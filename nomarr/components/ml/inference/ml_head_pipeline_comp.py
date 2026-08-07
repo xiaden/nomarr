@@ -12,7 +12,6 @@ dispatch logic can be tested and reasoned about independently of orchestration.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import partial
 from typing import TYPE_CHECKING, Any
@@ -26,6 +25,8 @@ from nomarr.helpers.dto.ml_dto import ProcessHeadPredictionsResult, RawOutputStr
 from nomarr.helpers.time_helper import internal_ms
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from nomarr.components.ml.onnx.ml_head import ONNXHeadModel
 
 logger = logging.getLogger(__name__)
@@ -36,16 +37,11 @@ logger = logging.getLogger(__name__)
 _HEAD_POOL = ThreadPoolExecutor(max_workers=12, thread_name_prefix="head")
 
 
-def shutdown_head_pool(*, timeout: float = 5.0) -> None:
+def shutdown_head_pool() -> None:
     """Shut down the module-level head prediction thread pool.
 
     Safe to call multiple times or when the pool has already exited.
     Called by the worker during cleanup to ensure a bounded exit time.
-
-    Args:
-        timeout: Max seconds to wait for in-flight predictions before
-                 forcing cancellation. Defaults to 5s — enough for any
-                 single head prediction to finish.
 
     """
     _HEAD_POOL.shutdown(wait=True, cancel_futures=True)
@@ -113,7 +109,7 @@ def run_single_head(
             kind=head_model.head_type,
             labels=head_model.labels,
         )
-        decision = run_head_decision(spec, pooled_vec, prefix="", segment_std=seg_std)
+        decision = run_head_decision(spec, pooled_vec, segment_std=seg_std)
 
         key_builder = partial(_build_tag_key, head_model=head_model)
 

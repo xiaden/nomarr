@@ -125,7 +125,6 @@ def scan_library_quick_workflow(
                     existing_for_folder = get_files_for_folder(db, library_id, folder.rel_path)
                     batch = scan_folder_files(
                         folder_path=Path(folder.abs_path),
-                        folder_rel_path=folder.rel_path,
                         library_root=library_root,
                         library_id=str(library_id),
                         existing_files=existing_for_folder,

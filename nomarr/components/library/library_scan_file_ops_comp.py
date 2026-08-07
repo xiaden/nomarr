@@ -89,7 +89,8 @@ def _upsert_batch(db: Database, file_docs: list[dict[str, Any]]) -> list[int]:
         msg = "All docs in a scan batch must share the same integer library_id"
         raise ValueError(msg)
 
-    file_ids = db.library.add_files_to_library(library_id, clean_docs)
+    with db.library.transaction():
+        file_ids = db.library.add_files_to_library(library_id, clean_docs)
 
     # Repair existing files whose state edges are missing (e.g. interrupted prior scan).
     # Using insert-ignoring semantics means already-transitioned edges are untouched.
@@ -183,7 +184,8 @@ def remove_deleted_files(db: Database, paths: list[str]) -> int:
         if (file_doc := cast("dict[str, Any] | None", db.library.find_file_by_path_any_library(path))) is not None
     ]
     for file_id in file_ids:
-        db.library.remove_file(file_id)
+        with db.library.transaction():
+            db.library.remove_file(file_id)
 
     return len(file_ids)
 
@@ -217,7 +219,8 @@ def save_folder_record(
     # Remove any existing folder with the same deterministic key before
     # inserting (add_library_folder is INSERT, not UPSERT).
     if existing_folder_id:
-        db.library.remove_library_folder(library_id, existing_folder_id)
+        with db.library.transaction():
+            db.library.remove_library_folder(library_id, existing_folder_id)
     else:
         # Try to find and remove a pre-existing folder with the same key
         try:
@@ -226,12 +229,14 @@ def save_folder_record(
                 if folder.get("key") == folder_key:
                     fid = folder.get("id")
                     if fid:
-                        db.library.remove_library_folder(library_id, fid)
+                        with db.library.transaction():
+                            db.library.remove_library_folder(library_id, fid)
                     break
         except Exception:
             pass  # best-effort cleanup
 
-    db.library.add_library_folder(library_id, folder_doc)
+    with db.library.transaction():
+        db.library.add_library_folder(library_id, folder_doc)
 
 
 def cleanup_stale_folders(
@@ -249,6 +254,7 @@ def cleanup_stale_folders(
         ]
         if stale_ids:
             for stale_id in stale_ids:
-                db.library.remove_library_folder(library_id, stale_id)
+                with db.library.transaction():
+                    db.library.remove_library_folder(library_id, stale_id)
     except DatabaseStateError as e:
         logger.warning("[scan] Failed to clean up folder records: %s", e)

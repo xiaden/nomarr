@@ -7,7 +7,6 @@ import json
 import logging
 import threading
 import time
-from collections.abc import Callable
 from multiprocessing.connection import Connection, wait
 from typing import TYPE_CHECKING, Any
 
@@ -26,6 +25,8 @@ from .deadline_ops import DeadlineOpsMixin
 from .state_transition_ops import StateTransitionOpsMixin
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
@@ -385,15 +386,16 @@ class HealthMonitorService(StateTransitionOpsMixin, DeadlineOpsMixin):
                 try:
                     # Convert monotonic time to wall-clock for DB storage
                     wall_ms = to_wall_ms(internal_s_to_ms(last_time))
-                    self.db.app.update_health(
-                        component_id,
-                        {
-                            "status": status,
-                            "last_snapshot": wall_ms.value,
-                            "created_at": wall_ms.value,
-                            "snapshot_type": "history",
-                        },
-                    )
+                    with self.db.app.transaction():
+                        self.db.app.update_health(
+                            component_id,
+                            {
+                                "status": status,
+                                "last_snapshot": wall_ms.value,
+                                "created_at": wall_ms.value,
+                                "snapshot_type": "history",
+                            },
+                        )
                 except Exception as e:
                     logger.warning("[HealthMonitor] History write failed for %s: %s", component_id, e, exc_info=True)
 

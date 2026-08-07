@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
 import pytest
@@ -12,6 +12,9 @@ from nomarr.helpers.exceptions import MisconfiguredError
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.web.dependencies import get_navidrome_service
 from nomarr.interfaces.api.web.navidrome_if import router as navidrome_router
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 @pytest.mark.unit

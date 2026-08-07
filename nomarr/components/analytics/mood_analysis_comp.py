@@ -6,9 +6,9 @@ from typing import TYPE_CHECKING, Any, TypedDict
 
 from nomarr.components.analytics.analytics_comp import DominantVibeResult, compute_dominant_vibes
 from nomarr.components.library.library_file_query_comp import get_library_stats
-from nomarr.helpers.dto.repo_dto import TagRow
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dto.repo_dto import TagRow
     from nomarr.persistence.db import Database
 
 

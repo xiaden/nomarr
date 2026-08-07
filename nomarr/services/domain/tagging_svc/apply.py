@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import logging
-import threading
 from dataclasses import asdict
 from typing import TYPE_CHECKING, Any, Literal
 
 from nomarr.helpers import ManagedTask
 from nomarr.helpers.dto.calibration_dto import WriteCalibratedTagsParams
-from nomarr.helpers.dto.recalibration_dto import ApplyCalibrationResult
 from nomarr.workflows.calibration.apply_calibration_wf import apply_calibration_wf
 from nomarr.workflows.calibration.get_calibration_status_wf import get_calibration_status_workflow
 from nomarr.workflows.calibration.write_calibrated_tags_wf import write_calibrated_tags_wf
@@ -24,6 +22,9 @@ from .config import (
 )
 
 if TYPE_CHECKING:
+    import threading
+
+    from nomarr.helpers.dto.recalibration_dto import ApplyCalibrationResult
     from nomarr.persistence.db import Database
     from nomarr.services.domain.library_svc import LibraryService
     from nomarr.services.infrastructure.background_tasks_svc import BackgroundTaskService

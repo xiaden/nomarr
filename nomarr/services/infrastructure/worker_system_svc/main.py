@@ -8,7 +8,6 @@ import time
 from multiprocessing import Event, Pipe
 from typing import TYPE_CHECKING, Any
 
-from nomarr.components.ml.resources.ml_capacity_probe_comp import CapacityEstimate
 from nomarr.components.ml.resources.ml_tier_selection_comp import (
     ExecutionTier,
     TierSelection,
@@ -30,6 +29,7 @@ from .gpu_admission_ops import GpuAdmissionOpsMixin
 from .worker_death_ops import WorkerDeathOpsMixin
 
 if TYPE_CHECKING:
+    from nomarr.components.ml.resources.ml_capacity_probe_comp import CapacityEstimate
     from nomarr.helpers.dto.processing_dto import ProcessorConfig
     from nomarr.persistence.db import Database
     from nomarr.services.infrastructure.health_monitor_svc import HealthMonitorService
@@ -159,13 +159,15 @@ class WorkerSystemService(WorkerDeathOpsMixin, GpuAdmissionOpsMixin, ComponentLi
 
     def enable_worker_system(self) -> None:
         """Enable worker system globally (sets worker_enabled=true in DB meta)."""
-        self.db.app.update_config_option("worker_enabled", {"value": "true"})
+        with self.db.app.transaction():
+            self.db.app.update_config_option("worker_enabled", {"value": "true"})
         self._worker_enabled = True
         logger.info("[WorkerSystemService] Worker system globally enabled")
 
     def disable_worker_system(self) -> None:
         """Disable worker system globally (sets worker_enabled=false in DB meta)."""
-        self.db.app.update_config_option("worker_enabled", {"value": "false"})
+        with self.db.app.transaction():
+            self.db.app.update_config_option("worker_enabled", {"value": "false"})
         self._worker_enabled = False
         logger.info("[WorkerSystemService] Worker system globally disabled")
 

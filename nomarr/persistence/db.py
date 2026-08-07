@@ -89,6 +89,10 @@ class Database:
         # Import here to avoid circular imports
         from nomarr.persistence.api.application import AppDb
         from nomarr.persistence.api.library import LibraryDb
+        from nomarr.persistence.api.library_files import LibraryFilesDb
+        from nomarr.persistence.api.library_regions import LibraryRegionsDb
+        from nomarr.persistence.api.library_scans import LibraryScansDb
+        from nomarr.persistence.api.library_tags import LibraryTagsDb
         from nomarr.persistence.api.ml import MlDb
 
         # Create sub-facades
@@ -100,16 +104,33 @@ class Database:
             file_state_repo=self._file_state_repo,
             pipeline_repo=self._pipeline_repo,
         )
-        self.library = LibraryDb(
-            library_repo=self._library_repo,
+        files = LibraryFilesDb(
+            session=self._scoped,
             file_repo=self._file_repo,
             folder_repo=self._folder_repo,
-            scan_repo=self._scan_repo,
-            tag_repo=self._tag_repo,
-            file_tag_repo=self._file_tag_repo,
             file_state_repo=self._file_state_repo,
         )
+        tags = LibraryTagsDb(
+            session=self._scoped,
+            tag_repo=self._tag_repo,
+            file_tag_repo=self._file_tag_repo,
+        )
+        scans = LibraryScansDb(session=self._scoped, scan_repo=self._scan_repo)
+        regions = LibraryRegionsDb(
+            session=self._scoped,
+            library_repo=self._library_repo,
+            file_state_repo=self._file_state_repo,
+            pipeline_repo=self._pipeline_repo,
+        )
+        self.library = LibraryDb(
+            session=self._scoped,
+            files=files,
+            tags=tags,
+            scans=scans,
+            regions=regions,
+        )
         self.ml = MlDb(
+            session=self._scoped,
             vector_repo=self._vector_repo,
             model_repo=self._model_repo,
             output_repo=self._output_repo,

@@ -93,7 +93,7 @@ class NavidromeService:
             counts available for smart playlist construction.
 
         """
-        stats = preview_tag_stats_workflow(self._db, namespace=self.cfg.namespace)
+        stats = preview_tag_stats_workflow(self._db)
         return PreviewTagStatsResult(stats=stats)
 
     def get_tag_values(self, name: str) -> list[str]:
@@ -165,7 +165,6 @@ class NavidromeService:
 
         """
         playlist_structure = generate_smart_playlist_workflow(
-            db=self._db,
             query=query,
             playlist_name=playlist_name,
             comment=comment,
@@ -190,14 +189,8 @@ class NavidromeService:
 
     def generate_template_files(
         self,
-        template_id: str,
-        output_dir: str,
     ) -> GenerateTemplateFilesResult:
         """Generate playlist files from a Navidrome template.
-
-        Args:
-            template_id: Identifier of the template to generate from.
-            output_dir: Directory where generated playlist files are written.
 
         Returns:
             GenerateTemplateFilesResult DTO with count of generated files.
@@ -369,16 +362,11 @@ class NavidromeService:
             ValueError: If seed descriptor cannot resolve or no vector exists.
 
         """
-        group_size: int = self._config_service.get("vector_group_size", 15)
-        thoroughness: int = self._config_service.get("vector_search_thoroughness", 10)
-
         return find_similar_tracks(
             seed_descriptor=cast("TrackDescriptor", seed_descriptor),
             count=count,
             backbone_id=backbone_id,
             db=self._db,
-            vector_group_size=group_size,
-            vector_search_thoroughness=thoroughness,
         )
 
     # ------------------------------------------------------------------

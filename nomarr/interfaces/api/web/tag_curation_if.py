@@ -12,7 +12,9 @@ from pydantic import BaseModel
 from nomarr.helpers.logging_helper import sanitize_exception_message
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.web.dependencies import get_tagging_service
-from nomarr.services.domain.tagging_svc import TaggingService
+from nomarr.services.domain.tagging_svc import (
+    TaggingService,  # noqa: TC001  # FastAPI resolves Annotated[...] at route registration
+)
 
 logger = logging.getLogger(__name__)
 

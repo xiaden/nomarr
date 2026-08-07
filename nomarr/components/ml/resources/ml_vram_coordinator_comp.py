@@ -116,14 +116,15 @@ def register_vram_promise(
         )
         return False
 
-    db.app.promise_vram(
-        worker_id=worker_id,
-        pid=pid,
-        model_path=model_path,
-        promised_mb=promised_mb,
-        total_mb=total_mb,
-        used_mb=used_mb,
-    )
+    with db.app.transaction():
+        db.app.promise_vram(
+            worker_id=worker_id,
+            pid=pid,
+            model_path=model_path,
+            promised_mb=promised_mb,
+            total_mb=total_mb,
+            used_mb=used_mb,
+        )
     registered = True
 
     # registered is always True here — rejection paths return False above.
@@ -155,7 +156,8 @@ def release_vram_promise(
         model_path:  Absolute path to the ONNX model file.
 
     """
-    db.app.release_vram(worker_id=worker_id, model_path=model_path)
+    with db.app.transaction():
+        db.app.release_vram(worker_id=worker_id, model_path=model_path)
     logger.debug(
         "[vram_coordinator] Released promise: worker=%s model=%s",
         worker_id,
@@ -206,7 +208,8 @@ def release_worker_promises(
     # Count promises before releasing (AppDb.release_all_for_worker returns None)
     promises = db.app.list_vram_promises()
     count = sum(1 for p in promises if p.get("worker_id") == worker_id)
-    db.app.release_all_for_worker(worker_id=worker_id)
+    with db.app.transaction():
+        db.app.release_all_for_worker(worker_id=worker_id)
     if count:
         logger.info(
             "[vram_coordinator] Released %d promise(s) for worker %s",

@@ -1,6 +1,6 @@
 # ADR-004: Schema Refactor V1 — Graph Normalization and Collection Decomposition
 
-**Status:** Accepted  
+**Status:** Superseded by ADR-040  
 **Date:** 2026-04-03  
 **Tags:** persistence, arangodb, schema, migration, architecture  
 **Source Log:** exec-executor#L1  

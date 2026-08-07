@@ -107,7 +107,6 @@ def write_file_tags_workflow(
     db: Database,
     file_key: str,
     target_mode: str,
-    calibration_hash: str | None,
     has_calibration: bool,
     namespace: str = "nom",
 ) -> WriteResult:
@@ -121,7 +120,6 @@ def write_file_tags_workflow(
         db: Database instance
         file_key: Document _key of the file to write
         target_mode: Desired write mode ("none", "minimal", "full")
-        calibration_hash: Current calibration hash
         has_calibration: Whether calibration exists (affects mood tag filtering)
         namespace: Tag namespace (default: "nom")
 

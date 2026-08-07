@@ -27,7 +27,7 @@ Adopt canonical int8 temporal stream storage for both backbone embeddings and cl
 
 4. **Segmentation becomes a read-time operation**: When the user changes segmentation parameters, the system reads the int8 stream, converts to float32 in memory, runs the segmentation algorithm, recomputes pooled vectors, and rebuilds the vector index. No audio I/O, no ONNX inference.
 
-5. **The existing redundant fields**: The `vector` field (two consumers exist but both want centroids — they should use AQL aggregation instead) is dropped once those consumers are migrated to the correct approach. The stored pooled vector is renamed/consolidated to avoid confusion once it becomes a derived field.
+5. **The existing redundant fields**: The `vector` field (two consumers exist but both want centroids — they should use SQL/database aggregation instead) is dropped once those consumers are migrated to the correct approach. The stored pooled vector is renamed/consolidated to avoid confusion once it becomes a derived field.
 
 ## Consequences
 

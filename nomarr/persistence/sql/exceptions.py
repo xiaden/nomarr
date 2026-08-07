@@ -12,8 +12,8 @@ discriminate between different failure modes.
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator
 from contextlib import contextmanager
+from typing import TYPE_CHECKING
 
 from sqlalchemy.exc import IntegrityError, NoResultFound, OperationalError, SQLAlchemyError
 
@@ -24,6 +24,9 @@ from nomarr.helpers.exceptions import (
     ReferentialIntegrityError,
 )
 from nomarr.persistence.exceptions import DuplicateKeyError, PersistenceError
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 logger = logging.getLogger(__name__)
 

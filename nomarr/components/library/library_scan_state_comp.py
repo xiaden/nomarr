@@ -71,7 +71,8 @@ def ensure_scan_state(db: Database, library_id: int) -> dict[str, Any]:
 
     if scan_doc is None:
         default_doc = _default_scan_doc(library_id)
-        db.library.add_scan(library_id, default_doc)
+        with db.library.transaction():
+            db.library.add_scan(library_id, default_doc)
         scan_doc = cast("dict[str, Any] | None", db.library.get_scan(library_id)) or default_doc
     elif scan_doc.get("library_key") != library_key:
         repaired_doc = {
@@ -80,8 +81,10 @@ def ensure_scan_state(db: Database, library_id: int) -> dict[str, Any]:
             "key": library_key,
             "library_key": library_key,
         }
-        db.library.remove_scan(library_id)
-        db.library.add_scan(library_id, repaired_doc)
+        with db.library.transaction():
+            db.library.remove_scan(library_id)
+        with db.library.transaction():
+            db.library.add_scan(library_id, repaired_doc)
         scan_doc = cast("dict[str, Any] | None", db.library.get_scan(library_id)) or repaired_doc
 
     return scan_doc
@@ -103,7 +106,8 @@ def update_scan_state(db: Database, library_id: int, **fields: Any) -> dict[str,
     if not fields:
         return scan_doc
 
-    db.library.update_scan(library_id, fields)
+    with db.library.transaction():
+        db.library.update_scan(library_id, fields)
     refreshed = cast("dict[str, Any] | None", db.library.get_scan(library_id))
     if refreshed is not None:
         return refreshed
@@ -139,7 +143,8 @@ def transition_pipeline_axis(
                     f"Allowed targets: {sorted(allowed)}"
                 )
                 raise ValueError(msg)
-    db.app.update_pipeline_axis(library_id, axis_field, next_state)
+    with db.app.transaction():
+        db.app.update_pipeline_axis(library_id, axis_field, next_state)
 
 
 def get_pipeline_state(db: Database, library_id: int) -> dict[str, str]:
@@ -189,5 +194,6 @@ def bulk_transition_pipeline_axis(
         raise ValueError(msg)
     library_ids = get_libraries_in_axis_state(db, axis_field, from_state)
     for library_id in library_ids:
-        db.app.update_pipeline_axis(library_id, axis_field, to_state)
+        with db.app.transaction():
+            db.app.update_pipeline_axis(library_id, axis_field, to_state)
     return len(library_ids)

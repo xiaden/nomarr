@@ -9,9 +9,9 @@ from typing import TYPE_CHECKING, Any
 
 from nomarr.components.library.library_file_query_comp import search_songs_with_tags
 from nomarr.components.tagging.tag_query_comp import list_tags_by_name
-from nomarr.helpers.dto.library_dto import SearchFilesQuery
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dto.library_dto import SearchFilesQuery
     from nomarr.persistence.db import Database
 
 
@@ -43,7 +43,7 @@ def search_songs(
     )
 
 
-def get_unique_tag_values(db: Database, tag_key: str, nomarr_only: bool = False) -> list[str]:
+def get_unique_tag_values(db: Database, tag_key: str, _nomarr_only: bool = False) -> list[str]:
     """Get list of unique values for a specific tag key (name).
 
     Args:

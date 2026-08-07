@@ -106,11 +106,11 @@ def save_calibration_state(
         "overflow_count": overflow_count,
         "updated_at": now_ms().value,
     }
-    db.ml.replace_calibration_state(
-        model_id=model_id,
-        key=_key,
-        payload={key: value for key, value in doc.items() if key != "key"},
-    )
+    with db.ml.transaction():
+        db.ml.replace_calibration_state(
+            model_id=model_id,
+            payload={key: value for key, value in doc.items() if key != "key"},
+        )
 
 
 def load_all_calibration_states(
@@ -157,7 +157,8 @@ def delete_calibration_state(
     calibration_id = calibration_doc.get("id")
     if calibration_id is None:
         return
-    db.ml.remove_calibration_state(calibration_id=int(calibration_id))
+    with db.ml.transaction():
+        db.ml.remove_calibration_state(calibration_id=int(calibration_id))
 
 
 def create_calibration_history_snapshot(
@@ -185,7 +186,9 @@ def create_calibration_history_snapshot(
         "p95_delta": p95_delta,
         "n_delta": n_delta,
     }
-    return cast("str", db.ml.add_calibration_history(payload=doc))
+    with db.ml.transaction():
+        result = db.ml.add_calibration_history(payload=doc)
+    return cast("str", result)
 
 
 def get_latest_calibration_history_snapshot(
@@ -228,7 +231,8 @@ def delete_old_calibration_history_snapshots(
     if not stale_ids:
         return 0
 
-    db.ml.remove_calibration_history_entries(entry_ids=stale_ids)
+    with db.ml.transaction():
+        db.ml.remove_calibration_history_entries(entry_ids=stale_ids)
     return len(stale_ids)
 
 
@@ -245,7 +249,8 @@ def get_calibration_version(db: Database) -> str | None:
 
 def set_calibration_version(db: Database, version_hash: str) -> None:
     """Set the global calibration version hash."""
-    db.app.update_config_option(key="calibration_version", payload={"value": version_hash})
+    with db.app.transaction():
+        db.app.update_config_option(key="calibration_version", payload={"value": version_hash})
 
 
 def get_calibration_last_run(db: Database) -> int | None:
@@ -257,7 +262,8 @@ def get_calibration_last_run(db: Database) -> int | None:
 
 def set_calibration_last_run(db: Database, timestamp: str) -> None:
     """Record the timestamp of the last calibration run."""
-    db.app.update_config_option(key="calibration_last_run", payload={"value": timestamp})
+    with db.app.transaction():
+        db.app.update_config_option(key="calibration_last_run", payload={"value": timestamp})
 
 
 # ---------------------------------------------------------------------------
@@ -350,14 +356,17 @@ def clear_all_calibration_data(db: Database) -> dict[str, int]:
 
     """
     # Truncate calibration data
-    db.ml.maintenance.truncate_calibration_states()
-    db.ml.maintenance.truncate_calibration_history()
+    with db.ml.transaction():
+        db.ml.truncate_calibration_states()
+    with db.ml.transaction():
+        db.ml.truncate_calibration_history()
 
     # Clear calibration meta keys
     meta_keys_cleared = 0
     for key in ("calibration_version", "calibration_last_run"):
         if db.app.get_config_option(key=key) is not None:
-            db.app.remove_config_option(key=key)
+            with db.app.transaction():
+                db.app.remove_config_option(key=key)
             meta_keys_cleared += 1
 
     # Mark all files as not calibrated and not vectors extracted

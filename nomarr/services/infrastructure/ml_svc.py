@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from nomarr.components.ml.onnx.ml_discovery_comp import (
     discover_backbones,
@@ -23,7 +23,9 @@ from nomarr.components.ml.onnx.ml_model_registry_comp import (
 )
 from nomarr.components.ml.resources.ml_vram_probe_comp import clear_model_vram_measurements
 from nomarr.helpers.dto.ml_head_dto import HeadInfo
-from nomarr.persistence.db import Database
+
+if TYPE_CHECKING:
+    from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
 

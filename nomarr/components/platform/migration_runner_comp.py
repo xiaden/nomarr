@@ -9,7 +9,6 @@ import importlib
 import logging
 from collections import defaultdict
 from pathlib import Path
-from types import ModuleType
 from typing import TYPE_CHECKING
 
 from packaging.version import InvalidVersion, Version
@@ -18,6 +17,8 @@ from nomarr.__version__ import __version__
 from nomarr.helpers.time_helper import internal_ms
 
 if TYPE_CHECKING:
+    from types import ModuleType
+
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
@@ -198,10 +199,11 @@ def apply_migration(name: str, module: ModuleType, db: Database) -> None:
         module.MIGRATION_VERSION,
     )
 
-    db.app.record_migration_started(
-        migration_id=name,
-        filename=f"{name}.py",
-    )
+    with db.app.transaction():
+        db.app.record_migration_started(
+            migration_id=name,
+            filename=f"{name}.py",
+        )
 
     start_time = internal_ms()
     # Legacy migrations are no longer executed.
@@ -213,10 +215,12 @@ def apply_migration(name: str, module: ModuleType, db: Database) -> None:
 
     duration_ms = internal_ms().value - start_time.value
 
-    db.app.mark_migration_applied(migration_id=name)
+    with db.app.transaction():
+        db.app.mark_migration_applied(migration_id=name)
 
     # Write the new version only after the migration is fully recorded
-    db.set_version(module.MIGRATION_VERSION)
+    with db.app.transaction():
+        db.set_version(module.MIGRATION_VERSION)
 
     logger.info(
         "Migration %s (version %s) tracked in %dms",

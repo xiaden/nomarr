@@ -69,5 +69,5 @@ class DatabaseStateError(Exception):
         super().__init__(message)
 
 
-class FacadeMisuseWarning(FutureWarning):
-    """Warning for direct repo access bypassing intent facades."""
+class FacadeMisuseError(RuntimeError):
+    """Raised when a write facade method is called without an active transaction context."""

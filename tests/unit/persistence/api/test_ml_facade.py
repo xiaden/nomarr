@@ -16,6 +16,7 @@ def _make_ml_db() -> MlDb:
     mock_model_repo = MagicMock()
     mock_calibration_repo = MagicMock()
     return MlDb(
+        session=MagicMock(),
         vector_repo=mock_vector_repo,
         model_repo=mock_model_repo,
         calibration_repo=mock_calibration_repo,

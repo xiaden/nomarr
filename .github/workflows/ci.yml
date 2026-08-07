@@ -14,10 +14,6 @@ on:
       - "playwright.config.ts"
       - "BASE_VERSION"
       - ".github/workflows/ci.yml"
-      - "scripts/check-arango-fields.sh"
-      - ".arango-field-allowlist.yaml"
-      - "scripts/validate-arango-allowlist.py"
-      - "scripts/check-transitive-imports.py"
   pull_request:
     branches: [main, develop]
     paths:
@@ -30,10 +26,6 @@ on:
       - "pyproject.toml"
       - "playwright.config.ts"
       - ".github/workflows/ci.yml"
-      - "scripts/check-arango-fields.sh"
-      - ".arango-field-allowlist.yaml"
-      - "scripts/validate-arango-allowlist.py"
-      - "scripts/check-transitive-imports.py"
   workflow_dispatch:
 
 jobs:
@@ -84,6 +76,39 @@ jobs:
         run: |
           source .venv/bin/activate
           lint-imports
+
+  deptry:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Cache virtualenv
+        id: cache-venv
+        uses: actions/cache@v5
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-py3.12-${{ hashFiles('pyproject.toml', 'uv.lock') }}
+
+      - name: Install dependencies
+        if: steps.cache-venv.outputs.cache-hit != 'true'
+        run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run deptry
+        run: |
+          source .venv/bin/activate
+          deptry . --known-first-party nomarr
 
   frontend-test:
     runs-on: ubuntu-latest
@@ -151,63 +176,8 @@ jobs:
           source .venv/bin/activate
           pytest tests/ -v -m "not container_only and not requires_database and not code_smell"
 
-  arango-field-check:
-    name: "No ArangoDB field names in non-persistence code"
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Install ripgrep 14.1.1
-        run: |
-          curl -sLO https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz
-          tar xzf ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz
-          sudo mv ripgrep-14.1.1-x86_64-unknown-linux-musl/rg /usr/local/bin/
-          rm -rf ripgrep-14.1.1-x86_64-unknown-linux-musl ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz
-          rg --version
-
-      - name: Install PyYAML
-        run: python3 -m pip install pyyaml
-
-      - name: Validate allowlist not expired
-        run: python scripts/validate-arango-allowlist.py
-
-      - name: Check for ArangoDB field name violations
-        run: bash scripts/check-arango-fields.sh
-
-  grimp-transitive-check:
-    name: "grimp transitive import check"
-    needs: arango-field-check
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.12'
-
-      - name: Cache grimp graph
-        uses: actions/cache@v5
-        with:
-          path: |
-            .cache/grimp-graph/
-            .cache/grimp-graph-hash.txt
-          key: grimp-graph-${{ hashFiles('nomarr/**/*.py') }}
-          restore-keys: |
-            grimp-graph-
-
-      - name: Install grimp
-        run: pip install "grimp>=3.14"
-
-      - name: Run transitive import check
-        run: python scripts/check-transitive-imports.py
-
   build-and-push:
-    needs: [lint, test, frontend-test, arango-field-check, grimp-transitive-check]
+    needs: [lint, test, frontend-test, deptry]
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:

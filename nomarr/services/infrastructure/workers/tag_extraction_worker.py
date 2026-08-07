@@ -92,7 +92,8 @@ def _process_file(db: Database, file_id: int) -> None:
     # Update duration_seconds on the track record if not already set
     duration = metadata.get("duration")
     if duration is not None and not file_doc.get("duration_seconds"):
-        db.library.update_file_fields(file_id, {"duration_seconds": duration})
+        with db.library.transaction():
+            db.library.update_file_fields(file_id, {"duration_seconds": duration})
 
     transition_file_state(db, [file_id], STATE_NOT_HYDRATED, STATE_HYDRATED)
 

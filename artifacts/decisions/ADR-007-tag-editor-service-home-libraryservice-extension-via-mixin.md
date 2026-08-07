@@ -1,6 +1,6 @@
 # ADR-007: Tag Editor Service Home — LibraryService Extension via Mixin
 
-**Status:** Accepted  
+**Status:** Superseded by ADR-013  
 **Date:** 2026-04-04  
 **Tags:** architecture, services, tag-editor  
 **Source Log:** rnd-manager#L1  

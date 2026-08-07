@@ -46,8 +46,6 @@ def find_similar_tracks(
     count: int,
     backbone_id: str,
     db: Database,
-    vector_group_size: int = 15,
-    vector_search_thoroughness: int = 10,
 ) -> list[SimilarTrackResult]:
     """Find tracks similar to a portable seed descriptor.
 
@@ -63,8 +61,6 @@ def find_similar_tracks(
         count: Maximum number of similar tracks to return.
         backbone_id: Vector backbone identifier (e.g., "effnet").
         db: Database instance passed through to components.
-        vector_group_size: Songs per neighbourhood for nLists calculation.
-        vector_search_thoroughness: Percentage of neighbourhoods to probe (1-100).
 
     Returns:
         List of similar tracks with portable descriptors and score,
@@ -105,8 +101,6 @@ def find_similar_tracks(
         backbone_id=backbone_id,
         seed_vector=seed_vector,
         result_limit=fetch_limit,
-        vector_group_size=vector_group_size,
-        vector_search_thoroughness=vector_search_thoroughness,
     )
 
     # Exclude the seed track itself from results

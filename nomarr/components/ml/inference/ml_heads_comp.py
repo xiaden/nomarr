@@ -426,8 +426,6 @@ def run_head_decision(
     spec: HeadSpec,
     scores: np.ndarray,
     *,
-    prefix: str = "",
-    emit_all_scores: bool = True,
     segment_std: np.ndarray | None = None,
 ) -> HeadDecision:
     """Turn the raw output vector for a head into a :class:`HeadDecision`.
@@ -435,8 +433,6 @@ def run_head_decision(
     Args:
         spec: Head specification describing labels, thresholds, and cascade.
         scores: Head outputs (logits or probabilities).
-        prefix: Optional string to prepend to tag keys.
-        emit_all_scores: (unused, kept for signature compat).
         segment_std: Optional per-label segment standard deviation
             for stability gating.
 

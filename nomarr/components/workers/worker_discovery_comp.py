@@ -73,7 +73,8 @@ def claim_file(db: Database, file_id: str, worker_id: str) -> bool:
         "claimed_at": now_ms().value,
     }
     try:
-        db.app.add_claim(payload)
+        with db.app.transaction():
+            db.app.add_claim(payload)
     except DuplicateEntityError:
         return False
     return True
@@ -87,7 +88,8 @@ def release_claim(db: Database, file_id: int) -> None:
         file_id: File document id
 
     """
-    db.app.remove_claim(file_id)
+    with db.app.transaction():
+        db.app.remove_claim(file_id)
 
 
 def try_insert_or_steal_claim(
@@ -112,7 +114,8 @@ def try_insert_or_steal_claim(
 
     """
     try:
-        db.app.add_claim(payload)
+        with db.app.transaction():
+            db.app.add_claim(payload)
     except DuplicateEntityError:
         file_id = int(payload["file_id"])
         all_claims = _get_all_claims(db)
@@ -122,7 +125,8 @@ def try_insert_or_steal_claim(
         )
         if existing_claim is None:
             try:
-                db.app.add_claim(payload)
+                with db.app.transaction():
+                    db.app.add_claim(payload)
             except DuplicateEntityError:
                 return False
             return True
@@ -131,9 +135,11 @@ def try_insert_or_steal_claim(
         if claimed_at > now - lease_ms:
             return False
 
-        db.app.remove_claim(file_id)
+        with db.app.transaction():
+            db.app.remove_claim(file_id)
         try:
-            db.app.add_claim(payload)
+            with db.app.transaction():
+                db.app.add_claim(payload)
         except DuplicateEntityError:
             return False
         return True
@@ -192,9 +198,11 @@ def cleanup_stale_claims(db: Database, heartbeat_timeout_ms: int) -> int:
 
     removed = 0
     if inactive_worker_ids:
-        removed += db.app.remove_claims(worker_ids=sorted(inactive_worker_ids))
+        with db.app.transaction():
+            removed += db.app.remove_claims(worker_ids=sorted(inactive_worker_ids))
     if stale_file_ids:
-        removed += db.app.remove_claims(file_ids=sorted(stale_file_ids))
+        with db.app.transaction():
+            removed += db.app.remove_claims(file_ids=sorted(stale_file_ids))
     return removed
 
 
@@ -267,5 +275,6 @@ def release_claims_for_worker(db: Database, worker_id: str) -> list[str]:
         return []
 
     file_ids = [str(claim["file_id"]) for claim in claims]
-    db.app.remove_claims(worker_ids=[worker_id])
+    with db.app.transaction():
+        db.app.remove_claims(worker_ids=[worker_id])
     return file_ids

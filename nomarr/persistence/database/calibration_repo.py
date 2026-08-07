@@ -10,7 +10,6 @@ import time
 from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import Table, delete, select, update
-from sqlalchemy.orm import Session, scoped_session
 
 from nomarr.helpers.dto.calibration_repo_dto import (
     CalibrationHistoryRecord,
@@ -24,6 +23,7 @@ from nomarr.persistence.sql.primitives import insert_one
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Row
+    from sqlalchemy.orm import Session, scoped_session
 
 _T_STATE = cast("Table", CalibrationState.__table__)
 _T_HISTORY = cast("Table", CalibrationHistory.__table__)

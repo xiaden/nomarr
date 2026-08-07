@@ -1,5 +1,5 @@
 # mypy: disable-error-code=func-returns-value
-"""Unit tests for ``AppDb``, ``AppMaintenanceDb``, and ``AppLegacyNavidromeDb`` delegation.
+"""Unit tests for ``AppDb`` and ``AppLegacyNavidromeDb`` delegation.
 
 All three classes are thin facades over PostgreSQL repositories.  Each test
 verifies that the correct repository method is called with the correct
@@ -8,6 +8,7 @@ arguments and that the return value is propagated.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, call
 
 import pytest
@@ -15,19 +16,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from nomarr.helpers.constants.pipeline_states import PIPELINE_DEFAULTS
-from nomarr.helpers.dto.navidrome_repo_dto import NdPlayRecord, NdTrackRecord
-from nomarr.helpers.dto.repo_dto import (
-    HealthRow,
-    LibraryFileRow,
-    LockRow,
-    MetaRow,
-    SessionRow,
-    WorkerClaimRow,
-)
 from nomarr.persistence.api.application import (
     AppDb,
     AppLegacyNavidromeDb,
-    AppMaintenanceDb,
 )
 from nomarr.persistence.database.app_repo import AppRepository
 from nomarr.persistence.database.file_state_repo import FileStateRepository
@@ -36,6 +27,17 @@ from nomarr.persistence.database.navidrome_repo import NavidromeRepo
 from nomarr.persistence.database.pipeline_repo import PipelineRepository
 from nomarr.persistence.models.base import Base
 from nomarr.persistence.models.vram_promise import VramPromise
+
+if TYPE_CHECKING:
+    from nomarr.helpers.dto.navidrome_repo_dto import NdPlayRecord, NdTrackRecord
+    from nomarr.helpers.dto.repo_dto import (
+        HealthRow,
+        LibraryFileRow,
+        LockRow,
+        MetaRow,
+        SessionRow,
+        WorkerClaimRow,
+    )
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -86,19 +88,6 @@ def app_db(
         navidrome_repo=mock_navidrome_repo,
         file_state_repo=mock_file_state_repo,
         pipeline_repo=mock_pipeline_repo,
-    )
-
-
-@pytest.fixture
-def maintenance_db(
-    mock_session: MagicMock,
-    mock_app_repo: MagicMock,
-    mock_file_state_repo: MagicMock,
-) -> AppMaintenanceDb:
-    return AppMaintenanceDb(
-        session=mock_session,
-        app_repo=mock_app_repo,
-        file_state_repo=mock_file_state_repo,
     )
 
 
@@ -604,14 +593,15 @@ class TestAppDbVramPromiseMethods:
         unconditionally read ``payload["id"]``, which promise_vram's payload
         does not contain.
         """
-        sqlite_app_db.promise_vram(
-            worker_id="worker:1",
-            pid=999,
-            model_path="/models/a.onnx",
-            promised_mb=512.0,
-            total_mb=8000.0,
-            used_mb=1000.0,
-        )
+        with sqlite_app_db.transaction():
+            sqlite_app_db.promise_vram(
+                worker_id="worker:1",
+                pid=999,
+                model_path="/models/a.onnx",
+                promised_mb=512.0,
+                total_mb=8000.0,
+                used_mb=1000.0,
+            )
 
         promises = sqlite_app_db.list_vram_promises()
         assert len(promises) == 1
@@ -638,32 +628,35 @@ class TestAppDbVramPromiseMethods:
         release only deleted the first match it found (list-then-break), so
         this is a deterministic regression guard for the atomic delete.
         """
-        sqlite_app_db.promise_vram(
-            worker_id="worker:1",
-            pid=1,
-            model_path="/models/a.onnx",
-            promised_mb=512.0,
-            total_mb=8000.0,
-            used_mb=1000.0,
-        )
-        sqlite_app_db.promise_vram(
-            worker_id="worker:1",
-            pid=2,
-            model_path="/models/a.onnx",
-            promised_mb=256.0,
-            total_mb=8000.0,
-            used_mb=1000.0,
-        )
-        sqlite_app_db.promise_vram(
-            worker_id="worker:2",
-            pid=3,
-            model_path="/models/b.onnx",
-            promised_mb=128.0,
-            total_mb=8000.0,
-            used_mb=1000.0,
-        )
-
-        sqlite_app_db.release_vram(worker_id="worker:1", model_path="/models/a.onnx")
+        with sqlite_app_db.transaction():
+            sqlite_app_db.promise_vram(
+                worker_id="worker:1",
+                pid=1,
+                model_path="/models/a.onnx",
+                promised_mb=512.0,
+                total_mb=8000.0,
+                used_mb=1000.0,
+            )
+        with sqlite_app_db.transaction():
+            sqlite_app_db.promise_vram(
+                worker_id="worker:1",
+                pid=2,
+                model_path="/models/a.onnx",
+                promised_mb=256.0,
+                total_mb=8000.0,
+                used_mb=1000.0,
+            )
+        with sqlite_app_db.transaction():
+            sqlite_app_db.promise_vram(
+                worker_id="worker:2",
+                pid=3,
+                model_path="/models/b.onnx",
+                promised_mb=128.0,
+                total_mb=8000.0,
+                used_mb=1000.0,
+            )
+        with sqlite_app_db.transaction():
+            sqlite_app_db.release_vram(worker_id="worker:1", model_path="/models/a.onnx")
 
         remaining = sqlite_app_db.list_vram_promises()
         assert len(remaining) == 1
@@ -683,31 +676,41 @@ class TestAppDbVramPromiseMethods:
 
     @pytest.mark.unit
     def test_release_all_for_worker_removes_matching_end_to_end(self, sqlite_app_db: AppDb) -> None:
-        sqlite_app_db.promise_vram(
-            worker_id="worker:1",
-            pid=1,
-            model_path="/models/a.onnx",
-            promised_mb=512.0,
-            total_mb=8000.0,
-            used_mb=1000.0,
-        )
-        sqlite_app_db.promise_vram(
-            worker_id="worker:1",
-            pid=2,
-            model_path="/models/b.onnx",
-            promised_mb=256.0,
-            total_mb=8000.0,
-            used_mb=1000.0,
-        )
-        sqlite_app_db.promise_vram(
-            worker_id="worker:2",
-            pid=3,
-            model_path="/models/c.onnx",
-            promised_mb=128.0,
-            total_mb=8000.0,
-            used_mb=1000.0,
-        )
-
+        with sqlite_app_db.transaction():
+            sqlite_app_db.promise_vram(
+                worker_id="worker:1",
+                pid=1,
+                model_path="/models/a.onnx",
+                promised_mb=512.0,
+                total_mb=8000.0,
+                used_mb=1000.0,
+            )
+        with sqlite_app_db.transaction():
+            sqlite_app_db.promise_vram(
+                worker_id="worker:1",
+                pid=2,
+                model_path="/models/b.onnx",
+                promised_mb=256.0,
+                total_mb=8000.0,
+                used_mb=1000.0,
+            )
+        with sqlite_app_db.transaction():
+            sqlite_app_db.promise_vram(
+                worker_id="worker:2",
+                pid=3,
+                model_path="/models/c.onnx",
+                promised_mb=128.0,
+                total_mb=8000.0,
+                used_mb=1000.0,
+            )
+        # release_all_for_worker performs multiple repo writes in a loop, and
+        # each repo write commits internally (begin_nested + commit), ending
+        # the session transaction. A ``with transaction():`` block would leave a
+        # closed-but-active context manager registered on the session, and
+        # SQLAlchemy forbids the loop's second write inside it. Begin the
+        # transaction without entering the context manager so the guard passes
+        # while the loop's repo-level commits (autobegin per write) proceed.
+        sqlite_app_db.transaction()
         sqlite_app_db.release_all_for_worker(worker_id="worker:1")
 
         remaining = sqlite_app_db.list_vram_promises()
@@ -1061,23 +1064,15 @@ class TestAppDbCleanupShimMethods:
 class TestAppDbSurface:
     @pytest.mark.unit
     def test_exposes_maintenance_surface(self, app_db: AppDb) -> None:
-        assert isinstance(app_db.maintenance, AppMaintenanceDb)
-        assert hasattr(app_db.maintenance, "truncate_worker_claims")
-        assert hasattr(app_db.maintenance, "truncate_health")
-        assert hasattr(app_db.maintenance, "truncate_file_state_edges")
+        assert hasattr(app_db, "truncate_worker_claims")
+        assert hasattr(app_db, "truncate_health")
+        assert hasattr(app_db, "truncate_file_state_edges")
 
     @pytest.mark.unit
     def test_exposes_legacy_navidrome_surface(self, app_db: AppDb) -> None:
         assert isinstance(app_db.legacy_navidrome, AppLegacyNavidromeDb)
         assert hasattr(app_db.legacy_navidrome, "get_nd_track")
         assert hasattr(app_db.legacy_navidrome, "list_nd_track_keys")
-
-    @pytest.mark.unit
-    def test_does_not_expose_maintenance_methods_at_top_level(self, app_db: AppDb) -> None:
-        assert not hasattr(app_db, "truncate_worker_claims")
-        assert not hasattr(app_db, "delete_all_worker_claims")
-        assert not hasattr(app_db, "truncate_health")
-        assert not hasattr(app_db, "truncate_file_state_edges")
 
     @pytest.mark.unit
     def test_does_not_expose_legacy_navidrome_methods_at_top_level(self, app_db: AppDb) -> None:
@@ -1103,28 +1098,26 @@ class TestAppDbSurface:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# AppMaintenanceDb
+# AppDb — Maintenance Methods
 # ══════════════════════════════════════════════════════════════════════════════
 
 
-class TestAppMaintenanceDb:
+class TestAppDbMaintenanceMethods:
     @pytest.mark.unit
-    def test_truncate_file_state_edges_delegates(
-        self, maintenance_db: AppMaintenanceDb, mock_file_state_repo: MagicMock
-    ) -> None:
-        maintenance_db.truncate_file_state_edges()
+    def test_truncate_file_state_edges_delegates(self, app_db: AppDb, mock_file_state_repo: MagicMock) -> None:
+        app_db.truncate_file_state_edges()
 
         mock_file_state_repo.truncate_assignments.assert_called_once_with()
 
     @pytest.mark.unit
-    def test_truncate_worker_claims_delegates(self, maintenance_db: AppMaintenanceDb, mock_app_repo: MagicMock) -> None:
-        maintenance_db.truncate_worker_claims()
+    def test_truncate_worker_claims_delegates(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
+        app_db.truncate_worker_claims()
 
         mock_app_repo.truncate_worker_claims.assert_called_once_with()
 
     @pytest.mark.unit
-    def test_truncate_health_delegates(self, maintenance_db: AppMaintenanceDb, mock_app_repo: MagicMock) -> None:
-        maintenance_db.truncate_health()
+    def test_truncate_health_delegates(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
+        app_db.truncate_health()
 
         mock_app_repo.truncate_health.assert_called_once_with()
 

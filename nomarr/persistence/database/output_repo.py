@@ -10,7 +10,6 @@ import time
 from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import Table, delete, select
-from sqlalchemy.orm import Session, scoped_session
 
 from nomarr.helpers.dto.output_repo_dto import ModelOutputRecord, OutputStreamRecord
 from nomarr.persistence.models.ml_model_output import MlModelOutput
@@ -24,6 +23,7 @@ from nomarr.persistence.sql.primitives import (
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Row
+    from sqlalchemy.orm import Session, scoped_session
 
 _T_OUTPUT = cast("Table", MlModelOutput.__table__)
 _T_STREAM = cast("Table", MlOutputStream.__table__)

@@ -5,10 +5,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.components.library.library_id_comp import library_key_from_ref
-from nomarr.helpers.dto import LibraryPath
 from nomarr.helpers.time_helper import now_ms
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dto import LibraryPath
     from nomarr.persistence.db import Database
 
 
@@ -41,20 +41,21 @@ def upsert_library_file(
     normalized_path = str(path.relative)
     absolute_path = str(path.absolute)
     library_key = library_key_from_ref(str(library_id))
-    return db.library.add_file_to_library(
-        library_id,
-        {
-            "path": absolute_path,
-            "library_key": library_key,
-            "normalized_path": normalized_path,
-            "file_size": file_size,
-            "modified_time": modified_time,
-            "duration_seconds": duration_seconds,
-            "scanned_at": scanned_at,
-            "chromaprint": None,
-            "last_tagged_at": last_tagged_at,
-        },
-    )
+    with db.library.transaction():
+        return db.library.add_file_to_library(
+            library_id,
+            {
+                "path": absolute_path,
+                "library_key": library_key,
+                "normalized_path": normalized_path,
+                "file_size": file_size,
+                "modified_time": modified_time,
+                "duration_seconds": duration_seconds,
+                "scanned_at": scanned_at,
+                "chromaprint": None,
+                "last_tagged_at": last_tagged_at,
+            },
+        )
 
 
 def delete_library_file(db: Database, file_id: int) -> None:
@@ -67,10 +68,12 @@ def delete_library_file(db: Database, file_id: int) -> None:
     try:
         int(file_id)
         # It's a numeric ID, use it directly
-        db.library.remove_file(file_id)
+        with db.library.transaction():
+            db.library.remove_file(file_id)
     except ValueError:
         # Not an integer, treat as path
-        db.library.remove_file_by_path(str(file_id))
+        with db.library.transaction():
+            db.library.remove_file_by_path(str(file_id))
 
 
 def upsert_batch(db: Database, file_docs: list[dict[str, Any]]) -> list[int]:
@@ -95,7 +98,8 @@ def upsert_batch(db: Database, file_docs: list[dict[str, Any]]) -> list[int]:
     result = [0] * len(file_docs)
     for library_id, entries in grouped_docs.items():
         payloads = [payload for _, payload in entries]
-        file_ids = db.library.add_files_to_library(library_id, payloads)
+        with db.library.transaction():
+            file_ids = db.library.add_files_to_library(library_id, payloads)
         if len(file_ids) != len(entries):
             msg = f"add_files_to_library() returned {len(file_ids)} ids for {len(entries)} payloads"
             raise RuntimeError(msg)
@@ -114,7 +118,8 @@ def update_file_path(
     normalized_path: str | None = None,
 ) -> None:
     """Update path and metadata for a moved file."""
-    db.library.update_library_file_path(file_id, new_path)
+    with db.library.transaction():
+        db.library.update_library_file_path(file_id, new_path)
     fields: dict[str, Any] = {
         "file_size": file_size,
         "modified_time": modified_time,
@@ -124,12 +129,14 @@ def update_file_path(
     }
     if normalized_path is not None:
         fields["normalized_path"] = normalized_path
-    db.library.update_file_fields(file_id, fields)
+    with db.library.transaction():
+        db.library.update_file_fields(file_id, fields)
 
 
 def update_file_modified_time(db: Database, file_key: int, modified_time_ms: int) -> None:
     """Update the stored modified-time after a successful file write."""
-    db.library.update_library_file_modified_time(file_key, modified_time_ms)
+    with db.library.transaction():
+        db.library.update_library_file_modified_time(file_key, modified_time_ms)
 
 
 def bulk_delete_files(db: Database, paths: list[str]) -> int:
@@ -150,7 +157,8 @@ def bulk_delete_files(db: Database, paths: list[str]) -> int:
         return 0
 
     for path in matched_paths:
-        db.library.remove_file_by_path(path)
+        with db.library.transaction():
+            db.library.remove_file_by_path(path)
     return len(matched_paths)
 
 
@@ -165,9 +173,11 @@ def get_file_library_key(db: Database, file_id: int) -> int | None:
 
 def set_chromaprint(db: Database, file_id: int, chromaprint: str) -> None:
     """Persist a chromaprint fingerprint for one file."""
-    db.library.set_library_file_chromaprint(file_id, chromaprint)
+    with db.library.transaction():
+        db.library.set_library_file_chromaprint(file_id, chromaprint)
 
 
 def update_last_tagged_at(db: Database, file_id: int) -> None:
     """Record the wall-clock time at which a file was tagged."""
-    db.library.update_library_file_last_tagged_at(file_id, now_ms().value)
+    with db.library.transaction():
+        db.library.update_library_file_last_tagged_at(file_id, now_ms().value)

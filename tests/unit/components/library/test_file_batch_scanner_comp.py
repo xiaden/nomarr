@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -12,6 +12,9 @@ from nomarr.components.library.file_batch_scanner_comp import (
     scan_folder_files,
 )
 from nomarr.helpers.time_helper import Milliseconds
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 MODULE = "nomarr.components.library.file_batch_scanner_comp"
 
@@ -75,7 +78,6 @@ class TestScanFolderFiles:
         with patch(f"{MODULE}.os.listdir", side_effect=OSError("denied")):
             result = scan_folder_files(
                 folder_path=folder_path,
-                folder_rel_path="missing",
                 library_root=library_root,
                 library_id="libraries/1",
                 existing_files={},
@@ -105,7 +107,6 @@ class TestScanFolderFiles:
         ):
             result = scan_folder_files(
                 folder_path=folder_path,
-                folder_rel_path="Rock",
                 library_root=library_root,
                 library_id="libraries/1",
                 existing_files={str(track_path): {"modified_time": modified_time}},
@@ -133,7 +134,6 @@ class TestScanFolderFiles:
         ):
             result = scan_folder_files(
                 folder_path=folder_path,
-                folder_rel_path="Rock",
                 library_root=library_root,
                 library_id="libraries/1",
                 existing_files={},
@@ -162,7 +162,6 @@ class TestScanFolderFiles:
         ):
             result = scan_folder_files(
                 folder_path=folder_path,
-                folder_rel_path="Rock",
                 library_root=library_root,
                 library_id="libraries/1",
                 existing_files={},
@@ -194,7 +193,6 @@ class TestScanFolderFiles:
         ):
             result = scan_folder_files(
                 folder_path=folder_path,
-                folder_rel_path="Rock",
                 library_root=library_root,
                 library_id="libraries/1",
                 existing_files={},
@@ -233,7 +231,6 @@ class TestScanFolderFiles:
         ):
             result = scan_folder_files(
                 folder_path=folder_path,
-                folder_rel_path="Rock",
                 library_root=library_root,
                 library_id="libraries/1",
                 existing_files={

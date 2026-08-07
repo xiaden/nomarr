@@ -6,9 +6,12 @@ track-level vector [embed_dim] suitable for database storage and vector search.
 
 from __future__ import annotations
 
-import numpy as np
+from typing import TYPE_CHECKING
 
 from nomarr.components.ml.inference.ml_embed_comp import pool_scores
+
+if TYPE_CHECKING:
+    import numpy as np
 
 
 def pool_embedding_for_storage(

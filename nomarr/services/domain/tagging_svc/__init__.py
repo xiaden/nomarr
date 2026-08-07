@@ -5,8 +5,6 @@ from __future__ import annotations
 import threading
 from typing import TYPE_CHECKING, Any
 
-from nomarr.helpers.dto.recalibration_dto import ApplyCalibrationResult
-
 from .apply import TaggingApplyMixin
 from .config import CALIBRATION_APPLY_TASK_ID, ApplyCalibrationCombinedStatusDict, TaggingServiceConfig
 from .curation import TaggingCurationMixin
@@ -14,6 +12,7 @@ from .query import TaggingQueryMixin
 from .write import TaggingWriteMixin
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dto.recalibration_dto import ApplyCalibrationResult
     from nomarr.persistence.db import Database
     from nomarr.services.domain.library_svc import LibraryService
     from nomarr.services.infrastructure.background_tasks_svc import BackgroundTaskService

@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import functools
 import logging
-from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from nomarr.components.library import (
@@ -32,6 +31,8 @@ from nomarr.workflows.library.validate_library_tags_wf import validate_library_t
 
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from nomarr.persistence.db import Database
 
     from .config import LibraryServiceConfig
@@ -148,7 +149,7 @@ class LibraryScanMixin:
             job_ids=[task_id],
         )
 
-    def cancel_scan(self, library_id: int | None = None) -> bool:
+    def cancel_scan(self, _library_id: int | None = None) -> bool:
         """Cancel the currently running scan.
 
         Note: Cancellation support not yet implemented for direct scans.

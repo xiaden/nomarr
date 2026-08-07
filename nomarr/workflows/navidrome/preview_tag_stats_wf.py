@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def preview_tag_stats_workflow(db: Database, namespace: str = "nom") -> dict[str, dict[str, Any]]:
+def preview_tag_stats_workflow(db: Database) -> dict[str, dict[str, Any]]:
     """Preview statistics for all tags in the library.
 
     Returns stats for all tags: both standard tags (artist, album, year, etc.)
@@ -42,7 +42,6 @@ def preview_tag_stats_workflow(db: Database, namespace: str = "nom") -> dict[str
 
     Args:
         db: Database instance
-        namespace: Tag namespace (default: "nom") — currently unused, kept for API compat
 
     Returns:
         Dict of tag_key -> stats dict

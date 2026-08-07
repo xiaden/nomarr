@@ -31,10 +31,10 @@ from nomarr.components.platform.resource_monitor_comp import (
     get_vram_usage_mb,
     reset_telemetry_cache,
 )
-from nomarr.persistence.db import Database
 
 if TYPE_CHECKING:
     from nomarr.components.ml.onnx.ml_base import BaseONNXModel
+    from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
 
@@ -234,7 +234,8 @@ def probe_all_models(db: Database, models_dir: str) -> None:
         delta = _probe_single_model(model, waveform)
         delta_with_headroom = int(delta * 1.1) if delta is not None else None
         value = str(delta_with_headroom) if delta_with_headroom is not None else str(sys.maxsize)
-        db.app.update_config_option(f"{_META_PREFIX}{model._path}", {"value": value})
+        with db.app.transaction():
+            db.app.update_config_option(f"{_META_PREFIX}{model._path}", {"value": value})
         readable = _fmt_bytes(delta_with_headroom) if delta_with_headroom is not None else "unmeasured"
         results.append(f"  {model._path} -> {readable}")
 
@@ -276,7 +277,8 @@ def clear_model_vram_measurements(db: Database) -> None:
         key = doc.get("key")
         if not isinstance(key, str) or not key:
             continue
-        db.app.remove_config_option(key)
+        with db.app.transaction():
+            db.app.remove_config_option(key)
         removed += 1
     logger.info("[vram_probe] Cleared %d VRAM measurement(s)", removed)
 

@@ -270,7 +270,6 @@ class TestCalibrationStateCrud:
 
         mock_db.ml.replace_calibration_state.assert_called_once_with(
             model_id="ml_models/model-1",
-            key="mood_happy:happy",
             payload={
                 "head_name": "mood_happy",
                 "label": "happy",
@@ -333,8 +332,8 @@ class TestClearAllCalibrationData:
         ):
             result = clear_all_calibration_data(mock_db)
 
-        mock_db.ml.maintenance.truncate_calibration_states.assert_called_once_with()
-        mock_db.ml.maintenance.truncate_calibration_history.assert_called_once_with()
+        mock_db.ml.truncate_calibration_states.assert_called_once_with()
+        mock_db.ml.truncate_calibration_history.assert_called_once_with()
         mock_bulk_set_not_calibrated.assert_called_once_with(mock_db)
         mock_bulk_set_not_vectors_extracted.assert_called_once_with(mock_db)
         assert result["files_updated"] == 10

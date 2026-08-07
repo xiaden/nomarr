@@ -28,6 +28,7 @@ from nomarr.helpers.time_helper import internal_s, now_ms
 if TYPE_CHECKING:
     from multiprocessing.synchronize import Event as EventType
 
+    from nomarr.components.ml.onnx.ml_base import DevicePlacement as _DevicePlacement
     from nomarr.components.ml.onnx.ml_cache import ONNXModelCache
     from nomarr.helpers.dto.processing_dto import DeferredFileWrites, ProcessorConfig, ResourceManagementConfig
     from nomarr.persistence.db import Database
@@ -225,18 +226,20 @@ class DiscoveryWorker(multiprocessing.Process):
             logger.warning("[%s] Failed to clear stale VRAM promises at startup", self.worker_id, exc_info=True)
         config = ProcessorConfig(**self.processor_config_dict)
         self._current_status = "healthy"
-        db.app.update_health(
-            self.worker_id,
-            {
-                "component_type": "worker",
-                "status": "starting",
-                "last_heartbeat": now_ms().value,
-            },
-        )
-        db.app.update_health(
-            self.worker_id,
-            {"status": "healthy", "error": None, "last_heartbeat": now_ms().value},
-        )
+        with db.app.transaction():
+            db.app.update_health(
+                self.worker_id,
+                {
+                    "component_type": "worker",
+                    "status": "starting",
+                    "last_heartbeat": now_ms().value,
+                },
+            )
+        with db.app.transaction():
+            db.app.update_health(
+                self.worker_id,
+                {"status": "healthy", "error": None, "last_heartbeat": now_ms().value},
+            )
         logger.info(
             "[%s] Discovery worker started (pid=%s, tier=%d, prefer_gpu=%s)",
             self.worker_id,
@@ -268,7 +271,6 @@ class DiscoveryWorker(multiprocessing.Process):
 
     def _warm_onnx_cache(self, db: Database, config: ProcessorConfig) -> ONNXModelCache | None:
         """Warm the ONNX cache and probe GPU VRAM measurements when needed."""
-        from nomarr.components.ml.onnx.ml_base import DevicePlacement as _DevicePlacement
         from nomarr.components.ml.onnx.ml_cache import ONNXModelCache as _ONNXModelCache
         from nomarr.components.ml.resources.ml_vram_probe_comp import has_model_vram_measurements, probe_all_models
         from nomarr.components.platform.resource_monitor_comp import check_nvidia_gpu_capability
@@ -509,7 +511,8 @@ class DiscoveryWorker(multiprocessing.Process):
                     logger.exception("[%s] Pending write failed during shutdown", self.worker_id)
             write_executor.shutdown(wait=True)
             logger.info("[%s] Discovery worker stopping (processed %d files)", self.worker_id, files_processed)
-            db.app.update_health(self.worker_id, {"status": "stopping"})
+            with db.app.transaction():
+                db.app.update_health(self.worker_id, {"status": "stopping"})
             try:
                 from nomarr.components.ml.resources.ml_vram_coordinator_comp import release_worker_promises
 

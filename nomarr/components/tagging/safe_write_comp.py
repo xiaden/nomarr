@@ -187,7 +187,7 @@ def _safe_write_hardlink(
     filename: str,
     original_props: _AudioProperties,
     write_fn: Callable[[Path], None],
-    expected_mtime_ms: int,
+    _expected_mtime_ms: int,
 ) -> SafeWriteResult:
     """Safe write using hardlink replacement (atomic, no folder mtime change)."""
     temp_path = temp_folder / f"{uuid.uuid4().hex}_{filename}"
@@ -240,7 +240,7 @@ def _safe_write_fallback(
     original_path: Path,
     original_props: _AudioProperties,
     write_fn: Callable[[Path], None],
-    expected_mtime_ms: int,
+    _expected_mtime_ms: int,
 ) -> SafeWriteResult:
     """Safe write using .tmp file (modifies folder mtime)."""
     temp_path = original_path.with_suffix(original_path.suffix + ".tmp")

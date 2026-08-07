@@ -1,6 +1,6 @@
 # ADR-017: Adopt main + develop Two-Branch Model with Squash-Merge Policy
 
-**Status:** Accepted  
+**Status:** Superseded by ADR-029  
 **Date:** 2026-04-05  
 **Tags:** git, workflow, branching, ci, release  
 

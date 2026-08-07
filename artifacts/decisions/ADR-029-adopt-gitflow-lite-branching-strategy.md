@@ -4,6 +4,7 @@
 **Date:** 2026-04-24  
 **Tags:** git, branching, workflow, process  
 **Source Log:** agent#L24  
+**Supersedes:** ADR-017-adopt-main-develop-two-branch-model-with-squash-merge-policy.md  
 
 ## Context
 

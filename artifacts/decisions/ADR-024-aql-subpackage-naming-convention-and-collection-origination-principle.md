@@ -1,6 +1,6 @@
 # ADR-024: AQL Subpackage Naming Convention and Collection Origination Principle
 
-**Status:** Accepted  
+**Status:** Superseded by ADR-040  
 **Date:** 2026-04-09  
 **Tags:** persistence, architecture, aql, naming  
 **Source Log:** agent#L1  

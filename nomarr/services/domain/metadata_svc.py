@@ -122,7 +122,7 @@ class MetadataService:
     def list_songs_for_entity(
         self,
         entity_id: int,
-        name: str,
+        _name: str,
         limit: int = 100,
         offset: int = 0,
     ) -> SongListForEntityResult:

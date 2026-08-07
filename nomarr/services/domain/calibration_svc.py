@@ -10,7 +10,6 @@ from __future__ import annotations
 import logging
 import os
 import threading
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, TypedDict
 from typing import cast as type_cast
@@ -32,6 +31,8 @@ from nomarr.workflows.calibration.generate_calibration_wf import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from nomarr.persistence.db import Database
     from nomarr.services.infrastructure.background_tasks_svc import BackgroundTaskService
 
@@ -287,7 +288,6 @@ class CalibrationService:
         result = generate_histogram_calibration_wf(
             db=self._db,
             models_dir=self.cfg.models_dir,
-            namespace=self.cfg.namespace,
             progress_callback=self._update_progress,
         )
 

@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import Table, delete, func, insert, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.orm import Session, scoped_session
 
 from nomarr.helpers.dto.repo_dto import (
     HealthRow,
@@ -43,6 +42,7 @@ from nomarr.persistence.sql.primitives import (
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Row
+    from sqlalchemy.orm import Session, scoped_session
 
 _L = cast("Table", Lock.__table__)
 _H = cast("Table", Health.__table__)

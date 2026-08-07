@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, sentinel
 
 import pytest
 
-from nomarr.persistence.api.ml import MlDb, MlMaintenanceDb
+from nomarr.persistence.api.ml import MlDb
 
 
 def _make_ml_db() -> tuple[MlDb, MagicMock, MagicMock, MagicMock, MagicMock, MagicMock]:
@@ -18,6 +18,7 @@ def _make_ml_db() -> tuple[MlDb, MagicMock, MagicMock, MagicMock, MagicMock, Mag
     calibration_repo = MagicMock()
     embedding_stream_repo = MagicMock()
     db = MlDb(
+        session=MagicMock(),
         vector_repo=vector_repo,
         model_repo=model_repo,
         output_repo=output_repo,
@@ -27,31 +28,24 @@ def _make_ml_db() -> tuple[MlDb, MagicMock, MagicMock, MagicMock, MagicMock, Mag
     return db, vector_repo, model_repo, output_repo, calibration_repo, embedding_stream_repo
 
 
-def _make_ml_maintenance_db() -> tuple[MlMaintenanceDb, MagicMock, MagicMock, MagicMock]:
-    vector_repo = MagicMock()
-    model_repo = MagicMock()
-    calibration_repo = MagicMock()
-    db = MlMaintenanceDb(
-        vector_repo=vector_repo,
-        model_repo=model_repo,
-        calibration_repo=calibration_repo,
-    )
-    return db, vector_repo, model_repo, calibration_repo
-
-
 @pytest.mark.unit
 def test_exposes_ml_maintenance_surface() -> None:
-    db, _, _, _, _, _ = _make_ml_db()
+    db, vector_repo, _, _, calibration_repo, _ = _make_ml_db()
 
-    assert isinstance(db.maintenance, MlMaintenanceDb)
-    assert hasattr(db.maintenance, "truncate_vectors_in_collection")
-    assert hasattr(db.maintenance, "truncate_calibration_states")
-    assert hasattr(db.maintenance, "truncate_calibration_history")
-    assert not hasattr(db.maintenance, "truncate_vector_edges")
+    assert hasattr(db, "truncate_vectors_in_collection")
+    assert hasattr(db, "truncate_calibration_states")
+    assert hasattr(db, "truncate_calibration_history")
     assert not hasattr(db, "truncate_vector_collection")
     assert not hasattr(db, "truncate_vector_edges")
-    assert not hasattr(db, "truncate_calibration_states")
-    assert not hasattr(db, "truncate_calibration_history")
+
+    db.truncate_vectors_in_collection("vectors_track_hot__model__lib")
+    vector_repo.truncate_embeddings.assert_called_once_with()
+
+    db.truncate_calibration_states()
+    calibration_repo.truncate_states.assert_called_once_with()
+
+    db.truncate_calibration_history()
+    calibration_repo.truncate_history.assert_called_once_with()
 
 
 @pytest.mark.unit
@@ -262,7 +256,7 @@ def test_list_calibration_states_delegates_to_calibration_repo() -> None:
 
 @pytest.mark.unit
 def test_truncate_vectors_in_collection_delegates_to_vector_repo() -> None:
-    db, vector_repo, _, _ = _make_ml_maintenance_db()
+    db, vector_repo, _, _, _, _ = _make_ml_db()
     vector_repo.truncate_embeddings = MagicMock()
 
     db.truncate_vectors_in_collection("vectors_track_hot__model__lib")
@@ -272,7 +266,7 @@ def test_truncate_vectors_in_collection_delegates_to_vector_repo() -> None:
 
 @pytest.mark.unit
 def test_truncate_calibration_states_delegates_to_calibration_repo() -> None:
-    db, _, _, calibration_repo = _make_ml_maintenance_db()
+    db, _, _, _, calibration_repo, _ = _make_ml_db()
     calibration_repo.truncate_states = MagicMock()
 
     db.truncate_calibration_states()
@@ -282,7 +276,7 @@ def test_truncate_calibration_states_delegates_to_calibration_repo() -> None:
 
 @pytest.mark.unit
 def test_truncate_calibration_history_delegates_to_calibration_repo() -> None:
-    db, _, _, calibration_repo = _make_ml_maintenance_db()
+    db, _, _, _, calibration_repo, _ = _make_ml_db()
     calibration_repo.truncate_history = MagicMock()
 
     db.truncate_calibration_history()
@@ -541,7 +535,7 @@ def test_index_backbone_embeddings_ignores_extra_args() -> None:
     db, vector_repo, _, _, _, _ = _make_ml_db()
     vector_repo.drain_hot_to_cold = MagicMock(return_value=5)
 
-    result = db.index_backbone_embeddings("openl3", embed_dim=128, nlists=100)
+    result = db.index_backbone_embeddings("openl3", _embed_dim=128, _nlists=100)
 
     assert result == 5
     vector_repo.drain_hot_to_cold.assert_called_once_with("openl3")
@@ -704,7 +698,7 @@ def test_replace_calibration_state_delegates_to_calibration_repo_ignoring_key() 
     calibration_repo.set_state = MagicMock(return_value=sentinel.result)
     payload = {"head_name": "genre", "label": "rock"}
 
-    result = db.replace_calibration_state("model1", "legacy_key", payload)
+    result = db.replace_calibration_state("model1", payload)
 
     assert result is sentinel.result
     calibration_repo.set_state.assert_called_once_with("model1", state_data=payload)
@@ -784,7 +778,7 @@ def test_rebuild_backbone_embedding_index_succeeds_silently() -> None:
     # PostgreSQL manages the HNSW index automatically — the method
     # accepts embed_dim/nlists for backwards compatibility but should
     # not raise.
-    db.rebuild_backbone_embedding_index("openl3", embed_dim=128, nlists=100)
+    db.rebuild_backbone_embedding_index("openl3")
 
 
 # ---------------------------------------------------------------------------

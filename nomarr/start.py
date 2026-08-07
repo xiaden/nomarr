@@ -45,7 +45,7 @@ if __name__ == "__main__":
 
     logger = logging.getLogger(__name__)
 
-    def shutdown_handler(signum, frame) -> None:
+    def shutdown_handler(signum, _frame) -> None:
         """Handle shutdown signals gracefully."""
         logger.info("Received signal %s, shutting down...", signum)
         application.stop()

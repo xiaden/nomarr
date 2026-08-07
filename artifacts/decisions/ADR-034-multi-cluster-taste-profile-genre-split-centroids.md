@@ -4,6 +4,7 @@
 **Date:** 2026-06-16  
 **Tags:** taste-profile, playlist-generation, multi-cluster  
 **Source Log:** rnd-architect#L4  
+**Supersedes:** ADR-033-multi-cluster-taste-profile-genre-split-centroids.md  
 
 ## Context
 

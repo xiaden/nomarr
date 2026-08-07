@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import Table, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.orm import Session, scoped_session
 
 from nomarr.helpers.dto.model_repo_dto import ModelRecord
 from nomarr.helpers.exceptions import DatabaseStateError
@@ -21,6 +20,7 @@ from nomarr.persistence.sql.primitives import delete_by_key, select_by_key
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Row
+    from sqlalchemy.orm import Session, scoped_session
 
 _T = cast("Table", MlModel.__table__)
 

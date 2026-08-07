@@ -22,10 +22,8 @@ eviction is implemented by the worker setting ``cache.warm = False``.
 from __future__ import annotations
 
 import logging
-from collections.abc import Generator
 from typing import TYPE_CHECKING
 
-from nomarr.components.ml.onnx.ml_backbone import ONNXBackboneModel
 from nomarr.components.ml.onnx.ml_base import (
     BaseONNXModel,
     DevicePlacement,
@@ -36,9 +34,12 @@ from nomarr.components.ml.onnx.ml_discovery_comp import (
     discover_head_models,
     discover_head_models_no_db,
 )
-from nomarr.components.ml.onnx.ml_head import ONNXHeadModel
 
 if TYPE_CHECKING:
+    from collections.abc import Generator
+
+    from nomarr.components.ml.onnx.ml_backbone import ONNXBackboneModel
+    from nomarr.components.ml.onnx.ml_head import ONNXHeadModel
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)

@@ -130,7 +130,8 @@ def _handle_invalid_path(
         logger.warning(f"[reconcile_library_paths] Invalid path ({status}): {file_path} - {reason}")
     elif policy == "delete_invalid":
         try:
-            db.library.remove_file_by_path(file_path)
+            with db.library.transaction():
+                db.library.remove_file_by_path(file_path)
             result["deleted_files"] += 1
             logger.info(f"[reconcile_library_paths] Deleted invalid path ({status}): {file_path} - {reason}")
         except RuntimeError as e:

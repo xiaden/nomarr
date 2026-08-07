@@ -4,7 +4,7 @@
 **Date:** 2026-07-19  
 **Tags:** persistence, architecture, postgresql, pgvector, migration, database  
 **Source Log:** nyx#L3  
-**Supersedes:** ADR-030-adopt-descriptor-based-database-facade-for-persistence-access, ADR-031-aql-primitives-and-intent-sub-facades-as-canonical-persistence-architecture, ADR-036-vector-stores-are-per-backbone-not-per-backbone-per-library  
+**Supersedes:** ADR-030-adopt-descriptor-based-database-facade-for-persistence-access, ADR-031-aql-primitives-and-intent-sub-facades-as-canonical-persistence-architecture, ADR-036-vector-stores-are-per-backbone-not-per-backbone-per-library, ADR-004-schema-refactor-v1-graph-normalization, ADR-010-bulk-edit-commit-strategy-optimistic-batch-via-set-song-tags-batch, ADR-016-skip-ensure-schema-on-existing-databases, ADR-024-aql-subpackage-naming-convention-and-collection-origination-principle, ADR-025-schema-driven-persistence-constructor-supersedes-hand-written-aql-conventions  
 
 ## Context
 

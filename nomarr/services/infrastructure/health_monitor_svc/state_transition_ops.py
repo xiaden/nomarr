@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-import threading
+from typing import TYPE_CHECKING
 
 from nomarr.helpers.dto.health_dto import (
     ComponentLifecycleHandler,
@@ -12,7 +12,10 @@ from nomarr.helpers.dto.health_dto import (
 )
 from nomarr.helpers.time_helper import InternalSeconds, internal_s
 
-from ._helpers import _ComponentState
+if TYPE_CHECKING:
+    import threading
+
+    from ._helpers import _ComponentState
 
 logger = logging.getLogger(__name__)
 

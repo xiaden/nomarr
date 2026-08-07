@@ -11,7 +11,6 @@ import time
 from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import Table, delete, func, insert, select, text, update
-from sqlalchemy.orm import Session, scoped_session
 
 from nomarr.helpers.dto.vector_repo_dto import EmbeddingRecord, SimilarResult
 from nomarr.helpers.vector_params_helper import get_ef_search
@@ -20,6 +19,7 @@ from nomarr.persistence.sql.exceptions import map_persistence_exceptions
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Row
+    from sqlalchemy.orm import Session, scoped_session
 
 _T = cast("Table", Embedding.__table__)
 

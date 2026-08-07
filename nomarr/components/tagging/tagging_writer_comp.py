@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import contextlib
 import json
-from collections.abc import Mapping
 from pathlib import Path as PathLib
 from typing import TYPE_CHECKING, cast
 
@@ -20,7 +19,7 @@ from nomarr.components.tagging.safe_write_comp import SafeWriteResult, safe_writ
 from nomarr.helpers.dto.path_dto import LibraryPath
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Mapping
     from pathlib import Path
 
     from nomarr.helpers.dto.tags_dto import Tags

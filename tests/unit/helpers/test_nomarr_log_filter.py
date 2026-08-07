@@ -6,8 +6,7 @@ Tests verify automatic identity/role tag derivation and context injection.
 from __future__ import annotations
 
 import logging
-from collections.abc import Generator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -17,6 +16,9 @@ from nomarr.helpers.logging_helper import (
     clear_log_context,
     set_log_context,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
 
 
 def _get_attr(record: logging.LogRecord, attr: str) -> Any:

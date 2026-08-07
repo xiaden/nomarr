@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
 import pytest
@@ -18,6 +18,9 @@ from nomarr.helpers.dto.library_dto import (
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.web.dependencies import get_library_service, get_tagging_service
 from nomarr.interfaces.api.web.songs_if import router as songs_router
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 def make_library_file(file_id: int = 1) -> LibraryFileWithTags:

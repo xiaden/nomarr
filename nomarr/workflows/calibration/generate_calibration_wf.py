@@ -32,7 +32,6 @@ USAGE:
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -56,6 +55,8 @@ from nomarr.components.ml.onnx.ml_model_registry_comp import get_registered_mode
 from nomarr.components.tagging.mood_labels_comp import normalize_tag_label
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from nomarr.persistence.db import Database
 
 
@@ -308,7 +309,6 @@ def _compare_calibrations(
 def generate_histogram_calibration_wf(
     db: Database,
     models_dir: str,
-    namespace: str = "nom",
     progress_callback: Callable[..., None] | None = None,
 ) -> dict[str, Any]:
     """Generate histogram-based calibrations for all model labels (single pass).
@@ -325,7 +325,6 @@ def generate_histogram_calibration_wf(
     Args:
         db: Database instance
         models_dir: Path to models directory
-        namespace: Tag namespace (default "nom")
         progress_callback: Optional callback for progress updates (per-head granularity)
 
     Returns:

@@ -92,7 +92,8 @@ def delete_library(db: Database, library_id: int) -> bool:
     if not library:
         return False
 
-    db.library.remove_library(library_id)
+    with db.library.transaction():
+        db.library.remove_library(library_id)
     logger.info(f"[LibraryAdmin] Deleted library {library_id}: {library.get('name')}")
     return True
 

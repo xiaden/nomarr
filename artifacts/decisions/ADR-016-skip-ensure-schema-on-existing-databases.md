@@ -1,6 +1,6 @@
 # ADR-016: Skip ensure_schema on Existing Databases
 
-**Status:** Accepted  
+**Status:** Superseded by ADR-040  
 **Date:** 2026-04-05  
 **Tags:** migrations, persistence, arangodb, startup  
 **Source Log:** director#L1  

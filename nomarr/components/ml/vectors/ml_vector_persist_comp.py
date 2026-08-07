@@ -7,12 +7,12 @@ import logging
 import math
 from typing import TYPE_CHECKING, Any
 
-import numpy as np
-
 from nomarr.components.ml.vectors.ml_vector_pool_comp import get_embedding_dimension, pool_embedding_for_storage
 from nomarr.helpers.time_helper import internal_ms
 
 if TYPE_CHECKING:
+    import numpy as np
+
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
@@ -75,7 +75,8 @@ def upsert_hot_track_vector(
     }
 
     collection_name = f"vectors_track_hot__{backbone}"
-    db.ml.replace_file_vectors(collection_name, file_id, [vector_doc])
+    with db.ml.transaction():
+        db.ml.replace_file_vectors(collection_name, file_id, [vector_doc])
 
     stored_vectors = db.ml.list_file_vectors(collection_name, file_id)
     stored_vector_id = next(

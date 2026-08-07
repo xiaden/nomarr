@@ -6,9 +6,12 @@ duplication.
 
 from __future__ import annotations
 
-from sqlalchemy.engine import Row
+from typing import TYPE_CHECKING
 
 from nomarr.helpers.dto.repo_dto import LibraryFileRow
+
+if TYPE_CHECKING:
+    from sqlalchemy.engine import Row
 
 
 def _file_row_to_dto(row: Row) -> LibraryFileRow:

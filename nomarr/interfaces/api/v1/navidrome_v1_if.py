@@ -7,17 +7,21 @@ Auth: API key (verify_key).
 from __future__ import annotations
 
 import logging
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from nomarr.components.navidrome.descriptor_match_comp import TrackDescriptor
 from nomarr.helpers.dto.navidrome_dto import TrackPlayData
 from nomarr.helpers.exceptions import MisconfiguredError
 from nomarr.interfaces.api.auth import verify_key
 from nomarr.interfaces.api.web.dependencies import get_navidrome_service
-from nomarr.services.domain.navidrome_svc import NavidromeService
+from nomarr.services.domain.navidrome_svc import (
+    NavidromeService,  # noqa: TC001  # FastAPI resolves Annotated[...] at route registration
+)
+
+if TYPE_CHECKING:
+    from nomarr.components.navidrome.descriptor_match_comp import TrackDescriptor
 
 logger = logging.getLogger(__name__)
 

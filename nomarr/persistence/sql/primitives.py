@@ -8,12 +8,14 @@ and a ``Session``; they never import ORM models.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import Table, delete, func, insert, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.engine import Row
-from sqlalchemy.orm import Session, scoped_session
+
+if TYPE_CHECKING:
+    from sqlalchemy.engine import Row
+    from sqlalchemy.orm import Session, scoped_session
 
 
 def select_by_key(
@@ -73,7 +75,7 @@ def insert_one(
 def upsert_by_field(
     table: Table,
     field: str,
-    match_val: Any,
+    _match_val: Any,
     data: dict,
     *,
     session: scoped_session[Session],

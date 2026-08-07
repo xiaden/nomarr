@@ -84,7 +84,8 @@ def set_file_written(db: Database, file_key: str) -> None:
     file_id = int(file_key)
     transition_file_state(db, [file_id], STATE_NOT_WRITTEN, STATE_WRITTEN)
     transition_file_state(db, [file_id], STATE_TAGS_NOT_FRESH, STATE_TAGS_CURRENT)
-    db.app.release_claim(file_id)
+    with db.app.transaction():
+        db.app.release_claim(file_id)
 
 
 def release_claim(db: Database, file_key: str) -> None:
@@ -93,7 +94,8 @@ def release_claim(db: Database, file_key: str) -> None:
     PostgreSQL uses integer IDs; file_key is the string representation of the ID.
     """
     file_id = int(file_key)
-    db.app.release_claim(file_id)
+    with db.app.transaction():
+        db.app.release_claim(file_id)
 
 
 def count_files_needing_reconciliation(db: Database, library_id: int) -> int:

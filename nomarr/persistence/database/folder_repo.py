@@ -6,11 +6,9 @@ self-reference FK and ``library_id`` FK column.
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import Table, delete, select
-from sqlalchemy.engine import Row
-from sqlalchemy.orm import Session, scoped_session
 
 from nomarr.helpers.dto.repo_dto import LibraryFolderRow
 from nomarr.persistence.models.library_folder import LibraryFolder
@@ -19,6 +17,10 @@ from nomarr.persistence.sql.primitives import (
     insert_one,
     select_by_key,
 )
+
+if TYPE_CHECKING:
+    from sqlalchemy.engine import Row
+    from sqlalchemy.orm import Session, scoped_session
 
 _T = cast("Table", LibraryFolder.__table__)
 

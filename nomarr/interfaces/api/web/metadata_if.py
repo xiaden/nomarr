@@ -54,7 +54,7 @@ async def list_entities(
 
 @router.get("/{collection}/{entity_id}", dependencies=[Depends(verify_session)])
 async def get_entity(
-    collection: EntityCollection,
+    collection: EntityCollection,  # noqa: ARG001  # FastAPI path param name is part of the URL contract
     entity_id: str,
     metadata_service: Annotated[MetadataService, Depends(get_metadata_service)],
 ) -> EntityResponse:
@@ -72,7 +72,7 @@ async def get_entity(
 
 @router.get("/{collection}/{entity_id}/song", dependencies=[Depends(verify_session)])
 async def list_songs_for_entity(
-    collection: EntityCollection,
+    collection: EntityCollection,  # noqa: ARG001  # FastAPI path param name is part of the URL contract
     entity_id: str,
     name: Annotated[str, Query(description="Relation type (artist, album, label, genre, year)")],
     limit: Annotated[int, Query(ge=1, le=1000)] = 100,

@@ -71,7 +71,8 @@ class TestServiceMethodInventory:
         libs = service.list_libraries()
         for lib in libs:
             if lib.name == "ServiceTestLib":
-                db.library.remove_library(lib.id)
+                with db.library.transaction():
+                    db.library.remove_library(lib.id)
                 break
 
     def test_library_service_get_library_stats(self, db, seed_data):

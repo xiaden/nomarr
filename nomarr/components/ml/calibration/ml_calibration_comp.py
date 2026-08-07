@@ -193,7 +193,7 @@ def compute_calibration_def_hash(model_id: str, head_name: str, label: str) -> s
     return hashlib.md5(calib_def_str.encode()).hexdigest()
 
 
-def get_default_histogram_spec(head_name: str) -> dict[str, Any]:
+def get_default_histogram_spec() -> dict[str, Any]:
     """Get default histogram specification for a head type.
 
     All heads use same histogram parameters:
@@ -204,9 +204,6 @@ def get_default_histogram_spec(head_name: str) -> dict[str, Any]:
 
     This provides consistent, memory-bounded histogram computation
     regardless of head type (mood, genre, instrument, etc).
-
-    Args:
-        head_name: Head name (e.g., "mood_happy", "genre_rock")
 
     Returns:
         {"lo": float, "hi": float, "bins": int}
@@ -309,7 +306,6 @@ def derive_percentiles_from_sparse_histogram(
     sparse_bins: list[dict[str, Any]],
     lo: float = 0.0,
     hi: float = 1.0,
-    bin_width: float = 0.0001,
     p5_target: float = 0.05,
     p95_target: float = 0.95,
 ) -> dict[str, Any]:
@@ -319,7 +315,6 @@ def derive_percentiles_from_sparse_histogram(
         sparse_bins: Histogram bins - list of {min_val: float, count: int, underflow_count: int, overflow_count: int}
         lo: Histogram lower bound (0.0)
         hi: Histogram upper bound (1.0)
-        bin_width: Uniform bin width (0.0001)
         p5_target: 5th percentile threshold (0.05)
         p95_target: 95th percentile threshold (0.95)
 
@@ -386,14 +381,13 @@ def generate_calibration_from_histogram(
         {p5: float, p95: float, n: int, underflow_count: int, overflow_count: int, histogram_bins: list[{val, count}]}
 
     """
-    bin_width = (hi - lo) / bins
     sparse_bins = get_sparse_histogram(db, model_id=model_id, label=label, lo=lo, hi=hi, bins=bins)
     if not sparse_bins:
         logger.warning(f"[calibration] No data for {model_id}:{head_name}:{label}")
         return {"p5": lo, "p95": hi, "n": 0, "underflow_count": 0, "overflow_count": 0, "histogram_bins": []}
 
     result = derive_percentiles_from_sparse_histogram(
-        sparse_bins=sparse_bins, lo=lo, hi=hi, bin_width=bin_width, p5_target=0.05, p95_target=0.95
+        sparse_bins=sparse_bins, lo=lo, hi=hi, p5_target=0.05, p95_target=0.95
     )
 
     # Transform sparse_bins to storage format: [{val: float, count: int}]
@@ -543,7 +537,8 @@ def import_calibration_state_from_json(db: Database, input_path: str, overwrite:
                 "overflow_count": calib.get("overflow_count", 0),
                 "histogram_bins": calib.get("histogram_bins"),
             }
-            db.ml.replace_calibration_state(model_id, key="", payload=state_data)
+            with db.ml.transaction():
+                db.ml.replace_calibration_state(model_id, payload=state_data)
             logger.info(f"[calibration] Imported {head_name}:{label}")
             imported_count += 1
 
@@ -580,11 +575,11 @@ def compute_global_calibration_hash(calibration_states: list[dict[str, Any]]) ->
     sorted_states = sorted(calibration_states, key=lambda x: x.get("id", 0))
     hash_parts = []
     for state in sorted_states:
-        _id = state.get("id", 0)
+        state_id = state.get("id", 0)
         sd = state.get("state_data", {})
         calib_hash = sd.get("calibration_def_hash", "")
         p5 = sd.get("p5", "")
         p95 = sd.get("p95", "")
-        hash_parts.append(f"{_id}:{calib_hash}:{p5}:{p95}")
+        hash_parts.append(f"{state_id}:{calib_hash}:{p5}:{p95}")
     combined = "|".join(hash_parts)
     return hashlib.md5(combined.encode()).hexdigest()

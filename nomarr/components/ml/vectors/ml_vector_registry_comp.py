@@ -36,7 +36,8 @@ def delete_vectors_by_file_id(db: Database, file_id: str) -> int:
     for collection_name in collection_names:
         vectors = db.ml.list_file_vectors(collection_name, int(file_id))
         total_deleted += len(vectors)
-        db.ml.remove_file_vectors(collection_name, int(file_id))
+        with db.ml.transaction():
+            db.ml.remove_file_vectors(collection_name, int(file_id))
 
     return total_deleted
 
@@ -65,6 +66,7 @@ def delete_vectors_by_file_ids(db: Database, file_ids: list[str]) -> int:
             vectors = db.ml.list_file_vectors(collection_name, int(file_id))
             total_deleted += len(vectors)
         int_file_ids = [int(fid) for fid in file_ids]
-        db.ml.remove_vectors_for_files(collection_name, int_file_ids)
+        with db.ml.transaction():
+            db.ml.remove_vectors_for_files(collection_name, int_file_ids)
 
     return total_deleted

@@ -8,7 +8,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import Table, delete, select
-from sqlalchemy.orm import Session, scoped_session
 
 from nomarr.helpers.dto.repo_dto import LibraryScanRow
 from nomarr.persistence.models.library_scan import LibraryScan
@@ -21,6 +20,7 @@ from nomarr.persistence.sql.primitives import (
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Row
+    from sqlalchemy.orm import Session, scoped_session
 
 _T = cast("Table", LibraryScan.__table__)
 

@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
 import pytest
 
-from nomarr.components.navidrome.descriptor_match_comp import TrackDescriptor
 from nomarr.workflows.navidrome.find_similar_tracks_wf import find_similar_tracks
+
+if TYPE_CHECKING:
+    from nomarr.components.navidrome.descriptor_match_comp import TrackDescriptor
 
 SEED: TrackDescriptor = {
     "title": "Seed",
@@ -39,14 +42,10 @@ def helper_shims(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     monkeypatch.setattr(
         "nomarr.workflows.navidrome.find_similar_tracks_wf.search_similar_cold_track_vectors",
-        lambda db, backbone_id, seed_vector, result_limit, vector_group_size, vector_search_thoroughness: (
-            db._search_similar_cold_track_vectors(
-                backbone_id=backbone_id,
-                seed_vector=seed_vector,
-                result_limit=result_limit,
-                vector_group_size=vector_group_size,
-                vector_search_thoroughness=vector_search_thoroughness,
-            )
+        lambda db, backbone_id, seed_vector, result_limit: db._search_similar_cold_track_vectors(
+            backbone_id=backbone_id,
+            seed_vector=seed_vector,
+            result_limit=result_limit,
         ),
     )
 

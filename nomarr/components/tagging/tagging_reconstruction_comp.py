@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -26,7 +26,9 @@ from nomarr.components.tagging.tagging_aggregation_comp import (
     assign_regression_outputs,
 )
 from nomarr.helpers.dto.ml_dto import HeadOutput, LoadedOutputStream
-from nomarr.helpers.dto.ml_head_dto import HeadInfo
+
+if TYPE_CHECKING:
+    from nomarr.helpers.dto.ml_head_dto import HeadInfo
 
 logger = logging.getLogger(__name__)
 

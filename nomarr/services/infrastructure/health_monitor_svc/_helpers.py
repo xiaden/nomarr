@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from multiprocessing.connection import Connection
+from typing import TYPE_CHECKING
 
-from nomarr.helpers.dto.health_dto import (
-    ComponentLifecycleHandler,
-    ComponentPolicy,
-    ComponentStatus,
-)
 from nomarr.helpers.time_helper import InternalSeconds, internal_s
+
+if TYPE_CHECKING:
+    from multiprocessing.connection import Connection
+
+    from nomarr.helpers.dto.health_dto import (
+        ComponentLifecycleHandler,
+        ComponentPolicy,
+        ComponentStatus,
+    )
 
 
 @dataclass

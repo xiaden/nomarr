@@ -8,7 +8,9 @@ from fastapi import APIRouter, Depends
 
 from nomarr.interfaces.api.types.info_types import PublicInfoResponse
 from nomarr.interfaces.api.web.dependencies import get_info_service
-from nomarr.services.infrastructure.info_svc import InfoService
+from nomarr.services.infrastructure.info_svc import (
+    InfoService,  # noqa: TC001  # FastAPI resolves Annotated[...] at route registration
+)
 
 # Router instance (will be included in main app under /api prefix)
 router = APIRouter(prefix="/v1", tags=["public"])

@@ -12,19 +12,18 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from nomarr.helpers.dto.navidrome_dto import RuleGroup, SmartPlaylistFilter, TagCondition
 from nomarr.helpers.exceptions import PlaylistQueryError
 from nomarr.helpers.tag_key_mapping import (
     is_versioned_ml_key,
     make_navidrome_field_name,
     make_short_tag_name,
 )
-
-if TYPE_CHECKING:
-    from nomarr.persistence.db import Database
 from nomarr.workflows.navidrome.parse_smart_playlist_query_wf import (
     parse_smart_playlist_query,
 )
+
+if TYPE_CHECKING:
+    from nomarr.helpers.dto.navidrome_dto import RuleGroup, SmartPlaylistFilter, TagCondition
 
 # Operator mappings to Navidrome .nsp format
 NSP_OPERATORS: dict[str, str] = {
@@ -41,7 +40,6 @@ VALID_SORT_COLUMNS: set[str] = {"path", "title", "artist", "album", "random"}
 
 
 def generate_smart_playlist_workflow(
-    db: Database,
     query: str,
     *,
     playlist_name: str = "Playlist",
@@ -59,7 +57,6 @@ def generate_smart_playlist_workflow(
     4. Returns a Python dict (service layer can serialize to JSON if needed)
 
     Args:
-        db: Database instance (for potential future validation or track counting)
         query: Smart Playlist query string (e.g., "tag:mood_happy > 0.7 AND tag:energy > 0.6")
         playlist_name: Name of the playlist
         comment: Optional description

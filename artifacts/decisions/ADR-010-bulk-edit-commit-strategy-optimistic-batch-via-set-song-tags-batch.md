@@ -1,6 +1,6 @@
 # ADR-010: Bulk Edit Commit Strategy — Optimistic Batch via set_song_tags_batch
 
-**Status:** Accepted  
+**Status:** Superseded by ADR-040  
 **Date:** 2026-04-04  
 **Tags:** persistence, arangodb, tag-editor, performance  
 **Source Log:** rnd-manager#L1  

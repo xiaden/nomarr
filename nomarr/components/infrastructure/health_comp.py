@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from nomarr.helpers.dto.repo_dto import HealthRow
-
 if TYPE_CHECKING:
+    from nomarr.helpers.dto.repo_dto import HealthRow
     from nomarr.persistence.db import Database
 
 

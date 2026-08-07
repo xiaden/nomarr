@@ -7,7 +7,7 @@ Covers:
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import pytest
@@ -16,6 +16,9 @@ from fastapi.testclient import TestClient
 
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.web import auth_if
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 @pytest.fixture

@@ -54,8 +54,6 @@ def search_similar_cold_track_vectors(
     backbone_id: str,
     seed_vector: list[float],
     result_limit: int,
-    vector_group_size: int,
-    vector_search_thoroughness: int,
 ) -> list[dict[str, Any]]:
     """Run ANN similarity search against the promoted cold collection.
 
@@ -68,12 +66,6 @@ def search_similar_cold_track_vectors(
         backbone_id: Backbone identifier used to select the cold namespace.
         seed_vector: Query embedding vector used as the ANN search seed.
         result_limit: Maximum number of similar vector documents to return.
-        vector_group_size: Target group size (accepted for API compatibility;
-            no longer used to derive ANN parameters — PostgreSQL manages
-            the HNSW index automatically).
-        vector_search_thoroughness: Search thoroughness (accepted for API
-            compatibility; no longer used — PostgreSQL manages the HNSW
-            index automatically).
 
     Returns:
         List of matching cold vector documents.  Returns an empty list when

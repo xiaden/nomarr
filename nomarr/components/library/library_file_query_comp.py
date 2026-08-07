@@ -7,13 +7,15 @@ from __future__ import annotations
 
 import random
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from nomarr.components.library.library_file_state_comp import count_untagged_files
 from nomarr.components.library.tag_hydration_comp import hydrate_songs_with_metadata
 from nomarr.helpers.constants.file_states import STATE_PROCESSED
 from nomarr.helpers.time_helper import now_ms
-from nomarr.persistence.db import Database
+
+if TYPE_CHECKING:
+    from nomarr.persistence.db import Database
 
 DEFAULT_LIMIT = 1000
 
@@ -669,21 +671,30 @@ def clear_library_data(db: Database) -> None:
     from nomarr.components.ml.inference.ml_output_stream_store_comp import delete_output_streams
 
     for collection_name in db.ml.list_vector_collection_names():
-        db.ml.clear_vector_collection(collection_name)
+        with db.ml.transaction():
+            db.ml.clear_vector_collection(collection_name)
     for file_doc in cast("list[dict[str, Any]]", db.library.list_files(limit=None)):
         file_id = file_doc.get("id")
         if isinstance(file_id, int):
             delete_output_streams(db, file_id)
     # Link/edge collections
-    db.library.maintenance.truncate_song_tag_edges()
-    db.app.maintenance.truncate_file_state_edges()
-    db.library.maintenance.truncate_file_links()
-    db.library.maintenance.truncate_folder_links()
+    with db.library.transaction():
+        db.library.truncate_song_tag_edges()
+    with db.app.transaction():
+        db.app.truncate_file_state_edges()
+    with db.library.transaction():
+        db.library.truncate_file_links()
+    with db.library.transaction():
+        db.library.truncate_folder_links()
     # Documents
-    db.library.maintenance.truncate_tags()
-    db.library.maintenance.truncate_files()
-    db.library.maintenance.truncate_folders()
-    db.library.maintenance.truncate_scan_records()
+    with db.library.transaction():
+        db.library.truncate_tags()
+    with db.library.transaction():
+        db.library.truncate_files()
+    with db.library.transaction():
+        db.library.truncate_folders()
+    with db.library.transaction():
+        db.library.truncate_scan_records()
     # Pipeline states are now fields on library documents (scan_state, ml_state, etc.)
     # They are reset to defaults when libraries are recreated or via migration.
 

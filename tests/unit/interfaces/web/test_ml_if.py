@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
 import pytest
@@ -11,6 +11,9 @@ from nomarr.helpers.dto.info_dto import WorkStatusResult
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.web.dependencies import get_library_service, get_ml_service
 from nomarr.interfaces.api.web.ml_if import router as ml_router
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 @pytest.fixture

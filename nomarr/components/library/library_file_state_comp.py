@@ -60,7 +60,8 @@ def transition_file_state(db: Database, file_ids: list[int], from_state: str, to
 
     unique_file_ids = list(dict.fromkeys(file_ids))
     state_membership = _state_membership_for_files(db, unique_file_ids)
-    db.app.remove_file_states(unique_file_ids)
+    with db.app.transaction():
+        db.app.remove_file_states(unique_file_ids)
 
     next_state_groups: defaultdict[str, list[int]] = defaultdict(list)
     for file_id in unique_file_ids:
@@ -71,12 +72,13 @@ def transition_file_state(db: Database, file_ids: list[int], from_state: str, to
             next_state_groups[state].append(file_id)
 
     for state, grouped_file_ids in next_state_groups.items():
-        db.app.add_file_states(grouped_file_ids, state)
+        with db.app.transaction():
+            db.app.add_file_states(grouped_file_ids, state)
 
 
 def _insert_file_state_edges_ignoring_duplicates(db: Database, edge_docs: list[dict[str, Any]]) -> None:
     for edge_doc in edge_docs:
-        with contextlib.suppress(DuplicateEntityError):
+        with contextlib.suppress(DuplicateEntityError), db.app.transaction():
             db.app.add_file_states([edge_doc["_from"]], edge_doc["_to"])
 
 
@@ -169,7 +171,8 @@ def initialize_file_states_batch(db: Database, file_ids: list[int]) -> None:
 def clear_all_states(db: Database, file_id: int) -> int:
     """Remove all state edges for one file."""
     deleted_count = _count_state_edges_for_files(db, [file_id])
-    db.app.remove_file_states([file_id])
+    with db.app.transaction():
+        db.app.remove_file_states([file_id])
     return deleted_count
 
 
@@ -178,7 +181,8 @@ def clear_all_states_batch(db: Database, file_ids: list[int]) -> int:
     if not file_ids:
         return 0
     deleted_count = _count_state_edges_for_files(db, file_ids)
-    db.app.remove_file_states(file_ids)
+    with db.app.transaction():
+        db.app.remove_file_states(file_ids)
     return deleted_count
 
 
@@ -445,6 +449,7 @@ def bulk_set_not_hydrated(db: Database, library_id: int | None = None) -> int:
     if to_transition:
         transition_file_state(db, to_transition, STATE_HYDRATED, STATE_NOT_HYDRATED)
     if to_add:
-        db.app.add_file_states(to_add, STATE_NOT_HYDRATED)
+        with db.app.transaction():
+            db.app.add_file_states(to_add, STATE_NOT_HYDRATED)
 
     return len(to_transition) + len(to_add)

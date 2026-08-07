@@ -1,4 +1,20 @@
 
+NOTE — STALE SNAPSHOT (read-only)
+
+This file is a documentation-audit snapshot of docstring coverage captured
+BEFORE the simplification-program persistence facade rebuild (Parts C1/C2,
+2026-08-06). It describes classes and methods that no longer exist in the
+current codebase: LibraryMaintenanceDb, AppMaintenanceDb, MlMaintenanceDb,
+the `.maintenance` companion surfaces, and pre-transaction facade docstrings.
+
+Do NOT treat this file as current API documentation. The authoritative
+persistence contract is
+artifacts/designs/parts/nomarr-simplification-program/CONTRACTS.md; the live
+facade code is nomarr/persistence/api/ (LibraryDb forwarder + four
+sub-facades, AppDb, MlDb) with AR-2 transaction guards.
+
+==============================================================================
+
 === library.py ===
 [C] LibraryMaintenanceDb:
   Maintenance-only companion surface for library persistence operations. |  | Wired as ``LibraryDb.maintenance`` by Part A. Destructive, reset, repair, | and diagnostics-only operations belong here, not on the routine top-level | ``LibraryDb`` surface. Parts B

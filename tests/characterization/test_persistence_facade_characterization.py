@@ -25,16 +25,18 @@ class TestLibraryDbFacadeCharacterization:
 
     def test_add_library(self, db, seed_data):
         """Snapshot: add_library(payload) → int (library ID)."""
-        result = db.library.add_library(
-            {
-                "name": "CharTestLib",
-                "path": "/tmp/chartest",
-                "library_type": "music",
-            }
-        )
+        with db.library.transaction():
+            result = db.library.add_library(
+                {
+                    "name": "CharTestLib",
+                    "path": "/tmp/chartest",
+                    "library_type": "music",
+                }
+            )
         assert_snapshot_matches("LibraryDb_add_library", result)
         # Cleanup
-        db.library.remove_library(result)
+        with db.library.transaction():
+            db.library.remove_library(result)
 
     def test_get_library(self, db, seed_data):
         """Snapshot: get_library(library_id) → LibraryRow | None."""
@@ -53,22 +55,24 @@ class TestLibraryDbFacadeCharacterization:
         from nomarr.helpers.time_helper import now_ms
 
         now_ms_val = now_ms()
-        result = db.library.add_file_to_library(
-            lib_id,
-            {
-                "path": "/tmp/chartest/char_song.flac",
-                "normalized_path": "/tmp/chartest/char_song.flac",
-                "file_size": 999999,
-                "modified_time": now_ms_val.value,
-                "duration_seconds": 123.456,
-                "needs_tagging": 0,
-                "is_valid": 1,
-                "tagged": 0,
-            },
-        )
+        with db.library.transaction():
+            result = db.library.add_file_to_library(
+                lib_id,
+                {
+                    "path": "/tmp/chartest/char_song.flac",
+                    "normalized_path": "/tmp/chartest/char_song.flac",
+                    "file_size": 999999,
+                    "modified_time": now_ms_val.value,
+                    "duration_seconds": 123.456,
+                    "needs_tagging": 0,
+                    "is_valid": 1,
+                    "tagged": 0,
+                },
+            )
         assert_snapshot_matches("LibraryDb_add_file_to_library", result)
         # Cleanup: remove the file
-        db.library.remove_file(result)
+        with db.library.transaction():
+            db.library.remove_file(result)
 
     def test_get_file_by_path(self, db, seed_data):
         """Snapshot: get_file_by_path(path, library_id) → LibraryFileRow | None."""
@@ -95,13 +99,14 @@ class TestLibraryDbFacadeCharacterization:
         tag_ids = seed_data["tags"][:2]
 
         # Replace tags
-        db.library.replace_file_tags(
-            file_id,
-            [
-                {"tag_id": tag_ids[0], "confidence": 0.99, "source": "test"},
-                {"tag_id": tag_ids[1], "confidence": 0.85, "source": "test"},
-            ],
-        )
+        with db.library.transaction():
+            db.library.replace_file_tags(
+                file_id,
+                [
+                    {"tag_id": tag_ids[0], "confidence": 0.99, "source": "test"},
+                    {"tag_id": tag_ids[1], "confidence": 0.85, "source": "test"},
+                ],
+            )
 
         # Read back to snapshot the result
         result = db.library.list_tags_for_file(file_id)
@@ -115,7 +120,8 @@ class TestLibraryDbFacadeCharacterization:
 
     def test_find_or_create_tag(self, db, seed_data):
         """Snapshot: find_or_create_tag(name, value, namespace) → int (tag ID)."""
-        result = db.library.find_or_create_tag("nom:char-test", "charvalue", "nom")
+        with db.library.transaction():
+            result = db.library.find_or_create_tag("nom:char-test", "charvalue", "nom")
         assert_snapshot_matches("LibraryDb_find_or_create_tag", result)
         # Note: tag persists; cleanup is handled by _cleanup_seed_data
 
@@ -126,15 +132,18 @@ class TestLibraryDbFacadeCharacterization:
         assert_snapshot_matches("LibraryDb_get_tag", result)
 
     def test_maintenance_delete_tags_by_ids(self, db, seed_data):
-        """Snapshot: maintenance.delete_tags_by_ids(tag_ids) → int (deleted count).
+        """Snapshot: delete_tags_by_ids(tag_ids) → int (deleted count).
 
         This test creates temporary tags to delete, so we don't affect seed data.
         """
         # Create temporary tags to delete
-        temp_tag1 = db.library.find_or_create_tag("temp:delete1", "val1", "temp")
-        temp_tag2 = db.library.find_or_create_tag("temp:delete2", "val2", "temp")
+        with db.library.transaction():
+            temp_tag1 = db.library.find_or_create_tag("temp:delete1", "val1", "temp")
+        with db.library.transaction():
+            temp_tag2 = db.library.find_or_create_tag("temp:delete2", "val2", "temp")
 
-        result = db.library.maintenance.delete_tags_by_ids([temp_tag1, temp_tag2])
+        with db.library.transaction():
+            result = db.library.delete_tags_by_ids([temp_tag1, temp_tag2])
         assert_snapshot_matches("LibraryDb_maintenance_delete_tags_by_ids", result)
 
     def test_add_scan(self, db, seed_data):
@@ -143,21 +152,23 @@ class TestLibraryDbFacadeCharacterization:
         from nomarr.helpers.time_helper import now_ms
 
         now_ms_val = now_ms()
-        result = db.library.add_scan(
-            lib_id,
-            {
-                "scan_type": "incremental",
-                "status": "running",
-                "started_at": now_ms_val.value,
-                "finished_at": None,
-                "files_found": 0,
-                "files_processed": 0,
-                "error": None,
-            },
-        )
+        with db.library.transaction():
+            result = db.library.add_scan(
+                lib_id,
+                {
+                    "scan_type": "incremental",
+                    "status": "running",
+                    "started_at": now_ms_val.value,
+                    "finished_at": None,
+                    "files_found": 0,
+                    "files_processed": 0,
+                    "error": None,
+                },
+            )
         assert_snapshot_matches("LibraryDb_add_scan", result)
         # Cleanup
-        db.library.remove_scan(lib_id)
+        with db.library.transaction():
+            db.library.remove_scan(lib_id)
 
     def test_get_scan(self, db, seed_data):
         """Snapshot: get_scan(library_id) → LibraryScanRow | None."""
@@ -174,13 +185,14 @@ class TestLibraryDbFacadeCharacterization:
         """
         lib_id = seed_data["libraries"][0]
         # Update the scan created by seed_data
-        db.library.update_scan(
-            lib_id,
-            {
-                "status": "completed",
-                "files_processed": 99,
-            },
-        )
+        with db.library.transaction():
+            db.library.update_scan(
+                lib_id,
+                {
+                    "status": "completed",
+                    "files_processed": 99,
+                },
+            )
         # Read back to snapshot
         result = db.library.get_scan(lib_id)
         assert_snapshot_matches("LibraryDb_update_scan", result)
@@ -192,7 +204,8 @@ class TestLibraryDbFacadeCharacterization:
         """
         lib_id = seed_data["libraries"][0]
         # Remove the scan
-        db.library.remove_scan(lib_id)
+        with db.library.transaction():
+            db.library.remove_scan(lib_id)
         # Verify it's gone
         result = db.library.get_scan(lib_id)
         assert_snapshot_matches("LibraryDb_remove_scan", result)

@@ -52,7 +52,8 @@ def promote_and_rebuild_workflow(
     embed_dim = derive_embed_dim(models_dir, backbone_id)
     logger.info("[promote & rebuild] Derived embed_dim=%d for %s", embed_dim, backbone_id)
 
-    drained = db.ml.index_backbone_embeddings(backbone_id, embed_dim, nlists)
+    with db.ml.transaction():
+        drained = db.ml.index_backbone_embeddings(backbone_id, embed_dim, nlists)
     if drained == 0:
         logger.info("[promote & rebuild] Hot empty and cold indexed — nothing to do")
     else:

@@ -1,10 +1,10 @@
 # ADR-025: Schema-Driven Persistence Constructor Supersedes Hand-Written AQL Conventions
 
-**Status:** Accepted  
+**Status:** Superseded by ADR-040  
 **Date:** 2026-04-11  
 **Tags:** persistence, architecture, schema-constructor, aql  
 **Source Log:** agent#L11  
-**Supersedes:** ADR-024, ADR-010, ADR-014  
+**Supersedes:** ADR-024, ADR-010  
 
 ## Context
 

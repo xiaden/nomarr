@@ -5,11 +5,11 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-import numpy as np
-
 from nomarr.helpers.dto.ml_dto import LoadAudioMonoResult
 
 if TYPE_CHECKING:
+    import numpy as np
+
     from nomarr.helpers.dto.path_dto import LibraryPath
 
 # Essentia: minimal build (AudioLoader+MonoLoader+MonoMixer+Resample, no TF).

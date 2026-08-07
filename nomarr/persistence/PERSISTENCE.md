@@ -37,7 +37,11 @@ persistence/
 ├── api/
 │   ├── __init__.py
 │   ├── application.py           # AppDb intent facade
-│   ├── library.py               # LibraryDb intent facade
+│   ├── library.py               # LibraryDb intent facade (thin forwarder)
+│   ├── library_files.py         # LibraryFilesDb sub-facade
+│   ├── library_regions.py       # LibraryRegionsDb sub-facade
+│   ├── library_scans.py         # LibraryScansDb sub-facade
+│   ├── library_tags.py          # LibraryTagsDb sub-facade
 │   └── ml.py                    # MlDb intent facade
 ├── sql/
 │   ├── __init__.py
@@ -119,14 +123,14 @@ The repository instances are constructed internally and wired into the sub-facad
 
 ### `db.library`
 
-`LibraryDb` in `api/library.py` is the domain facade for library-facing persistence.
+`LibraryDb` in `api/library.py` is a thin namespaced forwarder over four sub-facades — `library_files`, `library_tags`, `library_scans`, and `library_regions` — exposing the library-facing persistence surface.
 
 It wraps operations such as:
 
 - library CRUD and library-domain queries
 - file and folder queries plus intent-level file lifecycle operations
 - tag lookup, replacement, aggregation, and cleanup routed through library-domain methods
-- maintenance-only routines on `db.library.maintenance` (orphan cleanup, destructive resets, diagnostics)
+- maintenance-only routines (orphan cleanup, destructive resets) are flat on the facade: `db.library.list_orphaned_file_ids()`, `db.library.list_orphaned_tag_ids()`, `db.library.delete_tags_by_ids(...)`, `db.library.truncate_files()`, `db.library.truncate_file_links()`, `db.library.truncate_folder_links()`, `db.library.truncate_folders()`, `db.library.truncate_tags()`, `db.library.truncate_song_tag_edges()`, `db.library.truncate_scan_records()`
 
 Use `db.library` when the caller thinks in terms of libraries, files, folders, and tags rather than specific database tables.
 
@@ -139,7 +143,7 @@ It wraps operations such as:
 - file state reads and state-oriented intents
 - scan and pipeline-state persistence hidden behind app-domain methods
 - locks, claims, health, migration/config, and VRAM promise persistence
-- maintenance-only routines on `db.app.maintenance` (truncation, resets, diagnostics)
+- maintenance-only routines on `db.app` (truncation, resets): `db.app.truncate_file_state_edges()`, `db.app.truncate_worker_claims()`, `db.app.truncate_health()`
 - legacy Navidrome persistence isolated as compatibility debt, not future public contract
 
 Use `db.app` for coordination data and operational state rather than music-library content.
@@ -152,7 +156,7 @@ It wraps operations such as:
 
 - ML output stream, vector, model, model-output, and calibration intents
 - runtime vector-collection registration/query surfaces routed through ML-domain methods
-- maintenance-only routines on `db.ml.maintenance` (truncation, resets, diagnostics)
+- maintenance-only routines on `db.ml` (truncation, resets): `db.ml.truncate_vectors_in_collection(...)`, `db.ml.truncate_calibration_states()`, `db.ml.truncate_calibration_history()`
 
 Use `db.ml` when the caller works with embeddings, models, output streams, or calibration artifacts.
 
@@ -254,18 +258,19 @@ Key points:
 - All models use standard PostgreSQL column types (integer primary keys, `UUID`, `JSONB`, `TEXT`, `TIMESTAMPTZ`, etc.)
 - Vector/embedding data is stored in dedicated tables with PostgreSQL-compatible types
 
-### Dynamic vector registration
+### Vector collections
 
-Vector collections are registered at runtime through the ML layer:
+Vector collections are addressed by name through the ML layer; the name acts
+as a ``backbone_id`` over the single PostgreSQL ``embeddings`` table. They are
+no longer registered at runtime:
 
 ```python
-db.ml.add_vector_collection(
-    "vectors_track_hot__demo_model__main",
-    "vectors_track_hot",
-)
+db.ml.list_vector_collection_names()
+db.ml.search_vectors("vectors_track_hot__demo_model__main", query_vector, limit=10)
 ```
 
-That registration returns a runtime vector namespace that can then be used for vector persistence and similarity search.
+``search_vectors`` returns the nearest-neighbour vectors for a query vector
+within the named collection.
 
 ---
 
@@ -276,16 +281,22 @@ Prefer intent-level calls from higher layers:
 ```python
 library = db.library.get_library(library_id)
 files = db.library.list_songs(library_id, limit=100)
-db.app.transition_file_states(file_ids, "queued", "processing")
 streams = db.ml.list_output_streams_for_file(file_id)
 ```
 
-Within higher layers, do **not** drop to raw SQL just because the session is available:
+Within higher layers, do **not** drop to raw SQL just because the session is available. Under AR-2, every facade write must run inside a ``transaction()`` context — a guarded write method called outside one raises ``FacadeMisuseError``. Wrap each write in its own per-write block (one write per ``with db.<facade>.transaction():``):
 
 ```python
 file_doc = db.library.get_file(file_id)
-db.library.replace_file_tags(file_id, [{"name": "genre", "value": "rock"}])
-db.app.update_scan(library_id, {"status": "complete"})
+
+with db.library.transaction():
+    db.library.replace_file_tags(file_id, [{"name": "genre", "value": "rock"}])
+
+with db.library.transaction():
+    db.library.update_scan(library_id, {"status": "complete"})
+
+with db.app.transaction():
+    db.app.replace_file_states(file_ids, "processing")
 ```
 
 Use raw SQL access only for capabilities that are not already wrapped:

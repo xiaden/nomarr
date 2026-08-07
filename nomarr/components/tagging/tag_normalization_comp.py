@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 # Canonical tag set - only these keys (plus nom:*) will be kept
 CANONICAL_TAGS = {

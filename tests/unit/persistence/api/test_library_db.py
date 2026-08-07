@@ -1,5 +1,5 @@
 # mypy: disable-error-code=func-returns-value
-"""Unit tests for ``LibraryDb`` and ``LibraryMaintenanceDb`` delegation."""
+"""Unit tests for ``LibraryDb`` delegation to the four sub-facades."""
 
 from __future__ import annotations
 
@@ -7,7 +7,11 @@ from unittest.mock import MagicMock, sentinel
 
 import pytest
 
-from nomarr.persistence.api.library import LibraryDb, LibraryMaintenanceDb
+from nomarr.persistence.api.library import LibraryDb
+from nomarr.persistence.api.library_files import LibraryFilesDb
+from nomarr.persistence.api.library_regions import LibraryRegionsDb
+from nomarr.persistence.api.library_scans import LibraryScansDb
+from nomarr.persistence.api.library_tags import LibraryTagsDb
 
 # ── helpers ───────────────────────────────────────────────────────────────
 
@@ -20,34 +24,29 @@ def _make_library_db() -> tuple[LibraryDb, MagicMock, MagicMock, MagicMock, Magi
     tag_repo = MagicMock()
     file_tag_repo = MagicMock()
     file_state_repo = MagicMock()
-    db = LibraryDb(
-        library_repo=library_repo,
+    pipeline_repo = MagicMock()
+    files = LibraryFilesDb(
+        session=MagicMock(),
         file_repo=file_repo,
         folder_repo=folder_repo,
-        scan_repo=scan_repo,
-        tag_repo=tag_repo,
-        file_tag_repo=file_tag_repo,
         file_state_repo=file_state_repo,
     )
-    return db, library_repo, file_repo, folder_repo, scan_repo, tag_repo, file_tag_repo, file_state_repo
-
-
-def _make_library_maintenance_db() -> tuple[
-    LibraryMaintenanceDb, MagicMock, MagicMock, MagicMock, MagicMock, MagicMock
-]:
-    file_repo = MagicMock()
-    tag_repo = MagicMock()
-    file_tag_repo = MagicMock()
-    folder_repo = MagicMock()
-    scan_repo = MagicMock()
-    db = LibraryMaintenanceDb(
-        file_repo=file_repo,
-        tag_repo=tag_repo,
-        file_tag_repo=file_tag_repo,
-        folder_repo=folder_repo,
-        scan_repo=scan_repo,
+    tags = LibraryTagsDb(session=MagicMock(), tag_repo=tag_repo, file_tag_repo=file_tag_repo)
+    scans = LibraryScansDb(session=MagicMock(), scan_repo=scan_repo)
+    regions = LibraryRegionsDb(
+        session=MagicMock(),
+        library_repo=library_repo,
+        file_state_repo=file_state_repo,
+        pipeline_repo=pipeline_repo,
     )
-    return db, file_repo, tag_repo, file_tag_repo, folder_repo, scan_repo
+    db = LibraryDb(
+        session=MagicMock(),
+        files=files,
+        tags=tags,
+        scans=scans,
+        regions=regions,
+    )
+    return db, library_repo, file_repo, folder_repo, scan_repo, tag_repo, file_tag_repo, file_state_repo
 
 
 # ── surface / contract ────────────────────────────────────────────────────
@@ -55,20 +54,58 @@ def _make_library_maintenance_db() -> tuple[
 
 @pytest.mark.unit
 def test_exposes_library_maintenance_surface() -> None:
-    db, *_ = _make_library_db()
+    db, _, file_repo, folder_repo, _, tag_repo, file_tag_repo, _ = _make_library_db()
 
-    assert isinstance(db.maintenance, LibraryMaintenanceDb)
-    assert hasattr(db.maintenance, "truncate_files")
-    assert hasattr(db.maintenance, "truncate_tags")
-    assert hasattr(db.maintenance, "truncate_folders")
-    assert hasattr(db.maintenance, "truncate_song_tag_edges")
-    assert hasattr(db.maintenance, "truncate_file_links")
-    assert hasattr(db.maintenance, "truncate_folder_links")
-    assert hasattr(db.maintenance, "list_orphaned_file_ids")
-    assert hasattr(db.maintenance, "list_orphaned_tag_ids")
-    assert hasattr(db.maintenance, "delete_tags_by_ids")
-    assert not hasattr(db, "truncate_files")
-    assert not hasattr(db, "truncate_tags")
+    # Four sub-facade namespaces are exposed with the right types
+    assert isinstance(db.files, LibraryFilesDb)
+    assert isinstance(db.tags, LibraryTagsDb)
+    assert isinstance(db.scans, LibraryScansDb)
+    assert isinstance(db.regions, LibraryRegionsDb)
+
+    # Maintenance surface is forwarded at the LibraryDb top level
+    assert hasattr(db, "list_orphaned_file_ids")
+    assert hasattr(db, "list_orphaned_tag_ids")
+    assert hasattr(db, "delete_tags_by_ids")
+    assert hasattr(db, "truncate_files")
+    assert hasattr(db, "truncate_file_links")
+    assert hasattr(db, "truncate_folder_links")
+    assert hasattr(db, "truncate_folders")
+    assert hasattr(db, "truncate_tags")
+    assert hasattr(db, "truncate_song_tag_edges")
+    assert hasattr(db, "truncate_scan_records")
+
+    # Forwarders route to the correct sub-facade repo
+    db.list_orphaned_file_ids()
+    file_repo.list_orphaned_file_ids.assert_called_once_with()
+
+    db.list_orphaned_tag_ids()
+    tag_repo.get_orphaned_tag_ids.assert_called_once_with()
+
+    db.delete_tags_by_ids([1, 2])
+    tag_repo.delete_tags_by_ids.assert_called_once_with([1, 2])
+
+    db.truncate_files()
+    file_repo.truncate_files.assert_called_once_with()
+
+    db.truncate_file_links()
+    file_repo.truncate_file_links.assert_called_once_with()
+
+    db.truncate_folder_links()
+    folder_repo.truncate_folder_links.assert_called_once_with()
+
+    db.truncate_folders()
+    folder_repo.truncate_folders.assert_called_once_with()
+
+    db.truncate_tags()
+    tag_repo.truncate_tags.assert_called_once_with()
+
+    db.truncate_song_tag_edges()
+    file_tag_repo.truncate_file_tag_assignments.assert_called_once_with()
+
+    # LibraryMaintenanceDb no longer exists
+    import nomarr.persistence.api.library as library_module
+
+    assert not hasattr(library_module, "LibraryMaintenanceDb")
 
 
 # ── Library CRUD ──────────────────────────────────────────────────────────
@@ -791,7 +828,7 @@ def test_list_file_tags_for_files_groups_by_file_id() -> None:
     assert result[1][0]["id"] == 100
     assert result[1][0]["name"] == "genre"
     assert result[1][0]["value"] == "Rock"
-    file_tag_repo.get_tags_for_files_batch.assert_called_once_with([1, 2], name_starts_with=None, include_edge=False)
+    file_tag_repo.get_tags_for_files_batch.assert_called_once_with([1, 2], name_starts_with=None)
 
 
 @pytest.mark.unit
@@ -812,7 +849,7 @@ def test_list_file_tags_for_files_with_name_starts_with() -> None:
 
     db.list_file_tags_for_files([1], name_starts_with="genre")
 
-    file_tag_repo.get_tags_for_files_batch.assert_called_once_with([1], name_starts_with="genre", include_edge=False)
+    file_tag_repo.get_tags_for_files_batch.assert_called_once_with([1], name_starts_with="genre")
 
 
 @pytest.mark.unit
@@ -1028,15 +1065,32 @@ def test_remove_scan_noop_when_not_exists() -> None:
     scan_repo.delete_scan_record.assert_not_called()
 
 
-# ── File state ────────────────────────────────────────────────────────────
+# ── Sub-facade maintenance surfaces ───────────────────────────────────────
 
 
-# ── LibraryMaintenanceDb ──────────────────────────────────────────────────
+def _make_files_db() -> tuple[LibraryFilesDb, MagicMock, MagicMock]:
+    file_repo = MagicMock()
+    folder_repo = MagicMock()
+    file_state_repo = MagicMock()
+    db = LibraryFilesDb(
+        session=MagicMock(),
+        file_repo=file_repo,
+        folder_repo=folder_repo,
+        file_state_repo=file_state_repo,
+    )
+    return db, file_repo, folder_repo
+
+
+def _make_tags_db() -> tuple[LibraryTagsDb, MagicMock, MagicMock]:
+    tag_repo = MagicMock()
+    file_tag_repo = MagicMock()
+    db = LibraryTagsDb(session=MagicMock(), tag_repo=tag_repo, file_tag_repo=file_tag_repo)
+    return db, tag_repo, file_tag_repo
 
 
 @pytest.mark.unit
 def test_maintenance_list_orphaned_file_ids() -> None:
-    db, file_repo, *_ = _make_library_maintenance_db()
+    db, file_repo, _ = _make_files_db()
     file_repo.list_orphaned_file_ids = MagicMock(return_value=sentinel.ids)
 
     result = db.list_orphaned_file_ids()
@@ -1047,7 +1101,7 @@ def test_maintenance_list_orphaned_file_ids() -> None:
 
 @pytest.mark.unit
 def test_maintenance_list_orphaned_tag_ids() -> None:
-    db, _, tag_repo, *_ = _make_library_maintenance_db()
+    db, tag_repo, _ = _make_tags_db()
     tag_repo.get_orphaned_tag_ids = MagicMock(return_value=sentinel.ids)
 
     result = db.list_orphaned_tag_ids()
@@ -1058,7 +1112,7 @@ def test_maintenance_list_orphaned_tag_ids() -> None:
 
 @pytest.mark.unit
 def test_maintenance_delete_tags_by_ids() -> None:
-    db, _, tag_repo, *_ = _make_library_maintenance_db()
+    db, tag_repo, _ = _make_tags_db()
     tag_repo.delete_tags_by_ids = MagicMock()
 
     db.delete_tags_by_ids([1, 2, 3])
@@ -1068,7 +1122,7 @@ def test_maintenance_delete_tags_by_ids() -> None:
 
 @pytest.mark.unit
 def test_maintenance_truncate_files() -> None:
-    db, file_repo, *_ = _make_library_maintenance_db()
+    db, file_repo, _ = _make_files_db()
     file_repo.truncate_files = MagicMock()
 
     db.truncate_files()
@@ -1078,7 +1132,7 @@ def test_maintenance_truncate_files() -> None:
 
 @pytest.mark.unit
 def test_maintenance_truncate_file_links() -> None:
-    db, file_repo, *_ = _make_library_maintenance_db()
+    db, file_repo, _ = _make_files_db()
     file_repo.truncate_file_links = MagicMock()
 
     db.truncate_file_links()
@@ -1088,7 +1142,7 @@ def test_maintenance_truncate_file_links() -> None:
 
 @pytest.mark.unit
 def test_maintenance_truncate_folder_links() -> None:
-    db, _, _, _, folder_repo, _ = _make_library_maintenance_db()
+    db, _, folder_repo = _make_files_db()
     folder_repo.truncate_folder_links = MagicMock()
 
     db.truncate_folder_links()
@@ -1098,7 +1152,7 @@ def test_maintenance_truncate_folder_links() -> None:
 
 @pytest.mark.unit
 def test_maintenance_truncate_folders() -> None:
-    db, _, _, _, folder_repo, _ = _make_library_maintenance_db()
+    db, _, folder_repo = _make_files_db()
     folder_repo.truncate_folders = MagicMock()
 
     db.truncate_folders()
@@ -1108,7 +1162,7 @@ def test_maintenance_truncate_folders() -> None:
 
 @pytest.mark.unit
 def test_maintenance_truncate_tags() -> None:
-    db, _, tag_repo, *_ = _make_library_maintenance_db()
+    db, tag_repo, _ = _make_tags_db()
     tag_repo.truncate_tags = MagicMock()
 
     db.truncate_tags()
@@ -1118,9 +1172,19 @@ def test_maintenance_truncate_tags() -> None:
 
 @pytest.mark.unit
 def test_maintenance_truncate_song_tag_edges() -> None:
-    db, _, _, file_tag_repo, *_ = _make_library_maintenance_db()
+    db, _, file_tag_repo = _make_tags_db()
     file_tag_repo.truncate_file_tag_assignments = MagicMock()
 
     db.truncate_song_tag_edges()
 
     file_tag_repo.truncate_file_tag_assignments.assert_called_once_with()
+
+
+@pytest.mark.unit
+def test_maintenance_truncate_scan_records() -> None:
+    scan_repo = MagicMock()
+    db = LibraryScansDb(session=MagicMock(), scan_repo=scan_repo)
+
+    db.truncate_scan_records()
+
+    scan_repo.truncate_scans.assert_called_once_with()

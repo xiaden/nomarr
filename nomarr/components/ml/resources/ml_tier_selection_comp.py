@@ -162,7 +162,6 @@ def select_execution_tier(
         return _evaluate_cpu_only_tier(
             worker_ram=worker_ram,
             ram_budget_mb=ram_budget_mb,
-            config_max_workers=config_max_workers,
         )
 
     # Try each tier from highest performance to lowest
@@ -202,7 +201,6 @@ def select_execution_tier(
     return _evaluate_cpu_only_tier(
         worker_ram=worker_ram,
         ram_budget_mb=ram_budget_mb,
-        config_max_workers=config_max_workers,
     )
 
 
@@ -318,7 +316,6 @@ def _evaluate_tier_2(
 def _evaluate_cpu_only_tier(
     worker_ram: int,
     ram_budget_mb: int,
-    config_max_workers: int,
 ) -> TierSelection:
     """Evaluate Tier 3/4 (CPU-only) eligibility.
 

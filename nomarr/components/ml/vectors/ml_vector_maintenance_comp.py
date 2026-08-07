@@ -72,7 +72,8 @@ def drain_hot_to_cold(db: Database, backbone_id: str) -> int:
         Number of rows drained from hot to cold.
 
     """
-    return db.ml.index_backbone_embeddings(backbone_id)
+    with db.ml.transaction():
+        return db.ml.index_backbone_embeddings(backbone_id)
 
 
 def verify_hot_empty(db: Database, backbone_id: str) -> None:
@@ -147,7 +148,8 @@ def rebuild_cold_vector_index(db: Database, embed_dim: int) -> None:
         embed_dim: Embedding dimension.
 
     """
-    db.ml.rebuild_vector_index(embed_dim)
+    with db.ml.transaction():
+        db.ml.rebuild_vector_index(embed_dim)
 
 
 def backfill_genres(db: Database, backbone_id: str) -> int:

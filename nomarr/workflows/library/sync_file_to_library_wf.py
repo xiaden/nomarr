@@ -28,7 +28,7 @@ def _sync_tags_and_entities(
     file_id: int,
     file_path: str,
     metadata: dict[str, Any],
-    namespace: str,
+    _namespace: str,
     tagged_version: str | None,
 ) -> None:
     """Write tags, seed entities, and update metadata for a known file.
@@ -77,7 +77,8 @@ def _sync_tags_and_entities(
         entries = _build_song_tag_entries(file_id, entity_tags)  # type: ignore[arg-type]  # TODO(migration): component expects str, should be int
         if entries:
             for entry in entries:
-                db.library.replace_file_tags(entry["song_id"], entry["tags"])
+                with db.library.transaction():
+                    db.library.replace_file_tags(entry["song_id"], entry["tags"])
         logger.debug(f"[sync_file_to_library] Seeded entities for {file_path}")
     except Exception as entity_error:
         logger.warning(f"[sync_file_to_library] Failed to seed entities: {entity_error}", exc_info=True)
@@ -108,7 +109,7 @@ def sync_file_to_library(
     used by both the library scanner and the processor after tagging.
 
     Orchestrates:
-    1. Library domain: Update song record (by _id when available)
+    1. Library domain: Update song record (by id when available)
     2. Tagging domain: Parse and upsert file_tags (external + nomarr tags)
     3. Metadata domain: Seed entity graph
 

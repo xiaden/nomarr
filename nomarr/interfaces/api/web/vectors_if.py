@@ -29,9 +29,15 @@ from nomarr.interfaces.api.web.dependencies import (
     get_vector_maintenance_service,
     get_vector_search_service,
 )
-from nomarr.services.domain.vector_maintenance_svc import VectorMaintenanceService
-from nomarr.services.domain.vector_search_svc import VectorSearchService
-from nomarr.services.infrastructure.ml_svc import MLService
+from nomarr.services.domain.vector_maintenance_svc import (
+    VectorMaintenanceService,  # noqa: TC001  # FastAPI resolves Annotated[...] at route registration
+)
+from nomarr.services.domain.vector_search_svc import (
+    VectorSearchService,  # noqa: TC001  # FastAPI resolves Annotated[...] at route registration
+)
+from nomarr.services.infrastructure.ml_svc import (
+    MLService,  # noqa: TC001  # FastAPI resolves Annotated[...] at route registration
+)
 
 logger = logging.getLogger(__name__)
 

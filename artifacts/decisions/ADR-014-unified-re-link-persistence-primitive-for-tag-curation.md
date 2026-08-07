@@ -7,18 +7,18 @@
 
 ## Context
 
-The tag curation tool requires four operations: rename, merge, split, and single-song edit. At the graph level, these look different in the UI but are structurally identical:
+The tag curation tool requires four operations: rename, merge, split, and single-song edit. At the data level, these look different in the UI but are structurally identical:
 
-- **Rename:** Move ALL edges from tag vertex A to tag vertex B (find-or-create B with new value, same rel)
-- **Merge:** Move ALL edges from tag vertex A to tag vertex B (B already exists). Handle duplicates — songs already linked to B must not get duplicate edges.
-- **Split:** Move SOME edges (selected songs) from tag vertex A to tag vertex B (find-or-create B)
-- **Single-song edit:** Move ONE edge from tag vertex A to tag vertex B
+- **Rename:** Re-point ALL song_has_tags rows from tag A to tag B (find-or-create B with new value, same rel)
+- **Merge:** Re-point ALL song_has_tags rows from tag A to tag B (B already exists). Handle duplicates — songs already linked to B must not get duplicate rows.
+- **Split:** Re-point SOME song_has_tags rows (selected songs) from tag A to tag B (find-or-create B)
+- **Single-song edit:** Re-point ONE song_has_tags row from tag A to tag B
 
-All four reduce to: "re-link edges from source tag to target tag for a set of songs (or all songs)."
+All four reduce to: "re-point song_has_tags rows from source tag to target tag for a set of songs (or all songs)."
 
-The existing `set_song_tags_batch()` from ADR-010 operates per-song: given a song, replace all its tags for a rel. This is correct for per-song multi-tag overwrites but is NOT the right primitive for graph-level curation where the operation is "given a tag, move its edges." The access pattern is inverted.
+The existing `set_song_tags_batch()` from ADR-010 operates per-song: given a song, replace all its tags for a rel. This is correct for per-song multi-tag overwrites but is NOT the right primitive for tag-graph curation where the operation is "given a tag, re-point its rows." The access pattern is inverted.
 
-Directly mutating tag vertex values (e.g., renaming by updating the `value` field) is not viable because the `(name, value)` unique index would conflict if the target value already exists as a separate vertex.
+Directly mutating tag rows (e.g., renaming by updating the `value` field) is not viable because the `(name, value)` unique index would conflict if the target value already exists as a separate row.
 
 ## Decision
 
@@ -26,43 +26,43 @@ All four curation operations use a single persistence primitive: `relink_tag_edg
 
 **Semantics:**
 
-- If `song_ids` is None → re-link ALL edges from source to target
-- If `song_ids` is provided → re-link only edges for those songs
-- Handles duplicates: songs already linked to target are skipped (no duplicate edges)
+- If `song_ids` is None → re-point ALL song_has_tags rows from source to target
+- If `song_ids` is provided → re-point only rows for those songs
+- Handles duplicates: songs already linked to target are skipped (no duplicate rows)
 - Returns `RelinkResult(moved=int, skipped=int, source_orphaned=bool)`
 
 **Operation mapping:**
 
-- **Rename:** source = old tag vertex, target = find_or_create(same name, new value), song_ids = None
+- **Rename:** source = old tag, target = find_or_create(same name, new value), song_ids = None
 - **Merge:** source = each tag to merge, target = canonical tag (already exists), song_ids = None
 - **Split:** source = current tag, target = find_or_create(same name, new value), song_ids = selected subset
 - **Single-song:** source = current tag, target = find_or_create(same name, new value), song_ids = [one_song]
 
-**AQL implementation (2-3 round trips):**
+**Implementation (2-3 SQL statements):**
 
-1. Find or create target tag vertex (UPSERT on `(name, value)`)
-2. Re-link edges: UPDATE `song_has_tags` WHERE `_to == source_tag_id` (AND `_from IN song_ids` if scoped), SET `_to = target_tag_id`. Use UPSERT to skip duplicates.
-3. Cleanup: run `cleanup_orphaned_tags()` to delete source vertex if zero edges remain
+1. Find or create the target tag (upsert — `INSERT ... ON CONFLICT` on `(name, value)`)
+2. Re-point rows: UPDATE `song_has_tags` SET `tag_id = target_tag_id` WHERE `tag_id = source_tag_id` (AND `song_id IN song_ids` if scoped). Skip duplicates with a uniqueness guard on `(song_id, tag_id)`.
+3. Cleanup: run `cleanup_orphaned_tags()` to delete the source tag if zero referencing rows remain
 
-**Never mutates a tag vertex value directly** — always re-links edges. This avoids unique index conflicts entirely.
+**Never mutates a tag value directly** — always re-points rows. This avoids unique index conflicts entirely.
 
-**Relationship to ADR-010:** ADR-010's `set_song_tags_batch` remains valid for per-song multi-tag replacement (the original bulk edit use case). `relink_tag_edges` is the primitive for graph-level curation. They coexist — different access patterns for different use cases.
+**Relationship to ADR-010:** ADR-010's `set_song_tags_batch` remains valid for per-song multi-tag replacement (the original bulk edit use case). `relink_tag_edges` is the primitive for tag-graph curation. They coexist — different access patterns for different use cases.
 
 ## Consequences
 
 **Positive:**
 
 - Single primitive handles all four curation operations — minimal persistence surface area
-- Avoids unique index conflicts by never mutating tag vertex values
-- Duplicate-safe: UPSERT semantics prevent double-edges during merge
-- Orphan cleanup is automatic — no dangling tag vertices after rename/merge
+- Avoids unique index conflicts by never mutating tag values directly
+- Duplicate-safe: upsert semantics prevent duplicate rows during merge
+- Orphan cleanup is automatic — no dangling tags after rename/merge
 - Idempotent: safe to retry on partial failure
 
 **Negative:**
 
-- 2-3 AQL round trips per operation (not single-query). Acceptable for user-initiated curation.
+- 2-3 SQL statements per operation (not single-query). Acceptable for user-initiated curation.
 - `cleanup_orphaned_tags()` after every operation adds overhead — could be batched/deferred for bulk merges. Acceptable for alpha.
-- Re-linking edges (rather than updating vertex value) means ArangoDB edge `_key` changes for moved edges — no external consumers depend on edge keys today.
+- Re-pointing rows (rather than updating tag value) means the `song_has_tags` rows change for moved songs — no external consumers depend on the old row identity today.
 
 **Neutral:**
 

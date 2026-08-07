@@ -10,10 +10,10 @@ from __future__ import annotations
 import hashlib
 from typing import TYPE_CHECKING, Any, cast
 
-from nomarr.helpers.dto.model_repo_dto import ModelRecord
 from nomarr.helpers.time_helper import now_ms
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dto.model_repo_dto import ModelRecord
     from nomarr.persistence.db import Database
 
 
@@ -101,7 +101,8 @@ def upsert_registered_model(
         )
 
     try:
-        result = db.ml.add_model(payload)
+        with db.ml.transaction():
+            result = db.ml.add_model(payload)
         if not isinstance(result, dict):
             raise RuntimeError(f"Failed to load persisted ml_models document for path={path}")
         return result
@@ -116,13 +117,14 @@ def mark_model_fully_configured(db: Database, model_id: str, value: bool) -> Non
     if not isinstance(model_doc, dict):
         return
 
-    db.ml.update_model(
-        model_id,
-        {
-            "fully_configured": value,
-            "updated_at": now_ms().value,
-        },
-    )
+    with db.ml.transaction():
+        db.ml.update_model(
+            model_id,
+            {
+                "fully_configured": value,
+                "updated_at": now_ms().value,
+            },
+        )
 
 
 def mark_model_known(db: Database, model_id: str, value: bool) -> None:
@@ -131,18 +133,20 @@ def mark_model_known(db: Database, model_id: str, value: bool) -> None:
     if not isinstance(model_doc, dict):
         return
 
-    db.ml.update_model(
-        model_id,
-        {
-            "is_known": value,
-            "updated_at": now_ms().value,
-        },
-    )
+    with db.ml.transaction():
+        db.ml.update_model(
+            model_id,
+            {
+                "is_known": value,
+                "updated_at": now_ms().value,
+            },
+        )
 
 
 def delete_registered_model(db: Database, model_id: str) -> None:
     """Delete one registered model vertex by ID."""
-    db.ml.remove_model(model_id)
+    with db.ml.transaction():
+        db.ml.remove_model(model_id)
 
 
 def list_model_outputs_for_model(db: Database, model_id: str) -> list[dict[str, Any]]:
@@ -171,7 +175,8 @@ def ensure_model_outputs(db: Database, file_id: int, model_id: str, output_count
             payload["label"] = existing.get("label")
             payload["fully_labeled"] = existing.get("fully_labeled", False)
 
-        db.ml.replace_model_output(file_id, model_id, output_key, payload)
+        with db.ml.transaction():
+            db.ml.replace_model_output(file_id, model_id, output_key, payload)
 
     return list_model_outputs_for_model(db, model_id)
 
@@ -182,17 +187,18 @@ def update_model_output_label(db: Database, file_id: int, model_id: str, output_
     if not isinstance(existing_output, dict):
         return
 
-    db.ml.replace_model_output(
-        file_id,
-        model_id,
-        output_id,
-        {
-            "id": output_id,
-            "output_index": existing_output.get("output_index"),
-            "label": label,
-            "fully_labeled": True,
-        },
-    )
+    with db.ml.transaction():
+        db.ml.replace_model_output(
+            file_id,
+            model_id,
+            output_id,
+            {
+                "id": output_id,
+                "output_index": existing_output.get("output_index"),
+                "label": label,
+                "fully_labeled": True,
+            },
+        )
 
 
 def build_model_output_index_map(db: Database) -> dict[str, dict[int, str]]:
@@ -213,7 +219,8 @@ def build_model_output_index_map(db: Database) -> dict[str, dict[int, str]]:
 
 def delete_model_outputs_for_model(db: Database, model_id: str) -> list[str]:
     """Delete all output vertices for one model."""
-    result = db.ml.remove_model_outputs_for_model(model_id)  # type: ignore[attr-defined]
+    with db.ml.transaction():
+        result = db.ml.remove_model_outputs_for_model(model_id)  # type: ignore[attr-defined]
     if isinstance(result, list):
         return [str(r) for r in result]
     return []

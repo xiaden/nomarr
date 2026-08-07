@@ -5,9 +5,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from nomarr.components.library.library_records_comp import get_library_record, list_watchable_library_records
-from nomarr.helpers.dto.library_dto import LibraryDict
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dto.library_dto import LibraryDict
     from nomarr.persistence.db import Database
 
 

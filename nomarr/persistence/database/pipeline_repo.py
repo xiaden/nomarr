@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import delete, distinct, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.orm import Session, scoped_session
 
 from nomarr.helpers.dto.repo_dto import LibraryFileRow, PipelineStateRow
 from nomarr.persistence.database.repo_helpers import _file_row_to_dto
@@ -23,6 +22,7 @@ from nomarr.persistence.sql.exceptions import map_persistence_exceptions
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Row
+    from sqlalchemy.orm import Session, scoped_session
     from sqlalchemy.schema import Table
 
 _T: Table = PipelineState.__table__  # type: ignore[assignment]  # Model.__table__ is typed as FromClause; we know it's Table

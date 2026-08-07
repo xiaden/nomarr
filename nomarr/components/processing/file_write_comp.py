@@ -17,9 +17,9 @@ from nomarr.components.tagging.tag_query_comp import get_song_tags
 from nomarr.components.tagging.tag_write_comp import set_song_tags, set_song_tags_batch
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dto.tags_dto import Tags
     from nomarr.persistence.db import Database
 
-from nomarr.helpers.dto.tags_dto import Tags
 
 logger = logging.getLogger(__name__)
 

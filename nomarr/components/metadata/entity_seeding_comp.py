@@ -143,7 +143,8 @@ def seed_entities_for_scan_batch(
     if all_tag_entries:
         try:
             for entry in all_tag_entries:
-                db.library.replace_file_tags(entry["song_id"], entry["tags"])
+                with db.library.transaction():
+                    db.library.replace_file_tags(entry["song_id"], entry["tags"])
         except (ValueError, RuntimeError) as e:
             logger.warning("[entity_seeding] Batch tag seeding failed: %s", e)
             return 0

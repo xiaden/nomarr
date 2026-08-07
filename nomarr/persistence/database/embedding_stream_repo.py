@@ -15,7 +15,6 @@ import time
 from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import Table, delete, select, update
-from sqlalchemy.orm import Session, scoped_session
 
 from nomarr.helpers.dto.embedding_stream_repo_dto import EmbeddingStreamRecord
 from nomarr.persistence.models.ml_embedding_stream import MlEmbeddingStream
@@ -24,6 +23,7 @@ from nomarr.persistence.sql.primitives import insert_one
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Row
+    from sqlalchemy.orm import Session, scoped_session
 
 _T = cast("Table", MlEmbeddingStream.__table__)
 

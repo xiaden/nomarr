@@ -342,7 +342,6 @@ nomarr/services/domain/library_svc/
 ├── scan.py          # LibraryScanMixin
 ├── query.py         # LibraryQueryMixin
 ├── files.py         # LibraryFilesMixin
-├── entities.py      # LibraryEntitiesMixin
 └── config.py        # LibraryServiceConfig dataclass
 ```
 
@@ -356,10 +355,11 @@ nomarr/services/domain/library_svc/
 ```python
 # library_svc/__init__.py
 from .admin import LibraryAdminMixin
-from .scan import LibraryScanMixin
+from .files import LibraryFilesMixin
 from .query import LibraryQueryMixin
+from .scan import LibraryScanMixin
 
-class LibraryService(LibraryAdminMixin, LibraryScanMixin, LibraryQueryMixin):
+class LibraryService(LibraryAdminMixin, LibraryScanMixin, LibraryQueryMixin, LibraryFilesMixin):
     """Unified library service composed from mixins."""
     pass
 ```

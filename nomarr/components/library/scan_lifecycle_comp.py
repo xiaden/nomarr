@@ -194,14 +194,15 @@ def mark_scan_started(db: Database, library_id: int, scan_type: str) -> None:
         scan_type: ``"quick"`` or ``"full"``
 
     """
-    db.library.add_scan(
-        library_id,
-        {
-            "scan_type": scan_type,
-            "status": "in_progress",
-            "started_at": now_ms().value,
-        },
-    )
+    with db.library.transaction():
+        db.library.add_scan(
+            library_id,
+            {
+                "scan_type": scan_type,
+                "status": "in_progress",
+                "started_at": now_ms().value,
+            },
+        )
 
 
 def mark_scan_completed(db: Database, library_id: int) -> None:
@@ -212,13 +213,14 @@ def mark_scan_completed(db: Database, library_id: int) -> None:
         library_id: Library document ``id``
 
     """
-    db.library.update_scan(
-        library_id,
-        {
-            "status": "completed",
-            "finished_at": now_ms().value,
-        },
-    )
+    with db.library.transaction():
+        db.library.update_scan(
+            library_id,
+            {
+                "status": "completed",
+                "finished_at": now_ms().value,
+            },
+        )
 
 
 def update_scan_progress(
@@ -253,7 +255,8 @@ def update_scan_progress(
     if scan_error is not None:
         payload["scan_error"] = scan_error
     if payload:
-        db.library.update_scan(library_id, payload)
+        with db.library.transaction():
+            db.library.update_scan(library_id, payload)
 
 
 def is_scan_stale(db: Database, library_id: int, timeout_ms: int = 300_000) -> bool:

@@ -63,16 +63,17 @@ def upsert_output_streams(db: Database, *, file_id: int, streams: list[StreamWri
         return
 
     normalized_streams = _normalize_streams(streams)
-    db.ml.replace_output_streams_for_file(
-        file_id=file_id,
-        stream_payloads=[
-            {
-                "output_id": stream.output_id,
-                "values": stream.values,
-            }
-            for stream in normalized_streams
-        ],
-    )
+    with db.ml.transaction():
+        db.ml.replace_output_streams_for_file(
+            file_id=file_id,
+            stream_payloads=[
+                {
+                    "output_id": stream.output_id,
+                    "values": stream.values,
+                }
+                for stream in normalized_streams
+            ],
+        )
 
 
 def fetch_output_streams(db: Database, file_id: int) -> list[StreamRecord]:
@@ -217,5 +218,6 @@ def delete_output_streams(db: Database, file_id: int) -> int:
     if not stream_ids:
         return 0
 
-    db.ml.replace_output_streams_for_file(file_id, [])
+    with db.ml.transaction():
+        db.ml.replace_output_streams_for_file(file_id, [])
     return len(stream_ids)

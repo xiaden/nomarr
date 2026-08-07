@@ -6,11 +6,11 @@ import logging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from nomarr.persistence.db import Database
     from nomarr.services.infrastructure.config_svc import ConfigService
 
 from nomarr.components.ml.onnx.ml_discovery_comp import discover_backbones
 from nomarr.helpers.vector_params_helper import get_ef_construction
-from nomarr.persistence.db import Database
 from nomarr.workflows.platform.promote_and_rebuild_vectors_wf import (
     promote_and_rebuild_workflow,
 )

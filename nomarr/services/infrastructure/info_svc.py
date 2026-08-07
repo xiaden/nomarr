@@ -12,7 +12,6 @@ import contextlib
 import logging
 import multiprocessing
 from dataclasses import dataclass
-from multiprocessing.connection import Connection
 from typing import TYPE_CHECKING
 
 from nomarr.components.platform.gpu_monitor_comp import (
@@ -32,6 +31,8 @@ from nomarr.helpers.dto.info_dto import (
 )
 
 if TYPE_CHECKING:
+    from multiprocessing.connection import Connection
+
     from nomarr.persistence.db import Database
     from nomarr.services.infrastructure.health_monitor_svc import HealthMonitorService
     from nomarr.services.infrastructure.ml_svc import MLService
@@ -71,10 +72,10 @@ class _GPUMonitorLifecycleHandler(ComponentLifecycleHandler):
 
     def on_status_change(
         self,
-        component_id: str,
+        component_id: str,  # noqa: ARG002  # ComponentLifecycleHandler Protocol contract — callers pass keyword args by this name
         old_status: str,
         new_status: str,
-        context: StatusChangeContext,
+        context: StatusChangeContext,  # noqa: ARG002  # ComponentLifecycleHandler Protocol contract
     ) -> None:
         """Handle GPU monitor status changes from HealthMonitorService."""
         logger.debug(f"[InfoService] GPU monitor status: {old_status} -> {new_status}")

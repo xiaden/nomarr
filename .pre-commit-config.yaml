@@ -31,6 +31,15 @@ repos:
         pass_filenames: false
         files: ^nomarr/
 
+  # --- Deptry: dependency audit ---
+  - repo: local
+    hooks:
+      - id: deptry
+        name: deptry dependency audit
+        entry: bash -c "deptry . --known-first-party nomarr"
+        language: system
+        pass_filenames: false
+
   # --- Frontend: ESLint + TypeScript ---
   - repo: local
     hooks:
@@ -71,13 +80,3 @@ repos:
         language: system
         pass_filenames: false
         files: ^(nomarr|tests/unit)/
-
-  # --- ArangoDB field name enforcement ---
-  - repo: local
-    hooks:
-      - id: no-arango-field-names
-        name: "No ArangoDB field names in non-persistence code"
-        entry: bash scripts/check-arango-fields.sh
-        language: system
-        pass_filenames: false
-        types: [python]

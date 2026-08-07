@@ -13,7 +13,6 @@ import time
 from typing import TYPE_CHECKING
 
 from sqlalchemy import Table, delete, func, select
-from sqlalchemy.orm import Session, scoped_session
 
 from nomarr.helpers.dto.repo_dto import FileStateAssignmentRow, FileStateRow
 from nomarr.persistence.models.file_state import FileState
@@ -23,6 +22,7 @@ from nomarr.persistence.sql.primitives import insert_one
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Row
+    from sqlalchemy.orm import Session, scoped_session
 
 _A: Table = FileStateAssignment.__table__  # type: ignore[assignment]  # Model.__table__ is typed as FromClause; we know it's Table
 _S: Table = FileState.__table__  # type: ignore[assignment]  # Model.__table__ is typed as FromClause; we know it's Table
@@ -126,7 +126,7 @@ class FileStateRepository:
                 self._session.execute(stmt)
             self._session.commit()
 
-    def bootstrap_states(self, file_ids: list[int]) -> None:
+    def bootstrap_states(self, _file_ids: list[int]) -> None:
         """Ensure canonical state records exist in ``file_states``.
 
         Inserts the default state names if the lookup table is empty.

@@ -48,7 +48,7 @@ api_app = FastAPI(title="Nomarr", version="1.2", lifespan=lifespan)
 
 
 @api_app.exception_handler(Exception)
-async def exception_handler(request, exc: Exception):
+async def exception_handler(_request, exc: Exception):
     logger.exception(f"[API] Exception: {exc}")
     return JSONResponse(status_code=500, content={"error": str(exc)})
 

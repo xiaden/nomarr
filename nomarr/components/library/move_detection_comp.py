@@ -254,7 +254,8 @@ def apply_detected_moves(
                 entries = _build_song_tag_entries(str(move.file_id), entity_tags)
                 if entries:
                     for entry in entries:
-                        db.library.replace_file_tags(int(entry["song_id"]), entry["tags"])
+                        with db.library.transaction():
+                            db.library.replace_file_tags(int(entry["song_id"]), entry["tags"])
             except RuntimeError as e:
                 logger.warning(
                     "Failed to update entities for moved file %s: %s",

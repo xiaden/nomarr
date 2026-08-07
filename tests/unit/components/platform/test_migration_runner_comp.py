@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from types import ModuleType
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -16,6 +15,10 @@ from nomarr.components.platform.migration_runner_comp import (
     get_pending_migrations,
     run_pending_migrations,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
+    from types import ModuleType
 
 
 def _make_migration_module(version: str, description: str = "Test migration") -> MagicMock:

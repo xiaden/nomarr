@@ -80,16 +80,11 @@ class VectorSearchService:
         vector: list[float] = vector_doc["vector_n"]
 
         # Step 2: Single ANN search on per-backbone cold collection
-        group_size: int = self._config_svc.get("vector_group_size", 15)
-        thoroughness: int = self._config_svc.get("vector_search_thoroughness", 10)
-
         raw_results = search_similar_cold_track_vectors(
             db=self.db,
             backbone_id=backbone_id,
             seed_vector=vector,
             result_limit=limit,
-            vector_group_size=group_size,
-            vector_search_thoroughness=thoroughness,
         )
 
         # Apply min_score filtering

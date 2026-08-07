@@ -109,8 +109,6 @@ class TestSearchSimilarColdTrackVectors:
             backbone_id="effnet",
             seed_vector=[0.1, 0.2, 0.3],
             result_limit=11,
-            vector_group_size=15,
-            vector_search_thoroughness=10,
         )
 
         assert result == []
@@ -128,8 +126,6 @@ class TestSearchSimilarColdTrackVectors:
             backbone_id="effnet",
             seed_vector=[0.1, 0.2, 0.3],
             result_limit=11,
-            vector_group_size=15,
-            vector_search_thoroughness=25,
         )
 
         assert result == [{"file_id": 2, "score": 0.91}]

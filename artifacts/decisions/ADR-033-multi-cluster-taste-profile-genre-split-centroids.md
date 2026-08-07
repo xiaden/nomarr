@@ -1,6 +1,6 @@
 # ADR-033: Multi-Cluster Taste Profile — Genre-Split Centroids
 
-**Status:** Proposed  
+**Status:** Superseded by ADR-034  
 **Date:** 2026-06-16  
 **Tags:** taste-profile, playlist-generation, multi-cluster  
 **Source Log:** rnd-architect#L4  
@@ -31,3 +31,7 @@ All playlist builders are updated uniformly to iterate over clusters with per-cl
 - DTO contract breaks for TasteProfile and NavidromePersonalPlaylistContext — all consumers must be updated in the same deployment
 - All five builder functions are rewritten simultaneously (this project does phased deployment)
 - Untagged track coverage is preserved without making data consistency Nomarr's problem
+
+---
+
+**Note:** This record is retained for history. ADR-034 (same title, Accepted) is the canonical version of this decision. The two records describe the same decision; ADR-034 carries the authoritative status and references.

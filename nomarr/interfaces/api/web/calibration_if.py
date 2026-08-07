@@ -21,8 +21,12 @@ from nomarr.interfaces.api.types.calibration_types import (
     LibraryCalibrationStatusResponse,
 )
 from nomarr.interfaces.api.web.dependencies import get_calibration_service, get_tagging_service
-from nomarr.services.domain.calibration_svc import CalibrationService
-from nomarr.services.domain.tagging_svc import TaggingService
+from nomarr.services.domain.calibration_svc import (
+    CalibrationService,  # noqa: TC001  # FastAPI resolves Annotated[...] at route registration
+)
+from nomarr.services.domain.tagging_svc import (
+    TaggingService,  # noqa: TC001  # FastAPI resolves Annotated[...] at route registration
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/calibration", tags=["Calibration"])

@@ -45,7 +45,6 @@ from nomarr.helpers.constants.pipeline_states import (
     WRITE_NOT_WRITTEN,
     WRITE_STATE_FIELD,
 )
-from nomarr.helpers.dto.info_dto import WorkStatusResult
 from nomarr.helpers.dto.library_dto import (
     ErroredFileItem,
     ErroredFilesResult,
@@ -57,6 +56,7 @@ from nomarr.helpers.dto.library_dto import (
 )
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dto.info_dto import WorkStatusResult
     from nomarr.persistence.db import Database
 
     from .config import LibraryServiceConfig

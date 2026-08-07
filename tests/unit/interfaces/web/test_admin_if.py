@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
-from collections.abc import Callable, Coroutine, Iterator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -12,6 +11,9 @@ from fastapi.testclient import TestClient
 
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.web.admin_if import router as admin_router
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Coroutine, Iterator
 
 
 @pytest.fixture

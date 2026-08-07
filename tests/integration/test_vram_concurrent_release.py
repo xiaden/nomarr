@@ -26,10 +26,10 @@ from __future__ import annotations
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
 import pytest
-from sqlalchemy.orm import Session
 
 from nomarr.persistence.api.application import AppDb
 from nomarr.persistence.database.app_repo import AppRepository
@@ -37,6 +37,9 @@ from nomarr.persistence.database.file_state_repo import FileStateRepository
 from nomarr.persistence.database.library_repo import LibraryRepository
 from nomarr.persistence.database.navidrome_repo import NavidromeRepo
 from nomarr.persistence.database.pipeline_repo import PipelineRepository
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 WORKER_ID = "worker:concurrent"
 MODEL_PATH = "/models/concurrent.onnx"
@@ -70,31 +73,38 @@ def test_concurrent_release_leaves_no_stale_promises(pg_session) -> None:
     # Two promises for the same worker+model — the old list-then-break
     # release() would only ever delete the first match it found, leaving
     # the second row stale.
-    db.promise_vram(
-        worker_id=WORKER_ID,
-        pid=1,
-        model_path=MODEL_PATH,
-        promised_mb=512.0,
-        total_mb=8000.0,
-        used_mb=1000.0,
-    )
-    db.promise_vram(
-        worker_id=WORKER_ID,
-        pid=2,
-        model_path=MODEL_PATH,
-        promised_mb=256.0,
-        total_mb=8000.0,
-        used_mb=1000.0,
-    )
+    # Write methods require transaction() context (AR-2). Each facade write is
+    # wrapped in its own per-write block: repo writes commit internally
+    # (begin_nested + commit), ending the session transaction — mirroring the
+    # pattern in tests/unit/persistence/api/test_app_db.py.
+    with db.transaction():
+        db.promise_vram(
+            worker_id=WORKER_ID,
+            pid=1,
+            model_path=MODEL_PATH,
+            promised_mb=512.0,
+            total_mb=8000.0,
+            used_mb=1000.0,
+        )
+    with db.transaction():
+        db.promise_vram(
+            worker_id=WORKER_ID,
+            pid=2,
+            model_path=MODEL_PATH,
+            promised_mb=256.0,
+            total_mb=8000.0,
+            used_mb=1000.0,
+        )
     # A non-matching promise that must survive the release storm.
-    db.promise_vram(
-        worker_id=OTHER_WORKER,
-        pid=3,
-        model_path=OTHER_MODEL,
-        promised_mb=128.0,
-        total_mb=8000.0,
-        used_mb=1000.0,
-    )
+    with db.transaction():
+        db.promise_vram(
+            worker_id=OTHER_WORKER,
+            pid=3,
+            model_path=OTHER_MODEL,
+            promised_mb=128.0,
+            total_mb=8000.0,
+            used_mb=1000.0,
+        )
 
     barrier = Barrier(_N_THREADS)
     # SQLAlchemy forbids concurrent operations on a single Session, so the
@@ -103,7 +113,7 @@ def test_concurrent_release_leaves_no_stale_promises(pg_session) -> None:
 
     def _release() -> None:
         barrier.wait()
-        with session_lock:
+        with session_lock, db.transaction():
             db.release_vram(worker_id=WORKER_ID, model_path=MODEL_PATH)
 
     with ThreadPoolExecutor(max_workers=_N_THREADS) as pool:

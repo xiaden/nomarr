@@ -25,23 +25,27 @@ def _to_int_file_id(file_id: str | int | None) -> int | None:
 
 def upsert_navidrome_track(db: Database, nd_id: str) -> None:
     # The legacy signature only supplied a key; we pass None for the optional fields.
-    db.app.upsert_navidrome_track(nd_id, title=None, artist=None, album=None, file_path=None)
+    with db.app.transaction():
+        db.app.upsert_navidrome_track(nd_id, title=None, artist=None, album=None, file_path=None)
 
 
 def bulk_upsert_navidrome_tracks(db: Database, nd_ids: list[str]) -> int:
     if not nd_ids:
         return 0
-    return db.app.bulk_upsert_navidrome_tracks(nd_ids)
+    with db.app.transaction():
+        return db.app.bulk_upsert_navidrome_tracks(nd_ids)
 
 
 def ensure_navidrome_file_link(db: Database, nd_id: str, file_id: int) -> None:
-    db.app.map_navidrome_track_to_file(nd_id, file_id)
+    with db.app.transaction():
+        db.app.map_navidrome_track_to_file(nd_id, file_id)
 
 
 def bulk_ensure_navidrome_file_links(db: Database, mappings: list[dict[str, str]]) -> int:
     if not mappings:
         return 0
-    return db.app.bulk_map_navidrome_tracks(mappings)
+    with db.app.transaction():
+        return db.app.bulk_map_navidrome_tracks(mappings)
 
 
 def list_navidrome_track_keys(db: Database) -> list[str]:
@@ -60,7 +64,8 @@ def delete_navidrome_tracks_cascade(db: Database, nd_ids: list[str]) -> int:
     for nd_id in nd_ids:
         file_id = db.app.get_mapped_file_for_navidrome_track(nd_id)
         if file_id is not None:
-            total += db.app.delete_navidrome_tracks_for_file(file_id)
+            with db.app.transaction():
+                total += db.app.delete_navidrome_tracks_for_file(file_id)
     return total
 
 
@@ -113,7 +118,8 @@ def bulk_upsert_navidrome_plays(db: Database, user_id: str, plays: list[dict[str
         if not isinstance(played_at, int):
             continue
         file_id = _to_int_file_id(play.get("file_id"))
-        total += db.app.record_navidrome_play(nd_id, user_id, played_at, file_id)
+        with db.app.transaction():
+            total += db.app.record_navidrome_play(nd_id, user_id, played_at, file_id)
     return total
 
 

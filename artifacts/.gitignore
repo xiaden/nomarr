@@ -6,6 +6,7 @@
 !**/.gitkeep
 
 # ADRs are stable architectural decisions — always committed
+!decisions/
 !decisions/*.md
 
 # ASRs are architectural requirements — always committed

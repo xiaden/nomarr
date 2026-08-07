@@ -2,20 +2,22 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 from nomarr.components.tagging.tag_query_comp import _narrow_tag_list
-from nomarr.helpers.dto.tag_curation_dto import RelinkResult
-from nomarr.helpers.dto.tags_dto import TagValue
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+
+    from nomarr.helpers.dto.tag_curation_dto import RelinkResult
+    from nomarr.helpers.dto.tags_dto import TagValue
     from nomarr.persistence.db import Database
 
 
 def find_or_create_tag(db: Database, name: str, value: TagValue) -> int:
     """Find or create one tag vertex and return its id."""
-    return db.library.find_or_create_tag(name, str(value), "")
+    with db.library.transaction():
+        return db.library.find_or_create_tag(name, str(value), "")
 
 
 def _tag_name(tag_doc: Mapping[str, Any]) -> str | None:
@@ -43,10 +45,11 @@ def _merge_replaced_tags(
 def set_song_tags(db: Database, song_id: int, name: str, values: list[TagValue]) -> None:
     """Replace all tags for one ``song_id`` + ``name`` pair."""
     existing_tags = db.library.list_file_tags_for_files([song_id]).get(song_id, [])
-    db.library.replace_file_tags(
-        song_id,
-        _merge_replaced_tags(existing_tags, replacements_by_name={name: values}),
-    )
+    with db.library.transaction():
+        db.library.replace_file_tags(
+            song_id,
+            _merge_replaced_tags(existing_tags, replacements_by_name={name: values}),
+        )
 
 
 def _validate_tag_value(value: object) -> TagValue:
@@ -71,27 +74,30 @@ def set_song_tags_batch(db: Database, entries: list[dict[str, Any]]) -> None:
 
     existing_tags_by_song = db.library.list_file_tags_for_files(list(replacements_by_song))
     for song_id, replacements_by_name in replacements_by_song.items():
-        db.library.replace_file_tags(
-            song_id,
-            _merge_replaced_tags(
-                existing_tags_by_song.get(song_id, []),
-                replacements_by_name=replacements_by_name,
-            ),
-        )
+        with db.library.transaction():
+            db.library.replace_file_tags(
+                song_id,
+                _merge_replaced_tags(
+                    existing_tags_by_song.get(song_id, []),
+                    replacements_by_name=replacements_by_name,
+                ),
+            )
 
 
 def add_song_tag(db: Database, song_id: int, name: str, value: TagValue) -> None:
     """Add one tag value to a song without replacing other values for the name."""
     existing_tags = db.library.list_file_tags_for_files([song_id]).get(song_id, [])
-    db.library.replace_file_tags(
-        song_id,
-        [*(dict(t) for t in existing_tags), {"name": name, "value": value}],
-    )
+    with db.library.transaction():
+        db.library.replace_file_tags(
+            song_id,
+            [*(dict(t) for t in existing_tags), {"name": name, "value": value}],
+        )
 
 
 def delete_song_tags(db: Database, song_id: int) -> None:
     """Delete all tag edges for one song."""
-    db.library.remove_file_tags(song_id)
+    with db.library.transaction():
+        db.library.remove_file_tags(song_id)
 
 
 def relink_tag_edges(
@@ -136,9 +142,11 @@ def relink_tag_edges(
         return {"moved": 0, "skipped": 0, "source_orphaned": False}
 
     if song_ids is None:
-        db.library.replace_tag_references(source_tag_id, target_tag_id)
+        with db.library.transaction():
+            db.library.replace_tag_references(source_tag_id, target_tag_id)
     else:
-        db.library.replace_selected_tag_references(selected_source_file_ids, source_tag_id, target_tag_id)
+        with db.library.transaction():
+            db.library.replace_selected_tag_references(selected_source_file_ids, source_tag_id, target_tag_id)
 
     return {
         "moved": moved,

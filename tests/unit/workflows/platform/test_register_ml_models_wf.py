@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from types import SimpleNamespace
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, call, patch
 
 import pytest
 
 from nomarr.workflows.platform.register_ml_models_wf import register_ml_models_workflow
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _fake_onnxruntime_module(output_count: int) -> SimpleNamespace:

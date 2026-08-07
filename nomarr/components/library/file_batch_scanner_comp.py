@@ -34,7 +34,6 @@ class FileBatchResult:
 
 def scan_folder_files(
     folder_path: Path,
-    folder_rel_path: str,
     library_root: Path,
     library_id: str,
     existing_files: dict[str, dict],
@@ -48,7 +47,6 @@ def scan_folder_files(
 
     Args:
         folder_path: Absolute folder path to scan
-        folder_rel_path: POSIX relative path for this folder
         library_root: Library root for normalization
         library_id: Library identifier
         existing_files: Path → existing file dict (for determining if file is new/updated)

@@ -13,7 +13,9 @@ from fastapi import APIRouter, Depends
 
 from nomarr.interfaces.api.auth import get_key_service, verify_session
 from nomarr.interfaces.api.types.api_key_types import ApiKeyResponse
-from nomarr.services.infrastructure.keys_svc import KeyManagementService
+from nomarr.services.infrastructure.keys_svc import (
+    KeyManagementService,  # noqa: TC001  # FastAPI resolves Annotated[...] at route registration
+)
 
 router = APIRouter(prefix="/api-key", tags=["API Key"], dependencies=[Depends(verify_session)])
 

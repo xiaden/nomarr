@@ -15,7 +15,7 @@ Use MUI DataGrid `paginationMode="server"` with the existing `search_library_fil
 
 ## Consequences
 
-**Positive:**\n- Handles 10k+ file libraries without browser memory issues\n- Reuses existing backend pagination support — zero backend changes\n- MUI DataGrid community edition supports this natively\n- Predictable performance — always loads one page at a time\n\n**Negative:**\n- Page transitions require API round-trip (mitigated by small page size and fast AQL queries)\n- "Select all" across pages requires special handling (select all on server vs. select visible only)\n- Sorting/filtering changes reset to page 1\n\n**Note:** If AQL JOIN performance degrades at 10k+ rows with complex tag filters, server-side cursor pagination may be needed. Profile before optimizing.
+**Positive:**\n- Handles 10k+ file libraries without browser memory issues\n- Reuses existing backend pagination support — zero backend changes\n- MUI DataGrid community edition supports this natively\n- Predictable performance — always loads one page at a time\n\n**Negative:**\n- Page transitions require API round-trip (mitigated by small page size and fast database queries)\n- "Select all" across pages requires special handling (select all on server vs. select visible only)\n- Sorting/filtering changes reset to page 1\n\n**Note:** If query performance degrades at 10k+ rows with complex tag filters, server-side cursor pagination may be needed. Profile before optimizing.
 
 ## References
 

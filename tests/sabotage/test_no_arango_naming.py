@@ -1,23 +1,13 @@
 """Sabotage tests: no ArangoDB naming conventions in non-persistence code (AR-3).
 
-These tests are RED at creation time. They define the target state per
-CONTRACTS.md AR-3 (no ArangoDB naming conventions).
-
-They will turn GREEN as the implementing parts (B, C1, C2) complete their work.
-Do NOT claim the overall plan is complete while these tests are RED.
-
-Target state (per CONTRACTS.md AR-3):
+Shipped state (per CONTRACTS.md AR-3):
 - Field names use ``id``, ``key``, ``rev`` — not ``_id``, ``_key``, ``_rev``.
 - No collection-prefixed filenames in persistence.
 - No AQL primitives in non-persistence code.
 
-Current state (RED baseline):
-- 16 ArangoDB field reference violations measured in scan scope (_id=5, _key=11, _rev=0); CONTRACTS.md C4's ~92 is the historical whole-codebase figure.
-- ``_id``, ``_key``, ``_rev`` string literals exist in components, workflows.
-- AQL primitives may exist in comments or string literals.
-
-The tests scan source code at test time and report violations. When all
-violations are cleaned up (Part B), these tests turn GREEN.
+The tests scan source code at test time and report violations. The scan
+scope is clean — all previously identified field-reference violations were
+resolved in Part B, and the suite is GREEN.
 """
 
 from __future__ import annotations
@@ -126,23 +116,19 @@ def _format_violations(violations: list[tuple[str, int, str]], limit: int = 20) 
 
 @pytest.mark.sabotage_check
 class TestNoArangoIdFields:
-    """RED BASELINE: No ``_id`` field references in non-persistence code.
+    """Shipped state: no ``_id`` field references in non-persistence code.
 
-    Target behavior (AR-3): Field names use ``id``, not ``_id``.
-    Current behavior: 16 ArangoDB field reference violations across components, workflows, etc. (_id=5, _key=11, _rev=0).
-
-    This test FAILS until Part B cleans up all ArangoDB field references.
+    Per AR-3, field names use ``id``, not ``_id``. The scan scope is clean —
+    no ``_id`` string literals remain in components, services, workflows,
+    interfaces, or helpers.
     """
 
     def test_no_id_field_references_in_non_persistence(self):
         """Non-persistence code has no ``_id`` field references.
 
         Scans components/, services/, workflows/, interfaces/, helpers/
-        for string literals like ``"_id"`` or ``'_id'``.
-
-        RED → GREEN transition:
-        - RED: Violations exist (ArangoDB residue).
-        - GREEN: No violations (all cleaned up in Part B).
+        for string literals like ``"_id"`` or ``'_id'``. Any match is an
+        AR-3 violation and fails the test.
         """
         violations = _scan_files_for_pattern(NON_PERSISTENCE_DIRS, ARANGO_ID_PATTERN)
         report = _format_violations(violations)
@@ -159,23 +145,19 @@ class TestNoArangoIdFields:
 
 @pytest.mark.sabotage_check
 class TestNoArangoKeyFields:
-    """RED BASELINE: No ``_key`` field references in non-persistence code.
+    """Shipped state: no ``_key`` field references in non-persistence code.
 
-    Target behavior (AR-3): Field names use ``key``, not ``_key``.
-    Current behavior: violations exist in components (e.g., descriptor_match_comp.py).
-
-    This test FAILS until Part B cleans up all ArangoDB field references.
+    Per AR-3, field names use ``key``, not ``_key``. The scan scope is clean —
+    no ``_key`` string literals remain in components, services, workflows,
+    interfaces, or helpers.
     """
 
     def test_no_key_field_references_in_non_persistence(self):
         """Non-persistence code has no ``_key`` field references.
 
         Scans components/, services/, workflows/, interfaces/, helpers/
-        for string literals like ``"_key"`` or ``'_key'``.
-
-        RED → GREEN transition:
-        - RED: Violations exist (ArangoDB residue).
-        - GREEN: No violations (all cleaned up in Part B).
+        for string literals like ``"_key"`` or ``'_key'``. Any match is an
+        AR-3 violation and fails the test.
         """
         violations = _scan_files_for_pattern(NON_PERSISTENCE_DIRS, ARANGO_KEY_PATTERN)
         report = _format_violations(violations)
@@ -192,23 +174,19 @@ class TestNoArangoKeyFields:
 
 @pytest.mark.sabotage_check
 class TestNoArangoRevFields:
-    """RED BASELINE: No ``_rev`` field references in non-persistence code.
+    """Shipped state: no ``_rev`` field references in non-persistence code.
 
-    Target behavior (AR-3): Field names use ``rev``, not ``_rev``.
-    Current behavior: may have fewer violations than _id/_key.
-
-    This test FAILS until Part B cleans up all ArangoDB field references.
+    Per AR-3, field names use ``rev``, not ``_rev``. The scan scope is clean —
+    no ``_rev`` string literals remain in components, services, workflows,
+    interfaces, or helpers.
     """
 
     def test_no_rev_field_references_in_non_persistence(self):
         """Non-persistence code has no ``_rev`` field references.
 
         Scans components/, services/, workflows/, interfaces/, helpers/
-        for string literals like ``"_rev"`` or ``'_rev'``.
-
-        RED → GREEN transition:
-        - RED: Violations exist (ArangoDB residue).
-        - GREEN: No violations (all cleaned up in Part B).
+        for string literals like ``"_rev"`` or ``'_rev'``. Any match is an
+        AR-3 violation and fails the test.
         """
         violations = _scan_files_for_pattern(NON_PERSISTENCE_DIRS, ARANGO_REV_PATTERN)
         report = _format_violations(violations)
@@ -227,11 +205,9 @@ class TestNoArangoRevFields:
 class TestNoCollectionPrefixedFilenames:
     """Check that persistence filenames don't use ArangoDB collection-prefix convention.
 
-    Target behavior (AR-3): No filenames like ``aql_*``, ``collection_*``,
-    ``edge_*``, ``graph_*`` in nomarr/persistence/database/.
-
-    Current behavior: filenames use ``*_repo.py`` convention (PostgreSQL-era).
-    This test should PASS in both current and target states (no violations).
+    Per AR-3, no filenames like ``aql_*``, ``collection_*``, ``edge_*``,
+    ``graph_*`` in nomarr/persistence/database/. Files use the ``*_repo.py``
+    convention (PostgreSQL-era); the test passes with no violations.
     """
 
     def test_no_collection_prefixed_filenames_in_persistence(self):
@@ -239,8 +215,6 @@ class TestNoCollectionPrefixedFilenames:
 
         Checks nomarr/persistence/database/ for filenames starting with
         aql_, collection_, edge_, or graph_ (ArangoDB conventions).
-
-        Should PASS now — the migration to PostgreSQL already renamed these.
         """
         project_root = Path(__file__).parent.parent.parent
         db_dir = project_root / PERSISTENCE_DATABASE_DIR
@@ -268,15 +242,12 @@ class TestNoCollectionPrefixedFilenames:
 
 @pytest.mark.sabotage_check
 class TestNoAqlPrimitives:
-    """RED BASELINE: No AQL primitives in non-persistence code.
+    """Shipped state: no AQL primitives in non-persistence code.
 
-    Target behavior (AR-3): No AQL query syntax in components, services, etc.
-    AQL primitives: ``FOR doc IN``, ``FILTER doc.``, ``RETURN doc.``,
-    ``UPSERT``, ``LET doc =``, ``INBOUND``, ``OUTBOUND``.
-
-    Current behavior: may have AQL references in comments or string literals.
-
-    This test FAILS if AQL primitives are found (excluding comments).
+    Per AR-3, AQL query syntax must not appear outside persistence:
+    ``FOR doc IN``, ``FILTER doc.``, ``RETURN doc.``, ``UPSERT``,
+    ``LET doc =``, ``INBOUND``, ``OUTBOUND``. The test fails if any are
+    found (excluding pure comment lines).
     """
 
     def test_no_aql_primitives_in_non_persistence(self):
@@ -284,11 +255,7 @@ class TestNoAqlPrimitives:
 
         Scans components/, services/, workflows/, interfaces/, helpers/
         for AQL query patterns (FOR...IN, FILTER, RETURN, UPSERT, etc.).
-        Excludes pure comment lines.
-
-        RED → GREEN transition:
-        - RED: AQL primitives found in non-persistence code.
-        - GREEN: No AQL primitives (all cleaned up in Part B).
+        Excludes pure comment lines; any match fails the test.
         """
         all_violations: list[tuple[str, int, str]] = []
 

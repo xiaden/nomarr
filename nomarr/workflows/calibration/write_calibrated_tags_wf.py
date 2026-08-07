@@ -60,11 +60,11 @@ from nomarr.components.tagging.tagging_aggregation_comp import aggregate_mood_ta
 from nomarr.components.tagging.tagging_reconstruction_comp import (
     reconstruct_head_outputs_from_streams,
 )
-from nomarr.helpers.dto.tags_dto import Tags
 
 if TYPE_CHECKING:
     from nomarr.helpers.dto.calibration_dto import WriteCalibratedTagsParams
     from nomarr.helpers.dto.ml_head_dto import HeadInfo
+    from nomarr.helpers.dto.tags_dto import Tags
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)

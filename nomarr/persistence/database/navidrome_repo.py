@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import Table, delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.orm import Session, scoped_session
 
 from nomarr.helpers.dto.navidrome_repo_dto import NdPlayRecord, NdTrackRecord
 from nomarr.persistence.models.navidrome_play import NavidromePlay
@@ -22,6 +21,7 @@ from nomarr.persistence.sql.exceptions import map_persistence_exceptions
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Row
+    from sqlalchemy.orm import Session, scoped_session
 
 _T_TRACK = cast("Table", NavidromeTrack.__table__)
 _T_TRACK_MAP = cast("Table", NavidromeTrackMap.__table__)

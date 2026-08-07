@@ -10,7 +10,7 @@
 
 Tag edits in the Tag Editor could follow several strategies:
 
-1. **DB-only (original ADR-008):** Write tag changes to ArangoDB only. Fast, no I/O, no file locking. But tag edits are never visible to external players, and users have no path to persist changes to disk.
+1. **DB-only (original ADR-008):** Write tag changes to the database only. Fast, no I/O, no file locking. But tag edits are never visible to external players, and users have no path to persist changes to disk.
 2. **Immediate writeback:** Write to DB and audio files synchronously. Ensures external players see changes but introduces file I/O, locking, format-specific writers, and risk of corruption on every edit.
 3. **Two-phase curation → commit:** Curation operations are instant DB-only changes. File writeback is deferred and user-initiated via a "Commit Changes" action, batching multiple edits into a single file write pass.
 
@@ -22,7 +22,7 @@ Two-phase curation → commit. Curation operations are instant DB-only changes t
 
 **Phase 1 — Curation (instant, DB-only):**
 
-- All tag curation operations (rename, merge, split, single-song edit) write to ArangoDB only
+- All tag curation operations (rename, merge, split, single-song edit) write to the database only
 - Affected files are transitioned to `tags_not_written` state via ADR-003's state graph
 - No file I/O, no locking — sub-second response times for all curation operations
 - The UI shows a persistent indicator of uncommitted changes (e.g., "12 files with pending tag changes")

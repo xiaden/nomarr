@@ -13,8 +13,6 @@ import sys
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Literal
 
-import numpy as np
-
 import nomarr.components.ml.resources.ml_vram_coordinator_comp as _coordinator
 import nomarr.components.ml.resources.ml_worker_context_comp as _worker_ctx
 from nomarr.components.ml.onnx import ml_session_comp as backend_onnx
@@ -24,6 +22,7 @@ from nomarr.components.ml.resources.ml_vram_oom_helper_comp import (
 )
 
 if TYPE_CHECKING:
+    import numpy as np
     import onnxruntime as ort
 
 

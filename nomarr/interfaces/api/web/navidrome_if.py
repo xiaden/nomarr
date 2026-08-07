@@ -139,15 +139,13 @@ async def web_navidrome_templates_list(
 
 @router.post("/template", dependencies=[Depends(verify_session)])
 async def web_navidrome_templates_generate(
-    request: GenerateTemplateFilesRequest,
+    _request: GenerateTemplateFilesRequest,
     navidrome_service: Annotated["NavidromeService", Depends(get_navidrome_service)],
 ) -> GenerateTemplateFilesResponse:
     """Generate all playlist templates as a batch."""
     try:
         result_dto = await asyncio.to_thread(
             navidrome_service.generate_template_files,
-            template_id=request.template_id or "",
-            output_dir=request.output_dir or "",
         )
         return GenerateTemplateFilesResponse(files_generated=result_dto.files_generated)
     except Exception as e:

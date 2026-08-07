@@ -18,10 +18,10 @@ from nomarr.components.library.scan_lifecycle_comp import (
     transition_to_scanning,
     update_scan_progress,
 )
-from nomarr.helpers.dto.library_dto import LibraryDict
 from nomarr.helpers.exceptions import LibraryAlreadyScanningError
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dto.library_dto import LibraryDict
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)

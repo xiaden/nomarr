@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from typing import TYPE_CHECKING
 
 from nomarr.components.library.library_file_state_comp import count_untagged_files, get_uncalibrated_tagged_file_ids
 from nomarr.components.library.library_records_comp import get_library_record
@@ -34,11 +35,13 @@ from nomarr.helpers.constants.pipeline_states import (
     WRITE_STATE_FIELD,
 )
 from nomarr.helpers.dto.library_dto import LibraryPipelineStatusDTO
-from nomarr.persistence.db import Database
 from nomarr.services.domain.calibration_svc import CALIBRATION_GENERATE_TASK_ID, CalibrationService
-from nomarr.services.domain.navidrome_svc import NavidromeService
 from nomarr.services.domain.tagging_svc import CALIBRATION_APPLY_TASK_ID, TaggingService
-from nomarr.services.infrastructure.background_tasks_svc import BackgroundTaskService
+
+if TYPE_CHECKING:
+    from nomarr.persistence.db import Database
+    from nomarr.services.domain.navidrome_svc import NavidromeService
+    from nomarr.services.infrastructure.background_tasks_svc import BackgroundTaskService
 
 logger = logging.getLogger(__name__)
 

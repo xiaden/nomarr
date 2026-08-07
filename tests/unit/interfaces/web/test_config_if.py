@@ -7,7 +7,7 @@ Covers:
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -18,6 +18,9 @@ from nomarr.helpers.dto.config_dto import GetInternalInfoResult, WebConfigResult
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.web import config_if
 from nomarr.interfaces.api.web.dependencies import get_config_service
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 @pytest.fixture

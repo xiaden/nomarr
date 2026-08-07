@@ -47,8 +47,6 @@ def make_db() -> MagicMock:
     db = MagicMock()
 
     db.library = MagicMock()
-    db.library.maintenance = MagicMock()
-    db.library.file_tag_repo = MagicMock()
 
     db.app = MagicMock()
 
@@ -720,21 +718,21 @@ def test_clear_library_data_truncates_all_facades() -> None:
         call(db, 2),
     ]
 
-    db.library.maintenance.truncate_song_tag_edges.assert_called_once_with()
+    db.library.truncate_song_tag_edges.assert_called_once_with()
 
-    db.app.maintenance.truncate_file_state_edges.assert_called_once_with()
+    db.app.truncate_file_state_edges.assert_called_once_with()
 
-    db.library.maintenance.truncate_file_links.assert_called_once_with()
+    db.library.truncate_file_links.assert_called_once_with()
 
-    db.library.maintenance.truncate_folder_links.assert_called_once_with()
+    db.library.truncate_folder_links.assert_called_once_with()
 
-    db.library.maintenance.truncate_tags.assert_called_once_with()
+    db.library.truncate_tags.assert_called_once_with()
 
-    db.library.maintenance.truncate_files.assert_called_once_with()
+    db.library.truncate_files.assert_called_once_with()
 
-    db.library.maintenance.truncate_folders.assert_called_once_with()
+    db.library.truncate_folders.assert_called_once_with()
 
-    db.library.maintenance.truncate_scan_records.assert_called_once_with()
+    db.library.truncate_scan_records.assert_called_once_with()
 
 
 @pytest.mark.unit

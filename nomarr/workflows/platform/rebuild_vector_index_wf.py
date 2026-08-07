@@ -48,6 +48,7 @@ def rebuild_vector_index_workflow(
     embed_dim = derive_embed_dim(models_dir, backbone_id)
     logger.info("[rebuild index wf] embed_dim=%d for %s", embed_dim, backbone_id)
 
-    db.ml.rebuild_vector_index(embed_dim)
+    with db.ml.transaction():
+        db.ml.rebuild_vector_index(embed_dim)
 
     logger.info("[rebuild index wf] Completed for backbone=%s", backbone_id)

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
 import pytest
@@ -11,6 +11,9 @@ from nomarr.helpers.dto.library_dto import LibraryDict
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.web.dependencies import get_library_service, get_pipeline_service
 from nomarr.interfaces.api.web.library_if import router as library_router
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 def make_library(*, auto_write: bool, name: str = "Test Library") -> LibraryDict:

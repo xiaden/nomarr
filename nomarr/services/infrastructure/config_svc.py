@@ -12,7 +12,6 @@ import dataclasses
 import logging
 import os
 import threading
-from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Literal
 
 import yaml
@@ -30,6 +29,8 @@ from nomarr.helpers.dto.processing_dto import ProcessorConfig
 from nomarr.persistence.db import Database
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from nomarr.services.infrastructure.worker_system_svc import WorkerSystemService
 
 # ======================================================================
@@ -193,7 +194,8 @@ class ConfigService:
                 url=os.environ.get("PG_DATABASE_URL", "postgresql+psycopg2://nomarr:nomarr@localhost:5432/nomarr")
             )
             try:
-                db.app.update_config_option(f"config_{key}", {"value": value})
+                with db.app.transaction():
+                    db.app.update_config_option(f"config_{key}", {"value": value})
             finally:
                 db.close()
         except Exception:
@@ -299,10 +301,11 @@ class ConfigService:
                 for key in _ALLOWED_CONFIG_KEYS:
                     if key not in existing_keys and key in bootstrap_config:
                         value = bootstrap_config[key]
-                        db.app.update_config_option(
-                            f"config_{key}",
-                            {"value": str(value) if value is not None else ""},
-                        )
+                        with db.app.transaction():
+                            db.app.update_config_option(
+                                f"config_{key}",
+                                {"value": str(value) if value is not None else ""},
+                            )
 
                 # Load: read all config_* keys back into cache
                 all_docs = db.app.list_config_options(prefix="config_")

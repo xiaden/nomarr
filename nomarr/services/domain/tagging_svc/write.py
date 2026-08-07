@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import logging
-import threading
-from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.components.library.library_file_state_comp import bulk_set_tags_not_fresh
@@ -20,6 +18,9 @@ from nomarr.workflows.library.file_tags_io_wf import read_file_tags_workflow, re
 from nomarr.workflows.processing.write_file_tags_wf import write_file_tags_workflow
 
 if TYPE_CHECKING:
+    import threading
+    from collections.abc import Callable
+
     from nomarr.persistence.db import Database
     from nomarr.services.infrastructure.background_tasks_svc import BackgroundTaskService
 
@@ -118,7 +119,6 @@ class TaggingWriteMixin:
                     db=self.db,
                     file_key=file_key,
                     target_mode=target_mode,
-                    calibration_hash=calibration_hash,
                     has_calibration=has_calibration,
                     namespace=namespace,
                 )

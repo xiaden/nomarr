@@ -9,7 +9,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import Table, select, update
-from sqlalchemy.orm import Session, scoped_session
 
 from nomarr.helpers.dto.repo_dto import LibraryRow
 from nomarr.persistence.models.library import Library
@@ -23,6 +22,7 @@ from nomarr.persistence.sql.primitives import (
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Row
+    from sqlalchemy.orm import Session, scoped_session
 
 _T = cast("Table", Library.__table__)
 

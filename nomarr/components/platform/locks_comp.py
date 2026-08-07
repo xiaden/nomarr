@@ -36,7 +36,8 @@ def acquire_distributed_lock(
         existing_expires_at = float(existing.get("expires_at", 0.0))
         if existing_expires_at >= now and existing.get("holder") != holder:
             return False
-        db.app.remove_lock(reference)
+        with db.app.transaction():
+            db.app.remove_lock(reference)
 
     payload = {
         "document_reference": reference,
@@ -47,7 +48,8 @@ def acquire_distributed_lock(
         "status": "active",
     }
     try:
-        db.app.add_lock(payload)
+        with db.app.transaction():
+            db.app.add_lock(payload)
     except DuplicateEntityError:
         return False
     return True
@@ -60,7 +62,8 @@ def release_distributed_lock(db: Database, lock_type: str, resource_id: str, hol
     if existing is None or existing.get("holder") != holder:
         return False
 
-    db.app.remove_lock(reference)
+    with db.app.transaction():
+        db.app.remove_lock(reference)
     remaining = cast("dict[str, Any] | None", db.app.get_lock(reference))
     return remaining is None or remaining.get("holder") != holder
 
@@ -87,5 +90,6 @@ def reap_stale_locks(db: Database, worker_id: str, stale_after_ms: int) -> None:
             continue
 
         resource_id = reference.split(":", maxsplit=1)[1]
-        db.app.remove_lock(reference)
+        with db.app.transaction():
+            db.app.remove_lock(reference)
         logger.warning("[locks] %s reaped stale promotion lock for %s", worker_id, resource_id)

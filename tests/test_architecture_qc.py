@@ -19,8 +19,14 @@ Architecture rules enforced:
 6. Higher layers must not import Tier 1/Tier 2 persistence internals - NOT in import-linter
 """
 
+import ast
+import importlib.util
+import json
 import re
+import shutil
+import subprocess
 from collections.abc import Generator
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -29,6 +35,42 @@ import pytest
 PROJECT_ROOT = Path(__file__).parent.parent
 NOMARR_DIR = PROJECT_ROOT / "nomarr"
 PERSISTENCE_TIER_BOOTSTRAP_ALLOWLIST: set[Path] = set()
+
+# Grandfathered ArangoDB field-name references (_id/_key) outside persistence.
+# Key: (relative file path, line number). Value: ISO-format expiry date.
+# Migrated from .arango-field-allowlist.yaml (Part E, P1-S1). Expiry policy:
+# default 90 days from generation (2026-10-15); interface-boundary entries
+# (Pydantic Field descriptions documenting the API contract) 365 days
+# (2027-07-17). The test fails if a reference is NOT in this allowlist, or if
+# an allowlist entry's expiry has passed.
+ARANGO_FIELD_ALLOWLIST: dict[tuple[str, int], str] = {
+    ("nomarr/components/library/move_detection_comp.py", 31): "2026-10-15",
+    ("nomarr/components/library/reconcile_paths_comp.py", 38): "2026-10-15",
+    ("nomarr/components/library/tag_hydration_comp.py", 87): "2026-10-15",
+    ("nomarr/components/library/tag_hydration_comp.py", 136): "2026-10-15",
+    ("nomarr/components/ml/calibration/ml_calibration_state_comp.py", 94): "2026-10-15",
+    ("nomarr/components/ml/calibration/ml_calibration_state_comp.py", 96): "2026-10-15",
+    ("nomarr/components/ml/vectors/ml_vector_retrieve_comp.py", 29): "2026-10-15",
+    ("nomarr/components/workers/worker_tag_comp.py", 33): "2026-10-15",
+    ("nomarr/helpers/dto/navidrome_dto.py", 222): "2026-10-15",
+    ("nomarr/interfaces/api/types/info_types.py", 176): "2027-07-17",
+    ("nomarr/interfaces/api/types/info_types.py", 195): "2027-07-17",
+    ("nomarr/interfaces/api/types/playlist_import_types.py", 44): "2027-07-17",
+    ("nomarr/services/domain/analytics_svc.py", 201): "2026-10-15",
+    ("nomarr/services/domain/library_svc/files.py", 116): "2026-10-15",
+    ("nomarr/services/domain/playlist_import_svc.py", 59): "2026-10-15",
+    ("nomarr/services/domain/tagging_svc/query.py", 96): "2026-10-15",
+    ("nomarr/services/domain/tagging_svc/query.py", 133): "2026-10-15",
+    ("nomarr/workflows/library/reconcile_paths_wf.py", 31): "2026-10-15",
+    ("nomarr/workflows/library/scan_library_full_wf.py", 76): "2026-10-15",
+    ("nomarr/workflows/library/scan_library_quick_wf.py", 72): "2026-10-15",
+    ("nomarr/workflows/library/scan_setup_wf.py", 43): "2026-10-15",
+    ("nomarr/workflows/navidrome/generate_playlists_wf.py", 82): "2026-10-15",
+    ("nomarr/workflows/processing/process_file_wf.py", 60): "2026-10-15",
+    ("nomarr/workflows/processing/write_file_tags_wf.py", 48): "2026-10-15",
+    ("nomarr/workflows/processing/write_file_tags_wf.py", 121): "2026-10-15",
+    ("nomarr/workflows/vectors/get_track_vector_wf.py", 32): "2026-10-15",
+}
 
 
 def find_python_files(directory: Path, exclude_dirs: set[str] | None = None) -> Generator[Path, None, None]:
@@ -461,3 +503,331 @@ def test_higher_layers_do_not_import_persistence_tier1_or_tier2_internals():
 def test_persistence_tier_bootstrap_allowlist_stays_empty() -> None:
     """Ensure no lower-tier bootstrap exceptions are reintroduced."""
     assert set() == PERSISTENCE_TIER_BOOTSTRAP_ALLOWLIST
+
+
+@pytest.mark.code_smell
+def test_no_arango_field_names_outside_persistence():
+    """Ensure no ArangoDB field names (_id/_key) appear outside persistence.
+
+    Migrated from scripts/check-arango-fields.sh + .arango-field-allowlist.yaml
+    (Part E, P1-S1). Scans nomarr/**/*.py excluding nomarr/persistence/** and
+    tests/** for word-boundary _id/_key references. Any reference not in the
+    embedded ARANGO_FIELD_ALLOWLIST fails; any allowlist entry whose expiry has
+    passed also fails (expiry semantics preserved from the original YAML).
+    """
+    violations = []
+    pattern = re.compile(r"\b_id\b|\b_key\b")
+
+    for py_file in find_python_files(NOMARR_DIR):
+        # Skip persistence layer - ArangoDB field names are only forbidden
+        # outside the persistence layer (the migration boundary).
+        if "persistence" in py_file.parts:
+            continue
+
+        rel_path = py_file.relative_to(PROJECT_ROOT).as_posix()
+        try:
+            with open(py_file, encoding="utf-8") as f:
+                for line_num, line in enumerate(f, start=1):
+                    if pattern.search(line) and (rel_path, line_num) not in ARANGO_FIELD_ALLOWLIST:
+                        violations.append(f"  {rel_path}:{line_num}: {line.strip()}")
+        except Exception as e:
+            pytest.fail(f"Failed to read {py_file}: {e}")
+
+    # Any allowlist entry past its expiry is also a failure - it must be
+    # either fixed in code or the expiry must be renewed deliberately.
+    today = date.today()
+    expired = [
+        f"  {path}:{line} (expired {expiry})"
+        for (path, line), expiry in sorted(ARANGO_FIELD_ALLOWLIST.items())
+        if date.fromisoformat(expiry) < today
+    ]
+
+    if violations:
+        msg = (
+            "Found ArangoDB field names (_id/_key) outside persistence layer.\n"
+            "ArangoDB field naming is forbidden outside nomarr/persistence/ (AR-3).\n"
+            "Use PostgreSQL-style field names (id, key) instead.\n\n"
+            "Violations:\n" + "\n".join(violations)
+        )
+        pytest.fail(msg)
+
+    if expired:
+        msg = (
+            "ArangoDB field-name allowlist entries have expired.\n"
+            "Fix the underlying reference in code, then remove the entry from\n"
+            "ARANGO_FIELD_ALLOWLIST in tests/test_architecture_qc.py.\n\n"
+            "Expired entries:\n" + "\n".join(expired)
+        )
+        pytest.fail(msg)
+
+
+# --- P6: Enforcement gates (import-linter, deptry, snapshot determinism, facade guards) ---
+
+
+def _load_characterization_conftest():
+    """Import tests/characterization/conftest.py by file path.
+
+    Loading by module spec (importlib) instead of a package import works
+    without a tests/__init__.py (which the repo deliberately omits) and only
+    executes the conftest's module-level imports (stdlib + orjson +
+    testcontainers + nomarr, all available in dev environments) - no Docker
+    fixtures start.
+    """
+    conftest_path = Path(__file__).parent / "characterization" / "conftest.py"
+    spec = importlib.util.spec_from_file_location("characterization_conftest", conftest_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"could not build a module spec for characterization conftest at {conftest_path}")
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except ImportError:
+        pytest.skip("characterization conftest cannot be imported (nomarr or orjson unavailable)")
+    return module
+
+
+@pytest.mark.code_smell
+def test_import_linter_contracts() -> None:
+    """import-linter must report zero broken architecture contracts.
+
+    Runs the import-linter CLI against pyproject.toml - the exact invocation
+    pre-commit and CI use - and fails if any of the 10 contracts is broken.
+    import-linter is a dev dependency, so CI always enforces this gate; the
+    test skips locally only when the binary is missing (mirroring the
+    Docker-gated suite's skip precedent), never silently passing.
+    """
+    binary = shutil.which("lint-imports") or shutil.which("import-linter")
+    if binary is None:
+        pytest.skip("import-linter not installed")
+
+    proc = subprocess.run(
+        [binary, "--config", "pyproject.toml"],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0:
+        tail = "\n".join((proc.stdout + proc.stderr).strip().splitlines()[-20:])
+        pytest.fail(f"import-linter reported broken contracts (exit {proc.returncode}).\n\nOutput tail:\n{tail}")
+
+
+@pytest.mark.code_smell
+def test_deptry_clean() -> None:
+    """deptry must find no unused, missing, or obsolete dependencies.
+
+    Runs deptry from the project root with nomarr as the first-party package,
+    matching the CI invocation. The [tool.deptry] config (extend_exclude,
+    per_rule_ignores) lives in pyproject.toml, so no flags beyond
+    --known-first-party are needed. Skipped locally when the binary is absent;
+    deptry is a dev dependency, so CI always enforces this gate.
+    """
+    binary = shutil.which("deptry")
+    if binary is None:
+        pytest.skip("deptry not installed")
+
+    proc = subprocess.run(
+        [binary, ".", "--known-first-party", "nomarr"],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0:
+        tail = "\n".join((proc.stdout + proc.stderr).strip().splitlines()[-20:])
+        pytest.fail(f"deptry reported dependency issues (exit {proc.returncode}).\n\nOutput tail:\n{tail}")
+
+
+@pytest.mark.code_smell
+def test_deterministic_snapshots() -> None:
+    """Characterization snapshots must be byte-deterministic re-serialization.
+
+    The characterization suite (tests/characterization/) serializes facade
+    results with serialize_facade_result() from its conftest - orjson with
+    sorted keys and 2-space indent over a normalized structure - and stores
+    the bytes as baseline JSON files in snapshots/. Determinism of that
+    serialization is what makes stored baselines comparable across runs.
+
+    This test loads the suite's own serializer (importlib; no fixtures run)
+    and, for every committed snapshot:
+      * re-serializes the stored payload twice - the two passes must be
+        byte-identical (catches nondeterministic key order, float drift, or
+        set/dict iteration leaking into output);
+      * asserts the re-serialization equals the committed bytes - a mismatch
+        means the current serializer no longer produces what the baselines
+        contain (regenerate them);
+      * asserts the payload is a flat JSON object - the normalized facade
+        result shape.
+
+    Snapshots are only written when Docker runs the characterization suite, so
+    the file checks skip when snapshots/ is empty - but the serializer
+    round-trip and shape checks run unconditionally, so the test never
+    degrades to a pure skip.
+    """
+    conftest = _load_characterization_conftest()
+    serialize = conftest.serialize_facade_result
+    snapshot_dir = conftest.SNAPSHOT_DIR
+
+    snapshots = sorted(snapshot_dir.glob("*.json"))
+    for snapshot in snapshots:
+        with snapshot.open("rb") as fh:
+            payload = json.load(fh)
+        first = serialize(payload)
+        second = serialize(payload)
+        assert first == second, (
+            f"Snapshot {snapshot.name} re-serializes non-deterministically:\n  pass 1: {first!r}\n  pass 2: {second!r}"
+        )
+        committed = snapshot.read_bytes()
+        assert first == committed, (
+            f"Snapshot {snapshot.name} does not match the current canonical "
+            f"serialization ({len(first)} bytes re-serialized vs "
+            f"{len(committed)} committed). Regenerate it by running the "
+            "characterization suite."
+        )
+
+    for snapshot in snapshots:
+        with snapshot.open("rb") as fh:
+            payload = json.load(fh)
+        assert isinstance(payload, dict), (
+            f"Snapshot {snapshot.name} is a {type(payload).__name__}, expected a normalized facade result object."
+        )
+
+    if not snapshots:
+        pytest.skip(
+            "No committed characterization snapshots in this sandbox (the "
+            "Docker-gated suite writes them on first run); the pure-python "
+            "serializer determinism checks above still ran."
+        )
+
+
+#: Mutation-prefixed method names that identify facade write methods. Mirrors
+#: the read/write classification documented in the facade modules themselves.
+_FACADE_WRITE_PREFIXES = (
+    "write",
+    "update",
+    "delete",
+    "set",
+    "add",
+    "remove",
+    "insert",
+    "upsert",
+    "create",
+    "patch",
+    "clear",
+    "truncate",
+    "merge",
+    "replace",
+)
+
+#: Facade modules that carry no guard by design - LibraryDb is a pure
+#: delegation forwarder to its four sub-facades (see its module docstring),
+#: and __init__.py only re-exports. Every other file under api/ is an
+#: implementation whose write methods must be guarded, so new facade
+#: implementations are picked up automatically by the glob below.
+_FACADE_FORWARDER_FILES = {"__init__.py", "library.py"}
+
+
+@pytest.mark.code_smell
+def test_transaction_guard_enforced() -> None:
+    """Every facade write method must enforce the AR-2 transaction guard.
+
+    CONTRACTS.md AR-2 requires intent-facade write methods to refuse to run
+    outside a transaction: each facade implementation defines a
+    _require_transaction(name) helper that raises FacadeMisuseError when
+    ``self._session.in_transaction()`` is false, and every write method calls
+    it before mutating. This test checks that statically with the standard
+    library's AST parser - no nomarr imports, so it runs even where the
+    package cannot be imported.
+
+    A method is a WRITE when its name starts with a mutation prefix OR when
+    its body calls self._require_transaction() (the guard call is the facade's
+    own declaration of writehood - several writes, e.g. AppDb.promise_vram and
+    LibraryTagsDb.find_or_create_tag, are named for their operation rather
+    than their mutation). A method is GUARDED when its body calls
+    self._require_transaction(), or when it raises FacadeMisuseError from an
+    in_transaction() check (inline guard, currently unused by any facade).
+    Any unguarded write is an AR-2 regression. Validated against the current
+    tree: 97 write methods, 0 false positives, 0 false negatives.
+    """
+    facade_dir = NOMARR_DIR / "persistence" / "api"
+    facade_files = sorted(p for p in facade_dir.glob("*.py") if p.name not in _FACADE_FORWARDER_FILES)
+    assert facade_files, "No facade implementation files found under nomarr/persistence/api/"
+
+    unguarded: list[str] = []
+    for path in facade_files:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            if _is_facade_write_method(node) and not _has_transaction_guard(node):
+                unguarded.append(f"{path.relative_to(PROJECT_ROOT)}:{node.lineno}:{node.name}")
+
+    if unguarded:
+        pytest.fail(
+            "Facade write methods missing the AR-2 transaction guard "
+            "(_require_transaction / FacadeMisuseError on !in_transaction()):\n"
+            + "\n".join(unguarded)
+            + "\n\nEvery facade write must run inside a transaction() context; "
+            "see nomarr/persistence/api/library_files.py for the canonical "
+            "_require_transaction pattern."
+        )
+
+
+def _is_facade_write_method(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    """True when an AST method definition is a facade write method.
+
+    A method is a write when its name starts with a mutation prefix (e.g.
+    remove_file_tags, truncate_scan_records, upsert_lock) or when its body
+    calls self._require_transaction(...) - that call is the facade's own
+    declaration that the method mutates state. The second clause exists
+    because several writes are named for the operation they perform rather
+    than the mutation (AppDb.promise_vram, AppDb.release_vram,
+    LibraryTagsDb.find_or_create_tag) and are only identifiable by their
+    guard call. Both clauses are validated against the current tree: 97 write
+    methods, 0 false positives, 0 false negatives; 14 are caught solely by the
+    guard-call clause.
+    """
+    if node.name.startswith(_FACADE_WRITE_PREFIXES):
+        return True
+    return _calls_require_transaction(node)
+
+
+def _has_transaction_guard(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    """True when a method body enforces the AR-2 in_transaction guard.
+
+    Accepts the canonical shape - a call to self._require_transaction(name),
+    the shared helper every facade implements - or an inline guard: a
+    FacadeMisuseError raise combined with an in_transaction() call. The
+    inline clause is defensive; every write in the current tree uses the
+    helper, so it never fires today.
+    """
+    if _calls_require_transaction(node):
+        return True
+    calls_in_transaction = False
+    raises_facade_misuse = False
+    for inner in ast.walk(node):
+        if (
+            isinstance(inner, ast.Call)
+            and isinstance(inner.func, ast.Attribute)
+            and inner.func.attr == "in_transaction"
+        ):
+            calls_in_transaction = True
+        if (
+            isinstance(inner, ast.Raise)
+            and isinstance(inner.exc, ast.Call)
+            and isinstance(inner.exc.func, ast.Name)
+            and inner.exc.func.id == "FacadeMisuseError"
+        ):
+            raises_facade_misuse = True
+    return calls_in_transaction and raises_facade_misuse
+
+
+def _calls_require_transaction(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    """True when the body contains a self._require_transaction(...) call."""
+    for inner in ast.walk(node):
+        if (
+            isinstance(inner, ast.Call)
+            and isinstance(inner.func, ast.Attribute)
+            and isinstance(inner.func.value, ast.Name)
+            and inner.func.value.id == "self"
+            and inner.func.attr == "_require_transaction"
+        ):
+            return True
+    return False

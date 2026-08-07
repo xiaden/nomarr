@@ -10,7 +10,7 @@ The term "library" in Nomarr has been overloaded and poorly defined since the ap
 
 Currently, a library in Nomarr is:
 - A base folder path on the filesystem that the user has authorized Nomarr to scan
-- A document in ArangoDB's `libraries` collection with metadata (name, path, auto-write settings, etc.)
+- A library record in the database with metadata (name, path, auto-write settings, etc.)
 - The anchor for `library_contains_file` edges, linking scanned files back to their origin path
 
 What a library is **not**:

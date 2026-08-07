@@ -121,7 +121,6 @@ class TestDerivePercentilesFromSparseHistogram:
             sparse_bins,
             lo=0.0,
             hi=1.0,
-            bin_width=0.05,
             p5_target=0.05,
             p95_target=0.95,
         )
@@ -148,7 +147,7 @@ class TestDerivePercentilesFromSparseHistogram:
         assert set(result) == {"p5", "p95", "n", "underflow_count", "overflow_count"}
 
     def test_returns_bounds_and_zero_counts_for_empty_sparse_bins(self) -> None:
-        result = derive_percentiles_from_sparse_histogram([], lo=0.1, hi=0.9, bin_width=0.1)
+        result = derive_percentiles_from_sparse_histogram([], lo=0.1, hi=0.9)
 
         assert result == {
             "p5": 0.1,
@@ -246,7 +245,6 @@ class TestGenerateCalibrationFromHistogram:
             sparse_bins=sparse_bins,
             lo=0.0,
             hi=1.0,
-            bin_width=0.1,
             p5_target=0.05,
             p95_target=0.95,
         )
@@ -322,7 +320,7 @@ class TestGetDefaultHistogramSpec:
     """Tests for ``get_default_histogram_spec``."""
 
     def test_returns_expected_histogram_fields_and_values(self) -> None:
-        result = get_default_histogram_spec("mood_happy")
+        result = get_default_histogram_spec()
 
         assert result == {
             "lo": 0.0,
