@@ -5,13 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
-from nomarr.components.library.library_file_query_comp import get_library_counts
-from nomarr.components.library.library_file_state_comp import count_untagged_files
 from nomarr.components.library.library_scan_state_comp import (
     _pipeline_state_to_scan_status,
     get_pipeline_state,
     get_scan_state,
 )
+from nomarr.components.library.library_song_query_comp import get_library_counts
+from nomarr.components.library.library_song_state_comp import count_untagged_files
 from nomarr.helpers.constants.pipeline_states import ML_IN_PROGRESS
 from nomarr.helpers.dto.library_dto import LibraryDict
 from nomarr.helpers.time_helper import now_ms
@@ -48,8 +48,7 @@ def create_library_record(
         "created_at": timestamp,
         "updated_at": timestamp,
     }
-    with db.library.transaction():
-        result = db.library.add_library(payload)
+    result = db.library.add_library(payload)
     return cast("int", result)
 
 
@@ -118,8 +117,7 @@ def update_library_record(
     if "file_write_mode" in fields and fields["file_write_mode"] is not None:
         _validate_file_write_mode(cast("str", fields["file_write_mode"]))
 
-    with db.library.transaction():
-        db.library.update_library(library_id, update_fields)
+    db.library.update_library(library_id, update_fields)
 
 
 def update_library_config_fields(

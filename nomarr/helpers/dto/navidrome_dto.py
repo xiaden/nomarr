@@ -289,7 +289,6 @@ class NavidromePersonalPlaylistContext(TypedDict):
     """
 
     backbone_id: str
-    library_key: str
     clusters: list[TasteCluster]
     max_songs: int
     played_file_ids: list[str]

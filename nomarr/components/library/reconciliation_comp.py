@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
-from nomarr.components.library.library_file_state_comp import get_stale_file_ids, transition_file_state
+from nomarr.components.library.library_song_state_comp import get_stale_song_ids, transition_song_state
 from nomarr.components.workers.worker_discovery_comp import try_insert_or_steal_claim
 from nomarr.helpers.constants.file_states import (
     STATE_NOT_WRITTEN,
@@ -43,14 +43,14 @@ def claim_files_for_reconciliation(
         worker.
 
     """
-    stale_ids = get_stale_file_ids(db, library_id=library_id)
+    stale_ids = get_stale_song_ids(db, library_id=library_id)
     if not stale_ids:
         return []
 
     candidates = [
         candidate
         for file_id in stale_ids
-        if (candidate := cast("dict[str, Any] | None", db.library.get_file(file_id))) is not None
+        if (candidate := cast("dict[str, Any] | None", db.library.get_song(file_id))) is not None
     ]
 
     claimed: list[dict[str, Any]] = []
@@ -82,10 +82,9 @@ def set_file_written(db: Database, file_key: str) -> None:
     PostgreSQL uses integer IDs; file_key is the string representation of the ID.
     """
     file_id = int(file_key)
-    transition_file_state(db, [file_id], STATE_NOT_WRITTEN, STATE_WRITTEN)
-    transition_file_state(db, [file_id], STATE_TAGS_NOT_FRESH, STATE_TAGS_CURRENT)
-    with db.app.transaction():
-        db.app.release_claim(file_id)
+    transition_song_state(db, [file_id], STATE_NOT_WRITTEN, STATE_WRITTEN)
+    transition_song_state(db, [file_id], STATE_TAGS_NOT_FRESH, STATE_TAGS_CURRENT)
+    db.app.release_claim(file_id)
 
 
 def release_claim(db: Database, file_key: str) -> None:
@@ -94,10 +93,9 @@ def release_claim(db: Database, file_key: str) -> None:
     PostgreSQL uses integer IDs; file_key is the string representation of the ID.
     """
     file_id = int(file_key)
-    with db.app.transaction():
-        db.app.release_claim(file_id)
+    db.app.release_claim(file_id)
 
 
 def count_files_needing_reconciliation(db: Database, library_id: int) -> int:
     """Count files that are still in the ``tags_not_fresh`` state."""
-    return len(get_stale_file_ids(db, library_id=library_id))
+    return len(get_stale_song_ids(db, library_id=library_id))

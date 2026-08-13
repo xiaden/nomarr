@@ -3,14 +3,14 @@
 This package contains repository classes organized by domain/table:
 
 - ``LibraryRepository`` — ``libraries`` table
-- ``FileRepository`` — ``songs`` table
+- ``SongRepository`` — ``songs`` table
 - ``FolderRepository`` — ``library_folders`` table
 - ``TagRepository`` — ``tags`` table
-- ``FileTagRepository`` — ``file_tags`` junction table
+- ``SongTagRepository`` — ``song_tags`` junction table
 - ``ScanRepository`` — ``library_scans`` table
 - ``AppRepository`` — KV tables (locks, health, meta, sessions, worker claims, …)
 - ``PipelineRepository`` — ``pipeline_states`` table
-- ``FileStateRepository`` — ``file_states`` and ``file_state_assignments`` tables
+- ``SongStateRepository`` — ``song_states`` and ``song_state_assignments`` tables
 - ``ModelRepo`` — ``ml_models`` table
 - ``OutputRepo`` — ``ml_model_outputs`` and ``ml_output_streams`` tables
 - ``CalibrationRepo`` — ``calibration_states`` and ``calibration_history`` tables

@@ -167,7 +167,7 @@ class TestNavidromeServiceDescriptorResolution:
 
         with (
             patch(
-                "nomarr.services.domain.navidrome_svc.get_files_by_ids_with_tags",
+                "nomarr.services.domain.navidrome_svc.get_songs_by_ids_with_tags",
                 return_value=[{"id": "1", "_key": "track-1"}],
             ) as mock_get_files,
             patch(
@@ -207,7 +207,7 @@ class TestNavidromeServiceDescriptorResolution:
         service, _ = _make_service()
 
         with patch(
-            "nomarr.services.domain.navidrome_svc.get_files_by_ids_with_tags",
+            "nomarr.services.domain.navidrome_svc.get_songs_by_ids_with_tags",
             return_value=[{"_key": "missing-id"}],
         ):
             descriptors = service.resolve_files_to_descriptors([1])
@@ -219,7 +219,7 @@ class TestNavidromeServiceDescriptorResolution:
 
         with (
             patch(
-                "nomarr.services.domain.navidrome_svc.get_files_by_ids_with_tags",
+                "nomarr.services.domain.navidrome_svc.get_songs_by_ids_with_tags",
                 side_effect=RuntimeError("query failed"),
             ),
             pytest.raises(RuntimeError, match="query failed"),
@@ -231,7 +231,7 @@ class TestNavidromeServiceDescriptorResolution:
 
         with (
             patch(
-                "nomarr.services.domain.navidrome_svc.get_files_by_ids_with_tags",
+                "nomarr.services.domain.navidrome_svc.get_songs_by_ids_with_tags",
                 return_value=[{"id": "1"}],
             ),
             patch(

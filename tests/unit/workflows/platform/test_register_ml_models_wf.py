@@ -98,7 +98,7 @@ class TestRegisterMlModelsWorkflow:
 
         mock_update_label.assert_called_once_with(
             db,
-            file_id=0,
+            song_id=0,
             model_id=model_id,
             output_id="ml_model_outputs/output-1",
             label="sad",
@@ -172,6 +172,6 @@ class TestRegisterMlModelsWorkflow:
             register_ml_models_workflow(db, str(tmp_path))
 
         assert mock_update_label.call_args_list == [
-            call(db, file_id=0, model_id=model_id, output_id="ml_model_outputs/output-0", label="happy"),
-            call(db, file_id=0, model_id=model_id, output_id="ml_model_outputs/output-1", label="sad"),
+            call(db, song_id=0, model_id=model_id, output_id="ml_model_outputs/output-0", label="happy"),
+            call(db, song_id=0, model_id=model_id, output_id="ml_model_outputs/output-1", label="sad"),
         ]

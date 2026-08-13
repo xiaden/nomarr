@@ -68,7 +68,7 @@ class LibraryDict:
     last_scan_started_at: int | None = None  # Timestamp (ms) when scan started
     last_scan_at: int | None = None  # Timestamp (ms) of last scan completion
     scan_type_in_progress: str | None = None  # "quick" or "full" if a scan is running
-    # Pipeline axis states (stored on library document)
+    # Pipeline axis states (persisted in the pipeline_states table)
     scan_state: str = "not_scanned"
     ml_state: str = "not_ML_processed"
     calibration_state: str = "not_calibrated"
@@ -115,8 +115,8 @@ class FileTag:
 
 
 @dataclass
-class LibraryFileWithTags:
-    """Library file with its tags."""
+class LibrarySongWithTags:
+    """Library song with its tags."""
 
     id: int  # PostgreSQL primary key
     path: str
@@ -159,15 +159,15 @@ class SearchFilesQuery:
 class SearchFilesResult:
     """Result from library_service.search_files."""
 
-    files: list[LibraryFileWithTags]
+    songs: list[LibrarySongWithTags]
     total: int
     limit: int = 100
     offset: int = 0
 
 
-def map_file_with_tags_to_dto(file_dict: dict[str, Any]) -> LibraryFileWithTags:
-    """Convert a raw file dictionary (with tags) to LibraryFileWithTags DTO."""
-    return LibraryFileWithTags(
+def map_song_with_tags_to_dto(file_dict: dict[str, Any]) -> LibrarySongWithTags:
+    """Convert a raw file dictionary (with tags) to LibrarySongWithTags DTO."""
+    return LibrarySongWithTags(
         id=file_dict["id"],
         path=file_dict["path"],
         library_id=file_dict["library_id"],
@@ -217,7 +217,7 @@ class TagCleanupResult:
 
 @dataclass
 class FileTagsResult:
-    """Result from library_service.get_file_tags."""
+    """Result from the song-tag lookup (``get_song_tags``)."""
 
     file_id: int  # PostgreSQL primary key
     path: str
@@ -278,9 +278,9 @@ __all__ = [
     "FileTag",
     "FileTagsResult",
     "LibraryDict",
-    "LibraryFileWithTags",
     "LibraryPipelineStatusDTO",
     "LibraryScanStatusResult",
+    "LibrarySongWithTags",
     "LibraryStatsResult",
     "RetryErroredResult",
     "SearchFilesQuery",

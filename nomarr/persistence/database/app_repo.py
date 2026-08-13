@@ -270,24 +270,24 @@ class AppRepository:
             self._session.commit()
             return int(row._mapping["id"])
 
-    def claim_file(self, file_id: int, worker_id: str, payload: dict[str, Any]) -> None:
-        """Record a worker's claim on a file."""
+    def claim_file(self, song_id: int, worker_id: str, payload: dict[str, Any]) -> None:
+        """Record a worker's claim on a song."""
         with map_persistence_exceptions():
             with self._session.begin_nested():
                 data = {
                     "worker_id": worker_id,
-                    "key": str(file_id),
+                    "key": str(song_id),
                     "value": payload,
                     "claimed_at": payload.get("claimed_at", 0),
                 }
                 insert_one(_WC, data, session=self._session)
             self._session.commit()
 
-    def release_claim(self, file_id: int) -> None:
-        """Release a file claim by its key (``str(file_id)``)."""
+    def release_claim(self, song_id: int) -> None:
+        """Release a song claim by its key (``str(song_id)``)."""
         with map_persistence_exceptions():
             with self._session.begin_nested():
-                stmt = delete(_WC).where(_WC.c.key == str(file_id))
+                stmt = delete(_WC).where(_WC.c.key == str(song_id))
                 self._session.execute(stmt)
             self._session.commit()
 
@@ -302,12 +302,12 @@ class AppRepository:
             self._session.commit()
             return int(result.rowcount)  # type: ignore[attr-defined]  # CursorResult vs Result — mypy sees Result but .rowcount exists at runtime
 
-    def delete_claims_for_files(self, file_ids: list[int]) -> int:
-        """Delete claims for the given file ids (stored as ``key`` strings)."""
+    def delete_claims_for_songs(self, song_ids: list[int]) -> int:
+        """Delete claims for the given song ids (stored as ``key`` strings)."""
         with map_persistence_exceptions():
-            if not file_ids:
+            if not song_ids:
                 return 0
-            str_ids = [str(fid) for fid in file_ids]
+            str_ids = [str(sid) for sid in song_ids]
             with self._session.begin_nested():
                 stmt = delete(_WC).where(_WC.c.key.in_(str_ids))
                 result = self._session.execute(stmt)

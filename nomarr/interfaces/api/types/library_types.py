@@ -314,7 +314,7 @@ class SearchFilesResponse(BaseModel):
                         for t in f.tags
                     ],
                 )
-                for f in result.files
+                for f in result.songs
             ],
             total=result.total,
             limit=result.limit,

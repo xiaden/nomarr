@@ -38,7 +38,7 @@ class TestSetSongTags:
     @pytest.mark.mocked
     def test_replaces_requested_tag_name_and_keeps_other_tags(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.list_file_tags_for_files.return_value = {
+        mock_db.library.list_song_tags_for_songs.return_value = {
             1: [
                 {"_id": "tags/old-genre", "name": "genre", "value": "old"},
                 {"_id": "tags/mood", "name": "mood", "value": "happy"},
@@ -47,8 +47,8 @@ class TestSetSongTags:
 
         set_song_tags(mock_db, 1, "genre", ["rock"])
 
-        mock_db.library.list_file_tags_for_files.assert_called_once_with([1])
-        mock_db.library.replace_file_tags.assert_called_once_with(
+        mock_db.library.list_song_tags_for_songs.assert_called_once_with([1])
+        mock_db.library.replace_song_tags.assert_called_once_with(
             1,
             [
                 {"_id": "tags/mood", "name": "mood", "value": "happy"},
@@ -60,7 +60,7 @@ class TestSetSongTags:
     @pytest.mark.mocked
     def test_empty_values_remove_only_requested_name(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.list_file_tags_for_files.return_value = {
+        mock_db.library.list_song_tags_for_songs.return_value = {
             1: [
                 {"_id": "tags/old-genre", "name": "genre", "value": "old"},
                 {"_id": "tags/mood", "name": "mood", "value": "happy"},
@@ -69,7 +69,7 @@ class TestSetSongTags:
 
         set_song_tags(mock_db, 1, "genre", [])
 
-        mock_db.library.replace_file_tags.assert_called_once_with(
+        mock_db.library.replace_song_tags.assert_called_once_with(
             1,
             [{"_id": "tags/mood", "name": "mood", "value": "happy"}],
         )
@@ -78,11 +78,11 @@ class TestSetSongTags:
     @pytest.mark.mocked
     def test_handles_missing_existing_tags(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.list_file_tags_for_files.return_value = {}
+        mock_db.library.list_song_tags_for_songs.return_value = {}
 
         set_song_tags(mock_db, 1, "genre", ["rock"])
 
-        mock_db.library.replace_file_tags.assert_called_once_with(
+        mock_db.library.replace_song_tags.assert_called_once_with(
             1,
             [{"name": "genre", "value": "rock"}],
         )
@@ -98,8 +98,8 @@ class TestSetSongTagsBatch:
 
         set_song_tags_batch(mock_db, [])
 
-        mock_db.library.list_file_tags_for_files.assert_not_called()
-        mock_db.library.replace_file_tags.assert_not_called()
+        mock_db.library.list_song_tags_for_songs.assert_not_called()
+        mock_db.library.replace_song_tags.assert_not_called()
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -110,7 +110,7 @@ class TestSetSongTagsBatch:
             {"song_id": 1, "name": "mood", "values": ["happy", "bright"]},
             {"song_id": 2, "name": "genre", "values": ["jazz"]},
         ]
-        mock_db.library.list_file_tags_for_files.return_value = {
+        mock_db.library.list_song_tags_for_songs.return_value = {
             1: [
                 {"_id": "tags/old-genre", "name": "genre", "value": "old"},
                 {"_id": "tags/year", "name": "year", "value": 1999},
@@ -122,8 +122,8 @@ class TestSetSongTagsBatch:
 
         set_song_tags_batch(mock_db, entries)
 
-        mock_db.library.list_file_tags_for_files.assert_called_once_with([1, 2])
-        assert mock_db.library.replace_file_tags.call_args_list == [
+        mock_db.library.list_song_tags_for_songs.assert_called_once_with([1, 2])
+        assert mock_db.library.replace_song_tags.call_args_list == [
             call(
                 1,
                 [
@@ -150,7 +150,7 @@ class TestAddSongTag:
     @pytest.mark.mocked
     def test_appends_tag_via_replace_file_tags(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.list_file_tags_for_files.return_value = {
+        mock_db.library.list_song_tags_for_songs.return_value = {
             1: [
                 {"_id": "tags/existing", "name": "mood", "value": "happy"},
             ]
@@ -158,7 +158,7 @@ class TestAddSongTag:
 
         add_song_tag(mock_db, 1, "genre", "rock")
 
-        mock_db.library.replace_file_tags.assert_called_once_with(
+        mock_db.library.replace_song_tags.assert_called_once_with(
             1,
             [
                 {"_id": "tags/existing", "name": "mood", "value": "happy"},
@@ -177,7 +177,7 @@ class TestDeleteSongTags:
 
         delete_song_tags(mock_db, 1)
 
-        mock_db.library.remove_file_tags.assert_called_once_with(1)
+        mock_db.library.remove_song_tags.assert_called_once_with(1)
 
 
 class TestRelinkTagEdges:
@@ -187,11 +187,12 @@ class TestRelinkTagEdges:
     @pytest.mark.mocked
     def test_returns_zero_moved_when_no_source_tags_exist(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.list_files.return_value = [
+        mock_db.library.list_libraries.return_value = [{"id": 1}]
+        mock_db.library.list_songs.return_value = [
             {"id": 1},
             {"id": 2},
         ]
-        mock_db.library.list_file_tags_for_files.return_value = {
+        mock_db.library.list_song_tags_for_songs.return_value = {
             1: [{"_id": "tags/other", "id": 999, "name": "genre", "value": "rock"}],
             2: [{"_id": "tags/another", "id": 777, "name": "mood", "value": "happy"}],
         }
@@ -206,11 +207,12 @@ class TestRelinkTagEdges:
     @pytest.mark.mocked
     def test_moves_edges_to_target(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.list_files.return_value = [
+        mock_db.library.list_libraries.return_value = [{"id": 1}]
+        mock_db.library.list_songs.return_value = [
             {"id": 1},
             {"id": 2},
         ]
-        mock_db.library.list_file_tags_for_files.return_value = {
+        mock_db.library.list_song_tags_for_songs.return_value = {
             1: [{"_id": "tags/source", "id": 100, "name": "genre", "value": "old-a"}],
             2: [{"_id": "tags/source", "id": 100, "name": "genre", "value": "old-b"}],
         }
@@ -224,11 +226,12 @@ class TestRelinkTagEdges:
     @pytest.mark.mocked
     def test_skips_already_existing_target_tags(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.list_files.return_value = [
+        mock_db.library.list_libraries.return_value = [{"id": 1}]
+        mock_db.library.list_songs.return_value = [
             {"id": 1},
             {"id": 2},
         ]
-        mock_db.library.list_file_tags_for_files.return_value = {
+        mock_db.library.list_song_tags_for_songs.return_value = {
             1: [
                 {"_id": "tags/source", "id": 100, "name": "genre", "value": "old-a"},
                 {"_id": "tags/target", "id": 200, "name": "genre", "value": "new-a"},
@@ -245,12 +248,13 @@ class TestRelinkTagEdges:
     @pytest.mark.mocked
     def test_filters_by_song_ids_and_reports_remaining_source_refs(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.list_files.return_value = [
+        mock_db.library.list_libraries.return_value = [{"id": 1}]
+        mock_db.library.list_songs.return_value = [
             {"id": 1},
             {"id": 2},
             {"id": 3},
         ]
-        mock_db.library.list_file_tags_for_files.return_value = {
+        mock_db.library.list_song_tags_for_songs.return_value = {
             1: [{"_id": "tags/source", "id": 100, "name": "genre", "value": "old-a"}],
             2: [
                 {"_id": "tags/source", "id": 100, "name": "genre", "value": "old-b"},

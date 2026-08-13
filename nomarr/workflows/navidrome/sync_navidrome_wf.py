@@ -12,9 +12,9 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from nomarr.components.library.library_file_query_comp import (
-    get_files_by_paths_bulk,
+from nomarr.components.library.library_song_query_comp import (
     get_sample_normalized_path,
+    get_songs_by_paths_bulk,
 )
 from nomarr.components.navidrome.navidrome_graph_comp import (
     bulk_ensure_navidrome_file_links,
@@ -68,7 +68,7 @@ def _resolve_song_paths(
     resolved_docs: dict[str, dict[str, Any]] = {}
     for start in range(0, len(resolved_paths), _PATH_LOOKUP_BATCH_SIZE):
         batch = resolved_paths[start : start + _PATH_LOOKUP_BATCH_SIZE]
-        resolved_docs.update(get_files_by_paths_bulk(db, batch))
+        resolved_docs.update(get_songs_by_paths_bulk(db, batch))
 
     resolved_count = sum(1 for path in resolved_paths if path in resolved_docs)
     if resolved_count == 0:
@@ -101,7 +101,7 @@ def sync_navidrome(
 
     Walks all albums via ``getAlbumList2`` (paginated), fetches each album's
     songs, optionally rewrites their paths via configured prefix mappings,
-    resolves Nomarr file IDs via ``get_files_by_paths_bulk(db, ...)``, and writes
+    resolves Nomarr file IDs via ``get_songs_by_paths_bulk(db, ...)``, and writes
     to ``navidrome_tracks``, ``has_nd_id``, ``navidrome_playcounts``, and
     play records.  Orphan tracks (present in DB but absent from
     Navidrome) are cascade-deleted.

@@ -1,7 +1,7 @@
 """Worker discovery component.
 
 Core discovery and claiming logic for discovery-based workers.
-Workers query the songs collection directly instead of polling a queue.
+Workers query the songs table directly instead of polling a queue.
 """
 
 from __future__ import annotations
@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, cast
 
-from nomarr.components.library.library_file_state_comp import discover_next_untagged_file
+from nomarr.components.library.library_song_state_comp import discover_next_untagged_file
 from nomarr.helpers.exceptions import DuplicateEntityError
 from nomarr.helpers.time_helper import now_ms
 
@@ -33,16 +33,16 @@ def _get_all_claims(db: Database) -> list[dict[str, Any]]:
 def discover_next_file(
     db: Database,
 ) -> str | None:
-    """Discover next untagged file.
+    """Discover the next untagged song.
 
-    Uses file_states graph traversal to find files in the not_tagged state,
-    excluding too_short and already-claimed files.
+    Uses the song state graph to find songs in the ``not_processed`` state,
+    excluding errored and already-claimed songs.
 
     Args:
         db: Database instance
 
     Returns:
-        File id or None if no work available
+        Song id or None if no work available
 
     """
     file_doc = discover_next_untagged_file(db, exclude_claimed=True)
@@ -73,8 +73,7 @@ def claim_file(db: Database, file_id: str, worker_id: str) -> bool:
         "claimed_at": now_ms().value,
     }
     try:
-        with db.app.transaction():
-            db.app.add_claim(payload)
+        db.app.add_claim(payload)
     except DuplicateEntityError:
         return False
     return True
@@ -88,8 +87,7 @@ def release_claim(db: Database, file_id: int) -> None:
         file_id: File document id
 
     """
-    with db.app.transaction():
-        db.app.remove_claim(file_id)
+    db.app.remove_claim(file_id)
 
 
 def try_insert_or_steal_claim(
@@ -114,8 +112,7 @@ def try_insert_or_steal_claim(
 
     """
     try:
-        with db.app.transaction():
-            db.app.add_claim(payload)
+        db.app.add_claim(payload)
     except DuplicateEntityError:
         file_id = int(payload["file_id"])
         all_claims = _get_all_claims(db)
@@ -125,8 +122,7 @@ def try_insert_or_steal_claim(
         )
         if existing_claim is None:
             try:
-                with db.app.transaction():
-                    db.app.add_claim(payload)
+                db.app.add_claim(payload)
             except DuplicateEntityError:
                 return False
             return True
@@ -135,11 +131,9 @@ def try_insert_or_steal_claim(
         if claimed_at > now - lease_ms:
             return False
 
-        with db.app.transaction():
-            db.app.remove_claim(file_id)
+        db.app.remove_claim(file_id)
         try:
-            with db.app.transaction():
-                db.app.add_claim(payload)
+            db.app.add_claim(payload)
         except DuplicateEntityError:
             return False
         return True
@@ -181,28 +175,26 @@ def cleanup_stale_claims(db: Database, heartbeat_timeout_ms: int) -> int:
         if str(claim["worker_id"]) in active_workers and claim.get("claim_type") != "reconcile"
     ]
 
-    stale_file_ids: set[int] = set()
-    candidate_file_ids = sorted({int(claim["file_id"]) for claim in active_ml_claims})
-    if candidate_file_ids:
-        file_docs = cast("list[dict[str, Any]]", db.library.list_files_by_ids(candidate_file_ids))
-        existing_file_ids = {doc["id"] for doc in file_docs if "id" in doc}
+    stale_song_ids: set[int] = set()
+    candidate_song_ids = sorted({int(claim["file_id"]) for claim in active_ml_claims})
+    if candidate_song_ids:
+        song_docs = cast("list[dict[str, Any]]", db.library.list_songs_by_ids(candidate_song_ids))
+        existing_song_ids = {doc["id"] for doc in song_docs if "id" in doc}
 
-        tagged_file_ids = {
-            file_doc["id"]
-            for file_doc in cast("list[dict[str, Any]]", db.app.list_file_docs_in_state(_TAGGED_STATE_ID))
-            if "id" in file_doc and file_doc["id"] in candidate_file_ids
+        tagged_song_ids = {
+            song_doc["id"]
+            for song_doc in cast("list[dict[str, Any]]", db.app.list_song_docs_in_state(_TAGGED_STATE_ID))
+            if "id" in song_doc and song_doc["id"] in candidate_song_ids
         }
-        stale_file_ids = {
-            file_id for file_id in candidate_file_ids if file_id not in existing_file_ids or file_id in tagged_file_ids
+        stale_song_ids = {
+            song_id for song_id in candidate_song_ids if song_id not in existing_song_ids or song_id in tagged_song_ids
         }
 
     removed = 0
     if inactive_worker_ids:
-        with db.app.transaction():
-            removed += db.app.remove_claims(worker_ids=sorted(inactive_worker_ids))
-    if stale_file_ids:
-        with db.app.transaction():
-            removed += db.app.remove_claims(file_ids=sorted(stale_file_ids))
+        removed += db.app.remove_claims(worker_ids=sorted(inactive_worker_ids))
+    if stale_song_ids:
+        removed += db.app.remove_claims(song_ids=sorted(stale_song_ids))
     return removed
 
 
@@ -213,7 +205,7 @@ def discover_and_claim_file(
     """Discover and claim the next available file for processing.
 
     Combined operation that:
-    1. Discovers next untagged file (excludes too_short and claimed)
+    1. Discovers next untagged song (excludes errored and claimed)
     2. Attempts to claim it
     3. Returns file_id if successful, None otherwise
 
@@ -275,6 +267,5 @@ def release_claims_for_worker(db: Database, worker_id: str) -> list[str]:
         return []
 
     file_ids = [str(claim["file_id"]) for claim in claims]
-    with db.app.transaction():
-        db.app.remove_claims(worker_ids=[worker_id])
+    db.app.remove_claims(worker_ids=[worker_id])
     return file_ids

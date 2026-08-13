@@ -6,7 +6,6 @@ import logging
 import os
 from typing import TYPE_CHECKING
 
-from nomarr.components.library.library_file_query_comp import clear_library_data as clear_library_file_data
 from nomarr.components.library.library_records_comp import (
     create_library_record,
     get_library_by_name,
@@ -22,6 +21,7 @@ from nomarr.components.library.library_scan_state_comp import (
     ensure_scan_state,
     get_libraries_in_axis_state,
 )
+from nomarr.components.library.library_song_query_comp import clear_library_data as clear_library_song_data
 from nomarr.helpers.constants.pipeline_states import PIPELINE_DEFAULTS, SCAN_IN_PROGRESS, SCAN_STATE_FIELD
 from nomarr.helpers.exceptions import DatabaseStateError
 
@@ -92,8 +92,7 @@ def delete_library(db: Database, library_id: int) -> bool:
     if not library:
         return False
 
-    with db.library.transaction():
-        db.library.remove_library(library_id)
+    db.library.remove_library(library_id)
     logger.info(f"[LibraryAdmin] Deleted library {library_id}: {library.get('name')}")
     return True
 
@@ -110,7 +109,7 @@ def clear_library_data(db: Database, library_root: str | None) -> None:
     if _is_scan_running(db):
         msg = "Cannot clear library while scan jobs are running. Cancel scans first."
         raise RuntimeError(msg)
-    clear_library_file_data(db)
+    clear_library_song_data(db)
     logger.info("[LibraryAdmin] Library data cleared")
 
 

@@ -14,7 +14,7 @@ class EmbeddingStreamRecord(TypedDict):
     """Single row from the ``ml_embedding_streams`` table."""
 
     id: int
-    file_id: int
+    song_id: int
     backbone: str
     patches_emb: bytes
     created_at: int

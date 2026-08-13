@@ -89,25 +89,25 @@ def test_list_vector_namespaces_removed() -> None:
 
 
 @pytest.mark.unit
-def test_list_output_streams_for_file_delegates_to_output_repo() -> None:
+def test_list_output_streams_for_song_delegates_to_output_repo() -> None:
     db, _, _, output_repo, _, _ = _make_ml_db()
-    output_repo.get_outputs_for_file = MagicMock(return_value=sentinel.result)
+    output_repo.get_outputs_for_song = MagicMock(return_value=sentinel.result)
 
-    result = db.list_output_streams_for_file(1)
+    result = db.list_output_streams_for_song(1)
 
     assert result is sentinel.result
-    output_repo.get_outputs_for_file.assert_called_once_with(1)
+    output_repo.get_outputs_for_song.assert_called_once_with(1)
 
 
 @pytest.mark.unit
-def test_list_file_vectors_delegates_to_vector_repo() -> None:
+def test_list_song_vectors_delegates_to_vector_repo() -> None:
     db, vector_repo, _, _, _, _ = _make_ml_db()
-    vector_repo.get_embeddings_for_file = MagicMock(return_value=sentinel.result)
+    vector_repo.get_embeddings_for_song = MagicMock(return_value=sentinel.result)
 
-    result = db.list_file_vectors("vectors_track_hot__model__lib", 1)
+    result = db.list_song_vectors("vectors_track_hot__model__lib", 1)
 
     assert result is sentinel.result
-    vector_repo.get_embeddings_for_file.assert_called_once_with(1)
+    vector_repo.get_embeddings_for_song.assert_called_once_with(1)
 
 
 @pytest.mark.unit
@@ -290,9 +290,9 @@ def test_truncate_calibration_history_delegates_to_calibration_repo() -> None:
 
 
 @pytest.mark.unit
-def test_replace_file_vectors_deletes_then_inserts_per_payload() -> None:
+def test_replace_song_vectors_deletes_then_inserts_per_payload() -> None:
     db, vector_repo, _, _, _, _ = _make_ml_db()
-    vector_repo.delete_embeddings_for_file = MagicMock()
+    vector_repo.delete_embeddings_for_song = MagicMock()
     vector_repo.insert_embedding = MagicMock()
     payloads: list[dict[str, Any]] = [
         {
@@ -309,19 +309,19 @@ def test_replace_file_vectors_deletes_then_inserts_per_payload() -> None:
         },
     ]
 
-    db.replace_file_vectors("vectors_track_hot__model__lib", 42, payloads)
+    db.replace_song_vectors("vectors_track_hot__model__lib", 42, payloads)
 
-    vector_repo.delete_embeddings_for_file.assert_called_once_with(42)
+    vector_repo.delete_embeddings_for_song.assert_called_once_with(42)
     assert vector_repo.insert_embedding.call_count == 2
     vector_repo.insert_embedding.assert_any_call(
-        file_id=42,
+        song_id=42,
         backbone_id="openl3",
         model_id="model_a",
         embedding_vector=[0.1, 0.2, 0.3],
         genres=["rock"],
     )
     vector_repo.insert_embedding.assert_any_call(
-        file_id=42,
+        song_id=42,
         backbone_id="openl3",
         model_id="model_b",
         embedding_vector=[0.4, 0.5],
@@ -330,16 +330,16 @@ def test_replace_file_vectors_deletes_then_inserts_per_payload() -> None:
 
 
 @pytest.mark.unit
-def test_replace_file_vectors_backbone_id_falls_back_to_collection_name() -> None:
+def test_replace_song_vectors_backbone_id_falls_back_to_collection_name() -> None:
     db, vector_repo, _, _, _, _ = _make_ml_db()
-    vector_repo.delete_embeddings_for_file = MagicMock()
+    vector_repo.delete_embeddings_for_song = MagicMock()
     vector_repo.insert_embedding = MagicMock()
     payloads = [{"model_id": "model_a", "embedding_vector": [0.1]}]
 
-    db.replace_file_vectors("openl3", 7, payloads)
+    db.replace_song_vectors("openl3", 7, payloads)
 
     vector_repo.insert_embedding.assert_called_once_with(
-        file_id=7,
+        song_id=7,
         backbone_id="openl3",
         model_id="model_a",
         embedding_vector=[0.1],
@@ -348,9 +348,9 @@ def test_replace_file_vectors_backbone_id_falls_back_to_collection_name() -> Non
 
 
 @pytest.mark.unit
-def test_replace_file_vectors_embedding_vector_falls_back_to_embedding_key() -> None:
+def test_replace_song_vectors_embedding_vector_falls_back_to_embedding_key() -> None:
     db, vector_repo, _, _, _, _ = _make_ml_db()
-    vector_repo.delete_embeddings_for_file = MagicMock()
+    vector_repo.delete_embeddings_for_song = MagicMock()
     vector_repo.insert_embedding = MagicMock()
     payloads = [
         {
@@ -360,10 +360,10 @@ def test_replace_file_vectors_embedding_vector_falls_back_to_embedding_key() -> 
         },
     ]
 
-    db.replace_file_vectors("vectors_track_hot__model__lib", 1, payloads)
+    db.replace_song_vectors("vectors_track_hot__model__lib", 1, payloads)
 
     vector_repo.insert_embedding.assert_called_once_with(
-        file_id=1,
+        song_id=1,
         backbone_id="openl3",
         model_id="model_a",
         embedding_vector=[0.9, 0.8],
@@ -372,52 +372,52 @@ def test_replace_file_vectors_embedding_vector_falls_back_to_embedding_key() -> 
 
 
 @pytest.mark.unit
-def test_replace_file_vectors_empty_payloads_only_deletes() -> None:
+def test_replace_song_vectors_empty_payloads_only_deletes() -> None:
     db, vector_repo, _, _, _, _ = _make_ml_db()
-    vector_repo.delete_embeddings_for_file = MagicMock()
+    vector_repo.delete_embeddings_for_song = MagicMock()
     vector_repo.insert_embedding = MagicMock()
 
-    db.replace_file_vectors("openl3", 5, [])
+    db.replace_song_vectors("openl3", 5, [])
 
-    vector_repo.delete_embeddings_for_file.assert_called_once_with(5)
+    vector_repo.delete_embeddings_for_song.assert_called_once_with(5)
     vector_repo.insert_embedding.assert_not_called()
 
 
 @pytest.mark.unit
-def test_replace_output_streams_for_file_deletes_then_inserts_per_payload() -> None:
+def test_replace_output_streams_for_song_deletes_then_inserts_per_payload() -> None:
     db, _, _, output_repo, _, _ = _make_ml_db()
-    output_repo.delete_outputs_for_file = MagicMock()
+    output_repo.delete_outputs_for_song = MagicMock()
     output_repo.store_output_stream = MagicMock()
     payloads = [
         {"model_id": "model_a", "status": "success"},
         {"model_id": "model_b", "status": "failed"},
     ]
 
-    db.replace_output_streams_for_file(42, payloads)
+    db.replace_output_streams_for_song(42, payloads)
 
-    output_repo.delete_outputs_for_file.assert_called_once_with(42)
+    output_repo.delete_outputs_for_song.assert_called_once_with(42)
     assert output_repo.store_output_stream.call_count == 2
     output_repo.store_output_stream.assert_any_call(
-        file_id=42,
+        song_id=42,
         model_id="model_a",
         status="success",
     )
     output_repo.store_output_stream.assert_any_call(
-        file_id=42,
+        song_id=42,
         model_id="model_b",
         status="failed",
     )
 
 
 @pytest.mark.unit
-def test_replace_output_streams_for_file_empty_payloads_only_deletes() -> None:
+def test_replace_output_streams_for_song_empty_payloads_only_deletes() -> None:
     db, _, _, output_repo, _, _ = _make_ml_db()
-    output_repo.delete_outputs_for_file = MagicMock()
+    output_repo.delete_outputs_for_song = MagicMock()
     output_repo.store_output_stream = MagicMock()
 
-    db.replace_output_streams_for_file(10, [])
+    db.replace_output_streams_for_song(10, [])
 
-    output_repo.delete_outputs_for_file.assert_called_once_with(10)
+    output_repo.delete_outputs_for_song.assert_called_once_with(10)
     output_repo.store_output_stream.assert_not_called()
 
 
@@ -497,26 +497,26 @@ def test_clear_vector_collection_delegates_to_delete_all_embeddings() -> None:
 
 
 @pytest.mark.unit
-def test_remove_vectors_for_files_deletes_each_file_id() -> None:
+def test_remove_vectors_for_songs_deletes_each_song_id() -> None:
     db, vector_repo, _, _, _, _ = _make_ml_db()
-    vector_repo.delete_embeddings_for_file = MagicMock()
+    vector_repo.delete_embeddings_for_song = MagicMock()
 
-    db.remove_vectors_for_files("openl3", [10, 20, 30])
+    db.remove_vectors_for_songs("openl3", [10, 20, 30])
 
-    assert vector_repo.delete_embeddings_for_file.call_count == 3
-    vector_repo.delete_embeddings_for_file.assert_any_call(10)
-    vector_repo.delete_embeddings_for_file.assert_any_call(20)
-    vector_repo.delete_embeddings_for_file.assert_any_call(30)
+    assert vector_repo.delete_embeddings_for_song.call_count == 3
+    vector_repo.delete_embeddings_for_song.assert_any_call(10)
+    vector_repo.delete_embeddings_for_song.assert_any_call(20)
+    vector_repo.delete_embeddings_for_song.assert_any_call(30)
 
 
 @pytest.mark.unit
-def test_remove_vectors_for_files_empty_list_makes_no_calls() -> None:
+def test_remove_vectors_for_songs_empty_list_makes_no_calls() -> None:
     db, vector_repo, _, _, _, _ = _make_ml_db()
-    vector_repo.delete_embeddings_for_file = MagicMock()
+    vector_repo.delete_embeddings_for_song = MagicMock()
 
-    db.remove_vectors_for_files("openl3", [])
+    db.remove_vectors_for_songs("openl3", [])
 
-    vector_repo.delete_embeddings_for_file.assert_not_called()
+    vector_repo.delete_embeddings_for_song.assert_not_called()
 
 
 @pytest.mark.unit
@@ -569,34 +569,34 @@ def test_count_calibration_history_returns_zero_for_empty() -> None:
 
 
 @pytest.mark.unit
-def test_replace_embedding_stream_for_file_delegates_to_embedding_stream_repo() -> None:
+def test_replace_embedding_stream_for_song_delegates_to_embedding_stream_repo() -> None:
     db, _, _, _, _, embedding_stream_repo = _make_ml_db()
     embedding_stream_repo.upsert_stream = MagicMock(return_value=sentinel.result)
     payload = {"status": "success", "frame_count": 100}
 
-    result = db.replace_embedding_stream_for_file(42, "openl3", payload)
+    result = db.replace_embedding_stream_for_song(42, "openl3", payload)
 
     assert result is sentinel.result
     embedding_stream_repo.upsert_stream.assert_called_once_with(42, "openl3", payload)
 
 
 @pytest.mark.unit
-def test_get_embedding_stream_for_file_delegates_to_embedding_stream_repo() -> None:
+def test_get_embedding_stream_for_song_delegates_to_embedding_stream_repo() -> None:
     db, _, _, _, _, embedding_stream_repo = _make_ml_db()
     embedding_stream_repo.get_stream = MagicMock(return_value=sentinel.result)
 
-    result = db.get_embedding_stream_for_file(42, "openl3")
+    result = db.get_embedding_stream_for_song(42, "openl3")
 
     assert result is sentinel.result
     embedding_stream_repo.get_stream.assert_called_once_with(42, "openl3")
 
 
 @pytest.mark.unit
-def test_get_embedding_stream_for_file_returns_none_when_absent() -> None:
+def test_get_embedding_stream_for_song_returns_none_when_absent() -> None:
     db, _, _, _, _, embedding_stream_repo = _make_ml_db()
     embedding_stream_repo.get_stream = MagicMock(return_value=None)
 
-    result = db.get_embedding_stream_for_file(99, "openl3")
+    result = db.get_embedding_stream_for_song(99, "openl3")
 
     assert result is None
     embedding_stream_repo.get_stream.assert_called_once_with(99, "openl3")
@@ -625,13 +625,13 @@ def test_list_embedding_streams_by_backbone_custom_pagination() -> None:
 
 
 @pytest.mark.unit
-def test_remove_embedding_streams_for_file_delegates_to_embedding_stream_repo() -> None:
+def test_remove_embedding_streams_for_song_delegates_to_embedding_stream_repo() -> None:
     db, _, _, _, _, embedding_stream_repo = _make_ml_db()
-    embedding_stream_repo.delete_for_file = MagicMock()
+    embedding_stream_repo.delete_for_song = MagicMock()
 
-    db.remove_embedding_streams_for_file(42)
+    db.remove_embedding_streams_for_song(42)
 
-    embedding_stream_repo.delete_for_file.assert_called_once_with(42)
+    embedding_stream_repo.delete_for_song.assert_called_once_with(42)
 
 
 # ---------------------------------------------------------------------------
@@ -649,7 +649,7 @@ def test_replace_model_output_delegates_to_output_repo_ignoring_output_key() -> 
 
     assert result is sentinel.result
     output_repo.store_model_output.assert_called_once_with(
-        file_id=42,
+        song_id=42,
         model_id="model1",
         output_data=payload,
     )
@@ -674,6 +674,16 @@ def test_remove_model_outputs_for_model_delegates_to_output_repo() -> None:
 
     assert result == 5
     output_repo.delete_outputs_for_model.assert_called_once_with("model1")
+
+
+@pytest.mark.unit
+def test_remove_output_streams_for_song_delegates_to_output_repo() -> None:
+    db, _, _, output_repo, _, _ = _make_ml_db()
+    output_repo.delete_outputs_for_song = MagicMock()
+
+    db.remove_output_streams_for_song(42)
+
+    output_repo.delete_outputs_for_song.assert_called_once_with(42)
 
 
 # ---------------------------------------------------------------------------
@@ -720,13 +730,13 @@ def test_remove_calibration_state_delegates_to_calibration_repo() -> None:
 
 
 @pytest.mark.unit
-def test_remove_file_vectors_delegates_to_vector_repo_ignoring_collection_name() -> None:
+def test_remove_song_vectors_delegates_to_vector_repo_ignoring_collection_name() -> None:
     db, vector_repo, _, _, _, _ = _make_ml_db()
-    vector_repo.delete_embeddings_for_file = MagicMock()
+    vector_repo.delete_embeddings_for_song = MagicMock()
 
-    db.remove_file_vectors("vectors_track_hot__model__lib", 42)
+    db.remove_song_vectors("vectors_track_hot__model__lib", 42)
 
-    vector_repo.delete_embeddings_for_file.assert_called_once_with(42)
+    vector_repo.delete_embeddings_for_song.assert_called_once_with(42)
 
 
 # ---------------------------------------------------------------------------

@@ -11,7 +11,7 @@ import logging
 from typing import TYPE_CHECKING, Literal
 
 from nomarr.components.infrastructure.path_comp import build_library_path_from_db
-from nomarr.components.library.library_file_query_comp import get_library_stats, list_songs
+from nomarr.components.library.library_song_query_comp import get_library_stats, list_songs
 
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
@@ -130,8 +130,7 @@ def _handle_invalid_path(
         logger.warning(f"[reconcile_library_paths] Invalid path ({status}): {file_path} - {reason}")
     elif policy == "delete_invalid":
         try:
-            with db.library.transaction():
-                db.library.remove_file_by_path(file_path)
+            db.library.remove_song_by_path(file_path)
             result["deleted_files"] += 1
             logger.info(f"[reconcile_library_paths] Deleted invalid path ({status}): {file_path} - {reason}")
         except RuntimeError as e:

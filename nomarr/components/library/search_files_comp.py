@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from nomarr.components.library.library_file_query_comp import search_songs_with_tags
+from nomarr.components.library.library_song_query_comp import search_songs_with_tags
 from nomarr.components.tagging.tag_query_comp import list_tags_by_name
 
 if TYPE_CHECKING:

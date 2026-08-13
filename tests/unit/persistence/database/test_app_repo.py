@@ -327,8 +327,8 @@ class TestAppRepository:
         assert not any(c["worker_id"] == "worker1" for c in claims)
         assert any(c["worker_id"] == "worker2" for c in claims)
 
-    def test_delete_claims_for_files(self, pg_session) -> None:
-        """delete_claims_for_files should delete claims for files."""
+    def test_delete_claims_for_songs(self, pg_session) -> None:
+        """delete_claims_for_songs should delete claims for songs."""
         repo = AppRepository(pg_session)
         repo.insert_worker_claim(
             {
@@ -346,7 +346,7 @@ class TestAppRepository:
                 "claimed_at": 1000,
             }
         )
-        deleted = repo.delete_claims_for_files([20])
+        deleted = repo.delete_claims_for_songs([20])
         assert deleted == 1
         claims = repo.list_claims()
         assert not any(c["key"] == "20" for c in claims)

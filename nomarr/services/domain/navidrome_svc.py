@@ -10,7 +10,7 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
-from nomarr.components.library.library_file_query_comp import get_files_by_ids_with_tags
+from nomarr.components.library.library_song_query_comp import get_songs_by_ids_with_tags
 from nomarr.components.navidrome.descriptor_match_comp import build_track_descriptor
 from nomarr.components.navidrome.subsonic_client_comp import SubsonicClient
 from nomarr.components.navidrome.templates_comp import generate_template_files, get_template_summary
@@ -460,7 +460,7 @@ class NavidromeService:
         if not file_ids:
             return {}
 
-        file_docs = get_files_by_ids_with_tags(self._db, [int(fid) for fid in file_ids])
+        file_docs = get_songs_by_ids_with_tags(self._db, [int(fid) for fid in file_ids])
         descriptors_by_file_id: dict[str, TrackDescriptor] = {}
         for file_doc in file_docs:
             file_id = file_doc.get("id")

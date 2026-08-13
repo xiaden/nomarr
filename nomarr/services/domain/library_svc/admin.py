@@ -16,11 +16,11 @@ from nomarr.components.library.library_admin_comp import (
     delete_library,
     update_library_root,
 )
-from nomarr.components.library.library_file_query_comp import get_library_counts
 from nomarr.components.library.library_records_comp import (
     get_library_record,
     list_library_records,
 )
+from nomarr.components.library.library_song_query_comp import get_library_counts
 from nomarr.components.library.update_library_metadata_comp import UpdateLibraryMetadataComp
 from nomarr.helpers.dto.library_dto import LibraryDict
 

@@ -106,7 +106,7 @@ def seed_entities_for_scan_batch(
     """Seed entity vertices/edges and update metadata caches for scanned files.
 
     Batch-optimised: collects per-file tag entries in-memory, then executes
-    ``replace_file_tags`` per entry and ``update_metadata_cache_batch``
+    ``replace_song_tags`` per entry and ``update_metadata_cache_batch``
     — total N+1 calls per folder instead of ~20 x N per file.
 
     Args:
@@ -139,12 +139,11 @@ def seed_entities_for_scan_batch(
         except (ValueError, TypeError, KeyError) as e:
             logger.warning("[entity_seeding] Failed to build entities for file_id %s: %s", file_id, e)
 
-    # 3) Seed entities via replace_file_tags (one call per entry)
+    # 3) Seed entities via replace_song_tags (one call per entry)
     if all_tag_entries:
         try:
             for entry in all_tag_entries:
-                with db.library.transaction():
-                    db.library.replace_file_tags(entry["song_id"], entry["tags"])
+                db.library.replace_song_tags(entry["song_id"], entry["tags"])
         except (ValueError, RuntimeError) as e:
             logger.warning("[entity_seeding] Batch tag seeding failed: %s", e)
             return 0

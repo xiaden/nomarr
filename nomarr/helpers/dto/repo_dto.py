@@ -23,7 +23,7 @@ class LibraryRow(TypedDict):
     updated_at: int  # BigInteger
 
 
-class LibraryFileRow(TypedDict):
+class SongRow(TypedDict):
     """Single row from the ``songs`` table."""
 
     id: int
@@ -70,7 +70,12 @@ class LibraryScanRow(TypedDict):
 
 
 class TagRow(TypedDict):
-    """Single row from the ``tags`` table."""
+    """Single row from the ``tags`` table.
+
+    ``confidence`` and ``tier`` are legacy columns: kept for schema
+    stability, never populated by any code path. ML scores live on
+    ``tag_model_output`` (see DD-song-domain-repair Q5).
+    """
 
     id: int
     name: str
@@ -83,11 +88,11 @@ class TagRow(TypedDict):
     created_at: int
 
 
-class FileTagRow(TypedDict):
-    """Single row from the ``file_tags`` junction table."""
+class SongTagRow(TypedDict):
+    """Single row from the ``song_tags`` junction table."""
 
     id: int
-    file_id: int
+    song_id: int
     tag_id: int
     confidence: float
     source: str
@@ -145,29 +150,25 @@ class WorkerClaimRow(TypedDict):
     claimed_at: int
 
 
-class FileStateRow(TypedDict):
-    """Single row from the ``file_states`` lookup table."""
+class SongStateRow(TypedDict):
+    """Single row from the ``song_states`` lookup table."""
 
     id: int
     name: str
     description: str | None
 
 
-class FileStateAssignmentRow(TypedDict):
-    """Single row from the ``file_state_assignments`` junction table."""
+class SongStateAssignmentRow(TypedDict):
+    """Single row from the ``song_state_assignments`` junction table."""
 
     id: int
-    file_id: int
+    song_id: int
     state_id: int
     created_at: int
 
 
 __all__ = [
-    "FileStateAssignmentRow",
-    "FileStateRow",
-    "FileTagRow",
     "HealthRow",
-    "LibraryFileRow",
     "LibraryFolderRow",
     "LibraryRow",
     "LibraryScanRow",
@@ -175,6 +176,10 @@ __all__ = [
     "MetaRow",
     "PipelineStateRow",
     "SessionRow",
+    "SongRow",
+    "SongStateAssignmentRow",
+    "SongStateRow",
+    "SongTagRow",
     "TagRow",
     "WorkerClaimRow",
 ]

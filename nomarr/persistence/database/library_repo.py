@@ -1,16 +1,20 @@
 """LibraryRepository — CRUD and domain queries for the ``libraries`` table.
 
 Uses Part B primitives for simple lookups and direct SQLAlchemy Core for
-filtered queries and pipeline-axis operations.
+filtered queries. Pipeline-axis state reads delegate to ``PipelineRepository``,
+which reads/writes the ``pipeline_states`` rows (Q3 contract) rather than any
+``libraries`` columns.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
-from sqlalchemy import Table, select, update
+from sqlalchemy import Table, select
 
+from nomarr.helpers.constants.pipeline_states import PIPELINE_AXIS_FIELDS, PIPELINE_DEFAULTS
 from nomarr.helpers.dto.repo_dto import LibraryRow
+from nomarr.persistence.database.pipeline_repo import PipelineRepository
 from nomarr.persistence.models.library import Library
 from nomarr.persistence.sql.exceptions import map_persistence_exceptions
 from nomarr.persistence.sql.primitives import (
@@ -100,36 +104,43 @@ class LibraryRepository:
                 delete_by_key(_T, library_id, session=self._session)
             self._session.commit()
 
-    # ── pipeline axis helpers ───────────────────────────────────
-
-    def update_pipeline_axis(self, library_id: int, axis_field: str, axis_value: str) -> None:
-        """Set a pipeline-axis column (e.g. ``scan_state``) on a library."""
-        with map_persistence_exceptions():
-            with self._session.begin_nested():
-                stmt = update(_T).where(_T.c.id == library_id).values({axis_field: axis_value})
-                self._session.execute(stmt)
-            self._session.commit()
+    # ── pipeline axis helpers (row-backed via PipelineRepository) ───
 
     def get_pipeline_state(self, library_id: int) -> dict[str, str] | None:
-        """Return the four pipeline-axis columns as a dict, or ``None``."""
+        """Return the four pipeline-axis states as a dict, or ``None``.
+
+        Reads from ``pipeline_states`` rows via :class:`PipelineRepository`
+        (one row per axis key from ``PIPELINE_AXIS_FIELDS``, each row's
+        ``state_data`` shaped ``{"state": <pole_value>}``). Returns ``None``
+        when the library has no pipeline-state rows at all; otherwise returns
+        all four axis keys, falling back to ``PIPELINE_DEFAULTS`` for any axis
+        that has no row.
+        """
+        pipeline_repo = PipelineRepository(self._session)
         with map_persistence_exceptions():
-            row = select_by_key(_T, library_id, session=self._session)
-            if row is None:
+            result: dict[str, str] = {}
+            any_row = False
+            for axis in PIPELINE_AXIS_FIELDS:
+                row = pipeline_repo.get_state(library_id, axis)
+                if row is None:
+                    result[axis] = PIPELINE_DEFAULTS[axis]
+                else:
+                    any_row = True
+                    result[axis] = row["state_data"].get("state", PIPELINE_DEFAULTS[axis])
+            if not any_row:
                 return None
-            m = row._mapping
-            return {
-                "scan_state": m.get("scan_state", "not_scanned"),
-                "ml_state": m.get("ml_state", "not_ML_processed"),
-                "calibration_state": m.get("calibration_state", "not_calibrated"),
-                "tag_write_state": m.get("tag_write_state", "not_written"),
-            }
+            return result
 
     def get_libraries_in_axis_state(self, axis_field: str, axis_value: str) -> list[int]:
-        """Return ids of libraries whose *axis_field* equals *axis_value*."""
+        """Return ids of libraries whose *axis_field* state equals *axis_value*.
+
+        Delegates to :meth:`PipelineRepository.list_libraries_in_pipeline_state`
+        (``axis_field`` is the ``state_key``; matches ``state_data["state"] ==
+        axis_value``), so the lookup is backed by ``pipeline_states`` rows rather
+        than any ``libraries`` column.
+        """
         with map_persistence_exceptions():
-            stmt = select(_T.c.id).where(_T.c[axis_field] == axis_value)
-            result = self._session.execute(stmt)
-            return [row[0] for row in result.all()]
+            return PipelineRepository(self._session).list_libraries_in_pipeline_state(axis_field, axis_value)
 
     # ── cascade delete (ORM) ────────────────────────────────────
 

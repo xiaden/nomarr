@@ -145,7 +145,7 @@ class MLService:
             label: Human-readable tag label for this activation.
 
         """
-        update_model_output_label(self.db, file_id=0, model_id=str(model_id), output_id=str(output_id), label=label)
+        update_model_output_label(self.db, song_id=0, model_id=str(model_id), output_id=str(output_id), label=label)
 
     def mark_model_configured(self, model_id: str | int, value: bool) -> None:
         """Set the fully_configured flag on a model vertex.

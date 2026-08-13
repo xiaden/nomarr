@@ -1,4 +1,4 @@
-"""LibraryFile ORM model."""
+"""Song ORM model."""
 
 from sqlalchemy import (
     BigInteger,
@@ -16,10 +16,10 @@ from sqlalchemy.orm import Mapped, mapped_column
 from nomarr.persistence.models.base import Base
 
 
-class LibraryFile(Base):
+class Song(Base):
     """Represents a single audio file within a library."""
 
-    __tablename__ = "library_files"
+    __tablename__ = "songs"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     library_id: Mapped[int] = mapped_column(ForeignKey("libraries.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -42,8 +42,8 @@ class LibraryFile(Base):
     created_at: Mapped[int] = mapped_column(BigInteger)
 
     __table_args__ = (
-        UniqueConstraint("library_id", "path", name="uq_library_files_library_path"),
-        UniqueConstraint("library_id", "normalized_path", name="uq_library_files_library_norm_path"),
-        Index("ix_lf_needs_tagging_valid", "needs_tagging", "is_valid"),
-        Index("ix_lf_library_tagged", "library_id", "tagged"),
+        UniqueConstraint("library_id", "path", name="uq_songs_library_path"),
+        UniqueConstraint("library_id", "normalized_path", name="uq_songs_library_norm_path"),
+        Index("ix_songs_needs_tagging_valid", "needs_tagging", "is_valid"),
+        Index("ix_songs_library_tagged", "library_id", "tagged"),
     )

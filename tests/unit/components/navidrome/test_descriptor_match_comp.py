@@ -30,26 +30,26 @@ def _seed(**overrides: object) -> TrackDescriptor:
 @pytest.mark.mocked
 def test_resolve_seed_descriptor_uses_targeted_title_query() -> None:
     db = MagicMock()
-    db.library.search_files_by_tag_pattern = MagicMock(return_value=[{"id": "1"}])
-    db.library.search_files_by_tag.return_value = []
+    db.library.search_songs_by_tag_pattern = MagicMock(return_value=[{"id": "1"}])
+    db.library.search_songs_by_tag.return_value = []
 
     resolved, status = resolve_seed_descriptor_to_file(db, _seed())
 
     assert status == "descriptor_unresolved"
     assert resolved is None
-    db.library.search_files_by_tag_pattern.assert_called_once_with("title", "Song A")
-    db.library.search_files_by_tag.assert_not_called()
+    db.library.search_songs_by_tag_pattern.assert_called_once_with("title", "Song A")
+    db.library.search_songs_by_tag.assert_not_called()
 
 
 @pytest.mark.unit
 @pytest.mark.mocked
 def test_resolve_seed_descriptor_returns_unresolved_when_title_empty() -> None:
     db = MagicMock()
-    db.library.search_files_by_tag.return_value = []
+    db.library.search_songs_by_tag.return_value = []
 
     resolved, status = resolve_seed_descriptor_to_file(db, _seed(title=""))
 
     assert status == "descriptor_unresolved"
     assert resolved is None
-    db.library.search_files_by_tag.assert_called_once_with("artist", "Artist A", limit=None)
+    db.library.search_songs_by_tag.assert_called_once_with("artist", "Artist A", limit=None)
     db.songs.get.many.assert_not_called()

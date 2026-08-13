@@ -159,15 +159,13 @@ class WorkerSystemService(WorkerDeathOpsMixin, GpuAdmissionOpsMixin, ComponentLi
 
     def enable_worker_system(self) -> None:
         """Enable worker system globally (sets worker_enabled=true in DB meta)."""
-        with self.db.app.transaction():
-            self.db.app.update_config_option("worker_enabled", {"value": "true"})
+        self.db.app.update_config_option("worker_enabled", {"value": "true"})
         self._worker_enabled = True
         logger.info("[WorkerSystemService] Worker system globally enabled")
 
     def disable_worker_system(self) -> None:
         """Disable worker system globally (sets worker_enabled=false in DB meta)."""
-        with self.db.app.transaction():
-            self.db.app.update_config_option("worker_enabled", {"value": "false"})
+        self.db.app.update_config_option("worker_enabled", {"value": "false"})
         self._worker_enabled = False
         logger.info("[WorkerSystemService] Worker system globally disabled")
 

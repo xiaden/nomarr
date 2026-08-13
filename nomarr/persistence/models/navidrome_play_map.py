@@ -1,4 +1,4 @@
-"""NavidromePlayMap ORM model — junction mapping plays to library files."""
+"""NavidromePlayMap ORM model — junction mapping plays to songs."""
 
 from sqlalchemy import BigInteger, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
@@ -7,7 +7,7 @@ from nomarr.persistence.models.base import Base
 
 
 class NavidromePlayMap(Base):
-    """Junction table: maps Navidrome plays to library files (composite PK)."""
+    """Junction table: maps Navidrome plays to songs (composite PK)."""
 
     __tablename__ = "navidrome_play_maps"
 
@@ -15,8 +15,8 @@ class NavidromePlayMap(Base):
         ForeignKey("navidrome_plays.id", ondelete="CASCADE"),
         primary_key=True,
     )
-    file_id: Mapped[int] = mapped_column(
-        ForeignKey("library_files.id", ondelete="CASCADE"),
+    song_id: Mapped[int] = mapped_column(
+        ForeignKey("songs.id", ondelete="CASCADE"),
         primary_key=True,
         index=True,
     )

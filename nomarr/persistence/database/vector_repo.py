@@ -29,7 +29,7 @@ def _row_to_embedding_record(row: Row[Any]) -> EmbeddingRecord:
     m = row._mapping
     return EmbeddingRecord(
         id=m["id"],
-        file_id=m["file_id"],
+        song_id=m["song_id"],
         backbone_id=m["backbone_id"],
         tier=m["tier"],
         embed_dim=m["embed_dim"],
@@ -46,7 +46,7 @@ def _row_to_similar_result(row: Row[Any]) -> SimilarResult:
     """Convert a SQLAlchemy ``Row`` to a ``SimilarResult`` TypedDict."""
     m = row._mapping
     return SimilarResult(
-        file_id=m["file_id"],
+        song_id=m["song_id"],
         backbone_id=m["backbone_id"],
         distance=m["distance"],
     )
@@ -66,7 +66,7 @@ class VectorRepo:
 
     def insert_embedding(
         self,
-        file_id: int,
+        song_id: int,
         backbone_id: str,
         model_id: str,
         embedding_vector: list[float],
@@ -86,7 +86,7 @@ class VectorRepo:
                 stmt = (
                     insert(_T)
                     .values(
-                        file_id=file_id,
+                        song_id=song_id,
                         backbone_id=backbone_id,
                         model_id=model_id,
                         embed_dim=len(embedding_vector),
@@ -141,7 +141,7 @@ class VectorRepo:
             distance_expr = _T.c.embedding.op("<=>")(embedding)
             stmt = (
                 select(
-                    _T.c.file_id,
+                    _T.c.song_id,
                     _T.c.backbone_id,
                     distance_expr.label("distance"),
                 )
@@ -181,10 +181,10 @@ class VectorRepo:
 
     # ── queries ─────────────────────────────────────────────────
 
-    def get_embeddings_for_file(self, file_id: int) -> list[EmbeddingRecord]:
-        """Return all embeddings (all backbones) for a given file."""
+    def get_embeddings_for_song(self, song_id: int) -> list[EmbeddingRecord]:
+        """Return all embeddings (all backbones) for a given song."""
         with map_persistence_exceptions():
-            stmt = select(_T).where(_T.c.file_id == file_id)
+            stmt = select(_T).where(_T.c.song_id == song_id)
             result = self._session.execute(stmt)
             return [_row_to_embedding_record(r) for r in result.all()]
 
@@ -229,11 +229,11 @@ class VectorRepo:
                 self._session.execute(delete(_T))
             self._session.commit()
 
-    def delete_embeddings_for_file(self, file_id: int) -> None:
-        """Delete all embeddings for a given file."""
+    def delete_embeddings_for_song(self, song_id: int) -> None:
+        """Delete all embeddings for a given song."""
         with map_persistence_exceptions():
             with self._session.begin_nested():
-                stmt = delete(_T).where(_T.c.file_id == file_id)
+                stmt = delete(_T).where(_T.c.song_id == song_id)
                 self._session.execute(stmt)
             self._session.commit()
 

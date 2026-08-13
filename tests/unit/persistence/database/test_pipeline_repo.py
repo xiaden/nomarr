@@ -7,7 +7,7 @@ from sqlalchemy import insert
 
 from nomarr.persistence.database.pipeline_repo import PipelineRepository
 from nomarr.persistence.models.library import Library
-from nomarr.persistence.models.library_file import LibraryFile
+from nomarr.persistence.models.song import Song
 
 
 def _create_library(session) -> int:
@@ -26,11 +26,11 @@ def _create_library(session) -> int:
     return r.inserted_primary_key[0]
 
 
-def _create_library_and_file(session) -> tuple[int, int]:
-    """Helper: insert a library and file, return (library_id, file_id)."""
+def _create_library_and_song(session) -> tuple[int, int]:
+    """Helper: insert a library and song, return (library_id, song_id)."""
     lib_id = _create_library(session)
     r = session.execute(
-        insert(LibraryFile).values(
+        insert(Song).values(
             library_id=lib_id,
             folder_id=None,
             path="/music/test.mp3",
@@ -49,8 +49,8 @@ def _create_library_and_file(session) -> tuple[int, int]:
             created_at=1000,
         )
     )
-    file_id = r.inserted_primary_key[0]
-    return lib_id, file_id
+    song_id = r.inserted_primary_key[0]
+    return lib_id, song_id
 
 
 @pytest.mark.unit
@@ -136,33 +136,34 @@ class TestPipelineRepository:
         result = repo.count_pipeline_states()
         assert result >= 2
 
-    def test_list_file_docs_in_state(self, pg_session) -> None:
-        """list_file_docs_in_state should return files in a given state."""
-        from nomarr.persistence.database.file_state_repo import FileStateRepository
+    def test_list_song_docs_in_state(self, pg_session) -> None:
+        """list_song_docs_in_state should return songs in a given state."""
+        from nomarr.helpers.constants.file_states import STATE_PROCESSED
+        from nomarr.persistence.database.song_state_repo import SongStateRepository
 
-        _lib_id, file_id = _create_library_and_file(pg_session)
-        fs_repo = FileStateRepository(pg_session)
+        _lib_id, song_id = _create_library_and_song(pg_session)
+        fs_repo = SongStateRepository(pg_session)
         # Bootstrap canonical states
         fs_repo.bootstrap_states([])
-        # Assign "pending" state to file (single file_id, not list)
-        fs_repo.assign_state(file_id, "pending")
+        # Assign a 16-vertex state to the song
+        fs_repo.assign_state(song_id, STATE_PROCESSED)
 
         repo = PipelineRepository(pg_session)
-        result = repo.list_file_docs_in_state("pending")
+        result = repo.list_song_docs_in_state(STATE_PROCESSED)
         assert len(result) >= 1
-        assert any(f["id"] == file_id for f in result)
+        assert any(s["id"] == song_id for s in result)
 
-    def test_get_state_edges_for_files(self, pg_session) -> None:
-        """get_state_edges_for_files should return pipeline states for file libraries."""
-        lib_id, file_id = _create_library_and_file(pg_session)
+    def test_get_state_edges_for_songs(self, pg_session) -> None:
+        """get_state_edges_for_songs should return pipeline states for song libraries."""
+        lib_id, song_id = _create_library_and_song(pg_session)
         repo = PipelineRepository(pg_session)
         repo.upsert_pipeline_state(lib_id, "scan_state", {"status": "idle"})
-        result = repo.get_state_edges_for_files([file_id])
+        result = repo.get_state_edges_for_songs([song_id])
         assert len(result) >= 1
         assert any(s["library_id"] == lib_id for s in result)
 
-    def test_get_state_edges_for_files_empty(self, pg_session) -> None:
-        """get_state_edges_for_files should return [] for empty file_ids."""
+    def test_get_state_edges_for_songs_empty(self, pg_session) -> None:
+        """get_state_edges_for_songs should return [] for empty song_ids."""
         repo = PipelineRepository(pg_session)
-        result = repo.get_state_edges_for_files([])
+        result = repo.get_state_edges_for_songs([])
         assert result == []

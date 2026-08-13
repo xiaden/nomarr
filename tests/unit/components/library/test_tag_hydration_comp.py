@@ -132,7 +132,7 @@ class TestHydrateFileDocsWithMetadata:
         result = hydrate_songs_with_metadata(mock_db, [])
 
         assert result == []
-        mock_db.library.list_file_tags_for_files.assert_not_called()
+        mock_db.library.list_song_tags_for_songs.assert_not_called()
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -142,7 +142,7 @@ class TestHydrateFileDocsWithMetadata:
             {"id": 1, "path": "/music/song1.flac"},
             {"id": 2, "path": "/music/song2.flac"},
         ]
-        mock_db.library.list_file_tags_for_files.return_value = {
+        mock_db.library.list_song_tags_for_songs.return_value = {
             1: [
                 {"name": "artist", "value": ["Artist One"]},
                 {"name": "album", "value": ["Album One"]},
@@ -165,7 +165,7 @@ class TestHydrateFileDocsWithMetadata:
 
         result = hydrate_songs_with_metadata(mock_db, file_docs)
 
-        mock_db.library.list_file_tags_for_files.assert_called_once_with([1, 2])
+        mock_db.library.list_song_tags_for_songs.assert_called_once_with([1, 2])
         assert len(result) == 2
         assert result[0]["artist"] == "Artist One"
         assert result[0]["album"] == "Album One"
@@ -183,7 +183,7 @@ class TestHydrateFileDocsWithMetadata:
     def test_file_with_no_tags_gets_none_fields(self) -> None:
         mock_db = MagicMock()
         file_docs = [{"id": 1, "path": "/music/song.flac"}]
-        mock_db.library.list_file_tags_for_files.return_value = {
+        mock_db.library.list_song_tags_for_songs.return_value = {
             1: [],
         }
 
@@ -206,7 +206,7 @@ class TestHydrateFileDocsWithMetadata:
     def test_original_docs_not_mutated(self) -> None:
         mock_db = MagicMock()
         file_docs = [{"id": 1, "path": "/music/song.flac"}]
-        mock_db.library.list_file_tags_for_files.return_value = {
+        mock_db.library.list_song_tags_for_songs.return_value = {
             1: [
                 {"name": "artist", "value": ["New Artist"]},
             ],
@@ -227,13 +227,13 @@ class TestHydrateFileDocsWithMetadata:
             {"id": None, "path": "/music/none_id.flac"},
         ]
 
-        # Mock list_file_tags_for_files to return empty for the valid id
-        mock_db.library.list_file_tags_for_files.return_value = {}
+        # Mock list_song_tags_for_songs to return empty for the valid id
+        mock_db.library.list_song_tags_for_songs.return_value = {}
 
         result = hydrate_songs_with_metadata(mock_db, file_docs)
 
         # Doc with id=123 triggers tag lookup; docs with missing or None id don't
-        mock_db.library.list_file_tags_for_files.assert_called_once_with([123])
+        mock_db.library.list_song_tags_for_songs.assert_called_once_with([123])
         assert len(result) == 3
         assert result[0] == {"path": "/music/no_id.flac"}
         assert "id" in result[1] and result[1]["id"] == 123
@@ -253,7 +253,7 @@ class TestHydrateFileDocWithMetadata:
     def test_single_file_hydration(self) -> None:
         mock_db = MagicMock()
         file_doc = {"id": 1, "path": "/music/song.flac"}
-        mock_db.library.list_file_tags_for_files.return_value = {
+        mock_db.library.list_song_tags_for_songs.return_value = {
             1: [
                 {"name": "artist", "value": ["Solo Artist"]},
                 {"name": "album", "value": ["Solo Album"]},
@@ -275,4 +275,4 @@ class TestHydrateFileDocWithMetadata:
         assert result["genres"] == ["Jazz"]
         assert result["year"] == 2022
         assert result["path"] == "/music/song.flac"
-        mock_db.library.list_file_tags_for_files.assert_called_once_with([1])
+        mock_db.library.list_song_tags_for_songs.assert_called_once_with([1])

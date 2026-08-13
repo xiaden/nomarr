@@ -1,20 +1,20 @@
-"""Unit tests for TagRepository and FileTagRepository."""
+"""Unit tests for TagRepository and SongTagRepository."""
 
 from __future__ import annotations
 
 import pytest
 from sqlalchemy import insert
 
-from nomarr.persistence.database.file_tag_repo import FileTagRepository
+from nomarr.persistence.database.song_tag_repo import SongTagRepository
 from nomarr.persistence.database.tag_repo import TagRepository
-from nomarr.persistence.models.file_tag import SongTag
 from nomarr.persistence.models.library import Library
-from nomarr.persistence.models.library_file import LibraryFile
+from nomarr.persistence.models.song import Song
+from nomarr.persistence.models.song_tag import SongTag
 from nomarr.persistence.models.tag import Tag
 
 
-def _create_library_and_file(session) -> tuple[int, int]:
-    """Helper: create a library and a file, return (library_id, file_id)."""
+def _create_library_and_song(session) -> tuple[int, int]:
+    """Helper: create a library and a song, return (library_id, song_id)."""
     lib_r = session.execute(
         insert(Library).values(
             name="Tag Lib",
@@ -27,8 +27,8 @@ def _create_library_and_file(session) -> tuple[int, int]:
         )
     )
     lib_id = lib_r.inserted_primary_key[0]
-    file_r = session.execute(
-        insert(LibraryFile).values(
+    song_r = session.execute(
+        insert(Song).values(
             library_id=lib_id,
             path="/tag/lib/test.mp3",
             normalized_path="/tag/lib/test.mp3",
@@ -41,8 +41,8 @@ def _create_library_and_file(session) -> tuple[int, int]:
             created_at=1000,
         )
     )
-    file_id = file_r.inserted_primary_key[0]
-    return lib_id, file_id
+    song_id = song_r.inserted_primary_key[0]
+    return lib_id, song_id
 
 
 def _create_tag(session, name: str = "rock", value: str = "rock", namespace: str = "genre") -> int:
@@ -142,97 +142,166 @@ class TestTagRepository:
         result = repo.get_tag(tag_id)
         assert result is None
 
-    # ── file-tag associations ───────────────────────────────────
+    # ── song-tag associations ───────────────────────────────────
 
-    def test_get_tags_for_file(self, pg_session) -> None:
-        """get_tags_for_file should return tags assigned to a file."""
-        _, file_id = _create_library_and_file(pg_session)
+    def test_get_tags_for_song(self, pg_session) -> None:
+        """get_tags_for_song should return tags assigned to a song."""
+        _, song_id = _create_library_and_song(pg_session)
         tag_id1 = _create_tag(pg_session, name="rock", value="rock", namespace="genre")
         tag_id2 = _create_tag(pg_session, name="pop", value="pop", namespace="genre")
-        file_tag_repo = FileTagRepository(pg_session)
-        file_tag_repo.assign_tag_to_file(file_id, tag_id1, confidence=0.9)
-        file_tag_repo.assign_tag_to_file(file_id, tag_id2, confidence=0.8)
-        result = file_tag_repo.get_tags_for_file(file_id)
+        song_tag_repo = SongTagRepository(pg_session)
+        song_tag_repo.assign_tag_to_song(song_id, tag_id1, confidence=0.9)
+        song_tag_repo.assign_tag_to_song(song_id, tag_id2, confidence=0.8)
+        result = song_tag_repo.get_tags_for_song(song_id)
         assert len(result) == 2
         names = {t["name"] for t in result}
         assert "rock" in names
         assert "pop" in names
 
-    def test_assign_tag_to_file(self, pg_session) -> None:
-        """assign_tag_to_file should create a file-tag association."""
-        _, file_id = _create_library_and_file(pg_session)
+    def test_assign_tag_to_song(self, pg_session) -> None:
+        """assign_tag_to_song should create a song-tag association."""
+        _, song_id = _create_library_and_song(pg_session)
         tag_id = _create_tag(pg_session)
-        file_tag_repo = FileTagRepository(pg_session)
-        file_tag_repo.assign_tag_to_file(file_id, tag_id, confidence=0.95, source="ml")
-        tags = file_tag_repo.get_tags_for_file(file_id)
+        song_tag_repo = SongTagRepository(pg_session)
+        song_tag_repo.assign_tag_to_song(song_id, tag_id, confidence=0.95, source="ml")
+        tags = song_tag_repo.get_tags_for_song(song_id)
         assert len(tags) == 1
         assert tags[0]["id"] == tag_id
 
-    def test_remove_tag_from_file(self, pg_session) -> None:
-        """remove_tag_from_file should delete the association."""
-        _, file_id = _create_library_and_file(pg_session)
+    def test_remove_tag_from_song(self, pg_session) -> None:
+        """remove_tag_from_song should delete the association."""
+        _, song_id = _create_library_and_song(pg_session)
         tag_id = _create_tag(pg_session)
-        file_tag_repo = FileTagRepository(pg_session)
-        file_tag_repo.assign_tag_to_file(file_id, tag_id)
-        file_tag_repo.remove_tag_from_file(file_id, tag_id)
-        tags = file_tag_repo.get_tags_for_file(file_id)
+        song_tag_repo = SongTagRepository(pg_session)
+        song_tag_repo.assign_tag_to_song(song_id, tag_id)
+        song_tag_repo.remove_tag_from_song(song_id, tag_id)
+        tags = song_tag_repo.get_tags_for_song(song_id)
         assert len(tags) == 0
 
-    def test_replace_file_tags(self, pg_session) -> None:
-        """replace_file_tags should delete old and insert new assignments."""
-        _, file_id = _create_library_and_file(pg_session)
+    def test_replace_song_tags(self, pg_session) -> None:
+        """replace_song_tags should delete old and insert new assignments."""
+        _, song_id = _create_library_and_song(pg_session)
         tag_id1 = _create_tag(pg_session, name="old1", value="old1", namespace="genre")
         tag_id2 = _create_tag(pg_session, name="old2", value="old2", namespace="genre")
         tag_id3 = _create_tag(pg_session, name="new1", value="new1", namespace="genre")
-        file_tag_repo = FileTagRepository(pg_session)
-        file_tag_repo.assign_tag_to_file(file_id, tag_id1)
-        file_tag_repo.assign_tag_to_file(file_id, tag_id2)
-        file_tag_repo.replace_file_tags(
-            file_id,
+        song_tag_repo = SongTagRepository(pg_session)
+        song_tag_repo.assign_tag_to_song(song_id, tag_id1)
+        song_tag_repo.assign_tag_to_song(song_id, tag_id2)
+        song_tag_repo.replace_song_tags(
+            song_id,
             [
                 {"tag_id": tag_id3, "confidence": 0.9, "source": "ml"},
             ],
         )
-        tags = file_tag_repo.get_tags_for_file(file_id)
+        tags = song_tag_repo.get_tags_for_song(song_id)
         assert len(tags) == 1
         assert tags[0]["name"] == "new1"
 
-    def test_get_files_for_tag(self, pg_session) -> None:
-        """get_files_for_tag should return files assigned to a tag."""
-        _, file_id1 = _create_library_and_file(pg_session)
-        _, file_id2 = _create_library_and_file(pg_session)
+    def test_get_songs_for_tag(self, pg_session) -> None:
+        """get_songs_for_tag should return songs assigned to a tag."""
+        _, song_id1 = _create_library_and_song(pg_session)
+        _, song_id2 = _create_library_and_song(pg_session)
         tag_id = _create_tag(pg_session)
-        file_tag_repo = FileTagRepository(pg_session)
-        file_tag_repo.assign_tag_to_file(file_id1, tag_id)
-        file_tag_repo.assign_tag_to_file(file_id2, tag_id)
-        result = file_tag_repo.get_files_for_tag(tag_id)
+        song_tag_repo = SongTagRepository(pg_session)
+        song_tag_repo.assign_tag_to_song(song_id1, tag_id)
+        song_tag_repo.assign_tag_to_song(song_id2, tag_id)
+        result = song_tag_repo.get_songs_for_tag(tag_id)
         assert len(result) == 2
-        ids = {f["id"] for f in result}
-        assert file_id1 in ids
-        assert file_id2 in ids
+        ids = {s["id"] for s in result}
+        assert song_id1 in ids
+        assert song_id2 in ids
 
-    def test_list_file_ids_for_tag(self, pg_session) -> None:
-        """list_file_ids_for_tag should return file ids with pagination."""
-        _, file_id1 = _create_library_and_file(pg_session)
-        _, file_id2 = _create_library_and_file(pg_session)
+    def test_list_song_ids_for_tag(self, pg_session) -> None:
+        """list_song_ids_for_tag should return song ids with pagination."""
+        _, song_id1 = _create_library_and_song(pg_session)
+        _, song_id2 = _create_library_and_song(pg_session)
         tag_id = _create_tag(pg_session)
-        file_tag_repo = FileTagRepository(pg_session)
-        file_tag_repo.assign_tag_to_file(file_id1, tag_id)
-        file_tag_repo.assign_tag_to_file(file_id2, tag_id)
-        result = file_tag_repo.list_file_ids_for_tag(tag_id, limit=1, offset=0)
+        song_tag_repo = SongTagRepository(pg_session)
+        song_tag_repo.assign_tag_to_song(song_id1, tag_id)
+        song_tag_repo.assign_tag_to_song(song_id2, tag_id)
+        result = song_tag_repo.list_song_ids_for_tag(tag_id, limit=1, offset=0)
         assert len(result) == 1
-        assert result[0] in (file_id1, file_id2)
+        assert result[0] in (song_id1, song_id2)
+
+    def test_count_songs_for_tag(self, pg_session) -> None:
+        """count_songs_for_tag should count song-tag assignments for a tag."""
+        _, song_id1 = _create_library_and_song(pg_session)
+        _, song_id2 = _create_library_and_song(pg_session)
+        tag_id = _create_tag(pg_session)
+        song_tag_repo = SongTagRepository(pg_session)
+        song_tag_repo.assign_tag_to_song(song_id1, tag_id)
+        song_tag_repo.assign_tag_to_song(song_id2, tag_id)
+        result = song_tag_repo.count_songs_for_tag(tag_id)
+        assert result == 2
+
+    def test_count_songs_for_tag_zero(self, pg_session) -> None:
+        """count_songs_for_tag should return 0 for a tag with no assignments."""
+        tag_id = _create_tag(pg_session)
+        song_tag_repo = SongTagRepository(pg_session)
+        result = song_tag_repo.count_songs_for_tag(tag_id)
+        assert result == 0
+
+    def test_count_songs_by_tag(self, pg_session) -> None:
+        """count_songs_by_tag should count distinct songs for matching tags."""
+        _, song_id1 = _create_library_and_song(pg_session)
+        _, song_id2 = _create_library_and_song(pg_session)
+        tag_id = _create_tag(pg_session, name="genre", value="rock", namespace="genre")
+        song_tag_repo = SongTagRepository(pg_session)
+        song_tag_repo.assign_tag_to_song(song_id1, tag_id)
+        song_tag_repo.assign_tag_to_song(song_id2, tag_id)
+        result = song_tag_repo.count_songs_by_tag("genre", "rock")
+        assert result == 2
+
+    def test_count_songs_by_tag_non_matching_value(self, pg_session) -> None:
+        """count_songs_by_tag should return 0 when value does not match."""
+        _, song_id = _create_library_and_song(pg_session)
+        tag_id = _create_tag(pg_session, name="genre", value="rock", namespace="genre")
+        song_tag_repo = SongTagRepository(pg_session)
+        song_tag_repo.assign_tag_to_song(song_id, tag_id)
+        result = song_tag_repo.count_songs_by_tag("genre", "pop")
+        assert result == 0
+
+    def test_get_song_tag_edges_for_tags(self, pg_session) -> None:
+        """get_song_tag_edges_for_tags should return edge dicts with expected keys."""
+        _, song_id = _create_library_and_song(pg_session)
+        tag_id = _create_tag(pg_session)
+        song_tag_repo = SongTagRepository(pg_session)
+        song_tag_repo.assign_tag_to_song(song_id, tag_id, confidence=0.9, source="ml")
+        result = song_tag_repo.get_song_tag_edges_for_tags([tag_id])
+        assert len(result) == 1
+        edge = result[0]
+        assert edge["song_id"] == song_id
+        assert edge["tag_id"] == tag_id
+        assert edge["confidence"] == 0.9
+        assert edge["source"] == "ml"
+
+    def test_get_song_tag_edges_for_tags_empty(self, pg_session) -> None:
+        """get_song_tag_edges_for_tags should return [] for empty tag_ids."""
+        song_tag_repo = SongTagRepository(pg_session)
+        result = song_tag_repo.get_song_tag_edges_for_tags([])
+        assert result == []
+
+    def test_get_song_tag_edges_for_tags_limit(self, pg_session) -> None:
+        """get_song_tag_edges_for_tags should respect the limit parameter."""
+        _, song_id1 = _create_library_and_song(pg_session)
+        _, song_id2 = _create_library_and_song(pg_session)
+        tag_id = _create_tag(pg_session)
+        song_tag_repo = SongTagRepository(pg_session)
+        song_tag_repo.assign_tag_to_song(song_id1, tag_id)
+        song_tag_repo.assign_tag_to_song(song_id2, tag_id)
+        result = song_tag_repo.get_song_tag_edges_for_tags([tag_id], limit=1)
+        assert len(result) == 1
 
     # ── orphan management ───────────────────────────────────────
 
     def test_get_orphaned_tag_ids(self, pg_session) -> None:
-        """get_orphaned_tag_ids should return tags with no file assignments."""
+        """get_orphaned_tag_ids should return tags with no song assignments."""
         tag_id1 = _create_tag(pg_session, name="orphan1", value="orphan1", namespace="genre")
         tag_id2 = _create_tag(pg_session, name="orphan2", value="orphan2", namespace="genre")
-        _, file_id = _create_library_and_file(pg_session)
-        file_tag_repo = FileTagRepository(pg_session)
+        _, song_id = _create_library_and_song(pg_session)
+        song_tag_repo = SongTagRepository(pg_session)
         tag_repo = TagRepository(pg_session)
-        file_tag_repo.assign_tag_to_file(file_id, tag_id1)
+        song_tag_repo.assign_tag_to_song(song_id, tag_id1)
         result = tag_repo.get_orphaned_tag_ids()
         assert tag_id2 in result
         assert tag_id1 not in result
@@ -241,10 +310,10 @@ class TestTagRepository:
         """cleanup_orphaned_tags should delete tags with no assignments."""
         tag_id1 = _create_tag(pg_session, name="keep", value="keep", namespace="genre")
         tag_id2 = _create_tag(pg_session, name="delete", value="delete", namespace="genre")
-        _, file_id = _create_library_and_file(pg_session)
-        file_tag_repo = FileTagRepository(pg_session)
+        _, song_id = _create_library_and_song(pg_session)
+        song_tag_repo = SongTagRepository(pg_session)
         tag_repo = TagRepository(pg_session)
-        file_tag_repo.assign_tag_to_file(file_id, tag_id1)
+        song_tag_repo.assign_tag_to_song(song_id, tag_id1)
         deleted = tag_repo.cleanup_orphaned_tags()
         assert deleted == 1
         assert tag_repo.get_tag(tag_id1) is not None
@@ -280,49 +349,49 @@ class TestTagRepository:
         result = repo.count_tags()
         assert result >= 2
 
-    def test_get_tags_for_files_batch(self, pg_session) -> None:
-        """get_tags_for_files_batch should return tag assignments for multiple files."""
-        _, file_id1 = _create_library_and_file(pg_session)
-        _, file_id2 = _create_library_and_file(pg_session)
+    def test_get_tags_for_songs_batch(self, pg_session) -> None:
+        """get_tags_for_songs_batch should return tag assignments for multiple songs."""
+        _, song_id1 = _create_library_and_song(pg_session)
+        _, song_id2 = _create_library_and_song(pg_session)
         tag_id = _create_tag(pg_session)
-        file_tag_repo = FileTagRepository(pg_session)
-        file_tag_repo.assign_tag_to_file(file_id1, tag_id, confidence=0.9)
-        file_tag_repo.assign_tag_to_file(file_id2, tag_id, confidence=0.8)
-        result = file_tag_repo.get_tags_for_files_batch([file_id1, file_id2])
+        song_tag_repo = SongTagRepository(pg_session)
+        song_tag_repo.assign_tag_to_song(song_id1, tag_id, confidence=0.9)
+        song_tag_repo.assign_tag_to_song(song_id2, tag_id, confidence=0.8)
+        result = song_tag_repo.get_tags_for_songs_batch([song_id1, song_id2])
         assert len(result) == 2
         assert all(r["tag_id"] == tag_id for r in result)
 
     def test_get_song_tags(self, pg_session) -> None:
-        """get_song_tags should return tags for a file."""
-        _, file_id = _create_library_and_file(pg_session)
+        """get_song_tags should return tags for a song."""
+        _, song_id = _create_library_and_song(pg_session)
         tag_id = _create_tag(pg_session)
-        file_tag_repo = FileTagRepository(pg_session)
-        file_tag_repo.assign_tag_to_file(file_id, tag_id)
-        result = file_tag_repo.get_song_tags(file_id)
+        song_tag_repo = SongTagRepository(pg_session)
+        song_tag_repo.assign_tag_to_song(song_id, tag_id)
+        result = song_tag_repo.get_song_tags(song_id)
         assert len(result) == 1
         assert result[0]["id"] == tag_id
 
     # ── search ──────────────────────────────────────────────────
 
-    def test_search_files_by_tag(self, pg_session) -> None:
-        """search_files_by_tag should find files with exact tag match."""
-        _, file_id = _create_library_and_file(pg_session)
+    def test_search_songs_by_tag(self, pg_session) -> None:
+        """search_songs_by_tag should find songs with exact tag match."""
+        _, song_id = _create_library_and_song(pg_session)
         tag_id = _create_tag(pg_session, name="genre", value="rock", namespace="genre")
-        file_tag_repo = FileTagRepository(pg_session)
-        file_tag_repo.assign_tag_to_file(file_id, tag_id)
-        result = file_tag_repo.search_files_by_tag("genre", "rock")
+        song_tag_repo = SongTagRepository(pg_session)
+        song_tag_repo.assign_tag_to_song(song_id, tag_id)
+        result = song_tag_repo.search_songs_by_tag("genre", "rock")
         assert len(result) == 1
-        assert result[0]["id"] == file_id
+        assert result[0]["id"] == song_id
 
-    def test_search_files_by_tag_contains(self, pg_session) -> None:
-        """search_files_by_tag_contains should find files with partial tag match."""
-        _, file_id = _create_library_and_file(pg_session)
+    def test_search_songs_by_tag_contains(self, pg_session) -> None:
+        """search_songs_by_tag_contains should find songs with partial tag match."""
+        _, song_id = _create_library_and_song(pg_session)
         tag_id = _create_tag(pg_session, name="genre", value="progressive rock", namespace="genre")
-        file_tag_repo = FileTagRepository(pg_session)
-        file_tag_repo.assign_tag_to_file(file_id, tag_id)
-        result = file_tag_repo.search_files_by_tag_contains("genre", "rock")
+        song_tag_repo = SongTagRepository(pg_session)
+        song_tag_repo.assign_tag_to_song(song_id, tag_id)
+        result = song_tag_repo.search_songs_by_tag_contains("genre", "rock")
         assert len(result) == 1
-        assert result[0]["id"] == file_id
+        assert result[0]["id"] == song_id
 
     def test_get_tag_value_frequencies(self, pg_session) -> None:
         """get_tag_value_frequencies should return value counts."""
@@ -341,14 +410,14 @@ class TestTagRepository:
 
     def test_replace_tag_references(self, pg_session) -> None:
         """replace_tag_references should re-point assignments."""
-        _, file_id = _create_library_and_file(pg_session)
+        _, song_id = _create_library_and_song(pg_session)
         source_id = _create_tag(pg_session, name="old", value="old", namespace="genre")
         target_id = _create_tag(pg_session, name="new", value="new", namespace="genre")
-        file_tag_repo = FileTagRepository(pg_session)
+        song_tag_repo = SongTagRepository(pg_session)
         TagRepository(pg_session)
-        file_tag_repo.assign_tag_to_file(file_id, source_id)
-        file_tag_repo.replace_tag_references(source_id, target_id)
-        tags = file_tag_repo.get_tags_for_file(file_id)
+        song_tag_repo.assign_tag_to_song(song_id, source_id)
+        song_tag_repo.replace_tag_references(source_id, target_id)
+        tags = song_tag_repo.get_tags_for_song(song_id)
         assert len(tags) == 1
         assert tags[0]["id"] == target_id
 
@@ -373,48 +442,48 @@ class TestTagRepository:
 
     def test_list_tags_with_song_count(self, pg_session) -> None:
         """list_tags_with_song_count should include assignment counts."""
-        _, file_id = _create_library_and_file(pg_session)
+        _, song_id = _create_library_and_song(pg_session)
         tag_id = _create_tag(pg_session, name="rock", value="rock", namespace="genre")
-        file_tag_repo = FileTagRepository(pg_session)
+        song_tag_repo = SongTagRepository(pg_session)
         tag_repo = TagRepository(pg_session)
-        file_tag_repo.assign_tag_to_file(file_id, tag_id)
+        song_tag_repo.assign_tag_to_song(song_id, tag_id)
         result = tag_repo.list_tags_with_song_count()
         assert len(result) >= 1
         rock_tag = next((t for t in result if t["name"] == "rock"), None)
         assert rock_tag is not None
         assert rock_tag["song_count"] == 1
 
-    def test_get_genre_tags_for_files(self, pg_session) -> None:
-        """get_genre_tags_for_files should return genre tags for files."""
-        _, file_id = _create_library_and_file(pg_session)
+    def test_get_genre_tags_for_songs(self, pg_session) -> None:
+        """get_genre_tags_for_songs should return genre tags for songs."""
+        _, song_id = _create_library_and_song(pg_session)
         genre_id = _create_tag(pg_session, name="genre", value="rock", namespace="genre")
         other_id = _create_tag(pg_session, name="mood", value="happy", namespace="mood")
-        file_tag_repo = FileTagRepository(pg_session)
-        file_tag_repo.assign_tag_to_file(file_id, genre_id)
-        file_tag_repo.assign_tag_to_file(file_id, other_id)
-        result = file_tag_repo.get_genre_tags_for_files([file_id])
+        song_tag_repo = SongTagRepository(pg_session)
+        song_tag_repo.assign_tag_to_song(song_id, genre_id)
+        song_tag_repo.assign_tag_to_song(song_id, other_id)
+        result = song_tag_repo.get_genre_tags_for_songs([song_id])
         assert len(result) == 1
         assert result[0]["name"] == "genre"
 
-    def test_search_files_by_tag_pattern(self, pg_session) -> None:
-        """search_files_by_tag_pattern should match ILIKE pattern."""
-        _, file_id = _create_library_and_file(pg_session)
+    def test_search_songs_by_tag_pattern(self, pg_session) -> None:
+        """search_songs_by_tag_pattern should match ILIKE pattern."""
+        _, song_id = _create_library_and_song(pg_session)
         tag_id = _create_tag(pg_session, name="genre", value="progressive rock", namespace="genre")
-        file_tag_repo = FileTagRepository(pg_session)
-        file_tag_repo.assign_tag_to_file(file_id, tag_id)
-        result = file_tag_repo.search_files_by_tag_pattern("genre", "%rock%")
+        song_tag_repo = SongTagRepository(pg_session)
+        song_tag_repo.assign_tag_to_song(song_id, tag_id)
+        result = song_tag_repo.search_songs_by_tag_pattern("genre", "%rock%")
         assert len(result) == 1
-        assert result[0]["id"] == file_id
+        assert result[0]["id"] == song_id
 
     # ── maintenance ─────────────────────────────────────────────
 
-    def test_truncate_file_tag_assignments(self, pg_session) -> None:
-        """truncate_file_tag_assignments should remove all file_tags."""
-        _, file_id = _create_library_and_file(pg_session)
+    def test_truncate_song_tag_assignments(self, pg_session) -> None:
+        """truncate_song_tag_assignments should remove all song_tags."""
+        _, song_id = _create_library_and_song(pg_session)
         tag_id = _create_tag(pg_session)
-        file_tag_repo = FileTagRepository(pg_session)
-        file_tag_repo.assign_tag_to_file(file_id, tag_id)
-        file_tag_repo.truncate_file_tag_assignments()
+        song_tag_repo = SongTagRepository(pg_session)
+        song_tag_repo.assign_tag_to_song(song_id, tag_id)
+        song_tag_repo.truncate_song_tag_assignments()
         from sqlalchemy import select
 
         result = pg_session.execute(select(SongTag))

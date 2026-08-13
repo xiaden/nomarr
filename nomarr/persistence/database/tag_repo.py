@@ -3,8 +3,8 @@
 Uses Part B primitives for simple lookups and direct SQLAlchemy Core for
 JOINs, filtered queries, and batch operations.
 
-File-tag junction operations live in ``FileTagRepository``
-(``file_tag_repo.py``).
+Song-tag junction operations live in ``SongTagRepository``
+(``song_tag_repo.py``).
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import delete, func, select
 
 from nomarr.helpers.dto.repo_dto import TagRow
-from nomarr.persistence.models.file_tag import SongTag
+from nomarr.persistence.models.song_tag import SongTag
 from nomarr.persistence.models.tag import Tag
 from nomarr.persistence.sql.exceptions import map_persistence_exceptions
 from nomarr.persistence.sql.primitives import (
@@ -116,14 +116,14 @@ class TagRepository:
     # ── orphan management ───────────────────────────────────────
 
     def get_orphaned_tag_ids(self) -> list[int]:
-        """Return tag ids that have no file-tag assignments."""
+        """Return tag ids that have no song-tag assignments."""
         with map_persistence_exceptions():
             stmt = select(_T.c.id).outerjoin(_FT, _T.c.id == _FT.c.tag_id).where(_FT.c.id.is_(None))
             result = self._session.execute(stmt)
             return [row[0] for row in result.all()]
 
     def cleanup_orphaned_tags(self) -> int:
-        """Delete tags with no file assignments; return the count deleted."""
+        """Delete tags with no song assignments; return the count deleted."""
         with map_persistence_exceptions():
             orphaned = self.get_orphaned_tag_ids()
             if not orphaned:
@@ -244,7 +244,7 @@ class TagRepository:
         limit: int | None = None,
         offset: int = 0,
     ) -> list[dict[str, Any]]:
-        """Return tags with their file-assignment count."""
+        """Return tags with their song-assignment count."""
         with map_persistence_exceptions():
             stmt = select(
                 _T.c.id,
@@ -256,7 +256,7 @@ class TagRepository:
                 _T.c.tier,
                 _T.c.created_at,
                 _T.c.parent_tag_id,
-                func.count(_FT.c.file_id).label("song_count"),
+                func.count(_FT.c.song_id).label("song_count"),
             ).outerjoin(_FT, _T.c.id == _FT.c.tag_id)
             if name is not None:
                 stmt = stmt.where(_T.c.name == name)

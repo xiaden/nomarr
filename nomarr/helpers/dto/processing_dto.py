@@ -124,10 +124,10 @@ class DeferredFileWrites:
     with the next file.
 
     The expected execution order is:
-    1. ``save_file_tags``         (tag vertices + edges)
+    1. ``save_song_tags``         (tag vertices + edges)
     2. ``set_chromaprint``        (fingerprint)
     3. ``upsert_output_streams``  (canonical raw output streams)
-    4. ``mark_file_processed``    (only if 1-3 succeeded)
+    4. ``mark_song_processed``    (only if 1-3 succeeded)
     5. ``release_claim``          (always, even on error)
     """
 

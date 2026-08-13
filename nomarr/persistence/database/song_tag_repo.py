@@ -1,6 +1,6 @@
-"""FileTagRepository — file ↔ tag junction operations.
+"""SongTagRepository — song ↔ tag junction operations.
 
-Manages the ``file_tags`` junction table that links library files to tags.
+Manages the ``song_tags`` junction table that links songs to tags.
 Split from ``TagRepository`` to keep each repo focused on a single table
 group (see persistence.md size guidelines).
 """
@@ -13,10 +13,9 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from nomarr.helpers.dto.repo_dto import LibraryFileRow, TagRow
-from nomarr.persistence.database.repo_helpers import _file_row_to_dto
-from nomarr.persistence.models.file_tag import SongTag
-from nomarr.persistence.models.library_file import LibraryFile
+from nomarr.helpers.dto.repo_dto import SongRow, TagRow
+from nomarr.persistence.models.song import Song
+from nomarr.persistence.models.song_tag import SongTag
 from nomarr.persistence.models.tag import Tag
 from nomarr.persistence.sql.exceptions import map_persistence_exceptions
 from nomarr.persistence.sql.primitives import insert_one
@@ -27,8 +26,8 @@ if TYPE_CHECKING:
     from sqlalchemy.schema import Table
 
 _T: Table = Tag.__table__  # type: ignore[assignment]  # Model.__table__ is typed as FromClause; we know it's Table
-_FT: Table = SongTag.__table__  # type: ignore[assignment]  # Model.__table__ is typed as FromClause; we know it's Table
-_LF: Table = LibraryFile.__table__  # type: ignore[assignment]  # Model.__table__ is typed as FromClause; we know it's Table
+_ST: Table = SongTag.__table__  # type: ignore[assignment]  # Model.__table__ is typed as FromClause; we know it's Table
+_S: Table = Song.__table__  # type: ignore[assignment]  # Model.__table__ is typed as FromClause; we know it's Table
 
 
 def _tag_row_to_dto(row: Row) -> TagRow:
@@ -47,62 +46,86 @@ def _tag_row_to_dto(row: Row) -> TagRow:
     )
 
 
-class FileTagRepository:
-    """Repository for the ``file_tags`` junction table."""
+def _row_to_dto(row: Row) -> SongRow:
+    """Convert a SQLAlchemy ``Row`` to a ``SongRow`` TypedDict."""
+    m = row._mapping
+    return SongRow(
+        id=m["id"],
+        library_id=m["library_id"],
+        folder_id=m["folder_id"],
+        path=m["path"],
+        normalized_path=m["normalized_path"],
+        file_size=m["file_size"],
+        modified_time=m["modified_time"],
+        duration_seconds=m["duration_seconds"],
+        chromaprint=m["chromaprint"],
+        needs_tagging=m["needs_tagging"],
+        is_valid=m["is_valid"],
+        tagged=m["tagged"],
+        calibration_hash=m["calibration_hash"],
+        write_claimed_by=m["write_claimed_by"],
+        last_tagged_at=m["last_tagged_at"],
+        scanned_at=m["scanned_at"],
+        created_at=m["created_at"],
+    )
+
+
+class SongTagRepository:
+    """Repository for the ``song_tags`` junction table."""
 
     def __init__(self, session: scoped_session[Session]) -> None:
         self._session = session
 
-    # ── file-tag associations ───────────────────────────────────
+    # ── song-tag associations ───────────────────────────────────
 
-    def get_tags_for_file(self, file_id: int) -> list[TagRow]:
-        """Return all tags assigned to a file via the ``file_tags`` junction."""
+    def get_tags_for_song(self, song_id: int) -> list[TagRow]:
+        """Return all tags assigned to a song via the ``song_tags`` junction."""
         with map_persistence_exceptions():
-            stmt = select(_T).join(_FT, _T.c.id == _FT.c.tag_id).where(_FT.c.file_id == file_id)
+            stmt = select(_T).join(_ST, _T.c.id == _ST.c.tag_id).where(_ST.c.song_id == song_id)
             result = self._session.execute(stmt)
             return [_tag_row_to_dto(r) for r in result.all()]
 
-    def assign_tag_to_file(
+    def assign_tag_to_song(
         self,
-        file_id: int,
+        song_id: int,
         tag_id: int,
         confidence: float = 1.0,
         source: str | None = None,
     ) -> None:
-        """Insert a row into ``file_tags`` linking *file_id* to *tag_id*."""
+        """Insert a row into ``song_tags`` linking *song_id* to *tag_id*."""
         with map_persistence_exceptions():
             with self._session.begin_nested():
                 payload = {
-                    "file_id": file_id,
+                    "song_id": song_id,
                     "tag_id": tag_id,
                     "confidence": confidence,
                     "source": source or "nomarr",
                     "created_at": int(time.time() * 1000),
                 }
-                insert_one(_FT, payload, session=self._session)
+                insert_one(_ST, payload, session=self._session)
             self._session.commit()
 
-    def remove_tag_from_file(self, file_id: int, tag_id: int) -> None:
-        """Delete the junction row for a specific file + tag pair."""
+    def remove_tag_from_song(self, song_id: int, tag_id: int) -> None:
+        """Delete the junction row for a specific song + tag pair."""
         with map_persistence_exceptions():
             with self._session.begin_nested():
-                stmt = delete(_FT).where(
-                    _FT.c.file_id == file_id,
-                    _FT.c.tag_id == tag_id,
+                stmt = delete(_ST).where(
+                    _ST.c.song_id == song_id,
+                    _ST.c.tag_id == tag_id,
                 )
                 self._session.execute(stmt)
             self._session.commit()
 
-    def replace_file_tags(self, file_id: int, tags: list[dict[str, Any]]) -> None:
-        """Delete all existing tag assignments for a file and insert new ones."""
+    def replace_song_tags(self, song_id: int, tags: list[dict[str, Any]]) -> None:
+        """Delete all existing tag assignments for a song and insert new ones."""
         with map_persistence_exceptions():
             with self._session.begin_nested():
-                self._session.execute(delete(_FT).where(_FT.c.file_id == file_id))
+                self._session.execute(delete(_ST).where(_ST.c.song_id == song_id))
                 if tags:
                     now_ms = int(time.time() * 1000)
                     rows = [
                         {
-                            "file_id": file_id,
+                            "song_id": song_id,
                             "tag_id": t["tag_id"],
                             "confidence": t.get("confidence", 1.0),
                             "source": t.get("source", "nomarr"),
@@ -110,28 +133,28 @@ class FileTagRepository:
                         }
                         for t in tags
                     ]
-                    self._session.execute(pg_insert(_FT).values(rows))
+                    self._session.execute(pg_insert(_ST).values(rows))
             self._session.commit()
 
-    def get_files_for_tag(self, tag_id: int, limit: int | None = None) -> list[LibraryFileRow]:
-        """Return files assigned to a tag via JOIN."""
+    def get_songs_for_tag(self, tag_id: int, limit: int | None = None) -> list[SongRow]:
+        """Return songs assigned to a tag via JOIN."""
         with map_persistence_exceptions():
-            stmt = select(_LF).join(_FT, _LF.c.id == _FT.c.file_id).where(_FT.c.tag_id == tag_id)
+            stmt = select(_S).join(_ST, _S.c.id == _ST.c.song_id).where(_ST.c.tag_id == tag_id)
             if limit is not None:
                 stmt = stmt.limit(limit)
             result = self._session.execute(stmt)
-            return [_file_row_to_dto(r) for r in result.all()]
+            return [_row_to_dto(r) for r in result.all()]
 
-    def list_file_ids_for_tag(
+    def list_song_ids_for_tag(
         self,
         tag_id: int,
         *,
         limit: int | None = None,
         offset: int = 0,
     ) -> list[int]:
-        """Return file ids assigned to a tag with pagination."""
+        """Return song ids assigned to a tag with pagination."""
         with map_persistence_exceptions():
-            stmt = select(_FT.c.file_id).where(_FT.c.tag_id == tag_id)
+            stmt = select(_ST.c.song_id).where(_ST.c.tag_id == tag_id)
             if offset:
                 stmt = stmt.offset(offset)
             if limit is not None:
@@ -141,43 +164,43 @@ class FileTagRepository:
 
     # ── batch queries ───────────────────────────────────────────
 
-    def get_tags_for_files_batch(
+    def get_tags_for_songs_batch(
         self,
-        file_ids: list[int],
+        song_ids: list[int],
         *,
         name_starts_with: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Return tag assignments for a batch of file ids.
+        """Return tag assignments for a batch of song ids.
 
-        Each dict contains ``file_id``, ``tag_id``, ``tag_name``,
+        Each dict contains ``song_id``, ``tag_id``, ``tag_name``,
         ``tag_value``, ``namespace``, ``parent_tag_id``, ``tier``,
         ``created_at``, ``confidence``, and ``source``.
         """
         with map_persistence_exceptions():
-            if not file_ids:
+            if not song_ids:
                 return []
             stmt = (
                 select(
-                    _FT.c.file_id,
-                    _FT.c.tag_id,
+                    _ST.c.song_id,
+                    _ST.c.tag_id,
                     _T.c.name,
                     _T.c.value,
                     _T.c.namespace,
                     _T.c.parent_tag_id,
                     _T.c.tier,
                     _T.c.created_at,
-                    _FT.c.confidence,
-                    _FT.c.source,
+                    _ST.c.confidence,
+                    _ST.c.source,
                 )
-                .join(_T, _T.c.id == _FT.c.tag_id)
-                .where(_FT.c.file_id.in_(file_ids))
+                .join(_T, _T.c.id == _ST.c.tag_id)
+                .where(_ST.c.song_id.in_(song_ids))
             )
             if name_starts_with is not None:
                 stmt = stmt.where(_T.c.name.like(name_starts_with + "%"))
             result = self._session.execute(stmt)
             return [
                 {
-                    "file_id": r[0],
+                    "song_id": r[0],
                     "tag_id": r[1],
                     "tag_name": r[2],
                     "tag_value": r[3],
@@ -191,10 +214,10 @@ class FileTagRepository:
                 for r in result.all()
             ]
 
-    def get_song_tags(self, file_id: int, nomarr_only: bool = False) -> list[TagRow]:
-        """Return tags for a file, optionally filtered to ``nom:`` namespace."""
+    def get_song_tags(self, song_id: int, nomarr_only: bool = False) -> list[TagRow]:
+        """Return tags for a song, optionally filtered to ``nom:`` namespace."""
         with map_persistence_exceptions():
-            stmt = select(_T).join(_FT, _T.c.id == _FT.c.tag_id).where(_FT.c.file_id == file_id)
+            stmt = select(_T).join(_ST, _T.c.id == _ST.c.tag_id).where(_ST.c.song_id == song_id)
             if nomarr_only:
                 stmt = stmt.where(_T.c.namespace == "nom")
             result = self._session.execute(stmt)
@@ -202,39 +225,39 @@ class FileTagRepository:
 
     # ── search ──────────────────────────────────────────────────
 
-    def search_files_by_tag(
+    def search_songs_by_tag(
         self,
         tag_key: str,
         value: str,
         *,
         limit: int | None = None,
-    ) -> list[LibraryFileRow]:
-        """Return files that have a tag with exact *tag_key* name and *value*."""
+    ) -> list[SongRow]:
+        """Return songs that have a tag with exact *tag_key* name and *value*."""
         with map_persistence_exceptions():
             stmt = (
-                select(_LF)
-                .join(_FT, _LF.c.id == _FT.c.file_id)
-                .join(_T, _T.c.id == _FT.c.tag_id)
+                select(_S)
+                .join(_ST, _S.c.id == _ST.c.song_id)
+                .join(_T, _T.c.id == _ST.c.tag_id)
                 .where(_T.c.name == tag_key, _T.c.value == value)
             )
             if limit is not None:
                 stmt = stmt.limit(limit)
             result = self._session.execute(stmt)
-            return [_file_row_to_dto(r) for r in result.all()]
+            return [_row_to_dto(r) for r in result.all()]
 
-    def search_files_by_tag_contains(
+    def search_songs_by_tag_contains(
         self,
         tag_key: str,
         value: str,
         *,
         limit: int | None = None,
-    ) -> list[LibraryFileRow]:
-        """Return files whose tag value contains *value* (ILIKE)."""
+    ) -> list[SongRow]:
+        """Return songs whose tag value contains *value* (ILIKE)."""
         with map_persistence_exceptions():
             stmt = (
-                select(_LF)
-                .join(_FT, _LF.c.id == _FT.c.file_id)
-                .join(_T, _T.c.id == _FT.c.tag_id)
+                select(_S)
+                .join(_ST, _S.c.id == _ST.c.song_id)
+                .join(_T, _T.c.id == _ST.c.tag_id)
                 .where(
                     _T.c.name == tag_key,
                     _T.c.value.ilike(f"%{value}%"),
@@ -243,21 +266,21 @@ class FileTagRepository:
             if limit is not None:
                 stmt = stmt.limit(limit)
             result = self._session.execute(stmt)
-            return [_file_row_to_dto(r) for r in result.all()]
+            return [_row_to_dto(r) for r in result.all()]
 
-    def search_files_by_tag_pattern(
+    def search_songs_by_tag_pattern(
         self,
         tag_name: str,
         pattern: str,
         *,
         limit: int | None = None,
-    ) -> list[LibraryFileRow]:
-        """Return files whose tag value matches an ILIKE *pattern*."""
+    ) -> list[SongRow]:
+        """Return songs whose tag value matches an ILIKE *pattern*."""
         with map_persistence_exceptions():
             stmt = (
-                select(_LF)
-                .join(_FT, _LF.c.id == _FT.c.file_id)
-                .join(_T, _T.c.id == _FT.c.tag_id)
+                select(_S)
+                .join(_ST, _S.c.id == _ST.c.song_id)
+                .join(_T, _T.c.id == _ST.c.tag_id)
                 .where(
                     _T.c.name == tag_name,
                     _T.c.value.ilike(pattern),
@@ -266,37 +289,37 @@ class FileTagRepository:
             if limit is not None:
                 stmt = stmt.limit(limit)
             result = self._session.execute(stmt)
-            return [_file_row_to_dto(r) for r in result.all()]
+            return [_row_to_dto(r) for r in result.all()]
 
     def replace_tag_references(
         self,
         source_tag_id: int,
         target_tag_id: int,
         *,
-        file_ids: list[int] | None = None,
+        song_ids: list[int] | None = None,
     ) -> None:
-        """Re-point file-tag assignments from *source_tag_id* to *target_tag_id*."""
+        """Re-point song-tag assignments from *source_tag_id* to *target_tag_id*."""
         with map_persistence_exceptions():
             with self._session.begin_nested():
-                stmt = update(_FT).where(_FT.c.tag_id == source_tag_id)
-                if file_ids is not None:
-                    stmt = stmt.where(_FT.c.file_id.in_(file_ids))
+                stmt = update(_ST).where(_ST.c.tag_id == source_tag_id)
+                if song_ids is not None:
+                    stmt = stmt.where(_ST.c.song_id.in_(song_ids))
                 stmt = stmt.values(tag_id=target_tag_id)
                 self._session.execute(stmt)
             self._session.commit()
 
     # ── Plan E facade support ───────────────────────────────────
 
-    def get_genre_tags_for_files(self, file_ids: list[int]) -> list[TagRow]:
-        """Return genre tags assigned to the given file ids."""
+    def get_genre_tags_for_songs(self, song_ids: list[int]) -> list[TagRow]:
+        """Return genre tags assigned to the given song ids."""
         with map_persistence_exceptions():
-            if not file_ids:
+            if not song_ids:
                 return []
             stmt = (
                 select(_T)
-                .join(_FT, _T.c.id == _FT.c.tag_id)
+                .join(_ST, _T.c.id == _ST.c.tag_id)
                 .where(
-                    _FT.c.file_id.in_(file_ids),
+                    _ST.c.song_id.in_(song_ids),
                     _T.c.name == "genre",
                 )
             )
@@ -305,26 +328,26 @@ class FileTagRepository:
 
     # ── maintenance ─────────────────────────────────────────────
 
-    def truncate_file_tag_assignments(self) -> None:
-        """Delete all rows from ``file_tags``."""
+    def truncate_song_tag_assignments(self) -> None:
+        """Delete all rows from ``song_tags``."""
         with map_persistence_exceptions():
             with self._session.begin_nested():
-                self._session.execute(delete(_FT))
+                self._session.execute(delete(_ST))
             self._session.commit()
 
     def count_songs_for_tag(self, tag_id: int) -> int:
-        """Count file-tag assignments for a specific tag."""
+        """Count song-tag assignments for a specific tag."""
         with map_persistence_exceptions():
-            stmt = select(func.count()).select_from(_FT).where(_FT.c.tag_id == tag_id)
+            stmt = select(func.count()).select_from(_ST).where(_ST.c.tag_id == tag_id)
             result = self._session.execute(stmt)
             return result.scalar() or 0
 
-    def count_files_by_tag(self, tag_key: str, target_value: str) -> int:
-        """Count distinct files assigned to tags matching *tag_key* and *target_value*."""
+    def count_songs_by_tag(self, tag_key: str, target_value: str) -> int:
+        """Count distinct songs assigned to tags matching *tag_key* and *target_value*."""
         with map_persistence_exceptions():
             stmt = (
-                select(func.count(func.distinct(_FT.c.file_id)))
-                .join(_T, _T.c.id == _FT.c.tag_id)
+                select(func.count(func.distinct(_ST.c.song_id)))
+                .join(_T, _T.c.id == _ST.c.tag_id)
                 .where(
                     _T.c.name == tag_key,
                     _T.c.value == target_value,
@@ -333,31 +356,31 @@ class FileTagRepository:
             result = self._session.execute(stmt)
             return result.scalar() or 0
 
-    def get_file_tag_edges_for_tags(
+    def get_song_tag_edges_for_tags(
         self,
         tag_ids: list[int],
         *,
         limit: int | None = None,
     ) -> list[dict[str, Any]]:
-        """Return file-tag edge rows for the given tag ids.
+        """Return song-tag edge rows for the given tag ids.
 
-        Each dict contains ``file_id``, ``tag_id``, ``confidence``, and ``source``.
+        Each dict contains ``song_id``, ``tag_id``, ``confidence``, and ``source``.
         """
         with map_persistence_exceptions():
             if not tag_ids:
                 return []
             stmt = select(
-                _FT.c.file_id,
-                _FT.c.tag_id,
-                _FT.c.confidence,
-                _FT.c.source,
-            ).where(_FT.c.tag_id.in_(tag_ids))
+                _ST.c.song_id,
+                _ST.c.tag_id,
+                _ST.c.confidence,
+                _ST.c.source,
+            ).where(_ST.c.tag_id.in_(tag_ids))
             if limit is not None:
                 stmt = stmt.limit(limit)
             result = self._session.execute(stmt)
             return [
                 {
-                    "file_id": r[0],
+                    "song_id": r[0],
                     "tag_id": r[1],
                     "confidence": r[2],
                     "source": r[3],

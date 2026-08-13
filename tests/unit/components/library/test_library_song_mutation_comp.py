@@ -1,4 +1,4 @@
-"""Tests for nomarr.components.library.library_file_mutation_comp."""
+"""Tests for nomarr.components.library.library_song_mutation_comp."""
 
 from __future__ import annotations
 
@@ -7,16 +7,16 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from nomarr.components.library.library_file_mutation_comp import (
-    bulk_delete_files,
-    delete_library_file,
-    get_file_library_key,
+from nomarr.components.library.library_song_mutation_comp import (
+    bulk_delete_songs,
+    delete_library_song,
+    get_song_library_key,
     set_chromaprint,
-    update_file_modified_time,
-    update_file_path,
     update_last_tagged_at,
+    update_song_modified_time,
+    update_song_path,
     upsert_batch,
-    upsert_library_file,
+    upsert_library_song,
 )
 
 
@@ -30,12 +30,12 @@ class TestUpsertBatch:
         result = upsert_batch(mock_db, [])
 
         assert result == []
-        mock_db.library.add_files_to_library.assert_not_called()
+        mock_db.library.add_songs_to_library.assert_not_called()
 
     @pytest.mark.unit
     def test_batch_groups_payloads_by_library_and_preserves_input_order(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.add_files_to_library.side_effect = [
+        mock_db.library.add_songs_to_library.side_effect = [
             [f"{'songs'}/rock-existing", f"{'songs'}/rock-new"],
             [f"{'songs'}/jazz-new"],
         ]
@@ -70,7 +70,7 @@ class TestUpsertBatch:
             f"{'songs'}/jazz-new",
             f"{'songs'}/rock-new",
         ]
-        assert mock_db.library.add_files_to_library.call_args_list == [
+        assert mock_db.library.add_songs_to_library.call_args_list == [
             call(
                 1,
                 [
@@ -124,7 +124,7 @@ class TestUpsertBatch:
         with pytest.raises(ValueError, match="library_id is required for upsert_batch"):
             upsert_batch(mock_db, file_docs)
 
-        mock_db.library.add_files_to_library.assert_not_called()
+        mock_db.library.add_songs_to_library.assert_not_called()
 
 
 class TestDeleteLibraryFile:
@@ -134,19 +134,19 @@ class TestDeleteLibraryFile:
     def test_deletes_file_id_via_library_intent(self) -> None:
         mock_db = MagicMock()
 
-        delete_library_file(mock_db, 123)
+        delete_library_song(mock_db, 123)
 
-        mock_db.library.remove_file.assert_called_once_with(123)
-        mock_db.library.remove_file_by_path.assert_not_called()
+        mock_db.library.remove_song.assert_called_once_with(123)
+        mock_db.library.remove_song_by_path.assert_not_called()
 
     @pytest.mark.unit
     def test_resolves_path_delete_via_path_intent(self) -> None:
         mock_db = MagicMock()
 
-        delete_library_file(mock_db, "C:/music/song.mp3")
+        delete_library_song(mock_db, "C:/music/song.mp3")
 
-        mock_db.library.remove_file_by_path.assert_called_once_with("C:/music/song.mp3")
-        mock_db.library.remove_file.assert_not_called()
+        mock_db.library.remove_song_by_path.assert_called_once_with("C:/music/song.mp3")
+        mock_db.library.remove_song.assert_not_called()
 
 
 class TestBulkDeleteFiles:
@@ -155,21 +155,21 @@ class TestBulkDeleteFiles:
     @pytest.mark.unit
     def test_bulk_delete_resolves_paths_and_removes_each_found_file_once(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.find_file_by_path_any_library.side_effect = [
+        mock_db.library.find_song_by_path_any_library.side_effect = [
             {"_id": f"{'songs'}/a"},
             None,
             {"_id": f"{'songs'}/c"},
         ]
 
-        result = bulk_delete_files(mock_db, ["C:/music/a.mp3", "C:/music/missing.mp3", "C:/music/c.mp3"])
+        result = bulk_delete_songs(mock_db, ["C:/music/a.mp3", "C:/music/missing.mp3", "C:/music/c.mp3"])
 
         assert result == 2
-        assert mock_db.library.find_file_by_path_any_library.call_args_list == [
+        assert mock_db.library.find_song_by_path_any_library.call_args_list == [
             call("C:/music/a.mp3"),
             call("C:/music/missing.mp3"),
             call("C:/music/c.mp3"),
         ]
-        assert mock_db.library.remove_file_by_path.call_args_list == [
+        assert mock_db.library.remove_song_by_path.call_args_list == [
             call("C:/music/a.mp3"),
             call("C:/music/c.mp3"),
         ]
@@ -177,12 +177,12 @@ class TestBulkDeleteFiles:
     @pytest.mark.unit
     def test_bulk_delete_returns_zero_when_no_paths_match(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.find_file_by_path_any_library.return_value = None
+        mock_db.library.find_song_by_path_any_library.return_value = None
 
-        result = bulk_delete_files(mock_db, ["C:/music/missing.mp3"])
+        result = bulk_delete_songs(mock_db, ["C:/music/missing.mp3"])
 
         assert result == 0
-        mock_db.library.remove_file_by_path.assert_not_called()
+        mock_db.library.remove_song_by_path.assert_not_called()
 
 
 class TestUpsertLibraryFile:
@@ -191,21 +191,15 @@ class TestUpsertLibraryFile:
     @pytest.mark.unit
     def test_adds_file_to_library_with_expected_payload(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.add_file_to_library.return_value = f"{'songs'}/123"
+        mock_db.library.add_song_to_library.return_value = f"{'songs'}/123"
         mock_path = MagicMock()
         mock_path.is_valid.return_value = True
         mock_path.relative = "relative/song.mp3"
         mock_path.absolute = "C:/music/song.mp3"
 
-        with (
-            patch("nomarr.components.library.library_file_mutation_comp.now_ms") as mock_now_ms,
-            patch(
-                "nomarr.components.library.library_file_mutation_comp.library_key_from_ref",
-                return_value="lib_key",
-            ) as mock_library_key_from_ref,
-        ):
+        with patch("nomarr.components.library.library_song_mutation_comp.now_ms") as mock_now_ms:
             mock_now_ms.return_value.value = 1000
-            result = upsert_library_file(
+            result = upsert_library_song(
                 mock_db,
                 mock_path,
                 "libraries/1",
@@ -214,12 +208,10 @@ class TestUpsertLibraryFile:
             )
 
         assert result == f"{'songs'}/123"
-        mock_library_key_from_ref.assert_called_once_with("libraries/1")
-        mock_db.library.add_file_to_library.assert_called_once_with(
+        mock_db.library.add_song_to_library.assert_called_once_with(
             "libraries/1",
             {
                 "path": "C:/music/song.mp3",
-                "library_key": "lib_key",
                 "normalized_path": "relative/song.mp3",
                 "file_size": 1234,
                 "modified_time": 5678,
@@ -239,7 +231,7 @@ class TestUpsertLibraryFile:
         mock_path.reason = "bad path"
 
         with pytest.raises(ValueError, match=r"Cannot upsert invalid path \(invalid\): bad path"):
-            upsert_library_file(
+            upsert_library_song(
                 mock_db,
                 mock_path,
                 "libraries/1",
@@ -247,7 +239,7 @@ class TestUpsertLibraryFile:
                 modified_time=5678,
             )
 
-        mock_db.library.add_file_to_library.assert_not_called()
+        mock_db.library.add_song_to_library.assert_not_called()
 
 
 class TestUpdateFilePath:
@@ -257,9 +249,9 @@ class TestUpdateFilePath:
     def test_updates_path_and_core_metadata(self) -> None:
         mock_db = MagicMock()
 
-        with patch("nomarr.components.library.library_file_mutation_comp.now_ms") as mock_now_ms:
+        with patch("nomarr.components.library.library_song_mutation_comp.now_ms") as mock_now_ms:
             mock_now_ms.return_value.value = 2000
-            update_file_path(
+            update_song_path(
                 mock_db,
                 f"{'songs'}/123",
                 "C:/music/new-song.mp3",
@@ -268,11 +260,11 @@ class TestUpdateFilePath:
                 duration_seconds=123.4,
             )
 
-        mock_db.library.update_library_file_path.assert_called_once_with(
+        mock_db.library.update_library_song_path.assert_called_once_with(
             f"{'songs'}/123",
             "C:/music/new-song.mp3",
         )
-        mock_db.library.update_file_fields.assert_called_once_with(
+        mock_db.library.update_song_fields.assert_called_once_with(
             f"{'songs'}/123",
             {
                 "file_size": 4321,
@@ -287,9 +279,9 @@ class TestUpdateFilePath:
     def test_includes_normalized_path_when_provided(self) -> None:
         mock_db = MagicMock()
 
-        with patch("nomarr.components.library.library_file_mutation_comp.now_ms") as mock_now_ms:
+        with patch("nomarr.components.library.library_song_mutation_comp.now_ms") as mock_now_ms:
             mock_now_ms.return_value.value = 2000
-            update_file_path(
+            update_song_path(
                 mock_db,
                 f"{'songs'}/123",
                 "C:/music/new-song.mp3",
@@ -298,7 +290,7 @@ class TestUpdateFilePath:
                 normalized_path="relative/new-song.mp3",
             )
 
-        mock_db.library.update_file_fields.assert_called_once_with(
+        mock_db.library.update_song_fields.assert_called_once_with(
             f"{'songs'}/123",
             {
                 "file_size": 4321,
@@ -318,9 +310,9 @@ class TestUpdateFileModifiedTime:
     def test_updates_modified_time_on_normalized_file_id(self) -> None:
         mock_db = MagicMock()
 
-        update_file_modified_time(mock_db, "abc123", 7777)
+        update_song_modified_time(mock_db, "abc123", 7777)
 
-        mock_db.library.update_library_file_modified_time.assert_called_once_with(
+        mock_db.library.update_library_song_modified_time.assert_called_once_with(
             "abc123",
             7777,
         )
@@ -332,22 +324,22 @@ class TestGetFileLibraryKey:
     @pytest.mark.unit
     def test_returns_library_key_when_file_exists(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.get_library_ids_for_files.return_value = {123: 456}
+        mock_db.library.get_library_ids_for_songs.return_value = {123: 456}
 
-        result = get_file_library_key(mock_db, 123)
+        result = get_song_library_key(mock_db, 123)
 
         assert result == 456
-        mock_db.library.get_library_ids_for_files.assert_called_once_with([123])
+        mock_db.library.get_library_ids_for_songs.assert_called_once_with([123])
 
     @pytest.mark.unit
     def test_returns_none_when_file_is_missing(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.get_library_ids_for_files.return_value = {}
+        mock_db.library.get_library_ids_for_songs.return_value = {}
 
-        result = get_file_library_key(mock_db, 123)
+        result = get_song_library_key(mock_db, 123)
 
         assert result is None
-        mock_db.library.get_library_ids_for_files.assert_called_once_with([123])
+        mock_db.library.get_library_ids_for_songs.assert_called_once_with([123])
 
 
 class TestSetChromaprint:
@@ -359,7 +351,7 @@ class TestSetChromaprint:
 
         set_chromaprint(mock_db, "abc123", "chromaprint-value")
 
-        mock_db.library.set_library_file_chromaprint.assert_called_once_with(
+        mock_db.library.set_library_song_chromaprint.assert_called_once_with(
             "abc123",
             "chromaprint-value",
         )
@@ -372,11 +364,11 @@ class TestUpdateLastTaggedAt:
     def test_updates_last_tagged_at_with_current_timestamp(self) -> None:
         mock_db = MagicMock()
 
-        with patch("nomarr.components.library.library_file_mutation_comp.now_ms") as mock_now_ms:
+        with patch("nomarr.components.library.library_song_mutation_comp.now_ms") as mock_now_ms:
             mock_now_ms.return_value.value = 9999
             update_last_tagged_at(mock_db, f"{'songs'}/123")
 
-        mock_db.library.update_library_file_last_tagged_at.assert_called_once_with(
+        mock_db.library.update_library_song_last_tagged_at.assert_called_once_with(
             f"{'songs'}/123",
             9999,
         )

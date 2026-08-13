@@ -9,8 +9,8 @@ from pathlib import Path
 from typing import Any
 
 from nomarr.components.infrastructure.path_comp import build_library_path_from_input
-from nomarr.components.library.library_file_mutation_comp import update_file_path
-from nomarr.components.library.library_file_query_comp import find_move_candidate_by_chromaprint
+from nomarr.components.library.library_song_mutation_comp import update_song_path
+from nomarr.components.library.library_song_query_comp import find_move_candidate_by_chromaprint
 from nomarr.components.library.metadata_extraction_comp import compute_chromaprint_for_file
 from nomarr.components.metadata.entity_seeding_comp import (
     _build_song_tag_entries,
@@ -213,7 +213,7 @@ def apply_detected_moves(
     """Persist detected file moves to the database.
 
     For each move:
-    1. Updates the file record path / size / mtime via ``update_file_path``
+    1. Updates the file record path / size / mtime via ``update_song_path``
     2. Re-seeds entity tags from the new file's metadata
 
     Args:
@@ -237,9 +237,9 @@ def apply_detected_moves(
             # new_path not under library_root; skip normalization
             computed_normalized_path = None
 
-        update_file_path(
+        update_song_path(
             db,
-            file_id=move.file_id,
+            song_id=move.file_id,
             new_path=move.new_path,
             file_size=move.new_file_size,
             modified_time=move.new_modified_time,
@@ -254,8 +254,7 @@ def apply_detected_moves(
                 entries = _build_song_tag_entries(str(move.file_id), entity_tags)
                 if entries:
                     for entry in entries:
-                        with db.library.transaction():
-                            db.library.replace_file_tags(int(entry["song_id"]), entry["tags"])
+                        db.library.replace_song_tags(int(entry["song_id"]), entry["tags"])
             except RuntimeError as e:
                 logger.warning(
                     "Failed to update entities for moved file %s: %s",

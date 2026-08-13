@@ -12,7 +12,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from nomarr.components.infrastructure.path_comp import build_library_path_from_db
-from nomarr.components.library.library_file_mutation_comp import bulk_delete_files
+from nomarr.components.library.library_song_mutation_comp import bulk_delete_songs
 from nomarr.components.ml.audio.ml_audio_comp import (
     AudioLoadCrashError,
     AudioLoadShutdownError,
@@ -72,7 +72,7 @@ def process_file_workflow(
     if not library_path.is_valid():
         if library_path.status == "not_found":
             logger.warning(f"[process_file_workflow] File no longer exists on disk, cleaning up: {path}")
-            bulk_delete_files(db, [path])
+            bulk_delete_songs(db, [path])
             return ProcessFileResult(
                 file_path=path,
                 elapsed=0,
@@ -119,7 +119,7 @@ def process_file_workflow(
         raise
     except AudioLoadCrashError as e:
         logger.error(f"[processor] Audio load crashed for {path}: {e}")
-        bulk_delete_files(db, [path])
+        bulk_delete_songs(db, [path])
         logger.info(f"[processor] Deleted invalid file: {path}")
         elapsed = round((internal_ms().value - start_all.value) / 1000, 2)
         return ProcessFileResult(

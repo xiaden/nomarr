@@ -47,7 +47,7 @@ def _row_to_play_record(row: Row[Any]) -> NdPlayRecord:
     m = row._mapping
     return NdPlayRecord(
         nd_id=m["nd_id"],
-        file_id=m["file_id"],
+        song_id=m["song_id"],
         playcount=m["playcount"],
         last_played=m["last_played"],
     )
@@ -118,7 +118,7 @@ class NavidromeRepo:
 
     # ── track ↔ file junction ───────────────────────────────────
 
-    def map_track_to_file(self, nd_id: str, file_id: int) -> None:
+    def map_track_to_file(self, nd_id: str, song_id: int) -> None:
         """Insert a track-to-file mapping (ON CONFLICT DO NOTHING)."""
         with map_persistence_exceptions():
             with self._session.begin_nested():
@@ -127,26 +127,26 @@ class NavidromeRepo:
                     pg_insert(_T_TRACK_MAP)
                     .values(
                         navidrome_track_id=nd_id,
-                        file_id=file_id,
+                        song_id=song_id,
                         created_at=now,
                     )
-                    .on_conflict_do_nothing(index_elements=["navidrome_track_id", "file_id"])
+                    .on_conflict_do_nothing(index_elements=["navidrome_track_id", "song_id"])
                 )
                 self._session.execute(stmt)
             self._session.commit()
 
     def get_mapped_file(self, nd_id: str) -> int | None:
-        """Return the file_id mapped to a Navidrome track, or ``None``."""
+        """Return the song_id mapped to a Navidrome track, or ``None``."""
         with map_persistence_exceptions():
-            stmt = select(_T_TRACK_MAP.c.file_id).where(_T_TRACK_MAP.c.navidrome_track_id == nd_id)
+            stmt = select(_T_TRACK_MAP.c.song_id).where(_T_TRACK_MAP.c.navidrome_track_id == nd_id)
             result = self._session.execute(stmt)
             row = result.fetchone()
             return row[0] if row else None
 
-    def resolve_file_to_nd_track(self, file_id: int) -> str | None:
-        """Reverse lookup: return the Navidrome track ID for a file."""
+    def resolve_file_to_nd_track(self, song_id: int) -> str | None:
+        """Reverse lookup: return the Navidrome track ID for a song."""
         with map_persistence_exceptions():
-            stmt = select(_T_TRACK_MAP.c.navidrome_track_id).where(_T_TRACK_MAP.c.file_id == file_id)
+            stmt = select(_T_TRACK_MAP.c.navidrome_track_id).where(_T_TRACK_MAP.c.song_id == song_id)
             result = self._session.execute(stmt)
             row = result.fetchone()
             return row[0] if row else None
@@ -177,7 +177,7 @@ class NavidromeRepo:
     def bulk_map_tracks(self, mappings: list[dict[str, str]]) -> int:
         """Batch insert track-to-file mappings.  Returns count inserted.
 
-        Each dict in *mappings* must have ``nd_id`` and ``file_id`` keys.
+        Each dict in *mappings* must have ``nd_id`` and ``song_id`` keys.
         """
         with map_persistence_exceptions():
             if not mappings:
@@ -187,7 +187,7 @@ class NavidromeRepo:
                 values = [
                     {
                         "navidrome_track_id": m["nd_id"],
-                        "file_id": int(m["file_id"]),
+                        "song_id": int(m["song_id"]),
                         "created_at": now,
                     }
                     for m in mappings
@@ -195,7 +195,7 @@ class NavidromeRepo:
                 stmt = (
                     pg_insert(_T_TRACK_MAP)
                     .values(values)
-                    .on_conflict_do_nothing(index_elements=["navidrome_track_id", "file_id"])
+                    .on_conflict_do_nothing(index_elements=["navidrome_track_id", "song_id"])
                 )
                 result = self._session.execute(stmt)
             self._session.commit()
@@ -208,9 +208,9 @@ class NavidromeRepo:
         nd_id: str,
         user_id: str | None,
         played_at: int,
-        file_id: int | None = None,
+        song_id: int | None = None,
     ) -> int:
-        """Record a play event and optionally map it to a file.
+        """Record a play event and optionally map it to a song.
 
         Returns the new play row's primary key.
         """
@@ -230,12 +230,12 @@ class NavidromeRepo:
                 assert row is not None
                 play_id: int = row[0]
 
-                if file_id is not None:
+                if song_id is not None:
                     now = int(time.time())
                     map_stmt = (
                         pg_insert(_T_PLAY_MAP)
-                        .values(play_id=play_id, file_id=file_id, created_at=now)
-                        .on_conflict_do_nothing(index_elements=["play_id", "file_id"])
+                        .values(play_id=play_id, song_id=song_id, created_at=now)
+                        .on_conflict_do_nothing(index_elements=["play_id", "song_id"])
                     )
                     self._session.execute(map_stmt)
             self._session.commit()
@@ -253,33 +253,33 @@ class NavidromeRepo:
             stmt = (
                 select(
                     np_.c.navidrome_track_id.label("nd_id"),
-                    npm.c.file_id,
+                    npm.c.song_id,
                     func.count().label("playcount"),
                     func.max(np_.c.played_at).label("last_played"),
                 )
                 .select_from(np_.join(npm, np_.c.id == npm.c.play_id))
                 .where(np_.c.user_id == user_id)
-                .group_by(np_.c.navidrome_track_id, npm.c.file_id)
+                .group_by(np_.c.navidrome_track_id, npm.c.song_id)
                 .order_by(func.count().desc())
                 .limit(top_n)
             )
             result = self._session.execute(stmt)
             return [_row_to_play_record(r) for r in result.all()]
 
-    def delete_tracks_for_file(self, file_id: int) -> int:
-        """Delete track mappings for a file, then orphaned tracks.
+    def delete_tracks_for_file(self, song_id: int) -> int:
+        """Delete track mappings for a song, then orphaned tracks.
 
         Returns the number of track-map rows deleted.
         """
         with map_persistence_exceptions():
             with self._session.begin_nested():
                 # 1. Collect track IDs that will lose their last mapping
-                sel = select(_T_TRACK_MAP.c.navidrome_track_id).where(_T_TRACK_MAP.c.file_id == file_id)
+                sel = select(_T_TRACK_MAP.c.navidrome_track_id).where(_T_TRACK_MAP.c.song_id == song_id)
                 result = self._session.execute(sel)
                 affected_nd_ids = [r[0] for r in result.all()]
 
-                # 2. Delete the track-map rows for this file
-                del_map = delete(_T_TRACK_MAP).where(_T_TRACK_MAP.c.file_id == file_id)
+                # 2. Delete the track-map rows for this song
+                del_map = delete(_T_TRACK_MAP).where(_T_TRACK_MAP.c.song_id == song_id)
                 map_result = self._session.execute(del_map)
                 map_deleted = int(map_result.rowcount)  # type: ignore[attr-defined]  # CursorResult.rowcount is int at runtime
 

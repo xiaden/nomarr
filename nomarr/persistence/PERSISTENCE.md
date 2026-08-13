@@ -38,9 +38,9 @@ persistence/
 │   ├── __init__.py
 │   ├── application.py           # AppDb intent facade
 │   ├── library.py               # LibraryDb intent facade (thin forwarder)
-│   ├── library_files.py         # LibraryFilesDb sub-facade
 │   ├── library_regions.py       # LibraryRegionsDb sub-facade
 │   ├── library_scans.py         # LibraryScansDb sub-facade
+│   ├── library_songs.py         # LibrarySongsDb sub-facade
 │   ├── library_tags.py          # LibraryTagsDb sub-facade
 │   └── ml.py                    # MlDb intent facade
 ├── sql/
@@ -52,10 +52,10 @@ persistence/
 │   ├── repo_helpers.py          # Shared repository utilities
 │   ├── app_repo.py              # Application data operations (locks, sessions, worker claims, VRAM)
 │   ├── calibration_repo.py      # Calibration state and history
-│   ├── embedding_stream_repo.py # Embedding stream operations
-│   ├── file_repo.py             # Library file CRUD
-│   ├── file_state_repo.py       # File state and assignment operations
-│   ├── file_tag_repo.py         # File–tag relationship operations
+│   ├── embedding_stream_repo.py  # Embedding stream operations
+│   ├── song_repo.py             # Library song CRUD
+│   ├── song_state_repo.py       # Song state and assignment operations
+│   ├── song_tag_repo.py         # Song–tag relationship operations
 │   ├── folder_repo.py           # Folder CRUD
 │   ├── library_repo.py          # Library record CRUD
 │   ├── model_repo.py            # ML model and output labeling
@@ -69,13 +69,13 @@ persistence/
     ├── __init__.py
     ├── base.py                  # SQLAlchemy declarative base
     ├── library.py               # Library table
-    ├── library_file.py          # Library file table
     ├── library_folder.py        # Library folder table
-    ├── file_state.py            # File state table
-    ├── file_state_assignment.py # File state assignment table
-    ├── file_tag.py              # File–tag join table
-    ├── tag.py                   # Tag table
     ├── library_scan.py          # Library scan table
+    ├── song.py                  # Song table
+    ├── song_state.py            # Song state table
+    ├── song_state_assignment.py # Song state assignment table
+    ├── song_tag.py              # Song–tag join table
+    ├── tag.py                   # Tag table
     ├── ...                      # +20 additional ORM models (vectors, ML, Navidrome, health, etc.)
 ```
 
@@ -123,16 +123,16 @@ The repository instances are constructed internally and wired into the sub-facad
 
 ### `db.library`
 
-`LibraryDb` in `api/library.py` is a thin namespaced forwarder over four sub-facades — `library_files`, `library_tags`, `library_scans`, and `library_regions` — exposing the library-facing persistence surface.
+`LibraryDb` in `api/library.py` is a thin namespaced forwarder over four sub-facades — `library_songs`, `library_tags`, `library_scans`, and `library_regions` (exposed as `db.library.songs`, `db.library.tags`, `db.library.scans`, `db.library.regions`) — exposing the library-facing persistence surface.
 
 It wraps operations such as:
 
 - library CRUD and library-domain queries
-- file and folder queries plus intent-level file lifecycle operations
+- song and folder queries plus intent-level song lifecycle operations
 - tag lookup, replacement, aggregation, and cleanup routed through library-domain methods
-- maintenance-only routines (orphan cleanup, destructive resets) are flat on the facade: `db.library.list_orphaned_file_ids()`, `db.library.list_orphaned_tag_ids()`, `db.library.delete_tags_by_ids(...)`, `db.library.truncate_files()`, `db.library.truncate_file_links()`, `db.library.truncate_folder_links()`, `db.library.truncate_folders()`, `db.library.truncate_tags()`, `db.library.truncate_song_tag_edges()`, `db.library.truncate_scan_records()`
+- maintenance-only routines (orphan cleanup, destructive resets) are flat on the facade: `db.library.list_orphaned_song_ids()`, `db.library.list_orphaned_tag_ids()`, `db.library.delete_tags_by_ids(...)`, `db.library.truncate_songs()`, `db.library.truncate_song_links()`, `db.library.truncate_folder_links()`, `db.library.truncate_folders()`, `db.library.truncate_tags()`, `db.library.truncate_song_tag_edges()`, `db.library.truncate_scan_records()`
 
-Use `db.library` when the caller thinks in terms of libraries, files, folders, and tags rather than specific database tables.
+Use `db.library` when the caller thinks in terms of libraries, songs, folders, and tags rather than specific database tables.
 
 ### `db.app`
 
@@ -143,7 +143,7 @@ It wraps operations such as:
 - file state reads and state-oriented intents
 - scan and pipeline-state persistence hidden behind app-domain methods
 - locks, claims, health, migration/config, and VRAM promise persistence
-- maintenance-only routines on `db.app` (truncation, resets): `db.app.truncate_file_state_edges()`, `db.app.truncate_worker_claims()`, `db.app.truncate_health()`
+- maintenance-only routines on `db.app` (truncation, resets): `db.app.truncate_song_state_edges()`, `db.app.truncate_worker_claims()`, `db.app.truncate_health()`
 - legacy Navidrome persistence isolated as compatibility debt, not future public contract
 
 Use `db.app` for coordination data and operational state rather than music-library content.
@@ -170,11 +170,11 @@ Examples include:
 
 - `AppRepository`
 - `LibraryRepository`
-- `FileRepository`
+- `SongRepository`
 - `FolderRepository`
 - `TagRepository`
-- `FileTagRepository`
-- `FileStateRepository`
+- `SongTagRepository`
+- `SongStateRepository`
 - `ScanRepository`
 - `PipelineRepository`
 - `NavidromeRepo`
@@ -280,23 +280,17 @@ Prefer intent-level calls from higher layers:
 
 ```python
 library = db.library.get_library(library_id)
-files = db.library.list_songs(library_id, limit=100)
-streams = db.ml.list_output_streams_for_file(file_id)
+songs = db.library.list_songs(library_id, limit=100)
+streams = db.ml.list_output_streams_for_song(song_id)
 ```
 
-Within higher layers, do **not** drop to raw SQL just because the session is available. Under AR-2, every facade write must run inside a ``transaction()`` context — a guarded write method called outside one raises ``FacadeMisuseError``. Wrap each write in its own per-write block (one write per ``with db.<facade>.transaction():``):
+Within higher layers, do **not** drop to raw SQL just because the session is available, and do **not** open your own transactions for ordinary writes. Facade write methods execute directly; the underlying repositories own their own short internal transactions (AR-SDR-4). Just call the write method:
 
 ```python
-file_doc = db.library.get_file(file_id)
-
-with db.library.transaction():
-    db.library.replace_file_tags(file_id, [{"name": "genre", "value": "rock"}])
-
-with db.library.transaction():
-    db.library.update_scan(library_id, {"status": "complete"})
-
-with db.app.transaction():
-    db.app.replace_file_states(file_ids, "processing")
+song = db.library.get_song(song_id)
+db.library.replace_song_tags(song_id, [{"name": "genre", "value": "rock"}])
+db.library.update_scan(library_id, {"status": "complete"})
+db.app.replace_song_states(song_ids, "processing")
 ```
 
 Use raw SQL access only for capabilities that are not already wrapped:

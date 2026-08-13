@@ -132,11 +132,10 @@ def get_or_run_capacity_probe(
         )
 
     # Try to acquire probe lock
-    with db.app.transaction():
-        lock_acquired = db.app.acquire_lock(
-            resource_id=f"capacity_probe:{model_set_hash}",
-            payload={"worker_id": worker_id, "status": "probing"},
-        )
+    lock_acquired = db.app.acquire_lock(
+        resource_id=f"capacity_probe:{model_set_hash}",
+        payload={"worker_id": worker_id, "status": "probing"},
+    )
 
     if lock_acquired:
         # This worker will perform the probe
@@ -209,8 +208,7 @@ def _run_capacity_probe(
                 "[ml_capacity_probe] No heads found in %s, using conservative estimates",
                 models_dir,
             )
-            with db.app.transaction():
-                db.app.remove_lock(resource_id=f"capacity_probe:{model_set_hash}")
+            db.app.remove_lock(resource_id=f"capacity_probe:{model_set_hash}")
             return CapacityEstimate(
                 model_set_hash=model_set_hash,
                 measured_backbone_vram_mb=CONSERVATIVE_BACKBONE_VRAM_MB if gpu_capable else 0,
@@ -260,25 +258,23 @@ def _run_capacity_probe(
         )
 
         # Persist results
-        with db.app.transaction():
-            db.app.update_config_option(
-                key=f"capacity_estimate:{model_set_hash}",
-                payload={
-                    "value": {
-                        "measured_backbone_vram_mb": backbone_vram_mb,
-                        "estimated_worker_ram_mb": worker_ram_mb,
-                        "probe_duration_s": probe_duration,
-                        "probed_by_worker": worker_id,
-                    }
-                },
-            )
+        db.app.update_config_option(
+            key=f"capacity_estimate:{model_set_hash}",
+            payload={
+                "value": {
+                    "measured_backbone_vram_mb": backbone_vram_mb,
+                    "estimated_worker_ram_mb": worker_ram_mb,
+                    "probe_duration_s": probe_duration,
+                    "probed_by_worker": worker_id,
+                }
+            },
+        )
 
         # Mark lock as complete
-        with db.app.transaction():
-            db.app.upsert_lock(
-                resource_id=f"capacity_probe:{model_set_hash}",
-                payload={"worker_id": "", "status": "complete"},
-            )
+        db.app.upsert_lock(
+            resource_id=f"capacity_probe:{model_set_hash}",
+            payload={"worker_id": "", "status": "complete"},
+        )
 
         return CapacityEstimate(
             model_set_hash=model_set_hash,
@@ -291,8 +287,7 @@ def _run_capacity_probe(
     except (OSError, ImportError, RuntimeError) as e:
         logger.exception("[ml_capacity_probe] Probe failed: %s", e)
         # Release lock on failure so another worker can try
-        with db.app.transaction():
-            db.app.remove_lock(resource_id=f"capacity_probe:{model_set_hash}")
+        db.app.remove_lock(resource_id=f"capacity_probe:{model_set_hash}")
 
         # Return conservative estimates
         return CapacityEstimate(
@@ -386,6 +381,5 @@ def invalidate_capacity_estimate(db: Database, models_dir: str) -> None:
 
     """
     model_set_hash = compute_model_set_hash(models_dir)
-    with db.app.transaction():
-        db.app.remove_config_option(key=f"capacity_estimate:{model_set_hash}")
+    db.app.remove_config_option(key=f"capacity_estimate:{model_set_hash}")
     logger.info("[ml_capacity_probe] Invalidated capacity estimate for hash=%s", model_set_hash)

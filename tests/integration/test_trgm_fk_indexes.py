@@ -4,9 +4,15 @@ Tests that:
 1. pg_trgm extension is installed and similarity() works.
 2. Fuzzy match via pg_trgm ``%`` operator finds typo-tolerant results.
 3. Every FK column in the schema has a supporting B-tree index.
-4. FK cascade enforcement works correctly across the library→file→embedding chain.
+4. FK cascade enforcement works correctly across the library→song→embedding chain.
 
 Covers plan steps P5-S1 (pg_trgm) and P5-S2 (FK indexes).
+
+Plan A note: this file is a fresh-establishment gate and is kept
+self-contained — data setup uses the renamed ORM models (``Song``) and raw
+SQL against the corrected schema (``songs``/``embeddings`` with ``song_id``).
+Repository classes under ``nomarr/persistence/database/`` are transiently
+broken by the hard cut (Plan B fixes them) and are intentionally not imported.
 """
 
 from __future__ import annotations
@@ -16,10 +22,8 @@ import pytest
 from sqlalchemy import Engine, insert, text
 from sqlalchemy.exc import IntegrityError
 
-from nomarr.persistence.database.library_repo import LibraryRepository
-from nomarr.persistence.database.vector_repo import VectorRepo
 from nomarr.persistence.models.library import Library
-from nomarr.persistence.models.library_file import LibraryFile
+from nomarr.persistence.models.song import Song
 
 # Embedding dimension must match HALFVEC(1280) in the Embedding model.
 _EMBED_DIM = 1280
@@ -45,10 +49,10 @@ def _create_library(session, name: str = "Test Lib") -> int:
     return int(r.inserted_primary_key[0])
 
 
-def _create_file(session, library_id: int, path: str) -> int:
-    """Insert a library file row and return its id."""
+def _create_song(session, library_id: int, path: str) -> int:
+    """Insert a song row (``songs`` table) and return its id."""
     r = session.execute(
-        insert(LibraryFile).values(
+        insert(Song).values(
             library_id=library_id,
             path=path,
             normalized_path=path,
@@ -70,6 +74,44 @@ def _random_vector(dim: int = _EMBED_DIM, seed: int = 42) -> list[float]:
     v = rng.standard_normal(dim).astype(np.float32)
     v /= np.linalg.norm(v)
     return v.tolist()  # type: ignore[no-any-return]
+
+
+def _insert_embedding(
+    session,
+    song_id: int,
+    *,
+    backbone_id: str = _BACKBONE,
+    model_id: str = "test_model",
+    seed: int = 42,
+) -> None:
+    """Insert an embedding row via raw SQL against the ``embeddings`` table."""
+    vec = _random_vector(seed=seed)
+    # Render the halfvec literal as PG expects it: '[0.1,0.2,...]'
+    vec_literal = "[" + ",".join(f"{x:.6f}" for x in vec) + "]"
+    session.execute(
+        text(
+            "INSERT INTO embeddings (song_id, backbone_id, model_id, embed_dim, model_suite_hash, "
+            "embedding, tier, created_at, updated_at) "
+            "VALUES (:song_id, :backbone_id, :model_id, :embed_dim, :model_suite_hash, "
+            ":embedding::halfvec, 'hot', :created_at, :updated_at)"
+        ),
+        {
+            "song_id": song_id,
+            "backbone_id": backbone_id,
+            "model_id": model_id,
+            "embed_dim": _EMBED_DIM,
+            "model_suite_hash": "test_suite_hash",
+            "embedding": vec_literal,
+            "created_at": 1000,
+            "updated_at": 1000,
+        },
+    )
+
+
+def _count_embeddings_for_song(session, song_id: int) -> int:
+    """Return the number of ``embeddings`` rows for a song."""
+    result = session.execute(text("SELECT COUNT(*) FROM embeddings WHERE song_id = :song_id"), {"song_id": song_id})
+    return int(result.scalar())
 
 
 # ── pg_trgm fuzzy matching ──────────────────────────────────────────────────
@@ -211,15 +253,15 @@ class TestFkIndexes:
             )
             index_names = {row[0] for row in result.fetchall()}
 
-            # These are the auto-generated B-tree indexes from index=True on FK columns
+            # Explicit index names from corrected Alembic 001 (AR-SDR-2).
             expected_indexes = [
-                "embeddings_file_id_idx",
-                "file_tags_file_id_idx",
-                "file_tags_tag_id_idx",
-                "songs_library_id_idx",
-                "library_folders_library_id_idx",
-                "ml_output_streams_file_id_idx",
-                "ml_output_streams_model_id_idx",
+                "ix_song_tags_song_id",
+                "ix_song_tags_tag_id",
+                "ix_songs_library_id",
+                "ix_library_folders_library_id",
+                "ix_ml_output_streams_song_id",
+                "ix_ml_output_streams_model_id",
+                "ix_embeddings_song_id",
             ]
 
             missing = [idx for idx in expected_indexes if idx not in index_names]
@@ -235,52 +277,37 @@ class TestFkEnforcement:
     """Verify FK constraints and cascade behavior."""
 
     def test_cascade_delete_library_removes_embeddings(self, pg_session) -> None:
-        """Deleting a library should cascade through files to embeddings.
+        """Deleting a library should cascade through songs to embeddings.
 
         The FK chain is: libraries → songs → embeddings (all CASCADE).
-        Verifies zero orphaned rows after remove_library().
+        Verifies zero orphaned rows after the library row is deleted.
         """
         lib_id = _create_library(pg_session, "FK Cascade Lib")
-        file_id = _create_file(pg_session, lib_id, "/music/fk_test/test.mp3")
+        song_id = _create_song(pg_session, lib_id, "/music/fk_test/test.mp3")
 
-        # Insert an embedding
-        repo = VectorRepo(pg_session)
-        repo.insert_embedding(
-            file_id=file_id,
-            backbone_id=_BACKBONE,
-            model_id="test_model",
-            embedding_vector=_random_vector(seed=42),
-        )
+        # Insert an embedding (raw SQL against the ``embeddings`` table).
+        _insert_embedding(pg_session, song_id=song_id, seed=42)
 
         # Verify embedding exists
-        embeddings = repo.get_embeddings_for_file(file_id)
-        assert len(embeddings) == 1
+        assert _count_embeddings_for_song(pg_session, song_id) == 1
 
-        # Delete the library — should cascade through files to embeddings
-        lib_repo = LibraryRepository(pg_session)
-        lib_repo.remove_library(lib_id)
+        # Delete the library — FK ON DELETE CASCADE removes songs and embeddings.
+        pg_session.execute(text("DELETE FROM libraries WHERE id = :id"), {"id": lib_id})
 
         # Verify library is gone
         result = pg_session.execute(text("SELECT COUNT(*) FROM libraries WHERE id = :id"), {"id": lib_id})
         assert result.scalar() == 0
 
-        # Verify file is gone (cascaded)
-        result = pg_session.execute(text("SELECT COUNT(*) FROM songs WHERE id = :id"), {"id": file_id})
+        # Verify song is gone (cascaded)
+        result = pg_session.execute(text("SELECT COUNT(*) FROM songs WHERE id = :id"), {"id": song_id})
         assert result.scalar() == 0
 
         # Verify embedding is gone (cascaded)
-        embeddings = repo.get_embeddings_for_file(file_id)
-        assert len(embeddings) == 0
+        assert _count_embeddings_for_song(pg_session, song_id) == 0
 
-    def test_insert_embedding_with_invalid_file_id_fails(self, pg_session) -> None:
-        """Inserting an embedding with a non-existent file_id should raise FK violation."""
-        repo = VectorRepo(pg_session)
+    def test_insert_embedding_with_invalid_song_id_fails(self, pg_session) -> None:
+        """Inserting an embedding with a non-existent song_id should raise FK violation."""
         with pytest.raises(IntegrityError) as exc_info:
-            repo.insert_embedding(
-                file_id=999999,  # non-existent
-                backbone_id=_BACKBONE,
-                model_id="test_model",
-                embedding_vector=_random_vector(seed=77),
-            )
+            _insert_embedding(pg_session, song_id=999999, seed=77)  # non-existent
         # Should be a foreign key violation
         assert "foreign key" in str(exc_info.value).lower() or "violates" in str(exc_info.value).lower()

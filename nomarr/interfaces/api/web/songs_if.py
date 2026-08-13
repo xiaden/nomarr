@@ -103,7 +103,7 @@ async def get_files_by_ids(
 
 
 @router.post("/file/by-tag", dependencies=[Depends(verify_session)])
-async def search_files_by_tag(
+async def search_songs_by_tag(
     request: TagSearchRequest,
     tagging_service: Annotated["TaggingService", Depends(get_tagging_service)],
 ) -> SearchFilesResponse:
@@ -114,7 +114,7 @@ async def search_files_by_tag(
     """
     try:
         result = await asyncio.to_thread(
-            tagging_service.search_files_by_tag,
+            tagging_service.search_songs_by_tag,
             tag_key=request.tag_key,
             target_value=request.target_value,
             limit=request.limit,
@@ -193,8 +193,8 @@ async def cleanup_orphaned_tags(
 ) -> TagCleanupResponse:
     """Clean up orphaned tags (tags not referenced by any file).
 
-    This endpoint identifies and removes tags from the tags collection that are
-    no longer referenced by any file via song_has_tags. Useful for database maintenance
+    This endpoint identifies and removes tags from the tags table that are
+    no longer referenced by any file via the song_tags junction table. Useful for database maintenance
     after deleting files or changing tag structures.
     """
     try:
@@ -215,7 +215,7 @@ async def get_file_tags(
     decoded_file_id: int = decode_path_id(file_id)
     try:
         result = await asyncio.to_thread(
-            tagging_service.get_file_tags, file_id=decoded_file_id, nomarr_only=nomarr_only
+            tagging_service.get_song_tags, song_id=decoded_file_id, nomarr_only=nomarr_only
         )
         return FileTagsResponse.from_dto(result)
     except ValueError:
@@ -260,12 +260,12 @@ async def retry_errored_files(
     request: RetryErroredRequest | None = None,
     library_service: "LibraryService" = Depends(get_library_service),
 ) -> RetryErroredResponse:
-    """Retry errored files by clearing their errored state and re-queuing for tagging."""
+    """Retry errored songs by clearing their errored state and re-queuing for tagging."""
     decoded_library_id: int = decode_path_id(library_id)
-    file_ids = [decode_path_id(fid) for fid in request.file_ids] if request and request.file_ids else None
+    song_ids = [decode_path_id(fid) for fid in request.file_ids] if request and request.file_ids else None
     try:
         result = await asyncio.to_thread(
-            library_service.retry_errored_files, library_id=decoded_library_id, file_ids=file_ids
+            library_service.retry_errored_songs, library_id=decoded_library_id, song_ids=song_ids
         )
         return RetryErroredResponse(**result)
     except ValueError:

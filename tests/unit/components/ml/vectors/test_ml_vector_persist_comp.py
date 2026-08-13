@@ -17,11 +17,11 @@ PATCH_BASE = "nomarr.components.ml.vectors.ml_vector_persist_comp"
 class TestUpsertHotTrackVector:
     """Tests for ``upsert_hot_track_vector``."""
 
-    def test_replaces_file_vectors_and_reloads_vector_id(self) -> None:
-        """Writes the vector document through normalized file-vector methods and reloads its id."""
+    def test_replaces_song_vectors_and_reloads_vector_id(self) -> None:
+        """Writes the vector document through normalized song-vector methods and reloads its id."""
         mock_db = MagicMock()
         expected_key = hashlib.sha1(b"1|abc123").hexdigest()
-        mock_db.ml.list_file_vectors.return_value = [
+        mock_db.ml.list_song_vectors.return_value = [
             {
                 "id": "vectors_track_hot__effnet/vector-doc",
                 "key": expected_key,
@@ -31,7 +31,7 @@ class TestUpsertHotTrackVector:
         with patch(f"{PATCH_BASE}.internal_ms", return_value=MagicMock(value=1234)):
             vector_id = upsert_hot_track_vector(
                 db=mock_db,
-                file_id=1,
+                song_id=1,
                 backbone="effnet",
                 model_suite_hash="abc123",
                 embed_dim=2,
@@ -51,12 +51,12 @@ class TestUpsertHotTrackVector:
         }
 
         assert vector_id == "vectors_track_hot__effnet/vector-doc"
-        mock_db.ml.replace_file_vectors.assert_called_once_with(
+        mock_db.ml.replace_song_vectors.assert_called_once_with(
             "vectors_track_hot__effnet",
             1,
             [expected_doc],
         )
-        mock_db.ml.list_file_vectors.assert_called_once_with(
+        mock_db.ml.list_song_vectors.assert_called_once_with(
             "vectors_track_hot__effnet",
             1,
         )
@@ -89,7 +89,7 @@ class TestPersistBackboneVector:
         ):
             result = persist_backbone_vector(
                 db=mock_db,
-                file_id=1,
+                song_id=1,
                 backbone="effnet",
                 embeddings_2d=embeddings,
                 model_suite_hash="abc123",
@@ -102,7 +102,7 @@ class TestPersistBackboneVector:
         mock_get_embedding_dimension.assert_called_once()
         mock_upsert_hot_track_vector.assert_called_once_with(
             db=mock_db,
-            file_id=1,
+            song_id=1,
             backbone="effnet",
             model_suite_hash="abc123",
             embed_dim=128,
@@ -127,7 +127,7 @@ class TestPersistBackboneVector:
         ):
             result = persist_backbone_vector(
                 db=mock_db,
-                file_id=1,
+                song_id=1,
                 backbone="effnet",
                 embeddings_2d=embeddings,
                 model_suite_hash="abc123",
@@ -140,7 +140,7 @@ class TestPersistBackboneVector:
         mock_get_embedding_dimension.assert_called_once()
         mock_upsert_hot_track_vector.assert_called_once_with(
             db=mock_db,
-            file_id=1,
+            song_id=1,
             backbone="effnet",
             model_suite_hash="abc123",
             embed_dim=128,
@@ -177,7 +177,7 @@ class TestPersistBackboneVector:
         ):
             result = persist_backbone_vector(
                 db=mock_db,
-                file_id=f"{'songs'}/f1",
+                song_id=f"{'songs'}/f1",
                 backbone="effnet",
                 embeddings_2d=embeddings,
                 model_suite_hash="abc123",
@@ -191,7 +191,7 @@ class TestPersistBackboneVector:
         mock_get_embedding_dimension.assert_called_once_with(embeddings)
         mock_upsert_hot_track_vector.assert_called_once_with(
             db=mock_db,
-            file_id=f"{'songs'}/f1",
+            song_id=f"{'songs'}/f1",
             backbone="effnet",
             model_suite_hash="abc123",
             embed_dim=64,

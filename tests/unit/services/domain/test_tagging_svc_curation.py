@@ -113,7 +113,7 @@ class TestRenameTag:
                 return_value=["10", "20"],
             ),
             patch(
-                "nomarr.services.domain.tagging_svc.curation.transition_file_state",
+                "nomarr.services.domain.tagging_svc.curation.transition_song_state",
             ) as mock_transition,
         ):
             result = service.rename_tag("1", "music_genre")
@@ -163,7 +163,7 @@ class TestMergeTags:
                 return_value=["10"],
             ),
             patch(
-                "nomarr.services.domain.tagging_svc.curation.transition_file_state",
+                "nomarr.services.domain.tagging_svc.curation.transition_song_state",
             ) as mock_transition,
         ):
             result = service.merge_tags(["2"], "1")
@@ -190,7 +190,7 @@ class TestMergeTags:
                 return_value=[],
             ),
             patch(
-                "nomarr.services.domain.tagging_svc.curation.transition_file_state",
+                "nomarr.services.domain.tagging_svc.curation.transition_song_state",
             ),
         ):
             result = service.merge_tags(["1"], "1")
@@ -240,7 +240,7 @@ class TestSplitTag:
                 return_value={"moved": 2, "skipped": 0, "source_orphaned": False},
             ),
             patch(
-                "nomarr.services.domain.tagging_svc.curation.transition_file_state",
+                "nomarr.services.domain.tagging_svc.curation.transition_song_state",
             ) as mock_transition,
         ):
             result = service.split_tag("1", ["10", "20"], "rock")
@@ -249,12 +249,12 @@ class TestSplitTag:
         assert mock_transition.call_count == 2
 
 
-class TestUpdateFileTags:
-    """Tests for ``TaggingCurationMixin.update_file_tags``."""
+class TestUpdateSongTags:
+    """Tests for ``TaggingCurationMixin.update_song_tags``."""
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_update_file_tags_success(self) -> None:
+    def test_update_song_tags_success(self) -> None:
         """Successful update should return file_id, name, and tags dict."""
         service = _make_service()
         mock_tags_obj = MagicMock()
@@ -264,14 +264,14 @@ class TestUpdateFileTags:
                 "nomarr.services.domain.tagging_svc.curation.set_song_tags",
             ) as mock_set,
             patch(
-                "nomarr.services.domain.tagging_svc.curation.transition_file_state",
+                "nomarr.services.domain.tagging_svc.curation.transition_song_state",
             ) as mock_transition,
             patch(
                 "nomarr.services.domain.tagging_svc.curation.get_song_tags",
                 return_value=mock_tags_obj,
             ),
         ):
-            result = service.update_file_tags("1", "genre", ["rock"])
+            result = service.update_song_tags("1", "genre", ["rock"])
 
         assert result == {"file_id": "1", "name": "genre", "tags": {"genre": ["rock"]}}
         mock_set.assert_called_once()
@@ -279,8 +279,8 @@ class TestUpdateFileTags:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_update_file_tags_rejects_nom_prefix(self) -> None:
+    def test_update_song_tags_rejects_nom_prefix(self) -> None:
         """Updating with a nom: name should raise ValueError (ADR-009)."""
         service = _make_service()
         with pytest.raises(ValueError, match="read-only"):
-            service.update_file_tags("1", "nom:genre", ["rock"])
+            service.update_song_tags("1", "nom:genre", ["rock"])

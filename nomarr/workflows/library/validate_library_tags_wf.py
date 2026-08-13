@@ -6,7 +6,7 @@ import logging
 from collections import Counter
 from typing import TYPE_CHECKING, Any
 
-from nomarr.components.library.library_file_state_comp import get_files_with_incomplete_tags, transition_file_state
+from nomarr.components.library.library_song_state_comp import get_songs_with_incomplete_tags, transition_song_state
 from nomarr.components.ml.onnx.ml_discovery_comp import discover_heads
 from nomarr.helpers.constants.file_states import STATE_NOT_WRITTEN, STATE_WRITTEN
 
@@ -56,7 +56,7 @@ def validate_library_tags_workflow(
 
     namespace_prefix = f"{namespace}:"
 
-    results = get_files_with_incomplete_tags(
+    results = get_songs_with_incomplete_tags(
         db,
         expected_heads=expected_heads,
         namespace_prefix=namespace_prefix,
@@ -71,8 +71,8 @@ def validate_library_tags_workflow(
 
     repaired = 0
     if auto_repair and incomplete:
-        file_ids = [row["file_id"] for row in incomplete]
-        transition_file_state(db, file_ids, STATE_WRITTEN, STATE_NOT_WRITTEN)
+        song_ids = [row["file_id"] for row in incomplete]
+        transition_song_state(db, song_ids, STATE_WRITTEN, STATE_NOT_WRITTEN)
         repaired = len(incomplete)
 
     return {

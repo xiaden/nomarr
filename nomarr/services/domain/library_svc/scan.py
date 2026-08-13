@@ -266,7 +266,7 @@ class LibraryScanMixin:
 
         Checks that every file marked as tagged has edges for all discovered
         ML heads.  Incomplete files are optionally repaired by marking them
-        back to the ``not_tagged`` state so discovery workers reprocess them.
+        back to the ``not_written`` state so discovery workers reprocess them.
 
         Args:
             library_id: Library to validate

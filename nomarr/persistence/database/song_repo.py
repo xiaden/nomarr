@@ -1,4 +1,4 @@
-"""FileRepository — CRUD and domain queries for the ``songs`` table.
+"""SongRepository — CRUD and domain queries for the ``songs`` table.
 
 Uses Part B primitives for simple lookups and direct SQLAlchemy Core for
 filtered queries, batch operations, and maintenance methods.
@@ -11,9 +11,9 @@ from typing import TYPE_CHECKING, Any, cast
 from sqlalchemy import Table, delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from nomarr.helpers.dto.repo_dto import LibraryFileRow
-from nomarr.persistence.models.file_tag import SongTag
-from nomarr.persistence.models.library_file import LibraryFile
+from nomarr.helpers.dto.repo_dto import SongRow
+from nomarr.persistence.models.song import Song
+from nomarr.persistence.models.song_tag import SongTag
 from nomarr.persistence.sql.exceptions import map_persistence_exceptions
 from nomarr.persistence.sql.primitives import (
     delete_by_key,
@@ -26,13 +26,13 @@ if TYPE_CHECKING:
     from sqlalchemy.engine import Row
     from sqlalchemy.orm import Session, scoped_session
 
-_T = cast("Table", LibraryFile.__table__)
+_T = cast("Table", Song.__table__)
 
 
-def _row_to_dto(row: Row) -> LibraryFileRow:
-    """Convert a SQLAlchemy ``Row`` to a ``LibraryFileRow`` TypedDict."""
+def _row_to_dto(row: Row) -> SongRow:
+    """Convert a SQLAlchemy ``Row`` to a ``SongRow`` TypedDict."""
     m = row._mapping
-    return LibraryFileRow(
+    return SongRow(
         id=m["id"],
         library_id=m["library_id"],
         folder_id=m["folder_id"],
@@ -53,7 +53,7 @@ def _row_to_dto(row: Row) -> LibraryFileRow:
     )
 
 
-class FileRepository:
+class SongRepository:
     """Repository for the ``songs`` table."""
 
     def __init__(self, session: scoped_session[Session]) -> None:
@@ -61,38 +61,38 @@ class FileRepository:
 
     # ── basic CRUD ──────────────────────────────────────────────
 
-    def add_file(self, payload: dict[str, Any]) -> int:
-        """Insert a new file row and return its ``id``."""
+    def add_song(self, payload: dict[str, Any]) -> int:
+        """Insert a new song row and return its ``id``."""
         with map_persistence_exceptions():
             with self._session.begin_nested():
                 row = insert_one(_T, payload, session=self._session)
             self._session.commit()
             return int(row._mapping["id"])
 
-    def get_file(self, file_id: int) -> LibraryFileRow | None:
-        """Fetch a single file by primary key."""
+    def get_song(self, song_id: int) -> SongRow | None:
+        """Fetch a single song by primary key."""
         with map_persistence_exceptions():
-            row = select_by_key(_T, file_id, session=self._session)
+            row = select_by_key(_T, song_id, session=self._session)
             return _row_to_dto(row) if row else None
 
-    def get_file_by_path(self, path: str, library_id: int) -> LibraryFileRow | None:
-        """Fetch a file by path within a specific library."""
+    def get_song_by_path(self, path: str, library_id: int) -> SongRow | None:
+        """Fetch a song by path within a specific library."""
         with map_persistence_exceptions():
             stmt = select(_T).where(_T.c.path == path, _T.c.library_id == library_id)
             result = self._session.execute(stmt)
             row = result.fetchone()
             return _row_to_dto(row) if row else None
 
-    def get_file_by_path_unscoped(self, path: str) -> LibraryFileRow | None:
-        """Fetch a file by path across all libraries."""
+    def get_song_by_path_unscoped(self, path: str) -> SongRow | None:
+        """Fetch a song by path across all libraries."""
         with map_persistence_exceptions():
             stmt = select(_T).where(_T.c.path == path).limit(1)
             result = self._session.execute(stmt)
             row = result.fetchone()
             return _row_to_dto(row) if row else None
 
-    def get_file_by_normalized_path(self, library_id: int, normalized_path: str) -> LibraryFileRow | None:
-        """Fetch a file by normalized path within a specific library."""
+    def get_song_by_normalized_path(self, library_id: int, normalized_path: str) -> SongRow | None:
+        """Fetch a song by normalized path within a specific library."""
         with map_persistence_exceptions():
             stmt = select(_T).where(
                 _T.c.library_id == library_id,
@@ -102,8 +102,8 @@ class FileRepository:
             row = result.fetchone()
             return _row_to_dto(row) if row else None
 
-    def upsert_file(self, payload: dict[str, Any]) -> int:
-        """Insert or update a file, keyed on ``(library_id, path)`` unique constraint."""
+    def upsert_song(self, payload: dict[str, Any]) -> int:
+        """Insert or update a song, keyed on ``(library_id, path)`` unique constraint."""
         with map_persistence_exceptions():
             with self._session.begin_nested():
                 stmt = (
@@ -123,8 +123,8 @@ class FileRepository:
             self._session.commit()
             return int(row._mapping["id"])
 
-    def upsert_files_for_library(self, library_id: int, payloads: list[dict[str, Any]]) -> list[int]:
-        """Batch upsert files for a single library.
+    def upsert_songs_for_library(self, library_id: int, payloads: list[dict[str, Any]]) -> list[int]:
+        """Batch upsert songs for a single library.
 
         Each payload must contain at least ``path``.  The ``library_id``
         is forced to the supplied value.
@@ -147,66 +147,42 @@ class FileRepository:
             self._session.commit()
             return ids
 
-    def update_file(self, file_id: int, fields: dict[str, Any]) -> None:
-        """Update arbitrary fields on a file row."""
+    def update_song(self, song_id: int, fields: dict[str, Any]) -> None:
+        """Update arbitrary fields on a song row."""
         with map_persistence_exceptions():
             with self._session.begin_nested():
-                update_by_field(_T, "id", file_id, fields, session=self._session)
+                update_by_field(_T, "id", song_id, fields, session=self._session)
             self._session.commit()
 
-    def delete_file(self, file_id: int) -> None:
-        """Delete a single file by primary key."""
+    def delete_song(self, song_id: int) -> None:
+        """Delete a single song by primary key."""
         with map_persistence_exceptions():
             with self._session.begin_nested():
-                delete_by_key(_T, file_id, session=self._session)
+                delete_by_key(_T, song_id, session=self._session)
             self._session.commit()
 
     # ── filtered queries ────────────────────────────────────────
 
-    def list_files(
-        self,
-        *,
-        filters: dict[str, Any] | None = None,
-        limit: int | None = None,
-    ) -> list[LibraryFileRow]:
-        """Return files matching optional field-equality filters."""
+    def get_songs_by_ids(self, song_ids: list[int]) -> list[SongRow]:
+        """Fetch multiple songs by their primary keys."""
         with map_persistence_exceptions():
-            stmt = select(_T)
-            if filters:
-                for field, value in filters.items():
-                    stmt = stmt.where(_T.c[field] == value)
-            if limit is not None:
-                stmt = stmt.limit(limit)
-            result = self._session.execute(stmt)
-            return [_row_to_dto(r) for r in result.all()]
-
-    def count_files(self) -> int:
-        """Return total row count of ``songs``."""
-        with map_persistence_exceptions():
-            stmt = select(func.count()).select_from(_T)
-            result = self._session.execute(stmt)
-            return result.scalar() or 0
-
-    def get_files_by_ids(self, file_ids: list[int]) -> list[LibraryFileRow]:
-        """Fetch multiple files by their primary keys."""
-        with map_persistence_exceptions():
-            if not file_ids:
+            if not song_ids:
                 return []
-            stmt = select(_T).where(_T.c.id.in_(file_ids))
+            stmt = select(_T).where(_T.c.id.in_(song_ids))
             result = self._session.execute(stmt)
             return [_row_to_dto(r) for r in result.all()]
 
-    def get_library_ids_for_files(self, file_ids: list[int]) -> dict[int, int]:
-        """Return ``{file_id: library_id}`` mapping for the given file ids."""
+    def get_library_ids_for_songs(self, song_ids: list[int]) -> dict[int, int]:
+        """Return ``{song_id: library_id}`` mapping for the given song ids."""
         with map_persistence_exceptions():
-            if not file_ids:
+            if not song_ids:
                 return {}
-            stmt = select(_T.c.id, _T.c.library_id).where(_T.c.id.in_(file_ids))
+            stmt = select(_T.c.id, _T.c.library_id).where(_T.c.id.in_(song_ids))
             result = self._session.execute(stmt)
             return {row[0]: row[1] for row in result.all()}
 
-    def list_library_file_ids(self, library_id: int, *, limit: int | None = None) -> list[int]:
-        """Return file ids belonging to a library."""
+    def list_library_song_ids(self, library_id: int, *, limit: int | None = None) -> list[int]:
+        """Return song ids belonging to a library."""
         with map_persistence_exceptions():
             stmt = select(_T.c.id).where(_T.c.library_id == library_id)
             if limit is not None:
@@ -214,8 +190,8 @@ class FileRepository:
             result = self._session.execute(stmt)
             return [row[0] for row in result.all()]
 
-    def list_songs(self, library_id: int, *, limit: int | None = None) -> list[LibraryFileRow]:
-        """Return full file rows belonging to a library."""
+    def list_songs(self, library_id: int, *, limit: int | None = None) -> list[SongRow]:
+        """Return full song rows belonging to a library."""
         with map_persistence_exceptions():
             stmt = select(_T).where(_T.c.library_id == library_id)
             if limit is not None:
@@ -223,7 +199,7 @@ class FileRepository:
             result = self._session.execute(stmt)
             return [_row_to_dto(r) for r in result.all()]
 
-    def list_existing_file_paths(self, paths: list[str]) -> list[str]:
+    def list_existing_song_paths(self, paths: list[str]) -> list[str]:
         """Return paths from *paths* that already exist in the table."""
         with map_persistence_exceptions():
             if not paths:
@@ -232,8 +208,8 @@ class FileRepository:
             result = self._session.execute(stmt)
             return [row[0] for row in result.all()]
 
-    def find_by_chromaprint(self, library_id: int, chromaprint: str) -> LibraryFileRow | None:
-        """Find a file by chromaprint within a library."""
+    def find_song_by_chromaprint(self, library_id: int, chromaprint: str) -> SongRow | None:
+        """Find a song by chromaprint within a library."""
         with map_persistence_exceptions():
             stmt = select(_T).where(
                 _T.c.chromaprint == chromaprint,
@@ -243,8 +219,8 @@ class FileRepository:
             row = result.fetchone()
             return _row_to_dto(row) if row else None
 
-    def list_files_for_folder(self, library_id: int, folder_rel_path: str) -> list[LibraryFileRow]:
-        """Return files whose path starts with the given folder relative path."""
+    def list_songs_for_folder(self, library_id: int, folder_rel_path: str) -> list[SongRow]:
+        """Return songs whose path starts with the given folder relative path."""
         with map_persistence_exceptions():
             prefix = folder_rel_path.rstrip("/") + "/"
             stmt = select(_T).where(
@@ -256,18 +232,18 @@ class FileRepository:
 
     # ── mutation / maintenance ──────────────────────────────────
 
-    def remove_files(self, file_ids: list[int]) -> None:
-        """Delete multiple files by id.  FK CASCADE handles derived data."""
+    def remove_songs(self, song_ids: list[int]) -> None:
+        """Delete multiple songs by id.  FK CASCADE handles derived data."""
         with map_persistence_exceptions():
-            if not file_ids:
+            if not song_ids:
                 return
             with self._session.begin_nested():
-                stmt = delete(_T).where(_T.c.id.in_(file_ids))
+                stmt = delete(_T).where(_T.c.id.in_(song_ids))
                 self._session.execute(stmt)
             self._session.commit()
 
-    def list_orphaned_file_ids(self) -> list[int]:
-        """Return file ids whose ``library_id`` has no matching library."""
+    def list_orphaned_song_ids(self) -> list[int]:
+        """Return song ids whose ``library_id`` has no matching library."""
         with map_persistence_exceptions():
             from nomarr.persistence.models.library import Library
 
@@ -278,29 +254,29 @@ class FileRepository:
             result = self._session.execute(stmt)
             return [row[0] for row in result.all()]
 
-    def truncate_files(self) -> None:
+    def truncate_songs(self) -> None:
         """Delete all rows from ``songs``."""
         with map_persistence_exceptions():
             with self._session.begin_nested():
                 self._session.execute(delete(_T))
             self._session.commit()
 
-    def truncate_file_links(self) -> None:
-        """Delete all rows from the ``file_tags`` junction table."""
+    def truncate_song_links(self) -> None:
+        """Delete all rows from the ``song_tags`` junction table."""
         with map_persistence_exceptions():
             with self._session.begin_nested():
                 self._session.execute(delete(cast("Table", SongTag.__table__)))
             self._session.commit()
 
     def count_songs(self, library_id: int) -> int:
-        """Return the number of files belonging to *library_id*."""
+        """Return the number of songs belonging to *library_id*."""
         with map_persistence_exceptions():
             stmt = select(func.count()).select_from(_T).where(_T.c.library_id == library_id)
             result = self._session.execute(stmt)
             return result.scalar() or 0
 
     def count_recently_tagged(self, cutoff_ms: int) -> int:
-        """Count files with ``last_tagged_at >= cutoff_ms``."""
+        """Count songs with ``last_tagged_at >= cutoff_ms``."""
         with map_persistence_exceptions():
             stmt = select(func.count()).select_from(_T).where(_T.c.last_tagged_at >= cutoff_ms)
             result = self._session.execute(stmt)
@@ -311,8 +287,8 @@ class FileRepository:
         library_id: int,
         *,
         limit: int | None = None,
-    ) -> list[LibraryFileRow]:
-        """Return file rows for a library ordered by id (for fuzzy matching)."""
+    ) -> list[SongRow]:
+        """Return song rows for a library ordered by id (for fuzzy matching)."""
         with map_persistence_exceptions():
             stmt = select(_T).where(_T.c.library_id == library_id).order_by(_T.c.id)
             if limit is not None:

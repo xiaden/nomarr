@@ -1,6 +1,7 @@
 """Library pipeline state constants — multi-axis model.
 
-Each library carries four independent state axes as document fields.
+Each library carries four independent state axes stored in the
+``pipeline_states`` table.
 Each axis has three lifecycle poles: not_started, in_progress, completed.
 
 Axes:
@@ -78,7 +79,7 @@ WRITE_AXIS: tuple[str, ...] = (
 )
 
 # ---------------------------------------------------------------------------
-#  Field names on the library document
+#  Axis key names for the pipeline-state record
 # ---------------------------------------------------------------------------
 SCAN_STATE_FIELD = "scan_state"
 ML_STATE_FIELD = "ml_state"

@@ -92,7 +92,7 @@ def register_ml_models_workflow(
         model_id: str = model_doc["id"]
 
         # Step 4: Ensure output vertices exist
-        outputs = ensure_model_outputs(db, file_id=0, model_id=model_id, output_count=output_count)
+        outputs = ensure_model_outputs(db, song_id=0, model_id=model_id, output_count=output_count)
 
         # Step 5: Seed missing labels for known shipped models
         if known_outputs is not None:
@@ -102,7 +102,7 @@ def register_ml_models_workflow(
                     continue
                 update_model_output_label(
                     db,
-                    file_id=0,
+                    song_id=0,
                     model_id=model_id,
                     output_id=output_doc["id"],
                     label=label,

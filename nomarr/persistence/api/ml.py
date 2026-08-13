@@ -1,14 +1,11 @@
 from __future__ import annotations
 
 import logging
-import warnings
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import text
 
 if TYPE_CHECKING:
-    from contextlib import AbstractContextManager
-
     from sqlalchemy.orm import Session, scoped_session
 
     from nomarr.helpers.dto.calibration_repo_dto import CalibrationHistoryRecord, CalibrationStateRecord
@@ -22,8 +19,6 @@ if TYPE_CHECKING:
     from nomarr.persistence.database.output_repo import OutputRepo
     from nomarr.persistence.database.vector_repo import VectorRepo
 
-from nomarr.helpers.exceptions import FacadeMisuseError
-
 logger = logging.getLogger(__name__)
 
 
@@ -34,37 +29,6 @@ class MlDb:
     Destructive maintenance operations (``truncate_vectors_in_collection``,
     ``truncate_calibration_states``, ``truncate_calibration_history``) are
     exposed directly on this facade.
-
-    READ/WRITE classification (AR-2): READ methods use SQLAlchemy autobegin
-    and need no transaction context; WRITE methods (inserts/updates/deletes/
-    upserts/truncates) must be called inside ``transaction()`` and raise
-    :class:`FacadeMisuseError` otherwise. No-op index-management methods
-    (``build_vector_index``, ``drop_vector_index``,
-    ``rebuild_backbone_embedding_index``) perform no DB mutation and are
-    classified READ; ``rebuild_vector_index`` executes REINDEX and is WRITE.
-
-    READ:   list_vector_collection_names, list_output_streams_for_file,
-            list_file_vectors, search_vectors, get_model, get_model_by_type,
-            list_models, count_models, list_models_by_ids, get_model_output,
-            list_model_outputs, get_calibration_state,
-            get_calibration_state_view, list_calibration_states,
-            list_calibration_history_snapshots, count_calibration_history,
-            get_embedding_stream_for_file, list_embedding_streams_by_backbone,
-            list_all_calibration_states_with_models, get_embedding_stats,
-            has_embedding_index, has_vector_index, backfill_genres,
-            build_vector_index, drop_vector_index,
-            rebuild_backbone_embedding_index
-    WRITE:  truncate_vectors_in_collection, truncate_calibration_states,
-            truncate_calibration_history, clear_vector_collection, add_model,
-            update_model, remove_model, add_calibration_history,
-            replace_embedding_stream_for_file, remove_embedding_streams_for_file,
-            replace_output_streams_for_file, remove_output_streams_for_file,
-            replace_file_vectors, remove_file_vectors, remove_vectors_for_files,
-            replace_model_output, remove_model_output,
-            remove_model_outputs_for_model, replace_calibration_state,
-            remove_calibration_state, remove_calibration_history_for_model,
-            remove_calibration_history_entries, index_backbone_embeddings,
-            rebuild_vector_index
     """
 
     def __init__(
@@ -99,34 +63,6 @@ class MlDb:
         assert model_repo is not None, "ModelRepo is required"
         assert calibration_repo is not None, "CalibrationRepo is required"
 
-    def _require_transaction(self, method_name: str) -> None:
-        """Raise :class:`FacadeMisuseError` when no transaction is active (AR-2)."""
-        if not cast("Session", self._session).in_transaction():
-            raise FacadeMisuseError(
-                f"{type(self).__name__}.{method_name}() is a write method — call within a transaction() context"
-            )
-
-    def transaction(self) -> AbstractContextManager[Session]:
-        """Return a ``session.begin()`` context manager for write operations (AR-2).
-
-        Must be entered FIRST, before any write method call. If a read method
-        already autobegun a transaction, warn and reuse it instead of ending it:
-        committing an active transaction here would make SQLAlchemy raise
-        ``InvalidRequestError`` on the next session use when the transaction was
-        opened by an enclosing ``transaction()`` (``_trans_ctx_check`` rejects a
-        closed-but-still-registered context manager), and an autobegun read
-        transaction only needs to be committed by the returned context manager
-        at exit. Reusing the active transaction is lossless and safe.
-        """
-        if cast("Session", self._session).in_transaction():
-            warnings.warn(
-                "Transaction already active — did you call a read method before entering the context?", stacklevel=2
-            )
-            active = cast("Session", self._session).get_transaction()
-            if active is not None:
-                return cast("AbstractContextManager[Session]", active)
-        return cast("AbstractContextManager[Session]", self._session.begin())
-
     # ------------------------------------------------------------------
     # Maintenance methods (destructive reset/repair)
     # ------------------------------------------------------------------
@@ -138,19 +74,16 @@ class MlDb:
         PostgreSQL uses a single ``embeddings`` table.
         """
         assert self._vector_repo is not None, "VectorRepo not wired"
-        self._require_transaction("truncate_vectors_in_collection")
         self._vector_repo.truncate_embeddings()
 
     def truncate_calibration_states(self) -> None:
         """Truncate all calibration state rows."""
         assert self._calibration_repo is not None, "CalibrationRepo not wired"
-        self._require_transaction("truncate_calibration_states")
         self._calibration_repo.truncate_states()
 
     def truncate_calibration_history(self) -> None:
         """Truncate all calibration history rows."""
         assert self._calibration_repo is not None, "CalibrationRepo not wired"
-        self._require_transaction("truncate_calibration_history")
         self._calibration_repo.truncate_history()
 
     # ------------------------------------------------------------------
@@ -168,22 +101,21 @@ class MlDb:
         PostgreSQL uses a single ``embeddings`` table.
         """
         assert self._vector_repo is not None, "VectorRepo not wired"
-        self._require_transaction("clear_vector_collection")
         self._vector_repo.delete_all_embeddings()
 
-    def list_output_streams_for_file(self, file_id: int) -> list[ModelOutputRecord]:
-        """Return all canonical output stream records linked to one file."""
+    def list_output_streams_for_song(self, song_id: int) -> list[ModelOutputRecord]:
+        """Return all canonical output stream records linked to one song."""
         assert self._output_repo is not None, "OutputRepo not wired"
-        return self._output_repo.get_outputs_for_file(file_id)
+        return self._output_repo.get_outputs_for_song(song_id)
 
-    def list_file_vectors(self, _collection_name: str, file_id: int) -> list[EmbeddingRecord]:
-        """Return all embedding records stored for one file.
+    def list_song_vectors(self, _collection_name: str, song_id: int) -> list[EmbeddingRecord]:
+        """Return all embedding records stored for one song.
 
         ``collection_name`` is accepted for backwards compatibility but ignored —
         PostgreSQL uses a single ``embeddings`` table with a ``backbone_id`` column.
         """
         assert self._vector_repo is not None, "VectorRepo not wired"
-        return self._vector_repo.get_embeddings_for_file(file_id)
+        return self._vector_repo.get_embeddings_for_song(song_id)
 
     def search_vectors(
         self,
@@ -222,19 +154,16 @@ class MlDb:
     def add_model(self, payload: dict[str, Any]) -> ModelRecord:
         """Upsert a model row and return the persisted ModelRecord."""
         assert self._model_repo is not None, "ModelRepo not wired"
-        self._require_transaction("add_model")
         return self._model_repo.upsert_model(payload)
 
     def update_model(self, model_id: str, fields: dict[str, Any]) -> None:
         """Apply field updates to an existing ml_models row."""
         assert self._model_repo is not None, "ModelRepo not wired"
-        self._require_transaction("update_model")
         self._model_repo.update_model(model_id, fields)
 
     def remove_model(self, model_id: str) -> None:
         """Delete one ml_models row by id."""
         assert self._model_repo is not None, "ModelRepo not wired"
-        self._require_transaction("remove_model")
         self._model_repo.delete_model(model_id)
 
     def list_models(self) -> list[ModelRecord]:
@@ -302,7 +231,6 @@ class MlDb:
     def add_calibration_history(self, payload: dict[str, Any]) -> CalibrationHistoryRecord:
         """Insert a calibration history event and return the persisted record."""
         assert self._calibration_repo is not None, "CalibrationRepo not wired"
-        self._require_transaction("add_calibration_history")
         return self._calibration_repo.record_history(
             model_id=payload["model_id"],
             event=payload["event"],
@@ -321,28 +249,27 @@ class MlDb:
         history = self._calibration_repo.get_history(model_id)
         return len(history)
 
-    def replace_embedding_stream_for_file(
+    def replace_embedding_stream_for_song(
         self,
-        file_id: int,
+        song_id: int,
         backbone: str,
         stream_payload: dict[str, Any],
     ) -> EmbeddingStreamRecord:
-        """Upsert an embedding stream for a (file, backbone) pair.
+        """Upsert an embedding stream for a (song, backbone) pair.
 
         Returns the persisted ``EmbeddingStreamRecord``.
         """
         assert self._embedding_stream_repo is not None, "EmbeddingStreamRepository not wired"
-        self._require_transaction("replace_embedding_stream_for_file")
-        return self._embedding_stream_repo.upsert_stream(file_id, backbone, stream_payload)
+        return self._embedding_stream_repo.upsert_stream(song_id, backbone, stream_payload)
 
-    def get_embedding_stream_for_file(
+    def get_embedding_stream_for_song(
         self,
-        file_id: int,
+        song_id: int,
         backbone: str,
     ) -> EmbeddingStreamRecord | None:
-        """Return the embedding stream for ``(file_id, backbone)``, or ``None``."""
+        """Return the embedding stream for ``(song_id, backbone)``, or ``None``."""
         assert self._embedding_stream_repo is not None, "EmbeddingStreamRepository not wired"
-        return self._embedding_stream_repo.get_stream(file_id, backbone)
+        return self._embedding_stream_repo.get_stream(song_id, backbone)
 
     def list_embedding_streams_by_backbone(
         self,
@@ -355,22 +282,21 @@ class MlDb:
         assert self._embedding_stream_repo is not None, "EmbeddingStreamRepository not wired"
         return self._embedding_stream_repo.list_by_backbone(backbone, limit=limit, offset=offset)
 
-    def remove_embedding_streams_for_file(self, file_id: int) -> None:
-        """Delete all embedding streams linked to one file."""
+    def remove_embedding_streams_for_song(self, song_id: int) -> None:
+        """Delete all embedding streams linked to one song."""
         assert self._embedding_stream_repo is not None, "EmbeddingStreamRepository not wired"
-        self._require_transaction("remove_embedding_streams_for_file")
-        self._embedding_stream_repo.delete_for_file(file_id)
+        self._embedding_stream_repo.delete_for_song(song_id)
 
     # ------------------------------------------------------------------
     # Promoted intent-complete write methods
     # ------------------------------------------------------------------
 
-    def replace_output_streams_for_file(
+    def replace_output_streams_for_song(
         self,
-        file_id: int,
+        song_id: int,
         stream_payloads: list[dict[str, Any]],
     ) -> None:
-        """Replace all canonical output streams for one file (delete-then-insert).
+        """Replace all canonical output streams for one song (delete-then-insert).
 
         .. note::
            The delete and each insert commit independently via their repos.
@@ -379,28 +305,26 @@ class MlDb:
            (e.g. a facade-level ``begin/commit`` wrapper) for atomicity.
         """
         assert self._output_repo is not None, "OutputRepo not wired"
-        self._require_transaction("replace_output_streams_for_file")
-        self._output_repo.delete_outputs_for_file(file_id)
+        self._output_repo.delete_outputs_for_song(song_id)
         for payload in stream_payloads:
             self._output_repo.store_output_stream(
-                file_id=file_id,
+                song_id=song_id,
                 model_id=payload["model_id"],
                 status=payload["status"],
             )
 
-    def remove_output_streams_for_file(self, file_id: int) -> None:
-        """Delete all canonical output streams linked to one file."""
+    def remove_output_streams_for_song(self, song_id: int) -> None:
+        """Delete all canonical output streams linked to one song."""
         assert self._output_repo is not None, "OutputRepo not wired"
-        self._require_transaction("remove_output_streams_for_file")
-        self._output_repo.delete_outputs_for_file(file_id)
+        self._output_repo.delete_outputs_for_song(song_id)
 
-    def replace_file_vectors(
+    def replace_song_vectors(
         self,
         collection_name: str,
-        file_id: int,
+        song_id: int,
         vector_payloads: list[dict[str, Any]],
     ) -> None:
-        """Replace all vector rows for one file (delete-then-insert).
+        """Replace all vector rows for one song (delete-then-insert).
 
         ``collection_name`` is accepted for backwards compatibility but ignored —
         PostgreSQL uses a single ``embeddings`` table.
@@ -412,8 +336,7 @@ class MlDb:
            for atomicity.
         """
         assert self._vector_repo is not None, "VectorRepo not wired"
-        self._require_transaction("replace_file_vectors")
-        self._vector_repo.delete_embeddings_for_file(file_id)
+        self._vector_repo.delete_embeddings_for_song(song_id)
         for payload in vector_payloads:
             # Require embedding_vector (or fallback key 'embedding') — no silent
             # empty-list default, which would cause a confusing DB dimension error.
@@ -421,39 +344,37 @@ class MlDb:
             if embedding_vector is None:
                 embedding_vector = payload["embedding"]
             self._vector_repo.insert_embedding(
-                file_id=file_id,
+                song_id=song_id,
                 backbone_id=payload.get("backbone_id", collection_name),
                 model_id=payload["model_id"],
                 embedding_vector=embedding_vector,
                 genres=payload.get("genres"),
             )
 
-    def remove_file_vectors(self, _collection_name: str, file_id: int) -> None:
-        """Delete all vector rows for one file.
+    def remove_song_vectors(self, _collection_name: str, song_id: int) -> None:
+        """Delete all vector rows for one song.
 
         ``collection_name`` is accepted for backwards compatibility but ignored.
         """
         assert self._vector_repo is not None, "VectorRepo not wired"
-        self._require_transaction("remove_file_vectors")
-        self._vector_repo.delete_embeddings_for_file(file_id)
+        self._vector_repo.delete_embeddings_for_song(song_id)
 
-    def remove_vectors_for_files(self, _collection_name: str, file_ids: list[int]) -> None:
-        """Delete all vector rows for each file_id in file_ids.
+    def remove_vectors_for_songs(self, _collection_name: str, song_ids: list[int]) -> None:
+        """Delete all vector rows for each song_id in song_ids.
 
         .. note::
-           TODO: N+1 — loops ``delete_embeddings_for_file`` per file_id.
-           VectorRepo has no batch-delete-by-file-ids method yet.  Add a
-           single ``DELETE … WHERE file_id = ANY(…)`` to VectorRepo for
+           TODO: N+1 — loops ``delete_embeddings_for_song`` per song_id.
+           VectorRepo has no batch-delete-by-song-ids method yet.  Add a
+           single ``DELETE … WHERE song_id = ANY(…)`` to VectorRepo for
            production scaling.
         """
         assert self._vector_repo is not None, "VectorRepo not wired"
-        self._require_transaction("remove_vectors_for_files")
-        for fid in file_ids:
-            self._vector_repo.delete_embeddings_for_file(fid)
+        for sid in song_ids:
+            self._vector_repo.delete_embeddings_for_song(sid)
 
     def replace_model_output(
         self,
-        file_id: int,
+        song_id: int,
         model_id: str,
         _output_key: str,
         payload: dict[str, Any],
@@ -464,9 +385,8 @@ class MlDb:
         PostgreSQL uses auto-generated integer primary keys.
         """
         assert self._output_repo is not None, "OutputRepo not wired"
-        self._require_transaction("replace_model_output")
         return self._output_repo.store_model_output(
-            file_id=file_id,
+            song_id=song_id,
             model_id=model_id,
             output_data=payload,
         )
@@ -474,13 +394,11 @@ class MlDb:
     def remove_model_output(self, output_id: int) -> None:
         """Delete one model output by primary key."""
         assert self._output_repo is not None, "OutputRepo not wired"
-        self._require_transaction("remove_model_output")
         self._output_repo.delete_output(output_id)
 
     def remove_model_outputs_for_model(self, model_id: str) -> int:
         """Delete all model outputs for one model and return the count deleted."""
         assert self._output_repo is not None, "OutputRepo not wired"
-        self._require_transaction("remove_model_outputs_for_model")
         return self._output_repo.delete_outputs_for_model(model_id)
 
     def list_all_calibration_states_with_models(self) -> list[dict[str, Any]]:
@@ -498,7 +416,6 @@ class MlDb:
         PostgreSQL uses auto-generated integer primary keys.
         """
         assert self._calibration_repo is not None, "CalibrationRepo not wired"
-        self._require_transaction("replace_calibration_state")
         return self._calibration_repo.set_state(model_id, state_data=payload)
 
     def remove_calibration_state(self, calibration_id: int) -> None:
@@ -508,13 +425,11 @@ class MlDb:
         Edge deletion (model_has_calibration) is no longer needed.
         """
         assert self._calibration_repo is not None, "CalibrationRepo not wired"
-        self._require_transaction("remove_calibration_state")
         self._calibration_repo.delete_state(calibration_id)
 
     def remove_calibration_history_for_model(self, model_id: str) -> None:
         """Delete all calibration history entries for one model."""
         assert self._calibration_repo is not None, "CalibrationRepo not wired"
-        self._require_transaction("remove_calibration_history_for_model")
         self._calibration_repo.delete_history_for_model(model_id)
 
     def remove_calibration_history_entries(self, entry_ids: list[str]) -> None:
@@ -524,7 +439,6 @@ class MlDb:
         ``calibration_history.id`` integer primary key.
         """
         assert self._calibration_repo is not None, "CalibrationRepo not wired"
-        self._require_transaction("remove_calibration_history_entries")
         int_ids: list[int] = [int(e) for e in entry_ids]
         self._calibration_repo.delete_history_entries(int_ids)
 
@@ -551,7 +465,6 @@ class MlDb:
         Returns the number of rows drained.
         """
         assert self._vector_repo is not None, "VectorRepo not wired"
-        self._require_transaction("index_backbone_embeddings")
         return self._vector_repo.drain_hot_to_cold(backbone_id)
 
     def rebuild_backbone_embedding_index(
@@ -606,7 +519,6 @@ class MlDb:
         index dimension is fixed at schema creation time.
         """
         assert self._vector_repo is not None, "VectorRepo not wired"
-        self._require_transaction("rebuild_vector_index")
         try:
             self._vector_repo._session.execute(text("REINDEX INDEX CONCURRENTLY ix_embeddings_cold_hnsw"))
             logger.info("Successfully rebuilt cold HNSW index (ix_embeddings_cold_hnsw).")

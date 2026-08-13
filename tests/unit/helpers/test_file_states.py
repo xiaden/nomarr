@@ -7,15 +7,27 @@ import pytest
 from nomarr.helpers.constants.file_states import (
     ALL_STATE_VERTICES,
     AXIS_PAIRS,
+    STATE_CALIBRATED,
     STATE_ERRORED,
+    STATE_HYDRATED,
+    STATE_NOT_CALIBRATED,
     STATE_NOT_ERRORED,
+    STATE_NOT_HYDRATED,
     STATE_NOT_PROCESSED,
+    STATE_NOT_SCANNED,
+    STATE_NOT_VECTORS_EXTRACTED,
+    STATE_NOT_WRITTEN,
     STATE_PROCESSED,
+    STATE_SCANNED,
+    STATE_TAGS_CURRENT,
+    STATE_TAGS_NOT_FRESH,
+    STATE_VECTORS_EXTRACTED,
+    STATE_WRITTEN,
 )
 
 
 class TestFileStateConstants:
-    """Tests for canonical file-state vertex constants."""
+    """Tests for canonical song-state axis-pair vertex constants."""
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -24,8 +36,47 @@ class TestFileStateConstants:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_all_state_vertices_are_file_states_ids(self) -> None:
-        assert all(vertex.startswith("file_states/") for vertex in ALL_STATE_VERTICES)
+    def test_all_state_vertices_are_bare_axis_names(self) -> None:
+        expected_bare_axis_names = {
+            "processed",
+            "not_processed",
+            "calibrated",
+            "not_calibrated",
+            "written",
+            "not_written",
+            "tags_current",
+            "tags_not_fresh",
+            "hydrated",
+            "not_hydrated",
+            "scanned",
+            "not_scanned",
+            "vectors_extracted",
+            "not_vectors_extracted",
+            "errored",
+            "not_errored",
+        }
+        constant_values = {
+            STATE_PROCESSED,
+            STATE_NOT_PROCESSED,
+            STATE_CALIBRATED,
+            STATE_NOT_CALIBRATED,
+            STATE_WRITTEN,
+            STATE_NOT_WRITTEN,
+            STATE_TAGS_CURRENT,
+            STATE_TAGS_NOT_FRESH,
+            STATE_HYDRATED,
+            STATE_NOT_HYDRATED,
+            STATE_SCANNED,
+            STATE_NOT_SCANNED,
+            STATE_VECTORS_EXTRACTED,
+            STATE_NOT_VECTORS_EXTRACTED,
+            STATE_ERRORED,
+            STATE_NOT_ERRORED,
+        }
+
+        assert constant_values == expected_bare_axis_names
+        # No ArangoDB doc-ID prefix remains on any canonical value.
+        assert all("/" not in vertex for vertex in ALL_STATE_VERTICES)
 
     @pytest.mark.unit
     @pytest.mark.mocked

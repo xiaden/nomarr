@@ -1,19 +1,19 @@
-"""Library file operations.
+"""Library song operations.
 
 This module handles:
 - Cleaning up orphaned tags in DB
 - Path reconciliation and validation
-- File tag queries from DB
+- Song tag queries from DB
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from nomarr.components.library.file_tags_comp import get_file_tags_with_path
-from nomarr.components.library.library_file_state_comp import get_errored_file_ids, transition_file_state
 from nomarr.components.library.library_records_comp import get_library_record
 from nomarr.components.library.library_root_comp import resolve_path_within_library
+from nomarr.components.library.library_song_state_comp import get_errored_song_ids, transition_song_state
+from nomarr.components.library.song_tags_comp import get_song_tags_with_path
 from nomarr.helpers.constants.file_states import (
     STATE_ERRORED,
     STATE_NOT_ERRORED,
@@ -33,8 +33,8 @@ if TYPE_CHECKING:
     from .config import LibraryServiceConfig
 
 
-class LibraryFilesMixin:
-    """Mixin providing library file operations."""
+class LibrarySongsMixin:
+    """Mixin providing library song operations."""
 
     db: Database
     cfg: LibraryServiceConfig
@@ -63,24 +63,24 @@ class LibraryFilesMixin:
             deleted_count=result["deleted_count"],
         )
 
-    def get_file_tags(self, file_id: int, nomarr_only: bool = False) -> FileTagsResult:
-        """Get all tags for a specific file.
+    def get_song_tags(self, song_id: int, nomarr_only: bool = False) -> FileTagsResult:
+        """Get all tags for a specific song.
 
         Args:
-            file_id: Library file ID
+            song_id: Library song ID
             nomarr_only: If True, only return Nomarr-generated tags
 
         Returns:
-            FileTagsResult DTO with file info and tags
+            FileTagsResult DTO with song info and tags
 
         Raises:
-            ValueError: If file not found
+            ValueError: If song not found
 
         """
-        # Get file and tags from component
-        result = get_file_tags_with_path(self.db, int(file_id), nomarr_only=nomarr_only)
+        # Get song and tags from component
+        result = get_song_tags_with_path(self.db, int(song_id), nomarr_only=nomarr_only)
         if not result:
-            msg = f"File with ID {file_id} not found"
+            msg = f"Song with ID {song_id} not found"
             raise ValueError(msg)
 
         # Convert to FileTag DTOs
@@ -95,7 +95,7 @@ class LibraryFilesMixin:
         ]
 
         return FileTagsResult(
-            file_id=int(file_id),
+            file_id=int(song_id),
             path=result["path"],
             tags=tags,
         )
@@ -176,31 +176,31 @@ class LibraryFilesMixin:
         """
         return resolve_path_within_library(library_root, user_path, must_exist=must_exist, must_be_file=must_be_file)
 
-    def retry_errored_files(
+    def retry_errored_songs(
         self,
         library_id: int,
-        file_ids: list[int] | None = None,
+        song_ids: list[int] | None = None,
     ) -> RetryErroredResult:
-        """Clear errored state for files and re-queue them for discovery.
+        """Clear errored state for songs and re-queue them for discovery.
 
         Args:
-            library_id: Library key to scope the operation
-            file_ids: Optional subset of file IDs to retry. If None, retries all errored.
+            library_id: Library ID to scope the operation
+            song_ids: Optional subset of song IDs to retry. If None, retries all errored.
 
         Returns:
-            RetryErroredResult with count of retried files
+            RetryErroredResult with count of retried songs
 
         Raises:
             ValueError: If library does not exist
 
         """
         self._get_library_or_error(library_id)
-        errored_ids = get_errored_file_ids(self.db, int(library_id))
-        if file_ids:
-            allowed = set(file_ids)
+        errored_ids = get_errored_song_ids(self.db, int(library_id))
+        if song_ids:
+            allowed = set(song_ids)
             errored_ids = [fid for fid in errored_ids if fid in allowed]
         if errored_ids:
-            transition_file_state(self.db, errored_ids, STATE_ERRORED, STATE_NOT_ERRORED)
-            transition_file_state(self.db, errored_ids, STATE_PROCESSED, STATE_NOT_PROCESSED)
+            transition_song_state(self.db, errored_ids, STATE_ERRORED, STATE_NOT_ERRORED)
+            transition_song_state(self.db, errored_ids, STATE_PROCESSED, STATE_NOT_PROCESSED)
         cleared = len(errored_ids)
         return RetryErroredResult(retried=cleared)

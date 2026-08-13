@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from nomarr.helpers.dto.library_dto import (
     FileTag,
     FileTagsResult,
-    LibraryFileWithTags,
+    LibrarySongWithTags,
     SearchFilesQuery,
     SearchFilesResult,
     UniqueTagKeysResult,
@@ -23,9 +23,9 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
 
-def make_library_file(file_id: int = 1) -> LibraryFileWithTags:
+def make_library_file(file_id: int = 1) -> LibrarySongWithTags:
     """Build a minimal library file DTO for interface tests."""
-    return LibraryFileWithTags(
+    return LibrarySongWithTags(
         id=file_id,
         path="/music/song.flac",
         library_id=1,
@@ -57,7 +57,7 @@ def make_library_file(file_id: int = 1) -> LibraryFileWithTags:
 def make_search_result() -> SearchFilesResult:
     """Build a minimal paginated search result DTO."""
     return SearchFilesResult(
-        files=[make_library_file()],
+        songs=[make_library_file()],
         total=1,
         limit=25,
         offset=5,
@@ -186,7 +186,7 @@ class TestLibraryFilesEndpoints:
     ) -> None:
         """POST by-ids should decode every file ID before invoking the service."""
         mock_library_service.get_files_by_ids.return_value = SearchFilesResult(
-            files=[make_library_file(file_id=42)],
+            songs=[make_library_file(file_id=42)],
             total=1,
             limit=1,
             offset=0,
@@ -209,7 +209,7 @@ class TestLibraryFilesEndpoints:
         mock_tagging_service: MagicMock,
     ) -> None:
         """POST by-tag should forward the body fields to the tagging service."""
-        mock_tagging_service.search_files_by_tag.return_value = make_search_result()
+        mock_tagging_service.search_songs_by_tag.return_value = make_search_result()
 
         response = client.post(
             "/api/web/library/file/by-tag",
@@ -223,7 +223,7 @@ class TestLibraryFilesEndpoints:
 
         assert response.status_code == 200
         assert response.json()["total"] == 1
-        mock_tagging_service.search_files_by_tag.assert_called_once_with(
+        mock_tagging_service.search_songs_by_tag.assert_called_once_with(
             tag_key="nom:bpm",
             target_value=120.0,
             limit=10,
@@ -305,7 +305,7 @@ class TestLibraryFilesEndpoints:
         mock_tagging_service: MagicMock,
     ) -> None:
         """GET file tags should decode the path ID and serialize the tag payload."""
-        mock_tagging_service.get_file_tags.return_value = FileTagsResult(
+        mock_tagging_service.get_song_tags.return_value = FileTagsResult(
             file_id=1,
             path="/music/song.flac",
             tags=[
@@ -333,8 +333,8 @@ class TestLibraryFilesEndpoints:
                 }
             ],
         }
-        mock_tagging_service.get_file_tags.assert_called_once_with(
-            file_id=1,
+        mock_tagging_service.get_song_tags.assert_called_once_with(
+            song_id=1,
             nomarr_only=False,
         )
 
@@ -344,14 +344,14 @@ class TestLibraryFilesEndpoints:
         mock_tagging_service: MagicMock,
     ) -> None:
         """Missing files should surface as HTTP 404."""
-        mock_tagging_service.get_file_tags.side_effect = ValueError("missing")
+        mock_tagging_service.get_song_tags.side_effect = ValueError("missing")
 
         response = client.get("/api/web/library/file/1/tag")
 
         assert response.status_code == 404
         assert response.json() == {"detail": "File not found"}
-        mock_tagging_service.get_file_tags.assert_called_once_with(
-            file_id=1,
+        mock_tagging_service.get_song_tags.assert_called_once_with(
+            song_id=1,
             nomarr_only=False,
         )
 
@@ -361,15 +361,15 @@ class TestLibraryFilesEndpoints:
         mock_library_service: MagicMock,
     ) -> None:
         """POST retry-errored should default to retrying the entire library when no body is sent."""
-        mock_library_service.retry_errored_files.return_value = {"retried": 3}
+        mock_library_service.retry_errored_songs.return_value = {"retried": 3}
 
         response = client.post("/api/web/library/1/retry-errored")
 
         assert response.status_code == 200
         assert response.json() == {"retried": 3}
-        mock_library_service.retry_errored_files.assert_called_once_with(
+        mock_library_service.retry_errored_songs.assert_called_once_with(
             library_id=1,
-            file_ids=None,
+            song_ids=None,
         )
 
     def test_retry_errored_files_returns_404_when_missing(
@@ -378,13 +378,13 @@ class TestLibraryFilesEndpoints:
         mock_library_service: MagicMock,
     ) -> None:
         """Missing libraries should surface as HTTP 404 for retry-errored."""
-        mock_library_service.retry_errored_files.side_effect = ValueError("missing")
+        mock_library_service.retry_errored_songs.side_effect = ValueError("missing")
 
         response = client.post("/api/web/library/1/retry-errored")
 
         assert response.status_code == 404
         assert response.json() == {"detail": "Library not found"}
-        mock_library_service.retry_errored_files.assert_called_once_with(
+        mock_library_service.retry_errored_songs.assert_called_once_with(
             library_id=1,
-            file_ids=None,
+            song_ids=None,
         )

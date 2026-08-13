@@ -194,8 +194,7 @@ class ConfigService:
                 url=os.environ.get("PG_DATABASE_URL", "postgresql+psycopg2://nomarr:nomarr@localhost:5432/nomarr")
             )
             try:
-                with db.app.transaction():
-                    db.app.update_config_option(f"config_{key}", {"value": value})
+                db.app.update_config_option(f"config_{key}", {"value": value})
             finally:
                 db.close()
         except Exception:
@@ -301,11 +300,10 @@ class ConfigService:
                 for key in _ALLOWED_CONFIG_KEYS:
                     if key not in existing_keys and key in bootstrap_config:
                         value = bootstrap_config[key]
-                        with db.app.transaction():
-                            db.app.update_config_option(
-                                f"config_{key}",
-                                {"value": str(value) if value is not None else ""},
-                            )
+                        db.app.update_config_option(
+                            f"config_{key}",
+                            {"value": str(value) if value is not None else ""},
+                        )
 
                 # Load: read all config_* keys back into cache
                 all_docs = db.app.list_config_options(prefix="config_")

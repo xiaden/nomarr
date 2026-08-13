@@ -98,7 +98,7 @@ def hydrate_songs_with_metadata(db: Database, songs: list[dict[str, Any]]) -> li
     if not song_ids:
         return [{**song} for song in songs]
 
-    tags_by_song = db.library.list_file_tags_for_files(song_ids)
+    tags_by_song = db.library.list_song_tags_for_songs(song_ids)
 
     result: list[dict[str, Any]] = []
     for song in songs:

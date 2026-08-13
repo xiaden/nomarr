@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from nomarr.components.library.library_file_state_comp import discover_next_file_needing_tags
+from nomarr.components.library.library_song_state_comp import discover_next_file_needing_tags
 from nomarr.components.workers.worker_discovery_comp import claim_file, release_claim
 
 if TYPE_CHECKING:

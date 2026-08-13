@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, TypedDict, cast
 
-from nomarr.components.library.library_file_query_comp import get_files_by_ids_with_tags
+from nomarr.components.library.library_song_query_comp import get_songs_by_ids_with_tags
 from nomarr.components.playlist_import.metadata_normalizer_comp import normalize_artist, normalize_title
 
 if TYPE_CHECKING:
@@ -82,7 +82,7 @@ def build_track_descriptor(file_doc: dict[str, Any]) -> TrackDescriptor:
 
 
 def _search_candidate_docs(db: Database, field_name: str, value: str) -> list[dict[str, Any]]:
-    return cast("list[dict[str, Any]]", db.library.search_files_by_tag_pattern(field_name, value))
+    return cast("list[dict[str, Any]]", db.library.search_songs_by_tag_pattern(field_name, value))
 
 
 def _candidate_file_ids(db: Database, seed: TrackDescriptor) -> set[str]:
@@ -93,7 +93,7 @@ def _candidate_file_ids(db: Database, seed: TrackDescriptor) -> set[str]:
 
     artist = seed.get("artist", "")
     if artist:
-        artist_docs = cast("list[dict[str, Any]]", db.library.search_files_by_tag("artist", artist, limit=None))
+        artist_docs = cast("list[dict[str, Any]]", db.library.search_songs_by_tag("artist", artist, limit=None))
         return {file_id for doc in artist_docs if isinstance((file_id := doc.get("id")), str)}
 
     return set()
@@ -105,7 +105,7 @@ def resolve_seed_descriptor_to_file(db: Database, seed: TrackDescriptor) -> tupl
     if not candidate_ids:
         return None, "descriptor_unresolved"
 
-    docs = get_files_by_ids_with_tags(db, [int(cid) for cid in sorted(candidate_ids)])
+    docs = get_songs_by_ids_with_tags(db, [int(cid) for cid in sorted(candidate_ids)])
     descriptors_by_id = {
         file_id: _descriptor_from_doc(file_doc) for file_doc in docs if isinstance((file_id := file_doc.get("id")), str)
     }

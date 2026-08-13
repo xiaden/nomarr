@@ -270,6 +270,63 @@ class TestRestartWorkerHelper:
         # Should not crash, just log error (verify no workers created)
         assert len(worker_service._workers) == 0
 
+    @patch("nomarr.services.infrastructure.workers.discovery_worker.DiscoveryWorker")
+    def test_restart_worker_serializes_dataclass_processor_config(self, mock_worker_cls, worker_service):
+        """Canonical path: ProcessorConfig dataclass is serialized via asdict().
+
+        Runs the real create_discovery_worker (only the process class is patched)
+        and verifies the worker receives the asdict() output.
+        """
+        from dataclasses import asdict
+
+        mock_worker = MagicMock()
+        mock_worker.worker_id = "worker:tag:0"
+        mock_worker_cls.return_value = mock_worker
+
+        worker_service._restart_worker("discovery_worker:0")
+
+        mock_worker_cls.assert_called_once()
+        call_kwargs = mock_worker_cls.call_args[1]
+        assert call_kwargs["processor_config_dict"] == asdict(worker_service.processor_config)
+        mock_worker.start.assert_called_once()
+
+    @patch("nomarr.services.infrastructure.workers.discovery_worker.DiscoveryWorker")
+    def test_restart_worker_accepts_dict_processor_config(self, mock_worker_cls, mock_db):
+        """Regression: dict processor_config must not raise asdict() TypeError.
+
+        Previously, create_discovery_worker called asdict() on a non-dataclass,
+        raising "asdict() should be called on dataclass instances". The exception
+        was caught and logged as "Failed to restart worker", silently leaving the
+        worker dead. A pre-serialized dict must pass through unchanged.
+        """
+        config_dict = {
+            "models_dir": "/mock/models",
+            "min_duration_s": 30,
+            "allow_short": False,
+            "batch_size": 11,
+            "namespace": "nom",
+            "version_tag_key": "nom_version",
+            "tagger_version": "test",
+        }
+        service = WorkerSystemService(
+            db=mock_db,
+            processor_config=config_dict,  # type: ignore[arg-type]  # Intentional: exercises the dict-form contract the restart path must tolerate
+            pipeline_svc=MagicMock(),
+            health_monitor=MagicMock(),
+            default_enabled=True,
+            worker_count=1,
+        )
+        mock_worker = MagicMock()
+        mock_worker.worker_id = "worker:tag:0"
+        mock_worker_cls.return_value = mock_worker
+
+        service._restart_worker("discovery_worker:0")
+
+        mock_worker_cls.assert_called_once()
+        call_kwargs = mock_worker_cls.call_args[1]
+        assert call_kwargs["processor_config_dict"] == config_dict
+        mock_worker.start.assert_called_once()
+
 
 class TestStopAllWorkersTimerCleanup:
     """Test stop_all_workers() cancels pending restart timers."""

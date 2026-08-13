@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from nomarr.components.infrastructure.path_comp import build_library_path_from_db
-from nomarr.components.library.library_file_mutation_comp import update_file_modified_time
+from nomarr.components.library.library_song_mutation_comp import update_song_modified_time
 from nomarr.components.library.reconciliation_comp import set_file_written
 from nomarr.components.processing.file_write_comp import (
     get_file_for_writing,
@@ -220,7 +220,7 @@ def write_file_tags_workflow(
 
         # Sync mtime in DB so scanner skips this file on next scan
         if result.new_mtime_ms is not None:
-            update_file_modified_time(db, file_id, result.new_mtime_ms)
+            update_song_modified_time(db, file_id, result.new_mtime_ms)
 
         # Update file projection state in database
         set_file_written(db, file_key)

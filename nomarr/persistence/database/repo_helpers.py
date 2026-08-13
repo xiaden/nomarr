@@ -8,16 +8,16 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from nomarr.helpers.dto.repo_dto import LibraryFileRow
+from nomarr.helpers.dto.repo_dto import SongRow
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Row
 
 
-def _file_row_to_dto(row: Row) -> LibraryFileRow:
-    """Convert a SQLAlchemy ``Row`` to a ``LibraryFileRow`` TypedDict."""
+def _song_row_to_dto(row: Row) -> SongRow:
+    """Convert a SQLAlchemy ``Row`` to a ``SongRow`` TypedDict."""
     m = row._mapping
-    return LibraryFileRow(
+    return SongRow(
         id=m["id"],
         library_id=m["library_id"],
         folder_id=m["folder_id"],

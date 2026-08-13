@@ -27,7 +27,7 @@ from nomarr.components.analytics.mood_analysis_comp import (
     get_mood_and_tier_tags_for_correlation,
     get_mood_distribution_data,
 )
-from nomarr.components.library.library_file_query_comp import (
+from nomarr.components.library.library_song_query_comp import (
     get_artist_album_frequencies,
     list_songs,
 )

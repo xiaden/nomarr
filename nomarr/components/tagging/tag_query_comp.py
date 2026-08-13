@@ -117,7 +117,7 @@ def count_songs_for_tag(db: Database, tag_id: int) -> int:
     tag = get_tag(db, tag_id)
     if tag is None:
         return 0
-    return len(db.library.list_file_ids_for_tag_id(tag_id, limit=None))
+    return len(db.library.list_song_ids_for_tag_id(tag_id, limit=None))
 
 
 def list_tags_by_name(
@@ -152,7 +152,7 @@ def count_tags_by_name(db: Database, name: str | None = None, search: str | None
 
 def get_song_tags(db: Database, song_id: int, name: str | None = None, nomarr_only: bool = False) -> Tags:
     """Return tags for one song as a ``Tags`` DTO."""
-    tag_docs = _narrow_tag_list(db.library.list_tags_for_file(song_id))
+    tag_docs = _narrow_tag_list(db.library.list_tags_for_song(song_id))
     rows: list[dict[str, Any]] = []
     for tag in tag_docs:
         tag_name = tag.get("name")
@@ -160,7 +160,7 @@ def get_song_tags(db: Database, song_id: int, name: str | None = None, nomarr_on
             continue
         if name is not None and tag_name != name:
             continue
-        if nomarr_only and not tag_name.startswith("nom:"):
+        if nomarr_only and tag.get("namespace") != "nom":
             continue
         rows.append({"name": tag_name, "value": tag["value"]})
     return Tags.from_db_rows(rows)
@@ -171,7 +171,7 @@ def get_nomarr_tags_bulk(db: Database, file_ids: list[int]) -> dict[int, Tags]:
     if not file_ids:
         return {}
 
-    result_raw = db.library.list_file_tags_for_files(
+    result_raw = db.library.list_song_tags_for_songs(
         file_ids,
         name_starts_with="nom:",
     )
@@ -195,7 +195,7 @@ def list_songs_for_tag(db: Database, tag_id: int, limit: int = 100, offset: int 
     tag = get_tag(db, tag_id)
     if tag is None:
         return []
-    result = db.library.list_file_ids_for_tag_id(tag_id, limit=limit, offset=offset)
+    result = db.library.list_song_ids_for_tag_id(tag_id, limit=limit, offset=offset)
     if isinstance(result, list):
         return [fid for fid in result if isinstance(fid, int)]
     return []
@@ -219,7 +219,7 @@ def get_file_ids_matching_tag(db: Database, name: str, operator: str, value: Tag
         if not isinstance(tag_name, str) or tag_value is None:
             continue
         for file_doc in _narrow_tag_list(
-            db.library.search_files_by_tag(tag_name, str(tag_value), limit=None),
+            db.library.search_songs_by_tag(tag_name, str(tag_value), limit=None),
         ):
             file_id = file_doc.get("id")
             if isinstance(file_id, int):
@@ -271,7 +271,7 @@ def get_file_ids_for_tags(
             if not isinstance(tag_name, str) or tag_value is None:
                 continue
             for file_doc in _narrow_tag_list(
-                db.library.search_files_by_tag(tag_name, str(tag_value), limit=None),
+                db.library.search_songs_by_tag(tag_name, str(tag_value), limit=None),
             ):
                 file_id = file_doc.get("id")
                 if isinstance(file_id, int):
@@ -305,7 +305,7 @@ def get_file_ids_for_mood_tags(
 
     for mood_value in mood_values:
         file_docs = _narrow_tag_list(
-            db.library.search_files_by_tag_contains(name, mood_value, limit=None),
+            db.library.search_songs_by_tag_contains(name, mood_value, limit=None),
         )
         file_ids: set[int] = {file_id for file_doc in file_docs if isinstance((file_id := file_doc.get("id")), int)}
         if library_ids is not None:
@@ -328,7 +328,7 @@ def get_distinct_tag_values_for_files(db: Database, file_ids: list[int], name: s
     if not file_ids:
         return []
 
-    raw = db.library.list_file_tags_for_files(file_ids)
+    raw = db.library.list_song_tags_for_songs(file_ids)
     if not isinstance(raw, dict):
         return []
     tags_by_file = {k: list(v) if isinstance(v, list) else [] for k, v in raw.items() if isinstance(k, int)}
@@ -346,7 +346,7 @@ def get_tag_values_grouped_by_file(db: Database, file_ids: list[int], name: str)
     if not file_ids:
         return {}
 
-    raw = db.library.list_file_tags_for_files(file_ids)
+    raw = db.library.list_song_tags_for_songs(file_ids)
     if not isinstance(raw, dict):
         return {}
     tags_by_file = {k: list(v) if isinstance(v, list) else [] for k, v in raw.items() if isinstance(k, int)}
@@ -365,18 +365,18 @@ def get_tag_values_grouped_by_file(db: Database, file_ids: list[int], name: str)
 def get_tag_songs_with_metadata(db: Database, tag_id: int, limit: int = 50, offset: int = 0) -> list[TagSongItem]:
     """Return song rows for a tag with basic file metadata."""
     result: list[TagSongItem] = []
-    for file_id in list_songs_for_tag(db, tag_id, limit=limit, offset=offset):
-        file_doc = _narrow_tag_dict_opt(db.library.get_file(file_id))
-        if file_doc is None:
+    for song_id in list_songs_for_tag(db, tag_id, limit=limit, offset=offset):
+        song_doc = _narrow_tag_dict_opt(db.library.get_song(song_id))
+        if song_doc is None:
             continue
-        tag_docs = _narrow_tag_list(db.library.list_tags_for_file(file_id))
+        tag_docs = _narrow_tag_list(db.library.list_tags_for_song(song_id))
         result.append(
             TagSongItem(
-                file_id=str(file_id),
+                file_id=str(song_id),
                 title=_first_name_value(tag_docs, "title"),
                 artist=_first_name_value(tag_docs, "artist"),
                 album=_first_name_value(tag_docs, "album"),
-                path=str(file_doc.get("path", "")),
+                path=str(song_doc.get("path", "")),
             ),
         )
     return result

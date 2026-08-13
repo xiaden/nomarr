@@ -204,15 +204,14 @@ class Application:
         def heartbeat_loop() -> None:
             while self._running:
                 try:
-                    with db.app.transaction():
-                        db.app.update_health(
-                            "app",
-                            {
-                                "component_type": "app",
-                                "status": "healthy",
-                                "last_heartbeat": now_ms().value,
-                            },
-                        )
+                    db.app.update_health(
+                        "app",
+                        {
+                            "component_type": "app",
+                            "status": "healthy",
+                            "last_heartbeat": now_ms().value,
+                        },
+                    )
                 except Exception as e:
                     logger.exception(f"[Application] Heartbeat error: {e}")
                 time.sleep(5)
@@ -238,17 +237,15 @@ class Application:
             return
         logger.debug("[Application] Starting...")
         logger.debug("[Application] Cleaning ephemeral runtime state...")
-        with self.db.app.transaction():
-            self.db.app.truncate_health()
-        with self.db.app.transaction():
-            self.db.app.update_health(
-                "app",
-                {
-                    "component_type": "app",
-                    "status": "starting",
-                    "last_heartbeat": now_ms().value,
-                },
-            )
+        self.db.app.truncate_health()
+        self.db.app.update_health(
+            "app",
+            {
+                "component_type": "app",
+                "status": "starting",
+                "last_heartbeat": now_ms().value,
+            },
+        )
         logger.debug("[Application] Initializing authentication...")
         key_service = KeyManagementService(self.db)
         self.api_key = key_service.get_or_create_api_key()
@@ -416,11 +413,10 @@ class Application:
         info_service.start()
         self._running = True
         self._start_app_heartbeat()
-        with self.db.app.transaction():
-            self.db.app.update_health(
-                "app",
-                {"status": "healthy", "error": None, "last_heartbeat": now_ms().value},
-            )
+        self.db.app.update_health(
+            "app",
+            {"status": "healthy", "error": None, "last_heartbeat": now_ms().value},
+        )
 
         # Summary log with key startup info
         from nomarr.services.infrastructure import keys_svc
@@ -500,14 +496,12 @@ class Application:
             logger.info("[Application] Stopping health monitor...")
             self.health_monitor.stop()
         try:
-            with self.db.app.transaction():
-                self.db.app.update_health(
-                    "app",
-                    {"status": "stopping", "exit_code": 0},
-                )
+            self.db.app.update_health(
+                "app",
+                {"status": "stopping", "exit_code": 0},
+            )
             logger.info("[Application] Cleaning ephemeral runtime state...")
-            with self.db.app.transaction():
-                self.db.app.truncate_health()
+            self.db.app.truncate_health()
         except Exception as e:
             logger.warning(f"[Application] DB unavailable during shutdown (expected if containers stopping): {e}")
         self._running = False

@@ -109,7 +109,7 @@ def seed_data(db):
 
     Creates:
     - 2 libraries
-    - 3 files (2 in library 1, 1 in library 2)
+    - 3 songs (2 in library 1, 1 in library 2)
     - 5 tags
     - 1 scan record for library 1
 
@@ -120,120 +120,107 @@ def seed_data(db):
 
     created: dict[str, list[int]] = {
         "libraries": [],
-        "files": [],
+        "songs": [],
         "tags": [],
         "scans": [],
     }
 
     # Create 2 libraries
-    with db.library.transaction():
-        lib1_id = db.library.add_library(
-            {
-                "name": "TestLib1",
-                "path": "/tmp/test1",
-                "library_type": "music",
-            }
-        )
-    with db.library.transaction():
-        lib2_id = db.library.add_library(
-            {
-                "name": "TestLib2",
-                "path": "/tmp/test2",
-                "library_type": "music",
-            }
-        )
+    lib1_id = db.library.add_library(
+        {
+            "name": "TestLib1",
+            "path": "/tmp/test1",
+            "library_type": "music",
+        }
+    )
+    lib2_id = db.library.add_library(
+        {
+            "name": "TestLib2",
+            "path": "/tmp/test2",
+            "library_type": "music",
+        }
+    )
     created["libraries"] = [lib1_id, lib2_id]
 
-    # Create 3 files (2 in lib1, 1 in lib2)
+    # Create 3 songs (2 in lib1, 1 in lib2)
     now_ms_val = now_ms()
-    with db.library.transaction():
-        file1_id = db.library.add_file_to_library(
-            lib1_id,
-            {
-                "path": "/tmp/test1/song1.flac",
-                "normalized_path": "/tmp/test1/song1.flac",
-                "file_size": 1024000,
-                "modified_time": now_ms_val.value,
-                "duration_seconds": 180.5,
-                "needs_tagging": 0,
-                "is_valid": 1,
-                "tagged": 0,
-            },
-        )
-    with db.library.transaction():
-        file2_id = db.library.add_file_to_library(
-            lib1_id,
-            {
-                "path": "/tmp/test1/song2.mp3",
-                "normalized_path": "/tmp/test1/song2.mp3",
-                "file_size": 512000,
-                "modified_time": now_ms_val.value,
-                "duration_seconds": 240.0,
-                "needs_tagging": 1,
-                "is_valid": 1,
-                "tagged": 0,
-            },
-        )
-    with db.library.transaction():
-        file3_id = db.library.add_file_to_library(
-            lib2_id,
-            {
-                "path": "/tmp/test2/song3.flac",
-                "normalized_path": "/tmp/test2/song3.flac",
-                "file_size": 2048000,
-                "modified_time": now_ms_val.value,
-                "duration_seconds": 300.0,
-                "needs_tagging": 0,
-                "is_valid": 1,
-                "tagged": 1,
-            },
-        )
-    created["files"] = [file1_id, file2_id, file3_id]
+    song1_id = db.library.add_song_to_library(
+        lib1_id,
+        {
+            "path": "/tmp/test1/song1.flac",
+            "normalized_path": "/tmp/test1/song1.flac",
+            "file_size": 1024000,
+            "modified_time": now_ms_val.value,
+            "duration_seconds": 180.5,
+            "needs_tagging": 0,
+            "is_valid": 1,
+            "tagged": 0,
+        },
+    )
+    song2_id = db.library.add_song_to_library(
+        lib1_id,
+        {
+            "path": "/tmp/test1/song2.mp3",
+            "normalized_path": "/tmp/test1/song2.mp3",
+            "file_size": 512000,
+            "modified_time": now_ms_val.value,
+            "duration_seconds": 240.0,
+            "needs_tagging": 1,
+            "is_valid": 1,
+            "tagged": 0,
+        },
+    )
+    song3_id = db.library.add_song_to_library(
+        lib2_id,
+        {
+            "path": "/tmp/test2/song3.flac",
+            "normalized_path": "/tmp/test2/song3.flac",
+            "file_size": 2048000,
+            "modified_time": now_ms_val.value,
+            "duration_seconds": 300.0,
+            "needs_tagging": 0,
+            "is_valid": 1,
+            "tagged": 1,
+        },
+    )
+    created["songs"] = [song1_id, song2_id, song3_id]
 
     # Create 5 tags
-    with db.library.transaction():
-        tag1_id = db.library.find_or_create_tag("nom:mood-strict", "happy", "nom")
-    with db.library.transaction():
-        tag2_id = db.library.find_or_create_tag("nom:mood-strict", "sad", "nom")
-    with db.library.transaction():
-        tag3_id = db.library.find_or_create_tag("nom:genre", "rock", "nom")
-    with db.library.transaction():
-        tag4_id = db.library.find_or_create_tag("nom:genre", "jazz", "nom")
-    with db.library.transaction():
-        tag5_id = db.library.find_or_create_tag("nom:tempo", "fast", "nom")
+    tag1_id = db.library.find_or_create_tag("nom:mood-strict", "happy", "nom")
+    tag2_id = db.library.find_or_create_tag("nom:mood-strict", "sad", "nom")
+    tag3_id = db.library.find_or_create_tag("nom:genre", "rock", "nom")
+    tag4_id = db.library.find_or_create_tag("nom:genre", "jazz", "nom")
+    tag5_id = db.library.find_or_create_tag("nom:tempo", "fast", "nom")
     created["tags"] = [tag1_id, tag2_id, tag3_id, tag4_id, tag5_id]
 
-    # Assign tags to files
-    with db.library.transaction():
-        db.library.replace_file_tags(
-            file1_id,
-            [
-                {"tag_id": tag1_id, "confidence": 0.95, "source": "ml"},
-                {"tag_id": tag3_id, "confidence": 0.88, "source": "ml"},
-            ],
-        )
-    with db.library.transaction():
-        db.library.replace_file_tags(
-            file2_id,
-            [
-                {"tag_id": tag2_id, "confidence": 0.72, "source": "ml"},
-            ],
-        )
+    # Assign tags to songs
+    db.library.replace_song_tags(
+        song1_id,
+        [
+            {"tag_id": tag1_id, "confidence": 0.95, "source": "ml"},
+            {"tag_id": tag3_id, "confidence": 0.88, "source": "ml"},
+        ],
+    )
+    db.library.replace_song_tags(
+        song2_id,
+        [
+            {"tag_id": tag2_id, "confidence": 0.72, "source": "ml"},
+        ],
+    )
 
     # Create 1 scan record for library 1
-    with db.library.transaction():
-        scan1_id = db.library.add_scan(
-            lib1_id,
-            {
-                "scan_type": "full",
-                "status": "completed",
-                "started_at": now_ms_val.value - 60000,
-                "finished_at": now_ms_val.value,
-                "files_found": 2,
-                "files_processed": 2,
-                "error": None,
-            },
-        )
+    scan1_id = db.library.add_scan(
+        lib1_id,
+        {
+            "scan_type": "full",
+            "status": "completed",
+            "started_at": now_ms_val.value - 60000,
+            "finished_at": now_ms_val.value,
+            "files_found": 2,
+            "files_processed": 2,
+            "error": None,
+        },
+    )
     created["scans"] = [scan1_id]
 
     yield created
@@ -249,18 +236,16 @@ def _cleanup_seed_data(db: Database) -> None:
     """
     # Delete in dependency order to avoid foreign key violations
     try:
-        # Delete all tags (this also deletes file_tags via CASCADE)
+        # Delete all tags (this also deletes song_tags via CASCADE)
         all_tags = db.library.list_tags(limit=10000)
         if all_tags:
             tag_ids = [t["id"] for t in all_tags]
-            with db.library.transaction():
-                db.library.delete_tags_by_ids(tag_ids)
+            db.library.delete_tags_by_ids(tag_ids)
 
-        # Delete all libraries (cascades to files and scans)
+        # Delete all libraries (cascades to songs and scans)
         all_libs = db.library.list_libraries()
         for lib in all_libs:
-            with db.library.transaction():
-                db.library.remove_library(lib["id"])
+            db.library.remove_library(lib["id"])
     except Exception:
         # If cleanup fails, continue (test database will be recreated)
         pass

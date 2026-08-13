@@ -34,7 +34,7 @@ def _row_to_output_record(row: Row[Any]) -> ModelOutputRecord:
     m = row._mapping
     return ModelOutputRecord(
         id=m["id"],
-        file_id=m["file_id"],
+        song_id=m["song_id"],
         model_id=m["model_id"],
         output_data=m["output_data"],
         created_at=m["created_at"],
@@ -50,7 +50,7 @@ def _row_to_stream_record(row: Row[Any]) -> OutputStreamRecord:
     m = row._mapping
     return OutputStreamRecord(
         id=m["id"],
-        file_id=m["file_id"],
+        song_id=m["song_id"],
         model_id=m["model_id"],
         status=m["status"],
         created_at=m["created_at"],
@@ -67,7 +67,7 @@ class OutputRepo:
 
     def store_model_output(
         self,
-        file_id: int,
+        song_id: int,
         model_id: str,
         output_data: dict[str, Any],
         output_index: int | None = None,
@@ -85,7 +85,7 @@ class OutputRepo:
                 row = insert_one(
                     _T_OUTPUT,
                     {
-                        "file_id": file_id,
+                        "song_id": song_id,
                         "model_id": model_id,
                         "output_data": output_data,
                         "created_at": now,
@@ -104,10 +104,10 @@ class OutputRepo:
             row = select_by_key(_T_OUTPUT, output_id, session=self._session)
             return _row_to_output_record(row) if row else None
 
-    def get_outputs_for_file(self, file_id: int) -> list[ModelOutputRecord]:
-        """Return all model outputs for a given file."""
+    def get_outputs_for_song(self, song_id: int) -> list[ModelOutputRecord]:
+        """Return all model outputs for a given song."""
         with map_persistence_exceptions():
-            stmt = select(_T_OUTPUT).where(_T_OUTPUT.c.file_id == file_id)
+            stmt = select(_T_OUTPUT).where(_T_OUTPUT.c.song_id == song_id)
             result = self._session.execute(stmt)
             return [_row_to_output_record(r) for r in result.all()]
 
@@ -127,11 +127,11 @@ class OutputRepo:
             self._session.commit()
             return int(result.rowcount)  # type: ignore[attr-defined]  # CursorResult.rowcount is int at runtime
 
-    def delete_outputs_for_file(self, file_id: int) -> int:
-        """Delete all model outputs for a given file.  Returns count deleted."""
+    def delete_outputs_for_song(self, song_id: int) -> int:
+        """Delete all model outputs for a given song.  Returns count deleted."""
         with map_persistence_exceptions():
             with self._session.begin_nested():
-                stmt = delete(_T_OUTPUT).where(_T_OUTPUT.c.file_id == file_id)
+                stmt = delete(_T_OUTPUT).where(_T_OUTPUT.c.song_id == song_id)
                 result = self._session.execute(stmt)
             self._session.commit()
             return int(result.rowcount)  # type: ignore[attr-defined]  # CursorResult.rowcount is int at runtime
@@ -145,7 +145,7 @@ class OutputRepo:
 
     # ── output streams ──────────────────────────────────────────
 
-    def store_output_stream(self, file_id: int, model_id: str, status: str) -> OutputStreamRecord:
+    def store_output_stream(self, song_id: int, model_id: str, status: str) -> OutputStreamRecord:
         """Insert an output stream row and return it."""
         with map_persistence_exceptions():
             with self._session.begin_nested():
@@ -153,7 +153,7 @@ class OutputRepo:
                 row = insert_one(
                     _T_STREAM,
                     {
-                        "file_id": file_id,
+                        "song_id": song_id,
                         "model_id": model_id,
                         "status": status,
                         "created_at": now,

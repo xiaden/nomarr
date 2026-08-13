@@ -10,16 +10,15 @@ import hashlib
 import logging
 from typing import TYPE_CHECKING, Any, cast
 
-from nomarr.components.library.library_file_query_comp import (
+from nomarr.components.library.library_song_query_comp import (
     get_existing_file_paths,
     list_songs,
 )
-from nomarr.components.library.library_file_state_comp import (
-    initialize_file_states_batch,
+from nomarr.components.library.library_song_state_comp import (
+    initialize_song_states_batch,
     library_has_tagged_files,
-    transition_file_state,
+    transition_song_state,
 )
-from nomarr.components.library.library_id_comp import library_key_from_ref
 from nomarr.helpers.constants.file_states import STATE_NOT_PROCESSED, STATE_PROCESSED
 from nomarr.helpers.exceptions import DatabaseStateError
 from nomarr.helpers.time_helper import now_ms
@@ -56,7 +55,6 @@ def _folder_doc(
     return {
         "key": _folder_key(library_id, folder_path),
         "path": folder_path,
-        "library_key": library_key_from_ref(str(library_id)),
         "mtime": mtime,
         "file_count": file_count,
         "last_scanned_at": now_ms().value,
@@ -79,7 +77,7 @@ def _upsert_batch(db: Database, file_docs: list[dict[str, Any]]) -> list[int]:
     # Identify which paths already exist before upserting so state edges are
     # only initialised for genuinely new files.  Re-initialising an existing
     # file would silently re-insert the negative-side edges for every axis
-    # (e.g. not_tagged), overwriting transitions that have already occurred
+    # (e.g. not_processed), overwriting transitions that have already occurred
     # and pushing those files backwards through the pipeline.
     paths = [d["path"] for d in clean_docs if "path" in d]
     existing_paths = get_existing_file_paths(db, paths)
@@ -89,8 +87,7 @@ def _upsert_batch(db: Database, file_docs: list[dict[str, Any]]) -> list[int]:
         msg = "All docs in a scan batch must share the same integer library_id"
         raise ValueError(msg)
 
-    with db.library.transaction():
-        file_ids = db.library.add_files_to_library(library_id, clean_docs)
+    file_ids = db.library.add_songs_to_library(library_id, clean_docs)
 
     # Repair existing files whose state edges are missing (e.g. interrupted prior scan).
     # Using insert-ignoring semantics means already-transitioned edges are untouched.
@@ -98,10 +95,10 @@ def _upsert_batch(db: Database, file_docs: list[dict[str, Any]]) -> list[int]:
         file_id for file_id, doc in zip(file_ids, clean_docs, strict=True) if doc.get("path") in existing_paths
     ]
     if existing_file_ids:
-        missing_state_ids = [fid for fid in existing_file_ids if db.app.get_file_state(fid) is None]
+        missing_state_ids = [fid for fid in existing_file_ids if db.app.get_song_state(fid) is None]
         if missing_state_ids:
             logger.warning("[scan] Repairing %d file(s) with missing state edges", len(missing_state_ids))
-            initialize_file_states_batch(db, missing_state_ids)
+            initialize_song_states_batch(db, missing_state_ids)
 
     return file_ids
 
@@ -156,7 +153,7 @@ def bootstrap_file_state_edges(
     edge_bootstraps: list[dict[str, Any]],
     file_id_by_path: dict[str, int],
 ) -> int:
-    """Create ml_tagged state edges for files that should skip ML tagging.
+    """Create ml_tagged state edges for songs that should skip ML tagging.
 
     Returns the number of edges created.
     """
@@ -168,7 +165,7 @@ def bootstrap_file_state_edges(
             continue
 
         if bootstrap["type"] == "ml_tagged":
-            transition_file_state(db, [file_id], STATE_NOT_PROCESSED, STATE_PROCESSED)
+            transition_song_state(db, [file_id], STATE_NOT_PROCESSED, STATE_PROCESSED)
             count += 1
     return count
 
@@ -181,11 +178,10 @@ def remove_deleted_files(db: Database, paths: list[str]) -> int:
     file_ids = [
         file_doc["id"]
         for path in paths
-        if (file_doc := cast("dict[str, Any] | None", db.library.find_file_by_path_any_library(path))) is not None
+        if (file_doc := cast("dict[str, Any] | None", db.library.find_song_by_path_any_library(path))) is not None
     ]
     for file_id in file_ids:
-        with db.library.transaction():
-            db.library.remove_file(file_id)
+        db.library.remove_song(file_id)
 
     return len(file_ids)
 
@@ -219,8 +215,7 @@ def save_folder_record(
     # Remove any existing folder with the same deterministic key before
     # inserting (add_library_folder is INSERT, not UPSERT).
     if existing_folder_id:
-        with db.library.transaction():
-            db.library.remove_library_folder(library_id, existing_folder_id)
+        db.library.remove_library_folder(library_id, existing_folder_id)
     else:
         # Try to find and remove a pre-existing folder with the same key
         try:
@@ -229,14 +224,12 @@ def save_folder_record(
                 if folder.get("key") == folder_key:
                     fid = folder.get("id")
                     if fid:
-                        with db.library.transaction():
-                            db.library.remove_library_folder(library_id, fid)
+                        db.library.remove_library_folder(library_id, fid)
                     break
         except Exception:
             pass  # best-effort cleanup
 
-    with db.library.transaction():
-        db.library.add_library_folder(library_id, folder_doc)
+    db.library.add_library_folder(library_id, folder_doc)
 
 
 def cleanup_stale_folders(
@@ -254,7 +247,6 @@ def cleanup_stale_folders(
         ]
         if stale_ids:
             for stale_id in stale_ids:
-                with db.library.transaction():
-                    db.library.remove_library_folder(library_id, stale_id)
+                db.library.remove_library_folder(library_id, stale_id)
     except DatabaseStateError as e:
         logger.warning("[scan] Failed to clean up folder records: %s", e)

@@ -366,7 +366,7 @@ def generate_calibration_from_histogram(
 ) -> dict[str, Any]:
     """Generate calibration for a single label using DB histogram query.
 
-    Stateless, idempotent computation. Always computes from current file_tags.
+    Stateless, idempotent computation. Always computes from the current song-tag rows.
 
     Args:
         db: Database instance
@@ -537,8 +537,7 @@ def import_calibration_state_from_json(db: Database, input_path: str, overwrite:
                 "overflow_count": calib.get("overflow_count", 0),
                 "histogram_bins": calib.get("histogram_bins"),
             }
-            with db.ml.transaction():
-                db.ml.replace_calibration_state(model_id, payload=state_data)
+            db.ml.replace_calibration_state(model_id, payload=state_data)
             logger.info(f"[calibration] Imported {head_name}:{label}")
             imported_count += 1
 

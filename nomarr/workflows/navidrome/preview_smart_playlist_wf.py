@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from nomarr.components.library.library_file_query_comp import get_tracks_by_file_ids
+from nomarr.components.library.library_song_query_comp import get_tracks_by_song_ids
 from nomarr.helpers.dto.navidrome_dto import PlaylistPreviewResult
 from nomarr.helpers.exceptions import PlaylistQueryError
 
@@ -57,16 +57,16 @@ def preview_smart_playlist_workflow(
     # Parse query into filter tree
     playlist_filter = parse_smart_playlist_query(query, namespace)
 
-    # Execute filter to get matching file IDs
-    file_ids = execute_smart_playlist_filter(db, playlist_filter)
+    # Execute filter to get matching song IDs
+    song_ids = execute_smart_playlist_filter(db, playlist_filter)
 
     # Count total matches
-    total_count = len(file_ids)
+    total_count = len(song_ids)
 
     # Fetch sample tracks (limit already validated at API layer: 1-100)
-    sample_tracks = get_tracks_by_file_ids(
+    sample_tracks = get_tracks_by_song_ids(
         db,
-        file_ids=file_ids,
+        song_ids=song_ids,
         order_by=None,  # Random order for preview
         limit=preview_limit,
     )

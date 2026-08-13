@@ -71,8 +71,7 @@ class TestServiceMethodInventory:
         libs = service.list_libraries()
         for lib in libs:
             if lib.name == "ServiceTestLib":
-                with db.library.transaction():
-                    db.library.remove_library(lib.id)
+                db.library.remove_library(lib.id)
                 break
 
     def test_library_service_get_library_stats(self, db, seed_data):
@@ -107,8 +106,8 @@ class TestServiceMethodInventory:
         result = service.search_files(query)
         assert_snapshot_matches("LibraryService_search_files", result)
 
-    def test_library_service_get_file_tags(self, db, seed_data):
-        """Snapshot: LibraryService.get_file_tags(file_id, nomarr_only=False)."""
+    def test_library_service_get_song_tags(self, db, seed_data):
+        """Snapshot: LibraryService.get_song_tags(song_id, nomarr_only=False)."""
         from nomarr.services.domain.library_svc import LibraryService
         from nomarr.services.domain.library_svc.config import LibraryServiceConfig
 
@@ -118,9 +117,9 @@ class TestServiceMethodInventory:
             tagger_version="test-v1",
         )
         service = LibraryService(cfg=cfg, db=db)
-        file_id = seed_data["files"][0]
-        result = service.get_file_tags(file_id, nomarr_only=False)
-        assert_snapshot_matches("LibraryService_get_file_tags", result)
+        song_id = seed_data["songs"][0]
+        result = service.get_song_tags(song_id, nomarr_only=False)
+        assert_snapshot_matches("LibraryService_get_song_tags", result)
 
     def test_library_service_cleanup_orphaned_tags(self, db, seed_data):
         """Snapshot: LibraryService.cleanup_orphaned_tags(dry_run=True)."""
@@ -162,8 +161,8 @@ class TestServiceMethodInventory:
         result = service.get_calibration_status()
         assert_snapshot_matches("TaggingService_get_calibration_status", result)
 
-    def test_tagging_service_update_file_tags(self, db, seed_data):
-        """Snapshot: TaggingService.update_file_tags(file_id, name, values)."""
+    def test_tagging_service_update_song_tags(self, db, seed_data):
+        """Snapshot: TaggingService.update_song_tags(song_id, name, values)."""
         from nomarr.services.domain.tagging_svc import TaggingService
         from nomarr.services.domain.tagging_svc.config import TaggingServiceConfig
 
@@ -180,13 +179,13 @@ class TestServiceMethodInventory:
             bts=bts,
             config_service=config_service,
         )
-        file_id = str(seed_data["files"][0])
-        result = service.update_file_tags(
-            file_id=file_id,
+        song_id = str(seed_data["songs"][0])
+        result = service.update_song_tags(
+            song_id=song_id,
             name="mood",
             values=["happy", "energetic"],
         )
-        assert_snapshot_matches("TaggingService_update_file_tags", result)
+        assert_snapshot_matches("TaggingService_update_song_tags", result)
 
     def test_tagging_service_list_tag_values(self, db, seed_data):
         """Snapshot: TaggingService.list_tag_values(...)."""

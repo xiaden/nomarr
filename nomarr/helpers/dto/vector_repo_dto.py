@@ -14,7 +14,7 @@ class EmbeddingRecord(TypedDict):
     """Single row from the ``embeddings`` table."""
 
     id: int
-    file_id: int
+    song_id: int
     backbone_id: str
     tier: str
     embed_dim: int
@@ -29,7 +29,7 @@ class EmbeddingRecord(TypedDict):
 class SimilarResult(TypedDict):
     """Result from an ANN similarity search."""
 
-    file_id: int
+    song_id: int
     backbone_id: str
     distance: float
 

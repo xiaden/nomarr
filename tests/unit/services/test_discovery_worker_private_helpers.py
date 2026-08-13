@@ -118,7 +118,7 @@ class TestHandleProcessError:
         assert result == 4
 
     @pytest.mark.unit
-    @patch("nomarr.components.library.library_file_state_comp.transition_file_state")
+    @patch("nomarr.components.library.library_song_state_comp.transition_song_state")
     @patch(_PATCH_RELEASE)
     def test_sets_file_state_errored(self, mock_release, mock_transition_file_state):
         """Should mark the file as errored in the database."""
@@ -147,7 +147,7 @@ class TestHandleProcessError:
 
     @pytest.mark.unit
     @patch(
-        "nomarr.components.library.library_file_state_comp.transition_file_state",
+        "nomarr.components.library.library_song_state_comp.transition_song_state",
         side_effect=RuntimeError("db down"),
     )
     @patch(_PATCH_RELEASE)
@@ -288,7 +288,7 @@ class TestProcessClaimedFile:
 
     _PATCH_RELEASE = "nomarr.components.workers.worker_discovery_comp.release_claim"
     _PATCH_PROCESS = "nomarr.workflows.processing.process_file_wf.process_file_workflow"
-    _PATCH_GET_FILE = "nomarr.components.library.library_file_query_comp.get_file_by_id"
+    _PATCH_GET_FILE = "nomarr.components.library.library_song_query_comp.get_song_by_id"
     _PATCH_UPDATE_TAGGED = f"{_MODULE}.update_last_tagged_at"
     _PATCH_GETSIZE = f"{_MODULE}.os.path.getsize"
     _PATCH_MALLOC_TRIM = f"{_MODULE}._malloc_trim"
@@ -323,7 +323,7 @@ class TestProcessClaimedFile:
         mock_release_claim.assert_called_once_with(mock_db, f"{'songs'}/missing")
 
     @pytest.mark.unit
-    @patch("nomarr.components.library.library_file_state_comp.transition_file_state")
+    @patch("nomarr.components.library.library_song_state_comp.transition_song_state")
     @patch(_PATCH_UPDATE_TAGGED)
     @patch(_PATCH_RELEASE)
     @patch(_PATCH_MALLOC_TRIM)

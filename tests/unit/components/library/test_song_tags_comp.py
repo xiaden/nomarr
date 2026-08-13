@@ -1,0 +1,121 @@
+"""Tests for ``nomarr.components.library.song_tags_comp``."""
+
+from __future__ import annotations
+
+from unittest.mock import MagicMock
+
+import pytest
+
+from nomarr.components.library.song_tags_comp import get_song_tags_with_path
+
+
+class TestGetFileTagsWithPath:
+    """Tests for ``get_song_tags_with_path()``."""
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_returns_none_when_file_not_found(self) -> None:
+        mock_db = MagicMock()
+        mock_db.library.get_song.return_value = None
+
+        result = get_song_tags_with_path(mock_db, 1)
+
+        assert result is None
+        mock_db.library.get_song.assert_called_once_with(1)
+        mock_db.library.list_tags_for_song.assert_not_called()
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_returns_path_and_empty_tags_when_no_tags(self) -> None:
+        mock_db = MagicMock()
+        file_doc = {"path": "D:/Music/song.flac"}
+        mock_db.library.get_song.return_value = file_doc
+        mock_db.library.list_tags_for_song.return_value = []
+
+        result = get_song_tags_with_path(mock_db, 1)
+
+        assert result == {"path": "D:/Music/song.flac", "tags": []}
+        mock_db.library.get_song.assert_called_once_with(1)
+        mock_db.library.list_tags_for_song.assert_called_once_with(1)
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_transforms_single_value_tags(self) -> None:
+        mock_db = MagicMock()
+        file_doc = {"path": "D:/Music/song.flac"}
+        mock_db.library.get_song.return_value = file_doc
+        mock_db.library.list_tags_for_song.return_value = [
+            {"name": "nom:mood", "value": "happy", "namespace": "nom"},
+        ]
+
+        result = get_song_tags_with_path(mock_db, 1)
+
+        assert result == {
+            "path": "D:/Music/song.flac",
+            "tags": [
+                {
+                    "key": "nom:mood",
+                    "name": "nom:mood",
+                    "value": "happy",
+                    "is_nomarr_tag": True,
+                }
+            ],
+        }
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_transforms_multi_value_tags_to_individual_entries(self) -> None:
+        mock_db = MagicMock()
+        file_doc = {"path": "D:/Music/song.flac"}
+        mock_db.library.get_song.return_value = file_doc
+        mock_db.library.list_tags_for_song.return_value = [
+            {"name": "genre", "value": "a", "namespace": ""},
+            {"name": "genre", "value": "b", "namespace": ""},
+        ]
+
+        result = get_song_tags_with_path(mock_db, 1)
+
+        assert result == {
+            "path": "D:/Music/song.flac",
+            "tags": [
+                {
+                    "key": "genre",
+                    "name": "genre",
+                    "value": "a",
+                    "is_nomarr_tag": False,
+                },
+                {
+                    "key": "genre",
+                    "name": "genre",
+                    "value": "b",
+                    "is_nomarr_tag": False,
+                },
+            ],
+        }
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_passes_nomarr_only_flag(self) -> None:
+        mock_db = MagicMock()
+        file_doc = {"path": "D:/Music/song.flac"}
+        mock_db.library.get_song.return_value = file_doc
+        mock_db.library.list_tags_for_song.return_value = [
+            {"name": "nom:mood", "value": "happy", "namespace": "nom"},
+            {"name": "genre", "value": "a", "namespace": ""},
+        ]
+
+        result = get_song_tags_with_path(mock_db, 1, nomarr_only=True)
+
+        mock_db.library.list_tags_for_song.assert_called_once_with(1)
+        # nomarr_only=True must exclude non-nomarr tags from the result.
+        assert result == {
+            "path": "D:/Music/song.flac",
+            "tags": [
+                {
+                    "key": "nom:mood",
+                    "name": "nom:mood",
+                    "value": "happy",
+                    "is_nomarr_tag": True,
+                }
+            ],
+        }

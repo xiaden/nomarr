@@ -1,4 +1,4 @@
-"""MlModelOutput ORM model — stores ML model output data per file."""
+"""MlModelOutput ORM model — stores ML model output data per song."""
 
 from sqlalchemy import BigInteger, ForeignKey, Integer, String, text
 from sqlalchemy.dialects.postgresql import JSONB
@@ -8,12 +8,12 @@ from nomarr.persistence.models.base import Base
 
 
 class MlModelOutput(Base):
-    """Stores ML model output data (JSONB) for a file/model pair."""
+    """Stores ML model output data (JSONB) for a song/model pair."""
 
     __tablename__ = "ml_model_outputs"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    file_id: Mapped[int] = mapped_column(ForeignKey("library_files.id", ondelete="CASCADE"), nullable=False, index=True)
+    song_id: Mapped[int] = mapped_column(ForeignKey("songs.id", ondelete="CASCADE"), nullable=False, index=True)
     model_id: Mapped[str] = mapped_column(ForeignKey("ml_models.id", ondelete="CASCADE"), nullable=False, index=True)
     output_data: Mapped[dict] = mapped_column(JSONB, nullable=False)
     created_at: Mapped[int] = mapped_column(BigInteger)

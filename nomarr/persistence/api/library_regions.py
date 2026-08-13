@@ -1,4 +1,4 @@
-"""Library, pipeline-state, and file-state sub-facade for the library surface.
+"""Library and pipeline-state sub-facade for the library surface.
 
 Holds all library-domain (``libraries`` table) and pipeline-axis intent
 methods. Wired into ``LibraryDb`` as its ``regions`` namespace
@@ -6,37 +6,28 @@ methods. Wired into ``LibraryDb`` as its ``regions`` namespace
 §Phase 1). Methods moved verbatim from ``LibraryDb`` — signatures and
 behavior unchanged.
 
-READ/WRITE classification (AR-2): READ methods use SQLAlchemy autobegin
-and need no transaction context; WRITE methods (inserts/updates/deletes)
-must be called inside ``LibraryDb.transaction()`` and raise
-:class:`FacadeMisuseError` otherwise.
-
-READ:   get_library, get_library_by_name, list_libraries, list_library_keys,
-        get_pipeline_state, get_libraries_in_axis_state
-WRITE:  add_library, update_library, update_pipeline_axis, remove_library
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, cast
-
-from nomarr.helpers.exceptions import FacadeMisuseError
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session, scoped_session
 
     from nomarr.helpers.dto.repo_dto import LibraryRow
-    from nomarr.persistence.database.file_state_repo import FileStateRepository
     from nomarr.persistence.database.library_repo import LibraryRepository
-    from nomarr.persistence.database.pipeline_repo import PipelineRepository
+    from nomarr.persistence.database.song_state_repo import SongStateRepository
 
 
 class LibraryRegionsDb:
     """Persistence sub-facade for library and pipeline-state operations.
 
     Domain identity: the ``name`` and ``path`` library columns. Owns
-    library CRUD plus pipeline-axis state columns on the ``libraries``
-    table.
+    library CRUD plus pipeline-state reads. Pipeline-axis state now
+    lives in ``pipeline_states`` rows (no columns on ``libraries``): the
+    read methods below forward to ``LibraryRepository``, which delegates
+    to ``PipelineRepository`` for the row-backed lookups.
     """
 
     def __init__(
@@ -44,24 +35,14 @@ class LibraryRegionsDb:
         *,
         session: scoped_session[Session],
         library_repo: LibraryRepository,
-        file_state_repo: FileStateRepository,
-        pipeline_repo: PipelineRepository,
+        song_state_repo: SongStateRepository,
     ) -> None:
         self._session = session
         self._library_repo = library_repo
-        self._file_state_repo = file_state_repo
-        self._pipeline_repo = pipeline_repo
-
-    def _require_transaction(self, method_name: str) -> None:
-        """Raise :class:`FacadeMisuseError` when no transaction is active (AR-2)."""
-        if not cast("Session", self._session).in_transaction():
-            raise FacadeMisuseError(
-                f"{type(self).__name__}.{method_name}() is a write method — call within a transaction() context"
-            )
+        self._song_state_repo = song_state_repo
 
     def add_library(self, payload: dict[str, Any]) -> int:
         """Create a new library and return its ID."""
-        self._require_transaction("add_library")
         return self._library_repo.add_library(payload)
 
     def get_library(self, library_id: int) -> LibraryRow | None:
@@ -82,7 +63,6 @@ class LibraryRegionsDb:
 
     def update_library(self, library_id: int, fields: dict[str, Any]) -> None:
         """Update fields on a library."""
-        self._require_transaction("update_library")
         self._library_repo.update_library(library_id, fields)
 
     def get_pipeline_state(self, library_id: int) -> dict[str, str] | None:
@@ -93,11 +73,6 @@ class LibraryRegionsDb:
         """Return library IDs where the given axis field matches the value."""
         return self._library_repo.get_libraries_in_axis_state(axis_field, axis_value)
 
-    def update_pipeline_axis(self, library_id: int, axis_field: str, axis_value: str) -> None:
-        """Update a single pipeline axis field on a library row."""
-        self._require_transaction("update_pipeline_axis")
-        self._library_repo.update_pipeline_axis(library_id, axis_field, axis_value)
-
     def remove_library(self, library_id: int) -> bool:
         """Delete a library and all associated data.
 
@@ -106,7 +81,6 @@ class LibraryRegionsDb:
         Orphaned tag rows are not cleaned up — callers should invoke
         cleanup_orphaned_tags() separately if needed.
         """
-        self._require_transaction("remove_library")
         if not self._library_repo.get_library(library_id):
             return False
         self._library_repo.remove_library(library_id)

@@ -28,7 +28,7 @@ class TestGetFileForWriting:
         file_doc = {"id": 123, "path": "/music/song.flac"}
 
         with patch(
-            "nomarr.components.processing.file_write_comp.get_file_by_id",
+            "nomarr.components.processing.file_write_comp.get_song_by_id",
             return_value=file_doc,
         ) as mock_get_file_by_id:
             result = get_file_for_writing(mock_db, "123")
@@ -43,7 +43,7 @@ class TestGetFileForWriting:
         file_doc = {"id": 456, "path": "/music/song.flac"}
 
         with patch(
-            "nomarr.components.processing.file_write_comp.get_file_by_id",
+            "nomarr.components.processing.file_write_comp.get_song_by_id",
             return_value=file_doc,
         ) as mock_get_file_by_id:
             result = get_file_for_writing(mock_db, "456")
@@ -57,7 +57,7 @@ class TestGetFileForWriting:
         mock_db = MagicMock()
 
         with patch(
-            "nomarr.components.processing.file_write_comp.get_file_by_id",
+            "nomarr.components.processing.file_write_comp.get_song_by_id",
             return_value=None,
         ) as mock_get_file_by_id:
             result = get_file_for_writing(mock_db, "999")

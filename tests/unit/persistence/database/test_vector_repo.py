@@ -8,15 +8,15 @@ from sqlalchemy import insert
 
 from nomarr.persistence.database.vector_repo import VectorRepo
 from nomarr.persistence.models.library import Library
-from nomarr.persistence.models.library_file import LibraryFile
+from nomarr.persistence.models.song import Song
 
 # Embedding dimension must match HALFVEC(1280) in the Embedding model.
 _EMBED_DIM = 1280
 _BACKBONE = "test_backbone"
 
 
-def _create_library_and_file(session) -> tuple[int, int]:
-    """Helper: create a library and a file, return (library_id, file_id)."""
+def _create_library_and_song(session) -> tuple[int, int]:
+    """Helper: create a library and a song, return (library_id, song_id)."""
     lib_r = session.execute(
         insert(Library).values(
             name="Vector Lib",
@@ -29,8 +29,8 @@ def _create_library_and_file(session) -> tuple[int, int]:
         )
     )
     lib_id = lib_r.inserted_primary_key[0]
-    file_r = session.execute(
-        insert(LibraryFile).values(
+    song_r = session.execute(
+        insert(Song).values(
             library_id=lib_id,
             path="/vector/lib/test.mp3",
             normalized_path="/vector/lib/test.mp3",
@@ -43,8 +43,8 @@ def _create_library_and_file(session) -> tuple[int, int]:
             created_at=1000,
         )
     )
-    file_id = file_r.inserted_primary_key[0]
-    return lib_id, file_id
+    song_id = song_r.inserted_primary_key[0]
+    return lib_id, song_id
 
 
 def _random_vector(dim: int = _EMBED_DIM, seed: int | None = None) -> list[float]:
@@ -68,28 +68,28 @@ class TestVectorRepo:
 
     def test_insert_embedding(self, pg_session) -> None:
         """insert_embedding should insert a row with tier='hot'."""
-        _, file_id = _create_library_and_file(pg_session)
+        _, song_id = _create_library_and_song(pg_session)
         repo = VectorRepo(pg_session)
         vec = _random_vector(seed=1)
         record = repo.insert_embedding(
-            file_id=file_id,
+            song_id=song_id,
             backbone_id=_BACKBONE,
             model_id="test_model",
             embedding_vector=vec,
         )
         assert record["id"] > 0
-        assert record["file_id"] == file_id
+        assert record["song_id"] == song_id
         assert record["backbone_id"] == _BACKBONE
         assert record["tier"] == "hot"
         assert record["embed_dim"] == _EMBED_DIM
 
     def test_insert_embedding_with_genres(self, pg_session) -> None:
         """insert_embedding should store genres when provided."""
-        _, file_id = _create_library_and_file(pg_session)
+        _, song_id = _create_library_and_song(pg_session)
         repo = VectorRepo(pg_session)
         vec = _random_vector(seed=2)
         record = repo.insert_embedding(
-            file_id=file_id,
+            song_id=song_id,
             backbone_id=_BACKBONE,
             model_id="test_model",
             embedding_vector=vec,
@@ -101,15 +101,15 @@ class TestVectorRepo:
 
     def test_find_nearest_returns_ordered_results(self, pg_session) -> None:
         """find_nearest should return SimilarResult list ordered by cosine distance."""
-        lib_id, file_id = _create_library_and_file(pg_session)
+        lib_id, song_id = _create_library_and_song(pg_session)
         repo = VectorRepo(pg_session)
 
-        # Insert several embeddings — each needs a unique file_id due to FK constraint
+        # Insert several embeddings — each needs a unique song_id due to FK constraint
         vectors = [_random_vector(seed=i) for i in range(10)]
-        file_ids = [file_id]
+        song_ids = [song_id]
         for i in range(1, 10):
-            file_r = pg_session.execute(
-                insert(LibraryFile).values(
+            song_r = pg_session.execute(
+                insert(Song).values(
                     library_id=lib_id,
                     path=f"/vector/lib/test_{i}.mp3",
                     normalized_path=f"/vector/lib/test_{i}.mp3",
@@ -122,11 +122,11 @@ class TestVectorRepo:
                     created_at=1000 + i,
                 )
             )
-            file_ids.append(file_r.inserted_primary_key[0])
+            song_ids.append(song_r.inserted_primary_key[0])
 
         for i, vec in enumerate(vectors):
             repo.insert_embedding(
-                file_id=file_ids[i],
+                song_id=song_ids[i],
                 backbone_id=_BACKBONE,
                 model_id="test_model",
                 embedding_vector=vec,
@@ -157,13 +157,13 @@ class TestVectorRepo:
 
     def test_drain_hot_to_cold(self, pg_session) -> None:
         """drain_hot_to_cold should update tier and return count."""
-        _, file_id = _create_library_and_file(pg_session)
+        _, song_id = _create_library_and_song(pg_session)
         repo = VectorRepo(pg_session)
 
         # Insert 5 hot embeddings
         for i in range(5):
             repo.insert_embedding(
-                file_id=file_id,
+                song_id=song_id,
                 backbone_id=_BACKBONE,
                 model_id="test_model",
                 embedding_vector=_random_vector(seed=100 + i),
@@ -189,49 +189,49 @@ class TestVectorRepo:
         count = repo.drain_hot_to_cold("nonexistent_backbone")
         assert count == 0
 
-    # ── get_embeddings_for_file ─────────────────────────────────
+    # ── get_embeddings_for_song ─────────────────────────────────
 
-    def test_get_embeddings_for_file(self, pg_session) -> None:
-        """get_embeddings_for_file should return all embeddings for a file."""
-        _, file_id = _create_library_and_file(pg_session)
+    def test_get_embeddings_for_song(self, pg_session) -> None:
+        """get_embeddings_for_song should return all embeddings for a song."""
+        _, song_id = _create_library_and_song(pg_session)
         repo = VectorRepo(pg_session)
 
-        # Insert embeddings for this file with different backbones
+        # Insert embeddings for this song with different backbones
         repo.insert_embedding(
-            file_id=file_id,
+            song_id=song_id,
             backbone_id="backbone_a",
             model_id="model_a",
             embedding_vector=_random_vector(seed=200),
         )
         repo.insert_embedding(
-            file_id=file_id,
+            song_id=song_id,
             backbone_id="backbone_b",
             model_id="model_b",
             embedding_vector=_random_vector(seed=201),
         )
 
-        results = repo.get_embeddings_for_file(file_id)
+        results = repo.get_embeddings_for_song(song_id)
         assert len(results) == 2
         backbone_ids = {r["backbone_id"] for r in results}
         assert "backbone_a" in backbone_ids
         assert "backbone_b" in backbone_ids
 
-    def test_get_embeddings_for_file_nonexistent(self, pg_session) -> None:
-        """get_embeddings_for_file should return empty list for unknown file."""
+    def test_get_embeddings_for_song_nonexistent(self, pg_session) -> None:
+        """get_embeddings_for_song should return empty list for unknown song."""
         repo = VectorRepo(pg_session)
-        results = repo.get_embeddings_for_file(999999)
+        results = repo.get_embeddings_for_song(999999)
         assert results == []
 
     # ── count_cold_embeddings ───────────────────────────────────
 
     def test_count_cold_embeddings(self, pg_session) -> None:
         """count_cold_embeddings should return correct count after drain."""
-        _, file_id = _create_library_and_file(pg_session)
+        _, song_id = _create_library_and_song(pg_session)
         repo = VectorRepo(pg_session)
 
         for i in range(3):
             repo.insert_embedding(
-                file_id=file_id,
+                song_id=song_id,
                 backbone_id=_BACKBONE,
                 model_id="test_model",
                 embedding_vector=_random_vector(seed=300 + i),
@@ -248,13 +248,13 @@ class TestVectorRepo:
 
     def test_get_embedding_stats(self, pg_session) -> None:
         """get_embedding_stats should return hot and cold counts."""
-        _, file_id = _create_library_and_file(pg_session)
+        _, song_id = _create_library_and_song(pg_session)
         repo = VectorRepo(pg_session)
 
         # Insert 4 embeddings (all hot)
         for i in range(4):
             repo.insert_embedding(
-                file_id=file_id,
+                song_id=song_id,
                 backbone_id=_BACKBONE,
                 model_id="test_model",
                 embedding_vector=_random_vector(seed=400 + i),
@@ -281,12 +281,12 @@ class TestVectorRepo:
 
     def test_delete_all_embeddings(self, pg_session) -> None:
         """delete_all_embeddings should remove all rows."""
-        _, file_id = _create_library_and_file(pg_session)
+        _, song_id = _create_library_and_song(pg_session)
         repo = VectorRepo(pg_session)
 
         for i in range(3):
             repo.insert_embedding(
-                file_id=file_id,
+                song_id=song_id,
                 backbone_id=_BACKBONE,
                 model_id="test_model",
                 embedding_vector=_random_vector(seed=500 + i),
@@ -301,8 +301,8 @@ class TestVectorRepo:
 
     def test_truncate_embeddings_clears_all_rows(self, pg_session) -> None:
         """truncate_embeddings should remove all rows from the embeddings table."""
-        _lib_id1, file_id1 = _create_library_and_file(pg_session)
-        # Create a second library + file
+        _lib_id1, song_id1 = _create_library_and_song(pg_session)
+        # Create a second library + song
         lib_r = pg_session.execute(
             insert(Library).values(
                 name="Truncate Lib 2",
@@ -315,8 +315,8 @@ class TestVectorRepo:
             )
         )
         lib_id2 = lib_r.inserted_primary_key[0]
-        file_r = pg_session.execute(
-            insert(LibraryFile).values(
+        song_r = pg_session.execute(
+            insert(Song).values(
                 library_id=lib_id2,
                 path="/vector/lib/truncate2.mp3",
                 normalized_path="/vector/lib/truncate2.mp3",
@@ -329,19 +329,19 @@ class TestVectorRepo:
                 created_at=2000,
             )
         )
-        file_id2 = file_r.inserted_primary_key[0]
+        song_id2 = song_r.inserted_primary_key[0]
 
         repo = VectorRepo(pg_session)
 
-        # Insert embeddings for two different files
+        # Insert embeddings for two different songs
         repo.insert_embedding(
-            file_id=file_id1,
+            song_id=song_id1,
             backbone_id=_BACKBONE,
             model_id="test_model",
             embedding_vector=_random_vector(seed=700),
         )
         repo.insert_embedding(
-            file_id=file_id2,
+            song_id=song_id2,
             backbone_id=_BACKBONE,
             model_id="test_model",
             embedding_vector=_random_vector(seed=701),
@@ -362,14 +362,14 @@ class TestVectorRepo:
         assert stats["hot_count"] == 0
         assert stats["cold_count"] == 0
 
-    # ── delete_embeddings_for_file ──────────────────────────────
+    # ── delete_embeddings_for_song ──────────────────────────────
 
-    def test_delete_embeddings_for_file(self, pg_session) -> None:
-        """delete_embeddings_for_file should remove only that file's embeddings."""
-        lib_id, file_id1 = _create_library_and_file(pg_session)
-        # Create a second file
-        file_r = pg_session.execute(
-            insert(LibraryFile).values(
+    def test_delete_embeddings_for_song(self, pg_session) -> None:
+        """delete_embeddings_for_song should remove only that song's embeddings."""
+        lib_id, song_id1 = _create_library_and_song(pg_session)
+        # Create a second song
+        song_r = pg_session.execute(
+            insert(Song).values(
                 library_id=lib_id,
                 path="/vector/lib/test2.mp3",
                 normalized_path="/vector/lib/test2.mp3",
@@ -382,29 +382,29 @@ class TestVectorRepo:
                 created_at=2000,
             )
         )
-        file_id2 = file_r.inserted_primary_key[0]
+        song_id2 = song_r.inserted_primary_key[0]
 
         repo = VectorRepo(pg_session)
         repo.insert_embedding(
-            file_id=file_id1,
+            song_id=song_id1,
             backbone_id=_BACKBONE,
             model_id="test_model",
             embedding_vector=_random_vector(seed=600),
         )
         repo.insert_embedding(
-            file_id=file_id2,
+            song_id=song_id2,
             backbone_id=_BACKBONE,
             model_id="test_model",
             embedding_vector=_random_vector(seed=601),
         )
 
-        # Delete only file_id1's embeddings
-        repo.delete_embeddings_for_file(file_id1)
+        # Delete only song_id1's embeddings
+        repo.delete_embeddings_for_song(song_id1)
 
-        # file_id1 should have none
-        results1 = repo.get_embeddings_for_file(file_id1)
+        # song_id1 should have none
+        results1 = repo.get_embeddings_for_song(song_id1)
         assert len(results1) == 0
 
-        # file_id2 should still have its embedding
-        results2 = repo.get_embeddings_for_file(file_id2)
+        # song_id2 should still have its embedding
+        results2 = repo.get_embeddings_for_song(song_id2)
         assert len(results2) == 1

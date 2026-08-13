@@ -82,8 +82,7 @@ def update_metadata_cache_batch(db: Database, updates: list[dict[str, Any]]) -> 
         if not isinstance(song_id, int):
             continue
         update["_cache_updated_at"] = now_val.value
-        with db.library.transaction():
-            db.library.update_file_fields(song_id, update)
+        db.library.update_song_fields(song_id, update)
 
 
 # ---------------------------------------------------------------------------
@@ -139,8 +138,7 @@ def rebuild_song_metadata_cache(db: Database, song_id: int) -> None:
         if v is not None
     }
     if fields:
-        with db.library.transaction():
-            db.library.update_file_fields(song_id, fields)
+        db.library.update_song_fields(song_id, fields)
 
 
 def rebuild_all_song_metadata_caches(db: Database, limit: int | None = None) -> int:
@@ -154,9 +152,9 @@ def rebuild_all_song_metadata_caches(db: Database, limit: int | None = None) -> 
         Count of songs whose cache was rebuilt.
 
     """
-    from nomarr.components.library.library_file_query_comp import list_all_file_ids
+    from nomarr.components.library.library_song_query_comp import list_all_song_ids
 
-    file_ids = list_all_file_ids(db, limit=limit)
+    file_ids = list_all_song_ids(db, limit=limit)
     count = 0
     for file_id in file_ids:
         rebuild_song_metadata_cache(db, file_id)

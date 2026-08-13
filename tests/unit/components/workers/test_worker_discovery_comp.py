@@ -115,10 +115,10 @@ class TestCleanupStaleClaims:
         mock_db.app.list_worker_health.return_value = [
             {"component_id": "worker:active", "last_heartbeat": 9001},
         ]
-        mock_db.library.list_files_by_ids.return_value = [
+        mock_db.library.list_songs_by_ids.return_value = [
             {"id": 3},
         ]
-        mock_db.app.list_file_docs_in_state.return_value = [
+        mock_db.app.list_song_docs_in_state.return_value = [
             {"id": 3},
             {"id": 999},
         ]
@@ -133,12 +133,12 @@ class TestCleanupStaleClaims:
         assert result == 3
         mock_db.app.list_claims.assert_called_once_with()
         mock_db.app.list_worker_health.assert_called_once_with()
-        mock_db.library.list_files_by_ids.assert_called_once_with([2, 3])
-        mock_db.app.list_file_docs_in_state.assert_called_once_with("tagged")
+        mock_db.library.list_songs_by_ids.assert_called_once_with([2, 3])
+        mock_db.app.list_song_docs_in_state.assert_called_once_with("tagged")
         assert mock_db.app.remove_claims.call_args_list == [
             call(worker_ids=["worker:stale"]),
             call(
-                file_ids=[
+                song_ids=[
                     2,
                     3,
                 ]
@@ -155,8 +155,8 @@ class TestCleanupStaleClaims:
         assert result == 0
         mock_db.app.list_claims.assert_called_once_with()
         mock_db.app.list_worker_health.assert_not_called()
-        mock_db.library.list_files_by_ids.assert_not_called()
-        mock_db.app.list_file_docs_in_state.assert_not_called()
+        mock_db.library.list_songs_by_ids.assert_not_called()
+        mock_db.app.list_song_docs_in_state.assert_not_called()
         mock_db.app.remove_claims.assert_not_called()
 
 

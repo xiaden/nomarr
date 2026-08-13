@@ -33,8 +33,8 @@ def helper_shims(monkeypatch: pytest.MonkeyPatch) -> None:
         lambda db, seed_descriptor: db._resolve_seed_descriptor_to_file(seed_descriptor),
     )
     monkeypatch.setattr(
-        "nomarr.workflows.navidrome.find_similar_tracks_wf.get_files_by_ids_with_tags",
-        lambda db, file_ids: db.library.get_files_by_ids_with_tags(file_ids),
+        "nomarr.workflows.navidrome.find_similar_tracks_wf.get_songs_by_ids_with_tags",
+        lambda db, file_ids: db.library.get_songs_by_ids_with_tags(file_ids),
     )
     monkeypatch.setattr(
         "nomarr.workflows.navidrome.find_similar_tracks_wf.get_cold_track_vector",
@@ -72,7 +72,7 @@ def _make_db(
         return_value={"vector_n": seed_vector, "file_id": seed_file_id} if seed_file_id else None,
     )
     db._search_similar_cold_track_vectors = MagicMock(return_value=ann_results)
-    db.library.get_files_by_ids_with_tags.return_value = file_docs
+    db.library.get_songs_by_ids_with_tags.return_value = file_docs
     return db
 
 
@@ -83,8 +83,9 @@ class TestFindSimilarTracksHappyPath:
     def test_returns_portable_descriptors(self) -> None:
         db = _make_db(
             ann_results=[
-                {"file_id": 1, "score": 1.0},
-                {"file_id": 2, "score": 0.95},
+                # seed self-match (song_id == seed_file_id) is excluded
+                {"song_id": 1, "backbone_id": "effnet", "distance": 0.0},
+                {"song_id": 2, "backbone_id": "effnet", "distance": 1.0},
             ],
             file_docs=[
                 {
@@ -117,11 +118,11 @@ class TestFindSimilarTracksHappyPath:
         assert result["disc_number"] == 1
         assert result["year"] == 2024
         assert result["nomarr_file_key"] == "match-1"
-        assert result["score"] == 0.95
+        assert result["score"] == 0.5
 
     @pytest.mark.unit
     def test_respects_count_limit(self) -> None:
-        ann = [{"file_id": f"{'songs'}/f{i}", "score": 0.9 - i * 0.01} for i in range(10)]
+        ann = [{"song_id": f"{'songs'}/f{i}", "distance": 0.1 + i * 0.01} for i in range(10)]
         docs = [
             {
                 "id": f"{'songs'}/f{i}",
@@ -150,7 +151,7 @@ class TestFindSimilarTracksHappyPath:
     @pytest.mark.unit
     def test_does_not_use_navidrome_song_map_table(self) -> None:
         db = _make_db(
-            ann_results=[{"file_id": f"{'songs'}/match-1", "score": 0.95}],
+            ann_results=[{"song_id": f"{'songs'}/match-1", "distance": 0.5}],
             file_docs=[
                 {
                     "id": f"{'songs'}/match-1",
@@ -206,7 +207,7 @@ class TestFindSimilarTracksEdgeCases:
     @pytest.mark.unit
     def test_missing_metadata_defaults(self) -> None:
         db = _make_db(
-            ann_results=[{"file_id": f"{'songs'}/sparse", "score": 0.9}],
+            ann_results=[{"song_id": f"{'songs'}/sparse", "distance": 0.5}],
             file_docs=[{"id": f"{'songs'}/sparse", "tags": []}],
         )
 

@@ -114,7 +114,7 @@ class TestGetLibraryStats:
     @pytest.mark.mocked
     def test_returns_zero_stats_when_no_files_exist(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.count_files.return_value = 0
+        mock_db.library.list_libraries.return_value = []
 
         result = get_library_stats(mock_db)
 
@@ -124,15 +124,15 @@ class TestGetLibraryStats:
             "total_file_size_bytes": 0,
             "avg_track_length_ms": 0,
         }
-        mock_db.library.count_files.assert_called_once_with()
-        mock_db.library.list_files.assert_not_called()
+        mock_db.library.list_libraries.assert_called_once_with()
+        mock_db.library.list_songs.assert_not_called()
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_returns_aggregated_stats_for_files(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.count_files.return_value = 3
-        mock_db.library.list_files.return_value = [
+        mock_db.library.list_libraries.return_value = [{"id": 1}]
+        mock_db.library.list_songs.return_value = [
             {"duration_seconds": 180.5, "file_size": 1_000},
             {"duration_seconds": None, "file_size": 2_000},
             {"duration_seconds": 59, "file_size": 500},
@@ -146,8 +146,8 @@ class TestGetLibraryStats:
             "total_file_size_bytes": 3500,
             "avg_track_length_ms": pytest.approx(79833.33333333333),
         }
-        mock_db.library.count_files.assert_called_once_with()
-        mock_db.library.list_files.assert_called_once_with(limit=3)
+        mock_db.library.list_libraries.assert_called_once_with()
+        mock_db.library.list_songs.assert_called_once_with(1)
 
 
 class TestGetTagValueCounts:
@@ -164,7 +164,7 @@ class TestGetTagValueCounts:
             {"id": 3, "value": "Skip"},
         ]
 
-        mock_db.library.list_file_tag_edges.return_value = [
+        mock_db.library.list_song_tag_edges.return_value = [
             {"tag_id": 1},
             {"tag_id": 1},
             {"tag_id": 1},
@@ -177,7 +177,7 @@ class TestGetTagValueCounts:
 
         assert result == {"Rock": 4, "Jazz": 2, "Skip": 0}
         mock_db.library.list_tags.assert_called_once_with(name="genre", limit=3)
-        mock_db.library.list_file_tag_edges.assert_called_once_with([1, 2, 3])
+        mock_db.library.list_song_tag_edges.assert_called_once_with([1, 2, 3])
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -189,7 +189,7 @@ class TestGetTagValueCounts:
 
         assert result == {}
         mock_db.library.list_tags.assert_not_called()
-        mock_db.library.list_file_tag_edges.assert_not_called()
+        mock_db.library.list_song_tag_edges.assert_not_called()
 
 
 class TestGetAllTagStatsBatched:
@@ -217,7 +217,7 @@ class TestGetAllTagStatsBatched:
             {"id": 2, "name": "genre", "value": "Jazz"},
             {"id": 3, "name": "year", "value": 1999},
         ]
-        mock_db.library.list_file_tag_edges.return_value = [
+        mock_db.library.list_song_tag_edges.return_value = [
             {"tag_id": 1},
             {"tag_id": 1},
             {"tag_id": 1},
@@ -244,7 +244,7 @@ class TestGetAllTagStatsBatched:
             },
         }
         mock_db.library.list_tags.assert_called_once_with(limit=3)
-        mock_db.library.list_file_tag_edges.assert_called_once_with([1, 2, 3])
+        mock_db.library.list_song_tag_edges.assert_called_once_with([1, 2, 3])
 
 
 class TestGetYearDistribution:
@@ -271,7 +271,7 @@ class TestGetYearDistribution:
             {"id": 3, "value": "2020"},
             {"id": 4, "value": 2022},
         ]
-        mock_db.library.list_file_tag_edges.return_value = [
+        mock_db.library.list_song_tag_edges.return_value = [
             {"tag_id": 1},
             {"tag_id": 1},
             {"tag_id": 2},
@@ -288,7 +288,7 @@ class TestGetYearDistribution:
             {"year": 2019, "count": 2},
         ]
         mock_db.library.list_tags.assert_called_once_with(name="year", limit=4)
-        mock_db.library.list_file_tag_edges.assert_called_once_with([1, 2, 3, 4])
+        mock_db.library.list_song_tag_edges.assert_called_once_with([1, 2, 3, 4])
 
 
 class TestGetGenreDistribution:
@@ -315,7 +315,7 @@ class TestGetGenreDistribution:
             {"id": 3, "value": "Blues"},
             {"id": 4, "value": 123},
         ]
-        mock_db.library.list_file_tag_edges.return_value = [
+        mock_db.library.list_song_tag_edges.return_value = [
             {"tag_id": 1},
             {"tag_id": 1},
             {"tag_id": 2},
@@ -336,4 +336,4 @@ class TestGetGenreDistribution:
             {"genre": "Blues", "count": 4},
         ]
         mock_db.library.list_tags.assert_called_once_with(name="genre", limit=4)
-        mock_db.library.list_file_tag_edges.assert_called_once_with([1, 2, 3])
+        mock_db.library.list_song_tag_edges.assert_called_once_with([1, 2, 3])

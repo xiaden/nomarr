@@ -16,14 +16,14 @@ class TestEmbeddingStreamRecord:
         """EmbeddingStreamRecord should be creatable with all required fields."""
         row = EmbeddingStreamRecord(
             id=1,
-            file_id=42,
+            song_id=42,
             backbone="bb_test",
             patches_emb=b"\x00\x01\x02\x03",
             created_at=1000,
             updated_at=2000,
         )
         assert row["id"] == 1
-        assert row["file_id"] == 42
+        assert row["song_id"] == 42
         assert row["backbone"] == "bb_test"
         assert row["patches_emb"] == b"\x00\x01\x02\x03"
         assert row["created_at"] == 1000

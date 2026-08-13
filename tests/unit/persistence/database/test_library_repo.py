@@ -212,8 +212,9 @@ class TestLibraryRepository:
         result = repo.get_library(lib_id)
         assert result is None
 
-    def test_get_pipeline_state_returns_defaults(self, pg_session) -> None:
-        """get_pipeline_state should return dict with defaults when columns missing."""
+    def test_get_pipeline_state_no_rows_returns_none(self, pg_session) -> None:
+        """get_pipeline_state should return None when the library has no rows."""
+
         repo = LibraryRepository(pg_session)
         lib_id = repo.add_library(
             {
@@ -227,8 +228,29 @@ class TestLibraryRepository:
             }
         )
         state = repo.get_pipeline_state(lib_id)
+        assert state is None
+
+    def test_get_pipeline_state_rows_with_defaults(self, pg_session) -> None:
+        """get_pipeline_state should merge row states with defaults for missing axes."""
+        from nomarr.persistence.database.pipeline_repo import PipelineRepository
+
+        lib_repo = LibraryRepository(pg_session)
+        pipe_repo = PipelineRepository(pg_session)
+        lib_id = lib_repo.add_library(
+            {
+                "name": "Pipeline Test 2",
+                "path": "/music/pipeline2",
+                "library_type": "music",
+                "auto_tag": 0,
+                "auto_curate": 0,
+                "created_at": 9001,
+                "updated_at": 9001,
+            }
+        )
+        pipe_repo.upsert_pipeline_state(lib_id, "scan_state", {"state": "scanned"})
+        state = lib_repo.get_pipeline_state(lib_id)
         assert state is not None
-        assert state["scan_state"] == "not_scanned"
+        assert state["scan_state"] == "scanned"
         assert state["ml_state"] == "not_ML_processed"
         assert state["calibration_state"] == "not_calibrated"
         assert state["tag_write_state"] == "not_written"
@@ -238,6 +260,40 @@ class TestLibraryRepository:
         repo = LibraryRepository(pg_session)
         state = repo.get_pipeline_state(999999)
         assert state is None
+
+    def test_get_libraries_in_axis_state(self, pg_session) -> None:
+        """get_libraries_in_axis_state should filter by state_data pole via rows."""
+        from nomarr.persistence.database.pipeline_repo import PipelineRepository
+
+        lib_repo = LibraryRepository(pg_session)
+        pipe_repo = PipelineRepository(pg_session)
+        id1 = lib_repo.add_library(
+            {
+                "name": "Axis 1",
+                "path": "/music/axis1",
+                "library_type": "music",
+                "auto_tag": 0,
+                "auto_curate": 0,
+                "created_at": 9100,
+                "updated_at": 9100,
+            }
+        )
+        id2 = lib_repo.add_library(
+            {
+                "name": "Axis 2",
+                "path": "/music/axis2",
+                "library_type": "music",
+                "auto_tag": 0,
+                "auto_curate": 0,
+                "created_at": 9101,
+                "updated_at": 9101,
+            }
+        )
+        pipe_repo.upsert_pipeline_state(id1, "scan_state", {"state": "scanning"})
+        pipe_repo.upsert_pipeline_state(id2, "scan_state", {"state": "scanned"})
+        result = lib_repo.get_libraries_in_axis_state("scan_state", "scanning")
+        assert id1 in result
+        assert id2 not in result
 
     def test_remove_library_cascades(self, pg_session) -> None:
         """remove_library should delete via ORM with cascade."""

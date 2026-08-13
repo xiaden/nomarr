@@ -11,10 +11,10 @@ import os
 from typing import TYPE_CHECKING, Any
 
 from nomarr.components.infrastructure.path_comp import build_library_path_from_input
-from nomarr.components.library.file_sync_comp import mark_file_processed, save_file_tags
-from nomarr.components.library.library_file_mutation_comp import set_chromaprint, upsert_library_file
-from nomarr.components.library.library_file_query_comp import get_library_file
 from nomarr.components.library.library_records_comp import find_library_containing_path
+from nomarr.components.library.library_song_mutation_comp import set_chromaprint, upsert_library_song
+from nomarr.components.library.library_song_query_comp import get_library_song
+from nomarr.components.library.song_sync_comp import mark_song_processed, save_song_tags
 from nomarr.components.metadata.entity_seeding_comp import _build_song_tag_entries
 from nomarr.components.tagging.tag_parsing_comp import parse_tag_values
 
@@ -57,13 +57,13 @@ def _sync_tags_and_entities(
     parsed_nom_tags = parse_tag_values(nom_tags) if nom_tags else {}
 
     # Persist all external tags
-    save_file_tags(db, file_id, parsed_all_tags)  # type: ignore[arg-type]  # TODO(migration): component expects str, should be int
+    save_song_tags(db, file_id, parsed_all_tags)  # type: ignore[arg-type]  # TODO(migration): component expects str, should be int
 
     # Persist nomarr-namespaced tags (prefix names with "nom:")
     prefixed_nom_tags = {
         (f"nom:{name}" if not name.startswith("nom:") else name): values for name, values in parsed_nom_tags.items()
     }
-    save_file_tags(db, file_id, prefixed_nom_tags)  # type: ignore[arg-type]  # TODO(migration): component expects str, should be int
+    save_song_tags(db, file_id, prefixed_nom_tags)  # type: ignore[arg-type]  # TODO(migration): component expects str, should be int
 
     try:
         entity_tags = {
@@ -77,8 +77,7 @@ def _sync_tags_and_entities(
         entries = _build_song_tag_entries(file_id, entity_tags)  # type: ignore[arg-type]  # TODO(migration): component expects str, should be int
         if entries:
             for entry in entries:
-                with db.library.transaction():
-                    db.library.replace_file_tags(entry["song_id"], entry["tags"])
+                db.library.replace_song_tags(entry["song_id"], entry["tags"])
         logger.debug(f"[sync_file_to_library] Seeded entities for {file_path}")
     except Exception as entity_error:
         logger.warning(f"[sync_file_to_library] Failed to seed entities: {entity_error}", exc_info=True)
@@ -89,7 +88,7 @@ def _sync_tags_and_entities(
         logger.debug(f"[sync_file_to_library] Stored chromaprint for {file_path}")
 
     if tagged_version:
-        mark_file_processed(db, file_id)  # type: ignore[arg-type]  # TODO(migration): component expects str, should be int
+        mark_song_processed(db, file_id)  # type: ignore[arg-type]  # TODO(migration): component expects str, should be int
 
     logger.debug(f"[sync_file_to_library] Synced {file_path}")
 
@@ -158,7 +157,7 @@ def sync_file_to_library(
             )
             return
 
-        upsert_library_file(
+        upsert_library_song(
             db,
             path=library_path,
             library_id=library_id,
@@ -167,7 +166,7 @@ def sync_file_to_library(
             duration_seconds=metadata.get("duration"),
         )
 
-        file_record = get_library_file(db, file_path)
+        file_record = get_library_song(db, file_path)
         if not file_record:
             logger.warning(f"[sync_file_to_library] File record not found after upsert: {file_path}")
             return

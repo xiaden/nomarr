@@ -5,10 +5,7 @@ from __future__ import annotations
 import pytest
 
 from nomarr.helpers.dto.repo_dto import (
-    FileStateAssignmentRow,
-    FileStateRow,
     HealthRow,
-    LibraryFileRow,
     LibraryFolderRow,
     LibraryRow,
     LibraryScanRow,
@@ -16,6 +13,10 @@ from nomarr.helpers.dto.repo_dto import (
     MetaRow,
     PipelineStateRow,
     SessionRow,
+    SongRow,
+    SongStateAssignmentRow,
+    SongStateRow,
+    SongTagRow,
     TagRow,
     WorkerClaimRow,
 )
@@ -47,13 +48,13 @@ class TestLibraryRow:
 
 
 @pytest.mark.unit
-class TestLibraryFileRow:
-    """Tests for LibraryFileRow TypedDict."""
+class TestSongRow:
+    """Tests for SongRow TypedDict."""
 
     @pytest.mark.unit
     def test_can_create_with_all_fields(self) -> None:
-        """LibraryFileRow should be creatable with all required fields."""
-        row = LibraryFileRow(
+        """SongRow should be creatable with all required fields."""
+        row = SongRow(
             id=1,
             library_id=1,
             folder_id=None,
@@ -148,37 +149,59 @@ class TestTagRow:
 
 
 @pytest.mark.unit
-class TestFileStateRow:
-    """Tests for FileStateRow TypedDict."""
+class TestSongTagRow:
+    """Tests for SongTagRow TypedDict."""
 
     @pytest.mark.unit
     def test_can_create_with_all_fields(self) -> None:
-        """FileStateRow should be creatable with all required fields."""
-        row = FileStateRow(
+        """SongTagRow should be creatable with all required fields."""
+        row = SongTagRow(
             id=1,
-            name="pending",
+            song_id=1,
+            tag_id=2,
+            confidence=0.95,
+            source="ml",
+            created_at=1000,
+        )
+        assert row["id"] == 1
+        assert row["song_id"] == 1
+        assert row["tag_id"] == 2
+        assert row["confidence"] == 0.95
+        assert row["source"] == "ml"
+
+
+@pytest.mark.unit
+class TestSongStateRow:
+    """Tests for SongStateRow TypedDict."""
+
+    @pytest.mark.unit
+    def test_can_create_with_all_fields(self) -> None:
+        """SongStateRow should be creatable with all required fields."""
+        row = SongStateRow(
+            id=1,
+            name="processed",
             description="Awaiting processing",
         )
         assert row["id"] == 1
-        assert row["name"] == "pending"
+        assert row["name"] == "processed"
         assert row["description"] == "Awaiting processing"
 
 
 @pytest.mark.unit
-class TestFileStateAssignmentRow:
-    """Tests for FileStateAssignmentRow TypedDict."""
+class TestSongStateAssignmentRow:
+    """Tests for SongStateAssignmentRow TypedDict."""
 
     @pytest.mark.unit
     def test_can_create_with_all_fields(self) -> None:
-        """FileStateAssignmentRow should be creatable with all required fields."""
-        row = FileStateAssignmentRow(
+        """SongStateAssignmentRow should be creatable with all required fields."""
+        row = SongStateAssignmentRow(
             id=1,
-            file_id=1,
+            song_id=1,
             state_id=1,
             created_at=1000,
         )
         assert row["id"] == 1
-        assert row["file_id"] == 1
+        assert row["song_id"] == 1
         assert row["state_id"] == 1
 
 

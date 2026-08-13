@@ -1,13 +1,13 @@
 # Library Service
 
-Composite service for library management, assembled from focused mixins. Handles library CRUD, scanning, querying, and file operations.
+Composite service for library management, assembled from focused mixins. Handles library CRUD, scanning, querying, and song operations.
 
 ## Responsibilities
 
 - Library administration (create, update, delete, configuration)
 - Scan lifecycle (quick/full scan dispatch, status, cancellation, history)
-- File search, tag discovery, and statistics
-- File-level tag operations and path reconciliation
+- Song search, tag discovery, and statistics
+- Song-level tag operations and path reconciliation
 - Per-library vector config management
 
 ## Key Modules
@@ -17,7 +17,7 @@ Composite service for library management, assembled from focused mixins. Handles
  | `__init__.py` | Exports `LibraryService` and `LibraryServiceConfig` |
  | `admin.py` | `LibraryAdminMixin` — library CRUD, clear data, vector config, worker health checks |
  | `config.py` | `LibraryServiceConfig` dataclass — namespace, tagger_version, library_root |
- | `files.py` | `LibraryFilesMixin` — file tags, reconciliation, path resolution, tag cleanup |
+ | `songs.py` | `LibrarySongsMixin` — song tags, reconciliation, path resolution, tag cleanup |
  | `query.py` | `LibraryQueryMixin` — stats, search, tag keys/values, work status, recently processed |
  | `scan.py` | `LibraryScanMixin` — quick/full scan dispatch, status, history, cancellation, validation |
 

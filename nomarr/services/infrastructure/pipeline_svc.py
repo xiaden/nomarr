@@ -6,13 +6,13 @@ import logging
 import threading
 from typing import TYPE_CHECKING
 
-from nomarr.components.library.library_file_state_comp import count_untagged_files, get_uncalibrated_tagged_file_ids
 from nomarr.components.library.library_records_comp import get_library_record
 from nomarr.components.library.library_scan_state_comp import (
     bulk_transition_pipeline_axis,
     get_libraries_in_axis_state,
     get_pipeline_state,
 )
+from nomarr.components.library.library_song_state_comp import count_untagged_files, get_uncalibrated_tagged_song_ids
 from nomarr.components.library.scan_lifecycle_comp import (
     is_scan_stale,
     transition_pipeline_axis,
@@ -52,7 +52,8 @@ class LibraryPipelineService:
     This infrastructure service owns startup recovery and the callback wiring
     between calibration generation, calibration apply, and file writeback.
 
-    Pipeline state is stored as four independent axes on the library document:
+    Pipeline state is stored as four independent axes in the ``pipeline_states``
+    table:
     - scan_state: not_scanned / scanning / scanned
     - ml_state: not_ML_processed / ML_processing / ML_processed
     - calibration_state: not_calibrated / calibrating / calibrated
@@ -305,7 +306,7 @@ class LibraryPipelineService:
         if state.get(ML_STATE_FIELD) == ML_IN_PROGRESS:
             untagged_count = count_untagged_files(self.db, int(library_id))
         elif state.get(CAL_STATE_FIELD) in {CAL_NOT_CALIBRATED, CAL_IN_PROGRESS}:
-            uncalibrated_count = len(get_uncalibrated_tagged_file_ids(self.db, int(library_id)))
+            uncalibrated_count = len(get_uncalibrated_tagged_song_ids(self.db, int(library_id)))
         elif state.get(WRITE_STATE_FIELD) in {WRITE_NOT_WRITTEN, WRITE_IN_PROGRESS}:
             reconcile_status = self.tagging_svc.get_reconcile_status(library_id)
             pending_write_count = int(reconcile_status["pending_count"])

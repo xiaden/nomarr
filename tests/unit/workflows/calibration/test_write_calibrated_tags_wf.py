@@ -46,7 +46,7 @@ class TestLoadOutputStreamsForFile:
         )
         monkeypatch.setattr(stream_store_module, "fetch_output_streams", fetch_output_streams)
 
-        result = stream_store_module.load_output_streams_for_file(
+        result = stream_store_module.load_output_streams_for_song(
             db,
             f"{'songs'}/1",
             "/music/example.flac",
@@ -77,14 +77,14 @@ class TestLoadOutputStreamsForFile:
 
     def test_returns_empty_and_skips_lookup_when_streams_are_missing(self, monkeypatch: pytest.MonkeyPatch) -> None:
         db = MagicMock()
-        db.app.get_file_states_for_files = MagicMock(return_value={})
-        db.app.remove_file_states = MagicMock()
-        db.app.add_file_states = MagicMock()
+        db.app.get_song_states_for_songs = MagicMock(return_value={})
+        db.app.remove_song_states = MagicMock()
+        db.app.add_song_states = MagicMock()
         head_infos = [_FakeHeadInfo(name="mood_multiclass", labels=["happy", "sad"], model_path="/models/mood.onnx")]
         fetch_output_streams = MagicMock(return_value=[])
         monkeypatch.setattr(stream_store_module, "fetch_output_streams", fetch_output_streams)
 
-        result = stream_store_module.load_output_streams_for_file(
+        result = stream_store_module.load_output_streams_for_song(
             db,
             f"{'songs'}/1",
             "/music/example.flac",
@@ -99,9 +99,9 @@ class TestLoadOutputStreamsForFile:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         db = MagicMock()
-        db.app.get_file_states_for_files = MagicMock(return_value={})
-        db.app.remove_file_states = MagicMock()
-        db.app.add_file_states = MagicMock()
+        db.app.get_song_states_for_songs = MagicMock(return_value={})
+        db.app.remove_song_states = MagicMock()
+        db.app.add_song_states = MagicMock()
         head_infos = [_FakeHeadInfo(name="mood_multiclass", labels=["happy", "sad"], model_path="/models/mood.onnx")]
         monkeypatch.setattr(
             stream_store_module,
@@ -109,7 +109,7 @@ class TestLoadOutputStreamsForFile:
             MagicMock(return_value=[StreamRecord(output_id="ml_model_outputs/out-404", output_index=0, values=[0.5])]),
         )
 
-        result = stream_store_module.load_output_streams_for_file(
+        result = stream_store_module.load_output_streams_for_song(
             db,
             f"{'songs'}/1",
             "/music/example.flac",
@@ -158,19 +158,19 @@ class TestWriteCalibratedTagsWorkflow:
             )
         ]
         mood_tags = _make_tags(**{"nom:mood-happy": "high"})
-        require_library_file_id = MagicMock(return_value=f"{'songs'}/1")
+        require_library_song_id = MagicMock(return_value=f"{'songs'}/1")
         discover_heads = MagicMock(return_value=head_infos)
         build_output_stream_lookup = MagicMock(return_value={"ml_model_outputs/out-1": ("mood_multiclass", "happy")})
-        load_output_streams_for_file = MagicMock(return_value=output_streams)
+        load_output_streams_for_song = MagicMock(return_value=output_streams)
         reconstruct = MagicMock(return_value=head_outputs)
         aggregate_mood_tags = MagicMock(return_value=mood_tags)
         save_mood_tags = MagicMock()
         get_calibration_version = MagicMock(return_value="cal-v1")
         update_file_calibration_hash = MagicMock()
-        monkeypatch.setattr(wf_module, "require_library_file_id", require_library_file_id)
+        monkeypatch.setattr(wf_module, "require_library_song_id", require_library_song_id)
         monkeypatch.setattr(wf_module, "discover_heads", discover_heads)
         monkeypatch.setattr(wf_module, "build_output_stream_lookup", build_output_stream_lookup)
-        monkeypatch.setattr(wf_module, "load_output_streams_for_file", load_output_streams_for_file)
+        monkeypatch.setattr(wf_module, "load_output_streams_for_song", load_output_streams_for_song)
         monkeypatch.setattr(wf_module, "reconstruct_head_outputs_from_streams", reconstruct)
         monkeypatch.setattr(wf_module, "aggregate_mood_tags", aggregate_mood_tags)
         monkeypatch.setattr(wf_module, "save_mood_tags", save_mood_tags)
@@ -180,9 +180,9 @@ class TestWriteCalibratedTagsWorkflow:
 
         wf_module.write_calibrated_tags_wf(db, params)
 
-        require_library_file_id.assert_called_once_with(db, "/music/example.flac")
+        require_library_song_id.assert_called_once_with(db, "/music/example.flac")
         build_output_stream_lookup.assert_called_once_with(db, head_infos)
-        load_output_streams_for_file.assert_called_once_with(
+        load_output_streams_for_song.assert_called_once_with(
             db,
             f"{'songs'}/1",
             "/music/example.flac",
@@ -265,18 +265,18 @@ class TestWriteCalibratedTagsWorkflow:
             calibrations={"happy": {"p5": 0.1}},
             calibration_version="cal-v1",
         )
-        require_library_file_id = MagicMock(side_effect=[f"{'songs'}/1", f"{'songs'}/2"])
+        require_library_song_id = MagicMock(side_effect=[f"{'songs'}/1", f"{'songs'}/2"])
         discover_heads = MagicMock()
         build_output_stream_lookup = MagicMock(return_value=lookup)
-        load_output_streams_for_file = MagicMock(side_effect=[output_streams_1, output_streams_2])
+        load_output_streams_for_song = MagicMock(side_effect=[output_streams_1, output_streams_2])
         reconstruct = MagicMock(side_effect=[head_outputs_1, head_outputs_2])
         aggregate_mood_tags = MagicMock(side_effect=[mood_tags_1, mood_tags_2])
         save_mood_tags = MagicMock()
         update_file_calibration_hash = MagicMock()
-        monkeypatch.setattr(wf_module, "require_library_file_id", require_library_file_id)
+        monkeypatch.setattr(wf_module, "require_library_song_id", require_library_song_id)
         monkeypatch.setattr(wf_module, "discover_heads", discover_heads)
         monkeypatch.setattr(wf_module, "build_output_stream_lookup", build_output_stream_lookup)
-        monkeypatch.setattr(wf_module, "load_output_streams_for_file", load_output_streams_for_file)
+        monkeypatch.setattr(wf_module, "load_output_streams_for_song", load_output_streams_for_song)
         monkeypatch.setattr(wf_module, "reconstruct_head_outputs_from_streams", reconstruct)
         monkeypatch.setattr(wf_module, "aggregate_mood_tags", aggregate_mood_tags)
         monkeypatch.setattr(wf_module, "save_mood_tags", save_mood_tags)
@@ -288,9 +288,9 @@ class TestWriteCalibratedTagsWorkflow:
         discover_heads.assert_not_called()
         build_output_stream_lookup.assert_called_once_with(db, head_infos)
         assert batch_ctx.output_stream_lookup is lookup
-        assert load_output_streams_for_file.call_count == 2
-        assert load_output_streams_for_file.call_args_list[0].kwargs["output_lookup"] is lookup
-        assert load_output_streams_for_file.call_args_list[1].kwargs["output_lookup"] is lookup
+        assert load_output_streams_for_song.call_count == 2
+        assert load_output_streams_for_song.call_args_list[0].kwargs["output_lookup"] is lookup
+        assert load_output_streams_for_song.call_args_list[1].kwargs["output_lookup"] is lookup
         assert batch_ctx.pending_mood_tags == [
             (f"{'songs'}/1", mood_tags_1),
             (f"{'songs'}/2", mood_tags_2),
@@ -315,17 +315,17 @@ class TestWriteCalibratedTagsWorkflow:
             calibrate_heads=False,
         )
         head_infos = [_FakeHeadInfo(name="mood_multiclass", labels=["happy", "sad"], model_path="/models/mood.onnx")]
-        require_library_file_id = MagicMock(return_value=f"{'songs'}/1")
+        require_library_song_id = MagicMock(return_value=f"{'songs'}/1")
         discover_heads = MagicMock(return_value=head_infos)
         build_output_stream_lookup = MagicMock(return_value={"ml_model_outputs/out-1": ("mood_multiclass", "happy")})
-        load_output_streams_for_file = MagicMock(return_value=[])
+        load_output_streams_for_song = MagicMock(return_value=[])
         reconstruct = MagicMock()
         save_mood_tags = MagicMock()
         update_file_calibration_hash = MagicMock()
-        monkeypatch.setattr(wf_module, "require_library_file_id", require_library_file_id)
+        monkeypatch.setattr(wf_module, "require_library_song_id", require_library_song_id)
         monkeypatch.setattr(wf_module, "discover_heads", discover_heads)
         monkeypatch.setattr(wf_module, "build_output_stream_lookup", build_output_stream_lookup)
-        monkeypatch.setattr(wf_module, "load_output_streams_for_file", load_output_streams_for_file)
+        monkeypatch.setattr(wf_module, "load_output_streams_for_song", load_output_streams_for_song)
         monkeypatch.setattr(wf_module, "reconstruct_head_outputs_from_streams", reconstruct)
         monkeypatch.setattr(wf_module, "save_mood_tags", save_mood_tags)
         monkeypatch.setattr(wf_module, "update_file_calibration_hash", update_file_calibration_hash)

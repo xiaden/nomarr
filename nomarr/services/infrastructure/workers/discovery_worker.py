@@ -14,7 +14,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from multiprocessing import Event
 from typing import TYPE_CHECKING, Any
 
-from nomarr.components.library.library_file_mutation_comp import update_last_tagged_at
+from nomarr.components.library.library_song_mutation_comp import update_last_tagged_at
 from nomarr.helpers.constants.file_states import (
     STATE_ERRORED,
     STATE_NOT_ERRORED,
@@ -87,44 +87,44 @@ def _malloc_trim() -> None:
 
 def _execute_deferred_writes(db: Database, writes: DeferredFileWrites, worker_id: str) -> None:
     """Persist deferred file writes and release the worker claim."""
-    from nomarr.components.library.file_sync_comp import save_file_tags
-    from nomarr.components.library.library_file_mutation_comp import set_chromaprint
-    from nomarr.components.library.library_file_state_comp import transition_file_state
+    from nomarr.components.library.library_song_mutation_comp import set_chromaprint
+    from nomarr.components.library.library_song_state_comp import transition_song_state
+    from nomarr.components.library.song_sync_comp import save_song_tags
     from nomarr.components.ml.inference.ml_output_stream_store_comp import StreamWrite, upsert_output_streams
     from nomarr.components.tagging.tag_parsing_comp import parse_tag_values
     from nomarr.components.workers.worker_discovery_comp import release_claim
 
-    file_id_str = writes.file_id
-    file_id = int(file_id_str)
+    song_id_str = writes.file_id
+    song_id = int(song_id_str)
     try:
         parsed_nom_tags = parse_tag_values(writes.db_tags) if writes.db_tags else {}
         prefixed_nom_tags = {
             (f"nom:{name}" if not name.startswith("nom:") else name): values for name, values in parsed_nom_tags.items()
         }
-        save_file_tags(db, file_id_str, prefixed_nom_tags)
+        save_song_tags(db, song_id_str, prefixed_nom_tags)
         if writes.chromaprint:
-            set_chromaprint(db, file_id, writes.chromaprint)
+            set_chromaprint(db, song_id, writes.chromaprint)
         if writes.raw_output_streams:
             upsert_output_streams(
                 db,
-                file_id=file_id,
+                song_id=song_id,
                 streams=[
                     StreamWrite(output_id=stream.output_id, values=stream.values)
                     for stream in writes.raw_output_streams
                 ],
             )
-        transition_file_state(db, [file_id], STATE_NOT_PROCESSED, STATE_PROCESSED)
-        update_last_tagged_at(db, file_id)
-        transition_file_state(db, [file_id], STATE_NOT_VECTORS_EXTRACTED, STATE_VECTORS_EXTRACTED)
+        transition_song_state(db, [song_id], STATE_NOT_PROCESSED, STATE_PROCESSED)
+        update_last_tagged_at(db, song_id)
+        transition_song_state(db, [song_id], STATE_NOT_VECTORS_EXTRACTED, STATE_VECTORS_EXTRACTED)
         logger.debug("[%s] Async writes done for %s (%d tags)", worker_id, writes.path, len(writes.db_tags))
     except Exception:
         try:
-            transition_file_state(db, [file_id], STATE_NOT_ERRORED, STATE_ERRORED)
+            transition_song_state(db, [song_id], STATE_NOT_ERRORED, STATE_ERRORED)
         except Exception:
-            logger.warning("[%s] Failed to set errored state for %s", worker_id, file_id, exc_info=True)
+            logger.warning("[%s] Failed to set errored state for %s", worker_id, song_id, exc_info=True)
         logger.exception("[%s] Async write failed for %s — file will be retried", worker_id, writes.path)
     finally:
-        release_claim(db, file_id)
+        release_claim(db, song_id)
 
 
 class DiscoveryWorker(multiprocessing.Process):
@@ -226,20 +226,18 @@ class DiscoveryWorker(multiprocessing.Process):
             logger.warning("[%s] Failed to clear stale VRAM promises at startup", self.worker_id, exc_info=True)
         config = ProcessorConfig(**self.processor_config_dict)
         self._current_status = "healthy"
-        with db.app.transaction():
-            db.app.update_health(
-                self.worker_id,
-                {
-                    "component_type": "worker",
-                    "status": "starting",
-                    "last_heartbeat": now_ms().value,
-                },
-            )
-        with db.app.transaction():
-            db.app.update_health(
-                self.worker_id,
-                {"status": "healthy", "error": None, "last_heartbeat": now_ms().value},
-            )
+        db.app.update_health(
+            self.worker_id,
+            {
+                "component_type": "worker",
+                "status": "starting",
+                "last_heartbeat": now_ms().value,
+            },
+        )
+        db.app.update_health(
+            self.worker_id,
+            {"status": "healthy", "error": None, "last_heartbeat": now_ms().value},
+        )
         logger.info(
             "[%s] Discovery worker started (pid=%s, tier=%d, prefer_gpu=%s)",
             self.worker_id,
@@ -308,7 +306,7 @@ class DiscoveryWorker(multiprocessing.Process):
             return None
 
     def _check_resource_headroom(
-        self, db: Database, file_id: int, rm_config: ResourceManagementConfig | None
+        self, db: Database, song_id: int, rm_config: ResourceManagementConfig | None
     ) -> float | None:
         if rm_config is None or not rm_config.enabled:
             return None
@@ -329,7 +327,7 @@ class DiscoveryWorker(multiprocessing.Process):
                 resource_status.vram_used_mb,
                 resource_status.ram_used_mb,
             )
-            release_claim(db, file_id)
+            release_claim(db, song_id)
             self._current_status = "recovering"
             return internal_s().value + 30.0
         if not resource_status.vram_ok and resource_status.ram_ok:
@@ -341,7 +339,7 @@ class DiscoveryWorker(multiprocessing.Process):
     def _process_claimed_file(
         self,
         db: Database,
-        file_id: int,
+        song_id: int,
         config: ProcessorConfig,
         onnx_cache: ONNXModelCache | None,
         pending_write: Future[None] | None,
@@ -350,16 +348,16 @@ class DiscoveryWorker(multiprocessing.Process):
         """Process a claimed file and schedule any deferred database writes."""
         import sys
 
-        from nomarr.components.library.library_file_query_comp import get_file_by_id
-        from nomarr.components.library.library_file_state_comp import transition_file_state
+        from nomarr.components.library.library_song_query_comp import get_song_by_id
+        from nomarr.components.library.library_song_state_comp import transition_song_state
         from nomarr.components.workers.worker_discovery_comp import release_claim
         from nomarr.workflows.processing.process_file_wf import process_file_workflow
 
-        logger.debug("[%s] Fetching file doc for %s", self.worker_id, file_id)
-        file_doc = get_file_by_id(db, file_id)
+        logger.debug("[%s] Fetching file doc for %s", self.worker_id, song_id)
+        file_doc = get_song_by_id(db, song_id)
         if not file_doc:
-            logger.warning("[%s] Claimed file %s not found in database", self.worker_id, file_id)
-            release_claim(db, file_id)
+            logger.warning("[%s] Claimed file %s not found in database", self.worker_id, song_id)
+            release_claim(db, song_id)
             return pending_write, False
         file_path = file_doc["path"]
         try:
@@ -370,7 +368,7 @@ class DiscoveryWorker(multiprocessing.Process):
         sys.stdout.flush()
         sys.stderr.flush()
         assert onnx_cache is not None, "onnx_cache must be warmed before processing"
-        result = process_file_workflow(path=file_path, config=config, db=db, file_id=str(file_id), cache=onnx_cache)
+        result = process_file_workflow(path=file_path, config=config, db=db, file_id=str(song_id), cache=onnx_cache)
         logger.debug("[%s] Workflow returned for %s", self.worker_id, file_path)
         _malloc_trim()
         if pending_write is not None:
@@ -378,9 +376,9 @@ class DiscoveryWorker(multiprocessing.Process):
             pending_write = None
         if result.heads_processed == 0 and result.tags_written == 0:
             logger.info("[%s] Skipped %s (all heads skipped - likely too short)", self.worker_id, file_path)
-            transition_file_state(db, [file_id], STATE_NOT_PROCESSED, STATE_PROCESSED)
-            update_last_tagged_at(db, file_id)
-            release_claim(db, file_id)
+            transition_song_state(db, [song_id], STATE_NOT_PROCESSED, STATE_PROCESSED)
+            update_last_tagged_at(db, song_id)
+            release_claim(db, song_id)
             return None, True
         if result.deferred_writes is not None:
             pending_write = write_executor.submit(_execute_deferred_writes, db, result.deferred_writes, self.worker_id)
@@ -395,20 +393,20 @@ class DiscoveryWorker(multiprocessing.Process):
                 timing,
             )
             return pending_write, True
-        release_claim(db, file_id)
+        release_claim(db, song_id)
         return pending_write, True
 
-    def _handle_process_error(self, db: Database, file_id: int, error: Exception, consecutive_errors: int) -> int:
-        from nomarr.components.library.library_file_state_comp import transition_file_state
+    def _handle_process_error(self, db: Database, song_id: int, error: Exception, consecutive_errors: int) -> int:
+        from nomarr.components.library.library_song_state_comp import transition_song_state
         from nomarr.components.workers.worker_discovery_comp import release_claim
 
         next_errors = consecutive_errors + 1
-        logger.exception("[%s] Error processing %s: %s", self.worker_id, file_id, error)
+        logger.exception("[%s] Error processing %s: %s", self.worker_id, song_id, error)
         try:
-            transition_file_state(db, [file_id], STATE_NOT_ERRORED, STATE_ERRORED)
+            transition_song_state(db, [song_id], STATE_NOT_ERRORED, STATE_ERRORED)
         except Exception:
-            logger.warning("[%s] Failed to set errored state for %s", self.worker_id, file_id, exc_info=True)
-        release_claim(db, file_id)
+            logger.warning("[%s] Failed to set errored state for %s", self.worker_id, song_id, exc_info=True)
+        release_claim(db, song_id)
         if next_errors >= MAX_CONSECUTIVE_ERRORS:
             logger.exception("[%s] Too many consecutive errors (%d), shutting down", self.worker_id, next_errors)
         return next_errors
@@ -442,8 +440,8 @@ class DiscoveryWorker(multiprocessing.Process):
                     logger.info("[%s] Recovery window expired, resuming work", self.worker_id)
 
                 logger.debug("[%s] Polling for work...", self.worker_id)
-                file_id = discover_and_claim_file(db, self.worker_id)
-                if file_id is None:
+                song_id = discover_and_claim_file(db, self.worker_id)
+                if song_id is None:
                     idle_consecutive_polls += 1
                     if idle_consecutive_polls >= 3 and not idle_frame_sent:
                         self._send_idle_frame(True)
@@ -458,14 +456,14 @@ class DiscoveryWorker(multiprocessing.Process):
                     time.sleep(IDLE_SLEEP_S)
                     continue
 
-                int_file_id = int(file_id)
-                logger.debug("[%s] Work found: claimed file %s", self.worker_id, file_id)
+                int_song_id = int(song_id)
+                logger.debug("[%s] Work found: claimed file %s", self.worker_id, song_id)
                 if idle_frame_sent:
                     self._send_idle_frame(False)
                     idle_frame_sent = False
                 idle_consecutive_polls = 0
                 last_work_time = internal_s().value
-                recovering_until = self._check_resource_headroom(db, int_file_id, rm_config)
+                recovering_until = self._check_resource_headroom(db, int_song_id, rm_config)
                 if recovering_until is not None:
                     continue
                 if not cache_warmed:
@@ -477,9 +475,9 @@ class DiscoveryWorker(multiprocessing.Process):
                         logger.warning(
                             "[%s] Cache warmup failed; releasing claim on %s and will retry",
                             self.worker_id,
-                            file_id,
+                            song_id,
                         )
-                        release_claim(db, int_file_id)
+                        release_claim(db, int_song_id)
                         consecutive_errors += 1
                         if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
                             logger.error(
@@ -494,13 +492,13 @@ class DiscoveryWorker(multiprocessing.Process):
 
                 try:
                     pending_write, processed = self._process_claimed_file(
-                        db, int_file_id, config, onnx_cache, pending_write, write_executor
+                        db, int_song_id, config, onnx_cache, pending_write, write_executor
                     )
                     if processed:
                         files_processed += 1
                         consecutive_errors = 0
                 except Exception as exc:
-                    consecutive_errors = self._handle_process_error(db, int_file_id, exc, consecutive_errors)
+                    consecutive_errors = self._handle_process_error(db, int_song_id, exc, consecutive_errors)
                     if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
                         break
         finally:
@@ -511,8 +509,7 @@ class DiscoveryWorker(multiprocessing.Process):
                     logger.exception("[%s] Pending write failed during shutdown", self.worker_id)
             write_executor.shutdown(wait=True)
             logger.info("[%s] Discovery worker stopping (processed %d files)", self.worker_id, files_processed)
-            with db.app.transaction():
-                db.app.update_health(self.worker_id, {"status": "stopping"})
+            db.app.update_health(self.worker_id, {"status": "stopping"})
             try:
                 from nomarr.components.ml.resources.ml_vram_coordinator_comp import release_worker_promises
 
@@ -537,21 +534,35 @@ def create_discovery_worker(
     worker_index: int,
     db_hosts: str,
     db_password: str,
-    processor_config: ProcessorConfig,
+    processor_config: ProcessorConfig | dict[str, Any],
     stop_event: EventType | None = None,
     health_pipe: multiprocessing.connection.Connection | None = None,
     execution_tier: int = 0,
     prefer_gpu: bool = True,
 ) -> DiscoveryWorker:
-    """Create a discovery worker for the given index."""
+    """Create a discovery worker for the given index.
+
+    ``processor_config`` may be a ``ProcessorConfig`` dataclass (the canonical
+    form) or an already-serialized dict (e.g. a config reloaded from storage).
+    ``asdict()`` only accepts dataclass instances, so a dict must be passed
+    through unchanged — otherwise the worker restart path raises a TypeError
+    that is caught and logged, silently leaving the worker dead.
+    """
     worker_id = f"worker:tag:{worker_index}"
     from dataclasses import asdict
+
+    from nomarr.helpers.dto.processing_dto import ProcessorConfig
+
+    if isinstance(processor_config, ProcessorConfig):
+        processor_config_dict = asdict(processor_config)
+    else:
+        processor_config_dict = processor_config
 
     return DiscoveryWorker(
         worker_id=worker_id,
         db_hosts=db_hosts,
         db_password=db_password,
-        processor_config_dict=asdict(processor_config),
+        processor_config_dict=processor_config_dict,
         stop_event=stop_event,
         health_pipe=health_pipe,
         execution_tier=execution_tier,

@@ -38,7 +38,7 @@ def _row_to_dto(row: Row[Any]) -> EmbeddingStreamRecord:
     m = row._mapping
     return EmbeddingStreamRecord(
         id=m["id"],
-        file_id=m["file_id"],
+        song_id=m["song_id"],
         backbone=m["backbone_id"],
         patches_emb=m["patches_emb"],
         created_at=m["created_at"],
@@ -54,19 +54,19 @@ class EmbeddingStreamRepository:
 
     def upsert_stream(
         self,
-        file_id: int,
+        song_id: int,
         backbone: str,
         stream_payload: dict[str, Any],
     ) -> EmbeddingStreamRecord:
-        """Insert or update an embedding stream for a (file, backbone) pair.
+        """Insert or update an embedding stream for a (song, backbone) pair.
 
         ``ml_embedding_streams`` has no unique constraint on
-        ``(file_id, backbone_id)``, so this uses a select-then-insert-or-update
+        ``(song_id, backbone_id)``, so this uses a select-then-insert-or-update
         pattern.  ``patches_emb`` is extracted from *stream_payload*.
         """
         with map_persistence_exceptions():
             patches_emb: bytes = stream_payload["patches_emb"]
-            existing = self._get_existing(file_id, backbone)
+            existing = self._get_existing(song_id, backbone)
 
             if existing is not None:
                 with self._session.begin_nested():
@@ -82,7 +82,7 @@ class EmbeddingStreamRepository:
                 row = insert_one(
                     _T,
                     {
-                        "file_id": file_id,
+                        "song_id": song_id,
                         "backbone_id": backbone,
                         "patches_emb": patches_emb,
                         "created_at": now,
@@ -92,10 +92,10 @@ class EmbeddingStreamRepository:
             self._session.commit()
             return _row_to_dto(row)
 
-    def get_stream(self, file_id: int, backbone: str) -> EmbeddingStreamRecord | None:
-        """Fetch the embedding stream for a (file, backbone) pair."""
+    def get_stream(self, song_id: int, backbone: str) -> EmbeddingStreamRecord | None:
+        """Fetch the embedding stream for a (song, backbone) pair."""
         with map_persistence_exceptions():
-            return self._get_existing(file_id, backbone)
+            return self._get_existing(song_id, backbone)
 
     def list_by_backbone(
         self,
@@ -117,20 +117,20 @@ class EmbeddingStreamRepository:
             result = self._session.execute(stmt)
             return [_row_to_dto(r) for r in result.all()]
 
-    def delete_for_file(self, file_id: int) -> None:
-        """Delete all embedding streams for a given file."""
+    def delete_for_song(self, song_id: int) -> None:
+        """Delete all embedding streams for a given song."""
         with map_persistence_exceptions():
             with self._session.begin_nested():
-                stmt = delete(_T).where(_T.c.file_id == file_id)
+                stmt = delete(_T).where(_T.c.song_id == song_id)
                 self._session.execute(stmt)
             self._session.commit()
 
     # ── internal helpers ────────────────────────────────────────
 
-    def _get_existing(self, file_id: int, backbone: str) -> EmbeddingStreamRecord | None:
-        """Fetch the stream row for a (file, backbone) pair, as a DTO."""
+    def _get_existing(self, song_id: int, backbone: str) -> EmbeddingStreamRecord | None:
+        """Fetch the stream row for a (song, backbone) pair, as a DTO."""
         stmt = select(_T).where(
-            _T.c.file_id == file_id,
+            _T.c.song_id == song_id,
             _T.c.backbone_id == backbone,
         )
         result = self._session.execute(stmt)

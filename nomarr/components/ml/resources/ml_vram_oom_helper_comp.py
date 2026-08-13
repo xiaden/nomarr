@@ -38,8 +38,7 @@ def update_model_vram_from_oom(db: Database, model_path: str, requested_bytes: i
     raw = None if raw_doc is None else raw_doc.get("value")
     base = int(raw) if raw is not None else requested_bytes
     new_limit = int(base * 1.25)
-    with db.app.transaction():
-        db.app.update_config_option(f"{_META_PREFIX}{model_path}", {"value": str(new_limit)})
+    db.app.update_config_option(f"{_META_PREFIX}{model_path}", {"value": str(new_limit)})
     logger.warning(
         "[vram_probe] OOM self-heal: updated %s from %s to %s (%d bytes) — bumped probe by 25%%",
         model_path,

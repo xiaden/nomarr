@@ -39,11 +39,11 @@ class TestNdPlayRecord:
         """NdPlayRecord should be creatable with all required fields."""
         row = NdPlayRecord(
             nd_id="nd_track_1",
-            file_id=42,
+            song_id=42,
             playcount=5,
             last_played=2000,
         )
         assert row["nd_id"] == "nd_track_1"
-        assert row["file_id"] == 42
+        assert row["song_id"] == 42
         assert row["playcount"] == 5
         assert row["last_played"] == 2000

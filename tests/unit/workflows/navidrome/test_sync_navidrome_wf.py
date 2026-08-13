@@ -47,7 +47,7 @@ def _make_db(
 ) -> MagicMock:
     """Create a mock Database with app and library mocks."""
     db = MagicMock()
-    db.library.get_files_by_paths_bulk.return_value = path_map or {}
+    db.library.get_songs_by_paths_bulk.return_value = path_map or {}
     db.app.bulk_upsert_nd_tracks.return_value = 0
     db.app.bulk_ensure_nd_file_links.return_value = None
     db.app.list_nd_track_keys.return_value = existing_track_keys or []
@@ -67,7 +67,7 @@ def _song(nd_id: str, path: str, play_count: int = 0, last_played_ms: int = 0) -
 
 
 _CRAWL_PATH = "nomarr.workflows.navidrome.sync_navidrome_wf.crawl_navidrome_songs"
-_GET_FILES_BY_PATHS = "nomarr.workflows.navidrome.sync_navidrome_wf.get_files_by_paths_bulk"
+_GET_FILES_BY_PATHS = "nomarr.workflows.navidrome.sync_navidrome_wf.get_songs_by_paths_bulk"
 
 
 # ---------------------------------------------------------------------------
@@ -99,7 +99,7 @@ class TestSyncNavidrome:
 
         with (
             patch(_CRAWL_PATH, return_value=songs),
-            patch(_GET_FILES_BY_PATHS, return_value=db.library.get_files_by_paths_bulk.return_value),
+            patch(_GET_FILES_BY_PATHS, return_value=db.library.get_songs_by_paths_bulk.return_value),
         ):
             result = sync_navidrome(client, db, "user-1")
 
@@ -129,7 +129,7 @@ class TestSyncNavidrome:
 
         with (
             patch(_CRAWL_PATH, return_value=songs),
-            patch(_GET_FILES_BY_PATHS, return_value=db.library.get_files_by_paths_bulk.return_value),
+            patch(_GET_FILES_BY_PATHS, return_value=db.library.get_songs_by_paths_bulk.return_value),
         ):
             result = sync_navidrome(client, db, "user-1")
 
@@ -149,7 +149,7 @@ class TestSyncNavidrome:
 
         with (
             patch(_CRAWL_PATH, return_value=songs),
-            patch(_GET_FILES_BY_PATHS, return_value=db.library.get_files_by_paths_bulk.return_value),
+            patch(_GET_FILES_BY_PATHS, return_value=db.library.get_songs_by_paths_bulk.return_value),
         ):
             result = sync_navidrome(client, db, "user-1")
 
@@ -181,7 +181,7 @@ class TestSyncNavidrome:
 
         with (
             patch(_CRAWL_PATH, return_value=songs),
-            patch(_GET_FILES_BY_PATHS, return_value=db.library.get_files_by_paths_bulk.return_value),
+            patch(_GET_FILES_BY_PATHS, return_value=db.library.get_songs_by_paths_bulk.return_value),
         ):
             result = sync_navidrome(
                 client,
@@ -257,7 +257,7 @@ class TestSyncNavidrome:
 
         with (
             patch(_CRAWL_PATH, return_value=[]),
-            patch(_GET_FILES_BY_PATHS, return_value=db.library.get_files_by_paths_bulk.return_value),
+            patch(_GET_FILES_BY_PATHS, return_value=db.library.get_songs_by_paths_bulk.return_value),
         ):
             result = sync_navidrome(client, db, "user-1")
 
@@ -280,7 +280,7 @@ class TestSyncNavidrome:
 
         with (
             patch(_CRAWL_PATH, return_value=songs),
-            patch(_GET_FILES_BY_PATHS, return_value=db.library.get_files_by_paths_bulk.return_value),
+            patch(_GET_FILES_BY_PATHS, return_value=db.library.get_songs_by_paths_bulk.return_value),
         ):
             result = sync_navidrome(client, db, "user-1")
 
@@ -301,7 +301,7 @@ class TestSyncNavidrome:
 
         with (
             patch(_CRAWL_PATH, return_value=songs),
-            patch(_GET_FILES_BY_PATHS, return_value=db.library.get_files_by_paths_bulk.return_value),
+            patch(_GET_FILES_BY_PATHS, return_value=db.library.get_songs_by_paths_bulk.return_value),
         ):
             result = sync_navidrome(client, db, "user-1")
 
@@ -329,7 +329,7 @@ class TestSyncNavidrome:
 
         with (
             patch(_CRAWL_PATH, return_value=songs),
-            patch(_GET_FILES_BY_PATHS, return_value=db.library.get_files_by_paths_bulk.return_value),
+            patch(_GET_FILES_BY_PATHS, return_value=db.library.get_songs_by_paths_bulk.return_value),
         ):
             result = sync_navidrome(client, db, "user-1")
 

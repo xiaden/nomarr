@@ -88,7 +88,7 @@ def pipeline_state_helper_shims(monkeypatch: pytest.MonkeyPatch) -> None:
         return db.library.bulk_transition_pipeline_axis(axis_field, from_state, to_state)
 
     def _transition_pipeline_axis(db, library_id, axis_field, axis_value):
-        return db.library.update_pipeline_axis(library_id, axis_field, axis_value)
+        return db.app.upsert_pipeline_state(library_id, axis_field, {"state": axis_value})
 
     def _get_pipeline_state(db, library_id):
         return db.library.get_pipeline_state(library_id)
@@ -96,8 +96,8 @@ def pipeline_state_helper_shims(monkeypatch: pytest.MonkeyPatch) -> None:
     def _count_untagged_files(db, library_id):
         return db.songs.count_untagged_files(library_id)
 
-    def _get_uncalibrated_tagged_file_ids(db, library_id):
-        return db.songs.get_uncalibrated_tagged_file_ids(library_id)
+    def _get_uncalibrated_tagged_song_ids(db, library_id):
+        return db.songs.get_uncalibrated_tagged_song_ids(library_id)
 
     monkeypatch.setattr(
         "nomarr.services.infrastructure.pipeline_svc.get_library_record",
@@ -124,8 +124,8 @@ def pipeline_state_helper_shims(monkeypatch: pytest.MonkeyPatch) -> None:
         _count_untagged_files,
     )
     monkeypatch.setattr(
-        "nomarr.services.infrastructure.pipeline_svc.get_uncalibrated_tagged_file_ids",
-        _get_uncalibrated_tagged_file_ids,
+        "nomarr.services.infrastructure.pipeline_svc.get_uncalibrated_tagged_song_ids",
+        _get_uncalibrated_tagged_song_ids,
     )
     monkeypatch.setattr(
         "nomarr.services.infrastructure.pipeline_svc.update_scan_progress",
@@ -169,7 +169,7 @@ class TestRecoverStaleStates:
         pipeline_service.recover_stale_states()
 
         # Should transition scanning library to not_scanned
-        mock_db.library.update_pipeline_axis.assert_any_call(library_id, SCAN_STATE_FIELD, SCAN_NOT_SCANNED)
+        mock_db.app.upsert_pipeline_state.assert_any_call(library_id, SCAN_STATE_FIELD, {"state": SCAN_NOT_SCANNED})
 
     def test_recover_stale_states_calibrating(
         self,
@@ -251,4 +251,4 @@ class TestOnWriteComplete:
 
         pipeline_service.on_write_complete(library_id)
 
-        mock_db.library.update_pipeline_axis.assert_called_with(library_id, WRITE_STATE_FIELD, WRITE_COMPLETE)
+        mock_db.app.upsert_pipeline_state.assert_called_with(library_id, WRITE_STATE_FIELD, {"state": WRITE_COMPLETE})

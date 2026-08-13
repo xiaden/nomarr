@@ -20,8 +20,8 @@ from nomarr.components.navidrome.navidrome_graph_comp import (
     ensure_navidrome_file_link,
     get_top_navidrome_plays,
     list_navidrome_track_keys,
-    resolve_file_to_navidrome_track,
     resolve_navidrome_track_to_file,
+    resolve_song_to_navidrome_track,
     upsert_navidrome_track,
 )
 
@@ -63,11 +63,11 @@ class TestBulkUpsertNavidromeTracks:
 class TestEnsureNavidromeFileLink:
     def test_delegates_to_app_map(self) -> None:
         db = MagicMock()
-        db.app.map_navidrome_track_to_file = MagicMock()
+        db.app.map_navidrome_track_to_song = MagicMock()
 
         ensure_navidrome_file_link(db, "nd-1", 42)
 
-        db.app.map_navidrome_track_to_file.assert_called_once_with("nd-1", 42)
+        db.app.map_navidrome_track_to_song.assert_called_once_with("nd-1", 42)
 
 
 @pytest.mark.unit
@@ -119,13 +119,13 @@ class TestDeleteNavidromeTracksCascade:
     def test_cascade_deletes_resolved_tracks(self) -> None:
         db = MagicMock()
         db.app.get_mapped_file_for_navidrome_track = MagicMock(side_effect=[10, None, 20])
-        db.app.delete_navidrome_tracks_for_file = MagicMock(side_effect=[1, 1])
+        db.app.delete_navidrome_tracks_for_song = MagicMock(side_effect=[1, 1])
 
         result = delete_navidrome_tracks_cascade(db, ["nd-1", "nd-2", "nd-3"])
 
         assert result == 2
         assert db.app.get_mapped_file_for_navidrome_track.call_count == 3
-        assert db.app.delete_navidrome_tracks_for_file.call_count == 2
+        assert db.app.delete_navidrome_tracks_for_song.call_count == 2
 
 
 @pytest.mark.unit
@@ -152,18 +152,18 @@ class TestResolveNavidromeTrackToFile:
 class TestResolveFileToNavidromeTrack:
     def test_returns_nd_id_string(self) -> None:
         db = MagicMock()
-        db.app.resolve_file_to_navidrome_track = MagicMock(return_value="nd-42")
+        db.app.resolve_song_to_navidrome_track = MagicMock(return_value="nd-42")
 
-        result = resolve_file_to_navidrome_track(db, 10)
+        result = resolve_song_to_navidrome_track(db, 10)
 
         assert result == "nd-42"
-        db.app.resolve_file_to_navidrome_track.assert_called_once_with(10)
+        db.app.resolve_song_to_navidrome_track.assert_called_once_with(10)
 
     def test_returns_none_when_no_mapping(self) -> None:
         db = MagicMock()
-        db.app.resolve_file_to_navidrome_track = MagicMock(return_value=None)
+        db.app.resolve_song_to_navidrome_track = MagicMock(return_value=None)
 
-        result = resolve_file_to_navidrome_track(db, 10)
+        result = resolve_song_to_navidrome_track(db, 10)
 
         assert result is None
 
@@ -198,12 +198,12 @@ class TestBulkResolveFilesToNavidromeIds:
 
     def test_resolves_multiple_files(self) -> None:
         db = MagicMock()
-        db.app.resolve_file_to_navidrome_track = MagicMock(side_effect=["nd-1", None])
+        db.app.resolve_song_to_navidrome_track = MagicMock(side_effect=["nd-1", None])
 
         result = bulk_resolve_files_to_navidrome_ids(db, [10, 20])
 
         assert result == {10: "nd-1"}
-        assert db.app.resolve_file_to_navidrome_track.call_count == 2
+        assert db.app.resolve_song_to_navidrome_track.call_count == 2
 
 
 @pytest.mark.unit
@@ -254,7 +254,7 @@ class TestGetTopNavidromePlays:
             return_value=[
                 {
                     "nd_id": "nd-1",
-                    "file_id": 10,
+                    "song_id": 10,
                     "playcount": 10,
                     "last_played": 1700000000,
                 },

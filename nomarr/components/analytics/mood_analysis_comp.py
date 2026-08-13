@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, TypedDict
 
 from nomarr.components.analytics.analytics_comp import DominantVibeResult, compute_dominant_vibes
-from nomarr.components.library.library_file_query_comp import get_library_stats
+from nomarr.components.library.library_song_query_comp import get_library_stats
 
 if TYPE_CHECKING:
     from nomarr.helpers.dto.repo_dto import TagRow
@@ -30,13 +30,13 @@ class MoodAnalysisResult(TypedDict):
 # ---------------------------------------------------------------------------
 
 
-def _get_library_file_ids(db: Database, library_id: int | None) -> set[int] | None:
+def _get_library_song_ids(db: Database, library_id: int | None) -> set[int] | None:
     """Return the allowed file-id set for a library scope when requested."""
     if library_id is None:
         return None
 
     file_ids: set[int] = set()
-    file_docs = db.library.list_files(filters={"library_id": library_id}, limit=None)
+    file_docs = db.library.list_songs(library_id)
     for file_doc in file_docs:
         f_id = file_doc.get("id")
         if isinstance(f_id, int):
@@ -67,7 +67,7 @@ def _get_tag_edge_rows(
     library_id: int | None = None,
 ) -> list[tuple[int, str]]:
     """Return ``(file_id, tag_value)`` rows for one tag name."""
-    library_file_ids = _get_library_file_ids(db, library_id)
+    library_song_ids = _get_library_song_ids(db, library_id)
 
     tag_docs = _get_tag_docs_for_name(db, name)
     tag_id_to_value: dict[int, str] = {}
@@ -80,15 +80,15 @@ def _get_tag_edge_rows(
     if not tag_id_to_value:
         return []
 
-    # Query files for each tag value using search_files_by_tag
+    # Query files for each tag value using search_songs_by_tag
     rows: list[tuple[int, str]] = []
     for tag_value in tag_id_to_value.values():
-        file_docs = db.library.search_files_by_tag(name, tag_value, limit=None)
+        file_docs = db.library.search_songs_by_tag(name, tag_value, limit=None)
         for file_doc in file_docs:
             file_id = file_doc.get("id")
             if not isinstance(file_id, int):
                 continue
-            if library_file_ids is not None and file_id not in library_file_ids:
+            if library_song_ids is not None and file_id not in library_song_ids:
                 continue
             rows.append((file_id, tag_value))
 

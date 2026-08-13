@@ -67,7 +67,3 @@ class DatabaseStateError(Exception):
 
     def __init__(self, message: str | None = None) -> None:
         super().__init__(message)
-
-
-class FacadeMisuseError(RuntimeError):
-    """Raised when a write facade method is called without an active transaction context."""

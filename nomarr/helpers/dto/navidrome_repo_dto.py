@@ -25,7 +25,7 @@ class NdPlayRecord(TypedDict):
     """Aggregated play record for a Navidrome track."""
 
     nd_id: str
-    file_id: int | None
+    song_id: int | None
     playcount: int
     last_played: int
 

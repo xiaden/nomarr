@@ -19,12 +19,13 @@ Architecture rules enforced:
 6. Higher layers must not import Tier 1/Tier 2 persistence internals - NOT in import-linter
 """
 
-import ast
 import importlib.util
+import io
 import json
 import re
 import shutil
 import subprocess
+import tokenize
 from collections.abc import Generator
 from datetime import date
 from pathlib import Path
@@ -57,7 +58,7 @@ ARANGO_FIELD_ALLOWLIST: dict[tuple[str, int], str] = {
     ("nomarr/interfaces/api/types/info_types.py", 195): "2027-07-17",
     ("nomarr/interfaces/api/types/playlist_import_types.py", 44): "2027-07-17",
     ("nomarr/services/domain/analytics_svc.py", 201): "2026-10-15",
-    ("nomarr/services/domain/library_svc/files.py", 116): "2026-10-15",
+    ("nomarr/services/domain/library_svc/songs.py", 116): "2026-10-15",
     ("nomarr/services/domain/playlist_import_svc.py", 59): "2026-10-15",
     ("nomarr/services/domain/tagging_svc/query.py", 96): "2026-10-15",
     ("nomarr/services/domain/tagging_svc/query.py", 133): "2026-10-15",
@@ -71,6 +72,25 @@ ARANGO_FIELD_ALLOWLIST: dict[tuple[str, int], str] = {
     ("nomarr/workflows/processing/write_file_tags_wf.py", 121): "2026-10-15",
     ("nomarr/workflows/vectors/get_track_vector_wf.py", 32): "2026-10-15",
 }
+
+
+def _docstring_lines(content: str) -> set[int]:
+    """Return 1-based line numbers that fall inside triple-quoted docstrings.
+
+    Uses the ``tokenize`` module so prose inside docstrings is excluded from
+    scans without hiding genuine string-literal references (e.g. a
+    ``__tablename__ = "file_tags"`` line is NOT a docstring and is still
+    detected). Mirrors tests/sabotage/test_no_arango_naming.py.
+    """
+    lines: set[int] = set()
+    try:
+        for tok in tokenize.generate_tokens(io.StringIO(content).readline):
+            if tok.type == tokenize.STRING and (tok.string.startswith('"""') or tok.string.startswith("'''")):
+                for ln in range(tok.start[0], tok.end[0] + 1):
+                    lines.add(ln)
+    except (tokenize.TokenError, IndentationError, UnicodeDecodeError):
+        pass
+    return lines
 
 
 def find_python_files(directory: Path, exclude_dirs: set[str] | None = None) -> Generator[Path, None, None]:
@@ -595,7 +615,12 @@ def test_import_linter_contracts() -> None:
     test skips locally only when the binary is missing (mirroring the
     Docker-gated suite's skip precedent), never silently passing.
     """
-    binary = shutil.which("lint-imports") or shutil.which("import-linter")
+    # Prefer the project's .venv binary: the system python lacks `rich` and is
+    # PEP-668-locked, so its `lint-imports`/`import-linter` entry points crash
+    # on import. The .venv ships a working import-linter 2.13. Fall back to a
+    # PATH-resolved binary for CI environments where the venv is not present.
+    venv_lint = PROJECT_ROOT / ".venv" / "bin" / "lint-imports"
+    binary = str(venv_lint) if venv_lint.exists() else (shutil.which("lint-imports") or shutil.which("import-linter"))
     if binary is None:
         pytest.skip("import-linter not installed")
 
@@ -697,137 +722,153 @@ def test_deterministic_snapshots() -> None:
         )
 
 
-#: Mutation-prefixed method names that identify facade write methods. Mirrors
-#: the read/write classification documented in the facade modules themselves.
-_FACADE_WRITE_PREFIXES = (
-    "write",
-    "update",
-    "delete",
-    "set",
-    "add",
-    "remove",
-    "insert",
-    "upsert",
-    "create",
-    "patch",
-    "clear",
-    "truncate",
-    "merge",
-    "replace",
+#: AR-SDR-4 transaction vocabulary that must not reappear in the facade API
+#: surface. Caller-managed transactions are not a domain contract: the old
+#: `_require_transaction` guard, `FacadeMisuseError`, and `transaction()` were
+#: removed from every facade (LibraryDb, AppDb, MlDb and their sub-facades).
+#: Repositories may still use short internal transactions (begin_nested +
+#: commit); this check is scoped to the persistence API surface only.
+_FACADE_TRANSACTION_PATTERNS = (
+    re.compile(r"_require_transaction"),
+    re.compile(r"FacadeMisuseError"),
+    re.compile(r"\.transaction\("),
 )
-
-#: Facade modules that carry no guard by design - LibraryDb is a pure
-#: delegation forwarder to its four sub-facades (see its module docstring),
-#: and __init__.py only re-exports. Every other file under api/ is an
-#: implementation whose write methods must be guarded, so new facade
-#: implementations are picked up automatically by the glob below.
-_FACADE_FORWARDER_FILES = {"__init__.py", "library.py"}
 
 
 @pytest.mark.code_smell
-def test_transaction_guard_enforced() -> None:
-    """Every facade write method must enforce the AR-2 transaction guard.
+def test_facade_transaction_contract_absent() -> None:
+    """No facade exposes the AR-2 transaction guard vocabulary (AR-SDR-4).
 
-    CONTRACTS.md AR-2 requires intent-facade write methods to refuse to run
-    outside a transaction: each facade implementation defines a
-    _require_transaction(name) helper that raises FacadeMisuseError when
-    ``self._session.in_transaction()`` is false, and every write method calls
-    it before mutating. This test checks that statically with the standard
-    library's AST parser - no nomarr imports, so it runs even where the
-    package cannot be imported.
-
-    A method is a WRITE when its name starts with a mutation prefix OR when
-    its body calls self._require_transaction() (the guard call is the facade's
-    own declaration of writehood - several writes, e.g. AppDb.promise_vram and
-    LibraryTagsDb.find_or_create_tag, are named for their operation rather
-    than their mutation). A method is GUARDED when its body calls
-    self._require_transaction(), or when it raises FacadeMisuseError from an
-    in_transaction() check (inline guard, currently unused by any facade).
-    Any unguarded write is an AR-2 regression. Validated against the current
-    tree: 97 write methods, 0 false positives, 0 false negatives.
+    CONTRACTS.md AR-SDR-4 abolishes caller-managed transactions as a domain
+    contract: `_require_transaction`, `FacadeMisuseError`, and `transaction()`
+    were removed from every facade. This test checks that statically by
+    scanning nomarr/persistence/api/*.py - no nomarr imports, so it runs even
+    where the package cannot be imported. Any reappearance of the guard
+    vocabulary is an AR-SDR-4 regression. Persistence repositories may keep
+    short internal transactions; that is outside this facade-surface check.
     """
     facade_dir = NOMARR_DIR / "persistence" / "api"
-    facade_files = sorted(p for p in facade_dir.glob("*.py") if p.name not in _FACADE_FORWARDER_FILES)
-    assert facade_files, "No facade implementation files found under nomarr/persistence/api/"
+    facade_files = sorted(facade_dir.glob("*.py"))
+    assert facade_files, "No facade files found under nomarr/persistence/api/"
 
-    unguarded: list[str] = []
+    violations: list[str] = []
     for path in facade_files:
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                continue
-            if _is_facade_write_method(node) and not _has_transaction_guard(node):
-                unguarded.append(f"{path.relative_to(PROJECT_ROOT)}:{node.lineno}:{node.name}")
+        for line_num, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            if any(pat.search(line) for pat in _FACADE_TRANSACTION_PATTERNS):
+                violations.append(f"  {path.relative_to(PROJECT_ROOT)}:{line_num}: {line.strip()}")
 
-    if unguarded:
+    if violations:
         pytest.fail(
-            "Facade write methods missing the AR-2 transaction guard "
-            "(_require_transaction / FacadeMisuseError on !in_transaction()):\n"
-            + "\n".join(unguarded)
-            + "\n\nEvery facade write must run inside a transaction() context; "
-            "see nomarr/persistence/api/library_files.py for the canonical "
-            "_require_transaction pattern."
+            "Facade exposes the removed AR-2 transaction guard vocabulary "
+            "(_require_transaction / FacadeMisuseError / transaction()):\n"
+            + "\n".join(violations)
+            + "\n\nAR-SDR-4 removes caller-managed transactions from every facade; "
+            "callers must invoke write methods directly without a transaction() "
+            "context."
         )
 
 
-def _is_facade_write_method(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
-    """True when an AST method definition is a facade write method.
+#: AR-SDR-1 file-domain elimination surface (songs are the sole canonical entity).
+#: Mirrors tests/sabotage/test_no_arango_naming.py::TestNoFileDomainNaming so the
+#: pytest-level arch_qc suite enforces the same policy with faster feedback and
+#: better line-level messages.
+FILE_DOMAIN_SCAN_DIRS = [
+    Path("nomarr/persistence"),
+    *[Path(f"nomarr/{d}") for d in ("components", "services", "workflows", "interfaces", "helpers")],
+]
 
-    A method is a write when its name starts with a mutation prefix (e.g.
-    remove_file_tags, truncate_scan_records, upsert_lock) or when its body
-    calls self._require_transaction(...) - that call is the facade's own
-    declaration that the method mutates state. The second clause exists
-    because several writes are named for the operation they perform rather
-    than the mutation (AppDb.promise_vram, AppDb.release_vram,
-    LibraryTagsDb.find_or_create_tag) and are only identifiable by their
-    guard call. Both clauses are validated against the current tree: 97 write
-    methods, 0 false positives, 0 false negatives; 14 are caught solely by the
-    guard-call clause.
+# Eliminated entity/type/facade/transaction surface (hard-zero after Plans A-D).
+_FILE_ENTITY_PATTERNS = (
+    re.compile(r"\blibrary_files\b"),
+    re.compile(r"\bLibraryFile\b"),
+    re.compile(r"\bLibraryFilesDb\b"),
+    re.compile(r"\bFileRepository\b"),
+    re.compile(r"\bFileTagRepository\b"),
+    re.compile(r"\bFileStateRepository\b"),
+    re.compile(r"db\.library\.files"),
+    re.compile(r"_require_transaction"),
+    re.compile(r"FacadeMisuseError"),
+    re.compile(r"\.transaction\("),
+)
+
+# Eliminated persistence table/entity names. Scanned as code tokens; prose inside
+# docstrings/comments is excluded so prose like "current file_tags" does not count.
+_FILE_TABLE_PATTERNS = (
+    re.compile(r"\bfile_tags\b"),
+    re.compile(r"\bfile_states\b"),
+    re.compile(r"file_state_assignments"),
+)
+
+# EXCEPTION ALLOWLIST (AR-SDR-1/6/7): a matching line is NOT a violation.
+# (a) Physical audio-file tag-IO layer. (b) AR-SDR-6 constants seed source.
+# (c) Wire/API-contract `file_id` in nomarr/interfaces/ (no bare file_id pattern
+#     is scanned here - it is scoped to persistence+domain API surface in P3-S3).
+_FILE_ALLOWLIST = (
+    re.compile(r"file_tags_io_wf"),
+    re.compile(r"write_file_tags_wf"),
+    re.compile(r"read_file_tags_workflow"),
+    re.compile(r"remove_file_tags_workflow"),
+    re.compile(r"write_file_tags_workflow"),
+    re.compile(r"\bread_file_tags\b"),
+    re.compile(r"\bremove_file_tags\b"),
+    re.compile(r"\bwrite_file_tags\b"),
+    re.compile(r"file_write_comp"),
+    re.compile(r"\bTagWriter\b"),
+    re.compile(r"\bsafe_write\b"),
+    re.compile(r"file_states import"),
+    re.compile(r"pipeline_states import"),
+)
+
+
+@pytest.mark.code_smell
+@pytest.mark.slow
+def test_no_file_domain_naming_in_persistence_surface() -> None:
+    """No file-domain persistence/domain vocabulary outside the AR-SDR-1/6/7 allowlist.
+
+    Songs are the sole canonical library entity. The eliminated file-domain
+    entity/type/facade/transaction surface and the persistence table/entity
+    names (`file_tags`, `file_states`, `file_state_assignments`) must not
+    reappear in `nomarr/persistence/` or the non-persistence layers, except in
+    the physical audio-file tag-IO layer, the AR-SDR-6 constants seed source, and
+    the wire/API-contract `file_id` in interfaces. Physical-path terms
+    (`file_path`, scanner/path components, `library_folders`, scan columns,
+    `navidrome_tracks.file_path`) are intentionally NOT scanned here - they are
+    physical-filesystem terminology per AR-SDR-1.
     """
-    if node.name.startswith(_FACADE_WRITE_PREFIXES):
-        return True
-    return _calls_require_transaction(node)
+    violations: list[tuple[str, int, str]] = []
+    project_root = PROJECT_ROOT
 
+    def scan(pattern: re.Pattern[str], exclude_docstrings: bool = False) -> None:
+        for rel_dir in FILE_DOMAIN_SCAN_DIRS:
+            dir_path = project_root / rel_dir
+            if not dir_path.exists():
+                continue
+            for py_file in dir_path.rglob("*.py"):
+                try:
+                    content = py_file.read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError):
+                    continue
+                doc_lines = _docstring_lines(content) if exclude_docstrings else set()
+                rel_path = py_file.relative_to(project_root).as_posix()
+                for line_num, line in enumerate(content.splitlines(), start=1):
+                    if line.lstrip().startswith("#"):
+                        continue
+                    if exclude_docstrings and line_num in doc_lines:
+                        continue
+                    if pattern.search(line) and not any(allow.search(line) for allow in _FILE_ALLOWLIST):
+                        violations.append((rel_path, line_num, line.strip()))
 
-def _has_transaction_guard(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
-    """True when a method body enforces the AR-2 in_transaction guard.
+    for pattern in _FILE_ENTITY_PATTERNS:
+        scan(pattern)
+    for pattern in _FILE_TABLE_PATTERNS:
+        scan(pattern, exclude_docstrings=True)
 
-    Accepts the canonical shape - a call to self._require_transaction(name),
-    the shared helper every facade implements - or an inline guard: a
-    FacadeMisuseError raise combined with an in_transaction() call. The
-    inline clause is defensive; every write in the current tree uses the
-    helper, so it never fires today.
-    """
-    if _calls_require_transaction(node):
-        return True
-    calls_in_transaction = False
-    raises_facade_misuse = False
-    for inner in ast.walk(node):
-        if (
-            isinstance(inner, ast.Call)
-            and isinstance(inner.func, ast.Attribute)
-            and inner.func.attr == "in_transaction"
-        ):
-            calls_in_transaction = True
-        if (
-            isinstance(inner, ast.Raise)
-            and isinstance(inner.exc, ast.Call)
-            and isinstance(inner.exc.func, ast.Name)
-            and inner.exc.func.id == "FacadeMisuseError"
-        ):
-            raises_facade_misuse = True
-    return calls_in_transaction and raises_facade_misuse
-
-
-def _calls_require_transaction(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
-    """True when the body contains a self._require_transaction(...) call."""
-    for inner in ast.walk(node):
-        if (
-            isinstance(inner, ast.Call)
-            and isinstance(inner.func, ast.Attribute)
-            and isinstance(inner.func.value, ast.Name)
-            and inner.func.value.id == "self"
-            and inner.func.attr == "_require_transaction"
-        ):
-            return True
-    return False
+    if violations:
+        unique = sorted(set(violations))
+        report = "\n".join(f"  {p}:{ln}: {txt}" for p, ln, txt in unique[:20])
+        if len(unique) > 20:
+            report += f"\n  ... and {len(unique) - 20} more"
+        pytest.fail(
+            "AR-SDR-1 violation: file-domain persistence/domain vocabulary found "
+            "(songs are the sole canonical entity).\n" + report
+        )

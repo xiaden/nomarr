@@ -16,7 +16,7 @@ class TestEmbeddingRecord:
         """EmbeddingRecord should be creatable with all required fields."""
         row = EmbeddingRecord(
             id=1,
-            file_id=42,
+            song_id=42,
             backbone_id="bb_test",
             tier="hot",
             embed_dim=128,
@@ -28,7 +28,7 @@ class TestEmbeddingRecord:
             updated_at=2000,
         )
         assert row["id"] == 1
-        assert row["file_id"] == 42
+        assert row["song_id"] == 42
         assert row["backbone_id"] == "bb_test"
         assert row["tier"] == "hot"
         assert row["embed_dim"] == 128
@@ -48,10 +48,10 @@ class TestSimilarResult:
     def test_can_create_with_all_fields(self) -> None:
         """SimilarResult should be creatable with all required fields."""
         row = SimilarResult(
-            file_id=42,
+            song_id=42,
             backbone_id="bb_test",
             distance=0.15,
         )
-        assert row["file_id"] == 42
+        assert row["song_id"] == 42
         assert row["backbone_id"] == "bb_test"
         assert row["distance"] == 0.15

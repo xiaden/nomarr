@@ -59,44 +59,27 @@ def _default_scan_doc(library_id: int) -> dict[str, Any]:
     library_key = library_key_from_ref(str(library_id))
     return {
         "key": library_key,
-        "library_key": library_key,
         **_DEFAULT_SCAN_FIELDS,
     }
 
 
 def ensure_scan_state(db: Database, library_id: int) -> dict[str, Any]:
-    """Return the scan document for a library, creating or repairing it when needed."""
-    library_key = library_key_from_ref(str(library_id))
+    """Return the scan document for a library, creating it when missing."""
     scan_doc = cast("dict[str, Any] | None", db.library.get_scan(library_id))
 
     if scan_doc is None:
         default_doc = _default_scan_doc(library_id)
-        with db.library.transaction():
-            db.library.add_scan(library_id, default_doc)
+        db.library.add_scan(library_id, default_doc)
         scan_doc = cast("dict[str, Any] | None", db.library.get_scan(library_id)) or default_doc
-    elif scan_doc.get("library_key") != library_key:
-        repaired_doc = {
-            **_DEFAULT_SCAN_FIELDS,
-            **scan_doc,
-            "key": library_key,
-            "library_key": library_key,
-        }
-        with db.library.transaction():
-            db.library.remove_scan(library_id)
-        with db.library.transaction():
-            db.library.add_scan(library_id, repaired_doc)
-        scan_doc = cast("dict[str, Any] | None", db.library.get_scan(library_id)) or repaired_doc
 
     return scan_doc
 
 
 def get_scan_state(db: Database, library_id: int) -> dict[str, Any] | None:
-    """Return the scan document for a library, repairing legacy rows when found."""
+    """Return the scan document for a library, or None when no scan exists."""
     scan_doc = cast("dict[str, Any] | None", db.library.get_scan(library_id))
     if scan_doc is None:
         return None
-    if scan_doc.get("library_key") != library_key_from_ref(str(library_id)):
-        return ensure_scan_state(db, library_id)
     return scan_doc
 
 
@@ -106,8 +89,7 @@ def update_scan_state(db: Database, library_id: int, **fields: Any) -> dict[str,
     if not fields:
         return scan_doc
 
-    with db.library.transaction():
-        db.library.update_scan(library_id, fields)
+    db.library.update_scan(library_id, fields)
     refreshed = cast("dict[str, Any] | None", db.library.get_scan(library_id))
     if refreshed is not None:
         return refreshed
@@ -120,7 +102,7 @@ def transition_pipeline_axis(
     axis_field: str,
     next_state: str,
 ) -> None:
-    """Update a single pipeline axis on a library document.
+    """Update a single pipeline axis on a library's pipeline-state row.
 
     Validates that the transition is allowed from the current axis state.
 
@@ -143,8 +125,7 @@ def transition_pipeline_axis(
                     f"Allowed targets: {sorted(allowed)}"
                 )
                 raise ValueError(msg)
-    with db.app.transaction():
-        db.app.update_pipeline_axis(library_id, axis_field, next_state)
+    db.app.upsert_pipeline_state(library_id, axis_field, {"state": next_state})
 
 
 def get_pipeline_state(db: Database, library_id: int) -> dict[str, str]:
@@ -163,7 +144,7 @@ def get_libraries_in_axis_state(
     axis_field: str,
     axis_value: str,
 ) -> list[int]:
-    """Return library document IDs where the given axis field matches the value."""
+    """Return library IDs whose pipeline-state row matches the axis value."""
     return db.app.get_libraries_in_axis_state(axis_field, axis_value)
 
 
@@ -194,6 +175,5 @@ def bulk_transition_pipeline_axis(
         raise ValueError(msg)
     library_ids = get_libraries_in_axis_state(db, axis_field, from_state)
     for library_id in library_ids:
-        with db.app.transaction():
-            db.app.update_pipeline_axis(library_id, axis_field, to_state)
+        db.app.upsert_pipeline_state(library_id, axis_field, {"state": to_state})
     return len(library_ids)

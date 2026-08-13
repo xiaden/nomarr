@@ -1,121 +1,100 @@
 """Sabotage tests: transaction policy and facade API shape (AR-1, AR-2).
 
-Shipped state (per CONTRACTS.md AR-2):
-- WRITE facade methods require a ``transaction()`` context; calling them
-  outside one raises ``FacadeMisuseError``.
+Shipped state (per CONTRACTS.md AR-2 / AR-SDR-4):
+- WRITE facade methods succeed WITHOUT a ``transaction()`` context; the
+  ``transaction()`` context manager and the ``_require_transaction`` guard
+  have been removed from all facades (``LibraryDb``, ``AppDb``, ``MlDb`` and
+  their sub-facades). Callers may invoke write methods directly.
 - READ facade methods use SQLAlchemy autobegin (no explicit transaction).
-- ``transaction()`` is a context manager on each sub-facade (``LibraryDb``,
-  ``AppDb``, ``MlDb``) that wraps ``session.begin()``; entering it when a
-  transaction is already active (e.g. after an autobegun read) warns and
-  reuses the active transaction instead of nesting.
-- Per-write rule: each write runs in its own ``with db.<facade>.transaction():``
-  block (one write per block).
+- ``FacadeMisuseError`` is no longer part of the shipped API and must not be
+  importable from ``nomarr.helpers.exceptions``.
 - Facade methods return domain objects (TypedDict-like) with typed fields and
   accept domain-shaped payloads (not integer PKs).
 """
 
 from __future__ import annotations
 
-# ---------------------------------------------------------------------------
-# Defensive import: FacadeMisuseError lives in nomarr.helpers.exceptions and
-# is imported directly at runtime. The TYPE_CHECKING stub satisfies pyright
-# without affecting runtime behavior.
-# ---------------------------------------------------------------------------
-from typing import TYPE_CHECKING
-
 import pytest
 
-if TYPE_CHECKING:
-    # Static-analysis stub mirroring the real class in nomarr.helpers.exceptions.
-    # Satisfies pyright without affecting runtime behavior.
-    class FacadeMisuseError(RuntimeError): ...
-else:
-    try:
-        from nomarr.helpers.exceptions import FacadeMisuseError  # type: ignore[assignment]
-    except ImportError:
-        # Defensive fallback — skipped while the real class imports cleanly
-        # from nomarr.helpers.exceptions. Keeps the module importable if the
-        # class is ever removed.
-        FacadeMisuseError = type(
-            "_FacadeMisuseErrorPlaceholder",
-            (RuntimeError,),
-            {"__doc__": "Fallback — real FacadeMisuseError unavailable from nomarr.helpers.exceptions"},
-        )
-
-
 # ---------------------------------------------------------------------------
-# Test 1: Write methods must require transaction() context
+# Test 1: FacadeMisuseError is no longer importable
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.sabotage_check
-class TestWriteMethodsRequireTransaction:
-    """Shipped state: WRITE methods raise FacadeMisuseError outside transaction().
+class TestFacadeMisuseErrorRemoved:
+    """Shipped state: FacadeMisuseError no longer exists.
 
-    Per CONTRACTS.md AR-2, every guarded write method checks the session
-    transaction before running; with no active transaction it raises
-    ``FacadeMisuseError`` naming the write method:
-        if not self._session.in_transaction():
-            raise FacadeMisuseError(
-                f"{type(self).__name__}.{method_name}() is a write method "
-                f"— call within a transaction() context"
-            )
-
-    Callers must run each write inside ``with db.<facade>.transaction():``
-    (one write per block). The unwrapped ``add_library`` call in this test
-    exercises the guard and must raise.
+    Per CONTRACTS.md AR-SDR-4 the transaction contract (and the
+    ``FacadeMisuseError`` raised by its guard) is removed. Importing it from
+    ``nomarr.helpers.exceptions`` must raise ImportError.
     """
 
-    def test_write_method_outside_transaction_raises(self, db, seed_data):
-        """Calling a WRITE facade method without transaction() raises FacadeMisuseError.
-
-        Exercises the AR-2 guard: ``add_library`` invoked with no active
-        transaction must raise ``FacadeMisuseError`` (matching "write method").
-        """
-        with pytest.raises(FacadeMisuseError, match="write method"):
-            # add_library is a WRITE method — should require transaction() context
-            db.library.add_library(
-                {
-                    "name": "SabotageTestLib",
-                    "path": "/tmp/sabotage_test",
-                    "library_type": "music",
-                }
-            )
+    def test_facade_misuse_error_not_importable(self):
+        """Importing FacadeMisuseError from nomarr.helpers.exceptions raises ImportError."""
+        with pytest.raises(ImportError):
+            from nomarr.helpers.exceptions import FacadeMisuseError  # noqa: F401
 
 
 # ---------------------------------------------------------------------------
-# Test 2: Nested transaction detection
+# Test 2: Write methods succeed without transaction context
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.sabotage_check
-class TestNestedTransactionDetection:
-    """Shipped state: transaction() warns and reuses an active transaction.
+class TestWriteMethodsWorkWithoutTransaction:
+    """Shipped state: WRITE methods succeed without transaction().
 
-    Per CONTRACTS.md AR-2, ``transaction()`` is available on ``LibraryDb``,
-    ``AppDb``, and ``MlDb``. Entering it when a transaction is already active
-    (e.g. after an autobegun read) issues a ``UserWarning`` and returns the
-    existing transaction instead of nesting or committing — a caller's staged
-    writes are never discarded.
+    Per CONTRACTS.md AR-2 / AR-SDR-4, write facade methods no longer require a
+    ``transaction()`` context. Calling them directly must succeed.
     """
 
-    def test_nested_transaction_detection(self, db):
-        """transaction() exists and is callable on the LibraryDb facade.
-
-        Per AR-2, ``transaction()`` is part of the facade API — a context
-        manager wrapping ``session.begin()`` that warns and reuses an active
-        transaction when entered after an autobegun read.
-        """
-        # Check that the transaction() method exists
-        assert hasattr(db.library, "transaction"), (
-            "LibraryDb must have a transaction() method (AR-2). "
-            "This method wraps session.begin() and warns if called after autobegin."
+    def test_write_method_succeeds_without_transaction(self, db, seed_data):
+        """Calling a WRITE facade method without transaction() succeeds."""
+        result = db.library.add_library(
+            {
+                "name": "SabotageTestLib",
+                "path": "/tmp/sabotage_test",
+                "library_type": "music",
+            }
         )
-        assert callable(db.library.transaction), "LibraryDb.transaction must be callable (context manager)."
+        assert isinstance(result, int), "add_library should return an integer ID"
+        db.library.remove_library(result)
 
 
 # ---------------------------------------------------------------------------
-# Test 3: Read methods work without explicit transaction
+# Test 3: Facades expose no transaction() or _require_transaction
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.sabotage_check
+class TestNoTransactionContract:
+    """Shipped state: transaction() and _require_transaction are removed.
+
+    Per CONTRACTS.md AR-SDR-4, ``transaction()`` and ``_require_transaction``
+    have been removed from every facade. Facades must not expose them.
+    """
+
+    def test_facades_do_not_expose_transaction(self, db):
+        """LibraryDb, AppDb, and MlDb must not expose a transaction() method."""
+        for facade in (db.library, db.app, db.ml):
+            assert not hasattr(facade, "transaction"), (
+                f"{type(facade).__name__} must not have a transaction() method (AR-SDR-4)."
+            )
+            assert not hasattr(facade, "_require_transaction"), (
+                f"{type(facade).__name__} must not have a _require_transaction guard (AR-SDR-4)."
+            )
+
+    def test_sub_facades_do_not_expose_transaction(self, db):
+        """Sub-facades (songs, tags, scans, regions) must not expose transaction()."""
+        for sub in (db.library.songs, db.library.tags, db.library.scans, db.library.regions):
+            assert not hasattr(sub, "transaction"), (
+                f"{type(sub).__name__} must not have a transaction() method (AR-SDR-4)."
+            )
+
+
+# ---------------------------------------------------------------------------
+# Test 4: Read methods work without explicit transaction
 # ---------------------------------------------------------------------------
 
 
@@ -128,10 +107,7 @@ class TestReadMethodsWorkWithoutTransaction:
     """
 
     def test_read_method_works_without_explicit_transaction(self, db, seed_data):
-        """Calling a READ facade method without transaction() succeeds.
-
-        Reads use SQLAlchemy autobegin safely and are unguarded.
-        """
+        """Calling a READ facade method without transaction() succeeds."""
         # list_libraries is a READ method — should work without transaction
         result = db.library.list_libraries()
         assert isinstance(result, list), "READ methods should return results without requiring transaction()"
@@ -143,7 +119,7 @@ class TestReadMethodsWorkWithoutTransaction:
 
 
 # ---------------------------------------------------------------------------
-# Test 4: Facade methods return domain objects, not raw dicts
+# Test 5: Facade methods return domain objects, not raw dicts
 # ---------------------------------------------------------------------------
 
 
@@ -185,7 +161,7 @@ class TestFacadeMethodsReturnDomainObjects:
 
 
 # ---------------------------------------------------------------------------
-# Test 5: Facade methods accept domain identifiers
+# Test 6: Facade methods accept domain identifiers
 # ---------------------------------------------------------------------------
 
 
@@ -214,16 +190,8 @@ class TestFacadeMethodsAcceptDomainIdentifiers:
             "library_type": "music",
         }
 
-        # Verify the method accepts this payload shape
-        # (may fail if DB is not available, but the API shape is the check)
-        try:
-            result = db.library.add_library(payload)
-            # If we get here, the method accepts the payload shape
-            assert isinstance(result, int), "add_library should return an integer ID"
-            # Cleanup
-            db.library.remove_library(result)
-        except FacadeMisuseError:
-            # If the guard is implemented, this is expected without transaction()
-            # This is acceptable — the API shape test passes if the method
-            # accepts the payload (even if it later rejects due to no transaction)
-            pass
+        # Verify the method accepts this payload shape and returns an integer ID
+        result = db.library.add_library(payload)
+        assert isinstance(result, int), "add_library should return an integer ID"
+        # Cleanup
+        db.library.remove_library(result)

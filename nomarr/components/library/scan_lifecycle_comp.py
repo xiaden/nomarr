@@ -194,15 +194,14 @@ def mark_scan_started(db: Database, library_id: int, scan_type: str) -> None:
         scan_type: ``"quick"`` or ``"full"``
 
     """
-    with db.library.transaction():
-        db.library.add_scan(
-            library_id,
-            {
-                "scan_type": scan_type,
-                "status": "in_progress",
-                "started_at": now_ms().value,
-            },
-        )
+    db.library.add_scan(
+        library_id,
+        {
+            "scan_type": scan_type,
+            "status": "in_progress",
+            "started_at": now_ms().value,
+        },
+    )
 
 
 def mark_scan_completed(db: Database, library_id: int) -> None:
@@ -213,14 +212,13 @@ def mark_scan_completed(db: Database, library_id: int) -> None:
         library_id: Library document ``id``
 
     """
-    with db.library.transaction():
-        db.library.update_scan(
-            library_id,
-            {
-                "status": "completed",
-                "finished_at": now_ms().value,
-            },
-        )
+    db.library.update_scan(
+        library_id,
+        {
+            "status": "completed",
+            "finished_at": now_ms().value,
+        },
+    )
 
 
 def update_scan_progress(
@@ -255,8 +253,7 @@ def update_scan_progress(
     if scan_error is not None:
         payload["scan_error"] = scan_error
     if payload:
-        with db.library.transaction():
-            db.library.update_scan(library_id, payload)
+        db.library.update_scan(library_id, payload)
 
 
 def is_scan_stale(db: Database, library_id: int, timeout_ms: int = 300_000) -> bool:
@@ -301,7 +298,7 @@ def on_scan_complete_pipeline_hook(db: Database, library_id: int) -> None:
         library_id: Library document ``id``
 
     """
-    file_count = len(db.library.list_library_file_ids(library_id))
+    file_count = len(db.library.list_library_song_ids(library_id))
     next_state = ML_IN_PROGRESS if file_count > 0 else ML_NOT_PROCESSED
     current = get_pipeline_state(db, library_id)
     if current.get(ML_STATE_FIELD) != next_state:

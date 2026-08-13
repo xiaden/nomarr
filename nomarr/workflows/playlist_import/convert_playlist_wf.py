@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from nomarr.components.library.library_file_query_comp import get_tracks_for_matching
+from nomarr.components.library.library_song_query_comp import get_tracks_for_matching
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database

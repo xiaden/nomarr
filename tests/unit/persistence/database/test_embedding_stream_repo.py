@@ -7,7 +7,7 @@ from sqlalchemy import insert
 
 from nomarr.persistence.database.embedding_stream_repo import EmbeddingStreamRepository
 from nomarr.persistence.models.library import Library
-from nomarr.persistence.models.library_file import LibraryFile
+from nomarr.persistence.models.song import Song
 
 
 def _insert_library(session) -> int:
@@ -29,10 +29,10 @@ def _insert_library(session) -> int:
     return int(result.scalar_one())
 
 
-def _insert_library_file(session, library_id: int, path: str = "/music/es_test/file.mp3") -> int:
-    """Insert a library file row and return its id."""
+def _insert_song(session, library_id: int, path: str = "/music/es_test/file.mp3") -> int:
+    """Insert a song row and return its id."""
     stmt = (
-        insert(LibraryFile)
+        insert(Song)
         .values(
             library_id=library_id,
             path=path,
@@ -41,7 +41,7 @@ def _insert_library_file(session, library_id: int, path: str = "/music/es_test/f
             modified_time=1000,
             created_at=1000,
         )
-        .returning(LibraryFile.id)
+        .returning(Song.id)
     )
     result = session.execute(stmt)
     return int(result.scalar_one())
@@ -55,16 +55,16 @@ class TestEmbeddingStreamRepository:
     def test_upsert_stream_insert(self, pg_session) -> None:
         """upsert_stream should insert a new embedding stream."""
         lib_id = _insert_library(pg_session)
-        file_id = _insert_library_file(pg_session, lib_id)
+        song_id = _insert_song(pg_session, lib_id)
         repo = EmbeddingStreamRepository(pg_session)
 
         record = repo.upsert_stream(
-            file_id=file_id,
+            song_id=song_id,
             backbone="bb_test",
             stream_payload={"patches_emb": b"\x00\x01\x02"},
         )
         assert record["id"] > 0
-        assert record["file_id"] == file_id
+        assert record["song_id"] == song_id
         assert record["backbone"] == "bb_test"
         assert record["patches_emb"] == b"\x00\x01\x02"
         assert record["created_at"] > 0
@@ -74,25 +74,25 @@ class TestEmbeddingStreamRepository:
     def test_upsert_stream_update(self, pg_session) -> None:
         """upsert_stream should update an existing stream for the same (file, backbone)."""
         lib_id = _insert_library(pg_session)
-        file_id = _insert_library_file(pg_session, lib_id)
+        song_id = _insert_song(pg_session, lib_id)
         repo = EmbeddingStreamRepository(pg_session)
 
-        repo.upsert_stream(file_id, "bb_upd", {"patches_emb": b"\x00"})
-        updated = repo.upsert_stream(file_id, "bb_upd", {"patches_emb": b"\xff\xfe"})
-        assert updated["file_id"] == file_id
+        repo.upsert_stream(song_id, "bb_upd", {"patches_emb": b"\x00"})
+        updated = repo.upsert_stream(song_id, "bb_upd", {"patches_emb": b"\xff\xfe"})
+        assert updated["song_id"] == song_id
         assert updated["backbone"] == "bb_upd"
         assert updated["patches_emb"] == b"\xff\xfe"
 
     def test_get_stream_existing(self, pg_session) -> None:
         """get_stream should return the stream for an existing (file, backbone) pair."""
         lib_id = _insert_library(pg_session)
-        file_id = _insert_library_file(pg_session, lib_id)
+        song_id = _insert_song(pg_session, lib_id)
         repo = EmbeddingStreamRepository(pg_session)
 
-        repo.upsert_stream(file_id, "bb_get", {"patches_emb": b"\xab"})
-        result = repo.get_stream(file_id, "bb_get")
+        repo.upsert_stream(song_id, "bb_get", {"patches_emb": b"\xab"})
+        result = repo.get_stream(song_id, "bb_get")
         assert result is not None
-        assert result["file_id"] == file_id
+        assert result["song_id"] == song_id
         assert result["backbone"] == "bb_get"
         assert result["patches_emb"] == b"\xab"
 
@@ -105,18 +105,18 @@ class TestEmbeddingStreamRepository:
     def test_list_by_backbone(self, pg_session) -> None:
         """list_by_backbone should return streams for a given backbone."""
         lib_id = _insert_library(pg_session)
-        file_id_1 = _insert_library_file(pg_session, lib_id, "/music/es_test/f1.mp3")
-        file_id_2 = _insert_library_file(pg_session, lib_id, "/music/es_test/f2.mp3")
+        song_id_1 = _insert_song(pg_session, lib_id, "/music/es_test/f1.mp3")
+        song_id_2 = _insert_song(pg_session, lib_id, "/music/es_test/f2.mp3")
         repo = EmbeddingStreamRepository(pg_session)
 
-        repo.upsert_stream(file_id_1, "bb_list", {"patches_emb": b"\x01"})
-        repo.upsert_stream(file_id_2, "bb_list", {"patches_emb": b"\x02"})
-        repo.upsert_stream(file_id_1, "bb_other", {"patches_emb": b"\x03"})
+        repo.upsert_stream(song_id_1, "bb_list", {"patches_emb": b"\x01"})
+        repo.upsert_stream(song_id_2, "bb_list", {"patches_emb": b"\x02"})
+        repo.upsert_stream(song_id_1, "bb_other", {"patches_emb": b"\x03"})
 
         results = repo.list_by_backbone("bb_list")
         assert len(results) == 2
-        file_ids = {r["file_id"] for r in results}
-        assert file_ids == {file_id_1, file_id_2}
+        song_ids = {r["song_id"] for r in results}
+        assert song_ids == {song_id_1, song_id_2}
 
     def test_list_by_backbone_with_pagination(self, pg_session) -> None:
         """list_by_backbone should support limit and offset."""
@@ -125,8 +125,8 @@ class TestEmbeddingStreamRepository:
 
         # Insert 5 streams for the same backbone
         for i in range(5):
-            fid = _insert_library_file(pg_session, lib_id, f"/music/es_test/pg_{i}.mp3")
-            repo.upsert_stream(fid, "bb_page", {"patches_emb": bytes([i])})
+            sid = _insert_song(pg_session, lib_id, f"/music/es_test/pg_{i}.mp3")
+            repo.upsert_stream(sid, "bb_page", {"patches_emb": bytes([i])})
 
         # Get first 2
         page_1 = repo.list_by_backbone("bb_page", limit=2, offset=0)
@@ -141,15 +141,15 @@ class TestEmbeddingStreamRepository:
         ids_2 = {r["id"] for r in page_2}
         assert ids_1.isdisjoint(ids_2)
 
-    def test_delete_for_file(self, pg_session) -> None:
-        """delete_for_file should remove all streams for a given file."""
+    def test_delete_for_song(self, pg_session) -> None:
+        """delete_for_song should remove all streams for a given song."""
         lib_id = _insert_library(pg_session)
-        file_id = _insert_library_file(pg_session, lib_id)
+        song_id = _insert_song(pg_session, lib_id)
         repo = EmbeddingStreamRepository(pg_session)
 
-        repo.upsert_stream(file_id, "bb_del_1", {"patches_emb": b"\x01"})
-        repo.upsert_stream(file_id, "bb_del_2", {"patches_emb": b"\x02"})
+        repo.upsert_stream(song_id, "bb_del_1", {"patches_emb": b"\x01"})
+        repo.upsert_stream(song_id, "bb_del_2", {"patches_emb": b"\x02"})
 
-        repo.delete_for_file(file_id)
-        assert repo.get_stream(file_id, "bb_del_1") is None
-        assert repo.get_stream(file_id, "bb_del_2") is None
+        repo.delete_for_song(song_id)
+        assert repo.get_stream(song_id, "bb_del_1") is None
+        assert repo.get_stream(song_id, "bb_del_2") is None

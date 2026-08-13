@@ -37,7 +37,7 @@ class TestUpdateFileCalibrationHash:
     def test_delegates_to_file_states_transition(self) -> None:
         mock_db = MagicMock()
         with patch(
-            "nomarr.components.ml.calibration.ml_calibration_state_comp.transition_file_state"
+            "nomarr.components.ml.calibration.ml_calibration_state_comp.transition_song_state"
         ) as mock_transition:
             update_file_calibration_hash(mock_db, f"{'songs'}/abc123")
 
@@ -61,7 +61,7 @@ class TestUpdateFileCalibrationHashesBatch:
             f"{'songs'}/c",
         ]
         with patch(
-            "nomarr.components.ml.calibration.ml_calibration_state_comp.transition_file_state"
+            "nomarr.components.ml.calibration.ml_calibration_state_comp.transition_song_state"
         ) as mock_transition:
             update_file_calibration_hashes_batch(mock_db, file_ids)
 
@@ -73,7 +73,7 @@ class TestUpdateFileCalibrationHashesBatch:
     def test_empty_list_makes_no_calls(self) -> None:
         mock_db = MagicMock()
         with patch(
-            "nomarr.components.ml.calibration.ml_calibration_state_comp.transition_file_state"
+            "nomarr.components.ml.calibration.ml_calibration_state_comp.transition_song_state"
         ) as mock_transition:
             update_file_calibration_hashes_batch(mock_db, [])
 

@@ -16,13 +16,13 @@ class TestOutputStreamRecord:
         """OutputStreamRecord should be creatable with all required fields."""
         row = OutputStreamRecord(
             id=1,
-            file_id=42,
+            song_id=42,
             model_id="model_1",
             status="pending",
             created_at=1000,
         )
         assert row["id"] == 1
-        assert row["file_id"] == 42
+        assert row["song_id"] == 42
         assert row["model_id"] == "model_1"
         assert row["status"] == "pending"
         assert row["created_at"] == 1000
@@ -37,13 +37,13 @@ class TestModelOutputRecord:
         """ModelOutputRecord should be creatable with all required fields."""
         row = ModelOutputRecord(
             id=1,
-            file_id=42,
+            song_id=42,
             model_id="model_1",
             output_data={"genre": "rock", "confidence": 0.95},
             created_at=1000,
         )
         assert row["id"] == 1
-        assert row["file_id"] == 42
+        assert row["song_id"] == 42
         assert row["model_id"] == "model_1"
         assert row["output_data"]["genre"] == "rock"
         assert row["output_data"]["confidence"] == 0.95
@@ -54,7 +54,7 @@ class TestModelOutputRecord:
         """ModelOutputRecord should be creatable with all 8 fields (5 required + 3 NotRequired)."""
         row = ModelOutputRecord(
             id=1,
-            file_id=42,
+            song_id=42,
             model_id="model_1",
             output_data={"genre": "rock", "confidence": 0.95},
             created_at=1000,
@@ -63,7 +63,7 @@ class TestModelOutputRecord:
             fully_labeled=True,
         )
         assert row["id"] == 1
-        assert row["file_id"] == 42
+        assert row["song_id"] == 42
         assert row["model_id"] == "model_1"
         assert row["output_data"]["genre"] == "rock"
         assert row["created_at"] == 1000

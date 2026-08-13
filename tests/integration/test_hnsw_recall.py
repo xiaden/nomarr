@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 
 from nomarr.persistence.database.vector_repo import VectorRepo
 from nomarr.persistence.models.library import Library
-from nomarr.persistence.models.library_file import LibraryFile
+from nomarr.persistence.models.song import Song
 
 # Embedding dimension must match HALFVEC(1280) in the Embedding model.
 _EMBED_DIM = 1280
@@ -33,7 +33,7 @@ _BACKBONE = "hnsw_recall_bb"
 
 
 def _create_library_and_file(session: Session, *, lib_name: str = "HNSW Lib", idx: int = 0) -> tuple[int, int]:
-    """Insert a library + one file.  Return ``(library_id, file_id)``."""
+    """Insert a library + one song.  Return ``(library_id, song_id)``."""
     lib_r = session.execute(
         insert(Library).values(
             name=lib_name,
@@ -46,8 +46,8 @@ def _create_library_and_file(session: Session, *, lib_name: str = "HNSW Lib", id
         )
     )
     lib_id = lib_r.inserted_primary_key[0]  # type: ignore[attr-defined]
-    file_r = session.execute(
-        insert(LibraryFile).values(
+    song_r = session.execute(
+        insert(Song).values(
             library_id=lib_id,
             path=f"/hnsw/lib{idx}/track{idx}.mp3",
             normalized_path=f"/hnsw/lib{idx}/track{idx}.mp3",
@@ -60,8 +60,8 @@ def _create_library_and_file(session: Session, *, lib_name: str = "HNSW Lib", id
             created_at=1000 + idx,
         )
     )
-    file_id = file_r.inserted_primary_key[0]  # type: ignore[attr-defined]
-    return lib_id, file_id
+    song_id = song_r.inserted_primary_key[0]  # type: ignore[attr-defined]
+    return lib_id, song_id
 
 
 def _random_vector(dim: int = _EMBED_DIM, seed: int | None = None) -> list[float]:
@@ -88,17 +88,17 @@ class TestHnswRecall:
         inserted vectors.  The self-match must be the nearest result (distance
         ≈ 0), and all returned distances must be monotonically non-decreasing.
         """
-        lib_id, file_id = _create_library_and_file(pg_session)
+        lib_id, song_id = _create_library_and_file(pg_session)
         repo = VectorRepo(pg_session)
 
         num_vectors = 20
         vectors = [_random_vector(seed=i) for i in range(num_vectors)]
 
         # Create additional files for each embedding (FK constraint)
-        file_ids = [file_id]
+        song_ids = [song_id]
         for i in range(1, num_vectors):
-            file_r = pg_session.execute(
-                insert(LibraryFile).values(
+            song_r = pg_session.execute(
+                insert(Song).values(
                     library_id=lib_id,
                     path=f"/hnsw/lib0/track_{i}.mp3",
                     normalized_path=f"/hnsw/lib0/track_{i}.mp3",
@@ -111,11 +111,11 @@ class TestHnswRecall:
                     created_at=1000 + i,
                 )
             )
-            file_ids.append(file_r.inserted_primary_key[0])
+            song_ids.append(song_r.inserted_primary_key[0])
 
         for i, vec in enumerate(vectors):
             repo.insert_embedding(
-                file_id=file_ids[i],
+                song_id=song_ids[i],
                 backbone_id=_BACKBONE,
                 model_id="recall_model",
                 embedding_vector=vec,
@@ -154,7 +154,7 @@ class TestHnswRecall:
         queries with a test vector. Compares HNSW results against exhaustive
         brute-force search to compute recall@10.
         """
-        lib_id, file_id = _create_library_and_file(pg_session)
+        lib_id, song_id = _create_library_and_file(pg_session)
         repo = VectorRepo(pg_session)
 
         # Generate 1000 vectors of dimension 1280
@@ -167,10 +167,10 @@ class TestHnswRecall:
             vectors.append(v.tolist())
 
         # Create additional files for each embedding (FK constraint)
-        file_ids = [file_id]
+        song_ids = [song_id]
         for i in range(1, num_vectors):
-            file_r = pg_session.execute(
-                insert(LibraryFile).values(
+            song_r = pg_session.execute(
+                insert(Song).values(
                     library_id=lib_id,
                     path=f"/hnsw/lib0/recall_track_{i}.mp3",
                     normalized_path=f"/hnsw/lib0/recall_track_{i}.mp3",
@@ -183,12 +183,12 @@ class TestHnswRecall:
                     created_at=1000 + i,
                 )
             )
-            file_ids.append(file_r.inserted_primary_key[0])
+            song_ids.append(song_r.inserted_primary_key[0])
 
         # Insert all vectors as hot embeddings
         for i, vec in enumerate(vectors):
             repo.insert_embedding(
-                file_id=file_ids[i],
+                song_id=song_ids[i],
                 backbone_id=_BACKBONE,
                 model_id="recall_benchmark_model",
                 embedding_vector=vec,
@@ -215,12 +215,12 @@ class TestHnswRecall:
         distances.sort(key=lambda x: x[1])
         brute_force_top10 = {idx for idx, _ in distances[:10]}
 
-        # Extract file_ids from HNSW results
-        hnsw_file_ids = {r["file_id"] for r in hnsw_results}
+        # Extract song_ids from HNSW results
+        hnsw_song_ids = {r["song_id"] for r in hnsw_results}
 
-        # Map file_ids back to vector indices
-        file_id_to_idx = {fid: i for i, fid in enumerate(file_ids)}
-        hnsw_indices = {file_id_to_idx[fid] for fid in hnsw_file_ids if fid in file_id_to_idx}
+        # Map song_ids back to vector indices
+        song_id_to_idx = {song_id: i for i, song_id in enumerate(song_ids)}
+        hnsw_indices = {song_id_to_idx[song_id] for song_id in hnsw_song_ids if song_id in song_id_to_idx}
 
         # Compute recall@10
         true_positives = len(brute_force_top10 & hnsw_indices)
@@ -277,10 +277,10 @@ class TestConcurrentAccess:
             )
             lib_id = lib_r.inserted_primary_key[0]  # type: ignore[attr-defined]
 
-            file_ids: list[int] = []
+            song_ids: list[int] = []
             for i in range(num_concurrent):
-                file_r = session.execute(
-                    insert(LibraryFile).values(
+                song_r = session.execute(
+                    insert(Song).values(
                         library_id=lib_id,
                         path=f"/hnsw/conc_insert/track{i}.mp3",
                         normalized_path=f"/hnsw/conc_insert/track{i}.mp3",
@@ -293,23 +293,23 @@ class TestConcurrentAccess:
                         created_at=1000 + i,
                     )
                 )
-                file_ids.append(file_r.inserted_primary_key[0])  # type: ignore[attr-defined]
+                song_ids.append(song_r.inserted_primary_key[0])  # type: ignore[attr-defined]
             session.commit()
 
         # Concurrent inserts — each thread gets its own session.
-        def _insert_one(fid: int, seed: int) -> None:
+        def _insert_one(song_id: int, seed: int) -> None:
             with pg_engine.begin() as conn:
                 s = Session(bind=conn)
                 repo = VectorRepo(s)
                 repo.insert_embedding(
-                    file_id=fid,
+                    song_id=song_id,
                     backbone_id=_BACKBONE,
                     model_id="concurrent_model",
                     embedding_vector=_random_vector(seed=seed),
                 )
 
         with ThreadPoolExecutor(max_workers=num_concurrent) as executor:
-            futures = [executor.submit(_insert_one, fid, 1000 + i) for i, fid in enumerate(file_ids)]
+            futures = [executor.submit(_insert_one, song_id, 1000 + i) for i, song_id in enumerate(song_ids)]
             for f in futures:
                 f.result()
 
@@ -346,8 +346,8 @@ class TestConcurrentAccess:
                 )
             )
             lib_id = lib_r.inserted_primary_key[0]  # type: ignore[attr-defined]
-            file_r = session.execute(
-                insert(LibraryFile).values(
+            song_r = session.execute(
+                insert(Song).values(
                     library_id=lib_id,
                     path="/hnsw/conc_query/track0.mp3",
                     normalized_path="/hnsw/conc_query/track0.mp3",
@@ -360,12 +360,12 @@ class TestConcurrentAccess:
                     created_at=1000,
                 )
             )
-            file_id = file_r.inserted_primary_key[0]  # type: ignore[attr-defined]
+            song_id = song_r.inserted_primary_key[0]  # type: ignore[attr-defined]
 
             repo = VectorRepo(session)
             for i in range(15):
                 repo.insert_embedding(
-                    file_id=file_id,
+                    song_id=song_id,
                     backbone_id=_BACKBONE,
                     model_id="conc_query_model",
                     embedding_vector=_random_vector(seed=2000 + i),

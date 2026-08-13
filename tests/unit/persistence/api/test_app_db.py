@@ -15,16 +15,15 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from nomarr.helpers.constants.pipeline_states import PIPELINE_DEFAULTS
 from nomarr.persistence.api.application import (
     AppDb,
     AppLegacyNavidromeDb,
 )
 from nomarr.persistence.database.app_repo import AppRepository
-from nomarr.persistence.database.file_state_repo import FileStateRepository
 from nomarr.persistence.database.library_repo import LibraryRepository
 from nomarr.persistence.database.navidrome_repo import NavidromeRepo
 from nomarr.persistence.database.pipeline_repo import PipelineRepository
+from nomarr.persistence.database.song_state_repo import SongStateRepository
 from nomarr.persistence.models.base import Base
 from nomarr.persistence.models.vram_promise import VramPromise
 
@@ -32,10 +31,10 @@ if TYPE_CHECKING:
     from nomarr.helpers.dto.navidrome_repo_dto import NdPlayRecord, NdTrackRecord
     from nomarr.helpers.dto.repo_dto import (
         HealthRow,
-        LibraryFileRow,
         LockRow,
         MetaRow,
         SessionRow,
+        SongRow,
         WorkerClaimRow,
     )
 
@@ -49,7 +48,11 @@ def mock_session() -> MagicMock:
 
 @pytest.fixture
 def mock_app_repo() -> MagicMock:
-    return MagicMock(spec=AppRepository)
+    # Plain MagicMock: the AppDb facade still calls file-vocab repo methods
+    # (e.g. delete_claims_for_songs) that no longer exist on the song-vocab
+    # AppRepository. Those facade methods are renamed in Plan D/E; until then
+    # the mock must accept both vocabularies.
+    return MagicMock()
 
 
 @pytest.fixture
@@ -63,13 +66,21 @@ def mock_navidrome_repo() -> MagicMock:
 
 
 @pytest.fixture
-def mock_file_state_repo() -> MagicMock:
-    return MagicMock(spec=FileStateRepository)
+def mock_song_state_repo() -> MagicMock:
+    # Plain MagicMock: the AppDb facade still calls file-vocab repo methods
+    # (get_song_state, list_songs_in_state, ...) that no longer exist on the
+    # song-vocab SongStateRepository. Those facade methods are renamed in
+    # Plan D/E; until then the mock must accept both vocabularies.
+    return MagicMock()
 
 
 @pytest.fixture
 def mock_pipeline_repo() -> MagicMock:
-    return MagicMock(spec=PipelineRepository)
+    # Plain MagicMock: the AppDb facade still calls the file-vocab
+    # list_song_docs_in_state which no longer exists on the song-vocab
+    # PipelineRepository (list_song_docs_in_state). Renamed in Plan D/E;
+    # until then the mock must accept both vocabularies.
+    return MagicMock()
 
 
 @pytest.fixture
@@ -78,7 +89,7 @@ def app_db(
     mock_app_repo: MagicMock,
     mock_library_repo: MagicMock,
     mock_navidrome_repo: MagicMock,
-    mock_file_state_repo: MagicMock,
+    mock_song_state_repo: MagicMock,
     mock_pipeline_repo: MagicMock,
 ) -> AppDb:
     return AppDb(
@@ -86,7 +97,7 @@ def app_db(
         app_repo=mock_app_repo,
         library_repo=mock_library_repo,
         navidrome_repo=mock_navidrome_repo,
-        file_state_repo=mock_file_state_repo,
+        song_state_repo=mock_song_state_repo,
         pipeline_repo=mock_pipeline_repo,
     )
 
@@ -117,7 +128,7 @@ def sqlite_app_db() -> AppDb:
         app_repo=AppRepository(session),
         library_repo=MagicMock(spec=LibraryRepository),
         navidrome_repo=MagicMock(spec=NavidromeRepo),
-        file_state_repo=MagicMock(spec=FileStateRepository),
+        song_state_repo=MagicMock(spec=SongStateRepository),
         pipeline_repo=MagicMock(spec=PipelineRepository),
     )
     try:
@@ -136,109 +147,109 @@ def sqlite_app_db() -> AppDb:
 
 class TestAppDbFileStateMethods:
     @pytest.mark.unit
-    def test_get_file_state_delegates_to_file_state_repo(self, app_db: AppDb, mock_file_state_repo: MagicMock) -> None:
-        mock_file_state_repo.get_file_state.return_value = "queued"
+    def test_get_file_state_delegates_to_song_state_repo(self, app_db: AppDb, mock_song_state_repo: MagicMock) -> None:
+        mock_song_state_repo.get_song_state.return_value = "queued"
 
-        result = app_db.get_file_state(42)
+        result = app_db.get_song_state(42)
 
         assert result == "queued"
-        mock_file_state_repo.get_file_state.assert_called_once_with(42)
+        mock_song_state_repo.get_song_state.assert_called_once_with(42)
 
     @pytest.mark.unit
-    def test_get_file_state_returns_none_when_no_state(self, app_db: AppDb, mock_file_state_repo: MagicMock) -> None:
-        mock_file_state_repo.get_file_state.return_value = None
+    def test_get_file_state_returns_none_when_no_state(self, app_db: AppDb, mock_song_state_repo: MagicMock) -> None:
+        mock_song_state_repo.get_song_state.return_value = None
 
-        result = app_db.get_file_state(99)
+        result = app_db.get_song_state(99)
 
         assert result is None
-        mock_file_state_repo.get_file_state.assert_called_once_with(99)
+        mock_song_state_repo.get_song_state.assert_called_once_with(99)
 
     @pytest.mark.unit
-    def test_get_file_states_for_files_delegates(self, app_db: AppDb, mock_file_state_repo: MagicMock) -> None:
+    def test_get_file_states_for_files_delegates(self, app_db: AppDb, mock_song_state_repo: MagicMock) -> None:
         expected = {1: {"queued"}, 2: {"tagged", "queued"}}
-        mock_file_state_repo.get_file_states_for_files.return_value = expected
+        mock_song_state_repo.get_song_states_for_songs.return_value = expected
 
-        result = app_db.get_file_states_for_files([1, 2])
+        result = app_db.get_song_states_for_songs([1, 2])
 
         assert result == expected
-        mock_file_state_repo.get_file_states_for_files.assert_called_once_with([1, 2])
+        mock_song_state_repo.get_song_states_for_songs.assert_called_once_with([1, 2])
 
     @pytest.mark.unit
-    def test_list_files_in_state_delegates(self, app_db: AppDb, mock_file_state_repo: MagicMock) -> None:
-        mock_file_state_repo.list_files_in_state.return_value = [10, 20, 30]
+    def test_list_files_in_state_delegates(self, app_db: AppDb, mock_song_state_repo: MagicMock) -> None:
+        mock_song_state_repo.list_songs_in_state.return_value = [10, 20, 30]
 
-        result = app_db.list_files_in_state("queued", limit=50)
+        result = app_db.list_songs_in_state("queued", limit=50)
 
         assert result == [10, 20, 30]
-        mock_file_state_repo.list_files_in_state.assert_called_once_with("queued", limit=50)
+        mock_song_state_repo.list_songs_in_state.assert_called_once_with("queued", limit=50)
 
     @pytest.mark.unit
-    def test_list_files_in_state_without_limit(self, app_db: AppDb, mock_file_state_repo: MagicMock) -> None:
-        mock_file_state_repo.list_files_in_state.return_value = [10]
+    def test_list_files_in_state_without_limit(self, app_db: AppDb, mock_song_state_repo: MagicMock) -> None:
+        mock_song_state_repo.list_songs_in_state.return_value = [10]
 
-        result = app_db.list_files_in_state("tagged")
+        result = app_db.list_songs_in_state("tagged")
 
         assert result == [10]
-        mock_file_state_repo.list_files_in_state.assert_called_once_with("tagged", limit=None)
+        mock_song_state_repo.list_songs_in_state.assert_called_once_with("tagged", limit=None)
 
     @pytest.mark.unit
     def test_list_file_docs_in_state_delegates_to_pipeline_repo(
         self, app_db: AppDb, mock_pipeline_repo: MagicMock
     ) -> None:
-        expected: list[LibraryFileRow] = []
-        mock_pipeline_repo.list_file_docs_in_state.return_value = expected
+        expected: list[SongRow] = []
+        mock_pipeline_repo.list_song_docs_in_state.return_value = expected
 
-        result = app_db.list_file_docs_in_state("queued", limit=10)
+        result = app_db.list_song_docs_in_state("queued", limit=10)
 
         assert result == expected
-        mock_pipeline_repo.list_file_docs_in_state.assert_called_once_with("queued", limit=10)
+        mock_pipeline_repo.list_song_docs_in_state.assert_called_once_with("queued", limit=10)
 
     @pytest.mark.unit
-    def test_count_files_in_state_delegates(self, app_db: AppDb, mock_file_state_repo: MagicMock) -> None:
-        mock_file_state_repo.count_files_in_state.return_value = 7
+    def test_count_songs_in_state_delegates(self, app_db: AppDb, mock_song_state_repo: MagicMock) -> None:
+        mock_song_state_repo.count_songs_in_state.return_value = 7
 
-        result = app_db.count_files_in_state("queued")
+        result = app_db.count_songs_in_state("queued")
 
         assert result == 7
-        mock_file_state_repo.count_files_in_state.assert_called_once_with("queued")
+        mock_song_state_repo.count_songs_in_state.assert_called_once_with("queued")
 
     @pytest.mark.unit
-    def test_add_file_states_assigns_each_file(self, app_db: AppDb, mock_file_state_repo: MagicMock) -> None:
-        app_db.add_file_states([1, 2, 3], "queued")
+    def test_add_file_states_assigns_each_file(self, app_db: AppDb, mock_song_state_repo: MagicMock) -> None:
+        app_db.add_song_states([1, 2, 3], "queued")
 
-        assert mock_file_state_repo.assign_state.call_args_list == [
+        assert mock_song_state_repo.assign_state.call_args_list == [
             call(1, "queued"),
             call(2, "queued"),
             call(3, "queued"),
         ]
 
     @pytest.mark.unit
-    def test_add_file_states_empty_list_no_calls(self, app_db: AppDb, mock_file_state_repo: MagicMock) -> None:
-        app_db.add_file_states([], "queued")
+    def test_add_file_states_empty_list_no_calls(self, app_db: AppDb, mock_song_state_repo: MagicMock) -> None:
+        app_db.add_song_states([], "queued")
 
-        mock_file_state_repo.assign_state.assert_not_called()
+        mock_song_state_repo.assign_state.assert_not_called()
 
     @pytest.mark.unit
-    def test_replace_file_states_removes_then_adds(self, app_db: AppDb, mock_file_state_repo: MagicMock) -> None:
-        app_db.replace_file_states([1, 2], "processing")
+    def test_replace_file_states_removes_then_adds(self, app_db: AppDb, mock_song_state_repo: MagicMock) -> None:
+        app_db.replace_song_states([1, 2], "processing")
 
-        mock_file_state_repo.remove_states_for_files.assert_called_once_with([1, 2])
-        assert mock_file_state_repo.assign_state.call_args_list == [
+        mock_song_state_repo.remove_states_for_songs.assert_called_once_with([1, 2])
+        assert mock_song_state_repo.assign_state.call_args_list == [
             call(1, "processing"),
             call(2, "processing"),
         ]
 
     @pytest.mark.unit
-    def test_remove_file_states_skips_empty_batch(self, app_db: AppDb, mock_file_state_repo: MagicMock) -> None:
-        app_db.remove_file_states([])
+    def test_remove_file_states_skips_empty_batch(self, app_db: AppDb, mock_song_state_repo: MagicMock) -> None:
+        app_db.remove_song_states([])
 
-        mock_file_state_repo.remove_states_for_files.assert_not_called()
+        mock_song_state_repo.remove_states_for_songs.assert_not_called()
 
     @pytest.mark.unit
-    def test_remove_file_states_delegates_non_empty(self, app_db: AppDb, mock_file_state_repo: MagicMock) -> None:
-        app_db.remove_file_states([10, 20])
+    def test_remove_file_states_delegates_non_empty(self, app_db: AppDb, mock_song_state_repo: MagicMock) -> None:
+        app_db.remove_song_states([10, 20])
 
-        mock_file_state_repo.remove_states_for_files.assert_called_once_with([10, 20])
+        mock_song_state_repo.remove_states_for_songs.assert_called_once_with([10, 20])
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -263,12 +274,6 @@ class TestAppDbPipelineStateMethods:
         mock_library_repo.get_pipeline_state.assert_called_once_with(5)
 
     @pytest.mark.unit
-    def test_update_pipeline_axis_delegates(self, app_db: AppDb, mock_library_repo: MagicMock) -> None:
-        app_db.update_pipeline_axis(5, "scan_state", "scanning")
-
-        mock_library_repo.update_pipeline_axis.assert_called_once_with(5, "scan_state", "scanning")
-
-    @pytest.mark.unit
     def test_get_libraries_in_axis_state_delegates(self, app_db: AppDb, mock_library_repo: MagicMock) -> None:
         mock_library_repo.get_libraries_in_axis_state.return_value = [1, 3, 7]
 
@@ -276,6 +281,12 @@ class TestAppDbPipelineStateMethods:
 
         assert result == [1, 3, 7]
         mock_library_repo.get_libraries_in_axis_state.assert_called_once_with("scan_state", "scanning")
+
+    @pytest.mark.unit
+    def test_upsert_pipeline_state_delegates(self, app_db: AppDb, mock_pipeline_repo: MagicMock) -> None:
+        app_db.upsert_pipeline_state(5, "scan_state", {"state": "scanning"})
+
+        mock_pipeline_repo.upsert_pipeline_state.assert_called_once_with(5, "scan_state", {"state": "scanning"})
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -385,13 +396,13 @@ class TestAppDbClaimMethods:
     @pytest.mark.unit
     def test_remove_claims_combines_worker_and_file_removals(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
         mock_app_repo.delete_claims_for_workers.return_value = 2
-        mock_app_repo.delete_claims_for_files.return_value = 3
+        mock_app_repo.delete_claims_for_songs.return_value = 3
 
-        result = app_db.remove_claims(worker_ids=["w1"], file_ids=[1, 2])
+        result = app_db.remove_claims(worker_ids=["w1"], song_ids=[1, 2])
 
         assert result == 5
         mock_app_repo.delete_claims_for_workers.assert_called_once_with(["w1"])
-        mock_app_repo.delete_claims_for_files.assert_called_once_with([1, 2])
+        mock_app_repo.delete_claims_for_songs.assert_called_once_with([1, 2])
 
     @pytest.mark.unit
     def test_remove_claims_worker_ids_only(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
@@ -401,17 +412,17 @@ class TestAppDbClaimMethods:
 
         assert result == 4
         mock_app_repo.delete_claims_for_workers.assert_called_once_with(["w1", "w2"])
-        mock_app_repo.delete_claims_for_files.assert_not_called()
+        mock_app_repo.delete_claims_for_songs.assert_not_called()
 
     @pytest.mark.unit
     def test_remove_claims_file_ids_only(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        mock_app_repo.delete_claims_for_files.return_value = 1
+        mock_app_repo.delete_claims_for_songs.return_value = 1
 
-        result = app_db.remove_claims(file_ids=[10])
+        result = app_db.remove_claims(song_ids=[10])
 
         assert result == 1
         mock_app_repo.delete_claims_for_workers.assert_not_called()
-        mock_app_repo.delete_claims_for_files.assert_called_once_with([10])
+        mock_app_repo.delete_claims_for_songs.assert_called_once_with([10])
 
     @pytest.mark.unit
     def test_remove_claims_no_filters_returns_zero(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
@@ -419,7 +430,7 @@ class TestAppDbClaimMethods:
 
         assert result == 0
         mock_app_repo.delete_claims_for_workers.assert_not_called()
-        mock_app_repo.delete_claims_for_files.assert_not_called()
+        mock_app_repo.delete_claims_for_songs.assert_not_called()
 
     @pytest.mark.unit
     def test_list_claims_delegates(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
@@ -593,15 +604,14 @@ class TestAppDbVramPromiseMethods:
         unconditionally read ``payload["id"]``, which promise_vram's payload
         does not contain.
         """
-        with sqlite_app_db.transaction():
-            sqlite_app_db.promise_vram(
-                worker_id="worker:1",
-                pid=999,
-                model_path="/models/a.onnx",
-                promised_mb=512.0,
-                total_mb=8000.0,
-                used_mb=1000.0,
-            )
+        sqlite_app_db.promise_vram(
+            worker_id="worker:1",
+            pid=999,
+            model_path="/models/a.onnx",
+            promised_mb=512.0,
+            total_mb=8000.0,
+            used_mb=1000.0,
+        )
 
         promises = sqlite_app_db.list_vram_promises()
         assert len(promises) == 1
@@ -628,35 +638,31 @@ class TestAppDbVramPromiseMethods:
         release only deleted the first match it found (list-then-break), so
         this is a deterministic regression guard for the atomic delete.
         """
-        with sqlite_app_db.transaction():
-            sqlite_app_db.promise_vram(
-                worker_id="worker:1",
-                pid=1,
-                model_path="/models/a.onnx",
-                promised_mb=512.0,
-                total_mb=8000.0,
-                used_mb=1000.0,
-            )
-        with sqlite_app_db.transaction():
-            sqlite_app_db.promise_vram(
-                worker_id="worker:1",
-                pid=2,
-                model_path="/models/a.onnx",
-                promised_mb=256.0,
-                total_mb=8000.0,
-                used_mb=1000.0,
-            )
-        with sqlite_app_db.transaction():
-            sqlite_app_db.promise_vram(
-                worker_id="worker:2",
-                pid=3,
-                model_path="/models/b.onnx",
-                promised_mb=128.0,
-                total_mb=8000.0,
-                used_mb=1000.0,
-            )
-        with sqlite_app_db.transaction():
-            sqlite_app_db.release_vram(worker_id="worker:1", model_path="/models/a.onnx")
+        sqlite_app_db.promise_vram(
+            worker_id="worker:1",
+            pid=1,
+            model_path="/models/a.onnx",
+            promised_mb=512.0,
+            total_mb=8000.0,
+            used_mb=1000.0,
+        )
+        sqlite_app_db.promise_vram(
+            worker_id="worker:1",
+            pid=2,
+            model_path="/models/a.onnx",
+            promised_mb=256.0,
+            total_mb=8000.0,
+            used_mb=1000.0,
+        )
+        sqlite_app_db.promise_vram(
+            worker_id="worker:2",
+            pid=3,
+            model_path="/models/b.onnx",
+            promised_mb=128.0,
+            total_mb=8000.0,
+            used_mb=1000.0,
+        )
+        sqlite_app_db.release_vram(worker_id="worker:1", model_path="/models/a.onnx")
 
         remaining = sqlite_app_db.list_vram_promises()
         assert len(remaining) == 1
@@ -676,41 +682,30 @@ class TestAppDbVramPromiseMethods:
 
     @pytest.mark.unit
     def test_release_all_for_worker_removes_matching_end_to_end(self, sqlite_app_db: AppDb) -> None:
-        with sqlite_app_db.transaction():
-            sqlite_app_db.promise_vram(
-                worker_id="worker:1",
-                pid=1,
-                model_path="/models/a.onnx",
-                promised_mb=512.0,
-                total_mb=8000.0,
-                used_mb=1000.0,
-            )
-        with sqlite_app_db.transaction():
-            sqlite_app_db.promise_vram(
-                worker_id="worker:1",
-                pid=2,
-                model_path="/models/b.onnx",
-                promised_mb=256.0,
-                total_mb=8000.0,
-                used_mb=1000.0,
-            )
-        with sqlite_app_db.transaction():
-            sqlite_app_db.promise_vram(
-                worker_id="worker:2",
-                pid=3,
-                model_path="/models/c.onnx",
-                promised_mb=128.0,
-                total_mb=8000.0,
-                used_mb=1000.0,
-            )
-        # release_all_for_worker performs multiple repo writes in a loop, and
-        # each repo write commits internally (begin_nested + commit), ending
-        # the session transaction. A ``with transaction():`` block would leave a
-        # closed-but-active context manager registered on the session, and
-        # SQLAlchemy forbids the loop's second write inside it. Begin the
-        # transaction without entering the context manager so the guard passes
-        # while the loop's repo-level commits (autobegin per write) proceed.
-        sqlite_app_db.transaction()
+        sqlite_app_db.promise_vram(
+            worker_id="worker:1",
+            pid=1,
+            model_path="/models/a.onnx",
+            promised_mb=512.0,
+            total_mb=8000.0,
+            used_mb=1000.0,
+        )
+        sqlite_app_db.promise_vram(
+            worker_id="worker:1",
+            pid=2,
+            model_path="/models/b.onnx",
+            promised_mb=256.0,
+            total_mb=8000.0,
+            used_mb=1000.0,
+        )
+        sqlite_app_db.promise_vram(
+            worker_id="worker:2",
+            pid=3,
+            model_path="/models/c.onnx",
+            promised_mb=128.0,
+            total_mb=8000.0,
+            used_mb=1000.0,
+        )
         sqlite_app_db.release_all_for_worker(worker_id="worker:1")
 
         remaining = sqlite_app_db.list_vram_promises()
@@ -946,7 +941,7 @@ class TestAppDbNavidromeMethods:
 
     @pytest.mark.unit
     def test_map_navidrome_track_to_file_delegates(self, app_db: AppDb, mock_navidrome_repo: MagicMock) -> None:
-        app_db.map_navidrome_track_to_file("nd1", 42)
+        app_db.map_navidrome_track_to_song("nd1", 42)
 
         mock_navidrome_repo.map_track_to_file.assert_called_once_with("nd1", 42)
 
@@ -971,7 +966,7 @@ class TestAppDbNavidromeMethods:
     def test_resolve_file_to_navidrome_track_delegates(self, app_db: AppDb, mock_navidrome_repo: MagicMock) -> None:
         mock_navidrome_repo.resolve_file_to_nd_track.return_value = "nd1"
 
-        result = app_db.resolve_file_to_navidrome_track(42)
+        result = app_db.resolve_song_to_navidrome_track(42)
 
         assert result == "nd1"
         mock_navidrome_repo.resolve_file_to_nd_track.assert_called_once_with(42)
@@ -980,7 +975,7 @@ class TestAppDbNavidromeMethods:
     def test_resolve_file_returns_none(self, app_db: AppDb, mock_navidrome_repo: MagicMock) -> None:
         mock_navidrome_repo.resolve_file_to_nd_track.return_value = None
 
-        result = app_db.resolve_file_to_navidrome_track(999)
+        result = app_db.resolve_song_to_navidrome_track(999)
 
         assert result is None
 
@@ -1007,7 +1002,7 @@ class TestAppDbNavidromeMethods:
     def test_record_navidrome_play_delegates(self, app_db: AppDb, mock_navidrome_repo: MagicMock) -> None:
         mock_navidrome_repo.record_play.return_value = 100
 
-        result = app_db.record_navidrome_play("nd1", "user1", 5000, file_id=42)
+        result = app_db.record_navidrome_play("nd1", "user1", 5000, song_id=42)
 
         assert result == 100
         mock_navidrome_repo.record_play.assert_called_once_with("nd1", "user1", 5000, 42)
@@ -1023,7 +1018,7 @@ class TestAppDbNavidromeMethods:
 
     @pytest.mark.unit
     def test_get_top_navidrome_plays_delegates(self, app_db: AppDb, mock_navidrome_repo: MagicMock) -> None:
-        expected: list[NdPlayRecord] = [{"nd_id": "nd1", "file_id": 1, "playcount": 10, "last_played": 5000}]
+        expected: list[NdPlayRecord] = [{"nd_id": "nd1", "song_id": 1, "playcount": 10, "last_played": 5000}]
         mock_navidrome_repo.get_top_plays.return_value = expected
 
         result = app_db.get_top_navidrome_plays("user1", 5)
@@ -1035,7 +1030,7 @@ class TestAppDbNavidromeMethods:
     def test_delete_navidrome_tracks_for_file_delegates(self, app_db: AppDb, mock_navidrome_repo: MagicMock) -> None:
         mock_navidrome_repo.delete_tracks_for_file.return_value = 3
 
-        result = app_db.delete_navidrome_tracks_for_file(42)
+        result = app_db.delete_navidrome_tracks_for_song(42)
 
         assert result == 3
         mock_navidrome_repo.delete_tracks_for_file.assert_called_once_with(42)
@@ -1048,12 +1043,10 @@ class TestAppDbNavidromeMethods:
 
 class TestAppDbCleanupShimMethods:
     @pytest.mark.unit
-    def test_remove_pipeline_state_resets_all_axes(self, app_db: AppDb, mock_library_repo: MagicMock) -> None:
+    def test_remove_pipeline_state_deletes_rows(self, app_db: AppDb, mock_pipeline_repo: MagicMock) -> None:
         app_db.remove_pipeline_state(5)
 
-        assert mock_library_repo.update_pipeline_axis.call_count == len(PIPELINE_DEFAULTS)
-        for axis_field, default_value in PIPELINE_DEFAULTS.items():
-            mock_library_repo.update_pipeline_axis.assert_any_call(5, axis_field, default_value)
+        mock_pipeline_repo.delete_pipeline_state.assert_called_once_with(5)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1066,7 +1059,7 @@ class TestAppDbSurface:
     def test_exposes_maintenance_surface(self, app_db: AppDb) -> None:
         assert hasattr(app_db, "truncate_worker_claims")
         assert hasattr(app_db, "truncate_health")
-        assert hasattr(app_db, "truncate_file_state_edges")
+        assert hasattr(app_db, "truncate_song_state_edges")
 
     @pytest.mark.unit
     def test_exposes_legacy_navidrome_surface(self, app_db: AppDb) -> None:
@@ -1082,10 +1075,10 @@ class TestAppDbSurface:
     @pytest.mark.unit
     def test_does_expose_routine_navidrome_methods_at_top_level(self, app_db: AppDb) -> None:
         assert hasattr(app_db, "upsert_navidrome_track")
-        assert hasattr(app_db, "map_navidrome_track_to_file")
+        assert hasattr(app_db, "map_navidrome_track_to_song")
         assert hasattr(app_db, "get_mapped_file_for_navidrome_track")
         assert hasattr(app_db, "record_navidrome_play")
-        assert hasattr(app_db, "delete_navidrome_tracks_for_file")
+        assert hasattr(app_db, "delete_navidrome_tracks_for_song")
 
     @pytest.mark.unit
     def test_maintenance_methods_not_on_app_db(self, app_db: AppDb) -> None:
@@ -1104,10 +1097,10 @@ class TestAppDbSurface:
 
 class TestAppDbMaintenanceMethods:
     @pytest.mark.unit
-    def test_truncate_file_state_edges_delegates(self, app_db: AppDb, mock_file_state_repo: MagicMock) -> None:
-        app_db.truncate_file_state_edges()
+    def test_truncate_file_state_edges_delegates(self, app_db: AppDb, mock_song_state_repo: MagicMock) -> None:
+        app_db.truncate_song_state_edges()
 
-        mock_file_state_repo.truncate_assignments.assert_called_once_with()
+        mock_song_state_repo.truncate_assignments.assert_called_once_with()
 
     @pytest.mark.unit
     def test_truncate_worker_claims_delegates(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:

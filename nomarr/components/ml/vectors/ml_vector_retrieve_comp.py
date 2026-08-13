@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 def get_cold_track_vector(
     db: Database,
-    file_id: int,
+    song_id: int,
     backbone_id: str,
 ) -> dict[str, Any] | None:
     """Fetch a track's vector document from the cold collection.
@@ -26,7 +26,7 @@ def get_cold_track_vector(
 
     Args:
         db: Database instance.
-        file_id: Library file document ``_id``.
+        song_id: Library song document ``_id``.
         backbone_id: Backbone identifier (e.g. ``"effnet"``).
 
     Returns:
@@ -43,7 +43,7 @@ def get_cold_track_vector(
         )
         return None
 
-    results = db.ml.list_file_vectors(backbone_id, file_id)
+    results = db.ml.list_song_vectors(backbone_id, song_id)
     if results:
         return results[0]  # type: ignore[return-value]
     return None

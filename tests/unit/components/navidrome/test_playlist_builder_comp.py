@@ -27,7 +27,6 @@ def _make_ctx(**overrides: object) -> dict:
     """Build a minimal NavidromePersonalPlaylistContext dict."""
     base: dict = {
         "backbone_id": "backbones/1",
-        "library_key": "lib1",
         "clusters": [
             {
                 "label": "Rock",
@@ -52,9 +51,14 @@ def _make_ctx(**overrides: object) -> dict:
     return base
 
 
-def _make_result(file_id: int) -> dict:
-    """Build a minimal ANN result dict."""
-    return {"file_id": file_id}
+def _make_result(song_id: int) -> dict:
+    """Build a minimal ANN SimilarResult dict (song_id-keyed)."""
+    return {"song_id": song_id}
+
+
+def _make_wire_item(key: str) -> dict:
+    """Build a generic wire-keyed item for the dead-code interleave helper."""
+    return {"file_id": key}
 
 
 def _make_db(cold_count: int = 1000, search_results: list[list[dict]] | None = None) -> MagicMock:
@@ -91,7 +95,7 @@ def test_interleave_empty_results_returns_empty() -> None:
 @pytest.mark.unit
 @pytest.mark.mocked
 def test_interleave_target_size_zero_returns_empty() -> None:
-    results = {"A": [_make_result(1)]}
+    results = {"A": [_make_wire_item(1)]}
     result = _interleave_per_cluster(results, {"A": 1.0}, target_size=0)
     assert result == []
 
@@ -107,7 +111,7 @@ def test_interleave_all_empty_clusters_returns_empty() -> None:
 @pytest.mark.unit
 @pytest.mark.mocked
 def test_interleave_single_cluster_returns_up_to_target() -> None:
-    results = {"A": [_make_result(f"f{i}") for i in range(20)]}
+    results = {"A": [_make_wire_item(f"f{i}") for i in range(20)]}
     result = _interleave_per_cluster(results, {"A": 1.0}, target_size=5)
     assert result == [f"f{i}" for i in range(5)]
 
@@ -115,7 +119,7 @@ def test_interleave_single_cluster_returns_up_to_target() -> None:
 @pytest.mark.unit
 @pytest.mark.mocked
 def test_interleave_single_cluster_fewer_than_target() -> None:
-    results = {"A": [_make_result("f1"), _make_result("f2")]}
+    results = {"A": [_make_wire_item("f1"), _make_wire_item("f2")]}
     result = _interleave_per_cluster(results, {"A": 1.0}, target_size=10)
     assert result == ["f1", "f2"]
 
@@ -125,9 +129,9 @@ def test_interleave_single_cluster_fewer_than_target() -> None:
 def test_interleave_proportional_weights_largest_remainder() -> None:
     """Verify largest-remainder slot allocation with known weights."""
     results = {
-        "A": [_make_result(f"a{i}") for i in range(10)],
-        "B": [_make_result(f"b{i}") for i in range(10)],
-        "C": [_make_result(f"c{i}") for i in range(10)],
+        "A": [_make_wire_item(f"a{i}") for i in range(10)],
+        "B": [_make_wire_item(f"b{i}") for i in range(10)],
+        "C": [_make_wire_item(f"c{i}") for i in range(10)],
     }
     weights = {"A": 0.5, "B": 0.3, "C": 0.2}
     result = _interleave_per_cluster(results, weights, target_size=10)
@@ -146,8 +150,8 @@ def test_interleave_proportional_weights_largest_remainder() -> None:
 def test_interleave_largest_remainder_distributes_leftover() -> None:
     """When floors don't sum to target, largest fractional remainders get +1."""
     results = {
-        "A": [_make_result(f"a{i}") for i in range(5)],
-        "B": [_make_result(f"b{i}") for i in range(5)],
+        "A": [_make_wire_item(f"a{i}") for i in range(5)],
+        "B": [_make_wire_item(f"b{i}") for i in range(5)],
     }
     weights = {"A": 0.5, "B": 0.5}
     result = _interleave_per_cluster(results, weights, target_size=5)
@@ -163,8 +167,8 @@ def test_interleave_largest_remainder_distributes_leftover() -> None:
 def test_interleave_zero_total_weight_even_split() -> None:
     """When all weights are zero, fallback to even split across sorted labels."""
     results = {
-        "B": [_make_result(f"b{i}") for i in range(5)],
-        "A": [_make_result(f"a{i}") for i in range(5)],
+        "B": [_make_wire_item(f"b{i}") for i in range(5)],
+        "A": [_make_wire_item(f"a{i}") for i in range(5)],
     }
     weights = {"A": 0.0, "B": 0.0}
     result = _interleave_per_cluster(results, weights, target_size=4)
@@ -180,8 +184,8 @@ def test_interleave_zero_total_weight_even_split() -> None:
 def test_interleave_round_robin_descending_weight_order() -> None:
     """Round-robin should interleave in descending weight order."""
     results = {
-        "A": [_make_result(f"a{i}") for i in range(5)],
-        "B": [_make_result(f"b{i}") for i in range(5)],
+        "A": [_make_wire_item(f"a{i}") for i in range(5)],
+        "B": [_make_wire_item(f"b{i}") for i in range(5)],
     }
     weights = {"A": 0.7, "B": 0.3}
     result = _interleave_per_cluster(results, weights, target_size=4)
@@ -196,8 +200,8 @@ def test_interleave_round_robin_descending_weight_order() -> None:
 def test_interleave_clusters_exhausted_returns_partial() -> None:
     """When clusters run out before target_size, return what we have."""
     results = {
-        "A": [_make_result("a1")],
-        "B": [_make_result("b1")],
+        "A": [_make_wire_item("a1")],
+        "B": [_make_wire_item("b1")],
     }
     weights = {"A": 0.5, "B": 0.5}
     result = _interleave_per_cluster(results, weights, target_size=100)
@@ -209,8 +213,8 @@ def test_interleave_clusters_exhausted_returns_partial() -> None:
 @pytest.mark.mocked
 def test_interleave_no_mutation_of_input_lists() -> None:
     """Original result lists must not be modified."""
-    original_a = [_make_result(1), _make_result(2)]
-    original_b = [_make_result(1), _make_result(2)]
+    original_a = [_make_wire_item(1), _make_wire_item(2)]
+    original_b = [_make_wire_item(1), _make_wire_item(2)]
     results = {"A": deepcopy(original_a), "B": deepcopy(original_b)}
     weights = {"A": 0.5, "B": 0.5}
 

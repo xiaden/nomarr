@@ -250,7 +250,7 @@ class TestGetTagEdgeRows:
                 "calm": [{"id": 2}],
             }[tag_value]
 
-        mock_db.library.search_files_by_tag.side_effect = search_files_by_tag_side_effect
+        mock_db.library.search_songs_by_tag.side_effect = search_files_by_tag_side_effect
 
         result = _get_tag_edge_rows(mock_db, "nom:mood-strict")
 
@@ -258,6 +258,6 @@ class TestGetTagEdgeRows:
             (1, "happy"),
             (2, "calm"),
         ]
-        mock_db.library.search_files_by_tag.assert_any_call("nom:mood-strict", "happy", limit=None)
-        mock_db.library.search_files_by_tag.assert_any_call("nom:mood-strict", "calm", limit=None)
-        assert mock_db.library.search_files_by_tag.call_count == 2
+        mock_db.library.search_songs_by_tag.assert_any_call("nom:mood-strict", "happy", limit=None)
+        mock_db.library.search_songs_by_tag.assert_any_call("nom:mood-strict", "calm", limit=None)
+        assert mock_db.library.search_songs_by_tag.call_count == 2

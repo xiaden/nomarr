@@ -27,7 +27,7 @@ class Embedding(Base):
     __tablename__ = "embeddings"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    file_id: Mapped[int] = mapped_column(ForeignKey("library_files.id", ondelete="CASCADE"), nullable=False, index=True)
+    song_id: Mapped[int] = mapped_column(ForeignKey("songs.id", ondelete="CASCADE"), nullable=False, index=True)
     backbone_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     model_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     embed_dim: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -41,7 +41,7 @@ class Embedding(Base):
     updated_at: Mapped[int] = mapped_column(BigInteger)
 
     __table_args__ = (
-        UniqueConstraint("file_id", "backbone_id", name="uq_embeddings_file_backbone"),
+        UniqueConstraint("song_id", "backbone_id", name="uq_embeddings_song_backbone"),
         Index("ix_embeddings_backbone_tier", "backbone_id", "tier"),
         Index(
             "ix_embeddings_cold_hnsw",

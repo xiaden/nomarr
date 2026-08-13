@@ -78,8 +78,8 @@ def compute_taste_profile(
         if len(genre_plays) < 3:
             continue
 
-        # Get vectors for this genre's files by querying per file_id.
-        # Note: db.ml.list_file_vectors() returns EmbeddingRecord which does
+        # Get vectors for this genre's files by querying per song_id.
+        # Note: db.ml.list_song_vectors() returns EmbeddingRecord which does
         # not currently include the "vector" field — this is a known
         # persistence-layer gap tracked in S2 scope.
         resolved_backbone = backbone_id or "default"
@@ -87,10 +87,10 @@ def compute_taste_profile(
 
         vector_map: dict[int, list[float]] = {}
         for fid in genre_file_id_list:
-            results = db.ml.list_file_vectors(resolved_backbone, int(fid))
+            results = db.ml.list_song_vectors(resolved_backbone, int(fid))
             for doc in results:
-                if doc.get("file_id"):
-                    vector_map[doc["file_id"]] = doc["embedding"]  # type: ignore[typeddict-item]
+                if doc.get("song_id"):
+                    vector_map[doc["song_id"]] = doc["embedding"]  # type: ignore[typeddict-item]
 
         paired: list[tuple[TrackPlayData, list[float]]] = []
         for play in genre_plays:
@@ -135,10 +135,10 @@ def compute_taste_profile(
 
             ut_vector_map: dict[int, list[float]] = {}
             for fid in ut_file_ids:
-                ut_results = db.ml.list_file_vectors(resolved_backbone, int(fid))
+                ut_results = db.ml.list_song_vectors(resolved_backbone, int(fid))
                 for doc in ut_results:
-                    if doc.get("file_id"):
-                        ut_vector_map[doc["file_id"]] = doc["embedding"]  # type: ignore[typeddict-item]
+                    if doc.get("song_id"):
+                        ut_vector_map[doc["song_id"]] = doc["embedding"]  # type: ignore[typeddict-item]
 
             ut_paired: list[tuple[TrackPlayData, list[float]]] = []
             for play in untagged_plays:

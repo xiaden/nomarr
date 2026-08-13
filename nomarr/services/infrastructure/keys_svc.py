@@ -75,8 +75,7 @@ class KeyManagementService:
         if key:
             return key
         new_key = secrets.token_urlsafe(32)
-        with self._db.app.transaction():
-            self._db.app.update_config_option("api_key", {"value": new_key})
+        self._db.app.update_config_option("api_key", {"value": new_key})
         logger.info("[KeyManagement] Generated new API key on first run.")
         return new_key
 
@@ -88,8 +87,7 @@ class KeyManagementService:
 
         """
         new_key = secrets.token_urlsafe(32)
-        with self._db.app.transaction():
-            self._db.app.update_config_option("api_key", {"value": new_key})
+        self._db.app.update_config_option("api_key", {"value": new_key})
         logger.info("[KeyManagement] API key regenerated.")
         return new_key
 
@@ -168,14 +166,12 @@ class KeyManagementService:
             return ""
         if config_password:
             password_hash = self.hash_password(config_password)
-            with self._db.app.transaction():
-                self._db.app.update_config_option("admin_password_hash", {"value": password_hash})
+            self._db.app.update_config_option("admin_password_hash", {"value": password_hash})
             logger.info("[KeyManagement] Admin password set from config file.")
             return ""
         random_password = secrets.token_urlsafe(16)
         password_hash = self.hash_password(random_password)
-        with self._db.app.transaction():
-            self._db.app.update_config_option("admin_password_hash", {"value": password_hash})
+        self._db.app.update_config_option("admin_password_hash", {"value": password_hash})
         logger.warning("[KeyManagement] ========================================")
         logger.warning("[KeyManagement] AUTO-GENERATED ADMIN PASSWORD:")
         logger.warning(f"[KeyManagement]   {random_password}")
@@ -194,8 +190,7 @@ class KeyManagementService:
 
         """
         password_hash = self.hash_password(new_password)
-        with self._db.app.transaction():
-            self._db.app.update_config_option("admin_password_hash", {"value": password_hash})
+        self._db.app.update_config_option("admin_password_hash", {"value": password_hash})
         logger.warning("[KeyManagement] Admin password reset - all sessions invalidated")
 
     def create_session(self) -> str:
@@ -209,16 +204,15 @@ class KeyManagementService:
         session_token = secrets.token_urlsafe(32)
         expiry = now_s().value + SESSION_TIMEOUT_SECONDS
         _session_cache[session_token] = expiry
-        with self._db.app.transaction():
-            self._db.app.insert_session(
-                [
-                    {
-                        "session_id": session_token,
-                        "user_id": "admin",
-                        "expiry_timestamp": int(expiry * 1000),
-                    }
-                ],
-            )
+        self._db.app.insert_session(
+            [
+                {
+                    "session_id": session_token,
+                    "user_id": "admin",
+                    "expiry_timestamp": int(expiry * 1000),
+                }
+            ],
+        )
         logger.info(f"[KeyManagement] Created new session (expires in {SESSION_TIMEOUT_SECONDS}s)")
         return session_token
 
@@ -254,8 +248,7 @@ class KeyManagementService:
 
         """
         _session_cache.pop(session_token, None)
-        with self._db.app.transaction():
-            self._db.app.delete_session(session_token)
+        self._db.app.delete_session(session_token)
         logger.info("[KeyManagement] Session invalidated (logout)")
 
     def cleanup_expired_sessions(self) -> int:
@@ -275,8 +268,7 @@ class KeyManagementService:
             session_count,
         )
         if expired_docs:
-            with self._db.app.transaction():
-                self._db.app.delete_sessions_by_ids([doc["id"] for doc in expired_docs])
+            self._db.app.delete_sessions_by_ids([doc["id"] for doc in expired_docs])
         db_count = len(expired_docs)
         if expired or db_count:
             logger.info(f"[KeyManagement] Cleaned up {len(expired)} expired session(s) from cache, {db_count} from DB")

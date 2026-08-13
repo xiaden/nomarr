@@ -478,7 +478,7 @@ class TestUpdateFileTags:
         mock_tagging_service: MagicMock,
     ) -> None:
         """Should update file tags and return result."""
-        mock_tagging_service.update_file_tags.return_value = {
+        mock_tagging_service.update_song_tags.return_value = {
             "file_id": "file1",
             "name": "genre",
             "tags": {"genre": ["rock", "alternative"]},
@@ -494,8 +494,8 @@ class TestUpdateFileTags:
         assert data["file_id"] == "file1"
         assert data["name"] == "genre"
         assert data["tags"]["genre"] == ["rock", "alternative"]
-        mock_tagging_service.update_file_tags.assert_called_once_with(
-            file_id="file1", name="genre", values=["rock", "alternative"]
+        mock_tagging_service.update_song_tags.assert_called_once_with(
+            song_id="file1", name="genre", values=["rock", "alternative"]
         )
 
     def test_update_file_tags_value_error(
@@ -504,7 +504,7 @@ class TestUpdateFileTags:
         mock_tagging_service: MagicMock,
     ) -> None:
         """Should return 400 when ValueError raised."""
-        mock_tagging_service.update_file_tags.side_effect = ValueError("Invalid file ID")
+        mock_tagging_service.update_song_tags.side_effect = ValueError("Invalid file ID")
 
         response = client.patch(
             "/tag-curation/file/invalid/tag",
@@ -520,7 +520,7 @@ class TestUpdateFileTags:
         mock_tagging_service: MagicMock,
     ) -> None:
         """Should return 500 when exception raised."""
-        mock_tagging_service.update_file_tags.side_effect = RuntimeError("Database error")
+        mock_tagging_service.update_song_tags.side_effect = RuntimeError("Database error")
 
         response = client.patch(
             "/tag-curation/file/file1/tag",

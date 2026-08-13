@@ -268,8 +268,8 @@ async def update_file_tags(
     """Replace all tags for a file+name with new values."""
     try:
         result = await asyncio.to_thread(
-            tagging_service.update_file_tags,
-            file_id=file_id,
+            tagging_service.update_song_tags,
+            song_id=file_id,
             name=request.name,
             values=request.values,
         )

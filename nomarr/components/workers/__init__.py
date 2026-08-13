@@ -1,8 +1,8 @@
 """Workers package - crash handling, restart logic, and discovery components.
 
-In the discovery model, workers select files via the file-state graph instead
-of polling a queue. Files in the ``not_tagged`` state that are not ``too_short``
-and have no active claim are available for processing.
+In the discovery model, workers select songs via song-state assignments instead
+of polling a queue. Songs in the ``not_processed`` state that have no active claim
+are available for processing.
 """
 
 from .worker_crash_comp import (

@@ -1,4 +1,4 @@
-"""Tests for ``nomarr.components.library.library_file_query_comp``."""
+"""Tests for ``nomarr.components.library.library_song_query_comp``."""
 
 from __future__ import annotations
 
@@ -6,37 +6,37 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from nomarr.components.library.library_file_query_comp import (
+from nomarr.components.library.library_song_query_comp import (
     DEFAULT_LIMIT,
-    _collect_file_ids_for_tag_ids,
+    _collect_song_ids_for_tag_ids,
     clear_library_data,
-    count_files_by_tag,
     count_recently_tagged,
+    count_songs_by_tag,
     detect_nd_path_prefix,
     find_move_candidate_by_chromaprint,
     get_all_library_paths,
     get_artist_album_frequencies,
     get_existing_file_paths,
-    get_file_by_id,
-    get_file_modified_times,
-    get_files_by_chromaprint,
-    get_files_by_ids_with_tags,
-    get_files_by_paths_bulk,
-    get_files_for_folder,
-    get_files_for_folders,
     get_folder_rel_paths,
     get_library_counts,
-    get_library_file,
+    get_library_song,
     get_library_stats,
     get_recently_processed,
     get_sample_normalized_path,
+    get_song_by_id,
+    get_song_modified_times,
+    get_songs_by_chromaprint,
+    get_songs_by_ids_with_tags,
+    get_songs_by_paths_bulk,
+    get_songs_for_folder,
+    get_songs_for_folders,
     get_tagged_file_paths,
-    get_tracks_by_file_ids,
+    get_tracks_by_song_ids,
     get_tracks_for_matching,
-    list_all_file_ids,
+    list_all_song_ids,
     list_songs,
-    require_library_file_id,
-    search_files_by_tag,
+    require_library_song_id,
+    search_songs_by_tag,
     search_songs_with_tags,
 )
 from nomarr.helpers.constants.file_states import STATE_PROCESSED
@@ -60,13 +60,13 @@ def test_get_file_by_id_uses_library_facade() -> None:
 
     db = make_db()
 
-    db.library.get_file.return_value = {"id": 1}
+    db.library.get_song.return_value = {"id": 1}
 
-    result = get_file_by_id(db, 1)
+    result = get_song_by_id(db, 1)
 
     assert result == {"id": 1}
 
-    db.library.get_file.assert_called_once_with(1)
+    db.library.get_song.assert_called_once_with(1)
 
 
 @pytest.mark.unit
@@ -76,7 +76,7 @@ def test_count_recently_tagged_uses_library_counter() -> None:
 
     db.library.count_recently_tagged.return_value = 2
 
-    with patch("nomarr.components.library.library_file_query_comp.now_ms") as mock_now_ms:
+    with patch("nomarr.components.library.library_song_query_comp.now_ms") as mock_now_ms:
         mock_now_ms.return_value.value = 10_000
 
         result = count_recently_tagged(db, window_seconds=5)
@@ -93,13 +93,13 @@ def test_get_existing_file_paths_uses_library_batch_lookup() -> None:
 
     paths = ["D:/Music/song.flac", "D:/Music/other.flac"]
 
-    db.library.list_existing_file_paths.return_value = ["D:/Music/song.flac", "D:/Music/song.flac"]
+    db.library.list_existing_song_paths.return_value = ["D:/Music/song.flac", "D:/Music/song.flac"]
 
     result = get_existing_file_paths(db, paths)
 
     assert result == {"D:/Music/song.flac"}
 
-    db.library.list_existing_file_paths.assert_called_once_with(paths)
+    db.library.list_existing_song_paths.assert_called_once_with(paths)
 
 
 @pytest.mark.unit
@@ -107,26 +107,34 @@ def test_get_files_by_ids_with_tags_hydrates_tags_and_library_ids() -> None:
 
     db = make_db()
 
-    db.library.list_files_by_ids.return_value = [{"id": 1, "path": "D:/Music/song.flac", "library_key": "1"}]
+    db.library.list_songs_by_ids.return_value = [{"id": 1, "path": "D:/Music/song.flac", "library_key": "1"}]
 
-    db.library.list_file_tags_for_files.return_value = {1: [{"name": "genre", "value": "rock"}]}
-    db.library.get_library_ids_for_files.return_value = {1: 1}
+    db.library.list_song_tags_for_songs.return_value = {
+        1: [
+            {"name": "genre", "value": "rock"},
+            {"name": "nom:mood-tier-1", "value": "calm", "namespace": "nom"},
+        ]
+    }
+    db.library.get_library_ids_for_songs.return_value = {1: 1}
 
-    result = get_files_by_ids_with_tags(db, [1])
+    result = get_songs_by_ids_with_tags(db, [1])
 
     assert result == [
         {
             "id": 1,
             "path": "D:/Music/song.flac",
             "library_key": "1",
-            "tags": [{"key": "genre", "value": "rock", "type": "string", "is_nomarr": False}],
+            "tags": [
+                {"key": "genre", "value": "rock", "type": "string", "is_nomarr": False},
+                {"key": "nom:mood-tier-1", "value": "calm", "type": "string", "is_nomarr": True},
+            ],
             "library_id": 1,
         }
     ]
 
-    db.library.list_files_by_ids.assert_called_once_with([1])
+    db.library.list_songs_by_ids.assert_called_once_with([1])
 
-    db.library.list_file_tags_for_files.assert_called_once_with([1])
+    db.library.list_song_tags_for_songs.assert_called_once_with([1])
 
 
 @pytest.mark.unit
@@ -134,11 +142,11 @@ def test_get_files_by_ids_with_tags_returns_empty_list_when_ids_empty() -> None:
 
     db = make_db()
 
-    result = get_files_by_ids_with_tags(db, [])
+    result = get_songs_by_ids_with_tags(db, [])
 
     assert result == []
 
-    db.library.list_files_by_ids.assert_not_called()
+    db.library.list_songs_by_ids.assert_not_called()
 
 
 @pytest.mark.unit
@@ -154,7 +162,7 @@ def test_get_library_file_scoped_filters_songs() -> None:
 
     db.library.list_songs.return_value = [row]
 
-    result = get_library_file(db, "song.flac", library_id=1)
+    result = get_library_song(db, "song.flac", library_id=1)
 
     assert result == row
 
@@ -168,17 +176,13 @@ def test_get_library_file_unscoped_tries_normalized_then_unscoped_path() -> None
 
     row = {"id": 1, "path": "D:/Music/song.flac"}
 
-    db.library.list_files.return_value = []
+    db.library.find_song_by_path_any_library.return_value = row
 
-    db.library.find_file_by_path_any_library.return_value = row
-
-    result = get_library_file(db, "D:/Music/song.flac")
+    result = get_library_song(db, "D:/Music/song.flac")
 
     assert result == row
 
-    db.library.list_files.assert_called_once_with(filters={"normalized_path": "D:/Music/song.flac"}, limit=1)
-
-    db.library.find_file_by_path_any_library.assert_called_once_with("D:/Music/song.flac")
+    db.library.find_song_by_path_any_library.assert_called_once_with("D:/Music/song.flac")
 
 
 @pytest.mark.unit
@@ -187,10 +191,10 @@ def test_get_files_by_paths_bulk_maps_only_found_paths() -> None:
     db = make_db()
 
     with patch(
-        "nomarr.components.library.library_file_query_comp.get_library_file",
+        "nomarr.components.library.library_song_query_comp.get_library_song",
         side_effect=[None, {"id": 2, "path": "D:/Music/found.flac"}],
     ) as get_library_file_mock:
-        result = get_files_by_paths_bulk(db, ["missing.flac", "D:/Music/found.flac"])
+        result = get_songs_by_paths_bulk(db, ["missing.flac", "D:/Music/found.flac"])
 
     assert result == {"D:/Music/found.flac": {"id": 2, "path": "D:/Music/found.flac"}}
 
@@ -202,11 +206,11 @@ def test_get_files_by_paths_bulk_returns_empty_mapping_when_paths_empty() -> Non
 
     db = make_db()
 
-    result = get_files_by_paths_bulk(db, [])
+    result = get_songs_by_paths_bulk(db, [])
 
     assert result == {}
 
-    db.library.find_file_by_path_any_library.assert_not_called()
+    db.library.find_song_by_path_any_library.assert_not_called()
 
 
 @pytest.mark.unit
@@ -214,7 +218,9 @@ def test_detect_nd_path_prefix_uses_longest_matching_normalized_path() -> None:
 
     db = make_db()
 
-    db.library.list_files.return_value = [
+    db.library.list_libraries.return_value = [{"id": 1}]
+
+    db.library.list_songs.return_value = [
         {"normalized_path": "song.flac"},
         {"normalized_path": "artist/song.flac"},
     ]
@@ -223,7 +229,7 @@ def test_detect_nd_path_prefix_uses_longest_matching_normalized_path() -> None:
 
     assert result == "/music/"
 
-    db.library.list_files.assert_called_once_with(limit=DEFAULT_LIMIT)
+    db.library.list_songs.assert_called_once_with(1, limit=DEFAULT_LIMIT)
 
 
 @pytest.mark.unit
@@ -231,7 +237,7 @@ def test_detect_nd_path_prefix_returns_none_without_match() -> None:
 
     db = make_db()
 
-    db.library.list_files.return_value = []
+    db.library.list_songs.return_value = []
 
     assert detect_nd_path_prefix(db, "/music/missing.flac") is None
 
@@ -241,13 +247,15 @@ def test_list_songs_unscoped_sorts_and_paginates() -> None:
 
     db = make_db()
 
-    db.library.list_files.return_value = [
+    db.library.list_libraries.return_value = [{"id": 1}]
+
+    db.library.list_songs.return_value = [
         {"id": 2, "artist": "B", "album": "A", "title": "T2"},
         {"id": 1, "artist": "A", "album": "A", "title": "T1"},
     ]
 
     with patch(
-        "nomarr.components.library.library_file_query_comp.hydrate_songs_with_metadata",
+        "nomarr.components.library.library_song_query_comp.hydrate_songs_with_metadata",
         side_effect=lambda _db, docs: docs,
     ):
         rows, total = list_songs(db, limit=1, offset=1)
@@ -256,7 +264,7 @@ def test_list_songs_unscoped_sorts_and_paginates() -> None:
 
     assert total == 2
 
-    db.library.list_files.assert_called_once_with(limit=DEFAULT_LIMIT)
+    db.library.list_songs.assert_called_once_with(1)
 
 
 @pytest.mark.unit
@@ -277,7 +285,7 @@ def test_list_songs_scoped_filters_in_python() -> None:
     ]
 
     with patch(
-        "nomarr.components.library.library_file_query_comp.hydrate_songs_with_metadata",
+        "nomarr.components.library.library_song_query_comp.hydrate_songs_with_metadata",
         side_effect=lambda _db, docs: docs,
     ):
         rows, total = list_songs(db, artist="Artist", album="Album", library_id=1)
@@ -294,13 +302,15 @@ def test_get_all_library_paths_uses_list_files() -> None:
 
     db = make_db()
 
-    db.library.list_files.return_value = [{"path": "D:/Music/a.flac"}, {"path": "D:/Music/b.flac"}]
+    db.library.list_libraries.return_value = [{"id": 1}]
+
+    db.library.list_songs.return_value = [{"path": "D:/Music/a.flac"}, {"path": "D:/Music/b.flac"}]
 
     result = get_all_library_paths(db)
 
     assert result == ["D:/Music/a.flac", "D:/Music/b.flac"]
 
-    db.library.list_files.assert_called_once_with(limit=DEFAULT_LIMIT)
+    db.library.list_songs.assert_called_once_with(1, limit=DEFAULT_LIMIT)
 
 
 @pytest.mark.unit
@@ -308,17 +318,19 @@ def test_get_file_modified_times_builds_mapping_from_list_files() -> None:
 
     db = make_db()
 
-    db.library.list_files.return_value = [
+    db.library.list_libraries.return_value = [{"id": 1}]
+
+    db.library.list_songs.return_value = [
         {"path": "D:/Music/a.flac", "modified_time": 10},
         {"path": "D:/Music/b.flac", "modified_time": 20},
         {"path": "D:/Music/skip.flac", "modified_time": None},
     ]
 
-    result = get_file_modified_times(db)
+    result = get_song_modified_times(db)
 
     assert result == {"D:/Music/a.flac": 10, "D:/Music/b.flac": 20}
 
-    db.library.list_files.assert_called_once_with(limit=DEFAULT_LIMIT)
+    db.library.list_songs.assert_called_once_with(1)
 
 
 @pytest.mark.unit
@@ -326,7 +338,7 @@ def test_get_tagged_file_paths_reads_tagged_file_docs_from_app_facade() -> None:
 
     db = make_db()
 
-    db.app.list_file_docs_in_state.return_value = [
+    db.app.list_song_docs_in_state.return_value = [
         {"id": 1, "path": "D:/Music/a.flac"},
         {"id": 2, "path": "D:/Music/b.flac"},
     ]
@@ -335,7 +347,7 @@ def test_get_tagged_file_paths_reads_tagged_file_docs_from_app_facade() -> None:
 
     assert result == ["D:/Music/a.flac", "D:/Music/b.flac"]
 
-    db.app.list_file_docs_in_state.assert_called_once_with(STATE_PROCESSED, limit=DEFAULT_LIMIT)
+    db.app.list_song_docs_in_state.assert_called_once_with(STATE_PROCESSED, limit=DEFAULT_LIMIT)
 
 
 @pytest.mark.unit
@@ -366,7 +378,7 @@ def test_get_files_for_folder_marks_tagged_state_from_app_facade() -> None:
 
     db.library.list_songs_for_folder.return_value = [matching_doc]
 
-    result = get_files_for_folder(db, 1, "Artist/Album")
+    result = get_songs_for_folder(db, 1, "Artist/Album")
 
     assert result == {matching_doc["path"]: matching_doc}
 
@@ -392,9 +404,9 @@ def test_get_files_for_folders_matches_root_and_nested_paths() -> None:
 
     db.library.list_songs.return_value = [root_doc, nested_doc]
 
-    db.app.list_files_in_state.return_value = [2]
+    db.app.list_songs_in_state.return_value = [2]
 
-    result = get_files_for_folders(db, 1, ["", "Artist"])
+    result = get_songs_for_folders(db, 1, ["", "Artist"])
 
     assert result == {
         root_doc["path"]: {**root_doc, "has_tagged_state": False},
@@ -407,7 +419,7 @@ def test_get_recently_processed_sorts_by_latest_activity() -> None:
 
     db = make_db()
 
-    db.app.list_file_docs_in_state.return_value = [
+    db.app.list_song_docs_in_state.return_value = [
         {
             "id": 1,
             "normalized_path": "Artist/older.flac",
@@ -427,7 +439,7 @@ def test_get_recently_processed_sorts_by_latest_activity() -> None:
     ]
 
     with patch(
-        "nomarr.components.library.library_file_query_comp.hydrate_songs_with_metadata",
+        "nomarr.components.library.library_song_query_comp.hydrate_songs_with_metadata",
         side_effect=lambda _db, docs: docs,
     ):
         result = get_recently_processed(db, limit=1)
@@ -444,7 +456,7 @@ def test_get_recently_processed_sorts_by_latest_activity() -> None:
         }
     ]
 
-    db.app.list_file_docs_in_state.assert_called_once_with(STATE_PROCESSED, limit=DEFAULT_LIMIT)
+    db.app.list_song_docs_in_state.assert_called_once_with(STATE_PROCESSED, limit=DEFAULT_LIMIT)
 
 
 @pytest.mark.unit
@@ -452,22 +464,22 @@ def test_get_recently_processed_scopes_to_library_ids() -> None:
 
     db = make_db()
 
-    db.app.list_file_docs_in_state.return_value = [
+    db.app.list_song_docs_in_state.return_value = [
         {"id": 1, "normalized_path": "keep.flac", "scanned_at": 5},
         {"id": 2, "normalized_path": "skip.flac", "scanned_at": 6},
     ]
 
-    db.library.list_library_file_ids.return_value = [1]
+    db.library.list_library_song_ids.return_value = [1]
 
     with patch(
-        "nomarr.components.library.library_file_query_comp.hydrate_songs_with_metadata",
+        "nomarr.components.library.library_song_query_comp.hydrate_songs_with_metadata",
         side_effect=lambda _db, docs: docs,
     ):
         result = get_recently_processed(db, library_id=1)
 
     assert [row["file_id"] for row in result] == [1]
 
-    db.library.list_library_file_ids.assert_called_once_with(1, limit=DEFAULT_LIMIT)
+    db.library.list_library_song_ids.assert_called_once_with(1, limit=DEFAULT_LIMIT)
 
 
 @pytest.mark.unit
@@ -482,7 +494,7 @@ def test_get_files_by_chromaprint_scoped_filters_songs() -> None:
         {"id": 2, "chromaprint": "def"},
     ]
 
-    result = get_files_by_chromaprint(db, "abc", library_id=1)
+    result = get_songs_by_chromaprint(db, "abc", library_id=1)
 
     assert result == [matching_doc]
 
@@ -494,30 +506,32 @@ def test_get_files_by_chromaprint_unscoped_uses_filtered_list_files() -> None:
 
     db = make_db()
 
-    db.library.list_files.return_value = [{"id": 1, "chromaprint": "abc"}]
+    db.library.list_libraries.return_value = [{"id": 1}]
 
-    result = get_files_by_chromaprint(db, "abc")
+    db.library.find_library_song_by_chromaprint.return_value = {"id": 1, "chromaprint": "abc"}
+
+    result = get_songs_by_chromaprint(db, "abc")
 
     assert result == [{"id": 1, "chromaprint": "abc"}]
 
-    db.library.list_files.assert_called_once_with(filters={"chromaprint": "abc"}, limit=None)
+    db.library.find_library_song_by_chromaprint.assert_called_once_with(1, "abc")
 
 
 @pytest.mark.unit
-def test_get_tracks_by_file_ids_sorts_and_applies_defaults() -> None:
+def test_get_tracks_by_song_ids_sorts_and_applies_defaults() -> None:
 
     db = make_db()
 
-    db.library.list_files_by_ids.return_value = [
+    db.library.list_songs_by_ids.return_value = [
         {"path": "D:/Music/one.flac", "title": None, "artist": None, "album": None, "sort_rank": 1},
         {"path": "D:/Music/two.flac", "title": "Two", "artist": "Artist", "album": "Album", "sort_rank": 2},
     ]
 
     with patch(
-        "nomarr.components.library.library_file_query_comp.hydrate_songs_with_metadata",
+        "nomarr.components.library.library_song_query_comp.hydrate_songs_with_metadata",
         side_effect=lambda _db, docs: docs,
     ):
-        result = get_tracks_by_file_ids(
+        result = get_tracks_by_song_ids(
             db,
             {1, 2},
             [("sort_rank", "desc")],
@@ -526,7 +540,7 @@ def test_get_tracks_by_file_ids_sorts_and_applies_defaults() -> None:
 
     assert result == [{"path": "D:/Music/two.flac", "title": "Two", "artist": "Artist", "album": "Album"}]
 
-    db.library.list_files_by_ids.assert_called_once()
+    db.library.list_songs_by_ids.assert_called_once()
 
 
 @pytest.mark.unit
@@ -534,12 +548,12 @@ def test_get_library_stats_aggregates_global_file_docs() -> None:
 
     db = make_db()
 
-    db.library.list_files.return_value = [
+    db.library.list_libraries.return_value = [{"id": 1}]
+
+    db.library.list_songs.return_value = [
         {"duration_seconds": 10.5, "file_size": 100},
         {"duration_seconds": 9.5, "file_size": 200},
     ]
-
-    db.library.count_files.return_value = 2
 
     db.library.count_tags.return_value = 10
 
@@ -548,7 +562,7 @@ def test_get_library_stats_aggregates_global_file_docs() -> None:
         [{"value": "Album A"}],
     ]
 
-    with patch("nomarr.components.library.library_file_query_comp.count_untagged_files", return_value=4):
+    with patch("nomarr.components.library.library_song_query_comp.count_untagged_files", return_value=4):
         result = get_library_stats(db)
 
     assert result == {
@@ -560,9 +574,7 @@ def test_get_library_stats_aggregates_global_file_docs() -> None:
         "needs_tagging_count": 4,
     }
 
-    db.library.list_files.assert_called_once_with(limit=None)
-
-    db.library.count_files.assert_called_once_with()
+    db.library.list_songs.assert_called_once_with(1)
 
     assert db.library.count_tags.call_count == 2
 
@@ -613,7 +625,9 @@ def test_get_tracks_for_matching_filters_valid_files_and_projects_isrc() -> None
 
     db = make_db()
 
-    db.library.list_files.return_value = [
+    db.library.list_libraries.return_value = [{"id": 1}]
+
+    db.library.list_tracks_for_matching.return_value = [
         {
             "id": 1,
             "path": "D:/Music/song.flac",
@@ -623,10 +637,10 @@ def test_get_tracks_for_matching_filters_valid_files_and_projects_isrc() -> None
         }
     ]
 
-    db.library.list_file_tags_for_files.return_value = {1: [{"name": "isrc", "value": "ABC123"}]}
+    db.library.list_song_tags_for_songs.return_value = {1: [{"name": "isrc", "value": "ABC123"}]}
 
     with patch(
-        "nomarr.components.library.library_file_query_comp.hydrate_songs_with_metadata",
+        "nomarr.components.library.library_song_query_comp.hydrate_songs_with_metadata",
         side_effect=lambda _db, docs: docs,
     ):
         result = get_tracks_for_matching(db)
@@ -642,9 +656,9 @@ def test_get_tracks_for_matching_filters_valid_files_and_projects_isrc() -> None
         }
     ]
 
-    db.library.list_files.assert_called_once_with(filters={"is_valid": True}, limit=DEFAULT_LIMIT)
+    db.library.list_tracks_for_matching.assert_called_once_with(1, limit=DEFAULT_LIMIT)
 
-    db.library.list_file_tags_for_files.assert_called_once_with([1])
+    db.library.list_song_tags_for_songs.assert_called_once_with([1])
 
 
 @pytest.mark.unit
@@ -663,10 +677,10 @@ def test_get_tracks_for_matching_scopes_to_library_and_projects_isrc() -> None:
         }
     ]
 
-    db.library.list_file_tags_for_files.return_value = {1: [{"name": "isrc", "value": "XYZ789"}]}
+    db.library.list_song_tags_for_songs.return_value = {1: [{"name": "isrc", "value": "XYZ789"}]}
 
     with patch(
-        "nomarr.components.library.library_file_query_comp.hydrate_songs_with_metadata",
+        "nomarr.components.library.library_song_query_comp.hydrate_songs_with_metadata",
         side_effect=lambda _db, docs: docs,
     ):
         result = get_tracks_for_matching(db, library_id=1)
@@ -684,9 +698,9 @@ def test_get_tracks_for_matching_scopes_to_library_and_projects_isrc() -> None:
 
     db.library.list_tracks_for_matching.assert_called_once_with(1, limit=DEFAULT_LIMIT)
 
-    db.library.list_files.assert_not_called()
+    db.library.list_songs.assert_not_called()
 
-    db.library.list_file_tags_for_files.assert_called_once_with([1])
+    db.library.list_song_tags_for_songs.assert_called_once_with([1])
 
 
 @pytest.mark.unit
@@ -698,11 +712,9 @@ def test_clear_library_data_truncates_all_facades() -> None:
     # so it must be a sync mock — AsyncMock would return a coroutine by default
     db.ml.list_vector_collection_names = MagicMock(return_value=["vectors_track__hot__effnet"])
 
-    db.library.list_files.return_value = [
-        {"id": 1},
-        {"id": 2},
-        {"id": None},
-    ]
+    db.library.list_libraries.return_value = [{"id": 1}]
+
+    db.library.list_library_song_ids.return_value = [1, 2]
 
     with patch(
         "nomarr.components.ml.inference.ml_output_stream_store_comp.delete_output_streams"
@@ -711,7 +723,7 @@ def test_clear_library_data_truncates_all_facades() -> None:
 
     db.ml.clear_vector_collection.assert_called_once_with("vectors_track__hot__effnet")
 
-    db.library.list_files.assert_called_once_with(limit=None)
+    db.library.list_library_song_ids.assert_called_once_with(1, limit=None)
 
     assert mock_delete_output_streams.call_args_list == [
         call(db, 1),
@@ -720,15 +732,15 @@ def test_clear_library_data_truncates_all_facades() -> None:
 
     db.library.truncate_song_tag_edges.assert_called_once_with()
 
-    db.app.truncate_file_state_edges.assert_called_once_with()
+    db.app.truncate_song_state_edges.assert_called_once_with()
 
-    db.library.truncate_file_links.assert_called_once_with()
+    db.library.truncate_song_links.assert_called_once_with()
 
     db.library.truncate_folder_links.assert_called_once_with()
 
     db.library.truncate_tags.assert_called_once_with()
 
-    db.library.truncate_files.assert_called_once_with()
+    db.library.truncate_songs.assert_called_once_with()
 
     db.library.truncate_folders.assert_called_once_with()
 
@@ -736,21 +748,21 @@ def test_clear_library_data_truncates_all_facades() -> None:
 
 
 @pytest.mark.unit
-def test_collect_file_ids_for_tag_ids_returns_edge_sources() -> None:
+def test_collect_song_ids_for_tag_ids_returns_edge_sources() -> None:
 
     db = make_db()
 
-    db.library.list_file_tag_edges.return_value = [
-        {"file_id": 1, "tag_id": 1},
-        {"file_id": 2, "tag_id": 2},
+    db.library.list_song_tag_edges.return_value = [
+        {"song_id": 1, "tag_id": 1},
+        {"song_id": 2, "tag_id": 2},
         {"tag_id": 3},
     ]
 
-    result = _collect_file_ids_for_tag_ids(db, {1, 2})
+    result = _collect_song_ids_for_tag_ids(db, {1, 2})
 
     assert result == {1, 2}
 
-    db.library.list_file_tag_edges.assert_called_once()
+    db.library.list_song_tag_edges.assert_called_once()
 
 
 @pytest.mark.unit
@@ -772,17 +784,17 @@ def test_search_songs_with_tags_filters_and_hydrates_page() -> None:
             "path": "D:/Music/two.flac",
         },
     ]
-    db.library.search_files_by_tag_pattern.side_effect = [file_docs, file_docs, [file_docs[0]]]
+    db.library.search_songs_by_tag_pattern.side_effect = [file_docs, file_docs, [file_docs[0]]]
     db.library.count_tags.return_value = 1
     db.library.list_tags_by_name.return_value = [{"id": 1, "value": "rock"}]
-    db.library.list_file_tag_edges.return_value = [{"file_id": 1, "tag_id": 1}]
-    db.app.list_files_in_state.return_value = [1]
-    db.library.list_files_by_ids.return_value = [{**file_docs[0], "library_key": "1"}]
-    db.library.list_file_tags_for_files.return_value = {1: [{"name": "genre", "value": "rock"}]}
-    db.library.get_library_ids_for_files.return_value = {1: 1}
+    db.library.list_song_tag_edges.return_value = [{"song_id": 1, "tag_id": 1}]
+    db.app.list_songs_in_state.return_value = [1]
+    db.library.list_songs_by_ids.return_value = [{**file_docs[0], "library_key": "1"}]
+    db.library.list_song_tags_for_songs.return_value = {1: [{"name": "genre", "value": "rock"}]}
+    db.library.get_library_ids_for_songs.return_value = {1: 1}
 
     with patch(
-        "nomarr.components.library.library_file_query_comp.hydrate_songs_with_metadata",
+        "nomarr.components.library.library_song_query_comp.hydrate_songs_with_metadata",
         side_effect=lambda _db, docs: docs,
     ):
         rows, total = search_songs_with_tags(
@@ -810,17 +822,17 @@ def test_search_songs_with_tags_filters_and_hydrates_page() -> None:
             "library_id": 1,
         }
     ]
-    assert db.library.search_files_by_tag_pattern.call_args_list == [
+    assert db.library.search_songs_by_tag_pattern.call_args_list == [
         call("artist", "%Artist%"),
         call("album", "%Album%"),
         call("title", "%song%"),
     ]
     db.library.count_tags.assert_called_once_with()
     db.library.list_tags_by_name.assert_called_once_with("genre", limit=1)
-    db.library.list_file_tag_edges.assert_called_once_with([1])
-    db.app.list_files_in_state.assert_called_once_with(STATE_PROCESSED, limit=DEFAULT_LIMIT)
-    db.library.list_files_by_ids.assert_called_once_with([1])
-    db.library.list_file_tags_for_files.assert_called_once_with([1])
+    db.library.list_song_tag_edges.assert_called_once_with([1])
+    db.app.list_songs_in_state.assert_called_once_with(STATE_PROCESSED, limit=DEFAULT_LIMIT)
+    db.library.list_songs_by_ids.assert_called_once_with([1])
+    db.library.list_song_tags_for_songs.assert_called_once_with([1])
 
 
 @pytest.mark.unit
@@ -828,17 +840,17 @@ def test_count_files_by_tag_uses_library_facade_for_string_and_numeric_modes() -
     db = make_db()
     db.library.count_tags.return_value = 1
     db.library.list_tags_by_name.return_value = [{"id": 1, "value": "rock"}]
-    db.library.list_file_tag_edges.return_value = [
-        {"file_id": 1, "tag_id": 1},
-        {"file_id": 2, "tag_id": 1},
+    db.library.list_song_tag_edges.return_value = [
+        {"song_id": 1, "tag_id": 1},
+        {"song_id": 2, "tag_id": 1},
     ]
 
-    string_count = count_files_by_tag(db, "genre", "rock")
+    string_count = count_songs_by_tag(db, "genre", "rock")
 
     assert string_count == 2
     db.library.count_tags.assert_called_once_with()
     db.library.list_tags_by_name.assert_called_once_with("genre", limit=1)
-    db.library.list_file_tag_edges.assert_called_once_with([1])
+    db.library.list_song_tag_edges.assert_called_once_with([1])
 
     db = make_db()
     db.library.count_tags.return_value = 2
@@ -846,14 +858,14 @@ def test_count_files_by_tag_uses_library_facade_for_string_and_numeric_modes() -
         {"id": 1, "value": 120.0},
         {"id": 2, "value": True},
     ]
-    db.library.list_file_tag_edges.return_value = [{"file_id": 1, "tag_id": 1}]
+    db.library.list_song_tag_edges.return_value = [{"song_id": 1, "tag_id": 1}]
 
-    numeric_count = count_files_by_tag(db, "nom:bpm", 120.0)
+    numeric_count = count_songs_by_tag(db, "nom:bpm", 120.0)
 
     assert numeric_count == 1
     db.library.count_tags.assert_called_once_with()
     db.library.list_tags_by_name.assert_called_once_with("nom:bpm", limit=2)
-    db.library.list_file_tag_edges.assert_called_once_with([1])
+    db.library.list_song_tag_edges.assert_called_once_with([1])
 
 
 @pytest.mark.unit
@@ -864,11 +876,11 @@ def test_search_files_by_tag_numeric_sorts_by_distance_and_hydrates_tags() -> No
         {"id": 1, "value": 118.0},
         {"id": 2, "value": 121.0},
     ]
-    db.library.list_file_tag_edges.return_value = [
-        {"file_id": 1, "tag_id": 1},
-        {"file_id": 2, "tag_id": 2},
+    db.library.list_song_tag_edges.return_value = [
+        {"song_id": 1, "tag_id": 1},
+        {"song_id": 2, "tag_id": 2},
     ]
-    db.library.list_files_by_ids.return_value = [
+    db.library.list_songs_by_ids.return_value = [
         {
             "id": 1,
             "artist": "B",
@@ -884,37 +896,37 @@ def test_search_files_by_tag_numeric_sorts_by_distance_and_hydrates_tags() -> No
             "library_key": "1",
         },
     ]
-    db.library.list_file_tags_for_files.return_value = {
+    db.library.list_song_tags_for_songs.return_value = {
         1: [{"name": "nom:bpm", "value": 118.0}],
         2: [{"name": "nom:bpm", "value": 121.0}],
     }
-    db.library.get_library_ids_for_files.return_value = {2: 1}
+    db.library.get_library_ids_for_songs.return_value = {2: 1}
 
     with patch(
-        "nomarr.components.library.library_file_query_comp.hydrate_songs_with_metadata",
+        "nomarr.components.library.library_song_query_comp.hydrate_songs_with_metadata",
         side_effect=lambda _db, docs: docs,
     ):
-        result = search_files_by_tag(db, "nom:bpm", 120.0, limit=1, offset=0)
+        result = search_songs_by_tag(db, "nom:bpm", 120.0, limit=1, offset=0)
 
     assert result[0]["id"] == 2
     assert result[0]["distance"] == 1.0
     assert result[0]["library_id"] == 1
     db.library.count_tags.assert_called_once_with()
     db.library.list_tags_by_name.assert_called_once_with("nom:bpm", limit=2)
-    db.library.list_file_tag_edges.assert_called_once_with([1, 2], limit=DEFAULT_LIMIT)
-    db.library.list_files_by_ids.assert_called_once_with([1, 2])
-    db.library.list_file_tags_for_files.assert_called_once_with([2])
+    db.library.list_song_tag_edges.assert_called_once_with([1, 2], limit=DEFAULT_LIMIT)
+    db.library.list_songs_by_ids.assert_called_once_with([1, 2])
+    db.library.list_song_tags_for_songs.assert_called_once_with([2])
 
 
 @pytest.mark.unit
-def test_require_library_file_id_returns_id_for_existing_file() -> None:
+def test_require_library_song_id_returns_id_for_existing_song() -> None:
 
     db = make_db()
 
-    with patch("nomarr.components.library.library_file_query_comp.get_library_file") as mock_get_library_file:
+    with patch("nomarr.components.library.library_song_query_comp.get_library_song") as mock_get_library_file:
         mock_get_library_file.return_value = {"id": 123}
 
-        result = require_library_file_id(db, "D:/Music/song.flac", library_id=1)
+        result = require_library_song_id(db, "D:/Music/song.flac", library_id=1)
 
     assert result == 123
 
@@ -922,36 +934,33 @@ def test_require_library_file_id_returns_id_for_existing_file() -> None:
 
 
 @pytest.mark.unit
-def test_require_library_file_id_raises_for_missing_file() -> None:
+def test_require_library_song_id_raises_for_missing_song() -> None:
 
     db = make_db()
 
-    with patch("nomarr.components.library.library_file_query_comp.get_library_file") as mock_get_library_file:
+    with patch("nomarr.components.library.library_song_query_comp.get_library_song") as mock_get_library_file:
         mock_get_library_file.return_value = None
 
         with pytest.raises(FileNotFoundError, match=r"File not in library: D:/Music/missing\.flac"):
-            require_library_file_id(db, "D:/Music/missing.flac")
+            require_library_song_id(db, "D:/Music/missing.flac")
 
     mock_get_library_file.assert_called_once_with(db, "D:/Music/missing.flac", library_id=None)
 
 
 @pytest.mark.unit
-def test_list_all_file_ids_filters_non_string_ids_and_uses_default_limit() -> None:
+def test_list_all_song_ids_filters_non_string_ids_and_uses_default_limit() -> None:
 
     db = make_db()
 
-    db.library.list_files.return_value = [
-        {"id": 1},
-        {"id": "not_int"},
-        {"path": "D:/Music/three.flac"},
-        {"id": 4},
-    ]
+    db.library.list_libraries.return_value = [{"id": 1}]
 
-    result = list_all_file_ids(db)
+    db.library.list_library_song_ids.return_value = [1, 4]
+
+    result = list_all_song_ids(db)
 
     assert result == [1, 4]
 
-    db.library.list_files.assert_called_once_with(limit=DEFAULT_LIMIT)
+    db.library.list_library_song_ids.assert_called_once_with(1, limit=DEFAULT_LIMIT)
 
 
 @pytest.mark.unit
@@ -959,13 +968,15 @@ def test_get_sample_normalized_path_returns_first_value() -> None:
 
     db = make_db()
 
-    db.library.list_files.return_value = [{"normalized_path": "Artist/Album/song.flac"}]
+    db.library.list_libraries.return_value = [{"id": 1}]
+
+    db.library.list_songs.return_value = [{"normalized_path": "Artist/Album/song.flac"}]
 
     result = get_sample_normalized_path(db)
 
     assert result == "Artist/Album/song.flac"
 
-    db.library.list_files.assert_called_once_with(limit=1)
+    db.library.list_songs.assert_called_once_with(1, limit=1)
 
 
 @pytest.mark.unit
@@ -975,10 +986,10 @@ def test_find_move_candidate_by_chromaprint_normalizes_library_id() -> None:
 
     candidate = {"id": 9, "chromaprint": "abc123"}
 
-    db.library.find_library_file_by_chromaprint.return_value = candidate
+    db.library.find_library_song_by_chromaprint.return_value = candidate
 
     result = find_move_candidate_by_chromaprint(db, 9, "abc123")
 
     assert result == candidate
 
-    db.library.find_library_file_by_chromaprint.assert_called_once_with(9, "abc123")
+    db.library.find_library_song_by_chromaprint.assert_called_once_with(9, "abc123")

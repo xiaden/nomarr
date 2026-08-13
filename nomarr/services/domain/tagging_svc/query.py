@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Protocol
 
-from nomarr.components.library.file_tags_comp import get_file_tags_with_path
-from nomarr.components.library.library_file_query_comp import count_files_by_tag, search_files_by_tag
-from nomarr.components.library.library_file_state_comp import count_pending_tag_writes
 from nomarr.components.library.library_records_comp import list_library_records
+from nomarr.components.library.library_song_query_comp import count_songs_by_tag, search_songs_by_tag
+from nomarr.components.library.library_song_state_comp import count_pending_tag_writes
 from nomarr.components.library.search_files_comp import get_unique_tag_values
+from nomarr.components.library.song_tags_comp import get_song_tags_with_path
 from nomarr.components.tagging.tag_query_comp import (
     count_songs_for_tag,
     count_tags_by_name,
@@ -23,7 +23,7 @@ from nomarr.helpers.dto.library_dto import (
     SearchFilesResult,
     TagCleanupResult,
     UniqueTagKeysResult,
-    map_file_with_tags_to_dto,
+    map_song_with_tags_to_dto,
 )
 from nomarr.helpers.dto.tag_curation_dto import CommitResult, TagListResult, TagSongItem, TagValueItem
 from nomarr.workflows.library.cleanup_orphaned_tags_wf import cleanup_orphaned_tags_workflow
@@ -191,25 +191,22 @@ class TaggingQueryMixin:
         values = get_unique_mood_values(self.db, mood_tier=mood_tier, limit=limit)
         return UniqueTagKeysResult(tag_keys=values, count=len(values), calibration=None, library_id=None)
 
-    def get_file_tags(self, file_id: int, nomarr_only: bool = False) -> FileTagsResult:
-        """Get all tags for a specific file.
+    def get_song_tags(self, song_id: int, nomarr_only: bool = False) -> FileTagsResult:
+        """Return the tags currently stored for a single song.
 
         Args:
-            file_id: Library file ID
-            nomarr_only: If True, only return Nomarr-generated tags
+            song_id: The song identifier.
+            nomarr_only: Whether to only include ``nom:`` namespace tags.
 
         Returns:
-            FileTagsResult DTO with file info and tags
+            A :class:`FileTagsResult` containing the song's stored tags.
 
         Raises:
-            ValueError: If file not found
-
+            ValueError: If the song does not exist.
         """
-        result = get_file_tags_with_path(self.db, int(file_id), nomarr_only=nomarr_only)
+        result = get_song_tags_with_path(self.db, int(song_id), nomarr_only=nomarr_only)
         if not result:
-            msg = f"File with ID {file_id} not found"
-            raise ValueError(msg)
-
+            raise ValueError(f"Song with ID {song_id} not found")
         tags = [
             FileTag(
                 key=tag["key"],
@@ -219,12 +216,7 @@ class TaggingQueryMixin:
             )
             for tag in result["tags"]
         ]
-
-        return FileTagsResult(
-            file_id=int(file_id),
-            path=result["path"],
-            tags=tags,
-        )
+        return FileTagsResult(file_id=int(song_id), path=result["path"], tags=tags)
 
     def cleanup_orphaned_tags(self, dry_run: bool = False) -> TagCleanupResult:
         """Clean up orphaned tags from the database.
@@ -242,7 +234,7 @@ class TaggingQueryMixin:
             deleted_count=result["deleted_count"],
         )
 
-    def search_files_by_tag(
+    def search_songs_by_tag(
         self,
         tag_key: str,
         target_value: float | str,
@@ -261,7 +253,7 @@ class TaggingQueryMixin:
             SearchFilesResult with matched files
 
         """
-        files = search_files_by_tag(self.db, tag_key, target_value, limit, offset)
-        total = count_files_by_tag(self.db, tag_key, target_value)
-        files_with_tags = [map_file_with_tags_to_dto(f) for f in files]
-        return SearchFilesResult(files=files_with_tags, total=total, limit=limit, offset=offset)
+        files = search_songs_by_tag(self.db, tag_key, target_value, limit, offset)
+        total = count_songs_by_tag(self.db, tag_key, target_value)
+        files_with_tags = [map_song_with_tags_to_dto(f) for f in files]
+        return SearchFilesResult(songs=files_with_tags, total=total, limit=limit, offset=offset)

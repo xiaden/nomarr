@@ -10,23 +10,23 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from nomarr.components.library.library_file_query_comp import (
-    count_files_by_tag,
-    count_recently_tagged,
-    get_all_library_paths,
-    get_files_by_ids_with_tags,
-    get_library_stats,
-    get_recently_processed,
-    get_tagged_file_paths,
-    search_files_by_tag,
-)
-from nomarr.components.library.library_file_state_comp import (
-    count_errored_files,
-    get_errored_file_ids,
-    get_uncalibrated_tagged_file_ids,
-)
 from nomarr.components.library.library_records_comp import get_library_record, list_library_records
 from nomarr.components.library.library_scan_state_comp import get_libraries_in_axis_state
+from nomarr.components.library.library_song_query_comp import (
+    count_recently_tagged,
+    count_songs_by_tag,
+    get_all_library_paths,
+    get_library_stats,
+    get_recently_processed,
+    get_songs_by_ids_with_tags,
+    get_tagged_file_paths,
+    search_songs_by_tag,
+)
+from nomarr.components.library.library_song_state_comp import (
+    count_errored_songs,
+    get_errored_song_ids,
+    get_uncalibrated_tagged_song_ids,
+)
 from nomarr.components.library.search_files_comp import (
     get_unique_tag_values,
     search_songs,
@@ -52,7 +52,7 @@ from nomarr.helpers.dto.library_dto import (
     SearchFilesQuery,
     SearchFilesResult,
     UniqueTagKeysResult,
-    map_file_with_tags_to_dto,
+    map_song_with_tags_to_dto,
 )
 
 if TYPE_CHECKING:
@@ -124,11 +124,11 @@ class LibraryQueryMixin:
         libraries = list_library_records(self.db, enabled_only=True)
         all_file_ids: list[int] = []
         for lib in libraries:
-            file_ids = get_uncalibrated_tagged_file_ids(self.db, lib.id)
+            file_ids = get_uncalibrated_tagged_song_ids(self.db, lib.id)
             all_file_ids.extend(file_ids)
         if not all_file_ids:
             return []
-        files = get_files_by_ids_with_tags(self.db, all_file_ids)
+        files = get_songs_by_ids_with_tags(self.db, all_file_ids)
         return [f["path"] for f in files if f.get("path")]
 
     def search_files(self, query: SearchFilesQuery) -> SearchFilesResult:
@@ -144,8 +144,8 @@ class LibraryQueryMixin:
 
         """
         files, total = search_songs(self.db, query)
-        files_with_tags = [map_file_with_tags_to_dto(f) for f in files]
-        return SearchFilesResult(files=files_with_tags, total=total, limit=query.limit, offset=query.offset)
+        files_with_tags = [map_song_with_tags_to_dto(f) for f in files]
+        return SearchFilesResult(songs=files_with_tags, total=total, limit=query.limit, offset=query.offset)
 
     def get_files_by_ids(self, file_ids: list[int]) -> SearchFilesResult:
         """Get files by IDs with their tags.
@@ -159,11 +159,11 @@ class LibraryQueryMixin:
             SearchFilesResult with files matching the IDs
 
         """
-        files = get_files_by_ids_with_tags(self.db, [int(fid) for fid in file_ids])
-        files_with_tags = [map_file_with_tags_to_dto(f) for f in files]
-        return SearchFilesResult(files=files_with_tags, total=len(files), limit=len(file_ids), offset=0)
+        files = get_songs_by_ids_with_tags(self.db, [int(fid) for fid in file_ids])
+        files_with_tags = [map_song_with_tags_to_dto(f) for f in files]
+        return SearchFilesResult(songs=files_with_tags, total=len(files), limit=len(file_ids), offset=0)
 
-    def search_files_by_tag(
+    def search_songs_by_tag(
         self,
         tag_key: str,
         target_value: float | str,
@@ -185,10 +185,10 @@ class LibraryQueryMixin:
             SearchFilesResult with matched files (includes distance for float searches)
 
         """
-        files = search_files_by_tag(self.db, tag_key, target_value, limit, offset)
-        total = count_files_by_tag(self.db, tag_key, target_value)
-        files_with_tags = [map_file_with_tags_to_dto(f) for f in files]
-        return SearchFilesResult(files=files_with_tags, total=total, limit=limit, offset=offset)
+        files = search_songs_by_tag(self.db, tag_key, target_value, limit, offset)
+        total = count_songs_by_tag(self.db, tag_key, target_value)
+        files_with_tags = [map_song_with_tags_to_dto(f) for f in files]
+        return SearchFilesResult(songs=files_with_tags, total=total, limit=limit, offset=offset)
 
     def get_unique_tag_keys(self, nomarr_only: bool = False) -> UniqueTagKeysResult:
         """Get all unique tag keys across the library.
@@ -316,9 +316,9 @@ class LibraryQueryMixin:
 
         """
         self._get_library_or_error(library_id)
-        total = count_errored_files(self.db, int(library_id))
-        errored_ids = get_errored_file_ids(self.db, int(library_id))
-        files_raw = get_files_by_ids_with_tags(self.db, errored_ids)
+        total = count_errored_songs(self.db, int(library_id))
+        errored_ids = get_errored_song_ids(self.db, int(library_id))
+        files_raw = get_songs_by_ids_with_tags(self.db, errored_ids)
         files: list[ErroredFileItem] = [
             ErroredFileItem(
                 id=f["id"],

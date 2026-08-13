@@ -287,7 +287,7 @@ class TestEnsureModelOutputs:
         mock_db.ml.get_model_output.return_value = None
         mock_db.ml.list_model_outputs.return_value = [{"_id": "ml_model_outputs/new-output", "output_index": 0}]
 
-        ensure_model_outputs(mock_db, file_id=1, model_id="ml_models/abc", output_count=1)
+        ensure_model_outputs(mock_db, song_id=1, model_id="ml_models/abc", output_count=1)
 
         output_key = hashlib.sha256(b"ml_models/abc:0").hexdigest()[:16]
         mock_db.ml.replace_model_output.assert_called_once_with(
@@ -309,7 +309,7 @@ class TestEnsureModelOutputs:
         mock_db.ml.get_model_output.return_value = existing_output
         mock_db.ml.list_model_outputs.return_value = [existing_output]
 
-        ensure_model_outputs(mock_db, file_id=1, model_id="ml_models/abc", output_count=1)
+        ensure_model_outputs(mock_db, song_id=1, model_id="ml_models/abc", output_count=1)
 
         mock_db.ml.replace_model_output.assert_called_once_with(
             1,
@@ -336,7 +336,7 @@ class TestUpdateModelOutputLabel:
         }
 
         update_model_output_label(
-            mock_db, file_id=1, model_id="ml_models/abc", output_id="ml_model_outputs/abc123", label="mood"
+            mock_db, song_id=1, model_id="ml_models/abc", output_id="ml_model_outputs/abc123", label="mood"
         )
 
         mock_db.ml.replace_model_output.assert_called_once_with(

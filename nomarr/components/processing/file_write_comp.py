@@ -10,8 +10,8 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from nomarr.components.library.library_file_query_comp import get_file_by_id
 from nomarr.components.library.library_records_comp import get_library_record
+from nomarr.components.library.library_song_query_comp import get_song_by_id
 from nomarr.components.library.reconciliation_comp import release_claim
 from nomarr.components.tagging.tag_query_comp import get_song_tags
 from nomarr.components.tagging.tag_write_comp import set_song_tags, set_song_tags_batch
@@ -42,7 +42,7 @@ def get_file_for_writing(
     """
     # PostgreSQL uses integer IDs; convert file_key to int
     file_id = int(file_key)
-    file_doc = get_file_by_id(db, file_id)
+    file_doc = get_song_by_id(db, file_id)
     return file_id, file_key, file_doc
 
 

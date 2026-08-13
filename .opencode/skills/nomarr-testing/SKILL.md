@@ -145,6 +145,50 @@ await page.goto('/calibration');
 
 ---
 
+## Error-Behavior Coverage Policy
+
+How to choose *what* error behavior to test and *how* to test it. Codified from the 2026-08 error-coverage analysis (`artifacts/reports/error-coverage-gaps.md`), which found most untested error paths cluster in data-loss, worker-loss, security, and PG-only behavior — while many existing tests only validate mocks.
+
+### 1. Mock at the boundary, never the subject
+
+Mock only at process/IO/engine boundaries (subprocess, network, filesystem, ONNX runtime, DB engine, clock). Never patch a component's own logic to avoid exercising it:
+
+```python
+# ❌ Patches the logic under test — the real validation never executes
+@patch("nomarr.components.library.library_scan_state_comp.transition_pipeline_axis")
+def test_invalid_transition(self, mock_transition): ...
+
+# ✅ Calls the real function; asserts the real validation
+@pytest.mark.unit
+def test_invalid_transition():
+    with pytest.raises(ValueError, match="Allowed targets"):
+        transition_pipeline_axis(state, "illegal", "transition")
+```
+
+Prefer real SQLite sessions over MagicMock repos in repo/facade tests: a mocked repo can never raise a real constraint, which makes the facade's error branch structurally unreachable (the facade suites had 68–136 mock refs per file for exactly this reason).
+
+### 2. Outcome assertions over interaction assertions
+
+Assert state transitions, DB rows, HTTP bodies, filesystem effects, and UI render — not mock call arguments. Keep interaction assertions **only** for ordering/cleanup guarantees (e.g., "the claim is released even when the errored transition raises").
+
+### 3. Delete tests that can't fail meaningfully
+
+A test whose dependencies are all mocked at the wrong layer keeps the suite green while behavior rots. Delete when:
+- (a) it can never fail on real behavior (wrong-layer mocks), or
+- (b) it pins behavior we have decided is wrong — but only **after** the production fix lands, so the fix isn't blocked by its own regression test.
+
+### 4. Every skip/exclusion gets a runnable home
+
+No `@pytest.mark.skip` or CI-excluded marker without a runnable path:
+- PG-only behavior (pgcode mapping, `FOR UPDATE`, `TRUNCATE`, FK cascades, poisoned-session recovery) → a Docker-PG tier that runs in CI or nightly — never just `requires_database`-excluded.
+- Broken-but-green tests (e.g. `test_hnsw_recall.py` stale `file_id` kwargs) → repair or delete; do not leave excluded.
+
+### 5. Prioritize high-importance error behavior
+
+When choosing new tests, rank by risk: **data loss → worker loss → security/leak surfaces → PG-only paths → silent failure**. Pure-logic modules with zero tests (`ml_embed_comp`, `tagging_aggregation_comp`, `ml_backbone`, `id_codec`, `sanitize_exception_message`) are the cheapest high-value wins — mock-free by construction.
+
+---
+
 ## Validation Checklist
 
 Before committing test code:
@@ -154,6 +198,8 @@ Before committing test code:
 - [ ] E2E tests use auth fixture for authenticated pages
 - [ ] No hardcoded URLs in E2E (use `baseURL`)
 - [ ] All relevant test suites pass locally
+- [ ] Error-path tests mock at the boundary, never the subject's own logic
+- [ ] No skipped / CI-excluded test without a runnable home (Docker-PG tier or deletion)
 
 ---
 

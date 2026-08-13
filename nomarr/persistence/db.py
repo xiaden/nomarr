@@ -14,9 +14,6 @@ from sqlalchemy.orm import scoped_session
 from nomarr.persistence.database.app_repo import AppRepository
 from nomarr.persistence.database.calibration_repo import CalibrationRepo
 from nomarr.persistence.database.embedding_stream_repo import EmbeddingStreamRepository
-from nomarr.persistence.database.file_repo import FileRepository
-from nomarr.persistence.database.file_state_repo import FileStateRepository
-from nomarr.persistence.database.file_tag_repo import FileTagRepository
 from nomarr.persistence.database.folder_repo import FolderRepository
 from nomarr.persistence.database.library_repo import LibraryRepository
 from nomarr.persistence.database.model_repo import ModelRepo
@@ -24,6 +21,9 @@ from nomarr.persistence.database.navidrome_repo import NavidromeRepo
 from nomarr.persistence.database.output_repo import OutputRepo
 from nomarr.persistence.database.pipeline_repo import PipelineRepository
 from nomarr.persistence.database.scan_repo import ScanRepository
+from nomarr.persistence.database.song_repo import SongRepository
+from nomarr.persistence.database.song_state_repo import SongStateRepository
+from nomarr.persistence.database.song_tag_repo import SongTagRepository
 from nomarr.persistence.database.tag_repo import TagRepository
 from nomarr.persistence.database.vector_repo import VectorRepo
 from nomarr.persistence.pg_engine import create_pg_engine, session_factory
@@ -74,12 +74,12 @@ class Database:
         self._scan_repo = ScanRepository(self._scoped)
         self._library_repo = LibraryRepository(self._scoped)
         self._navidrome_repo = NavidromeRepo(self._scoped)
-        self._file_state_repo = FileStateRepository(self._scoped)
+        self._song_state_repo = SongStateRepository(self._scoped)
         self._pipeline_repo = PipelineRepository(self._scoped)
-        self._file_repo = FileRepository(self._scoped)
+        self._song_repo = SongRepository(self._scoped)
         self._folder_repo = FolderRepository(self._scoped)
         self._tag_repo = TagRepository(self._scoped)
-        self._file_tag_repo = FileTagRepository(self._scoped)
+        self._song_tag_repo = SongTagRepository(self._scoped)
         self._vector_repo = VectorRepo(self._scoped)
         self._model_repo = ModelRepo(self._scoped)
         self._output_repo = OutputRepo(self._scoped)
@@ -89,9 +89,9 @@ class Database:
         # Import here to avoid circular imports
         from nomarr.persistence.api.application import AppDb
         from nomarr.persistence.api.library import LibraryDb
-        from nomarr.persistence.api.library_files import LibraryFilesDb
         from nomarr.persistence.api.library_regions import LibraryRegionsDb
         from nomarr.persistence.api.library_scans import LibraryScansDb
+        from nomarr.persistence.api.library_songs import LibrarySongsDb
         from nomarr.persistence.api.library_tags import LibraryTagsDb
         from nomarr.persistence.api.ml import MlDb
 
@@ -101,30 +101,29 @@ class Database:
             app_repo=self._app_repo,
             library_repo=self._library_repo,
             navidrome_repo=self._navidrome_repo,
-            file_state_repo=self._file_state_repo,
+            song_state_repo=self._song_state_repo,
             pipeline_repo=self._pipeline_repo,
         )
-        files = LibraryFilesDb(
+        songs = LibrarySongsDb(
             session=self._scoped,
-            file_repo=self._file_repo,
+            song_repo=self._song_repo,
             folder_repo=self._folder_repo,
-            file_state_repo=self._file_state_repo,
+            song_state_repo=self._song_state_repo,
         )
         tags = LibraryTagsDb(
             session=self._scoped,
             tag_repo=self._tag_repo,
-            file_tag_repo=self._file_tag_repo,
+            song_tag_repo=self._song_tag_repo,
         )
         scans = LibraryScansDb(session=self._scoped, scan_repo=self._scan_repo)
         regions = LibraryRegionsDb(
             session=self._scoped,
             library_repo=self._library_repo,
-            file_state_repo=self._file_state_repo,
-            pipeline_repo=self._pipeline_repo,
+            song_state_repo=self._song_state_repo,
         )
         self.library = LibraryDb(
             session=self._scoped,
-            files=files,
+            songs=songs,
             tags=tags,
             scans=scans,
             regions=regions,

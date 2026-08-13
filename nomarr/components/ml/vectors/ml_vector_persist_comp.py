@@ -18,9 +18,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _make_vector_key(file_id: int, model_suite_hash: str) -> str:
+def _make_vector_key(song_id: int, model_suite_hash: str) -> str:
     """Return the deterministic key for one persisted track vector."""
-    return hashlib.sha1(f"{file_id}|{model_suite_hash}".encode()).hexdigest()
+    return hashlib.sha1(f"{song_id}|{model_suite_hash}".encode()).hexdigest()
 
 
 def _normalize_vector(vector: list[float]) -> list[float]:
@@ -33,7 +33,7 @@ def _normalize_vector(vector: list[float]) -> list[float]:
 
 def upsert_hot_track_vector(
     db: Database,
-    file_id: int,
+    song_id: int,
     backbone: str,
     model_suite_hash: str,
     embed_dim: int,
@@ -42,13 +42,13 @@ def upsert_hot_track_vector(
 ) -> str:
     """Upsert one pooled track vector into the active vector store.
 
-    Builds the hot vector document for the given file and model suite,
-    replaces that file's vectors in the selected hot namespace through the
+    Builds the hot vector document for the given song and model suite,
+    replaces that song's vectors in the selected hot namespace through the
     normalized ``db.ml`` intent API, and returns the stored vector document id.
 
     Args:
         db: Database instance.
-        file_id: Library file document ``id``.
+        song_id: Library song document ``id``.
         backbone: Backbone model name used to select the hot vector namespace.
         model_suite_hash: Hash of the model suite that produced the vector.
         embed_dim: Embedding dimensionality of ``vector``.
@@ -62,10 +62,10 @@ def upsert_hot_track_vector(
         RuntimeError: If the persisted vector cannot be reloaded after replacement.
 
     """
-    vector_key = _make_vector_key(file_id, model_suite_hash)
+    vector_key = _make_vector_key(song_id, model_suite_hash)
     vector_doc: dict[str, Any] = {
         "key": vector_key,
-        "file_id": file_id,
+        "file_id": song_id,
         "model_suite_hash": model_suite_hash,
         "embed_dim": embed_dim,
         "vector": list(vector),
@@ -75,10 +75,9 @@ def upsert_hot_track_vector(
     }
 
     collection_name = f"vectors_track_hot__{backbone}"
-    with db.ml.transaction():
-        db.ml.replace_file_vectors(collection_name, file_id, [vector_doc])
+    db.ml.replace_song_vectors(collection_name, song_id, [vector_doc])
 
-    stored_vectors = db.ml.list_file_vectors(collection_name, file_id)
+    stored_vectors = db.ml.list_song_vectors(collection_name, song_id)
     stored_vector_id = next(
         (
             str(stored_vector_id)
@@ -88,7 +87,7 @@ def upsert_hot_track_vector(
         None,
     )
     if stored_vector_id is None:
-        msg = f"Vector replacement returned no ids for file '{file_id}' in backbone '{backbone}'"
+        msg = f"Vector replacement returned no ids for song '{song_id}' in backbone '{backbone}'"
         raise RuntimeError(msg)
 
     return stored_vector_id
@@ -96,7 +95,7 @@ def upsert_hot_track_vector(
 
 def persist_backbone_vector(
     db: Database,
-    file_id: int,
+    song_id: int,
     backbone: str,
     embeddings_2d: np.ndarray,
     model_suite_hash: str,
@@ -109,7 +108,7 @@ def persist_backbone_vector(
 
     Args:
         db: Database instance.
-        file_id: song document id.
+        song_id: song document id.
         backbone: Backbone model name (used to select the vector collection).
         embeddings_2d: Shape ``[num_segments, embed_dim]`` backbone output.
         model_suite_hash: Hash of the model suite used to produce the embeddings.
@@ -125,7 +124,7 @@ def persist_backbone_vector(
         embed_dim = get_embedding_dimension(embeddings_2d)
         upsert_hot_track_vector(
             db=db,
-            file_id=file_id,
+            song_id=song_id,
             backbone=backbone,
             model_suite_hash=model_suite_hash,
             embed_dim=embed_dim,

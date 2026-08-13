@@ -96,7 +96,7 @@ class TestGetPathsNeedingCalibration:
                 ],
             ),
             patch(
-                "nomarr.services.domain.library_svc.query.get_uncalibrated_tagged_file_ids",
+                "nomarr.services.domain.library_svc.query.get_uncalibrated_tagged_song_ids",
                 return_value=[],
             ) as mock_uncalibrated,
         ):
@@ -125,11 +125,11 @@ class TestGetPathsNeedingCalibration:
                 ],
             ),
             patch(
-                "nomarr.services.domain.library_svc.query.get_uncalibrated_tagged_file_ids",
+                "nomarr.services.domain.library_svc.query.get_uncalibrated_tagged_song_ids",
                 return_value=[f"{'songs'}/a", f"{'songs'}/b"],
             ),
             patch(
-                "nomarr.services.domain.library_svc.query.get_files_by_ids_with_tags",
+                "nomarr.services.domain.library_svc.query.get_songs_by_ids_with_tags",
                 return_value=[{"path": "/music/song1.mp3"}, {"path": "/music/song2.mp3"}],
             ) as mock_files,
         ):
@@ -154,15 +154,15 @@ class TestGetErroredFiles:
                 return_value={"_id": 123},
             ),
             patch(
-                "nomarr.services.domain.library_svc.query.count_errored_files",
+                "nomarr.services.domain.library_svc.query.count_errored_songs",
                 return_value=2,
             ),
             patch(
-                "nomarr.services.domain.library_svc.query.get_errored_file_ids",
+                "nomarr.services.domain.library_svc.query.get_errored_song_ids",
                 return_value=[f"{'songs'}/1", f"{'songs'}/2"],
             ),
             patch(
-                "nomarr.services.domain.library_svc.query.get_files_by_ids_with_tags",
+                "nomarr.services.domain.library_svc.query.get_songs_by_ids_with_tags",
                 return_value=[
                     {
                         "id": 1,
@@ -210,15 +210,15 @@ class TestGetErroredFiles:
                 return_value={"_id": 123},
             ),
             patch(
-                "nomarr.services.domain.library_svc.query.count_errored_files",
+                "nomarr.services.domain.library_svc.query.count_errored_songs",
                 return_value=0,
             ),
             patch(
-                "nomarr.services.domain.library_svc.query.get_errored_file_ids",
+                "nomarr.services.domain.library_svc.query.get_errored_song_ids",
                 return_value=[],
             ),
             patch(
-                "nomarr.services.domain.library_svc.query.get_files_by_ids_with_tags",
+                "nomarr.services.domain.library_svc.query.get_songs_by_ids_with_tags",
                 return_value=[],
             ),
         ):

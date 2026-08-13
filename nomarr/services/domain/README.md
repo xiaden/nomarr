@@ -21,7 +21,7 @@ Service classes that expose domain operations to the interface layer. Each servi
  | `tagging_svc.py` | Calibrated tag application — file/library tagging, reconciliation, background apply |
  | `vector_maintenance_svc.py` | Hot→cold vector promotion, index rebuild, stats |
  | `vector_search_svc.py` | ANN similarity search against cold vector collections |
- | `_library_mapping.py` | DTO mapper — converts raw file dicts to `LibraryFileWithTags` DTOs |
+ | `_library_mapping.py` | DTO mapper — converts raw song dicts to `LibrarySongWithTags` DTOs |
  | `library_svc/` | Composite library service (admin, scan, query, files, entities) — see subfolder README |
 
 ## Patterns

@@ -5,8 +5,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, cast
 
-from nomarr.components.library.library_file_state_comp import bulk_set_tags_not_fresh
 from nomarr.components.library.library_records_comp import get_library_record
+from nomarr.components.library.library_song_state_comp import bulk_set_tags_not_fresh
 from nomarr.components.library.reconciliation_comp import (
     claim_files_for_reconciliation,
     count_files_needing_reconciliation,

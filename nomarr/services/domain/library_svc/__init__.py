@@ -4,7 +4,7 @@ This package provides a modular LibraryService composed from focused mixins:
 - LibraryAdminMixin: Library CRUD, configuration, and data management
 - LibraryScanMixin: Scanning operations, status, and history
 - LibraryQueryMixin: Statistics, search, and tag discovery
-- LibraryFilesMixin: File tag operations and path handling
+- LibrarySongsMixin: Song tag operations and path handling
 """
 
 from __future__ import annotations
@@ -17,19 +17,19 @@ if TYPE_CHECKING:
 
 from .admin import LibraryAdminMixin
 from .config import LibraryServiceConfig
-from .files import LibraryFilesMixin
 from .query import LibraryQueryMixin
 from .scan import LibraryScanMixin
+from .songs import LibrarySongsMixin
 
 
-class LibraryService(LibraryAdminMixin, LibraryScanMixin, LibraryQueryMixin, LibraryFilesMixin):
+class LibraryService(LibraryAdminMixin, LibraryScanMixin, LibraryQueryMixin, LibrarySongsMixin):
     """Unified library management service.
 
     This service composes functionality from multiple focused mixins:
     - Admin: Library CRUD, configuration checks, clear data
     - Scan: Scanning operations, status, history
     - Query: Statistics, search, tag discovery
-    - Files: File tag operations, reconciliation, path resolution
+    - Songs: Song tag operations, reconciliation, path resolution
 
     Usage:
         db = Database(...)
@@ -49,8 +49,8 @@ class LibraryService(LibraryAdminMixin, LibraryScanMixin, LibraryQueryMixin, Lib
         stats = service.get_library_stats()
         files = service.search_files(SearchFilesQuery(query_text="rock"))
 
-        # File operations
-        tags = service.get_file_tags(file_id="file-123")
+        # Song operations
+        tags = service.get_song_tags(song_id="song-123")
         service.cleanup_orphaned_tags()
     """
 

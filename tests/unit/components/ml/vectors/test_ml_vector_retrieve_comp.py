@@ -16,7 +16,7 @@ def _make_db() -> MagicMock:
     """Create a mock Database with sync ml methods configured."""
     db = MagicMock()
     db.ml.get_embedding_stats = MagicMock()
-    db.ml.list_file_vectors = MagicMock()
+    db.ml.list_song_vectors = MagicMock()
     db.ml.search_vectors = MagicMock()
     return db
 
@@ -38,7 +38,7 @@ class TestGetColdTrackVector:
 
         assert result is None
         mock_db.ml.get_embedding_stats.assert_called_once_with("effnet")
-        mock_db.ml.list_file_vectors.assert_not_called()
+        mock_db.ml.list_song_vectors.assert_not_called()
 
     def test_returns_none_when_cold_count_negative(self) -> None:
         """Returns None when cold_count is a negative/string value from stats."""
@@ -53,15 +53,13 @@ class TestGetColdTrackVector:
 
         assert result is None
         mock_db.ml.get_embedding_stats.assert_called_once_with("effnet")
-        mock_db.ml.list_file_vectors.assert_not_called()
+        mock_db.ml.list_song_vectors.assert_not_called()
 
     def test_returns_vector_document_when_cold_exists(self) -> None:
-        """Fetches and returns vector via list_file_vectors when cold_count > 0."""
+        """Fetches and returns vector via list_song_vectors when cold_count > 0."""
         mock_db = _make_db()
         expected_doc = {
-            "_id": "vectors_track_cold__effnet/k1",
-            "_key": "k1",
-            "file_id": 1,
+            "song_id": 1,
             "vector": [0.1, 0.2, 0.3],
             "score": 0.95,
         }
@@ -70,13 +68,13 @@ class TestGetColdTrackVector:
             "hot_count": 0,
             "index_exists": True,
         }
-        mock_db.ml.list_file_vectors.return_value = [expected_doc]
+        mock_db.ml.list_song_vectors.return_value = [expected_doc]
 
         result = get_cold_track_vector(mock_db, 1, "effnet")
 
         assert result == expected_doc
         mock_db.ml.get_embedding_stats.assert_called_once_with("effnet")
-        mock_db.ml.list_file_vectors.assert_called_once_with("effnet", 1)
+        mock_db.ml.list_song_vectors.assert_called_once_with("effnet", 1)
 
     def test_returns_none_when_vector_not_found(self) -> None:
         """Returns None when cold collection has docs but file has no vector."""
@@ -86,13 +84,13 @@ class TestGetColdTrackVector:
             "hot_count": 0,
             "index_exists": True,
         }
-        mock_db.ml.list_file_vectors.return_value = []
+        mock_db.ml.list_song_vectors.return_value = []
 
         result = get_cold_track_vector(mock_db, 999, "effnet")
 
         assert result is None
         mock_db.ml.get_embedding_stats.assert_called_once_with("effnet")
-        mock_db.ml.list_file_vectors.assert_called_once_with("effnet", 999)
+        mock_db.ml.list_song_vectors.assert_called_once_with("effnet", 999)
 
 
 @pytest.mark.unit
@@ -119,7 +117,7 @@ class TestSearchSimilarColdTrackVectors:
         """Delegates to db.ml.search_vectors when cold_count > 0."""
         mock_db = _make_db()
         mock_db.ml.get_embedding_stats.return_value = {"cold_count": 300}
-        mock_db.ml.search_vectors.return_value = [{"file_id": 2, "score": 0.91}]
+        mock_db.ml.search_vectors.return_value = [{"song_id": 2, "score": 0.91}]
 
         result = search_similar_cold_track_vectors(
             mock_db,
@@ -128,7 +126,7 @@ class TestSearchSimilarColdTrackVectors:
             result_limit=11,
         )
 
-        assert result == [{"file_id": 2, "score": 0.91}]
+        assert result == [{"song_id": 2, "score": 0.91}]
         mock_db.ml.get_embedding_stats.assert_called_once_with("effnet")
         mock_db.ml.search_vectors.assert_called_once_with(
             "effnet",

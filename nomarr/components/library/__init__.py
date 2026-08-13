@@ -1,15 +1,10 @@
-"""Library components — file management, scanning, metadata, and queries.
+"""Library components — song management, scanning, metadata, and queries.
 
-Core library domain components covering file mutation/queries, folder
+Core library domain components covering song mutation/queries, folder
 discovery, scan lifecycle, path reconciliation, metadata extraction,
-chromaprint computation, file state transitions, and tag hydration.
+chromaprint computation, song state transitions, and tag hydration.
 """
 
-from .file_sync_comp import mark_file_processed, save_file_tags
-from .file_tags_comp import get_file_tags_with_path
-from .library_file_mutation_comp import get_file_library_key, set_chromaprint, upsert_library_file
-from .library_file_query_comp import get_library_file
-from .library_file_state_comp import bulk_set_not_hydrated
 from .library_id_comp import library_key_from_ref, normalize_library_id
 from .library_records_comp import (
     create_library_record,
@@ -38,6 +33,9 @@ from .library_scan_file_ops_comp import (
     snapshot_existing_files,
     upsert_scanned_files,
 )
+from .library_song_mutation_comp import get_song_library_key, set_chromaprint, upsert_library_song
+from .library_song_query_comp import get_library_song
+from .library_song_state_comp import bulk_set_not_hydrated
 from .library_watch_config_comp import (
     get_library_watch_config,
     list_watchable_libraries,
@@ -60,6 +58,8 @@ from .search_files_comp import (
     get_unique_tag_values,
     search_songs,
 )
+from .song_sync_comp import mark_song_processed, save_song_tags
+from .song_tags_comp import get_song_tags_with_path
 
 __all__ = [
     "bulk_set_not_hydrated",
@@ -73,38 +73,38 @@ __all__ = [
     "find_ml_complete_libraries",
     "get_base_library_root",
     "get_cached_folders",
-    "get_file_library_key",
-    "get_file_tags_with_path",
     "get_library_by_name",
-    "get_library_file",
     "get_library_record",
     "get_library_scan_histories",
+    "get_library_song",
     "get_library_watch_config",
     "get_scanning_library_ids",
+    "get_song_library_key",
+    "get_song_tags_with_path",
     "get_unique_tag_values",
     "library_key_from_ref",
     "list_all_library_keys",
     "list_library_records",
     "list_watchable_libraries",
     "list_watchable_library_records",
-    "mark_file_processed",
     "mark_scan_completed",
     "mark_scan_started",
+    "mark_song_processed",
     "normalize_library_id",
     "normalize_library_root",
     "remove_deleted_files",
     "resolve_artists",
     "resolve_library_for_scan",
     "resolve_path_within_library",
-    "save_file_tags",
     "save_folder_record",
+    "save_song_tags",
     "search_songs",
     "set_chromaprint",
     "snapshot_existing_files",
     "update_library_config_fields",
     "update_library_record",
     "update_scan_progress",
-    "upsert_library_file",
+    "upsert_library_song",
     "upsert_scanned_files",
     "validate_library_root",
 ]

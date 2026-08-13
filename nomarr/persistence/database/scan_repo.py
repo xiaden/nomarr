@@ -24,6 +24,12 @@ if TYPE_CHECKING:
 
 _T = cast("Table", LibraryScan.__table__)
 
+# Columns on the ``library_scans`` table — any payload key that is not a
+# column (e.g. legacy ``key``/``files_total``/``completed_at``/``scan_heartbeat``)
+# is dropped at the write boundary so ``insert_one`` never receives an unknown
+# column (which would raise a compile error on strict insert).
+_SCAN_COLUMNS: frozenset[str] = frozenset(_T.columns.keys())
+
 
 def _row_to_dto(row: Row) -> LibraryScanRow:
     """Convert a SQLAlchemy ``Row`` to a ``LibraryScanRow`` TypedDict."""
@@ -48,10 +54,16 @@ class ScanRepository:
         self._session = session
 
     def create_scan(self, payload: dict[str, Any]) -> int:
-        """Insert a new scan record and return its ``id``."""
+        """Insert a new scan record and return its ``id``.
+
+        Only keys that map to a ``library_scans`` column are written; any
+        unknown/legacy payload keys are silently dropped to keep the strict
+        ``insert_one`` from raising a compile error.
+        """
+        filtered = {k: v for k, v in payload.items() if k in _SCAN_COLUMNS}
         with map_persistence_exceptions():
             with self._session.begin_nested():
-                row = insert_one(_T, payload, session=self._session)
+                row = insert_one(_T, filtered, session=self._session)
             self._session.commit()
             return int(row._mapping["id"])
 

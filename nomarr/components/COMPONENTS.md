@@ -39,13 +39,13 @@ components/
 │
   ├── library/
 │   ├── file_batch_scanner_comp.py     # Batch file scanning
-│   ├── file_sync_comp.py              # File synchronization
-│   ├── file_tags_comp.py              # File tag operations
+│   ├── song_sync_comp.py              # Song sync operations
+│   ├── song_tags_comp.py              # Song tag operations
 │   ├── folder_analysis_comp.py        # Folder structure analysis
 │   ├── library_admin_comp.py          # Library CRUD
-│   ├── library_file_mutation_comp.py  # File insert/update/delete, batch ops
-│   ├── library_file_query_comp.py     # File query operations
-│   ├── library_file_state_comp.py     # File state transitions and membership
+│   ├── library_song_mutation_comp.py  # Song insert/update/delete, batch ops
+│   ├── library_song_query_comp.py     # Song query operations
+│   ├── library_song_state_comp.py     # Song state transitions and membership
 │   ├── library_id_comp.py             # Library ID normalization
 │   ├── library_records_comp.py        # Library record CRUD and queries
 │   ├── library_root_comp.py           # Root path operations

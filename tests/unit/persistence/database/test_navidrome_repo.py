@@ -7,7 +7,7 @@ from sqlalchemy import insert
 
 from nomarr.persistence.database.navidrome_repo import NavidromeRepo
 from nomarr.persistence.models.library import Library
-from nomarr.persistence.models.library_file import LibraryFile
+from nomarr.persistence.models.song import Song
 
 
 def _insert_library(session) -> int:
@@ -29,10 +29,10 @@ def _insert_library(session) -> int:
     return int(result.scalar_one())
 
 
-def _insert_library_file(session, library_id: int, path: str = "/music/nd_test/file.mp3") -> int:
-    """Insert a library file row and return its id."""
+def _insert_song(session, library_id: int, path: str = "/music/nd_test/file.mp3") -> int:
+    """Insert a song row and return its id."""
     stmt = (
-        insert(LibraryFile)
+        insert(Song)
         .values(
             library_id=library_id,
             path=path,
@@ -41,7 +41,7 @@ def _insert_library_file(session, library_id: int, path: str = "/music/nd_test/f
             modified_time=1000,
             created_at=1000,
         )
-        .returning(LibraryFile.id)
+        .returning(Song.id)
     )
     result = session.execute(stmt)
     return int(result.scalar_one())
@@ -111,15 +111,15 @@ class TestNavidromeRepo:
         assert "keys_1" in keys
         assert "keys_2" in keys
 
-    def test_map_track_to_file(self, pg_session) -> None:
-        """map_track_to_file should create a track-to-file mapping."""
+    def test_map_track_to_song(self, pg_session) -> None:
+        """map_track_to_file should create a track-to-song mapping."""
         lib_id = _insert_library(pg_session)
-        file_id = _insert_library_file(pg_session, lib_id)
+        song_id = _insert_song(pg_session, lib_id)
         repo = NavidromeRepo(pg_session)
         repo.upsert_track("nd_map", "Title", "Artist", "Album", "/path.mp3")
-        repo.map_track_to_file("nd_map", file_id)
+        repo.map_track_to_file("nd_map", song_id)
         result = repo.get_mapped_file("nd_map")
-        assert result == file_id
+        assert result == song_id
 
     def test_get_mapped_file_nonexistent(self, pg_session) -> None:
         """get_mapped_file should return None when no mapping exists."""
@@ -128,17 +128,17 @@ class TestNavidromeRepo:
         assert result is None
 
     def test_resolve_file_to_nd_track(self, pg_session) -> None:
-        """resolve_file_to_nd_track should reverse-lookup a track by file_id."""
+        """resolve_file_to_nd_track should reverse-lookup a track by song_id."""
         lib_id = _insert_library(pg_session)
-        file_id = _insert_library_file(pg_session, lib_id)
+        song_id = _insert_song(pg_session, lib_id)
         repo = NavidromeRepo(pg_session)
         repo.upsert_track("nd_resolve", "Title", "Artist", "Album", "/path.mp3")
-        repo.map_track_to_file("nd_resolve", file_id)
-        result = repo.resolve_file_to_nd_track(file_id)
+        repo.map_track_to_file("nd_resolve", song_id)
+        result = repo.resolve_file_to_nd_track(song_id)
         assert result == "nd_resolve"
 
     def test_resolve_file_to_nd_track_nonexistent(self, pg_session) -> None:
-        """resolve_file_to_nd_track should return None for unmapped file."""
+        """resolve_file_to_nd_track should return None for unmapped song."""
         repo = NavidromeRepo(pg_session)
         result = repo.resolve_file_to_nd_track(999999)
         assert result is None
@@ -160,21 +160,21 @@ class TestNavidromeRepo:
         assert count == 0
 
     def test_bulk_map_tracks(self, pg_session) -> None:
-        """bulk_map_tracks should insert multiple track-to-file mappings."""
+        """bulk_map_tracks should insert multiple track-to-song mappings."""
         lib_id = _insert_library(pg_session)
-        file_id_1 = _insert_library_file(pg_session, lib_id, "/music/nd_test/b1.mp3")
-        file_id_2 = _insert_library_file(pg_session, lib_id, "/music/nd_test/b2.mp3")
+        song_id_1 = _insert_song(pg_session, lib_id, "/music/nd_test/b1.mp3")
+        song_id_2 = _insert_song(pg_session, lib_id, "/music/nd_test/b2.mp3")
         repo = NavidromeRepo(pg_session)
         repo.bulk_upsert_tracks(["bm_1", "bm_2"])
 
         mappings = [
-            {"nd_id": "bm_1", "file_id": str(file_id_1)},
-            {"nd_id": "bm_2", "file_id": str(file_id_2)},
+            {"nd_id": "bm_1", "song_id": str(song_id_1)},
+            {"nd_id": "bm_2", "song_id": str(song_id_2)},
         ]
         count = repo.bulk_map_tracks(mappings)
         assert count == 2
-        assert repo.get_mapped_file("bm_1") == file_id_1
-        assert repo.get_mapped_file("bm_2") == file_id_2
+        assert repo.get_mapped_file("bm_1") == song_id_1
+        assert repo.get_mapped_file("bm_2") == song_id_2
 
     def test_bulk_map_tracks_empty(self, pg_session) -> None:
         """bulk_map_tracks should return 0 for empty input."""
@@ -194,34 +194,34 @@ class TestNavidromeRepo:
         assert isinstance(play_id, int)
         assert play_id > 0
 
-    def test_record_play_with_file(self, pg_session) -> None:
-        """record_play with file_id should also create a play-to-file mapping."""
+    def test_record_play_with_song(self, pg_session) -> None:
+        """record_play with song_id should also create a play-to-song mapping."""
         lib_id = _insert_library(pg_session)
-        file_id = _insert_library_file(pg_session, lib_id)
+        song_id = _insert_song(pg_session, lib_id)
         repo = NavidromeRepo(pg_session)
         repo.upsert_track("nd_playf", "Title", "Artist", "Album", "/path.mp3")
         play_id = repo.record_play(
             nd_id="nd_playf",
             user_id="user_1",
             played_at=6000,
-            file_id=file_id,
+            song_id=song_id,
         )
         assert play_id > 0
 
     def test_get_top_plays(self, pg_session) -> None:
         """get_top_plays should return aggregated play counts for a user."""
         lib_id = _insert_library(pg_session)
-        file_id = _insert_library_file(pg_session, lib_id)
+        song_id = _insert_song(pg_session, lib_id)
         repo = NavidromeRepo(pg_session)
         repo.upsert_track("nd_top", "Title", "Artist", "Album", "/path.mp3")
 
-        # Record 3 plays for the same track/file/user
+        # Record 3 plays for the same track/song/user
         for i in range(3):
             repo.record_play(
                 nd_id="nd_top",
                 user_id="top_user",
                 played_at=7000 + i,
-                file_id=file_id,
+                song_id=song_id,
             )
 
         results = repo.get_top_plays("top_user", top_n=10)
@@ -232,14 +232,14 @@ class TestNavidromeRepo:
         assert matching[0]["last_played"] == 7002
 
     def test_delete_tracks_for_file(self, pg_session) -> None:
-        """delete_tracks_for_file should remove track mappings for a file."""
+        """delete_tracks_for_file should remove track mappings for a song."""
         lib_id = _insert_library(pg_session)
-        file_id = _insert_library_file(pg_session, lib_id)
+        song_id = _insert_song(pg_session, lib_id)
         repo = NavidromeRepo(pg_session)
         repo.upsert_track("nd_delf", "Title", "Artist", "Album", "/path.mp3")
-        repo.map_track_to_file("nd_delf", file_id)
+        repo.map_track_to_file("nd_delf", song_id)
 
-        deleted = repo.delete_tracks_for_file(file_id)
+        deleted = repo.delete_tracks_for_file(song_id)
         assert deleted == 1
         result = repo.get_mapped_file("nd_delf")
         assert result is None

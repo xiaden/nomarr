@@ -8,7 +8,7 @@ File and library management — scanning, syncing, metadata extraction, move det
 - Folder discovery and incremental scan planning (mtime + file count change detection)
 - Batch file scanning with metadata extraction and chromaprint fingerprinting
 - Missing file detection and move detection (chromaprint-based)
-- File tag storage and search with filtering
+- Song tag storage and search with filtering
 - Scan lifecycle management (start, progress, complete, interrupt recovery)
 - Path reconciliation after library root changes
 
@@ -28,11 +28,11 @@ File and library management — scanning, syncing, metadata extraction, move det
  | `scan_lifecycle_comp` | Scan start/complete marks, progress updates, interrupt detection |
  | `library_scan_file_ops_comp` | Persist scanned files/folders, bootstrap file states, remove deleted files |
  | `library_scan_state_comp` | Pipeline axis transitions, scan state persistence |
- | `library_file_mutation_comp` | Single-file insert/update/delete, batch upserts, path/time updates |
- | `library_file_query_comp` | File queries (paginated listing, search, tag hydration, stats) |
-  | `library_file_state_comp` | File state transitions, discovery of next file to process, bulk state ops |
- | `file_sync_comp` | Single-file operations: mark tagged, save tags, set chromaprint |
- | `file_tags_comp` | Retrieve all tags for a file with optional Nomarr-only filtering |
+ | `library_song_mutation_comp` | Single-song insert/update/delete, batch upserts, path/time updates |
+ | `library_song_query_comp` | Song queries (paginated listing, search, tag hydration, stats) |
+  | `library_song_state_comp` | Song state transitions, discovery of next song to process, bulk state ops |
+ | `song_sync_comp` | Single-song operations: mark tagged, save tags, set chromaprint |
+ | `song_tags_comp` | Retrieve all tags for a song with optional Nomarr-only filtering |
  | `tag_hydration_comp` | Hydrate songs with canonical metadata from tags |
  | `metadata_extraction_comp` | Extract metadata from audio files (mutagen-based: MP3/MP4/FLAC), resolve artists, compute chromaprints |
  | `missing_file_detection_comp` | Folder-aware detection of files removed from disk (respects skipped folders) |

@@ -83,7 +83,7 @@ def _search_all_clusters(
             continue
         any_searched = True
         for item in raw:
-            fid = item.get("file_id")
+            fid = item.get("song_id")
             if fid is not None and fid not in seen:
                 seen.add(fid)
                 all_results.append(item)
@@ -109,7 +109,7 @@ def build_familiar_playlist(
     if raw_results is None:
         return []
 
-    file_ids = [str(r["file_id"]) for r in raw_results if r["file_id"] in played][: ctx["max_songs"]]
+    file_ids = [str(r["song_id"]) for r in raw_results if r["song_id"] in played][: ctx["max_songs"]]
 
     return [
         NavidromePersonalPlaylistEntry(
@@ -131,7 +131,7 @@ def build_discovery_playlist(
     if raw_results is None:
         return []
 
-    file_ids = [str(r["file_id"]) for r in raw_results if r["file_id"] not in played][: ctx["max_songs"]]
+    file_ids = [str(r["song_id"]) for r in raw_results if r["song_id"] not in played][: ctx["max_songs"]]
 
     return [
         NavidromePersonalPlaylistEntry(
@@ -163,14 +163,14 @@ def build_hidden_gems_playlist(
     if raw_results is None:
         return []
 
-    candidates: list[dict[str, Any]] = [r for r in raw_results if r["file_id"] not in played]
+    candidates: list[dict[str, Any]] = [r for r in raw_results if r["song_id"] not in played]
 
     if known_artists:
-        candidate_file_ids = [r["file_id"] for r in candidates]
-        candidate_artists = get_tag_values_grouped_by_file(db, candidate_file_ids, "artist")
-        candidates = [r for r in candidates if not (candidate_artists.get(r["file_id"], set()) & known_artists)]
+        candidate_song_ids = [r["song_id"] for r in candidates]
+        candidate_artists = get_tag_values_grouped_by_file(db, candidate_song_ids, "artist")
+        candidates = [r for r in candidates if not (candidate_artists.get(r["song_id"], set()) & known_artists)]
 
-    file_ids = [str(r["file_id"]) for r in candidates][: ctx["max_songs"]]
+    file_ids = [str(r["song_id"]) for r in candidates][: ctx["max_songs"]]
 
     return [
         NavidromePersonalPlaylistEntry(
@@ -199,7 +199,7 @@ def build_universal_playlist(
         step = max(1, len(raw_results) // ctx["max_songs"])
         sampled = raw_results[::step][: ctx["max_songs"]]
         random.shuffle(sampled)
-        file_ids = [str(r["file_id"]) for r in sampled]
+        file_ids = [str(r["song_id"]) for r in sampled]
 
     return [
         NavidromePersonalPlaylistEntry(
@@ -233,15 +233,15 @@ def build_genre_playlists(
         return []
 
     # Get vectors for played files by querying per file_id.
-    # Note: db.ml.list_file_vectors() returns EmbeddingRecord which does
+    # Note: db.ml.list_song_vectors() returns EmbeddingRecord which does
     # not currently include the "embedding" field — this is a known
     # persistence-layer gap tracked in S2 scope.
     vector_map: dict[int, list[float]] = {}
     for fid_str in played_file_ids:
-        results = db.ml.list_file_vectors(ctx["backbone_id"], int(fid_str))
+        results = db.ml.list_song_vectors(ctx["backbone_id"], int(fid_str))
         for doc in results:
-            if doc.get("file_id"):
-                vector_map[doc["file_id"]] = doc["embedding"]  # type: ignore[typeddict-item]
+            if doc.get("song_id"):
+                vector_map[doc["song_id"]] = doc["embedding"]  # type: ignore[typeddict-item]
 
     if not vector_map:
         return []
@@ -311,7 +311,7 @@ def build_genre_playlists(
             )
             continue
 
-        file_ids = [str(r["file_id"]) for r in raw_results][: ctx["max_songs"]]
+        file_ids = [str(r["song_id"]) for r in raw_results][: ctx["max_songs"]]
         playlists.append(
             NavidromePersonalPlaylistEntry(
                 playlist_type=f"genre_{genre.lower()}",

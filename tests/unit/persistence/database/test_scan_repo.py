@@ -50,6 +50,38 @@ class TestScanRepository:
         assert isinstance(scan_id, int)
         assert scan_id > 0
 
+    def test_create_scan_drops_legacy_keys_at_write_boundary(self, pg_session) -> None:
+        """create_scan should drop non-column payload keys before insert.
+
+        Legacy doc-shaped keys (``key``, ``files_total``, ``completed_at``,
+        ``scan_heartbeat``) have no ``library_scans`` column; the write-boundary
+        filter must strip them so the strict ``insert_one`` does not raise a
+        compile error on unknown columns.
+        """
+        lib_id = _create_library(pg_session)
+        repo = ScanRepository(pg_session)
+        scan_id = repo.create_scan(
+            {
+                "library_id": lib_id,
+                "scan_type": "full",
+                "status": "completed",
+                "started_at": 1000,
+                "finished_at": 2000,
+                # Legacy / scan-doc keys that have no LibraryScan column:
+                "key": "1",
+                "files_total": 999,
+                "completed_at": 2000,
+                "scan_heartbeat": 2000,
+            }
+        )
+        assert isinstance(scan_id, int)
+        assert scan_id > 0
+        result = repo.get_scan_record(lib_id)
+        assert result is not None
+        assert result["scan_type"] == "full"
+        assert result["status"] == "completed"
+        assert result["files_found"] == 0
+
     def test_get_scan_record_existing(self, pg_session) -> None:
         """get_scan_record should return the most recent scan for a library."""
         lib_id = _create_library(pg_session)

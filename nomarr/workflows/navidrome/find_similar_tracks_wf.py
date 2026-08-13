@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, TypedDict
 
-from nomarr.components.library.library_file_query_comp import get_files_by_ids_with_tags
+from nomarr.components.library.library_song_query_comp import get_songs_by_ids_with_tags
 from nomarr.components.ml.vectors.ml_vector_retrieve_comp import (
     get_cold_track_vector,
     search_similar_cold_track_vectors,
@@ -50,10 +50,10 @@ def find_similar_tracks(
     """Find tracks similar to a portable seed descriptor.
 
     Pipeline:
-        1. Resolve seed descriptor to Nomarr file_id
+        1. Resolve seed descriptor to a library song id
         2. Fetch seed vector from the promoted cold collection via components
         3. Run ANN search on cold collection
-        4. Enrich result file_ids with descriptor metadata
+        4. Enrich result song_ids with descriptor metadata
         5. Return up to ``count`` results sorted by similarity score
 
     Args:
@@ -104,7 +104,7 @@ def find_similar_tracks(
     )
 
     # Exclude the seed track itself from results
-    results = [r for r in raw_results if r["file_id"] != seed_file_id]
+    results = [r for r in raw_results if r["song_id"] != seed_file_id]
     logger.debug("ANN search returned %d results (excluding seed)", len(results))
 
     if not results:
@@ -112,15 +112,15 @@ def find_similar_tracks(
 
     # 4. Enrich with metadata
     results = results[:count]
-    enrichment_file_ids = [r["file_id"] for r in results]
-    file_docs = get_files_by_ids_with_tags(db, enrichment_file_ids)
+    enrichment_song_ids = [r["song_id"] for r in results]
+    file_docs = get_songs_by_ids_with_tags(db, enrichment_song_ids)
     file_docs_by_id: dict[str, dict] = {doc["id"]: doc for doc in file_docs}
 
     # 5. Build result list
     output: list[SimilarTrackResult] = []
     for result in results:
-        file_id = result["file_id"]
-        doc = file_docs_by_id.get(file_id, {})
+        song_id = result["song_id"]
+        doc = file_docs_by_id.get(song_id, {})
         descriptor = build_track_descriptor(doc)
 
         output.append(
@@ -134,7 +134,9 @@ def find_similar_tracks(
                 disc_number=descriptor["disc_number"],
                 year=descriptor["year"],
                 nomarr_file_key=descriptor["nomarr_file_key"],
-                score=float(result["score"]),
+                # SimilarResult has no ``score``; derive a similarity score
+                # from its ``distance`` so ``SimilarTrackResult.score`` stays populated.
+                score=1.0 / (1.0 + float(result["distance"])),
             )
         )
 

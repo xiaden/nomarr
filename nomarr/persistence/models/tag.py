@@ -26,7 +26,11 @@ class Tag(Base):
         ForeignKey("tags.id", ondelete="SET NULL"), nullable=True, index=True
     )
     source: Mapped[str] = mapped_column(String(100), nullable=False)
+    # Legacy column: kept for schema stability, never populated by any code
+    # path. ML scores live on tag_model_output (see DD-song-domain-repair Q5).
     confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Legacy column: kept for schema stability, never populated by any code
+    # path. ML scores live on tag_model_output (see DD-song-domain-repair Q5).
     tier: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[int] = mapped_column(BigInteger)
 

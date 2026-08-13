@@ -16,11 +16,6 @@ from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.components.library.file_batch_scanner_comp import scan_folder_files
 from nomarr.components.library.folder_analysis_comp import discover_library_folders
-from nomarr.components.library.library_file_query_comp import (
-    get_files_for_folder,
-    get_folder_rel_paths,
-)
-from nomarr.components.library.library_file_state_comp import transition_file_state
 from nomarr.components.library.library_root_comp import validate_library_root
 from nomarr.components.library.library_scan_file_ops_comp import (
     cleanup_stale_folders,
@@ -30,6 +25,11 @@ from nomarr.components.library.library_scan_file_ops_comp import (
     upsert_scanned_files,
 )
 from nomarr.components.library.library_scan_state_comp import transition_pipeline_axis
+from nomarr.components.library.library_song_query_comp import (
+    get_folder_rel_paths,
+    get_songs_for_folder,
+)
+from nomarr.components.library.library_song_state_comp import transition_song_state
 from nomarr.components.library.scan_lifecycle_comp import (
     mark_scan_completed,
     mark_scan_started,
@@ -96,7 +96,7 @@ def scan_library_quick_workflow(
     try:
         # Step 2 — Pre-scan DB lookups
         db_folder_paths = get_folder_rel_paths(db, library_id)
-        file_count = db.library.count_files_for_library(library_id)
+        file_count = db.library.count_songs_for_library(library_id)
         cached_folders = get_cached_folders(db, library_id)
 
         # Step 3 — Discover folders on disk
@@ -122,7 +122,7 @@ def scan_library_quick_workflow(
 
             for attempt in range(2):
                 try:
-                    existing_for_folder = get_files_for_folder(db, library_id, folder.rel_path)
+                    existing_for_folder = get_songs_for_folder(db, library_id, folder.rel_path)
                     batch = scan_folder_files(
                         folder_path=Path(folder.abs_path),
                         library_root=library_root,
@@ -145,8 +145,8 @@ def scan_library_quick_workflow(
                         file_ids = cast(
                             "list[int]", upsert_scanned_files(db, batch.file_entries, batch.edge_bootstraps)
                         )
-                        transition_file_state(db, file_ids, STATE_NOT_SCANNED, STATE_SCANNED)
-                        transition_file_state(db, file_ids, STATE_ERRORED, STATE_NOT_ERRORED)
+                        transition_song_state(db, file_ids, STATE_NOT_SCANNED, STATE_SCANNED)
+                        transition_song_state(db, file_ids, STATE_ERRORED, STATE_NOT_ERRORED)
                         # Reset hydrated → not_hydrated for modified files
                         # so the tag extraction worker re-extracts their audio tags.
                         # New files already get not_hydrated from state bootstrap.
@@ -156,7 +156,7 @@ def scan_library_quick_workflow(
                             if e["path"] not in new_paths
                         ]
                         if modified_file_ids:
-                            transition_file_state(db, modified_file_ids, STATE_HYDRATED, STATE_NOT_HYDRATED)
+                            transition_song_state(db, modified_file_ids, STATE_HYDRATED, STATE_NOT_HYDRATED)
                         stats["files_added"] += sum(1 for e in batch.file_entries if e["path"] in new_paths)
 
                     # Files in DB for this folder no longer on disk → delete
@@ -196,7 +196,7 @@ def scan_library_quick_workflow(
 
         # Step 6 — Delete files from folders that vanished entirely from disk
         for folder_rel_path in vanished_folder_paths:
-            vanished_files = get_files_for_folder(db, library_id, folder_rel_path)
+            vanished_files = get_songs_for_folder(db, library_id, folder_rel_path)
             if vanished_files:
                 stats["files_removed"] += remove_deleted_files(db, list(vanished_files.keys()))
 

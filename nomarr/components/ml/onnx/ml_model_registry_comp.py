@@ -101,8 +101,7 @@ def upsert_registered_model(
         )
 
     try:
-        with db.ml.transaction():
-            result = db.ml.add_model(payload)
+        result = db.ml.add_model(payload)
         if not isinstance(result, dict):
             raise RuntimeError(f"Failed to load persisted ml_models document for path={path}")
         return result
@@ -117,14 +116,13 @@ def mark_model_fully_configured(db: Database, model_id: str, value: bool) -> Non
     if not isinstance(model_doc, dict):
         return
 
-    with db.ml.transaction():
-        db.ml.update_model(
-            model_id,
-            {
-                "fully_configured": value,
-                "updated_at": now_ms().value,
-            },
-        )
+    db.ml.update_model(
+        model_id,
+        {
+            "fully_configured": value,
+            "updated_at": now_ms().value,
+        },
+    )
 
 
 def mark_model_known(db: Database, model_id: str, value: bool) -> None:
@@ -133,20 +131,18 @@ def mark_model_known(db: Database, model_id: str, value: bool) -> None:
     if not isinstance(model_doc, dict):
         return
 
-    with db.ml.transaction():
-        db.ml.update_model(
-            model_id,
-            {
-                "is_known": value,
-                "updated_at": now_ms().value,
-            },
-        )
+    db.ml.update_model(
+        model_id,
+        {
+            "is_known": value,
+            "updated_at": now_ms().value,
+        },
+    )
 
 
 def delete_registered_model(db: Database, model_id: str) -> None:
     """Delete one registered model vertex by ID."""
-    with db.ml.transaction():
-        db.ml.remove_model(model_id)
+    db.ml.remove_model(model_id)
 
 
 def list_model_outputs_for_model(db: Database, model_id: str) -> list[dict[str, Any]]:
@@ -160,7 +156,7 @@ def list_fully_labeled_model_outputs(db: Database, model_id: str) -> list[dict[s
     return [doc for doc in list_model_outputs_for_model(db, model_id) if bool(doc.get("fully_labeled"))]
 
 
-def ensure_model_outputs(db: Database, file_id: int, model_id: str, output_count: int) -> list[dict[str, Any]]:
+def ensure_model_outputs(db: Database, song_id: int, model_id: str, output_count: int) -> list[dict[str, Any]]:
     """Ensure all expected output vertices exist for a model."""
     for output_index in range(output_count):
         output_key = _output_key(model_id, output_index)
@@ -175,30 +171,28 @@ def ensure_model_outputs(db: Database, file_id: int, model_id: str, output_count
             payload["label"] = existing.get("label")
             payload["fully_labeled"] = existing.get("fully_labeled", False)
 
-        with db.ml.transaction():
-            db.ml.replace_model_output(file_id, model_id, output_key, payload)
+        db.ml.replace_model_output(song_id, model_id, output_key, payload)
 
     return list_model_outputs_for_model(db, model_id)
 
 
-def update_model_output_label(db: Database, file_id: int, model_id: str, output_id: str, label: str) -> None:
+def update_model_output_label(db: Database, song_id: int, model_id: str, output_id: str, label: str) -> None:
     """Write label metadata for one output vertex."""
     existing_output = db.ml.get_model_output(output_id)  # type: ignore[arg-type]
     if not isinstance(existing_output, dict):
         return
 
-    with db.ml.transaction():
-        db.ml.replace_model_output(
-            file_id,
-            model_id,
-            output_id,
-            {
-                "id": output_id,
-                "output_index": existing_output.get("output_index"),
-                "label": label,
-                "fully_labeled": True,
-            },
-        )
+    db.ml.replace_model_output(
+        song_id,
+        model_id,
+        output_id,
+        {
+            "id": output_id,
+            "output_index": existing_output.get("output_index"),
+            "label": label,
+            "fully_labeled": True,
+        },
+    )
 
 
 def build_model_output_index_map(db: Database) -> dict[str, dict[int, str]]:
@@ -219,8 +213,7 @@ def build_model_output_index_map(db: Database) -> dict[str, dict[int, str]]:
 
 def delete_model_outputs_for_model(db: Database, model_id: str) -> list[str]:
     """Delete all output vertices for one model."""
-    with db.ml.transaction():
-        result = db.ml.remove_model_outputs_for_model(model_id)  # type: ignore[attr-defined]
+    result = db.ml.remove_model_outputs_for_model(model_id)  # type: ignore[attr-defined]
     if isinstance(result, list):
         return [str(r) for r in result]
     return []

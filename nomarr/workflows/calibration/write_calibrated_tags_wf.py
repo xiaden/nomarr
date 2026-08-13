@@ -44,7 +44,7 @@ import threading
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, cast
 
-from nomarr.components.library.library_file_query_comp import require_library_file_id
+from nomarr.components.library.library_song_query_comp import require_library_song_id
 from nomarr.components.ml.calibration.ml_calibration_state_comp import (
     get_calibration_version,
     load_calibration_lookup,
@@ -52,7 +52,7 @@ from nomarr.components.ml.calibration.ml_calibration_state_comp import (
 )
 from nomarr.components.ml.inference.ml_output_stream_store_comp import (
     build_output_stream_lookup,
-    load_output_streams_for_file,
+    load_output_streams_for_song,
 )
 from nomarr.components.ml.onnx.ml_discovery_comp import discover_heads
 from nomarr.components.processing.file_write_comp import save_mood_tags
@@ -83,8 +83,8 @@ class BatchContext:
         calibration_version: Global calibration version string
         output_stream_lookup: Optional cached mapping of output_id to
             ``(head_name, label)`` derived from registered model outputs.
-        pending_mood_tags: Accumulated (file_id, mood_tags) for deferred batch write.
-        pending_calibration_hashes: Accumulated file_ids for deferred batch calibration mark.
+        pending_mood_tags: Accumulated (song_id, mood_tags) for deferred batch write.
+        pending_calibration_hashes: Accumulated song_ids for deferred batch calibration mark.
 
     """
 
@@ -145,7 +145,7 @@ def write_calibrated_tags_wf(
     file_path = params.file_path
     models_dir = params.models_dir
     logger.debug("[calibrated_tags] Processing %s", file_path)
-    file_id = require_library_file_id(db, file_path)
+    song_id = require_library_song_id(db, file_path)
 
     # Use cached values from batch context when available
     heads: list[Any] | None = batch_ctx.heads if batch_ctx is not None else None
@@ -170,9 +170,9 @@ def write_calibrated_tags_wf(
                     batch_ctx.output_stream_lookup = output_stream_lookup
                 output_stream_lookup = batch_ctx.output_stream_lookup
 
-    output_streams = load_output_streams_for_file(
+    output_streams = load_output_streams_for_song(
         db,
-        file_id,
+        song_id,
         file_path,
         heads_list,
         output_lookup=output_stream_lookup,
@@ -200,14 +200,14 @@ def write_calibrated_tags_wf(
     # Write to DB — batch mode defers, single-file mode writes immediately
     if batch_ctx is not None:
         with batch_ctx._lock:
-            batch_ctx.pending_mood_tags.append((file_id, mood_tags))
+            batch_ctx.pending_mood_tags.append((song_id, mood_tags))
             global_version = batch_ctx.calibration_version
             if global_version:
-                batch_ctx.pending_calibration_hashes.append(file_id)
+                batch_ctx.pending_calibration_hashes.append(song_id)
     else:
-        save_mood_tags(db, file_id, mood_tags)
+        save_mood_tags(db, song_id, mood_tags)
         global_version = get_calibration_version(db)
         if global_version:
-            update_file_calibration_hash(db, file_id)
+            update_file_calibration_hash(db, song_id)
             logger.debug("[calibrated_tags] Updated calibration_hash for %s", file_path)
         logger.debug("[calibrated_tags] Updated mood tags in DB for %s", file_path)

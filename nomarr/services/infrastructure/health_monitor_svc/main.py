@@ -386,16 +386,15 @@ class HealthMonitorService(StateTransitionOpsMixin, DeadlineOpsMixin):
                 try:
                     # Convert monotonic time to wall-clock for DB storage
                     wall_ms = to_wall_ms(internal_s_to_ms(last_time))
-                    with self.db.app.transaction():
-                        self.db.app.update_health(
-                            component_id,
-                            {
-                                "status": status,
-                                "last_snapshot": wall_ms.value,
-                                "created_at": wall_ms.value,
-                                "snapshot_type": "history",
-                            },
-                        )
+                    self.db.app.update_health(
+                        component_id,
+                        {
+                            "status": status,
+                            "last_snapshot": wall_ms.value,
+                            "created_at": wall_ms.value,
+                            "snapshot_type": "history",
+                        },
+                    )
                 except Exception as e:
                     logger.warning("[HealthMonitor] History write failed for %s: %s", component_id, e, exc_info=True)
 

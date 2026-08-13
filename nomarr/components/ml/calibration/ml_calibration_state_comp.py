@@ -10,13 +10,13 @@ import logging
 import re
 from typing import TYPE_CHECKING, Any, cast
 
-from nomarr.components.library.library_file_state_comp import (
+from nomarr.components.library.library_records_comp import list_library_records
+from nomarr.components.library.library_song_state_comp import (
     bulk_set_not_calibrated,
     bulk_set_not_vectors_extracted,
     get_calibration_status_by_library,
-    transition_file_state,
+    transition_song_state,
 )
-from nomarr.components.library.library_records_comp import list_library_records
 from nomarr.helpers.constants.file_states import STATE_CALIBRATED, STATE_NOT_CALIBRATED
 from nomarr.helpers.time_helper import now_ms
 
@@ -106,11 +106,10 @@ def save_calibration_state(
         "overflow_count": overflow_count,
         "updated_at": now_ms().value,
     }
-    with db.ml.transaction():
-        db.ml.replace_calibration_state(
-            model_id=model_id,
-            payload={key: value for key, value in doc.items() if key != "key"},
-        )
+    db.ml.replace_calibration_state(
+        model_id=model_id,
+        payload={key: value for key, value in doc.items() if key != "key"},
+    )
 
 
 def load_all_calibration_states(
@@ -157,8 +156,7 @@ def delete_calibration_state(
     calibration_id = calibration_doc.get("id")
     if calibration_id is None:
         return
-    with db.ml.transaction():
-        db.ml.remove_calibration_state(calibration_id=int(calibration_id))
+    db.ml.remove_calibration_state(calibration_id=int(calibration_id))
 
 
 def create_calibration_history_snapshot(
@@ -186,8 +184,7 @@ def create_calibration_history_snapshot(
         "p95_delta": p95_delta,
         "n_delta": n_delta,
     }
-    with db.ml.transaction():
-        result = db.ml.add_calibration_history(payload=doc)
+    result = db.ml.add_calibration_history(payload=doc)
     return cast("str", result)
 
 
@@ -231,8 +228,7 @@ def delete_old_calibration_history_snapshots(
     if not stale_ids:
         return 0
 
-    with db.ml.transaction():
-        db.ml.remove_calibration_history_entries(entry_ids=stale_ids)
+    db.ml.remove_calibration_history_entries(entry_ids=stale_ids)
     return len(stale_ids)
 
 
@@ -249,8 +245,7 @@ def get_calibration_version(db: Database) -> str | None:
 
 def set_calibration_version(db: Database, version_hash: str) -> None:
     """Set the global calibration version hash."""
-    with db.app.transaction():
-        db.app.update_config_option(key="calibration_version", payload={"value": version_hash})
+    db.app.update_config_option(key="calibration_version", payload={"value": version_hash})
 
 
 def get_calibration_last_run(db: Database) -> int | None:
@@ -262,8 +257,7 @@ def get_calibration_last_run(db: Database) -> int | None:
 
 def set_calibration_last_run(db: Database, timestamp: str) -> None:
     """Record the timestamp of the last calibration run."""
-    with db.app.transaction():
-        db.app.update_config_option(key="calibration_last_run", payload={"value": timestamp})
+    db.app.update_config_option(key="calibration_last_run", payload={"value": timestamp})
 
 
 # ---------------------------------------------------------------------------
@@ -276,7 +270,7 @@ def update_file_calibration_hash(
     file_id: int,
 ) -> None:
     """Mark a single library file as calibrated."""
-    transition_file_state(db, [file_id], STATE_NOT_CALIBRATED, STATE_CALIBRATED)
+    transition_song_state(db, [file_id], STATE_NOT_CALIBRATED, STATE_CALIBRATED)
 
 
 def update_file_calibration_hashes_batch(
@@ -291,7 +285,7 @@ def update_file_calibration_hashes_batch(
 
     """
     for file_id in file_ids:
-        transition_file_state(db, [file_id], STATE_NOT_CALIBRATED, STATE_CALIBRATED)
+        transition_song_state(db, [file_id], STATE_NOT_CALIBRATED, STATE_CALIBRATED)
 
 
 def compute_reconciliation_info(
@@ -356,17 +350,14 @@ def clear_all_calibration_data(db: Database) -> dict[str, int]:
 
     """
     # Truncate calibration data
-    with db.ml.transaction():
-        db.ml.truncate_calibration_states()
-    with db.ml.transaction():
-        db.ml.truncate_calibration_history()
+    db.ml.truncate_calibration_states()
+    db.ml.truncate_calibration_history()
 
     # Clear calibration meta keys
     meta_keys_cleared = 0
     for key in ("calibration_version", "calibration_last_run"):
         if db.app.get_config_option(key=key) is not None:
-            with db.app.transaction():
-                db.app.remove_config_option(key=key)
+            db.app.remove_config_option(key=key)
             meta_keys_cleared += 1
 
     # Mark all files as not calibrated and not vectors extracted

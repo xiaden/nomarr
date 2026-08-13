@@ -113,7 +113,6 @@ def generate_playlists(
     # TODO(S6): NavidromePersonalPlaylistContext.played_file_ids should be list[int]
     ctx = NavidromePersonalPlaylistContext(
         backbone_id=backbone_id,
-        library_key="",
         clusters=profile["clusters"],
         max_songs=max_songs,
         played_file_ids=played_file_ids,  # type: ignore[typeddict-item]

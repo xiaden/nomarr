@@ -5,12 +5,8 @@ from nomarr.persistence.models.base import Base
 from nomarr.persistence.models.calibration_history import CalibrationHistory
 from nomarr.persistence.models.calibration_state import CalibrationState
 from nomarr.persistence.models.embedding import Embedding
-from nomarr.persistence.models.file_state import FileState
-from nomarr.persistence.models.file_state_assignment import FileStateAssignment
-from nomarr.persistence.models.file_tag import SongTag
 from nomarr.persistence.models.health import Health
 from nomarr.persistence.models.library import Library
-from nomarr.persistence.models.library_file import LibraryFile
 from nomarr.persistence.models.library_folder import LibraryFolder
 from nomarr.persistence.models.library_scan import LibraryScan
 from nomarr.persistence.models.lock import Lock
@@ -25,6 +21,10 @@ from nomarr.persistence.models.navidrome_track import NavidromeTrack
 from nomarr.persistence.models.navidrome_track_map import NavidromeTrackMap
 from nomarr.persistence.models.pipeline_state import PipelineState
 from nomarr.persistence.models.session import Session
+from nomarr.persistence.models.song import Song
+from nomarr.persistence.models.song_state import SongState
+from nomarr.persistence.models.song_state_assignment import SongStateAssignment
+from nomarr.persistence.models.song_tag import SongTag
 from nomarr.persistence.models.tag import Tag
 from nomarr.persistence.models.vram_promise import VramPromise
 from nomarr.persistence.models.worker_claim import WorkerClaim
@@ -36,11 +36,8 @@ __all__ = [
     "CalibrationHistory",
     "CalibrationState",
     "Embedding",
-    "FileState",
-    "FileStateAssignment",
     "Health",
     "Library",
-    "LibraryFile",
     "LibraryFolder",
     "LibraryScan",
     "Lock",
@@ -55,6 +52,9 @@ __all__ = [
     "NavidromeTrackMap",
     "PipelineState",
     "Session",
+    "Song",
+    "SongState",
+    "SongStateAssignment",
     "SongTag",
     "Tag",
     "VramPromise",

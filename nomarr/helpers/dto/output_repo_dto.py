@@ -14,7 +14,7 @@ class OutputStreamRecord(TypedDict):
     """Single row from the ``ml_output_streams`` table."""
 
     id: int
-    file_id: int
+    song_id: int
     model_id: str
     status: str
     created_at: int
@@ -24,7 +24,7 @@ class ModelOutputRecord(TypedDict):
     """Single row from the ``ml_model_outputs`` table."""
 
     id: int
-    file_id: int
+    song_id: int
     model_id: str
     output_data: dict[str, Any]
     created_at: int

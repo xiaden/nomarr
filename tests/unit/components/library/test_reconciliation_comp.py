@@ -30,24 +30,24 @@ class TestClaimFilesForReconciliation:
         mock_db = MagicMock()
 
         with patch(
-            "nomarr.components.library.reconciliation_comp.get_stale_file_ids",
+            "nomarr.components.library.reconciliation_comp.get_stale_song_ids",
             return_value=[],
         ):
             result = claim_files_for_reconciliation(mock_db, "libraries/test", "workers/test")
 
         assert result == []
-        mock_db.library.get_file.assert_not_called()
+        mock_db.library.get_song.assert_not_called()
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_claims_available_file_successfully(self) -> None:
         mock_db = MagicMock()
         candidate = {"id": 123}
-        mock_db.library.get_file.return_value = candidate
+        mock_db.library.get_song.return_value = candidate
 
         with (
             patch(
-                "nomarr.components.library.reconciliation_comp.get_stale_file_ids",
+                "nomarr.components.library.reconciliation_comp.get_stale_song_ids",
                 return_value=[123],
             ),
             patch(
@@ -63,7 +63,7 @@ class TestClaimFilesForReconciliation:
             result = claim_files_for_reconciliation(mock_db, 1, "workers/test")
 
         assert result == [candidate]
-        mock_db.library.get_file.assert_called_once_with(123)
+        mock_db.library.get_song.assert_called_once_with(123)
         claim_payload, claim_now, claim_lease_ms = mock_try_claim.call_args.args[1:]
         assert claim_payload["key"] == "claim_reconcile_123"
         assert claim_payload["file_id"] == "123"
@@ -79,11 +79,11 @@ class TestClaimFilesForReconciliation:
         mock_db = MagicMock()
         stale_ids = [100, 101, 102, 103, 104]
         candidates = [{"id": file_id} for file_id in stale_ids]
-        mock_db.library.get_file.side_effect = candidates
+        mock_db.library.get_song.side_effect = candidates
 
         with (
             patch(
-                "nomarr.components.library.reconciliation_comp.get_stale_file_ids",
+                "nomarr.components.library.reconciliation_comp.get_stale_song_ids",
                 return_value=stale_ids,
             ),
             patch(
@@ -104,7 +104,7 @@ class TestClaimFilesForReconciliation:
             )
 
         assert result == candidates[:2]
-        assert mock_db.library.get_file.call_count == len(stale_ids)
+        assert mock_db.library.get_song.call_count == len(stale_ids)
         assert mock_try_claim.call_count == 2
         first_payload, first_now, first_lease_ms = mock_try_claim.call_args_list[0].args[1:]
         second_payload, second_now, second_lease_ms = mock_try_claim.call_args_list[1].args[1:]
@@ -118,11 +118,11 @@ class TestClaimFilesForReconciliation:
     def test_skips_already_claimed_active_file(self) -> None:
         mock_db = MagicMock()
         candidate = {"id": 123}
-        mock_db.library.get_file.return_value = candidate
+        mock_db.library.get_song.return_value = candidate
 
         with (
             patch(
-                "nomarr.components.library.reconciliation_comp.get_stale_file_ids",
+                "nomarr.components.library.reconciliation_comp.get_stale_song_ids",
                 return_value=[123],
             ),
             patch(
@@ -143,7 +143,7 @@ class TestClaimFilesForReconciliation:
             )
 
         assert result == []
-        mock_db.library.get_file.assert_called_once_with(123)
+        mock_db.library.get_song.assert_called_once_with(123)
         mock_try_claim.assert_called_once_with(
             mock_db,
             {
@@ -162,11 +162,11 @@ class TestClaimFilesForReconciliation:
     def test_reclaims_expired_lease(self) -> None:
         mock_db = MagicMock()
         candidate = {"id": 123}
-        mock_db.library.get_file.return_value = candidate
+        mock_db.library.get_song.return_value = candidate
 
         with (
             patch(
-                "nomarr.components.library.reconciliation_comp.get_stale_file_ids",
+                "nomarr.components.library.reconciliation_comp.get_stale_song_ids",
                 return_value=[123],
             ),
             patch(
@@ -187,7 +187,7 @@ class TestClaimFilesForReconciliation:
             )
 
         assert result == [candidate]
-        mock_db.library.get_file.assert_called_once_with(123)
+        mock_db.library.get_song.assert_called_once_with(123)
         mock_try_claim.assert_called_once_with(
             mock_db,
             {
@@ -210,7 +210,7 @@ class TestSetFileWritten:
     def test_normalizes_bare_key_to_full_id(self) -> None:
         mock_db = MagicMock()
 
-        with patch("nomarr.components.library.reconciliation_comp.transition_file_state") as mock_transition:
+        with patch("nomarr.components.library.reconciliation_comp.transition_song_state") as mock_transition:
             set_file_written(mock_db, 123)
 
         first_transition = mock_transition.call_args_list[0].args
@@ -227,7 +227,7 @@ class TestSetFileWritten:
     def test_normalizes_full_id_unchanged(self) -> None:
         mock_db = MagicMock()
 
-        with patch("nomarr.components.library.reconciliation_comp.transition_file_state") as mock_transition:
+        with patch("nomarr.components.library.reconciliation_comp.transition_song_state") as mock_transition:
             set_file_written(mock_db, 123)
 
         for transition_call in mock_transition.call_args_list:
@@ -239,7 +239,7 @@ class TestSetFileWritten:
     def test_transitions_tag_state_edges(self) -> None:
         mock_db = MagicMock()
 
-        with patch("nomarr.components.library.reconciliation_comp.transition_file_state") as mock_transition:
+        with patch("nomarr.components.library.reconciliation_comp.transition_song_state") as mock_transition:
             set_file_written(mock_db, 123)
 
         assert mock_transition.call_count == 2
@@ -263,7 +263,7 @@ class TestSetFileWritten:
     def test_releases_claim_via_app_api(self) -> None:
         mock_db = MagicMock()
 
-        with patch("nomarr.components.library.reconciliation_comp.transition_file_state"):
+        with patch("nomarr.components.library.reconciliation_comp.transition_song_state"):
             set_file_written(mock_db, 123)
 
         mock_db.app.release_claim.assert_called_once_with(123)
@@ -300,7 +300,7 @@ class TestCountFilesNeedingReconciliation:
         mock_db = MagicMock()
 
         with patch(
-            "nomarr.components.library.reconciliation_comp.get_stale_file_ids",
+            "nomarr.components.library.reconciliation_comp.get_stale_song_ids",
             return_value=[
                 100,
                 101,
@@ -317,7 +317,7 @@ class TestCountFilesNeedingReconciliation:
         mock_db = MagicMock()
 
         with patch(
-            "nomarr.components.library.reconciliation_comp.get_stale_file_ids",
+            "nomarr.components.library.reconciliation_comp.get_stale_song_ids",
             return_value=[],
         ):
             result = count_files_needing_reconciliation(mock_db, 1)

@@ -17,9 +17,9 @@ import logging
 import threading
 from typing import TYPE_CHECKING
 
-from nomarr.components.library.library_file_state_comp import (
+from nomarr.components.library.library_song_state_comp import (
     discover_next_file_needing_tags,
-    transition_file_state,
+    transition_song_state,
 )
 from nomarr.helpers.constants.file_states import (
     STATE_ERRORED,
@@ -37,41 +37,41 @@ IDLE_SLEEP_S = 1.0
 MAX_CONSECUTIVE_ERRORS = 10
 
 
-def _process_file(db: Database, file_id: int) -> None:
-    """Extract tags for one file and transition it to hydrated.
+def _process_file(db: Database, song_id: int) -> None:
+    """Extract tags for one song and transition it to hydrated.
 
     Steps:
     1. Load track record and resolve absolute path
     2. Extract audio metadata (mutagen via extract_metadata)
-    3. Persist nom: tags to DB (save_file_tags)
+    3. Persist nom: tags to DB (save_song_tags)
     4. Seed entity graph (artist, album, genre etc.)
     5. Transition state: not_hydrated → hydrated
     6. Clear any error state that may have been set previously
 
     Args:
         db: Database instance
-        file_id: Integer primary key of the file record
+        song_id: Integer primary key of the song record
 
     Raises:
         Exception: Propagated to caller for error counting and state transition
 
     """
     from nomarr.components.infrastructure.path_comp import build_library_path_from_input
-    from nomarr.components.library.file_sync_comp import save_file_tags
     from nomarr.components.library.metadata_extraction_comp import extract_metadata
+    from nomarr.components.library.song_sync_comp import save_song_tags
     from nomarr.components.metadata.entity_seeding_comp import seed_entities_for_scan_batch
     from nomarr.components.tagging.tag_parsing_comp import parse_tag_values
 
-    file_doc = db.library.get_file(file_id)
-    if file_doc is None:
-        msg = f"File not found: {file_id}"
+    song_doc = db.library.get_song(song_id)
+    if song_doc is None:
+        msg = f"Song not found: {song_id}"
         raise ValueError(msg)
-    path: str = str(file_doc["path"])
-    namespace: str = str(file_doc.get("namespace", "nom"))
+    path: str = str(song_doc["path"])
+    namespace: str = str(song_doc.get("namespace", "nom"))
 
     library_path = build_library_path_from_input(path, db)
     if not library_path.is_valid():
-        msg = f"Invalid library path for {file_id}: {library_path.reason}"
+        msg = f"Invalid library path for {song_id}: {library_path.reason}"
         raise ValueError(msg)
 
     metadata = extract_metadata(library_path, namespace=namespace)
@@ -84,18 +84,17 @@ def _process_file(db: Database, file_id: int) -> None:
             (f"{namespace}:{name}" if not name.startswith(f"{namespace}:") else name): values
             for name, values in parsed_nom_tags.items()
         }
-        save_file_tags(db, str(file_id), prefixed)
+        save_song_tags(db, str(song_id), prefixed)
 
     # Seed entity graph (artist, album, genre etc.)
-    seed_entities_for_scan_batch(db, [str(file_id)], {str(file_id): metadata})
+    seed_entities_for_scan_batch(db, [str(song_id)], {str(song_id): metadata})
 
     # Update duration_seconds on the track record if not already set
     duration = metadata.get("duration")
-    if duration is not None and not file_doc.get("duration_seconds"):
-        with db.library.transaction():
-            db.library.update_file_fields(file_id, {"duration_seconds": duration})
+    if duration is not None and not song_doc.get("duration_seconds"):
+        db.library.update_song_fields(song_id, {"duration_seconds": duration})
 
-    transition_file_state(db, [file_id], STATE_NOT_HYDRATED, STATE_HYDRATED)
+    transition_song_state(db, [song_id], STATE_NOT_HYDRATED, STATE_HYDRATED)
 
 
 class TagExtractionWorker(threading.Thread):
@@ -137,18 +136,18 @@ class TagExtractionWorker(threading.Thread):
             if file_doc is None:
                 self._stop_event.wait(IDLE_SLEEP_S)
                 continue
-            file_id: int = int(file_doc["id"])
+            song_id: int = int(file_doc["id"])
 
             try:
-                _process_file(self._db, file_id)
+                _process_file(self._db, song_id)
                 consecutive_errors = 0
-                logger.debug("[%s] Extracted tags for %s", self._worker_id, file_id)
+                logger.debug("[%s] Extracted tags for %s", self._worker_id, song_id)
             except Exception:
-                logger.exception("[%s] Error extracting tags for %s", self._worker_id, file_id)
+                logger.exception("[%s] Error extracting tags for %s", self._worker_id, song_id)
                 try:
-                    transition_file_state(self._db, [file_id], STATE_NOT_ERRORED, STATE_ERRORED)
+                    transition_song_state(self._db, [song_id], STATE_NOT_ERRORED, STATE_ERRORED)
                 except Exception:
-                    logger.exception("[%s] Failed to set error state for %s", self._worker_id, file_id)
+                    logger.exception("[%s] Failed to set error state for %s", self._worker_id, song_id)
                 consecutive_errors += 1
                 if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
                     logger.error(

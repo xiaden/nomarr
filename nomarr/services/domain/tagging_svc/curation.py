@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from nomarr.components.library.library_file_state_comp import transition_file_state
+from nomarr.components.library.library_song_state_comp import transition_song_state
 from nomarr.components.tagging.tag_query_comp import get_song_tags, get_tag, list_songs_for_tag
 from nomarr.components.tagging.tag_write_comp import find_or_create_tag, relink_tag_edges, set_song_tags
 from nomarr.helpers.constants.file_states import STATE_NOT_WRITTEN, STATE_WRITTEN
@@ -67,7 +67,7 @@ class TaggingCurationMixin:
 
         song_ids = list_songs_for_tag(self.db, target_tag_id)
         for song_id in song_ids:
-            transition_file_state(self.db, [int(song_id)], STATE_WRITTEN, STATE_NOT_WRITTEN)
+            transition_song_state(self.db, [int(song_id)], STATE_WRITTEN, STATE_NOT_WRITTEN)
 
         return RenameResult(moved=relink["moved"], merged_into_existing=merged_into_existing)
 
@@ -107,7 +107,7 @@ class TaggingCurationMixin:
 
         song_ids = list_songs_for_tag(self.db, int(canonical_tag_id))
         for song_id in song_ids:
-            transition_file_state(self.db, [int(song_id)], STATE_WRITTEN, STATE_NOT_WRITTEN)
+            transition_song_state(self.db, [int(song_id)], STATE_WRITTEN, STATE_NOT_WRITTEN)
 
         return MergeResult(total_moved=total_moved, sources_removed=sources_removed)
 
@@ -138,30 +138,23 @@ class TaggingCurationMixin:
         relink = relink_tag_edges(self.db, int(source_tag_id), target_tag_id, song_ids=[int(sid) for sid in song_ids])
 
         for song_id in song_ids:
-            transition_file_state(self.db, [int(song_id)], STATE_WRITTEN, STATE_NOT_WRITTEN)
+            transition_song_state(self.db, [int(song_id)], STATE_WRITTEN, STATE_NOT_WRITTEN)
 
         return SplitResult(moved=relink["moved"], new_tag_created=new_tag_created)
 
-    def update_file_tags(self, file_id: str, name: str, values: list[str]) -> dict[str, Any]:
-        """Replace all tags for a file+name with new values.
-
-        Rejects nom: prefix names (ADR-009). Delegates to set_song_tags
-        and marks the file for writeback.
+    def update_song_tags(self, song_id: str, name: str, values: list[str]) -> dict:
+        """Update the value of a single tag on a song.
 
         Args:
-            file_id: Database file ID
-            name: Tag key (e.g., "genre", "artist")
-            values: New tag values
+            song_id: The song identifier.
+            name: The tag name to update.
+            values: The new values to assign.
 
         Returns:
-            Dict with updated tags
-
-        Raises:
-            ValueError: If name has nom: prefix
-
+            A dict keyed by ``file_id`` (API contract), ``name`` and ``tags``.
         """
         self._reject_nom_prefix(name=name)
-        set_song_tags(self.db, int(file_id), name, list(values))
-        transition_file_state(self.db, [int(file_id)], STATE_WRITTEN, STATE_NOT_WRITTEN)
-        tags = get_song_tags(self.db, int(file_id), name=name)
-        return {"file_id": file_id, "name": name, "tags": tags.to_dict()}
+        set_song_tags(self.db, int(song_id), name, list(values))
+        transition_song_state(self.db, [int(song_id)], STATE_WRITTEN, STATE_NOT_WRITTEN)
+        tags = get_song_tags(self.db, int(song_id), name=name)
+        return {"file_id": song_id, "name": name, "tags": tags.to_dict()}

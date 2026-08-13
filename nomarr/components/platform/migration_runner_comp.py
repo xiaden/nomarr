@@ -199,11 +199,10 @@ def apply_migration(name: str, module: ModuleType, db: Database) -> None:
         module.MIGRATION_VERSION,
     )
 
-    with db.app.transaction():
-        db.app.record_migration_started(
-            migration_id=name,
-            filename=f"{name}.py",
-        )
+    db.app.record_migration_started(
+        migration_id=name,
+        filename=f"{name}.py",
+    )
 
     start_time = internal_ms()
     # Legacy migrations are no longer executed.
@@ -215,12 +214,10 @@ def apply_migration(name: str, module: ModuleType, db: Database) -> None:
 
     duration_ms = internal_ms().value - start_time.value
 
-    with db.app.transaction():
-        db.app.mark_migration_applied(migration_id=name)
+    db.app.mark_migration_applied(migration_id=name)
 
     # Write the new version only after the migration is fully recorded
-    with db.app.transaction():
-        db.set_version(module.MIGRATION_VERSION)
+    db.set_version(module.MIGRATION_VERSION)
 
     logger.info(
         "Migration %s (version %s) tracked in %dms",

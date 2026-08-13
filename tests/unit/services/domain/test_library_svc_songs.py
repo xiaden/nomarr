@@ -1,4 +1,4 @@
-"""Tests for nomarr.services.domain.library_svc.files module."""
+"""Tests for nomarr.services.domain.library_svc.songs module."""
 
 from __future__ import annotations
 
@@ -13,10 +13,10 @@ from nomarr.helpers.constants.file_states import (
     STATE_PROCESSED,
 )
 from nomarr.helpers.dto.library_dto import RetryErroredResult
-from nomarr.services.domain.library_svc.files import LibraryFilesMixin
+from nomarr.services.domain.library_svc.songs import LibrarySongsMixin
 
 
-class _ConcreteFilesMixin(LibraryFilesMixin):
+class _ConcreteSongsMixin(LibrarySongsMixin):
     """Minimal concrete class for testing the mixin."""
 
     def __init__(self, db: MagicMock) -> None:
@@ -24,31 +24,31 @@ class _ConcreteFilesMixin(LibraryFilesMixin):
         self.cfg = MagicMock()
 
 
-class TestRetryErroredFiles:
-    """Tests for retry_errored_files."""
+class TestRetryErroredSongs:
+    """Tests for retry_errored_songs."""
 
     @pytest.mark.unit
-    @patch("nomarr.services.domain.library_svc.files.transition_file_state")
+    @patch("nomarr.services.domain.library_svc.songs.transition_song_state")
     @patch(
-        "nomarr.services.domain.library_svc.files.get_errored_file_ids",
+        "nomarr.services.domain.library_svc.songs.get_errored_song_ids",
         return_value=[f"{'songs'}/1", f"{'songs'}/2"],
     )
-    def test_retries_all_errored_when_no_file_ids(
+    def test_retries_all_errored_when_no_song_ids(
         self,
-        mock_get_errored_file_ids: MagicMock,
-        mock_transition_file_state: MagicMock,
+        mock_get_errored_song_ids: MagicMock,
+        mock_transition_song_state: MagicMock,
     ) -> None:
         mock_db = MagicMock()
         mock_db.library.get_library = MagicMock(return_value={"_id": 123, "id": 123})
         mock_db.library.get_scan = MagicMock(return_value=None)
         mock_db.app.get_pipeline_state = MagicMock(return_value=None)
-        mixin = _ConcreteFilesMixin(mock_db)
+        mixin = _ConcreteSongsMixin(mock_db)
 
-        result = mixin.retry_errored_files(123)
+        result = mixin.retry_errored_songs(123)
 
         assert result == RetryErroredResult(retried=2)
-        mock_get_errored_file_ids.assert_called_once_with(mock_db, 123)
-        assert mock_transition_file_state.call_args_list == [
+        mock_get_errored_song_ids.assert_called_once_with(mock_db, 123)
+        assert mock_transition_song_state.call_args_list == [
             call(
                 mock_db,
                 [f"{'songs'}/1", f"{'songs'}/2"],
@@ -64,33 +64,33 @@ class TestRetryErroredFiles:
         ]
 
     @pytest.mark.unit
-    @patch("nomarr.services.domain.library_svc.files.transition_file_state")
+    @patch("nomarr.services.domain.library_svc.songs.transition_song_state")
     @patch(
-        "nomarr.services.domain.library_svc.files.get_errored_file_ids",
+        "nomarr.services.domain.library_svc.songs.get_errored_song_ids",
         return_value=[
             f"{'songs'}/1",
             f"{'songs'}/2",
             f"{'songs'}/3",
         ],
     )
-    def test_filters_to_specified_file_ids(
+    def test_filters_to_specified_song_ids(
         self,
-        mock_get_errored_file_ids: MagicMock,
-        mock_transition_file_state: MagicMock,
+        mock_get_errored_song_ids: MagicMock,
+        mock_transition_song_state: MagicMock,
     ) -> None:
         mock_db = MagicMock()
         mock_db.library.get_library = MagicMock(return_value={"_id": 123, "id": 123})
         mock_db.library.get_scan = MagicMock(return_value=None)
         mock_db.app.get_pipeline_state = MagicMock(return_value=None)
-        mixin = _ConcreteFilesMixin(mock_db)
+        mixin = _ConcreteSongsMixin(mock_db)
 
-        mixin.retry_errored_files(
+        mixin.retry_errored_songs(
             123,
-            file_ids=[f"{'songs'}/1", f"{'songs'}/3"],
+            song_ids=[f"{'songs'}/1", f"{'songs'}/3"],
         )
 
-        mock_get_errored_file_ids.assert_called_once_with(mock_db, 123)
-        assert mock_transition_file_state.call_args_list == [
+        mock_get_errored_song_ids.assert_called_once_with(mock_db, 123)
+        assert mock_transition_song_state.call_args_list == [
             call(
                 mock_db,
                 [f"{'songs'}/1", f"{'songs'}/3"],
@@ -106,30 +106,30 @@ class TestRetryErroredFiles:
         ]
 
     @pytest.mark.unit
-    @patch("nomarr.services.domain.library_svc.files.transition_file_state")
+    @patch("nomarr.services.domain.library_svc.songs.transition_song_state")
     @patch(
-        "nomarr.services.domain.library_svc.files.get_errored_file_ids",
+        "nomarr.services.domain.library_svc.songs.get_errored_song_ids",
         return_value=[f"{'songs'}/1"],
     )
-    def test_calls_transition_helper_twice_for_errored_files(
+    def test_calls_transition_helper_twice_for_errored_songs(
         self,
-        _mock_get_errored_file_ids: MagicMock,
-        mock_transition_file_state: MagicMock,
+        _mock_get_errored_song_ids: MagicMock,
+        mock_transition_song_state: MagicMock,
     ) -> None:
         mock_db = MagicMock()
         mock_db.library.get_library = MagicMock(return_value={"_id": 123, "id": 123})
         mock_db.library.get_scan = MagicMock(return_value=None)
         mock_db.app.get_pipeline_state = MagicMock(return_value=None)
-        mixin = _ConcreteFilesMixin(mock_db)
+        mixin = _ConcreteSongsMixin(mock_db)
 
-        mixin.retry_errored_files(123)
+        mixin.retry_errored_songs(123)
 
-        assert mock_transition_file_state.call_count == 2
+        assert mock_transition_song_state.call_count == 2
 
     @pytest.mark.unit
     def test_raises_on_invalid_library(self) -> None:
         mock_db = MagicMock()
-        mixin = _ConcreteFilesMixin(mock_db)
+        mixin = _ConcreteSongsMixin(mock_db)
         with (
             patch.object(mixin, "_get_library_or_error", side_effect=ValueError("not found")),
             pytest.raises(
@@ -137,18 +137,18 @@ class TestRetryErroredFiles:
                 match="not found",
             ),
         ):
-            mixin.retry_errored_files("bad_id")
+            mixin.retry_errored_songs("bad_id")
 
 
 class TestReconcileLibraryPaths:
-    """Tests for ``LibraryFilesMixin.reconcile_library_paths``."""
+    """Tests for ``LibrarySongsMixin.reconcile_library_paths``."""
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_delegates_to_workflow_with_expected_arguments(self) -> None:
         """Explicit policy and batch size should be forwarded unchanged."""
         mock_db = MagicMock()
-        mixin = _ConcreteFilesMixin(mock_db)
+        mixin = _ConcreteSongsMixin(mock_db)
         mixin.cfg.library_root = "/music"
         expected_result = {
             "total_files": 10,
@@ -161,7 +161,7 @@ class TestReconcileLibraryPaths:
         }
 
         with patch(
-            "nomarr.services.domain.library_svc.files.reconcile_library_paths_workflow",
+            "nomarr.services.domain.library_svc.songs.reconcile_library_paths_workflow",
             return_value=expected_result,
         ) as mock_reconcile_library_paths_workflow:
             result = mixin.reconcile_library_paths(
@@ -184,7 +184,7 @@ class TestReconcileLibraryPaths:
     def test_uses_default_policy_and_batch_size(self) -> None:
         """Omitted args should default to mark_invalid and batch size 1000."""
         mock_db = MagicMock()
-        mixin = _ConcreteFilesMixin(mock_db)
+        mixin = _ConcreteSongsMixin(mock_db)
         mixin.cfg.library_root = "/music"
         expected_result = {
             "total_files": 0,
@@ -197,7 +197,7 @@ class TestReconcileLibraryPaths:
         }
 
         with patch(
-            "nomarr.services.domain.library_svc.files.reconcile_library_paths_workflow",
+            "nomarr.services.domain.library_svc.songs.reconcile_library_paths_workflow",
             return_value=expected_result,
         ) as mock_reconcile_library_paths_workflow:
             result = mixin.reconcile_library_paths("libraries/1")

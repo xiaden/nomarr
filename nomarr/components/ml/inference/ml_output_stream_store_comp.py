@@ -7,7 +7,7 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from nomarr.components.library.library_file_state_comp import transition_file_state
+from nomarr.components.library.library_song_state_comp import transition_song_state
 from nomarr.components.ml.onnx.ml_model_registry_comp import build_model_output_index_map
 from nomarr.helpers.constants.file_states import STATE_NOT_PROCESSED, STATE_PROCESSED
 from nomarr.helpers.dto.ml_dto import LoadedOutputStream
@@ -40,9 +40,9 @@ class StreamRecord:
     values: list[float]
 
 
-def _stream_key(file_id: int, output_id: str | int) -> str:
+def _stream_key(song_id: int, output_id: str | int) -> str:
     """Build the stable key for one canonical output stream."""
-    return hashlib.sha1(f"{file_id}|{output_id}".encode()).hexdigest()
+    return hashlib.sha1(f"{song_id}|{output_id}".encode()).hexdigest()
 
 
 def _normalize_streams(streams: list[StreamWrite]) -> list[StreamWrite]:
@@ -57,28 +57,27 @@ def _normalize_streams(streams: list[StreamWrite]) -> list[StreamWrite]:
     return list(deduped.values())
 
 
-def upsert_output_streams(db: Database, *, file_id: int, streams: list[StreamWrite]) -> None:
-    """Upsert canonical raw output streams for a file."""
+def upsert_output_streams(db: Database, *, song_id: int, streams: list[StreamWrite]) -> None:
+    """Upsert canonical raw output streams for a song."""
     if not streams:
         return
 
     normalized_streams = _normalize_streams(streams)
-    with db.ml.transaction():
-        db.ml.replace_output_streams_for_file(
-            file_id=file_id,
-            stream_payloads=[
-                {
-                    "output_id": stream.output_id,
-                    "values": stream.values,
-                }
-                for stream in normalized_streams
-            ],
-        )
+    db.ml.replace_output_streams_for_song(
+        song_id=song_id,
+        stream_payloads=[
+            {
+                "output_id": stream.output_id,
+                "values": stream.values,
+            }
+            for stream in normalized_streams
+        ],
+    )
 
 
-def fetch_output_streams(db: Database, file_id: int) -> list[StreamRecord]:
-    """Fetch all canonical output streams linked to one file."""
-    stream_docs = db.ml.list_output_streams_for_file(file_id)
+def fetch_output_streams(db: Database, song_id: int) -> list[StreamRecord]:
+    """Fetch all canonical output streams linked to one song."""
+    stream_docs = db.ml.list_output_streams_for_song(song_id)
     if not stream_docs:
         return []
 
@@ -151,22 +150,22 @@ def resolve_output_stream_lookup(
     return build_output_stream_lookup(db, head_infos)
 
 
-def load_output_streams_for_file(
+def load_output_streams_for_song(
     db: Database,
-    file_id: int,
+    song_id: int,
     file_path: str,
     head_infos: list[Any],
     *,
     output_lookup: dict[str, tuple[str, str]] | None = None,
 ) -> list[LoadedOutputStream]:
-    """Load canonical streams for one file and enrich them with discovered head metadata."""
-    stream_records = fetch_output_streams(db, file_id)
+    """Load canonical streams for one song and enrich them with discovered head metadata."""
+    stream_records = fetch_output_streams(db, song_id)
     if not stream_records:
         logger.warning(
             "[output_stream_store] No canonical output streams found for %s, transitioning to not_processed for re-inference",
             file_path,
         )
-        transition_file_state(db, [file_id], STATE_PROCESSED, STATE_NOT_PROCESSED)
+        transition_song_state(db, [song_id], STATE_PROCESSED, STATE_NOT_PROCESSED)
         return []
 
     lookup = resolve_output_stream_lookup(db, head_infos, cached_lookup=output_lookup)
@@ -198,7 +197,7 @@ def load_output_streams_for_file(
             file_path,
             unmatched_output_ids,
         )
-        transition_file_state(db, [file_id], STATE_PROCESSED, STATE_NOT_PROCESSED)
+        transition_song_state(db, [song_id], STATE_PROCESSED, STATE_NOT_PROCESSED)
         return []
 
     logger.debug(
@@ -209,15 +208,14 @@ def load_output_streams_for_file(
     return output_streams
 
 
-def delete_output_streams(db: Database, file_id: int) -> int:
-    """Delete all canonical output streams for one file."""
-    stream_docs = db.ml.list_output_streams_for_file(file_id)
+def delete_output_streams(db: Database, song_id: int) -> int:
+    """Delete all canonical output streams for one song."""
+    stream_docs = db.ml.list_output_streams_for_song(song_id)
     stream_ids = sorted(
         {stream_id for stream_doc in stream_docs if isinstance((stream_id := stream_doc.get("id")), (str, int))}
     )
     if not stream_ids:
         return 0
 
-    with db.ml.transaction():
-        db.ml.replace_output_streams_for_file(file_id, [])
+    db.ml.replace_output_streams_for_song(song_id, [])
     return len(stream_ids)
