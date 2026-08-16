@@ -33,6 +33,8 @@ on:
       - "dockerfile"
       - "docker/compose.yaml"
       - "pyproject.toml"
+      - "uv.lock"
+      - "requirements.txt"
       - "playwright.config.ts"
       - "BASE_VERSION"
       - ".github/workflows/backend-tests.yml"
@@ -46,6 +48,8 @@ on:
       - "dockerfile"
       - "docker/compose.yaml"
       - "pyproject.toml"
+      - "uv.lock"
+      - "requirements.txt"
       - "playwright.config.ts"
       - ".github/workflows/backend-tests.yml"
   workflow_dispatch:
