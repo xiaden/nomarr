@@ -32,10 +32,10 @@ Quality over quantity. Your playlists will thank you.
 
 Real numbers, real hardware:
 
-| Library size | Setup | Time |
-|--------------|-------|------|
-| 30k songs | Nomarr, 2 workers, 2080 Ti | ~8 hours |
-| 30k songs | Audiomuse, CPU only (default) | 56+ hours |
+ | Library size | Setup | Time |
+ | -------------- | ------- | ------ |
+ | 30k songs | Nomarr, 2 workers, 2080 Ti | ~8 hours |
+ | 30k songs | Audiomuse, CPU only (default) | 56+ hours |
 
 GPU inference isn't optional if you value your time.
 
@@ -85,7 +85,7 @@ For the technically curious:
 
 - **Dual embedding models** — out of the box, every song gets processed by TWO different embedding models. BYO models supported with proper folder structure.
 - **Custom Essentia build** — audio loading and preprocessing via a hardened Essentia fork. Corrupt files won't crash the application. This is why Docker-only is the supported path.
-- **ArangoDB** — graph database dynamics for relationship queries ("songs similar to X that share tags with Y"), relational speed for standard operations. Best of both worlds.
+- **PostgreSQL** — relational database for all library, file, tag, scan, and ML metadata storage with efficient indexing and querying.
 
 ---
 
@@ -105,8 +105,7 @@ Let's be honest about what you're getting into:
 git clone https://github.com/xiaden/nomarr.git
 cd nomarr/docker
 cp nomarr.env.example nomarr.env
-cp nomarr-arangodb.env.example nomarr-arangodb.env
-# Edit both .env files — set a strong root password, map your music library volume
+# Edit the .env file — map your music library volume, set your preferences
 docker compose up -d
 docker compose logs nomarr | grep "Admin password"
 ```
@@ -123,6 +122,31 @@ If you pull published images from GHCR instead of building locally, use these ta
 - `ghcr.io/xiaden/nomarr:<sha>` — commit-specific image for an exact build
 
 Once running, the API docs live at **`/docs`** (FastAPI's built-in OpenAPI UI).
+
+### Frontend builds & CI gates
+
+- **The frontend production bundle is built by Docker, not committed.** The
+  `dockerfile` builds the UI in a Node 24 stage (`npm ci` + `npm run build`) and
+  copies the result into the image at `/app/nomarr/public_html/`. The generated
+  tree (`nomarr/public_html/`) is gitignored and never checked in.
+- **Source mode does not serve `frontend/dist`.** When you run the backend from
+  the checkout, it serves the SPA from `nomarr/public_html/` only — which is
+  absent in a fresh checkout, so `/` returns a `Web UI not found` JSON 404 until
+  populated. The backend ignores `frontend/dist` entirely. Develop against the
+  Vite dev server (`cd frontend && npm run dev`), or mirror Docker by running
+  `npm run build` and copying `frontend/dist` into `nomarr/public_html/`.
+  Production always ships via Docker. See CONTRIBUTING.md.
+- **There is no pre-commit hook.** Lint/type/test/build enforcement runs in
+  independent CI workflows: `backend-quality.yml` (ruff, ruff format, mypy,
+  lint-imports, deptry), `backend-tests.yml` (pytest gate + ADR-042
+  architecture-QC suite), `frontend-checks.yml` (ESLint, `tsc`, Vitest, build),
+  `docker-publish.yml` (image build/publish on push or manual dispatch),
+  `e2e.yml` (manual-only), `docs-check.yml` (PR docs consistency), and
+  `codeql.yml` (security gate on push→main, pull requests →main, and a weekly
+  scheduled scan).
+
+See **[CONTRIBUTING.md](CONTRIBUTING.md)** for the exact local commands that
+mirror each gate.
 
 ---
 
@@ -149,15 +173,15 @@ Once running, the API docs live at **`/docs`** (FastAPI's built-in OpenAPI UI).
 
 ## Repository structure
 
-| Path | What's there |
-|------|------|
-| `nomarr/` | Python backend — interfaces, services, workflows, components, persistence |
-| `frontend/` | React + TypeScript web UI |
-| `docker/` | Compose files, environment examples, deployment assets |
-| `docs/` | User and developer docs |
-| `tests/` | Backend tests |
-| `e2e/` | End-to-end tests |
-| `scripts/` | Build and dev tooling |
+ | Path | What's there |
+ | ------ | ------ |
+ | `nomarr/` | Python backend — interfaces, services, workflows, components, persistence |
+ | `frontend/` | React + TypeScript web UI |
+ | `docker/` | Compose files, environment examples, deployment assets |
+ | `docs/` | User and developer docs |
+ | `tests/` | Backend tests |
+ | `e2e/` | End-to-end tests |
+ | `scripts/` | Build and dev tooling |
 
 ---
 
@@ -195,7 +219,7 @@ Built with:
 - **[Essentia](https://essentia.upf.edu/)** — Audio loading and preprocessing, by the Music Technology Group, Universitat Pompeu Fabra
 - **[ONNX Runtime](https://onnxruntime.ai/)** — ML inference engine
 - **[FastAPI](https://fastapi.tiangolo.com/)** — Python web framework
-- **[ArangoDB](https://www.arangodb.com/)** — Multi-model database
+- **[PostgreSQL](https://www.postgresql.org/)** — Relational database
 
 ---
 

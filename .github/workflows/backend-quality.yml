@@ -1,0 +1,127 @@
+name: Backend Quality
+
+# Independent backend code-quality gate: lint, format, type, layer-boundary,
+# and dependency audits. Splits the former monolithic `ci.yml` lint+deptry
+# jobs into their own workflow so a quality failure is reported and attributed
+# independently of backend tests, frontend checks, and Docker publish.
+#
+# Preserved from the original `ci.yml` (ADR-019 / ADR-042):
+#   - ruff check, ruff format --check, mypy, lint-imports, deptry commands
+#   - Python 3.12 setup, venv caching, `pip install -e ".[dev]"`
+#   - push branches [main, develop, feat/**] + PR to [main, develop] path
+#     filters + workflow_dispatch
+# Each job fails independently; there is no cross-workflow `needs` chain.
+
+on:
+  push:
+    branches: [main, develop, 'feat/**']
+    paths:
+      - "nomarr/**"
+      - "tests/**"
+      - "frontend/**"
+      - "e2e/**"
+      - "dockerfile"
+      - "docker/compose.yaml"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "requirements.txt"
+      - "playwright.config.ts"
+      - "BASE_VERSION"
+      - ".github/workflows/backend-quality.yml"
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "nomarr/**"
+      - "tests/**"
+      - "frontend/**"
+      - "e2e/**"
+      - "dockerfile"
+      - "docker/compose.yaml"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "requirements.txt"
+      - "playwright.config.ts"
+      - ".github/workflows/backend-quality.yml"
+  workflow_dispatch:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Cache virtualenv
+        id: cache-venv
+        uses: actions/cache@v5
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-py3.12-${{ hashFiles('pyproject.toml', 'uv.lock') }}
+
+      - name: Install dependencies
+        if: steps.cache-venv.outputs.cache-hit != 'true'
+        run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Lint (ruff check)
+        run: |
+          source .venv/bin/activate
+          ruff check .
+
+      - name: Format check (ruff format)
+        run: |
+          source .venv/bin/activate
+          ruff format --check .
+
+      - name: Type check (mypy)
+        run: |
+          source .venv/bin/activate
+          mypy nomarr/ --config-file pyproject.toml
+
+      - name: Import linter
+        run: |
+          source .venv/bin/activate
+          lint-imports
+
+  deptry:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Cache virtualenv
+        id: cache-venv
+        uses: actions/cache@v5
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-py3.12-${{ hashFiles('pyproject.toml', 'uv.lock') }}
+
+      - name: Install dependencies
+        if: steps.cache-venv.outputs.cache-hit != 'true'
+        run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run deptry
+        run: |
+          source .venv/bin/activate
+          deptry . --known-first-party nomarr

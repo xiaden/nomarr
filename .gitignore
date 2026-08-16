@@ -12,7 +12,11 @@ __pycache__/
 *.egg-info/
 build/
 .venv/
+.venv-*/
 venv/
+.venv
+venv
+.venv-*
 *.py[cod]
 *$py.class
 
@@ -51,6 +55,18 @@ build.ps1
 # Serena IDE files
 .serena/
 
+# Obsidian vault
+.obsidian/
+
+# Playwright MCP
+.playwright-mcp/
+
+# Copilot memory (local agent state)
+memories/
+
+# Local-only Copilot hooks (machine-specific)
+.github/hooks/
+
 # Old/deprecated models
 models_old/
 
@@ -77,6 +93,10 @@ radon
 classification_results.json
 scripts/outputs/
 scripts/human-scripts/outputs/
+scripts/embedding_research/scripts/outputs/
+
+# ADR staging drafts (local only, not for review)
+artifacts/decisions/drafts/
 
 # Temp scripts & debugging
 scripts/temp/
@@ -93,6 +113,15 @@ build/
 *.spec
 frontend/dist/
 frontend/build/
+
+# Generated frontend bundle (built into the Docker image by the dockerfile;
+# never committed to git)
+nomarr/public_html/
+
+# Empty working directories (mount points, local state)
+docker/media/
+nomarr/components/library/libraries/
+scripts/embedding_research/scripts/
 
 # Environment variables
 .env
@@ -132,3 +161,21 @@ fpcalc.exe
 /playwright/.auth/
 
 build_resources/models-prepatch/
+
+# Code graph database (generated)
+.codegraph/
+.codegraphrc.json
+
+.agents/
+
+.continue/
+
+.devcontainer/
+
+# v2 prototype (local only)
+v2/
+.rw/
+
+# Docker skill credentials (local only)
+.opencode/skills/docker/references/credentials.md
+.github/skills/docker/references/credentials.md

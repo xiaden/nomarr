@@ -27,7 +27,13 @@ Thank you for your interest in contributing to Nomarr! This document provides gu
 
 ### Submitting Pull Requests
 
-> **Pull requests target `develop`, not `main`.** Nomarr now uses a two-branch workflow: feature branches merge into `develop` first, and `develop` is squash-merged into `main` for stable releases. See [ADR-017](artifacts/decisions/ADR-017-adopt-main-develop-two-branch-model-with-squash-merge-policy.md) for the full branching model.
+> **Nomarr uses a three-tier GitFlow-lite branching strategy** (see [ADR-029](artifacts/decisions/ADR-029-adopt-gitflow-lite-branching-strategy.md)):
+>
+> - **`feat/*`, `fix/*`, `chore/*`** — short-lived work branches. Squash-merged into `develop` via PR.
+> - **`develop`** — integration branch. Working at every commit. PR-only, no direct push. Merged into `main` via PR.
+> - **`main`** — stable releases only. PR-only, no direct push.
+>
+> **Your PR targets `develop`.** Open your branch from `develop`, do your work, then open a PR back to `develop`.
 
 **Before starting work on a PR:**
 
@@ -38,14 +44,17 @@ Thank you for your interest in contributing to Nomarr! This document provides gu
 **PR Requirements:**
 
 - Code follows the existing architecture patterns (see below)
-- Pull requests should target `develop` unless you are coordinating an approved hotfix flow
-- CI must pass before merge on `develop` or `main`, including all required gates:
-   - Lint: `ruff check nomarr/ tests/`
-   - Backend tests: `pytest tests/ -m "not container_only and not requires_database and not code_smell"`
-   - Frontend tests: `npm run test -- --run`
-   - CodeQL for pull requests to `main`
+- Pull requests target `develop` (hotfixes targeting `main` require explicit coordination)
+- CI must pass before merge on `develop` or `main`. Checks run in **independent workflows** that each report their own result (no monolithic chain):
+  - **Backend quality** (`.github/workflows/backend-quality.yml`): `ruff check .`, `ruff format --check .`, `mypy nomarr/ --config-file pyproject.toml`, `lint-imports`, `deptry . --known-first-party nomarr`
+  - **Backend tests** (`.github/workflows/backend-tests.yml`): `pytest tests/ -v -m "not container_only and not requires_database and not code_smell"` plus the ADR-042 architecture-QC suite run explicitly (`pytest tests/test_architecture_qc.py -v`)
+  - **Frontend checks** (`.github/workflows/frontend-checks.yml`): `npm ci`, `npm run lint`, `npx tsc -b --noEmit`, `npm run test`, and `npm run build`
+  - **Docker publish** (`.github/workflows/docker-publish.yml`): builds and publishes the image on push / `workflow_dispatch` only
+  - **CodeQL** (`.github/workflows/codeql.yml`) on push to `main`, pull requests to `main`, and on a weekly schedule
 - Python code passes `ruff` linting and `mypy` type checking (zero errors)
 - Frontend code passes ESLint
+- **There is no `pre-commit` hook.** Enforcement is CI-owned; run the gates locally before pushing (see [Running Tests](#running-tests)).
+- **The frontend production bundle is built by CI/Docker, not committed.** The generated tree under `nomarr/public_html/` is gitignored and produced inside the Docker image by the `dockerfile`'s Node builder stage. Do not commit frontend build output.
 - All relevant tests pass locally before you open or update the PR
 - Commit messages are descriptive
 - PR description explains what changed and why
@@ -63,6 +72,7 @@ Keep names short, lowercase, and descriptive.
 **For ML model contributions:**
 
 ⚠️ **Consult with Music Technology Group, Universitat Pompeu Fabra** before submitting PRs that:
+
 - Modify model processing logic
 - Create derivative works of Essentia models
 - Change how model outputs are interpreted or normalized
@@ -85,7 +95,7 @@ interfaces → services → workflows → components → (persistence / helpers)
 4. **Type annotations are mandatory** - all Python code must be fully typed
 5. **Essentia is isolated** — only `components/ml/audio/ml_audio_comp.py` (audio loading) and `components/ml/audio/ml_preprocess_comp.py` (mel spectrogram) import essentia. Essentia is not the ML backend — ONNX Runtime is.
 6. **Persistence is components-only** — only the components layer may call persistence. Services, workflows, and interfaces must never access the database directly.
-7. **Discovery-based workers** — a single worker type claims files from the `library_files` collection. There is no queue-based processing.
+7. **Discovery-based workers** — a single worker type claims files from the `songs` collection. There is no queue-based processing.
 
 **Layer-specific instructions:**
 
@@ -93,7 +103,7 @@ interfaces → services → workflows → components → (persistence / helpers)
 - `nomarr/services/` - Service layer, orchestrates workflows and components
 - `nomarr/workflows/` - Multi-step business logic, calls components
 - `nomarr/components/` - Reusable domain logic, calls persistence/helpers
-- `nomarr/persistence/` - Database access, ArangoDB queries
+- `nomarr/persistence/` - Database access, SQL queries
 - `nomarr/helpers/` - Pure utility functions, no nomarr imports
 
 See [.github/instructions/](.github/instructions/) for detailed layer conventions.
@@ -141,7 +151,7 @@ All development targets the `develop` branch. Clone the repository and switch to
 
    ```bash
    # From repo root
-   docker compose -f docker/compose.yaml up -d arangodb  # Start database only
+   docker compose -f docker/compose.yaml up -d nomarr-postgres  # Start database only
 
    # In one terminal - backend
    source .venv/bin/activate
@@ -152,23 +162,105 @@ All development targets the `develop` branch. Clone the repository and switch to
    npm run dev
    ```
 
+   **Source-mode frontend behavior:** when running the backend from the checkout
+   (source mode), it serves the SPA from `nomarr/public_html/` only. That tree is
+   gitignored and absent from a fresh checkout, so the backend returns a JSON
+   `` "Web UI not found" `` 404 for `/` unless it has been populated. **The
+   backend does NOT serve `frontend/dist`** — running `npm run build` is not
+   enough to make the UI show up through the backend. Two supported ways to view
+   the UI while developing:
+
+   - **Vite dev server (recommended):** `cd frontend && npm run dev`, then open
+     the URL Vite prints (default `http://localhost:5173`). Vite hot-reloads and
+     proxies API calls to the backend. This is the intended source-mode workflow.
+   - **Mirror what Docker does:** `cd frontend && npm run build` and copy the
+     result into the package path the backend serves:
+     `rm -rf nomarr/public_html && cp -r frontend/dist nomarr/public_html`
+     (remember `nomarr/public_html/` is gitignored — do not commit it).
+
+   Production always ships via Docker, which builds the frontend in a Node stage
+   and copies `frontend/dist` into the image at `/app/nomarr/public_html/` — see
+   the `dockerfile`.
+
 ### Running Tests
 
+These commands mirror the independent CI gates. Run them locally before pushing — CI enforces the same commands, but does not run on your machine, and there is no pre-commit hook to do it for you.
+
 ```bash
-# Backend unit tests
-pytest tests/
-
-# Backend linting (MUST pass before submitting PR)
-ruff check nomarr/
-mypy nomarr/
+# Backend quality (matches backend-quality.yml)
+ruff check .
+ruff format --check .
+mypy nomarr/ --config-file pyproject.toml
 lint-imports  # Check layer boundaries
+deptry . --known-first-party nomarr  # dependency audit
 
-# Frontend linting
-cd frontend && npm run lint
+# Backend tests (matches backend-tests.yml)
+pytest tests/ -v -m "not container_only and not requires_database and not code_smell"
+# ADR-042 architecture/quality enforcement is excluded by the `not code_smell`
+# expression above, so run it explicitly as CI does:
+pytest tests/test_architecture_qc.py -v
 
-# End-to-end tests (requires Docker environment)
-npx playwright test
+# Frontend checks (matches frontend-checks.yml; run from frontend/)
+cd frontend
+npm ci
+npm run lint          # ESLint
+npx tsc -b --noEmit   # TypeScript
+npm run test          # Vitest
+npm run build         # production build -> frontend/dist
+cd ..
+
+# End-to-end tests (requires Docker environment; run from e2e/)
+cd e2e && npx playwright test
 ```
+
+**E2E, docs, and security are independent workflows.** E2E (`.github/workflows/e2e.yml`) is manual-only (`workflow_dispatch`) and by default runs against the image tagged with the short SHA of the commit under test. Docs consistency (`.github/workflows/docs-check.yml`) runs on pull requests. CodeQL (`.github/workflows/codeql.yml`) is the security gate, scheduled weekly and on PRs to `main`.
+
+### Validating CI Completion for an Exact Commit
+
+Before pushing a branch, verify that every required CI gate completed **and**
+passed for the **exact** commit you are about to push, using the local validator:
+
+```bash
+python scripts/validate_commit.py "$(git rev-parse HEAD)"
+```
+
+This is a **read-only, local** check against the GitHub API. It **never re-runs,
+repairs, merges, or pushes** anything, and it never alters GitHub state — it only
+tells you whether the required checks for that exact SHA are done. Pass a full
+40-character SHA or a sufficiently-unique short SHA; a short SHA is resolved to
+its canonical full SHA via a read-only `gh api` commit lookup before validation.
+
+**Prerequisites:** the [GitHub CLI](https://cli.github.com) (`gh`) installed and
+authenticated (`gh auth status` must report a logged-in account with `repo`
+scope). The validator only issues read-only `gh api` GET calls.
+
+**Required-check semantics:** the contract is defined in `REQUIRED_CHECKS`
+inside `scripts/validate_commit.py` (see [docs/dev/validate-commit.md](docs/dev/validate-commit.md)).
+Checks are keyed on the GitHub check-run *job* names: `lint`, `deptry`, `test`,
+`architecture-qc` (ADR-042), `frontend-checks`, `build-and-push`, `promote`,
+`e2e`, `docs-check`, and `analyze` (CodeQL). Which checks are required depends on
+the trigger context (`--trigger push|pr|manual`, default `push`); checks that are
+documented as not applicable to the context are reported as `NOT-APPLICABLE`,
+never silently treated as success. `docs-check` is PR-only (`docs-check.yml` has
+no `workflow_dispatch` trigger), so a `--trigger manual` run does not falsely
+require it. CodeQL is main-target only, so a main-target commit must be validated
+with `--require analyze`. `analyze` is the one exception to the exact job-name
+rule: the `codeql.yml` job is a matrix (`name: Analyze (${{ matrix.language }})`),
+so the real check runs are `Analyze (actions)`, `Analyze (go)`, and so on. The
+validator uses a prefix-aware matcher that consumes and requires every leg whose
+name starts with `Analyze (` — see
+[docs/dev/validate-commit.md](docs/dev/validate-commit.md).
+
+**Exit codes:** `0` = every required check present, completed, and successful.
+`1` = a required check is missing, pending, or unsuccessful (failure/skipped/
+cancelled/neutral/etc.), or the API returned runs for a different `head_sha`
+(exact-commit violation). `2` = could not validate (`gh` missing/unauth'd,
+network/auth error, malformed response, or bad arguments). Diagnostics name
+exactly which checks failed and why.
+
+**Scope limits:** validation only. There is no self-hosted runner automation and
+no automatic repair or rerun of failed checks — a non-zero exit means "do not
+consider this commit done", not "go fix it for me".
 
 ## 📝 Code Style
 
@@ -193,6 +285,7 @@ npx playwright test
 - Reference issues when applicable (`Fixes #123`)
 
 Examples:
+
 ```
 Fix calibration calculation for edge case with zero variance
 Add file watcher polling mode for network mounts
