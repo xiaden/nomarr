@@ -1,1 +1,0 @@
-function e(e,t=`warning`){}export{e as t};

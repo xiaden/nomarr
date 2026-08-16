@@ -13,7 +13,10 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: "../nomarr/public_html",
+    // Disposable build output owned by frontend/. The Dockerfile builds the
+    // bundle here and copies it into the runtime image (see dockerfile). The
+    // generated tree is no longer committed under nomarr/public_html/.
+    outDir: "dist",
     emptyOutDir: true,
   },
   server: {

@@ -1,4 +1,33 @@
-name: CI
+name: Docker Publish
+
+# Independent Docker build/publish/promote gate. Moves the former monolithic
+# `ci.yml` `build-and-push` and `promote` jobs into their own workflow so
+# image builds are reported and attributed independently of quality, test,
+# and frontend responsibilities.
+#
+# Preserved from the original `ci.yml` (ADR-018):
+#   - triggers only on push / workflow_dispatch (never on pull_request), the
+#     same condition as the old `build-and-push` job's `if:`
+#   - push branches [main, develop, feat/**] path filters + workflow_dispatch
+#   - checkout with submodules
+#   - version/base-version extraction (nomarr/__version__.py + BASE_VERSION)
+#   - GHCR tagging contract: sha_tag=<repo>:<short-sha>, promote_tags per
+#     branch (main -> latest + v<semver>; develop -> develop + <ver>.dev<run>;
+#     other -> preview), base_tag=v$BASE_VERSION
+#   - Buildx, GHCR login, registry build cache, provenance + SBOM attestations
+#   - promote depends only on build-and-push within THIS workflow (same
+#     workflow `needs`), and only when promote_tags is non-empty
+#
+# The workflows are INDEPENDENT: docker-publish.yml has no cross-workflow
+# `needs` on, and is not a hard gate for, any other workflow in this repo, and
+# vice versa. The old monolithic ci.yml's implicit cross-workflow ordering is
+# NOT preserved here. Merge/merge-gate decisions are enforced by GitHub branch
+# protection against each workflow's independent check runs, and per-commit
+# completion of this gate (the `build-and-push` and `promote` check runs) is
+# validated separately by scripts/validate_commit.py. Nothing in this file
+# re-runs, repairs, or merges other workflows.
+#
+# build-base.yml and the base image it publishes are NOT altered.
 
 on:
   push:
@@ -10,141 +39,14 @@ on:
       - "e2e/**"
       - "dockerfile"
       - "docker/compose.yaml"
-      - "requirements.txt"
       - "pyproject.toml"
       - "playwright.config.ts"
       - "BASE_VERSION"
-      - ".github/workflows/ci.yml"
-  pull_request:
-    branches: [main, develop]
-    paths:
-      - "nomarr/**"
-      - "tests/**"
-      - "frontend/**"
-      - "e2e/**"
-      - "dockerfile"
-      - "docker/compose.yaml"
-      - "requirements.txt"
-      - "pyproject.toml"
-      - "playwright.config.ts"
-      - ".github/workflows/ci.yml"
+      - ".github/workflows/docker-publish.yml"
   workflow_dispatch:
 
 jobs:
-  lint:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.12'
-
-      - name: Cache virtualenv
-        id: cache-venv
-        uses: actions/cache@v5
-        with:
-          path: .venv
-          key: venv-${{ runner.os }}-py3.12-${{ hashFiles('requirements.txt', 'pyproject.toml') }}
-
-      - name: Install dependencies
-        if: steps.cache-venv.outputs.cache-hit != 'true'
-        run: |
-          python -m venv .venv
-          source .venv/bin/activate
-          pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install -e .
-
-      - name: Lint (ruff check)
-        run: |
-          source .venv/bin/activate
-          ruff check .
-
-      - name: Format check (ruff format)
-        run: |
-          source .venv/bin/activate
-          ruff format --check .
-
-      - name: Type check (mypy)
-        run: |
-          source .venv/bin/activate
-          mypy nomarr/ --config-file pyproject.toml
-
-      - name: Import linter
-        run: |
-          source .venv/bin/activate
-          lint-imports
-
-  frontend-test:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v5
-        with:
-          node-version: '24'
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Install frontend dependencies
-        run: npm ci --prefix frontend
-
-      - name: Lint (ESLint)
-        run: npm run lint --prefix frontend
-
-      - name: Type check (TypeScript)
-        run: npx tsc -b --noEmit
-        working-directory: frontend
-
-      - name: Run frontend tests
-        run: npm run test --prefix frontend
-
-  test:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.12'
-
-      - name: Cache virtualenv
-        id: cache-venv
-        uses: actions/cache@v5
-        with:
-          path: .venv
-          key: venv-${{ runner.os }}-py3.12-${{ hashFiles('requirements.txt', 'pyproject.toml') }}
-
-      - name: Install dependencies
-        if: steps.cache-venv.outputs.cache-hit != 'true'
-        run: |
-          python -m venv .venv
-          source .venv/bin/activate
-          pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install -e .
-
-      - name: Run backend tests
-        run: |
-          source .venv/bin/activate
-          pytest tests/ -v -m "not container_only and not requires_database and not code_smell"
-
   build-and-push:
-    needs: [lint, test, frontend-test]
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: read

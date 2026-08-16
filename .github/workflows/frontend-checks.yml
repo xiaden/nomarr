@@ -1,0 +1,80 @@
+name: Frontend Checks
+
+# Independent frontend gate: install, lint, type-check, unit test, and a
+# production build. Splits the former monolithic `ci.yml` `frontend-test` job
+# into its own workflow so frontend results are reported and attributed
+# independently of backend and Docker responsibilities.
+#
+# Preserved from the original `ci.yml` (ADR-019):
+#   - Node 24 setup with npm cache (cache-dependency-path frontend/package-lock.json)
+#   - `npm ci --prefix frontend`, `npm run lint --prefix frontend`,
+#     `npx tsc -b --noEmit` (working-directory frontend), `npm run test --prefix frontend`
+#   - push branches [main, develop, feat/**] + PR to [main, develop] path
+#     filters + workflow_dispatch
+#
+# ADDED vs. the old `frontend-test` job: a production build step
+# (`npm run build --prefix frontend`). The old job validated lint/type/test but
+# never produced the deployable bundle. Now that the Dockerfile builds the
+# frontend itself from source (see dockerfile + P1-S7) and the generated bundle
+# is no longer committed, this gate proves `npm run build` succeeds in CI.
+# The build emits to frontend/dist (see frontend/vite.config.ts, P1-S6).
+
+on:
+  push:
+    branches: [main, develop, 'feat/**']
+    paths:
+      - "nomarr/**"
+      - "tests/**"
+      - "frontend/**"
+      - "e2e/**"
+      - "dockerfile"
+      - "docker/compose.yaml"
+      - "pyproject.toml"
+      - "playwright.config.ts"
+      - "BASE_VERSION"
+      - ".github/workflows/frontend-checks.yml"
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "nomarr/**"
+      - "tests/**"
+      - "frontend/**"
+      - "e2e/**"
+      - "dockerfile"
+      - "docker/compose.yaml"
+      - "pyproject.toml"
+      - "playwright.config.ts"
+      - ".github/workflows/frontend-checks.yml"
+  workflow_dispatch:
+
+jobs:
+  frontend-checks:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
+
+      - name: Lint (ESLint)
+        run: npm run lint --prefix frontend
+
+      - name: Type check (TypeScript)
+        run: npx tsc -b --noEmit
+        working-directory: frontend
+
+      - name: Run frontend tests
+        run: npm run test --prefix frontend
+
+      - name: Production build
+        run: npm run build --prefix frontend
