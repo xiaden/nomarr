@@ -258,7 +258,7 @@ def upsert_track(self, ...) -> Record:
     self._session.commit()
 ```
 
-**Affected files:** `nomarr/persistence/database/navidrome_repo.py::upsert_track` (L77-L102). Other repos with `.returning()` inside `begin_nested()` blocks should be audited: `model_repo.py:L144`, `file_repo.py:L116`, `vector_repo.py:L102`, `embedding_stream_repo.py:L73`, `calibration_repo.py:L86`.
+**Affected files:** `nomarr/persistence/database/navidrome_repo.py::upsert_track` (L77-L102). Other repos with `.returning()` inside `begin_nested()` blocks should be audited: `model_repo.py:L144`, `song_repo.py:L116`, `vector_repo.py:L102`, `embedding_stream_repo.py:L73`, `calibration_repo.py:L86`.
 
 ### 2. Stale `async def` test methods
 

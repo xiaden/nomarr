@@ -69,7 +69,7 @@ def scan_library_quick_workflow(
 
     Args:
         db: Database instance
-        library_id: Library document ``_id``
+        library_id: Library document ``id``
         tagger_version: Model suite hash for version comparison
 
     Returns:

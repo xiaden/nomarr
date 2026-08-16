@@ -1,7 +1,7 @@
 """Personal playlist builders from taste profiles and play history.
 
 Each public function builds one playlist type via ANN search against the
-cold vector collection.  Builders return ``songs/id`` values;
+cold vector collection.  Builders return ``song_id`` values;
 nd_id resolution is the interface layer's responsibility.
 """
 

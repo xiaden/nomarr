@@ -1,7 +1,7 @@
 """Per-model VRAM probe component.
 
 Measures the actual VRAM consumed by each ONNX model on the current GPU and stores
-results in the ``meta`` collection as:
+results in the ``meta`` table as:
 
     ``ml_model_vram:{model_path}`` -> bytes (str), or ``str(sys.maxsize)`` if not measured
 

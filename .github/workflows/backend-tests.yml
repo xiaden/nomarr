@@ -1,0 +1,128 @@
+name: Backend Tests
+
+# Independent backend test gate. Splits the former monolithic `ci.yml` `test`
+# job into its own workflow so backend test results are reported and
+# attributed independently of quality, frontend, and Docker responsibilities.
+#
+# Preserved from the original `ci.yml` (ADR-019):
+#   - the exact pytest gate:
+#       pytest tests/ -v -m "not container_only and not requires_database and not code_smell"
+#   - Python 3.12 setup, libchromaprint1 system dependency, venv caching,
+#     `pip install -e ".[dev]"`
+#   - push branches [main, develop, feat/**] + PR to [main, develop] path
+#     filters + workflow_dispatch
+#
+# Architecture-QC enforcement (ADR-042):
+#   The tests in tests/test_architecture_qc.py are marked @pytest.mark.code_smell
+#   and (partly) @pytest.mark.slow, so the broad `not code_smell` expression above
+#   EXCLUDES them. That must NOT silently weaken ADR-042, which names
+#   `test_architecture_qc.py` as part of the consolidated enforcement toolchain.
+#   This workflow therefore runs that file EXPLICITLY in its own dedicated job
+#   (architecture-qc), using the exact same invocation a contributor would run
+#   locally. That job is a required gate for merge, preserving enforcement.
+#   Decision: run separately (chosen over documenting its absence).
+
+on:
+  push:
+    branches: [main, develop, 'feat/**']
+    paths:
+      - "nomarr/**"
+      - "tests/**"
+      - "frontend/**"
+      - "e2e/**"
+      - "dockerfile"
+      - "docker/compose.yaml"
+      - "pyproject.toml"
+      - "playwright.config.ts"
+      - "BASE_VERSION"
+      - ".github/workflows/backend-tests.yml"
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "nomarr/**"
+      - "tests/**"
+      - "frontend/**"
+      - "e2e/**"
+      - "dockerfile"
+      - "docker/compose.yaml"
+      - "pyproject.toml"
+      - "playwright.config.ts"
+      - ".github/workflows/backend-tests.yml"
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y \
+            libchromaprint1
+
+      - name: Cache virtualenv
+        id: cache-venv
+        uses: actions/cache@v5
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-py3.12-${{ hashFiles('pyproject.toml', 'uv.lock') }}
+
+      - name: Install dependencies
+        if: steps.cache-venv.outputs.cache-hit != 'true'
+        run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run backend tests
+        run: |
+          source .venv/bin/activate
+          pytest tests/ -v -m "not container_only and not requires_database and not code_smell"
+
+  # ADR-042 enforcement: architecture/quality gates in tests/test_architecture_qc.py
+  # are marked code_smell (+ slow) and are therefore excluded by the `not code_smell`
+  # expression in the `test` job above. Run them explicitly so ADR-042 consolidation
+  # (import-linter contracts, test_architecture_qc.py, ruff, deptry) stays a live,
+  # required gate. See workflow header comment for the documented decision.
+  architecture-qc:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Cache virtualenv
+        id: cache-venv
+        uses: actions/cache@v5
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-py3.12-${{ hashFiles('pyproject.toml', 'uv.lock') }}
+
+      - name: Install dependencies
+        if: steps.cache-venv.outputs.cache-hit != 'true'
+        run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run architecture-QC enforcement (ADR-042)
+        run: |
+          source .venv/bin/activate
+          pytest tests/test_architecture_qc.py -v

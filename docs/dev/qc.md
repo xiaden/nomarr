@@ -43,9 +43,8 @@ Relevant areas include:
 - `nomarr/services/domain/tagging_svc.py` — tagging operations
 - `nomarr/services/infrastructure/worker_system_svc.py` — worker lifecycle
 - `nomarr/persistence/db.py` — database facade
-- `nomarr/persistence/base.py` — persistence base types
-- `nomarr/persistence/collections.py` — class-based collection declarations
-- `nomarr/persistence/constructor/builder.py` — runtime collection wiring
+- `nomarr/persistence/api/` — intent-level sub-facades (`LibraryDb`, `AppDb`, `MlDb`)
+- `nomarr/persistence/database/` — private repository classes
 - `nomarr/interfaces/api/` — FastAPI routes and auth
 - `nomarr/interfaces/cli/` — CLI commands
 
@@ -53,9 +52,8 @@ Relevant areas include:
 
 Persistence changes should be validated for:
 
-- correct collection declarations in `collections.py`
-- correct runtime wiring through `Builder`
-- regenerated `nomarr/persistence/stubs/` when the public API changes
+- correct intent-level facade surface in `nomarr/persistence/api/`
+- correct repository wiring through the `Database` facade in `nomarr/persistence/db.py`
 - no upward imports from persistence into higher layers
 
 ---
@@ -75,10 +73,9 @@ Good QC output should make it obvious:
 
 When persistence internals change:
 
-1. update the collection declarations or builder wiring
-2. regenerate stubs if the runtime API changed
-3. run backend lint
-4. run targeted tests or the full suite as appropriate
-5. run architecture QC to confirm boundaries still hold
+1. update the intent facade surface (`api/`) or repository wiring (`database/`)
+2. run backend lint
+3. run targeted tests or the full suite as appropriate
+4. run architecture QC to confirm boundaries still hold
 
 That combo catches most refactor gremlins before they escape into the wild.

@@ -79,7 +79,7 @@ def generate_playlists(
         pp_max_clusters: Maximum number of genre clusters for taste profile computation.
 
     Returns:
-        List of generated playlists with ``song/_id`` track lists.
+        List of generated playlists with ``song_id`` track lists.
 
     """
     # Step 1: Compute taste profile from caller-provided play data

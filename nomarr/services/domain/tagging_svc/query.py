@@ -93,7 +93,7 @@ class TaggingQueryMixin:
         """Get songs linked to a tag with metadata.
 
         Args:
-            tag_id: Tag _id
+            tag_id: Tag id
             limit: Max results
             offset: Pagination offset
 
@@ -130,7 +130,7 @@ class TaggingQueryMixin:
         """Commit pending tag writes by writing tags for affected libraries.
 
         Args:
-            library_id: Optional library _id to scope. If None, finds libraries
+            library_id: Optional library id to scope. If None, finds libraries
                         with pending files.
 
         Returns:

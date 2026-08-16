@@ -48,7 +48,7 @@ Rules that MUST stay true about that data.
 
 ### 4. Private Implementation
 
-Direct persistence access is **private** to the domain. Other domains CANNOT call `db.songs` directly — they MUST call library domain components.
+Direct persistence access is **private** to the domain. Other domains CANNOT call `db.library` directly — they MUST call library domain components.
 
 **Metaphor:** Domains are like in-process microservices. You call their API (components), you never touch their database directly.
 
@@ -65,8 +65,8 @@ Direct persistence access is **private** to the domain. Other domains CANNOT cal
 # components/library/library_file_mutation_comp.py
 from nomarr.persistence.db import Database
 
-def upsert_library_file(db: Database, library_id: str, file_path: str) -> dict:
-    return db.songs.upsert({"path": file_path, ...})
+def upsert_library_file(db: Database, library_id: int, file_path: str) -> dict:
+    return db.library.update_songs(...)
 
 # ✅ GOOD — Workflow calls component
 # workflows/library/scan_library_full_wf.py
@@ -77,7 +77,7 @@ def scan_library(db, library_id):
         upsert_library_file(db, library_id, path)
 
 # ❌ BAD — Workflow imports persistence
-db.songs.insert(...)  # BYPASSES INVARIANTS!
+db.library.update_songs(...)  # BYPASSES INVARIANTS!
 ```
 
 ### Rule 2: Cross-Domain via Components Only
@@ -86,11 +86,11 @@ db.songs.insert(...)  # BYPASSES INVARIANTS!
 
 ```python
 # ✅ GOOD — Library workflow calls metadata domain component
-from nomarr.components.metadata.entity_seeding_comp import seed_entities
+from nomarr.components.metadata.entity_seeding_comp import seed_entities_for_scan_batch
 
-def scan_file_workflow(db, file_doc, tags):
-    add_file(db, library_id, file_doc["path"])      # Library domain
-    seed_entities(db, file_doc["_id"], tags)          # Metadata domain
+def scan_song_workflow(db, library_id, song, tags):
+    song_id = db.library.add_song_to_library(library_id, song)          # Library domain
+    seed_entities_for_scan_batch(db, [str(song["id"])], {song["id"]: tags})  # Metadata domain
 
 # ❌ BAD — Library workflow bypasses metadata domain
 db.entities.insert({"id": artist_id})  # No invariant enforcement!
@@ -111,7 +111,7 @@ Each domain maps to a subfolder under `components/` and owns specific PostgreSQL
 - `libraries` — Library definitions, root paths
 - `songs` — File records, paths, audio metadata, tagging state
 - `library_folders` — Folder cache for quick scanning
-- `file_states` — Table for file lifecycle state (e.g., `ml_tagged`)
+- `song_states` / `song_state_assignments` — Song lifecycle state lookup and per-song state assignments (e.g., `ml_tagged`)
 
 **Invariants:**
 
@@ -185,10 +185,11 @@ Each domain maps to a subfolder under `components/` and owns specific PostgreSQL
 
 - `ml_models` — Registered model definitions (backbone + heads)
 - `ml_model_outputs` — Raw model output storage
-- `calibration_state` — Current calibration parameters per model
+- `ml_output_streams` — ML output streaming status per song/model
+- `ml_embedding_streams` — Embedding computation progress per song/backbone
+- `embeddings` — Vector embeddings (single table, addressed by `backbone_id`)
+- `calibration_states` — Current calibration parameters per model
 - `calibration_history` — Historical calibration records
-- `segment_scores_stats` — Per-file segment score statistics
-- `ml_capacity` — GPU/CPU capacity probe results
 - `vram_promises` — VRAM allocation tracking
 
 **Subpackages:**

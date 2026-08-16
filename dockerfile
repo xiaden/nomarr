@@ -5,6 +5,35 @@
 # Use pre-built base image with all heavy dependencies
 # Build base with: docker build -f dockerfile.base -t ghcr.io/xiaden/nomarr-base:latest .
 ARG BASE_TAG=latest
+
+# ----------------------------------------------------------------------
+#  Frontend builder stage (Node 24)
+#  Reproducible: npm ci from the committed lockfile, then a production
+#  build. The bundle is emitted to frontend/dist (see vite.config.ts) and
+#  copied into the runtime image below, so the generated frontend tree is
+#  never committed to git. Mirrors the frontend-checks.yml CI gate.
+# ----------------------------------------------------------------------
+FROM node:24 AS frontend-builder
+
+WORKDIR /build/frontend
+
+# Install from the lockfile first (layer-cached unless the lockfile changes)
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+
+# Copy the remaining frontend source needed for `npm run build`
+# (tsc -b && vite build). Do NOT copy node_modules.
+COPY frontend/index.html ./
+COPY frontend/public ./public
+COPY frontend/src ./src
+COPY frontend/tsconfig.json frontend/tsconfig.app.json frontend/tsconfig.node.json ./
+COPY frontend/vite.config.ts ./vite.config.ts
+
+RUN npm run build
+
+# ----------------------------------------------------------------------
+#  Runtime stage (pre-built base image)
+# ----------------------------------------------------------------------
 FROM ghcr.io/xiaden/nomarr-base:${BASE_TAG}
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -41,8 +70,11 @@ COPY build_resources/scripts/*.sh /app/docker/
 RUN cp /app/docker/cleanup-cron.sh /app/ && \
     cp /app/docker/nom-cli.sh /usr/local/bin/nom
 
-# Note: Frontend is built separately (npm run build in frontend/)
-# Vite builds directly to nomarr/public_html/, which is copied above
+# The tracked frontend bundle under nomarr/public_html/ was removed (P1-S9)
+# and is gitignored (P1-S8). The runtime image's /app/nomarr/public_html/ is
+# produced here from the frontend-builder stage, not from the checked-out
+# nomarr/ tree.
+COPY --from=frontend-builder /build/frontend/dist/ /app/nomarr/public_html/
 
 # Combine RUN commands to reduce layers (4 commands = 1 layer instead of 4)
 RUN chmod +x /app/cleanup-cron.sh /usr/local/bin/nom && \

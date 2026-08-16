@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 def generate_navidrome_config_workflow(db: Database, namespace: str = "nom") -> str:
     """Generate Navidrome TOML configuration for custom tags.
 
-    Queries the tags collection to discover all nomarr tags, detects their types,
+    Queries the tags table to discover all nomarr tags, detects their types,
     and generates proper TOML configuration with user-friendly field names.
 
     The field names are short (e.g., nom_happy_raw) while the aliases point to

@@ -29,7 +29,7 @@ def get_track_vector(
 
     Args:
         db: Database instance.
-        file_id: Song document ``_id`` (e.g. ``"song/12345"``).
+        file_id: Song document ``id`` (e.g. ``"12345"``).
         backbone_id: Backbone identifier (e.g. ``"effnet"``).
 
     Returns:

@@ -84,7 +84,7 @@ def hydrate_songs_with_metadata(db: Database, songs: list[dict[str, Any]]) -> li
 
     Returns:
         List of new dicts with metadata fields merged in. Songs without a
-        string _id are returned as shallow copies. Songs with no tags are
+        string id are returned as shallow copies. Songs with no tags are
         returned as-is (no ``None``-valued metadata keys are injected).
 
     """
@@ -133,7 +133,7 @@ def hydrate_song_with_metadata(db: Database, song: dict[str, Any]) -> dict[str, 
         song: Single song dict to hydrate
 
     Returns:
-        New dict with metadata fields merged in. If the song has no string _id,
+        New dict with metadata fields merged in. If the song has no string id,
         returns a shallow copy unchanged.
 
     """

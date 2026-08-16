@@ -41,7 +41,7 @@ class ConvertPlaylistRequest(BaseModel):
     )
     library_id: int | None = Field(
         default=None,
-        description="Optional library _id to restrict matching scope",
+        description="Optional library id to restrict matching scope",
     )
 
     @field_validator("library_id", mode="before")

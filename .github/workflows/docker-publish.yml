@@ -1,0 +1,153 @@
+name: Docker Publish
+
+# Independent Docker build/publish/promote gate. Moves the former monolithic
+# `ci.yml` `build-and-push` and `promote` jobs into their own workflow so
+# image builds are reported and attributed independently of quality, test,
+# and frontend responsibilities.
+#
+# Preserved from the original `ci.yml` (ADR-018):
+#   - triggers only on push / workflow_dispatch (never on pull_request), the
+#     same condition as the old `build-and-push` job's `if:`
+#   - push branches [main, develop, feat/**] path filters + workflow_dispatch
+#   - checkout with submodules
+#   - version/base-version extraction (nomarr/__version__.py + BASE_VERSION)
+#   - GHCR tagging contract: sha_tag=<repo>:<short-sha>, promote_tags per
+#     branch (main -> latest + v<semver>; develop -> develop + <ver>.dev<run>;
+#     other -> preview), base_tag=v$BASE_VERSION
+#   - Buildx, GHCR login, registry build cache, provenance + SBOM attestations
+#   - promote depends only on build-and-push within THIS workflow (same
+#     workflow `needs`), and only when promote_tags is non-empty
+#
+# The workflows are INDEPENDENT: docker-publish.yml has no cross-workflow
+# `needs` on, and is not a hard gate for, any other workflow in this repo, and
+# vice versa. The old monolithic ci.yml's implicit cross-workflow ordering is
+# NOT preserved here. Merge/merge-gate decisions are enforced by GitHub branch
+# protection against each workflow's independent check runs, and per-commit
+# completion of this gate (the `build-and-push` and `promote` check runs) is
+# validated separately by scripts/validate_commit.py. Nothing in this file
+# re-runs, repairs, or merges other workflows.
+#
+# build-base.yml and the base image it publishes are NOT altered.
+
+on:
+  push:
+    branches: [main, develop, 'feat/**']
+    paths:
+      - "nomarr/**"
+      - "tests/**"
+      - "frontend/**"
+      - "e2e/**"
+      - "dockerfile"
+      - "docker/compose.yaml"
+      - "pyproject.toml"
+      - "playwright.config.ts"
+      - "BASE_VERSION"
+      - ".github/workflows/docker-publish.yml"
+  workflow_dispatch:
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    outputs:
+      sha_tag: ${{ steps.tags.outputs.sha_tag }}
+      promote_tags: ${{ steps.tags.outputs.promote_tags }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          submodules: true
+
+      - name: Extract versions
+        id: versions
+        run: |
+          VERSION=$(python3 -c "exec(open('nomarr/__version__.py').read()); print(__version__)")
+          BASE_VERSION=$(cat BASE_VERSION)
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "base_version=${BASE_VERSION}" >> $GITHUB_OUTPUT
+          echo "App version: ${VERSION}"
+          echo "Base version: ${BASE_VERSION}"
+
+      - name: Compute image tags
+        id: tags
+        run: |
+          REPO="ghcr.io/${{ github.repository_owner }}/nomarr"
+          SHA="${{ github.sha }}"
+          SHORT_SHA="${SHA:0:7}"
+          VERSION="${{ steps.versions.outputs.version }}"
+          BASE_VERSION="${{ steps.versions.outputs.base_version }}"
+
+          SHA_TAG="${REPO}:${SHORT_SHA}"
+
+          if [ "${{ github.ref_name }}" = "main" ]; then
+            SEMVER="${VERSION%.dev*}"
+            PROMOTE_TAGS="${REPO}:latest,${REPO}:v${SEMVER}"
+          elif [ "${{ github.ref_name }}" = "develop" ]; then
+            VERSION_BASE="${VERSION%.dev*}"
+            DEV_TAG="${VERSION_BASE}.dev${{ github.run_number }}"
+            PROMOTE_TAGS="${REPO}:develop,${REPO}:${DEV_TAG}"
+          else
+            PROMOTE_TAGS="${REPO}:preview"
+          fi
+          BASE_TAG="v${BASE_VERSION}"
+
+          echo "sha_tag=${SHA_TAG}" >> $GITHUB_OUTPUT
+          echo "promote_tags=${PROMOTE_TAGS}" >> $GITHUB_OUTPUT
+          echo "base_tag=${BASE_TAG}" >> $GITHUB_OUTPUT
+          echo "SHA tag: ${SHA_TAG}"
+          echo "Promote tags: ${PROMOTE_TAGS}"
+          echo "Base image tag: ${BASE_TAG}"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push SHA-tagged image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./dockerfile
+          push: true
+          pull: true
+          build-args: |
+            BASE_TAG=${{ steps.tags.outputs.base_tag }}
+          tags: ${{ steps.tags.outputs.sha_tag }}
+          cache-from: |
+            type=registry,ref=ghcr.io/${{ github.repository_owner }}/nomarr:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/nomarr:buildcache,mode=max
+          provenance: true
+          sbom: true
+
+  promote:
+    needs: [build-and-push]
+    if: needs.build-and-push.outputs.promote_tags != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Promote image with release tags
+        run: |
+          SHA_TAG="${{ needs.build-and-push.outputs.sha_tag }}"
+          IFS=',' read -ra TAGS <<< "${{ needs.build-and-push.outputs.promote_tags }}"
+          for TAG in "${TAGS[@]}"; do
+            echo "Tagging ${SHA_TAG} -> ${TAG}"
+            docker buildx imagetools create --tag "${TAG}" "${SHA_TAG}"
+          done

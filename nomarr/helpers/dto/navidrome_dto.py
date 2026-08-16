@@ -219,7 +219,7 @@ class NavidromeStaticPlaylistResult(TypedDict):
         playlist_name: Display name written to Navidrome.
         playlist_id: Navidrome-assigned playlist ID.
         track_nd_ids: Navidrome song IDs that were successfully resolved.
-        unresolved_file_ids: Nomarr file ``_id`` values with no ND mapping.
+        unresolved_file_ids: Nomarr file ``id`` values with no ND mapping.
 
     """
 

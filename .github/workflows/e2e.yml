@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       image_tag:
-        description: "Nomarr image tag to test (default: develop)"
+        description: "Nomarr image tag to test (default: <short-sha> of the commit under test)"
         required: false
         type: string
 
@@ -28,7 +28,13 @@ jobs:
           if [ -n "${{ inputs.image_tag }}" ]; then
             TAG="${{ inputs.image_tag }}"
           else
-            TAG="develop"
+            # docker-publish.yml tags every build with a short-SHA tag
+            # (<repo>:<short-sha>) and never re-tags the same commit. Default
+            # to the exact image produced for the commit under test so the E2E
+            # suite always runs against the code it was dispatched on, rather
+            # than a moving `develop` tag.
+            SHA="${{ github.sha }}"
+            TAG="${SHA:0:7}"
           fi
           echo "tag=${TAG}" >> $GITHUB_OUTPUT
           echo "Using image tag: ${TAG}"

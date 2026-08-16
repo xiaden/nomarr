@@ -19,7 +19,7 @@ Persistence sits at the bottom of the dependency graph:
 - **Components** may call persistence directly
 - **Persistence** may use helpers and low-level SQL utilities
 - **Persistence never imports** components, workflows, services, or interfaces
-- **Persistence returns raw documents and query results**; higher layers decide how to map or interpret them
+- **Persistence returns raw rows and query results**; higher layers decide how to map or interpret them
 
 Persistence is responsible for data access, not orchestration or business policy.
 
@@ -33,7 +33,7 @@ persistence/
 ├── PERSISTENCE.md               # This guide
 ├── db.py                        # Top-level Database facade and sub-facade wiring
 ├── pg_engine.py                 # PostgreSQL engine, session factory, scoped session
-├── exceptions.py                # Domain exceptions (DuplicateKeyError, PersistenceError)
+├── exceptions.py                # Deprecated PersistenceError/DuplicateKeyError (use nomarr/helpers/exceptions.py domain exceptions)
 ├── api/
 │   ├── __init__.py
 │   ├── application.py           # AppDb intent facade
@@ -140,7 +140,7 @@ Use `db.library` when the caller thinks in terms of libraries, songs, folders, a
 
 It wraps operations such as:
 
-- file state reads and state-oriented intents
+- song state reads and state-oriented intents
 - scan and pipeline-state persistence hidden behind app-domain methods
 - locks, claims, health, migration/config, and VRAM promise persistence
 - maintenance-only routines on `db.app` (truncation, resets): `db.app.truncate_song_state_edges()`, `db.app.truncate_worker_claims()`, `db.app.truncate_health()`
@@ -211,7 +211,7 @@ When adding or modifying helpers in `sql/primitives.py`, contributors must follo
 
 1. **All data values flow through SQLAlchemy parameter binding** — never interpolate user-supplied values directly into SQL text.
 2. **Use SQLAlchemy Core `Table.c` column references** for structural elements; avoid string-based column interpolation where possible.
-3. **Error mapping discipline** — all SQLAlchemy exceptions are mapped through `map_sqlalchemy_error()` in `sql/exceptions.py` so callers see storage-agnostic `PersistenceError` subtypes.
+3. **Error mapping discipline** — SQLAlchemy exceptions raised by Tier 1 primitives are translated at the Tier 2 repository boundary via `map_persistence_exceptions()` in `sql/exceptions.py` into the four domain exceptions in `nomarr/helpers/exceptions.py`: `EntityNotFoundError`, `DuplicateEntityError`, `ReferentialIntegrityError`, and `DatabaseStateError`. Raw SQLAlchemy exceptions propagate out of Tier 1 primitives and are only mapped at the Tier 2 repo boundary.
 
 Use these helpers when several repository classes need the same safe query-building pattern. Keep table-specific and domain-specific intent in the `database/` modules; do not grow `primitives.py` into a generic query framework.
 
@@ -325,7 +325,7 @@ When changing persistence behavior, work from the right layer downward.
 
 ### If the schema changes
 
-1. Add the forward-only migration under `nomarr/migrations/`
+1. Add the forward-only migration under `alembic/versions/`
 2. Do not patch old baselines in place
 3. Update any affected persistence APIs and their callers together
 

@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 class WriteResult:
     """Result from write_file_tags_workflow."""
 
-    file_key: str  # Document _key of the file
+    file_key: str  # Document id of the file
     tags_written: int  # Number of tags written to file
     tags_filtered: int  # Number of tags filtered out by mode
     success: bool  # Whether write succeeded
@@ -118,7 +118,7 @@ def write_file_tags_workflow(
 
     Args:
         db: Database instance
-        file_key: Document _key of the file to write
+        file_key: Document id of the file to write
         target_mode: Desired write mode ("none", "minimal", "full")
         has_calibration: Whether calibration exists (affects mood tag filtering)
         namespace: Tag namespace (default: "nom")

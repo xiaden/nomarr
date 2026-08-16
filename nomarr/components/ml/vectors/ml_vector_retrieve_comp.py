@@ -26,7 +26,7 @@ def get_cold_track_vector(
 
     Args:
         db: Database instance.
-        song_id: Library song document ``_id``.
+        song_id: Library song document ``id``.
         backbone_id: Backbone identifier (e.g. ``"effnet"``).
 
     Returns:

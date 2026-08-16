@@ -3,9 +3,10 @@
 Holds all song-domain (``songs`` table) and folder-domain
 (``library_folders`` table) intent methods. Wired into ``LibraryDb`` as
 its ``songs`` namespace (namespaced-forwarding split per
-DD-persistence-intent-facade-rebuild §Phase 1). Methods moved verbatim
-from the ``LibrarySongsDb`` sub-facade — including the former
-maintenance surface — signatures and behavior unchanged.
+DD-persistence-intent-facade-rebuild §Phase 1). Methods were extracted
+verbatim from the former single ``LibraryDb`` when the sealed library
+facade was split into sub-facades — including the former maintenance
+surface — signatures and behavior unchanged.
 """
 
 from __future__ import annotations

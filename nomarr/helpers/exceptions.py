@@ -14,7 +14,7 @@ class PlaylistQueryError(Exception):
 
 
 class LibraryNotFoundError(ValueError):
-    """Raised when a library document cannot be found by its ID."""
+    """Raised when a library row cannot be found by its ID."""
 
 
 class LibraryAlreadyScanningError(ValueError):

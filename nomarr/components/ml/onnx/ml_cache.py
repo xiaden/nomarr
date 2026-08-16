@@ -6,7 +6,7 @@ instance (the synchronous constructor stores parameters only).  It provides
 two high-level controls:
 
 - ``cache.warm = True`` — load all sessions.  Worker identity and database are
-  retrieved from the process-local registry (see :mod:`ml_worker_context_comp`);
+  retrieved from the process-local registry (see :mod:`nomarr.components.ml.resources.ml_worker_context_comp`);
   if no context is registered (probe processes, tests), the coordinator check
   is skipped and models are loaded directly.  GPU models that don't fit are
   automatically retried on CPU.
@@ -80,7 +80,7 @@ class ONNXModelCache:
         self.heads: dict[str, list[ONNXHeadModel]] = {}
 
     def _discover(self) -> None:
-        """Shared discovery logic. Discovers backbone models from filesystem and head models from database. Called by factory and refresh methods."""
+        """Shared discovery logic. Discovers backbone models from filesystem and head models from database. Called by the create() factory."""
         backbone_list: list[ONNXBackboneModel] = discover_backbone_models(self._models_dir)
         head_list: list[ONNXHeadModel] = (
             discover_head_models(self._models_dir, self.db)

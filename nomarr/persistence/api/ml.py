@@ -1,3 +1,9 @@
+"""ML persistence sub-facade (``MlDb``).
+
+Groups model, output-stream, vector, and calibration persistence into a single
+intent facade wired as ``db.ml``.
+"""
+
 from __future__ import annotations
 
 import logging

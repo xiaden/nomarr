@@ -1,3 +1,9 @@
+"""App-state persistence sub-facade (``AppDb``) and legacy Navidrome surface.
+
+Groups application-state, lock/claim, session, health, migration/config, and
+VRAM-promise persistence into a single intent facade wired as ``db.app``.
+"""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING

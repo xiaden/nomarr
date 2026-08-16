@@ -215,16 +215,16 @@ The frontend `LibraryFile` interface (in `frontend/src/shared/api/files.ts`) exp
 
 ### 14. Sub-Repo → Library Facade Mock Migration (2026-07-17)
 
-The `LibraryDb` class in `nomarr/persistence/api/library.py` exposes deprecated sub-repo properties (`file_repo`, `file_tag_repo`, `tag_repo`, `file_state_repo`) which emit `FacadeMisuseWarning` when accessed. Production code has been migrated to use intent-level methods directly on `db.library`.
+The `LibraryDb` class in `nomarr/persistence/api/library.py` is a thin namespaced forwarder exposing exactly four sub-facade properties — `songs`, `tags`, `scans`, `regions` (`db.library.songs`, `db.library.tags`, `db.library.scans`, `db.library.regions`). Production code calls intent-level methods directly on `db.library` (or a sub-facade namespace); the facade exposes no repo properties.
 
-**Mock path rename patterns for tests:**
+**Vocabulary rename patterns (file → song):**
 
-| Old mock path | New mock path |
+| Old (pre-evolution) name | Current name |
 |---|---|
-| `db.library.file_tag_repo.get_file_tag_edges_for_tags` | `db.library.list_file_tag_edges` |
-| `db.library.file_tag_repo.search_files_by_tag_pattern` | `db.library.search_files_by_tag_pattern` |
-| `db.library.tag_repo.get_or_create_tag` | `db.library.find_or_create_tag` |
-| `db.library.file_repo.update_file` | `db.library.update_file_fields` |
+| `list_file_tag_edges` | `db.library.list_song_tag_edges` |
+| `search_files_by_tag_pattern` | `db.library.search_songs_by_tag_pattern` |
+| `update_file_fields` | `db.library.update_song_fields` |
+| `count_files_for_library` | `db.library.count_songs_for_library` |
 
 **Files affected:** `test_tag_stats_comp.py`, `test_tag_write_comp.py`, `test_library_file_mutation_comp.py`, `test_library_file_query_comp.py`, `test_descriptor_match_comp.py`.
 
@@ -254,8 +254,8 @@ The `LibraryDb` class in `nomarr/persistence/api/library.py` exposes deprecated 
 - `nomarr/helpers/dto/library_dto.py`
 - `nomarr/helpers/dto/processing_dto.py`
 - `nomarr/helpers/dto/metadata_dto.py`
-- `nomarr/persistence/database/songs_repo/main.py`
-- `nomarr/persistence/database/app_repo/main.py`
+- `nomarr/persistence/database/song_repo.py`
+- `nomarr/persistence/database/app_repo.py`
 - `nomarr/persistence/api/library.py`
 - `nomarr/persistence/api/application.py`
 - `nomarr/persistence/schema/names.py`

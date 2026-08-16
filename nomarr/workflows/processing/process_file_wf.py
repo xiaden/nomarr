@@ -57,7 +57,7 @@ def process_file_workflow(
         path: Path to the audio file.
         config: Processing configuration (models_dir, namespace, tagger_version, etc.).
         db: Database instance. Required for path resolution and metadata writes.
-        file_id: song document _id. Avoids path-based lookup when provided.
+        file_id: song document id. Avoids path-based lookup when provided.
         cache: ONNXModelCache instance. Required; auto-warmed if not already warm.
 
     Returns:

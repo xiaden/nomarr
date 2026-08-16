@@ -40,7 +40,7 @@ def scan_setup_workflow(
 
     Args:
         db: Database instance.
-        library_id: Library document ``_id``.
+        library_id: Library document ``id``.
         scan_type: ``"quick"`` or ``"full"`` (used only for logging).
 
     Returns:

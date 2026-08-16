@@ -28,7 +28,7 @@ class FileMove:
 
     old_path: str
     new_path: str
-    file_id: int  # DB _id of the moved file
+    file_id: int  # DB id of the moved file
     chromaprint: str
     old_duration: float | None
     new_duration: float | None

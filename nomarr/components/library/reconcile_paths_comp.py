@@ -29,13 +29,13 @@ def reconcile_library_paths(
 ) -> ReconcileResult:
     """Re-validate all library paths against current configuration.
 
-    This component scans the songs collection and re-validates each path
+    This component scans the songs table and re-validates each path
     using build_library_path_from_db() to check against current config.
     Useful after library root changes or library deletions.
 
     Args:
         db: Database instance
-        library_id: Library document _id to scope reconciliation to
+        library_id: Library document id to scope reconciliation to
         policy: What to do with invalid paths:
             - "dry_run": Only report, don't modify database
             - "mark_invalid": Keep files but log warnings

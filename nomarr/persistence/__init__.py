@@ -18,7 +18,6 @@ Internal structure:
 - ``api/`` — Domain-oriented persistence surfaces (LibraryDb, AppDb, MlDb)
 - ``database/`` — Repository classes organized by domain/table
 - ``models/`` — SQLAlchemy ORM models
-- ``schema/`` — Table and index DDL definitions
 - ``db.py`` — Database class (connect, version, lifecycle)
 """
 

@@ -73,7 +73,7 @@ def scan_library_full_workflow(
 
     Args:
         db: Database instance
-        library_id: Library document ``_id``
+        library_id: Library document ``id``
         tagger_version: Model suite hash for version comparison
         models_dir: Path to ML models (enables tag validation when provided)
         namespace: Tag namespace (default ``"nom"``)

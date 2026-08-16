@@ -198,7 +198,7 @@ class AnalyticsService:
         ``MoodDistributionResult`` DTO suitable for API responses.
 
         Args:
-            library_id: Optional library ``_id`` to filter by.
+            library_id: Optional library ``id`` to filter by.
 
         Returns:
             MoodDistributionResult DTO with mood_distribution list.

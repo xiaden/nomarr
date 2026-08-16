@@ -22,13 +22,13 @@ def reconcile_library_paths_workflow(
 ) -> ReconcileResult:
     """Re-validate all library paths against current configuration.
 
-    This checks all files in the songs collection to detect paths that have
+    This checks all files in the songs table to detect paths that have
     become invalid due to config changes (library root moves, deletions, etc.).
     Useful after modifying library configurations or recovering from filesystem changes.
 
     Args:
         db: Database instance
-        library_id: Library document _id to scope reconciliation to
+        library_id: Library document id to scope reconciliation to
         library_root: Library root configuration (must be set)
         policy: What to do with invalid paths:
             - "dry_run": Only report, don't modify database

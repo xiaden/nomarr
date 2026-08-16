@@ -59,7 +59,7 @@ def claim_file(db: Database, file_id: str, worker_id: str) -> bool:
 
     Args:
         db: Database instance
-        file_id: File document id (e.g., ``12345``)
+        file_id: Song id (e.g., ``12345``)
         worker_id: Worker identifier (e.g., "worker:tag:0")
 
     Returns:
@@ -84,7 +84,7 @@ def release_claim(db: Database, file_id: int) -> None:
 
     Args:
         db: Database instance
-        file_id: File document id
+        file_id: Song id
 
     """
     db.app.remove_claim(file_id)

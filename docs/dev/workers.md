@@ -17,7 +17,7 @@ All workers are identical `DiscoveryWorker` processes. There are no separate sca
 **Worker loop:**
 
 1. Query `songs` for next unprocessed file (`needs_tagging=1`)
-2. Claim file by inserting a deterministic claim document into `worker_claims`
+2. Claim file by inserting a deterministic claim row into `worker_claims`
 3. Process file using `process_file_workflow` (ONNX backbone + heads → tags)
 4. Execute deferred DB writes (tags, model outputs, segment stats) on background thread
 5. Release claim
@@ -181,39 +181,37 @@ file_id = discover_and_claim_file(
 )
 ```
 
-**Claim mechanism** uses constructor-backed `db.worker_claims` accessors via the `Database` facade:
+**Claim mechanism** goes through the `db.app` intent facade (post-ADR-040 sync persistence). Worker claims live in the `worker_claims` table; worker processes never touch it directly — they use `AppDb` methods:
 
- | Operation | Constructor accessor | Description |
- | ----------- | ---------------------- | ------------- |
- | Claim file | `worker_claims.insert([claim_doc])` | Insert claim with deterministic key (atomic uniqueness) |
- | Release claim | `worker_claims.file_id.delete(file_id)` | Delete claim after processing |
- | Get claim | `worker_claims.file_id.get(file_id)` | Check if file is claimed |
- | Worker claims | `worker_claims.worker_id.get.many(worker_id, limit=worker_claims.count())` | All claims held by a worker |
- | Release all | `worker_claims.delete([claim["id"] for claim in claims])` | Release all claims (crash recovery) |
- | Cleanup stale | `worker_claims.get.many.by_filter({}, limit=None)` + `worker_claims.delete(...)` | Enumerate claims via constructor verbs, filter stale rows in component code, then delete by `id` |
+ | Operation | AppDb method | Description |
+ | ----------- | ------------ | ------------- |
+ | Claim file | `db.app.add_claim(payload) -> int` | Insert claim; deterministic `key` (`claim_<song_id>`) enforces atomic uniqueness — raises `DuplicateEntityError` if already claimed |
+ | Release claim | `db.app.remove_claim(song_id)` | Delete one song's claim after processing |
+ | Bulk release | `db.app.remove_claims(worker_ids=..., song_ids=...)` | Delete claims matching worker ids and/or song ids; returns count removed |
+ | List claims | `db.app.list_claims() -> list[WorkerClaimRow]` | All claims (each row carries `id`, `worker_id`, `key`, `value`, `claimed_at`) |
 
-**Claim document structure:**
+ **Claim payload structure** (the dict passed to `add_claim`; stored as the row's `value` JSONB):
 
-```json
-{
-  "id": "claim_{file_id}",
-  "file_id": "songs/12345",
-  "worker_id": "worker:discovery:0",
-  "claimed_at": 1705779600000
-}
-```
+ ```json
+ {
+   "key": "claim_12345",
+   "file_id": "12345",
+   "worker_id": "worker:discovery:0",
+   "claimed_at": 1705779600000
+ }
+ ```
 
-**Key properties:**
+ **Key properties:**
 
-- **Deterministic claim key:** Based on file ID; database uniqueness constraint prevents duplicate claims
-- **One claim per file:** Only one worker can process a file at a time
-- **Ephemeral:** Represents active work, not scheduled work; deleted after processing
+ - **Deterministic claim key:** `key` is `claim_<song_id>`; the database uniqueness constraint prevents duplicate claims (insertion raises `DuplicateEntityError`)
+ - **One claim per file:** Only one worker can process a song at a time
+ - **Ephemeral:** Represents active work, not scheduled work; deleted after processing
 
 ### 3. File Processing
 
 For each claimed file:
 
-1. Fetch file document from `songs`
+1. Fetch song row from `songs`
 2. Lazy-warm ONNX model cache on first file (avoids VRAM allocation until work arrives)
 3. Run `process_file_workflow` (audio load → mel spectrogram → backbone embedding → head inference → tag aggregation)
 4. Submit deferred DB writes to background thread (overlaps I/O with next file's ML)
@@ -234,7 +232,7 @@ When no work is found:
 
 The worker idle path also advances the library automation pipeline.
 
-When `discover_and_claim_file()` returns `None`, the subprocess checks `db.library_pipeline_states.find_ml_complete_libraries(...)` for libraries still in `ml_running` whose untagged file count has reached zero. For each completed library, the worker transitions the pipeline state to:
+When `discover_and_claim_file()` returns `None`, the subprocess checks `find_ml_complete_libraries(db, ...)` (in `nomarr/components/library/library_records_comp.py`) for libraries still in `ml_running` whose untagged file count has reached zero. For each completed library, the worker transitions the pipeline state to:
 
 - `awaiting_calibration` when the tagged file count meets the calibration minimum
 - `too_small` when the library is fully tagged but still below that minimum
@@ -310,7 +308,7 @@ Restart decisions use `should_restart_worker(restart_count, last_restart_wall_ms
 
 When a worker crashes mid-file:
 
-- Its claim document remains in `worker_claims`
+- Its claim row remains in `worker_claims`
 - `WorkerSystemService.on_status_change("dead")` immediately releases the claim
 - The file returns to `needs_tagging=1` state and becomes rediscoverable
 - The replacement worker (or any other worker) will pick it up

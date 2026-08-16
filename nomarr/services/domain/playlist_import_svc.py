@@ -56,7 +56,7 @@ class PlaylistImportService:
 
         Args:
             playlist_url: Full URL to a Spotify or Deezer playlist
-            library_id: Optional library _id to restrict matching scope
+            library_id: Optional library id to restrict matching scope
 
         Returns:
             PlaylistConversionResult with:

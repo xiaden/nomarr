@@ -123,6 +123,31 @@ If you pull published images from GHCR instead of building locally, use these ta
 
 Once running, the API docs live at **`/docs`** (FastAPI's built-in OpenAPI UI).
 
+### Frontend builds & CI gates
+
+- **The frontend production bundle is built by Docker, not committed.** The
+  `dockerfile` builds the UI in a Node 24 stage (`npm ci` + `npm run build`) and
+  copies the result into the image at `/app/nomarr/public_html/`. The generated
+  tree (`nomarr/public_html/`) is gitignored and never checked in.
+- **Source mode does not serve `frontend/dist`.** When you run the backend from
+  the checkout, it serves the SPA from `nomarr/public_html/` only — which is
+  absent in a fresh checkout, so `/` returns a `Web UI not found` JSON 404 until
+  populated. The backend ignores `frontend/dist` entirely. Develop against the
+  Vite dev server (`cd frontend && npm run dev`), or mirror Docker by running
+  `npm run build` and copying `frontend/dist` into `nomarr/public_html/`.
+  Production always ships via Docker. See CONTRIBUTING.md.
+- **There is no pre-commit hook.** Lint/type/test/build enforcement runs in
+  independent CI workflows: `backend-quality.yml` (ruff, ruff format, mypy,
+  lint-imports, deptry), `backend-tests.yml` (pytest gate + ADR-042
+  architecture-QC suite), `frontend-checks.yml` (ESLint, `tsc`, Vitest, build),
+  `docker-publish.yml` (image build/publish on push or manual dispatch),
+  `e2e.yml` (manual-only), `docs-check.yml` (PR docs consistency), and
+  `codeql.yml` (security gate on push→main, pull requests →main, and a weekly
+  scheduled scan).
+
+See **[CONTRIBUTING.md](CONTRIBUTING.md)** for the exact local commands that
+mirror each gate.
+
 ---
 
 ## Documentation

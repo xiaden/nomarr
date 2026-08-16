@@ -114,6 +114,10 @@ build/
 frontend/dist/
 frontend/build/
 
+# Generated frontend bundle (built into the Docker image by the dockerfile;
+# never committed to git)
+nomarr/public_html/
+
 # Empty working directories (mount points, local state)
 docker/media/
 nomarr/components/library/libraries/

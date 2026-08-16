@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 
 def load_calibrations_from_db_wf(db: Database) -> dict[str, dict[str, Any]]:
-    """Load all calibrations from calibration_state collection.
+    """Load all calibrations from calibration_state table.
 
     Returns dict mapping label -> {p5, p95} for use in aggregation.
     Format matches legacy sidecar structure for compatibility with aggregation logic.
@@ -85,7 +85,7 @@ _cached_version: str | None = None
 def load_calibrations_cached_wf(db: Database) -> dict[str, dict[str, float]]:
     """Load calibrations with caching based on version hash.
 
-    Checks calibration_version in meta collection. If version matches cached
+    Checks calibration_version in the meta table. If version matches cached
     version, returns cached calibrations without database query.
 
     Cache is module-level (per-process), so workers maintain separate caches.
