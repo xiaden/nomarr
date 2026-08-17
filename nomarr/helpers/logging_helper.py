@@ -152,7 +152,7 @@ def sanitize_exception_message(exception: Exception, safe_message: str = "An err
 
     """
     # Log the full exception for debugging
-    logger.exception(f"[security] Exception sanitized: {exception}")
+    logger.error(f"[security] Exception sanitized: {exception}", exc_info=exception)
 
     # Return generic message to user
     return safe_message
