@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from nomarr.helpers.dto.calibration_repo_dto import CalibrationHistoryRecord, CalibrationStateRecord
     from nomarr.helpers.dto.embedding_stream_repo_dto import EmbeddingStreamRecord
     from nomarr.helpers.dto.model_repo_dto import ModelRecord
-    from nomarr.helpers.dto.output_repo_dto import ModelOutputRecord
+    from nomarr.helpers.dto.output_repo_dto import ModelOutputRecord, OutputStreamRecord
     from nomarr.helpers.dto.vector_repo_dto import EmbeddingRecord, SimilarResult
     from nomarr.persistence.database.calibration_repo import CalibrationRepo
     from nomarr.persistence.database.embedding_stream_repo import EmbeddingStreamRepository
@@ -109,10 +109,10 @@ class MlDb:
         assert self._vector_repo is not None, "VectorRepo not wired"
         self._vector_repo.delete_all_embeddings()
 
-    def list_output_streams_for_song(self, song_id: int) -> list[ModelOutputRecord]:
+    def list_output_streams_for_song(self, song_id: int) -> list[OutputStreamRecord]:
         """Return all canonical output stream records linked to one song."""
         assert self._output_repo is not None, "OutputRepo not wired"
-        return self._output_repo.get_outputs_for_song(song_id)
+        return self._output_repo.list_output_streams_for_song(song_id)
 
     def list_song_vectors(self, _collection_name: str, song_id: int) -> list[EmbeddingRecord]:
         """Return all embedding records stored for one song.

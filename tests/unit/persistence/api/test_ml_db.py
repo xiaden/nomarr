@@ -91,12 +91,12 @@ def test_list_vector_namespaces_removed() -> None:
 @pytest.mark.unit
 def test_list_output_streams_for_song_delegates_to_output_repo() -> None:
     db, _, _, output_repo, _, _ = _make_ml_db()
-    output_repo.get_outputs_for_song = MagicMock(return_value=sentinel.result)
+    output_repo.list_output_streams_for_song = MagicMock(return_value=sentinel.result)
 
     result = db.list_output_streams_for_song(1)
 
     assert result is sentinel.result
-    output_repo.get_outputs_for_song.assert_called_once_with(1)
+    output_repo.list_output_streams_for_song.assert_called_once_with(1)
 
 
 @pytest.mark.unit
