@@ -171,6 +171,22 @@ class TestRecoverStaleStates:
         # Should transition scanning library to not_scanned
         mock_db.app.upsert_pipeline_state.assert_any_call(library_id, SCAN_STATE_FIELD, {"state": SCAN_NOT_SCANNED})
 
+    def test_recover_stale_states_ignores_missing_scan_row(
+        self,
+        pipeline_service: LibraryPipelineService,
+        mock_db: MagicMock,
+    ) -> None:
+        """A stale pipeline state without a scan row must not block recovery."""
+        library_id = 1
+        mock_db.library.get_libraries_in_axis_state.side_effect = [[library_id], []]
+        mock_db.library.bulk_transition_pipeline_axis.return_value = 0
+        mock_db.libraries.update_scan_status.side_effect = ValueError("no scan exists")
+
+        recovery_counts = pipeline_service.recover_stale_states()
+
+        assert recovery_counts["scanning"] == 1
+        mock_db.app.upsert_pipeline_state.assert_any_call(library_id, SCAN_STATE_FIELD, {"state": SCAN_NOT_SCANNED})
+
     def test_recover_stale_states_calibrating(
         self,
         pipeline_service: LibraryPipelineService,

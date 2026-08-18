@@ -112,11 +112,19 @@ class LibraryPipelineService:
         ]
         for library_id in stale_scanning:
             transition_pipeline_axis(self.db, library_id, SCAN_STATE_FIELD, SCAN_NOT_SCANNED)
-            update_scan_progress(
-                self.db,
-                library_id,
-                scan_error="Scan interrupted by server restart",
-            )
+            try:
+                update_scan_progress(
+                    self.db,
+                    library_id,
+                    scan_error="Scan interrupted by server restart",
+                )
+            except ValueError:
+                # Pipeline state can outlive its scan row after an interrupted
+                # transaction. State recovery must still complete at startup.
+                logger.warning(
+                    "Could not record restart interruption for library %s: scan row is missing",
+                    library_id,
+                )
         recovery_counts["scanning"] = len(stale_scanning)
         if stale_scanning:
             logger.info("Recovered %s stale scanning libraries to not_scanned", len(stale_scanning))
@@ -160,11 +168,18 @@ class LibraryPipelineService:
         for library_id in scanning_libraries:
             if is_scan_stale(self.db, int(library_id), timeout_ms):
                 transition_pipeline_axis(self.db, library_id, SCAN_STATE_FIELD, SCAN_NOT_SCANNED)
-                update_scan_progress(
-                    self.db,
-                    library_id,
-                    scan_error="Scan timed out: no heartbeat received",
-                )
+                try:
+                    update_scan_progress(
+                        self.db,
+                        library_id,
+                        scan_error="Scan timed out: no heartbeat received",
+                    )
+                except ValueError:
+                    # A missing scan row is a recoverable state/row divergence.
+                    logger.warning(
+                        "Could not record heartbeat timeout for library %s: scan row is missing",
+                        library_id,
+                    )
                 recovered += 1
                 logger.warning(
                     "Recovered scanning library %s due to stale heartbeat",
