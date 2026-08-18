@@ -46,11 +46,9 @@ import {
 import { getWorkStatus, type PipelineLibrary } from "../../../shared/api/processing";
 import { ServerFilePicker } from "../../../shared/components/ServerFilePicker";
 import type { Library } from "../../../shared/types";
-import { useLibraryVectorConfig } from "../hooks/useLibraryVectorConfig";
 import { useLibraryVectorStats } from "../hooks/useLibraryVectorStats";
 
 import { PipelineStateBadge } from "./PipelineStateBadge";
-import { VectorConfigSection } from "./VectorConfigSection";
 import { VectorStatsCard } from "./VectorStatsCard";
 
 export function LibraryManagement() {
@@ -76,14 +74,8 @@ export function LibraryManagement() {
   const [originalFileWriteMode, setOriginalFileWriteMode] = useState<"none" | "minimal" | "full">("full");
   const [pipelineLibraries, setPipelineLibraries] = useState<PipelineLibrary[]>([]);
 
-  // Vector search config and stats for the editing library
-  const { config: vectorConfig, loading: vectorConfigLoading, saving: vectorSaving, updateConfig: updateVectorConfig } = useLibraryVectorConfig(editingId);
+  // Vector stats for the editing library
   const { stats: vectorStats } = useLibraryVectorStats(editingId);
-
-  const vectorTotalTracks = useMemo(() => {
-    if (!vectorStats) return 0;
-    return vectorStats.stats.reduce((sum, s) => sum + s.hot_count + s.cold_count, 0);
-  }, [vectorStats]);
 
   const pipelineLibraryById = useMemo(
     () => new Map(pipelineLibraries.map((library) => [library.library_id, library])),
@@ -669,16 +661,6 @@ export function LibraryManagement() {
                 </Select>
               </FormControl>
             </Box>
-
-            {/* Vector Search Config (edit mode only) */}
-            {!isCreating && vectorConfig && !vectorConfigLoading && (
-              <VectorConfigSection
-                config={vectorConfig}
-                totalTracks={vectorTotalTracks}
-                onUpdate={updateVectorConfig}
-                disabled={vectorSaving}
-              />
-            )}
 
             {/* Vector Stats (edit mode only) */}
             {!isCreating && vectorStats && (
