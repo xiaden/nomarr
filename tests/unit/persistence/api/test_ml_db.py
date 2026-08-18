@@ -679,11 +679,11 @@ def test_remove_model_outputs_for_model_delegates_to_output_repo() -> None:
 @pytest.mark.unit
 def test_remove_output_streams_for_song_delegates_to_output_repo() -> None:
     db, _, _, output_repo, _, _ = _make_ml_db()
-    output_repo.delete_outputs_for_song = MagicMock()
+    output_repo.delete_output_streams_for_song = MagicMock()
 
     db.remove_output_streams_for_song(42)
 
-    output_repo.delete_outputs_for_song.assert_called_once_with(42)
+    output_repo.delete_output_streams_for_song.assert_called_once_with(42)
 
 
 # ---------------------------------------------------------------------------

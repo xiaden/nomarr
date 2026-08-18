@@ -322,7 +322,7 @@ class MlDb:
     def remove_output_streams_for_song(self, song_id: int) -> None:
         """Delete all canonical output streams linked to one song."""
         assert self._output_repo is not None, "OutputRepo not wired"
-        self._output_repo.delete_outputs_for_song(song_id)
+        self._output_repo.delete_output_streams_for_song(song_id)
 
     def replace_song_vectors(
         self,
