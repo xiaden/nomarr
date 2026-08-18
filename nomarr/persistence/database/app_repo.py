@@ -88,16 +88,19 @@ def _session_row_to_dto(row: Row) -> SessionRow:
 
 def _claim_row_to_dto(row: Row) -> WorkerClaimRow:
     m = row._mapping
-    value = m["value"]
-    claim_fields = {key: value[key] for key in ("file_id", "claim_type") if key in value}
-    return WorkerClaimRow(
-        id=m["id"],
-        worker_id=m["worker_id"],
-        key=m["key"],
-        value=value,
-        claimed_at=m["claimed_at"],
-        **claim_fields,
-    )
+    value = cast("dict[str, Any]", m["value"])
+    result: WorkerClaimRow = {
+        "id": cast("int", m["id"]),
+        "worker_id": cast("str", m["worker_id"]),
+        "key": cast("str", m["key"]),
+        "value": value,
+        "claimed_at": cast("int", m["claimed_at"]),
+    }
+    if "file_id" in value:
+        result["file_id"] = cast("str | int", value["file_id"])
+    if "claim_type" in value:
+        result["claim_type"] = cast("str", value["claim_type"])
+    return result
 
 
 class AppRepository:
@@ -183,9 +186,7 @@ class AppRepository:
         with map_persistence_exceptions():
             with self._session.begin_nested():
                 data = {**fields, "worker_id": component_id}
-                existing = self._session.execute(
-                    select(_H.c.worker_id).where(_H.c.worker_id == component_id)
-                ).first()
+                existing = self._session.execute(select(_H.c.worker_id).where(_H.c.worker_id == component_id)).first()
                 if existing:
                     update_by_field(_H, "worker_id", component_id, fields, session=self._session)
                 else:
@@ -313,19 +314,28 @@ class AppRepository:
                 insert_one(_WC, data, session=self._session)
             self._session.commit()
 
-    def release_claim(self, worker_id: str, song_id: int, claim_type: str = "process") -> None:
+    def release_claim(
+        self,
+        worker_id: str | int,
+        song_id: int | None = None,
+        claim_type: str | None = None,
+    ) -> None:
         """Release one worker's claim for a song."""
         with map_persistence_exceptions():
             with self._session.begin_nested():
+                worker_filter: str | None = worker_id if isinstance(worker_id, str) else None
+                if song_id is None:
+                    song_id = int(worker_id)
                 prefix = f"claim_{claim_type}_" if claim_type else "claim_"
                 stmt = delete(_WC).where(
-                    _WC.c.worker_id == worker_id,
                     _WC.c.key == f"{prefix}{song_id}",
                 )
+                if worker_filter is not None:
+                    stmt = stmt.where(_WC.c.worker_id == worker_filter)
                 self._session.execute(stmt)
             self._session.commit()
 
-    def release_claim_by_song(self, song_id: int, claim_type: str = "process") -> None:
+    def release_claim_by_song(self, song_id: int, claim_type: str | None = None) -> None:
         """Release a song claim regardless of which worker owns it."""
         with map_persistence_exceptions():
             with self._session.begin_nested():
