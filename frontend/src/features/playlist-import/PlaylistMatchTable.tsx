@@ -454,7 +454,7 @@ function AlternativeRow({ file, selected, onSelect, label }: AlternativeRowProps
       )}
       <Tooltip title={`${file.title} \u2014 ${file.artist}${file.album ? ` (${file.album})` : ""}`} placement="top-start">
         <Typography variant="body2" noWrap sx={{ maxWidth: 500 }}>
-          {file.title || "Unknown"} \u2014 {file.artist || "Unknown"}
+          {file.title || "Unknown"} {"\u2014"} {file.artist || "Unknown"}
           {file.album && <em> ({file.album})</em>}
           {label && <em> {label}</em>}
         </Typography>
