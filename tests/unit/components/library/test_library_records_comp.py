@@ -264,7 +264,7 @@ class TestUpdateLibraryRecord:
             {
                 "updated_at": 222333444,
                 "name": "Renamed",
-                "watch_mode": "poll",
+                "auto_tag": 1,
             },
         )
 

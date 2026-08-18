@@ -108,10 +108,28 @@ def update_library_record(
     **fields: Any,
 ) -> None:
     """Update a library document by ``id`` through the constructor namespace."""
-    update_fields = {
-        "updated_at": now_ms().value,
-        **{key: value for key, value in fields.items() if value is not None},
+    update_fields: dict[str, Any] = {"updated_at": now_ms().value}
+
+    # The component API uses intent names, while the repository accepts only
+    # columns from the libraries table.
+    column_fields = {
+        "name": "name",
+        "root_path": "path",
+        "is_enabled": "library_type",
+        "watch_mode": "auto_tag",
+        "library_auto_write": "auto_curate",
     }
+    for intent_name, column_name in column_fields.items():
+        value = fields.get(intent_name)
+        if value is None:
+            continue
+        if intent_name == "is_enabled":
+            value = "music" if value else "disabled"
+        elif intent_name == "watch_mode":
+            value = int(value != "off")
+        elif intent_name == "library_auto_write":
+            value = int(value)
+        update_fields[column_name] = value
 
     if "watch_mode" in fields and fields["watch_mode"] is not None:
         _validate_watch_mode(cast("str", fields["watch_mode"]))
