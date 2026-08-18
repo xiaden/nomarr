@@ -362,6 +362,13 @@ export function LibraryManagement() {
       await loadLibraries();
       resetForm();
     } catch (err) {
+      // A later write-mode request can fail after the main update committed.
+      // Reconcile the editor with the server instead of retaining stale form values.
+      try {
+        await loadLibraries();
+      } catch {
+        // Preserve the original update error if refreshing also fails.
+      }
       setError(
         err instanceof Error ? err.message : "Failed to update library"
       );

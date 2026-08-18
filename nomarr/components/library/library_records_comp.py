@@ -117,6 +117,9 @@ def update_library_record(
     if "file_write_mode" in fields and fields["file_write_mode"] is not None:
         _validate_file_write_mode(cast("str", fields["file_write_mode"]))
 
+    # Send all changes through one repository transaction.  The old per-field
+    # calls committed independently, so a later failure could leave a library
+    # only partially updated.
     db.library.update_library(library_id, update_fields)
 
 

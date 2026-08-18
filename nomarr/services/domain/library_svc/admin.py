@@ -14,11 +14,13 @@ from nomarr.components.library.library_admin_comp import (
     clear_library_data,
     create_library,
     delete_library,
+    resolve_library_root,
     update_library_root,
 )
 from nomarr.components.library.library_records_comp import (
     get_library_record,
     list_library_records,
+    update_library_record,
 )
 from nomarr.components.library.library_song_query_comp import get_library_counts
 from nomarr.components.library.update_library_metadata_comp import UpdateLibraryMetadataComp
@@ -193,19 +195,23 @@ class LibraryAdminMixin:
         # Validate library exists
         self._get_library_or_error(library_id)
 
+        normalized_root_path = None
         if root_path is not None:
-            self.update_library_root(library_id, root_path)
+            normalized_root_path = resolve_library_root(self.db, self.cfg.library_root, library_id, root_path)
 
         if (
-            name is not None
+            normalized_root_path is not None
+            or name is not None
             or is_enabled is not None
             or watch_mode is not None
             or file_write_mode is not None
             or library_auto_write is not None
         ):
-            self.update_library_metadata(
+            update_library_record(
+                self.db,
                 library_id,
                 name=name,
+                root_path=normalized_root_path,
                 is_enabled=is_enabled,
                 watch_mode=watch_mode,
                 file_write_mode=file_write_mode,

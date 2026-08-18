@@ -111,6 +111,10 @@ class LibraryDb:
     def list_library_keys(self) -> list[int]:
         return self._regions.list_library_keys()
 
+    def update_library(self, library_id: int, fields: dict[str, object]) -> None:
+        """Update all supplied library columns in one transaction."""
+        self._regions.update_library(library_id, fields)
+
     def rename_library(self, library_id: int, name: str, *, updated_at: int) -> None:
         self._regions.rename_library(library_id, name, updated_at=updated_at)
 
