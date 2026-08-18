@@ -116,13 +116,16 @@ class LibraryDb:
         self._regions.update_library(library_id, fields)
 
     def rename_library(self, library_id: int, name: str, *, updated_at: int) -> None:
-        self._regions.rename_library(library_id, name, updated_at=updated_at)
+        self._regions.update_library(library_id, {"name": name, "updated_at": updated_at})
 
     def change_library_root(self, library_id: int, root_path: str, *, updated_at: int) -> None:
-        self._regions.change_library_root(library_id, root_path, updated_at=updated_at)
+        self._regions.update_library(library_id, {"path": root_path, "updated_at": updated_at})
 
     def enable_library(self, library_id: int, is_enabled: bool, *, updated_at: int) -> None:
-        self._regions.enable_library(library_id, is_enabled, updated_at=updated_at)
+        self._regions.update_library(
+            library_id,
+            {"library_type": "music" if is_enabled else "disabled", "updated_at": updated_at},
+        )
 
     def update_library_metadata(
         self,
