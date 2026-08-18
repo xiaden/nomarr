@@ -88,12 +88,15 @@ def _session_row_to_dto(row: Row) -> SessionRow:
 
 def _claim_row_to_dto(row: Row) -> WorkerClaimRow:
     m = row._mapping
+    value = m["value"]
+    claim_fields = {key: value[key] for key in ("file_id", "claim_type") if key in value}
     return WorkerClaimRow(
         id=m["id"],
         worker_id=m["worker_id"],
         key=m["key"],
-        value=m["value"],
+        value=value,
         claimed_at=m["claimed_at"],
+        **claim_fields,
     )
 
 
@@ -266,7 +269,13 @@ class AppRepository:
         """Insert a worker-claim row and return its ``id``."""
         with map_persistence_exceptions():
             with self._session.begin_nested():
-                row = insert_one(_WC, payload, session=self._session)
+                data = {
+                    "worker_id": payload["worker_id"],
+                    "key": payload["key"],
+                    "value": payload["value"],
+                    "claimed_at": payload.get("claimed_at", 0),
+                }
+                row = insert_one(_WC, data, session=self._session)
             self._session.commit()
             return int(row._mapping["id"])
 

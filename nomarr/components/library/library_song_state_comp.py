@@ -198,7 +198,7 @@ def discover_next_untagged_file(
         claimed_ids: set[int] = set()
         for c in claims:
             with contextlib.suppress(ValueError, KeyError):
-                claimed_ids.add(int(c["key"]))
+                claimed_ids.add(int(c["file_id"]))
         candidate_ids -= claimed_ids
     candidate_docs = [doc for doc in untagged_files if doc.get("id") in candidate_ids]
     if not candidate_docs:
@@ -233,7 +233,7 @@ def discover_next_file_needing_tags(
         claimed_ids: set[int] = set()
         for c in claims:
             with contextlib.suppress(ValueError, KeyError):
-                claimed_ids.add(int(c["key"]))
+                claimed_ids.add(int(c["file_id"]))
         candidate_ids -= claimed_ids
     candidate_docs = [doc for doc in pending_files if doc.get("id") in candidate_ids]
     if not candidate_docs:

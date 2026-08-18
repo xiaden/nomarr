@@ -68,8 +68,8 @@ def claim_file(db: Database, file_id: str, worker_id: str) -> bool:
     """
     payload = {
         "key": _claim_key(file_id),
-        "file_id": file_id,
         "worker_id": worker_id,
+        "value": {"file_id": file_id},
         "claimed_at": now_ms().value,
     }
     try:
