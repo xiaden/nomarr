@@ -117,7 +117,7 @@ def update_library_record(
         "name": "name",
         "root_path": "path",
         "is_enabled": "library_type",
-        "watch_mode": "auto_tag",
+        "watch_mode": "watch_mode",
         "file_write_mode": "file_write_mode",
         "library_auto_write": "auto_curate",
     }
@@ -127,11 +127,12 @@ def update_library_record(
             continue
         if intent_name == "is_enabled":
             value = "music" if value else "disabled"
-        elif intent_name == "watch_mode":
-            value = int(value != "off")
         elif intent_name == "library_auto_write":
             value = int(value)
         update_fields[column_name] = value
+
+    if "watch_mode" in fields and fields["watch_mode"] is not None:
+        update_fields["auto_tag"] = int(fields["watch_mode"] != "off")
 
     if "watch_mode" in fields and fields["watch_mode"] is not None:
         _validate_watch_mode(cast("str", fields["watch_mode"]))
