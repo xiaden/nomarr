@@ -80,7 +80,7 @@ class TestCreateLibraryRecord:
     @pytest.mark.unit
     def test_inserts_constructor_record_with_defaults(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.add_library.return_value = "libraries/1"
+        mock_db.library.create_library.return_value = "libraries/1"
 
         with patch("nomarr.components.library.library_records_comp.now_ms") as mock_now_ms:
             mock_now_ms.return_value = MagicMock(value=123456789)
@@ -91,17 +91,15 @@ class TestCreateLibraryRecord:
             )
 
         assert result == "libraries/1"
-        mock_db.library.add_library.assert_called_once_with(
-            {
-                "name": "Main",
-                "root_path": "D:/Music",
-                "is_enabled": True,
-                "watch_mode": "off",
-                "file_write_mode": "full",
-                "library_auto_write": False,
-                "created_at": 123456789,
-                "updated_at": 123456789,
-            }
+        mock_db.library.create_library.assert_called_once_with(
+            name="Main",
+            root_path="D:/Music",
+            is_enabled=True,
+            watch_mode="off",
+            file_write_mode="full",
+            library_auto_write=False,
+            created_at=123456789,
+            updated_at=123456789,
         )
 
 
@@ -289,6 +287,19 @@ class TestUpdateLibraryRecord:
                 "name": "Renamed",
                 "auto_tag": 1,
             },
+        )
+
+    @pytest.mark.unit
+    def test_persists_file_write_mode(self) -> None:
+        mock_db = MagicMock()
+
+        with patch("nomarr.components.library.library_records_comp.now_ms") as mock_now_ms:
+            mock_now_ms.return_value = MagicMock(value=222333444)
+            update_library_record(mock_db, 1, file_write_mode="minimal")
+
+        mock_db.library.update_library.assert_called_once_with(
+            1,
+            {"updated_at": 222333444, "file_write_mode": "minimal"},
         )
 
 
