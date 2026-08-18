@@ -32,7 +32,7 @@ tests/
 │   └── workflows/                  # Tests for nomarr/workflows/
 │       ├── calibration/            # Calibration workflow tests
 │       ├── library/                # Library workflow tests
-│       ├── navidrome/              # Navidrome sync workflow tests
+│       ├── navidrome/              # Navidrome playlist workflow tests
 │       ├── processing/             # Processing workflow tests
 │       └── queue/                  # Queue workflow tests
 │

@@ -59,7 +59,6 @@ persistence/
 │   ├── folder_repo.py           # Folder CRUD
 │   ├── library_repo.py          # Library record CRUD
 │   ├── model_repo.py            # ML model and output labeling
-│   ├── navidrome_repo.py        # Navidrome mapping and playcount operations
 │   ├── output_repo.py           # ML output stream persistence
 │   ├── pipeline_repo.py         # Pipeline state operations
 │   ├── scan_repo.py             # Library scan record operations
@@ -76,7 +75,7 @@ persistence/
     ├── song_state_assignment.py # Song state assignment table
     ├── song_tag.py              # Song–tag join table
     ├── tag.py                   # Tag table
-    ├── ...                      # +20 additional ORM models (vectors, ML, Navidrome, health, etc.)
+    ├── ...                      # additional ORM models (vectors, ML, health, etc.)
 ```
 
 ### What changed from the old docs
@@ -144,7 +143,7 @@ It wraps operations such as:
 - scan and pipeline-state persistence hidden behind app-domain methods
 - locks, claims, health, migration/config, and VRAM promise persistence
 - maintenance-only routines on `db.app` (truncation, resets): `db.app.truncate_song_state_edges()`, `db.app.truncate_worker_claims()`, `db.app.truncate_health()`
-- legacy Navidrome persistence isolated as compatibility debt, not future public contract
+- **Navidrome data is never persisted locally.** Nomarr does not store Navidrome tracks, song↔Navidrome-ID mappings, or playcounts in its database. Navidrome play data arrives only through the plugin/request boundary (e.g. the personal-playlists request's `top_plays`) and is used transiently for taste-profile computation; song↔Navidrome-ID resolution and playcounts are owned by the Navidrome plugin, not by Nomarr's persistence layer.
 
 Use `db.app` for coordination data and operational state rather than music-library content.
 
@@ -177,7 +176,6 @@ Examples include:
 - `SongStateRepository`
 - `ScanRepository`
 - `PipelineRepository`
-- `NavidromeRepo`
 - `VectorRepo`
 - `ModelRepo`
 - `OutputRepo`

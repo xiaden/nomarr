@@ -1,9 +1,9 @@
 # mypy: disable-error-code=func-returns-value
-"""Unit tests for ``AppDb`` and ``AppLegacyNavidromeDb`` delegation.
+"""Unit tests for ``AppDb`` delegation.
 
-All three classes are thin facades over PostgreSQL repositories.  Each test
-verifies that the correct repository method is called with the correct
-arguments and that the return value is propagated.
+``AppDb`` is a thin facade over PostgreSQL repositories.  Each test verifies
+that the correct repository method is called with the correct arguments and
+that the return value is propagated.
 """
 
 from __future__ import annotations
@@ -15,20 +15,15 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from nomarr.persistence.api.application import (
-    AppDb,
-    AppLegacyNavidromeDb,
-)
+from nomarr.persistence.api.application import AppDb
 from nomarr.persistence.database.app_repo import AppRepository
 from nomarr.persistence.database.library_repo import LibraryRepository
-from nomarr.persistence.database.navidrome_repo import NavidromeRepo
 from nomarr.persistence.database.pipeline_repo import PipelineRepository
 from nomarr.persistence.database.song_state_repo import SongStateRepository
 from nomarr.persistence.models.base import Base
 from nomarr.persistence.models.vram_promise import VramPromise
 
 if TYPE_CHECKING:
-    from nomarr.helpers.dto.navidrome_repo_dto import NdPlayRecord, NdTrackRecord
     from nomarr.helpers.dto.repo_dto import (
         HealthRow,
         LockRow,
@@ -61,11 +56,6 @@ def mock_library_repo() -> MagicMock:
 
 
 @pytest.fixture
-def mock_navidrome_repo() -> MagicMock:
-    return MagicMock(spec=NavidromeRepo)
-
-
-@pytest.fixture
 def mock_song_state_repo() -> MagicMock:
     # Plain MagicMock: the AppDb facade still calls file-vocab repo methods
     # (get_song_state, list_songs_in_state, ...) that no longer exist on the
@@ -88,7 +78,6 @@ def app_db(
     mock_session: MagicMock,
     mock_app_repo: MagicMock,
     mock_library_repo: MagicMock,
-    mock_navidrome_repo: MagicMock,
     mock_song_state_repo: MagicMock,
     mock_pipeline_repo: MagicMock,
 ) -> AppDb:
@@ -96,15 +85,9 @@ def app_db(
         session=mock_session,
         app_repo=mock_app_repo,
         library_repo=mock_library_repo,
-        navidrome_repo=mock_navidrome_repo,
         song_state_repo=mock_song_state_repo,
         pipeline_repo=mock_pipeline_repo,
     )
-
-
-@pytest.fixture
-def legacy_navidrome_db(mock_navidrome_repo: MagicMock) -> AppLegacyNavidromeDb:
-    return AppLegacyNavidromeDb(navidrome_repo=mock_navidrome_repo)
 
 
 @pytest.fixture
@@ -127,7 +110,6 @@ def sqlite_app_db() -> AppDb:
         session=session,
         app_repo=AppRepository(session),
         library_repo=MagicMock(spec=LibraryRepository),
-        navidrome_repo=MagicMock(spec=NavidromeRepo),
         song_state_repo=MagicMock(spec=SongStateRepository),
         pipeline_repo=MagicMock(spec=PipelineRepository),
     )
@@ -917,126 +899,6 @@ class TestAppDbConfigMetaMethods:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# AppDb — Navidrome Methods
-# ══════════════════════════════════════════════════════════════════════════════
-
-
-class TestAppDbNavidromeMethods:
-    @pytest.mark.unit
-    def test_upsert_navidrome_track_delegates(self, app_db: AppDb, mock_navidrome_repo: MagicMock) -> None:
-        expected: NdTrackRecord = {
-            "id": "nd1",
-            "title": "Song",
-            "artist": "Art",
-            "album": "Alb",
-            "file_path": "/p",
-            "created_at": 100,
-        }
-        mock_navidrome_repo.upsert_track.return_value = expected
-
-        result = app_db.upsert_navidrome_track("nd1", "Song", "Art", "Alb", "/p")
-
-        assert result == expected
-        mock_navidrome_repo.upsert_track.assert_called_once_with("nd1", "Song", "Art", "Alb", "/p")
-
-    @pytest.mark.unit
-    def test_map_navidrome_track_to_file_delegates(self, app_db: AppDb, mock_navidrome_repo: MagicMock) -> None:
-        app_db.map_navidrome_track_to_song("nd1", 42)
-
-        mock_navidrome_repo.map_track_to_file.assert_called_once_with("nd1", 42)
-
-    @pytest.mark.unit
-    def test_get_mapped_file_for_navidrome_track_delegates(self, app_db: AppDb, mock_navidrome_repo: MagicMock) -> None:
-        mock_navidrome_repo.get_mapped_file.return_value = 42
-
-        result = app_db.get_mapped_file_for_navidrome_track("nd1")
-
-        assert result == 42
-        mock_navidrome_repo.get_mapped_file.assert_called_once_with("nd1")
-
-    @pytest.mark.unit
-    def test_get_mapped_file_returns_none(self, app_db: AppDb, mock_navidrome_repo: MagicMock) -> None:
-        mock_navidrome_repo.get_mapped_file.return_value = None
-
-        result = app_db.get_mapped_file_for_navidrome_track("nd_missing")
-
-        assert result is None
-
-    @pytest.mark.unit
-    def test_resolve_file_to_navidrome_track_delegates(self, app_db: AppDb, mock_navidrome_repo: MagicMock) -> None:
-        mock_navidrome_repo.resolve_file_to_nd_track.return_value = "nd1"
-
-        result = app_db.resolve_song_to_navidrome_track(42)
-
-        assert result == "nd1"
-        mock_navidrome_repo.resolve_file_to_nd_track.assert_called_once_with(42)
-
-    @pytest.mark.unit
-    def test_resolve_file_returns_none(self, app_db: AppDb, mock_navidrome_repo: MagicMock) -> None:
-        mock_navidrome_repo.resolve_file_to_nd_track.return_value = None
-
-        result = app_db.resolve_song_to_navidrome_track(999)
-
-        assert result is None
-
-    @pytest.mark.unit
-    def test_bulk_upsert_navidrome_tracks_delegates(self, app_db: AppDb, mock_navidrome_repo: MagicMock) -> None:
-        mock_navidrome_repo.bulk_upsert_tracks.return_value = 5
-
-        result = app_db.bulk_upsert_navidrome_tracks(["nd1", "nd2"])
-
-        assert result == 5
-        mock_navidrome_repo.bulk_upsert_tracks.assert_called_once_with(["nd1", "nd2"])
-
-    @pytest.mark.unit
-    def test_bulk_map_navidrome_tracks_delegates(self, app_db: AppDb, mock_navidrome_repo: MagicMock) -> None:
-        mappings = [{"nd_id": "nd1", "file_id": "1"}]
-        mock_navidrome_repo.bulk_map_tracks.return_value = 1
-
-        result = app_db.bulk_map_navidrome_tracks(mappings)
-
-        assert result == 1
-        mock_navidrome_repo.bulk_map_tracks.assert_called_once_with(mappings)
-
-    @pytest.mark.unit
-    def test_record_navidrome_play_delegates(self, app_db: AppDb, mock_navidrome_repo: MagicMock) -> None:
-        mock_navidrome_repo.record_play.return_value = 100
-
-        result = app_db.record_navidrome_play("nd1", "user1", 5000, song_id=42)
-
-        assert result == 100
-        mock_navidrome_repo.record_play.assert_called_once_with("nd1", "user1", 5000, 42)
-
-    @pytest.mark.unit
-    def test_record_navidrome_play_without_file_id(self, app_db: AppDb, mock_navidrome_repo: MagicMock) -> None:
-        mock_navidrome_repo.record_play.return_value = 101
-
-        result = app_db.record_navidrome_play("nd1", "user1", 5000)
-
-        assert result == 101
-        mock_navidrome_repo.record_play.assert_called_once_with("nd1", "user1", 5000, None)
-
-    @pytest.mark.unit
-    def test_get_top_navidrome_plays_delegates(self, app_db: AppDb, mock_navidrome_repo: MagicMock) -> None:
-        expected: list[NdPlayRecord] = [{"nd_id": "nd1", "song_id": 1, "playcount": 10, "last_played": 5000}]
-        mock_navidrome_repo.get_top_plays.return_value = expected
-
-        result = app_db.get_top_navidrome_plays("user1", 5)
-
-        assert result == expected
-        mock_navidrome_repo.get_top_plays.assert_called_once_with("user1", 5)
-
-    @pytest.mark.unit
-    def test_delete_navidrome_tracks_for_file_delegates(self, app_db: AppDb, mock_navidrome_repo: MagicMock) -> None:
-        mock_navidrome_repo.delete_tracks_for_file.return_value = 3
-
-        result = app_db.delete_navidrome_tracks_for_song(42)
-
-        assert result == 3
-        mock_navidrome_repo.delete_tracks_for_file.assert_called_once_with(42)
-
-
-# ══════════════════════════════════════════════════════════════════════════════
 # AppDb — Cleanup/Shim Methods
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -1060,25 +922,6 @@ class TestAppDbSurface:
         assert hasattr(app_db, "truncate_worker_claims")
         assert hasattr(app_db, "truncate_health")
         assert hasattr(app_db, "truncate_song_state_edges")
-
-    @pytest.mark.unit
-    def test_exposes_legacy_navidrome_surface(self, app_db: AppDb) -> None:
-        assert isinstance(app_db.legacy_navidrome, AppLegacyNavidromeDb)
-        assert hasattr(app_db.legacy_navidrome, "get_nd_track")
-        assert hasattr(app_db.legacy_navidrome, "list_nd_track_keys")
-
-    @pytest.mark.unit
-    def test_does_not_expose_legacy_navidrome_methods_at_top_level(self, app_db: AppDb) -> None:
-        assert not hasattr(app_db, "get_nd_track")
-        assert not hasattr(app_db, "list_nd_track_keys")
-
-    @pytest.mark.unit
-    def test_does_expose_routine_navidrome_methods_at_top_level(self, app_db: AppDb) -> None:
-        assert hasattr(app_db, "upsert_navidrome_track")
-        assert hasattr(app_db, "map_navidrome_track_to_song")
-        assert hasattr(app_db, "get_mapped_file_for_navidrome_track")
-        assert hasattr(app_db, "record_navidrome_play")
-        assert hasattr(app_db, "delete_navidrome_tracks_for_song")
 
     @pytest.mark.unit
     def test_maintenance_methods_not_on_app_db(self, app_db: AppDb) -> None:
@@ -1113,50 +956,3 @@ class TestAppDbMaintenanceMethods:
         app_db.truncate_health()
 
         mock_app_repo.truncate_health.assert_called_once_with()
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# AppLegacyNavidromeDb
-# ══════════════════════════════════════════════════════════════════════════════
-
-
-class TestAppLegacyNavidromeDb:
-    @pytest.mark.unit
-    def test_get_nd_track_delegates_to_navidrome_repo(
-        self, legacy_navidrome_db: AppLegacyNavidromeDb, mock_navidrome_repo: MagicMock
-    ) -> None:
-        expected: NdTrackRecord = {
-            "id": "nd1",
-            "title": "Song",
-            "artist": "Art",
-            "album": "Alb",
-            "file_path": "/p",
-            "created_at": 100,
-        }
-        mock_navidrome_repo.get_track.return_value = expected
-
-        result = legacy_navidrome_db.get_nd_track("nd1")
-
-        assert result == expected
-        mock_navidrome_repo.get_track.assert_called_once_with("nd1")
-
-    @pytest.mark.unit
-    def test_get_nd_track_returns_none(
-        self, legacy_navidrome_db: AppLegacyNavidromeDb, mock_navidrome_repo: MagicMock
-    ) -> None:
-        mock_navidrome_repo.get_track.return_value = None
-
-        result = legacy_navidrome_db.get_nd_track("missing")
-
-        assert result is None
-
-    @pytest.mark.unit
-    def test_list_nd_track_keys_delegates(
-        self, legacy_navidrome_db: AppLegacyNavidromeDb, mock_navidrome_repo: MagicMock
-    ) -> None:
-        mock_navidrome_repo.list_nd_track_keys.return_value = ["nd1", "nd2", "nd3"]
-
-        result = legacy_navidrome_db.list_nd_track_keys()
-
-        assert result == ["nd1", "nd2", "nd3"]
-        mock_navidrome_repo.list_nd_track_keys.assert_called_once_with()

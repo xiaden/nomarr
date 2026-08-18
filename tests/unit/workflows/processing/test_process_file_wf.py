@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nomarr.components.ml.audio.ml_audio_comp import AudioLoadCrashError
 from nomarr.components.ml.inference.ml_backbone_embed_comp import BackboneEmbedding, BackboneEmbeddingResult
 from nomarr.helpers.dto.ml_dto import LoadAudioMonoResult, ProcessHeadPredictionsResult, RawOutputStream
 from nomarr.helpers.dto.processing_dto import DeferredOutputStreamWrite, ProcessorConfig
@@ -95,3 +96,45 @@ def test_process_file_workflow_packages_resolved_output_streams_and_skips_missin
         DeferredOutputStreamWrite(output_id="ml_model_outputs/out-0", values=[0.1, 0.9]),
         DeferredOutputStreamWrite(output_id="ml_model_outputs/out-2", values=[0.7, 0.3]),
     ]
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+def test_audio_load_crash_preserves_song_record() -> None:
+    """Decoder crashes return a retryable result without deleting song data."""
+    config = ProcessorConfig(
+        models_dir="models",
+        min_duration_s=30,
+        allow_short=False,
+        batch_size=4,
+        namespace="nom",
+        version_tag_key="tagger_version",
+        tagger_version="v-test",
+    )
+    head = cast("Any", SimpleNamespace(meta=SimpleNamespace(name="genre-head")))
+    cache = cast(
+        "Any",
+        SimpleNamespace(
+            warm=True,
+            heads={"bb1": [head]},
+            backbones={"bb1": SimpleNamespace(preprocess_params=SimpleNamespace(sample_rate=16000))},
+        ),
+    )
+    db = MagicMock()
+    library_path = MagicMock()
+    library_path.is_valid.return_value = True
+    library_path.absolute = Path("/music/song.flac")
+
+    with (
+        patch("nomarr.workflows.processing.process_file_wf.build_library_path_from_db", return_value=library_path),
+        patch("nomarr.workflows.processing.process_file_wf.compute_model_suite_hash", return_value="suite-hash"),
+        patch(
+            "nomarr.workflows.processing.process_file_wf.load_audio_mono",
+            side_effect=AudioLoadCrashError("decoder unavailable"),
+        ),
+        patch("nomarr.workflows.processing.process_file_wf.bulk_delete_songs") as delete_mock,
+    ):
+        result = process_file_workflow("song.flac", config, cache, db, file_id="1")
+
+    delete_mock.assert_not_called()
+    assert result.head_results == {"_crash": {"status": "crash", "reason": "decoder unavailable"}}

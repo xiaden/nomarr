@@ -268,6 +268,27 @@ def test_list_songs_unscoped_sorts_and_paginates() -> None:
 
 
 @pytest.mark.unit
+def test_list_songs_unscoped_paginates_beyond_default_collection_cap() -> None:
+    db = make_db()
+
+    db.library.list_libraries.return_value = [{"id": 1}]
+    songs = [
+        {"id": song_id, "artist": "A", "album": "A", "title": f"T{song_id:04d}"} for song_id in range(DEFAULT_LIMIT + 1)
+    ]
+    db.library.list_songs.return_value = songs
+
+    with patch(
+        "nomarr.components.library.library_song_query_comp.hydrate_songs_with_metadata",
+        side_effect=lambda _db, docs: docs,
+    ):
+        rows, total = list_songs(db, limit=1, offset=DEFAULT_LIMIT)
+
+    assert rows == [songs[-1]]
+    assert total == DEFAULT_LIMIT + 1
+    db.library.list_songs.assert_called_once_with(1)
+
+
+@pytest.mark.unit
 def test_list_songs_scoped_filters_in_python() -> None:
 
     db = make_db()

@@ -490,6 +490,29 @@ class TestAddRemoveWorkers:
         assert len(worker_service._workers) == 1
         assert worker_service._workers[0] == mock_workers[0]
 
+    @patch("nomarr.services.infrastructure.worker_system_svc.main.release_worker_promises")
+    @patch("nomarr.services.infrastructure.worker_system_svc.main.release_claims_for_worker")
+    def test_remove_workers_keeps_worker_tracked_if_force_stop_fails(
+        self, mock_release_claims, mock_release_promises, worker_service
+    ):
+        """A worker still alive after terminate/kill remains tracked with resources intact."""
+        mock_workers = [MagicMock() for _ in range(2)]
+        for i, worker in enumerate(mock_workers):
+            worker.worker_id = f"worker_{i}"
+            worker.is_alive.return_value = i == 1
+        worker_service._workers = list(mock_workers)
+
+        worker_service.remove_workers(1)
+
+        worker = mock_workers[1]
+        worker.stop.assert_called_once()
+        worker.terminate.assert_called_once()
+        worker.kill.assert_called_once()
+        assert worker in worker_service._workers
+        mock_release_claims.assert_not_called()
+        mock_release_promises.assert_not_called()
+        worker_service.health_monitor.unregister_component.assert_not_called()
+
     def test_remove_workers_zero(self, worker_service, caplog):
         """remove_workers(0) is a no-op with warning logged."""
         caplog.set_level("WARNING")

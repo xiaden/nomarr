@@ -127,6 +127,20 @@ class SongStateRepository:
                 self._session.execute(stmt)
             self._session.commit()
 
+    def remove_state_for_songs(self, song_ids: list[int], state: str) -> None:
+        """Delete one named state assignment from the given songs."""
+        with map_persistence_exceptions():
+            if not song_ids:
+                return
+            with self._session.begin_nested():
+                state_ids = select(_S.c.id).where(_S.c.name == state)
+                stmt = delete(_A).where(
+                    _A.c.song_id.in_(song_ids),
+                    _A.c.state_id.in_(state_ids),
+                )
+                self._session.execute(stmt)
+            self._session.commit()
+
     def bootstrap_states(self, song_ids: list[int]) -> None:
         """Ensure the 16 canonical axis-pair state vertices exist.
 

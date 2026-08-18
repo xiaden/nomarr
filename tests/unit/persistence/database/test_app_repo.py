@@ -292,7 +292,7 @@ class TestAppRepository:
         repo.claim_file(1, "worker1", {"status": "processing", "claimed_at": 1000})
         claims = repo.list_claims()
         assert len(claims) >= 1
-        assert any(c["key"] == "1" and c["worker_id"] == "worker1" for c in claims)
+        assert any(c["key"] == "claim_1" and c["worker_id"] == "worker1" for c in claims)
 
     def test_release_claim(self, pg_session) -> None:
         """release_claim should delete the claim."""
@@ -300,7 +300,7 @@ class TestAppRepository:
         repo.claim_file(2, "worker1", {"status": "processing", "claimed_at": 1000})
         repo.release_claim(2)
         claims = repo.list_claims()
-        assert not any(c["key"] == "2" for c in claims)
+        assert not any(c["key"] == "claim_2" for c in claims)
 
     def test_delete_claims_for_workers(self, pg_session) -> None:
         """delete_claims_for_workers should delete claims for workers."""
@@ -333,7 +333,7 @@ class TestAppRepository:
         repo.insert_worker_claim(
             {
                 "worker_id": "worker1",
-                "key": "20",
+                "key": "claim_20",
                 "value": {},
                 "claimed_at": 1000,
             }
@@ -341,7 +341,7 @@ class TestAppRepository:
         repo.insert_worker_claim(
             {
                 "worker_id": "worker1",
-                "key": "21",
+                "key": "claim_21",
                 "value": {},
                 "claimed_at": 1000,
             }
@@ -349,8 +349,8 @@ class TestAppRepository:
         deleted = repo.delete_claims_for_songs([20])
         assert deleted == 1
         claims = repo.list_claims()
-        assert not any(c["key"] == "20" for c in claims)
-        assert any(c["key"] == "21" for c in claims)
+        assert not any(c["key"] == "claim_20" for c in claims)
+        assert any(c["key"] == "claim_21" for c in claims)
 
     def test_steal_claim(self, pg_session) -> None:
         """steal_claim should update expired claims."""

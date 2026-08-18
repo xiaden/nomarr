@@ -14,6 +14,6 @@ class WorkerClaim(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     worker_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    key: Mapped[str] = mapped_column(String(255), nullable=False)
+    key: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     value: Mapped[dict] = mapped_column(JSONB, nullable=False)
     claimed_at: Mapped[int] = mapped_column(BigInteger, index=True)

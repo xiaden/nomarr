@@ -89,7 +89,6 @@ def generate_playlists(
         top_plays=top_plays,
         backbone_id=backbone_id,
         half_life_days=half_life_days,
-        top_n=top_n,
         pp_max_clusters=pp_max_clusters,
     )
     if profile is None:

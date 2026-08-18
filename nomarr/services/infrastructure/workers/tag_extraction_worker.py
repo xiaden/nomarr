@@ -8,7 +8,8 @@ into the graph.  This is Pass 2 of the two-pass scan pipeline:
   Pass 2 (this): read audio tags → write to DB → seed entities
                  → transition not_hydrated → hydrated
 
-No locking needed — single thread, no other worker touches not_hydrated files.
+  Files are claimed through the shared worker-claim mechanism so multiple
+  extraction workers cannot process the same song concurrently.
 """
 
 from __future__ import annotations
@@ -18,9 +19,10 @@ import threading
 from typing import TYPE_CHECKING
 
 from nomarr.components.library.library_song_state_comp import (
-    discover_next_file_needing_tags,
     transition_song_state,
 )
+from nomarr.components.workers.worker_discovery_comp import release_claim
+from nomarr.components.workers.worker_tag_comp import discover_and_claim_file_for_tags
 from nomarr.helpers.constants.file_states import (
     STATE_ERRORED,
     STATE_HYDRATED,
@@ -132,11 +134,11 @@ class TagExtractionWorker(threading.Thread):
         consecutive_errors = 0
 
         while not self._stop_event.is_set():
-            file_doc = discover_next_file_needing_tags(self._db, exclude_claimed=False)
-            if file_doc is None:
+            file_id = discover_and_claim_file_for_tags(self._db, self._worker_id)
+            if file_id is None:
                 self._stop_event.wait(IDLE_SLEEP_S)
                 continue
-            song_id: int = int(file_doc["id"])
+            song_id: int = int(file_id)
 
             try:
                 _process_file(self._db, song_id)
@@ -156,5 +158,10 @@ class TagExtractionWorker(threading.Thread):
                         consecutive_errors,
                     )
                     break
+            finally:
+                try:
+                    release_claim(self._db, song_id)
+                except Exception:
+                    logger.exception("[%s] Failed to release claim for %s", self._worker_id, song_id)
 
         logger.info("[%s] Tag extraction worker stopped", self._worker_id)

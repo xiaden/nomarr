@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import contextlib
 import logging
-from collections import defaultdict
 from typing import TYPE_CHECKING, Any
 
 from nomarr.helpers.constants.file_states import (
@@ -14,6 +13,7 @@ from nomarr.helpers.constants.file_states import (
     STATE_ERRORED,
     STATE_HYDRATED,
     STATE_NOT_CALIBRATED,
+    STATE_NOT_ERRORED,
     STATE_NOT_HYDRATED,
     STATE_NOT_PROCESSED,
     STATE_NOT_VECTORS_EXTRACTED,
@@ -66,19 +66,10 @@ def transition_song_state(db: Database, song_ids: list[int], from_state: str, to
         return
 
     unique_song_ids = list(dict.fromkeys(song_ids))
-    state_membership = _state_membership_for_songs(db, unique_song_ids)
-    db.app.remove_song_states(unique_song_ids)
-
-    next_state_groups: defaultdict[str, list[int]] = defaultdict(list)
-    for song_id in unique_song_ids:
-        next_states = set(state_membership.get(song_id, set()))
-        next_states.discard(from_state)
-        next_states.add(to_state)
-        for state in sorted(next_states):
-            next_state_groups[state].append(song_id)
-
-    for state, grouped_song_ids in next_state_groups.items():
-        db.app.add_song_states(grouped_song_ids, state)
+    # Touch only the requested axis.  Rewriting all assignments from a stale
+    # snapshot can lose unrelated edges and can race with another transition.
+    db.app.remove_song_state(unique_song_ids, from_state)
+    db.app.add_song_states(unique_song_ids, to_state)
 
 
 def _insert_file_state_edges_ignoring_duplicates(db: Database, edge_docs: list[dict[str, Any]]) -> None:
@@ -450,13 +441,17 @@ def bulk_set_not_hydrated(db: Database, library_id: int | None = None) -> int:
 
     hydrated_ids = _state_song_ids(db, STATE_HYDRATED)
     not_hydrated_ids = _state_song_ids(db, STATE_NOT_HYDRATED)
+    errored_ids = _state_song_ids(db, STATE_ERRORED)
 
     to_transition = [fid for fid in song_ids if fid in hydrated_ids]
     to_add = [fid for fid in song_ids if fid not in hydrated_ids and fid not in not_hydrated_ids]
+    to_recover = [fid for fid in song_ids if fid in errored_ids]
 
     if to_transition:
         transition_song_state(db, to_transition, STATE_HYDRATED, STATE_NOT_HYDRATED)
     if to_add:
         db.app.add_song_states(to_add, STATE_NOT_HYDRATED)
+    if to_recover:
+        transition_song_state(db, to_recover, STATE_ERRORED, STATE_NOT_ERRORED)
 
-    return len(to_transition) + len(to_add)
+    return len(set(to_transition) | set(to_add) | set(to_recover))

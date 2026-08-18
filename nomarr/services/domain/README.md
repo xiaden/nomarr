@@ -16,7 +16,7 @@ Service classes that expose domain operations to the interface layer. Each servi
  | `analytics_svc.py` | Tag frequency, mood distribution, co-occurrence, and collection overview analytics |
  | `calibration_svc.py` | Histogram calibration generation, convergence tracking, background threading |
  | `metadata_svc.py` | Entity (tag) navigation — list, get, song-entity relationships, orphan cleanup |
-  | `navidrome_svc.py` | Navidrome integration — config generation, smart/static playlists, sync, personal playlists |
+  | `navidrome_svc.py` | Navidrome integration — config generation, smart/static playlists, personal playlists |
  | `playlist_import_svc.py` | Spotify/Deezer playlist conversion to local M3U via track matching |
  | `tagging_svc.py` | Calibrated tag application — file/library tagging, reconciliation, background apply |
  | `vector_maintenance_svc.py` | Hot→cold vector promotion, index rebuild, stats |

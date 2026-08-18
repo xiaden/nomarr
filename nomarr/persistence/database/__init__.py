@@ -14,6 +14,5 @@ This package contains repository classes organized by domain/table:
 - ``ModelRepo`` — ``ml_models`` table
 - ``OutputRepo`` — ``ml_model_outputs`` and ``ml_output_streams`` tables
 - ``CalibrationRepo`` — ``calibration_states`` and ``calibration_history`` tables
-- ``NavidromeRepo`` — Navidrome track, play, and junction tables
 - ``EmbeddingStreamRepository`` — ``ml_embedding_streams`` table
 """

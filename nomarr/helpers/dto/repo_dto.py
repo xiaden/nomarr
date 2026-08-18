@@ -63,6 +63,7 @@ class LibraryScanRow(TypedDict):
     scan_type: str
     status: str
     started_at: int
+    heartbeat_at: int | None
     finished_at: int | None
     files_found: int
     files_processed: int

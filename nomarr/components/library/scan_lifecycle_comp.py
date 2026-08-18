@@ -194,12 +194,14 @@ def mark_scan_started(db: Database, library_id: int, scan_type: str) -> None:
         scan_type: ``"quick"`` or ``"full"``
 
     """
+    started_at = now_ms().value
     db.library.add_scan(
         library_id,
         {
             "scan_type": scan_type,
             "status": "in_progress",
-            "started_at": now_ms().value,
+            "started_at": started_at,
+            "heartbeat_at": started_at,
         },
     )
 
@@ -244,6 +246,9 @@ def update_scan_progress(
 
     """
     payload: dict[str, Any] = {}
+    # A progress update is also the scan heartbeat.  Keep this separate from
+    # started_at so scan duration and the API's start time remain immutable.
+    payload["heartbeat_at"] = now_ms().value
     if status is not None:
         payload["status"] = status
     if progress is not None:
@@ -278,12 +283,14 @@ def is_scan_stale(db: Database, library_id: int, timeout_ms: int = 300_000) -> b
     if not scan:
         return False
 
-    started_at = scan.get("started_at")
-    if not isinstance(started_at, int):
+    heartbeat_at = scan.get("heartbeat_at")
+    if not isinstance(heartbeat_at, int):
+        heartbeat_at = scan.get("started_at")
+    if not isinstance(heartbeat_at, int):
         return False
 
     now_val: int = now_ms().value
-    elapsed = now_val - started_at
+    elapsed = now_val - heartbeat_at
     return elapsed > timeout_ms
 
 

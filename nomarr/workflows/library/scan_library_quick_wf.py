@@ -162,7 +162,7 @@ def scan_library_quick_workflow(
                     # Files in DB for this folder no longer on disk → delete
                     deleted_paths = [p for p in existing_for_folder if p not in batch.discovered_paths]
                     if deleted_paths:
-                        stats["files_removed"] += remove_deleted_files(db, deleted_paths)
+                        stats["files_removed"] += remove_deleted_files(db, library_id, deleted_paths)
 
                     cached_folder = cached_folders.get(folder.rel_path)
                     save_folder_record(
@@ -198,7 +198,7 @@ def scan_library_quick_workflow(
         for folder_rel_path in vanished_folder_paths:
             vanished_files = get_songs_for_folder(db, library_id, folder_rel_path)
             if vanished_files:
-                stats["files_removed"] += remove_deleted_files(db, list(vanished_files.keys()))
+                stats["files_removed"] += remove_deleted_files(db, library_id, list(vanished_files.keys()))
 
         # Step 7 — Clean up stale folder records
         cleanup_stale_folders(db, library_id, discovered_folder_paths)

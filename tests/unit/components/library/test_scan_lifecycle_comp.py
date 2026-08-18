@@ -24,6 +24,7 @@ from nomarr.components.library.scan_lifecycle_comp import (
     get_library_scan_histories,
     get_scanning_library_ids,
     is_library_scanning,
+    is_scan_stale,
     mark_scan_completed,
     mark_scan_started,
     on_scan_complete_pipeline_hook,
@@ -68,7 +69,8 @@ class TestBootstrapFileStateEdges:
         file_id_by_path = {"/music/song.mp3": 123}
         result = bootstrap_file_state_edges(mock_db, bootstraps, file_id_by_path)
         assert result == 1
-        mock_db.app.remove_song_states.assert_called_once_with([123])
+        mock_db.app.remove_song_state.assert_called_once_with([123], STATE_NOT_PROCESSED)
+        mock_db.app.remove_song_states.assert_not_called()
         mock_db.app.add_song_states.assert_called_once_with([123], STATE_PROCESSED)
 
     @pytest.mark.unit
@@ -353,18 +355,39 @@ class TestScanStateHelpers:
     def test_update_scan_progress_delegates_to_database_facade(self) -> None:
         mock_db = MagicMock()
 
-        update_scan_progress(
-            mock_db,
-            1,
-            progress=5,
-            total=12,
-            scan_error="boom",
-        )
+        with patch("nomarr.components.library.scan_lifecycle_comp.now_ms") as mock_now_ms:
+            mock_now_ms.return_value.value = 123
+            update_scan_progress(mock_db, 1, progress=5, total=12, scan_error="boom")
 
         mock_db.library.update_scan.assert_called_once_with(
             1,
-            {"progress": 5, "total": 12, "scan_error": "boom"},
+            {"heartbeat_at": 123, "progress": 5, "total": 12, "scan_error": "boom"},
         )
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_is_scan_stale_uses_recent_heartbeat(self) -> None:
+        mock_db = MagicMock()
+        mock_db.app.get_pipeline_state.return_value = {SCAN_STATE_FIELD: SCAN_IN_PROGRESS}
+        mock_db.library.get_scan.return_value = {
+            "started_at": 100,
+            "heartbeat_at": 290_000,
+        }
+
+        with patch("nomarr.components.library.scan_lifecycle_comp.now_ms") as mock_now_ms:
+            mock_now_ms.return_value.value = 300_000
+            assert is_scan_stale(mock_db, 1, timeout_ms=20_000) is False
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_is_scan_stale_falls_back_to_started_at(self) -> None:
+        mock_db = MagicMock()
+        mock_db.app.get_pipeline_state.return_value = {SCAN_STATE_FIELD: SCAN_IN_PROGRESS}
+        mock_db.library.get_scan.return_value = {"started_at": 100}
+
+        with patch("nomarr.components.library.scan_lifecycle_comp.now_ms") as mock_now_ms:
+            mock_now_ms.return_value.value = 301
+            assert is_scan_stale(mock_db, 1, timeout_ms=200) is True
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -395,12 +418,13 @@ class TestFolderCacheHelpers:
                 existing_folder_id=10,
             )
 
-        inserted_doc = mock_db.library.add_library_folder.call_args.args[1]
+        inserted_doc = mock_db.library.replace_library_folder.call_args.args[2]
         assert inserted_doc["path"] == "Rock"
         assert "library_key" not in inserted_doc
         assert inserted_doc["mtime"] == 123
         assert inserted_doc["file_count"] == 7
         assert inserted_doc["last_scanned_at"] == 456
+        mock_db.library.replace_library_folder.assert_called_once_with(1, 10, inserted_doc)
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -428,17 +452,22 @@ class TestRemoveDeletedFiles:
         """remove_deleted_files resolves file ids and delegates deletion to library.remove_song."""
         mock_db = MagicMock()
         paths = ["/music/a.mp3", "/music/b.mp3", "/music/c.mp3"]
-        mock_db.library.find_song_by_path_any_library.side_effect = [
+        mock_db.library.get_song_by_path.side_effect = [
             {"id": 1},
             {"id": 2},
             None,
         ]
 
-        result = remove_deleted_files(mock_db, paths)
+        result = remove_deleted_files(mock_db, 7, paths)
 
         assert mock_db.library.remove_song.call_args_list == [
             call(1),
             call(2),
+        ]
+        assert mock_db.library.get_song_by_path.call_args_list == [
+            call("/music/a.mp3", 7),
+            call("/music/b.mp3", 7),
+            call("/music/c.mp3", 7),
         ]
         assert result == 2
 
@@ -446,9 +475,9 @@ class TestRemoveDeletedFiles:
         """remove_deleted_files skips lookup and deletion when no file paths are supplied."""
         mock_db = MagicMock()
 
-        result = remove_deleted_files(mock_db, [])
+        result = remove_deleted_files(mock_db, 7, [])
 
-        mock_db.library.find_song_by_path_any_library.assert_not_called()
+        mock_db.library.get_song_by_path.assert_not_called()
         mock_db.library.remove_song.assert_not_called()
         assert result == 0
 

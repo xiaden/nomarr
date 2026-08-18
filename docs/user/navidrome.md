@@ -11,10 +11,10 @@ Nomarr can generate smart playlists for [Navidrome](https://www.navidrome.org/) 
 **What this integration provides:**
 
 - **Smart playlist generation** using a visual rule builder with nested AND/OR logic
-- **Direct push to Navidrome** via the Subsonic API (no file copying needed)
+- **Plugin-mediated push to Navidrome** — Nomarr resolves files to portable track descriptors; the Navidrome plugin performs the actual push
 - **Static M3U playlists** from hand-picked tracks
 - **Playlist templates** for common genres and moods with batch generation
-- **Song sync** to pull your Navidrome library into Nomarr for cross-referencing
+- **Plugin-backed recommendation & playlist output** — personal playlists and similar-track results return portable track descriptors; the Navidrome plugin resolves them to Navidrome song IDs. No song-map sync.
 - **Connectivity testing** to verify your Navidrome connection
 
 **Flow boundary:**
@@ -37,10 +37,10 @@ Tag Storage (database)
     ↓
 Playlist Builder (Web UI rule builder)
     ↓
-Download .nsp file  OR  Push directly to Navidrome via Subsonic API
+Download .nsp file  OR  Push to Navidrome via plugin (Nomarr resolves descriptors, plugin pushes)
 ```
 
-Unlike file-based export workflows, Nomarr connects to Navidrome over the network using the Subsonic API. You configure the connection in the Web UI, and playlists are pushed directly — no shared volumes or file copying required.
+Unlike file-based export workflows, playlists reach Navidrome through the Navidrome plugin: Nomarr resolves tracks to portable descriptors and returns them over the network, and the plugin then pushes the playlist into Navidrome. No shared volumes or file copying required (see [Pushing Playlists to Navidrome](#pushing-playlists-to-navidrome)).
 
 ---
 
@@ -161,12 +161,13 @@ Instead of downloading `.nsp` files, you can push playlists directly to Navidrom
 1. Build your playlist using the rule builder or templates
 2. Preview the matching tracks
 3. Click **Push to Navidrome**
-4. Nomarr resolves your local file IDs to Navidrome song IDs via the synced library
-5. The playlist is created (or updated) in Navidrome via the Subsonic API
+4. Nomarr returns portable track descriptors for the selected tracks
+5. The Navidrome plugin resolves the descriptors to Navidrome song IDs and creates (or updates) the playlist in Navidrome
 
 !!! note
-    Backend-managed Navidrome-ID playlist push paths are removed. Use plugin-backed
-    descriptor flows for recommendation/playlist output.
+    Backend-managed Navidrome-ID mapping is removed. Nomarr never persists
+    song↔Navidrome-ID mappings; playlists are pushed as portable track
+    descriptors that the Navidrome plugin resolves on its side.
 
 ---
 
@@ -258,7 +259,7 @@ All `pp_*` settings are configurable from the Web UI settings panel:
 Personal playlists are generated via a direct API call (not the Web UI rule builder):
 
 ```
-POST /api/v1/navidrome/generate-playlists
+POST /api/v1/navidrome/playlist/generate
 ```
 
 Request body:
@@ -266,12 +267,13 @@ Request body:
  | Field | Type | Description |
  | ------- | ------ | ------------- |
  | `user_id` | string | Navidrome user identifier |
+ | `top_plays` | object[] | Play history entries supplied by the Navidrome plugin (required). Each entry: `file_id` (int, library file primary key resolved from a prior `nomarr_file_key` descriptor), `playcount` (int ≥ 0), `last_played` (int \| null) |
  | `enabled_types` | string[] \ | null | Override which playlist types to generate; `null` uses config |
  | `max_songs` | int \ | null | Override max songs per playlist; `null` uses config |
  | `min_songs` | int \ | null | Override min songs per playlist; `null` uses config |
  | `max_genre_playlists` | int \ | null | Override max genre playlists (1–25); `null` uses config |
 
-Returns `status: "ok"` with a list of generated playlists, or `status: "no_data"` when there is insufficient play history. Returns HTTP 422 if `library_key` is not configured.
+Returns `status: "ok"` with a list of generated playlists, or `status: "no_data"` when there is insufficient play history. Returns HTTP 422 with `status: "misconfigured"` when the Navidrome API user (`navidrome_api_user`) is not configured.
 
 ---
 
@@ -319,15 +321,16 @@ For programmatic access, Nomarr provides a full REST API for all Navidrome opera
  | Endpoint | Method | Description |
  | ---------- | -------- | ------------- |
  | `/api/web/navidrome/preview` | GET | Tag statistics for your library |
- | `/api/web/navidrome/tag-values` | GET | Distinct values for a specific tag |
+ | `/api/web/navidrome/tag-value` | GET | Distinct values for a specific tag |
  | `/api/web/navidrome/config` | GET | Generate TOML config text |
- | `/api/web/navidrome/playlists/preview` | POST | Preview playlist query results |
- | `/api/web/navidrome/playlists/generate` | POST | Generate .nsp playlist file |
- | `/api/web/navidrome/playlists/static` | POST | Generate static M3U playlist |
- | `/api/web/navidrome/playlists/push` | POST | Removed (410 Gone) |
- | `/api/web/navidrome/templates` | GET | List available templates |
- | `/api/web/navidrome/templates` | POST | Batch generate from templates |
- | `/api/web/navidrome/sync-songs` | POST | Removed (410 Gone) |
+ | `/api/web/navidrome/playlist/preview` | POST | Preview playlist query results |
+ | `/api/web/navidrome/playlist/generate` | POST | Generate .nsp playlist file |
+ | `/api/web/navidrome/playlist/static` | POST | Generate static M3U playlist |
+ | `/api/web/navidrome/playlist/push` | POST | Resolve file IDs to portable track descriptors (plugin pushes to Navidrome) |
+ | `/api/web/navidrome/generate-personal-playlists` | POST | Generate personal playlists from plugin-supplied play history (`top_plays`: object[] with `file_id`, `playcount`, `last_played`); returns `status` (`ok` / `no_data`), `message`, and `playlists` of portable track descriptors |
+ | `/api/web/navidrome/template` | GET | List available templates |
+ | `/api/web/navidrome/template` | POST | Batch generate from templates |
+ | `/api/web/navidrome/sync-song` | POST | Removed (410 Gone) — sync endpoint returns 410 |
  | `/api/web/navidrome/ping` | POST | Test Navidrome connectivity |
  | `/api/web/navidrome/status` | GET | Check if Navidrome is configured |
 
@@ -361,7 +364,7 @@ For programmatic access, Nomarr provides a full REST API for all Navidrome opera
 
 **Q: Do I need to set up shared volumes between Nomarr and Navidrome?**
 
-A: No. Nomarr pushes playlists to Navidrome over the Subsonic API. No shared filesystem is needed for playlist delivery. However, both must be able to access the same music files at some path.
+A: No. The Navidrome plugin pushes the playlist into Navidrome over the Subsonic API. No shared filesystem is needed for playlist delivery. However, both must be able to access the same music files at some path.
 
 **Q: What’s an .nsp file?**
 

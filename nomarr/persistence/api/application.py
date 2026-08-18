@@ -1,4 +1,4 @@
-"""App-state persistence sub-facade (``AppDb``) and legacy Navidrome surface.
+"""App-state persistence sub-facade (``AppDb``).
 
 Groups application-state, lock/claim, session, health, migration/config, and
 VRAM-promise persistence into a single intent facade wired as ``db.app``.
@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session, scoped_session
 
-    from nomarr.helpers.dto.navidrome_repo_dto import NdPlayRecord, NdTrackRecord
     from nomarr.helpers.dto.repo_dto import (
         HealthRow,
         LockRow,
@@ -22,28 +21,8 @@ if TYPE_CHECKING:
     )
     from nomarr.persistence.database.app_repo import AppRepository
     from nomarr.persistence.database.library_repo import LibraryRepository
-    from nomarr.persistence.database.navidrome_repo import NavidromeRepo
     from nomarr.persistence.database.pipeline_repo import PipelineRepository
     from nomarr.persistence.database.song_state_repo import SongStateRepository
-
-
-class AppLegacyNavidromeDb:
-    """Legacy-only Navidrome persistence surface.
-
-    These plugin-era mapping/play methods are intentionally isolated from the
-    routine ``AppDb`` contract. Canonical app callers should continue to use
-    the normalized ``AppDb`` routine methods; legacy compatibility access, if
-    needed, stays confined to ``db.app.legacy_navidrome``.
-    """
-
-    def __init__(self, *, navidrome_repo: NavidromeRepo) -> None:
-        self._navidrome_repo = navidrome_repo
-
-    def get_nd_track(self, track_id: str) -> NdTrackRecord | None:
-        return self._navidrome_repo.get_track(track_id)
-
-    def list_nd_track_keys(self) -> list[str]:
-        return self._navidrome_repo.list_nd_track_keys()
 
 
 class AppDb:
@@ -51,9 +30,7 @@ class AppDb:
 
     Routine methods expose the normalized app-domain intent surface. Destructive
     maintenance operations (``truncate_health``, ``truncate_worker_claims``,
-    ``truncate_song_state_edges``) are exposed directly on this facade; legacy
-    Navidrome persistence is isolated on ``.legacy_navidrome`` instead of the
-    routine top-level API.
+    ``truncate_song_state_edges``) are exposed directly on this facade.
     """
 
     def __init__(
@@ -62,7 +39,6 @@ class AppDb:
         session: scoped_session[Session],
         app_repo: AppRepository,
         library_repo: LibraryRepository,
-        navidrome_repo: NavidromeRepo,
         song_state_repo: SongStateRepository,
         pipeline_repo: PipelineRepository,
     ) -> None:
@@ -73,13 +49,9 @@ class AppDb:
         """
         self._song_state_repo = song_state_repo
         self._app_repo = app_repo
-        self._navidrome_repo = navidrome_repo
         self._library_repo = library_repo
         self._pipeline_repo = pipeline_repo
         self._session = session
-        self.legacy_navidrome: AppLegacyNavidromeDb = AppLegacyNavidromeDb(
-            navidrome_repo=navidrome_repo,
-        )
 
     # ------------------------------------------------------------------
     # Maintenance methods (destructive reset/repair)
@@ -133,6 +105,10 @@ class AppDb:
         if not song_ids:
             return
         self._song_state_repo.remove_states_for_songs(song_ids)
+
+    def remove_song_state(self, song_ids: list[int], state: str) -> None:
+        """Remove one state pole without disturbing other song axes."""
+        self._song_state_repo.remove_state_for_songs(song_ids, state)
 
     def get_pipeline_state(self, library_id: int) -> dict[str, str] | None:
         """Return the four pipeline axis values for a library."""
@@ -357,50 +333,6 @@ class AppDb:
 
     def remove_config_option(self, key: str) -> None:
         self._app_repo.delete_meta(key)
-
-    # ------------------------------------------------------------------
-    # Navidrome methods
-    # ------------------------------------------------------------------
-
-    def upsert_navidrome_track(
-        self,
-        nd_id: str,
-        title: str | None,
-        artist: str | None,
-        album: str | None,
-        file_path: str | None,
-    ) -> NdTrackRecord:
-        return self._navidrome_repo.upsert_track(nd_id, title, artist, album, file_path)
-
-    def map_navidrome_track_to_song(self, nd_id: str, song_id: int) -> None:
-        self._navidrome_repo.map_track_to_file(nd_id, song_id)
-
-    def get_mapped_file_for_navidrome_track(self, nd_id: str) -> int | None:
-        return self._navidrome_repo.get_mapped_file(nd_id)
-
-    def resolve_song_to_navidrome_track(self, song_id: int) -> str | None:
-        return self._navidrome_repo.resolve_file_to_nd_track(song_id)
-
-    def bulk_upsert_navidrome_tracks(self, nd_ids: list[str]) -> int:
-        return self._navidrome_repo.bulk_upsert_tracks(nd_ids)
-
-    def bulk_map_navidrome_tracks(self, mappings: list[dict[str, str]]) -> int:
-        return self._navidrome_repo.bulk_map_tracks(mappings)
-
-    def record_navidrome_play(
-        self,
-        nd_id: str,
-        user_id: str | None,
-        played_at: int,
-        song_id: int | None = None,
-    ) -> int:
-        return self._navidrome_repo.record_play(nd_id, user_id, played_at, song_id)
-
-    def get_top_navidrome_plays(self, user_id: str, top_n: int) -> list[NdPlayRecord]:
-        return self._navidrome_repo.get_top_plays(user_id, top_n)
-
-    def delete_navidrome_tracks_for_song(self, song_id: int) -> int:
-        return self._navidrome_repo.delete_tracks_for_file(song_id)
 
     def remove_pipeline_state(self, library_id: int) -> None:
         """Delete all pipeline-state rows for the library.

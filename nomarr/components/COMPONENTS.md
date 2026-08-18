@@ -114,10 +114,8 @@ components/
   ├── navidrome/
 │   ├── descriptor_match_comp.py       # Track descriptor build and resolve
 │   ├── m3u_comp.py                    # M3U playlist generation
-│   ├── navidrome_graph_comp.py        # Navidrome track/file edge management
 │   ├── playlist_builder_comp.py        # Smart playlist building
 │   ├── subsonic_client_comp.py         # Subsonic API client
-│   ├── subsonic_crawl_comp.py          # Subsonic library crawling
 │   ├── tag_query_comp.py              # Tag-based song queries
 │   ├── taste_profile_comp.py          # User taste profiling
 │   └── templates_comp.py              # Playlist template handling

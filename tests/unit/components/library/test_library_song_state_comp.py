@@ -8,6 +8,7 @@ import pytest
 
 from nomarr.components.library.library_song_state_comp import (
     bulk_set_not_calibrated,
+    bulk_set_not_hydrated,
     bulk_set_not_vectors_extracted,
     bulk_set_tags_not_fresh,
     clear_all_states,
@@ -33,7 +34,10 @@ from nomarr.helpers.constants.file_states import (
     AXIS_PAIRS,
     STATE_CALIBRATED,
     STATE_ERRORED,
+    STATE_HYDRATED,
     STATE_NOT_CALIBRATED,
+    STATE_NOT_ERRORED,
+    STATE_NOT_HYDRATED,
     STATE_NOT_PROCESSED,
     STATE_NOT_VECTORS_EXTRACTED,
     STATE_NOT_WRITTEN,
@@ -641,7 +645,7 @@ class TestTransitionFileState:
     """Tests for ``transition_song_state()``."""
 
     @pytest.mark.unit
-    def test_rewrites_state_membership_via_normalized_file_state_methods_for_valid_axis_pair(self) -> None:
+    def test_replaces_only_requested_axis_for_valid_axis_pair(self) -> None:
         mock_db = _make_mock_db()
         song_ids = [1, 2]
         from_state = STATE_NOT_PROCESSED
@@ -653,8 +657,18 @@ class TestTransitionFileState:
 
         transition_song_state(mock_db, song_ids, from_state, to_state)
 
-        mock_db.app.remove_song_states.assert_called_once_with(song_ids)
+        mock_db.app.remove_song_state.assert_called_once_with(song_ids, from_state)
         mock_db.app.add_song_states.assert_called_once_with(song_ids, to_state)
+
+    @pytest.mark.unit
+    def test_missing_from_state_does_not_drop_other_axes(self) -> None:
+        mock_db = _make_mock_db()
+        song_ids = [1]
+
+        transition_song_state(mock_db, song_ids, STATE_NOT_HYDRATED, STATE_HYDRATED)
+
+        mock_db.app.remove_song_state.assert_called_once_with(song_ids, STATE_NOT_HYDRATED)
+        mock_db.app.add_song_states.assert_called_once_with(song_ids, STATE_HYDRATED)
 
     @pytest.mark.unit
     def test_raises_value_error_for_invalid_axis_pair(self) -> None:
@@ -664,12 +678,30 @@ class TestTransitionFileState:
         with pytest.raises(ValueError):
             transition_song_state(mock_db, song_ids, STATE_NOT_PROCESSED, STATE_CALIBRATED)
 
-        mock_db.app.remove_song_states.assert_not_called()
+        mock_db.app.remove_song_state.assert_not_called()
         mock_db.app.add_song_states.assert_not_called()
 
 
 class TestBulkTransitions:
     """Tests for the bulk state transition helpers."""
+
+    @pytest.mark.unit
+    def test_bulk_set_not_hydrated_repairs_missing_hydration_and_error_edges(self) -> None:
+        mock_db = _make_mock_db()
+        mock_db.library.list_libraries.return_value = [{"id": 1}]
+        mock_db.library.list_songs.return_value = [{"id": 7}]
+        mock_db.app.list_song_docs_in_state.side_effect = lambda state: [{"id": 7}] if state == STATE_ERRORED else []
+
+        result = bulk_set_not_hydrated(mock_db)
+
+        assert result == 1
+        assert mock_db.app.add_song_states.call_args_list == [
+            call([7], STATE_NOT_HYDRATED),
+            call([7], STATE_NOT_ERRORED),
+        ]
+        assert mock_db.app.remove_song_state.call_args_list == [
+            call([7], STATE_ERRORED),
+        ]
 
     @pytest.mark.unit
     def test_bulk_set_not_calibrated_uses_normalized_state_writes_for_all_calibrated_files(self) -> None:
@@ -687,7 +719,7 @@ class TestBulkTransitions:
 
         assert result == 2
         mock_db.app.list_song_docs_in_state.assert_any_call(STATE_CALIBRATED)
-        mock_db.app.remove_song_states.assert_called_once_with(calibrated_ids)
+        mock_db.app.remove_song_state.assert_called_once_with(calibrated_ids, STATE_CALIBRATED)
         mock_db.app.add_song_states.assert_called_once_with(calibrated_ids, STATE_NOT_CALIBRATED)
 
     @pytest.mark.unit
@@ -709,7 +741,7 @@ class TestBulkTransitions:
         result = bulk_set_tags_not_fresh(mock_db, library_id=1)
 
         assert result == 1
-        mock_db.app.remove_song_states.assert_called_once_with([2])
+        mock_db.app.remove_song_state.assert_called_once_with([2], STATE_TAGS_CURRENT)
         mock_db.app.add_song_states.assert_called_once_with([2], STATE_TAGS_NOT_FRESH)
         mock_db.app.list_song_docs_in_state.assert_any_call(STATE_TAGS_CURRENT)
         mock_db.library.list_songs.assert_called_once_with(1)
@@ -750,7 +782,7 @@ class TestBulkTransitions:
         result = bulk_set_tags_not_fresh(mock_db)
 
         assert result == 2
-        mock_db.app.remove_song_states.assert_called_once_with(current_ids)
+        mock_db.app.remove_song_state.assert_called_once_with(current_ids, STATE_TAGS_CURRENT)
         mock_db.app.add_song_states.assert_called_once_with(current_ids, STATE_TAGS_NOT_FRESH)
         mock_db.library.list_songs.assert_not_called()
 
@@ -780,5 +812,5 @@ class TestBulkTransitions:
 
         assert result == 1
         mock_db.app.list_song_docs_in_state.assert_any_call(STATE_VECTORS_EXTRACTED)
-        mock_db.app.remove_song_states.assert_called_once_with(vector_ids)
+        mock_db.app.remove_song_state.assert_called_once_with(vector_ids, STATE_VECTORS_EXTRACTED)
         mock_db.app.add_song_states.assert_called_once_with(vector_ids, STATE_NOT_VECTORS_EXTRACTED)

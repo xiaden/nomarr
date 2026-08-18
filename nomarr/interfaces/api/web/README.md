@@ -27,7 +27,7 @@ Internal HTTP endpoints powering the Nomarr web dashboard.
  | `library_scan_if.py` | Library scan (quick/full), repair, reconcile, write tags, pipeline status |
  | `metadata_if.py` | Entity listing, detail, songs-by-entity, artists-for-album, albums-for-artist |
  | `ml_if.py` | Model listing, output labels, configuration, VRAM probe, work status, recent activity |
- | `navidrome_if.py` | Navidrome preview, config, playlists, templates, sync, personal playlists |
+ | `navidrome_if.py` | Navidrome preview, config, playlists, templates, personal playlists |
  | `playlist_import_if.py` | Spotify/Deezer playlist import, credential status |
  | `tag_curation_if.py` | Tag rename, merge, split, list values, commit pending, update file tags |
  | `tags_if.py` | Show/remove tags from audio files |

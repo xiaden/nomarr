@@ -32,6 +32,22 @@ def _make_worker_self(worker_id: str = "worker:tag:0") -> MagicMock:
     return mock_self
 
 
+class TestDatabaseUrlValidation:
+    """Invalid inherited configuration must not reach SQLAlchemy engine setup."""
+
+    @pytest.mark.parametrize("database_url", ["", "not-a-url", "sqlite:///worker.db", "postgresql://user@host"])
+    def test_rejects_invalid_database_url(self, database_url: str):
+        from nomarr.services.infrastructure.workers.discovery_worker import _validate_database_url
+
+        with pytest.raises(ValueError):
+            _validate_database_url(database_url)
+
+    def test_accepts_postgresql_url_with_database_name(self):
+        from nomarr.services.infrastructure.workers.discovery_worker import _validate_database_url
+
+        _validate_database_url("postgresql+psycopg2://user:password@host:5432/nomarr")
+
+
 # ---------------------------------------------------------------------------
 # _evict_idle_cache
 # ---------------------------------------------------------------------------

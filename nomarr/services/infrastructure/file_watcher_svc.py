@@ -229,7 +229,8 @@ class FileWatcherService:
     def _schedule_cleanup(self, library_id: str) -> None:
         """Schedule a library for cleanup (called from polling loop when library not found)."""
         self._pending_cleanups.add(library_id)
-        # Direct call — all sync now, safe from polling thread
+        # Cleanup is synchronous, but stop_watching_library avoids joining the
+        # polling thread when this method is called from that thread.
         self._do_cleanup(library_id)
 
     def _do_cleanup(self, library_id: str) -> None:
@@ -416,7 +417,11 @@ class FileWatcherService:
             stop_event = self._stop_events.pop(library_id, None)
             if stop_event is not None:
                 stop_event.set()
-            watcher.join(timeout=5.0)
+            # A polling loop can discover that its library was deleted or
+            # disabled and clean itself up.  Joining the current thread raises
+            # RuntimeError and leaves the watcher state partially cleaned up.
+            if watcher is not threading.current_thread():
+                watcher.join(timeout=5.0)
             if library_id in self.last_poll_time:
                 del self.last_poll_time[library_id]
         else:

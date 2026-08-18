@@ -42,6 +42,17 @@ HEALTH_FRAME_PREFIX = "HEALTH|"
 IDLE_FRAME_PREFIX = "IDLE|"  # Frame prefix for idle/active state signals
 
 
+def _validate_database_url(database_url: str) -> None:
+    """Reject unusable worker database configuration before engine creation."""
+    from sqlalchemy.engine import make_url
+
+    if not database_url:
+        raise ValueError("database URL is empty")
+    parsed_url = make_url(database_url)
+    if not parsed_url.drivername.startswith("postgresql") or not parsed_url.database:
+        raise ValueError("database URL must be a PostgreSQL URL with a database name")
+
+
 def _check_idle_pipeline_completion(db: Database, health_pipe: multiprocessing.connection.Connection | None) -> int:
     """Transition idle ML-complete libraries and signal calibration health updates."""
     from nomarr.components.library.library_records_comp import find_ml_complete_libraries
@@ -218,7 +229,17 @@ class DiscoveryWorker(multiprocessing.Process):
             self._current_status = "unhealthy"
             time.sleep(10)
             return None
-        db = Database(url=self.db_hosts)
+        try:
+            # Engine creation parses the URL eagerly.  Keep malformed inherited
+            # configuration from escaping the subprocess before health telemetry
+            # and restart handling can observe the failure.
+            _validate_database_url(self.db_hosts)
+            db = Database(url=self.db_hosts)
+        except Exception as exc:
+            logger.exception("[%s] Invalid database URL during worker startup: %s", self.worker_id, exc)
+            self._current_status = "unhealthy"
+            self._send_health_frame("unhealthy")
+            return None
         register_worker_context(db, self.worker_id)
         try:
             release_worker_promises(db, self.worker_id)

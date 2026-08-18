@@ -344,7 +344,10 @@ def list_songs(
             db.library.list_songs(library_id, limit=None),
         )
     else:
-        file_docs = _get_all_library_song_docs(db, DEFAULT_LIMIT)
+        # Collect the complete global result before filtering and pagination.
+        # Applying the helper's default cap here drops songs before an offset
+        # can be applied, making pages after the first 1,000 rows incorrect.
+        file_docs = _get_all_library_song_docs(db, limit=None)
 
     file_docs = hydrate_songs_with_metadata(db, file_docs)
 

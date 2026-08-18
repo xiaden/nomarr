@@ -360,6 +360,8 @@ class Application:
         )
         recovery_counts = pipeline_svc.recover_stale_states()
         logger.debug("[Application] Recovered pipeline stale states on startup: %s", recovery_counts)
+        recovered_scans = pipeline_svc.recover_stale_heartbeats()
+        logger.debug("[Application] Recovered stale library scans on startup: %d", recovered_scans)
         # Vector services (search and maintenance)
         from nomarr.services.domain.vector_maintenance_svc import VectorMaintenanceService
         from nomarr.services.domain.vector_search_svc import VectorSearchService

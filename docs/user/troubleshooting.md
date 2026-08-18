@@ -252,18 +252,18 @@ Polling mode checks for changes every 60 seconds, which is slower than event mod
 
 ### Push Fails
 
-**Symptoms:** Push to Navidrome returns errors about unresolved songs.
+**Symptoms:** Push to Navidrome fails or playlists reference tracks Navidrome cannot resolve.
 
-**Cause:** Nomarr can't map its file IDs to Navidrome song IDs.
+**Cause:** The Nomarr backend does not maintain a song-to-Navidrome-ID mapping (that mapping lives in the Navidrome plugin). Push failures usually mean the plugin cannot resolve the descriptor files on the Navidrome side.
 
 **Solution:**
 
-1. Run **Sync Songs** from the Navidrome page to refresh the mapping
-2. Ensure both Nomarr and Navidrome point to the **same music files** (paths may differ between containers, but the actual files must be the same)
+1. Ensure both Nomarr and Navidrome point to the **same music files** (paths may differ between containers, but the actual files must be the same)
+2. Verify the Navidrome plugin is configured (Nomarr API URL and API key) and its descriptor resolution can reach the same library paths
+3. Review the Navidrome plugin logs for resolution errors — e.g. run Navidrome with `ND_PLUGINS_LOGLEVEL=debug` and check for error messages from the nomarr plugin
 
 !!! note
-    This Sync Songs requirement applies to backend push flows.
-    Navidrome plugin Instant Mix / similar-track recommendations use descriptor resolution in-plugin and do not require Nomarr song-map sync.
+    Descriptor resolution and pushes happen in the Navidrome plugin; the Nomarr backend performs no song-map sync (the legacy `sync-song` endpoint returns 410 Gone).
 
 ---
 

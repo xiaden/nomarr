@@ -1,6 +1,6 @@
 # Navidrome Workflows
 
-Workflows for Navidrome integration — smart/static playlist generation, config export, Subsonic API sync, and vector-based track similarity.
+Workflows for Navidrome integration — smart/static playlist generation, config export, and vector-based track similarity.
 
 ## Responsibilities
 
@@ -8,10 +8,8 @@ Workflows for Navidrome integration — smart/static playlist generation, config
 - Generate `.nsp` smart playlist structures for Navidrome
 - Preview smart playlist results with sample tracks
 - Generate static M3U playlists from file IDs
-- Push playlists to Navidrome via Subsonic API
 - Generate Navidrome TOML config for custom tag fields
 - Preview tag statistics for config generation
-- Sync Navidrome song inventory into graph collections
 - Find similar tracks via vector ANN search
 - Generate personal playlists from user taste profiles
 
@@ -24,18 +22,15 @@ Workflows for Navidrome integration — smart/static playlist generation, config
  | `generate_smart_playlist_wf.py` | Convert parsed filter to `.nsp` JSON structure with sort/limit validation |
  | `preview_smart_playlist_wf.py` | Execute filter and return total count + sample tracks |
  | `generate_static_playlist_wf.py` | Resolve file IDs to paths, generate M3U content, optional server-side save |
- | `push_playlist_wf.py` | Resolve file IDs to Navidrome song IDs, create/replace playlist via Subsonic API |
  | `generate_navidrome_config_wf.py` | Query tags collection, detect types, generate TOML with field aliases |
  | `preview_tag_stats_wf.py` | Batched tag statistics for all tags (type, multivalue, summary, short_name) |
-  | `sync_navidrome_wf.py` | Walk Navidrome albums, auto-detect path prefix, upsert tracks/edges, cascade-delete orphans |
-  | `find_similar_tracks_wf.py` | Resolve seed ND ID → vector → ANN search → resolve results to ND IDs + metadata |
+ | `find_similar_tracks_wf.py` | Resolve seed descriptor → vector → ANN search → return similar-track descriptors |
  | `generate_playlists_wf.py` | Taste profile computation, dispatch to playlist type builders (familiar, discovery, hidden gems, genre) |
 
 ## Patterns
 
 - **Pure parsing**: Query parser is a pure function with no DB access; execution is separate
 - **Set-based filtering**: Filter engine uses Python set intersection/union for boolean logic
-- **Auto-detection**: Sync workflow auto-detects Navidrome path prefix from sample songs
 - **Builder dispatch**: Playlist generation dispatches to per-type builder components
 
 ## Architecture Rules
@@ -45,5 +40,5 @@ Workflows for Navidrome integration — smart/static playlist generation, config
 ## Dependencies
 
 - **Called by**: `services/domain/navidrome_svc.py`
-- **Calls**: `components/navidrome/*` (playlist builders, Subsonic client, templates), `components/ml/vectors/*` (ANN search)
-- **Receives**: `Database`, `SubsonicClient`, namespace, config parameters
+- **Calls**: `components/navidrome/*` (playlist builders, taste profile, descriptor matching, tag query, M3U), `components/ml/vectors/*` (ANN search)
+- **Receives**: `Database`, namespace, config parameters

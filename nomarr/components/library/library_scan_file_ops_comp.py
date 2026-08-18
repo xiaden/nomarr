@@ -170,15 +170,19 @@ def bootstrap_file_state_edges(
     return count
 
 
-def remove_deleted_files(db: Database, paths: list[str]) -> int:
+def remove_deleted_files(db: Database, library_id: int, paths: list[str]) -> int:
     """Bulk-delete files that are no longer on disk.
+
+    Paths are resolved within the scanning library.  Relative paths can be
+    shared by multiple libraries, so an unscoped lookup could delete another
+    library's song.
 
     Returns the number of files deleted.
     """
     file_ids = [
         file_doc["id"]
         for path in paths
-        if (file_doc := cast("dict[str, Any] | None", db.library.find_song_by_path_any_library(path))) is not None
+        if (file_doc := cast("dict[str, Any] | None", db.library.get_song_by_path(path, library_id))) is not None
     ]
     for file_id in file_ids:
         db.library.remove_song(file_id)
@@ -212,24 +216,20 @@ def save_folder_record(
     folder_doc = _folder_doc(library_id, rel_path, mtime, file_count)
     folder_key = folder_doc["key"]
 
-    # Remove any existing folder with the same deterministic key before
-    # inserting (add_library_folder is INSERT, not UPSERT).
+    # Replace in one transaction so a failed insert cannot leave the cache
+    # missing after the old record has been deleted.
     if existing_folder_id:
-        db.library.remove_library_folder(library_id, existing_folder_id)
+        db.library.replace_library_folder(library_id, existing_folder_id, folder_doc)
     else:
-        # Try to find and remove a pre-existing folder with the same key
-        try:
-            existing = db.library.list_folders_for_library(library_id)
-            for folder in cast("list[dict[str, Any]]", existing):
-                if folder.get("key") == folder_key:
-                    fid = folder.get("id")
-                    if fid:
-                        db.library.remove_library_folder(library_id, fid)
-                    break
-        except Exception:
-            pass  # best-effort cleanup
-
-    db.library.add_library_folder(library_id, folder_doc)
+        existing = db.library.list_folders_for_library(library_id)
+        for folder in cast("list[dict[str, Any]]", existing):
+            if folder.get("key") == folder_key:
+                fid = folder.get("id")
+                if fid:
+                    db.library.replace_library_folder(library_id, fid, folder_doc)
+                break
+        else:
+            db.library.add_library_folder(library_id, folder_doc)
 
 
 def cleanup_stale_folders(

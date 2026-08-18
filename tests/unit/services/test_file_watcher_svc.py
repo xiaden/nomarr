@@ -896,6 +896,9 @@ class TestSyncWatchers:
             thread = watcher.observers[1]
             time.sleep(0.25)
         assert not thread.is_alive()
+        assert 1 not in watcher.observers
+        assert 1 not in watcher._stop_events
+        assert 1 not in watcher.last_poll_time
 
     def test_polling_loop_exits_when_watch_mode_becomes_off(self, mock_db, mock_library_service):
         """_polling_loop should stop when watch_mode flips to off mid-poll."""
@@ -922,6 +925,9 @@ class TestSyncWatchers:
             thread = watcher.observers[1]
             time.sleep(0.25)
         assert not thread.is_alive()
+        assert 1 not in watcher.observers
+        assert 1 not in watcher._stop_events
+        assert 1 not in watcher.last_poll_time
 
     def test_polling_loop_continues_on_library_already_scanning_error(self, mock_db):
         """_polling_loop should continue (not exit) on LibraryAlreadyScanningError."""

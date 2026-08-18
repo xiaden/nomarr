@@ -4,6 +4,7 @@ Thin wrapper around KeyManagementService for FastAPI dependency injection.
 
 from __future__ import annotations
 
+import hmac
 from typing import cast
 
 from fastapi import Depends, HTTPException
@@ -35,7 +36,7 @@ async def verify_key(creds: HTTPAuthorizationCredentials = Depends(auth_scheme))
 
     if api_key is None:
         raise HTTPException(status_code=500, detail="API key not initialized")
-    if token != api_key:
+    if not hmac.compare_digest(token, api_key):
         raise HTTPException(status_code=403, detail="Invalid API key")
 
 

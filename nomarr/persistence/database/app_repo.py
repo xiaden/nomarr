@@ -276,7 +276,7 @@ class AppRepository:
             with self._session.begin_nested():
                 data = {
                     "worker_id": worker_id,
-                    "key": str(song_id),
+                    "key": f"claim_{song_id}",
                     "value": payload,
                     "claimed_at": payload.get("claimed_at", 0),
                 }
@@ -284,10 +284,11 @@ class AppRepository:
             self._session.commit()
 
     def release_claim(self, song_id: int) -> None:
-        """Release a song claim by its key (``str(song_id)``)."""
+        """Release a song claim by its deterministic claim key."""
         with map_persistence_exceptions():
             with self._session.begin_nested():
-                stmt = delete(_WC).where(_WC.c.key == str(song_id))
+                keys = (f"claim_{song_id}", f"claim_reconcile_{song_id}")
+                stmt = delete(_WC).where(_WC.c.key.in_(keys))
                 self._session.execute(stmt)
             self._session.commit()
 
@@ -307,7 +308,7 @@ class AppRepository:
         with map_persistence_exceptions():
             if not song_ids:
                 return 0
-            str_ids = [str(sid) for sid in song_ids]
+            str_ids = [key for sid in song_ids for key in (f"claim_{sid}", f"claim_reconcile_{sid}")]
             with self._session.begin_nested():
                 stmt = delete(_WC).where(_WC.c.key.in_(str_ids))
                 result = self._session.execute(stmt)

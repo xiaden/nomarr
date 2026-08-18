@@ -368,14 +368,6 @@ def bootstrap_states():
     pass  # File state initialization
 
 
-def bulk_resolve_files_to_navidrome_ids():
-    pass  # Navidrome integration
-
-
-def bulk_resolve_navidrome_tracks_to_files():
-    pass  # Navidrome integration
-
-
 def cancel_scan():
     pass  # Scan control
 
@@ -414,10 +406,6 @@ def detect_missing_files():
 
 def detect_nd_path_prefix():
     pass  # Navidrome path detection
-
-
-def ensure_navidrome_file_link():
-    pass  # Navidrome integration
 
 
 def file_has_tagged_state():
@@ -707,10 +695,6 @@ def start_apply_calibration():
 
 
 # Metadata components
-def get_nd_track():
-    pass  # Navidrome track retrieval
-
-
 def hydrate_song_with_tags():
     pass  # Song hydration
 
@@ -924,10 +908,6 @@ def serve_spa():
 
 def switch_watch_mode():
     pass  # Watch mode switching
-
-
-def sync_navidrome():
-    pass  # Navidrome sync
 
 
 def update_config():

@@ -17,7 +17,6 @@ from nomarr.persistence.database.embedding_stream_repo import EmbeddingStreamRep
 from nomarr.persistence.database.folder_repo import FolderRepository
 from nomarr.persistence.database.library_repo import LibraryRepository
 from nomarr.persistence.database.model_repo import ModelRepo
-from nomarr.persistence.database.navidrome_repo import NavidromeRepo
 from nomarr.persistence.database.output_repo import OutputRepo
 from nomarr.persistence.database.pipeline_repo import PipelineRepository
 from nomarr.persistence.database.scan_repo import ScanRepository
@@ -73,7 +72,6 @@ class Database:
         self._app_repo = AppRepository(self._scoped)
         self._scan_repo = ScanRepository(self._scoped)
         self._library_repo = LibraryRepository(self._scoped)
-        self._navidrome_repo = NavidromeRepo(self._scoped)
         self._song_state_repo = SongStateRepository(self._scoped)
         self._pipeline_repo = PipelineRepository(self._scoped)
         self._song_repo = SongRepository(self._scoped)
@@ -100,7 +98,6 @@ class Database:
             session=self._scoped,
             app_repo=self._app_repo,
             library_repo=self._library_repo,
-            navidrome_repo=self._navidrome_repo,
             song_state_repo=self._song_state_repo,
             pipeline_repo=self._pipeline_repo,
         )

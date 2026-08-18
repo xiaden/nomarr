@@ -1,4 +1,4 @@
-"""Recency-weighted taste-profile computation from Navidrome play history."""
+"""Recency-weighted taste-profile computation from caller-provided play history (Navidrome plugin/request boundary)."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, cast
 
 import numpy as np
 
-from nomarr.components.navidrome.navidrome_graph_comp import get_top_navidrome_plays
 from nomarr.components.tagging.tag_query_comp import get_tag_values_grouped_by_file
 from nomarr.helpers.time_helper import now_ms
 
@@ -25,23 +24,28 @@ def compute_taste_profile(
     top_plays: list[TrackPlayData] | None = None,
     backbone_id: str | None = None,
     half_life_days: float = 30.0,
-    top_n: int = 200,
     pp_max_clusters: int = 10,
     plays: list[TrackPlayData] | None = None,
 ) -> TasteProfile | None:
-    """Compute a recency-weighted taste profile from play data.
+    """Compute a recency-weighted taste profile from caller-provided play data.
 
-    Groups tracks by genre tag, builds per-genre weighted-average centroid
-    clusters, then returns the top ``pp_max_clusters`` clusters sorted by
-    total recency weight.
+    Play history is REQUIRED from the caller (Navidrome plugin / API request
+    boundary); Nomarr never reads it from local persistence. Groups tracks by
+    genre tag, builds per-genre weighted-average centroid clusters, then
+    returns the top ``pp_max_clusters`` clusters sorted by total recency
+    weight.
 
-    Returns a :class:`TasteProfile` dict with ``clusters``, or ``None`` if
-    insufficient play data with embeddings is available.
+    Returns a :class:`TasteProfile` dict with ``clusters``, or ``None`` if no
+    play data was provided or insufficient plays with embeddings are available.
     """
     # Accept plays from either kwarg (prefer top_plays then plays)
     resolved_plays_raw: list[TrackPlayData] | None = top_plays or plays
     if resolved_plays_raw is None:
-        resolved_plays_raw = get_top_navidrome_plays(db, user_id, top_n)
+        logger.info(
+            "[navidrome] No play data provided for user %s — cannot build taste profile",
+            user_id,
+        )
+        return None
 
     if not resolved_plays_raw:
         logger.info("[navidrome] No play data for user %s — cannot build taste profile", user_id)

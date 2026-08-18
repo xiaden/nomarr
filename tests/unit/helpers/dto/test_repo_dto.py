@@ -113,6 +113,7 @@ class TestLibraryScanRow:
             scan_type="full",
             status="completed",
             started_at=1000,
+            heartbeat_at=1500,
             finished_at=2000,
             files_found=100,
             files_processed=100,

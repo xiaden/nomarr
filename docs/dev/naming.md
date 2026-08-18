@@ -110,7 +110,7 @@ process_  # Process file (process_file)
 tag_      # Tag file (tag_file)
 export_   # Export data (export_playlists)
 import_   # Import data (import_library)
-sync_     # Synchronize (sync_with_navidrome)
+sync_     # Synchronize (sync_file_to_library)
 promote_  # Promote vectors (promote_and_rebuild)
 ```
 
@@ -275,7 +275,7 @@ helpers/dto/
 ✅ library/scan_library_full_wf.py
 ✅ calibration/generate_calibration_wf.py
 ✅ processing/process_file_wf.py
-✅ navidrome/sync_navidrome_wf.py
+✅ navidrome/generate_playlists_wf.py
 
 ❌ process.py           # Too generic, missing _wf suffix
 ❌ workflow_process.py   # Wrong order

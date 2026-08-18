@@ -175,6 +175,7 @@ def upgrade() -> None:
         sa.Column("status", sa.String(length=50), nullable=False),
         sa.Column("started_at", sa.BigInteger(), nullable=False),
         sa.Column("finished_at", sa.BigInteger(), nullable=True),
+        sa.Column("heartbeat_at", sa.BigInteger(), nullable=True),
         sa.Column("files_found", sa.Integer(), nullable=False, server_default=sa.text("0")),
         sa.Column("files_processed", sa.Integer(), nullable=False, server_default=sa.text("0")),
         sa.Column("error", sa.Text(), nullable=True),
@@ -189,11 +190,25 @@ def upgrade() -> None:
         sa.Column("id", sa.String(length=255), nullable=False),
         sa.Column("model_type", sa.String(length=100), nullable=False),
         sa.Column("backbone_id", sa.String(length=100), nullable=False),
+        sa.Column("path", sa.String(length=512), nullable=True),
+        sa.Column("backbone", sa.String(length=100), nullable=True),
+        sa.Column("head_type", sa.String(length=100), nullable=True),
+        sa.Column("model_stem", sa.String(length=255), nullable=True),
+        sa.Column("output_count", sa.Integer(), nullable=False, server_default=sa.text("0")),
+        sa.Column("fully_configured", sa.Integer(), nullable=False, server_default=sa.text("0")),
+        sa.Column("is_known", sa.Integer(), nullable=False, server_default=sa.text("0")),
+        sa.Column("source", sa.String(length=100), nullable=False, server_default=sa.text("'discovered'")),
+        sa.Column("head_release_date", sa.String(length=50), nullable=True),
+        sa.Column("embedder_release_date", sa.String(length=50), nullable=True),
+        sa.Column("registered_at", sa.BigInteger(), nullable=True),
         sa.Column("enabled", sa.Integer(), nullable=False, server_default=sa.text("1")),
         sa.Column("created_at", sa.BigInteger(), nullable=False),
         sa.Column("updated_at", sa.BigInteger(), nullable=False),
         sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("path", name="uq_ml_models_path"),
     )
+    op.create_index("ix_ml_models_path", "ml_models", ["path"])
+    op.create_index("ix_ml_models_backbone", "ml_models", ["backbone"])
     op.create_index("ix_ml_models_updated_at", "ml_models", ["updated_at"])
 
     # ml_output_streams
@@ -232,6 +247,9 @@ def upgrade() -> None:
         sa.Column("song_id", sa.Integer(), nullable=False),
         sa.Column("model_id", sa.String(length=255), nullable=False),
         sa.Column("output_data", postgresql.JSONB(), nullable=False),
+        sa.Column("output_index", sa.Integer(), nullable=True),
+        sa.Column("label", sa.String(length=255), nullable=True),
+        sa.Column("fully_labeled", sa.Integer(), nullable=False, server_default=sa.text("0")),
         sa.Column("created_at", sa.BigInteger(), nullable=False),
         sa.ForeignKeyConstraint(["song_id"], ["songs.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["model_id"], ["ml_models.id"], ondelete="CASCADE"),
@@ -354,6 +372,7 @@ def upgrade() -> None:
         sa.Column("value", postgresql.JSONB(), nullable=False),
         sa.Column("claimed_at", sa.BigInteger(), nullable=False),
         sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("key", name="uq_worker_claims_key"),
     )
     op.create_index("ix_worker_claims_worker_id", "worker_claims", ["worker_id"])
     op.create_index("ix_worker_claims_claimed_at", "worker_claims", ["claimed_at"])

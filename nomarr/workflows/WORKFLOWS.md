@@ -59,9 +59,7 @@ workflows/
 │   ├── generate_static_playlist_wf.py     # Generate static playlist
 │   ├── parse_smart_playlist_query_wf.py   # Parse playlist query syntax
 │   ├── preview_smart_playlist_wf.py       # Preview playlist results
-│   ├── preview_tag_stats_wf.py            # Preview tag statistics
-│   ├── push_playlist_wf.py               # Push playlist to Navidrome
-│   └── sync_navidrome_wf.py               # Sync with Navidrome
+│   └── preview_tag_stats_wf.py            # Preview tag statistics
 │
 ├── platform/
 │   ├── idle_promotion_vectors_wf.py       # Idle vector promotion

@@ -202,7 +202,6 @@ class TestComputeTasteProfile:
             [],
             "backbone/1",
             half_life_days=30.0,
-            top_n=200,
         )
         assert result is None
 

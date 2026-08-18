@@ -832,7 +832,7 @@ def test_no_file_domain_naming_in_persistence_surface() -> None:
     the physical audio-file tag-IO layer, the AR-SDR-6 constants seed source, and
     the wire/API-contract `file_id` in interfaces. Physical-path terms
     (`file_path`, scanner/path components, `library_folders`, scan columns,
-    `navidrome_tracks.file_path`) are intentionally NOT scanned here - they are
+    `songs.path`) are intentionally NOT scanned here - they are
     physical-filesystem terminology per AR-SDR-1.
     """
     violations: list[tuple[str, int, str]] = []

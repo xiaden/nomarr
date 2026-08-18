@@ -76,7 +76,7 @@ class TestComputeChromaprint:
         """When Chromaprint library raises, the function should return an empty string."""
         waveform = _sine_wave(duration_seconds=5.0)
         with patch(
-            "chromaprint.Fingerprinter",
+            "nomarr.components.ml.audio.ml_chromaprint_comp.acoustid.fingerprint",
             side_effect=RuntimeError("simulated Chromaprint failure"),
         ):
             result = compute_chromaprint(waveform, SAMPLE_RATE)

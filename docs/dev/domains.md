@@ -233,18 +233,16 @@ Each domain maps to a subfolder under `components/` and owns specific PostgreSQL
 
 **Owns:**
 
-- `navidrome_tracks` — Track mapping between Nomarr and Navidrome
-- `navidrome_playcounts` — Playcount data from Navidrome
+- No persistent tables. Nomarr never stores Navidrome tracks, song↔Navidrome-ID mappings, or playcounts. Navidrome play data arrives through the plugin/request boundary (e.g. the personal-playlists request's `top_plays`) and is used transiently for taste-profile computation.
 
 **Invariants:**
 
-- Track mappings must reference valid library files
-- Playcounts are append-only
+- Play data is never persisted locally; song↔Navidrome-ID resolution is owned by the Navidrome plugin, not the database
 
 **Key components:**
 
 - `subsonic_client_comp.py` — Subsonic API client
-- `subsonic_crawl_comp.py` — Crawl Navidrome library
+- `descriptor_match_comp.py` — Build and resolve portable track descriptors
 - `playlist_builder_comp.py` — Build playlists from tag queries
 - `m3u_comp.py` — M3U file generation
 - `templates_comp.py` — Playlist template management

@@ -210,8 +210,8 @@ class NavidromeService:
         root, resolved from the file records).  When the ``m3u_output_path``
         config key is set, the M3U file is also saved server-side.
 
-        Does **not** push to Navidrome — call
-        :meth:`push_static_playlist` explicitly for that.
+        Does **not** push to Navidrome — the backend push path was removed;
+        playlist delivery is plugin-mediated.
 
         Args:
             file_ids: List of library file document IDs (max 200).

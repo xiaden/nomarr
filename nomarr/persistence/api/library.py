@@ -214,6 +214,9 @@ class LibraryDb:
     def add_library_folder(self, library_id: int, payload: dict[str, Any]) -> int:
         return self._songs.add_library_folder(library_id, payload)
 
+    def replace_library_folder(self, library_id: int, folder_id: int, payload: dict[str, Any]) -> None:
+        return self._songs.replace_library_folder(library_id, folder_id, payload)
+
     def remove_library_folder(self, library_id: int, folder_id: int) -> None:
         return self._songs.remove_library_folder(library_id, folder_id)
 

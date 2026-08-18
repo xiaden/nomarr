@@ -119,8 +119,9 @@ def process_file_workflow(
         raise
     except AudioLoadCrashError as e:
         logger.error(f"[processor] Audio load crashed for {path}: {e}")
-        bulk_delete_songs(db, [path])
-        logger.info(f"[processor] Deleted invalid file: {path}")
+        # A decoder crash may be transient or recoverable.  Preserve the song
+        # row and its associated tags/state/vectors for a later retry; only a
+        # confirmed missing file is cleaned up during path validation above.
         elapsed = round((internal_ms().value - start_all.value) / 1000, 2)
         return ProcessFileResult(
             file_path=path,

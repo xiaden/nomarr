@@ -40,6 +40,7 @@ def _row_to_dto(row: Row) -> LibraryScanRow:
         scan_type=m["scan_type"],
         status=m["status"],
         started_at=m["started_at"],
+        heartbeat_at=m["heartbeat_at"],
         finished_at=m["finished_at"],
         files_found=m["files_found"],
         files_processed=m["files_processed"],

@@ -80,7 +80,6 @@ def _make_app(session: Session) -> AppDb:
         session=session,
         app_repo=MagicMock(),
         library_repo=MagicMock(),
-        navidrome_repo=MagicMock(),
         song_state_repo=MagicMock(),
         pipeline_repo=MagicMock(),
     )

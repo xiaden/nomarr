@@ -13,7 +13,7 @@ from nomarr.components.ml.resources.ml_tier_selection_comp import (
     TierSelection,
 )
 from nomarr.components.ml.resources.ml_vram_coordinator_comp import release_worker_promises
-from nomarr.components.workers.worker_discovery_comp import cleanup_stale_claims
+from nomarr.components.workers.worker_discovery_comp import cleanup_stale_claims, release_claims_for_worker
 from nomarr.helpers.dto.health_dto import (
     ComponentLifecycleHandler,
     ComponentStatus,
@@ -340,12 +340,31 @@ class WorkerSystemService(WorkerDeathOpsMixin, GpuAdmissionOpsMixin, ComponentLi
             worker.join(timeout=2.0)
             if worker.is_alive():
                 logger.warning(
-                    "[WorkerSystemService] Worker %s (pid=%s) did not stop gracefully during scale-down",
+                    "[WorkerSystemService] Worker %s (pid=%s) did not stop gracefully during scale-down, terminating",
                     worker.worker_id,
                     worker.pid,
                 )
+                worker.terminate()
+                worker.join(timeout=1.0)
+                if worker.is_alive():
+                    logger.error(
+                        "[WorkerSystemService] Worker %s (pid=%s) still alive after terminate(), force killing",
+                        worker.worker_id,
+                        worker.pid,
+                    )
+                    worker.kill()
+                    worker.join(timeout=0.5)
+
+        stopped_workers = [worker for worker in workers_to_remove if not worker.is_alive()]
+        live_workers = [worker for worker in workers_to_remove if worker.is_alive()]
+        for worker in live_workers:
+            logger.error(
+                "[WorkerSystemService] Worker %s (pid=%s) remains alive after forced scale-down; keeping it tracked",
+                worker.worker_id,
+                worker.pid,
+            )
         if self.health_monitor:
-            for worker in workers_to_remove:
+            for worker in stopped_workers:
                 try:
                     self.health_monitor.unregister_component(worker.worker_id)
                 except Exception:
@@ -354,9 +373,22 @@ class WorkerSystemService(WorkerDeathOpsMixin, GpuAdmissionOpsMixin, ComponentLi
                         worker.worker_id,
                         exc_info=True,
                     )
-        for worker in workers_to_remove:
+        for worker in stopped_workers:
+            try:
+                release_claims_for_worker(self.db, worker.worker_id)
+                release_worker_promises(self.db, worker.worker_id)
+            except Exception:
+                logger.warning(
+                    "[WorkerSystemService] Failed to release resources for scaled-down worker %s",
+                    worker.worker_id,
+                    exc_info=True,
+                )
             self._workers.remove(worker)
-        logger.info("[WorkerSystemService] Removed %d worker(s), remaining=%d", count, len(self._workers))
+        logger.info(
+            "[WorkerSystemService] Removed %d worker(s), remaining=%d",
+            len(stopped_workers),
+            len(self._workers),
+        )
 
     def get_worker_count(self) -> int:
         """Return the current number of workers in the pool."""

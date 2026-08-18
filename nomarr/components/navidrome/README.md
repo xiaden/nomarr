@@ -1,11 +1,11 @@
 # Navidrome
 
-Navidrome/Subsonic integration — API communication, play data crawling, playlist generation, and taste profiling.
+Navidrome/Subsonic integration — API communication, playlist generation, and taste profiling.
 
 ## Responsibilities
 
 - Communicate with Navidrome via the Subsonic REST API
-- Crawl play history (play counts, last-played timestamps) for all songs
+- Receive play history via the plugin/request boundary (never persisted) for taste profiling
 - Build personalized playlists using ANN vector search with taste centroids
 - Compute recency-weighted taste profiles from user play data
 - Generate M3U playlist files with relative paths
@@ -17,7 +17,6 @@ Navidrome/Subsonic integration — API communication, play data crawling, playli
  | Module | Purpose |
  | -------- | ---------- |
  | `subsonic_client_comp` | `SubsonicClient` — synchronous HTTP client with token auth, covers ping, album listing, playlist CRUD, scan triggering |
- | `subsonic_crawl_comp` | Walk all Navidrome albums via paginated API, collect song IDs, paths, and play data |
  | `taste_profile_comp` | Compute recency-weighted taste centroid from top-N played tracks using embedding vectors |
  | `playlist_builder_comp` | Build personalized playlists — Familiar, Discovery, Hidden Gems, Universal, and per-genre via ANN search |
  | `tag_query_comp` | Tag-based playlist queries — find files by tag conditions, resolve short names to versioned keys, fetch preview tracks |

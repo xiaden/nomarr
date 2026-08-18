@@ -211,7 +211,7 @@ async def web_navidrome_push_playlist(
 async def web_navidrome_sync_songs(
     _navidrome_service: Annotated["NavidromeService", Depends(get_navidrome_service)],
 ) -> None:
-    """Trigger a full Navidrome song sync to graph collections."""
+    """Removed: backend Navidrome song-map sync no longer exists. Returns 410 Gone. Use plugin-backed descriptor flows."""
     raise HTTPException(
         status_code=410,
         detail=(

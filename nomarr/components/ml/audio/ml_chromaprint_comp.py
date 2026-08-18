@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 
-import chromaprint
+import acoustid
 import numpy as np
 
 logger = logging.getLogger(__name__)
@@ -48,14 +48,12 @@ def compute_chromaprint(waveform: np.ndarray, sample_rate: int) -> str:
         scaled = np.clip(audio_chunk * 32767.0, -32768, 32767).astype(np.int16)
         pcm_bytes: bytes = scaled.tobytes()
 
-        # Generate fingerprint using the Chromaprint library.
-        fingerprinter = chromaprint.Fingerprinter()
-        fingerprinter.start(sample_rate, 1)
-        fingerprinter.feed(pcm_bytes)
-        fingerprint_bytes: bytes = fingerprinter.finish()
+        # Generate the fingerprint through pyacoustid's supported wrapper API.
+        # The separately distributed ``chromaprint`` package does not expose
+        # the Fingerprinter class used by older versions of this component.
+        fingerprint = acoustid.fingerprint(sample_rate, 1, iter((pcm_bytes,)))
+        return fingerprint.decode("utf-8") if isinstance(fingerprint, bytes) else str(fingerprint)
 
-        return fingerprint_bytes.decode("utf-8")
-
-    except (ValueError, RuntimeError, chromaprint.FingerprintError):
+    except (ValueError, RuntimeError, acoustid.AcoustidError):
         logger.exception("[chromaprint] Failed to compute chromaprint")
         return ""

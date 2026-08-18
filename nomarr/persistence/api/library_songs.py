@@ -289,6 +289,10 @@ class LibrarySongsDb:
         """Create a folder and link it to a library."""
         return self._folder_repo.add_library_folder(library_id, payload)
 
+    def replace_library_folder(self, library_id: int, folder_id: int, payload: dict[str, Any]) -> None:
+        """Atomically replace one folder linked to a library."""
+        self._folder_repo.replace_library_folder(library_id, folder_id, payload)
+
     def remove_library_folder(self, library_id: int, folder_id: int) -> None:
         """Remove a folder link from a library and delete the folder."""
         self._folder_repo.remove_library_folder(library_id, folder_id)

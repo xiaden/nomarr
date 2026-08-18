@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
-from sqlalchemy import Table, delete, select
+from sqlalchemy import Table, delete, select, update
 
 from nomarr.helpers.dto.repo_dto import LibraryFolderRow
 from nomarr.persistence.models.library_folder import LibraryFolder
@@ -61,6 +61,15 @@ class FolderRepository:
                 row = insert_one(_T, data, session=self._session)
             self._session.commit()
             return int(row._mapping["id"])
+
+    def replace_library_folder(self, library_id: int, folder_id: int, payload: dict[str, Any]) -> None:
+        """Atomically update one folder row scoped to a library."""
+        with map_persistence_exceptions():
+            with self._session.begin_nested():
+                self._session.execute(
+                    update(_T).where(_T.c.id == folder_id, _T.c.library_id == library_id).values(payload)
+                )
+            self._session.commit()
 
     def get_folder(self, folder_id: int) -> LibraryFolderRow | None:
         """Fetch a single folder by primary key."""

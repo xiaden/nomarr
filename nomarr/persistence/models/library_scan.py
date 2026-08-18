@@ -16,6 +16,7 @@ class LibraryScan(Base):
     scan_type: Mapped[str] = mapped_column(String(50), nullable=False)
     status: Mapped[str] = mapped_column(String(50), nullable=False)
     started_at: Mapped[int] = mapped_column(BigInteger)
+    heartbeat_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     finished_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     files_found: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
     files_processed: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))

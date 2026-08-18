@@ -120,7 +120,7 @@ similar = db.ml.search_vectors("discogs_effnet", query_vector, limit=10)
 | Namespace | Role | Notes |
 | --- | --- | --- |
 | `db.library` | Library, song, tag, and scan persistence; thin forwarder over `db.library.songs`, `db.library.tags`, `db.library.scans`, `db.library.regions` | Preferred facade for library-domain callers |
-| `db.app` | Application state, song states, locks/claims, sessions, health, meta/migrations, and Navidrome-related persistence | Preferred facade for operational/app-state callers |
+| `db.app` | Application state, song states, locks/claims, sessions, health, meta/migrations | Preferred facade for operational/app-state callers |
 | `db.ml` | ML models, streams, vectors, and calibration persistence | Preferred facade for ML-domain callers |
 
 **`LibraryDb` sub-facades (via `db.library.*`):**
