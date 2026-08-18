@@ -127,18 +127,37 @@ class FolderRepository:
             self._session.commit()
 
     def replace_library_folders(self, library_id: int, payloads: list[dict[str, Any]]) -> None:
-        """Delete all folders for a library and re-insert from *payloads*.
+        """Reconcile a library's folders with *payloads*, preserving row ids.
 
-        FK CASCADE removes any child folders and disassociated files.
+        Songs reference folders by id, so replacing every row would trigger
+        ``ON DELETE SET NULL`` for every song in the library.  Match folders by
+        their stable path, update those rows in place, insert new paths, and
+        remove only paths that are no longer present.
         """
         with map_persistence_exceptions():
             with self._session.begin_nested():
-                # Delete existing folders for this library
-                self._session.execute(delete(_T).where(_T.c.library_id == library_id))
-                # Insert new folders
-                if payloads:
-                    rows_data = [{**p, "library_id": library_id} for p in payloads]
-                    self._session.execute(_T.insert().values(rows_data))
+                existing_rows = self._session.execute(
+                    select(_T.c.id, _T.c.path).where(_T.c.library_id == library_id)
+                ).all()
+                existing_ids_by_path = {row.path: row.id for row in existing_rows}
+                retained_ids: set[int] = set()
+
+                for payload in payloads:
+                    path = payload["path"]
+                    folder_id = existing_ids_by_path.get(path)
+                    if folder_id is None:
+                        row = self._session.execute(
+                            _T.insert().values({**payload, "library_id": library_id}).returning(_T.c.id)
+                        ).one()
+                        folder_id = int(row.id)
+                    else:
+                        values = {key: value for key, value in payload.items() if key not in {"id", "library_id"}}
+                        self._session.execute(update(_T).where(_T.c.id == folder_id).values(values))
+                    retained_ids.add(folder_id)
+
+                stale = [folder_id for folder_id in existing_ids_by_path.values() if folder_id not in retained_ids]
+                if stale:
+                    self._session.execute(delete(_T).where(_T.c.id.in_(stale), _T.c.library_id == library_id))
             self._session.commit()
 
     # ── maintenance ─────────────────────────────────────────────
