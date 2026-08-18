@@ -252,11 +252,11 @@ def update_scan_progress(
     if status is not None:
         payload["status"] = status
     if progress is not None:
-        payload["progress"] = progress
+        payload["files_processed"] = progress
     if total is not None:
-        payload["total"] = total
+        payload["files_found"] = total
     if scan_error is not None:
-        payload["scan_error"] = scan_error
+        payload["error"] = scan_error
     if payload:
         db.library.update_scan(library_id, payload)
 

@@ -361,7 +361,12 @@ class TestScanStateHelpers:
 
         mock_db.library.update_scan.assert_called_once_with(
             1,
-            {"heartbeat_at": 123, "progress": 5, "total": 12, "scan_error": "boom"},
+            {
+                "heartbeat_at": 123,
+                "files_processed": 5,
+                "files_found": 12,
+                "error": "boom",
+            },
         )
 
     @pytest.mark.unit

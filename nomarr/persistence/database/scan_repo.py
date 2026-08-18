@@ -77,10 +77,20 @@ class ScanRepository:
             return _row_to_dto(row) if row else None
 
     def update_scan(self, scan_id: int, fields: dict[str, Any]) -> None:
-        """Update arbitrary fields on a scan record."""
+        """Update fields on a scan record, ignoring non-schema aliases."""
+        normalized = {
+            "progress": "files_processed",
+            "total": "files_found",
+            "scan_error": "error",
+        }
+        filtered = {
+            normalized.get(key, key): value
+            for key, value in fields.items()
+            if normalized.get(key, key) in _SCAN_COLUMNS
+        }
         with map_persistence_exceptions():
             with self._session.begin_nested():
-                update_by_field(_T, "id", scan_id, fields, session=self._session)
+                update_by_field(_T, "id", scan_id, filtered, session=self._session)
             self._session.commit()
 
     def delete_scan_record(self, scan_id: int) -> None:

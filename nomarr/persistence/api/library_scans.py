@@ -49,7 +49,14 @@ class LibraryScansDb:
         if scan:
             self._scan_repo.update_scan(scan["id"], fields)
         else:
-            self._scan_repo.create_scan({**fields, "library_id": library_id})
+            self._scan_repo.create_scan(
+                {
+                    "library_id": library_id,
+                    "scan_type": "unknown",
+                    "status": fields.get("status", "in_progress"),
+                    **fields,
+                }
+            )
 
     def remove_scan(self, library_id: int) -> None:
         """Delete the scan record for a library if one exists."""
