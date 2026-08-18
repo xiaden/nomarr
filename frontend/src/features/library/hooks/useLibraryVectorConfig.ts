@@ -13,6 +13,8 @@ export function useLibraryVectorConfig(libraryId: string | null) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingUpdateRef = useRef<VectorConfigUpdate | null>(null);
+  const saveVersionRef = useRef(0);
 
   const loadConfig = useCallback(async () => {
     if (!libraryId) return;
@@ -36,6 +38,9 @@ export function useLibraryVectorConfig(libraryId: string | null) {
     (update: VectorConfigUpdate) => {
       if (!libraryId) return;
 
+      const saveVersion = ++saveVersionRef.current;
+      pendingUpdateRef.current = { ...pendingUpdateRef.current, ...update };
+
       // Update local state immediately for responsive UI
       setConfig((prev) =>
         prev
@@ -53,14 +58,24 @@ export function useLibraryVectorConfig(libraryId: string | null) {
       // Debounce API call
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       saveTimerRef.current = setTimeout(async () => {
+        const pendingUpdate = pendingUpdateRef.current;
+        pendingUpdateRef.current = null;
+        if (!pendingUpdate) return;
+
         try {
           setSaving(true);
-          const result = await updateLibraryVectorConfig(libraryId, update);
-          setConfig(result);
+          const result = await updateLibraryVectorConfig(libraryId, pendingUpdate);
+          if (saveVersionRef.current === saveVersion) {
+            setConfig(result);
+          }
         } catch (err) {
-          setError(err instanceof Error ? err.message : "Failed to save vector config");
+          if (saveVersionRef.current === saveVersion) {
+            setError(err instanceof Error ? err.message : "Failed to save vector config");
+          }
         } finally {
-          setSaving(false);
+          if (saveVersionRef.current === saveVersion) {
+            setSaving(false);
+          }
         }
       }, 400);
     },
@@ -71,6 +86,8 @@ export function useLibraryVectorConfig(libraryId: string | null) {
   useEffect(() => {
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      saveVersionRef.current += 1;
+      pendingUpdateRef.current = null;
     };
   }, []);
 
