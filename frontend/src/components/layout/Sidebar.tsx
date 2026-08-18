@@ -23,6 +23,7 @@ const navItems: NavItem[] = [
   { path: "/insights", label: "Insights" },
   { path: "/calibration", label: "Calibration" },
   { path: "/vector-search", label: "Vector Search" },
+  { path: "/admin", label: "Admin" },
   { path: "/navidrome", label: "Navidrome" },
   { path: "/playlist-import", label: "Playlist Import" },
   { path: "/tag-curation", label: "Tag Curation" },
