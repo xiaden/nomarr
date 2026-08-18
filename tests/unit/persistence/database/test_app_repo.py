@@ -163,6 +163,18 @@ class TestAppRepository:
         assert result["status"] == "healthy"
         assert result["last_seen"] == 2000
 
+    def test_upsert_health_creates_and_updates_row_without_unique_constraint(self, pg_session) -> None:
+        """upsert_health should work when worker_id has no unique constraint."""
+        repo = AppRepository(pg_session)
+
+        repo.upsert_health("worker1", {"status": "healthy", "last_seen": 1000})
+        repo.upsert_health("worker1", {"status": "unhealthy", "last_seen": 2000})
+
+        result = repo.get_health("worker1")
+        assert result is not None
+        assert result["status"] == "unhealthy"
+        assert result["last_seen"] == 2000
+
     # ── Meta ────────────────────────────────────────────────────
 
     def test_get_meta(self, pg_session) -> None:

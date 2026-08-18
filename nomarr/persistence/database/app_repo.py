@@ -183,7 +183,13 @@ class AppRepository:
         with map_persistence_exceptions():
             with self._session.begin_nested():
                 data = {**fields, "worker_id": component_id}
-                upsert_by_field(_H, "worker_id", component_id, data, session=self._session)
+                existing = self._session.execute(
+                    select(_H.c.worker_id).where(_H.c.worker_id == component_id)
+                ).first()
+                if existing:
+                    update_by_field(_H, "worker_id", component_id, fields, session=self._session)
+                else:
+                    insert_one(_H, data, session=self._session)
             self._session.commit()
 
     def update_health(self, component_id: str, fields: dict[str, Any]) -> None:
@@ -203,13 +209,7 @@ class AppRepository:
                 if existing:
                     update_by_field(_H, "worker_id", component_id, data, session=self._session)
                 else:
-                    upsert_by_field(
-                        _H,
-                        "worker_id",
-                        component_id,
-                        {**data, "worker_id": component_id},
-                        session=self._session,
-                    )
+                    insert_one(_H, {**data, "worker_id": component_id}, session=self._session)
             self._session.commit()
 
     # ── Meta ────────────────────────────────────────────────────
