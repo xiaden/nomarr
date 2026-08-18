@@ -31,14 +31,17 @@ export function SongListPanel({
   tagValue,
   refetchTagValues,
 }: SongListPanelProps): React.JSX.Element {
-  const { songs, total, loading, page, setPage } = useTagSongs({
+  const { songs, total, loading, page, setPage, refetch } = useTagSongs({
     tagId,
     initialPageSize: PAGE_SIZE,
   });
   const { selectedIds, toggle, deselectAll, count: selectedCount } =
     useSelection();
   const { split, loading: actionLoading } = useCurationActions({
-    onSuccess: refetchTagValues,
+    onSuccess: () => {
+      refetchTagValues();
+      refetch();
+    },
   });
   const [newTagValue, setNewTagValue] = useState("");
 
