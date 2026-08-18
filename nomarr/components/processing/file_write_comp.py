@@ -168,13 +168,14 @@ def save_mood_tags_batch(
 def release_file_claim(
     db: Database,
     file_key: str,
+    worker_id: str,
 ) -> None:
     """Release a write claim without updating projection state.
 
     Swallows exceptions so callers in error paths don't need try/except.
     """
     try:
-        release_claim(db, file_key)
+        release_claim(db, file_key, worker_id)
     except (ValueError, RuntimeError) as exc:
         logger.warning(
             "[file_write_comp] Failed to release claim for %s: %s",

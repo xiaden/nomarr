@@ -135,7 +135,7 @@ def _execute_deferred_writes(db: Database, writes: DeferredFileWrites, worker_id
             logger.warning("[%s] Failed to set errored state for %s", worker_id, song_id, exc_info=True)
         logger.exception("[%s] Async write failed for %s — file will be retried", worker_id, writes.path)
     finally:
-        release_claim(db, song_id)
+        release_claim(db, song_id, worker_id)
 
 
 class DiscoveryWorker(multiprocessing.Process):
@@ -348,7 +348,7 @@ class DiscoveryWorker(multiprocessing.Process):
                 resource_status.vram_used_mb,
                 resource_status.ram_used_mb,
             )
-            release_claim(db, song_id)
+            release_claim(db, song_id, self.worker_id)
             self._current_status = "recovering"
             return internal_s().value + 30.0
         if not resource_status.vram_ok and resource_status.ram_ok:
@@ -378,7 +378,7 @@ class DiscoveryWorker(multiprocessing.Process):
         file_doc = get_song_by_id(db, song_id)
         if not file_doc:
             logger.warning("[%s] Claimed file %s not found in database", self.worker_id, song_id)
-            release_claim(db, song_id)
+            release_claim(db, song_id, self.worker_id)
             return pending_write, False
         file_path = file_doc["path"]
         try:
@@ -399,13 +399,13 @@ class DiscoveryWorker(multiprocessing.Process):
             logger.warning(
                 "[%s] Decoder crash while processing %s; leaving unprocessed for retry", self.worker_id, file_path
             )
-            release_claim(db, song_id)
+            release_claim(db, song_id, self.worker_id)
             return None, False
         if result.heads_processed == 0 and result.tags_written == 0:
             logger.info("[%s] Skipped %s (all heads skipped - likely too short)", self.worker_id, file_path)
             transition_song_state(db, [song_id], STATE_NOT_PROCESSED, STATE_PROCESSED)
             update_last_tagged_at(db, song_id)
-            release_claim(db, song_id)
+            release_claim(db, song_id, self.worker_id)
             return None, True
         if result.deferred_writes is not None:
             pending_write = write_executor.submit(_execute_deferred_writes, db, result.deferred_writes, self.worker_id)
@@ -420,7 +420,7 @@ class DiscoveryWorker(multiprocessing.Process):
                 timing,
             )
             return pending_write, True
-        release_claim(db, song_id)
+        release_claim(db, song_id, self.worker_id)
         return pending_write, True
 
     def _handle_process_error(self, db: Database, song_id: int, error: Exception, consecutive_errors: int) -> int:
@@ -433,7 +433,7 @@ class DiscoveryWorker(multiprocessing.Process):
             transition_song_state(db, [song_id], STATE_NOT_ERRORED, STATE_ERRORED)
         except Exception:
             logger.warning("[%s] Failed to set errored state for %s", self.worker_id, song_id, exc_info=True)
-        release_claim(db, song_id)
+        release_claim(db, song_id, self.worker_id)
         if next_errors >= MAX_CONSECUTIVE_ERRORS:
             logger.exception("[%s] Too many consecutive errors (%d), shutting down", self.worker_id, next_errors)
         return next_errors
@@ -504,7 +504,7 @@ class DiscoveryWorker(multiprocessing.Process):
                             self.worker_id,
                             song_id,
                         )
-                        release_claim(db, int_song_id)
+                        release_claim(db, int_song_id, self.worker_id)
                         consecutive_errors += 1
                         if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
                             logger.error(

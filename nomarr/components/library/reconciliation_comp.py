@@ -60,10 +60,8 @@ def claim_files_for_reconciliation(
             break
 
         file_id = str(candidate["id"])
-        file_key = str(candidate["id"])
-        claim_key = f"claim_reconcile_{file_key}"
+        str(candidate["id"])
         payload = {
-            "key": claim_key,
             "file_id": file_id,
             "worker_id": worker_id,
             "claimed_at": now,
@@ -76,7 +74,7 @@ def claim_files_for_reconciliation(
     return claimed
 
 
-def set_file_written(db: Database, file_key: str) -> None:
+def set_file_written(db: Database, file_key: str, worker_id: str) -> None:
     """Advance processing state transitions after a successful tag write.
 
     PostgreSQL uses integer IDs; file_key is the string representation of the ID.
@@ -84,16 +82,16 @@ def set_file_written(db: Database, file_key: str) -> None:
     file_id = int(file_key)
     transition_song_state(db, [file_id], STATE_NOT_WRITTEN, STATE_WRITTEN)
     transition_song_state(db, [file_id], STATE_TAGS_NOT_FRESH, STATE_TAGS_CURRENT)
-    db.app.release_claim(file_id)
+    db.app.release_claim(worker_id, file_id, "reconcile")
 
 
-def release_claim(db: Database, file_key: str) -> None:
+def release_claim(db: Database, file_key: str, worker_id: str) -> None:
     """Release a reconciliation claim without changing projection state.
 
     PostgreSQL uses integer IDs; file_key is the string representation of the ID.
     """
     file_id = int(file_key)
-    db.app.release_claim(file_id)
+    db.app.release_claim(worker_id, file_id, "reconcile")
 
 
 def count_files_needing_reconciliation(db: Database, library_id: int) -> int:

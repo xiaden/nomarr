@@ -118,6 +118,7 @@ class TaggingWriteMixin:
                 result = write_file_tags_workflow(
                     db=self.db,
                     file_key=file_key,
+                    worker_id=worker_id,
                     target_mode=target_mode,
                     has_calibration=has_calibration,
                     namespace=namespace,
@@ -128,7 +129,7 @@ class TaggingWriteMixin:
                     logger.debug(
                         f"[reconcile] Skipping {file_key}: modified externally, will retry after rescan",
                     )
-                    release_claim(self.db, file_key)
+                    release_claim(self.db, file_key, worker_id)
                 else:
                     failed += 1
                     logger.warning(f"[reconcile] Failed to write tags for {file_key}: {result.error}")
@@ -136,7 +137,7 @@ class TaggingWriteMixin:
                 failed += 1
                 logger.exception(f"[reconcile] Error processing {file_key}: {e}")
                 try:
-                    release_claim(self.db, file_key)
+                    release_claim(self.db, file_key, worker_id)
                 except Exception as release_err:
                     logger.warning(f"[reconcile] Failed to release claim for {file_key}: {release_err}", exc_info=True)
 

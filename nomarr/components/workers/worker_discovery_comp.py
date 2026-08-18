@@ -66,20 +66,14 @@ def claim_file(db: Database, file_id: str, worker_id: str) -> bool:
         True if claim successful, False if already claimed
 
     """
-    payload = {
-        "key": _claim_key(file_id),
-        "file_id": file_id,
-        "worker_id": worker_id,
-        "claimed_at": now_ms().value,
-    }
     try:
-        db.app.add_claim(payload)
+        db.app.claim_song(int(file_id), worker_id, claimed_at=now_ms().value)
     except DuplicateEntityError:
         return False
     return True
 
 
-def release_claim(db: Database, file_id: int) -> None:
+def release_claim(db: Database, file_id: int, worker_id: str) -> None:
     """Release claim on file (after processing or error).
 
     Args:
@@ -87,7 +81,7 @@ def release_claim(db: Database, file_id: int) -> None:
         file_id: Song id
 
     """
-    db.app.remove_claim(file_id)
+    db.app.remove_claim(worker_id, file_id, "process")
 
 
 def try_insert_or_steal_claim(
@@ -100,8 +94,8 @@ def try_insert_or_steal_claim(
 
     Args:
         db: Database handle.
-        payload: Full claim document payload including ``key``, ``file_id``,
-            ``worker_id``, and ``claimed_at``.
+        payload: Claim metadata including ``file_id``, ``worker_id``, and
+            ``claimed_at``.
         now: Current timestamp in milliseconds.
         lease_ms: Claim lease duration in ms; existing claims older than this
             threshold are considered expired and may be stolen.
@@ -111,8 +105,12 @@ def try_insert_or_steal_claim(
         False if an active un-expired claim already exists.
 
     """
+    file_id = int(payload["file_id"])
+    worker_id = str(payload["worker_id"])
+    claim_type = payload.get("claim_type")
+    claimed_at = int(payload.get("claimed_at", 0))
     try:
-        db.app.add_claim(payload)
+        db.app.claim_song(file_id, worker_id, claim_type=claim_type, claimed_at=claimed_at)
     except DuplicateEntityError:
         file_id = int(payload["file_id"])
         all_claims = _get_all_claims(db)
@@ -122,7 +120,7 @@ def try_insert_or_steal_claim(
         )
         if existing_claim is None:
             try:
-                db.app.add_claim(payload)
+                db.app.claim_song(file_id, worker_id, claim_type=claim_type, claimed_at=claimed_at)
             except DuplicateEntityError:
                 return False
             return True
@@ -131,9 +129,9 @@ def try_insert_or_steal_claim(
         if claimed_at > now - lease_ms:
             return False
 
-        db.app.remove_claim(file_id)
+        db.app.remove_claim(worker_id, int(file_id), str(claim_type or "process"))
         try:
-            db.app.add_claim(payload)
+            db.app.claim_song(file_id, worker_id, claim_type=claim_type, claimed_at=claimed_at)
         except DuplicateEntityError:
             return False
         return True

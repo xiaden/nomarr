@@ -150,11 +150,28 @@ class AppDb:
     def acquire_lock(self, resource_id: str, payload: dict) -> bool:
         return self._app_repo.acquire_lock(resource_id, payload)
 
-    def add_claim(self, payload: dict) -> int:
+    def claim_song(
+        self,
+        song_id: int,
+        worker_id: str,
+        *,
+        claim_type: str | None = None,
+        claimed_at: int = 0,
+    ) -> int:
+        """Claim a song for a worker without exposing storage payloads."""
+        key = f"claim_{claim_type}_{song_id}" if claim_type else f"claim_{song_id}"
+        payload = {
+            "key": key,
+            "worker_id": worker_id,
+            "file_id": song_id,
+            "claimed_at": claimed_at,
+        }
+        if claim_type is not None:
+            payload["claim_type"] = claim_type
         return self._app_repo.insert_worker_claim(payload)
 
-    def remove_claim(self, song_id: int) -> None:
-        self._app_repo.release_claim(song_id)
+    def remove_claim(self, worker_id: str, song_id: int, claim_type: str = "process") -> None:
+        self._app_repo.release_claim(worker_id, song_id, claim_type)
 
     def remove_claims(
         self,
@@ -197,9 +214,9 @@ class AppDb:
     def upsert_health(self, component_id: str, fields: dict) -> None:
         self._app_repo.upsert_health(component_id, fields)
 
-    def release_claim(self, song_id: int) -> None:
-        """Release the worker claim for one song (alias for remove_claim)."""
-        self.remove_claim(song_id)
+    def release_claim(self, worker_id: str, song_id: int, claim_type: str = "process") -> None:
+        """Release one worker's claim for a song."""
+        self.remove_claim(worker_id, song_id, claim_type)
 
     def upsert_migration(self, name: str, fields: dict) -> None:
         self._app_repo.upsert_migration(name, fields)

@@ -274,11 +274,7 @@ class AppRepository:
                     "key": payload["key"],
                     "value": {
                         **dict(payload.get("value", {})),
-                        **{
-                            key: payload[key]
-                            for key in ("file_id", "claim_type")
-                            if key in payload
-                        },
+                        **{key: payload[key] for key in ("file_id", "claim_type") if key in payload},
                     },
                     "claimed_at": payload.get("claimed_at", 0),
                 }
@@ -299,12 +295,15 @@ class AppRepository:
                 insert_one(_WC, data, session=self._session)
             self._session.commit()
 
-    def release_claim(self, song_id: int) -> None:
-        """Release a song claim by its deterministic claim key."""
+    def release_claim(self, worker_id: str, song_id: int, claim_type: str = "process") -> None:
+        """Release one worker's claim for a song."""
         with map_persistence_exceptions():
             with self._session.begin_nested():
-                keys = (f"claim_{song_id}", f"claim_reconcile_{song_id}")
-                stmt = delete(_WC).where(_WC.c.key.in_(keys))
+                prefix = "claim_reconcile_" if claim_type == "reconcile" else "claim_"
+                stmt = delete(_WC).where(
+                    _WC.c.worker_id == worker_id,
+                    _WC.c.key == f"{prefix}{song_id}",
+                )
                 self._session.execute(stmt)
             self._session.commit()
 

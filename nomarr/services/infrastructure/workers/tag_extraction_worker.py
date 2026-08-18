@@ -160,7 +160,7 @@ class TagExtractionWorker(threading.Thread):
                     break
             finally:
                 try:
-                    release_claim(self._db, song_id)
+                    release_claim(self._db, song_id, self._worker_id)
                 except Exception:
                     logger.exception("[%s] Failed to release claim for %s", self._worker_id, song_id)
 

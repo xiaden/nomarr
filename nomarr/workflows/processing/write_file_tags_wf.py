@@ -106,6 +106,7 @@ def _resolve_library_path(
 def write_file_tags_workflow(
     db: Database,
     file_key: str,
+    worker_id: str,
     target_mode: str,
     has_calibration: bool,
     namespace: str = "nom",
@@ -209,7 +210,7 @@ def write_file_tags_workflow(
                     success=False,
                     error="file_modified_externally",
                 )
-            release_file_claim(db, file_key)
+            release_file_claim(db, file_key, worker_id)
             return WriteResult(
                 file_key=file_key,
                 tags_written=0,
@@ -223,7 +224,7 @@ def write_file_tags_workflow(
             update_song_modified_time(db, file_id, result.new_mtime_ms)
 
         # Update file projection state in database
-        set_file_written(db, file_key)
+        set_file_written(db, file_key, worker_id)
 
         logger.debug(
             f"[write_file_tags] Wrote {len(tags_to_write)} tags to {library_path.relative} "
@@ -240,7 +241,7 @@ def write_file_tags_workflow(
     except Exception as e:
         logger.exception(f"[write_file_tags] Failed to write tags for {file_key}")
         # Release claim on error (swallows exceptions internally)
-        release_file_claim(db, file_key)
+        release_file_claim(db, file_key, worker_id)
         return WriteResult(
             file_key=file_key,
             tags_written=0,
