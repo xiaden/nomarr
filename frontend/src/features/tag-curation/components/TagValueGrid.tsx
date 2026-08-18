@@ -40,22 +40,34 @@ export function TagValueGrid({ name, prefix }: TagValueGridProps): React.JSX.Ele
   } = useCurationActions({ onSuccess: refetch });
 
   const [expandedTagId, setExpandedTagId] = useState<string | null>(null);
+  const [expandedTags, setExpandedTags] = useState<Map<string, TagValueItem>>(
+    () => new Map()
+  );
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [selectedTagsById, setSelectedTagsById] = useState<Map<string, TagValueItem>>(
+    () => new Map()
+  );
   const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
 
   const paginationModel = { page, pageSize };
 
-  const expandedTag = expandedTagId
-    ? (rows.find((r) => r.id === expandedTagId) ?? null)
-    : null;
-
-  const selectedTags = rows.filter((r) => selectedIds.includes(r.id));
+  // Keep the selected row data independently of the current server-side page.
+  // Otherwise changing pages drops the source data needed by the merge dialog.
+  const selectedTags = selectedIds
+    .map((id) => selectedTagsById.get(id))
+    .filter((tag): tag is TagValueItem => tag !== undefined);
   const canMerge =
     selectedTags.length >= 2 &&
     selectedTags.every((t) => t.name === selectedTags[0]?.name);
 
-  const handleToggleExpand = useCallback((tagId: string) => {
-    setExpandedTagId((prev) => (prev === tagId ? null : tagId));
+  const handleToggleExpand = useCallback((tag: TagValueItem) => {
+    setExpandedTagId((prev) => (prev === tag.id ? null : tag.id));
+    setExpandedTags((prev) => {
+      if (prev.has(tag.id)) return prev;
+      const next = new Map(prev);
+      next.set(tag.id, tag);
+      return next;
+    });
   }, []);
 
   const processRowUpdate = useCallback(
@@ -85,7 +97,7 @@ export function TagValueGrid({ name, prefix }: TagValueGridProps): React.JSX.Ele
               size="small"
               onClick={(e) => {
                 e.stopPropagation();
-                handleToggleExpand(row.id);
+                handleToggleExpand(row);
               }}
               aria-label={isExpanded ? "Collapse songs" : "Expand songs"}
             >
@@ -150,13 +162,26 @@ export function TagValueGrid({ name, prefix }: TagValueGridProps): React.JSX.Ele
           setPage(model.page);
           setPageSize(model.pageSize);
         }}
-        pageSizeOptions={[25, 50, 100]}
-        checkboxSelection
-        disableRowSelectionOnClick
-        rowSelectionModel={{ type: 'include', ids: new Set(selectedIds) } as GridRowSelectionModel}
-        onRowSelectionModelChange={(model: GridRowSelectionModel) => {
-          setSelectedIds([...model.ids].map(String));
-        }}
+         pageSizeOptions={[25, 50, 100]}
+         checkboxSelection
+         keepNonExistentRowsSelected
+         disableRowSelectionOnClick
+         rowSelectionModel={{ type: 'include', ids: new Set(selectedIds) } as GridRowSelectionModel}
+         onRowSelectionModelChange={(model: GridRowSelectionModel) => {
+           const nextSelectedIds = [...model.ids].map(String);
+           setSelectedIds(nextSelectedIds);
+           setSelectedTagsById((previous) => {
+             const next = new Map(previous);
+             for (const row of rows) {
+               if (nextSelectedIds.includes(row.id)) {
+                 next.set(row.id, row);
+               } else {
+                 next.delete(row.id);
+               }
+             }
+             return next;
+           });
+         }}
         isRowSelectable={(params) => {
           const row = params.row as TagValueItem;
           return !row.name.startsWith("nom:");
@@ -184,13 +209,18 @@ export function TagValueGrid({ name, prefix }: TagValueGridProps): React.JSX.Ele
           },
         }}
       />
-      {expandedTag && (
-        <SongListPanel
-          tagId={expandedTag.id}
-          tagValue={expandedTag.value}
-          refetchTagValues={refetch}
-        />
-      )}
+      {[...expandedTags.values()].map((tag) => (
+        <Box
+          key={tag.id}
+          sx={{ display: expandedTagId === tag.id ? "block" : "none" }}
+        >
+          <SongListPanel
+            tagId={tag.id}
+            tagValue={tag.value}
+            refetchTagValues={refetch}
+          />
+        </Box>
+      ))}
       {mergeDialogOpen && (
         <MergeDialog
           key={selectedIds.join(",")}
