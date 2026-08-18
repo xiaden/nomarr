@@ -8,12 +8,12 @@
  *
  * Includes 300ms debouncing so it can be driven directly by input changes.
  *
- * Supports field-specific prefix syntax to narrow results:
+ * Supports prefix syntax to narrow results by field:
  *   a:term   - filter by artist name
  *   al:term  - filter by album name
- *   t:term   - filter by track title
+ *   t:term   - search across artist, album, and track fields (same as unprefixed text)
  * Unprefixed words search across all fields (general `q`).
- * Prefixes can be mixed: "a:good charlotte t:change"
+ * Prefixes can be mixed: "a:good charlotte al:the fame"
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -51,9 +51,11 @@ const FIELD_PREFIXES: ReadonlyArray<{ prefix: string; key: keyof SearchFilesPara
 /**
  * Parse a search query string that may contain field-specific prefixes.
  *
- * Syntax:  `a:Artist Term  al:Album Term  t:Track Term  general words`
+ * Syntax:  `a:Artist Term  al:Album Term  t:Search Term  general words`
  *
  * Each prefix captures all text until the next known prefix or end-of-string.
+ * The `t:` prefix is retained as a search alias, but the files API's `q`
+ * parameter searches across artist, album, and title fields.
  * Any text not preceded by a prefix goes into the general `q` field.
  *
  * @returns A `SearchFilesParams` with populated field filters.

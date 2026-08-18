@@ -61,7 +61,7 @@ export function BrowsePage() {
           {/* Search Input */}
           <TextField
             fullWidth
-            placeholder="Search library... (a: artist, al: album, t: track)"
+            placeholder="Search library... (a: artist, al: album, t: all fields)"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             size="medium"
@@ -82,7 +82,7 @@ export function BrowsePage() {
             autoFocus
           />
           <Typography variant="caption" color="text.disabled">
-            Prefix with a: artist, al: album, t: track to narrow results
+            Prefix with a: artist or al: album to narrow results; t: searches all fields
           </Typography>
 
           {/* Error */}
@@ -100,13 +100,13 @@ export function BrowsePage() {
                 Search your library
               </Typography>
               <Typography variant="body2" color="text.disabled">
-                Type to search across all fields, or use prefixes to narrow results
+                Type to search across all fields, or use a: / al: prefixes to narrow results
               </Typography>
               <Typography variant="body2" color="text.disabled" sx={{ mt: 0.5, fontFamily: "monospace" }}>
-                a:artist &nbsp; al:album &nbsp; t:track
+                a:artist &nbsp; al:album &nbsp; t:all fields
               </Typography>
               <Typography variant="body2" color="text.disabled" sx={{ mt: 0.5, fontStyle: "italic" }}>
-                Example: a:good charlotte t:change
+                Example: a:good charlotte al:the fame
               </Typography>
             </Box>
           )}
