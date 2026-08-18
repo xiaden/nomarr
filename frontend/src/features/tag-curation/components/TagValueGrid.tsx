@@ -40,9 +40,6 @@ export function TagValueGrid({ name, prefix }: TagValueGridProps): React.JSX.Ele
   } = useCurationActions({ onSuccess: refetch });
 
   const [expandedTagId, setExpandedTagId] = useState<string | null>(null);
-  const [expandedTags, setExpandedTags] = useState<Map<string, TagValueItem>>(
-    () => new Map()
-  );
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [selectedTagsById, setSelectedTagsById] = useState<Map<string, TagValueItem>>(
     () => new Map()
@@ -63,12 +60,6 @@ export function TagValueGrid({ name, prefix }: TagValueGridProps): React.JSX.Ele
 
   const handleToggleExpand = useCallback((tag: TagValueItem) => {
     setExpandedTagId((prev) => (prev === tag.id ? null : tag.id));
-    setExpandedTags((prev) => {
-      if (prev.has(tag.id)) return prev;
-      const next = new Map(prev);
-      next.set(tag.id, tag);
-      return next;
-    });
   }, []);
 
   const processRowUpdate = useCallback(
@@ -220,18 +211,18 @@ export function TagValueGrid({ name, prefix }: TagValueGridProps): React.JSX.Ele
           },
         }}
       />
-      {[...expandedTags.values()].map((tag) => (
-        <Box
-          key={tag.id}
-          sx={{ display: expandedTagId === tag.id ? "block" : "none" }}
-        >
-          <SongListPanel
-            tagId={tag.id}
-            tagValue={tag.value}
-            refetchTagValues={refetch}
-          />
-        </Box>
-      ))}
+      {(() => {
+        const expandedTag = rows.find((row) => row.id === expandedTagId);
+        return expandedTag ? (
+          <Box key={expandedTag.id}>
+            <SongListPanel
+              tagId={expandedTag.id}
+              tagValue={expandedTag.value}
+              refetchTagValues={refetch}
+            />
+          </Box>
+        ) : null;
+      })()}
       {mergeDialogOpen && (
         <MergeDialog
           key={selectedIds.join(",")}
