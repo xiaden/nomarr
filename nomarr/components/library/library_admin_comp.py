@@ -18,7 +18,6 @@ from nomarr.components.library.library_root_comp import (
     normalize_library_root,
 )
 from nomarr.components.library.library_scan_state_comp import (
-    ensure_scan_state,
     get_libraries_in_axis_state,
 )
 from nomarr.components.library.library_song_query_comp import clear_library_data as clear_library_song_data
@@ -58,7 +57,6 @@ def create_library(
             file_write_mode=file_write_mode,
             library_auto_write=library_auto_write,
         )
-        ensure_scan_state(db, library_id)
     except (ValueError, DatabaseStateError, OSError) as e:
         msg = f"Failed to create library: {e}"
         raise ValueError(msg) from e
