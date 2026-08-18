@@ -283,6 +283,8 @@ describe("LibraryManagement", () => {
   });
 
   it("renders the dashboard pipeline section with library badges", async () => {
+    vi.mocked(getWorkStatus).mockResolvedValue(workStatusFixture);
+
     renderWithProviders(<DashboardPage />);
 
     expect(await screen.findByText("Library Pipeline Progress")).toBeInTheDocument();
