@@ -82,7 +82,7 @@ def update_metadata_cache_batch(db: Database, updates: list[dict[str, Any]]) -> 
         if not isinstance(song_id, int):
             continue
         update["_cache_updated_at"] = now_val.value
-        db.library.update_song_fields(song_id, update)
+        db.library.update_library_song_metadata_cache(song_id, dict(update))
 
 
 # ---------------------------------------------------------------------------
@@ -138,7 +138,7 @@ def rebuild_song_metadata_cache(db: Database, song_id: int) -> None:
         if v is not None
     }
     if fields:
-        db.library.update_song_fields(song_id, fields)
+        db.library.update_library_song_metadata_cache(song_id, fields)
 
 
 def rebuild_all_song_metadata_caches(db: Database, limit: int | None = None) -> int:

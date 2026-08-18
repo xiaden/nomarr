@@ -244,6 +244,19 @@ class LibrarySongsDb:
         """Update the last-tagged timestamp on a library song."""
         self._song_repo.update_song(song_id, {"last_tagged_at": tagged_at_ms})
 
+    def update_library_song_duration(self, song_id: int, duration_seconds: float) -> None:
+        """Store duration discovered while hydrating a song's tags."""
+        self._song_repo.update_song(song_id, {"duration_seconds": duration_seconds})
+
+    def update_library_song_metadata_cache(self, song_id: int, fields: dict[str, Any]) -> None:
+        """Replace the recognized embedded metadata-cache fields for a song."""
+        allowed_fields = {"artist", "artists", "album", "labels", "genres", "year", "_cache_updated_at"}
+        invalid_fields = sorted(set(fields) - allowed_fields)
+        if invalid_fields:
+            raise ValueError(f"Unsupported metadata-cache fields: {', '.join(invalid_fields)}")
+        if fields:
+            self._song_repo.update_song(song_id, fields)
+
     def remove_song(self, song_id: int) -> None:
         """Remove one song. FK CASCADE handles derived streams and vectors.
 

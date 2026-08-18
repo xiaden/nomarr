@@ -94,7 +94,7 @@ def _process_file(db: Database, song_id: int) -> None:
     # Update duration_seconds on the track record if not already set
     duration = metadata.get("duration")
     if duration is not None and not song_doc.get("duration_seconds"):
-        db.library.update_song_fields(song_id, {"duration_seconds": duration})
+        db.library.update_library_song_duration(song_id, float(duration))
 
     transition_song_state(db, [song_id], STATE_NOT_HYDRATED, STATE_HYDRATED)
 
