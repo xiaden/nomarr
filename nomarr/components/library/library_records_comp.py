@@ -118,6 +118,7 @@ def update_library_record(
         "root_path": "path",
         "is_enabled": "library_type",
         "watch_mode": "auto_tag",
+        "file_write_mode": "file_write_mode",
         "library_auto_write": "auto_curate",
     }
     for intent_name, column_name in column_fields.items():
