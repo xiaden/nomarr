@@ -65,6 +65,7 @@ def reconcile_library_paths(
         if not files:
             break
         logger.debug(f"[reconcile_library_paths] Processing batch at offset {offset} ({len(files)} files)")
+        deleted_before_batch = result["deleted_files"]
         for file_record in files:
             result["total_files"] += 1
             file_path = file_record["path"]
@@ -87,7 +88,11 @@ def reconcile_library_paths(
             except (OSError, RuntimeError) as e:
                 result["errors"] += 1
                 logger.exception("[reconcile_library_paths] Error validating %s: %s", file_path, e)
-        offset += len(files)
+        # Removing a row shifts subsequent rows into the current page.  Only
+        # advance past rows that still exist, otherwise the next page skips
+        # songs that followed a deleted row.
+        deleted_in_batch = result["deleted_files"] - deleted_before_batch
+        offset += len(files) - deleted_in_batch
         if offset % (batch_size * 5) == 0:
             logger.info(
                 f"[reconcile_library_paths] Progress: {offset}/{total_count} "
