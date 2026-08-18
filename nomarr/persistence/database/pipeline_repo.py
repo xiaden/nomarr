@@ -9,11 +9,13 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import delete, distinct, func, select, update
+from sqlalchemy import and_, delete, distinct, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from nomarr.helpers.constants.pipeline_states import PIPELINE_DEFAULTS
 from nomarr.helpers.dto.repo_dto import PipelineStateRow, SongRow
 from nomarr.persistence.database.repo_helpers import _song_row_to_dto
+from nomarr.persistence.models.library import Library
 from nomarr.persistence.models.pipeline_state import PipelineState
 from nomarr.persistence.models.song import Song
 from nomarr.persistence.models.song_state import SongState
@@ -26,6 +28,7 @@ if TYPE_CHECKING:
     from sqlalchemy.schema import Table
 
 _T: Table = PipelineState.__table__  # type: ignore[assignment]  # Model.__table__ is typed as FromClause; we know it's Table
+_L: Table = Library.__table__  # type: ignore[assignment]  # Model.__table__ is typed as FromClause; we know it's Table
 _SSA: Table = SongStateAssignment.__table__  # type: ignore[assignment]  # Model.__table__ is typed as FromClause; we know it's Table
 _SS: Table = SongState.__table__  # type: ignore[assignment]  # Model.__table__ is typed as FromClause; we know it's Table
 _S: Table = Song.__table__  # type: ignore[assignment]  # Model.__table__ is typed as FromClause; we know it's Table
@@ -114,17 +117,27 @@ class PipelineRepository:
         *state_key* is one of the four axis keys from ``PIPELINE_AXIS_FIELDS``
         (``scan_state``/``ml_state``/``calibration_state``/``tag_write_state``);
         each row stores its state as ``state_data`` shaped ``{"state": <pole_value>}``.
-        Matching compares ``state_data["state"] == state_value`` on the Python
-        side to avoid the PostgreSQL ``@>`` operator, which is not available on
-        SQLite.  Works identically on both backends.
+        Missing rows use the same default state as higher-level reads. Matching
+        compares ``state_data["state"] == state_value`` on the Python side to
+        avoid the PostgreSQL ``@>`` operator, which is not available on SQLite.
+        Works identically on both backends.
         """
         with map_persistence_exceptions():
-            stmt = select(_T).where(_T.c.state_key == state_key)
+            stmt = (
+                select(_L.c.id, _T.c.state_data)
+                .select_from(
+                    _L.outerjoin(
+                        _T,
+                        and_(_T.c.library_id == _L.c.id, _T.c.state_key == state_key),
+                    )
+                )
+            )
             result = self._session.execute(stmt)
             return [
-                row._mapping["library_id"]
+                row._mapping["id"]
                 for row in result.all()
-                if row._mapping["state_data"].get("state") == state_value
+                if (row._mapping["state_data"] or {}).get("state", PIPELINE_DEFAULTS[state_key])
+                == state_value
             ]
 
     def count_pipeline_states(self) -> int:

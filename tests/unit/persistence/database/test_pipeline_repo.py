@@ -127,6 +127,15 @@ class TestPipelineRepository:
         assert lib_id1 in result
         assert lib_id2 not in result
 
+    def test_list_libraries_in_pipeline_state_includes_default(self, pg_session) -> None:
+        """Libraries without a row should match their default pipeline state."""
+        lib_id = _create_library(pg_session)
+        repo = PipelineRepository(pg_session)
+
+        result = repo.list_libraries_in_pipeline_state("scan_state", "not_scanned")
+
+        assert lib_id in result
+
     def test_count_pipeline_states(self, pg_session) -> None:
         """count_pipeline_states should return total count."""
         lib_id = _create_library(pg_session)
