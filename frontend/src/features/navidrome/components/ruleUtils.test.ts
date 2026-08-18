@@ -25,6 +25,17 @@ describe("buildQueryString", () => {
     expect(query).toBe("tag:mood_happy > 0.7 AND tag:energy > 0.6");
   });
 
+  it("quotes and escapes string values containing boolean words", () => {
+    const rules: Rule[] = [
+      { id: "1", tagKey: "artist", operator: "=", value: "Simon and Garfunkel" },
+      { id: "2", tagKey: "album", operator: "=", value: 'Live "and" Loud' },
+    ];
+    const query = buildQueryString(flatRulesToRootGroup(rules, "all"));
+    expect(query).toBe(
+      String.raw`tag:artist = "Simon and Garfunkel" AND tag:album = "Live \"and\" Loud"`
+    );
+  });
+
   it("builds query with OR logic", () => {
     const rules: Rule[] = [
       { id: "1", tagKey: "calm", operator: ">", value: "0.8" },

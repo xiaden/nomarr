@@ -58,6 +58,14 @@ export function flatRulesToRootGroup(rules: Rule[], logic: LogicMode): RuleGroup
 /** Maximum allowed nesting depth (must match backend MAX_RULE_GROUP_DEPTH). */
 export const MAX_RULE_GROUP_DEPTH = 5;
 
+/** Quote string values so boolean words remain part of the value. */
+function formatRuleValue(value: string): string {
+  if (/^-?(?:\d+\.?\d*|\.\d+)$/.test(value.trim())) {
+    return value;
+  }
+  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
+
 /**
  * Calculate the maximum nesting depth of a rule group tree.
  *
@@ -100,7 +108,7 @@ export function buildQueryString(group: RuleGroup): string {
   // Add rules from this group
   const ruleParts = group.rules
     .filter((r) => r.tagKey && r.value !== "")
-    .map((r) => `tag:${r.tagKey} ${r.operator} ${r.value}`);
+    .map((r) => `tag:${r.tagKey} ${r.operator} ${formatRuleValue(r.value)}`);
   parts.push(...ruleParts);
 
   // Recursively add nested groups with parentheses

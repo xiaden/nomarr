@@ -135,10 +135,27 @@ def _find_top_level_operators(query: str) -> list[tuple[int, str]]:
     """
     operators: list[tuple[int, str]] = []
     depth = 0
+    quote: str | None = None
+    escaped = False
     i = 0
 
     while i < len(query):
         char = query[i]
+
+        if quote is not None:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                quote = None
+            i += 1
+            continue
+
+        if char in ('"', "'"):
+            quote = char
+            i += 1
+            continue
 
         if char == "(":
             depth += 1
@@ -451,8 +468,11 @@ def _parse_condition(condition: str, namespace: str) -> TagCondition:
     # Add namespace prefix if not present
     full_tag_key = f"{namespace}:{tag_key}" if not tag_key.startswith(f"{namespace}:") else tag_key
 
-    # Convert value to appropriate type
-    value = value.strip().strip('"').strip("'")
+    # Convert value to appropriate type. Quoted values may contain boolean words.
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
+        quote = value[0]
+        value = value[1:-1].replace(f"\\{quote}", quote).replace("\\\\", "\\")
 
     # Try to convert to number
     typed_value: float | int | str
