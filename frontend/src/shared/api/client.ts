@@ -131,6 +131,11 @@ export async function request<T>(
       throw new ApiError(response.status, message, detail);
     }
 
+    // Successful no-content responses do not have a JSON body to parse.
+    if (response.status === 204 || response.status === 205) {
+      return undefined as T;
+    }
+
     // Parse JSON response
     const json = await response.json();
 
