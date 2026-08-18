@@ -15,7 +15,9 @@ import {
 import { useCallback, useEffect, useState } from "react";
 
 import { useNotification } from "../../../hooks/useNotification";
+import { useConfirmDialog } from "../../../hooks/useConfirmDialog";
 import { getApiKey, regenerateApiKey } from "../../../shared/api/apiKey";
+import { ConfirmDialog } from "../../../shared/components/ui";
 import {
   getConfig,
   updateConfig,
@@ -31,6 +33,8 @@ const CONFIG_KEYS = {
 
 export function ApiSettingsPanel() {
   const { showSuccess, showError } = useNotification();
+  const { confirm, isOpen, options, handleConfirm, handleCancel } =
+    useConfirmDialog();
 
   // --- Navidrome connection state ---
   const [url, setUrl] = useState("");
@@ -88,6 +92,15 @@ export function ApiSettingsPanel() {
   }, [showError]);
 
   const handleRegenerate = async () => {
+    const confirmed = await confirm({
+      title: "Regenerate API key?",
+      message:
+        "This will immediately invalidate the current API key and may break existing integrations until they are updated.",
+      confirmLabel: "Regenerate",
+      severity: "warning",
+    });
+    if (!confirmed) return;
+
     try {
       setRegenerating(true);
       const res = await regenerateApiKey();
@@ -319,6 +332,17 @@ export function ApiSettingsPanel() {
             : `Connection failed: ${pingResult.error ?? "Unknown error"}`}
         </Alert>
       )}
+
+      <ConfirmDialog
+        open={isOpen}
+        title={options.title}
+        message={options.message}
+        confirmLabel={options.confirmLabel}
+        cancelLabel={options.cancelLabel}
+        severity={options.severity}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
+      />
 
     </Stack>
   );
