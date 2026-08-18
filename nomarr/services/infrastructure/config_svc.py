@@ -175,8 +175,12 @@ class ConfigService:
             return value
         choices = get_args(annotation)
         value_type = next((choice for choice in choices if choice is not type(None)), annotation)
-        if value_type is bool and value.lower() in ("true", "false"):
-            return value.lower() == "true"
+        if value_type is bool:
+            normalized = value.strip().lower()
+            if normalized in ("true", "yes", "1", "on"):
+                return True
+            if normalized in ("false", "no", "0", "off"):
+                return False
         if value_type is int and value.strip():
             try:
                 return int(value)

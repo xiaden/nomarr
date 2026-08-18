@@ -82,6 +82,33 @@ class TestWriteToDb:
         )
 
 
+class TestCoerceValue:
+    """Tests for conversion of web-form config values."""
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            ("true", True),
+            ("YES", True),
+            ("1", True),
+            (" on ", True),
+            ("false", False),
+            ("NO", False),
+            ("0", False),
+            (" off ", False),
+        ],
+    )
+    def test_coerces_common_boolean_strings(self, value: str, expected: bool) -> None:
+        """Common boolean spellings should become actual booleans."""
+        assert ConfigService._coerce_value("calibrate_heads", value) is expected
+
+    @pytest.mark.unit
+    def test_preserves_unknown_boolean_string(self) -> None:
+        """Unknown boolean spellings should remain strings."""
+        assert ConfigService._coerce_value("calibrate_heads", "maybe") == "maybe"
+
+
 class TestBootstrapAndLoad:
     """Tests for ``ConfigService._bootstrap_and_load``."""
 
