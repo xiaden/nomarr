@@ -38,17 +38,15 @@ def create_library_record(
     _validate_file_write_mode(file_write_mode)
 
     timestamp = now_ms().value
-    result = db.library.add_library(
-        {
-            "name": name,
-            "root_path": root_path,
-            "is_enabled": is_enabled,
-            "watch_mode": watch_mode,
-            "file_write_mode": file_write_mode,
-            "library_auto_write": library_auto_write,
-            "created_at": timestamp,
-            "updated_at": timestamp,
-        }
+    result = db.library.create_library(
+        name=name,
+        root_path=root_path,
+        is_enabled=is_enabled,
+        watch_mode=watch_mode,
+        file_write_mode=file_write_mode,
+        library_auto_write=library_auto_write,
+        created_at=timestamp,
+        updated_at=timestamp,
     )
     return cast("int", result)
 

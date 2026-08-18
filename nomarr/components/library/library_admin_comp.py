@@ -22,7 +22,7 @@ from nomarr.components.library.library_scan_state_comp import (
     get_libraries_in_axis_state,
 )
 from nomarr.components.library.library_song_query_comp import clear_library_data as clear_library_song_data
-from nomarr.helpers.constants.pipeline_states import PIPELINE_DEFAULTS, SCAN_IN_PROGRESS, SCAN_STATE_FIELD
+from nomarr.helpers.constants.pipeline_states import SCAN_IN_PROGRESS, SCAN_STATE_FIELD
 from nomarr.helpers.exceptions import DatabaseStateError
 
 logger = logging.getLogger(__name__)
@@ -57,7 +57,6 @@ def create_library(
             watch_mode=watch_mode,
             file_write_mode=file_write_mode,
             library_auto_write=library_auto_write,
-            **PIPELINE_DEFAULTS,
         )
         ensure_scan_state(db, library_id)
     except (ValueError, DatabaseStateError, OSError) as e:
