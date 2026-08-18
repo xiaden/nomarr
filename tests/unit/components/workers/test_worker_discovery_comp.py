@@ -59,15 +59,20 @@ class TestClaimFile:
         mock_db = MagicMock()
         result = claim_file(mock_db, "123", "worker:tag:0")
         assert result is True
-        mock_db.app.add_claim.assert_called_once()
-        inserted = mock_db.app.add_claim.call_args.args[0]
-        assert inserted["key"] == "claim_123"
-        assert inserted["file_id"] == "123"
-        assert inserted["worker_id"] == "worker:tag:0"
+        mock_db.app.claim_song.assert_called_once_with(
+            123,
+            "worker:tag:0",
+            claimed_at=mock_db.app.claim_song.call_args.kwargs["claimed_at"],
+        )
 
 
 class TestTryInsertOrStealClaim:
     """Tests for expired claim replacement."""
+
+    @staticmethod
+    def _duplicate_claim_error() -> DuplicateEntityError:
+        """Build a duplicate entity error for the claim path."""
+        return DuplicateEntityError()
 
     @pytest.mark.unit
     def test_steals_expired_claim_without_using_new_owner_for_release(self) -> None:
@@ -90,20 +95,20 @@ class TestTryInsertOrStealClaim:
     @pytest.mark.unit
     def test_returns_false_when_duplicate_insert_raises(self) -> None:
         mock_db = MagicMock()
-        mock_db.app.add_claim.side_effect = self._duplicate_claim_error()
+        mock_db.app.claim_song.side_effect = self._duplicate_claim_error()
 
-        result = claim_file(mock_db, f"{'songs'}/abc", "worker:tag:0")
+        result = claim_file(mock_db, "123", "worker:tag:0")
 
         assert result is False
-        mock_db.app.add_claim.assert_called_once()
+        mock_db.app.claim_song.assert_called_once()
 
     @pytest.mark.unit
     def test_returns_false_when_already_claimed(self) -> None:
         mock_db = MagicMock()
-        mock_db.app.add_claim.side_effect = self._duplicate_claim_error()
+        mock_db.app.claim_song.side_effect = self._duplicate_claim_error()
         result = claim_file(mock_db, "456", "worker:tag:1")
         assert result is False
-        mock_db.app.add_claim.assert_called_once()
+        mock_db.app.claim_song.assert_called_once()
 
 
 class TestCleanupStaleClaims:
@@ -136,7 +141,7 @@ class TestCleanupStaleClaims:
             },
         ]
         mock_db.app.list_worker_health.return_value = [
-            {"component_id": "worker:active", "last_heartbeat": 9001},
+            {"worker_id": "worker:active", "last_seen": 9001},
         ]
         mock_db.library.list_songs_by_ids.return_value = [
             {"id": 3},

@@ -161,7 +161,7 @@ def cleanup_stale_claims(db: Database, heartbeat_timeout_ms: int) -> int:
     heartbeat_cutoff = now_ms().value - heartbeat_timeout_ms
     health_docs = cast("list[dict[str, Any]]", db.app.list_worker_health())
     active_workers = {
-        str(doc.get("component_id")) for doc in health_docs if int(doc.get("last_heartbeat", 0)) > heartbeat_cutoff
+        str(doc.get("worker_id")) for doc in health_docs if int(doc.get("last_seen", 0)) > heartbeat_cutoff
     }
 
     inactive_worker_ids = {

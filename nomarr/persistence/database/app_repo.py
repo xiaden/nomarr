@@ -317,7 +317,7 @@ class AppRepository:
         """Release one worker's claim for a song."""
         with map_persistence_exceptions():
             with self._session.begin_nested():
-                prefix = "claim_reconcile_" if claim_type == "reconcile" else "claim_"
+                prefix = f"claim_{claim_type}_" if claim_type else "claim_"
                 stmt = delete(_WC).where(
                     _WC.c.worker_id == worker_id,
                     _WC.c.key == f"{prefix}{song_id}",
@@ -329,7 +329,7 @@ class AppRepository:
         """Release a song claim regardless of which worker owns it."""
         with map_persistence_exceptions():
             with self._session.begin_nested():
-                prefix = "claim_reconcile_" if claim_type == "reconcile" else "claim_"
+                prefix = f"claim_{claim_type}_" if claim_type else "claim_"
                 stmt = delete(_WC).where(_WC.c.key == f"{prefix}{song_id}")
                 self._session.execute(stmt)
             self._session.commit()
