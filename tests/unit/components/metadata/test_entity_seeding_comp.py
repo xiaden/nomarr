@@ -2,70 +2,58 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
-
 import pytest
 
-from nomarr.components.metadata.entity_seeding_comp import seed_entities_for_scan_batch
-
-MODULE = "nomarr.components.metadata.entity_seeding_comp"
+from nomarr.components.metadata.entity_seeding_comp import extract_entity_tag_mapping
 
 
-class TestSeedEntitiesForScanBatch:
-    """Regression coverage for scan-time tag persistence."""
+class TestExtractEntityTagMapping:
+    """Tests for the hydration-ready entity tag mapping derivation."""
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_persists_full_source_tags_nom_tags_and_cache_updates(self) -> None:
-        """Scanner batch sync should persist entity tags as {name, value} payloads."""
-        mock_db = MagicMock()
+    def test_builds_mapping_from_raw_metadata(self) -> None:
+        """Entity fields are flattened into name → value-list mapping."""
         metadata = {
-            "all_tags": {
-                "genre": "Ambient; Drone",
-                "label": "Warp",
-                "comment": "late night listening",
-                "artist": '["Raw Artist"]',
-            },
-            "nom_tags": {
-                "mood": "chill",
-            },
             "artist": "Canonical Artist",
             "artists": ["Canonical Artist", "Guest Artist"],
             "album": "Selected Ambient Works",
             "label": "Warp",
             "genre": ["Ambient", "Drone"],
             "year": 1994,
-            "track_number": 7,
         }
 
-        result = seed_entities_for_scan_batch(
-            mock_db,
-            [f"{'songs'}/1"],
-            {f"{'songs'}/1": metadata},
-        )
+        mapping = extract_entity_tag_mapping(metadata)
 
-        assert result == 1
-        # Source now uses db.library.replace_song_tags per entry (not set_song_tags_batch)
-        mock_db.library.replace_song_tags.assert_called()
-        persisted_entries: list[dict] = [
-            {"song_id": call_args[0][0], "tags": call_args[0][1]}
-            for call_args in mock_db.library.replace_song_tags.call_args_list
-        ]
+        assert mapping["artist"] == ["Canonical Artist"]
+        assert mapping["artists"] == ["Canonical Artist", "Guest Artist"]
+        assert mapping["album"] == ["Selected Ambient Works"]
+        assert mapping["label"] == ["Warp"]
+        assert mapping["genre"] == ["Ambient", "Drone"]
+        assert mapping["year"] == [1994]
 
-        # New format: one entry per file, with "tags" list of {name, value} dicts
-        assert len(persisted_entries) > 0
-        file_entry = persisted_entries[0]
-        assert file_entry["song_id"] == f"{'songs'}/1"
-        assert "tags" in file_entry
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_ignores_non_entity_fields(self) -> None:
+        """Only entity tag keys are included; other metadata is dropped."""
+        metadata = {
+            "artist": "Artist",
+            "genre": ["Rock"],
+            "title": "Some Title",
+            "bpm": 120,
+            "key": "A",
+        }
 
-        tags_list: list[dict] = file_entry["tags"]
-        tag_map: dict[str, set[str]] = {}
-        for t in tags_list:
-            tag_map.setdefault(t["name"], set()).add(str(t["value"]))
+        mapping = extract_entity_tag_mapping(metadata)
 
-        assert tag_map["artist"] == {"Canonical Artist"}
-        assert tag_map["artists"] == {"Canonical Artist", "Guest Artist"}
-        assert tag_map["album"] == {"Selected Ambient Works"}
-        assert tag_map["label"] == {"Warp"}
-        assert tag_map["genre"] == {"Ambient", "Drone"}
-        assert tag_map["year"] == {"1994"}
+        # ``artist`` derives ``artists`` too, but title/bpm/key are dropped.
+        assert set(mapping.keys()) == {"artist", "artists", "genre"}
+        assert mapping["artist"] == ["Artist"]
+        assert mapping["artists"] == ["Artist"]
+        assert mapping["genre"] == ["Rock"]
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_empty_metadata_returns_empty_mapping(self) -> None:
+        """No entity fields → empty dict."""
+        assert extract_entity_tag_mapping({}) == {}

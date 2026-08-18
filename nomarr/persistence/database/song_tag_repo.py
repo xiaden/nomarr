@@ -116,6 +116,48 @@ class SongTagRepository:
                 self._session.execute(stmt)
             self._session.commit()
 
+    def replace_song_tags_batch(self, edges: list[dict[str, Any]]) -> None:
+        """Set-based full-replace of song↔tag edges across many songs.
+
+        Takes *edges* as a flat list of ``{"song_id", "tag_id",
+        "confidence", "source"}`` dicts (callers MUST resolve ``tag_id``
+        beforehand — this repo never looks tags up by name/value).  For every
+        affected song the existing edges are deleted and the supplied edges are
+        bulk-inserted in ONE statement each (full-replace semantics, so a retry
+        yields the same assignments).  Input rows are deduplicated by
+        ``(song_id, tag_id)``.
+
+        UoW-safe: never commits internally — the caller's unit of work owns
+        the transaction.  No per-song/per-tag loop on the hot path.
+
+        Args:
+            edges: Flat list of edge dicts.  ``confidence`` defaults to
+                   ``1.0`` and ``source`` to ``"nomarr"`` when omitted.
+
+        """
+        if not edges:
+            return
+        now_ms = int(time.time() * 1000)
+        # Dedupe by (song_id, tag_id) and group per song.
+        deduped: dict[tuple[int, int], dict[str, Any]] = {}
+        for e in edges:
+            key = (int(e["song_id"]), int(e["tag_id"]))
+            deduped.setdefault(
+                key,
+                {
+                    "song_id": key[0],
+                    "tag_id": key[1],
+                    "confidence": float(e.get("confidence", 1.0)),
+                    "source": str(e.get("source", "nomarr")),
+                    "created_at": now_ms,
+                },
+            )
+        rows = list(deduped.values())
+        song_ids = list(dict.fromkeys(int(e["song_id"]) for e in edges))
+
+        self._session.execute(delete(_ST).where(_ST.c.song_id.in_(song_ids)))
+        self._session.execute(pg_insert(_ST).values(rows))
+
     def replace_song_tags(self, song_id: int, tags: list[dict[str, Any]]) -> None:
         """Delete all existing tag assignments for a song and insert new ones."""
         with map_persistence_exceptions():

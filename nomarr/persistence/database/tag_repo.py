@@ -12,7 +12,7 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from nomarr.helpers.dto.repo_dto import TagRow
@@ -74,6 +74,73 @@ class TagRepository:
             result = self._session.execute(stmt)
             row = result.fetchone()
             return _tag_row_to_dto(row) if row else None
+
+    def get_or_create_tags_batch(self, rows: list[dict[str, Any]]) -> dict[tuple[str, str, str], int]:
+        """Set-based bulk get-or-create for tags keyed on ``(name, value, namespace)``.
+
+        Deduplicates input rows by identity, resolves existing tags in ONE
+        query, bulk-inserts the missing tags in ONE insert (conflict-safe), and
+        re-reads any identity that lost an insert race.  Returns
+        ``{(name, value, namespace): tag_id}``.
+
+        UoW-safe: never commits internally — the caller's unit of work owns
+        the transaction.  No per-tag loop on the hot path.
+
+        Args:
+            rows: Iterable of ``{"name": ..., "value": ..., "namespace": ...}``
+                  dicts.  ``namespace`` defaults to ``""`` when omitted.
+
+        Returns:
+            Mapping from ``(name, value, namespace)`` triple to tag id.
+
+        """
+        if not rows:
+            return {}
+        wanted: dict[tuple[str, str, str], dict[str, Any]] = {}
+        for r in rows:
+            name = str(r["name"])
+            value = str(r["value"])
+            namespace = str(r.get("namespace", ""))
+            identity = (name, value, namespace)
+            if identity not in wanted:
+                wanted[identity] = {
+                    "name": name,
+                    "value": value,
+                    "namespace": namespace,
+                    "source": "nomarr",
+                    "created_at": int(time.time() * 1000),
+                }
+
+        identities = list(wanted)
+        resolved: dict[tuple[str, str, str], int] = {}
+
+        # 1) ONE query to resolve existing tags.
+        conditions = [and_(_T.c.name == n, _T.c.value == v, _T.c.namespace == ns) for (n, v, ns) in identities]
+        stmt = select(_T.c.id, _T.c.name, _T.c.value, _T.c.namespace).where(or_(*conditions))
+        for row in self._session.execute(stmt):
+            resolved[(row[1], row[2], row[3])] = int(row[0])
+
+        # 2) ONE bulk insert for the missing tags (conflict-safe).
+        missing = [wanted[i] for i in identities if i not in resolved]
+        if missing:
+            insert_stmt = (
+                pg_insert(_T)
+                .values(missing)
+                .on_conflict_do_nothing(index_elements=[_T.c.name, _T.c.value, _T.c.namespace])
+                .returning(_T.c.id, _T.c.name, _T.c.value, _T.c.namespace)
+            )
+            for row in self._session.execute(insert_stmt):
+                resolved[(row[1], row[2], row[3])] = int(row[0])
+
+        # 3) Re-read any identity that lost an insert race (conflict hit).
+        unresolved = [i for i in identities if i not in resolved]
+        if unresolved:
+            conditions2 = [and_(_T.c.name == n, _T.c.value == v, _T.c.namespace == ns) for (n, v, ns) in unresolved]
+            stmt2 = select(_T.c.id, _T.c.name, _T.c.value, _T.c.namespace).where(or_(*conditions2))
+            for row in self._session.execute(stmt2):
+                resolved[(row[1], row[2], row[3])] = int(row[0])
+
+        return resolved
 
     def get_or_create_tag(self, name: str, value: str, namespace: str) -> int:
         """Return the id of an existing tag or insert a new one."""

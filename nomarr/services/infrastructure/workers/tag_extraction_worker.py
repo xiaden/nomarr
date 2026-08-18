@@ -1,12 +1,14 @@
 """Tag extraction worker thread.
 
 Single background threading.Thread that reads audio tags for files in the
-``not_hydrated`` state and seeds entities (artist, album, genre etc.)
-into the graph.  This is Pass 2 of the two-pass scan pipeline:
+``not_hydrated`` state and submits them to the atomic song-hydration
+intent (``db.library.songs.hydrate_song``).  This is Pass 2 of the
+two-pass scan pipeline:
 
   Pass 1 (scan): fast disk walk → upsert files → seed initial state edges
-  Pass 2 (this): read audio tags → write to DB → seed entities
-                 → transition not_hydrated → hydrated
+  Pass 2 (this): read audio tags → build one ``HydrateSongInput`` →
+                 hydrate atomically (tags, relationships, duration,
+                 not_hydrated → hydrated in one unit of work)
 
   Files are claimed through the shared worker-claim mechanism so multiple
   extraction workers cannot process the same song concurrently.
@@ -25,9 +27,7 @@ from nomarr.components.workers.worker_discovery_comp import release_claim
 from nomarr.components.workers.worker_tag_comp import discover_and_claim_file_for_tags
 from nomarr.helpers.constants.file_states import (
     STATE_ERRORED,
-    STATE_HYDRATED,
     STATE_NOT_ERRORED,
-    STATE_NOT_HYDRATED,
 )
 
 if TYPE_CHECKING:
@@ -40,15 +40,22 @@ MAX_CONSECUTIVE_ERRORS = 10
 
 
 def _process_file(db: Database, song_id: int) -> None:
-    """Extract tags for one song and transition it to hydrated.
+    """Extract tags for one song and hydrate it via the atomic intent.
+
+    Builds exactly one :class:`HydrateSongInput` from the extracted audio
+    metadata and submits it to ``db.library.songs.hydrate_song``, which
+    owns the whole unit of work: parsed ``nom:`` tags, entity relationships,
+    the forward-compatible (accepted-but-ignored) metadata-cache fields,
+    the one-shot duration fill, and the ``not_hydrated`` → ``hydrated``
+    state transition are committed together (or rolled back together on
+    failure).
 
     Steps:
     1. Load track record and resolve absolute path
     2. Extract audio metadata (mutagen via extract_metadata)
-    3. Persist nom: tags to DB (save_song_tags)
-    4. Seed entity graph (artist, album, genre etc.)
-    5. Transition state: not_hydrated → hydrated
-    6. Clear any error state that may have been set previously
+    3. Parse/prefix ``nom:`` tag values (namespace prefixing stays here)
+    4. Derive entity tags and metadata-cache fields in the metadata components
+    5. Submit one HydrateSongInput to the atomic hydration intent
 
     Args:
         db: Database instance
@@ -60,9 +67,10 @@ def _process_file(db: Database, song_id: int) -> None:
     """
     from nomarr.components.infrastructure.path_comp import build_library_path_from_input
     from nomarr.components.library.metadata_extraction_comp import extract_metadata
-    from nomarr.components.library.song_sync_comp import save_song_tags
-    from nomarr.components.metadata.entity_seeding_comp import seed_entities_for_scan_batch
+    from nomarr.components.metadata.entity_seeding_comp import extract_entity_tag_mapping
+    from nomarr.components.metadata.metadata_cache_comp import compute_metadata_cache_fields
     from nomarr.components.tagging.tag_parsing_comp import parse_tag_values
+    from nomarr.helpers.dto.hydration_dto import HydrateSongInput
 
     song_doc = db.library.get_song(song_id)
     if song_doc is None:
@@ -78,33 +86,41 @@ def _process_file(db: Database, song_id: int) -> None:
 
     metadata = extract_metadata(library_path, namespace=namespace)
 
-    # Persist nom: tags stored inside the audio file
+    # Parse/prefix nom: tags stored inside the audio file (prefixing stays here)
+    parsed_nom_tags: dict[str, list[str | int | float]] = {}
     nom_tags: dict = metadata.get("nom_tags") or {}
     if nom_tags:
-        parsed_nom_tags = parse_tag_values(nom_tags)
-        prefixed = {
+        parsed = parse_tag_values(nom_tags)
+        parsed_nom_tags = {
             (f"{namespace}:{name}" if not name.startswith(f"{namespace}:") else name): values
-            for name, values in parsed_nom_tags.items()
+            for name, values in parsed.items()
         }
-        save_song_tags(db, str(song_id), prefixed)
 
-    # Seed entity graph (artist, album, genre etc.)
-    seed_entities_for_scan_batch(db, [str(song_id)], {str(song_id): metadata})
+    # Derive entity tags and forward-compatible metadata-cache fields in the
+    # metadata components (never in persistence).
+    entity_tags = extract_entity_tag_mapping(metadata)
+    metadata_cache = compute_metadata_cache_fields(metadata)
 
-    # Update duration_seconds on the track record if not already set
+    # One atomic single-song hydration intent (tags, relationships, cache
+    # fields, one-shot duration, state transition all in one unit of work).
     duration = metadata.get("duration")
-    if duration is not None and not song_doc.get("duration_seconds"):
-        db.library.update_library_song_duration(song_id, float(duration))
-
-    transition_song_state(db, [song_id], STATE_NOT_HYDRATED, STATE_HYDRATED)
+    hydrate_input = HydrateSongInput(
+        song_id=song_id,
+        parsed_nom_tags=parsed_nom_tags,
+        entity_tags=entity_tags,
+        metadata_cache=metadata_cache,
+        duration_seconds=float(duration) if duration is not None else None,
+    )
+    db.library.songs.hydrate_song(hydrate_input)
 
 
 class TagExtractionWorker(threading.Thread):
     """Background thread that extracts audio tags for unprocessed library files.
 
-    Claims files in the ``not_hydrated`` state, reads their audio
-    metadata via mutagen, writes tags and entity graph edges to DB, then
-    transitions the state to ``hydrated``.
+    Claims files in the ``not_hydrated`` state, reads their audio metadata
+    via mutagen, and submits one ``HydrateSongInput`` to the atomic
+    ``db.library.songs.hydrate_song`` intent, which writes tags, entity
+    edges, one-shot duration, and the ``hydrated`` state in one unit of work.
 
     Args:
         db: Shared Database instance (same as the application's main db)

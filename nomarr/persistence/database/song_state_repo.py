@@ -15,7 +15,12 @@ from typing import TYPE_CHECKING
 from sqlalchemy import Table, delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from nomarr.helpers.constants.file_states import ALL_STATE_VERTICES, STATE_PROCESSED
+from nomarr.helpers.constants.file_states import (
+    ALL_STATE_VERTICES,
+    STATE_HYDRATED,
+    STATE_NOT_HYDRATED,
+    STATE_PROCESSED,
+)
 from nomarr.helpers.dto.repo_dto import SongStateAssignmentRow, SongStateRow
 from nomarr.persistence.models.song_state import SongState
 from nomarr.persistence.models.song_state_assignment import SongStateAssignment
@@ -149,6 +154,53 @@ class SongStateRepository:
                     pg_insert(_A).values(assignment_rows).on_conflict_do_nothing(index_elements=["song_id", "state_id"])
                 )
             self._session.commit()
+
+    def transition_to_hydrated(self, song_ids: list[int]) -> None:
+        """Atomically transition songs to ``hydrated`` without dropping other axes.
+
+        For every song in *song_ids* this removes any ``not_hydrated``
+        assignment (only if present) and establishes ``hydrated``.  All other
+        state axes (processed, scanned, calibrated, …) are left untouched — it
+        deliberately does NOT use :meth:`replace_state_for_songs` (which
+        wipes every axis).  Idempotent: re-running on already-hydrated songs
+        yields the same final assignments (insert is conflict-safe).
+
+        Set-based: one query resolves the two state ids, one delete clears
+        ``not_hydrated``, one bulk insert establishes ``hydrated``.
+
+        UoW-safe: never commits internally — the caller's unit of work owns
+        the transaction.
+
+        Args:
+            song_ids: Songs to transition to ``hydrated``.
+
+        """
+        unique_song_ids = list(dict.fromkeys(song_ids))
+        if not unique_song_ids:
+            return
+
+        # Resolve both state names → ids in ONE query.
+        state_stmt = select(_S.c.name, _S.c.id).where(_S.c.name.in_([STATE_HYDRATED, STATE_NOT_HYDRATED]))
+        state_ids: dict[str, int] = {str(name): int(sid) for name, sid in self._session.execute(state_stmt)}
+        hydrated_id = state_ids.get(STATE_HYDRATED)
+        not_hydrated_id = state_ids.get(STATE_NOT_HYDRATED)
+
+        # Drop not_hydrated membership only (other axes preserved).
+        if not_hydrated_id is not None:
+            self._session.execute(
+                delete(_A).where(
+                    _A.c.song_id.in_(unique_song_ids),
+                    _A.c.state_id == not_hydrated_id,
+                )
+            )
+
+        # Establish hydrated (conflict-safe ⇒ idempotent).
+        if hydrated_id is not None:
+            now_ms = int(time.time() * 1000)
+            rows = [{"song_id": sid, "state_id": hydrated_id, "created_at": now_ms} for sid in unique_song_ids]
+            self._session.execute(
+                pg_insert(_A).values(rows).on_conflict_do_nothing(index_elements=["song_id", "state_id"])
+            )
 
     def remove_states_for_songs(self, song_ids: list[int]) -> None:
         """Delete all state assignments for the given song ids."""

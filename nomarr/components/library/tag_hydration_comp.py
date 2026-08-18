@@ -114,8 +114,8 @@ def hydrate_songs_with_metadata(db: Database, songs: list[dict[str, Any]]) -> li
 
         song_tags = tags_by_song.get(lookup_id, [])
         metadata = extract_canonical_metadata(song_tags)  # type: ignore[arg-type]
-        # Strip None values so they don't override embedded cache fields
-        # (e.g., artist/album stored via update_metadata_cache_batch)
+        # Strip None values so they don't override tag-derived metadata
+        # (ADR-045: metadata is derived from source tags, no cache columns)
         metadata = {k: v for k, v in metadata.items() if v is not None}
         result.append({**song, **metadata})
 

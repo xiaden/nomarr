@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
-from sqlalchemy import Table, delete, func, select
+from sqlalchemy import Table, case, delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from nomarr.helpers.dto.repo_dto import SongRow
@@ -153,6 +153,96 @@ class SongRepository:
             with self._session.begin_nested():
                 update_by_field(_T, "id", song_id, fields, session=self._session)
             self._session.commit()
+
+    def update_song_metadata_fields(self, song_id: int, fields: dict[str, Any]) -> None:
+        """Update ONLY the supplied metadata-cache fields on a song row.
+
+        Filters *fields* down to columns that actually exist on the ``songs``
+        table and updates just those — no other columns are touched.  Per
+        ADR-045 the songs table carries no embedded metadata-cache columns
+        (artist/album/genres/year/... are derived from tags on read), so with
+        the current schema this is a no-op unless a supplied key happens to
+        name a real column.
+
+        UoW-safe: runs on the caller's scoped session inside the surrounding
+        unit of work and never commits internally — the unit owns the commit.
+        """
+        if not fields:
+            return
+        existing_columns = set(_T.c.keys())
+        writable = {k: v for k, v in fields.items() if k in existing_columns}
+        if not writable:
+            return
+        stmt = update(_T).where(_T.c.id == song_id).values(**writable)
+        self._session.execute(stmt)
+
+    def set_duration_if_unset(self, song_id: int, duration_seconds: float) -> bool:
+        """Set ``duration_seconds`` only when the row does not already have one.
+
+        One-shot fill: never overwrites an existing duration.  Returns
+        ``True`` when the value was written, ``False`` when the row already
+        had a duration (or the song does not exist).
+
+        UoW-safe: runs on the caller's scoped session inside the surrounding
+        unit of work and never commits internally — the unit owns the commit.
+        """
+        stmt = (
+            update(_T)
+            .where(_T.c.id == song_id, _T.c.duration_seconds.is_(None))
+            .values(duration_seconds=duration_seconds)
+            .returning(_T.c.id)
+        )
+        result = self._session.execute(stmt)
+        return result.fetchone() is not None
+
+    def set_durations_if_unset(self, song_durations: dict[int, float]) -> None:
+        """One-shot fill ``duration_seconds`` for many songs in ONE statement.
+
+        *song_durations* maps ``song_id`` → ``duration_seconds``.  Only rows
+        whose duration is currently NULL are updated (one-shot semantics —
+        never overwrites an existing duration).  A single ``CASE`` expression
+        assigns each song its own value, so the cost stays constant as the
+        batch grows.
+
+        UoW-safe: runs on the caller's scoped session inside the surrounding
+        unit of work and never commits internally.
+        """
+        if not song_durations:
+            return
+        stmt = (
+            update(_T)
+            .where(_T.c.id.in_(list(song_durations)), _T.c.duration_seconds.is_(None))
+            .values(duration_seconds=case(song_durations, value=_T.c.id))
+        )
+        self._session.execute(stmt)
+
+    def update_song_metadata_fields_batch(self, fields_by_song: dict[int, dict[str, Any]]) -> None:
+        """Update ONLY supplied metadata-cache fields across many songs.
+
+        *fields_by_song* maps ``song_id`` → fields.  Supplied keys are filtered
+        down to columns that actually exist on the ``songs`` table and only
+        those are written (per ADR-045 the songs table has no embedded
+        metadata-cache columns, so with the current schema this is a no-op).
+        One ``CASE``-based UPDATE is emitted per distinct real column, keeping
+        the statement count bounded (constant) as the batch grows.
+
+        UoW-safe: runs on the caller's scoped session inside the surrounding
+        unit of work and never commits internally.
+        """
+        if not fields_by_song:
+            return
+        existing_columns = set(_T.c.keys())
+        # Distinct real columns supplied across the batch (cache fields are
+        # filtered out here per ADR-045).
+        columns_used: set[str] = set()
+        for fields in fields_by_song.values():
+            columns_used.update(k for k in fields if k in existing_columns)
+        if not columns_used:
+            return
+        for col in columns_used:
+            song_values = {sid: fields[col] for sid, fields in fields_by_song.items() if col in fields}
+            stmt = update(_T).where(_T.c.id.in_(list(song_values))).values(**{col: case(song_values, value=_T.c.id)})
+            self._session.execute(stmt)
 
     def delete_song(self, song_id: int) -> None:
         """Delete a single song by primary key."""

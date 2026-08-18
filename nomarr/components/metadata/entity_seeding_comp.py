@@ -1,22 +1,13 @@
 """Entity seeding component - derive entities from raw metadata tags.
 
-Converts raw metadata strings into song tag edges via unified TagOperations API.
-Part of hybrid model: seed edges from imports, then rebuild cache.
+Derives entity/tag relationship mappings (artist, artists, album, label,
+genre, year) from raw extraction metadata for callers that need
+pre-prepared entity tags — e.g. the hydration intent via
+:func:`extract_entity_tag_mapping`, and manual sync workflows.  This module
+is compute-only: it never writes to the database.
 """
 
-import logging
-from typing import TYPE_CHECKING, Any
-
-from nomarr.components.metadata.metadata_cache_comp import (
-    compute_metadata_cache_fields,
-    update_metadata_cache_batch,
-)
-
-if TYPE_CHECKING:
-    from nomarr.persistence.db import Database
-
-logger = logging.getLogger(__name__)
-
+from typing import Any
 
 _ENTITY_TAG_KEYS = ("artist", "artists", "album", "label", "genre", "year")
 
@@ -35,11 +26,13 @@ def _extract_entity_tags(metadata: dict[str, Any]) -> dict[str, Any]:
 
 
 def _build_song_tag_entries(song_id: str, tags: dict[str, Any]) -> list[dict[str, Any]]:
-    """Build tag entries for batch-seeding from raw entity tags.
+    """Build song-tag entries from raw entity tags.
 
     Returns a list with zero or one entry.  Each entry has ``"song_id"``
-    and ``"tags"`` keys, where ``"tags"`` is a list of ``{name, value}``
-    dicts suitable for :meth:`TagAnalyticsOpsMixin.set_song_tags_batch`.
+    and ``"tags"`` keys, where ``"tags"`` is a list of flat
+    ``{name, value}`` payloads derived from the entity tag mappings:
+    artist (primary) + artists (multi), album, label, genre, and year
+    (coerced to int).
 
     Returns an empty list when the raw tags contain no entity fields.
 
@@ -98,61 +91,24 @@ def _build_song_tag_entries(song_id: str, tags: dict[str, Any]) -> list[dict[str
     return [{"song_id": song_id, "tags": tag_payloads}]
 
 
-def seed_entities_for_scan_batch(
-    db: "Database",
-    file_ids: list[str],
-    metadata_by_id: dict[str, dict[str, Any]],
-) -> int:
-    """Seed entity vertices/edges and update metadata caches for scanned files.
+def extract_entity_tag_mapping(metadata: dict[str, Any]) -> dict[str, list[str | int | float]]:
+    """Return entity tag name → value-list mapping derived from raw metadata.
 
-    Batch-optimised: collects per-file tag entries in-memory, then executes
-    ``replace_song_tags`` per entry and ``update_metadata_cache_batch``
-    — total N+1 calls per folder instead of ~20 x N per file.
+    Produces the shape expected by the hydration intent's ``entity_tags``
+    member (``Mapping[str, Sequence[str | int | float]]``): keys are entity tag
+    names (artist, artists, album, label, genre, year) and values are the
+    corresponding lists of tag values.  Reuses the canonical entity-tag
+    derivation from :func:`_build_song_tag_entries`; does not touch the DB.
 
-    Args:
-        db: Database instance
-        file_ids: Document _ids for files that were just upserted
-        metadata_by_id: Map of file_id -> raw metadata dict
-
-    Returns:
-        Number of files successfully seeded
+    Returns an empty dict when the metadata carries no entity fields.
 
     """
-    if not file_ids:
-        return 0
-
-    # Build all tag entries and cache updates in-memory (no DB lookups needed)
-    all_tag_entries: list[dict[str, Any]] = []
-    cache_updates: list[dict[str, Any]] = []
-
-    for file_id in file_ids:
-        metadata = metadata_by_id.get(file_id)
-
-        if not metadata:
-            logger.warning("[entity_seeding] No metadata for file_id: %s", file_id)
-            continue
-
-        try:
-            entity_tags = _extract_entity_tags(metadata)
-            all_tag_entries.extend(_build_song_tag_entries(file_id, entity_tags))
-            cache_updates.append({"song_id": file_id, **compute_metadata_cache_fields(metadata)})
-        except (ValueError, TypeError, KeyError) as e:
-            logger.warning("[entity_seeding] Failed to build entities for file_id %s: %s", file_id, e)
-
-    # 3) Seed entities via replace_song_tags (one call per entry)
-    if all_tag_entries:
-        try:
-            for entry in all_tag_entries:
-                db.library.replace_song_tags(entry["song_id"], entry["tags"])
-        except (ValueError, RuntimeError) as e:
-            logger.warning("[entity_seeding] Batch tag seeding failed: %s", e)
-            return 0
-
-    # 4) Batch update metadata cache (single query instead of N)
-    if cache_updates:
-        try:
-            update_metadata_cache_batch(db, cache_updates)
-        except (ValueError, RuntimeError) as e:
-            logger.warning("[entity_seeding] Batch cache update failed: %s", e)
-
-    return len(cache_updates)
+    entity_tags = _extract_entity_tags(metadata)
+    entries = _build_song_tag_entries("0", entity_tags)
+    if not entries:
+        return {}
+    mapping: dict[str, list[str | int | float]] = {}
+    for entry in entries:
+        for tag in entry["tags"]:
+            mapping.setdefault(str(tag["name"]), []).append(tag["value"])
+    return mapping

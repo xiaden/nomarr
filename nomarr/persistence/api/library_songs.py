@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from nomarr.helpers.dto.hydration_dto import HydrateSongInput
     from nomarr.helpers.dto.repo_dto import LibraryFolderRow, SongRow
     from nomarr.persistence.database.folder_repo import FolderRepository
+    from nomarr.persistence.database.song_hydration_repo import SongHydrationRepository
     from nomarr.persistence.database.song_repo import SongRepository
     from nomarr.persistence.database.song_state_repo import SongStateRepository
 
@@ -43,11 +44,13 @@ class LibrarySongsDb:
         song_repo: SongRepository,
         folder_repo: FolderRepository,
         song_state_repo: SongStateRepository,
+        song_hydration_repo: SongHydrationRepository,
     ) -> None:
         self._session = session
         self._song_repo = song_repo
         self._folder_repo = folder_repo
         self._song_state_repo = song_state_repo
+        self._song_hydration_repo = song_hydration_repo
 
     # ------------------------------------------------------------------
     # Song lookups
@@ -252,19 +255,6 @@ class LibrarySongsDb:
         """Update the last-tagged timestamp on a library song."""
         self._song_repo.update_song(song_id, {"last_tagged_at": tagged_at_ms})
 
-    def update_library_song_duration(self, song_id: int, duration_seconds: float) -> None:
-        """Store duration discovered while hydrating a song's tags."""
-        self._song_repo.update_song(song_id, {"duration_seconds": duration_seconds})
-
-    def update_library_song_metadata_cache(self, song_id: int, fields: dict[str, Any]) -> None:
-        """Replace the recognized embedded metadata-cache fields for a song."""
-        allowed_fields = {"artist", "artists", "album", "labels", "genres", "year", "_cache_updated_at"}
-        invalid_fields = sorted(set(fields) - allowed_fields)
-        if invalid_fields:
-            raise ValueError(f"Unsupported metadata-cache fields: {', '.join(invalid_fields)}")
-        if fields:
-            self._song_repo.update_song(song_id, fields)
-
     # ------------------------------------------------------------------
     # Song hydration (transactional intent)
     # ------------------------------------------------------------------
@@ -273,22 +263,18 @@ class LibrarySongsDb:
         """Hydrate a single song atomically from an already-parsed input.
 
         Owns the complete logical unit of work: parsed ``nom:`` tags,
-        entity/tag relationships, metadata-cache fields, the optional
-        one-shot duration, and the ``not_hydrated`` → ``hydrated`` state
-        transition are written in one shared-session transaction and
-        committed together. Any failure rolls back the entire unit, so a
-        song is never left partially hydrated.
+        entity/tag relationships, the accepted-but-ignored metadata-cache
+        fields (never persisted, ADR-045), the optional one-shot duration,
+        and the ``not_hydrated`` → ``hydrated`` state transition are
+        written in one shared-session transaction and committed together.
+        Any failure rolls back the entire unit, so a song is never left
+        partially hydrated.
 
         Idempotent for repeated inputs: re-running the same input produces
         the same persisted assignments without side effects.
 
-        This method does NOT expose ``transaction()`` or
-        ``_require_transaction()``; callers must not manage transactions.
-
-        Note:
-            The full implementation is wired in Phase 2 (repository-level
-            operation); this placeholder raises until then. No caller
-            references it yet.
+        This method owns its transaction boundary; callers must not manage
+        transactions.
 
         Args:
             input: Fully-parsed hydration payload (see
@@ -296,7 +282,7 @@ class LibrarySongsDb:
                 extracted/parsed — persistence never calls extraction.
 
         """
-        raise NotImplementedError("hydrate_song is wired in Phase 2")
+        self._song_hydration_repo.hydrate_song(input)
 
     def hydrate_songs_batch(
         self,
@@ -314,13 +300,8 @@ class LibrarySongsDb:
         Idempotent for repeated inputs and harmless for duplicate values and
         duplicate song IDs within the batch.
 
-        This method does NOT expose ``transaction()`` or
-        ``_require_transaction()``; callers must not manage transactions.
-
-        Note:
-            The full implementation is wired in Phase 2 (repository-level
-            operation); this placeholder raises until then. No caller
-            references it yet.
+        This method owns its transaction boundaries; callers must not manage
+        transactions.
 
         Args:
             inputs: Fully-parsed hydration payloads.
@@ -328,7 +309,7 @@ class LibrarySongsDb:
                 set-based persistence, never per-song/per-tag lookups.
 
         """
-        raise NotImplementedError("hydrate_songs_batch is wired in Phase 2")
+        return self._song_hydration_repo.hydrate_songs_batch(inputs, chunk_size=chunk_size)
 
     def remove_song(self, song_id: int) -> None:
         """Remove one song. FK CASCADE handles derived streams and vectors.

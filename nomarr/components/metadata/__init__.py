@@ -1,11 +1,7 @@
-"""Metadata components — entity seeding from tags.
+"""Metadata components — compute-only metadata derivation helpers.
 
-Provides components for deriving artist/album/genre entities from
-audio file tags and seeding them into the database.
+Holds helpers that derive metadata purely from raw audio tags: entity-tag
+mapping derivation (:mod:`entity_seeding_comp`) and forward-compatible
+metadata-cache field computation (:mod:`metadata_cache_comp`).  No DB writes
+happen here; the obsolete DB write path was removed per ADR-045.
 """
-
-from .entity_seeding_comp import seed_entities_for_scan_batch
-
-__all__ = [
-    "seed_entities_for_scan_batch",
-]

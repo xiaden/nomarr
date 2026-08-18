@@ -36,9 +36,12 @@ class HydrateSongInput:
             parsed tags. Values may be strings or numbers.
         entity_tags: Mapping of entity/tag relationship name → values (e.g.
             artist, artists, album, label, genre, year).
-        metadata_cache: Computed metadata-cache fields to write onto the song
-            row (sorted-array strings such as artist/artists/album/labels/
-            genres/year, plus ``_cache_updated_at``).
+        metadata_cache: Forward-compatibility fields accepted by the
+            contract for future use but never persisted — no song-row
+            metadata-cache columns exist per ADR-045 (tags are the sole
+            source of derived metadata). If present, holds computed
+            sorted-array strings (artist/artists/album/labels/genres/year,
+            plus bpm/key/title/tracknumber/discnumber).
         duration_seconds: Optional duration to store. Persistence treats this
             as one-shot: it must not overwrite an already-present duration.
 

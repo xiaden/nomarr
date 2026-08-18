@@ -244,12 +244,6 @@ class LibraryDb:
     def update_library_song_last_tagged_at(self, song_id: int, tagged_at_ms: int) -> None:
         return self._songs.update_library_song_last_tagged_at(song_id, tagged_at_ms)
 
-    def update_library_song_duration(self, song_id: int, duration_seconds: float) -> None:
-        return self._songs.update_library_song_duration(song_id, duration_seconds)
-
-    def update_library_song_metadata_cache(self, song_id: int, fields: dict[str, Any]) -> None:
-        return self._songs.update_library_song_metadata_cache(song_id, fields)
-
     def remove_song(self, song_id: int) -> None:
         return self._songs.remove_song(song_id)
 

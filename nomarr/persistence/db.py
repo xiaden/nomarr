@@ -21,6 +21,7 @@ from nomarr.persistence.database.model_repo import ModelRepo
 from nomarr.persistence.database.output_repo import OutputRepo
 from nomarr.persistence.database.pipeline_repo import PipelineRepository
 from nomarr.persistence.database.scan_repo import ScanRepository
+from nomarr.persistence.database.song_hydration_repo import SongHydrationRepository
 from nomarr.persistence.database.song_repo import SongRepository
 from nomarr.persistence.database.song_state_repo import SongStateRepository
 from nomarr.persistence.database.song_tag_repo import SongTagRepository
@@ -79,6 +80,13 @@ class Database:
         self._folder_repo = FolderRepository(self._scoped)
         self._tag_repo = TagRepository(self._scoped)
         self._song_tag_repo = SongTagRepository(self._scoped)
+        self._song_hydration_repo = SongHydrationRepository(
+            session=self._scoped,
+            song_repo=self._song_repo,
+            tag_repo=self._tag_repo,
+            song_tag_repo=self._song_tag_repo,
+            song_state_repo=self._song_state_repo,
+        )
         self._vector_repo = VectorRepo(self._scoped)
         self._model_repo = ModelRepo(self._scoped)
         self._output_repo = OutputRepo(self._scoped)
@@ -108,6 +116,7 @@ class Database:
             song_repo=self._song_repo,
             folder_repo=self._folder_repo,
             song_state_repo=self._song_state_repo,
+            song_hydration_repo=self._song_hydration_repo,
         )
         tags = LibraryTagsDb(
             session=self._scoped,

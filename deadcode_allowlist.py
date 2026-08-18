@@ -699,10 +699,6 @@ def hydrate_song_with_tags():
     pass  # Song hydration
 
 
-def rebuild_all_song_metadata_caches():
-    pass  # Metadata cache rebuild
-
-
 # Navidrome components
 def navidrome_generate_playlists():
     pass  # Playlist generation

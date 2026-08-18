@@ -29,6 +29,7 @@ def _make_library_db() -> tuple[LibraryDb, MagicMock, MagicMock, MagicMock, Magi
         song_repo=song_repo,
         folder_repo=folder_repo,
         song_state_repo=song_state_repo,
+        song_hydration_repo=MagicMock(),
     )
     tags = LibraryTagsDb(session=MagicMock(), tag_repo=tag_repo, song_tag_repo=song_tag_repo)
     scans = LibraryScansDb(session=MagicMock(), scan_repo=scan_repo)
@@ -1051,6 +1052,29 @@ def test_remove_scan_noop_when_not_exists() -> None:
     scan_repo.delete_scan_record.assert_not_called()
 
 
+# ── Song hydration (transactional intent) ────────────────────────────────
+
+
+@pytest.mark.unit
+def test_hydrate_song_delegates_to_song_hydration_repo() -> None:
+    db, hydration_repo = _make_songs_db_with_hydration()
+
+    db.hydrate_song(sentinel.input)
+
+    hydration_repo.hydrate_song.assert_called_once_with(sentinel.input)
+
+
+@pytest.mark.unit
+def test_hydrate_songs_batch_delegates_and_returns_count() -> None:
+    db, hydration_repo = _make_songs_db_with_hydration()
+    hydration_repo.hydrate_songs_batch = MagicMock(return_value=5)
+
+    result = db.hydrate_songs_batch([sentinel.a, sentinel.b], chunk_size=3)
+
+    assert result == 5
+    hydration_repo.hydrate_songs_batch.assert_called_once_with([sentinel.a, sentinel.b], chunk_size=3)
+
+
 # ── Sub-facade maintenance surfaces ───────────────────────────────────────
 
 
@@ -1063,8 +1087,22 @@ def _make_songs_db() -> tuple[LibrarySongsDb, MagicMock, MagicMock]:
         song_repo=song_repo,
         folder_repo=folder_repo,
         song_state_repo=song_state_repo,
+        song_hydration_repo=MagicMock(),
     )
     return db, song_repo, folder_repo
+
+
+def _make_songs_db_with_hydration() -> tuple[LibrarySongsDb, MagicMock]:
+    """Build a songs sub-facade with a controllable song_hydration_repo mock."""
+    song_hydration_repo = MagicMock()
+    db = LibrarySongsDb(
+        session=MagicMock(),
+        song_repo=MagicMock(),
+        folder_repo=MagicMock(),
+        song_state_repo=MagicMock(),
+        song_hydration_repo=song_hydration_repo,
+    )
+    return db, song_hydration_repo
 
 
 def _make_tags_db() -> tuple[LibraryTagsDb, MagicMock, MagicMock]:
