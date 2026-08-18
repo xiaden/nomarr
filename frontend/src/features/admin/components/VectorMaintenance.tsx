@@ -27,7 +27,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { ApiError } from "@shared/api/client";
 import {
@@ -49,24 +49,10 @@ export function VectorMaintenance() {
   const [rebuildError, setRebuildError] = useState<string | null>(null);
 
   const [promoteBackbone, setPromoteBackbone] = useState("");
-  const [promoteLibrary, setPromoteLibrary] = useState("");
   const [promoteNlists, setPromoteNlists] = useState<string>("");
   const [promoteLoading, setPromoteLoading] = useState(false);
   const [promoteResult, setPromoteResult] = useState<string | null>(null);
   const [promoteError, setPromoteError] = useState<string | null>(null);
-
-  // Derive unique library keys from stats
-  const libraryKeys = useMemo(() => {
-    if (!stats) return [];
-    return [...new Set(stats.map((s) => s.library_key))];
-  }, [stats]);
-
-  // Auto-select first library when available
-  useEffect(() => {
-    if (libraryKeys.length > 0 && !promoteLibrary) {
-      setPromoteLibrary(libraryKeys[0]);
-    }
-  }, [libraryKeys, promoteLibrary]);
 
   // Fetch stats on mount
   const fetchStats = useCallback(async () => {
@@ -114,7 +100,7 @@ export function VectorMaintenance() {
     setPromoteResult(null);
     try {
       const nlists = promoteNlists ? parseInt(promoteNlists, 10) : null;
-      const response = await promoteVectors(promoteBackbone, promoteLibrary, nlists);
+      const response = await promoteVectors(promoteBackbone, nlists);
       setPromoteResult(response.message);
       // Refresh stats after promote
       void fetchStats();
@@ -129,15 +115,15 @@ export function VectorMaintenance() {
     } finally {
       setPromoteLoading(false);
     }
-  }, [promoteBackbone, promoteLibrary, promoteNlists, fetchStats]);
+  }, [promoteBackbone, promoteNlists, fetchStats]);
 
   const handleRebuildIndex = useCallback(
-    async (backboneId: string, libraryKey: string) => {
-      const key = `${backboneId}:${libraryKey}`;
+    async (backboneId: string) => {
+      const key = backboneId;
       setRebuildingKey(key);
       setRebuildError(null);
       try {
-        await rebuildVectorIndex(backboneId, libraryKey);
+        await rebuildVectorIndex(backboneId);
         void fetchStats();
       } catch (err) {
         if (err instanceof ApiError) {
@@ -196,7 +182,6 @@ export function VectorMaintenance() {
                 <TableHead>
                   <TableRow>
                     <TableCell>Backbone</TableCell>
-                    {libraryKeys.length > 1 && <TableCell>Library</TableCell>}
                     <TableCell align="right">Hot</TableCell>
                     <TableCell align="right">Cold</TableCell>
                     <TableCell align="center">Index</TableCell>
@@ -205,13 +190,10 @@ export function VectorMaintenance() {
                 </TableHead>
                 <TableBody>
                   {stats.map((s) => {
-                    const rowKey = `${s.backbone_id}:${s.library_key}`;
+                    const rowKey = s.backbone_id;
                     return (
                       <TableRow key={rowKey}>
                         <TableCell>{s.backbone_id}</TableCell>
-                        {libraryKeys.length > 1 && (
-                          <TableCell>{s.library_key}</TableCell>
-                        )}
                         <TableCell align="right">
                           {s.hot_count.toLocaleString()}
                         </TableCell>
@@ -232,8 +214,7 @@ export function VectorMaintenance() {
                             disabled={rebuildingKey !== null}
                             onClick={() =>
                               void handleRebuildIndex(
-                                s.backbone_id,
-                                s.library_key
+                                s.backbone_id
                               )
                             }
                           >
@@ -274,23 +255,6 @@ export function VectorMaintenance() {
               </Select>
             </FormControl>
 
-            {libraryKeys.length > 1 && (
-              <FormControl fullWidth size="small">
-                <InputLabel>Library</InputLabel>
-                <Select
-                  value={promoteLibrary}
-                  label="Library"
-                  onChange={(e) => setPromoteLibrary(e.target.value)}
-                >
-                  {libraryKeys.map((lk) => (
-                    <MenuItem key={lk} value={lk}>
-                      {lk}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            )}
-
             <TextField
               label="HNSW nlists (optional)"
               placeholder="Auto-calculated if empty"
@@ -306,7 +270,7 @@ export function VectorMaintenance() {
             <Button
               variant="contained"
               onClick={() => void handlePromote()}
-              disabled={promoteLoading || !promoteBackbone || !promoteLibrary}
+              disabled={promoteLoading || !promoteBackbone}
             >
               {promoteLoading ? (
                 <CircularProgress size={24} />
