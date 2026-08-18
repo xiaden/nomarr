@@ -200,6 +200,7 @@ export function VectorSearchPage() {
             </FormControl>
 
             <TrackSearchPicker
+              value={selectedTrack}
               onTrackSelect={setSelectedTrack}
               helperText="Search by artist, album, or title to find a track"
             />

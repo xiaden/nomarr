@@ -24,6 +24,8 @@ interface TrackSearchPickerProps
 export function TrackSearchPicker({
   onTrackSelect,
   helperText = "Search by artist, album, or title",
+  value,
+  onChange,
   ...props
 }: TrackSearchPickerProps) {
   const [inputValue, setInputValue] = useState("");
@@ -79,11 +81,12 @@ export function TrackSearchPicker({
   );
 
   const handleChange = useCallback(
-    (_event: React.SyntheticEvent, value: LibraryFile | null) => {
-      setSelectedTrack(value);
-      onTrackSelect?.(value);
+    (event: React.SyntheticEvent, nextValue: LibraryFile | null) => {
+      setSelectedTrack(nextValue);
+      onTrackSelect?.(nextValue);
+      onChange?.(event, nextValue, "selectOption");
     },
-    [onTrackSelect]
+    [onChange, onTrackSelect]
   );
 
   const getOptionLabel = (option: LibraryFile): string => {
@@ -101,7 +104,7 @@ export function TrackSearchPicker({
       loading={loading}
       inputValue={inputValue}
       onInputChange={handleInputChange}
-      value={selectedTrack}
+      value={value !== undefined ? value : selectedTrack}
       onChange={handleChange}
       getOptionLabel={getOptionLabel}
       isOptionEqualToValue={isOptionEqualToValue}
