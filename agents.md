@@ -47,6 +47,13 @@ Testing conventions across all three test suites.
 - `references/frontend.md` — Co-located tests, query priority, mocking patterns
 - `references/e2e.md` — Docker environment, auth fixture, selector strategy, conditional waits
 
+**Virtual environment requirement:** Before running Python tools such as pytest,
+check for the project virtual environment and use its interpreter directly:
+`.venv/bin/python -m pytest ...`. The repository's venv is `.venv/`; on Linux
+the executable is `.venv/bin/python` (see
+`scripts/human-scripts/tools/ensure_venv.py`). Do not infer that a tool is
+unavailable solely because its bare command is not on `PATH`.
+
 ---
 
 ## Domain Skills

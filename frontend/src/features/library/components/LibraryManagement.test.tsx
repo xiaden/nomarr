@@ -106,7 +106,7 @@ const workStatusFixture = {
     {
       library_id: "libraries:456",
       name: "tiny library",
-      state: "too_small",
+      state: "cal_ready",
       library_auto_write: true,
     },
   ],
@@ -289,7 +289,7 @@ describe("LibraryManagement", () => {
     expect(screen.getByText("library name")).toBeInTheDocument();
     expect(screen.getByText("tiny library")).toBeInTheDocument();
     expect(screen.getByText("Write ready")).toBeInTheDocument();
-    expect(screen.getByText("Too small")).toBeInTheDocument();
+    expect(screen.getByText("Cal Ready")).toBeInTheDocument();
     expect(screen.getByText("Ready for file writeback review.")).toBeInTheDocument();
     expect(screen.getByText("Needs more tagged files before calibration can continue.")).toBeInTheDocument();
   });

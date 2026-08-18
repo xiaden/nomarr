@@ -136,13 +136,12 @@ class LibraryDb:
         library_auto_write: bool | None = None,
         updated_at: int,
     ) -> None:
-        self._regions.update_library_metadata(
-            library_id,
-            watch_mode=watch_mode,
-            file_write_mode=file_write_mode,
-            library_auto_write=library_auto_write,
-            updated_at=updated_at,
-        )
+        fields: dict[str, object] = {"updated_at": updated_at}
+        if watch_mode is not None:
+            fields["auto_tag"] = int(watch_mode != "off")
+        if library_auto_write is not None:
+            fields["auto_curate"] = int(library_auto_write)
+        self._regions.update_library(library_id, fields)
 
     def get_pipeline_state(self, library_id: int) -> dict[str, str] | None:
         return self._regions.get_pipeline_state(library_id)
@@ -202,7 +201,7 @@ class LibraryDb:
         library_id: int,
         payloads: list[dict[str, Any]],
         *,
-        initial_state: str = "tagged",
+        initial_state: str = "not_processed",
     ) -> list[int]:
         return self._songs.add_songs_to_library(library_id, payloads, initial_state=initial_state)
 

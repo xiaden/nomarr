@@ -3,7 +3,7 @@ import { Alert, Button, CircularProgress } from "@mui/material";
 import { usePendingCommit } from "../hooks/usePendingCommit";
 
 export function CommitBar(): React.JSX.Element {
-  const { pendingCount, commit, isCommitting } = usePendingCommit();
+  const { pendingCount, commit, isCommitting, commitError } = usePendingCommit();
 
   if (pendingCount === 0) {
     return <></>;
@@ -11,13 +11,13 @@ export function CommitBar(): React.JSX.Element {
 
   return (
     <Alert
-      severity="warning"
+      severity={commitError ? "error" : "warning"}
       sx={{ mb: 2 }}
       action={
         <Button
           color="inherit"
           size="small"
-          onClick={() => void commit()}
+          onClick={() => void commit().catch(() => undefined)}
           disabled={isCommitting}
           startIcon={isCommitting ? <CircularProgress size={16} /> : undefined}
         >
@@ -25,6 +25,7 @@ export function CommitBar(): React.JSX.Element {
         </Button>
       }
     >
+      {commitError ? `Commit failed: ${commitError}. ` : ""}
       {pendingCount} file{pendingCount !== 1 ? "s" : ""} have pending tag
       changes
     </Alert>

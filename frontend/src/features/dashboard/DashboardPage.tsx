@@ -234,12 +234,12 @@ export function DashboardPage() {
             ) : (
               <Stack spacing={1.25}>
                 {pipelineLibraries.map((library) => {
-                  const needsAttention = library.state === "too_small" || library.state === "write_ready";
+                  const needsAttention = library.state === "cal_ready" || library.state === "write_ready";
 
                   return needsAttention ? (
                     <Alert
                       key={library.library_id}
-                      severity={library.state === "too_small" ? "warning" : "info"}
+                      severity={library.state === "cal_ready" ? "warning" : "info"}
                       variant="outlined"
                     >
                       <Stack
@@ -252,7 +252,7 @@ export function DashboardPage() {
                         <Box>
                           <Typography variant="subtitle2">{library.name}</Typography>
                           <Typography variant="caption" color="text.secondary">
-                            {library.state === "too_small"
+                            {library.state === "cal_ready"
                               ? "Needs more tagged files before calibration can continue."
                               : "Ready for file writeback review."}
                           </Typography>

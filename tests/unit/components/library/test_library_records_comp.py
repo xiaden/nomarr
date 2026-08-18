@@ -187,6 +187,29 @@ class TestListLibraryRecords:
         mock_db.library.list_libraries.assert_called_once_with(enabled_only=False)
 
     @pytest.mark.unit
+    def test_maps_repository_columns_to_library_intent_fields(self) -> None:
+        mock_db = MagicMock()
+        mock_db.library.list_libraries.return_value = [
+            {
+                "id": 1,
+                "name": "Test Library",
+                "path": "/tmp",
+                "library_type": "music",
+                "auto_tag": 1,
+                "auto_curate": 1,
+                "created_at": 0,
+                "updated_at": 0,
+            }
+        ]
+
+        result = list_library_records(mock_db, include_scan=False)
+
+        assert result[0].root_path == "/tmp"
+        assert result[0].is_enabled is True
+        assert result[0].watch_mode == "event"
+        assert result[0].library_auto_write is True
+
+    @pytest.mark.unit
     def test_merges_scan_state_for_enabled_only_records(self) -> None:
         mock_db = MagicMock()
         enabled_docs = [self._make_lib(id=1)]

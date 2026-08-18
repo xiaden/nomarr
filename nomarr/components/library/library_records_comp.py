@@ -60,7 +60,8 @@ def get_library_record(
     include_scan: bool = True,
 ) -> dict[str, Any] | None:
     """Get one library by ``id`` and optionally merge scan state."""
-    doc = cast("dict[str, Any] | None", db.library.get_library(library_id))
+    row = cast("dict[str, Any] | None", db.library.get_library(library_id))
+    doc = None if row is None else _row_to_library_doc(row)
 
     if doc is None or not include_scan:
         return doc
@@ -74,7 +75,8 @@ def get_library_by_name(
     include_scan: bool = False,
 ) -> dict[str, Any] | None:
     """Get one library by unique name."""
-    doc = cast("dict[str, Any] | None", db.library.get_library_by_name(name))
+    row = cast("dict[str, Any] | None", db.library.get_library_by_name(name))
+    doc = None if row is None else _row_to_library_doc(row)
     if doc is None or not include_scan:
         return doc
     return _merge_scan_state(db, doc)
@@ -91,6 +93,7 @@ def list_library_records(
         "list[dict[str, Any]]",
         db.library.list_libraries(enabled_only=enabled_only),
     )
+    docs = [_row_to_library_doc(doc) for doc in docs]
     if include_scan:
         docs = [_merge_scan_state(db, doc) for doc in docs]
     return [LibraryDict(**doc) for doc in docs]
@@ -190,6 +193,58 @@ def find_library_containing_path(db: Database, file_path: str) -> LibraryDict | 
             continue  # Path is not under this library root; try the next one
 
     return None
+
+
+def _row_to_library_doc(row: dict[str, Any]) -> dict[str, Any]:
+    """Translate repository column names into the library intent shape.
+
+    The repository returns ``LibraryRow`` keys, while callers consume the
+    public ``LibraryDict`` vocabulary.  Keep this boundary explicit and omit
+    persistence-only columns rather than passing them to the DTO constructor.
+    """
+    if "path" in row:
+        return {
+            "id": row.get("id"),
+            "name": row.get("name"),
+            "root_path": row["path"],
+            "is_enabled": row.get("library_type") != "disabled",
+            "created_at": row.get("created_at"),
+            "updated_at": row.get("updated_at"),
+            "watch_mode": "event" if row.get("auto_tag") else "off",
+            "library_auto_write": bool(row.get("auto_curate")),
+            "file_write_mode": "full",
+        }
+
+    # Accept already-projected records from component-level test doubles and
+    # legacy callers while still dropping unknown keys before LibraryDict.
+    allowed = {
+        "id",
+        "name",
+        "root_path",
+        "is_enabled",
+        "created_at",
+        "updated_at",
+        "watch_mode",
+        "file_write_mode",
+        "library_auto_write",
+        "scan_status",
+        "scan_progress",
+        "scan_total",
+        "scanned_at",
+        "scan_error",
+        "last_scan_started_at",
+        "last_scan_at",
+        "scan_type_in_progress",
+        "scan_state",
+        "ml_state",
+        "calibration_state",
+        "tag_write_state",
+        "vector_search_thoroughness",
+        "vector_group_size",
+        "file_count",
+        "folder_count",
+    }
+    return {key: value for key, value in row.items() if key in allowed}
 
 
 def find_ml_complete_libraries(db: Database, min_files: int) -> list[dict[str, Any]]:

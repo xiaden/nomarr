@@ -20,7 +20,7 @@ import {
 } from "./useHistogramCalibrationGeneration";
 
 export function useCalibrationStatus() {
-  const { showSuccess, showError, showInfo } = useNotification();
+  const { showSuccess, showError } = useNotification();
   const { confirm, isOpen, options, handleConfirm, handleCancel } =
     useConfirmDialog();
   const [status, setStatus] = useState<CalibrationStatus | null>(null);
@@ -140,10 +140,6 @@ export function useCalibrationStatus() {
     await startApply();
   };
 
-  const handleUpdateFiles = () => {
-    showInfo("Not implemented");
-  };
-
   const handleClear = async () => {
     const confirmed = await confirm({
       title: "Clear All Calibration Data?",
@@ -177,7 +173,6 @@ export function useCalibrationStatus() {
     applyState,
     handleGenerate,
     handleApply,
-    handleUpdateFiles,
     handleClear,
     // Dialog state for rendering ConfirmDialog
     dialogState: { isOpen, options, handleConfirm, handleCancel },

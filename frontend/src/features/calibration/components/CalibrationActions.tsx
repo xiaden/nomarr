@@ -10,7 +10,6 @@ import { ActionCard, Panel, SectionHeader } from "@shared/components/ui";
 interface CalibrationActionsProps {
   onGenerate: () => Promise<void>;
   onApply: () => Promise<void>;
-  onUpdateFiles: () => void;
   onClear: () => Promise<void>;
   actionLoading: boolean;
 }
@@ -18,7 +17,6 @@ interface CalibrationActionsProps {
 export function CalibrationActions({
   onGenerate,
   onApply,
-  onUpdateFiles,
   onClear,
   actionLoading,
 }: CalibrationActionsProps) {
@@ -42,10 +40,11 @@ export function CalibrationActions({
     {
       label: "Update Calibration Files",
       description:
-        "Download and import the latest calibration bundle files from the repository.",
-      onClick: onUpdateFiles,
+        "Download and import the latest calibration bundle files from the repository. This action is not available yet.",
+      onClick: () => {},
       color: "secondary" as const,
       variant: "outlined" as const,
+      disabled: true,
     },
     {
       label: "Clear Calibration Data",
@@ -67,7 +66,7 @@ export function CalibrationActions({
             label={action.label}
             description={action.description}
             onClick={action.onClick}
-            disabled={actionLoading}
+            disabled={actionLoading || action.disabled}
             variant={action.variant}
             color={action.color}
           />

@@ -543,7 +543,9 @@ class TestExecuteDeferredWrites:
             tagger_version="v-test",
             chromaprint="fp",
             raw_output_streams=(
-                [DeferredOutputStreamWrite(output_id="out-0", values=[0.1, 0.9])] if with_streams else []
+                [DeferredOutputStreamWrite(output_id="out-0", values=[0.1, 0.9], output_index=0)]
+                if with_streams
+                else []
             ),
             backbone_vectors=(
                 [
@@ -582,7 +584,7 @@ class TestExecuteDeferredWrites:
                     "num_segments": 3,
                 }
             ],
-            output_streams=[{"output_id": "out-0", "values": [0.1, 0.9]}],
+            output_streams=[{"output_id": "out-0", "values": [0.1, 0.9], "output_index": 0}],
         )
         mock_release.assert_called_once_with(db, 42, "worker:tag:0")
 
@@ -595,7 +597,7 @@ class TestExecuteDeferredWrites:
             song_id=42,
             backbone="",
             vectors=[],
-            output_streams=[{"output_id": "out-0", "values": [0.1, 0.9]}],
+            output_streams=[{"output_id": "out-0", "values": [0.1, 0.9], "output_index": 0}],
         )
         mock_release.assert_called_once()
 
@@ -608,7 +610,7 @@ class TestExecuteDeferredWrites:
             namespace="nom",
             tagger_version="v-test",
             chromaprint=None,
-            raw_output_streams=[DeferredOutputStreamWrite(output_id="out-0", values=[0.1, 0.9])],
+            raw_output_streams=[DeferredOutputStreamWrite(output_id="out-0", values=[0.1, 0.9], output_index=0)],
             backbone_vectors=[
                 DeferredBackboneVectorWrite(
                     backbone="bb1",
@@ -626,8 +628,8 @@ class TestExecuteDeferredWrites:
         bb1_call, openl3_call = db.ml.replace_song_inference_results.call_args_list
         assert bb1_call.kwargs["backbone"] == "bb1"
         assert openl3_call.kwargs["backbone"] == "openl3"
-        # each per-backbone call carries the full canonical stream set
-        expected_streams = [{"output_id": "out-0", "values": [0.1, 0.9]}]
+        # each per-backbone call carries the full canonical stream set (with index)
+        expected_streams = [{"output_id": "out-0", "values": [0.1, 0.9], "output_index": 0}]
         assert bb1_call.kwargs["output_streams"] == expected_streams
         assert openl3_call.kwargs["output_streams"] == expected_streams
         mock_release.assert_called_once()

@@ -10,12 +10,14 @@ export interface UsePendingCommitResult {
   commit: (libraryId?: string) => Promise<CommitResult>;
   isCommitting: boolean;
   isPolling: boolean;
+  commitError: string | null;
 }
 
 export function usePendingCommit(): UsePendingCommitResult {
   const [pendingCount, setPendingCount] = useState(0);
   const [isCommitting, setIsCommitting] = useState(false);
   const [isPolling, setIsPolling] = useState(false);
+  const [commitError, setCommitError] = useState<string | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const poll = useCallback(async () => {
@@ -44,10 +46,16 @@ export function usePendingCommit(): UsePendingCommitResult {
   const commit = useCallback(
     async (libraryId?: string): Promise<CommitResult> => {
       setIsCommitting(true);
+      setCommitError(null);
       try {
         const result = await commitPendingTags(libraryId);
         await poll();
         return result;
+      } catch (error) {
+        setCommitError(
+          error instanceof Error ? error.message : "Failed to commit tag changes"
+        );
+        throw error;
       } finally {
         setIsCommitting(false);
       }
@@ -60,5 +68,6 @@ export function usePendingCommit(): UsePendingCommitResult {
     commit,
     isCommitting,
     isPolling,
+    commitError,
   };
 }
