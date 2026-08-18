@@ -150,6 +150,7 @@ export function useLibrarySearch(
     async (q: string) => {
       // Cancel any in-flight request
       abortRef.current?.abort();
+      abortRef.current = null;
       const controller = new AbortController();
       abortRef.current = controller;
 
@@ -194,6 +195,7 @@ export function useLibrarySearch(
 
     if (!query.trim()) {
       // Clear immediately when query is emptied
+      abortRef.current?.abort();
       setResults(null);
       setActiveQuery("");
       setLoading(false);

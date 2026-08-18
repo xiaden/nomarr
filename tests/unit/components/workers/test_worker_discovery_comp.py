@@ -88,7 +88,7 @@ class TestTryInsertOrStealClaim:
         )
 
         assert result is True
-        mock_db.app.remove_claim_by_song.assert_called_once_with(123, "process")
+        mock_db.app.remove_claim_by_song.assert_called_once_with(123, None)
         mock_db.app.remove_claim.assert_not_called()
         assert mock_db.app.claim_song.call_count == 2
 

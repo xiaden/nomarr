@@ -81,7 +81,7 @@ def release_claim(db: Database, file_id: int, worker_id: str) -> None:
         file_id: Song id
 
     """
-    db.app.remove_claim(worker_id, file_id, "process")
+    db.app.remove_claim(worker_id, file_id)
 
 
 def try_insert_or_steal_claim(
@@ -108,6 +108,8 @@ def try_insert_or_steal_claim(
     file_id = int(payload["file_id"])
     worker_id = str(payload["worker_id"])
     claim_type = payload.get("claim_type")
+    if claim_type is not None:
+        claim_type = str(claim_type)
     claimed_at = int(payload.get("claimed_at", 0))
     try:
         db.app.claim_song(file_id, worker_id, claim_type=claim_type, claimed_at=claimed_at)
@@ -129,7 +131,7 @@ def try_insert_or_steal_claim(
         if claimed_at > now - lease_ms:
             return False
 
-        db.app.remove_claim_by_song(int(file_id), str(claim_type or "process"))
+        db.app.remove_claim_by_song(int(file_id), claim_type)
         try:
             db.app.claim_song(file_id, worker_id, claim_type=claim_type, claimed_at=claimed_at)
         except DuplicateEntityError:

@@ -173,10 +173,10 @@ class AppDb:
             payload["claim_type"] = claim_type
         return self._app_repo.insert_worker_claim(payload)
 
-    def remove_claim(self, worker_id: str, song_id: int, claim_type: str = "process") -> None:
+    def remove_claim(self, worker_id: str, song_id: int, claim_type: str | None = None) -> None:
         self._app_repo.release_claim(worker_id, song_id, claim_type)
 
-    def remove_claim_by_song(self, song_id: int, claim_type: str = "process") -> None:
+    def remove_claim_by_song(self, song_id: int, claim_type: str | None = None) -> None:
         """Remove a song claim regardless of its current worker owner."""
         self._app_repo.release_claim_by_song(song_id, claim_type)
 
@@ -221,7 +221,7 @@ class AppDb:
     def upsert_health(self, component_id: str, fields: dict) -> None:
         self._app_repo.upsert_health(component_id, fields)
 
-    def release_claim(self, worker_id: str, song_id: int, claim_type: str = "process") -> None:
+    def release_claim(self, worker_id: str, song_id: int, claim_type: str | None = None) -> None:
         """Release one worker's claim for a song."""
         self.remove_claim(worker_id, song_id, claim_type)
 
