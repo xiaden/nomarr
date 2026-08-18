@@ -33,7 +33,7 @@ import {
     Stack,
     Typography,
 } from "@mui/material";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { getFilesByIds, searchByTag, type FileTag, type LibraryFile } from "../../../shared/api/files";
 import { listAlbumsForArtist, listEntities, listSongsForEntity, type Album } from "../../../shared/api/metadata";
@@ -84,6 +84,7 @@ export function LibraryBrowser({ initialStep }: LibraryBrowserProps) {
   const [tracks, setTracks] = useState<LibraryFile[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const requestVersion = useRef(0);
 
   // Pagination for artists
   const [artistsTotal, setArtistsTotal] = useState(0);
@@ -92,65 +93,78 @@ export function LibraryBrowser({ initialStep }: LibraryBrowserProps) {
 
   // Load artists with pagination
   const loadArtists = useCallback(async (offset: number = 0) => {
+    const version = ++requestVersion.current;
     try {
       setLoading(true);
       setError(null);
       const result = await listEntities("artist", { limit: artistsLimit, offset });
+      if (version !== requestVersion.current) return;
       setArtists(result.entities.sort((a, b) => a.display_name.localeCompare(b.display_name)));
       setArtistsTotal(result.total);
       setArtistsOffset(offset);
     } catch (err) {
+      if (version !== requestVersion.current) return;
       setError(err instanceof Error ? err.message : "Failed to load artists");
     } finally {
-      setLoading(false);
+      if (version === requestVersion.current) setLoading(false);
     }
   }, []);
 
   // Load albums for artist
   const loadAlbums = useCallback(async (artistId: string) => {
+    const version = ++requestVersion.current;
     try {
       setLoading(true);
       setError(null);
       const result = await listAlbumsForArtist(artistId);
+      if (version !== requestVersion.current) return;
       setAlbums(result.sort((a, b) => a.display_name.localeCompare(b.display_name)));
     } catch (err) {
+      if (version !== requestVersion.current) return;
       setError(err instanceof Error ? err.message : "Failed to load albums");
     } finally {
-      setLoading(false);
+      if (version === requestVersion.current) setLoading(false);
     }
   }, []);
 
   // Load tracks for album
   const loadTracks = useCallback(async (albumId: string) => {
+    const version = ++requestVersion.current;
     try {
       setLoading(true);
       setError(null);
       const result = await listSongsForEntity("album", albumId, "album", { limit: 500 });
+      if (version !== requestVersion.current) return;
       // Get file details for songs (song_ids are actually songs _ids)
       if (result.song_ids.length > 0) {
         const filesResult = await getFilesByIds(result.song_ids);
+        if (version !== requestVersion.current) return;
         setTracks(filesResult.files);
       } else {
         setTracks([]);
       }
     } catch (err) {
+      if (version !== requestVersion.current) return;
       setError(err instanceof Error ? err.message : "Failed to load tracks");
     } finally {
-      setLoading(false);
+      if (version === requestVersion.current) setLoading(false);
     }
   }, []);
 
   // Search by tag
   const loadTracksByTag = useCallback(async (tagKey: string, targetValue: number | string) => {
+    const version = ++requestVersion.current;
     try {
       setLoading(true);
       setError(null);
       const result = await searchByTag({ tag_key: tagKey, target_value: targetValue, limit: 100 });
+      if (version !== requestVersion.current) return;
       setTracks(result.files);
     } catch (err) {
+      if (version !== requestVersion.current) return;
       setError(err instanceof Error ? err.message : "Failed to search by tag");
     } finally {
-      setLoading(false);
+      if (version === requestVersion.current) setLoading(false);
     }
   }, []);
 
