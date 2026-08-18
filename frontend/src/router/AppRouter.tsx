@@ -18,6 +18,7 @@ const PlaylistImportPage = lazy(() => import("../features/playlist-import/Playli
 const VectorSearchPage = lazy(() => import("../features/vector-search/VectorSearchPage").then((m) => ({ default: m.VectorSearchPage })));
 const AdminPage = lazy(() => import("../features/admin/AdminPage").then((m) => ({ default: m.AdminPage })));
 const TagCurationPage = lazy(() => import("../features/tag-curation/TagCurationPage").then((m) => ({ default: m.TagCurationPage })));
+const LibraryPage = lazy(() => import("../features/library/LibraryPage").then((m) => ({ default: m.LibraryPage })));
 
 /**
  * Main application router.
@@ -76,6 +77,8 @@ export function AppRouter() {
                     <Route path="/vector-search" element={<VectorSearchPage />} />
                     <Route path="/admin" element={<AdminPage />} />
                     <Route path="/tag-curation" element={<TagCurationPage />} />
+                    <Route path="/library" element={<LibraryPage />} />
+                    <Route path="*" element={<NotFoundPage />} />
                   </Routes>
                 </AppShell>
               </ProtectedRoute>
@@ -84,6 +87,19 @@ export function AppRouter() {
         </Routes>
       </Suspense>
     </BrowserRouter>
+  );
+}
+
+function NotFoundPage() {
+  return (
+    <Box sx={{ p: 2.5 }}>
+      <Typography variant="h4" sx={{ mb: 2.5, fontWeight: 600 }}>
+        Page not found
+      </Typography>
+      <Typography color="text.secondary">
+        The page you requested does not exist.
+      </Typography>
+    </Box>
   );
 }
 
