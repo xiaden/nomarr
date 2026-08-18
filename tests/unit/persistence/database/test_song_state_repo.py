@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import delete, insert, select
 
-from nomarr.helpers.constants.file_states import ALL_STATE_VERTICES, STATE_PROCESSED
+from nomarr.helpers.constants.file_states import ALL_STATE_VERTICES, STATE_CALIBRATED, STATE_PROCESSED
 from nomarr.persistence.database.song_state_repo import SongStateRepository
 from nomarr.persistence.models.library import Library
 from nomarr.persistence.models.song import Song
@@ -58,6 +58,17 @@ class TestSongStateRepository:
         repo.assign_state(song_id, STATE_PROCESSED)
         state_name = repo.get_song_state(song_id)
         assert state_name == STATE_PROCESSED
+
+    def test_get_song_state_ignores_assignments_on_other_axes(self, pg_session) -> None:
+        """The scalar accessor should return the processing-axis state."""
+        repo = SongStateRepository(pg_session)
+        repo.bootstrap_states([])
+        _, song_id = _create_library_and_song(pg_session)
+
+        repo.assign_state(song_id, STATE_CALIBRATED)
+        repo.assign_state(song_id, STATE_PROCESSED)
+
+        assert repo.get_song_state(song_id) == STATE_PROCESSED
 
     def test_get_song_state_nonexistent(self, pg_session) -> None:
         """get_song_state should return None for song with no state."""
@@ -216,7 +227,7 @@ class TestSongStateRepository:
         assert state_name == STATE_PROCESSED
 
     def test_ensure_song_state_does_not_override(self, pg_session) -> None:
-        """ensure_song_state should leave an existing state assignment untouched."""
+        """ensure_song_state should leave an existing assignment untouched."""
         repo = SongStateRepository(pg_session)
         repo.bootstrap_states([])
         _, song_id = _create_library_and_song(pg_session)
@@ -224,7 +235,8 @@ class TestSongStateRepository:
         repo.assign_state(song_id, "hydrated")
         repo.ensure_song_state(song_id, STATE_PROCESSED)
         state_name = repo.get_song_state(song_id)
-        assert state_name == "hydrated"
+        assert state_name is None
+        assert repo.get_song_states_for_songs([song_id])[song_id] == {"hydrated"}
 
     def test_remove_states_for_songs(self, pg_session) -> None:
         """remove_states_for_songs should delete assignments."""
