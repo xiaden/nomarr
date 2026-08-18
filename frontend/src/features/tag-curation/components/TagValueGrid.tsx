@@ -1,7 +1,7 @@
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import { Alert, Box, Button, IconButton } from "@mui/material";
-import { DataGrid } from "@mui/x-data-grid";
+import { DataGrid, useGridApiRef } from "@mui/x-data-grid";
 import type {
   GridColDef,
   GridRowSelectionModel,
@@ -48,6 +48,7 @@ export function TagValueGrid({ name, prefix }: TagValueGridProps): React.JSX.Ele
     () => new Map()
   );
   const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
+  const apiRef = useGridApiRef();
 
   const paginationModel = { page, pageSize };
 
@@ -73,10 +74,19 @@ export function TagValueGrid({ name, prefix }: TagValueGridProps): React.JSX.Ele
   const processRowUpdate = useCallback(
     async (newRow: TagValueItem, oldRow: TagValueItem): Promise<TagValueItem> => {
       if (newRow.value === oldRow.value) return oldRow;
-      await rename(newRow.id, newRow.value);
-      return newRow;
+      try {
+        await rename(newRow.id, newRow.value);
+        return newRow;
+      } catch (error) {
+        const gridApi = apiRef.current;
+        if (gridApi) {
+          gridApi.updateRows([oldRow]);
+          gridApi.stopCellEditMode({ id: oldRow.id, field: "value" });
+        }
+        throw error;
+      }
     },
-    [rename]
+    [apiRef, rename]
   );
 
   const columns = useMemo<GridColDef<TagValueItem>[]>(
@@ -153,6 +163,7 @@ export function TagValueGrid({ name, prefix }: TagValueGridProps): React.JSX.Ele
         </Box>
       )}
       <DataGrid<TagValueItem>
+        apiRef={apiRef}
         rows={rows}
         columns={columns}
         rowCount={total}
