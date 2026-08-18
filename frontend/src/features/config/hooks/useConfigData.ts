@@ -53,12 +53,13 @@ export function useConfigData() {
       setSaveLoading(true);
       const changes: string[] = [];
 
-      // Update all changed keys (skip empty/null values)
+      // Update all changed keys. Empty strings are valid clearing values and
+      // must be sent to the API so they are not restored after reload.
       for (const key of Object.keys(config)) {
         if (config[key] !== originalConfig[key]) {
           const value = config[key];
-          // Skip null, undefined, or empty string values
-          if (value === null || value === undefined || value === "") {
+          // Null and undefined are not editable values from this form.
+          if (value === null || value === undefined) {
             continue;
           }
           await updateConfig(key, String(value));
