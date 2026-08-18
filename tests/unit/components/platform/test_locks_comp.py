@@ -41,7 +41,10 @@ class TestAcquireDistributedLock:
 
     def test_returns_false_when_active_lock_is_held_by_other_owner(self) -> None:
         db = MagicMock()
-        db.app.get_lock.return_value = {"expires_at": 10_000.0, "holder": "worker-2"}
+        db.app.get_lock.return_value = {
+            "key": "vector_promotion:file-1",
+            "value": {"expires_at": 10_000.0, "holder": "worker-2"},
+        }
 
         with patch(
             "nomarr.components.platform.locks_comp.now_ms",
@@ -55,7 +58,10 @@ class TestAcquireDistributedLock:
 
     def test_releases_expired_lock_before_reacquiring(self) -> None:
         db = MagicMock()
-        db.app.get_lock.return_value = {"expires_at": 5_000.0, "holder": "worker-2"}
+        db.app.get_lock.return_value = {
+            "key": "vector_promotion:file-1",
+            "value": {"expires_at": 5_000.0, "holder": "worker-2"},
+        }
 
         with patch(
             "nomarr.components.platform.locks_comp.now_ms",
@@ -73,7 +79,7 @@ class TestReleaseDistributedLock:
     def test_releases_lock_for_matching_owner(self) -> None:
         db = MagicMock()
         db.app.get_lock.side_effect = [
-            {"holder": "worker-1"},
+            {"key": "vector_promotion:file-1", "value": {"holder": "worker-1"}},
             None,
         ]
 
@@ -88,7 +94,10 @@ class TestReleaseDistributedLock:
 
     def test_returns_false_for_missing_or_foreign_lock(self) -> None:
         db = MagicMock()
-        db.app.get_lock.return_value = {"holder": "worker-2"}
+        db.app.get_lock.return_value = {
+            "key": "vector_promotion:file-1",
+            "value": {"holder": "worker-2"},
+        }
 
         result = release_distributed_lock(db, "vector_promotion", "file-1", "worker-1")
 
@@ -125,14 +134,20 @@ class TestReapStaleLocks:
         ]
         db.app.get_lock.side_effect = [
             {
-                "document_reference": "vector_promotion:file-1",
-                "lock_type": "vector_promotion",
-                "acquired_at": 100.0,
+                "key": "vector_promotion:file-1",
+                "value": {
+                    "document_reference": "vector_promotion:file-1",
+                    "lock_type": "vector_promotion",
+                    "acquired_at": 100.0,
+                },
             },
             {
-                "document_reference": "vector_promotion:file-2",
-                "lock_type": "vector_promotion",
-                "acquired_at": 9_500.0,
+                "key": "vector_promotion:file-2",
+                "value": {
+                    "document_reference": "vector_promotion:file-2",
+                    "lock_type": "vector_promotion",
+                    "acquired_at": 9_500.0,
+                },
             },
         ]
 
