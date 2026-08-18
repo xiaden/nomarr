@@ -309,7 +309,7 @@ class TagRepository:
             if name is not None:
                 stmt = stmt.where(_T.c.name == name)
             if search is not None:
-                stmt = stmt.where(_T.c.name.ilike(f"%{search}%"))
+                stmt = stmt.where(_T.c.value.ilike(f"%{search}%"))
             result = self._session.execute(stmt)
             return result.scalar() or 0
 
@@ -338,7 +338,7 @@ class TagRepository:
             if name is not None:
                 stmt = stmt.where(_T.c.name == name)
             if search is not None:
-                stmt = stmt.where(_T.c.name.ilike(f"%{search}%"))
+                stmt = stmt.where(_T.c.value.ilike(f"%{search}%"))
             stmt = stmt.group_by(
                 _T.c.id,
                 _T.c.name,

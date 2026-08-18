@@ -458,6 +458,18 @@ class TestTagRepository:
         result = repo.count_tags_filtered(name="rock")
         assert result == 1
 
+    def test_value_search_filters_tag_value(self, pg_session) -> None:
+        """Search should match values rather than tag names."""
+        _create_tag(pg_session, name="genre", value="rock", namespace="genre")
+        _create_tag(pg_session, name="genre", value="jazz", namespace="genre")
+        repo = TagRepository(pg_session)
+
+        result = repo.list_tags_with_song_count(name="genre", search="ro")
+        count = repo.count_tags_filtered(name="genre", search="ro")
+
+        assert [tag["value"] for tag in result] == ["rock"]
+        assert count == 1
+
     def test_list_tags_with_song_count(self, pg_session) -> None:
         """list_tags_with_song_count should include assignment counts."""
         _, song_id = _create_library_and_song(pg_session)
