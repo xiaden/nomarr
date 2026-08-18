@@ -210,6 +210,9 @@ export function useLibrarySearch(
 
     return () => {
       if (debounceRef.current !== null) clearTimeout(debounceRef.current);
+      // A query change supersedes the current request immediately, rather
+      // than waiting for the next debounced search to start.
+      abortRef.current?.abort();
     };
   }, [query, executeSearch]);
 
