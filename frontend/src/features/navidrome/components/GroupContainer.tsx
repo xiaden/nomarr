@@ -34,6 +34,7 @@ import { RuleRow, type Rule } from "./RuleRow";
 import {
   createRule,
   createRuleGroup,
+  MAX_RULE_GROUP_DEPTH,
   type LogicMode,
   type RuleGroup,
 } from "./ruleUtils";
@@ -115,6 +116,9 @@ export function GroupContainer({
   };
 
   const handleAddGroup = () => {
+    if (depth >= MAX_RULE_GROUP_DEPTH - 1) {
+      return;
+    }
     const newGroup = createRuleGroup(group.logic); // Inherit parent logic
     const updated = {
       ...group,
@@ -224,10 +228,15 @@ export function GroupContainer({
             <Button
               startIcon={<AddIcon />}
               onClick={handleAddGroup}
+              disabled={depth >= MAX_RULE_GROUP_DEPTH - 1}
               variant="outlined"
               size="small"
             >
-              Add Group
+              <Tooltip
+                title={`Groups can be nested up to ${MAX_RULE_GROUP_DEPTH} levels.`}
+              >
+                <span>Add Group</span>
+              </Tooltip>
             </Button>
           </Stack>
         </Stack>
