@@ -23,9 +23,17 @@ const PIPELINE_STATE_CONFIG: Record<string, PipelineStateConfig> = {
     label: "Scanning",
     color: "info",
   },
+  scan_ready: {
+    label: "Scan ready",
+    color: "warning",
+  },
   ml_running: {
     label: "ML running",
     color: "info",
+  },
+  ml_ready: {
+    label: "ML ready",
+    color: "warning",
   },
   too_small: {
     label: "Too small",
@@ -38,6 +46,10 @@ const PIPELINE_STATE_CONFIG: Record<string, PipelineStateConfig> = {
   calibrating: {
     label: "Calibrating",
     color: "info",
+  },
+  cal_ready: {
+    label: "Cal Ready",
+    color: "warning",
   },
   applying: {
     label: "Applying",

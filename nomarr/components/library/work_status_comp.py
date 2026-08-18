@@ -111,7 +111,7 @@ def _derive_pipeline_state(axis_state: dict[str, str]) -> str:
     Maps the four pipeline axes to a unified state label.
     An axis that is in a non-terminal state (not_completed, in_progress)
     means that phase of the pipeline needs work.
-    Returns the first incomplete axis found; if all are terminal → ``"idle"``.
+    Returns the first incomplete axis found; if all axes are terminal → ``"done"``.
     """
     if not axis_state:
         return "idle"
@@ -121,19 +121,30 @@ def _derive_pipeline_state(axis_state: dict[str, str]) -> str:
     if scan_val == "scanning":
         return "scanning"
 
-    # Map axis field → pipeline label when axis needs work
+    # Map axis field → pipeline label when axis needs work.  These labels are
+    # the public states consumed by the frontend, not the raw axis values.
     axis_map: list[tuple[str, str]] = [
         ("scan_state", "scan_ready"),
         ("ml_state", "ml_ready"),
         ("calibration_state", "cal_ready"),
         ("tag_write_state", "write_ready"),
     ]
-    # Terminal states = completed / done / not_needed
+    active_labels = {
+        "not_scanned": "scan_ready",
+        "not_ML_processed": "ml_ready",
+        "ML_processing": "ml_running",
+        "not_calibrated": "awaiting_calibration",
+        "calibrating": "calibrating",
+        "not_written": "write_ready",
+        "writing": "writing",
+    }
     terminal_values = {"scanned", "ML_processed", "calibrated", "written", ""}
 
     for key, label in axis_map:
         val = axis_state.get(key, "")
+        if val in active_labels:
+            return active_labels[val]
         if val and val not in terminal_values:
             return label
 
-    return "idle"
+    return "done"
