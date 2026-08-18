@@ -177,6 +177,10 @@ class AppDb:
     def remove_claim(self, worker_id: str, song_id: int, claim_type: str = "process") -> None:
         self._app_repo.release_claim(worker_id, song_id, claim_type)
 
+    def remove_claim_by_song(self, song_id: int, claim_type: str = "process") -> None:
+        """Remove a song claim regardless of its current worker owner."""
+        self._app_repo.release_claim_by_song(song_id, claim_type)
+
     def remove_claims(
         self,
         *,

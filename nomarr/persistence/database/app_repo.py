@@ -307,6 +307,15 @@ class AppRepository:
                 self._session.execute(stmt)
             self._session.commit()
 
+    def release_claim_by_song(self, song_id: int, claim_type: str = "process") -> None:
+        """Release a song claim regardless of which worker owns it."""
+        with map_persistence_exceptions():
+            with self._session.begin_nested():
+                prefix = "claim_reconcile_" if claim_type == "reconcile" else "claim_"
+                stmt = delete(_WC).where(_WC.c.key == f"{prefix}{song_id}")
+                self._session.execute(stmt)
+            self._session.commit()
+
     def delete_claims_for_workers(self, worker_ids: list[str]) -> int:
         """Delete all claims for the given worker ids; return row count."""
         with map_persistence_exceptions():

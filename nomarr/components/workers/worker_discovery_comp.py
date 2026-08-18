@@ -129,7 +129,7 @@ def try_insert_or_steal_claim(
         if claimed_at > now - lease_ms:
             return False
 
-        db.app.remove_claim(worker_id, int(file_id), str(claim_type or "process"))
+        db.app.remove_claim_by_song(int(file_id), str(claim_type or "process"))
         try:
             db.app.claim_song(file_id, worker_id, claim_type=claim_type, claimed_at=claimed_at)
         except DuplicateEntityError:

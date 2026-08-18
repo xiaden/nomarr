@@ -12,6 +12,7 @@ from nomarr.components.workers.worker_discovery_comp import (
     cleanup_stale_claims,
     discover_next_file,
     release_claims_for_worker,
+    try_insert_or_steal_claim,
 )
 from nomarr.helpers.exceptions import DuplicateEntityError
 
@@ -63,6 +64,30 @@ class TestClaimFile:
         assert inserted["key"] == "claim_123"
         assert inserted["file_id"] == "123"
         assert inserted["worker_id"] == "worker:tag:0"
+
+
+class TestTryInsertOrStealClaim:
+    """Tests for expired claim replacement."""
+
+    @pytest.mark.unit
+    def test_steals_expired_claim_without_using_new_owner_for_release(self) -> None:
+        mock_db = MagicMock()
+        mock_db.app.claim_song.side_effect = [DuplicateEntityError(), 1]
+        mock_db.app.list_claims.return_value = [
+            {"file_id": 123, "worker_id": "worker-a", "claimed_at": 1000}
+        ]
+
+        result = try_insert_or_steal_claim(
+            mock_db,
+            {"file_id": 123, "worker_id": "worker-b", "claimed_at": 5000},
+            now=5000,
+            lease_ms=1000,
+        )
+
+        assert result is True
+        mock_db.app.remove_claim_by_song.assert_called_once_with(123, "process")
+        mock_db.app.remove_claim.assert_not_called()
+        assert mock_db.app.claim_song.call_count == 2
 
     @pytest.mark.unit
     def test_returns_false_when_duplicate_insert_raises(self) -> None:

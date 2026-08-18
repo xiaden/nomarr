@@ -302,6 +302,14 @@ class TestAppRepository:
         claims = repo.list_claims()
         assert not any(c["key"] == "claim_2" for c in claims)
 
+    def test_release_claim_by_song_ignores_owner(self, pg_session) -> None:
+        """Expired claim stealing should remove a claim owned by another worker."""
+        repo = AppRepository(pg_session)
+        repo.claim_file(3, "worker1", {"status": "processing", "claimed_at": 1000})
+        repo.release_claim_by_song(3)
+        claims = repo.list_claims()
+        assert not any(c["key"] == "claim_3" for c in claims)
+
     def test_delete_claims_for_workers(self, pg_session) -> None:
         """delete_claims_for_workers should delete claims for workers."""
         repo = AppRepository(pg_session)

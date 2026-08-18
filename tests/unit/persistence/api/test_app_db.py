@@ -336,7 +336,7 @@ class TestAppDbLockMethods:
         result = app_db.acquire_lock("scan:1", {"owner": "w1"})
 
         assert result is True
-        mock_app_repo.acquire_lock.assert_called_once_with("scan:1", {"owner": "w1"})
+        mock_app_repo.acquire_lock.assert_called_once_with("scan:1", {"value": {"owner": "w1"}})
 
     @pytest.mark.unit
     def test_acquire_lock_returns_false_on_conflict(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
