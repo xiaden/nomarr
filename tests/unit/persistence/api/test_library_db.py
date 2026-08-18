@@ -130,11 +130,10 @@ def test_add_library_delegates() -> None:
     library_repo.add_library.assert_called_once_with(
         {
             "name": "main",
-            "root_path": "/music",
-            "is_enabled": True,
-            "watch_mode": "off",
-            "file_write_mode": "full",
-            "library_auto_write": False,
+            "path": "/music",
+            "library_type": "music",
+            "auto_tag": 0,
+            "auto_curate": 0,
             "created_at": 1,
             "updated_at": 1,
         }
