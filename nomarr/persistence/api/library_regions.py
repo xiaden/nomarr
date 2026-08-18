@@ -10,7 +10,7 @@ behavior unchanged.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session, scoped_session
@@ -41,9 +41,31 @@ class LibraryRegionsDb:
         self._library_repo = library_repo
         self._song_state_repo = song_state_repo
 
-    def add_library(self, payload: dict[str, Any]) -> int:
-        """Create a new library and return its ID."""
-        return self._library_repo.add_library(payload)
+    def create_library(
+        self,
+        *,
+        name: str,
+        root_path: str,
+        is_enabled: bool,
+        watch_mode: str,
+        file_write_mode: str,
+        library_auto_write: bool,
+        created_at: int,
+        updated_at: int,
+    ) -> int:
+        """Create a library, translating intent fields to table columns."""
+        del file_write_mode
+        return self._library_repo.add_library(
+            {
+                "name": name,
+                "path": root_path,
+                "library_type": "music" if is_enabled else "disabled",
+                "auto_tag": int(watch_mode != "off"),
+                "auto_curate": int(library_auto_write),
+                "created_at": created_at,
+                "updated_at": updated_at,
+            }
+        )
 
     def get_library(self, library_id: int) -> LibraryRow | None:
         """Get a library by its ID."""
