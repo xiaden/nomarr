@@ -272,7 +272,14 @@ class AppRepository:
                 data = {
                     "worker_id": payload["worker_id"],
                     "key": payload["key"],
-                    "value": payload["value"],
+                    "value": {
+                        **dict(payload.get("value", {})),
+                        **{
+                            key: payload[key]
+                            for key in ("file_id", "claim_type")
+                            if key in payload
+                        },
+                    },
                     "claimed_at": payload.get("claimed_at", 0),
                 }
                 row = insert_one(_WC, data, session=self._session)
