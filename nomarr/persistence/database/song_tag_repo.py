@@ -10,7 +10,7 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, exists, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from nomarr.helpers.dto.repo_dto import SongRow, TagRow
@@ -301,9 +301,20 @@ class SongTagRepository:
         """Re-point song-tag assignments from *source_tag_id* to *target_tag_id*."""
         with map_persistence_exceptions():
             with self._session.begin_nested():
+                target_edges = _ST.alias("target_song_tags")
                 stmt = update(_ST).where(_ST.c.tag_id == source_tag_id)
                 if song_ids is not None:
                     stmt = stmt.where(_ST.c.song_id.in_(song_ids))
+                stmt = stmt.where(
+                    ~exists(
+                        select(1)
+                        .select_from(target_edges)
+                        .where(
+                            target_edges.c.song_id == _ST.c.song_id,
+                            target_edges.c.tag_id == target_tag_id,
+                        )
+                    )
+                )
                 stmt = stmt.values(tag_id=target_tag_id)
                 self._session.execute(stmt)
             self._session.commit()

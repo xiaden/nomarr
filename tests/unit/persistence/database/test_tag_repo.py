@@ -421,6 +421,24 @@ class TestTagRepository:
         assert len(tags) == 1
         assert tags[0]["id"] == target_id
 
+    def test_replace_tag_references_skips_existing_target_edges(self, pg_session) -> None:
+        """replace_tag_references should skip songs already assigned to the target."""
+        _, song_with_source_id = _create_library_and_song(pg_session)
+        _, song_with_both_id = _create_library_and_song(pg_session)
+        source_id = _create_tag(pg_session, name="old", value="old", namespace="genre")
+        target_id = _create_tag(pg_session, name="new", value="new", namespace="genre")
+        repo = SongTagRepository(pg_session)
+        repo.assign_tag_to_song(song_with_source_id, source_id)
+        repo.assign_tag_to_song(song_with_both_id, source_id)
+        repo.assign_tag_to_song(song_with_both_id, target_id)
+
+        repo.replace_tag_references(source_id, target_id)
+
+        source_tags = repo.get_tags_for_song(song_with_source_id)
+        both_tags = repo.get_tags_for_song(song_with_both_id)
+        assert [tag["id"] for tag in source_tags] == [target_id]
+        assert {tag["id"] for tag in both_tags} == {source_id, target_id}
+
     # ── Plan E facade support ───────────────────────────────────
 
     def test_list_all_tag_names(self, pg_session) -> None:
