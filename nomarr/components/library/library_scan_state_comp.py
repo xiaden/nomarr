@@ -83,19 +83,6 @@ def get_scan_state(db: Database, library_id: int) -> dict[str, Any] | None:
     return scan_doc
 
 
-def update_scan_state(db: Database, library_id: int, **fields: Any) -> dict[str, Any]:
-    """Persist scan-state changes through the constructor-backed namespace."""
-    scan_doc = ensure_scan_state(db, library_id)
-    if not fields:
-        return scan_doc
-
-    db.library.update_scan(library_id, fields)
-    refreshed = cast("dict[str, Any] | None", db.library.get_scan(library_id))
-    if refreshed is not None:
-        return refreshed
-    return {**scan_doc, **fields}
-
-
 def transition_pipeline_axis(
     db: Database,
     library_id: int,
