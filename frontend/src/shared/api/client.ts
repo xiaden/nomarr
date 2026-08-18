@@ -69,7 +69,7 @@ export interface RequestOptions extends Omit<RequestInit, "body"> {
  * - JSON serialization of body
  * - Auth header injection
  * - Error normalization (ApiError)
- * - 401/403 session clearing
+ * - 401/403 session clearing for authenticated requests
  * - Optional snake_case → camelCase transform
  */
 export async function request<T>(
@@ -104,8 +104,12 @@ export async function request<T>(
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
 
-    // Handle auth errors - clear session and redirect
-    if (response.status === 401 || response.status === 403) {
+    // A 403 from an unauthenticated request is a regular API error. In
+    // particular, the login endpoint uses it for invalid credentials.
+    if (
+      response.status === 401 ||
+      (response.status === 403 && path !== "/api/web/authentication/login")
+    ) {
       clearSessionToken();
       redirectToLogin();
       throw new ApiError(response.status, "Unauthorized");
