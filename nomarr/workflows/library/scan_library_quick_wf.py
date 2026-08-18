@@ -32,7 +32,6 @@ from nomarr.components.library.library_song_query_comp import (
 from nomarr.components.library.library_song_state_comp import transition_song_state
 from nomarr.components.library.scan_lifecycle_comp import (
     mark_scan_completed,
-    mark_scan_started,
     resolve_library_for_scan,
     update_scan_progress,
 )
@@ -91,8 +90,6 @@ def scan_library_quick_workflow(
     library = resolve_library_for_scan(db, library_id)
     library_root = Path(library.root_path).resolve()
     validate_library_root(library_root)
-    mark_scan_started(db, library_id, scan_type="quick")
-
     try:
         # Step 2 — Pre-scan DB lookups
         db_folder_paths = get_folder_rel_paths(db, library_id)

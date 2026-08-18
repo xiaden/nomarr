@@ -39,19 +39,14 @@ class TestScanSetupWorkflowPipeline:
                 return_value=(False, None),
             ),
             patch("nomarr.workflows.library.scan_setup_wf.is_library_scanning", return_value=False),
-            patch("nomarr.workflows.library.scan_setup_wf.update_scan_progress") as mock_update,
+            patch("nomarr.workflows.library.scan_setup_wf.mark_scan_started") as mock_start,
             patch("nomarr.workflows.library.scan_setup_wf.transition_to_scanning") as mock_transition_to_scanning,
         ):
             result = scan_setup_workflow(mock_db, 1, scan_type="quick")
 
         assert result == library
         assert mock_transition_to_scanning.called
-        mock_update.assert_called_once_with(
-            mock_db,
-            1,
-            progress=0,
-            total=0,
-        )
+        mock_start.assert_called_once_with(mock_db, 1, "quick")
         mock_transition_to_scanning.assert_called_once_with(mock_db, 1)
 
     @pytest.mark.unit
@@ -75,11 +70,11 @@ class TestScanSetupWorkflowPipeline:
                 return_value=library,
             ),
             patch("nomarr.workflows.library.scan_setup_wf.is_library_scanning", return_value=True),
-            patch("nomarr.workflows.library.scan_setup_wf.update_scan_progress") as mock_update,
+            patch("nomarr.workflows.library.scan_setup_wf.mark_scan_started") as mock_start,
             patch("nomarr.workflows.library.scan_setup_wf.transition_to_scanning") as mock_transition,
             pytest.raises(LibraryAlreadyScanningError, match="already being scanned"),
         ):
             scan_setup_workflow(mock_db, 1, scan_type="quick")
 
-        mock_update.assert_not_called()
+        mock_start.assert_not_called()
         mock_transition.assert_not_called()

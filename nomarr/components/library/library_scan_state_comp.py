@@ -13,6 +13,7 @@ from nomarr.helpers.constants.pipeline_states import (
     PIPELINE_DEFAULTS,
     VALID_PIPELINE_TRANSITIONS,
 )
+from nomarr.helpers.time_helper import now_ms
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -21,9 +22,9 @@ _DEFAULT_SCAN_FIELDS: dict[str, Any] = {
     "files_processed": 0,
     "files_total": 0,
     "completed_at": None,
-    "started_at": None,
     "error": None,
-    "scan_type": None,
+    "scan_type": "initial",
+    "status": "idle",
     "scan_heartbeat": None,
 }
 
@@ -60,6 +61,7 @@ def _default_scan_doc(library_id: int) -> dict[str, Any]:
     return {
         "key": library_key,
         **_DEFAULT_SCAN_FIELDS,
+        "started_at": now_ms().value,
     }
 
 

@@ -14,9 +14,9 @@ from typing import TYPE_CHECKING
 from nomarr.components.library.scan_lifecycle_comp import (
     check_interrupted_scan,
     is_library_scanning,
+    mark_scan_started,
     resolve_library_for_scan,
     transition_to_scanning,
-    update_scan_progress,
 )
 from nomarr.helpers.exceptions import LibraryAlreadyScanningError
 
@@ -73,7 +73,9 @@ def scan_setup_workflow(
         library.name,
     )
 
-    update_scan_progress(db, int(library_id), progress=0, total=0)
+    # The setup workflow runs before the background scan starts, so it owns
+    # creation of the scan row.  Progress updates require that row to exist.
+    mark_scan_started(db, int(library_id), scan_type)
     transition_to_scanning(db, int(library_id))
 
     return library
