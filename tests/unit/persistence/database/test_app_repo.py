@@ -144,6 +144,25 @@ class TestAppRepository:
         assert result["status"] == "unhealthy"
         assert result["last_seen"] == 1000  # unchanged
 
+    def test_update_health_creates_row_and_maps_runtime_fields(self, pg_session) -> None:
+        """Runtime health writes create rows and ignore obsolete fields."""
+        repo = AppRepository(pg_session)
+
+        repo.update_health(
+            "worker1",
+            {
+                "status": "healthy",
+                "last_heartbeat": 2000,
+                "component_type": "worker",
+            },
+        )
+
+        result = repo.get_health("worker1")
+        assert result is not None
+        assert result["worker_id"] == "worker1"
+        assert result["status"] == "healthy"
+        assert result["last_seen"] == 2000
+
     # ── Meta ────────────────────────────────────────────────────
 
     def test_get_meta(self, pg_session) -> None:

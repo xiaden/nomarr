@@ -120,7 +120,7 @@ class AppRepository:
         """Insert-or-update a lock keyed on *resource_id*."""
         with map_persistence_exceptions():
             with self._session.begin_nested():
-                data = {"key": resource_id, **payload}
+                data = {**payload, "key": resource_id}
                 upsert_by_field(_L, "key", resource_id, data, session=self._session)
             self._session.commit()
 
@@ -139,7 +139,7 @@ class AppRepository:
 
     def acquire_lock(self, resource_id: str, payload: dict[str, Any]) -> bool:
         """Try to insert a lock; return ``False`` if it already exists."""
-        data = {"key": resource_id, **payload}
+        data = {**payload, "key": resource_id}
         try:
             with map_persistence_exceptions():
                 with self._session.begin_nested():
@@ -147,7 +147,6 @@ class AppRepository:
                 self._session.commit()
             return True
         except DuplicateEntityError:
-            self._session.rollback()
             return False
 
     def list_locks(self) -> list[LockRow]:
@@ -183,15 +182,46 @@ class AppRepository:
         """Insert-or-update a health row keyed on ``worker_id``."""
         with map_persistence_exceptions():
             with self._session.begin_nested():
-                data = {"worker_id": component_id, **fields}
+                data = {**fields, "worker_id": component_id}
                 upsert_by_field(_H, "worker_id", component_id, data, session=self._session)
             self._session.commit()
 
     def update_health(self, component_id: str, fields: dict[str, Any]) -> None:
-        """Update fields on a health row keyed on ``worker_id``."""
+        """Insert or update a health row keyed on ``worker_id``.
+
+        Health rows are recreated by startup maintenance, so an update-only
+        write cannot be used by the runtime telemetry path.  Keep the write
+        constrained to the actual ``worker_health`` columns as well; callers
+        may include fields belonging to the former history-record shape.
+        """
+        data = {
+            key: value
+            for key, value in fields.items()
+            if key in {"status", "last_seen"}
+        }
+        if "last_seen" not in data:
+            for alias in ("last_snapshot", "last_heartbeat"):
+                if alias in fields:
+                    data["last_seen"] = fields[alias]
+                    break
+        if not data:
+            return
+
         with map_persistence_exceptions():
             with self._session.begin_nested():
-                update_by_field(_H, "worker_id", component_id, fields, session=self._session)
+                existing = self._session.execute(
+                    select(_H.c.worker_id).where(_H.c.worker_id == component_id)
+                ).first()
+                if existing:
+                    update_by_field(_H, "worker_id", component_id, data, session=self._session)
+                else:
+                    upsert_by_field(
+                        _H,
+                        "worker_id",
+                        component_id,
+                        {**data, "worker_id": component_id},
+                        session=self._session,
+                    )
             self._session.commit()
 
     # ── Meta ────────────────────────────────────────────────────
@@ -206,7 +236,7 @@ class AppRepository:
         """Insert-or-update a meta row keyed on *key*."""
         with map_persistence_exceptions():
             with self._session.begin_nested():
-                data = {"key": key, **payload}
+                data = {**payload, "key": key}
                 upsert_by_field(_M, "key", key, data, session=self._session)
             self._session.commit()
 
@@ -363,7 +393,7 @@ class AppRepository:
         """Insert-or-update a migration record keyed on *name*."""
         with map_persistence_exceptions():
             with self._session.begin_nested():
-                data = {"name": name, **fields}
+                data = {**fields, "name": name}
                 upsert_by_field(_AM, "name", name, data, session=self._session)
             self._session.commit()
 
@@ -447,7 +477,7 @@ class AppRepository:
         """Insert-or-update a restart policy keyed on ``component_id``."""
         with map_persistence_exceptions():
             with self._session.begin_nested():
-                data = {"component_id": component_id, **fields}
+                data = {**fields, "component_id": component_id}
                 upsert_by_field(_WRP, "component_id", component_id, data, session=self._session)
             self._session.commit()
 
