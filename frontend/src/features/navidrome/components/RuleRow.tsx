@@ -19,7 +19,7 @@ import {
   Tooltip,
   type SelectChangeEvent,
 } from "@mui/material";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { getTagValues } from "@shared/api/navidrome";
 
@@ -73,20 +73,29 @@ export function RuleRow({
   // Fetch distinct values for the selected tag
   const [tagOptions, setTagOptions] = useState<string[]>([]);
   const [optionsLoading, setOptionsLoading] = useState(false);
+  const valuesRequestId = useRef(0);
 
   const fetchValues = useCallback(async (tagKey: string) => {
+    const requestId = ++valuesRequestId.current;
     if (!tagKey) {
       setTagOptions([]);
+      setOptionsLoading(false);
       return;
     }
     try {
       setOptionsLoading(true);
       const values = await getTagValues(tagKey);
-      setTagOptions(values);
+      if (requestId === valuesRequestId.current) {
+        setTagOptions(values);
+      }
     } catch {
-      setTagOptions([]);
+      if (requestId === valuesRequestId.current) {
+        setTagOptions([]);
+      }
     } finally {
-      setOptionsLoading(false);
+      if (requestId === valuesRequestId.current) {
+        setOptionsLoading(false);
+      }
     }
   }, []);
 
