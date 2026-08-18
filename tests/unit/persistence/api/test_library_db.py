@@ -134,6 +134,8 @@ def test_add_library_delegates() -> None:
             "library_type": "music",
             "auto_tag": 0,
             "auto_curate": 0,
+            "watch_mode": "off",
+            "file_write_mode": "full",
             "created_at": 1,
             "updated_at": 1,
         }
