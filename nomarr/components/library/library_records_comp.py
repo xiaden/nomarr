@@ -208,9 +208,9 @@ def _row_to_library_doc(row: dict[str, Any]) -> dict[str, Any]:
             "is_enabled": row.get("library_type") != "disabled",
             "created_at": row.get("created_at"),
             "updated_at": row.get("updated_at"),
-            "watch_mode": "event" if row.get("auto_tag") else "off",
+            "watch_mode": row.get("watch_mode") or ("event" if row.get("auto_tag") else "off"),
             "library_auto_write": bool(row.get("auto_curate")),
-            "file_write_mode": "full",
+            "file_write_mode": row.get("file_write_mode") or "full",
         }
 
     # Accept already-projected records from component-level test doubles and

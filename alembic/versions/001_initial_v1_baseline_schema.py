@@ -34,6 +34,8 @@ def upgrade() -> None:
         sa.Column("library_type", sa.String(length=50), nullable=False),
         sa.Column("auto_tag", sa.Integer(), nullable=False, server_default=sa.text("0")),
         sa.Column("auto_curate", sa.Integer(), nullable=False, server_default=sa.text("0")),
+        sa.Column("watch_mode", sa.String(length=20), nullable=False, server_default=sa.text("'off'")),
+        sa.Column("file_write_mode", sa.String(length=20), nullable=False, server_default=sa.text("'full'")),
         sa.Column("created_at", sa.BigInteger(), nullable=False),
         sa.Column("updated_at", sa.BigInteger(), nullable=False),
         sa.PrimaryKeyConstraint("id"),

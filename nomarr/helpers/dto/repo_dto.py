@@ -19,6 +19,8 @@ class LibraryRow(TypedDict):
     library_type: str
     auto_tag: int  # Integer, default 0
     auto_curate: int  # Integer, default 0
+    watch_mode: str
+    file_write_mode: str
     created_at: int  # BigInteger
     updated_at: int  # BigInteger
 

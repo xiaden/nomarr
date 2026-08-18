@@ -10,7 +10,7 @@ behavior unchanged.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session, scoped_session
@@ -54,7 +54,6 @@ class LibraryRegionsDb:
         updated_at: int,
     ) -> int:
         """Create a library, translating intent fields to table columns."""
-        del file_write_mode
         return self._library_repo.add_library(
             {
                 "name": name,
@@ -62,6 +61,8 @@ class LibraryRegionsDb:
                 "library_type": "music" if is_enabled else "disabled",
                 "auto_tag": int(watch_mode != "off"),
                 "auto_curate": int(library_auto_write),
+                "watch_mode": watch_mode,
+                "file_write_mode": file_write_mode,
                 "created_at": created_at,
                 "updated_at": updated_at,
             }

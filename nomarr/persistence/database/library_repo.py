@@ -41,6 +41,8 @@ def _row_to_dto(row: Row) -> LibraryRow:
         library_type=m["library_type"],
         auto_tag=m["auto_tag"],
         auto_curate=m["auto_curate"],
+        watch_mode=m["watch_mode"],
+        file_write_mode=m["file_write_mode"],
         created_at=m["created_at"],
         updated_at=m["updated_at"],
     )

@@ -17,5 +17,7 @@ class Library(Base):
     library_type: Mapped[str] = mapped_column(String(50), nullable=False)
     auto_tag: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
     auto_curate: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
+    watch_mode: Mapped[str] = mapped_column(String(20), default="off", server_default=text("'off'"))
+    file_write_mode: Mapped[str] = mapped_column(String(20), default="full", server_default=text("'full'"))
     created_at: Mapped[int] = mapped_column(BigInteger)
     updated_at: Mapped[int] = mapped_column(BigInteger)

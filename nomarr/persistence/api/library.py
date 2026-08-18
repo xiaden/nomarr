@@ -139,6 +139,9 @@ class LibraryDb:
         fields: dict[str, object] = {"updated_at": updated_at}
         if watch_mode is not None:
             fields["auto_tag"] = int(watch_mode != "off")
+            fields["watch_mode"] = watch_mode
+        if file_write_mode is not None:
+            fields["file_write_mode"] = file_write_mode
         if library_auto_write is not None:
             fields["auto_curate"] = int(library_auto_write)
         self._regions.update_library(library_id, fields)
