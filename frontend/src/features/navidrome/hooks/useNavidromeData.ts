@@ -17,6 +17,7 @@ import {
   buildQueryString,
   createRule,
   createRuleGroup,
+  validateGroupDepth,
   type RuleGroup,
 } from "../components/ruleUtils";
 
@@ -91,6 +92,11 @@ export function useNavidromeData() {
 
   // Playlist actions
   const previewPlaylist = async () => {
+    const depthError = validateGroupDepth(playlistRootGroup);
+    if (depthError) {
+      showError(depthError);
+      return;
+    }
     const query = buildQueryString(playlistRootGroup);
     if (!query.trim()) {
       showError("Add at least one complete rule");
@@ -113,6 +119,11 @@ export function useNavidromeData() {
   };
 
   const generatePlaylist = async () => {
+    const depthError = validateGroupDepth(playlistRootGroup);
+    if (depthError) {
+      showError(depthError);
+      return;
+    }
     const query = buildQueryString(playlistRootGroup);
     if (!query.trim()) {
       showError("Add at least one complete rule");

@@ -391,6 +391,13 @@ def parse_smart_playlist_query(query: str, namespace: str = "nom") -> SmartPlayl
     # Parse query into tree structure
     root_group = _parse_group(query, namespace, depth=0)
 
+    # Keep the parsed tree's depth contract explicit.  Parenthesis scanning
+    # validates syntax, while this validates the structure produced by the
+    # recursive parser (and keeps the backend limit aligned with clients).
+    if root_group.depth > MAX_RULE_GROUP_DEPTH:
+        msg = f"Query nesting depth {root_group.depth} exceeds maximum of {MAX_RULE_GROUP_DEPTH}"
+        raise PlaylistQueryError(msg)
+
     return SmartPlaylistFilter(root=root_group)
 
 
