@@ -4,7 +4,7 @@
 
 import type { Library, ScanResult } from "../types";
 
-import { del, get, patch, post, put } from "./client";
+import { del, get, patch, post } from "./client";
 
 export interface LibraryStats {
   total_files: number;
@@ -269,22 +269,6 @@ export async function getRecentActivity(
   return get(`/api/web/machine-learning/recent-activity?${params.toString()}`);
 }
 
-// ────────────────────────────────────────────────────────────────────────────────
-// Vector Search Configuration
-// ────────────────────────────────────────────────────────────────────────────────
-
-export interface VectorConfigResponse {
-  vector_group_size: number;
-  vector_search_thoroughness: number;
-  is_group_size_inherited: boolean;
-  is_thoroughness_inherited: boolean;
-}
-
-export interface VectorConfigUpdate {
-  vector_group_size: number | null;
-  vector_search_thoroughness: number | null;
-}
-
 export interface VectorStatsItem {
   backbone_id: string;
   hot_count: number;
@@ -295,24 +279,6 @@ export interface VectorStatsItem {
 export interface LibraryVectorStatsResponse {
   library_key: string;
   stats: VectorStatsItem[];
-}
-
-/**
- * Get the effective vector search config for a library.
- */
-export async function getLibraryVectorConfig(libraryId: string): Promise<VectorConfigResponse> {
-  return get(`/api/web/library/${libraryId}/vector-config`);
-}
-
-/**
- * Update per-library vector search config overrides.
- * Pass null values to clear the override and inherit the global default.
- */
-export async function updateLibraryVectorConfig(
-  libraryId: string,
-  config: VectorConfigUpdate
-): Promise<VectorConfigResponse> {
-  return put(`/api/web/library/${libraryId}/vector-config`, config);
 }
 
 /**
