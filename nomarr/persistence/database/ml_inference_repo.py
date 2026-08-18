@@ -104,8 +104,11 @@ class MlInferenceRepo:
             backbone_id=payload.get("backbone_id", backbone),
             model_id=payload["model_id"],
             embed_dim=len(embedding_vector),
-            model_suite_hash="",
-            num_segments=None,
+            # The canonical vector payload carries the model suite hash in
+            # ``model_id`` (see ml_vector_persist_comp.build_backbone_vector_payload),
+            # so ``model_suite_hash`` stays empty unless a payload supplies the key.
+            model_suite_hash=payload.get("model_suite_hash", ""),
+            num_segments=payload.get("num_segments"),
             segmentation_hash=None,
             embedding=embedding_vector,
             genres=payload.get("genres"),

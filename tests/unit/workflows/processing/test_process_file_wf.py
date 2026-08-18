@@ -119,8 +119,8 @@ def test_process_file_workflow_packages_resolved_output_streams_and_skips_missin
         )
     ]
     assert result.deferred_writes.raw_output_streams == [
-        DeferredOutputStreamWrite(output_id="ml_model_outputs/out-0", values=[0.1, 0.9]),
-        DeferredOutputStreamWrite(output_id="ml_model_outputs/out-2", values=[0.7, 0.3]),
+        DeferredOutputStreamWrite(output_id="ml_model_outputs/out-0", values=[0.1, 0.9], output_index=0),
+        DeferredOutputStreamWrite(output_id="ml_model_outputs/out-2", values=[0.7, 0.3], output_index=2),
     ]
 
 

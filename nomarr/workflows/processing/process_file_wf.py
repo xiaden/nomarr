@@ -220,7 +220,11 @@ def process_file_workflow(
                     )
                     continue
                 resolved_output_streams.append(
-                    DeferredOutputStreamWrite(output_id=output_id, values=output_stream.values)
+                    DeferredOutputStreamWrite(
+                        output_id=output_id,
+                        values=output_stream.values,
+                        output_index=output_stream.output_index,
+                    )
                 )
 
     # Build deferred DB writes (executed synchronously by worker)

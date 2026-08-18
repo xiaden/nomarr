@@ -29,6 +29,7 @@ class StreamWrite:
 
     output_id: str
     values: list[float]
+    output_index: int | None = None
 
 
 @dataclass(frozen=True)
@@ -53,20 +54,26 @@ def _normalize_streams(streams: list[StreamWrite]) -> list[StreamWrite]:
         deduped[output_id] = StreamWrite(
             output_id=output_id,
             values=[float(value) for value in stream.values],
+            output_index=stream.output_index,
         )
     return list(deduped.values())
 
 
 def build_output_stream_payloads(streams: list[StreamWrite]) -> list[dict[str, Any]]:
-    """Build canonical ``{output_id, values}`` stream payloads for the aggregate.
+    """Build canonical ``{output_id, values, output_index}`` stream payloads.
 
     Normalizes the write batch (last stream wins per output id) and returns the
     canonical payloads that ``db.ml.replace_song_inference_results`` persists to
-    ``ml_output_streams``. The live write path no longer upserts streams
-    directly — it forwards these payloads through the aggregate alongside the
-    song's backbone vector payloads in one atomic replacement.
+    ``ml_output_streams``. Each payload carries the output's ``output_index`` so
+    the live write→read round-trip preserves it (the read side drops rows whose
+    index is not an int). The live write path no longer upserts streams directly
+    — it forwards these payloads through the aggregate alongside the song's
+    backbone vector payloads in one atomic replacement.
     """
-    return [{"output_id": stream.output_id, "values": stream.values} for stream in _normalize_streams(streams)]
+    return [
+        {"output_id": stream.output_id, "values": stream.values, "output_index": stream.output_index}
+        for stream in _normalize_streams(streams)
+    ]
 
 
 def fetch_output_streams(db: Database, song_id: int) -> list[StreamRecord]:

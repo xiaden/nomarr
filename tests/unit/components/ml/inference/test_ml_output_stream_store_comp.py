@@ -37,8 +37,8 @@ class TestBuildOutputStreamPayloads:
         )
 
         assert result == [
-            {"output_id": "out-1", "values": [0.1, 0.2]},
-            {"output_id": "ml_model_outputs/out-2", "values": [0.3, 0.4]},
+            {"output_id": "out-1", "values": [0.1, 0.2], "output_index": None},
+            {"output_id": "ml_model_outputs/out-2", "values": [0.3, 0.4], "output_index": None},
         ]
 
     def test_last_stream_for_output_wins_within_batch(self) -> None:
@@ -50,8 +50,8 @@ class TestBuildOutputStreamPayloads:
         )
 
         assert result == [
-            {"output_id": "out-1", "values": [0.1]},
-            {"output_id": "ml_model_outputs/out-1", "values": [0.9, 1.1]},
+            {"output_id": "out-1", "values": [0.1], "output_index": None},
+            {"output_id": "ml_model_outputs/out-1", "values": [0.9, 1.1], "output_index": None},
         ]
 
     def test_duplicate_output_id_normalized_last_wins(self) -> None:
@@ -62,7 +62,21 @@ class TestBuildOutputStreamPayloads:
             ]
         )
 
-        assert result == [{"output_id": "head_0", "values": [0.4, 0.6]}]
+        assert result == [{"output_id": "head_0", "values": [0.4, 0.6], "output_index": None}]
+
+    def test_live_shape_payload_carries_output_index(self) -> None:
+        """The live write shape threads ``output_index`` through the payload."""
+        result = build_output_stream_payloads(
+            [
+                StreamWrite(output_id="ml_model_outputs/out-0", values=[0.1, 0.9], output_index=0),
+                StreamWrite(output_id="ml_model_outputs/out-1", values=[0.3, 0.7], output_index=1),
+            ]
+        )
+
+        assert result == [
+            {"output_id": "ml_model_outputs/out-0", "values": [0.1, 0.9], "output_index": 0},
+            {"output_id": "ml_model_outputs/out-1", "values": [0.3, 0.7], "output_index": 1},
+        ]
 
 
 @pytest.mark.unit
@@ -127,6 +141,49 @@ class TestFetchOutputStreams:
         result = fetch_output_streams(mock_db, song_id=f"{'songs'}/file-3")
 
         assert result == []
+
+    def test_live_shape_write_to_fetch_round_trip_carries_output_index(self) -> None:
+        """A live write-read round-trip survives with its output_index intact.
+
+        Reproduces the exact deferred/live shape: the canonical payload the
+        aggregate persists (with output_index) is what the facade read
+        returns, and fetch_output_streams must surface the index rather than
+        dropping the row (which previously forced a re-inference loop).
+        """
+        mock_db = MagicMock()
+        # The write side: payloads built from the live shape carry the index.
+        payloads = build_output_stream_payloads(
+            [
+                StreamWrite(output_id="ml_model_outputs/out-0", values=[0.1, 0.9], output_index=0),
+                StreamWrite(output_id="ml_model_outputs/out-1", values=[0.3, 0.7], output_index=1),
+            ]
+        )
+        assert payloads == [
+            {"output_id": "ml_model_outputs/out-0", "values": [0.1, 0.9], "output_index": 0},
+            {"output_id": "ml_model_outputs/out-1", "values": [0.3, 0.7], "output_index": 1},
+        ]
+
+        # The read side: the persisted rows (as the facade returns them) must
+        # round-trip the index through fetch_output_streams.
+        mock_db.ml.list_output_streams_for_song.return_value = payloads
+        records = fetch_output_streams(mock_db, song_id=7)
+
+        assert records == [
+            StreamRecord(output_id="ml_model_outputs/out-0", output_index=0, values=[0.1, 0.9]),
+            StreamRecord(output_id="ml_model_outputs/out-1", output_index=1, values=[0.3, 0.7]),
+        ]
+
+    def test_fetch_skips_none_output_index_row_without_dropping_siblings(self) -> None:
+        """A legacy output_index=None row is skipped; valid siblings survive."""
+        mock_db = MagicMock()
+        mock_db.ml.list_output_streams_for_song.return_value = [
+            {"output_id": "ml_model_outputs/out-null", "output_index": None, "values": [0.1]},
+            {"output_id": "ml_model_outputs/out-ok", "output_index": 1, "values": [0.5]},
+        ]
+
+        result = fetch_output_streams(mock_db, song_id=7)
+
+        assert result == [StreamRecord(output_id="ml_model_outputs/out-ok", output_index=1, values=[0.5])]
 
 
 @pytest.mark.unit

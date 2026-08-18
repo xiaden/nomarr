@@ -119,6 +119,32 @@ class TestMlInferenceRepo:
         streams = output_repo.list_output_streams_for_song(song_id)
         assert [(s["output_id"], s["values"]) for s in streams] == [("new_stream", [1.0, 2.0])]
 
+    def test_vector_metadata_fidelity_num_segments_and_suite_hash(self, pg_session) -> None:
+        """_insert_vector persists num_segments and model_suite_hash from the payload."""
+        _, song_id = _create_library_and_song(pg_session)
+        vector_repo = VectorRepo(pg_session)
+
+        repo = MlInferenceRepo(pg_session)
+        repo.replace_song_inference_results(
+            song_id,
+            "bb_meta",
+            vectors=[
+                {
+                    "embedding_vector": _random_vector(seed=20),
+                    "model_id": "suite-hash-123",
+                    "num_segments": 4,
+                    "model_suite_hash": "suite-hash-123",
+                },
+            ],
+            output_streams=[],
+        )
+
+        embeddings = vector_repo.get_embeddings_for_song(song_id)
+        assert len(embeddings) == 1
+        assert embeddings[0]["num_segments"] == 4
+        assert embeddings[0]["model_suite_hash"] == "suite-hash-123"
+        assert embeddings[0]["model_id"] == "suite-hash-123"
+
     def test_rolls_back_all_changes_on_insert_failure(self, pg_session) -> None:
         """A failed insert leaves vectors and streams untouched (no partial state)."""
         _, song_id = _create_library_and_song(pg_session)

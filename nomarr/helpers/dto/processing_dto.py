@@ -113,6 +113,7 @@ class DeferredOutputStreamWrite:
 
     output_id: str
     values: list[float]
+    output_index: int | None = None
 
 
 @dataclass
@@ -142,7 +143,8 @@ class DeferredFileWrites:
     1. ``save_song_tags``                (tag vertices + edges)
     2. ``set_chromaprint``               (fingerprint)
     3. ``replace_song_inference_results`` (canonical output streams + backbone
-                                          vectors, one atomic aggregate write)
+                                          vectors, one atomic aggregate write
+                                          per backbone)
     4. ``mark_song_processed``            (only if 1-3 succeeded)
     5. ``release_claim``                  (always, even on error)
     """
