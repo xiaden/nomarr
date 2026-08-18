@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { TagSongItem } from "../../../shared/api/tagCuration";
 import { fetchTagSongs } from "../../../shared/api/tagCuration";
@@ -28,11 +28,19 @@ export function useTagSongs({
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const pageSize = initialPageSize;
+  const requestSequence = useRef(0);
+
+  useEffect(() => {
+    setPage(0);
+  }, [tagId]);
 
   const load = useCallback(async () => {
+    const requestId = ++requestSequence.current;
     if (!tagId) {
       setSongs([]);
       setTotal(0);
+      setError(null);
+      setLoading(false);
       return;
     }
     setLoading(true);
@@ -40,12 +48,14 @@ export function useTagSongs({
     try {
       const offset = page * pageSize;
       const result = await fetchTagSongs(tagId, pageSize, offset);
+      if (requestId !== requestSequence.current) return;
       setSongs(result.songs);
       setTotal(result.total);
     } catch (err) {
+      if (requestId !== requestSequence.current) return;
       setError(err instanceof Error ? err.message : "Failed to load songs");
     } finally {
-      setLoading(false);
+      if (requestId === requestSequence.current) setLoading(false);
     }
   }, [tagId, page, pageSize]);
 

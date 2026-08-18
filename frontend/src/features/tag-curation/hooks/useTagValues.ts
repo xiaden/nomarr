@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { TagListResult, TagValueItem } from "../../../shared/api/tagCuration";
 import { fetchTagValues } from "../../../shared/api/tagCuration";
@@ -32,23 +32,27 @@ export function useTagValues({
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(initialPageSize);
+  const requestSequence = useRef(0);
 
   useEffect(() => {
     setPage(0);
   }, [name, prefix]);
 
   const load = useCallback(async () => {
+    const requestId = ++requestSequence.current;
     setLoading(true);
     setError(null);
     try {
       const offset = page * pageSize;
       const result: TagListResult = await fetchTagValues(name, prefix, pageSize, offset);
+      if (requestId !== requestSequence.current) return;
       setRows(result.tags);
       setTotal(result.total);
     } catch (err) {
+      if (requestId !== requestSequence.current) return;
       setError(err instanceof Error ? err.message : "Failed to load tag values");
     } finally {
-      setLoading(false);
+      if (requestId === requestSequence.current) setLoading(false);
     }
   }, [name, prefix, page, pageSize]);
 
