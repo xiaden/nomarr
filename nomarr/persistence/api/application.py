@@ -148,10 +148,10 @@ class AppDb:
         self._app_repo.release_lock(resource_id)
 
     def upsert_lock(self, resource_id: str, payload: dict) -> None:
-        self._app_repo.upsert_lock(resource_id, payload)
+        self._app_repo.upsert_lock(resource_id, {"value": payload})
 
     def acquire_lock(self, resource_id: str, payload: dict) -> bool:
-        return self._app_repo.acquire_lock(resource_id, payload)
+        return self._app_repo.acquire_lock(resource_id, {"value": payload})
 
     def claim_song(
         self,

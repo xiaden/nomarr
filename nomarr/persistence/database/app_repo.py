@@ -120,7 +120,7 @@ class AppRepository:
         """Insert-or-update a lock keyed on *resource_id*."""
         with map_persistence_exceptions():
             with self._session.begin_nested():
-                data = {**payload, "key": resource_id}
+                data = {"key": resource_id, "value": payload["value"]}
                 upsert_by_field(_L, "key", resource_id, data, session=self._session)
             self._session.commit()
 
@@ -139,7 +139,7 @@ class AppRepository:
 
     def acquire_lock(self, resource_id: str, payload: dict[str, Any]) -> bool:
         """Try to insert a lock; return ``False`` if it already exists."""
-        data = {**payload, "key": resource_id}
+        data = {"key": resource_id, "value": payload["value"]}
         try:
             with map_persistence_exceptions():
                 with self._session.begin_nested():
