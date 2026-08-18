@@ -395,6 +395,12 @@ class DiscoveryWorker(multiprocessing.Process):
         if pending_write is not None:
             pending_write.result()
             pending_write = None
+        if result.head_results.get("_crash", {}).get("status") == "crash":
+            logger.warning(
+                "[%s] Decoder crash while processing %s; leaving unprocessed for retry", self.worker_id, file_path
+            )
+            release_claim(db, song_id)
+            return None, False
         if result.heads_processed == 0 and result.tags_written == 0:
             logger.info("[%s] Skipped %s (all heads skipped - likely too short)", self.worker_id, file_path)
             transition_song_state(db, [song_id], STATE_NOT_PROCESSED, STATE_PROCESSED)

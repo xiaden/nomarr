@@ -394,6 +394,40 @@ class TestProcessClaimedFile:
     @patch(_PATCH_GETSIZE)
     @patch(_PATCH_PROCESS)
     @patch(_PATCH_GET_FILE)
+    def test_releases_decoder_crash_for_retry(
+        self, mock_get_file_by_id, mock_process_file_workflow, mock_getsize, mock_malloc_trim, mock_release_claim
+    ):
+        mock_self = _make_worker_self()
+        mock_db = MagicMock()
+        mock_get_file_by_id.return_value = {"path": "D:/music/broken.mp3"}
+        mock_getsize.return_value = 1234
+        mock_process_file_workflow.return_value = MagicMock(
+            heads_processed=0,
+            tags_written=0,
+            head_results={"_crash": {"status": "crash", "reason": "decoder unavailable"}},
+            deferred_writes=None,
+        )
+
+        result = self._call(
+            mock_self,
+            mock_db,
+            "songs/broken",
+            MagicMock(),
+            MagicMock(),
+            None,
+            MagicMock(),
+        )
+
+        assert result == (None, False)
+        mock_release_claim.assert_called_once_with(mock_db, "songs/broken")
+        mock_malloc_trim.assert_called_once_with()
+
+    @pytest.mark.unit
+    @patch(_PATCH_RELEASE)
+    @patch(_PATCH_MALLOC_TRIM)
+    @patch(_PATCH_GETSIZE)
+    @patch(_PATCH_PROCESS)
+    @patch(_PATCH_GET_FILE)
     def test_submits_deferred_writes_when_workflow_returns_them(
         self, mock_get_file_by_id, mock_process_file_workflow, mock_getsize, mock_malloc_trim, mock_release_claim
     ):
