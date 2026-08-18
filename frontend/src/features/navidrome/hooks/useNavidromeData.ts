@@ -3,7 +3,7 @@
  * Handles config generation and playlist generation.
  */
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { useNotification } from "../../../hooks/useNotification";
 import {
@@ -54,6 +54,13 @@ export function useNavidromeData() {
   const [playlistContent, setPlaylistContent] = useState<string | null>(null);
   const [playlistLoading, setPlaylistLoading] = useState(false);
   const [playlistError, setPlaylistError] = useState<string | null>(null);
+  const playlistRequestVersion = useRef(0);
+
+  const invalidatePlaylistResults = () => {
+    playlistRequestVersion.current += 1;
+    setPlaylistPreview(null);
+    setPlaylistContent(null);
+  };
 
   // Config actions
   const loadConfigPreview = async () => {
@@ -93,8 +100,11 @@ export function useNavidromeData() {
     try {
       setPlaylistLoading(true);
       setPlaylistError(null);
+      const requestVersion = playlistRequestVersion.current;
       const data = await apiPreviewPlaylist(query, 10);
-      setPlaylistPreview(data);
+      if (requestVersion === playlistRequestVersion.current) {
+        setPlaylistPreview(data);
+      }
     } catch (err) {
       setPlaylistError(err instanceof Error ? err.message : "Failed to preview playlist");
     } finally {
@@ -116,6 +126,7 @@ export function useNavidromeData() {
     try {
       setPlaylistLoading(true);
       setPlaylistError(null);
+      const requestVersion = playlistRequestVersion.current;
       const data = await apiGeneratePlaylist({
         query,
         playlist_name: playlistName,
@@ -123,7 +134,9 @@ export function useNavidromeData() {
         limit: playlistLimit,
         sort: playlistSort || undefined,
       });
-      setPlaylistContent(data.content);
+      if (requestVersion === playlistRequestVersion.current) {
+        setPlaylistContent(data.content);
+      }
     } catch (err) {
       setPlaylistError(err instanceof Error ? err.message : "Failed to generate playlist");
     } finally {
@@ -153,10 +166,25 @@ export function useNavidromeData() {
     // Playlist actions
     previewPlaylist,
     generatePlaylist,
-    setPlaylistRootGroup,
-    setPlaylistName,
-    setPlaylistComment,
-    setPlaylistLimit,
-    setPlaylistSort,
+    setPlaylistRootGroup: (group: RuleGroup) => {
+      invalidatePlaylistResults();
+      setPlaylistRootGroup(group);
+    },
+    setPlaylistName: (name: string) => {
+      invalidatePlaylistResults();
+      setPlaylistName(name);
+    },
+    setPlaylistComment: (comment: string) => {
+      invalidatePlaylistResults();
+      setPlaylistComment(comment);
+    },
+    setPlaylistLimit: (limit: number | undefined) => {
+      invalidatePlaylistResults();
+      setPlaylistLimit(limit);
+    },
+    setPlaylistSort: (sort: string) => {
+      invalidatePlaylistResults();
+      setPlaylistSort(sort);
+    },
   };
 }
