@@ -44,15 +44,6 @@ vi.mock("../../../shared/api/processing", () => ({
   getWorkStatus: vi.fn().mockResolvedValue({ is_busy: false }),
 }));
 
-vi.mock("../hooks/useLibraryVectorConfig", () => ({
-  useLibraryVectorConfig: vi.fn().mockReturnValue({
-    config: null,
-    loading: false,
-    saving: false,
-    updateConfig: vi.fn(),
-  }),
-}));
-
 vi.mock("../hooks/useLibraryVectorStats", () => ({
   useLibraryVectorStats: vi.fn().mockReturnValue({ stats: null }),
 }));
@@ -66,10 +57,6 @@ vi.mock("../../../hooks/useNotification", () => ({
 
 vi.mock("../../../shared/components/ServerFilePicker", () => ({
   ServerFilePicker: () => null,
-}));
-
-vi.mock("./VectorConfigSection", () => ({
-  VectorConfigSection: () => null,
 }));
 
 vi.mock("./VectorStatsCard", () => ({
