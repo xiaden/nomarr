@@ -882,11 +882,13 @@ def test_replace_selected_tag_references_passes_song_ids() -> None:
 
 @pytest.mark.unit
 def test_remove_song_tags_all_tags() -> None:
-    db, _, _, _, _, tag_repo, *_ = _make_library_db()
+    db, _, _, _, _, tag_repo, song_tag_repo, _ = _make_library_db()
+    song_tag_repo.replace_song_tags = MagicMock()
     tag_repo.cleanup_orphaned_tags = MagicMock()
 
     db.remove_song_tags(10)
 
+    song_tag_repo.replace_song_tags.assert_called_once_with(10, [])
     tag_repo.cleanup_orphaned_tags.assert_called_once_with()
 
 

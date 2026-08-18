@@ -278,7 +278,9 @@ class LibraryTagsDb:
 
     def remove_song_tags(self, song_id: int, tag_keys: list[int] | None = None) -> None:
         """Remove tag edges for one song and clean up orphaned tags."""
-        if tag_keys:
+        if tag_keys is None:
+            self._song_tag_repo.replace_song_tags(song_id, [])
+        else:
             for tag_id in tag_keys:
                 self._song_tag_repo.remove_tag_from_song(song_id, tag_id)
         self._tag_repo.cleanup_orphaned_tags()
