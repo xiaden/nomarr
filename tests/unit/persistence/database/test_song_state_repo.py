@@ -49,18 +49,17 @@ def _create_library_and_song(session) -> tuple[int, int]:
 class TestSongStateRepository:
     """Tests for SongStateRepository CRUD and query methods."""
 
-    def test_get_song_state_returns_name(self, pg_session) -> None:
-        """get_song_state should return the state name for a song."""
+    def test_get_song_states_returns_all_names(self, pg_session) -> None:
+        """get_song_states should return every state assigned to a song."""
         repo = SongStateRepository(pg_session)
         repo.bootstrap_states([])
         _, song_id = _create_library_and_song(pg_session)
 
         repo.assign_state(song_id, STATE_PROCESSED)
-        state_name = repo.get_song_state(song_id)
-        assert state_name == STATE_PROCESSED
+        assert repo.get_song_states(song_id) == {STATE_PROCESSED}
 
-    def test_get_song_state_ignores_assignments_on_other_axes(self, pg_session) -> None:
-        """The scalar accessor should return the processing-axis state."""
+    def test_get_song_states_includes_assignments_on_other_axes(self, pg_session) -> None:
+        """The single-song accessor should return all independent axes."""
         repo = SongStateRepository(pg_session)
         repo.bootstrap_states([])
         _, song_id = _create_library_and_song(pg_session)
@@ -68,13 +67,13 @@ class TestSongStateRepository:
         repo.assign_state(song_id, STATE_CALIBRATED)
         repo.assign_state(song_id, STATE_PROCESSED)
 
-        assert repo.get_song_state(song_id) == STATE_PROCESSED
+        assert repo.get_song_states(song_id) == {STATE_CALIBRATED, STATE_PROCESSED}
 
-    def test_get_song_state_nonexistent(self, pg_session) -> None:
-        """get_song_state should return None for song with no state."""
+    def test_get_song_states_nonexistent(self, pg_session) -> None:
+        """get_song_states should return an empty set for song with no state."""
         repo = SongStateRepository(pg_session)
-        result = repo.get_song_state(999999)
-        assert result is None
+        result = repo.get_song_states(999999)
+        assert result == set()
 
     def test_get_song_states_for_songs(self, pg_session) -> None:
         """get_song_states_for_songs should return dict of song_id -> state names."""
@@ -204,8 +203,7 @@ class TestSongStateRepository:
         _, song_id = _create_library_and_song(pg_session)
 
         repo.assign_state(song_id, STATE_PROCESSED)
-        state_name = repo.get_song_state(song_id)
-        assert state_name == STATE_PROCESSED
+        assert repo.get_song_states(song_id) == {STATE_PROCESSED}
 
     def test_assign_state_unknown_raises(self, pg_session) -> None:
         """assign_state should raise ValueError for unknown state name."""
@@ -223,8 +221,7 @@ class TestSongStateRepository:
         _, song_id = _create_library_and_song(pg_session)
 
         repo.ensure_song_state(song_id, STATE_PROCESSED)
-        state_name = repo.get_song_state(song_id)
-        assert state_name == STATE_PROCESSED
+        assert repo.get_song_states(song_id) == {STATE_PROCESSED}
 
     def test_ensure_song_state_does_not_override(self, pg_session) -> None:
         """ensure_song_state should leave an existing assignment untouched."""
@@ -234,8 +231,7 @@ class TestSongStateRepository:
 
         repo.assign_state(song_id, "hydrated")
         repo.ensure_song_state(song_id, STATE_PROCESSED)
-        state_name = repo.get_song_state(song_id)
-        assert state_name is None
+        assert repo.get_song_states(song_id) == {"hydrated"}
         assert repo.get_song_states_for_songs([song_id])[song_id] == {"hydrated"}
 
     def test_remove_states_for_songs(self, pg_session) -> None:
@@ -247,8 +243,7 @@ class TestSongStateRepository:
         repo.assign_state(song_id, STATE_PROCESSED)
         repo.remove_states_for_songs([song_id])
 
-        state_name = repo.get_song_state(song_id)
-        assert state_name is None
+        assert repo.get_song_states(song_id) == set()
 
     def test_bootstrap_states_creates_canonical(self, pg_session) -> None:
         """bootstrap_states should seed the 16 canonical vertices and no legacy names."""
@@ -282,8 +277,7 @@ class TestSongStateRepository:
         repo.bootstrap_states([song_id])
 
         # The song should carry the processed state.
-        state_name = repo.get_song_state(song_id)
-        assert state_name == STATE_PROCESSED
+        assert repo.get_song_states(song_id) == {STATE_PROCESSED}
 
     def test_count_for_song_and_state(self, pg_session) -> None:
         """count_for_song_and_state should return count of assignments."""

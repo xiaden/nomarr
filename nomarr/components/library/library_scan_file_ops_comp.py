@@ -95,7 +95,7 @@ def _upsert_batch(db: Database, file_docs: list[dict[str, Any]]) -> list[int]:
         file_id for file_id, doc in zip(file_ids, clean_docs, strict=True) if doc.get("path") in existing_paths
     ]
     if existing_file_ids:
-        missing_state_ids = [fid for fid in existing_file_ids if db.app.get_song_state(fid) is None]
+        missing_state_ids = [fid for fid in existing_file_ids if not db.app.get_song_states(fid)]
         if missing_state_ids:
             logger.warning("[scan] Repairing %d file(s) with missing state edges", len(missing_state_ids))
             initialize_song_states_batch(db, missing_state_ids)

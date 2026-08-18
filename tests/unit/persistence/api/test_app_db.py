@@ -129,22 +129,22 @@ def sqlite_app_db() -> AppDb:
 
 class TestAppDbFileStateMethods:
     @pytest.mark.unit
-    def test_get_file_state_delegates_to_song_state_repo(self, app_db: AppDb, mock_song_state_repo: MagicMock) -> None:
-        mock_song_state_repo.get_song_state.return_value = "queued"
+    def test_get_file_states_delegates_to_song_state_repo(self, app_db: AppDb, mock_song_state_repo: MagicMock) -> None:
+        mock_song_state_repo.get_song_states.return_value = {"queued", "written"}
 
-        result = app_db.get_song_state(42)
+        result = app_db.get_song_states(42)
 
-        assert result == "queued"
-        mock_song_state_repo.get_song_state.assert_called_once_with(42)
+        assert result == {"queued", "written"}
+        mock_song_state_repo.get_song_states.assert_called_once_with(42)
 
     @pytest.mark.unit
-    def test_get_file_state_returns_none_when_no_state(self, app_db: AppDb, mock_song_state_repo: MagicMock) -> None:
-        mock_song_state_repo.get_song_state.return_value = None
+    def test_get_file_states_returns_empty_set_when_no_state(self, app_db: AppDb, mock_song_state_repo: MagicMock) -> None:
+        mock_song_state_repo.get_song_states.return_value = set()
 
-        result = app_db.get_song_state(99)
+        result = app_db.get_song_states(99)
 
-        assert result is None
-        mock_song_state_repo.get_song_state.assert_called_once_with(99)
+        assert result == set()
+        mock_song_state_repo.get_song_states.assert_called_once_with(99)
 
     @pytest.mark.unit
     def test_get_file_states_for_files_delegates(self, app_db: AppDb, mock_song_state_repo: MagicMock) -> None:

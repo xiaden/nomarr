@@ -322,8 +322,7 @@ def library_has_tagged_files(db: Database, library_id: int) -> bool:
 
 def song_has_tagged_state(db: Database, song_id: int) -> bool:
     """Return whether one song currently has the tagged-state edge."""
-    state = db.app.get_song_state(song_id)
-    return state == STATE_PROCESSED
+    return STATE_PROCESSED in db.app.get_song_states(song_id)
 
 
 def get_songs_with_incomplete_tags(

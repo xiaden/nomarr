@@ -73,8 +73,8 @@ class AppDb:
     # Routine top-level methods already aligned with the DD contract
     # ------------------------------------------------------------------
 
-    def get_song_state(self, song_id: int) -> str | None:
-        return self._song_state_repo.get_song_state(song_id)
+    def get_song_states(self, song_id: int) -> set[str]:
+        return self._song_state_repo.get_song_states(song_id)
 
     def get_song_states_for_songs(self, song_ids: list[int]) -> dict[int, set[str]]:
         return self._song_state_repo.get_song_states_for_songs(song_ids)

@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import Table, delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from nomarr.helpers.constants.file_states import ALL_STATE_VERTICES, STATE_NOT_PROCESSED, STATE_PROCESSED
+from nomarr.helpers.constants.file_states import ALL_STATE_VERTICES, STATE_PROCESSED
 from nomarr.helpers.dto.repo_dto import SongStateAssignmentRow, SongStateRow
 from nomarr.persistence.models.song_state import SongState
 from nomarr.persistence.models.song_state_assignment import SongStateAssignment
@@ -57,21 +57,12 @@ class SongStateRepository:
     def __init__(self, session: scoped_session[Session]) -> None:
         self._session = session
 
-    def get_song_state(self, song_id: int) -> str | None:
-        """Return the processing-axis state name for a song, or ``None``."""
+    def get_song_states(self, song_id: int) -> set[str]:
+        """Return all state names assigned to one song."""
         with map_persistence_exceptions():
-            stmt = (
-                select(_S.c.name)
-                .join(_A, _S.c.id == _A.c.state_id)
-                .where(
-                    _A.c.song_id == song_id,
-                    _S.c.name.in_((STATE_PROCESSED, STATE_NOT_PROCESSED)),
-                )
-                .order_by(_A.c.id)
-            )
+            stmt = select(_S.c.name).join(_A, _S.c.id == _A.c.state_id).where(_A.c.song_id == song_id)
             result = self._session.execute(stmt)
-            row = result.fetchone()
-            return row[0] if row else None
+            return {row[0] for row in result.all()}
 
     def get_song_states_for_songs(self, song_ids: list[int]) -> dict[int, set[str]]:
         """Return ``{song_id: {state_names}}`` for a batch of song ids."""
