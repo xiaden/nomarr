@@ -243,9 +243,13 @@ export function LibraryManagement() {
   const isOutsideLibraryRoot = (path: string): boolean => {
     if (!libraryRoot) return false;
     // Normalize paths for comparison (handle trailing slashes)
-    const normalizedRoot = libraryRoot.replace(/\/+$/, "");
-    const normalizedPath = path.replace(/\/+$/, "");
-    return !normalizedPath.startsWith(normalizedRoot);
+    const normalizedRoot = libraryRoot.replace(/\/+$/, "") || "/";
+    const normalizedPath = path.replace(/\/+$/, "") || "/";
+    return !(
+      normalizedRoot === "/" ||
+      normalizedPath === normalizedRoot ||
+      normalizedPath.startsWith(`${normalizedRoot}/`)
+    );
   };
 
   const resetForm = () => {
