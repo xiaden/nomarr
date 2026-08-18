@@ -13,6 +13,7 @@ import time
 from typing import TYPE_CHECKING
 
 from sqlalchemy import Table, delete, func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from nomarr.helpers.constants.file_states import ALL_STATE_VERTICES, STATE_PROCESSED
 from nomarr.helpers.dto.repo_dto import SongStateAssignmentRow, SongStateRow
@@ -115,6 +116,39 @@ class SongStateRepository:
                     "created_at": int(time.time() * 1000),
                 }
                 insert_one(_A, payload, session=self._session)
+            self._session.commit()
+
+    def replace_state_for_songs(self, song_ids: list[int], state: str) -> None:
+        """Atomically replace all state assignments for the given songs.
+
+        The delete and insert share one transaction so a retry cannot leave a
+        song without a state.  Existing assignments are ignored to make the
+        operation idempotent after a partially completed retry.
+        """
+        with map_persistence_exceptions():
+            if not song_ids:
+                return
+
+            with self._session.begin_nested():
+                state_stmt = select(_S.c.id).where(_S.c.name == state)
+                state_row = self._session.execute(state_stmt).fetchone()
+                if state_row is None:
+                    msg = f"Unknown song state: {state!r}"
+                    raise ValueError(msg)
+
+                unique_song_ids = list(dict.fromkeys(song_ids))
+                self._session.execute(delete(_A).where(_A.c.song_id.in_(unique_song_ids)))
+                assignment_rows = [
+                    {
+                        "song_id": song_id,
+                        "state_id": state_row[0],
+                        "created_at": int(time.time() * 1000),
+                    }
+                    for song_id in unique_song_ids
+                ]
+                self._session.execute(
+                    pg_insert(_A).values(assignment_rows).on_conflict_do_nothing(index_elements=["song_id", "state_id"])
+                )
             self._session.commit()
 
     def remove_states_for_songs(self, song_ids: list[int]) -> None:

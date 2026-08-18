@@ -98,8 +98,7 @@ class AppDb:
             self._song_state_repo.assign_state(song_id, state)
 
     def replace_song_states(self, song_ids: list[int], state: str) -> None:
-        self._song_state_repo.remove_states_for_songs(song_ids)
-        self.add_song_states(song_ids, state)
+        self._song_state_repo.replace_state_for_songs(song_ids, state)
 
     def remove_song_states(self, song_ids: list[int]) -> None:
         if not song_ids:
