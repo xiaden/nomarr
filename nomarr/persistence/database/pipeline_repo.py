@@ -123,21 +123,17 @@ class PipelineRepository:
         Works identically on both backends.
         """
         with map_persistence_exceptions():
-            stmt = (
-                select(_L.c.id, _T.c.state_data)
-                .select_from(
-                    _L.outerjoin(
-                        _T,
-                        and_(_T.c.library_id == _L.c.id, _T.c.state_key == state_key),
-                    )
+            stmt = select(_L.c.id, _T.c.state_data).select_from(
+                _L.outerjoin(
+                    _T,
+                    and_(_T.c.library_id == _L.c.id, _T.c.state_key == state_key),
                 )
             )
             result = self._session.execute(stmt)
             return [
                 row._mapping["id"]
                 for row in result.all()
-                if (row._mapping["state_data"] or {}).get("state", PIPELINE_DEFAULTS[state_key])
-                == state_value
+                if (row._mapping["state_data"] or {}).get("state", PIPELINE_DEFAULTS[state_key]) == state_value
             ]
 
     def count_pipeline_states(self) -> int:

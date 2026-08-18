@@ -253,8 +253,8 @@ class LibraryDb:
     def remove_song_by_path(self, path: str, library_id: int | None = None) -> None:
         return self._songs.remove_song_by_path(path, library_id)
 
-    def list_existing_song_paths(self, paths: list[str]) -> list[str]:
-        return self._songs.list_existing_song_paths(paths)
+    def list_existing_song_paths(self, library_id: int, paths: list[str]) -> list[str]:
+        return self._songs.list_existing_song_paths(library_id, paths)
 
     def get_folder(self, folder_id: int) -> LibraryFolderRow | None:
         return self._songs.get_folder(folder_id)

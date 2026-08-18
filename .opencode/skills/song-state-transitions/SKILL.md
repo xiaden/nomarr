@@ -11,9 +11,9 @@ Song processing state lives in rows of the `song_state_assignments` junction tab
 
 ## Coverage
 
-**Documented:** `transition_song_state` semantics and failure modes, hydration worker flow (`tag_extraction_worker.py`), ML worker concurrent processing, error-marking paths, discovery exclusions, scan-batch post-transitions, retry flow, `ensure_song_state` "tagged" bug.
+**Documented:** `transition_song_state` semantics and failure modes, hydration worker flow (`tag_extraction_worker.py`), ML worker concurrent processing, error-marking paths, discovery exclusions, scan-batch post-transitions, retry flow, `ensure_song_state` "tagged" bug, `get_song_state` scalar accessor contract (processing-only since d21f4117; option-1 migration surface).
 **Not yet documented:** calibration/write-state transitions in detail, Navidrome sync interplay.
-**Last extended:** 2026-08-17
+**Last extended:** 2026-08-18
 
 ## Key Findings
 
@@ -46,6 +46,13 @@ Song processing state lives in rows of the `song_state_assignments` junction tab
 - `discover_next_untagged_file` (`library_song_state_comp.py:192-215`) and `discover_next_file_needing_tags` (:227-250) both subtract `errored` membership unconditionally.
 - Only clearing path: `retry_errored_songs` (`library_svc/songs.py:179-206`), which performs two more snapshot rewrites `(errored→not_errored)`, `(processed→not_processed)`. On a partial-edge row the result can be e.g. `{not_errored, not_processed}` — still missing `not_hydrated`, so the row can never be re-discovered for hydration again.
 
+### 7. `get_song_state` scalar accessor: processing-axis only (d21f4117); full-set migration surface (option 1)
+- **Location:** `nomarr/persistence/database/song_state_repo.py:60-74` (`SongStateRepository.get_song_state`), facade passthrough `nomarr/persistence/api/application.py:76-77`.
+- d21f4117 (2026-08-18) narrowed it: filters `_S.c.name.in_((STATE_PROCESSED, STATE_NOT_PROCESSED))`, `order_by(_A.c.id)`, `fetchone()` → returns the processing-axis pole or `None`. Before that commit it returned the first state edge of ANY axis — the cross-axis-membership hazard flagged by exec-executor L374.
+- **The full-set convention already exists:** `get_song_states_for_songs(song_ids) -> dict[int, set[str]]` (`song_state_repo.py:76-86`, `application.py:79-80`) returns ALL axes per song with no processing filter. Option 1 (full set of all states for one song) can wrap it: `get_song_states(song_id) -> set[str]` as `...get_song_states_for_songs([song_id]).get(song_id, set())` — empty set for no assignments (batch method omits songs with no states from the dict).
+- **Production callers of the scalar (both must change):** `library_song_state_comp.py:325` (`song_has_tagged_state`: `state == STATE_PROCESSED` → `STATE_PROCESSED in states`; no production callers of this function exist, only tests) and `library_scan_file_ops_comp.py:98` (`_upsert_batch` repair probe: `get_song_state(fid) is None` → `not states`; NOTE semantic change — a song with only non-processing edges e.g. `{hydrated}` is currently flagged as missing-state but would not be under full-set emptiness).
+- **Tests pinning the current contract:** `tests/unit/persistence/database/test_song_state_repo.py` (9 call sites incl. `test_get_song_state_ignores_assignments_on_other_axes:62-71` which encodes processing-only; `test_ensure_song_state_does_not_override:236-239` asserts `None` for non-processing), `tests/unit/persistence/api/test_app_db.py:132-147` (scalar mocks; batch test :150-157 already set-based), `tests/unit/components/library/test_library_song_state_comp.py:56,217-224,245-251` (`_make_mock_db` fixture + 2 `song_has_tagged_state` tests).
+
 ## Critical Invariants
 
 1. **A transition must never drop edges of other axes.** `transition_song_state`'s remove-all/re-add violates this under stale/partial membership reads and concurrent workers — the bug. Prefer touch-only-pole semantics (remove `from_state`, add `to_state`).
@@ -67,3 +74,5 @@ Song processing state lives in rows of the `song_state_assignments` junction tab
 - `nomarr/services/domain/library_svc/songs.py`, `scan.py`
 - `tests/unit/components/library/test_library_song_state_comp.py`
 - Research log entry L93 (support-researcher, 2026-08-17)
+- Research log entry L100 (support-researcher, 2026-08-18, contract-migration research)
+- Commit d21f4117 ("Fix scalar song state axis selection")

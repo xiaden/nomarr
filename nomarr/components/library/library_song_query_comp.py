@@ -31,11 +31,11 @@ def count_recently_tagged(db: Database, window_seconds: int = 300) -> int:
     return db.library.count_recently_tagged(cutoff_ms)
 
 
-def get_existing_file_paths(db: Database, paths: list[str]) -> set[str]:
-    """Return the subset of *paths* that already exist in the library songs table."""
+def get_existing_file_paths(db: Database, library_id: int, paths: list[str]) -> set[str]:
+    """Return paths that already exist in the target library's songs table."""
     if not paths:
         return set()
-    return set(db.library.list_existing_song_paths(paths))
+    return set(db.library.list_existing_song_paths(library_id, paths))
 
 
 def _matches_requested_path(file_doc: dict[str, Any], path: str) -> bool:

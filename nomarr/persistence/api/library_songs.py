@@ -17,8 +17,11 @@ from nomarr.helpers.constants.file_states import STATE_NOT_PROCESSED
 from nomarr.helpers.time_helper import now_ms
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from sqlalchemy.orm import Session, scoped_session
 
+    from nomarr.helpers.dto.hydration_dto import HydrateSongInput
     from nomarr.helpers.dto.repo_dto import LibraryFolderRow, SongRow
     from nomarr.persistence.database.folder_repo import FolderRepository
     from nomarr.persistence.database.song_repo import SongRepository
@@ -133,11 +136,14 @@ class LibrarySongsDb:
         library_id: int,
         payloads: list[dict[str, Any]],
         *,
-        initial_state: str = "tagged",
+        initial_state: str = STATE_NOT_PROCESSED,
     ) -> list[int]:
         """Upsert songs and bootstrap initial states for newly created rows."""
         existing_paths = set(
-            self._song_repo.list_existing_song_paths([str(p["path"]) for p in payloads if "path" in p])
+            self._song_repo.list_existing_song_paths(
+                library_id,
+                [str(p["path"]) for p in payloads if "path" in p],
+            )
         )
         song_ids = self._song_repo.upsert_songs_for_library(library_id, payloads)
         # Bootstrap state only for songs that were newly created
@@ -177,7 +183,7 @@ class LibrarySongsDb:
 
         # Determine existing paths to distinguish new vs updated songs
         incoming_paths = [str(p["path"]) for p in payloads if "path" in p]
-        existing_paths = set(self._song_repo.list_existing_song_paths(incoming_paths))
+        existing_paths = set(self._song_repo.list_existing_song_paths(library_id, incoming_paths))
 
         # Upsert songs
         song_ids = self._song_repo.upsert_songs_for_library(library_id, payloads)
@@ -185,7 +191,7 @@ class LibrarySongsDb:
         for song_id, payload in zip(song_ids, payloads, strict=True):
             if payload.get("path") not in existing_paths:
                 new_count += 1
-                self._song_state_repo.ensure_song_state(song_id, "tagged")
+                self._song_state_repo.ensure_song_state(song_id, STATE_NOT_PROCESSED)
         result["added"] = new_count
         result["updated"] = len(song_ids) - new_count
 
@@ -259,6 +265,71 @@ class LibrarySongsDb:
         if fields:
             self._song_repo.update_song(song_id, fields)
 
+    # ------------------------------------------------------------------
+    # Song hydration (transactional intent)
+    # ------------------------------------------------------------------
+
+    def hydrate_song(self, input: HydrateSongInput) -> None:
+        """Hydrate a single song atomically from an already-parsed input.
+
+        Owns the complete logical unit of work: parsed ``nom:`` tags,
+        entity/tag relationships, metadata-cache fields, the optional
+        one-shot duration, and the ``not_hydrated`` → ``hydrated`` state
+        transition are written in one shared-session transaction and
+        committed together. Any failure rolls back the entire unit, so a
+        song is never left partially hydrated.
+
+        Idempotent for repeated inputs: re-running the same input produces
+        the same persisted assignments without side effects.
+
+        This method does NOT expose ``transaction()`` or
+        ``_require_transaction()``; callers must not manage transactions.
+
+        Note:
+            The full implementation is wired in Phase 2 (repository-level
+            operation); this placeholder raises until then. No caller
+            references it yet.
+
+        Args:
+            input: Fully-parsed hydration payload (see
+                :class:`HydrateSongInput`). Values must already be
+                extracted/parsed — persistence never calls extraction.
+
+        """
+        raise NotImplementedError("hydrate_song is wired in Phase 2")
+
+    def hydrate_songs_batch(
+        self,
+        inputs: Sequence[HydrateSongInput],
+        *,
+        chunk_size: int = 100,
+    ) -> int:
+        """Hydrate a batch of songs, committing each bounded chunk atomically.
+
+        Owns the complete logical unit of work per chunk. Each chunk of up
+        to *chunk_size* inputs is committed as one shared-session
+        transaction; a failure rolls back only its own chunk. Returns the
+        number of inputs successfully committed.
+
+        Idempotent for repeated inputs and harmless for duplicate values and
+        duplicate song IDs within the batch.
+
+        This method does NOT expose ``transaction()`` or
+        ``_require_transaction()``; callers must not manage transactions.
+
+        Note:
+            The full implementation is wired in Phase 2 (repository-level
+            operation); this placeholder raises until then. No caller
+            references it yet.
+
+        Args:
+            inputs: Fully-parsed hydration payloads.
+            chunk_size: Maximum inputs per atomic chunk. Each chunk runs as
+                set-based persistence, never per-song/per-tag lookups.
+
+        """
+        raise NotImplementedError("hydrate_songs_batch is wired in Phase 2")
+
     def remove_song(self, song_id: int) -> None:
         """Remove one song. FK CASCADE handles derived streams and vectors.
 
@@ -285,9 +356,9 @@ class LibrarySongsDb:
         song_id: int = song_row["id"]
         self.remove_song(song_id)
 
-    def list_existing_song_paths(self, paths: list[str]) -> list[str]:
-        """Return the subset of the given paths that already have library-song rows."""
-        return self._song_repo.list_existing_song_paths(paths)
+    def list_existing_song_paths(self, library_id: int, paths: list[str]) -> list[str]:
+        """Return paths that already have rows in the given library."""
+        return self._song_repo.list_existing_song_paths(library_id, paths)
 
     # ------------------------------------------------------------------
     # Folder operations

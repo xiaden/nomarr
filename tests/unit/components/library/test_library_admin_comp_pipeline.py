@@ -7,9 +7,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from nomarr.components.library.library_admin_comp import _is_scan_running, create_library
-from nomarr.helpers.constants.pipeline_states import (
-    PIPELINE_DEFAULTS,
-)
 
 
 class TestCreateLibraryPipeline:
@@ -18,7 +15,7 @@ class TestCreateLibraryPipeline:
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_create_library_initializes_pipeline_state_after_persisting(self) -> None:
-        """Library creation should pass pipeline defaults to create_library_record."""
+        """Library creation should persist the supported library fields."""
         mock_db = MagicMock()
         mock_db.library.get_scan.return_value = None
 
@@ -57,7 +54,6 @@ class TestCreateLibraryPipeline:
             watch_mode="off",
             file_write_mode="full",
             library_auto_write=False,
-            **PIPELINE_DEFAULTS,
         )
 
     @pytest.mark.unit
@@ -102,7 +98,6 @@ class TestCreateLibraryPipeline:
             watch_mode="off",
             file_write_mode="full",
             library_auto_write=True,
-            **PIPELINE_DEFAULTS,
         )
 
     @pytest.mark.unit

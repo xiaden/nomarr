@@ -12,6 +12,11 @@ from nomarr.helpers.constants.file_states import (
     STATE_NOT_PROCESSED,
     STATE_PROCESSED,
 )
+from nomarr.helpers.dto.processing_dto import (
+    DeferredBackboneVectorWrite,
+    DeferredFileWrites,
+    DeferredOutputStreamWrite,
+)
 
 pytestmark = [pytest.mark.unit, pytest.mark.mocked]
 
@@ -502,3 +507,167 @@ class TestProcessClaimedFile:
         assert result == (None, True)
         mock_release_claim.assert_called_once_with(mock_db, f"{'songs'}/abc")
         mock_malloc_trim.assert_called_once_with()
+
+
+class TestExecuteDeferredWrites:
+    """Focused tests for ``_execute_deferred_writes`` routing payloads through the aggregate."""
+
+    _PATCH_PARSE = "nomarr.components.tagging.tag_parsing_comp.parse_tag_values"
+    _PATCH_SAVE_TAGS = "nomarr.components.library.song_sync_comp.save_song_tags"
+    _PATCH_CHROMAPRINT = "nomarr.components.library.library_song_mutation_comp.set_chromaprint"
+    _PATCH_TRANSITION = "nomarr.components.library.library_song_state_comp.transition_song_state"
+    _PATCH_RELEASE = "nomarr.components.workers.worker_discovery_comp.release_claim"
+    _PATCH_UPDATE_TAGGED = f"{_MODULE}.update_last_tagged_at"
+
+    def _call(self, db, writes):
+        """Invoke ``_execute_deferred_writes`` with component deps mocked."""
+        from nomarr.services.infrastructure.workers.discovery_worker import _execute_deferred_writes
+
+        with (
+            patch(self._PATCH_PARSE, return_value={}),
+            patch(self._PATCH_SAVE_TAGS),
+            patch(self._PATCH_CHROMAPRINT),
+            patch(self._PATCH_TRANSITION) as mock_transition,
+            patch(self._PATCH_RELEASE) as mock_release,
+            patch(self._PATCH_UPDATE_TAGGED),
+        ):
+            _execute_deferred_writes(db, writes, "worker:tag:0")
+        return mock_transition, mock_release
+
+    def _writes(self, *, with_vectors: bool = True, with_streams: bool = True) -> DeferredFileWrites:
+        return DeferredFileWrites(
+            file_id="42",
+            path="/music/a.flac",
+            db_tags={"nom:genre": ["rock"]},
+            namespace="nom",
+            tagger_version="v-test",
+            chromaprint="fp",
+            raw_output_streams=(
+                [DeferredOutputStreamWrite(output_id="out-0", values=[0.1, 0.9])] if with_streams else []
+            ),
+            backbone_vectors=(
+                [
+                    DeferredBackboneVectorWrite(
+                        backbone="bb1",
+                        vector_payloads=[
+                            {
+                                "backbone_id": "bb1",
+                                "model_id": "suite-hash",
+                                "embedding_vector": [0.25, 0.25],
+                                "embed_dim": 2,
+                                "num_segments": 3,
+                            }
+                        ],
+                    )
+                ]
+                if with_vectors
+                else []
+            ),
+        )
+
+    def test_routes_streams_and_vectors_through_aggregate_single_call(self) -> None:
+        db = MagicMock()
+        writes = self._writes()
+        _, mock_release = self._call(db, writes)
+
+        db.ml.replace_song_inference_results.assert_called_once_with(
+            song_id=42,
+            backbone="bb1",
+            vectors=[
+                {
+                    "backbone_id": "bb1",
+                    "model_id": "suite-hash",
+                    "embedding_vector": [0.25, 0.25],
+                    "embed_dim": 2,
+                    "num_segments": 3,
+                }
+            ],
+            output_streams=[{"output_id": "out-0", "values": [0.1, 0.9]}],
+        )
+        mock_release.assert_called_once_with(db, 42, "worker:tag:0")
+
+    def test_routes_streams_only_when_no_backbone_vectors(self) -> None:
+        db = MagicMock()
+        writes = self._writes(with_vectors=False)
+        _, mock_release = self._call(db, writes)
+
+        db.ml.replace_song_inference_results.assert_called_once_with(
+            song_id=42,
+            backbone="",
+            vectors=[],
+            output_streams=[{"output_id": "out-0", "values": [0.1, 0.9]}],
+        )
+        mock_release.assert_called_once()
+
+    def test_multiple_backbones_never_erase_each_other(self) -> None:
+        db = MagicMock()
+        writes = DeferredFileWrites(
+            file_id="42",
+            path="/music/a.flac",
+            db_tags={},
+            namespace="nom",
+            tagger_version="v-test",
+            chromaprint=None,
+            raw_output_streams=[DeferredOutputStreamWrite(output_id="out-0", values=[0.1, 0.9])],
+            backbone_vectors=[
+                DeferredBackboneVectorWrite(
+                    backbone="bb1",
+                    vector_payloads=[{"backbone_id": "bb1", "model_id": "h", "embedding_vector": [0.5, 0.5]}],
+                ),
+                DeferredBackboneVectorWrite(
+                    backbone="openl3",
+                    vector_payloads=[{"backbone_id": "openl3", "model_id": "h", "embedding_vector": [0.6, 0.4]}],
+                ),
+            ],
+        )
+        _, mock_release = self._call(db, writes)
+
+        assert db.ml.replace_song_inference_results.call_count == 2
+        bb1_call, openl3_call = db.ml.replace_song_inference_results.call_args_list
+        assert bb1_call.kwargs["backbone"] == "bb1"
+        assert openl3_call.kwargs["backbone"] == "openl3"
+        # each per-backbone call carries the full canonical stream set
+        expected_streams = [{"output_id": "out-0", "values": [0.1, 0.9]}]
+        assert bb1_call.kwargs["output_streams"] == expected_streams
+        assert openl3_call.kwargs["output_streams"] == expected_streams
+        mock_release.assert_called_once()
+
+    def test_backbones_without_streams_replaces_streams_with_none(self) -> None:
+        """Backbones present with no streams: aggregate called once with vectors and
+        output_streams=[], and streams are replaced per the aggregate replace contract."""
+        db = MagicMock()
+        writes = self._writes(with_vectors=True, with_streams=False)
+        _, mock_release = self._call(db, writes)
+
+        db.ml.replace_song_inference_results.assert_called_once_with(
+            song_id=42,
+            backbone="bb1",
+            vectors=[
+                {
+                    "backbone_id": "bb1",
+                    "model_id": "suite-hash",
+                    "embedding_vector": [0.25, 0.25],
+                    "embed_dim": 2,
+                    "num_segments": 3,
+                }
+            ],
+            output_streams=[],
+        )
+        mock_release.assert_called_once_with(db, 42, "worker:tag:0")
+
+    def test_aggregate_failure_sets_errored_and_releases_claim(self) -> None:
+        db = MagicMock()
+        db.ml.replace_song_inference_results.side_effect = RuntimeError("db down")
+        writes = self._writes()
+        mock_transition, mock_release = self._call(db, writes)
+
+        mock_transition.assert_any_call(db, [42], STATE_NOT_ERRORED, STATE_ERRORED)
+        mock_release.assert_called_once_with(db, 42, "worker:tag:0")
+
+    def test_no_write_when_no_streams_and_no_vectors(self) -> None:
+        db = MagicMock()
+        writes = self._writes(with_vectors=False, with_streams=False)
+        _, mock_release = self._call(db, writes)
+
+        db.ml.replace_song_inference_results.assert_not_called()
+        mock_release.assert_called_once()

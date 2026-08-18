@@ -403,10 +403,10 @@ def test_list_existing_song_paths_delegates() -> None:
     db, _, song_repo, *_ = _make_library_db()
     song_repo.list_existing_song_paths = MagicMock(return_value=["/a.mp3"])
 
-    result = db.list_existing_song_paths(["/a.mp3", "/b.mp3"])
+    result = db.list_existing_song_paths(1, ["/a.mp3", "/b.mp3"])
 
     assert result == ["/a.mp3"]
-    song_repo.list_existing_song_paths.assert_called_once_with(["/a.mp3", "/b.mp3"])
+    song_repo.list_existing_song_paths.assert_called_once_with(1, ["/a.mp3", "/b.mp3"])
 
 
 # ── Song mutations ────────────────────────────────────────────────────────
@@ -448,6 +448,7 @@ def test_add_songs_to_library_ensures_state_for_new_songs() -> None:
     result = db.add_songs_to_library(1, payloads, initial_state="pending")
 
     assert result == [10, 20, 30]
+    song_repo.list_existing_song_paths.assert_called_once_with(1, ["/existing.mp3", "/new1.mp3", "/new2.mp3"])
     song_repo.upsert_songs_for_library.assert_called_once_with(1, payloads)
     # Only new songs (path not in existing_paths) get ensure_song_state
     assert song_state_repo.ensure_song_state.call_count == 2
@@ -465,6 +466,7 @@ def test_add_songs_to_library_skips_state_for_existing_paths() -> None:
     payloads = [{"path": "/a.mp3"}, {"path": "/b.mp3"}]
     db.add_songs_to_library(1, payloads, initial_state="pending")
 
+    song_repo.list_existing_song_paths.assert_called_once_with(1, ["/a.mp3", "/b.mp3"])
     song_state_repo.ensure_song_state.assert_not_called()
 
 
@@ -483,6 +485,7 @@ def test_update_songs_reconciles_added_updated_removed() -> None:
     assert result["added"] == 3
     assert result["updated"] == 0
     assert result["removed"] == 2
+    song_repo.list_existing_song_paths.assert_called_once_with(1, ["/a.mp3", "/b.mp3", "/c.mp3"])
     song_repo.remove_songs.assert_called_once_with([4, 5])
 
 

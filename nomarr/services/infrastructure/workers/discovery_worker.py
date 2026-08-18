@@ -12,7 +12,7 @@ import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from multiprocessing import Event
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.components.library.library_song_mutation_comp import update_last_tagged_at
 from nomarr.helpers.constants.file_states import (
@@ -101,7 +101,6 @@ def _execute_deferred_writes(db: Database, writes: DeferredFileWrites, worker_id
     from nomarr.components.library.library_song_mutation_comp import set_chromaprint
     from nomarr.components.library.library_song_state_comp import transition_song_state
     from nomarr.components.library.song_sync_comp import save_song_tags
-    from nomarr.components.ml.inference.ml_output_stream_store_comp import StreamWrite, upsert_output_streams
     from nomarr.components.tagging.tag_parsing_comp import parse_tag_values
     from nomarr.components.workers.worker_discovery_comp import release_claim
 
@@ -115,15 +114,48 @@ def _execute_deferred_writes(db: Database, writes: DeferredFileWrites, worker_id
         save_song_tags(db, song_id_str, prefixed_nom_tags)
         if writes.chromaprint:
             set_chromaprint(db, song_id, writes.chromaprint)
-        if writes.raw_output_streams:
-            upsert_output_streams(
-                db,
-                song_id=song_id,
-                streams=[
-                    StreamWrite(output_id=stream.output_id, values=stream.values)
-                    for stream in writes.raw_output_streams
-                ],
+        if writes.raw_output_streams or writes.backbone_vectors:
+            from nomarr.components.ml.inference.ml_output_stream_store_comp import (
+                StreamWrite as _StreamWrite,
             )
+            from nomarr.components.ml.inference.ml_output_stream_store_comp import (
+                build_output_stream_payloads,
+            )
+
+            # Route streams through the canonical payload builder so duplicate
+            # output_ids across model paths collapse to a single row (last-wins
+            # per output_id), matching the pre-plan upsert normalization and
+            # the aggregate's replace contract.
+            stream_payloads = build_output_stream_payloads(cast("list[_StreamWrite]", writes.raw_output_streams))
+            if writes.backbone_vectors:
+                # One atomic aggregate call per backbone. Each call re-inserts
+                # the full canonical stream set and replaces only that
+                # backbone's vectors, so persisting one backbone never erases
+                # another backbone's vectors.
+                #
+                # When raw_output_streams is empty while backbone vectors
+                # exist, stream_payloads is [] and the aggregate deliberately
+                # replaces the song's existing streams with none. That is an
+                # intentional stream replacement, per the aggregate's replace
+                # contract (it atomically replaces song_id output streams and
+                # (song_id, backbone) vectors; it does not preserve streams it
+                # is not given).
+                for backbone_write in writes.backbone_vectors:
+                    db.ml.replace_song_inference_results(
+                        song_id=song_id,
+                        backbone=backbone_write.backbone,
+                        vectors=backbone_write.vector_payloads,
+                        output_streams=stream_payloads,
+                    )
+            elif stream_payloads:
+                # Streams only (no backbone vectors) — persist through the
+                # aggregate with no vectors to replace.
+                db.ml.replace_song_inference_results(
+                    song_id=song_id,
+                    backbone="",
+                    vectors=[],
+                    output_streams=stream_payloads,
+                )
         transition_song_state(db, [song_id], STATE_NOT_PROCESSED, STATE_PROCESSED)
         update_last_tagged_at(db, song_id)
         transition_song_state(db, [song_id], STATE_NOT_VECTORS_EXTRACTED, STATE_VECTORS_EXTRACTED)

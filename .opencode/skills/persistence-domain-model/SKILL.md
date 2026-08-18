@@ -17,7 +17,7 @@ The critical gap: **ADR-041 mandates domain dataclasses as the persistence-compo
 
 **Not yet documented:** Detailed per-repo method API, individual DTO file contents, V2 dataclass→V1 integration plan, frontend persistence coupling, Navidrome-specific persistence patterns
 
-**Last extended:** 2026-08-03
+**Last extended:** 2026-08-18
 
 ## Key Files
 
@@ -62,6 +62,19 @@ The critical gap: **ADR-041 mandates domain dataclasses as the persistence-compo
 5. **Essentia imports locked to 2 files only.** Components `ml_audio_comp.py` and `ml_preprocess_comp.py` ONLY. Enforced by architecture test.
 
 6. **Workflows must not import services or app.** Enforced by architecture test. DI via parameters.
+
+## ML Facade Write Atomicity (2026-08-18)
+
+Findings from research on the reported ML persistence facade issue (`nomarr/persistence/api/ml.py` L258-379).
+
+- **The atomicity gap is real and documented in docstrings as "Part F" deferred work:** `replace_output_streams_for_song` (ml.py:300) and `replace_song_vectors` (ml.py:327) are delete-then-insert where the delete and EACH insert commit independently (each repo method does `begin_nested()` + `commit()`). An insert failure after the delete leaves partial state.
+- **AR-SDR-4 forbids the Part F docstring's suggested fix.** Facades must NOT expose `transaction()`/`_require_transaction` (enforced by `tests/unit/test_transaction_guard.py` + `tests/sabotage/test_no_facades_begin_transactions.py`); repos own short internal transactions. The atomicity mechanism that complies: **one repo method wrapping all statements in a single `begin_nested()` + one `commit()`** — all repos share ONE `scoped_session` (db.py:69), so a single repo method can atomically span cross-table work.
+- **Contract mismatch bug:** `ml_output_stream_store_comp.upsert_output_streams` sends `{output_id, values}` payloads but `replace_output_streams_for_song` reads `payload["model_id"]`/`["status"]` → KeyError at runtime in `discovery_worker._execute_deferred_writes` (discovery_worker.py:119). The `model_id` FK → `ml_models.id` would also reject Arango-era output ids like `ml_model_outputs/out-1`.
+- **Table mismatch in OutputRepo:** `delete_outputs_for_song` deletes from `ml_model_outputs`; `store_output_stream` inserts into `ml_output_streams`; `get_outputs_for_song` reads `ml_model_outputs`. Delete/insert/read target different tables.
+- **Unbounded delete bug:** `replace_song_vectors` deletes ALL embeddings for a song across ALL backbones, then inserts one backbone's row. `process_file_wf.py:164` calls `persist_backbone_vector` per backbone in a loop → each backbone wipes the previous one's rows. Replace must be backbone-scoped (`DELETE … WHERE song_id = ? AND backbone_id = ?`).
+- **Schema can't store canonical streams:** `ml_output_streams` (alembic 001:214-227) has only id/song_id/model_id/status/created_at — no output_id/values columns. ADR-038 / DD-canonical-raw-output-stream-persistence values require an alembic change.
+- **Embedding stream write path is unwired:** `replace_embedding_stream_for_song` / `remove_embedding_streams_for_song` have zero production callers (test-only); `ml_embedding_streams` has no UNIQUE(song_id, backbone_id) (select-then-insert race).
+- **Recommended smallest fix:** new atomic repo method (single tx across embeddings + streams) exposed as `MlDb.replace_song_inference_results(song_id, backbone, *, vectors, output_streams)`; fix backbone-scoped delete; fix stream payload contract; migrate callers (discovery_worker.py, process_file_wf.py, ml_vector_persist_comp.py, library_song_query_comp.py); wire repo in db.py.
 
 ## Agent Proliferation Patterns (Known)
 

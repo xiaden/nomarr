@@ -11,12 +11,18 @@ from typing import Any, NotRequired, TypedDict
 
 
 class OutputStreamRecord(TypedDict):
-    """Single row from the ``ml_output_streams`` table."""
+    """Single canonical row from the ``ml_output_streams`` table.
+
+    Represents the canonical ``{output_id, values}`` stream record with stable
+    row/song/index/timestamp fields. ``ml_model_outputs`` remains a metadata
+    table used only to enrich reads.
+    """
 
     id: int
     song_id: int
-    model_id: str
-    status: str
+    output_id: str
+    output_index: int | None
+    values: list[float]
     created_at: int
 
 

@@ -20,6 +20,7 @@ def _make_ml_db() -> MlDb:
         vector_repo=mock_vector_repo,
         model_repo=mock_model_repo,
         calibration_repo=mock_calibration_repo,
+        ml_inference_repo=MagicMock(),
     )
 
 
@@ -113,3 +114,15 @@ class TestMlDbVectorIndexMethods:
         count = ml_db.backfill_genres("ast")
 
         assert count == 0
+
+
+@pytest.mark.unit
+def test_facade_aggregate_intent_without_transaction_api() -> None:
+    """MlDb exposes the single aggregate intent and no facade transaction API."""
+    ml_db = _make_ml_db()
+
+    assert hasattr(ml_db, "replace_song_inference_results")
+    assert not hasattr(ml_db, "replace_output_streams_for_song")
+    assert not hasattr(ml_db, "replace_song_vectors")
+    assert not hasattr(ml_db, "transaction")
+    assert not hasattr(ml_db, "_require_transaction")

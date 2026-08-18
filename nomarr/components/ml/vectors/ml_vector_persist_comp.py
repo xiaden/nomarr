@@ -1,10 +1,17 @@
-"""Vector persistence component: store pooled backbone embeddings in the database."""
+"""Vector persistence component: build canonical pooled backbone embedding payloads.
+
+The live vector write flows through the deferred-write aggregate
+``db.ml.replace_song_inference_results`` scoped to ``(song_id, backbone)``. This
+component no longer issues destructive DB writes itself; it derives the pooled
+track-level embedding and returns the canonical vector payload that the
+deferred-write path forwards to the aggregate. Because the aggregate deletes and
+re-inserts only the ``(song_id, backbone)`` scope it is given, persisting one
+backbone never erases another backbone's vectors.
+"""
 
 from __future__ import annotations
 
-import hashlib
 import logging
-import math
 from typing import TYPE_CHECKING, Any
 
 from nomarr.components.ml.vectors.ml_vector_pool_comp import get_embedding_dimension, pool_embedding_for_storage
@@ -13,118 +20,71 @@ from nomarr.helpers.time_helper import internal_ms
 if TYPE_CHECKING:
     import numpy as np
 
-    from nomarr.persistence.db import Database
-
 logger = logging.getLogger(__name__)
 
 
-def _make_vector_key(song_id: int, model_suite_hash: str) -> str:
-    """Return the deterministic key for one persisted track vector."""
-    return hashlib.sha1(f"{song_id}|{model_suite_hash}".encode()).hexdigest()
-
-
-def _normalize_vector(vector: list[float]) -> list[float]:
-    """Return an L2-normalized copy of ``vector`` for cosine ANN search."""
-    norm = math.sqrt(sum(value * value for value in vector))
-    if norm == 0.0:
-        return list(vector)
-    return [value / norm for value in vector]
-
-
-def upsert_hot_track_vector(
-    db: Database,
-    song_id: int,
+def build_backbone_vector_payload(
     backbone: str,
     model_suite_hash: str,
     embed_dim: int,
     vector: list[float],
     num_segments: int,
-) -> str:
-    """Upsert one pooled track vector into the active vector store.
+) -> dict[str, Any]:
+    """Build the canonical vector payload for the aggregate.
 
-    Builds the hot vector document for the given song and model suite,
-    replaces that song's vectors in the selected hot namespace through the
-    normalized ``db.ml`` intent API, and returns the stored vector document id.
+    The aggregate scopes replacement by ``(song_id, backbone)`` and persists the
+    canonical payload keys: ``backbone_id``, ``model_id``, ``embedding_vector``
+    (plus informational ``embed_dim``/``num_segments``).
 
     Args:
-        db: Database instance.
-        song_id: Library song document ``id``.
-        backbone: Backbone model name used to select the hot vector namespace.
-        model_suite_hash: Hash of the model suite that produced the vector.
+        backbone: Backbone model name — the canonical ``backbone_id``.
+        model_suite_hash: Hash of the model suite that produced the embeddings.
         embed_dim: Embedding dimensionality of ``vector``.
         vector: Pooled track-level embedding vector.
         num_segments: Number of source segments pooled into ``vector``.
 
     Returns:
-        The stored vector document ``id``.
-
-    Raises:
-        RuntimeError: If the persisted vector cannot be reloaded after replacement.
+        Canonical vector payload ``{backbone_id, model_id, embedding_vector,
+        embed_dim, num_segments}``.
 
     """
-    vector_key = _make_vector_key(song_id, model_suite_hash)
-    vector_doc: dict[str, Any] = {
-        "key": vector_key,
-        "file_id": song_id,
-        "model_suite_hash": model_suite_hash,
+    return {
+        "backbone_id": backbone,
+        "model_id": model_suite_hash,
+        "embedding_vector": list(vector),
         "embed_dim": embed_dim,
-        "vector": list(vector),
-        "vector_n": _normalize_vector(vector),
         "num_segments": num_segments,
-        "created_at": internal_ms().value,
     }
-
-    collection_name = f"vectors_track_hot__{backbone}"
-    db.ml.replace_song_vectors(collection_name, song_id, [vector_doc])
-
-    stored_vectors = db.ml.list_song_vectors(collection_name, song_id)
-    stored_vector_id = next(
-        (
-            str(stored_vector_id)
-            for stored_vector in stored_vectors
-            if stored_vector.get("key") == vector_key and isinstance((stored_vector_id := stored_vector.get("id")), str)
-        ),
-        None,
-    )
-    if stored_vector_id is None:
-        msg = f"Vector replacement returned no ids for song '{song_id}' in backbone '{backbone}'"
-        raise RuntimeError(msg)
-
-    return stored_vector_id
 
 
 def persist_backbone_vector(
-    db: Database,
-    song_id: int,
     backbone: str,
     embeddings_2d: np.ndarray,
     model_suite_hash: str,
     path: str,
-) -> float | None:
-    """Persist a pooled track-level embedding vector for one backbone.
+) -> dict[str, Any] | None:
+    """Derive the pooled track-level embedding and return its canonical payload.
 
-    Pools the segment-level embeddings, writes the result to the appropriate
-    vector collection, and returns elapsed milliseconds.
+    Pools the segment-level embeddings and builds the canonical vector payload
+    (with the backbone as ``backbone_id``) that the deferred-write path sends to
+    ``db.ml.replace_song_inference_results``. No DB write happens here — the
+    aggregate owns the atomic ``(song_id, backbone)``-scoped replacement.
 
     Args:
-        db: Database instance.
-        song_id: song document id.
-        backbone: Backbone model name (used to select the vector collection).
+        backbone: Backbone model name (the canonical ``backbone_id``).
         embeddings_2d: Shape ``[num_segments, embed_dim]`` backbone output.
         model_suite_hash: Hash of the model suite used to produce the embeddings.
         path: File path — used only for warning log messages on failure.
 
     Returns:
-        Elapsed milliseconds on success, ``None`` on failure (warning logged).
+        Canonical vector payload on success, ``None`` on failure (warning logged).
 
     """
     t = internal_ms()
     try:
         vector = pool_embedding_for_storage(embeddings_2d)
         embed_dim = get_embedding_dimension(embeddings_2d)
-        upsert_hot_track_vector(
-            db=db,
-            song_id=song_id,
+        payload = build_backbone_vector_payload(
             backbone=backbone,
             model_suite_hash=model_suite_hash,
             embed_dim=embed_dim,
@@ -133,12 +93,13 @@ def persist_backbone_vector(
         )
         elapsed = internal_ms().value - t.value
         logger.debug(
-            "[vectors] Persisted %s vector: dim=%d, segments=%d",
+            "[vectors] Derived %s vector: dim=%d, segments=%d (%.2f ms)",
             backbone,
             embed_dim,
             embeddings_2d.shape[0],
+            elapsed,
         )
-        return elapsed
+        return payload
     except (ValueError, RuntimeError, TypeError, OSError):
-        logger.warning("[vectors] Failed to persist %s vector for %s", backbone, path, exc_info=True)
+        logger.warning("[vectors] Failed to derive %s vector for %s", backbone, path, exc_info=True)
         return None

@@ -57,22 +57,16 @@ def _normalize_streams(streams: list[StreamWrite]) -> list[StreamWrite]:
     return list(deduped.values())
 
 
-def upsert_output_streams(db: Database, *, song_id: int, streams: list[StreamWrite]) -> None:
-    """Upsert canonical raw output streams for a song."""
-    if not streams:
-        return
+def build_output_stream_payloads(streams: list[StreamWrite]) -> list[dict[str, Any]]:
+    """Build canonical ``{output_id, values}`` stream payloads for the aggregate.
 
-    normalized_streams = _normalize_streams(streams)
-    db.ml.replace_output_streams_for_song(
-        song_id=song_id,
-        stream_payloads=[
-            {
-                "output_id": stream.output_id,
-                "values": stream.values,
-            }
-            for stream in normalized_streams
-        ],
-    )
+    Normalizes the write batch (last stream wins per output id) and returns the
+    canonical payloads that ``db.ml.replace_song_inference_results`` persists to
+    ``ml_output_streams``. The live write path no longer upserts streams
+    directly — it forwards these payloads through the aggregate alongside the
+    song's backbone vector payloads in one atomic replacement.
+    """
+    return [{"output_id": stream.output_id, "values": stream.values} for stream in _normalize_streams(streams)]
 
 
 def fetch_output_streams(db: Database, song_id: int) -> list[StreamRecord]:
@@ -217,5 +211,5 @@ def delete_output_streams(db: Database, song_id: int) -> int:
     if not stream_ids:
         return 0
 
-    db.ml.replace_output_streams_for_song(song_id, [])
+    db.ml.remove_output_streams_for_song(song_id)
     return len(stream_ids)

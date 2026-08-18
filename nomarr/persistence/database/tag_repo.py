@@ -89,9 +89,7 @@ class TagRepository:
                 stmt = (
                     pg_insert(_T)
                     .values(**payload)
-                    .on_conflict_do_nothing(
-                        index_elements=[_T.c.name, _T.c.value, _T.c.namespace]
-                    )
+                    .on_conflict_do_nothing(index_elements=[_T.c.name, _T.c.value, _T.c.namespace])
                     .returning(_T.c.id)
                 )
                 inserted = self._session.execute(stmt).fetchone()

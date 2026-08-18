@@ -16,6 +16,7 @@ from nomarr.persistence.database.calibration_repo import CalibrationRepo
 from nomarr.persistence.database.embedding_stream_repo import EmbeddingStreamRepository
 from nomarr.persistence.database.folder_repo import FolderRepository
 from nomarr.persistence.database.library_repo import LibraryRepository
+from nomarr.persistence.database.ml_inference_repo import MlInferenceRepo
 from nomarr.persistence.database.model_repo import ModelRepo
 from nomarr.persistence.database.output_repo import OutputRepo
 from nomarr.persistence.database.pipeline_repo import PipelineRepository
@@ -83,6 +84,7 @@ class Database:
         self._output_repo = OutputRepo(self._scoped)
         self._calibration_repo = CalibrationRepo(self._scoped)
         self._embedding_stream_repo = EmbeddingStreamRepository(self._scoped)
+        self._ml_inference_repo = MlInferenceRepo(self._scoped)
 
         # Import here to avoid circular imports
         from nomarr.persistence.api.application import AppDb
@@ -132,6 +134,7 @@ class Database:
             output_repo=self._output_repo,
             calibration_repo=self._calibration_repo,
             embedding_stream_repo=self._embedding_stream_repo,
+            ml_inference_repo=self._ml_inference_repo,
         )
 
     def close(self) -> None:

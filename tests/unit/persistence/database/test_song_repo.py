@@ -342,10 +342,11 @@ class TestSongRepository:
         _create_song(pg_session, lib_id, "/music/existing.mp3")
         repo = SongRepository(pg_session)
         result = repo.list_existing_song_paths(
+            lib_id,
             [
                 "/music/existing.mp3",
                 "/music/nonexistent.mp3",
-            ]
+            ],
         )
         assert "/music/existing.mp3" in result
         assert "/music/nonexistent.mp3" not in result

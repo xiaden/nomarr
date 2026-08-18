@@ -90,22 +90,72 @@ class TestOutputRepo:
         assert record["created_at"] > 0
 
     def test_store_output_stream(self, pg_session) -> None:
-        """store_output_stream should insert and return the stream record."""
+        """store_output_stream should insert and return the canonical stream record."""
         lib_id = _insert_library(pg_session)
         song_id = _insert_song(pg_session, lib_id)
-        _insert_model(pg_session, "stream_model_1")
 
         repo = OutputRepo(pg_session)
         record = repo.store_output_stream(
             song_id=song_id,
-            model_id="stream_model_1",
-            status="pending",
+            output_id="output_1",
+            values=[0.1, 0.2, 0.3],
+            output_index=0,
         )
         assert record["id"] > 0
         assert record["song_id"] == song_id
-        assert record["model_id"] == "stream_model_1"
-        assert record["status"] == "pending"
+        assert record["output_id"] == "output_1"
+        assert record["output_index"] == 0
+        assert record["values"] == [0.1, 0.2, 0.3]
         assert record["created_at"] > 0
+
+    def test_list_output_streams_for_song_round_trips(self, pg_session) -> None:
+        """list_output_streams_for_song should round-trip canonical {output_id, values}."""
+        lib_id = _insert_library(pg_session)
+        song_id = _insert_song(pg_session, lib_id)
+
+        repo = OutputRepo(pg_session)
+        repo.store_output_stream(song_id, output_id="output_a", values=[0.5, 0.6], output_index=0)
+        repo.store_output_stream(song_id, output_id="output_b", values=[0.7, 0.8], output_index=1)
+
+        results = repo.list_output_streams_for_song(song_id)
+        assert len(results) == 2
+        by_id = {r["output_id"]: r for r in results}
+        assert by_id["output_a"]["values"] == [0.5, 0.6]
+        assert by_id["output_a"]["output_index"] == 0
+        assert by_id["output_b"]["values"] == [0.7, 0.8]
+        assert by_id["output_b"]["output_index"] == 1
+
+    def test_list_output_streams_for_song_nonexistent(self, pg_session) -> None:
+        """list_output_streams_for_song should return [] for a song with no streams."""
+        repo = OutputRepo(pg_session)
+        assert repo.list_output_streams_for_song(999999) == []
+
+    def test_delete_output_streams_for_song_scopes_to_song(self, pg_session) -> None:
+        """delete_output_streams_for_song should remove only that song's streams."""
+        lib_id = _insert_library(pg_session)
+        song_id_1 = _insert_song(pg_session, lib_id)
+        song_r = pg_session.execute(
+            insert(Song)
+            .values(
+                library_id=lib_id,
+                path="/music/test/stream2.mp3",
+                normalized_path="/music/test/stream2.mp3",
+                file_size=2048,
+                modified_time=2000,
+                created_at=2000,
+            )
+            .returning(Song.id)
+        )
+        song_id_2 = song_r.scalar_one()
+
+        repo = OutputRepo(pg_session)
+        repo.store_output_stream(song_id_1, output_id="a", values=[1.0], output_index=0)
+        repo.store_output_stream(song_id_2, output_id="b", values=[2.0], output_index=0)
+
+        deleted = repo.delete_output_streams_for_song(song_id_1)
+        assert deleted == 1
+        assert repo.list_output_streams_for_song(song_id_1) == []
+        assert len(repo.list_output_streams_for_song(song_id_2)) == 1
 
     def test_get_output_existing(self, pg_session) -> None:
         """get_output should return the record for an existing output id."""

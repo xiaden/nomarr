@@ -12,68 +12,57 @@ from nomarr.components.ml.inference.ml_output_stream_store_comp import (
     StreamRecord,
     StreamWrite,
     build_output_stream_lookup,
+    build_output_stream_payloads,
     delete_output_streams,
     fetch_output_streams,
     load_output_streams_for_song,
     resolve_output_stream_lookup,
-    upsert_output_streams,
 )
 
 
 @pytest.mark.unit
 @pytest.mark.mocked
-class TestUpsertOutputStreams:
-    """Tests for ``upsert_output_streams``."""
+class TestBuildOutputStreamPayloads:
+    """Tests for ``build_output_stream_payloads`` (canonical aggregate payloads)."""
 
-    def test_returns_early_for_empty_streams(self) -> None:
-        mock_db = MagicMock()
+    def test_returns_empty_list_for_empty_streams(self) -> None:
+        assert build_output_stream_payloads([]) == []
 
-        upsert_output_streams(mock_db, song_id=1, streams=[])
-
-        mock_db.ml.replace_output_streams_for_song.assert_not_called()
-
-    def test_upserts_normalized_stream_payloads(self) -> None:
-        mock_db = MagicMock()
-        song_id = 1
-        output_1 = "out-1"
-        output_2 = "ml_model_outputs/out-2"
-
-        upsert_output_streams(
-            mock_db,
-            song_id=song_id,
-            streams=[
-                StreamWrite(output_id=output_1, values=[0.1, 0.2]),
-                StreamWrite(output_id=output_2, values=[0.3, 0.4]),
-            ],
+    def test_builds_canonical_normalized_payloads(self) -> None:
+        result = build_output_stream_payloads(
+            [
+                StreamWrite(output_id="out-1", values=[0.1, 0.2]),
+                StreamWrite(output_id="ml_model_outputs/out-2", values=[0.3, 0.4]),
+            ]
         )
 
-        mock_db.ml.replace_output_streams_for_song.assert_called_once_with(
-            song_id=1,
-            stream_payloads=[
-                {"output_id": "out-1", "values": [0.1, 0.2]},
-                {"output_id": "ml_model_outputs/out-2", "values": [0.3, 0.4]},
-            ],
-        )
+        assert result == [
+            {"output_id": "out-1", "values": [0.1, 0.2]},
+            {"output_id": "ml_model_outputs/out-2", "values": [0.3, 0.4]},
+        ]
 
     def test_last_stream_for_output_wins_within_batch(self) -> None:
-        mock_db = MagicMock()
-
-        upsert_output_streams(
-            mock_db,
-            song_id=1,
-            streams=[
+        result = build_output_stream_payloads(
+            [
                 StreamWrite(output_id="out-1", values=[0.1]),
                 StreamWrite(output_id="ml_model_outputs/out-1", values=[0.9, 1.1]),
-            ],
+            ]
         )
 
-        mock_db.ml.replace_output_streams_for_song.assert_called_once_with(
-            song_id=1,
-            stream_payloads=[
-                {"output_id": "out-1", "values": [0.1]},
-                {"output_id": "ml_model_outputs/out-1", "values": [0.9, 1.1]},
-            ],
+        assert result == [
+            {"output_id": "out-1", "values": [0.1]},
+            {"output_id": "ml_model_outputs/out-1", "values": [0.9, 1.1]},
+        ]
+
+    def test_duplicate_output_id_normalized_last_wins(self) -> None:
+        result = build_output_stream_payloads(
+            [
+                StreamWrite(output_id="head_0", values=[0.1, 0.9]),
+                StreamWrite(output_id="head_0", values=[0.4, 0.6]),
+            ]
         )
+
+        assert result == [{"output_id": "head_0", "values": [0.4, 0.6]}]
 
 
 @pytest.mark.unit
@@ -153,7 +142,7 @@ class TestDeleteOutputStreams:
 
         assert result == 0
         mock_db.ml.list_output_streams_for_song.assert_called_once_with(9)
-        mock_db.ml.replace_output_streams_for_song.assert_not_called()
+        mock_db.ml.remove_output_streams_for_song.assert_not_called()
 
     def test_deletes_stream_docs_for_song_once(self) -> None:
         mock_db = MagicMock()
@@ -167,7 +156,7 @@ class TestDeleteOutputStreams:
         result = delete_output_streams(mock_db, song_id=4)
 
         assert result == 2
-        mock_db.ml.replace_output_streams_for_song.assert_called_once_with(4, [])
+        mock_db.ml.remove_output_streams_for_song.assert_called_once_with(4)
 
 
 @pytest.mark.unit

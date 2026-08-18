@@ -199,12 +199,15 @@ class SongRepository:
             result = self._session.execute(stmt)
             return [_row_to_dto(r) for r in result.all()]
 
-    def list_existing_song_paths(self, paths: list[str]) -> list[str]:
-        """Return paths from *paths* that already exist in the table."""
+    def list_existing_song_paths(self, library_id: int, paths: list[str]) -> list[str]:
+        """Return paths from *paths* that already exist in a library."""
         with map_persistence_exceptions():
             if not paths:
                 return []
-            stmt = select(_T.c.path).where(_T.c.path.in_(paths))
+            stmt = select(_T.c.path).where(
+                _T.c.library_id == library_id,
+                _T.c.path.in_(paths),
+            )
             result = self._session.execute(stmt)
             return [row[0] for row in result.all()]
 

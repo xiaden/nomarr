@@ -12,7 +12,7 @@ import pytest
 from nomarr.components.ml.audio.ml_audio_comp import AudioLoadCrashError
 from nomarr.components.ml.inference.ml_backbone_embed_comp import BackboneEmbedding, BackboneEmbeddingResult
 from nomarr.helpers.dto.ml_dto import LoadAudioMonoResult, ProcessHeadPredictionsResult, RawOutputStream
-from nomarr.helpers.dto.processing_dto import DeferredOutputStreamWrite, ProcessorConfig
+from nomarr.helpers.dto.processing_dto import DeferredBackboneVectorWrite, DeferredOutputStreamWrite, ProcessorConfig
 from nomarr.workflows.processing.process_file_wf import process_file_workflow
 
 
@@ -74,7 +74,16 @@ def test_process_file_workflow_packages_resolved_output_streams_and_skips_missin
         patch("nomarr.workflows.processing.process_file_wf.compute_chromaprint", return_value="fp"),
         patch("nomarr.workflows.processing.process_file_wf.compute_backbone_embeddings", return_value=embed_result),
         patch("nomarr.workflows.processing.process_file_wf.run_heads", return_value=head_result),
-        patch("nomarr.workflows.processing.process_file_wf.persist_backbone_vector", return_value=None),
+        patch(
+            "nomarr.workflows.processing.process_file_wf.persist_backbone_vector",
+            return_value={
+                "backbone_id": "bb1",
+                "model_id": "suite-hash",
+                "embedding_vector": [0.25, 0.25],
+                "embed_dim": 2,
+                "num_segments": 3,
+            },
+        ) as persist_vector_mock,
         patch("nomarr.workflows.processing.process_file_wf.collect_mood_outputs", return_value={}),
         patch(
             "nomarr.workflows.processing.process_file_wf.build_model_output_index_map",
@@ -91,7 +100,24 @@ def test_process_file_workflow_packages_resolved_output_streams_and_skips_missin
         )
 
     build_output_index_map_mock.assert_called_once_with(mock_db)
+    persist_vector_mock.assert_called_once()
+    assert persist_vector_mock.call_args.args[0] == "bb1"
+    assert persist_vector_mock.call_args.args[2] == "suite-hash"
     assert result.deferred_writes is not None
+    assert result.deferred_writes.backbone_vectors == [
+        DeferredBackboneVectorWrite(
+            backbone="bb1",
+            vector_payloads=[
+                {
+                    "backbone_id": "bb1",
+                    "model_id": "suite-hash",
+                    "embedding_vector": [0.25, 0.25],
+                    "embed_dim": 2,
+                    "num_segments": 3,
+                }
+            ],
+        )
+    ]
     assert result.deferred_writes.raw_output_streams == [
         DeferredOutputStreamWrite(output_id="ml_model_outputs/out-0", values=[0.1, 0.9]),
         DeferredOutputStreamWrite(output_id="ml_model_outputs/out-2", values=[0.7, 0.3]),

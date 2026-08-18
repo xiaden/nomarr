@@ -51,8 +51,9 @@ def _row_to_stream_record(row: Row[Any]) -> OutputStreamRecord:
     return OutputStreamRecord(
         id=m["id"],
         song_id=m["song_id"],
-        model_id=m["model_id"],
-        status=m["status"],
+        output_id=m["output_id"],
+        output_index=m["output_index"],
+        values=list(m["values"]),
         created_at=m["created_at"],
     )
 
@@ -145,8 +146,15 @@ class OutputRepo:
 
     # ── output streams ──────────────────────────────────────────
 
-    def store_output_stream(self, song_id: int, model_id: str, status: str) -> OutputStreamRecord:
-        """Insert an output stream row and return it."""
+    def store_output_stream(
+        self,
+        song_id: int,
+        *,
+        output_id: str,
+        values: list[float],
+        output_index: int | None = None,
+    ) -> OutputStreamRecord:
+        """Insert one canonical output stream row and return it."""
         with map_persistence_exceptions():
             with self._session.begin_nested():
                 now = int(time.time())
@@ -154,11 +162,28 @@ class OutputRepo:
                     _T_STREAM,
                     {
                         "song_id": song_id,
-                        "model_id": model_id,
-                        "status": status,
+                        "output_id": output_id,
+                        "output_index": output_index,
+                        "values": values,
                         "created_at": now,
                     },
                     session=self._session,
                 )
             self._session.commit()
             return _row_to_stream_record(row)
+
+    def list_output_streams_for_song(self, song_id: int) -> list[OutputStreamRecord]:
+        """Return all canonical output streams for a given song."""
+        with map_persistence_exceptions():
+            stmt = select(_T_STREAM).where(_T_STREAM.c.song_id == song_id)
+            result = self._session.execute(stmt)
+            return [_row_to_stream_record(r) for r in result.all()]
+
+    def delete_output_streams_for_song(self, song_id: int) -> int:
+        """Delete all canonical output streams for a given song.  Returns count deleted."""
+        with map_persistence_exceptions():
+            with self._session.begin_nested():
+                stmt = delete(_T_STREAM).where(_T_STREAM.c.song_id == song_id)
+                result = self._session.execute(stmt)
+            self._session.commit()
+            return int(result.rowcount)  # type: ignore[attr-defined]  # CursorResult.rowcount is int at runtime

@@ -73,9 +73,7 @@ class TestTryInsertOrStealClaim:
     def test_steals_expired_claim_without_using_new_owner_for_release(self) -> None:
         mock_db = MagicMock()
         mock_db.app.claim_song.side_effect = [DuplicateEntityError(), 1]
-        mock_db.app.list_claims.return_value = [
-            {"file_id": 123, "worker_id": "worker-a", "claimed_at": 1000}
-        ]
+        mock_db.app.list_claims.return_value = [{"file_id": 123, "worker_id": "worker-a", "claimed_at": 1000}]
 
         result = try_insert_or_steal_claim(
             mock_db,

@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from nomarr.helpers.dto.vector_repo_dto import EmbeddingRecord, SimilarResult
     from nomarr.persistence.database.calibration_repo import CalibrationRepo
     from nomarr.persistence.database.embedding_stream_repo import EmbeddingStreamRepository
+    from nomarr.persistence.database.ml_inference_repo import MlInferenceRepo
     from nomarr.persistence.database.model_repo import ModelRepo
     from nomarr.persistence.database.output_repo import OutputRepo
     from nomarr.persistence.database.vector_repo import VectorRepo
@@ -46,6 +47,7 @@ class MlDb:
         output_repo: OutputRepo | None = None,
         calibration_repo: CalibrationRepo | None = None,
         embedding_stream_repo: EmbeddingStreamRepository | None = None,
+        ml_inference_repo: MlInferenceRepo | None = None,
     ) -> None:
         """Initialise the ML persistence facade.
 
@@ -64,6 +66,7 @@ class MlDb:
         self._output_repo = output_repo
         self._calibration_repo = calibration_repo
         self._embedding_stream_repo = embedding_stream_repo
+        self._ml_inference_repo = ml_inference_repo
         self._session = session
         assert vector_repo is not None, "VectorRepo is required"
         assert model_repo is not None, "ModelRepo is required"
@@ -297,65 +300,48 @@ class MlDb:
     # Promoted intent-complete write methods
     # ------------------------------------------------------------------
 
-    def replace_output_streams_for_song(
+    def replace_song_inference_results(
         self,
         song_id: int,
-        stream_payloads: list[dict[str, Any]],
+        backbone: str,
+        *,
+        vectors: list[dict[str, Any]],
+        output_streams: list[dict[str, Any]],
     ) -> None:
-        """Replace all canonical output streams for one song (delete-then-insert).
+        """Atomically replace a song's output streams and a backbone's vectors.
 
-        .. note::
-           The delete and each insert commit independently via their repos.
-           Worst case is partial completion if an insert fails after the
-           delete succeeded.  Part F should add proper transaction management
-           (e.g. a facade-level ``begin/commit`` wrapper) for atomicity.
+        Sole live aggregate intent for ML inference persistence. Delegates the
+        whole replacement to :class:`MlInferenceRepo`, which owns ONE short
+        repository-level transaction (``begin_nested`` SAVEPOINT + single
+        ``commit``). No facade-level transaction wrapper is used (AR-SDR-4).
+
+        Output streams use the canonical ``{output_id, values}`` payload shape
+        and persist to ``ml_output_streams``; ``ml_model_outputs`` remains
+        metadata used to enrich reads. Vector replacement is scoped to
+        ``(song_id, backbone)`` so sequentially-persisted backbones preserve
+        one another's vectors.
+
+        Args:
+            song_id: Song whose output streams are replaced and whose vectors
+                (scoped to *backbone*) are replaced.
+            backbone: Backbone identifier scoping vector deletion/insertion.
+            vectors: Canonical vector payloads
+                ``{embedding_vector | embedding, model_id, backbone_id?, genres?}``.
+            output_streams: Canonical stream payloads
+                ``{output_id, values, output_index?}``.
         """
-        assert self._output_repo is not None, "OutputRepo not wired"
-        self._output_repo.delete_outputs_for_song(song_id)
-        for payload in stream_payloads:
-            self._output_repo.store_output_stream(
-                song_id=song_id,
-                model_id=payload["model_id"],
-                status=payload["status"],
-            )
+        assert self._ml_inference_repo is not None, "MlInferenceRepo not wired"
+        self._ml_inference_repo.replace_song_inference_results(
+            song_id=song_id,
+            backbone=backbone,
+            vectors=vectors,
+            output_streams=output_streams,
+        )
 
     def remove_output_streams_for_song(self, song_id: int) -> None:
         """Delete all canonical output streams linked to one song."""
         assert self._output_repo is not None, "OutputRepo not wired"
         self._output_repo.delete_output_streams_for_song(song_id)
-
-    def replace_song_vectors(
-        self,
-        collection_name: str,
-        song_id: int,
-        vector_payloads: list[dict[str, Any]],
-    ) -> None:
-        """Replace all vector rows for one song (delete-then-insert).
-
-        ``collection_name`` is accepted for backwards compatibility but ignored —
-        PostgreSQL uses a single ``embeddings`` table.
-
-        .. note::
-           The delete and each insert commit independently via their repos.
-           Worst case is partial completion if an insert fails after the
-           delete succeeded.  Part F should add proper transaction management
-           for atomicity.
-        """
-        assert self._vector_repo is not None, "VectorRepo not wired"
-        self._vector_repo.delete_embeddings_for_song(song_id)
-        for payload in vector_payloads:
-            # Require embedding_vector (or fallback key 'embedding') — no silent
-            # empty-list default, which would cause a confusing DB dimension error.
-            embedding_vector = payload.get("embedding_vector")
-            if embedding_vector is None:
-                embedding_vector = payload["embedding"]
-            self._vector_repo.insert_embedding(
-                song_id=song_id,
-                backbone_id=payload.get("backbone_id", collection_name),
-                model_id=payload["model_id"],
-                embedding_vector=embedding_vector,
-                genres=payload.get("genres"),
-            )
 
     def remove_song_vectors(self, _collection_name: str, song_id: int) -> None:
         """Delete all vector rows for one song.

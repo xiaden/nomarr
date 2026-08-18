@@ -57,12 +57,10 @@ dev = [
     # P5-S2: floor pinned to 0.25.1 — the version the [tool.deptry] config (P3) was verified against
     "deptry>=0.25.1",
     "pytest>=8.3.0",
-    "pytest-asyncio>=0.24.0",
     "pytest-cov>=5.0.0",
     "ruff==0.15.9",
     "mypy>=1.19.0",
     "import-linter>=2.0",
-    "deptry>=0.20.0",
     "types-PyYAML",
     "types-requests",
     "mcp>=1.0.0",
@@ -252,10 +250,12 @@ extend_exclude = [
 [tool.deptry.per_rule_ignores]
 # DEP002: deps whose usage is invisible to static import scans (CLI/plugin/stub/transitive).
 # Manually verified in DEP_AUDIT §DEP002 — all false positives except psycopg2-binary (SQLAlchemy
-# postgresql+psycopg2:// dialect URL only, no import) and pyacoustid (provider; no acoustid import).
+# postgresql+psycopg2:// dialect URL only, no import) and pychromaprint (provider module loaded
+# internally by pyacoustid).
 # mcp = opencode runtime tooling, never imported in repo code.
 DEP002 = [
     "psycopg2-binary",
+    "pychromaprint",
     "pyacoustid",
     "pytest",  # test runner: 14 `import pytest` files live under scripts/embedding_research/tests/ (excluded tree) + root tests/ (deptry default exclude); same class as pytest-cov
     "pytest-cov",

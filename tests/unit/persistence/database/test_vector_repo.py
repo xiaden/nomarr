@@ -222,6 +222,33 @@ class TestVectorRepo:
         results = repo.get_embeddings_for_song(999999)
         assert results == []
 
+    def test_multiple_backbones_for_same_song_are_preserved(self, pg_session) -> None:
+        """Inserting embeddings for different backbones of one song preserves both.
+
+        The ``embeddings`` table keys rows by ``(song_id, backbone_id)``, so
+        backbone-scoped deletion (as performed by
+        ``MlInferenceRepo.replace_song_inference_results``) can replace one
+        backbone without erasing others.
+        """
+        _, song_id = _create_library_and_song(pg_session)
+        repo = VectorRepo(pg_session)
+        repo.insert_embedding(
+            song_id=song_id,
+            backbone_id="backbone_a",
+            model_id="model_a",
+            embedding_vector=_random_vector(seed=810),
+        )
+        repo.insert_embedding(
+            song_id=song_id,
+            backbone_id="backbone_b",
+            model_id="model_b",
+            embedding_vector=_random_vector(seed=811),
+        )
+
+        results = repo.get_embeddings_for_song(song_id)
+        backbone_ids = {r["backbone_id"] for r in results}
+        assert backbone_ids == {"backbone_a", "backbone_b"}
+
     # ── count_cold_embeddings ───────────────────────────────────
 
     def test_count_cold_embeddings(self, pg_session) -> None:

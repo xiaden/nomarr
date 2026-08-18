@@ -10,7 +10,7 @@ Rules:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
@@ -116,6 +116,21 @@ class DeferredOutputStreamWrite:
 
 
 @dataclass
+class DeferredBackboneVectorWrite:
+    """Deferred canonical vector payload for one backbone.
+
+    Carries the canonical backbone identifier plus its canonical
+    ``{embedding_vector | embedding, model_id, backbone_id?}`` vector payloads.
+    These are persisted via the aggregate ``db.ml.replace_song_inference_results``
+    alongside the song's output streams in one ``(song_id, backbone)``-scoped
+    atomic replacement.
+    """
+
+    backbone: str
+    vector_payloads: list[dict[str, Any]]
+
+
+@dataclass
 class DeferredFileWrites:
     """DB write payloads collected during ML processing.
 
@@ -124,11 +139,12 @@ class DeferredFileWrites:
     with the next file.
 
     The expected execution order is:
-    1. ``save_song_tags``         (tag vertices + edges)
-    2. ``set_chromaprint``        (fingerprint)
-    3. ``upsert_output_streams``  (canonical raw output streams)
-    4. ``mark_song_processed``    (only if 1-3 succeeded)
-    5. ``release_claim``          (always, even on error)
+    1. ``save_song_tags``                (tag vertices + edges)
+    2. ``set_chromaprint``               (fingerprint)
+    3. ``replace_song_inference_results`` (canonical output streams + backbone
+                                          vectors, one atomic aggregate write)
+    4. ``mark_song_processed``            (only if 1-3 succeeded)
+    5. ``release_claim``                  (always, even on error)
     """
 
     file_id: str
@@ -138,6 +154,7 @@ class DeferredFileWrites:
     tagger_version: str
     chromaprint: str | None
     raw_output_streams: list[DeferredOutputStreamWrite]
+    backbone_vectors: list[DeferredBackboneVectorWrite] = field(default_factory=list)
 
 
 @dataclass

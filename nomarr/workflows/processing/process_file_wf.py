@@ -27,6 +27,7 @@ from nomarr.components.ml.resources.ml_timing_comp import build_timing_summary
 from nomarr.components.ml.vectors.ml_vector_persist_comp import persist_backbone_vector
 from nomarr.components.tagging.tagging_aggregation_comp import collect_mood_outputs
 from nomarr.helpers.dto.processing_dto import (
+    DeferredBackboneVectorWrite,
     DeferredFileWrites,
     DeferredOutputStreamWrite,
     ProcessFileResult,
@@ -105,6 +106,9 @@ def process_file_workflow(
     regression_heads: list[tuple[Any, list[float]]] = []
     total_heads_succeeded = 0
     all_raw_output_streams: dict[str, list[Any]] = {}
+    # Backbone -> canonical vector payloads, persisted later via the deferred-
+    # write aggregate (``db.ml.replace_song_inference_results``) scoped by backbone.
+    backbone_vector_payloads: dict[str, list[dict[str, Any]]] = {}
     # Compute model suite hash once for vector persistence (not per backbone)
     model_suite_hash = compute_model_suite_hash(config.models_dir)
 
@@ -158,12 +162,15 @@ def process_file_workflow(
         regression_heads.extend(result.regression_heads)
         all_head_outputs.extend(result.all_head_outputs)
         all_raw_output_streams.update(result.raw_output_streams_by_model_path)
-        # Persist pooled track-level embedding vector for this backbone
+        # Derive pooled track-level embedding payload for this backbone. The
+        # DB write is deferred: the payload is carried to the worker, which
+        # persists it through the aggregate scoped to (song, backbone) so other
+        # backbones' vectors are never erased.
         if file_id is not None:
             assert library_path.library_id is not None  # validated above
-            elapsed_store = persist_backbone_vector(db, int(file_id), backbone, embeddings_2d, model_suite_hash, path)
-            if elapsed_store is not None:
-                timings[f"vector_store_{backbone}"] = elapsed_store
+            vector_payload = persist_backbone_vector(backbone, embeddings_2d, model_suite_hash, path)
+            if vector_payload is not None:
+                backbone_vector_payloads.setdefault(backbone, []).append(vector_payload)
         del embeddings_2d
         logger.debug(f"[processor] Released {backbone} embeddings from memory")
     if total_heads_succeeded == 0:
@@ -229,6 +236,10 @@ def process_file_workflow(
             tagger_version=config.tagger_version,
             chromaprint=shared_chromaprint,
             raw_output_streams=resolved_output_streams,
+            backbone_vectors=[
+                DeferredBackboneVectorWrite(backbone=backbone, vector_payloads=payloads)
+                for backbone, payloads in backbone_vector_payloads.items()
+            ],
         )
     elapsed_ms = internal_ms().value - start_all.value
     elapsed = round(elapsed_ms / 1000, 2)

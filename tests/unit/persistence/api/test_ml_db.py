@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-from typing import Any
 from unittest.mock import MagicMock, sentinel
 
 import pytest
@@ -17,6 +16,7 @@ def _make_ml_db() -> tuple[MlDb, MagicMock, MagicMock, MagicMock, MagicMock, Mag
     output_repo = MagicMock()
     calibration_repo = MagicMock()
     embedding_stream_repo = MagicMock()
+    ml_inference_repo = MagicMock()
     db = MlDb(
         session=MagicMock(),
         vector_repo=vector_repo,
@@ -24,6 +24,7 @@ def _make_ml_db() -> tuple[MlDb, MagicMock, MagicMock, MagicMock, MagicMock, Mag
         output_repo=output_repo,
         calibration_repo=calibration_repo,
         embedding_stream_repo=embedding_stream_repo,
+        ml_inference_repo=ml_inference_repo,
     )
     return db, vector_repo, model_repo, output_repo, calibration_repo, embedding_stream_repo
 
@@ -290,135 +291,50 @@ def test_truncate_calibration_history_delegates_to_calibration_repo() -> None:
 
 
 @pytest.mark.unit
-def test_replace_song_vectors_deletes_then_inserts_per_payload() -> None:
-    db, vector_repo, _, _, _, _ = _make_ml_db()
-    vector_repo.delete_embeddings_for_song = MagicMock()
-    vector_repo.insert_embedding = MagicMock()
-    payloads: list[dict[str, Any]] = [
-        {
-            "backbone_id": "openl3",
-            "model_id": "model_a",
-            "embedding_vector": [0.1, 0.2, 0.3],
-            "genres": ["rock"],
-        },
-        {
-            "backbone_id": "openl3",
-            "model_id": "model_b",
-            "embedding_vector": [0.4, 0.5],
-            "genres": None,
-        },
-    ]
+def test_replace_song_inference_results_delegates_to_aggregate_repo() -> None:
+    db, _, _, _, _, _ = _make_ml_db()
+    vectors = [{"model_id": "model_a", "embedding_vector": [0.1, 0.2]}]
+    output_streams = [{"output_id": "head_0", "values": [0.9, 0.1]}]
 
-    db.replace_song_vectors("vectors_track_hot__model__lib", 42, payloads)
+    db.replace_song_inference_results(42, "openl3", vectors=vectors, output_streams=output_streams)
 
-    vector_repo.delete_embeddings_for_song.assert_called_once_with(42)
-    assert vector_repo.insert_embedding.call_count == 2
-    vector_repo.insert_embedding.assert_any_call(
+    # The facade is a pure intent forwarder: canonical payloads (output_id/values),
+    # backbone scope, and the whole aggregate are delegated in ONE repository call.
+    db._ml_inference_repo.replace_song_inference_results.assert_called_once_with(
         song_id=42,
-        backbone_id="openl3",
-        model_id="model_a",
-        embedding_vector=[0.1, 0.2, 0.3],
-        genres=["rock"],
-    )
-    vector_repo.insert_embedding.assert_any_call(
-        song_id=42,
-        backbone_id="openl3",
-        model_id="model_b",
-        embedding_vector=[0.4, 0.5],
-        genres=None,
+        backbone="openl3",
+        vectors=vectors,
+        output_streams=output_streams,
     )
 
 
 @pytest.mark.unit
-def test_replace_song_vectors_backbone_id_falls_back_to_collection_name() -> None:
-    db, vector_repo, _, _, _, _ = _make_ml_db()
-    vector_repo.delete_embeddings_for_song = MagicMock()
-    vector_repo.insert_embedding = MagicMock()
-    payloads = [{"model_id": "model_a", "embedding_vector": [0.1]}]
+def test_replace_song_inference_results_makes_single_aggregate_call() -> None:
+    db, vector_repo, _, output_repo, _, _ = _make_ml_db()
 
-    db.replace_song_vectors("openl3", 7, payloads)
+    db.replace_song_inference_results(7, "openl3", vectors=[], output_streams=[])
 
-    vector_repo.insert_embedding.assert_called_once_with(
-        song_id=7,
-        backbone_id="openl3",
-        model_id="model_a",
-        embedding_vector=[0.1],
-        genres=None,
-    )
+    # The aggregate intent must own the whole replacement: exactly ONE call to the
+    # repository aggregate, and NO independent destructive repo calls from the facade.
+    db._ml_inference_repo.replace_song_inference_results.assert_called_once()
+    vector_repo.delete_embeddings_for_song.assert_not_called()
+    output_repo.delete_outputs_for_song.assert_not_called()
 
 
 @pytest.mark.unit
-def test_replace_song_vectors_embedding_vector_falls_back_to_embedding_key() -> None:
-    db, vector_repo, _, _, _, _ = _make_ml_db()
-    vector_repo.delete_embeddings_for_song = MagicMock()
-    vector_repo.insert_embedding = MagicMock()
-    payloads = [
-        {
-            "backbone_id": "openl3",
-            "model_id": "model_a",
-            "embedding": [0.9, 0.8],
-        },
-    ]
+def test_independently_destructive_live_write_methods_removed() -> None:
+    db, _, _, _, _, _ = _make_ml_db()
 
-    db.replace_song_vectors("vectors_track_hot__model__lib", 1, payloads)
-
-    vector_repo.insert_embedding.assert_called_once_with(
-        song_id=1,
-        backbone_id="openl3",
-        model_id="model_a",
-        embedding_vector=[0.9, 0.8],
-        genres=None,
-    )
+    assert not hasattr(db, "replace_output_streams_for_song")
+    assert not hasattr(db, "replace_song_vectors")
 
 
 @pytest.mark.unit
-def test_replace_song_vectors_empty_payloads_only_deletes() -> None:
-    db, vector_repo, _, _, _, _ = _make_ml_db()
-    vector_repo.delete_embeddings_for_song = MagicMock()
-    vector_repo.insert_embedding = MagicMock()
+def test_ml_db_exposes_no_facade_transaction_api() -> None:
+    db, _, _, _, _, _ = _make_ml_db()
 
-    db.replace_song_vectors("openl3", 5, [])
-
-    vector_repo.delete_embeddings_for_song.assert_called_once_with(5)
-    vector_repo.insert_embedding.assert_not_called()
-
-
-@pytest.mark.unit
-def test_replace_output_streams_for_song_deletes_then_inserts_per_payload() -> None:
-    db, _, _, output_repo, _, _ = _make_ml_db()
-    output_repo.delete_outputs_for_song = MagicMock()
-    output_repo.store_output_stream = MagicMock()
-    payloads = [
-        {"model_id": "model_a", "status": "success"},
-        {"model_id": "model_b", "status": "failed"},
-    ]
-
-    db.replace_output_streams_for_song(42, payloads)
-
-    output_repo.delete_outputs_for_song.assert_called_once_with(42)
-    assert output_repo.store_output_stream.call_count == 2
-    output_repo.store_output_stream.assert_any_call(
-        song_id=42,
-        model_id="model_a",
-        status="success",
-    )
-    output_repo.store_output_stream.assert_any_call(
-        song_id=42,
-        model_id="model_b",
-        status="failed",
-    )
-
-
-@pytest.mark.unit
-def test_replace_output_streams_for_song_empty_payloads_only_deletes() -> None:
-    db, _, _, output_repo, _, _ = _make_ml_db()
-    output_repo.delete_outputs_for_song = MagicMock()
-    output_repo.store_output_stream = MagicMock()
-
-    db.replace_output_streams_for_song(10, [])
-
-    output_repo.delete_outputs_for_song.assert_called_once_with(10)
-    output_repo.store_output_stream.assert_not_called()
+    assert not hasattr(db, "transaction")
+    assert not hasattr(db, "_require_transaction")
 
 
 @pytest.mark.unit

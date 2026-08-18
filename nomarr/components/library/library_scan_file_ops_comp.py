@@ -80,12 +80,12 @@ def _upsert_batch(db: Database, file_docs: list[dict[str, Any]]) -> list[int]:
     # (e.g. not_processed), overwriting transitions that have already occurred
     # and pushing those files backwards through the pipeline.
     paths = [d["path"] for d in clean_docs if "path" in d]
-    existing_paths = get_existing_file_paths(db, paths)
-
     library_id = library_ids[0]
     if not isinstance(library_id, int) or not all(lid == library_id for lid in library_ids):
         msg = "All docs in a scan batch must share the same integer library_id"
         raise ValueError(msg)
+
+    existing_paths = get_existing_file_paths(db, library_id, paths)
 
     file_ids = db.library.add_songs_to_library(library_id, clean_docs)
 

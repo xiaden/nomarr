@@ -13,18 +13,20 @@ class TestOutputStreamRecord:
 
     @pytest.mark.unit
     def test_can_create_with_all_fields(self) -> None:
-        """OutputStreamRecord should be creatable with all required fields."""
+        """OutputStreamRecord should be creatable with all canonical fields."""
         row = OutputStreamRecord(
             id=1,
             song_id=42,
-            model_id="model_1",
-            status="pending",
+            output_id="output_1",
+            output_index=0,
+            values=[0.1, 0.2],
             created_at=1000,
         )
         assert row["id"] == 1
         assert row["song_id"] == 42
-        assert row["model_id"] == "model_1"
-        assert row["status"] == "pending"
+        assert row["output_id"] == "output_1"
+        assert row["output_index"] == 0
+        assert row["values"] == [0.1, 0.2]
         assert row["created_at"] == 1000
 
 

@@ -6,12 +6,46 @@ duplication.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
 from nomarr.helpers.dto.repo_dto import SongRow
+from nomarr.persistence.sql.exceptions import map_persistence_exceptions
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from sqlalchemy.engine import Row
+    from sqlalchemy.orm import Session, scoped_session
+
+
+@contextmanager
+def atomic_unit_of_work(session: scoped_session[Session]) -> Iterator[None]:
+    """Run statements on *session* as a single atomic unit of work.
+
+    All repository statements executed inside the ``with`` block share the
+    existing scoped SQLAlchemy session and one outer transaction. The unit
+    commits exactly once on success and rolls back the entire unit on any
+    exception, so no partial writes can leak from a failed multi-statement
+    intent (e.g. song hydration).
+
+    Mirrors the repository conventions used across ``song_repo``,
+    ``song_tag_repo``, ``tag_repo``, and ``song_state_repo``: an inner
+    ``begin_nested()`` savepoint scopes the statements and
+    ``map_persistence_exceptions`` translates SQLAlchemy errors into domain
+    exceptions. On failure ``session.rollback()`` discards the whole unit.
+
+    Facades and callers must NOT open their own transactions around this
+    primitive; the unit owns the commit/rollback boundary.
+    """
+    try:
+        with map_persistence_exceptions():
+            with session.begin_nested():
+                yield
+            session.commit()
+    except BaseException:
+        session.rollback()
+        raise
 
 
 def _song_row_to_dto(row: Row) -> SongRow:

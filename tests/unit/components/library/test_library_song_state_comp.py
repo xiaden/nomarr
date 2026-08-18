@@ -216,12 +216,12 @@ class TestSimpleStateLookups:
     @pytest.mark.unit
     def test_file_has_tagged_state_uses_library_facade_counter(self) -> None:
         mock_db = _make_mock_db()
-        mock_db.app.get_song_state.return_value = STATE_PROCESSED
+        mock_db.app.get_song_states.return_value = {STATE_PROCESSED, "calibrated"}
 
         result = song_has_tagged_state(mock_db, 1)
 
         assert result is True
-        mock_db.app.get_song_state.assert_called_once_with(1)
+        mock_db.app.get_song_states.assert_called_once_with(1)
 
     @pytest.mark.unit
     def test_library_has_tagged_files_intersects_tagged_and_library_membership(self) -> None:
@@ -244,7 +244,7 @@ class TestSimpleStateLookups:
     @pytest.mark.unit
     def test_file_has_tagged_state_returns_false_when_count_is_zero(self) -> None:
         mock_db = _make_mock_db()
-        mock_db.app.get_song_state.return_value = None
+        mock_db.app.get_song_states.return_value = set()
 
         result = song_has_tagged_state(mock_db, 1)
 

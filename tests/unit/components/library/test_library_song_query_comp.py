@@ -95,11 +95,11 @@ def test_get_existing_file_paths_uses_library_batch_lookup() -> None:
 
     db.library.list_existing_song_paths.return_value = ["D:/Music/song.flac", "D:/Music/song.flac"]
 
-    result = get_existing_file_paths(db, paths)
+    result = get_existing_file_paths(db, 1, paths)
 
     assert result == {"D:/Music/song.flac"}
 
-    db.library.list_existing_song_paths.assert_called_once_with(paths)
+    db.library.list_existing_song_paths.assert_called_once_with(1, paths)
 
 
 @pytest.mark.unit
