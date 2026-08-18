@@ -26,7 +26,7 @@ import {
 import { useCallback, useState } from "react";
 
 import type { LibraryFile } from "@shared/api/files";
-import { listEntities } from "@shared/api/metadata";
+import { listAlbumsForArtist, listEntities } from "@shared/api/metadata";
 import { Panel } from "@shared/components/ui";
 import type { Entity } from "@shared/types";
 
@@ -107,20 +107,21 @@ export function SearchResults({ results, onNavigate }: SearchResultsProps) {
       let artist: Entity = { entity_id: "", key: "", display_name: artistName };
       let album = { entity_id: "", display_name: albumName };
       try {
-        const [artistResult, albumResult] = await Promise.all([
-          listEntities("artist", { search: artistName, limit: 5 }),
-          listEntities("album", { search: albumName, limit: 5 }),
-        ]);
+        const artistResult = await listEntities("artist", { search: artistName, limit: 5 });
         const artistMatch =
           artistResult.entities.find(
             (e) => e.display_name.toLowerCase() === artistName.toLowerCase()
           ) ?? artistResult.entities[0];
         if (artistMatch) artist = artistMatch;
-        const albumMatch =
-          albumResult.entities.find(
+        if (artist.entity_id) {
+          const artistAlbums = await listAlbumsForArtist(artist.entity_id);
+          const albumMatch = artistAlbums.find(
             (e) => e.display_name.toLowerCase() === albumName.toLowerCase()
-          ) ?? albumResult.entities[0];
-        if (albumMatch) album = { entity_id: albumMatch.entity_id, display_name: albumMatch.display_name };
+          );
+          if (albumMatch) {
+            album = { entity_id: albumMatch.entity_id, display_name: albumMatch.display_name };
+          }
+        }
       } catch {
         // Fall through
       }
