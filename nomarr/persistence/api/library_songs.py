@@ -156,6 +156,21 @@ class LibrarySongsDb:
         FK ON DELETE CASCADE handles derived data cleanup (streams, vectors,
         tags, state assignments) — no explicit derived-data removal needed.
         """
+        allowed_fields = {
+            "path",
+            "normalized_path",
+            "folder_id",
+            "file_size",
+            "modified_time",
+            "duration_seconds",
+            "scanned_at",
+        }
+        invalid_fields = sorted({key for payload in payloads for key in payload if key not in allowed_fields})
+        if invalid_fields:
+            raise ValueError(
+                "update_songs() accepts scan/reconciliation fields only; "
+                f"use an intent method for: {', '.join(invalid_fields)}"
+            )
         result: dict[str, int] = {"added": 0, "updated": 0, "removed": 0}
 
         # Determine existing paths to distinguish new vs updated songs
@@ -228,20 +243,6 @@ class LibrarySongsDb:
     def update_library_song_last_tagged_at(self, song_id: int, tagged_at_ms: int) -> None:
         """Update the last-tagged timestamp on a library song."""
         self._song_repo.update_song(song_id, {"last_tagged_at": tagged_at_ms})
-
-    def update_song_fields(self, song_id: int, fields: dict[str, Any]) -> None:
-        """Update arbitrary fields on a library song row.
-
-        Generic field-update facade for callers that need to patch one or
-        more columns on a song row without going through a specialised
-        setter.
-
-        Args:
-            song_id: Primary key of the song row to update.
-            fields: Mapping of column names to their new values.
-
-        """
-        self._song_repo.update_song(song_id, fields)
 
     def remove_song(self, song_id: int) -> None:
         """Remove one song. FK CASCADE handles derived streams and vectors.

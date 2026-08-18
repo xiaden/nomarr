@@ -112,16 +112,13 @@ def update_song_path(
 ) -> None:
     """Update path and metadata for a moved song."""
     db.library.update_library_song_path(song_id, new_path)
-    fields: dict[str, Any] = {
-        "file_size": file_size,
-        "modified_time": modified_time,
-        "is_valid": 1,
-        "duration_seconds": duration_seconds,
-        "scanned_at": now_ms().value,
-    }
-    if normalized_path is not None:
-        fields["normalized_path"] = normalized_path
-    db.library.update_song_fields(song_id, fields)
+    db.library.update_library_song_scan_metadata(
+        song_id,
+        file_size=file_size,
+        modified_time=modified_time,
+        duration_seconds=duration_seconds,
+        normalized_path=normalized_path,
+    )
 
 
 def update_song_modified_time(db: Database, file_key: int, modified_time_ms: int) -> None:
