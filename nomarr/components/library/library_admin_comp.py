@@ -67,11 +67,8 @@ def create_library(
     return library_id
 
 
-def update_library_root(db: Database, base_library_root: str | None, library_id: int, root_path: str) -> None:
-    """Update a library's root path.
-
-    Raises ValueError if the library is not found or the path is invalid.
-    """
+def resolve_library_root(db: Database, base_library_root: str | None, library_id: int, root_path: str) -> str:
+    """Validate and normalize a library root without persisting it."""
     library = get_library_record(db, library_id)
     if not library:
         msg = f"Library not found: {library_id}"
