@@ -13,6 +13,7 @@ import time
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import delete, func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from nomarr.helpers.dto.repo_dto import TagRow
 from nomarr.persistence.models.song_tag import SongTag
@@ -77,15 +78,6 @@ class TagRepository:
     def get_or_create_tag(self, name: str, value: str, namespace: str) -> int:
         """Return the id of an existing tag or insert a new one."""
         with map_persistence_exceptions():
-            stmt = select(_T.c.id).where(
-                _T.c.name == name,
-                _T.c.value == value,
-                _T.c.namespace == namespace,
-            )
-            result = self._session.execute(stmt)
-            row = result.fetchone()
-            if row is not None:
-                return int(row[0])
             with self._session.begin_nested():
                 payload = {
                     "name": name,
@@ -94,9 +86,29 @@ class TagRepository:
                     "source": "nomarr",
                     "created_at": int(time.time() * 1000),
                 }
-                inserted = insert_one(_T, payload, session=self._session)
+                stmt = (
+                    pg_insert(_T)
+                    .values(**payload)
+                    .on_conflict_do_nothing(
+                        index_elements=[_T.c.name, _T.c.value, _T.c.namespace]
+                    )
+                    .returning(_T.c.id)
+                )
+                inserted = self._session.execute(stmt).fetchone()
+                if inserted is not None:
+                    tag_id = int(inserted[0])
+                else:
+                    existing = self._session.execute(
+                        select(_T.c.id).where(
+                            _T.c.name == name,
+                            _T.c.value == value,
+                            _T.c.namespace == namespace,
+                        )
+                    ).fetchone()
+                    assert existing is not None
+                    tag_id = int(existing[0])
             self._session.commit()
-            return int(inserted._mapping["id"])
+            return tag_id
 
     def create_tag(self, payload: dict[str, Any]) -> int:
         """Insert a new tag row and return its ``id``."""
