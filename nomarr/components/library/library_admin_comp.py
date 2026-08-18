@@ -76,6 +76,15 @@ def resolve_library_root(db: Database, base_library_root: str | None, library_id
     base_root = get_base_library_root(base_library_root)
     abs_path = normalize_library_root(base_root, root_path)
     ensure_no_overlapping_library_root(db, abs_path, ignore_id=str(library_id))
+    return abs_path
+
+
+def update_library_root(db: Database, base_library_root: str | None, library_id: int, root_path: str) -> None:
+    """Update a library's root path.
+
+    Raises ValueError if the library is not found or the path is invalid.
+    """
+    abs_path = resolve_library_root(db, base_library_root, library_id, root_path)
     update_library_record(db, library_id, root_path=abs_path)
     logger.info(f"[LibraryAdmin] Updated library {library_id} root path to {abs_path}")
 
