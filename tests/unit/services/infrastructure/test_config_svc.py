@@ -342,6 +342,19 @@ class TestSet:
 
         mock_write.assert_called_once_with("db_path", "")
 
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_coerces_web_form_values_before_caching(self) -> None:
+        service = _make_service()
+        with patch.object(service, "_write_to_db"):
+            service.set("calibrate_heads", "false")
+            service.set("vector_group_size", "25")
+            service.set("pp_half_life_days", "12.5")
+
+        assert service.get("calibrate_heads") is False
+        assert service.get("vector_group_size") == 25
+        assert service.get("pp_half_life_days") == 12.5
+
 
 class TestGetInternalInfo:
     """Tests for ``ConfigService.get_internal_info()``."""

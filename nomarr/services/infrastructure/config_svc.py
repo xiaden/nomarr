@@ -12,7 +12,7 @@ import dataclasses
 import logging
 import os
 import threading
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, get_args, get_type_hints
 
 import yaml
 
@@ -147,6 +147,8 @@ class ConfigService:
             msg = f"Config key '{key}' is not an allowed config key"
             raise ValueError(msg)
 
+        value = self._coerce_value(key, value)
+
         with self._lock:
             self._cache[key] = value
             # Snapshot callbacks under the lock — fire them after releasing it.
@@ -162,6 +164,30 @@ class ConfigService:
                 cb(key, value)
             except Exception:
                 self._logger.exception("Config callback failed for key '%s'", key)
+
+    @staticmethod
+    def _coerce_value(key: str, value: Any) -> Any:
+        """Convert web-form strings to the declared DynamicConfig type."""
+        if not isinstance(value, str):
+            return value
+        annotation = get_type_hints(DynamicConfig).get(key, get_type_hints(StaticConfig).get(key))
+        if annotation is None:
+            return value
+        choices = get_args(annotation)
+        value_type = next((choice for choice in choices if choice is not type(None)), annotation)
+        if value_type is bool and value.lower() in ("true", "false"):
+            return value.lower() == "true"
+        if value_type is int and value.strip():
+            try:
+                return int(value)
+            except ValueError:
+                pass
+        if value_type is float and value.strip():
+            try:
+                return float(value)
+            except ValueError:
+                pass
+        return value
 
     def subscribe(self, key: str, callback: Callable[[str, Any], None]) -> None:
         """Register a callback for runtime config changes.
