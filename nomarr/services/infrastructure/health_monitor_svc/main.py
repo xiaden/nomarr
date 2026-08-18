@@ -390,9 +390,7 @@ class HealthMonitorService(StateTransitionOpsMixin, DeadlineOpsMixin):
                         component_id,
                         {
                             "status": status,
-                            "last_snapshot": wall_ms.value,
-                            "created_at": wall_ms.value,
-                            "snapshot_type": "history",
+                            "last_seen": wall_ms.value,
                         },
                     )
                 except Exception as e:

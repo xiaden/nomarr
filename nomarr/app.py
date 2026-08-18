@@ -209,7 +209,7 @@ class Application:
                         {
                             "component_type": "app",
                             "status": "healthy",
-                            "last_heartbeat": now_ms().value,
+                            "last_seen": now_ms().value,
                         },
                     )
                 except Exception as e:

@@ -144,15 +144,15 @@ class TestAppRepository:
         assert result["status"] == "unhealthy"
         assert result["last_seen"] == 1000  # unchanged
 
-    def test_update_health_creates_row_and_maps_runtime_fields(self, pg_session) -> None:
-        """Runtime health writes create rows and ignore obsolete fields."""
+    def test_update_health_creates_row_and_ignores_unknown_fields(self, pg_session) -> None:
+        """Runtime health writes create rows and ignore unknown fields."""
         repo = AppRepository(pg_session)
 
         repo.update_health(
             "worker1",
             {
                 "status": "healthy",
-                "last_heartbeat": 2000,
+                "last_seen": 2000,
                 "component_type": "worker",
             },
         )

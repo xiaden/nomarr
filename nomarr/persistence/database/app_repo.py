@@ -191,27 +191,15 @@ class AppRepository:
 
         Health rows are recreated by startup maintenance, so an update-only
         write cannot be used by the runtime telemetry path.  Keep the write
-        constrained to the actual ``worker_health`` columns as well; callers
-        may include fields belonging to the former history-record shape.
+        constrained to the actual ``worker_health`` columns.
         """
-        data = {
-            key: value
-            for key, value in fields.items()
-            if key in {"status", "last_seen"}
-        }
-        if "last_seen" not in data:
-            for alias in ("last_snapshot", "last_heartbeat"):
-                if alias in fields:
-                    data["last_seen"] = fields[alias]
-                    break
+        data = {key: value for key, value in fields.items() if key in {"status", "last_seen"}}
         if not data:
             return
 
         with map_persistence_exceptions():
             with self._session.begin_nested():
-                existing = self._session.execute(
-                    select(_H.c.worker_id).where(_H.c.worker_id == component_id)
-                ).first()
+                existing = self._session.execute(select(_H.c.worker_id).where(_H.c.worker_id == component_id)).first()
                 if existing:
                     update_by_field(_H, "worker_id", component_id, data, session=self._session)
                 else:
