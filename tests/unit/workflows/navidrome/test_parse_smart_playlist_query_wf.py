@@ -186,9 +186,7 @@ class TestDeeplyNestedValidExpressions:
     @pytest.mark.unit
     def test_quoted_values_can_contain_boolean_words(self) -> None:
         """AND/OR inside a quoted value must not split the query."""
-        result = parse_smart_playlist_query(
-            'tag:artist = "Simon and Garfunkel" AND tag:album = "Live \\\"and\\\" Loud"'
-        )
+        result = parse_smart_playlist_query('tag:artist = "Simon and Garfunkel" AND tag:album = "Live \\"and\\" Loud"')
 
         assert [condition.value for condition in result.root.conditions] == [
             "Simon and Garfunkel",

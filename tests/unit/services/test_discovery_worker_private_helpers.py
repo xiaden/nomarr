@@ -40,12 +40,20 @@ def _make_worker_self(worker_id: str = "worker:tag:0") -> MagicMock:
 class TestDatabaseUrlValidation:
     """Invalid inherited configuration must not reach SQLAlchemy engine setup."""
 
-    @pytest.mark.parametrize("database_url", ["", "not-a-url", "sqlite:///worker.db", "postgresql://user@host"])
+    @pytest.mark.parametrize("database_url", ["", "sqlite:///worker.db", "postgresql://user@host"])
     def test_rejects_invalid_database_url(self, database_url: str):
         from nomarr.services.infrastructure.workers.discovery_worker import _validate_database_url
 
         with pytest.raises(ValueError):
             _validate_database_url(database_url)
+
+    def test_rejects_malformed_database_url(self):
+        from sqlalchemy.exc import ArgumentError
+
+        from nomarr.services.infrastructure.workers.discovery_worker import _validate_database_url
+
+        with pytest.raises(ArgumentError):
+            _validate_database_url("not-a-url")
 
     def test_accepts_postgresql_url_with_database_name(self):
         from nomarr.services.infrastructure.workers.discovery_worker import _validate_database_url
@@ -164,7 +172,7 @@ class TestHandleProcessError:
 
         self._call(mock_self, mock_db, f"{'songs'}/abc", RuntimeError("x"), 0)
 
-        mock_release.assert_called_once_with(mock_db, f"{'songs'}/abc")
+        mock_release.assert_called_once_with(mock_db, f"{'songs'}/abc", "worker:tag:0")
 
     @pytest.mark.unit
     @patch(
@@ -185,7 +193,7 @@ class TestHandleProcessError:
             STATE_NOT_ERRORED,
             STATE_ERRORED,
         )
-        mock_release.assert_called_once_with(mock_db, f"{'songs'}/abc")
+        mock_release.assert_called_once_with(mock_db, f"{'songs'}/abc", "worker:tag:0")
 
     @pytest.mark.unit
     @patch(_PATCH_RELEASE)
@@ -271,7 +279,7 @@ class TestCheckResourceHeadroom:
             ram_estimate_mb=2048,
             ram_detection_mode="rss",
         )
-        mock_release_claim.assert_called_once_with(mock_db, f"{'songs'}/abc")
+        mock_release_claim.assert_called_once_with(mock_db, f"{'songs'}/abc", "worker:tag:0")
 
     @pytest.mark.unit
     @patch(_PATCH_RELEASE)
@@ -341,7 +349,7 @@ class TestProcessClaimedFile:
         )
 
         assert result == (pending_write, False)
-        mock_release_claim.assert_called_once_with(mock_db, f"{'songs'}/missing")
+        mock_release_claim.assert_called_once_with(mock_db, f"{'songs'}/missing", "worker:tag:0")
 
     @pytest.mark.unit
     @patch("nomarr.components.library.library_song_state_comp.transition_song_state")
@@ -390,7 +398,7 @@ class TestProcessClaimedFile:
             STATE_NOT_PROCESSED,
             STATE_PROCESSED,
         )
-        mock_release_claim.assert_called_once_with(mock_db, f"{'songs'}/abc")
+        mock_release_claim.assert_called_once_with(mock_db, f"{'songs'}/abc", "worker:tag:0")
         mock_malloc_trim.assert_called_once_with()
 
     @pytest.mark.unit
@@ -424,7 +432,7 @@ class TestProcessClaimedFile:
         )
 
         assert result == (None, False)
-        mock_release_claim.assert_called_once_with(mock_db, "songs/broken")
+        mock_release_claim.assert_called_once_with(mock_db, "songs/broken", "worker:tag:0")
         mock_malloc_trim.assert_called_once_with()
 
     @pytest.mark.unit
@@ -505,7 +513,7 @@ class TestProcessClaimedFile:
         )
 
         assert result == (None, True)
-        mock_release_claim.assert_called_once_with(mock_db, f"{'songs'}/abc")
+        mock_release_claim.assert_called_once_with(mock_db, f"{'songs'}/abc", "worker:tag:0")
         mock_malloc_trim.assert_called_once_with()
 
 

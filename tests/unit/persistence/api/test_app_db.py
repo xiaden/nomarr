@@ -138,7 +138,9 @@ class TestAppDbFileStateMethods:
         mock_song_state_repo.get_song_states.assert_called_once_with(42)
 
     @pytest.mark.unit
-    def test_get_file_states_returns_empty_set_when_no_state(self, app_db: AppDb, mock_song_state_repo: MagicMock) -> None:
+    def test_get_file_states_returns_empty_set_when_no_state(
+        self, app_db: AppDb, mock_song_state_repo: MagicMock
+    ) -> None:
         mock_song_state_repo.get_song_states.return_value = set()
 
         result = app_db.get_song_states(99)

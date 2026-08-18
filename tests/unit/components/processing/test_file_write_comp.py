@@ -219,9 +219,9 @@ class TestReleaseFileClaim:
         mock_db = MagicMock()
 
         with patch("nomarr.components.processing.file_write_comp.release_claim") as mock_release_claim:
-            release_file_claim(mock_db, "abc123")
+            release_file_claim(mock_db, "abc123", "worker:write:0")
 
-        mock_release_claim.assert_called_once_with(mock_db, "abc123")
+        mock_release_claim.assert_called_once_with(mock_db, "abc123", "worker:write:0")
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -232,6 +232,6 @@ class TestReleaseFileClaim:
             "nomarr.components.processing.file_write_comp.release_claim",
             side_effect=RuntimeError("boom"),
         ) as mock_release_claim:
-            release_file_claim(mock_db, "abc123")
+            release_file_claim(mock_db, "abc123", "worker:write:0")
 
-        mock_release_claim.assert_called_once_with(mock_db, "abc123")
+        mock_release_claim.assert_called_once_with(mock_db, "abc123", "worker:write:0")

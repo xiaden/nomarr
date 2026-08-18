@@ -65,7 +65,7 @@ class TestClaimFilesForReconciliation:
         assert result == [candidate]
         mock_db.library.get_song.assert_called_once_with(123)
         claim_payload, claim_now, claim_lease_ms = mock_try_claim.call_args.args[1:]
-        assert claim_payload["key"] == "claim_reconcile_123"
+        assert "key" not in claim_payload
         assert claim_payload["file_id"] == "123"
         assert claim_payload["worker_id"] == "workers/test"
         assert claim_payload["claimed_at"] == 10_000
@@ -108,8 +108,8 @@ class TestClaimFilesForReconciliation:
         assert mock_try_claim.call_count == 2
         first_payload, first_now, first_lease_ms = mock_try_claim.call_args_list[0].args[1:]
         second_payload, second_now, second_lease_ms = mock_try_claim.call_args_list[1].args[1:]
-        assert first_payload["key"] == "claim_reconcile_100"
-        assert second_payload["key"] == "claim_reconcile_101"
+        assert "key" not in first_payload
+        assert "key" not in second_payload
         assert first_now == second_now == 20_000
         assert first_lease_ms == second_lease_ms == 60_000
 
@@ -147,7 +147,6 @@ class TestClaimFilesForReconciliation:
         mock_try_claim.assert_called_once_with(
             mock_db,
             {
-                "key": "claim_reconcile_123",
                 "file_id": "123",
                 "worker_id": "workers/test",
                 "claimed_at": 60_000,
@@ -191,7 +190,6 @@ class TestClaimFilesForReconciliation:
         mock_try_claim.assert_called_once_with(
             mock_db,
             {
-                "key": "claim_reconcile_123",
                 "file_id": "123",
                 "worker_id": "workers/test",
                 "claimed_at": 120_000,
@@ -211,7 +209,7 @@ class TestSetFileWritten:
         mock_db = MagicMock()
 
         with patch("nomarr.components.library.reconciliation_comp.transition_song_state") as mock_transition:
-            set_file_written(mock_db, 123)
+            set_file_written(mock_db, 123, "worker:reconcile:0")
 
         first_transition = mock_transition.call_args_list[0].args
         assert first_transition == (
@@ -220,7 +218,7 @@ class TestSetFileWritten:
             STATE_NOT_WRITTEN,
             STATE_WRITTEN,
         )
-        mock_db.app.release_claim.assert_called_once_with(123)
+        mock_db.app.release_claim.assert_called_once_with("worker:reconcile:0", 123, "reconcile")
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -228,11 +226,11 @@ class TestSetFileWritten:
         mock_db = MagicMock()
 
         with patch("nomarr.components.library.reconciliation_comp.transition_song_state") as mock_transition:
-            set_file_written(mock_db, 123)
+            set_file_written(mock_db, 123, "worker:reconcile:0")
 
         for transition_call in mock_transition.call_args_list:
             assert transition_call.args[1] == [123]
-        mock_db.app.release_claim.assert_called_once_with(123)
+        mock_db.app.release_claim.assert_called_once_with("worker:reconcile:0", 123, "reconcile")
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -240,7 +238,7 @@ class TestSetFileWritten:
         mock_db = MagicMock()
 
         with patch("nomarr.components.library.reconciliation_comp.transition_song_state") as mock_transition:
-            set_file_written(mock_db, 123)
+            set_file_written(mock_db, 123, "worker:reconcile:0")
 
         assert mock_transition.call_count == 2
         first_transition = mock_transition.call_args_list[0].args
@@ -264,9 +262,9 @@ class TestSetFileWritten:
         mock_db = MagicMock()
 
         with patch("nomarr.components.library.reconciliation_comp.transition_song_state"):
-            set_file_written(mock_db, 123)
+            set_file_written(mock_db, 123, "worker:reconcile:0")
 
-        mock_db.app.release_claim.assert_called_once_with(123)
+        mock_db.app.release_claim.assert_called_once_with("worker:reconcile:0", 123, "reconcile")
 
 
 class TestReleaseClaim:
@@ -277,16 +275,16 @@ class TestReleaseClaim:
     def test_normalizes_bare_key_and_releases_claim_via_app_api(self) -> None:
         mock_db = MagicMock()
 
-        release_claim(mock_db, 123)
+        release_claim(mock_db, 123, "worker:reconcile:0")
 
-        mock_db.app.release_claim.assert_called_once_with(123)
+        mock_db.app.release_claim.assert_called_once_with("worker:reconcile:0", 123, "reconcile")
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_does_not_change_state_edges(self) -> None:
         mock_db = MagicMock()
 
-        release_claim(mock_db, 123)
+        release_claim(mock_db, 123, "worker:reconcile:0")
 
         mock_db.file_states.transition.assert_not_called()
 

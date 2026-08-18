@@ -61,10 +61,6 @@ class TestCreateLibrary:
             watch_mode="off",
             file_write_mode="minimal",
             library_auto_write=False,
-            scan_state="not_scanned",
-            ml_state="not_ML_processed",
-            calibration_state="not_calibrated",
-            tag_write_state="not_written",
         )
 
     @pytest.mark.unit
@@ -109,10 +105,6 @@ class TestCreateLibrary:
             watch_mode="off",
             file_write_mode="full",
             library_auto_write=False,
-            scan_state="not_scanned",
-            ml_state="not_ML_processed",
-            calibration_state="not_calibrated",
-            tag_write_state="not_written",
         )
 
 

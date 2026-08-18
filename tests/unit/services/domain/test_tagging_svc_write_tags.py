@@ -316,7 +316,7 @@ class TestWriteTagsToFiles:
             result = service.write_tags_to_files(1)
 
         assert result == WriteTagsResult(processed=0, remaining=0, failed=0)
-        mock_release_claim.assert_called_once_with(mock_db, "file1")
+        mock_release_claim.assert_called_once_with(mock_db, "file1", "reconcile:1")
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -350,4 +350,4 @@ class TestWriteTagsToFiles:
             result = service.write_tags_to_files(1)
 
         assert result == WriteTagsResult(processed=0, remaining=0, failed=1)
-        mock_release_claim.assert_called_once_with(mock_db, "file1")
+        mock_release_claim.assert_called_once_with(mock_db, "file1", "reconcile:1")
