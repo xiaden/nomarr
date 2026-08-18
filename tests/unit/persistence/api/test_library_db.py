@@ -414,13 +414,14 @@ def test_list_existing_song_paths_delegates() -> None:
 
 @pytest.mark.unit
 def test_add_song_to_library_returns_first_id() -> None:
-    db, _, song_repo, *_ = _make_library_db()
+    db, _, song_repo, *_, song_state_repo = _make_library_db()
     song_repo.upsert_songs_for_library = MagicMock(return_value=[42])
 
     result = db.add_song_to_library(1, {"path": "/a.mp3"})
 
     assert result == 42
     song_repo.upsert_songs_for_library.assert_called_once_with(1, [{"path": "/a.mp3"}])
+    song_state_repo.ensure_song_state.assert_called_once_with(42, "not_processed")
 
 
 @pytest.mark.unit

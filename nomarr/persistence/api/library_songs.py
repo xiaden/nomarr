@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from nomarr.helpers.constants.file_states import STATE_NOT_PROCESSED
 from nomarr.helpers.time_helper import now_ms
 
 if TYPE_CHECKING:
@@ -124,6 +125,7 @@ class LibrarySongsDb:
         if not song_ids:
             msg = "add_song_to_library() expected one song id"
             raise RuntimeError(msg)
+        self._song_state_repo.ensure_song_state(song_ids[0], STATE_NOT_PROCESSED)
         return song_ids[0]
 
     def add_songs_to_library(
