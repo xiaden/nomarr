@@ -297,13 +297,13 @@ class TestAppDbLockMethods:
 
     @pytest.mark.unit
     def test_add_lock_delegates_to_insert_lock(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        payload = {"resource_id": "scan:1"}
+        payload = {"document_reference": "scan:1", "holder": "w1", "expires_at": 123}
         mock_app_repo.insert_lock.return_value = "scan:1"
 
         result = app_db.add_lock(payload)
 
         assert result == "scan:1"
-        mock_app_repo.insert_lock.assert_called_once_with(payload)
+        mock_app_repo.insert_lock.assert_called_once_with({"key": "scan:1", "value": payload})
 
     @pytest.mark.unit
     def test_list_locks_delegates(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
@@ -327,7 +327,7 @@ class TestAppDbLockMethods:
 
         app_db.upsert_lock("scan:1", payload)
 
-        mock_app_repo.upsert_lock.assert_called_once_with("scan:1", payload)
+        mock_app_repo.upsert_lock.assert_called_once_with("scan:1", {"value": payload})
 
     @pytest.mark.unit
     def test_acquire_lock_returns_true_on_success(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:

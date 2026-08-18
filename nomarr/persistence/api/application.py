@@ -136,7 +136,11 @@ class AppDb:
         return self._app_repo.get_lock(resource_id)
 
     def add_lock(self, payload: dict) -> str:
-        return self._app_repo.insert_lock(payload)
+        """Add a lock using its resource key and JSON ownership payload."""
+        resource_id = payload.get("document_reference") or payload.get("resource_id")
+        if not isinstance(resource_id, str):
+            raise ValueError("lock payload must include a resource identifier")
+        return self._app_repo.insert_lock({"key": resource_id, "value": payload})
 
     def list_locks(self) -> list[LockRow]:
         return self._app_repo.list_locks()
