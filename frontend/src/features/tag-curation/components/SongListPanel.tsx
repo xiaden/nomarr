@@ -1,4 +1,4 @@
-import { Box, Button, TextField, Typography } from "@mui/material";
+import { Alert, Box, Button, TextField, Typography } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 import type { GridColDef, GridRowSelectionModel } from "@mui/x-data-grid";
 import { useState } from "react";
@@ -37,7 +37,11 @@ export function SongListPanel({
   });
   const { selectedIds, toggle, deselectAll, count: selectedCount } =
     useSelection();
-  const { split, loading: actionLoading } = useCurationActions({
+  const {
+    split,
+    loading: actionLoading,
+    error: actionError,
+  } = useCurationActions({
     onSuccess: () => {
       refetchTagValues();
       refetch();
@@ -64,9 +68,13 @@ export function SongListPanel({
 
   const handleSplit = async () => {
     if (selectedCount === 0 || !newTagValue.trim()) return;
-    await split(tagId, Array.from(selectedIds), newTagValue.trim());
-    setNewTagValue("");
-    deselectAll();
+    try {
+      await split(tagId, Array.from(selectedIds), newTagValue.trim());
+      setNewTagValue("");
+      deselectAll();
+    } catch {
+      // The action hook stores the error for display below.
+    }
   };
 
   return (
@@ -83,6 +91,11 @@ export function SongListPanel({
       <Typography variant="subtitle2" sx={{ mb: 1 }}>
         Songs tagged &quot;{tagValue}&quot;
       </Typography>
+      {actionError && (
+        <Alert severity="error" sx={{ mb: 1 }}>
+          {actionError}
+        </Alert>
+      )}
       <DataGrid<SongRow>
         rows={rows}
         columns={columns}
