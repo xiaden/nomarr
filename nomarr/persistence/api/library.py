@@ -75,8 +75,29 @@ class LibraryDb:
     # Library / pipeline-state forwarding (regions)
     # ------------------------------------------------------------------
 
-    def add_library(self, payload: dict[str, Any]) -> int:
-        return self._regions.add_library(payload)
+    def create_library(
+        self,
+        *,
+        name: str,
+        root_path: str,
+        is_enabled: bool,
+        watch_mode: str,
+        file_write_mode: str,
+        library_auto_write: bool,
+        created_at: int,
+        updated_at: int,
+    ) -> int:
+        """Create a library from the supported library properties."""
+        return self._regions.create_library(
+            name=name,
+            root_path=root_path,
+            is_enabled=is_enabled,
+            watch_mode=watch_mode,
+            file_write_mode=file_write_mode,
+            library_auto_write=library_auto_write,
+            created_at=created_at,
+            updated_at=updated_at,
+        )
 
     def get_library(self, library_id: int) -> LibraryRow | None:
         return self._regions.get_library(library_id)
@@ -90,8 +111,31 @@ class LibraryDb:
     def list_library_keys(self) -> list[int]:
         return self._regions.list_library_keys()
 
-    def update_library(self, library_id: int, fields: dict[str, Any]) -> None:
-        return self._regions.update_library(library_id, fields)
+    def rename_library(self, library_id: int, name: str, *, updated_at: int) -> None:
+        self._regions.rename_library(library_id, name, updated_at=updated_at)
+
+    def change_library_root(self, library_id: int, root_path: str, *, updated_at: int) -> None:
+        self._regions.change_library_root(library_id, root_path, updated_at=updated_at)
+
+    def enable_library(self, library_id: int, is_enabled: bool, *, updated_at: int) -> None:
+        self._regions.enable_library(library_id, is_enabled, updated_at=updated_at)
+
+    def update_library_metadata(
+        self,
+        library_id: int,
+        *,
+        watch_mode: str | None = None,
+        file_write_mode: str | None = None,
+        library_auto_write: bool | None = None,
+        updated_at: int,
+    ) -> None:
+        self._regions.update_library_metadata(
+            library_id,
+            watch_mode=watch_mode,
+            file_write_mode=file_write_mode,
+            library_auto_write=library_auto_write,
+            updated_at=updated_at,
+        )
 
     def get_pipeline_state(self, library_id: int) -> dict[str, str] | None:
         return self._regions.get_pipeline_state(library_id)
@@ -192,9 +236,6 @@ class LibraryDb:
 
     def update_library_song_last_tagged_at(self, song_id: int, tagged_at_ms: int) -> None:
         return self._songs.update_library_song_last_tagged_at(song_id, tagged_at_ms)
-
-    def update_song_fields(self, song_id: int, fields: dict[str, Any]) -> None:
-        return self._songs.update_song_fields(song_id, fields)
 
     def remove_song(self, song_id: int) -> None:
         return self._songs.remove_song(song_id)
@@ -400,8 +441,30 @@ class LibraryDb:
     def add_scan(self, library_id: int, payload: dict[str, Any]) -> int:
         return self._scans.add_scan(library_id, payload)
 
-    def update_scan(self, library_id: int, fields: dict[str, Any]) -> None:
-        return self._scans.update_scan(library_id, fields)
+    def start_scan(self, library_id: int, scan_type: str, started_at: int) -> int:
+        return self._scans.start_scan(library_id, scan_type, started_at)
+
+    def record_scan_progress(
+        self,
+        library_id: int,
+        *,
+        heartbeat_at: int,
+        status: str | None = None,
+        progress: int | None = None,
+        total: int | None = None,
+        scan_error: str | None = None,
+    ) -> None:
+        return self._scans.record_scan_progress(
+            library_id,
+            heartbeat_at=heartbeat_at,
+            status=status,
+            progress=progress,
+            total=total,
+            scan_error=scan_error,
+        )
+
+    def complete_scan(self, library_id: int, finished_at: int) -> None:
+        return self._scans.complete_scan(library_id, finished_at)
 
     def remove_scan(self, library_id: int) -> None:
         return self._scans.remove_scan(library_id)

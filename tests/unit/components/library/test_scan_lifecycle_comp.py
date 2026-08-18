@@ -339,7 +339,7 @@ class TestScanStateHelpers:
 
         mark_scan_started(mock_db, 1, "full")
 
-        mock_db.library.add_scan.assert_called_once()
+        mock_db.library.start_scan.assert_called_once()
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -348,7 +348,7 @@ class TestScanStateHelpers:
 
         mark_scan_completed(mock_db, 1)
 
-        mock_db.library.update_scan.assert_called_once()
+        mock_db.library.complete_scan.assert_called_once()
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -359,14 +359,13 @@ class TestScanStateHelpers:
             mock_now_ms.return_value.value = 123
             update_scan_progress(mock_db, 1, progress=5, total=12, scan_error="boom")
 
-        mock_db.library.update_scan.assert_called_once_with(
+        mock_db.library.record_scan_progress.assert_called_once_with(
             1,
-            {
-                "heartbeat_at": 123,
-                "files_processed": 5,
-                "files_found": 12,
-                "error": "boom",
-            },
+            heartbeat_at=123,
+            status=None,
+            progress=5,
+            total=12,
+            scan_error="boom",
         )
 
     @pytest.mark.unit

@@ -43,20 +43,49 @@ class LibraryScansDb:
         """Create a new scan record for a library."""
         return self._scan_repo.create_scan({**payload, "library_id": library_id})
 
-    def update_scan(self, library_id: int, fields: dict[str, Any]) -> None:
-        """Update an existing scan record or create one if none exists."""
+    def start_scan(self, library_id: int, scan_type: str, started_at: int) -> int:
+        """Create the initial record for a scan lifecycle."""
+        return self._scan_repo.create_scan(
+            {
+                "library_id": library_id,
+                "scan_type": scan_type,
+                "status": "in_progress",
+                "started_at": started_at,
+                "heartbeat_at": started_at,
+            }
+        )
+
+    def record_scan_progress(
+        self,
+        library_id: int,
+        *,
+        heartbeat_at: int,
+        status: str | None = None,
+        progress: int | None = None,
+        total: int | None = None,
+        scan_error: str | None = None,
+    ) -> None:
+        """Record validated progress fields for the current scan."""
         scan = self._scan_repo.get_scan_record(library_id)
-        if scan:
-            self._scan_repo.update_scan(scan["id"], fields)
-        else:
-            self._scan_repo.create_scan(
-                {
-                    "library_id": library_id,
-                    "scan_type": "unknown",
-                    "status": fields.get("status", "in_progress"),
-                    **fields,
-                }
-            )
+        if scan is None:
+            raise ValueError(f"Cannot record progress for library {library_id}: no scan exists")
+        fields: dict[str, Any] = {"heartbeat_at": heartbeat_at}
+        if status is not None:
+            fields["status"] = status
+        if progress is not None:
+            fields["files_processed"] = progress
+        if total is not None:
+            fields["files_found"] = total
+        if scan_error is not None:
+            fields["error"] = scan_error
+        self._scan_repo.update_scan(scan["id"], fields)
+
+    def complete_scan(self, library_id: int, finished_at: int) -> None:
+        """Mark the current scan as successfully completed."""
+        scan = self._scan_repo.get_scan_record(library_id)
+        if scan is None:
+            raise ValueError(f"Cannot complete scan for library {library_id}: no scan exists")
+        self._scan_repo.update_scan(scan["id"], {"status": "completed", "finished_at": finished_at})
 
     def remove_scan(self, library_id: int) -> None:
         """Delete the scan record for a library if one exists."""

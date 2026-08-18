@@ -114,10 +114,30 @@ def test_add_library_delegates() -> None:
     db, library_repo, *_ = _make_library_db()
     library_repo.add_library = MagicMock(return_value=sentinel.lib_id)
 
-    result = db.add_library(sentinel.payload)
+    result = db.create_library(
+        name="main",
+        root_path="/music",
+        is_enabled=True,
+        watch_mode="off",
+        file_write_mode="full",
+        library_auto_write=False,
+        created_at=1,
+        updated_at=1,
+    )
 
     assert result is sentinel.lib_id
-    library_repo.add_library.assert_called_once_with(sentinel.payload)
+    library_repo.add_library.assert_called_once_with(
+        {
+            "name": "main",
+            "root_path": "/music",
+            "is_enabled": True,
+            "watch_mode": "off",
+            "file_write_mode": "full",
+            "library_auto_write": False,
+            "created_at": 1,
+            "updated_at": 1,
+        }
+    )
 
 
 @pytest.mark.unit
@@ -179,9 +199,9 @@ def test_update_library_delegates() -> None:
     db, library_repo, *_ = _make_library_db()
     library_repo.update_library = MagicMock()
 
-    db.update_library(1, sentinel.fields)
+    db.rename_library(1, "renamed", updated_at=2)
 
-    library_repo.update_library.assert_called_once_with(1, sentinel.fields)
+    library_repo.update_library.assert_called_once_with(1, {"name": "renamed", "updated_at": 2})
 
 
 @pytest.mark.unit
@@ -536,16 +556,6 @@ def test_update_library_song_last_tagged_at_delegates() -> None:
     db.update_library_song_last_tagged_at(10, 5555)
 
     song_repo.update_song.assert_called_once_with(10, {"last_tagged_at": 5555})
-
-
-@pytest.mark.unit
-def test_update_song_fields_delegates() -> None:
-    db, _, song_repo, *_ = _make_library_db()
-    song_repo.update_song = MagicMock()
-
-    db.update_song_fields(10, {"duration_seconds": 120.5})
-
-    song_repo.update_song.assert_called_once_with(10, {"duration_seconds": 120.5})
 
 
 @pytest.mark.unit
@@ -993,29 +1003,22 @@ def test_add_scan_merges_library_id() -> None:
 
 
 @pytest.mark.unit
-def test_update_scan_when_exists() -> None:
+def test_record_scan_progress_translates_progress_fields() -> None:
     db, _, _, _, scan_repo, *_ = _make_library_db()
     scan_repo.get_scan_record = MagicMock(return_value={"id": 42})
     scan_repo.update_scan = MagicMock()
 
-    db.update_scan(1, {"status": "done"})
+    db.scans.record_scan_progress(1, heartbeat_at=123, progress=5, total=12, scan_error="boom")
 
-    scan_repo.get_scan_record.assert_called_once_with(1)
-    scan_repo.update_scan.assert_called_once_with(42, {"status": "done"})
-    scan_repo.create_scan.assert_not_called()
-
-
-@pytest.mark.unit
-def test_update_scan_creates_when_not_exists() -> None:
-    db, _, _, _, scan_repo, *_ = _make_library_db()
-    scan_repo.get_scan_record = MagicMock(return_value=None)
-    scan_repo.create_scan = MagicMock(return_value=99)
-
-    db.update_scan(1, {"status": "done"})
-
-    scan_repo.get_scan_record.assert_called_once_with(1)
-    scan_repo.create_scan.assert_called_once_with({"status": "done", "library_id": 1})
-    scan_repo.update_scan.assert_not_called()
+    scan_repo.update_scan.assert_called_once_with(
+        42,
+        {
+            "heartbeat_at": 123,
+            "files_processed": 5,
+            "files_found": 12,
+            "error": "boom",
+        },
+    )
 
 
 @pytest.mark.unit

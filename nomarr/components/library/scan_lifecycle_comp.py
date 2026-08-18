@@ -195,15 +195,7 @@ def mark_scan_started(db: Database, library_id: int, scan_type: str) -> None:
 
     """
     started_at = now_ms().value
-    db.library.add_scan(
-        library_id,
-        {
-            "scan_type": scan_type,
-            "status": "in_progress",
-            "started_at": started_at,
-            "heartbeat_at": started_at,
-        },
-    )
+    db.library.start_scan(library_id, scan_type, started_at)
 
 
 def mark_scan_completed(db: Database, library_id: int) -> None:
@@ -214,13 +206,7 @@ def mark_scan_completed(db: Database, library_id: int) -> None:
         library_id: Library document ``id``
 
     """
-    db.library.update_scan(
-        library_id,
-        {
-            "status": "completed",
-            "finished_at": now_ms().value,
-        },
-    )
+    db.library.complete_scan(library_id, now_ms().value)
 
 
 def update_scan_progress(
@@ -245,20 +231,16 @@ def update_scan_progress(
         scan_error: Error message (only when ``status='error'``)
 
     """
-    payload: dict[str, Any] = {}
-    # A progress update is also the scan heartbeat.  Keep this separate from
+    # A progress update is also the scan heartbeat. Keep this separate from
     # started_at so scan duration and the API's start time remain immutable.
-    payload["heartbeat_at"] = now_ms().value
-    if status is not None:
-        payload["status"] = status
-    if progress is not None:
-        payload["files_processed"] = progress
-    if total is not None:
-        payload["files_found"] = total
-    if scan_error is not None:
-        payload["error"] = scan_error
-    if payload:
-        db.library.update_scan(library_id, payload)
+    db.library.record_scan_progress(
+        library_id,
+        heartbeat_at=now_ms().value,
+        status=status,
+        progress=progress,
+        total=total,
+        scan_error=scan_error,
+    )
 
 
 def is_scan_stale(db: Database, library_id: int, timeout_ms: int = 300_000) -> bool:
