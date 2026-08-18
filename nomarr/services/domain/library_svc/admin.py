@@ -199,19 +199,27 @@ class LibraryAdminMixin:
         if root_path is not None:
             normalized_root_path = resolve_library_root(self.db, self.cfg.library_root, library_id, root_path)
 
-        if (
-            normalized_root_path is not None
-            or name is not None
-            or is_enabled is not None
-            or watch_mode is not None
-            or file_write_mode is not None
-            or library_auto_write is not None
-        ):
+        if normalized_root_path is not None:
             update_library_record(
                 self.db,
                 library_id,
                 name=name,
                 root_path=normalized_root_path,
+                is_enabled=is_enabled,
+                watch_mode=watch_mode,
+                file_write_mode=file_write_mode,
+                library_auto_write=library_auto_write,
+            )
+        elif (
+            name is not None
+            or is_enabled is not None
+            or watch_mode is not None
+            or file_write_mode is not None
+            or library_auto_write is not None
+        ):
+            self.update_library_metadata(
+                library_id,
+                name=name,
                 is_enabled=is_enabled,
                 watch_mode=watch_mode,
                 file_write_mode=file_write_mode,
