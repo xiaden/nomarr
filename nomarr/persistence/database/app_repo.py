@@ -355,6 +355,37 @@ class AppRepository:
             self._session.commit()
             return int(result.rowcount)  # type: ignore[attr-defined]  # CursorResult vs Result — mypy sees Result but .rowcount exists at runtime
 
+    def delete_claims(
+        self,
+        *,
+        worker_ids: list[str] | None = None,
+        song_ids: list[int] | None = None,
+    ) -> int:
+        """Delete claims matching either worker or song filters atomically."""
+        with map_persistence_exceptions():
+            if not worker_ids and not song_ids:
+                return 0
+
+            filters = []
+            if worker_ids:
+                filters.append(_WC.c.worker_id.in_(worker_ids))
+            if song_ids:
+                claim_keys = [
+                    condition
+                    for sid in song_ids
+                    for condition in (
+                        _WC.c.key == f"claim_{sid}",
+                        _WC.c.key.like(f"claim_%_{sid}"),
+                    )
+                ]
+                filters.append(or_(*claim_keys))
+
+            with self._session.begin_nested():
+                stmt = delete(_WC).where(or_(*filters))
+                result = self._session.execute(stmt)
+            self._session.commit()
+            return int(result.rowcount)  # type: ignore[attr-defined]  # CursorResult vs Result — mypy sees Result but .rowcount exists at runtime
+
     def delete_claims_for_songs(self, song_ids: list[int]) -> int:
         """Delete claims for the given song ids (stored as ``key`` strings)."""
         with map_persistence_exceptions():

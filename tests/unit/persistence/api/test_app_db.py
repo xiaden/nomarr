@@ -201,27 +201,21 @@ class TestAppDbFileStateMethods:
     def test_add_file_states_assigns_each_file(self, app_db: AppDb, mock_song_state_repo: MagicMock) -> None:
         app_db.add_song_states([1, 2, 3], "queued")
 
-        assert mock_song_state_repo.assign_state.call_args_list == [
-            call(1, "queued"),
-            call(2, "queued"),
-            call(3, "queued"),
-        ]
+        mock_song_state_repo.assign_states.assert_called_once_with([1, 2, 3], "queued")
 
     @pytest.mark.unit
     def test_add_file_states_empty_list_no_calls(self, app_db: AppDb, mock_song_state_repo: MagicMock) -> None:
         app_db.add_song_states([], "queued")
 
-        mock_song_state_repo.assign_state.assert_not_called()
+        mock_song_state_repo.assign_states.assert_not_called()
 
     @pytest.mark.unit
-    def test_replace_file_states_removes_then_adds(self, app_db: AppDb, mock_song_state_repo: MagicMock) -> None:
+    def test_replace_file_states_delegates_to_atomic_replacement(
+        self, app_db: AppDb, mock_song_state_repo: MagicMock
+    ) -> None:
         app_db.replace_song_states([1, 2], "processing")
 
-        mock_song_state_repo.remove_states_for_songs.assert_called_once_with([1, 2])
-        assert mock_song_state_repo.assign_state.call_args_list == [
-            call(1, "processing"),
-            call(2, "processing"),
-        ]
+        mock_song_state_repo.replace_state_for_songs.assert_called_once_with([1, 2], "processing")
 
     @pytest.mark.unit
     def test_remove_file_states_skips_empty_batch(self, app_db: AppDb, mock_song_state_repo: MagicMock) -> None:
@@ -356,65 +350,65 @@ class TestAppDbLockMethods:
 
 class TestAppDbClaimMethods:
     @pytest.mark.unit
-    def test_add_claim_delegates_to_insert_worker_claim(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        payload = {"file_id": 1, "worker_id": "w1"}
+    def test_claim_song_builds_payload_and_delegates(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
         mock_app_repo.insert_worker_claim.return_value = 42
 
-        result = app_db.add_claim(payload)
+        result = app_db.claim_song(1, "w1")
 
         assert result == 42
-        mock_app_repo.insert_worker_claim.assert_called_once_with(payload)
+        payload = mock_app_repo.insert_worker_claim.call_args.args[0]
+        assert payload["key"] == "claim_1"
+        assert payload["worker_id"] == "w1"
+        assert payload["file_id"] == 1
+        assert payload["claimed_at"] > 0
 
     @pytest.mark.unit
     def test_remove_claim_delegates_to_release_claim(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        app_db.remove_claim(42)
+        app_db.remove_claim("w1", 42)
 
-        mock_app_repo.release_claim.assert_called_once_with(42)
+        mock_app_repo.release_claim.assert_called_once_with("w1", 42, None)
 
     @pytest.mark.unit
     def test_release_claim_is_alias_for_remove_claim(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        app_db.release_claim(42)
+        app_db.release_claim("w1", 42)
 
-        mock_app_repo.release_claim.assert_called_once_with(42)
+        mock_app_repo.release_claim.assert_called_once_with("w1", 42, None)
 
     @pytest.mark.unit
     def test_remove_claims_combines_worker_and_file_removals(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        mock_app_repo.delete_claims_for_workers.return_value = 2
-        mock_app_repo.delete_claims_for_songs.return_value = 3
+        mock_app_repo.delete_claims.return_value = 3
 
         result = app_db.remove_claims(worker_ids=["w1"], song_ids=[1, 2])
 
-        assert result == 5
-        mock_app_repo.delete_claims_for_workers.assert_called_once_with(["w1"])
-        mock_app_repo.delete_claims_for_songs.assert_called_once_with([1, 2])
+        assert result == 3
+        mock_app_repo.delete_claims.assert_called_once_with(worker_ids=["w1"], song_ids=[1, 2])
 
     @pytest.mark.unit
     def test_remove_claims_worker_ids_only(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        mock_app_repo.delete_claims_for_workers.return_value = 4
+        mock_app_repo.delete_claims.return_value = 4
 
         result = app_db.remove_claims(worker_ids=["w1", "w2"])
 
         assert result == 4
-        mock_app_repo.delete_claims_for_workers.assert_called_once_with(["w1", "w2"])
-        mock_app_repo.delete_claims_for_songs.assert_not_called()
+        mock_app_repo.delete_claims.assert_called_once_with(worker_ids=["w1", "w2"], song_ids=None)
 
     @pytest.mark.unit
     def test_remove_claims_file_ids_only(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        mock_app_repo.delete_claims_for_songs.return_value = 1
+        mock_app_repo.delete_claims.return_value = 1
 
         result = app_db.remove_claims(song_ids=[10])
 
         assert result == 1
-        mock_app_repo.delete_claims_for_workers.assert_not_called()
-        mock_app_repo.delete_claims_for_songs.assert_called_once_with([10])
+        mock_app_repo.delete_claims.assert_called_once_with(worker_ids=None, song_ids=[10])
 
     @pytest.mark.unit
     def test_remove_claims_no_filters_returns_zero(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
+        mock_app_repo.delete_claims.return_value = 0
+
         result = app_db.remove_claims()
 
         assert result == 0
-        mock_app_repo.delete_claims_for_workers.assert_not_called()
-        mock_app_repo.delete_claims_for_songs.assert_not_called()
+        mock_app_repo.delete_claims.assert_called_once_with(worker_ids=None, song_ids=None)
 
     @pytest.mark.unit
     def test_list_claims_delegates(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:

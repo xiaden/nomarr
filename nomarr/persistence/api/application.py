@@ -198,15 +198,10 @@ class AppDb:
             song_ids: Optional song ids whose claims should be removed.
 
         Returns:
-            Total number of claims removed across both filters.
+            Total number of unique claims removed across both filters.
 
         """
-        removed = 0
-        if worker_ids:
-            removed += self._app_repo.delete_claims_for_workers(worker_ids)
-        if song_ids:
-            removed += self._app_repo.delete_claims_for_songs(song_ids)
-        return removed
+        return self._app_repo.delete_claims(worker_ids=worker_ids, song_ids=song_ids)
 
     def list_claims(self) -> list[WorkerClaimRow]:
         return self._app_repo.list_claims()

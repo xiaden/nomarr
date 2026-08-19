@@ -408,6 +408,31 @@ class TestAppRepository:
         assert not any(c["key"] == "claim_custom_type_20" for c in claims)
         assert any(c["key"] == "claim_21" for c in claims)
 
+    def test_delete_claims_deduplicates_overlapping_worker_and_song_filters(self, pg_session) -> None:
+        """Overlapping filters delete each matching claim once in one transaction."""
+        repo = AppRepository(pg_session)
+        repo.insert_worker_claim(
+            {
+                "worker_id": "worker1",
+                "key": "claim_20",
+                "value": {},
+                "claimed_at": 1000,
+            }
+        )
+        repo.insert_worker_claim(
+            {
+                "worker_id": "worker1",
+                "key": "claim_21",
+                "value": {},
+                "claimed_at": 1000,
+            }
+        )
+
+        deleted = repo.delete_claims(worker_ids=["worker1"], song_ids=[20])
+
+        assert deleted == 2
+        assert repo.list_claims() == []
+
     def test_steal_claim(self, pg_session) -> None:
         """steal_claim should update expired claims."""
         repo = AppRepository(pg_session)
