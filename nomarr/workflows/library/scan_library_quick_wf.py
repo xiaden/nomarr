@@ -123,7 +123,7 @@ def scan_library_quick_workflow(
                     batch = scan_folder_files(
                         folder_path=Path(folder.abs_path),
                         library_root=library_root,
-                        library_id=str(library_id),
+                        library_id=library_id,
                         existing_files=existing_for_folder,
                         tagger_version=tagger_version,
                         db=db,

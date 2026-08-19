@@ -35,7 +35,7 @@ class FileBatchResult:
 def scan_folder_files(
     folder_path: Path,
     library_root: Path,
-    library_id: str,
+    library_id: int,
     existing_files: dict[str, dict],
     tagger_version: str,
     db: Database,
@@ -48,7 +48,7 @@ def scan_folder_files(
     Args:
         folder_path: Absolute folder path to scan
         library_root: Library root for normalization
-        library_id: Library identifier
+        library_id: Integer library identifier required by persistence
         existing_files: Path → existing file dict (for determining if file is new/updated)
         tagger_version: Current model suite hash (used for ml-tagged bootstrap)
         db: Database instance (for build_library_path_from_input)
