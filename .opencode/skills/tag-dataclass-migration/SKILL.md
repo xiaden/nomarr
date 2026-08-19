@@ -7,7 +7,7 @@ description: The Tag/Tags value-object landscape in Nomarr — four duplicate da
 
 ## Mental Model
 
-Nomarr has **four** Tag/Tags dataclass definitions for the same concept ("a music tag with a name and one-or-more values"). Only one is actually used: `nomarr.helpers.dto.tags_dto` (16 importers). The other three are dead or scaffolding. The migration consolidates onto the validated `(name, values)` shape — but the validated shape rejects empty collections that the in-use v1 API produces freely, and v1 has factory/conversion methods (`from_dict`, `from_db_rows`, `to_dict`, `to_db_rows`) that the validated shape lacks. A migration is not a rename: empty-tag flows and method calls must be re-plumbed first.
+Nomarr has **four** Tag/Tags dataclass definitions for the same concept ("a music tag with a name and one-or-more values"). Only one is actually used: `nomarr.helpers.dto.tags_dto` (16 importers). The other three are dead or scaffolding. The migration consolidates onto the validated `(name, values)` shape — but the validated shape rejects empty collections that the in-use v1 API produces freely. A migration is not a rename: empty-tag flows and method calls must be re-plumbed first. (**TASK-tag-boundary-A** removed `from_db_rows`/`to_db_rows` entirely — row↔domain conversion is now owned by `nomarr.persistence.mappers.tag_mapper.py` (`tags_from_tag_rows` / `tag_rows_from_tags`), not by a dataclass factory.)
 
 ## Coverage
 
@@ -46,7 +46,7 @@ Tests (4): `tests/unit/components/processing/test_file_write_comp.py:18,127,146,
 | Empty dict → `from_dict({})` | allowed | **ValueError** (via empty items) | process_file_wf:85,138,192 |
 | `Tag(key=..., value=None)` | allowed (no validation) | **TypeError** | test_write_file_tags_wf.py:18 |
 | `from_dict` | yes | **NO** | tagging_aggregation_comp:345 |
-| `from_db_rows` | yes | **NO** | tag_query_comp:166,189 |
+| `from_db_rows` | yes | **NO** | (**TASK-tag-boundary-A** removed `from_db_rows`; `tag_query_comp` call-sites now use `tags_from_tag_rows` from `persistence/mappers/tag_mapper.py`) |
 | `to_dict` | yes (always-tuple) | **NO** | tagging_writer_comp:251,275; file_tags_io_wf:42 |
 | `to_db_rows`, `has_key`, `has_value` | yes | NO | — (no current callers) |
 | `get_values` miss | returns `()` | **raises KeyError** | — (no current callers, but semantic trap) |

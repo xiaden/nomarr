@@ -42,9 +42,7 @@ PERSISTENCE_FIELD_PATTERN = re.compile(
 )
 
 # Domain dataclass must not import persistence modules.
-PERSISTENCE_IMPORT_PATTERN = re.compile(
-    r"^\s*from\s+nomarr\.persistence|^\s*import\s+nomarr\.persistence"
-)
+PERSISTENCE_IMPORT_PATTERN = re.compile(r"^\s*from\s+nomarr\.persistence|^\s*import\s+nomarr\.persistence")
 
 # No DB-row factory on the domain dataclass.
 FROM_DB_ROWS_PATTERN = re.compile(r"\bfrom_db_rows\b")
@@ -123,9 +121,7 @@ class TestDomainTagsBoundary:
         violations = [
             (str(DOMAIN_TAGS_FILE), i, line.strip())
             for i, line in enumerate(content.splitlines(), start=1)
-            if FROM_DB_ROWS_PATTERN.search(line)
-            and not line.lstrip().startswith("#")
-            and '"""' not in line
+            if FROM_DB_ROWS_PATTERN.search(line) and not line.lstrip().startswith("#") and '"""' not in line
         ]
         assert len(violations) == 0, (
             "Domain Tags must not expose a DB-row factory; use the persistence "
@@ -141,10 +137,7 @@ class TestDomainTagsBoundary:
             for i, line in enumerate(content.splitlines(), start=1)
             if PERSISTENCE_IMPORT_PATTERN.search(line)
         ]
-        assert len(violations) == 0, (
-            "Domain dataclass must not import persistence modules.\n"
-            f"{_format(violations)}"
-        )
+        assert len(violations) == 0, f"Domain dataclass must not import persistence modules.\n{_format(violations)}"
 
     def test_domain_tags_has_no_persistence_only_fields(self) -> None:
         """Domain dataclass has no persistence-only field definitions."""
@@ -155,8 +148,7 @@ class TestDomainTagsBoundary:
             if re.search(r"^\s*(namespace|provenance|confidence|tier|created_at|updated_at)\s*[:=]", line)
         ]
         assert len(violations) == 0, (
-            "Domain Tag/Tags carries only name/value — no persistence fields.\n"
-            f"{_format(violations)}"
+            f"Domain Tag/Tags carries only name/value — no persistence fields.\n{_format(violations)}"
         )
 
 
@@ -174,8 +166,7 @@ class TestTagRowBoundary:
         violations = _scan_dir(API_TYPES_DIR, REPO_DTO_IMPORT_PATTERN)
         violations.extend(_scan_dir(API_WEB_DIR, REPO_DTO_IMPORT_PATTERN))
         assert len(violations) == 0, (
-            "API types must not import repo_dto (TagRow is persistence-owned).\n"
-            f"{_format(violations)}"
+            f"API types must not import repo_dto (TagRow is persistence-owned).\n{_format(violations)}"
         )
 
 
@@ -273,7 +264,5 @@ class TestNoFromDbRowsAnywhere:
                     if FROM_DB_ROWS_PATTERN.search(line):
                         violations.append((str(py_file.relative_to(project_root)), line_num, line.strip()))
         assert len(violations) == 0, (
-            "from_db_rows must be gone — row-to-domain conversion is the "
-            "persistence mapper.\n"
-            f"{_format(violations)}"
+            f"from_db_rows must be gone — row-to-domain conversion is the persistence mapper.\n{_format(violations)}"
         )

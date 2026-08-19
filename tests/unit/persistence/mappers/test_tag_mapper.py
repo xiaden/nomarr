@@ -77,9 +77,7 @@ class TestTagsFromTagRows:
 
 class TestTagRowsFromTags:
     def test_one_row_per_value(self) -> None:
-        tags = tags_from_tag_rows(
-            [{"name": "genre", "value": "rock"}, {"name": "genre", "value": "pop"}]
-        )
+        tags = tags_from_tag_rows([{"name": "genre", "value": "rock"}, {"name": "genre", "value": "pop"}])
         rows = tag_rows_from_tags(tags, namespace="nom", source="curation")
         assert rows == [
             {"name": "genre", "value": "rock", "namespace": "nom", "source": "curation"},

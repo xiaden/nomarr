@@ -171,7 +171,13 @@ class SearchFilesResult:
 
 
 def map_song_with_tags_to_dto(file_dict: dict[str, Any]) -> LibrarySongWithTags:
-    """Convert a raw file dictionary (with tags) to LibrarySongWithTags DTO."""
+    """Convert a raw file dictionary to a LibrarySongWithTags DTO.
+
+    ``file_dict["tags"]`` is expected to be a list of library-owned ``FileTag``
+    objects already projected by the shared row-to-``FileTag`` mapper
+    (``nomarr.components.library.tag_mapping_comp``); they are passed through
+    unchanged rather than built from raw dict rows here.
+    """
     return LibrarySongWithTags(
         id=file_dict["id"],
         path=file_dict["path"],
