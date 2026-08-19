@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, sentinel
+from unittest.mock import MagicMock, call, sentinel
 
 import pytest
 
@@ -440,6 +440,7 @@ def test_add_songs_to_library_ensures_state_for_new_songs() -> None:
     db, _, song_repo, *_, song_state_repo = _make_library_db()
     song_repo.list_existing_song_paths = MagicMock(return_value=["/existing.mp3"])
     song_repo.upsert_songs_for_library = MagicMock(return_value=[10, 20, 30])
+    song_repo.get_song_ids_by_paths = MagicMock(return_value={"/existing.mp3": 10, "/new1.mp3": 20, "/new2.mp3": 30})
     song_state_repo.ensure_song_state = MagicMock()
 
     payloads = [
@@ -463,6 +464,7 @@ def test_add_songs_to_library_skips_state_for_existing_paths() -> None:
     db, _, song_repo, *_, song_state_repo = _make_library_db()
     song_repo.list_existing_song_paths = MagicMock(return_value=["/a.mp3", "/b.mp3"])
     song_repo.upsert_songs_for_library = MagicMock(return_value=[1, 2])
+    song_repo.get_song_ids_by_paths = MagicMock(return_value={"/a.mp3": 1, "/b.mp3": 2})
     song_state_repo.ensure_song_state = MagicMock()
 
     payloads = [{"path": "/a.mp3"}, {"path": "/b.mp3"}]
@@ -470,6 +472,23 @@ def test_add_songs_to_library_skips_state_for_existing_paths() -> None:
 
     song_repo.list_existing_song_paths.assert_called_once_with(1, ["/a.mp3", "/b.mp3"])
     song_state_repo.ensure_song_state.assert_not_called()
+
+
+@pytest.mark.unit
+def test_add_songs_to_library_matches_states_to_paths_when_upsert_order_differs() -> None:
+    db, _, song_repo, *_, song_state_repo = _make_library_db()
+    song_repo.list_existing_song_paths = MagicMock(return_value=[])
+    song_repo.upsert_songs_for_library = MagicMock(return_value=[20, 10])
+    song_repo.get_song_ids_by_paths = MagicMock(return_value={"/a.mp3": 10, "/b.mp3": 20})
+    song_state_repo.ensure_song_state = MagicMock()
+
+    payloads = [{"path": "/a.mp3"}, {"path": "/b.mp3"}]
+
+    assert db.add_songs_to_library(1, payloads, initial_state="pending") == [10, 20]
+    song_state_repo.ensure_song_state.assert_has_calls([
+        call(10, "pending"),
+        call(20, "pending"),
+    ])
 
 
 @pytest.mark.unit
@@ -867,6 +886,21 @@ def test_replace_song_tags_delegates() -> None:
 
 
 @pytest.mark.unit
+def test_replace_song_tags_resolves_name_value_tags() -> None:
+    db, _, _, _, _, _, song_tag_repo, _ = _make_library_db()
+    song_tag_repo.replace_song_tags = MagicMock()
+    db._tags.find_or_create_tag = MagicMock(return_value=42)
+
+    db.replace_song_tags(10, [{"name": "genre", "value": "Rock", "confidence": 0.9}])
+
+    db._tags.find_or_create_tag.assert_called_once_with("genre", "Rock", "")
+    song_tag_repo.replace_song_tags.assert_called_once_with(
+        10,
+        [{"name": "genre", "value": "Rock", "confidence": 0.9, "tag_id": 42}],
+    )
+
+
+@pytest.mark.unit
 def test_replace_tag_references_delegates() -> None:
     db, *_, tag_repo, _ = _make_library_db()
     tag_repo.replace_tag_references = MagicMock()
@@ -901,15 +935,12 @@ def test_remove_song_tags_all_tags() -> None:
 @pytest.mark.unit
 def test_remove_song_tags_specific_tags() -> None:
     db, _, _, _, _, tag_repo, song_tag_repo, _ = _make_library_db()
-    song_tag_repo.remove_tag_from_song = MagicMock()
+    song_tag_repo.remove_tags_from_song = MagicMock()
     tag_repo.cleanup_orphaned_tags = MagicMock()
 
     db.remove_song_tags(10, tag_keys=[1, 2, 3])
 
-    assert song_tag_repo.remove_tag_from_song.call_count == 3
-    song_tag_repo.remove_tag_from_song.assert_any_call(10, 1)
-    song_tag_repo.remove_tag_from_song.assert_any_call(10, 2)
-    song_tag_repo.remove_tag_from_song.assert_any_call(10, 3)
+    song_tag_repo.remove_tags_from_song.assert_called_once_with(10, [1, 2, 3])
     tag_repo.cleanup_orphaned_tags.assert_called_once_with()
 
 

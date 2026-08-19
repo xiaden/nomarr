@@ -256,8 +256,24 @@ class LibraryTagsDb:
     # ------------------------------------------------------------------
 
     def replace_song_tags(self, song_id: int, tags: list[dict]) -> None:
-        """Replace all tag associations for a song."""
-        self._song_tag_repo.replace_song_tags(song_id, tags)
+        """Replace all tag associations for a song.
+
+        Callers provide tag documents using the public ``name``/``value``
+        shape.  Resolve documents without an existing database ID before
+        delegating to the junction-table repository, whose contract is
+        intentionally ID-based.
+        """
+        resolved_tags: list[dict[str, Any]] = []
+        for tag in tags:
+            tag_id = tag.get("tag_id", tag.get("id"))
+            if not isinstance(tag_id, int):
+                name = tag["name"]
+                value = tag["value"]
+                tag_id = self.find_or_create_tag(str(name), str(value), str(tag.get("namespace", "")))
+            resolved_tag = dict(tag)
+            resolved_tag["tag_id"] = tag_id
+            resolved_tags.append(resolved_tag)
+        self._song_tag_repo.replace_song_tags(song_id, resolved_tags)
 
     def replace_tag_references(self, source_tag_id: int, target_tag_id: int) -> None:
         """Remap song→tag edges from one tag to another across all affected songs."""
@@ -281,8 +297,7 @@ class LibraryTagsDb:
         if tag_keys is None:
             self._song_tag_repo.replace_song_tags(song_id, [])
         else:
-            for tag_id in tag_keys:
-                self._song_tag_repo.remove_tag_from_song(song_id, tag_id)
+            self._song_tag_repo.remove_tags_from_song(song_id, tag_keys)
         self._tag_repo.cleanup_orphaned_tags()
 
     def list_tag_value_frequencies(self, tag_names: list[str], limit: int) -> dict[str, list[tuple[str, int]]]:
