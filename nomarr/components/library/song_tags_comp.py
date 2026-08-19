@@ -39,7 +39,9 @@ def get_song_tags_with_path(db: Database, song_id: int, nomarr_only: bool = Fals
         {
             "key": tag["name"],
             "value": tag["value"],
-            "type": "float" if isinstance(tag["value"], (int, float)) and not isinstance(tag["value"], bool) else "string",
+            "type": "float"
+            if isinstance(tag["value"], (int, float)) and not isinstance(tag["value"], bool)
+            else "string",
             "is_nomarr": tag.get("namespace") == "nom",
         }
         for tag in tags

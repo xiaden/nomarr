@@ -64,6 +64,27 @@ class TestGetFileTagsWithPath:
 
     @pytest.mark.unit
     @pytest.mark.mocked
+    def test_tag_rows_have_canonical_keys(self) -> None:
+        """The component boundary must expose the canonical tag row contract."""
+        mock_db = MagicMock()
+        mock_db.library.get_song.return_value = {"path": "D:/Music/song.flac"}
+        mock_db.library.list_tags_for_song.return_value = [
+            {"name": "tempo", "value": 120, "namespace": ""},
+        ]
+
+        result = get_song_tags_with_path(mock_db, 1)
+
+        assert result is not None
+        assert set(result["tags"][0]) == {"key", "value", "type", "is_nomarr"}
+        assert result["tags"][0] == {
+            "key": "tempo",
+            "value": 120,
+            "type": "float",
+            "is_nomarr": False,
+        }
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
     def test_transforms_multi_value_tags_to_individual_entries(self) -> None:
         mock_db = MagicMock()
         file_doc = {"path": "D:/Music/song.flac"}
