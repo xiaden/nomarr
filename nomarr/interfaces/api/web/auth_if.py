@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel
 
@@ -50,10 +50,9 @@ async def login(request: LoginRequest):
 
 
 @router.post("/logout", response_model=LogoutResponse, dependencies=[Depends(verify_session)])
-async def logout(creds=Depends(verify_session)):
+async def logout(request: Request, _: None = Depends(verify_session)):
     """Invalidate the current session token (logout)."""
-    bearer = HTTPBearer(auto_error=False)
-    auth = await bearer(creds)
+    auth = await HTTPBearer(auto_error=False)(request)
     if auth:
         invalidate_session(auth.credentials)
     return LogoutResponse(status="logged_out")
