@@ -37,9 +37,9 @@ class SongRow(TypedDict):
     modified_time: int
     duration_seconds: float | None
     chromaprint: str | None
-    needs_tagging: int
-    is_valid: int
-    tagged: int
+    needs_tagging: bool
+    is_valid: bool
+    tagged: bool
     calibration_hash: str | None
     write_claimed_by: str | None
     last_tagged_at: int | None

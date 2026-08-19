@@ -130,9 +130,9 @@ class LibrarySongWithTags:
     calibration: str | None
     scanned_at: int | None
     last_tagged_at: int | None
-    tagged: int
+    tagged: bool
     tagged_version: str | None
-    skip_auto_tag: int
+    skip_auto_tag: bool
     created_at: str | None
     updated_at: str | None
     tags: list[FileTag]
