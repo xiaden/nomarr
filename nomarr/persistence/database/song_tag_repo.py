@@ -116,7 +116,12 @@ class SongTagRepository:
                 self._session.execute(stmt)
             self._session.commit()
 
-    def replace_song_tags_batch(self, edges: list[dict[str, Any]]) -> None:
+    def replace_song_tags_batch(
+        self,
+        edges: list[dict[str, Any]],
+        *,
+        song_ids: list[int] | None = None,
+    ) -> None:
         """Set-based full-replace of song↔tag edges across many songs.
 
         Takes *edges* as a flat list of ``{"song_id", "tag_id",
@@ -124,8 +129,9 @@ class SongTagRepository:
         beforehand — this repo never looks tags up by name/value).  For every
         affected song the existing edges are deleted and the supplied edges are
         bulk-inserted in ONE statement each (full-replace semantics, so a retry
-        yields the same assignments).  Input rows are deduplicated by
-        ``(song_id, tag_id)``.
+        yields the same assignments).  ``song_ids`` identifies affected songs
+        when the replacement is intentionally empty.  Input rows are
+        deduplicated by ``(song_id, tag_id)``.
 
         UoW-safe: never commits internally — the caller's unit of work owns
         the transaction.  No per-song/per-tag loop on the hot path.
@@ -135,7 +141,8 @@ class SongTagRepository:
                    ``1.0`` and ``source`` to ``"nomarr"`` when omitted.
 
         """
-        if not edges:
+        affected_song_ids = list(dict.fromkeys(song_ids or [int(e["song_id"]) for e in edges]))
+        if not affected_song_ids:
             return
         now_ms = int(time.time() * 1000)
         # Dedupe by (song_id, tag_id) and group per song.
@@ -153,10 +160,9 @@ class SongTagRepository:
                 },
             )
         rows = list(deduped.values())
-        song_ids = list(dict.fromkeys(int(e["song_id"]) for e in edges))
-
-        self._session.execute(delete(_ST).where(_ST.c.song_id.in_(song_ids)))
-        self._session.execute(pg_insert(_ST).values(rows))
+        self._session.execute(delete(_ST).where(_ST.c.song_id.in_(affected_song_ids)))
+        if rows:
+            self._session.execute(pg_insert(_ST).values(rows))
 
     def replace_song_tags(self, song_id: int, tags: list[dict[str, Any]]) -> None:
         """Delete all existing tag assignments for a song and insert new ones."""

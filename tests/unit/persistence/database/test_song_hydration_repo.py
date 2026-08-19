@@ -296,6 +296,16 @@ class TestHydrateSongsBatch:
         }
         assert STATE_HYDRATED in SongStateRepository(pg_session).get_song_states(song_id)
 
+    def test_empty_tags_replace_existing_edges(self, pg_session) -> None:
+        SongStateRepository(pg_session).bootstrap_states([])
+        _, song_id = _create_library_and_song(pg_session)
+        repo = _build_repo(pg_session)
+
+        repo.hydrate_songs_batch([_make_input(song_id)])
+        repo.hydrate_songs_batch([_make_input(song_id, parsed_nom_tags={}, entity_tags={})])
+
+        assert _song_tags(pg_session, song_id) == set()
+
     def test_statement_count_is_bounded_within_a_chunk(self, pg_engine, pg_session) -> None:
         """The statement count stays constant as inputs grow within one chunk.
 

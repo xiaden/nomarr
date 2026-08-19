@@ -213,7 +213,7 @@ class SongHydrationRepository:
                         }
                         for r in rows
                     )
-            self._song_tag_repo.replace_song_tags_batch(edges)
+            self._song_tag_repo.replace_song_tags_batch(edges, song_ids=song_ids)
 
             # Metadata-cache updates (no-op on current schema per ADR-045).
             cache_by_song: dict[int, dict[str, Any]] = {
