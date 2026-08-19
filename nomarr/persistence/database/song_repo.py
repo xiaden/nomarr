@@ -84,12 +84,17 @@ class SongRepository:
             return _row_to_dto(row) if row else None
 
     def get_song_by_path_unscoped(self, path: str) -> SongRow | None:
-        """Fetch a song by path across all libraries."""
+        """Fetch a song by path when it is unique across all libraries.
+
+        An unscoped lookup is used by path-based deletion.  Returning an
+        arbitrary row when libraries contain the same relative path could
+        delete the wrong song, so ambiguous matches are treated as missing.
+        """
         with map_persistence_exceptions():
-            stmt = select(_T).where(_T.c.path == path).limit(1)
+            stmt = select(_T).where(_T.c.path == path).limit(2)
             result = self._session.execute(stmt)
-            row = result.fetchone()
-            return _row_to_dto(row) if row else None
+            rows = result.all()
+            return _row_to_dto(rows[0]) if len(rows) == 1 else None
 
     def get_song_by_normalized_path(self, library_id: int, normalized_path: str) -> SongRow | None:
         """Fetch a song by normalized path within a specific library."""

@@ -126,6 +126,18 @@ class TestSongRepository:
         assert result is not None
         assert result["path"] == "/music/global.mp3"
 
+    def test_get_song_by_path_unscoped_returns_none_for_duplicate_path(self, pg_session) -> None:
+        """An ambiguous path must not select an arbitrary library's song."""
+        first_library_id = _create_library(pg_session)
+        second_library_id = _create_library(pg_session)
+        _create_song(pg_session, first_library_id, "/music/duplicate.mp3")
+        _create_song(pg_session, second_library_id, "/music/duplicate.mp3")
+        repo = SongRepository(pg_session)
+
+        result = repo.get_song_by_path_unscoped("/music/duplicate.mp3")
+
+        assert result is None
+
     def test_get_song_by_normalized_path(self, pg_session) -> None:
         """get_song_by_normalized_path should find song by normalized path."""
         lib_id = _create_library(pg_session)
