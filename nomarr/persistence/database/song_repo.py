@@ -316,9 +316,10 @@ class SongRepository:
         """Return songs whose path starts with the given folder relative path."""
         with map_persistence_exceptions():
             prefix = folder_rel_path.rstrip("/") + "/"
+            escaped_prefix = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             stmt = select(_T).where(
                 _T.c.library_id == library_id,
-                _T.c.path.like(prefix + "%"),
+                _T.c.path.like(escaped_prefix + "%", escape="\\"),
             )
             result = self._session.execute(stmt)
             return [_row_to_dto(r) for r in result.all()]
