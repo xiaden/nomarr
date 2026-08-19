@@ -199,28 +199,7 @@ class TestTagsMethods:
         with pytest.raises(TypeError, match="Invalid TagValue type: NoneType"):
             Tags.from_dict({"genre": (None,)})
 
-    @pytest.mark.unit
-    def test_from_db_rows_groups_rows_by_name(self) -> None:
-        tags = Tags.from_db_rows(
-            [
-                {"name": "genre", "value": "rock"},
-                {"name": "genre", "value": "pop"},
-                {"name": "artist", "value": "x"},
-            ]
-        )
-        assert tags.to_dict() == {"artist": ("x",), "genre": ("rock", "pop")}
-
-    @pytest.mark.unit
-    def test_from_db_rows_preserves_value_order(self) -> None:
-        tags = Tags.from_db_rows(
-            [
-                {"name": "genre", "value": "pop"},
-                {"name": "genre", "value": "rock"},
-            ]
-        )
-        assert tags.get_values("genre") == ("pop", "rock")
-
-    @pytest.mark.unit
-    def test_from_db_rows_empty_raises_value_error(self) -> None:
-        with pytest.raises(ValueError, match="at least one tag"):
-            Tags.from_db_rows([])
+    # Row-to-domain conversion lives in the persistence layer:
+    # nomarr.persistence.mappers.tag_mapper.tags_from_tag_rows covers grouping,
+    # value-order preservation, empty-row behavior, and persistence-only field
+    # rejection. The domain Tags no longer exposes a DB-row factory.

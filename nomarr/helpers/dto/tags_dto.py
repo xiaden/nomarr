@@ -13,7 +13,7 @@ Strict invariants (from the canonical module):
 - ``Tags`` must contain at least one ``Tag``; empty Tags/values raise ValueError.
 - ``None`` represents the empty/unloaded/missing state, not an empty collection.
 
-Conversion methods: ``from_dict``, ``from_db_rows``, ``to_dict``. Lookup methods:
+Conversion methods: ``from_dict``, ``to_dict``. Lookup methods:
 ``has_name`` and ``get_values`` (raises ``KeyError`` on a missing name).
 
 ``TagValue`` remains available here for backward compatibility.

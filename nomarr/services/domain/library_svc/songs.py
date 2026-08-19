@@ -20,7 +20,7 @@ from nomarr.helpers.constants.file_states import (
     STATE_NOT_PROCESSED,
     STATE_PROCESSED,
 )
-from nomarr.helpers.dto.library_dto import FileTag, FileTagsResult, RetryErroredResult, TagCleanupResult
+from nomarr.helpers.dto.library_dto import FileTagsResult, RetryErroredResult, TagCleanupResult
 from nomarr.workflows.library.cleanup_orphaned_tags_wf import cleanup_orphaned_tags_workflow
 from nomarr.workflows.library.reconcile_paths_wf import reconcile_library_paths_workflow
 
@@ -83,21 +83,12 @@ class LibrarySongsMixin:
             msg = f"Song with ID {song_id} not found"
             raise ValueError(msg)
 
-        # Convert to FileTag DTOs
-        tags = [
-            FileTag(
-                key=tag["key"],
-                value=str(tag["value"]),
-                tag_type=tag["type"],
-                is_nomarr=tag["is_nomarr"],
-            )
-            for tag in result["tags"]
-        ]
-
+        # Component already returns library-owned FileTag objects via the shared
+        # row-to-FileTag mapper; pass them through unchanged.
         return FileTagsResult(
             file_id=int(song_id),
             path=result["path"],
-            tags=tags,
+            tags=result["tags"],
         )
 
     def reconcile_library_paths(

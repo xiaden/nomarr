@@ -7,7 +7,7 @@ import { get, post } from "./client";
 export interface FileTag {
   key: string;
   value: string;
-  type: string;
+  tag_type: string;
   is_nomarr: boolean;
 }
 

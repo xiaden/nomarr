@@ -11,10 +11,12 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 
 from nomarr.components.library.library_song_state_comp import count_untagged_files
 from nomarr.components.library.tag_hydration_comp import hydrate_songs_with_metadata
+from nomarr.components.library.tag_mapping_comp import file_tag_from_tag_row, is_numeric_tag_value
 from nomarr.helpers.constants.file_states import STATE_PROCESSED
 from nomarr.helpers.time_helper import now_ms
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dto.library_dto import FileTag
     from nomarr.persistence.db import Database
 
 DEFAULT_LIMIT = 1000
@@ -154,29 +156,16 @@ def _matches_file_filters(file_doc: dict[str, Any], filter_dict: dict[str, Any])
     return all(file_doc.get(field_name) == expected_value for field_name, expected_value in filter_dict.items())
 
 
-def _is_numeric_tag_value(value: Any) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool)
-
-
 def _is_numeric_target_value(value: float | str) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool)
+    """Whether a curated tag target value is numeric (int/float, non-bool)."""
+    return is_numeric_tag_value(value)
 
 
-def _project_tag_row(tag_doc: Any) -> dict[str, Any]:
-    name_value = tag_doc.get("name")
-    tag_value = tag_doc.get("value")
-    return {
-        "key": name_value,
-        "value": tag_value,
-        "type": "float" if _is_numeric_tag_value(tag_value) else "string",
-        "is_nomarr": tag_doc.get("namespace") == "nom",
-    }
-
-
-def _tags_for_song(db: Database, song_id: int) -> list[dict[str, Any]]:
+def _tags_for_song(db: Database, song_id: int) -> list[FileTag]:
     tag_docs = db.library.list_tags_for_song(song_id)
     return [
-        _project_tag_row(tag_doc) for tag_doc in sorted(tag_docs, key=lambda tag_doc: _sort_key(tag_doc.get("name")))
+        file_tag_from_tag_row(tag_doc)
+        for tag_doc in sorted(tag_docs, key=lambda tag_doc: _sort_key(tag_doc.get("name")))
     ]
 
 
@@ -205,8 +194,8 @@ def _hydrate_files_with_tags(db: Database, file_docs: list[dict[str, Any]]) -> l
     raw_tags_by_file = db.library.list_song_tags_for_songs(song_ids)
     tags_by_file = {
         song_id: sorted(
-            [_project_tag_row(tag_doc) for tag_doc in tag_docs],
-            key=lambda tag_row: _sort_key(tag_row.get("key")),
+            [file_tag_from_tag_row(tag_doc) for tag_doc in tag_docs],
+            key=lambda tag_row: _sort_key(tag_row.key),
         )
         for song_id, tag_docs in raw_tags_by_file.items()
     }
@@ -717,7 +706,7 @@ def search_songs_by_tag(
             tag_id: cast("float", tag_value)
             for tag_doc in all_tag_docs
             if isinstance((tag_id := tag_doc.get("id")), int)
-            and _is_numeric_tag_value(tag_value := tag_doc.get("value"))
+            and is_numeric_tag_value(tag_value := tag_doc.get("value"))
         }
         if not tag_value_by_id:
             return []
@@ -792,7 +781,7 @@ def count_songs_by_tag(db: Database, tag_key: str, target_value: float | str) ->
         tag_ids = [
             tag_id
             for tag_doc in tag_docs
-            if isinstance((tag_id := tag_doc.get("id")), int) and _is_numeric_tag_value(tag_doc.get("value"))
+            if isinstance((tag_id := tag_doc.get("id")), int) and is_numeric_tag_value(tag_doc.get("value"))
         ]
     else:
         tag_ids = [tag_id for tag_doc in tag_docs if isinstance((tag_id := tag_doc.get("id")), int)]

@@ -106,7 +106,12 @@ class UpdateLibraryFromTagsParams:
 
 @dataclass
 class FileTag:
-    """Single tag for a library file."""
+    """Library/API contract, NOT a domain or persistence representation.
+
+    Carries no persistence identifiers, namespace provenance, confidence, or
+    storage timestamps. Produced from row-shaped inputs by the library mapper
+    ``nomarr.components.library.tag_mapping_comp``.
+    """
 
     key: str
     value: str
@@ -185,15 +190,7 @@ def map_song_with_tags_to_dto(file_dict: dict[str, Any]) -> LibrarySongWithTags:
         skip_auto_tag=file_dict.get("skip_auto_tag", 0),
         created_at=file_dict.get("created_at"),
         updated_at=file_dict.get("updated_at"),
-        tags=[
-            FileTag(
-                key=tag["key"],
-                value=tag["value"],
-                tag_type=tag["type"],
-                is_nomarr=tag["is_nomarr"],
-            )
-            for tag in file_dict.get("tags", [])
-        ],
+        tags=list(file_dict.get("tags", [])),
     )
 
 

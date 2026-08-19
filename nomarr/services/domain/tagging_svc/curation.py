@@ -164,7 +164,7 @@ class TaggingCurationMixin:
                 {
                     "key": tag.name,
                     "value": str(value),
-                    "type": "string",
+                    "tag_type": "string",
                     "is_nomarr": tag.name.startswith("nom:"),
                 }
                 for tag in tags

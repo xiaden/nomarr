@@ -18,7 +18,6 @@ from nomarr.components.tagging.tag_query_comp import (
 )
 from nomarr.components.tagging.tag_stats_comp import get_unique_names
 from nomarr.helpers.dto.library_dto import (
-    FileTag,
     FileTagsResult,
     SearchFilesResult,
     TagCleanupResult,
@@ -207,16 +206,9 @@ class TaggingQueryMixin:
         result = get_song_tags_with_path(self.db, int(song_id), nomarr_only=nomarr_only)
         if not result:
             raise ValueError(f"Song with ID {song_id} not found")
-        tags = [
-            FileTag(
-                key=tag["key"],
-                value=str(tag["value"]),
-                tag_type=tag["type"],
-                is_nomarr=tag["is_nomarr"],
-            )
-            for tag in result["tags"]
-        ]
-        return FileTagsResult(file_id=int(song_id), path=result["path"], tags=tags)
+        # Component already returns library-owned FileTag objects via the shared
+        # row-to-FileTag mapper; pass them through unchanged.
+        return FileTagsResult(file_id=int(song_id), path=result["path"], tags=result["tags"])
 
     def cleanup_orphaned_tags(self, dry_run: bool = False) -> TagCleanupResult:
         """Clean up orphaned tags from the database.

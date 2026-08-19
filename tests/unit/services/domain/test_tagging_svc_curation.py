@@ -280,7 +280,7 @@ class TestUpdateSongTags:
                 {
                     "key": "genre",
                     "value": "rock",
-                    "type": "string",
+                    "tag_type": "string",
                     "is_nomarr": False,
                 },
             ],

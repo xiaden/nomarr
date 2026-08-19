@@ -5,10 +5,11 @@ from __future__ import annotations
 import contextlib
 from typing import TYPE_CHECKING, Any
 
-from nomarr.helpers.dataclasses.tags_dataclass import Tags, TagValue
 from nomarr.helpers.dto.tag_curation_dto import TagSongItem
+from nomarr.persistence.mappers.tag_mapper import tags_from_tag_rows
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dataclasses.tags_dataclass import Tags, TagValue
     from nomarr.persistence.db import Database
 
 
@@ -165,7 +166,7 @@ def get_song_tags(db: Database, song_id: int, name: str | None = None, nomarr_on
         rows.append({"name": tag_name, "value": tag["value"]})
     if not rows:
         return None
-    return Tags.from_db_rows(rows)
+    return tags_from_tag_rows(rows)
 
 
 def get_nomarr_tags_bulk(db: Database, file_ids: list[int]) -> dict[int, Tags]:
@@ -188,7 +189,7 @@ def get_nomarr_tags_bulk(db: Database, file_ids: list[int]) -> dict[int, Tags]:
             if isinstance(tag_name := tag.get("name"), str) and "value" in tag
         ]
         if rows:
-            result[file_id] = Tags.from_db_rows(rows)
+            result[file_id] = tags_from_tag_rows(rows)
     return result
 
 

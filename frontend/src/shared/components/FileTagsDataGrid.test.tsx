@@ -9,12 +9,12 @@ import { FileTagsDataGrid } from "./FileTagsDataGrid";
 // Test fixtures
 // ──────────────────────────────────────────────────────────────────────
 
-const METADATA_TAG = { key: "artist", value: "Beatles", type: "string", is_nomarr: false };
-const METADATA_TAG_2 = { key: "album", value: "Abbey Road", type: "string", is_nomarr: false };
-const EXTENDED_TAG = { key: "composer", value: "Lennon/McCartney", type: "string", is_nomarr: false };
-const EXTENDED_TAG_2 = { key: "bpm", value: "120", type: "string", is_nomarr: false };
-const NOMARR_TAG = { key: "nom:mood-strict", value: "happy, energetic", type: "string", is_nomarr: true };
-const NOMARR_TAG_2 = { key: "nom:effnet_engaging", value: "0.85", type: "string", is_nomarr: true };
+const METADATA_TAG = { key: "artist", value: "Beatles", tag_type: "string", is_nomarr: false };
+const METADATA_TAG_2 = { key: "album", value: "Abbey Road", tag_type: "string", is_nomarr: false };
+const EXTENDED_TAG = { key: "composer", value: "Lennon/McCartney", tag_type: "string", is_nomarr: false };
+const EXTENDED_TAG_2 = { key: "bpm", value: "120", tag_type: "string", is_nomarr: false };
+const NOMARR_TAG = { key: "nom:mood-strict", value: "happy, energetic", tag_type: "string", is_nomarr: true };
+const NOMARR_TAG_2 = { key: "nom:effnet_engaging", value: "0.85", tag_type: "string", is_nomarr: true };
 
 const ALL_TAGS = [
   METADATA_TAG,

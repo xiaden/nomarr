@@ -485,13 +485,13 @@ class TestUpdateFileTags:
                 {
                     "key": "genre",
                     "value": "rock",
-                    "type": "string",
+                    "tag_type": "string",
                     "is_nomarr": False,
                 },
                 {
                     "key": "genre",
                     "value": "alternative",
-                    "type": "string",
+                    "tag_type": "string",
                     "is_nomarr": False,
                 },
             ],
@@ -510,13 +510,13 @@ class TestUpdateFileTags:
             {
                 "key": "genre",
                 "value": "rock",
-                "type": "string",
+                "tag_type": "string",
                 "is_nomarr": False,
             },
             {
                 "key": "genre",
                 "value": "alternative",
-                "type": "string",
+                "tag_type": "string",
                 "is_nomarr": False,
             },
         ]

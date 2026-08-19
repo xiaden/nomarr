@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from nomarr.components.library.song_tags_comp import get_song_tags_with_path
+from nomarr.helpers.dto.library_dto import FileTag
 
 
 class TestGetFileTagsWithPath:
@@ -52,20 +53,13 @@ class TestGetFileTagsWithPath:
 
         assert result == {
             "path": "D:/Music/song.flac",
-            "tags": [
-                {
-                    "key": "nom:mood",
-                    "value": "happy",
-                    "type": "string",
-                    "is_nomarr": True,
-                }
-            ],
+            "tags": [FileTag(key="nom:mood", value="happy", tag_type="string", is_nomarr=True)],
         }
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_tag_rows_have_canonical_keys(self) -> None:
-        """The component boundary must expose the canonical tag row contract."""
+    def test_tag_rows_have_library_file_tag_contract(self) -> None:
+        """The component boundary must expose library ``FileTag`` objects."""
         mock_db = MagicMock()
         mock_db.library.get_song.return_value = {"path": "D:/Music/song.flac"}
         mock_db.library.list_tags_for_song.return_value = [
@@ -75,13 +69,7 @@ class TestGetFileTagsWithPath:
         result = get_song_tags_with_path(mock_db, 1)
 
         assert result is not None
-        assert set(result["tags"][0]) == {"key", "value", "type", "is_nomarr"}
-        assert result["tags"][0] == {
-            "key": "tempo",
-            "value": 120,
-            "type": "float",
-            "is_nomarr": False,
-        }
+        assert result["tags"][0] == FileTag(key="tempo", value="120", tag_type="float", is_nomarr=False)
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -99,18 +87,8 @@ class TestGetFileTagsWithPath:
         assert result == {
             "path": "D:/Music/song.flac",
             "tags": [
-                {
-                    "key": "genre",
-                    "value": "a",
-                    "type": "string",
-                    "is_nomarr": False,
-                },
-                {
-                    "key": "genre",
-                    "value": "b",
-                    "type": "string",
-                    "is_nomarr": False,
-                },
+                FileTag(key="genre", value="a", tag_type="string", is_nomarr=False),
+                FileTag(key="genre", value="b", tag_type="string", is_nomarr=False),
             ],
         }
 
@@ -131,12 +109,5 @@ class TestGetFileTagsWithPath:
         # nomarr_only=True must exclude non-nomarr tags from the result.
         assert result == {
             "path": "D:/Music/song.flac",
-            "tags": [
-                {
-                    "key": "nom:mood",
-                    "value": "happy",
-                    "type": "string",
-                    "is_nomarr": True,
-                }
-            ],
+            "tags": [FileTag(key="nom:mood", value="happy", tag_type="string", is_nomarr=True)],
         }

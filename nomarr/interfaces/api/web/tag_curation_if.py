@@ -100,7 +100,7 @@ class UpdateFileTagResponse(BaseModel):
 
     key: str
     value: str
-    type: str
+    tag_type: str
     is_nomarr: bool
 
 

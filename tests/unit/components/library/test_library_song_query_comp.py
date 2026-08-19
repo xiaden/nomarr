@@ -40,6 +40,7 @@ from nomarr.components.library.library_song_query_comp import (
     search_songs_with_tags,
 )
 from nomarr.helpers.constants.file_states import STATE_PROCESSED
+from nomarr.helpers.dto.library_dto import FileTag
 
 
 def make_db() -> MagicMock:
@@ -125,8 +126,8 @@ def test_get_files_by_ids_with_tags_hydrates_tags_and_library_ids() -> None:
             "path": "D:/Music/song.flac",
             "library_key": "1",
             "tags": [
-                {"key": "genre", "value": "rock", "type": "string", "is_nomarr": False},
-                {"key": "nom:mood-tier-1", "value": "calm", "type": "string", "is_nomarr": True},
+                FileTag(key="genre", value="rock", tag_type="string", is_nomarr=False),
+                FileTag(key="nom:mood-tier-1", value="calm", tag_type="string", is_nomarr=True),
             ],
             "library_id": 1,
         }
@@ -839,7 +840,7 @@ def test_search_songs_with_tags_filters_and_hydrates_page() -> None:
             "title": "Song One",
             "path": "D:/Music/one.flac",
             "library_key": "1",
-            "tags": [{"key": "genre", "value": "rock", "type": "string", "is_nomarr": False}],
+            "tags": [FileTag(key="genre", value="rock", tag_type="string", is_nomarr=False)],
             "library_id": 1,
         }
     ]

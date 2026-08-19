@@ -31,7 +31,7 @@ import { useMemo, useState } from "react";
 interface FileTag {
   key: string;
   value: string;
-  type: string;
+  tag_type: string;
   is_nomarr: boolean;
 }
 
