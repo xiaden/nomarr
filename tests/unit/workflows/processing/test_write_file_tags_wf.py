@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from nomarr.helpers.dataclasses.tags_dataclass import Tag, Tags
-from nomarr.workflows.processing.write_file_tags_wf import _filter_tags_for_mode
+from nomarr.workflows.processing.write_file_tags_wf import _filter_tags_for_mode, _release_failed_write
 
 
 @pytest.mark.unit
@@ -67,3 +67,25 @@ class TestFilterTagsForMode:
             for calib in (True, False):
                 result = _filter_tags_for_mode(tags, mode, has_calibration=calib)
                 assert result is None
+
+
+@pytest.mark.unit
+class TestFailedWriteCleanup:
+    """Failed writes release claims without clearing pending state."""
+
+    def test_release_failed_write_only_releases_claim(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A failed write remains eligible for reconciliation retry."""
+        calls: list[tuple[object, str, str]] = []
+
+        def record_release(db: object, file_key: str, worker_id: str) -> None:
+            calls.append((db, file_key, worker_id))
+
+        monkeypatch.setattr(
+            "nomarr.workflows.processing.write_file_tags_wf.release_file_claim",
+            record_release,
+        )
+
+        db = object()
+        _release_failed_write(db, "42", "reconcile:1")
+
+        assert calls == [(db, "42", "reconcile:1")]

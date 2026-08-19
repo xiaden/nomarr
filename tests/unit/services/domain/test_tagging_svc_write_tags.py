@@ -139,7 +139,7 @@ class TestGetReconcileStatus:
         ):
             result = service.get_reconcile_status(1)
 
-        assert result == {"pending_count": 4, "in_progress": True}
+        assert result == {"pending_count": 4, "failed_count": 0, "in_progress": True}
         mock_bts.get_task_status.assert_called_once_with("write_tags:1")
 
     @pytest.mark.unit
@@ -163,8 +163,48 @@ class TestGetReconcileStatus:
         ):
             result = service.get_reconcile_status(1)
 
-        assert result == {"pending_count": 2, "in_progress": False}
-        mock_bts.get_task_status.assert_called_once_with("write_tags:1")
+        assert result == {"pending_count": 2, "failed_count": 0, "in_progress": False}
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_get_reconcile_status_exposes_completed_failures(self) -> None:
+        """Completed write batches expose failures alongside pending work."""
+        mock_db = MagicMock()
+        mock_bts = MagicMock()
+        mock_bts.get_task_status.return_value = {
+            "status": "complete",
+            "result": WriteTagsResult(processed=1, remaining=2, failed=2),
+        }
+        service = _make_service(db=mock_db, bts=mock_bts)
+
+        with (
+            patch(
+                "nomarr.services.domain.tagging_svc.write.get_library_record",
+                return_value={"_id": "lib1"},
+            ),
+            patch(
+                "nomarr.services.domain.tagging_svc.write.count_files_needing_reconciliation",
+                return_value=2,
+            ),
+        ):
+            result = service.get_reconcile_status(1)
+
+        assert result == {"pending_count": 2, "failed_count": 2, "in_progress": False}
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_background_task_returns_last_write_result(self) -> None:
+        """BTS stores the batch result so status polling can expose failures."""
+        mock_db = MagicMock()
+        mock_bts = MagicMock()
+        service = _make_service(db=mock_db, bts=mock_bts)
+        batch_result = WriteTagsResult(processed=1, remaining=0, failed=1)
+        mock_bts.start_task.side_effect = lambda task: task.fn()
+
+        with patch.object(service, "write_tags_to_files", return_value=batch_result):
+            result = service.start_write_tags_background(1, threading.Event())
+
+        assert result == batch_result
 
     @pytest.mark.unit
     @pytest.mark.mocked

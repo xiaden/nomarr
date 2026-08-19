@@ -24,7 +24,6 @@ from typing import TYPE_CHECKING, Any
 
 from nomarr.components.infrastructure.path_comp import build_library_path_from_db
 from nomarr.components.library.library_song_mutation_comp import update_song_modified_time
-from nomarr.components.library.library_song_state_comp import transition_song_state
 from nomarr.components.library.reconciliation_comp import set_file_written
 from nomarr.components.processing.file_write_comp import (
     get_file_for_writing,
@@ -33,7 +32,6 @@ from nomarr.components.processing.file_write_comp import (
     resolve_library_root,
 )
 from nomarr.components.tagging.tagging_writer_comp import TagWriter
-from nomarr.helpers.constants.file_states import STATE_TAGS_CURRENT, STATE_TAGS_NOT_FRESH
 from nomarr.helpers.dataclasses.tags_dataclass import Tags
 
 if TYPE_CHECKING:
@@ -118,16 +116,12 @@ def _resolve_library_path(
 
 
 def _release_failed_write(db: Database, file_key: str, worker_id: str) -> None:
-    """Release a failed write and remove it from the reconciliation queue.
+    """Release a failed write while leaving it in the reconciliation queue.
 
-    A failed projection write must not leave the file claimed or stale forever;
-    otherwise the background reconciler can repeatedly select the same file.
-    Cleanup is best effort because it runs while handling another failure.
+    A failed projection write must not be marked current: the database
+    projection is still stale and must be retried.  Only the claim is released;
+    cleanup is best effort because it runs while handling another failure.
     """
-    try:
-        transition_song_state(db, [int(file_key)], STATE_TAGS_NOT_FRESH, STATE_TAGS_CURRENT)
-    except (ValueError, RuntimeError) as exc:
-        logger.warning("[write_file_tags] Failed to clear stale state for %s: %s", file_key, exc, exc_info=True)
     release_file_claim(db, file_key, worker_id)
 
 

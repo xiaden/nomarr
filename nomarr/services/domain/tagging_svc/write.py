@@ -180,14 +180,17 @@ class TaggingWriteMixin:
         """
         task_id = f"write_tags:{library_id}"
 
-        def _task() -> None:
+        def _task() -> WriteTagsResult:
+            last_result = WriteTagsResult(processed=0, remaining=0, failed=0)
             while not stop_event.is_set():
                 result = self.write_tags_to_files(library_id)
+                last_result = result
                 if result.remaining == 0:
                     break
                 # Avoid hammering the database when a batch cannot make progress,
                 # while still allowing cancellation to interrupt the wait.
                 stop_event.wait(1.0)
+            return last_result
 
         return self._bts.start_task(
             ManagedTask(
@@ -218,7 +221,7 @@ class TaggingWriteMixin:
             library_id: Library database ID
 
         Returns:
-            Dict with pending_count and in_progress status
+            Dict with pending_count, failed_count, and in_progress status
 
         """
         library = get_library_record(self.db, int(library_id))
@@ -229,8 +232,11 @@ class TaggingWriteMixin:
         pending_count = count_files_needing_reconciliation(self.db, library_id=library_id)
         task_status = self._bts.get_task_status(f"write_tags:{library_id}")
         in_progress = task_status is not None and task_status["status"] == "running"
+        task_result = task_status.get("result") if task_status is not None else None
+        failed_count = task_result.failed if isinstance(task_result, WriteTagsResult) else 0
 
         return {
             "pending_count": pending_count,
+            "failed_count": failed_count,
             "in_progress": in_progress,
         }
