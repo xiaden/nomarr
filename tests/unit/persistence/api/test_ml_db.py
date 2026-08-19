@@ -129,7 +129,9 @@ def test_list_song_vectors_delegates_to_vector_repo() -> None:
     result = db.list_song_vectors("vectors_track_hot__model__lib", 1)
 
     assert result is sentinel.result
-    vector_repo.get_embeddings_for_song.assert_called_once_with(1)
+    vector_repo.get_embeddings_for_song.assert_called_once_with(
+        1, "vectors_track_hot__model__lib", "cold"
+    )
 
 
 @pytest.mark.unit

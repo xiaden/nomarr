@@ -118,14 +118,14 @@ class MlDb:
         assert self._output_repo is not None, "OutputRepo not wired"
         return self._output_repo.list_output_streams_for_song(song_id)
 
-    def list_song_vectors(self, _collection_name: str, song_id: int) -> list[EmbeddingRecord]:
-        """Return all embedding records stored for one song.
+    def list_song_vectors(self, collection_name: str, song_id: int, *, tier: str = "cold") -> list[EmbeddingRecord]:
+        """Return embedding records for one song, backbone, and tier.
 
-        ``collection_name`` is accepted for backwards compatibility but ignored —
-        PostgreSQL uses a single ``embeddings`` table with a ``backbone_id`` column.
+        ``collection_name`` is the backbone identifier. PostgreSQL uses a single
+        ``embeddings`` table with a ``backbone_id`` column.
         """
         assert self._vector_repo is not None, "VectorRepo not wired"
-        return self._vector_repo.get_embeddings_for_song(song_id)
+        return self._vector_repo.get_embeddings_for_song(song_id, collection_name, tier)
 
     def search_vectors(
         self,

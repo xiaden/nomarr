@@ -183,10 +183,19 @@ class VectorRepo:
 
     # ── queries ─────────────────────────────────────────────────
 
-    def get_embeddings_for_song(self, song_id: int) -> list[EmbeddingRecord]:
-        """Return all embeddings (all backbones) for a given song."""
+    def get_embeddings_for_song(
+        self,
+        song_id: int,
+        backbone_id: str,
+        tier: str = "cold",
+    ) -> list[EmbeddingRecord]:
+        """Return embeddings for a song, backbone, and tier."""
         with map_persistence_exceptions():
-            stmt = select(_T).where(_T.c.song_id == song_id)
+            stmt = select(_T).where(
+                _T.c.song_id == song_id,
+                _T.c.backbone_id == backbone_id,
+                _T.c.tier == tier,
+            )
             result = self._session.execute(stmt)
             return [_row_to_embedding_record(r) for r in result.all()]
 

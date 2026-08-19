@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from sqlalchemy import insert
+from sqlalchemy import insert, update
 
+from nomarr.persistence.database.song_tag_repo import SongTagRepository
+from nomarr.persistence.database.tag_repo import TagRepository
 from nomarr.persistence.database.vector_repo import VectorRepo
+from nomarr.persistence.models.embedding import Embedding
 from nomarr.persistence.models.library import Library
 from nomarr.persistence.models.song import Song
 
@@ -96,6 +99,29 @@ class TestVectorRepo:
             genres=["rock", "progressive"],
         )
         assert record["genres"] == ["rock", "progressive"]
+
+    def test_backfill_genres_updates_cold_embeddings(self, pg_session) -> None:
+        """backfill_genres should copy genre tags onto missing cold embeddings."""
+        _, song_id = _create_library_and_song(pg_session)
+        tag_id = TagRepository(pg_session).create_tag(
+            {"name": "genre", "value": "rock", "namespace": "nom", "source": "test", "created_at": 1000}
+        )
+        SongTagRepository(pg_session).assign_tag_to_song(song_id, tag_id, source="test")
+        repo = VectorRepo(pg_session)
+        repo.insert_embedding(
+            song_id=song_id,
+            backbone_id=_BACKBONE,
+            model_id="test_model",
+            embedding_vector=_random_vector(seed=3),
+        )
+        pg_session.execute(
+            update(Embedding.__table__).where(Embedding.__table__.c.song_id == song_id).values(tier="cold")
+        )
+        pg_session.commit()
+
+        assert repo.backfill_genres(_BACKBONE) == 1
+        record = repo.get_embeddings_for_song(song_id, _BACKBONE)[0]
+        assert record["genres"] == ["rock"]
 
     # ── find_nearest ────────────────────────────────────────────
 
@@ -191,8 +217,8 @@ class TestVectorRepo:
 
     # ── get_embeddings_for_song ─────────────────────────────────
 
-    def test_get_embeddings_for_song(self, pg_session) -> None:
-        """get_embeddings_for_song should return all embeddings for a song."""
+    def test_get_embeddings_for_song_filters_backbone_and_tier(self, pg_session) -> None:
+        """get_embeddings_for_song should not return another backbone or hot row."""
         _, song_id = _create_library_and_song(pg_session)
         repo = VectorRepo(pg_session)
 
@@ -210,16 +236,17 @@ class TestVectorRepo:
             embedding_vector=_random_vector(seed=201),
         )
 
-        results = repo.get_embeddings_for_song(song_id)
-        assert len(results) == 2
-        backbone_ids = {r["backbone_id"] for r in results}
-        assert "backbone_a" in backbone_ids
-        assert "backbone_b" in backbone_ids
+        repo.drain_hot_to_cold("backbone_a")
+
+        results = repo.get_embeddings_for_song(song_id, "backbone_a")
+        assert len(results) == 1
+        assert results[0]["backbone_id"] == "backbone_a"
+        assert repo.get_embeddings_for_song(song_id, "backbone_b") == []
 
     def test_get_embeddings_for_song_nonexistent(self, pg_session) -> None:
         """get_embeddings_for_song should return empty list for unknown song."""
         repo = VectorRepo(pg_session)
-        results = repo.get_embeddings_for_song(999999)
+        results = repo.get_embeddings_for_song(999999, "unknown")
         assert results == []
 
     def test_multiple_backbones_for_same_song_are_preserved(self, pg_session) -> None:
@@ -245,9 +272,11 @@ class TestVectorRepo:
             embedding_vector=_random_vector(seed=811),
         )
 
-        results = repo.get_embeddings_for_song(song_id)
+        repo.drain_hot_to_cold("backbone_a")
+        repo.drain_hot_to_cold("backbone_b")
+        results = repo.get_embeddings_for_song(song_id, "backbone_a")
         backbone_ids = {r["backbone_id"] for r in results}
-        assert backbone_ids == {"backbone_a", "backbone_b"}
+        assert backbone_ids == {"backbone_a"}
 
     # ── count_cold_embeddings ───────────────────────────────────
 
@@ -429,9 +458,9 @@ class TestVectorRepo:
         repo.delete_embeddings_for_song(song_id1)
 
         # song_id1 should have none
-        results1 = repo.get_embeddings_for_song(song_id1)
+        results1 = repo.get_embeddings_for_song(song_id1, _BACKBONE)
         assert len(results1) == 0
 
         # song_id2 should still have its embedding
-        results2 = repo.get_embeddings_for_song(song_id2)
+        results2 = repo.get_embeddings_for_song(song_id2, _BACKBONE, tier="hot")
         assert len(results2) == 1
