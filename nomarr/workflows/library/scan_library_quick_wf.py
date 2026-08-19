@@ -93,18 +93,17 @@ def scan_library_quick_workflow(
     try:
         # Step 2 — Pre-scan DB lookups
         db_folder_paths = get_folder_rel_paths(db, library_id)
-        file_count = db.library.count_songs_for_library(library_id)
         cached_folders = get_cached_folders(db, library_id)
 
         # Step 3 — Discover folders on disk
         all_folders = discover_library_folders(library_root, [library_root])
         discovered_folder_paths = {f.rel_path for f in all_folders}
 
-        update_scan_progress(db, library_id, total=file_count or sum(f.file_count for f in all_folders))
+        update_scan_progress(db, library_id, total=sum(f.file_count for f in all_folders))
 
         # Step 4 — Track which folders vanished so their files can be deleted after the loop
         vanished_folder_paths = db_folder_paths - discovered_folder_paths
-        all_discovered_paths: set[str] = set()
+        processed_file_count = 0
 
         # Step 5 — Per-folder scan with cache-check
         for folder in all_folders:
@@ -113,6 +112,8 @@ def scan_library_quick_workflow(
             if cached and cached["mtime"] == folder.mtime and cached["file_count"] == folder.file_count:
                 stats["folders_skipped"] += 1
                 logger.debug("Skipping unchanged folder: %s", folder.rel_path)
+                processed_file_count += folder.file_count
+                update_scan_progress(db, library_id, progress=processed_file_count)
                 continue
 
             stats["folders_scanned"] += 1
@@ -134,7 +135,6 @@ def scan_library_quick_workflow(
                     stats["files_skipped"] += batch.stats.get("files_skipped", 0)
                     stats["files_discovered"] += len(batch.discovered_paths)
                     warnings.extend(batch.warnings)
-                    all_discovered_paths.update(batch.discovered_paths)
 
                     # Upsert all discovered files immediately
                     if batch.file_entries:
@@ -189,7 +189,8 @@ def scan_library_quick_workflow(
                         stats["files_failed"] += folder.file_count
                         warnings.append(f"Folder {folder.rel_path!r} skipped after error: {e}")
 
-            update_scan_progress(db, library_id, progress=len(all_discovered_paths))
+            processed_file_count += folder.file_count
+            update_scan_progress(db, library_id, progress=processed_file_count)
 
         # Step 6 — Delete files from folders that vanished entirely from disk
         for folder_rel_path in vanished_folder_paths:
@@ -214,7 +215,7 @@ def scan_library_quick_workflow(
         update_scan_progress(
             db,
             library_id,
-            progress=stats["files_discovered"],
+            progress=processed_file_count,
             scan_error=None,
         )
 

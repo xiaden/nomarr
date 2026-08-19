@@ -179,7 +179,7 @@ export function DashboardPage() {
                     label={lib.name}
                     value={lib.progress}
                     total={lib.total}
-                    percentage={lib.total > 0 ? Math.round((lib.progress / lib.total) * 100) : 0}
+                    percentage={lib.total > 0 ? Math.min(100, Math.round((lib.progress / lib.total) * 100)) : 0}
                   />
                 ))}
               </Stack>
