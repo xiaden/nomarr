@@ -12,9 +12,9 @@ class _FileTagItem(TypedDict):
     """Internal shape of each tag dict returned to service callers."""
 
     key: str
-    name: str
     value: str | int | float | bool | list[str | int | float | bool]
-    is_nomarr_tag: bool
+    type: str
+    is_nomarr: bool
 
 
 def get_song_tags_with_path(db: Database, song_id: int, nomarr_only: bool = False) -> dict[str, Any] | None:
@@ -34,14 +34,13 @@ def get_song_tags_with_path(db: Database, song_id: int, nomarr_only: bool = Fals
     else:
         tags = all_tags
 
-    # Transform TagRow to API-compatible dict format.
-    # Each tag has a single string value.
+    # Transform TagRow to the canonical tag row shape used by tag consumers.
     tags_data: list[_FileTagItem] = [
         {
             "key": tag["name"],
-            "name": tag["name"],
             "value": tag["value"],
-            "is_nomarr_tag": tag.get("namespace") == "nom",
+            "type": "float" if isinstance(tag["value"], (int, float)) and not isinstance(tag["value"], bool) else "string",
+            "is_nomarr": tag.get("namespace") == "nom",
         }
         for tag in tags
     ]

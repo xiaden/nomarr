@@ -102,8 +102,8 @@ class TestCreateLibraryPipeline:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_create_library_initializes_scan_document_after_pipeline_transition(self) -> None:
-        """Library creation should seed the scan doc for the new library."""
+    def test_create_library_does_not_create_scan_document(self) -> None:
+        """Library creation leaves scan state deferred until scan setup."""
         mock_db = MagicMock()
 
         with (
@@ -124,7 +124,6 @@ class TestCreateLibraryPipeline:
                 "nomarr.components.library.library_admin_comp.create_library_record",
                 return_value="libraries/abc123",
             ),
-            patch("nomarr.components.library.library_admin_comp.ensure_scan_state") as mock_ensure_scan_state,
         ):
             create_library(
                 db=mock_db,
@@ -133,7 +132,7 @@ class TestCreateLibraryPipeline:
                 root_path="rock",
             )
 
-        mock_ensure_scan_state.assert_called_once_with(mock_db, "libraries/abc123")
+        mock_db.library.add_scan.assert_not_called()
 
 
 class TestIsScanRunning:

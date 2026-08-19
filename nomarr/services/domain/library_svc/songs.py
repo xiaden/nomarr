@@ -89,7 +89,7 @@ class LibrarySongsMixin:
                 key=tag["key"],
                 value=str(tag["value"]),
                 tag_type=tag["type"],
-                is_nomarr=tag["is_nomarr_tag"],
+                is_nomarr=tag["is_nomarr"],
             )
             for tag in result["tags"]
         ]

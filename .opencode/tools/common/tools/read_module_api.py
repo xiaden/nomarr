@@ -25,10 +25,12 @@ from __future__ import annotations
 __all__ = ["read_module_api"]
 
 import ast
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from common.helpers.config_loader import get_workspace_root
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # Constants that should be excluded (typing artifacts, not real constants)
 EXCLUDED_CONSTANTS = frozenset({"TYPE_CHECKING"})

@@ -227,8 +227,8 @@ class LibraryScanMixin:
             pipeline_state = None
         scan_status = _pipeline_state_to_scan_status(pipeline_state, scan_state)
         scan_progress = 0 if scan_state is None else int(scan_state.get("files_processed", 0) or 0)
-        scan_total = 0 if scan_state is None else int(scan_state.get("files_total", 0) or 0)
-        scanned_at = None if scan_state is None else scan_state.get("completed_at")
+        scan_total = 0 if scan_state is None else int(scan_state.get("files_found", 0) or 0)
+        scanned_at = None if scan_state is None else scan_state.get("finished_at")
         scan_error = None if scan_state is None else scan_state.get("error")
         enabled = self.background_tasks is not None
         return LibraryScanStatusResult(

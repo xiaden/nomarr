@@ -393,6 +393,41 @@ class TestTagRepository:
         assert len(result) == 1
         assert result[0]["id"] == song_id
 
+    def test_search_songs_by_tag_contains_escapes_like_wildcards(self, pg_session) -> None:
+        """Literal percent and underscore characters should not act as wildcards."""
+        _, matching_song_id = _create_library_and_song(pg_session)
+        _, wildcard_song_id = _create_library_and_song(pg_session)
+        _, underscore_match_id = _create_library_and_song(pg_session)
+        _, underscore_wildcard_id = _create_library_and_song(pg_session)
+        matching_tag_id = _create_tag(pg_session, name="genre", value="100% rock", namespace="genre")
+        wildcard_tag_id = _create_tag(pg_session, name="genre", value="1000 rock", namespace="genre")
+        underscore_match_tag_id = _create_tag(pg_session, name="genre", value="100_ rock", namespace="genre")
+        underscore_wildcard_tag_id = _create_tag(pg_session, name="genre", value="1001 rock", namespace="genre")
+        song_tag_repo = SongTagRepository(pg_session)
+        song_tag_repo.assign_tag_to_song(matching_song_id, matching_tag_id)
+        song_tag_repo.assign_tag_to_song(wildcard_song_id, wildcard_tag_id)
+        song_tag_repo.assign_tag_to_song(underscore_match_id, underscore_match_tag_id)
+        song_tag_repo.assign_tag_to_song(underscore_wildcard_id, underscore_wildcard_tag_id)
+
+        result = song_tag_repo.search_songs_by_tag_contains("genre", "100%")
+        underscore_result = song_tag_repo.search_songs_by_tag_contains("genre", "100_")
+
+        assert [song["id"] for song in result] == [matching_song_id]
+        assert [song["id"] for song in underscore_result] == [underscore_match_id]
+
+    def test_tag_value_search_escapes_like_wildcards(self, pg_session) -> None:
+        """Tag value filters should treat percent and underscore literally."""
+        _create_tag(pg_session, name="genre", value="100% rock", namespace="genre")
+        _create_tag(pg_session, name="genre", value="1000 rock", namespace="genre")
+        _create_tag(pg_session, name="genre", value="100_ rock", namespace="genre")
+        repo = TagRepository(pg_session)
+
+        assert repo.count_tags_filtered(name="genre", search="100%") == 1
+        result = repo.list_tags_with_song_count(name="genre", search="100%")
+
+        assert [tag["value"] for tag in result] == ["100% rock"]
+        assert repo.count_tags_filtered(name="genre", search="100_") == 1
+
     def test_get_tag_value_frequencies(self, pg_session) -> None:
         """get_tag_value_frequencies should return value counts."""
         # Create tags with same name and value but different namespaces

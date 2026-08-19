@@ -251,7 +251,6 @@ def get_venv_binary(project_root: Path, name: str) -> Path:
         ]
     else:
         candidates = [
-            project_root / ".venv-linux" / "bin" / name,
             project_root / ".venv" / "bin" / name,
         ]
     for candidate in candidates:

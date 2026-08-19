@@ -13,20 +13,9 @@ from nomarr.helpers.constants.pipeline_states import (
     PIPELINE_DEFAULTS,
     VALID_PIPELINE_TRANSITIONS,
 )
-from nomarr.helpers.time_helper import now_ms
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
-
-_DEFAULT_SCAN_FIELDS: dict[str, Any] = {
-    "files_processed": 0,
-    "files_total": 0,
-    "completed_at": None,
-    "error": None,
-    "scan_type": "initial",
-    "status": "idle",
-    "scan_heartbeat": None,
-}
 
 
 def _pipeline_state_to_scan_status(
@@ -38,14 +27,14 @@ def _pipeline_state_to_scan_status(
     Rules:
         - scan_state == "scanning" -> "scanning"
         - scan_doc.error present   -> "error"
-        - scan_doc.completed_at set -> "complete"
+        - scan_doc.finished_at set -> "complete"
         - otherwise                -> "idle"
     """
     if pipeline_state and pipeline_state.get("scan_state") == "scanning":
         return "scanning"
     if scan_doc and scan_doc.get("error"):
         return "error"
-    if scan_doc and scan_doc.get("completed_at"):
+    if scan_doc and scan_doc.get("finished_at"):
         return "complete"
     return "idle"
 
@@ -53,28 +42,6 @@ def _pipeline_state_to_scan_status(
 def _scan_doc_id(library_id: int) -> str:
     """Return the canonical scan document id for a library."""
     return f"library_scans/{library_key_from_ref(str(library_id))}"
-
-
-def _default_scan_doc(library_id: int) -> dict[str, Any]:
-    """Build the canonical default scan document payload."""
-    library_key = library_key_from_ref(str(library_id))
-    return {
-        "key": library_key,
-        **_DEFAULT_SCAN_FIELDS,
-        "started_at": now_ms().value,
-    }
-
-
-def ensure_scan_state(db: Database, library_id: int) -> dict[str, Any]:
-    """Return the scan document for a library, creating it when missing."""
-    scan_doc = cast("dict[str, Any] | None", db.library.get_scan(library_id))
-
-    if scan_doc is None:
-        default_doc = _default_scan_doc(library_id)
-        db.library.add_scan(library_id, default_doc)
-        scan_doc = cast("dict[str, Any] | None", db.library.get_scan(library_id)) or default_doc
-
-    return scan_doc
 
 
 def get_scan_state(db: Database, library_id: int) -> dict[str, Any] | None:

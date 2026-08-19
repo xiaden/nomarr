@@ -250,7 +250,7 @@ class TestWriteTagsToFiles:
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_write_tags_to_files_partial_failure(self) -> None:
-        """Non-external workflow failures should increment failed without releasing claims."""
+        """Non-external workflow failures should increment failed and release claims."""
         mock_db = MagicMock()
         mock_db.app.get_config_option = MagicMock(return_value={"value": "calibration-v1"})
         service = _make_service(db=mock_db)
@@ -282,7 +282,7 @@ class TestWriteTagsToFiles:
             result = service.write_tags_to_files(1)
 
         assert result == WriteTagsResult(processed=1, remaining=0, failed=1)
-        mock_release_claim.assert_not_called()
+        mock_release_claim.assert_called_once_with(mock_db, "file2", "reconcile:1")
 
     @pytest.mark.unit
     @pytest.mark.mocked

@@ -51,8 +51,13 @@ async function runPythonTool(
     workspace_root: workspaceRoot(context),
   })
 
+  const pythonExecutable = path.join(
+    workspaceRoot(context),
+    process.platform === "win32" ? ".venv\\Scripts\\python.exe" : ".venv/bin/python",
+  )
+
   const proc = Bun.spawn({
-    cmd: ["python3", "-m", moduleName],
+    cmd: [pythonExecutable, "-m", moduleName],
     cwd: toolsDir,
     stdin: "pipe",
     stdout: "pipe",

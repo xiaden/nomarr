@@ -132,6 +132,7 @@ class TaggingWriteMixin:
                     release_claim(self.db, file_key, worker_id)
                 else:
                     failed += 1
+                    release_claim(self.db, file_key, worker_id)
                     logger.warning(f"[reconcile] Failed to write tags for {file_key}: {result.error}")
             except Exception as e:
                 failed += 1
@@ -184,6 +185,9 @@ class TaggingWriteMixin:
                 result = self.write_tags_to_files(library_id)
                 if result.remaining == 0:
                     break
+                # Avoid hammering the database when a batch cannot make progress,
+                # while still allowing cancellation to interrupt the wait.
+                stop_event.wait(1.0)
 
         return self._bts.start_task(
             ManagedTask(

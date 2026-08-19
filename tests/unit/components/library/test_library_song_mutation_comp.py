@@ -249,57 +249,46 @@ class TestUpdateFilePath:
     def test_updates_path_and_core_metadata(self) -> None:
         mock_db = MagicMock()
 
-        with patch("nomarr.components.library.library_song_mutation_comp.now_ms") as mock_now_ms:
-            mock_now_ms.return_value.value = 2000
-            update_song_path(
-                mock_db,
-                f"{'songs'}/123",
-                "C:/music/new-song.mp3",
-                file_size=4321,
-                modified_time=8765,
-                duration_seconds=123.4,
-            )
+        update_song_path(
+            mock_db,
+            f"{'songs'}/123",
+            "C:/music/new-song.mp3",
+            file_size=4321,
+            modified_time=8765,
+            duration_seconds=123.4,
+        )
 
         mock_db.library.update_library_song_path.assert_called_once_with(
             f"{'songs'}/123",
             "C:/music/new-song.mp3",
         )
-        mock_db.library.update_song_fields.assert_called_once_with(
+        mock_db.library.update_library_song_scan_metadata.assert_called_once_with(
             f"{'songs'}/123",
-            {
-                "file_size": 4321,
-                "modified_time": 8765,
-                "is_valid": 1,
-                "duration_seconds": 123.4,
-                "scanned_at": 2000,
-            },
+            file_size=4321,
+            modified_time=8765,
+            duration_seconds=123.4,
+            normalized_path=None,
         )
 
     @pytest.mark.unit
     def test_includes_normalized_path_when_provided(self) -> None:
         mock_db = MagicMock()
 
-        with patch("nomarr.components.library.library_song_mutation_comp.now_ms") as mock_now_ms:
-            mock_now_ms.return_value.value = 2000
-            update_song_path(
-                mock_db,
-                f"{'songs'}/123",
-                "C:/music/new-song.mp3",
-                file_size=4321,
-                modified_time=8765,
-                normalized_path="relative/new-song.mp3",
-            )
-
-        mock_db.library.update_song_fields.assert_called_once_with(
+        update_song_path(
+            mock_db,
             f"{'songs'}/123",
-            {
-                "file_size": 4321,
-                "modified_time": 8765,
-                "is_valid": 1,
-                "duration_seconds": None,
-                "scanned_at": 2000,
-                "normalized_path": "relative/new-song.mp3",
-            },
+            "C:/music/new-song.mp3",
+            file_size=4321,
+            modified_time=8765,
+            normalized_path="relative/new-song.mp3",
+        )
+
+        mock_db.library.update_library_song_scan_metadata.assert_called_once_with(
+            f"{'songs'}/123",
+            file_size=4321,
+            modified_time=8765,
+            duration_seconds=None,
+            normalized_path="relative/new-song.mp3",
         )
 
 

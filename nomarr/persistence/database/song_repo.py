@@ -306,6 +306,18 @@ class SongRepository:
             result = self._session.execute(stmt)
             return [row[0] for row in result.all()]
 
+    def get_song_ids_by_paths(self, library_id: int, paths: list[str]) -> dict[str, int]:
+        """Return song IDs keyed by path within a library."""
+        with map_persistence_exceptions():
+            if not paths:
+                return {}
+            stmt = select(_T.c.path, _T.c.id).where(
+                _T.c.library_id == library_id,
+                _T.c.path.in_(paths),
+            )
+            result = self._session.execute(stmt)
+            return {row[0]: row[1] for row in result.all()}
+
     def find_song_by_chromaprint(self, library_id: int, chromaprint: str) -> SongRow | None:
         """Find a song by chromaprint within a library."""
         with map_persistence_exceptions():

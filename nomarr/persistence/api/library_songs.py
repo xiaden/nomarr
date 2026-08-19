@@ -148,12 +148,17 @@ class LibrarySongsDb:
                 [str(p["path"]) for p in payloads if "path" in p],
             )
         )
-        song_ids = self._song_repo.upsert_songs_for_library(library_id, payloads)
+        self._song_repo.upsert_songs_for_library(library_id, payloads)
+        song_ids_by_path = self._song_repo.get_song_ids_by_paths(
+            library_id,
+            [str(p["path"]) for p in payloads],
+        )
+        ordered_song_ids = [song_ids_by_path[str(p["path"])] for p in payloads]
         # Bootstrap state only for songs that were newly created
-        for song_id, payload in zip(song_ids, payloads, strict=True):
+        for song_id, payload in zip(ordered_song_ids, payloads, strict=True):
             if payload.get("path") not in existing_paths:
                 self._song_state_repo.ensure_song_state(song_id, initial_state)
-        return song_ids
+        return ordered_song_ids
 
     def update_songs(
         self,

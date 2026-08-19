@@ -30,6 +30,12 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session, scoped_session
     from sqlalchemy.schema import Table
 
+
+def _escape_like_search(value: str) -> str:
+    """Escape LIKE metacharacters in a literal search value."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 _T: Table = Tag.__table__  # type: ignore[assignment]  # Model.__table__ is typed as FromClause; we know it's Table
 _FT: Table = SongTag.__table__  # type: ignore[assignment]  # Model.__table__ is typed as FromClause; we know it's Table
 
@@ -309,7 +315,8 @@ class TagRepository:
             if name is not None:
                 stmt = stmt.where(_T.c.name == name)
             if search is not None:
-                stmt = stmt.where(_T.c.value.ilike(f"%{search}%"))
+                escaped_search = _escape_like_search(search)
+                stmt = stmt.where(_T.c.value.ilike(f"%{escaped_search}%", escape="\\"))
             result = self._session.execute(stmt)
             return result.scalar() or 0
 
@@ -338,7 +345,8 @@ class TagRepository:
             if name is not None:
                 stmt = stmt.where(_T.c.name == name)
             if search is not None:
-                stmt = stmt.where(_T.c.value.ilike(f"%{search}%"))
+                escaped_search = _escape_like_search(search)
+                stmt = stmt.where(_T.c.value.ilike(f"%{escaped_search}%", escape="\\"))
             stmt = stmt.group_by(
                 _T.c.id,
                 _T.c.name,

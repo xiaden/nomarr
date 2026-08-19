@@ -55,9 +55,9 @@ class TestGetFileTagsWithPath:
             "tags": [
                 {
                     "key": "nom:mood",
-                    "name": "nom:mood",
                     "value": "happy",
-                    "is_nomarr_tag": True,
+                    "type": "string",
+                    "is_nomarr": True,
                 }
             ],
         }
@@ -80,15 +80,15 @@ class TestGetFileTagsWithPath:
             "tags": [
                 {
                     "key": "genre",
-                    "name": "genre",
                     "value": "a",
-                    "is_nomarr_tag": False,
+                    "type": "string",
+                    "is_nomarr": False,
                 },
                 {
                     "key": "genre",
-                    "name": "genre",
                     "value": "b",
-                    "is_nomarr_tag": False,
+                    "type": "string",
+                    "is_nomarr": False,
                 },
             ],
         }
@@ -113,9 +113,9 @@ class TestGetFileTagsWithPath:
             "tags": [
                 {
                     "key": "nom:mood",
-                    "name": "nom:mood",
                     "value": "happy",
-                    "is_nomarr_tag": True,
+                    "type": "string",
+                    "is_nomarr": True,
                 }
             ],
         }

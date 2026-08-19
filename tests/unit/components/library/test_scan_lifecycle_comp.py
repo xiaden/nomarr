@@ -14,10 +14,7 @@ from nomarr.components.library.library_scan_file_ops_comp import (
     snapshot_existing_files,
     upsert_scanned_files,
 )
-from nomarr.components.library.library_scan_state_comp import (
-    ensure_scan_state,
-    get_scan_state,
-)
+from nomarr.components.library.library_scan_state_comp import get_scan_state
 from nomarr.components.library.scan_lifecycle_comp import (
     LibraryNotFoundError,
     check_interrupted_scan,
@@ -294,19 +291,6 @@ class TestScanStateHelpers:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_ensure_scan_state_inserts_default_doc_and_edge_when_missing(self) -> None:
-        mock_db = MagicMock()
-        mock_db.library.get_scan.side_effect = [None, {"id": 1, "key": "1"}]
-
-        result = ensure_scan_state(mock_db, 1)
-
-        mock_db.library.add_scan.assert_called_once()
-        assert mock_db.library.add_scan.call_args.args[0] == 1
-        inserted_doc = mock_db.library.add_scan.call_args.args[1]
-        assert inserted_doc["key"] == "1"
-        assert "library_key" not in inserted_doc
-        assert result["key"] == "1"
-
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_get_scan_state_looks_up_scan_doc_by_id_keyword(self) -> None:

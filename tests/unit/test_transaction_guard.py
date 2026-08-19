@@ -118,14 +118,44 @@ def test_facades_do_not_expose_transaction(session: Session) -> None:
 
 def test_write_succeeds_without_transaction(session: Session) -> None:
     db, library_repo = _make_library(session)
-    db.regions.add_library({"name": "music"})
-    library_repo.add_library.assert_called_once_with({"name": "music"})
+    db.regions.create_library(
+        name="music",
+        root_path="/music",
+        is_enabled=True,
+        watch_mode="manual",
+        file_write_mode="never",
+        library_auto_write=False,
+        created_at=1,
+        updated_at=1,
+    )
+    library_repo.add_library.assert_called_once_with(
+        {
+            "name": "music",
+            "path": "/music",
+            "library_type": "music",
+            "auto_tag": 1,
+            "auto_curate": 0,
+            "watch_mode": "manual",
+            "file_write_mode": "never",
+            "created_at": 1,
+            "updated_at": 1,
+        }
+    )
 
 
 def test_write_via_forwarder_succeeds_without_transaction(session: Session) -> None:
     db, library_repo = _make_library(session)
-    db.add_library({"name": "music"})
-    library_repo.add_library.assert_called_once_with({"name": "music"})
+    db.create_library(
+        name="music",
+        root_path="/music",
+        is_enabled=True,
+        watch_mode="manual",
+        file_write_mode="never",
+        library_auto_write=False,
+        created_at=1,
+        updated_at=1,
+    )
+    library_repo.add_library.assert_called_once()
 
 
 def test_sub_facade_write_succeeds_without_transaction(session: Session) -> None:

@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any
 
 from nomarr.components.infrastructure.path_comp import build_library_path_from_db
 from nomarr.components.library.library_song_mutation_comp import update_song_modified_time
+from nomarr.components.library.library_song_state_comp import transition_song_state
 from nomarr.components.library.reconciliation_comp import set_file_written
 from nomarr.components.processing.file_write_comp import (
     get_file_for_writing,
@@ -32,6 +33,7 @@ from nomarr.components.processing.file_write_comp import (
     resolve_library_root,
 )
 from nomarr.components.tagging.tagging_writer_comp import TagWriter
+from nomarr.helpers.constants.file_states import STATE_TAGS_CURRENT, STATE_TAGS_NOT_FRESH
 from nomarr.helpers.dto.tags_dto import Tags
 
 if TYPE_CHECKING:
@@ -103,6 +105,20 @@ def _resolve_library_path(
     return library_path if library_path.is_valid() else None
 
 
+def _release_failed_write(db: Database, file_key: str, worker_id: str) -> None:
+    """Release a failed write and remove it from the reconciliation queue.
+
+    A failed projection write must not leave the file claimed or stale forever;
+    otherwise the background reconciler can repeatedly select the same file.
+    Cleanup is best effort because it runs while handling another failure.
+    """
+    try:
+        transition_song_state(db, [int(file_key)], STATE_TAGS_NOT_FRESH, STATE_TAGS_CURRENT)
+    except (ValueError, RuntimeError) as exc:
+        logger.warning("[write_file_tags] Failed to clear stale state for %s: %s", file_key, exc, exc_info=True)
+    release_file_claim(db, file_key, worker_id)
+
+
 def write_file_tags_workflow(
     db: Database,
     file_key: str,
@@ -139,6 +155,7 @@ def write_file_tags_workflow(
         file_id, file_key, file_doc = get_file_for_writing(db, file_key)
 
         if not file_doc:
+            _release_failed_write(db, file_key, worker_id)
             return WriteResult(
                 file_key=file_key,
                 tags_written=0,
@@ -150,6 +167,7 @@ def write_file_tags_workflow(
         # Resolve library path
         library_path = _resolve_library_path(file_doc, db)
         if not library_path:
+            _release_failed_write(db, file_key, worker_id)
             return WriteResult(
                 file_key=file_key,
                 tags_written=0,
@@ -161,6 +179,7 @@ def write_file_tags_workflow(
         # Get library root for safe write
         library_id = file_doc.get("library_id")
         if not library_id or not isinstance(library_id, int):
+            _release_failed_write(db, file_key, worker_id)
             return WriteResult(
                 file_key=file_key,
                 tags_written=0,
@@ -170,6 +189,7 @@ def write_file_tags_workflow(
             )
         library_root = resolve_library_root(db, library_id)
         if not library_root:
+            _release_failed_write(db, file_key, worker_id)
             return WriteResult(
                 file_key=file_key,
                 tags_written=0,
@@ -181,6 +201,7 @@ def write_file_tags_workflow(
         # Require known mtime to prevent writing to externally-modified files
         expected_mtime_ms = file_doc.get("modified_time")
         if not isinstance(expected_mtime_ms, int):
+            _release_failed_write(db, file_key, worker_id)
             return WriteResult(
                 file_key=file_key,
                 tags_written=0,
@@ -202,6 +223,7 @@ def write_file_tags_workflow(
         # Write tags using atomic safe write
         result = tag_writer.write_safe(library_path, tags_to_write, library_root, expected_mtime_ms)
         if not result.success:
+            _release_failed_write(db, file_key, worker_id)
             if result.error == "file_modified_externally":
                 return WriteResult(
                     file_key=file_key,
@@ -210,7 +232,6 @@ def write_file_tags_workflow(
                     success=False,
                     error="file_modified_externally",
                 )
-            release_file_claim(db, file_key, worker_id)
             return WriteResult(
                 file_key=file_key,
                 tags_written=0,
@@ -240,8 +261,7 @@ def write_file_tags_workflow(
 
     except Exception as e:
         logger.exception(f"[write_file_tags] Failed to write tags for {file_key}")
-        # Release claim on error (swallows exceptions internally)
-        release_file_claim(db, file_key, worker_id)
+        _release_failed_write(db, file_key, worker_id)
         return WriteResult(
             file_key=file_key,
             tags_written=0,

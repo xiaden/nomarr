@@ -143,13 +143,10 @@ class SongStateRepository:
                 unique_song_ids = list(dict.fromkeys(song_ids))
                 now_ms = int(time.time() * 1000)
                 rows = [
-                    {"song_id": song_id, "state_id": state_row[0], "created_at": now_ms}
-                    for song_id in unique_song_ids
+                    {"song_id": song_id, "state_id": state_row[0], "created_at": now_ms} for song_id in unique_song_ids
                 ]
                 self._session.execute(
-                    pg_insert(_A)
-                    .values(rows)
-                    .on_conflict_do_nothing(index_elements=["song_id", "state_id"])
+                    pg_insert(_A).values(rows).on_conflict_do_nothing(index_elements=["song_id", "state_id"])
                 )
             self._session.commit()
 

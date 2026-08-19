@@ -25,6 +25,12 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session, scoped_session
     from sqlalchemy.schema import Table
 
+
+def _escape_like_search(value: str) -> str:
+    """Escape LIKE metacharacters in a literal search value."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 _T: Table = Tag.__table__  # type: ignore[assignment]  # Model.__table__ is typed as FromClause; we know it's Table
 _ST: Table = SongTag.__table__  # type: ignore[assignment]  # Model.__table__ is typed as FromClause; we know it's Table
 _S: Table = Song.__table__  # type: ignore[assignment]  # Model.__table__ is typed as FromClause; we know it's Table
@@ -112,6 +118,19 @@ class SongTagRepository:
                 stmt = delete(_ST).where(
                     _ST.c.song_id == song_id,
                     _ST.c.tag_id == tag_id,
+                )
+                self._session.execute(stmt)
+            self._session.commit()
+
+    def remove_tags_from_song(self, song_id: int, tag_ids: list[int]) -> None:
+        """Delete several tag assignments for a song in one transaction."""
+        if not tag_ids:
+            return
+        with map_persistence_exceptions():
+            with self._session.begin_nested():
+                stmt = delete(_ST).where(
+                    _ST.c.song_id == song_id,
+                    _ST.c.tag_id.in_(tag_ids),
                 )
                 self._session.execute(stmt)
             self._session.commit()
@@ -308,7 +327,7 @@ class SongTagRepository:
                 .join(_T, _T.c.id == _ST.c.tag_id)
                 .where(
                     _T.c.name == tag_key,
-                    _T.c.value.ilike(f"%{value}%"),
+                    _T.c.value.ilike(f"%{_escape_like_search(value)}%", escape="\\"),
                 )
             )
             if limit is not None:

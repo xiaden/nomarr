@@ -17,7 +17,7 @@ The critical gap: **ADR-041 mandates domain dataclasses as the persistence-compo
 
 **Not yet documented:** Detailed per-repo method API, individual DTO file contents, V2 dataclass→V1 integration plan, frontend persistence coupling, Navidrome-specific persistence patterns
 
-**Last extended:** 2026-08-18
+**Last extended:** 2026-08-19
 
 ## Key Files
 
@@ -78,7 +78,7 @@ Findings from research on the reported ML persistence facade issue (`nomarr/pers
 
 ## Agent Proliferation Patterns (Known)
 
-- **DTO duplication:** 28 files in `helpers/dto/`, three separate tag representations (`tags_dataclass.py` domain, `tags_dto.py` TypedDict, `repo_dto.py` TagRow)
+- **DTO duplication:** 28 files in `helpers/dto/`, four separate tag representations (`tags_dataclass.py` domain, `v2/.../tags_dataclass.py` copy, `tags_dto.py` DTO, `repo_dto.py` TagRow) plus `song_class.Tag` and `FileTag`/`TagSongItem` — see Domain Identity Audit
 - **Naming inconsistency:** `ModelRepo`/`OutputRepo` (short suffix) vs `LibraryRepository`/`SongRepository` (full suffix)
 - **Legacy coexistence:** Deprecated `PersistenceError` lives alongside canonical `DatabaseStateError`; facade `.maintenance` surfaces contain documented no-ops
 - **V2 self-contradiction:** V2 dataclasses have `from_db_doc()` methods that couple them to storage shapes — the exact pattern ADR-041 prohibits
@@ -104,6 +104,21 @@ V2 lives in `v2/nomarr/` and contains:
 - `components/infrastructure/` — empty directories (filesystem/, maintainance/, onnx/, workers/)
 
 **To make V2 operational:** (1) Remove all `from_db_doc()` methods from V2 dataclasses. (2) Add persistence mappers in `database/` (DB row → domain dataclass). (3) Update facade methods to return domain dataclasses. (4) Update all callers from TypedDict access to attribute access. (5) Keep the sabotage/arch-QC enforcement green (no ArangoDB field names outside persistence).
+
+## Domain Identity Audit (2026-08-19, read-only)
+
+Read-only domain-correctness audit of identity semantics across entities/DTOs/value objects. Key findings (all with locations; confidence high unless noted):
+
+- **Tag row shape divergence (live KeyError):** `song_tags_comp.get_song_tags_with_path` emits `{key, name, value, is_nomarr_tag}` — NO `type` key (song_tags_comp.py:39-47). Consumers `library_svc/songs.py:87-95` and `tagging_svc/query.py:210-218` read `tag["type"]` → `KeyError: 'type'` on `GET /file/{id}/tags` (route songs_if.py:209-218) whenever tags exist. A parallel shape `_project_tag_row` (library_song_query_comp.py:165-173) emits `{key, value, type, is_nomarr}` matching `map_song_with_tags_to_dto` — two incompatible shapes for the same concept, attribute named `is_nomarr` vs `is_nomarr_tag`.
+- **Four copies of the Tag value object:** `helpers/dataclasses/tags_dataclass.py` (`Tag(name, values)` — ADR-041 domain canonical, ZERO real consumers), `helpers/dto/tags_dto.py` (`Tag(key, value)` — the one actually imported by 10+ components/workflows; field named `key` not `name`; divergent `get_values`: raises KeyError vs returns `()`), `components/library/songs/song_class.py` (`Tag(name, value: str)` scalar — dead module), and `v2/.../tags_dataclass.py` (verbatim copy of the V1 dataclass).
+- **Identity type drift (str vs int):** `LibraryTrack.file_id: str` / `MatchedFileInfo.file_id: str` (playlist_import, `str(row.get("id") or "")` silent empty default at track_matcher_comp.py:52); `save_song_tags(db, song_id: str, ...)` (song_sync_comp.py:48-64) while `mark_song_processed` takes `int` (song_sync_comp.py:31) and workflows pass ints with `# type: ignore[arg-type]` (sync_file_to_library_wf.py:60,66,77,91); `SongListForEntityResult.song_ids: list[str]` via `str(sid)` (metadata_svc.py:145); `LibraryPipelineInfo.library_id: str` vs `ScanningLibraryInfo.library_id: int` in same module (info_dto.py:111 vs 121); `LibraryCalibrationStatus.library_id: str` (calibration_dto.py:80); `TagSongItem.file_id: str` (tag_curation_dto.py:47). Frontend `LibraryFile.file_id: string`/`library_id: string`/`tagged: boolean` (files.ts:15,17,26) vs backend int (library_types.py:259,261,271).
+- **Path conflated with identity:** `get_song_by_path_unscoped` = `WHERE path = ? LIMIT 1` no ORDER BY (song_repo.py:86-92); `remove_song_by_path` unscoped (library_songs.py:328-343); `delete_songs_by_paths` (library_song_mutation_comp.py:130-148) — but path is only unique per `(library_id, path)` (song.py:44-46). Same path in 2 libraries → nondeterministic delete target.
+- **V2 dataclass defects:** `EmbeddingStream.__post_init__` and `VectorEntry.__post_init__` reference `self.id`/`self.file_id` which are NOT fields → AttributeError on EVERY construction (embedding_dataclass.py:45-62, 92-104) — unconstructible. V2 `Song` has NO id field yet docstring claims `(id, path, normalized_path, library_id, library_key)` (song_dataclass.py:9-12) and `from_path()` passes `id=` → TypeError (kw_only); `_TUPLE_DOC_FIELDS` artists/labels/genres dead branches; `status`/`tagged`/`is_valid` attributes duplicate the edge-based state machine. V2 `Library.id: str` = `"libraries/12345"` + `key` property + `from_db_doc` reads `doc["_id"]` (library_dataclass.py:54-56,148-196) — reintroduces Arango-style qualified string ids the layer conventions ban; `OutputStream.from_db_doc` reads `doc["_id"]` too (embedding_dataclass.py:160-177).
+- **Legacy identity machinery still live:** `library_id_comp.py` `normalize_library_id`/`library_key_from_ref` implement `"libraries/{key}"` string identity (0 production callers, not allowlisted — dead); `library_scan_state_comp.py:42-44` `_scan_doc_id` builds `"library_scans/{key}"` (unused, dead). `get_song_library_key` returns int id but keeps legacy "key" naming (library_song_mutation_comp.py:151-157).
+- **DTO mutability:** `helpers/dto/README.md:35` claims "Most DTOs use @dataclass(frozen=True)" but ~9 of 102 `@dataclass` definitions are frozen (tags_dto, playlist_import, path_dto, hydration_dto) — the rest are mutable/unhashable.
+- **Dual-typed fields:** `LibraryDict.created_at: str | int` (library_dto.py:58-59) — DTO cannot decide its own type.
+
+Related logged research: L99 (tag_id contract gap: components pass {name,value}, persistence requires tag_id), L93 (state identity bugs: `ensure_song_state("tagged")` ValueError, remove-all/re-add transitions), L94/L103 (scan row legacy keys files_total/completed_at vs files_found/finished_at), L97 (output id/model_id contract mismatch, ml_output_streams schema).
 
 ## Sources
 

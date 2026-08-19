@@ -2,7 +2,7 @@ import type { Plugin } from "@opencode-ai/plugin"
 import path from "path"
 
 export const VenvActivatePlugin: Plugin = async ({ directory }) => {
-  const venvDir = path.join(directory, ".venv-linux")
+  const venvDir = path.join(directory, ".venv")
   const activateScript = path.join(venvDir, "bin", "activate")
 
   return {
