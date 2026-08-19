@@ -352,6 +352,8 @@ class TestAppDbClaimMethods:
     @pytest.mark.unit
     def test_claim_song_builds_payload_and_delegates(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
         mock_app_repo.insert_worker_claim.return_value = 42
+        app_db._library_repo = MagicMock()
+        app_db._library_repo.get_song.return_value = {"id": 1}
 
         result = app_db.claim_song(1, "w1")
 
