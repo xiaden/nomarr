@@ -91,9 +91,7 @@ def read_tags_from_file(path: LibraryPath, namespace: str) -> Tags | None:
         if not tag_dict:
             return None
 
-        items = tuple(
-            Tag(name=k, values=tuple(v if isinstance(v, list) else [v])) for k, v in tag_dict.items()
-        )
+        items = tuple(Tag(name=k, values=tuple(v if isinstance(v, list) else [v])) for k, v in tag_dict.items())
         return Tags(items=items)
 
     except (OSError, ValueError, mutagen.MutagenError) as e:

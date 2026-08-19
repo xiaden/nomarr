@@ -21,6 +21,7 @@ Conversion methods: ``from_dict``, ``from_db_rows``, ``to_dict``. Lookup methods
 Usage:
     from nomarr.helpers.dto.tags_dto import Tag, Tags, TagValue
 """
+
 from nomarr.helpers.dataclasses.tags_dataclass import Tag, Tags, TagValue
 
 __all__ = ["Tag", "TagValue", "Tags"]

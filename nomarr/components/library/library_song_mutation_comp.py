@@ -11,14 +11,6 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
-def _normalize_song_id(file_ref: str) -> str:
-    """Normalize a library-song reference to string form.
-
-    PostgreSQL uses integer IDs; file_ref is already the string representation.
-    """
-    return file_ref
-
-
 def upsert_library_song(
     db: Database,
     path: LibraryPath,

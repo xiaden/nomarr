@@ -33,7 +33,7 @@ def mark_song_processed(db: Database, song_id: int) -> None:
 
     Args:
         db: Database instance
-        song_id: Document ``id``
+        song_id: Song row ID (integer)
 
     """
     transition_song_state(db, [song_id], STATE_NOT_PROCESSED, STATE_PROCESSED)

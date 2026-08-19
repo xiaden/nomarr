@@ -95,8 +95,8 @@ def save_mood_tags(
     Always writes all three mood tier keys (mood-strict, mood-regular,
     mood-loose). Tiers absent from *mood_tags* are explicitly cleared with an
     empty value list so that previously-written tiers do not persist when the
-tier count drops after recalibration. ``None`` is
-the strict representation of "no tags to write" and clears all three tiers.
+    tier count drops after recalibration. ``None`` is
+    the strict representation of "no tags to write" and clears all three tiers.
 
     Args:
         db: Database instance

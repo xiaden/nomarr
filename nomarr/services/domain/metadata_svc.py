@@ -122,7 +122,7 @@ class MetadataService:
     def list_songs_for_entity(
         self,
         entity_id: int,
-        _name: str,
+        name: str,  # noqa: ARG002 (intentionally unused; kept for API compatibility, tag knows its name)
         limit: int = 100,
         offset: int = 0,
     ) -> SongListForEntityResult:

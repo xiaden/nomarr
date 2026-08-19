@@ -47,7 +47,7 @@ class ConvertPlaylistRequest(BaseModel):
     @field_validator("library_id", mode="before")
     @classmethod
     def decode_library_id(cls, v: str | None) -> int | None:
-        """Decode encoded library_id (libraries:123 -> libraries/123)."""
+        """Decode library_id to integer primary key (accepts int or string-repr of int)."""
         if v is None or v == "":
             return None
         return decode_id(v)
