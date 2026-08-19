@@ -15,6 +15,8 @@ from nomarr.helpers.dto.vector_repo_dto import EmbeddingRecord, SimilarResult
 from nomarr.helpers.time_helper import now_ms
 from nomarr.helpers.vector_params_helper import get_ef_search
 from nomarr.persistence.models.embedding import Embedding
+from nomarr.persistence.models.song_tag import SongTag
+from nomarr.persistence.models.tag import Tag
 from nomarr.persistence.sql.exceptions import map_persistence_exceptions
 
 if TYPE_CHECKING:
@@ -241,6 +243,29 @@ class VectorRepo:
             stmt = select(func.count()).select_from(_T).where(_T.c.backbone_id == backbone_id, _T.c.genres.is_(None))
             result = self._session.execute(stmt)
             return int(result.scalar() or 0)
+
+    def backfill_genres(self, backbone_id: str) -> int:
+        """Populate missing cold embedding genres from the song genre tags."""
+        with map_persistence_exceptions():
+            genre_values = (
+                select(func.array_agg(Tag.value))
+                .select_from(SongTag.__table__.join(Tag.__table__, SongTag.tag_id == Tag.id))
+                .where(SongTag.song_id == _T.c.song_id, Tag.name == "genre")
+                .scalar_subquery()
+            )
+            stmt = (
+                update(_T)
+                .where(
+                    _T.c.backbone_id == backbone_id,
+                    _T.c.tier == "cold",
+                    _T.c.genres.is_(None),
+                    genre_values.is_not(None),
+                )
+                .values(genres=genre_values, updated_at=now_ms().value)
+            )
+            result = self._session.execute(stmt)
+            self._session.commit()
+            return int(result.rowcount or 0)
 
     # ── delete / truncate ───────────────────────────────────────
 

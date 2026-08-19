@@ -153,9 +153,7 @@ def rebuild_cold_vector_index(db: Database, embed_dim: int) -> None:
 def backfill_genres(db: Database, backbone_id: str) -> int:
     """Backfill genres on cold embeddings that predate genre enrichment.
 
-    Delegates to the MlDb facade which counts embeddings with NULL genres
-    for the given backbone. Full genre backfill requires joining with the
-    songs tag data, which is outside MlDb's scope.
+    Delegates to the MlDb facade, which populates genres from the song tags.
 
     Args:
         db: Database handle.

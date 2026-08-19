@@ -63,20 +63,20 @@ class TestMlDbVectorIndexMethods:
         ml_db.rebuild_vector_index(1280)
         ml_db._vector_repo.rebuild_cold_hnsw_index.assert_called_once_with()
 
-    def test_backfill_genres_returns_count(self) -> None:
-        """backfill_genres should return the count of embeddings with NULL genres."""
+    def test_backfill_genres_returns_updated_count(self) -> None:
+        """backfill_genres should return the number of updated embeddings."""
         ml_db = _make_ml_db()
-        ml_db._vector_repo.count_missing_genres.return_value = 42
+        ml_db._vector_repo.backfill_genres.return_value = 42
 
         count = ml_db.backfill_genres("ast")
 
         assert count == 42
-        ml_db._vector_repo.count_missing_genres.assert_called_once_with("ast")
+        ml_db._vector_repo.backfill_genres.assert_called_once_with("ast")
 
     def test_backfill_genres_returns_zero_when_no_null_genres(self) -> None:
         """backfill_genres should return 0 when all embeddings have genres."""
         ml_db = _make_ml_db()
-        ml_db._vector_repo.count_missing_genres.return_value = 0
+        ml_db._vector_repo.backfill_genres.return_value = 0
 
         count = ml_db.backfill_genres("ast")
 

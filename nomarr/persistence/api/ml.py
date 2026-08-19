@@ -513,22 +513,17 @@ class MlDb:
         logger.info("Successfully rebuilt cold HNSW index (ix_embeddings_cold_hnsw).")
 
     def backfill_genres(self, backbone_id: str) -> int:
-        """Count embeddings that need genre backfilling.
-
-        Full genre backfill requires joining with the songs tag data,
-        which is outside MlDb's scope.  This method counts the rows with
-        ``genres IS NULL`` for the given backbone and returns the count.
+        """Backfill missing genres on cold embeddings for a backbone.
 
         Returns:
-            Number of embedding rows with NULL genres for this backbone.
+            Number of embedding rows updated with genre data.
 
         """
         assert self._vector_repo is not None, "VectorRepo not wired"
-        count = self._vector_repo.count_missing_genres(backbone_id)
+        count = self._vector_repo.backfill_genres(backbone_id)
         if count > 0:
-            logger.warning(
-                "backfill_genres: %d embeddings for backbone '%s' have NULL genres. "
-                "Full genre backfill requires the library facade (not available in MlDb scope).",
+            logger.info(
+                "backfill_genres: updated %d embeddings for backbone '%s'.",
                 count,
                 backbone_id,
             )
