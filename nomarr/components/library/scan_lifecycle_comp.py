@@ -23,6 +23,7 @@ from nomarr.helpers.constants.pipeline_states import (
     ML_IN_PROGRESS,
     ML_NOT_PROCESSED,
     ML_STATE_FIELD,
+    SCAN_COMPLETE,
     SCAN_IN_PROGRESS,
     SCAN_STATE_FIELD,
 )
@@ -207,6 +208,9 @@ def mark_scan_completed(db: Database, library_id: int) -> None:
 
     """
     db.library.complete_scan(library_id, now_ms().value)
+    pipeline_state = db.app.get_pipeline_state(library_id)
+    if isinstance(pipeline_state, dict):
+        transition_pipeline_axis(db, library_id, SCAN_STATE_FIELD, SCAN_COMPLETE)  # type: ignore[arg-type]
 
 
 def update_scan_progress(
