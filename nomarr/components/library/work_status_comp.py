@@ -68,8 +68,8 @@ def compute_work_status(
     pipeline_source = library_docs if library_docs is not None else libraries
     pipeline_states = pipeline_states or {}
     for lib in pipeline_source:
-        lib_id = str(lib.id)
-        lib_state = pipeline_states.get(lib_id, {})
+        lib_id = lib.id
+        lib_state = pipeline_states.get(str(lib_id), {})
         state = _derive_pipeline_state(lib_state)
         pipeline_libraries.append(
             LibraryPipelineInfo(

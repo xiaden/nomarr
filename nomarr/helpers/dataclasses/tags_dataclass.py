@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+    from typing import Any
 
 TagValue = str | int | float | bool
 
@@ -116,3 +117,41 @@ class Tags:
             if tag.name == name:
                 return tag.values
         raise KeyError(f"Tag name not found: {name}")
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Tags:
+        """Create Tags from a dict of ``name -> value(s)`` mappings.
+
+        Scalar values are normalized to single-element tuples; list/tuple values
+        are converted to tuples as-is. Non-TagValue elements are rejected by the
+        per-value type check in ``Tag.__post_init__``. An empty dict raises
+        ValueError because an empty Tags collection is invalid.
+        """
+        items: list[Tag] = []
+        for name, value in data.items():
+            if isinstance(value, list | tuple):
+                items.append(Tag(name=name, values=tuple(value)))
+            else:
+                items.append(Tag(name=name, values=(value,)))
+        return cls(items=tuple(items))
+
+    @classmethod
+    def from_db_rows(cls, db_rows: list[dict[str, Any]]) -> Tags:
+        """Create Tags from DB query rows, grouping rows by name.
+
+        Each row is a ``{"name": ..., "value": ...}`` dict; rows sharing a name
+        are aggregated into a single Tag whose values are the row values as a
+        tuple. An empty ``db_rows`` list raises ValueError because an empty Tags
+        collection is invalid.
+        """
+        aggregated: dict[str, list[TagValue]] = {}
+        for row in db_rows:
+            name = row["name"]
+            value = row["value"]
+            aggregated.setdefault(name, []).append(value)
+        items = [Tag(name=name, values=tuple(values)) for name, values in aggregated.items()]
+        return cls(items=tuple(items))
+
+    def to_dict(self) -> dict[str, tuple[TagValue, ...]]:
+        """Convert to dict, mapping each tag name to its values tuple."""
+        return {tag.name: tag.values for tag in self.items}

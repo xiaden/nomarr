@@ -135,7 +135,7 @@ export function VectorSearchPage() {
     if (
       pendingAutoSearchFileId &&
       backboneId &&
-      selectedTrack?.file_id === pendingAutoSearchFileId
+      String(selectedTrack?.file_id) === pendingAutoSearchFileId
     ) {
       setPendingAutoSearchFileId(null);
       searchByFileId(backboneId, pendingAutoSearchFileId, limit, minScore);
@@ -144,7 +144,7 @@ export function VectorSearchPage() {
 
   const handleSearch = useCallback(async () => {
     if (!selectedTrack) return;
-    await searchByFileId(backboneId, selectedTrack.file_id, limit, minScore);
+    await searchByFileId(backboneId, String(selectedTrack.file_id), limit, minScore);
   }, [backboneId, selectedTrack, limit, minScore, searchByFileId]);
 
   // ── Push playlist to Navidrome ──

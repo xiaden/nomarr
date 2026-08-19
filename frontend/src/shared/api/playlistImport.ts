@@ -22,7 +22,7 @@ export interface PlaylistTrackInputResponse {
 
 export interface MatchedFileInfoResponse {
   path: string;
-  file_id: string;
+  file_id: number;
   title: string;
   artist: string;
   album: string | null;

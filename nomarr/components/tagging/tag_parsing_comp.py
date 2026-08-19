@@ -11,7 +11,7 @@ import json
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from nomarr.helpers.dto.tags_dto import TagValue
+    from nomarr.helpers.dataclasses.tags_dataclass import TagValue
 
 
 def parse_tag_values(tags: dict[str, str | TagValue | list[TagValue]]) -> dict[str, list[TagValue]]:

@@ -24,10 +24,9 @@ if TYPE_CHECKING:
 
 _T = cast("Table", LibraryScan.__table__)
 
-# Columns on the ``library_scans`` table — any payload key that is not a
-# column (e.g. legacy ``key``/``files_total``/``completed_at``/``scan_heartbeat``)
-# is dropped at the write boundary so ``insert_one`` never receives an unknown
-# column (which would raise a compile error on strict insert).
+# Columns on the ``library_scans`` table.  Payloads use the canonical
+# ``LibraryScanRow`` names; unknown keys are dropped at the write boundary so
+# ``insert_one`` never receives an unknown column.
 _SCAN_COLUMNS: frozenset[str] = frozenset(_T.columns.keys())
 
 

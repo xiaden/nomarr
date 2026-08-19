@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
-    from nomarr.helpers.dto.tags_dto import Tags
+    from nomarr.helpers.dataclasses.tags_dataclass import Tags
 
 
 @dataclass
@@ -170,6 +170,6 @@ class ProcessFileResult:
     tags_written: int
     head_results: dict[str, dict[str, Any]]
     mood_aggregations: dict[str, int] | None
-    tags: Tags
+    tags: Tags | None
     timing_summary: str | None = None
     deferred_writes: DeferredFileWrites | None = None

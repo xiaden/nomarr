@@ -34,7 +34,7 @@ class MatchedFileInfo:
     """
 
     path: str
-    file_id: str
+    file_id: int
     title: str
     artist: str
     album: str | None = None

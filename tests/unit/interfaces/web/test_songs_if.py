@@ -35,7 +35,7 @@ def make_library_file(file_id: int = 1) -> LibrarySongWithTags:
         artist="Test Artist",
         album="Test Album",
         title="Test Song",
-        calibration=None,
+        calibration_version=None,
         scanned_at=1710000001,
         last_tagged_at=1710000002,
         tagged=1,
@@ -144,7 +144,7 @@ class TestLibraryFilesEndpoints:
                     "artist": "Test Artist",
                     "album": "Test Album",
                     "title": "Test Song",
-                    "calibration": None,
+                    "calibration_version": None,
                     "scanned_at": 1710000001,
                     "last_tagged_at": 1710000002,
                     "tagged": 1,
@@ -337,6 +337,8 @@ class TestLibraryFilesEndpoints:
             song_id=1,
             nomarr_only=False,
         )
+        # HTTP path ID "1" must be decoded to int at the interface boundary.
+        assert isinstance(mock_tagging_service.get_song_tags.call_args.kwargs["song_id"], int)
 
     def test_get_file_tags_returns_404_when_missing(
         self,

@@ -46,7 +46,7 @@ async def web_convert_playlist(
         result_dto = await asyncio.to_thread(
             playlist_service.convert_playlist,
             playlist_url=request.playlist_url,
-            library_id=str(request.library_id) if request.library_id is not None else None,
+            library_id=request.library_id,
         )
         return ConvertPlaylistResponse.from_dto(result_dto)
 

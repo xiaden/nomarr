@@ -62,9 +62,9 @@ from nomarr.components.tagging.tagging_reconstruction_comp import (
 )
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dataclasses.tags_dataclass import Tags
     from nomarr.helpers.dto.calibration_dto import WriteCalibratedTagsParams
     from nomarr.helpers.dto.ml_head_dto import HeadInfo
-    from nomarr.helpers.dto.tags_dto import Tags
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
@@ -92,7 +92,7 @@ class BatchContext:
     calibrations: dict[str, Any]
     calibration_version: str | None
     output_stream_lookup: dict[str, tuple[str, str]] | None = None
-    pending_mood_tags: list[tuple[int, Tags]] = field(default_factory=list)
+    pending_mood_tags: list[tuple[int, Tags | None]] = field(default_factory=list)
     pending_calibration_hashes: list[int] = field(default_factory=list)
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
 
@@ -188,12 +188,12 @@ def write_calibrated_tags_wf(
     if not head_outputs:
         return
     mood_tags = aggregate_mood_tags(head_outputs)
-    # mood_tags may be empty when all labels conflict or scores are below threshold.
-    # Empty is a valid calibration result — we still write it (to clear stale tiers)
+    # mood_tags may be None when all labels conflict or scores are below threshold.
+    # None is a valid calibration result — we still write it (to clear stale tiers)
     # and update calibration_hash so the file is not re-queued on every apply run.
     if not mood_tags:
         logger.debug(
-            "[calibrated_tags] No mood tags produced for %s — writing empty tiers and marking hash",
+            "[calibrated_tags] No mood tags produced for %s — writing None tiers and marking hash",
             file_path,
         )
 

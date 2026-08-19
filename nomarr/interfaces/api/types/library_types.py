@@ -265,7 +265,7 @@ class LibraryFileWithTagsResponse(BaseModel):
     artist: str | None
     album: str | None
     title: str | None
-    calibration: str | None
+    calibration_version: str | None = None
     scanned_at: int | None
     last_tagged_at: int | None
     tagged: bool
@@ -301,7 +301,7 @@ class SearchFilesResponse(BaseModel):
                     artist=f.artist,
                     album=f.album,
                     title=f.title,
-                    calibration=f.calibration,
+                    calibration_version=f.calibration_version,
                     scanned_at=f.scanned_at,
                     last_tagged_at=f.last_tagged_at,
                     tagged=f.tagged,

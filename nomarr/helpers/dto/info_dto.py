@@ -118,7 +118,7 @@ class ScanningLibraryInfo:
 class LibraryPipelineInfo:
     """Per-library pipeline state info for dashboard work-status polling."""
 
-    library_id: str
+    library_id: int
     name: str
     state: str
     library_auto_write: bool

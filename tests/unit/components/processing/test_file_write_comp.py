@@ -15,7 +15,7 @@ from nomarr.components.processing.file_write_comp import (
     save_mood_tags,
     save_mood_tags_batch,
 )
-from nomarr.helpers.dto.tags_dto import Tag, Tags
+from nomarr.helpers.dataclasses.tags_dataclass import Tag, Tags
 
 
 class TestGetFileForWriting:
@@ -124,7 +124,7 @@ class TestSaveMoodTags:
     @pytest.mark.mocked
     def test_writes_three_tiers_always(self) -> None:
         mock_db = MagicMock()
-        mood_tags = Tags(items=(Tag(key="mood-strict", value=("happy",)),))
+        mood_tags = Tags(items=(Tag(name="mood-strict", values=("happy",)),))
 
         with patch("nomarr.components.processing.file_write_comp.set_song_tags") as mock_set_song_tags:
             result = save_mood_tags(mock_db, 123, mood_tags)
@@ -145,8 +145,8 @@ class TestSaveMoodTags:
         mock_db = MagicMock()
         mood_tags = Tags(
             items=(
-                Tag(key="nom:mood-strict", value=("happy",)),
-                Tag(key="mood-regular", value=("calm", "warm")),
+                Tag(name="nom:mood-strict", values=("happy",)),
+                Tag(name="mood-regular", values=("calm", "warm")),
             )
         )
 
@@ -159,7 +159,7 @@ class TestSaveMoodTags:
     @pytest.mark.mocked
     def test_clears_absent_tiers_with_empty_list(self) -> None:
         mock_db = MagicMock()
-        mood_tags = Tags(items=(Tag(key="nom:mood-loose", value=("chill",)),))
+        mood_tags = Tags(items=(Tag(name="nom:mood-loose", values=("chill",)),))
 
         with patch("nomarr.components.processing.file_write_comp.set_song_tags") as mock_set_song_tags:
             save_mood_tags(mock_db, 123, mood_tags)
@@ -167,6 +167,25 @@ class TestSaveMoodTags:
         mock_set_song_tags.assert_any_call(mock_db, 123, "nom:mood-strict", [])
         mock_set_song_tags.assert_any_call(mock_db, 123, "nom:mood-regular", [])
         mock_set_song_tags.assert_any_call(mock_db, 123, "nom:mood-loose", ["chill"])
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_none_clears_all_three_tiers(self) -> None:
+        """The strict None state clears every mood tier with an empty value list."""
+        mock_db = MagicMock()
+
+        with patch("nomarr.components.processing.file_write_comp.set_song_tags") as mock_set_song_tags:
+            result = save_mood_tags(mock_db, 123, None)
+
+        assert result == 0
+        mock_set_song_tags.assert_has_calls(
+            [
+                call(mock_db, 123, "nom:mood-strict", []),
+                call(mock_db, 123, "nom:mood-regular", []),
+                call(mock_db, 123, "nom:mood-loose", []),
+            ]
+        )
+        assert mock_set_song_tags.call_count == 3
 
 
 class TestSaveMoodTagsBatch:
@@ -187,7 +206,7 @@ class TestSaveMoodTagsBatch:
     @pytest.mark.mocked
     def test_delegates_to_set_song_tags_batch(self) -> None:
         mock_db = MagicMock()
-        mood_tags = Tags(items=(Tag(key="mood-strict", value=("happy",)),))
+        mood_tags = Tags(items=(Tag(name="mood-strict", values=("happy",)),))
         items: list[tuple[int, Tags]] = [(123, mood_tags)]
 
         with patch(
@@ -202,8 +221,30 @@ class TestSaveMoodTagsBatch:
                 {
                     "song_id": 123,
                     "name": "nom:mood-strict",
-                    "values": ("happy",),
+                    "values": ["happy"],
                 },
+                {"song_id": 123, "name": "nom:mood-regular", "values": []},
+                {"song_id": 123, "name": "nom:mood-loose", "values": []},
+            ],
+        )
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_none_entry_clears_all_three_tiers(self) -> None:
+        """A None mood_tags entry emits empty value lists for every tier."""
+        mock_db = MagicMock()
+        items: list[tuple[int, Tags | None]] = [(123, None)]
+
+        with patch(
+            "nomarr.components.processing.file_write_comp.set_song_tags_batch",
+        ) as mock_set_song_tags_batch:
+            result = save_mood_tags_batch(mock_db, items)
+
+        assert result == 0
+        mock_set_song_tags_batch.assert_called_once_with(
+            mock_db,
+            [
+                {"song_id": 123, "name": "nom:mood-strict", "values": []},
                 {"song_id": 123, "name": "nom:mood-regular", "values": []},
                 {"song_id": 123, "name": "nom:mood-loose", "values": []},
             ],

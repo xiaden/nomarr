@@ -38,7 +38,9 @@ def read_file_tags_workflow(db: Database, path: str, namespace: str) -> dict[str
     # Read tags using component
     tags = read_tags_from_file(library_path, namespace)
 
-    # Convert to dict for API response
+    # Convert to dict for API response (empty dict when no namespaced tags)
+    if tags is None:
+        return {}
     return tags.to_dict()
 
 

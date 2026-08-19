@@ -8,9 +8,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from nomarr.helpers.dataclasses.tags_dataclass import Tag, Tags
 from nomarr.helpers.dto.calibration_dto import WriteCalibratedTagsParams
 from nomarr.helpers.dto.ml_dto import HeadOutput, LoadedOutputStream
-from nomarr.helpers.dto.tags_dto import Tag, Tags
 
 stream_store_module = importlib.import_module("nomarr.components.ml.inference.ml_output_stream_store_comp")
 wf_module = importlib.import_module("nomarr.workflows.calibration.write_calibrated_tags_wf")
@@ -19,7 +19,7 @@ StreamRecord = stream_store_module.StreamRecord
 
 def _make_tags(**items: str) -> Tags:
     """Create a Tags DTO from scalar string values."""
-    return Tags(items=tuple(Tag(key=key, value=(value,)) for key, value in items.items()))
+    return Tags(items=tuple(Tag(name=key, values=(value,)) for key, value in items.items()))
 
 
 class _FakeHeadInfo:
@@ -198,6 +198,64 @@ class TestWriteCalibratedTagsWorkflow:
         save_mood_tags.assert_called_once_with(db, f"{'songs'}/1", mood_tags)
         update_file_calibration_hash.assert_called_once_with(db, f"{'songs'}/1")
         assert db.segment_scores_stats.mock_calls == []
+
+    def test_none_aggregation_still_writes_none_tiers_and_marks_hash(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """When aggregation produces no mood tags, None is still written to clear stale tiers."""
+        db = MagicMock()
+        params = WriteCalibratedTagsParams(
+            file_path="/music/example.flac",
+            models_dir="/models",
+            namespace="nom",
+            version_tag_key="version",
+            calibrate_heads=False,
+        )
+        head_infos = [_FakeHeadInfo(name="mood_multiclass", labels=["happy", "sad"], model_path="/models/mood.onnx")]
+        output_streams = [
+            LoadedOutputStream(
+                head_name="mood_multiclass",
+                output_id="ml_model_outputs/out-1",
+                output_index=0,
+                label="happy",
+                values=[0.8, 0.7],
+            )
+        ]
+        head_outputs = [
+            HeadOutput(
+                head=cast("Any", head_infos[0]),
+                model_key="model:mood_multiclass:happy:none:0",
+                label="happy",
+                value=0.8,
+                tier="high",
+                calibration_id=None,
+            )
+        ]
+        require_library_song_id = MagicMock(return_value=f"{'songs'}/1")
+        discover_heads = MagicMock(return_value=head_infos)
+        build_output_stream_lookup = MagicMock(return_value={"ml_model_outputs/out-1": ("mood_multiclass", "happy")})
+        load_output_streams_for_song = MagicMock(return_value=output_streams)
+        reconstruct = MagicMock(return_value=head_outputs)
+        aggregate_mood_tags = MagicMock(return_value=None)
+        save_mood_tags = MagicMock()
+        get_calibration_version = MagicMock(return_value="cal-v1")
+        update_file_calibration_hash = MagicMock()
+        monkeypatch.setattr(wf_module, "require_library_song_id", require_library_song_id)
+        monkeypatch.setattr(wf_module, "discover_heads", discover_heads)
+        monkeypatch.setattr(wf_module, "build_output_stream_lookup", build_output_stream_lookup)
+        monkeypatch.setattr(wf_module, "load_output_streams_for_song", load_output_streams_for_song)
+        monkeypatch.setattr(wf_module, "reconstruct_head_outputs_from_streams", reconstruct)
+        monkeypatch.setattr(wf_module, "aggregate_mood_tags", aggregate_mood_tags)
+        monkeypatch.setattr(wf_module, "save_mood_tags", save_mood_tags)
+        monkeypatch.setattr(wf_module, "get_calibration_version", get_calibration_version)
+        monkeypatch.setattr(wf_module, "update_file_calibration_hash", update_file_calibration_hash)
+        monkeypatch.setattr(wf_module, "load_calibration_lookup", MagicMock(return_value={}))
+
+        wf_module.write_calibrated_tags_wf(db, params)
+
+        save_mood_tags.assert_called_once_with(db, f"{'songs'}/1", None)
+        update_file_calibration_hash.assert_called_once_with(db, f"{'songs'}/1")
 
     def test_batch_context_reuses_cached_output_lookup_and_defers_batch_writes(
         self,

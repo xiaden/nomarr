@@ -135,14 +135,14 @@ class MetadataService:
             offset: Skip first N results
 
         Returns:
-            SongListForEntityResult with song_ids, total, limit, offset
+            SongListForEntityResult with integer song_ids, total, limit, offset
 
         """
-        song_ids_int = list_songs_for_tag(self.db, entity_id, limit=limit, offset=offset)
+        song_ids = list_songs_for_tag(self.db, entity_id, limit=limit, offset=offset)
         total = count_songs_for_tag(self.db, entity_id)
 
         return SongListForEntityResult(
-            song_ids=[str(sid) for sid in song_ids_int],
+            song_ids=song_ids,
             total=total,
             limit=limit,
             offset=offset,
@@ -171,9 +171,11 @@ class MetadataService:
 
         for song_id in song_ids:
             artist_tags = get_song_tags(self.db, song_id, name="artist")
+            if artist_tags is None:
+                continue
             for artist_tag in artist_tags:
-                # Get the first value from the tag (always a list now)
-                for value in artist_tag.value:
+                # Get the values from the tag (always a non-empty tuple now)
+                for value in artist_tag.values:
                     tag_id = find_or_create_tag(self.db, "artist", value)
                     if tag_id not in artist_ids_seen:
                         artist_ids_seen.add(tag_id)
@@ -214,9 +216,11 @@ class MetadataService:
 
         for song_id in song_ids:
             album_tags = get_song_tags(self.db, song_id, name="album")
+            if album_tags is None:
+                continue
             for album_tag in album_tags:
-                # Get the first value from the tag (always a list now)
-                for value in album_tag.value:
+                # Get the values from the tag (always a non-empty tuple now)
+                for value in album_tag.values:
                     tag_id = find_or_create_tag(self.db, "album", value)
                     if tag_id not in album_ids_seen:
                         album_ids_seen.add(tag_id)

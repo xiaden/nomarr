@@ -23,7 +23,7 @@ class EntityListResult(TypedDict):
 class SongListForEntityResult(TypedDict):
     """Result for list_songs_for_entity()."""
 
-    song_ids: list[str]  # Song IDs
+    song_ids: list[int]  # Song IDs
     total: int
     limit: int
     offset: int

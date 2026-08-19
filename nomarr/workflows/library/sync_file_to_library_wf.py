@@ -57,13 +57,13 @@ def _sync_tags_and_entities(
     parsed_nom_tags = parse_tag_values(nom_tags) if nom_tags else {}
 
     # Persist all external tags
-    save_song_tags(db, file_id, parsed_all_tags)  # type: ignore[arg-type]  # TODO(migration): component expects str, should be int
+    save_song_tags(db, file_id, parsed_all_tags)
 
     # Persist nomarr-namespaced tags (prefix names with "nom:")
     prefixed_nom_tags = {
         (f"nom:{name}" if not name.startswith("nom:") else name): values for name, values in parsed_nom_tags.items()
     }
-    save_song_tags(db, file_id, prefixed_nom_tags)  # type: ignore[arg-type]  # TODO(migration): component expects str, should be int
+    save_song_tags(db, file_id, prefixed_nom_tags)
 
     try:
         entity_tags = {
@@ -74,7 +74,7 @@ def _sync_tags_and_entities(
             "genre": metadata.get("genre"),
             "year": metadata.get("year"),
         }
-        entries = _build_song_tag_entries(file_id, entity_tags)  # type: ignore[arg-type]  # TODO(migration): component expects str, should be int
+        entries = _build_song_tag_entries(file_id, entity_tags)
         if entries:
             for entry in entries:
                 db.library.replace_song_tags(entry["song_id"], entry["tags"])
@@ -88,7 +88,7 @@ def _sync_tags_and_entities(
         logger.debug(f"[sync_file_to_library] Stored chromaprint for {file_path}")
 
     if tagged_version:
-        mark_song_processed(db, file_id)  # type: ignore[arg-type]  # TODO(migration): component expects str, should be int
+        mark_song_processed(db, file_id)
 
     logger.debug(f"[sync_file_to_library] Synced {file_path}")
 

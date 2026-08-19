@@ -150,8 +150,8 @@ class TestLibraryDict:
             name="Music",
             root_path="/music",
             is_enabled=True,
-            created_at="2024-01-01T00:00:00Z",
-            updated_at="2024-01-01T00:00:00Z",
+            created_at=1704067200000,
+            updated_at=1704067200000,
         )
         assert lib.id == 12345
         assert lib.name == "Music"

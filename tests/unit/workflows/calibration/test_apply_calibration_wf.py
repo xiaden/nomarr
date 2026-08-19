@@ -8,8 +8,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from nomarr.helpers.dto.tags_dto import Tags
-
 apply_module = importlib.import_module("nomarr.workflows.calibration.apply_calibration_wf")
 
 
@@ -40,7 +38,7 @@ class TestApplyCalibrationWorkflow:
             file_path = params.file_path
             write_calls.append(file_path)
             with batch_ctx._lock:
-                batch_ctx.pending_mood_tags.append((file_path, Tags(items=())))
+                batch_ctx.pending_mood_tags.append((file_path, None))
                 batch_ctx.pending_calibration_hashes.append(file_path)
 
         monkeypatch.setattr(apply_module, "write_calibrated_tags_wf", _write_calibrated_tags)

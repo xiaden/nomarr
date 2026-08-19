@@ -26,6 +26,7 @@ from nomarr.components.ml.onnx.ml_model_registry_comp import build_model_output_
 from nomarr.components.ml.resources.ml_timing_comp import build_timing_summary
 from nomarr.components.ml.vectors.ml_vector_persist_comp import persist_backbone_vector
 from nomarr.components.tagging.tagging_aggregation_comp import collect_mood_outputs
+from nomarr.helpers.dataclasses.tags_dataclass import Tags
 from nomarr.helpers.dto.processing_dto import (
     DeferredBackboneVectorWrite,
     DeferredFileWrites,
@@ -33,7 +34,6 @@ from nomarr.helpers.dto.processing_dto import (
     ProcessFileResult,
     ProcessorConfig,
 )
-from nomarr.helpers.dto.tags_dto import Tags
 from nomarr.helpers.time_helper import internal_ms
 
 logger = logging.getLogger(__name__)
@@ -83,7 +83,7 @@ def process_file_workflow(
                 tags_written=0,
                 head_results={"_not_found": {"status": "not_found", "reason": library_path.reason}},
                 mood_aggregations=None,
-                tags=Tags.from_dict({}),
+                tags=None,
             )
         error_message = f"Path validation failed ({library_path.status}): {library_path.reason}"
         logger.error(f"[process_file_workflow] {error_message} - {path}")
@@ -136,7 +136,7 @@ def process_file_workflow(
             tags_written=0,
             head_results={"_crash": {"status": "crash", "reason": str(e)}},
             mood_aggregations=None,
-            tags=Tags.from_dict({}),
+            tags=None,
         )
     shared_chromaprint = compute_chromaprint(shared_audio.waveform, shared_audio.sample_rate)
     timings["audio_load"] = internal_ms().value - t_audio_load.value
@@ -190,7 +190,7 @@ def process_file_workflow(
                 tags_written=0,
                 head_results=all_head_results,
                 mood_aggregations=None,
-                tags=Tags.from_dict({}),
+                tags=None,
             )
         # Some heads failed (not skipped) - this is an error
         msg = "No heads produced decisions; refusing to write tags"

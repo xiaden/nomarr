@@ -51,7 +51,7 @@ helpers/
     ├── processing_dto.py         # Processing pipeline DTOs
     ├── recalibration_dto.py      # Recalibration DTOs
     ├── tagging_dto.py            # Tagging pipeline DTOs
-    ├── tags_dto.py               # Tag data DTOs
+    ├── tags_dto.py               # Re-exports strict Tag/Tags/TagValue from helpers/dataclasses/tags_dataclass.py
     └── vector_config_dto.py      # Vector configuration DTOs
 ```
 

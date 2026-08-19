@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nomarr.helpers.dataclasses.tags_dataclass import Tag, Tags
 from nomarr.helpers.dto.tag_curation_dto import MergeResult, RenameResult, SplitResult
 from nomarr.services.domain.tagging_svc import TaggingService, TaggingServiceConfig
 from nomarr.services.domain.tagging_svc.curation import TaggingCurationMixin
@@ -257,10 +258,7 @@ class TestUpdateSongTags:
     def test_update_song_tags_success(self) -> None:
         """Successful update should return file_id, name, and tag list."""
         service = _make_service()
-        mock_tags_obj = MagicMock()
-        mock_tags_obj.__iter__.return_value = iter(
-            [MagicMock(key="genre", value=("rock",))],
-        )
+        tags_obj = Tags(items=(Tag(name="genre", values=("rock",)),))
         with (
             patch(
                 "nomarr.services.domain.tagging_svc.curation.set_song_tags",
@@ -270,7 +268,7 @@ class TestUpdateSongTags:
             ) as mock_transition,
             patch(
                 "nomarr.services.domain.tagging_svc.curation.get_song_tags",
-                return_value=mock_tags_obj,
+                return_value=tags_obj,
             ),
         ):
             result = service.update_song_tags("1", "genre", ["rock"])
@@ -286,6 +284,33 @@ class TestUpdateSongTags:
                     "is_nomarr": False,
                 },
             ],
+        }
+        mock_set.assert_called_once()
+        mock_transition.assert_called_once()
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_update_song_tags_returns_empty_tags_when_get_song_tags_returns_none(self) -> None:
+        """The strict None state maps to an empty ``tags`` list in the response."""
+        service = _make_service()
+        with (
+            patch(
+                "nomarr.services.domain.tagging_svc.curation.set_song_tags",
+            ) as mock_set,
+            patch(
+                "nomarr.services.domain.tagging_svc.curation.transition_song_state",
+            ) as mock_transition,
+            patch(
+                "nomarr.services.domain.tagging_svc.curation.get_song_tags",
+                return_value=None,
+            ),
+        ):
+            result = service.update_song_tags("1", "genre", ["rock"])
+
+        assert result == {
+            "file_id": "1",
+            "name": "genre",
+            "tags": [],
         }
         mock_set.assert_called_once()
         mock_transition.assert_called_once()

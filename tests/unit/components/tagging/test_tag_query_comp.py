@@ -436,6 +436,30 @@ class TestGetSongTags:
 
         assert result.to_dict() == {"nom:mood-tier-1": ("calm", "bright")}
 
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_returns_none_when_no_rows_match(self) -> None:
+        """The strict None state represents a song with no matching tags."""
+        mock_db = MagicMock()
+        mock_db.library.list_tags_for_song.return_value = [
+            {"name": 123, "value": "skip"},
+            {"name": "mood"},
+        ]
+
+        result = get_song_tags(mock_db, f"{'songs'}/1")
+
+        assert result is None
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_returns_none_when_no_rows_at_all(self) -> None:
+        mock_db = MagicMock()
+        mock_db.library.list_tags_for_song.return_value = []
+
+        result = get_song_tags(mock_db, f"{'songs'}/1")
+
+        assert result is None
+
 
 class TestGetFileIdsMatchingTag:
     """Tests for get_file_ids_matching_tag - verifies the batched .get.in_() call path."""

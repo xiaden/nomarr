@@ -55,8 +55,8 @@ class LibraryDict:
     name: str
     root_path: str
     is_enabled: bool
-    created_at: str | int  # Can be ISO string or Unix timestamp (ms)
-    updated_at: str | int  # Can be ISO string or Unix timestamp (ms)
+    created_at: int  # Unix timestamp (ms), matching the persistence row
+    updated_at: int  # Unix timestamp (ms), matching the persistence row
     watch_mode: Literal["off", "event", "poll"] = "off"  # File watching mode (default: off)
     file_write_mode: Literal["none", "minimal", "full"] = "full"  # Tag write mode (default: full)
     library_auto_write: bool = False
@@ -127,7 +127,7 @@ class LibrarySongWithTags:
     artist: str | None
     album: str | None
     title: str | None
-    calibration: str | None
+    calibration_version: str | None
     scanned_at: int | None
     last_tagged_at: int | None
     tagged: bool
@@ -177,7 +177,7 @@ def map_song_with_tags_to_dto(file_dict: dict[str, Any]) -> LibrarySongWithTags:
         artist=file_dict.get("artist"),
         album=file_dict.get("album"),
         title=file_dict.get("title"),
-        calibration=file_dict.get("calibration"),
+        calibration_version=file_dict.get("calibration_hash"),
         scanned_at=file_dict.get("scanned_at"),
         last_tagged_at=file_dict.get("last_tagged_at"),
         tagged=file_dict.get("tagged", False),

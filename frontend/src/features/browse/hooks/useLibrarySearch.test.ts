@@ -58,11 +58,11 @@ describe("useLibrarySearch", () => {
       ...emptyResponse,
       files: [
         {
-          file_id: "new",
+          file_id: 1,
           path: "/new.mp3",
-          library_id: "library",
-          tagged: false,
-          skip_auto_tag: false,
+          library_id: 2,
+          tagged: 0,
+          skip_auto_tag: 0,
           tags: [],
         },
       ],
@@ -86,6 +86,6 @@ describe("useLibrarySearch", () => {
       vi.advanceTimersByTime(500);
       await Promise.resolve();
     });
-    expect(result.current.results?.tracks[0].file_id).toBe("new");
+    expect(result.current.results?.tracks[0].file_id).toBe(1);
   });
 });

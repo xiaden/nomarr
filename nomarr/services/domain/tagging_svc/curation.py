@@ -157,17 +157,21 @@ class TaggingCurationMixin:
         set_song_tags(self.db, int(song_id), name, list(values))
         transition_song_state(self.db, [int(song_id)], STATE_WRITTEN, STATE_NOT_WRITTEN)
         tags = get_song_tags(self.db, int(song_id), name=name)
+        if tags is None:
+            tags_list: list[dict[str, Any]] = []
+        else:
+            tags_list = [
+                {
+                    "key": tag.name,
+                    "value": str(value),
+                    "type": "string",
+                    "is_nomarr": tag.name.startswith("nom:"),
+                }
+                for tag in tags
+                for value in tag.values
+            ]
         return {
             "file_id": song_id,
             "name": name,
-            "tags": [
-                {
-                    "key": tag.key,
-                    "value": str(value),
-                    "type": "string",
-                    "is_nomarr": tag.key.startswith("nom:"),
-                }
-                for tag in tags
-                for value in tag.value
-            ],
+            "tags": tags_list,
         }

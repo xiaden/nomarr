@@ -286,12 +286,13 @@ class TestLibraryPipelineInfo:
     def test_can_create_pipeline_info(self) -> None:
         """Should create pipeline info with all fields."""
         info = LibraryPipelineInfo(
-            library_id="libraries/1",
+            library_id=1,
             name="Rock Library",
             state="write_ready",
             library_auto_write=True,
         )
-        assert info.library_id == "libraries/1"
+        assert info.library_id == 1
+        assert isinstance(info.library_id, int)
         assert info.name == "Rock Library"
         assert info.state == "write_ready"
         assert info.library_auto_write is True
@@ -300,7 +301,7 @@ class TestLibraryPipelineInfo:
     def test_library_auto_write_false(self) -> None:
         """Should handle auto-write disabled."""
         info = LibraryPipelineInfo(
-            library_id="libraries/2",
+            library_id=2,
             name="Jazz Library",
             state="idle",
             library_auto_write=False,
@@ -316,7 +317,7 @@ class TestWorkStatusResult:
     def test_can_create_with_pipeline_libraries(self) -> None:
         """Should create work status with pipeline_libraries populated."""
         pipeline_lib = LibraryPipelineInfo(
-            library_id="libraries/1",
+            library_id=1,
             name="Rock Library",
             state="ml_running",
             library_auto_write=False,
@@ -361,7 +362,7 @@ class TestWorkStatusResult:
     def test_scanning_state_is_busy(self) -> None:
         """Should treat active scanning as busy."""
         scanning = ScanningLibraryInfo(
-            library_id="libraries/1",
+            library_id=1,
             name="Rock Library",
             progress=50,
             total=200,

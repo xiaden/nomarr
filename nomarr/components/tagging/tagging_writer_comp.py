@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
     from pathlib import Path
 
-    from nomarr.helpers.dto.tags_dto import Tags
+    from nomarr.helpers.dataclasses.tags_dataclass import Tags
 
 
 def _to_text_value(value: object) -> str:
@@ -242,13 +242,17 @@ class TagWriter:
             msg = f"Unsupported file type for writing: .{ext}"
             raise RuntimeError(msg)
 
-    def write(self, path: LibraryPath, tags: Tags) -> None:
-        """Write tags directly to file (no safety verification)."""
+    def write(self, path: LibraryPath, tags: Tags | None) -> None:
+        """Write tags directly to file (no safety verification).
+
+        ``tags`` may be ``None`` (the strict empty state): the namespace is
+        cleared and no tags are written.
+        """
         if not path.is_valid():
             msg = f"Cannot write tags to invalid path ({path.status}): {path.absolute} - {path.reason}"
             raise ValueError(msg)
 
-        tags_dict = tags.to_dict()
+        tags_dict = tags.to_dict() if tags is not None else {}
 
         ext = str(path.absolute).lower().rsplit(".", 1)[-1]
         if ext == "mp3":
@@ -264,15 +268,19 @@ class TagWriter:
     def write_safe(
         self,
         path: LibraryPath,
-        tags: Tags,
+        tags: Tags | None,
         library_root: Path,
         expected_mtime_ms: int,
     ) -> SafeWriteResult:
-        """Write tags using atomic copy-modify-verify-replace to prevent corruption."""
+        """Write tags using atomic copy-modify-verify-replace to prevent corruption.
+
+        ``tags`` may be ``None`` (the strict empty state): the namespace is
+        cleared and no tags are written.
+        """
         if not path.is_valid():
             return SafeWriteResult(success=False, error=f"Invalid path: {path.reason}")
 
-        tags_dict = tags.to_dict()
+        tags_dict = tags.to_dict() if tags is not None else {}
 
         def write_fn(temp_path: PathLib) -> None:
             self._write_to_path(str(temp_path), tags_dict)

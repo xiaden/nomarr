@@ -103,6 +103,8 @@ def test_process_file_workflow_packages_resolved_output_streams_and_skips_missin
     persist_vector_mock.assert_called_once()
     assert persist_vector_mock.call_args.args[0] == "bb1"
     assert persist_vector_mock.call_args.args[2] == "suite-hash"
+    assert result.tags is not None
+    assert result.tags.to_dict() == {"tagger_version": ("v-test",)}
     assert result.deferred_writes is not None
     assert result.deferred_writes.backbone_vectors == [
         DeferredBackboneVectorWrite(
@@ -164,3 +166,81 @@ def test_audio_load_crash_preserves_song_record() -> None:
 
     delete_mock.assert_not_called()
     assert result.head_results == {"_crash": {"status": "crash", "reason": "decoder unavailable"}}
+    assert result.tags is None
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+def test_not_found_path_returns_result_with_tags_none() -> None:
+    """A missing file on disk returns a cleanup result with ``tags=None``."""
+    config = ProcessorConfig(
+        models_dir="models",
+        min_duration_s=30,
+        allow_short=False,
+        batch_size=4,
+        namespace="nom",
+        version_tag_key="tagger_version",
+        tagger_version="v-test",
+    )
+    cache = cast("Any", SimpleNamespace(warm=False))
+    db = MagicMock()
+    library_path = MagicMock()
+    library_path.is_valid.return_value = False
+    library_path.status = "not_found"
+    library_path.reason = "file missing on disk"
+    library_path.library_id = "libraries/lib1"
+
+    with (
+        patch("nomarr.workflows.processing.process_file_wf.build_library_path_from_db", return_value=library_path),
+        patch("nomarr.workflows.processing.process_file_wf.bulk_delete_songs") as delete_mock,
+    ):
+        result = process_file_workflow("song.flac", config, cache, db, file_id="1")
+
+    delete_mock.assert_called_once()
+    assert result.tags is None
+    assert result.head_results == {"_not_found": {"status": "not_found", "reason": "file missing on disk"}}
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+def test_all_heads_skipped_returns_tags_none() -> None:
+    """When every head is skipped (e.g. short audio) the result carries ``tags=None``."""
+    config = ProcessorConfig(
+        models_dir="models",
+        min_duration_s=30,
+        allow_short=False,
+        batch_size=4,
+        namespace="nom",
+        version_tag_key="tagger_version",
+        tagger_version="v-test",
+    )
+    head = cast("Any", SimpleNamespace(meta=SimpleNamespace(name="genre-head")))
+    cache = cast(
+        "Any",
+        SimpleNamespace(
+            warm=True,
+            heads={"bb1": [head]},
+            backbones={"bb1": SimpleNamespace(preprocess_params=SimpleNamespace(sample_rate=16000))},
+        ),
+    )
+    db = MagicMock()
+    library_path = MagicMock()
+    library_path.is_valid.return_value = True
+    library_path.absolute = Path("/music/song.flac")
+    library_path.library_id = "libraries/lib1"
+    embed_result = BackboneEmbeddingResult(embeddings=[], errors={"bb1": "audio too short"}, timings={})
+
+    with (
+        patch("nomarr.workflows.processing.process_file_wf.build_library_path_from_db", return_value=library_path),
+        patch("nomarr.workflows.processing.process_file_wf.compute_model_suite_hash", return_value="suite-hash"),
+        patch(
+            "nomarr.workflows.processing.process_file_wf.load_audio_mono",
+            return_value=LoadAudioMonoResult(waveform=MagicMock(), sample_rate=16000, duration=5.0),
+        ),
+        patch("nomarr.workflows.processing.process_file_wf.compute_chromaprint", return_value="fp"),
+        patch("nomarr.workflows.processing.process_file_wf.compute_backbone_embeddings", return_value=embed_result),
+    ):
+        result = process_file_workflow("song.flac", config, cache, db, file_id="1")
+
+    assert result.tags is None
+    assert result.head_results == {"genre-head": {"status": "skipped", "reason": "audio too short"}}

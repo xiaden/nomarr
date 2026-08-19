@@ -77,7 +77,7 @@ class HistogramCalibrationResult:
 class LibraryCalibrationStatus:
     """Calibration status for a single library (derived from file-level tracking)."""
 
-    library_id: str
+    library_id: int
     library_name: str
     total_files: int
     current_count: int  # Files with current calibration

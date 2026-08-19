@@ -13,9 +13,9 @@ The critical gap: **ADR-041 mandates domain dataclasses as the persistence-compo
 
 ## Coverage
 
-**Documented:** PostgreSQL 3-tier persistence architecture, intent facade API surface, TypedDict DTO proliferation problem, ADR-041 compliance gap, V2 domain dataclass state, ArangoDB migration status (no `_id`/`_key`/`_rev` outside persistence), migration infrastructure (Alembic), architecture enforcement tests
+**Documented:** PostgreSQL 3-tier persistence architecture, intent facade API surface, TypedDict DTO proliferation problem (quantitative inventory 2026-08-19: 422 classes, 60 exact-shape / 100 names-only duplicate families), ADR-041 compliance gap, V2 domain dataclass state, ArangoDB migration status (no `_id`/`_key`/`_rev` outside persistence), migration infrastructure (Alembic), architecture enforcement tests
 
-**Not yet documented:** Detailed per-repo method API, individual DTO file contents, V2 dataclass→V1 integration plan, frontend persistence coupling, Navidrome-specific persistence patterns
+**Not yet documented:** Detailed per-repo method API, V2 dataclass→V1 integration plan, frontend persistence coupling, Navidrome-specific persistence patterns
 
 **Last extended:** 2026-08-19
 
@@ -119,6 +119,31 @@ Read-only domain-correctness audit of identity semantics across entities/DTOs/va
 - **Dual-typed fields:** `LibraryDict.created_at: str | int` (library_dto.py:58-59) — DTO cannot decide its own type.
 
 Related logged research: L99 (tag_id contract gap: components pass {name,value}, persistence requires tag_id), L93 (state identity bugs: `ensure_song_state("tagged")` ValueError, remove-all/re-add transitions), L94/L103 (scan row legacy keys files_total/completed_at vs files_found/finished_at), L97 (output id/model_id contract mismatch, ml_output_streams schema).
+
+## Quantitative DTO Proliferation Inventory (2026-08-19, second independent pass)
+
+Read-only AST inventory (scripts `/tmp/dto_inventory/inventory.py`, `pass2.py`; repo untouched). Classifier: `@dataclass` frozen/mutable, TypedDict (incl. total=False), Pydantic v2 BaseModel, NamedTuple, Protocol, orm-model (`mapped_column`), plain. Duplicate families computed on flattened (inherited) normalized field signatures, two passes: exact (name+type) and names-only (type-drift tolerant). See log L111 for full evidence.
+
+**Grand totals (422 classes):** dataclass 159 (21 frozen / 138 mutable), TypedDict 66 (incl. 2 total=False), BaseModel 152, NamedTuple 1, Protocol 3, orm-model 24, plain 17.
+
+**By category:** helpers/dto 155 (7F+104M+43TD+1Proto across 27 modules; `__init__` exports 50 names); helpers/dataclasses 2 (Tag/Tags); persistence/models 24 orm; persistence/repos 0 + persistence/api 0 (row TypedDicts live in `helpers/dto/repo_dto.py`, 14 rows); interfaces/api/types 114 BaseModel; interfaces/api/web+v1 38+1; components 40 (7F+17M+12TD+1NT+3plain); workflows 8 (6M+1TD+1Proto); services 30 (9M+7TD+1Proto+13plain).
+
+**Duplicate families: 60 exact-shape, 100 names-only.** ~40 exact families are the sanctioned helpers/dto ↔ interfaces/types BaseModel `.from_dto()` boundary (mechanical, low risk). HIGH-RISK true duplicates:
+- 5 classes share `{status, message}`: `calibration_types.BackgroundStartResponse`, `config_types.ConfigUpdateResponse`, `web/admin_if.RestartResponse`, `web/library_if.DeleteLibraryResponse` + `ClearLibraryDataResponse`
+- `repo_dto.MetaRow` == `repo_dto.LockRow` (same module, `{key, value}`)
+- `generate_calibration_wf.py:81 CompareCalibrationsResult` == `:95 CalculateHeadDriftResult` (identical, same file, 8 fields)
+- `ml_output_stream_store_comp.StreamWrite`/`StreamRecord` (frozen) == `processing_dto.DeferredOutputStreamWrite` `{output_id, output_index, values}`
+- `descriptor_match_comp.TrackDescriptor` == `navidrome_types.TrackDescriptorResponse` == `navidrome_v1_if.SeedTrackDescriptor` (9-field triplication)
+- `analytics_comp.DominantVibeResult` == `analytics_dto.DominantVibeItem` == `analytics_types.DominantVibeItemResponse`; `CollectionOverviewResult` + `MoodAnalysisResult` defined BOTH in components/ and `analytics_dto.py` (same-name across modules)
+- services: `tagging_svc/config.py ApplyCalibrationResultDict` == `recalibration_dto.ApplyCalibrationResult` == `calibration_types.ApplyCalibrationResultResponse`; `calibration_svc.py:66 HistogramGenerationCombinedStatusDict` == `calibration_types.HistogramGenerationStatusResponse` (11 fields exact)
+- ORM vs rows: all 11 `repo_dto` Row TypedDicts mirror `persistence/models` ORM shapes (`SongRow`↔`Song` 17 fields) — by-design dual representation, Mapped[] vs plain types
+- `find_similar_tracks_wf.SimilarTrackResult` == `navidrome_v1_if.SongDescriptor` (10 fields); `tag_curation_dto` 8 TypedDicts ↔ `tag_curation_if` 16 inline BaseModels (web layer defines models inline instead of types/ package)
+
+**Tag family current state (dirty tree, migration in flight):** `helpers/dto/tags_dto.py` is now a re-export shim of `helpers/dataclasses/tags_dataclass.py` (0 class defs); `components/library/songs/song_class.py` deleted in tree; `v2/nomarr/helpers/dataclasses/tags_dataclass.py` still holds a duplicate Tag/Tags (plus song/embedding/library/classifier dataclasses). Live tree = 2 defs + 1 v2 scaffold (was 4 pre-migration). Untracked `.opencode/skills/tag-dataclass-migration/` holds the migration notes.
+
+**Ownership boundary violations** (nomarr-layers: DTOs belong in helpers/dto): components define 40 shape classes (incl. `track_matcher_comp.LibraryTrack`, `descriptor_match_comp.TrackDescriptor`, analytics results); workflows 8; services 30 (config dataclasses + status TypedDicts). helpers/dto stays pure (no nomarr.* imports) — violations are LOCAL definitions, not imports.
+
+**Recommended first remediation slice:** (1) `{status, message}` 5-class family → one shared response model; (2) merge `CompareCalibrationsResult`/`CalculateHeadDriftResult`; (3) `StreamWrite`/`StreamRecord` → `processing_dto`; (4) component analytics results → `analytics_dto` canonical, delete component TypedDicts; (5) merge `repo_dto.MetaRow`/`LockRow`; (6) move `tag_curation_if` inline models into types/; (7) delete v2 tag scaffold after migration. Do NOT consolidate the sanctioned dto↔types `.from_dto()` boundary.
 
 ## Sources
 

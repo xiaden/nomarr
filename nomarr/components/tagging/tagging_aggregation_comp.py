@@ -10,9 +10,9 @@ import numpy as np
 
 from nomarr.components.ml.onnx.ml_known_models_comp import OPPONENT_MAP
 from nomarr.components.tagging.mood_labels_comp import MOOD_MAPPING
+from nomarr.helpers.dataclasses.tags_dataclass import Tags
 from nomarr.helpers.dto.ml_dto import HeadOutput
 from nomarr.helpers.dto.tagging_dto import BuildTierTermSetsResult
-from nomarr.helpers.dto.tags_dto import Tags
 
 if TYPE_CHECKING:
     from nomarr.helpers.dto.ml_head_dto import HeadInfo
@@ -335,12 +335,15 @@ def aggregate_mood_tiers(
     return _make_inclusive_mood_tags(tier_sets.strict_terms, tier_sets.regular_terms, tier_sets.loose_terms)
 
 
-def aggregate_mood_tags(head_outputs: list[HeadOutput]) -> Tags:
-    """Aggregate HeadOutput objects into a ``Tags`` DTO of mood-tier tags."""
+def aggregate_mood_tags(head_outputs: list[HeadOutput]) -> Tags | None:
+    """Aggregate HeadOutput objects into a ``Tags`` DTO of mood-tier tags.
+
+    Returns ``None`` when no mood tags are generated.
+    """
     mood_tags_dict = aggregate_mood_tiers(head_outputs)
     if not mood_tags_dict:
         logger.debug("[tagging] No mood tags generated")
-        return Tags(items=())
+        return None
     logger.debug("[tagging] Generated %d mood tags", len(mood_tags_dict))
     return Tags.from_dict(mood_tags_dict)
 

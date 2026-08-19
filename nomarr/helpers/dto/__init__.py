@@ -33,6 +33,7 @@ Dataclass Classification:
 
 from __future__ import annotations
 
+from nomarr.helpers.dataclasses.tags_dataclass import Tag, Tags, TagValue
 from nomarr.helpers.dto.analytics_dto import (
     ArtistTagProfile,
     MoodDistributionData,
@@ -93,7 +94,6 @@ from nomarr.helpers.dto.tag_curation_dto import (
     TagSongItem,
     TagValueItem,
 )
-from nomarr.helpers.dto.tags_dto import Tag, Tags, TagValue
 from nomarr.helpers.dto.vector_config_dto import VectorConfigResult
 
 __all__ = [

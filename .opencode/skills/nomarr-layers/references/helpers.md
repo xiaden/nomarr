@@ -44,8 +44,8 @@ import yaml  # Third-party OK
 
 **DTO cross-imports are allowed (one-way only):**
 ```python
-# ✅ Allowed - sibling DTO imports within helpers/dto/
-from nomarr.helpers.dto.tags_dto import Tags  # OK in processing_dto.py
+# ✅ Allowed - helpers-internal sibling cross-imports
+from nomarr.helpers.dataclasses.tags_dataclass import Tags  # OK in processing_dto.py
 from nomarr.helpers.dto.path_dto import LibraryPath  # OK in ml_dto.py
 ```
 

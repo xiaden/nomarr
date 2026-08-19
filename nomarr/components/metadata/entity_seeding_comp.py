@@ -25,7 +25,7 @@ def _extract_entity_tags(metadata: dict[str, Any]) -> dict[str, Any]:
     return {k: metadata.get(k) for k in _ENTITY_TAG_KEYS}
 
 
-def _build_song_tag_entries(song_id: str, tags: dict[str, Any]) -> list[dict[str, Any]]:
+def _build_song_tag_entries(song_id: int, tags: dict[str, Any]) -> list[dict[str, Any]]:
     """Build song-tag entries from raw entity tags.
 
     Returns a list with zero or one entry.  Each entry has ``"song_id"``
@@ -104,7 +104,7 @@ def extract_entity_tag_mapping(metadata: dict[str, Any]) -> dict[str, list[str |
 
     """
     entity_tags = _extract_entity_tags(metadata)
-    entries = _build_song_tag_entries("0", entity_tags)
+    entries = _build_song_tag_entries(0, entity_tags)
     if not entries:
         return {}
     mapping: dict[str, list[str | int | float]] = {}

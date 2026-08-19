@@ -44,7 +44,7 @@ class CommitResult(TypedDict):
 
 
 class TagSongItem(TypedDict):
-    file_id: str
+    file_id: int
     title: str
     artist: str
     album: str

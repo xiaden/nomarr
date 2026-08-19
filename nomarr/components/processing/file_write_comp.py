@@ -17,7 +17,7 @@ from nomarr.components.tagging.tag_query_comp import get_song_tags
 from nomarr.components.tagging.tag_write_comp import set_song_tags, set_song_tags_batch
 
 if TYPE_CHECKING:
-    from nomarr.helpers.dto.tags_dto import Tags
+    from nomarr.helpers.dataclasses.tags_dataclass import Tags
     from nomarr.persistence.db import Database
 
 
@@ -70,11 +70,11 @@ def resolve_library_root(
 def get_nomarr_tags(
     db: Database,
     file_id: int,
-) -> Tags:
+) -> Tags | None:
     """Fetch Nomarr-namespaced tags for *file_id*.
 
-    Equivalent to calling the component-owned tag query helper with
-    ``nomarr_only=True``.
+    Returns ``None`` when the file has no nomarr tags. Equivalent to calling the
+    component-owned tag query helper with ``nomarr_only=True``.
     """
     return get_song_tags(db, file_id, nomarr_only=True)
 
@@ -88,19 +88,21 @@ _MOOD_TIER_NAMES = ("nom:mood-strict", "nom:mood-regular", "nom:mood-loose")
 def save_mood_tags(
     db: Database,
     file_id: int,
-    mood_tags: Tags,
+    mood_tags: Tags | None,
 ) -> int:
     """Write mood-* tags to the database for a file.
 
     Always writes all three mood tier keys (mood-strict, mood-regular,
     mood-loose). Tiers absent from *mood_tags* are explicitly cleared with an
     empty value list so that previously-written tiers do not persist when the
-    tier count drops after recalibration.
+tier count drops after recalibration. ``None`` is
+the strict representation of "no tags to write" and clears all three tiers.
 
     Args:
         db: Database instance
         file_id: File ID (integer)
-        mood_tags: Tags DTO containing mood tags to write
+        mood_tags: Tags DTO containing mood tags to write, or ``None`` when
+            no mood tags were produced.
 
     Returns:
         Number of tiers written with non-empty values
@@ -108,9 +110,10 @@ def save_mood_tags(
     """
     # Build lookup: normalised name -> values
     written: dict[str, list] = {}
-    for tag in mood_tags:
-        nomarr_name = f"nom:{tag.key}" if not tag.key.startswith("nom:") else tag.key
-        written[nomarr_name] = tag.value
+    if mood_tags is not None:
+        for tag in mood_tags:
+            nomarr_name = f"nom:{tag.name}" if not tag.name.startswith("nom:") else tag.name
+            written[nomarr_name] = list(tag.values)
 
     count = 0
     for name in _MOOD_TIER_NAMES:
@@ -123,7 +126,7 @@ def save_mood_tags(
 
 def save_mood_tags_batch(
     db: Database,
-    items: list[tuple[int, Tags]],
+    items: list[tuple[int, Tags | None]],
 ) -> int:
     """Write mood tags for multiple files via constructor-backed verbs.
 
@@ -135,7 +138,8 @@ def save_mood_tags_batch(
 
     Args:
         db: Database instance
-        items: List of (file_id, mood_tags) tuples
+        items: List of (file_id, mood_tags) tuples; ``mood_tags`` is ``None``
+            when no mood tags were produced (all three tiers get cleared).
 
     Returns:
         Number of (file_id, name) pairs written
@@ -148,9 +152,10 @@ def save_mood_tags_batch(
     for file_id, mood_tags in items:
         # Build a lookup for this file's non-empty tiers
         written: dict[str, list] = {}
-        for tag in mood_tags:
-            nomarr_name = f"nom:{tag.key}" if not tag.key.startswith("nom:") else tag.key
-            written[nomarr_name] = tag.value
+        if mood_tags is not None:
+            for tag in mood_tags:
+                nomarr_name = f"nom:{tag.name}" if not tag.name.startswith("nom:") else tag.name
+                written[nomarr_name] = list(tag.values)
         # Always emit all three tiers; absent ones get an empty list (→ delete)
         entries.extend(
             {"song_id": int(file_id), "name": name, "values": written.get(name, [])} for name in _MOOD_TIER_NAMES

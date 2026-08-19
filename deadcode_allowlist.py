@@ -1006,10 +1006,6 @@ class HealthComp:
     pass  # Health check component class
 
 
-class Song:
-    pass  # Song domain class
-
-
 class _LibrarySnapshot:
     pass  # Internal snapshot class
 

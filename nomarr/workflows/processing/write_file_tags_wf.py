@@ -11,7 +11,7 @@ ARCHITECTURE:
 - Uses existing TagWriter with atomic safe writes
 
 MODES:
-- "none": Remove all essentia:* tags (call TagWriter with tags={})
+- "none": Remove all nom-style namespaced tags (call TagWriter.write_safe(None))
 - "minimal": Only mood-tier tags (mood-strict, mood-regular, mood-loose)
 - "full": All available tags from DB
 """
@@ -34,7 +34,7 @@ from nomarr.components.processing.file_write_comp import (
 )
 from nomarr.components.tagging.tagging_writer_comp import TagWriter
 from nomarr.helpers.constants.file_states import STATE_TAGS_CURRENT, STATE_TAGS_NOT_FRESH
-from nomarr.helpers.dto.tags_dto import Tags
+from nomarr.helpers.dataclasses.tags_dataclass import Tags
 
 if TYPE_CHECKING:
     from nomarr.helpers.dto.path_dto import LibraryPath
@@ -55,33 +55,45 @@ class WriteResult:
 
 
 def _filter_tags_for_mode(
-    db_tags: Tags,
+    db_tags: Tags | None,
     target_mode: str,
     has_calibration: bool,
-) -> Tags:
+) -> Tags | None:
     """Filter tags based on target mode and calibration state.
 
     Args:
-        db_tags: All tags from database (Tags DTO)
+        db_tags: All tags from database (Tags DTO), or ``None`` when no nomarr
+            tags exist for the file.
         target_mode: "none", "minimal", or "full"
         has_calibration: Whether calibration exists
 
     Returns:
-        Filtered Tags DTO for file writing
+        Filtered ``Tags`` for file writing, or ``None`` when nothing should be
+        written. ``None`` is the strict representation of "clear/remove all
+        tags" — an empty ``Tags`` collection is invalid in the strict model,
+        so the empty result is expressed as ``None`` instead.
 
     """
+    # "none" mode clears the namespace entirely.
+    if target_mode == "none":
+        return None
+
+    # No nomarr tags in DB -> nothing to write; clear to stay consistent.
+    if db_tags is None:
+        return None
+
     # Filter out mood tags if uncalibrated (applies to ALL modes)
     if not has_calibration:
-        filtered_items = tuple(tag for tag in db_tags.items if not tag.key.startswith("mood-"))
+        filtered_items = tuple(tag for tag in db_tags.items if not tag.name.startswith("mood-"))
     else:
         filtered_items = db_tags.items  # Already a tuple
 
-    if target_mode == "none":
-        return Tags(items=())  # Clears namespace
-
     if target_mode == "minimal":
         # Only mood-tier tags
-        return Tags(items=tuple(tag for tag in filtered_items if tag.key.startswith("mood-")))
+        filtered_items = tuple(tag for tag in filtered_items if tag.name.startswith("mood-"))
+
+    if not filtered_items:
+        return None
 
     # "full" mode - return all tags (already mood-filtered if uncalibrated)
     return Tags(items=filtered_items)
@@ -210,12 +222,15 @@ def write_file_tags_workflow(
                 error=f"No valid modified_time in file_doc: {expected_mtime_ms}",
             )
 
-        # Get tags from database (nomarr tags only) - returns Tags DTO
+        # Get tags from database (nomarr tags only) - returns Tags | None
         db_tags = get_nomarr_tags(db, file_id)
 
-        # Filter tags for target mode
+        # Filter tags for target mode. ``None`` means "clear/remove all tags"
+        # and is passed to the writer so it still clears the namespace.
         tags_to_write = _filter_tags_for_mode(db_tags, target_mode, has_calibration)
-        tags_filtered = len(db_tags) - len(tags_to_write)
+        tags_filtered = (len(db_tags) if db_tags is not None else 0) - (
+            len(tags_to_write) if tags_to_write is not None else 0
+        )
 
         # Create tag writer with overwrite=True to clear namespace first
         tag_writer = TagWriter(overwrite=True, namespace=namespace)
@@ -248,13 +263,13 @@ def write_file_tags_workflow(
         set_file_written(db, file_key, worker_id)
 
         logger.debug(
-            f"[write_file_tags] Wrote {len(tags_to_write)} tags to {library_path.relative} "
+            f"[write_file_tags] Wrote {len(tags_to_write) if tags_to_write is not None else 0} tags to {library_path.relative} "
             f"(mode={target_mode}, filtered={tags_filtered})",
         )
 
         return WriteResult(
             file_key=file_key,
-            tags_written=len(tags_to_write),
+            tags_written=len(tags_to_write) if tags_to_write is not None else 0,
             tags_filtered=tags_filtered,
             success=True,
         )

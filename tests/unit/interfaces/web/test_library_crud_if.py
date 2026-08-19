@@ -176,6 +176,8 @@ class TestLibraryCrudEndpoints:
         assert response.json()["library_id"] == 1
         assert response.json()["name"] == "Test Library"
         mock_library_service.get_library.assert_called_once_with(1)
+        # HTTP path ID "1" must be decoded to int at the interface boundary.
+        assert isinstance(mock_library_service.get_library.call_args.args[0], int)
 
     def test_get_library_returns_404_when_missing(
         self,

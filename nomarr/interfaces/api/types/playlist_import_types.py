@@ -83,7 +83,7 @@ class MatchedFileInfoResponse(BaseModel):
     """Metadata about a matched library file."""
 
     path: str = Field(..., description="File path in library")
-    file_id: str = Field(..., description="Library file document ID")
+    file_id: int = Field(..., description="Library file primary key (integer)")
     title: str = Field(..., description="Track title from file metadata")
     artist: str = Field(..., description="Artist from file metadata")
     album: str | None = Field(None, description="Album from file metadata")

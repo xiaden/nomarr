@@ -111,7 +111,7 @@ def _execute_deferred_writes(db: Database, writes: DeferredFileWrites, worker_id
         prefixed_nom_tags = {
             (f"nom:{name}" if not name.startswith("nom:") else name): values for name, values in parsed_nom_tags.items()
         }
-        save_song_tags(db, song_id_str, prefixed_nom_tags)
+        save_song_tags(db, song_id, prefixed_nom_tags)
         if writes.chromaprint:
             set_chromaprint(db, song_id, writes.chromaprint)
         if writes.raw_output_streams or writes.backbone_vectors:

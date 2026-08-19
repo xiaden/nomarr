@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 import mutagen
 
-from nomarr.helpers.dto.tags_dto import Tag, Tags
+from nomarr.helpers.dataclasses.tags_dataclass import Tag, Tags
 
 if TYPE_CHECKING:
     from nomarr.helpers.dto.path_dto import LibraryPath
@@ -25,7 +25,9 @@ def read_nomarr_namespace(path: LibraryPath, namespace: str = DEFAULT_NAMESPACE)
         if not path.is_valid():
             return set()
         tags = read_tags_from_file(path, namespace)
-        return {tag.key for tag in tags}
+        if tags is None:
+            return set()
+        return {tag.name for tag in tags}
     except (OSError, ValueError, RuntimeError):
         return set()
 
@@ -48,8 +50,11 @@ def infer_write_mode_from_tags(tag_names: set[str]) -> str | None:
     return None
 
 
-def read_tags_from_file(path: LibraryPath, namespace: str) -> Tags:
-    """Read namespaced tags from an audio file."""
+def read_tags_from_file(path: LibraryPath, namespace: str) -> Tags | None:
+    """Read namespaced tags from an audio file.
+
+    Returns ``None`` when the file contains no namespaced tags.
+    """
     if not path.is_valid():
         msg = f"Cannot read tags from invalid path ({path.status}): {path.absolute} - {path.reason}"
         raise ValueError(msg)
@@ -83,7 +88,12 @@ def read_tags_from_file(path: LibraryPath, namespace: str) -> Tags:
             msg = f"Unsupported audio format: {ext}"
             raise ValueError(msg)
 
-        items = tuple(Tag(key=k, value=tuple(v if isinstance(v, list) else [v])) for k, v in tag_dict.items())
+        if not tag_dict:
+            return None
+
+        items = tuple(
+            Tag(name=k, values=tuple(v if isinstance(v, list) else [v])) for k, v in tag_dict.items()
+        )
         return Tags(items=items)
 
     except (OSError, ValueError, mutagen.MutagenError) as e:

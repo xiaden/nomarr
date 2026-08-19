@@ -9,8 +9,8 @@ from nomarr.components.tagging.tag_query_comp import _narrow_tag_list
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
+    from nomarr.helpers.dataclasses.tags_dataclass import TagValue
     from nomarr.helpers.dto.tag_curation_dto import RelinkResult
-    from nomarr.helpers.dto.tags_dto import TagValue
     from nomarr.persistence.db import Database
 
 

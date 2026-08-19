@@ -20,7 +20,7 @@ class TestReconcileLibraryPathsWorkflow:
         with pytest.raises(ValueError, match="Library root not configured"):
             reconcile_library_paths_workflow(
                 db=MagicMock(),
-                library_id="libraries/1",
+                library_id=1,
                 library_root=library_root,
             )
 
@@ -31,7 +31,7 @@ class TestReconcileLibraryPathsWorkflow:
         with pytest.raises(ValueError, match="Invalid policy 'bad_policy'"):
             reconcile_library_paths_workflow(
                 db=MagicMock(),
-                library_id="libraries/1",
+                library_id=1,
                 library_root="/music",
                 policy="bad_policy",  # type: ignore[arg-type]
             )
@@ -57,7 +57,7 @@ class TestReconcileLibraryPathsWorkflow:
         ) as mock_reconcile_library_paths:
             result = reconcile_library_paths_workflow(
                 db=mock_db,
-                library_id="libraries/1",
+                library_id=1,
                 library_root="/music",
                 policy="delete_invalid",
                 batch_size=250,
@@ -66,7 +66,7 @@ class TestReconcileLibraryPathsWorkflow:
         assert result is expected_result
         mock_reconcile_library_paths.assert_called_once_with(
             db=mock_db,
-            library_id="libraries/1",
+            library_id=1,
             policy="delete_invalid",
             batch_size=250,
         )

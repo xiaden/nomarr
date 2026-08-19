@@ -64,7 +64,7 @@ def delete_library_song(db: Database, song_id: int | str, library_id: int | None
     try:
         int(song_id)
         # It's a numeric ID, use it directly
-        db.library.remove_song(song_id)
+        db.library.remove_song(int(song_id))
     except ValueError as err:
         # Not an integer, treat as path
         if library_id is None:

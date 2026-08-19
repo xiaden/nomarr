@@ -46,7 +46,7 @@ class PlaylistImportService:
         self,
         playlist_url: str,
         *,
-        library_id: str | None = None,
+        library_id: int | None = None,
     ) -> PlaylistConversionResult:
         """Convert a streaming playlist URL to local M3U playlist.
 
@@ -71,7 +71,7 @@ class PlaylistImportService:
         return convert_playlist_workflow(
             self._db,
             playlist_url,
-            library_id=int(library_id) if library_id is not None else None,
+            library_id=library_id,
             spotify_client_id=self._config_service.get("spotify_client_id"),
             spotify_client_secret=self._config_service.get("spotify_client_secret"),
         )

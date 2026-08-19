@@ -47,7 +47,7 @@ def mark_song_processed(db: Database, song_id: int) -> None:
 
 def save_song_tags(
     db: Database,
-    song_id: str,
+    song_id: int,
     parsed_tags: dict[str, list[Any]],
 ) -> None:
     """Write parsed tags for a song.
@@ -57,7 +57,7 @@ def save_song_tags(
 
     Args:
         db: Database instance
-        song_id: Song row ID (integer as string)
+        song_id: Song row ID (integer)
         parsed_tags: Mapping of tag name → list of tag values
 
     """

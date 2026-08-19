@@ -32,7 +32,7 @@ class LibraryTrack:
     Contains normalized versions of metadata for efficient comparison.
     """
 
-    file_id: str
+    file_id: int
     file_path: str
     title: str
     artist: str
@@ -49,7 +49,7 @@ class LibraryTrack:
         Expected row keys: id, path, title, artist, album, isrc
         """
         return cls(
-            file_id=str(row.get("id") or ""),
+            file_id=row["id"],
             file_path=row.get("path", ""),
             title=row.get("title", ""),
             artist=row.get("artist", ""),

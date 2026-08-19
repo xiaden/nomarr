@@ -5,8 +5,8 @@ from __future__ import annotations
 import contextlib
 from typing import TYPE_CHECKING, Any
 
+from nomarr.helpers.dataclasses.tags_dataclass import Tags, TagValue
 from nomarr.helpers.dto.tag_curation_dto import TagSongItem
-from nomarr.helpers.dto.tags_dto import Tags, TagValue
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -150,8 +150,8 @@ def count_tags_by_name(db: Database, name: str | None = None, search: str | None
     return db.library.count_tags_filtered(name=name, search=search)
 
 
-def get_song_tags(db: Database, song_id: int, name: str | None = None, nomarr_only: bool = False) -> Tags:
-    """Return tags for one song as a ``Tags`` DTO."""
+def get_song_tags(db: Database, song_id: int, name: str | None = None, nomarr_only: bool = False) -> Tags | None:
+    """Return tags for one song as a ``Tags`` DTO, or ``None`` if no tags match."""
     tag_docs = _narrow_tag_list(db.library.list_tags_for_song(song_id))
     rows: list[dict[str, Any]] = []
     for tag in tag_docs:
@@ -163,6 +163,8 @@ def get_song_tags(db: Database, song_id: int, name: str | None = None, nomarr_on
         if nomarr_only and tag.get("namespace") != "nom":
             continue
         rows.append({"name": tag_name, "value": tag["value"]})
+    if not rows:
+        return None
     return Tags.from_db_rows(rows)
 
 
@@ -372,7 +374,7 @@ def get_tag_songs_with_metadata(db: Database, tag_id: int, limit: int = 50, offs
         tag_docs = _narrow_tag_list(db.library.list_tags_for_song(song_id))
         result.append(
             TagSongItem(
-                file_id=str(song_id),
+                file_id=song_id,
                 title=_first_name_value(tag_docs, "title"),
                 artist=_first_name_value(tag_docs, "artist"),
                 album=_first_name_value(tag_docs, "album"),

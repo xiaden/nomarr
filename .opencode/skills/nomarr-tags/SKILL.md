@@ -62,3 +62,25 @@ Two-tier architecture: PostgreSQL is the source of truth (relational tables); au
 - `set_song_tags_batch` is full-replace per `(song, tag_name)` — old edges for that name are deleted first.
 - `nom:mood-*` values are stored as JSON-encoded lists in the `value` field, not plain strings. Parsing is handled by `tag_parsing_comp.py`.
 - Mood file writes are blocked when `has_calibration=False` regardless of mode — this is silent to the user.
+
+---
+
+## Tag/Tags API Duplication Migration Map (researched 2026-08-19, log L109)
+
+Three `Tag`/`Tags` dataclasses exist. Only one is live.
+
+### LIVE: `tags_dto` — `nomarr/helpers/dto/tags_dto.py`
+- `Tag{key: str, value: tuple[TagValue, ...]}` frozen; `Tags` sorted by key; `from_dict`, `from_db_rows`, `to_dict`, `to_db_rows`, `has_key`, `get_values`→`()` when missing, `has_value`. Docstring: canonical `TagValue = str|int|float|bool` lives here.
+- **12 production importers**: `process_file_wf.py:36` (Tags.from_dict), `file_write_comp.py:20` (TYPE_CHECKING; get_nomarr_tags/save_mood_tags return/accept Tags), `write_file_tags_wf.py:37` (tags.items, tag.key access), `write_calibrated_tags_wf.py:67` (TYPE_CHECKING), `tag_parsing_comp.py:14` (TagValue), `tag_query_comp.py:9` (Tags.from_db_rows), `tag_write_comp.py:13` (TagValue), `tagging_aggregation_comp.py:15` (Tags.from_dict/Tags(items=())), `tagging_reader_comp.py:11` (Tag(key=…,value=…) + {tag.key} set), `tagging_writer_comp.py:25` (tags.to_dict() in TagWriter), `processing_dto.py:17` (TYPE_CHECKING), `helpers/dto/__init__.py:96` (re-export).
+- **Indirect Tag-object consumers**: `metadata_svc.py:176,219` (`for value in tag.value`), `tagging_svc/curation.py:165-171` (`tag.key`, `tag.key.startswith("nom:")`, `tag.value`), `file_tags_io_wf.py:42` (`tags.to_dict()`).
+- **Tests**: direct imports in `test_file_write_comp.py`, `test_apply_calibration_wf.py`, `test_write_calibrated_tags_wf.py`, `test_write_file_tags_wf.py` (constructors `Tag(key=…, value=(…,))`, `Tags(items=…)`); `.to_dict()` asserts in `test_tag_query_comp.py:300-301,403-437`. Gotcha: `test_write_file_tags_wf.py:18` builds `Tag(key=k, value=None)` — violates declared tuple type.
+
+### DEAD: `tags_dataclass` — `nomarr/helpers/dataclasses/tags_dataclass.py`
+- `Tag{name, values: tuple}` frozen+slots; `Tags` canonicalizes (merges dup names, dedupes values, casefold-sorts), `has_name`, `get_values` raises KeyError. Zero importers anywhere — only re-exported by `helpers/dataclasses/__init__.py:1`. Behavior differs from tags_dto (non-empty enforced, KeyError vs `()`, `.name` vs `.key`) — deleting is safe; if ever revived, semantics must be reconciled. `nomarr/helpers/dataclasses.py` (empty module) coexists with the `dataclasses/` package; package shadows the module.
+
+### DEAD: `song_class` — `nomarr/components/library/songs/song_class.py`
+- `Tag{name: str, value: str}` scalar mutable; `Vector`; `Song`. Zero importers (module docstring: "zero consumers in active runtime code", deletion candidate per Plan F). Referenced only by `deadcode_allowlist.py:1009-1010,746-747` and `.opencode/skills/library-files-data-flow/SKILL.md`. No literal `TagV2`/`TagsV2` exists anywhere; "v2" in `__version__.py` = DB schema.
+
+### NOT tags_dto (dict-row / other DTO shapes — separate concerns)
+- `tagging_svc/query.py:210-218` + `library_svc/songs.py` read `tag["type"]` from dict rows — KeyError conflation issue (log L105), not this migration.
+- `library_types.py:313,394` (`FileTag` DTO `.key/.value`), `analytics_comp.py:248,251` + `analytics_if.py:105-106` + `analytics_types.py:145-146` (`TagSpec`), `filter_engine_wf.py:160-175` (`TagCondition`) — different classes with same attribute names; do not touch when migrating tags_dto.

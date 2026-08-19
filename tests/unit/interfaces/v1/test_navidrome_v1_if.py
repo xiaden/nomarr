@@ -256,6 +256,10 @@ class TestGeneratePlaylistsEndpoint:
             [f"{'songs'}/track-1"],
         )
         mock_navidrome_service.resolve_files_to_nd.assert_not_called()
+        # Request-body file_id (int on the wire) must arrive at the service as int.
+        top_plays = mock_navidrome_service.generate_playlists.call_args.kwargs["top_plays"]
+        assert top_plays[0]["file_id"] == 1
+        assert isinstance(top_plays[0]["file_id"], int)
 
     def test_misconfigured_status_on_result_returns_422(
         self,
