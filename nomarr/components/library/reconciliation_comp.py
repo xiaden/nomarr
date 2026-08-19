@@ -44,12 +44,17 @@ def claim_files_for_reconciliation(
 
     """
     stale_ids = get_stale_song_ids(db, library_id=library_id)
-    if not stale_ids:
+    library_song_ids = {
+        song["id"] for song in db.library.list_songs(library_id) if isinstance(song, dict) and "id" in song
+    }
+    pending_ids = [song_id for song_id in db.app.list_songs_in_state(STATE_NOT_WRITTEN) if song_id in library_song_ids]
+    reconcile_ids = list(dict.fromkeys([*stale_ids, *pending_ids]))
+    if not reconcile_ids:
         return []
 
     candidates = [
         candidate
-        for file_id in stale_ids
+        for file_id in reconcile_ids
         if (candidate := cast("dict[str, Any] | None", db.library.get_song(file_id))) is not None
     ]
 
@@ -60,7 +65,6 @@ def claim_files_for_reconciliation(
             break
 
         file_id = str(candidate["id"])
-        str(candidate["id"])
         payload = {
             "file_id": file_id,
             "worker_id": worker_id,
@@ -81,7 +85,8 @@ def set_file_written(db: Database, file_key: str, worker_id: str) -> None:
     """
     file_id = int(file_key)
     transition_song_state(db, [file_id], STATE_NOT_WRITTEN, STATE_WRITTEN)
-    transition_song_state(db, [file_id], STATE_TAGS_NOT_FRESH, STATE_TAGS_CURRENT)
+    if STATE_TAGS_NOT_FRESH in db.app.get_song_states(file_id):
+        transition_song_state(db, [file_id], STATE_TAGS_NOT_FRESH, STATE_TAGS_CURRENT)
     db.app.release_claim(worker_id, file_id, "reconcile")
 
 
@@ -95,5 +100,10 @@ def release_claim(db: Database, file_key: str, worker_id: str) -> None:
 
 
 def count_files_needing_reconciliation(db: Database, library_id: int) -> int:
-    """Count files that are still in the ``tags_not_fresh`` state."""
-    return len(get_stale_song_ids(db, library_id=library_id))
+    """Count files whose database tag projection needs writing to disk."""
+    stale_ids = get_stale_song_ids(db, library_id=library_id)
+    library_song_ids = {
+        song["id"] for song in db.library.list_songs(library_id) if isinstance(song, dict) and "id" in song
+    }
+    pending_ids = [song_id for song_id in db.app.list_songs_in_state(STATE_NOT_WRITTEN) if song_id in library_song_ids]
+    return len(set(stale_ids).union(pending_ids))

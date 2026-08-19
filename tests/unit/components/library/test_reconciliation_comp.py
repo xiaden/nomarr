@@ -50,6 +50,7 @@ class TestClaimFilesForReconciliation:
                 "nomarr.components.library.reconciliation_comp.get_stale_song_ids",
                 return_value=[123],
             ),
+            patch.object(mock_db.app, "list_songs_in_state", return_value=[]),
             patch(
                 "nomarr.components.library.reconciliation_comp.now_ms",
                 return_value=Milliseconds(10_000),
@@ -75,6 +76,24 @@ class TestClaimFilesForReconciliation:
 
     @pytest.mark.unit
     @pytest.mark.mocked
+    def test_claims_pending_tag_write_when_tags_are_fresh(self) -> None:
+        mock_db = MagicMock()
+        candidate = {"id": 123}
+        mock_db.library.list_songs.return_value = [candidate]
+        mock_db.library.get_song.return_value = candidate
+
+        with (
+            patch("nomarr.components.library.reconciliation_comp.get_stale_song_ids", return_value=[]),
+            patch.object(mock_db.app, "list_songs_in_state", return_value=[123]),
+            patch("nomarr.components.library.reconciliation_comp.now_ms", return_value=Milliseconds(10_000)),
+            patch("nomarr.components.library.reconciliation_comp.try_insert_or_steal_claim", return_value=True),
+        ):
+            result = claim_files_for_reconciliation(mock_db, 1, "workers/test")
+
+        assert result == [candidate]
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
     def test_respects_batch_size_limit(self) -> None:
         mock_db = MagicMock()
         stale_ids = [100, 101, 102, 103, 104]
@@ -86,6 +105,7 @@ class TestClaimFilesForReconciliation:
                 "nomarr.components.library.reconciliation_comp.get_stale_song_ids",
                 return_value=stale_ids,
             ),
+            patch.object(mock_db.app, "list_songs_in_state", return_value=[]),
             patch(
                 "nomarr.components.library.reconciliation_comp.now_ms",
                 return_value=Milliseconds(20_000),
@@ -208,6 +228,7 @@ class TestSetFileWritten:
     def test_normalizes_bare_key_to_full_id(self) -> None:
         mock_db = MagicMock()
 
+        mock_db.app.get_song_states.return_value = {STATE_TAGS_NOT_FRESH}
         with patch("nomarr.components.library.reconciliation_comp.transition_song_state") as mock_transition:
             set_file_written(mock_db, 123, "worker:reconcile:0")
 
@@ -236,6 +257,7 @@ class TestSetFileWritten:
     @pytest.mark.mocked
     def test_transitions_tag_state_edges(self) -> None:
         mock_db = MagicMock()
+        mock_db.app.get_song_states.return_value = {STATE_TAGS_NOT_FRESH}
 
         with patch("nomarr.components.library.reconciliation_comp.transition_song_state") as mock_transition:
             set_file_written(mock_db, 123, "worker:reconcile:0")
@@ -304,7 +326,7 @@ class TestCountFilesNeedingReconciliation:
                 101,
                 102,
             ],
-        ):
+        ), patch.object(mock_db.app, "list_songs_in_state", return_value=[]):
             result = count_files_needing_reconciliation(mock_db, 1)
 
         assert result == 3
@@ -317,7 +339,21 @@ class TestCountFilesNeedingReconciliation:
         with patch(
             "nomarr.components.library.reconciliation_comp.get_stale_song_ids",
             return_value=[],
-        ):
+        ), patch.object(mock_db.app, "list_songs_in_state", return_value=[]):
             result = count_files_needing_reconciliation(mock_db, 1)
 
         assert result == 0
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_counts_pending_tag_writes_when_tags_are_fresh(self) -> None:
+        mock_db = MagicMock()
+        mock_db.library.list_songs.return_value = [{"id": 100}, {"id": 200}]
+
+        with (
+            patch("nomarr.components.library.reconciliation_comp.get_stale_song_ids", return_value=[]),
+            patch.object(mock_db.app, "list_songs_in_state", return_value=[100]),
+        ):
+            result = count_files_needing_reconciliation(mock_db, 1)
+
+        assert result == 1
