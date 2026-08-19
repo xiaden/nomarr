@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from nomarr.helpers import ManagedTask
+from nomarr.helpers.dataclasses.app_dataclasses import ConfigOption
 from nomarr.helpers.dto.library_dto import WriteTagsResult
 from nomarr.services.domain.tagging_svc import TaggingService, TaggingServiceConfig
 
@@ -214,7 +215,9 @@ class TestWriteTagsToFiles:
     def test_write_tags_to_files_happy_path(self) -> None:
         """Successful writes should increment processed and leave failed at zero."""
         mock_db = MagicMock()
-        mock_db.app.get_config_option = MagicMock(return_value={"value": "calibration-v1"})
+        mock_db.app.get_config_option = MagicMock(
+            return_value=ConfigOption(key="calibration_version", value="calibration-v1")
+        )
         service = _make_service(db=mock_db)
 
         with (
@@ -252,7 +255,9 @@ class TestWriteTagsToFiles:
     def test_write_tags_to_files_partial_failure(self) -> None:
         """Non-external workflow failures should increment failed and release claims."""
         mock_db = MagicMock()
-        mock_db.app.get_config_option = MagicMock(return_value={"value": "calibration-v1"})
+        mock_db.app.get_config_option = MagicMock(
+            return_value=ConfigOption(key="calibration_version", value="calibration-v1")
+        )
         service = _make_service(db=mock_db)
 
         with (
@@ -323,7 +328,9 @@ class TestWriteTagsToFiles:
     def test_write_tags_to_files_exception_releases_claim(self) -> None:
         """Workflow exceptions should count as failures and release the file claim."""
         mock_db = MagicMock()
-        mock_db.app.get_config_option = MagicMock(return_value={"value": "calibration-v1"})
+        mock_db.app.get_config_option = MagicMock(
+            return_value=ConfigOption(key="calibration_version", value="calibration-v1")
+        )
         service = _make_service(db=mock_db)
 
         with (

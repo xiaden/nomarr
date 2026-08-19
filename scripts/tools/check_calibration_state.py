@@ -32,8 +32,8 @@ def main() -> None:
         # ── Check calibration version ──────────────────────────────
         ver_doc = db.app.get_config_option("calibration_version")
         last_run_doc = db.app.get_config_option("calibration_last_run")
-        None if ver_doc is None else ver_doc.get("value")
-        None if last_run_doc is None else last_run_doc.get("value")
+        ver_doc.value if ver_doc else None
+        last_run_doc.value if last_run_doc else None
 
         # ── Print calibration_state summary ─────────────────────────
         states = db.ml.list_calibration_states()

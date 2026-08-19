@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from nomarr.components.library.library_records_comp import get_library_record
 from nomarr.components.library.library_song_state_comp import bulk_set_tags_not_fresh
@@ -97,8 +97,8 @@ class TaggingWriteMixin:
             raise ValueError(msg)
 
         target_mode = library.get("file_write_mode", "full")
-        calibration_doc = cast("dict[str, Any] | None", self.db.app.get_config_option("calibration_version"))
-        calibration_hash = None if calibration_doc is None else calibration_doc["value"]
+        calibration_doc = self.db.app.get_config_option("calibration_version")
+        calibration_hash = None if calibration_doc is None else calibration_doc.value
         has_calibration = bool(calibration_hash)
 
         worker_id = f"reconcile:{library_id}"

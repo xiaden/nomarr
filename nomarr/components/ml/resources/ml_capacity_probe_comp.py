@@ -115,8 +115,8 @@ def get_or_run_capacity_probe(
 
     # Check for existing estimate (stored in meta/config)
     raw = db.app.get_config_option(key=f"capacity_estimate:{model_set_hash}")
-    if raw is not None and raw.get("value") is not None:
-        existing = raw["value"]
+    if raw is not None and raw.value is not None:
+        existing = raw.value
         logger.debug(
             "[ml_capacity_probe] Using cached estimate for hash=%s (vram=%dMB, ram=%dMB)",
             model_set_hash,
@@ -323,8 +323,8 @@ def _wait_for_probe_completion(
     while internal_ms().value < deadline:
         # Check for completed estimate (stored in meta/config)
         raw = db.app.get_config_option(key=f"capacity_estimate:{model_set_hash}")
-        if raw is not None and raw.get("value") is not None:
-            estimate = raw["value"]
+        if raw is not None and raw.value is not None:
+            estimate = raw.value
             logger.info(
                 "[ml_capacity_probe] Got probe result from another worker (vram=%dMB, ram=%dMB)",
                 estimate["measured_backbone_vram_mb"],
@@ -343,8 +343,8 @@ def _wait_for_probe_completion(
         if lock is None:
             # Lock was released (probe failed), check for estimate one more time
             raw = db.app.get_config_option(key=f"capacity_estimate:{model_set_hash}")
-            if raw is not None and raw.get("value") is not None:
-                estimate = raw["value"]
+            if raw is not None and raw.value is not None:
+                estimate = raw.value
                 return CapacityEstimate(
                     model_set_hash=model_set_hash,
                     measured_backbone_vram_mb=estimate["measured_backbone_vram_mb"],
@@ -355,7 +355,7 @@ def _wait_for_probe_completion(
             # Lock released but no estimate - use conservative
             break
 
-        if lock["value"].get("status") == "complete":
+        if lock.value.get("status") == "complete":
             # Probe completed but we missed the estimate query - retry
             continue
 

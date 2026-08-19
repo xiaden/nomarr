@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from nomarr.helpers.dataclasses.app_dataclasses import ConfigOption, LockEntry
 from nomarr.helpers.time_helper import now_ms
 
 if TYPE_CHECKING:
@@ -15,8 +16,6 @@ if TYPE_CHECKING:
 
     from nomarr.helpers.dto.repo_dto import (
         HealthRow,
-        LockRow,
-        MetaRow,
         SessionRow,
         SongRow,
         WorkerClaimRow,
@@ -134,8 +133,9 @@ class AppDb:
         """
         self._pipeline_repo.upsert_pipeline_state(library_id, state_key, state_data)
 
-    def get_lock(self, resource_id: str) -> LockRow | None:
-        return self._app_repo.get_lock(resource_id)
+    def get_lock(self, resource_id: str) -> LockEntry | None:
+        row = self._app_repo.get_lock(resource_id)
+        return LockEntry(key=row["key"], value=row["value"]) if row is not None else None
 
     def add_lock(self, payload: dict) -> str:
         """Add a lock using its resource key and JSON ownership payload."""
@@ -144,8 +144,8 @@ class AppDb:
             raise ValueError("lock payload must include a resource identifier")
         return self._app_repo.insert_lock({"key": resource_id, "value": payload})
 
-    def list_locks(self) -> list[LockRow]:
-        return self._app_repo.list_locks()
+    def list_locks(self) -> list[LockEntry]:
+        return [LockEntry(key=row["key"], value=row["value"]) for row in self._app_repo.list_locks()]
 
     def remove_lock(self, resource_id: str) -> None:
         self._app_repo.release_lock(resource_id)
@@ -332,24 +332,25 @@ class AppDb:
     def get_active_sessions(self, not_before_ms: int, limit: int) -> list[SessionRow]:
         return self._app_repo.get_active_sessions(not_before_ms, limit)
 
-    def get_config_option(self, key: str) -> MetaRow | None:
-        return self._app_repo.get_meta(key)
+    def get_config_option(self, key: str) -> ConfigOption | None:
+        row = self._app_repo.get_meta(key)
+        return ConfigOption(key=row["key"], value=row["value"]) if row is not None else None
 
     def get_schema_version(self) -> str | None:
         """Get the schema version (stored as key='version' in meta)."""
-        row = self._app_repo.get_meta("version")
-        if row is None:
+        option = self.get_config_option("version")
+        if option is None:
             return None
-        value = row["value"]
+        value = option.value
         return str(value) if value is not None else None
 
-    def list_config_options(self, prefix: str | None = None) -> list[MetaRow]:
+    def list_config_options(self, prefix: str | None = None) -> list[ConfigOption]:
         keys = self._app_repo.list_meta_keys_by_prefix(prefix or "")
-        results: list[MetaRow] = []
+        results: list[ConfigOption] = []
         for key in keys:
             row = self._app_repo.get_meta(key)
             if row is not None:
-                results.append(row)
+                results.append(ConfigOption(key=row["key"], value=row["value"]))
         return results
 
     def update_config_option(self, key: str, payload: dict) -> None:

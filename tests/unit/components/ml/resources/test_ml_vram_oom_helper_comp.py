@@ -7,12 +7,13 @@ from unittest.mock import MagicMock
 import pytest
 
 from nomarr.components.ml.resources.ml_vram_oom_helper_comp import update_model_vram_from_oom
+from nomarr.helpers.dataclasses.app_dataclasses import ConfigOption
 
 
 @pytest.mark.unit
 def test_update_model_vram_from_existing_meta_value() -> None:
     db = MagicMock()
-    db.app.get_config_option.return_value = {"value": "1000"}
+    db.app.get_config_option.return_value = ConfigOption(key="ml_model_vram:model.onnx", value="1000")
 
     result = update_model_vram_from_oom(db, "model.onnx", 800)
 

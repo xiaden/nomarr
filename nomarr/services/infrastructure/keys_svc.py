@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 import secrets
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 
 import bcrypt
 
@@ -59,8 +59,8 @@ class KeyManagementService:
             Use this for validation. Use get_or_create_api_key() during initialization.
 
         """
-        api_key_doc = cast("dict[str, Any] | None", self._db.app.get_config_option("api_key"))
-        return None if api_key_doc is None else cast("str | None", api_key_doc.get("value"))
+        api_key_doc = self._db.app.get_config_option("api_key")
+        return None if api_key_doc is None else api_key_doc.value
 
     def get_or_create_api_key(self) -> str:
         """Get or create the public API key for external endpoints.
@@ -70,8 +70,8 @@ class KeyManagementService:
             API key string (existing or newly generated)
 
         """
-        key_doc = cast("dict[str, Any] | None", self._db.app.get_config_option("api_key"))
-        key = None if key_doc is None else cast("str | None", key_doc.get("value"))
+        key_doc = self._db.app.get_config_option("api_key")
+        key = cast("str | None", None if key_doc is None else key_doc.value)
         if key:
             return key
         new_key = secrets.token_urlsafe(32)
@@ -136,8 +136,8 @@ class KeyManagementService:
             RuntimeError: If password not found in database
 
         """
-        password_hash_doc = cast("dict[str, Any] | None", self._db.app.get_config_option("admin_password_hash"))
-        password_hash = None if password_hash_doc is None else cast("str | None", password_hash_doc.get("value"))
+        password_hash_doc = self._db.app.get_config_option("admin_password_hash")
+        password_hash = cast("str | None", None if password_hash_doc is None else password_hash_doc.value)
         if not password_hash:
             msg = "Admin password not found in DB. Password should be generated during initialization."
             raise RuntimeError(msg)
@@ -160,8 +160,8 @@ class KeyManagementService:
             Plaintext password if auto-generated (for logging), empty string otherwise
 
         """
-        existing_hash_doc = cast("dict[str, Any] | None", self._db.app.get_config_option("admin_password_hash"))
-        existing_hash = None if existing_hash_doc is None else cast("str | None", existing_hash_doc.get("value"))
+        existing_hash_doc = self._db.app.get_config_option("admin_password_hash")
+        existing_hash = None if existing_hash_doc is None else existing_hash_doc.value
         if existing_hash:
             return ""
         if config_password:

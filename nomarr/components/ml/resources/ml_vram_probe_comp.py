@@ -22,7 +22,7 @@ import logging
 import pathlib
 import sys
 import threading
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -259,7 +259,7 @@ def has_model_vram_measurements(db: Database) -> bool:
         True if at least one ``ml_model_vram:*`` key is present.
 
     """
-    docs = cast("list[dict[str, Any]]", db.app.list_config_options(prefix=_META_PREFIX))
+    docs = db.app.list_config_options(prefix=_META_PREFIX)
     return bool(docs)
 
 
@@ -270,10 +270,10 @@ def clear_model_vram_measurements(db: Database) -> None:
         db: Database instance.
 
     """
-    existing_docs = cast("list[dict[str, Any]]", db.app.list_config_options(prefix=_META_PREFIX))
+    existing_docs = db.app.list_config_options(prefix=_META_PREFIX)
     removed = 0
     for doc in existing_docs:
-        key = doc.get("key")
+        key = doc.key
         if not isinstance(key, str) or not key:
             continue
         db.app.remove_config_option(key)

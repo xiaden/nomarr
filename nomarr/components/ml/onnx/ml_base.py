@@ -103,7 +103,7 @@ class BaseONNXModel(ABC):
             if ctx is not None:
                 db, worker_id = ctx
                 raw_doc = db.app.get_config_option(key=f"{_VRAM_META_PREFIX}{self._path}")
-                raw = None if raw_doc is None else raw_doc.get("value")
+                raw = None if raw_doc is None else raw_doc.value
                 if raw is not None:
                     vram_limit_bytes = int(raw)
                     if vram_limit_bytes == sys.maxsize:

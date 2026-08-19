@@ -12,6 +12,7 @@ from nomarr.components.ml.resources.ml_vram_probe_comp import (
     has_model_vram_measurements,
     probe_all_models,
 )
+from nomarr.helpers.dataclasses.app_dataclasses import ConfigOption
 
 
 @pytest.mark.unit
@@ -58,7 +59,7 @@ class TestProbeAllModels:
 class TestHasModelVramMeasurements:
     def test_returns_true_when_matching_docs_exist(self) -> None:
         db = MagicMock()
-        db.app.list_config_options.return_value = [{"key": "ml_model_vram:model.onnx", "value": "123"}]
+        db.app.list_config_options.return_value = [ConfigOption(key="ml_model_vram:model.onnx", value="123")]
 
         assert has_model_vram_measurements(db) is True
         db.app.list_config_options.assert_called_once_with(prefix="ml_model_vram:")
@@ -75,8 +76,8 @@ class TestClearModelVramMeasurements:
     def test_deletes_each_matching_config_option(self) -> None:
         db = MagicMock()
         db.app.list_config_options.return_value = [
-            {"key": "ml_model_vram:first.onnx", "value": "101"},
-            {"key": "ml_model_vram:second.onnx", "value": "202"},
+            ConfigOption(key="ml_model_vram:first.onnx", value="101"),
+            ConfigOption(key="ml_model_vram:second.onnx", value="202"),
         ]
 
         clear_model_vram_measurements(db)

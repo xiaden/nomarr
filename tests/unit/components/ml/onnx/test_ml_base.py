@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 from nomarr.components.ml.onnx.ml_base import BaseONNXModel, VramFitError
+from nomarr.helpers.dataclasses.app_dataclasses import ConfigOption
 
 
 class _ConcreteModel(BaseONNXModel):
@@ -70,7 +71,9 @@ class TestBaseONNXModelLoadWithWorkerContext:
         self, mock_register: MagicMock, mock_create_session: MagicMock
     ) -> None:
         db = MagicMock()
-        db.app.get_config_option.return_value = {"value": "1048576"}  # 1MB
+        db.app.get_config_option.return_value = ConfigOption(
+            key="ml_model_vram:/models/effnet/model.onnx", value="1048576"
+        )  # 1MB
         ctx = (db, "worker:1")
 
         mock_session = MagicMock()
@@ -90,7 +93,9 @@ class TestBaseONNXModelLoadWithWorkerContext:
         self, mock_register: MagicMock, mock_create_session: MagicMock
     ) -> None:
         db = MagicMock()
-        db.app.get_config_option.return_value = {"value": "1048576"}
+        db.app.get_config_option.return_value = ConfigOption(
+            key="ml_model_vram:/models/effnet/model.onnx", value="1048576"
+        )
         ctx = (db, "worker:1")
 
         model = _ConcreteModel("/models/effnet/model.onnx")
@@ -109,7 +114,9 @@ class TestBaseONNXModelLoadWithWorkerContext:
         import sys
 
         db = MagicMock()
-        db.app.get_config_option.return_value = {"value": str(sys.maxsize)}
+        db.app.get_config_option.return_value = ConfigOption(
+            key="ml_model_vram:/models/effnet/model.onnx", value=str(sys.maxsize)
+        )
         ctx = (db, "worker:1")
 
         model = _ConcreteModel("/models/effnet/model.onnx")

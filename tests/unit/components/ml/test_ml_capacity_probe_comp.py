@@ -14,6 +14,7 @@ from nomarr.components.ml.resources.ml_capacity_probe_comp import (
     get_or_run_capacity_probe,
     invalidate_capacity_estimate,
 )
+from nomarr.helpers.dataclasses.app_dataclasses import ConfigOption
 
 pytestmark = pytest.mark.unit
 
@@ -105,12 +106,13 @@ class TestGetOrRunCapacityProbe:
     def test_returns_cached_estimate_when_exists(self):
         """Returns cached estimate if it exists for the model hash."""
         mock_db = MagicMock()
-        mock_db.app.get_config_option.return_value = {
-            "value": {
+        mock_db.app.get_config_option.return_value = ConfigOption(
+            key="capacity_estimate:abc123",
+            value={
                 "measured_backbone_vram_mb": 8000,
                 "estimated_worker_ram_mb": 2000,
-            }
-        }
+            },
+        )
 
         with (
             tempfile.TemporaryDirectory() as tmpdir,

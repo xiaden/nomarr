@@ -27,6 +27,7 @@ from nomarr.components.ml.calibration.ml_calibration_state_comp import (
     update_file_calibration_hashes_batch,
 )
 from nomarr.helpers.constants.file_states import STATE_CALIBRATED, STATE_NOT_CALIBRATED
+from nomarr.helpers.dataclasses.app_dataclasses import ConfigOption
 from nomarr.helpers.dto.library_dto import LibraryDict
 
 
@@ -342,7 +343,10 @@ class TestClearAllCalibrationData:
     @pytest.mark.unit
     def test_clears_meta_keys_only_when_present(self) -> None:
         mock_db = MagicMock()
-        mock_db.app.get_config_option.side_effect = [None, {"key": "calibration_last_run", "value": "exists"}]
+        mock_db.app.get_config_option.side_effect = [
+            None,
+            ConfigOption(key="calibration_last_run", value="exists"),
+        ]
         with (
             patch(
                 "nomarr.components.ml.calibration.ml_calibration_state_comp.bulk_set_not_calibrated",
@@ -548,7 +552,7 @@ class TestCalibrationVersionMeta:
     @pytest.mark.mocked
     def test_get_calibration_version_returns_value_from_doc(self) -> None:
         mock_db = MagicMock()
-        mock_db.app.get_config_option.return_value = {"key": "calibration_version", "value": "hash-123"}
+        mock_db.app.get_config_option.return_value = ConfigOption(key="calibration_version", value="hash-123")
 
         result = get_calibration_version(mock_db)
 
@@ -570,7 +574,9 @@ class TestCalibrationVersionMeta:
     @pytest.mark.mocked
     def test_get_calibration_last_run_returns_value_from_doc(self) -> None:
         mock_db = MagicMock()
-        mock_db.app.get_config_option.return_value = {"key": "calibration_last_run", "value": "1712345678901"}
+        mock_db.app.get_config_option.return_value = ConfigOption(
+            key="calibration_last_run", value="1712345678901"
+        )
 
         result = get_calibration_last_run(mock_db)
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -34,8 +34,8 @@ def parse_oom_requested_bytes(error: BaseException) -> int | None:
 
 def update_model_vram_from_oom(db: Database, model_path: str, requested_bytes: int) -> int:
     """Write a corrected VRAM limit after a BFC arena OOM."""
-    raw_doc = cast("dict[str, Any] | None", db.app.get_config_option(f"{_META_PREFIX}{model_path}"))
-    raw = None if raw_doc is None else raw_doc.get("value")
+    raw_doc = db.app.get_config_option(f"{_META_PREFIX}{model_path}")
+    raw = None if raw_doc is None else raw_doc.value
     base = int(raw) if raw is not None else requested_bytes
     new_limit = int(base * 1.25)
     db.app.update_config_option(f"{_META_PREFIX}{model_path}", {"value": str(new_limit)})

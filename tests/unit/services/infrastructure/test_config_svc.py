@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
+from nomarr.helpers.dataclasses.app_dataclasses import ConfigOption
 from nomarr.helpers.dto.config_dto import ConfigResult, GetInternalInfoResult, WebConfigResult
 from nomarr.helpers.dto.processing_dto import ProcessorConfig
 from nomarr.services.infrastructure.config_svc import (
@@ -166,7 +167,7 @@ class TestBootstrapAndLoad:
             mock_db_instance.app.list_config_options = MagicMock(
                 side_effect=[
                     [],
-                    [{"key": "config_library_root", "value": "/myns"}],
+                    [ConfigOption(key="config_library_root", value="/myns")],
                 ]
             )
             mock_db_instance.app.update_config_option = MagicMock()

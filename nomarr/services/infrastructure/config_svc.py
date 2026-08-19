@@ -324,7 +324,7 @@ class ConfigService:
             try:
                 # Batch-read existing config keys from DB
                 docs = db.app.list_config_options(prefix="config_")
-                existing_keys = {str(doc["key"])[7:] for doc in docs if "key" in doc}  # Strip 'config_' prefix
+                existing_keys = {str(doc.key)[7:] for doc in docs}  # Strip 'config_' prefix
 
                 # Seed: write only keys NOT already in DB
                 for key in _ALLOWED_CONFIG_KEYS:
@@ -338,10 +338,10 @@ class ConfigService:
                 # Load: read all config_* keys back into cache
                 all_docs = db.app.list_config_options(prefix="config_")
                 for meta_doc in all_docs:
-                    meta_key = str(meta_doc.get("key", ""))
+                    meta_key = str(meta_doc.key)
                     config_key = meta_key[7:]  # Strip 'config_' prefix
                     if config_key in _ALLOWED_CONFIG_KEYS:
-                        self._cache[config_key] = self._parse_db_value(str(meta_doc.get("value", "")))
+                        self._cache[config_key] = self._parse_db_value(str(meta_doc.value))
 
                 self._logger.debug("Config bootstrap complete: %d keys loaded", len(self._cache))
             finally:

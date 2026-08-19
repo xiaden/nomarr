@@ -15,6 +15,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
+from nomarr.helpers.dataclasses.app_dataclasses import ConfigOption, LockEntry
 from nomarr.persistence.api.application import AppDb
 from nomarr.persistence.database.app_repo import AppRepository
 from nomarr.persistence.database.library_repo import LibraryRepository
@@ -26,8 +27,6 @@ from nomarr.persistence.models.vram_promise import VramPromise
 if TYPE_CHECKING:
     from nomarr.helpers.dto.repo_dto import (
         HealthRow,
-        LockRow,
-        MetaRow,
         SessionRow,
         SongRow,
         WorkerClaimRow,
@@ -275,8 +274,8 @@ class TestAppDbPipelineStateMethods:
 class TestAppDbLockMethods:
     @pytest.mark.unit
     def test_get_lock_delegates(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        expected: LockRow = {"key": "scan:1", "value": {"owner": "w1"}}
-        mock_app_repo.get_lock.return_value = expected
+        expected: LockEntry = LockEntry(key="scan:1", value={"owner": "w1"})
+        mock_app_repo.get_lock.return_value = {"key": "scan:1", "value": {"owner": "w1"}}
 
         result = app_db.get_lock("scan:1")
 
@@ -303,8 +302,8 @@ class TestAppDbLockMethods:
 
     @pytest.mark.unit
     def test_list_locks_delegates(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        expected: list[LockRow] = [{"key": "a", "value": {}}, {"key": "b", "value": {}}]
-        mock_app_repo.list_locks.return_value = expected
+        expected: list[LockEntry] = [LockEntry(key="a", value={}), LockEntry(key="b", value={})]
+        mock_app_repo.list_locks.return_value = [{"key": "a", "value": {}}, {"key": "b", "value": {}}]
 
         result = app_db.list_locks()
 
@@ -798,8 +797,8 @@ class TestAppDbSessionMethods:
 class TestAppDbConfigMetaMethods:
     @pytest.mark.unit
     def test_get_config_option_delegates(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        expected: MetaRow = {"key": "config_scan_interval", "value": {"interval": 300}}
-        mock_app_repo.get_meta.return_value = expected
+        expected: ConfigOption = ConfigOption(key="config_scan_interval", value={"interval": 300})
+        mock_app_repo.get_meta.return_value = {"key": "config_scan_interval", "value": {"interval": 300}}
 
         result = app_db.get_config_option("config_scan_interval")
 
@@ -857,7 +856,10 @@ class TestAppDbConfigMetaMethods:
 
         result = app_db.list_config_options("config_")
 
-        assert result == [{"key": "config_a", "value": 1}, {"key": "config_b", "value": 2}]
+        assert result == [
+            ConfigOption(key="config_a", value=1),
+            ConfigOption(key="config_b", value=2),
+        ]
         mock_app_repo.list_meta_keys_by_prefix.assert_called_once_with("config_")
         assert mock_app_repo.get_meta.call_args_list == [call("config_a"), call("config_b")]
 
@@ -871,7 +873,7 @@ class TestAppDbConfigMetaMethods:
 
         result = app_db.list_config_options("config_")
 
-        assert result == [{"key": "config_a", "value": 1}]
+        assert result == [ConfigOption(key="config_a", value=1)]
 
     @pytest.mark.unit
     def test_list_config_options_no_prefix_passes_empty_string(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:

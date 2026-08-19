@@ -239,8 +239,8 @@ def delete_old_calibration_history_snapshots(
 
 def get_calibration_version(db: Database) -> str | None:
     """Return the current global calibration version hash, or ``None``."""
-    calibration_doc = cast("dict[str, Any] | None", db.app.get_config_option(key="calibration_version"))
-    return None if calibration_doc is None else calibration_doc.get("value")
+    calibration_doc = db.app.get_config_option(key="calibration_version")
+    return None if calibration_doc is None else calibration_doc.value
 
 
 def set_calibration_version(db: Database, version_hash: str) -> None:
@@ -250,8 +250,8 @@ def set_calibration_version(db: Database, version_hash: str) -> None:
 
 def get_calibration_last_run(db: Database) -> int | None:
     """Return the timestamp (ms) of the last calibration run, or ``None``."""
-    last_run_doc = cast("dict[str, Any] | None", db.app.get_config_option(key="calibration_last_run"))
-    last_run_str = None if last_run_doc is None else last_run_doc.get("value")
+    last_run_doc = db.app.get_config_option(key="calibration_last_run")
+    last_run_str = None if last_run_doc is None else last_run_doc.value
     return int(last_run_str) if last_run_str else None
 
 
