@@ -349,7 +349,7 @@ class TagRepository:
                 _T.c.tier,
                 _T.c.created_at,
                 _T.c.parent_tag_id,
-            )
+            ).order_by(_T.c.id)
             if offset:
                 stmt = stmt.offset(offset)
             if limit is not None:
