@@ -372,6 +372,17 @@ class TestSongRepository:
         assert len(result) == 2
         assert all(s["path"].startswith("/music/folder/") for s in result)
 
+    def test_list_songs_for_folder_escapes_like_wildcards(self, pg_session) -> None:
+        """Folder wildcard characters should be matched literally."""
+        lib_id = _create_library(pg_session)
+        _create_song(pg_session, lib_id, "/music/100%_complete/file1.mp3")
+        _create_song(pg_session, lib_id, "/music/100Xacomplete/file2.mp3")
+        repo = SongRepository(pg_session)
+
+        result = repo.list_songs_for_folder(lib_id, "/music/100%_complete")
+
+        assert [song["path"] for song in result] == ["/music/100%_complete/file1.mp3"]
+
     def test_list_tracks_for_matching(self, pg_session) -> None:
         """list_tracks_for_matching should return songs ordered by id."""
         lib_id = _create_library(pg_session)
