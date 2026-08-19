@@ -5,7 +5,13 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import delete, insert, select
 
-from nomarr.helpers.constants.file_states import ALL_STATE_VERTICES, STATE_CALIBRATED, STATE_PROCESSED
+from nomarr.helpers.constants.file_states import (
+    ALL_STATE_VERTICES,
+    STATE_CALIBRATED,
+    STATE_HYDRATED,
+    STATE_NOT_HYDRATED,
+    STATE_PROCESSED,
+)
 from nomarr.persistence.database.song_state_repo import SongStateRepository
 from nomarr.persistence.models.library import Library
 from nomarr.persistence.models.song import Song
@@ -205,6 +211,17 @@ class TestSongStateRepository:
         repo.assign_state(song_id, STATE_PROCESSED)
         assert repo.get_song_states(song_id) == {STATE_PROCESSED}
 
+    def test_assign_states_is_idempotent(self, pg_session) -> None:
+        """Batch assignment should tolerate duplicate rows and retries."""
+        repo = SongStateRepository(pg_session)
+        repo.bootstrap_states([])
+        _, song_id = _create_library_and_song(pg_session)
+
+        repo.assign_states([song_id, song_id], STATE_PROCESSED)
+        repo.assign_states([song_id], STATE_PROCESSED)
+
+        assert repo.get_song_states(song_id) == {STATE_PROCESSED}
+
     def test_assign_state_unknown_raises(self, pg_session) -> None:
         """assign_state should raise ValueError for unknown state name."""
         repo = SongStateRepository(pg_session)
@@ -278,6 +295,20 @@ class TestSongStateRepository:
 
         # The song should carry the processed state.
         assert repo.get_song_states(song_id) == {STATE_PROCESSED}
+
+    def test_transition_to_hydrated_seeds_unseeded_states(self, pg_session) -> None:
+        """Hydration should not no-op when the state lookup is empty."""
+        repo = SongStateRepository(pg_session)
+        pg_session.execute(delete(SongState))
+        pg_session.commit()
+        _, song_id = _create_library_and_song(pg_session)
+
+        repo.transition_to_hydrated([song_id])
+
+        assert repo.get_song_states(song_id) == {STATE_HYDRATED}
+        assert pg_session.execute(select(SongState)).scalars().all()
+        assert repo.get_song_states_for_songs([song_id])[song_id] == {STATE_HYDRATED}
+        assert STATE_NOT_HYDRATED not in repo.get_song_states(song_id)
 
     def test_count_for_song_and_state(self, pg_session) -> None:
         """count_for_song_and_state should return count of assignments."""
