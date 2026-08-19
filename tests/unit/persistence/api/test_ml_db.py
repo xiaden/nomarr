@@ -30,6 +30,27 @@ def _make_ml_db() -> tuple[MlDb, MagicMock, MagicMock, MagicMock, MagicMock, Mag
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    ("repository", "message"),
+    (
+        ("vector_repo", "VectorRepo is required"),
+        ("model_repo", "ModelRepo is required"),
+        ("calibration_repo", "CalibrationRepo is required"),
+    ),
+)
+def test_required_repositories_are_validated_without_asserts(repository: str, message: str) -> None:
+    repositories: dict[str, object] = {
+        "vector_repo": MagicMock(),
+        "model_repo": MagicMock(),
+        "calibration_repo": MagicMock(),
+    }
+    repositories[repository] = None
+
+    with pytest.raises(ValueError, match=message):
+        MlDb(session=MagicMock(), **repositories)
+
+
+@pytest.mark.unit
 def test_exposes_ml_maintenance_surface() -> None:
     db, vector_repo, _, _, calibration_repo, _ = _make_ml_db()
 

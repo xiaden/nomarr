@@ -55,8 +55,8 @@ class MlDb:
         All repository parameters are ``Optional`` to support the phased
         migration to PostgreSQL — ``db.py`` wires SQL repos
         incrementally.  ``vector_repo``, ``model_repo``, and ``calibration_repo``
-        are asserted as non-None at the end of construction because they are
-        required by the routine top-level API.
+        are required by the routine top-level API and are validated during
+        construction.
 
         Destructive maintenance operations (``truncate_vectors_in_collection``,
         ``truncate_calibration_states``, ``truncate_calibration_history``) are
@@ -69,9 +69,12 @@ class MlDb:
         self._embedding_stream_repo = embedding_stream_repo
         self._ml_inference_repo = ml_inference_repo
         self._session = session
-        assert vector_repo is not None, "VectorRepo is required"
-        assert model_repo is not None, "ModelRepo is required"
-        assert calibration_repo is not None, "CalibrationRepo is required"
+        if vector_repo is None:
+            raise ValueError("VectorRepo is required")
+        if model_repo is None:
+            raise ValueError("ModelRepo is required")
+        if calibration_repo is None:
+            raise ValueError("CalibrationRepo is required")
 
     # ------------------------------------------------------------------
     # Maintenance methods (destructive reset/repair)
