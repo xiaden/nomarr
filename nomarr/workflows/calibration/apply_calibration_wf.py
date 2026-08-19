@@ -80,7 +80,8 @@ def apply_calibration_wf(
             write size at the cost of more flush cycles.
 
     Returns:
-        ApplyCalibrationResult with processed/failed/total counts
+        ApplyCalibrationResult with processed/failed/total counts. Its message
+        includes the failed count and retry eligibility.
 
     """
     total = len(paths)

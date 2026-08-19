@@ -81,8 +81,13 @@ class TestApplyCalibrationWorkflow:
 
         monkeypatch.setattr(apply_module, "write_calibrated_tags_wf", _write)
         result = apply_module.apply_calibration_wf(
-            db=db, paths=["/music/file.flac"], models_dir="/models", namespace="nom",
-            version_tag_key="nom_version", calibrate_heads=False, max_write_workers=1,
+            db=db,
+            paths=["/music/file.flac"],
+            models_dir="/models",
+            namespace="nom",
+            version_tag_key="nom_version",
+            calibrate_heads=False,
+            max_write_workers=1,
             prefetch_chunk_size=1,
         )
 
@@ -107,8 +112,13 @@ class TestApplyCalibrationWorkflow:
 
         monkeypatch.setattr(apply_module, "write_calibrated_tags_wf", _write)
         result = apply_module.apply_calibration_wf(
-            db=db, paths=["/music/file.flac"], models_dir="/models", namespace="nom",
-            version_tag_key="nom_version", calibrate_heads=False, max_write_workers=1,
+            db=db,
+            paths=["/music/file.flac"],
+            models_dir="/models",
+            namespace="nom",
+            version_tag_key="nom_version",
+            calibrate_heads=False,
+            max_write_workers=1,
             prefetch_chunk_size=1,
         )
 

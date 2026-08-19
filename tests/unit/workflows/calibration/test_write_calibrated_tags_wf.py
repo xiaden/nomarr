@@ -252,7 +252,7 @@ class TestWriteCalibratedTagsWorkflow:
         monkeypatch.setattr(wf_module, "update_file_calibration_hash", update_file_calibration_hash)
         monkeypatch.setattr(wf_module, "load_calibration_lookup", MagicMock(return_value={}))
 
-        wf_module.write_calibrated_tags_wf(db, params)
+        assert wf_module.write_calibrated_tags_wf(db, params) is True
 
         save_mood_tags.assert_called_once_with(db, f"{'songs'}/1", None)
         update_file_calibration_hash.assert_called_once_with(db, f"{'songs'}/1")
@@ -389,7 +389,7 @@ class TestWriteCalibratedTagsWorkflow:
         monkeypatch.setattr(wf_module, "update_file_calibration_hash", update_file_calibration_hash)
         monkeypatch.setattr(wf_module, "load_calibration_lookup", MagicMock(return_value={}))
 
-        wf_module.write_calibrated_tags_wf(db, params)
+        assert wf_module.write_calibrated_tags_wf(db, params) is False
 
         reconstruct.assert_not_called()
         save_mood_tags.assert_not_called()
