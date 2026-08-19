@@ -18,7 +18,7 @@ from nomarr.components.library.scan_lifecycle_comp import (
     resolve_library_for_scan,
     transition_to_scanning,
 )
-from nomarr.helpers.exceptions import LibraryAlreadyScanningError
+from nomarr.helpers.exceptions import DuplicateEntityError, LibraryAlreadyScanningError
 
 if TYPE_CHECKING:
     from nomarr.helpers.dto.library_dto import LibraryDict
@@ -75,7 +75,15 @@ def scan_setup_workflow(
 
     # The setup workflow runs before the background scan starts, so it owns
     # creation of the scan row.  Progress updates require that row to exist.
-    mark_scan_started(db, int(library_id), scan_type)
+    try:
+        # The database enforces one in-progress row per library.  This insert
+        # is the atomic part of the guard: two requests may both observe the
+        # old axis value, but only one can claim the active scan row.
+        mark_scan_started(db, int(library_id), scan_type)
+    except DuplicateEntityError:
+        msg = f"Library {library_id} is already being scanned"
+        raise LibraryAlreadyScanningError(msg) from None
+
     transition_to_scanning(db, int(library_id))
 
     return library

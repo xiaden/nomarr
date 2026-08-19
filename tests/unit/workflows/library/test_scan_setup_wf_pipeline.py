@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from nomarr.helpers.dto.library_dto import LibraryDict
-from nomarr.helpers.exceptions import LibraryAlreadyScanningError
+from nomarr.helpers.exceptions import DuplicateEntityError, LibraryAlreadyScanningError
 from nomarr.workflows.library.scan_setup_wf import scan_setup_workflow
 
 
@@ -77,4 +77,34 @@ class TestScanSetupWorkflowPipeline:
             scan_setup_workflow(mock_db, 1, scan_type="quick")
 
         mock_start.assert_not_called()
+        mock_transition.assert_not_called()
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_scan_setup_maps_concurrent_active_scan_insert_to_already_scanning(self) -> None:
+        """A unique active-row violation rejects the losing concurrent request."""
+        mock_db = MagicMock()
+        library = LibraryDict(
+            id=1,
+            name="Main Library",
+            root_path="/music",
+            is_enabled=True,
+            created_at=0,
+            updated_at=0,
+            scan_status="idle",
+        )
+
+        with (
+            patch("nomarr.workflows.library.scan_setup_wf.resolve_library_for_scan", return_value=library),
+            patch("nomarr.workflows.library.scan_setup_wf.check_interrupted_scan", return_value=(False, None)),
+            patch("nomarr.workflows.library.scan_setup_wf.is_library_scanning", return_value=False),
+            patch(
+                "nomarr.workflows.library.scan_setup_wf.mark_scan_started",
+                side_effect=DuplicateEntityError("active scan already exists"),
+            ),
+            patch("nomarr.workflows.library.scan_setup_wf.transition_to_scanning") as mock_transition,
+            pytest.raises(LibraryAlreadyScanningError, match="already being scanned"),
+        ):
+            scan_setup_workflow(mock_db, 1, scan_type="quick")
+
         mock_transition.assert_not_called()
