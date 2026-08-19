@@ -7,7 +7,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nomarr.components.library.library_id_comp import library_key_from_ref, normalize_library_id
 from nomarr.components.library.library_records_comp import (
     create_library_record,
     find_library_containing_path,
@@ -48,30 +47,6 @@ class TestListAllLibraryKeys:
 
         assert result == []
         mock_db.library.list_library_keys.assert_called_once_with()
-
-
-class TestNormalizeLibraryId:
-    """Tests for ``normalize_library_id()``."""
-
-    @pytest.mark.unit
-    def test_returns_full_id_unchanged(self) -> None:
-        assert normalize_library_id("libraries/main") == "libraries/main"
-
-    @pytest.mark.unit
-    def test_prefixes_bare_key(self) -> None:
-        assert normalize_library_id("main") == "libraries/main"
-
-
-class TestLibraryKeyFromRef:
-    """Tests for ``library_key_from_ref()``."""
-
-    @pytest.mark.unit
-    def test_extracts_key_from_full_id(self) -> None:
-        assert library_key_from_ref("libraries/main") == "main"
-
-    @pytest.mark.unit
-    def test_returns_bare_key_unchanged(self) -> None:
-        assert library_key_from_ref("main") == "main"
 
 
 class TestCreateLibraryRecord:

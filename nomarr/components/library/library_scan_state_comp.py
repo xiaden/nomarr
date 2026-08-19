@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
-from nomarr.components.library.library_id_comp import library_key_from_ref
 from nomarr.helpers.constants.pipeline_states import (
     PIPELINE_DEFAULTS,
     VALID_PIPELINE_TRANSITIONS,
@@ -37,11 +36,6 @@ def _pipeline_state_to_scan_status(
     if scan_doc and scan_doc.get("finished_at"):
         return "complete"
     return "idle"
-
-
-def _scan_doc_id(library_id: int) -> str:
-    """Return the canonical scan document id for a library."""
-    return f"library_scans/{library_key_from_ref(str(library_id))}"
 
 
 def get_scan_state(db: Database, library_id: int) -> dict[str, Any] | None:

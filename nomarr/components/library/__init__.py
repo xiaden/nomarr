@@ -5,7 +5,6 @@ discovery, scan lifecycle, path reconciliation, metadata extraction,
 chromaprint computation, song state transitions, and tag hydration.
 """
 
-from .library_id_comp import library_key_from_ref, normalize_library_id
 from .library_records_comp import (
     create_library_record,
     find_library_containing_path,
@@ -33,7 +32,7 @@ from .library_scan_file_ops_comp import (
     snapshot_existing_files,
     upsert_scanned_files,
 )
-from .library_song_mutation_comp import get_song_library_key, set_chromaprint, upsert_library_song
+from .library_song_mutation_comp import set_chromaprint, upsert_library_song
 from .library_song_query_comp import get_library_song
 from .library_song_state_comp import bulk_set_not_hydrated
 from .library_watch_config_comp import (
@@ -79,10 +78,8 @@ __all__ = [
     "get_library_song",
     "get_library_watch_config",
     "get_scanning_library_ids",
-    "get_song_library_key",
     "get_song_tags_with_path",
     "get_unique_tag_values",
-    "library_key_from_ref",
     "list_all_library_keys",
     "list_library_records",
     "list_watchable_libraries",
@@ -90,7 +87,6 @@ __all__ = [
     "mark_scan_completed",
     "mark_scan_started",
     "mark_song_processed",
-    "normalize_library_id",
     "normalize_library_root",
     "remove_deleted_files",
     "resolve_artists",
