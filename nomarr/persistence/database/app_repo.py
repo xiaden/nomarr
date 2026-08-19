@@ -44,6 +44,8 @@ if TYPE_CHECKING:
     from sqlalchemy.engine import Row
     from sqlalchemy.orm import Session, scoped_session
 
+    from nomarr.persistence.database.song_repo import SongRepository
+
 _L = cast("Table", Lock.__table__)
 _H = cast("Table", Health.__table__)
 _M = cast("Table", Meta.__table__)
@@ -106,8 +108,9 @@ def _claim_row_to_dto(row: Row) -> WorkerClaimRow:
 class AppRepository:
     """Repository grouping KV-table operations (locks, health, meta, …)."""
 
-    def __init__(self, session: scoped_session[Session]) -> None:
+    def __init__(self, session: scoped_session[Session], song_repo: SongRepository | None = None) -> None:
         self._session = session
+        self._song_repo = song_repo
 
     # ── Lock ────────────────────────────────────────────────────
 
@@ -286,6 +289,9 @@ class AppRepository:
 
     def insert_worker_claim(self, payload: dict[str, Any]) -> int:
         """Insert a worker-claim row and return its ``id``."""
+        file_id = payload.get("file_id")
+        if file_id is not None and self._song_repo is not None and self._song_repo.get_song(file_id) is None:
+            raise ValueError(f"Song {file_id} does not exist")
         with map_persistence_exceptions():
             with self._session.begin_nested():
                 data = {

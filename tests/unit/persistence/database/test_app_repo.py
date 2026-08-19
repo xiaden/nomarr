@@ -317,6 +317,15 @@ class TestAppRepository:
         assert isinstance(claim_id, int)
         assert claim_id > 0
 
+    def test_insert_worker_claim_rejects_missing_song(self, pg_session) -> None:
+        repo = AppRepository(pg_session)
+        from unittest.mock import MagicMock
+        repo._song_repo = MagicMock()
+        repo._song_repo.get_song.return_value = None
+
+        with pytest.raises(ValueError, match="Song 999 does not exist"):
+            repo.insert_worker_claim({"worker_id": "w1", "key": "k", "file_id": 999})
+
     def test_claim_file(self, pg_session) -> None:
         """claim_file should record a worker's claim."""
         repo = AppRepository(pg_session)

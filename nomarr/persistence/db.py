@@ -71,12 +71,12 @@ class Database:
         self._scoped = scoped_session(_factory)
 
         # Instantiate all repositories
-        self._app_repo = AppRepository(self._scoped)
         self._scan_repo = ScanRepository(self._scoped)
         self._library_repo = LibraryRepository(self._scoped)
         self._song_state_repo = SongStateRepository(self._scoped)
         self._pipeline_repo = PipelineRepository(self._scoped)
         self._song_repo = SongRepository(self._scoped)
+        self._app_repo = AppRepository(self._scoped, song_repo=self._song_repo)
         self._folder_repo = FolderRepository(self._scoped)
         self._tag_repo = TagRepository(self._scoped)
         self._song_tag_repo = SongTagRepository(self._scoped)
