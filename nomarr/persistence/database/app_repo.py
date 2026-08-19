@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
-from sqlalchemy import Table, delete, func, insert, select, update
+from sqlalchemy import Table, delete, func, insert, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from nomarr.helpers.dto.repo_dto import (
@@ -360,9 +360,16 @@ class AppRepository:
         with map_persistence_exceptions():
             if not song_ids:
                 return 0
-            str_ids = [key for sid in song_ids for key in (f"claim_{sid}", f"claim_reconcile_{sid}")]
+            claim_keys = [
+                condition
+                for sid in song_ids
+                for condition in (
+                    _WC.c.key == f"claim_{sid}",
+                    _WC.c.key.like(f"claim_%_{sid}"),
+                )
+            ]
             with self._session.begin_nested():
-                stmt = delete(_WC).where(_WC.c.key.in_(str_ids))
+                stmt = delete(_WC).where(or_(*claim_keys))
                 result = self._session.execute(stmt)
             self._session.commit()
             return int(result.rowcount)  # type: ignore[attr-defined]  # CursorResult vs Result — mypy sees Result but .rowcount exists at runtime

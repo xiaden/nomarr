@@ -388,15 +388,24 @@ class TestAppRepository:
         repo.insert_worker_claim(
             {
                 "worker_id": "worker1",
+                "key": "claim_custom_type_20",
+                "value": {},
+                "claimed_at": 1000,
+            }
+        )
+        repo.insert_worker_claim(
+            {
+                "worker_id": "worker1",
                 "key": "claim_21",
                 "value": {},
                 "claimed_at": 1000,
             }
         )
         deleted = repo.delete_claims_for_songs([20])
-        assert deleted == 1
+        assert deleted == 2
         claims = repo.list_claims()
         assert not any(c["key"] == "claim_20" for c in claims)
+        assert not any(c["key"] == "claim_custom_type_20" for c in claims)
         assert any(c["key"] == "claim_21" for c in claims)
 
     def test_steal_claim(self, pg_session) -> None:
