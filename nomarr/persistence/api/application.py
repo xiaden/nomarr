@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from nomarr.helpers.time_helper import now_ms
+
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session, scoped_session
 
@@ -94,8 +96,9 @@ class AppDb:
         return self._song_state_repo.count_songs_in_state(state)
 
     def add_song_states(self, song_ids: list[int], state: str) -> None:
-        for song_id in song_ids:
-            self._song_state_repo.assign_state(song_id, state)
+        if not song_ids:
+            return
+        self._song_state_repo.assign_states(song_ids, state)
 
     def replace_song_states(self, song_ids: list[int], state: str) -> None:
         self._song_state_repo.replace_state_for_songs(song_ids, state)
@@ -159,9 +162,11 @@ class AppDb:
         worker_id: str,
         *,
         claim_type: str | None = None,
-        claimed_at: int = 0,
+        claimed_at: int | None = None,
     ) -> int:
         """Claim a song for a worker without exposing storage payloads."""
+        if claimed_at is None:
+            claimed_at = now_ms().value
         key = f"claim_{claim_type}_{song_id}" if claim_type else f"claim_{song_id}"
         payload = {
             "key": key,

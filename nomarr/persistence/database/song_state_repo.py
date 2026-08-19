@@ -122,6 +122,37 @@ class SongStateRepository:
                 insert_one(_A, payload, session=self._session)
             self._session.commit()
 
+    def assign_states(self, song_ids: list[int], state: str) -> None:
+        """Atomically and idempotently assign *state* to all *song_ids*.
+
+        A single transaction prevents a duplicate assignment from leaving a
+        batch partially applied.  Conflict-safe insertion also makes retries
+        and duplicate song ids harmless.
+        """
+        with map_persistence_exceptions():
+            if not song_ids:
+                return
+
+            with self._session.begin_nested():
+                state_stmt = select(_S.c.id).where(_S.c.name == state)
+                state_row = self._session.execute(state_stmt).fetchone()
+                if state_row is None:
+                    msg = f"Unknown song state: {state!r}"
+                    raise ValueError(msg)
+
+                unique_song_ids = list(dict.fromkeys(song_ids))
+                now_ms = int(time.time() * 1000)
+                rows = [
+                    {"song_id": song_id, "state_id": state_row[0], "created_at": now_ms}
+                    for song_id in unique_song_ids
+                ]
+                self._session.execute(
+                    pg_insert(_A)
+                    .values(rows)
+                    .on_conflict_do_nothing(index_elements=["song_id", "state_id"])
+                )
+            self._session.commit()
+
     def replace_state_for_songs(self, song_ids: list[int], state: str) -> None:
         """Atomically replace all state assignments for the given songs.
 
@@ -178,6 +209,15 @@ class SongStateRepository:
         unique_song_ids = list(dict.fromkeys(song_ids))
         if not unique_song_ids:
             return
+
+        # Hydration can be the first state operation after a database is
+        # created.  Seed the two vertices this transition needs rather than
+        # silently treating an empty lookup table as success.
+        state_rows = [
+            {"name": STATE_HYDRATED, "description": "Song metadata has been hydrated"},
+            {"name": STATE_NOT_HYDRATED, "description": "Song metadata has not been hydrated"},
+        ]
+        self._session.execute(pg_insert(_S).values(state_rows).on_conflict_do_nothing(index_elements=["name"]))
 
         # Resolve both state names → ids in ONE query.
         state_stmt = select(_S.c.name, _S.c.id).where(_S.c.name.in_([STATE_HYDRATED, STATE_NOT_HYDRATED]))
