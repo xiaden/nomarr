@@ -49,7 +49,8 @@ helpers/
     ├── playlist_import_dto.py    # Playlist import DTOs
     ├── processing_dto.py         # Processing pipeline DTOs
     ├── recalibration_dto.py      # Recalibration DTOs
-    └── tagging_dto.py            # Tagging pipeline DTOs
+    ├── tagging_dto.py            # Tagging pipeline DTOs
+    └── tags_dto.py               # Re-exports strict Tag/Tags/TagValue from helpers/dataclasses/tags_dataclass.py
 ```
 
 **Naming rules:**
