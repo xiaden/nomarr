@@ -20,6 +20,7 @@ from .conftest import assert_snapshot_matches
 
 
 @pytest.mark.characterization
+@pytest.mark.requires_database
 class TestLibraryDbFacadeCharacterization:
     """Characterization tests for LibraryDb facade methods."""
 

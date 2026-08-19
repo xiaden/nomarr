@@ -49,6 +49,7 @@ class TestWriteMethodsWorkWithoutTransaction:
     ``transaction()`` context. Calling them directly must succeed.
     """
 
+    @pytest.mark.requires_database
     def test_write_method_succeeds_without_transaction(self, db, seed_data):
         """Calling a WRITE facade method without transaction() succeeds."""
         result = db.library.add_library(
@@ -75,6 +76,7 @@ class TestNoTransactionContract:
     have been removed from every facade. Facades must not expose them.
     """
 
+    @pytest.mark.requires_database
     def test_facades_do_not_expose_transaction(self, db):
         """LibraryDb, AppDb, and MlDb must not expose a transaction() method."""
         for facade in (db.library, db.app, db.ml):
@@ -85,6 +87,7 @@ class TestNoTransactionContract:
                 f"{type(facade).__name__} must not have a _require_transaction guard (AR-SDR-4)."
             )
 
+    @pytest.mark.requires_database
     def test_sub_facades_do_not_expose_transaction(self, db):
         """Sub-facades (songs, tags, scans, regions) must not expose transaction()."""
         for sub in (db.library.songs, db.library.tags, db.library.scans, db.library.regions):
@@ -106,6 +109,7 @@ class TestReadMethodsWorkWithoutTransaction:
     the guard clause and do NOT require ``transaction()``.
     """
 
+    @pytest.mark.requires_database
     def test_read_method_works_without_explicit_transaction(self, db, seed_data):
         """Calling a READ facade method without transaction() succeeds."""
         # list_libraries is a READ method — should work without transaction
@@ -133,6 +137,7 @@ class TestFacadeMethodsReturnDomainObjects:
     dict keys.
     """
 
+    @pytest.mark.requires_database
     def test_facade_methods_return_domain_objects_not_raw_dicts(self, db, seed_data):
         """Facade methods return objects with expected domain field keys.
 
@@ -176,6 +181,7 @@ class TestFacadeMethodsAcceptDomainIdentifiers:
     not database-specific identifiers.
     """
 
+    @pytest.mark.requires_database
     def test_facade_methods_accept_domain_identifiers(self, db, seed_data):
         """Facade methods accept domain-shaped payloads.
 

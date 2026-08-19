@@ -23,6 +23,7 @@ from .conftest import assert_snapshot_matches
 
 
 @pytest.mark.characterization
+@pytest.mark.requires_database
 class TestServiceMethodInventory:
     """Characterization tests for service methods."""
 

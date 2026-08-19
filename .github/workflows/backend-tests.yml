@@ -130,3 +130,58 @@ jobs:
         run: |
           source .venv/bin/activate
           pytest tests/test_architecture_qc.py -v
+
+  # PostgreSQL-backed tests that need real PostgreSQL + pgvector. These are marked
+  # @pytest.mark.requires_database and are therefore EXCLUDED by the
+  # `not requires_database` expression in the `test` job above. Run them explicitly
+  # against a real PostgreSQL/pgvector database so they stay a live, required gate.
+  #
+  # Scope: the characterization suite (tests/characterization/) and the DB-backed
+  # sabotage contract tests (tests/sabotage/test_no_facades_begin_transactions.py).
+  #
+  # Setup note: the fixtures (tests/characterization/conftest.py and
+  # tests/sabotage/conftest.py) use testcontainers' PostgresContainer, which
+  # UNCONDITIONALLY spawns its own `pgvector/pgvector:pg17` container through the
+  # Docker socket and runs Alembic migrations itself. A GitHub Actions
+  # `services: postgres` entry cannot satisfy these fixtures (testcontainers always
+  # starts its own container, so the service would go unused), so this job relies on
+  # the native Docker daemon that is preinstalled and already running on
+  # GitHub-hosted ubuntu-latest runners — an explicit testcontainers-compatible
+  # setup. No Docker-in-Docker layer is required on the hosted runner. Migrations are
+  # applied by the fixtures themselves (run_alembic_migrations), so no manual setup
+  # step is needed here.
+  database-tests:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Cache virtualenv
+        id: cache-venv
+        uses: actions/cache@v5
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-py3.12-${{ hashFiles('pyproject.toml', 'uv.lock') }}
+
+      - name: Install dependencies
+        if: steps.cache-venv.outputs.cache-hit != 'true'
+        run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Verify Docker daemon is available for testcontainers
+        run: docker version --format '{{.Server.Version}}'
+
+      - name: Run PostgreSQL-backed characterization and sabotage contract tests
+        run: |
+          source .venv/bin/activate
+          pytest tests/characterization/ tests/sabotage/test_no_facades_begin_transactions.py -v -m requires_database
