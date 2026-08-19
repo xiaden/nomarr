@@ -178,7 +178,9 @@ def apply_calibration_wf(
             _t_io_chunk = (internal_ms().value - _t_io_start.value) / 1000
             _t_io_total += _t_io_chunk
 
-            # Flush deferred DB writes for this chunk
+            # Persist mood tags before marking files calibrated. A failed mood
+            # tag write must leave the file eligible for a later retry.
+            mood_flush_succeeded = True
             if batch_ctx.pending_mood_tags:
                 logger.debug(
                     f"[apply_calibration] Chunk {chunk_num}/{n_chunks}: "
@@ -187,16 +189,23 @@ def apply_calibration_wf(
                 try:
                     save_mood_tags_batch(db, batch_ctx.pending_mood_tags)
                 except Exception as e:
+                    mood_flush_succeeded = False
+                    failed_writes = len(batch_ctx.pending_mood_tags)
+                    success_count -= failed_writes
+                    fail_count += failed_writes
                     logger.warning(f"[apply_calibration] Batch mood tag flush failed: {e}", exc_info=True)
 
-            if batch_ctx.pending_calibration_hashes:
+            if mood_flush_succeeded and batch_ctx.pending_calibration_hashes:
                 logger.debug(
                     f"[apply_calibration] Chunk {chunk_num}/{n_chunks}: "
                     f"flushing {len(batch_ctx.pending_calibration_hashes)} calibration hash updates..."
                 )
                 try:
-                    update_file_calibration_hashes_batch(db, batch_ctx.pending_calibration_hashes)  # type: ignore[arg-type]  # TODO(migration): component expects list[str], should be list[int]
+                    update_file_calibration_hashes_batch(db, batch_ctx.pending_calibration_hashes)
                 except Exception as e:
+                    failed_writes = len(batch_ctx.pending_calibration_hashes)
+                    success_count -= failed_writes
+                    fail_count += failed_writes
                     logger.warning(f"[apply_calibration] Batch calibration hash flush failed: {e}", exc_info=True)
 
             logger.debug(f"[apply_calibration] Chunk {chunk_num}/{n_chunks} done in {_t_io_chunk:.2f}s I/O")
@@ -213,5 +222,5 @@ def apply_calibration_wf(
         processed=success_count,
         failed=fail_count,
         total=total,
-        message=f"Wrote calibrated tags to {success_count}/{total} files",
+        message=f"Wrote calibrated tags to {success_count}/{total} files ({fail_count} failed; eligible for retry)",
     )
