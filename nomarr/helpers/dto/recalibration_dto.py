@@ -10,16 +10,6 @@ from typing import Any
 
 
 @dataclass
-class GetStatusResult:
-    """Result from recalibration_service.get_status()."""
-
-    pending: int
-    running: int
-    done: int
-    error: int
-
-
-@dataclass
 class ApplyCalibrationResult:
     """Result from applying calibration to library files."""
 

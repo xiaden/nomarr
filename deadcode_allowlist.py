@@ -283,10 +283,6 @@ class AggResult:
     pass  # TypedDict result type
 
 
-class CalibrationHistoryResult:
-    pass  # TypedDict result type
-
-
 class CalibrationStateDict:
     pass  # TypedDict result type
 
@@ -295,23 +291,7 @@ class GenerateCalibrationResult:
     pass  # TypedDict result type
 
 
-class GetStatusResult:
-    pass  # TypedDict result type
-
-
 class HistogramCalibrationResult:
-    pass  # TypedDict result type
-
-
-class JobRemovalResult:
-    pass  # TypedDict result type
-
-
-class RetagAllResult:
-    pass  # TypedDict result type
-
-
-class RunCalibrationResult:
     pass  # TypedDict result type
 
 
@@ -324,10 +304,6 @@ class TokenizedGroup:
 
 
 class WorkerEnabledResult:
-    pass  # TypedDict result type
-
-
-class WorkerOperationResult:
     pass  # TypedDict result type
 
 

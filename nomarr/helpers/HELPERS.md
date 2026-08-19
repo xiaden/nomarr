@@ -27,7 +27,7 @@ Helpers sit at the **bottom** of the dependency chain. Every layer above may imp
 ```text
 helpers/
 ├── config_schema.py              # Configuration schema definitions
-├── dataclasses.py                # Shared dataclasses
+├── dataclasses/                  # Cross-domain dataclasses (package)
 ├── exceptions.py                 # Custom exception types
 ├── file_validation_helper.py     # Audio file validation utilities
 ├── files_helper.py               # File path utilities
@@ -36,7 +36,6 @@ helpers/
 ├── time_helper.py                # Time/timestamp conversions
 ├── vector_params_helper.py       # Vector dimension/parameter utilities
 └── dto/                          # Data Transfer Objects
-    ├── admin_dto.py              # Admin/management DTOs
     ├── analytics_dto.py          # Analytics domain DTOs
     ├── calibration_dto.py        # Calibration DTOs
     ├── config_dto.py             # Configuration DTOs
@@ -50,9 +49,7 @@ helpers/
     ├── playlist_import_dto.py    # Playlist import DTOs
     ├── processing_dto.py         # Processing pipeline DTOs
     ├── recalibration_dto.py      # Recalibration DTOs
-    ├── tagging_dto.py            # Tagging pipeline DTOs
-    ├── tags_dto.py               # Re-exports strict Tag/Tags/TagValue from helpers/dataclasses/tags_dataclass.py
-    └── vector_config_dto.py      # Vector configuration DTOs
+    └── tagging_dto.py            # Tagging pipeline DTOs
 ```
 
 **Naming rules:**

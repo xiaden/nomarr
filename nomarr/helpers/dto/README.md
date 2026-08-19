@@ -12,7 +12,6 @@ Typed dataclasses and TypedDicts shared across all layers — the canonical data
 
  | Module | Purpose |
  | -------- | -------- |
- | `admin_dto.py` | `JobRemovalResult`, `WorkerOperationResult`, `RunCalibrationResult`, `RetagAllResult` |
  | `analytics_dto.py` | `TagCoOccurrenceData`, `TagCorrelationData`, `MoodDistributionData` |
  | `calibration_dto.py` | Calibration run parameters and result containers |
  | `config_dto.py` | `ProcessorConfig` — ML processing configuration passed through layers |
@@ -27,8 +26,6 @@ Typed dataclasses and TypedDicts shared across all layers — the canonical data
  | `processing_dto.py` | `ProcessFileResult` — single-file processing outcome |
  | `recalibration_dto.py` | Recalibration workflow parameters and results |
  | `tagging_dto.py` | `TagWriteProfile`, `TagSpec`, `TagCondition` — tag write and filter types |
- | `tags_dto.py` | `Tag`, `Tags`, `TagValue` — core tag data model (frozen, sorted, tuple-based) |
- | `vector_config_dto.py` | `VectorConfigResult` — per-library vector configuration with inheritance |
 
 ## Patterns
 

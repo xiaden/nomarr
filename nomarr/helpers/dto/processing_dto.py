@@ -77,7 +77,7 @@ class ProcessorConfig:
     # Batch size for head prediction (VRAM control)
     batch_size: int
 
-    # Tag namespace (e.g., "essentia")
+    # Tag namespace (e.g., "nom")
     namespace: str
 
     # Key name for the version tag

@@ -94,7 +94,6 @@ from nomarr.helpers.dto.tag_curation_dto import (
     TagSongItem,
     TagValueItem,
 )
-from nomarr.helpers.dto.vector_config_dto import VectorConfigResult
 
 __all__ = [
     "AnalyzeWithSegmentsResult",
@@ -146,5 +145,4 @@ __all__ = [
     "TasteCluster",
     "TasteProfile",
     "TrackPlayData",
-    "VectorConfigResult",
 ]
