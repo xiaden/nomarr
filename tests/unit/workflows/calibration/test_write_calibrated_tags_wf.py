@@ -178,7 +178,7 @@ class TestWriteCalibratedTagsWorkflow:
         monkeypatch.setattr(wf_module, "update_file_calibration_hash", update_file_calibration_hash)
         monkeypatch.setattr(wf_module, "load_calibration_lookup", MagicMock(return_value={"happy": {"p5": 0.1}}))
 
-        wf_module.write_calibrated_tags_wf(db, params)
+        assert wf_module.write_calibrated_tags_wf(db, params) is True
 
         require_library_song_id.assert_called_once_with(db, "/music/example.flac")
         build_output_stream_lookup.assert_called_once_with(db, head_infos)

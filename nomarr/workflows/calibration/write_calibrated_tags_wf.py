@@ -102,7 +102,7 @@ def write_calibrated_tags_wf(
     params: WriteCalibratedTagsParams,
     *,
     batch_ctx: BatchContext | None = None,
-) -> None:
+) -> bool:
     """Update mood-* tags in the database by re-applying calibration.
 
     DB-only operation — does NOT write to audio files on disk.
@@ -135,7 +135,8 @@ def write_calibrated_tags_wf(
             deferred to the batch flush.
 
     Returns:
-        None (updates DB in-place)
+        ``True`` when tags were queued or written; ``False`` when no
+        calibrated output was available.
 
     Raises:
         FileNotFoundError: If file not found in library database
@@ -178,7 +179,8 @@ def write_calibrated_tags_wf(
         output_lookup=output_stream_lookup,
     )
     if not output_streams:
-        return
+        logger.warning("[calibrated_tags] No output streams found for %s", file_path)
+        return False
 
     head_outputs = reconstruct_head_outputs_from_streams(
         output_streams=output_streams,
@@ -186,7 +188,8 @@ def write_calibrated_tags_wf(
         calibrations=calibrations,
     )
     if not head_outputs:
-        return
+        logger.warning("[calibrated_tags] No calibrated outputs reconstructed for %s", file_path)
+        return False
     mood_tags = aggregate_mood_tags(head_outputs)
     # mood_tags may be None when all labels conflict or scores are below threshold.
     # None is a valid calibration result — we still write it (to clear stale tiers)
@@ -211,3 +214,4 @@ def write_calibrated_tags_wf(
             update_file_calibration_hash(db, song_id)
             logger.debug("[calibrated_tags] Updated calibration_hash for %s", file_path)
         logger.debug("[calibrated_tags] Updated mood tags in DB for %s", file_path)
+    return True

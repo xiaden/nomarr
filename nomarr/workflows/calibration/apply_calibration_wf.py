@@ -118,8 +118,7 @@ def apply_calibration_wf(
                 version_tag_key=version_tag_key,
                 calibrate_heads=calibrate_heads,
             )
-            write_calibrated_tags_wf(db=db, params=params, batch_ctx=ctx)
-            return True
+            return write_calibrated_tags_wf(db=db, params=params, batch_ctx=ctx)
         except Exception as e:
             logger.warning(f"Failed to write calibrated tags for {file_path}: {e}", exc_info=True)
             return False
