@@ -238,11 +238,15 @@ class TestSongRepository:
                 "tagged": 0,
                 "scanned_at": 1000,
                 "created_at": 1000,
+                "chromaprint": "later-fingerprint",
             },
         ]
         ids = repo.upsert_songs_for_library(lib_id, payloads)
         assert len(ids) == 2
         assert all(isinstance(i, int) for i in ids)
+        result = repo.get_song_by_path("/music/batch2.mp3", lib_id)
+        assert result is not None
+        assert result["chromaprint"] == "later-fingerprint"
 
     def test_update_song(self, pg_session) -> None:
         """update_song should modify specified fields."""

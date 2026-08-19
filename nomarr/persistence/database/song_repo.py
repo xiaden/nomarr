@@ -134,10 +134,10 @@ class SongRepository:
                 return []
             with self._session.begin_nested():
                 rows_data = [{**p, "library_id": library_id} for p in payloads]
+                columns = set().union(*(row.keys() for row in rows_data))
+                rows_data = [{column: row.get(column) for column in columns} for row in rows_data]
                 insert_stmt = pg_insert(_T).values(rows_data)
-                set_clause = {
-                    col: insert_stmt.excluded[col] for col in rows_data[0] if col not in ("library_id", "path")
-                }
+                set_clause = {col: insert_stmt.excluded[col] for col in columns if col not in ("library_id", "path")}
                 stmt = insert_stmt.on_conflict_do_update(
                     constraint="uq_songs_library_path",
                     set_=set_clause,
