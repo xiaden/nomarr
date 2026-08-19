@@ -481,7 +481,20 @@ class TestUpdateFileTags:
         mock_tagging_service.update_song_tags.return_value = {
             "file_id": "file1",
             "name": "genre",
-            "tags": {"genre": ["rock", "alternative"]},
+            "tags": [
+                {
+                    "key": "genre",
+                    "value": "rock",
+                    "type": "string",
+                    "is_nomarr": False,
+                },
+                {
+                    "key": "genre",
+                    "value": "alternative",
+                    "type": "string",
+                    "is_nomarr": False,
+                },
+            ],
         }
 
         response = client.patch(
@@ -493,7 +506,20 @@ class TestUpdateFileTags:
         data = response.json()
         assert data["file_id"] == "file1"
         assert data["name"] == "genre"
-        assert data["tags"]["genre"] == ["rock", "alternative"]
+        assert data["tags"] == [
+            {
+                "key": "genre",
+                "value": "rock",
+                "type": "string",
+                "is_nomarr": False,
+            },
+            {
+                "key": "genre",
+                "value": "alternative",
+                "type": "string",
+                "is_nomarr": False,
+            },
+        ]
         mock_tagging_service.update_song_tags.assert_called_once_with(
             song_id="file1", name="genre", values=["rock", "alternative"]
         )

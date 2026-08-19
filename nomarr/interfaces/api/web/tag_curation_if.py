@@ -95,10 +95,19 @@ class PendingCountResponse(BaseModel):
     count: int
 
 
+class UpdateFileTagResponse(BaseModel):
+    """Single tag returned after updating a file's tag values."""
+
+    key: str
+    value: str
+    type: str
+    is_nomarr: bool
+
+
 class UpdateFileTagsResponse(BaseModel):
     file_id: str
     name: str
-    tags: dict
+    tags: list[UpdateFileTagResponse]
 
 
 @router.post("/rename", dependencies=[Depends(verify_session)], response_model=RenameTagResponse)

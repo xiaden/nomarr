@@ -255,10 +255,12 @@ class TestUpdateSongTags:
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_update_song_tags_success(self) -> None:
-        """Successful update should return file_id, name, and tags dict."""
+        """Successful update should return file_id, name, and tag list."""
         service = _make_service()
         mock_tags_obj = MagicMock()
-        mock_tags_obj.to_dict.return_value = {"genre": ["rock"]}
+        mock_tags_obj.__iter__.return_value = iter(
+            [MagicMock(key="genre", value=("rock",))],
+        )
         with (
             patch(
                 "nomarr.services.domain.tagging_svc.curation.set_song_tags",
@@ -273,7 +275,18 @@ class TestUpdateSongTags:
         ):
             result = service.update_song_tags("1", "genre", ["rock"])
 
-        assert result == {"file_id": "1", "name": "genre", "tags": {"genre": ["rock"]}}
+        assert result == {
+            "file_id": "1",
+            "name": "genre",
+            "tags": [
+                {
+                    "key": "genre",
+                    "value": "rock",
+                    "type": "string",
+                    "is_nomarr": False,
+                },
+            ],
+        }
         mock_set.assert_called_once()
         mock_transition.assert_called_once()
 
