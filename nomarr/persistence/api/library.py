@@ -447,6 +447,10 @@ class LibraryDb:
     def get_scan(self, library_id: int) -> LibraryScanRow | None:
         return self._scans.get_scan(library_id)
 
+    def get_latest_successful_scan(self, library_id: int) -> LibraryScanRow | None:
+        """Return the latest completed scan row for a library."""
+        return self._scans.get_latest_successful_scan(library_id)
+
     def add_scan(self, library_id: int, payload: dict[str, Any]) -> int:
         return self._scans.add_scan(library_id, payload)
 

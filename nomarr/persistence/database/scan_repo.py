@@ -75,6 +75,23 @@ class ScanRepository:
             row = result.fetchone()
             return _row_to_dto(row) if row else None
 
+    def get_latest_successful_scan(self, library_id: int) -> LibraryScanRow | None:
+        """Fetch the latest completed scan with a non-null finish time.
+
+        Results are ordered by ``finished_at`` descending, with the row id as
+        a deterministic tie-breaker for scans completed in the same millisecond.
+        """
+        with map_persistence_exceptions():
+            stmt = (
+                select(_T)
+                .where(_T.c.library_id == library_id, _T.c.status == "completed", _T.c.finished_at.is_not(None))
+                .order_by(_T.c.finished_at.desc(), _T.c.id.desc())
+                .limit(1)
+            )
+            result = self._session.execute(stmt)
+            row = result.fetchone()
+            return _row_to_dto(row) if row else None
+
     def update_scan(self, scan_id: int, fields: dict[str, Any]) -> None:
         """Update fields on a scan record, ignoring non-schema aliases."""
         normalized = {

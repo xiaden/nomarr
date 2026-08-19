@@ -275,9 +275,15 @@ def find_ml_complete_libraries(db: Database, min_files: int) -> list[dict[str, A
 
 
 def _merge_scan_state(db: Database, library: dict[str, Any]) -> dict[str, Any]:
-    """Merge library scan state into a library document for API compatibility."""
+    """Merge current status with statistics from the latest successful scan.
+
+    The newest row may represent an active or failed attempt, so it supplies
+    status, progress, and errors while the successful row supplies the last
+    completed scan timestamp and total.
+    """
     library_id = library["id"]
     scan_doc = get_scan_state(db, library_id)
+    successful_scan = db.library.get_latest_successful_scan(library_id)
     try:
         pipeline_state = get_pipeline_state(db, library_id)
     except ValueError:
@@ -287,11 +293,17 @@ def _merge_scan_state(db: Database, library: dict[str, Any]) -> dict[str, Any]:
         **library,
         "scan_status": _pipeline_state_to_scan_status(pipeline_state, scan_doc),
         "scan_progress": 0 if scan_doc is None else scan_doc.get("files_processed", 0),
-        "scan_total": 0 if scan_doc is None else scan_doc.get("files_found", 0),
-        "scanned_at": None if scan_doc is None else scan_doc.get("finished_at"),
+        # The newest row may be a failed/interrupted attempt. Keep summary
+        # fields sourced from the most recent successful scan instead.
+        "scan_total": 0 if successful_scan is None else successful_scan.get("files_found", 0),
+        # The current row describes the active/failed attempt. Keep the
+        # successful summary independent so an interrupted attempt cannot
+        # erase the last known library statistics.
+        "scanned_at": None if successful_scan is None else successful_scan.get("finished_at"),
         "scan_error": None if scan_doc is None else scan_doc.get("error"),
         "last_scan_started_at": None if scan_doc is None else scan_doc.get("started_at"),
         "scan_type_in_progress": None if scan_doc is None else scan_doc.get("scan_type"),
+        "last_scan_at": None if successful_scan is None else successful_scan.get("finished_at"),
     }
 
 

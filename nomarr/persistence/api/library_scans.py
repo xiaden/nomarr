@@ -39,6 +39,10 @@ class LibraryScansDb:
         """Return the most recent scan record for a library."""
         return self._scan_repo.get_scan_record(library_id)
 
+    def get_latest_successful_scan(self, library_id: int) -> LibraryScanRow | None:
+        """Return the latest successful scan summary for a library."""
+        return self._scan_repo.get_latest_successful_scan(library_id)
+
     def add_scan(self, library_id: int, payload: dict[str, Any]) -> int:
         """Create a new scan record for a library."""
         return self._scan_repo.create_scan({**payload, "library_id": library_id})
