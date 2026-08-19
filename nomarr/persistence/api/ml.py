@@ -7,11 +7,12 @@ intent facade wired as ``db.ml``.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import text
 
 if TYPE_CHECKING:
+    from sqlalchemy.engine import Engine
     from sqlalchemy.orm import Session, scoped_session
 
     from nomarr.helpers.dto.calibration_repo_dto import CalibrationHistoryRecord, CalibrationStateRecord
@@ -512,7 +513,11 @@ class MlDb:
         """
         assert self._vector_repo is not None, "VectorRepo not wired"
         try:
-            self._vector_repo._session.execute(text("REINDEX INDEX CONCURRENTLY ix_embeddings_cold_hnsw"))
+            # The facade's session is backed by the application engine; cast the
+            # SQLAlchemy union return type so the dedicated connection is clear.
+            engine = cast("Engine", self._vector_repo._session.get_bind())
+            with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
+                connection.execute(text("REINDEX INDEX CONCURRENTLY ix_embeddings_cold_hnsw"))
             logger.info("Successfully rebuilt cold HNSW index (ix_embeddings_cold_hnsw).")
         except Exception:
             logger.exception("Failed to rebuild cold HNSW index (ix_embeddings_cold_hnsw).")

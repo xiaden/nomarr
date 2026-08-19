@@ -76,13 +76,17 @@ class TestMlDbVectorIndexMethods:
         """rebuild_vector_index should execute REINDEX INDEX CONCURRENTLY SQL."""
         ml_db = _make_ml_db()
         mock_result = MagicMock()
-        ml_db._vector_repo._session.execute = MagicMock(return_value=mock_result)
+        mock_connection = MagicMock()
+        mock_connection.execute.return_value = mock_result
+        ml_db._vector_repo._session.get_bind.return_value.connect.return_value.execution_options.return_value.__enter__.return_value = (
+            mock_connection
+        )
 
         ml_db.rebuild_vector_index(1280)
 
-        ml_db._vector_repo._session.execute.assert_called_once()
+        mock_connection.execute.assert_called_once()
         # Verify the SQL contains REINDEX
-        call_args = ml_db._vector_repo._session.execute.call_args
+        call_args = mock_connection.execute.call_args
         sql_text = str(call_args.args[0])
         assert "REINDEX" in sql_text.upper()
 
