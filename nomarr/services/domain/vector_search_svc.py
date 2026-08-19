@@ -13,6 +13,14 @@ from nomarr.services.infrastructure.config_svc import ConfigService
 logger = logging.getLogger(__name__)
 
 
+class MissingSeedVectorError(ValueError):
+    """Raised when the requested track has no vector for the backbone."""
+
+
+class VectorIndexUnavailableError(ValueError):
+    """Raised when the cold vector index is unavailable for searching."""
+
+
 class VectorSearchService:
     """Service for vector similarity search operations.
 
@@ -64,11 +72,17 @@ class VectorSearchService:
                 - Other document fields
 
         Raises:
-            ValueError: If file not found, no vector exists, or cold collection
-                has no vector index.
+            MissingSeedVectorError: If no vector exists for the source track.
+            VectorIndexUnavailableError: If the cold vector index is unavailable.
             RuntimeError: If search query fails
 
         """
+        # The cold HNSW index is a service prerequisite; check it before looking
+        # up the seed so an unavailable index remains distinct from an
+        # unprocessed track.
+        if not self.db.ml.has_vector_index(backbone_id):
+            raise VectorIndexUnavailableError(f"No vector index available for backbone '{backbone_id}'.")
+
         # Step 1: Get the source track's vector from the per-backbone cold collection
         vector_doc = get_cold_track_vector(self.db, file_id, backbone_id)
         if vector_doc is None:
@@ -76,7 +90,7 @@ class VectorSearchService:
                 f"No vector found for file '{file_id}' with backbone "
                 f"'{backbone_id}'. Track may not have been processed yet."
             )
-            raise ValueError(msg)
+            raise MissingSeedVectorError(msg)
         vector: list[float] = vector_doc["vector_n"]
 
         # Step 2: Single ANN search on per-backbone cold collection

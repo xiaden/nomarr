@@ -33,7 +33,9 @@ from nomarr.services.domain.vector_maintenance_svc import (
     VectorMaintenanceService,  # noqa: TC001  # FastAPI resolves Annotated[...] at route registration
 )
 from nomarr.services.domain.vector_search_svc import (
-    VectorSearchService,  # noqa: TC001  # FastAPI resolves Annotated[...] at route registration
+    MissingSeedVectorError,
+    VectorIndexUnavailableError,
+    VectorSearchService,  # FastAPI resolves Annotated[...] at route registration
 )
 from nomarr.services.infrastructure.ml_svc import (
     MLService,  # noqa: TC001  # FastAPI resolves Annotated[...] at route registration
@@ -77,6 +79,14 @@ async def search_vectors(
         ]
 
         return VectorSearchResponse(results=result_items)
+
+    except MissingSeedVectorError as e:
+        logger.warning(f"Vector search seed vector not found: {e}")
+        raise HTTPException(status_code=404, detail=str(e)) from e
+
+    except VectorIndexUnavailableError as e:
+        logger.warning(f"Vector search index unavailable: {e}")
+        raise HTTPException(status_code=503, detail=str(e)) from e
 
     except ValueError as e:
         logger.warning(f"Vector search validation error: {e}")
