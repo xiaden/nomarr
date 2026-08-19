@@ -606,15 +606,14 @@ def test_remove_song_by_path_scoped() -> None:
 
 
 @pytest.mark.unit
-def test_remove_song_by_path_unscoped_fallback() -> None:
+def test_remove_song_by_path_requires_library_scope() -> None:
     db, _, song_repo, *_ = _make_library_db()
-    song_repo.get_song_by_path = MagicMock(return_value=None)
-    song_repo.get_song_by_path_unscoped = MagicMock(return_value={"id": 77})
+    song_repo.get_song_by_path = MagicMock(return_value={"id": 77})
     song_repo.delete_song = MagicMock()
 
-    db.remove_song_by_path("/music/song.mp3")
+    db.remove_song_by_path("/music/song.mp3", library_id=2)
 
-    song_repo.get_song_by_path_unscoped.assert_called_once_with("/music/song.mp3")
+    song_repo.get_song_by_path.assert_called_once_with("/music/song.mp3", 2)
     song_repo.delete_song.assert_called_once_with(77)
 
 
@@ -622,10 +621,9 @@ def test_remove_song_by_path_unscoped_fallback() -> None:
 def test_remove_song_by_path_returns_silently_when_not_found() -> None:
     db, _, song_repo, *_ = _make_library_db()
     song_repo.get_song_by_path = MagicMock(return_value=None)
-    song_repo.get_song_by_path_unscoped = MagicMock(return_value=None)
     song_repo.delete_song = MagicMock()
 
-    db.remove_song_by_path("/nonexistent.mp3")
+    db.remove_song_by_path("/nonexistent.mp3", library_id=1)
 
     song_repo.delete_song.assert_not_called()
 

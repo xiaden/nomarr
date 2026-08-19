@@ -143,9 +143,9 @@ class TestDeleteLibraryFile:
     def test_resolves_path_delete_via_path_intent(self) -> None:
         mock_db = MagicMock()
 
-        delete_library_song(mock_db, "C:/music/song.mp3")
+        delete_library_song(mock_db, "C:/music/song.mp3", library_id=1)
 
-        mock_db.library.remove_song_by_path.assert_called_once_with("C:/music/song.mp3")
+        mock_db.library.remove_song_by_path.assert_called_once_with("C:/music/song.mp3", 1)
         mock_db.library.remove_song.assert_not_called()
 
 
@@ -155,31 +155,31 @@ class TestBulkDeleteFiles:
     @pytest.mark.unit
     def test_bulk_delete_resolves_paths_and_removes_each_found_file_once(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.find_song_by_path_any_library.side_effect = [
+        mock_db.library.get_song_by_path.side_effect = [
             {"_id": f"{'songs'}/a"},
             None,
             {"_id": f"{'songs'}/c"},
         ]
 
-        result = bulk_delete_songs(mock_db, ["C:/music/a.mp3", "C:/music/missing.mp3", "C:/music/c.mp3"])
+        result = bulk_delete_songs(mock_db, ["C:/music/a.mp3", "C:/music/missing.mp3", "C:/music/c.mp3"], 1)
 
         assert result == 2
-        assert mock_db.library.find_song_by_path_any_library.call_args_list == [
-            call("C:/music/a.mp3"),
-            call("C:/music/missing.mp3"),
-            call("C:/music/c.mp3"),
+        assert mock_db.library.get_song_by_path.call_args_list == [
+            call("C:/music/a.mp3", 1),
+            call("C:/music/missing.mp3", 1),
+            call("C:/music/c.mp3", 1),
         ]
         assert mock_db.library.remove_song_by_path.call_args_list == [
-            call("C:/music/a.mp3"),
-            call("C:/music/c.mp3"),
+            call("C:/music/a.mp3", 1),
+            call("C:/music/c.mp3", 1),
         ]
 
     @pytest.mark.unit
     def test_bulk_delete_returns_zero_when_no_paths_match(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.find_song_by_path_any_library.return_value = None
+        mock_db.library.get_song_by_path.return_value = None
 
-        result = bulk_delete_songs(mock_db, ["C:/music/missing.mp3"])
+        result = bulk_delete_songs(mock_db, ["C:/music/missing.mp3"], 1)
 
         assert result == 0
         mock_db.library.remove_song_by_path.assert_not_called()

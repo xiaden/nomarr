@@ -54,7 +54,7 @@ def upsert_library_song(
     )
 
 
-def delete_library_song(db: Database, song_id: int) -> None:
+def delete_library_song(db: Database, song_id: int | str, library_id: int | None = None) -> None:
     """Delete a library-song document and its edges.
 
     Accepts a song ID (integer) or a raw file path (resolved via path lookup).
@@ -65,9 +65,11 @@ def delete_library_song(db: Database, song_id: int) -> None:
         int(song_id)
         # It's a numeric ID, use it directly
         db.library.remove_song(song_id)
-    except ValueError:
+    except ValueError as err:
         # Not an integer, treat as path
-        db.library.remove_song_by_path(str(song_id))
+        if library_id is None:
+            raise ValueError("library_id is required when deleting a song by path") from err
+        db.library.remove_song_by_path(str(song_id), library_id)
 
 
 def upsert_batch(db: Database, file_docs: list[dict[str, Any]]) -> list[int]:
@@ -126,8 +128,8 @@ def update_song_modified_time(db: Database, file_key: int, modified_time_ms: int
     db.library.update_library_song_modified_time(file_key, modified_time_ms)
 
 
-def bulk_delete_songs(db: Database, paths: list[str]) -> int:
-    """Delete multiple library-song documents by path.
+def bulk_delete_songs(db: Database, paths: list[str], library_id: int) -> int:
+    """Delete multiple library-song documents by path in one library.
 
     Silently skips paths with no matching document. Returns the number deleted.
     """
@@ -137,14 +139,14 @@ def bulk_delete_songs(db: Database, paths: list[str]) -> int:
     resolved = [
         path
         for path in paths
-        if cast("dict[str, Any] | None", db.library.find_song_by_path_any_library(path)) is not None
+        if cast("dict[str, Any] | None", db.library.get_song_by_path(path, library_id)) is not None
     ]
     matched_paths = list(dict.fromkeys(resolved))
     if not matched_paths:
         return 0
 
     for path in matched_paths:
-        db.library.remove_song_by_path(path)
+        db.library.remove_song_by_path(path, library_id)
     return len(matched_paths)
 
 

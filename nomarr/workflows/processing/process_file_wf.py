@@ -73,7 +73,8 @@ def process_file_workflow(
     if not library_path.is_valid():
         if library_path.status == "not_found":
             logger.warning(f"[process_file_workflow] File no longer exists on disk, cleaning up: {path}")
-            bulk_delete_songs(db, [path])
+            if library_path.library_id is not None:
+                bulk_delete_songs(db, [path], library_path.library_id)
             return ProcessFileResult(
                 file_path=path,
                 elapsed=0,

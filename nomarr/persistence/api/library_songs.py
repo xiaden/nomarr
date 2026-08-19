@@ -325,18 +325,13 @@ class LibrarySongsDb:
         """
         self._song_repo.delete_song(song_id)
 
-    def remove_song_by_path(self, path: str, library_id: int | None = None) -> None:
-        """Remove a song by path if a matching song row can be resolved.
+    def remove_song_by_path(self, path: str, library_id: int) -> None:
+        """Remove a song by path within its owning library.
 
-        Resolves the path first, scoped to ``library_id`` when provided or across
-        all libraries otherwise, then delegates to ``remove_song``. Returns
-        silently when no matching song exists.
+        Path is only unique together with ``library_id``; requiring the library
+        here prevents an ambiguous path from selecting another library's song.
         """
-        song_row = (
-            self.get_song_by_path(path, library_id)
-            if library_id is not None
-            else self.find_song_by_path_any_library(path)
-        )
+        song_row = self.get_song_by_path(path, library_id)
         if song_row is None:
             return
         song_id: int = song_row["id"]

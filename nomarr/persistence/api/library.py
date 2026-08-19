@@ -249,7 +249,7 @@ class LibraryDb:
     def remove_song(self, song_id: int) -> None:
         return self._songs.remove_song(song_id)
 
-    def remove_song_by_path(self, path: str, library_id: int | None = None) -> None:
+    def remove_song_by_path(self, path: str, library_id: int) -> None:
         return self._songs.remove_song_by_path(path, library_id)
 
     def list_existing_song_paths(self, library_id: int, paths: list[str]) -> list[str]:

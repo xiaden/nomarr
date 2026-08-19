@@ -91,7 +91,7 @@ class SongRepository:
         delete the wrong song, so ambiguous matches are treated as missing.
         """
         with map_persistence_exceptions():
-            stmt = select(_T).where(_T.c.path == path).limit(2)
+            stmt = select(_T).where(_T.c.path == path).order_by(_T.c.id).limit(2)
             result = self._session.execute(stmt)
             rows = result.all()
             return _row_to_dto(rows[0]) if len(rows) == 1 else None
