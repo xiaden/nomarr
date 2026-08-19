@@ -6,6 +6,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nomarr.helpers.constants.file_states import (
+    STATE_NOT_WRITTEN,
+    STATE_TAGS_CURRENT,
+    STATE_TAGS_NOT_FRESH,
+    STATE_WRITTEN,
+)
 from nomarr.helpers.dataclasses.tags_dataclass import Tag, Tags
 from nomarr.helpers.dto.tag_curation_dto import MergeResult, RenameResult, SplitResult
 from nomarr.services.domain.tagging_svc import TaggingService, TaggingServiceConfig
@@ -252,6 +258,24 @@ class TestSplitTag:
 
 class TestUpdateSongTags:
     """Tests for ``TaggingCurationMixin.update_song_tags``."""
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_curated_song_is_marked_not_fresh_for_file_write(self) -> None:
+        """Curation must enqueue the song in the reconciliation stale state."""
+        service = _make_service()
+        service.db.app.get_song_states = MagicMock(return_value={STATE_WRITTEN, STATE_TAGS_CURRENT})
+        with (
+            patch("nomarr.services.domain.tagging_svc.curation.set_song_tags"),
+            patch("nomarr.services.domain.tagging_svc.curation.get_song_tags", return_value=None),
+            patch("nomarr.services.domain.tagging_svc.curation.transition_song_state") as transition,
+        ):
+            service.update_song_tags("1", "genre", ["rock"])
+
+        assert [call.args[1:] for call in transition.call_args_list] == [
+            ([1], STATE_WRITTEN, STATE_NOT_WRITTEN),
+            ([1], STATE_TAGS_CURRENT, STATE_TAGS_NOT_FRESH),
+        ]
 
     @pytest.mark.unit
     @pytest.mark.mocked

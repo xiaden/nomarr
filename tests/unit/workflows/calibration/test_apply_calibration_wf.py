@@ -75,6 +75,7 @@ class TestApplyCalibrationWorkflow:
 
     def test_mood_flush_failure_reports_files_and_skips_hashes(self, monkeypatch: pytest.MonkeyPatch) -> None:
         db = MagicMock()
+        db.app.get_song_states.return_value = {apply_module.STATE_TAGS_CURRENT}
         save_mood_tags_batch = MagicMock(side_effect=RuntimeError("tag write failed"))
         update_hashes = MagicMock()
         transition_song_state = MagicMock()
@@ -109,13 +110,16 @@ class TestApplyCalibrationWorkflow:
 
     def test_hash_flush_failure_reports_files_after_mood_flush(self, monkeypatch: pytest.MonkeyPatch) -> None:
         db = MagicMock()
+        db.app.get_song_states.return_value = {apply_module.STATE_TAGS_CURRENT}
         save_mood_tags_batch = MagicMock()
         update_hashes = MagicMock(side_effect=RuntimeError("state write failed"))
+        transition_song_state = MagicMock()
         monkeypatch.setattr(apply_module, "discover_heads", MagicMock(return_value=[{"head": "mood"}]))
         monkeypatch.setattr(apply_module, "load_calibrations_from_db_wf", MagicMock(return_value={}))
         monkeypatch.setattr(apply_module, "get_calibration_version", MagicMock(return_value="version-1"))
         monkeypatch.setattr(apply_module, "save_mood_tags_batch", save_mood_tags_batch)
         monkeypatch.setattr(apply_module, "update_file_calibration_hashes_batch", update_hashes)
+        monkeypatch.setattr(apply_module, "transition_song_state", transition_song_state)
 
         def _write(*, batch_ctx: Any, **_: Any) -> bool:
             with batch_ctx._lock:
@@ -137,3 +141,4 @@ class TestApplyCalibrationWorkflow:
 
         assert (result.processed, result.failed) == (0, 1)
         save_mood_tags_batch.assert_called_once()
+        transition_song_state.assert_not_called()

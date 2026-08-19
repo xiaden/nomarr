@@ -180,9 +180,10 @@ def apply_calibration_wf(
             _t_io_chunk = (internal_ms().value - _t_io_start.value) / 1000
             _t_io_total += _t_io_chunk
 
-            # Persist mood tags before marking files calibrated. A failed mood
-            # tag write must leave the file eligible for a later retry.
-            mood_flush_succeeded = True
+            # Persist DB updates before marking files stale for file write-back.
+            # Any mood-tag or calibration-hash failure leaves the file eligible
+            # for a later retry and avoids projecting a partial DB update.
+            writes_succeeded = True
             if batch_ctx.pending_mood_tags:
                 logger.debug(
                     f"[apply_calibration] Chunk {chunk_num}/{n_chunks}: "
@@ -191,13 +192,13 @@ def apply_calibration_wf(
                 try:
                     save_mood_tags_batch(db, batch_ctx.pending_mood_tags)
                 except Exception as e:
-                    mood_flush_succeeded = False
+                    writes_succeeded = False
                     failed_writes = len(batch_ctx.pending_mood_tags)
                     success_count -= failed_writes
                     fail_count += failed_writes
                     logger.warning(f"[apply_calibration] Batch mood tag flush failed: {e}", exc_info=True)
 
-            if mood_flush_succeeded and batch_ctx.pending_calibration_hashes:
+            if writes_succeeded and batch_ctx.pending_calibration_hashes:
                 logger.debug(
                     f"[apply_calibration] Chunk {chunk_num}/{n_chunks}: "
                     f"flushing {len(batch_ctx.pending_calibration_hashes)} calibration hash updates..."
@@ -205,12 +206,13 @@ def apply_calibration_wf(
                 try:
                     update_file_calibration_hashes_batch(db, batch_ctx.pending_calibration_hashes)
                 except Exception as e:
+                    writes_succeeded = False
                     failed_writes = len(batch_ctx.pending_calibration_hashes)
                     success_count -= failed_writes
                     fail_count += failed_writes
                     logger.warning(f"[apply_calibration] Batch calibration hash flush failed: {e}", exc_info=True)
 
-            if mood_flush_succeeded:
+            if writes_succeeded:
                 for song_id, _ in batch_ctx.pending_mood_tags:
                     if STATE_TAGS_CURRENT in db.app.get_song_states(song_id):
                         transition_song_state(db, [song_id], STATE_TAGS_CURRENT, STATE_TAGS_NOT_FRESH)

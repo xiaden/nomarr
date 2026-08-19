@@ -7,7 +7,12 @@ from typing import TYPE_CHECKING, Any
 from nomarr.components.library.library_song_state_comp import transition_song_state
 from nomarr.components.tagging.tag_query_comp import get_song_tags, get_tag, list_songs_for_tag
 from nomarr.components.tagging.tag_write_comp import find_or_create_tag, relink_tag_edges, set_song_tags
-from nomarr.helpers.constants.file_states import STATE_NOT_WRITTEN, STATE_WRITTEN
+from nomarr.helpers.constants.file_states import (
+    STATE_NOT_WRITTEN,
+    STATE_TAGS_CURRENT,
+    STATE_TAGS_NOT_FRESH,
+    STATE_WRITTEN,
+)
 from nomarr.helpers.dto.tag_curation_dto import MergeResult, RenameResult, SplitResult
 
 if TYPE_CHECKING:
@@ -18,6 +23,12 @@ class TaggingCurationMixin:
     """Mixin providing tag curation methods."""
 
     db: Database
+
+    def _mark_song_write_pending(self, song_id: int) -> None:
+        """Queue a curated song for both projection and file write-back."""
+        transition_song_state(self.db, [song_id], STATE_WRITTEN, STATE_NOT_WRITTEN)
+        if STATE_TAGS_CURRENT in self.db.app.get_song_states(song_id):
+            transition_song_state(self.db, [song_id], STATE_TAGS_CURRENT, STATE_TAGS_NOT_FRESH)
 
     @staticmethod
     def _reject_nom_prefix(name: str | None = None, *, tag_doc: dict[str, Any] | None = None) -> None:
@@ -67,7 +78,7 @@ class TaggingCurationMixin:
 
         song_ids = list_songs_for_tag(self.db, target_tag_id)
         for song_id in song_ids:
-            transition_song_state(self.db, [int(song_id)], STATE_WRITTEN, STATE_NOT_WRITTEN)
+            self._mark_song_write_pending(int(song_id))
 
         return RenameResult(moved=relink["moved"], merged_into_existing=merged_into_existing)
 
@@ -107,7 +118,7 @@ class TaggingCurationMixin:
 
         song_ids = list_songs_for_tag(self.db, int(canonical_tag_id))
         for song_id in song_ids:
-            transition_song_state(self.db, [int(song_id)], STATE_WRITTEN, STATE_NOT_WRITTEN)
+            self._mark_song_write_pending(int(song_id))
 
         return MergeResult(total_moved=total_moved, sources_removed=sources_removed)
 
@@ -138,7 +149,7 @@ class TaggingCurationMixin:
         relink = relink_tag_edges(self.db, int(source_tag_id), target_tag_id, song_ids=[int(sid) for sid in song_ids])
 
         for song_id in song_ids:
-            transition_song_state(self.db, [int(song_id)], STATE_WRITTEN, STATE_NOT_WRITTEN)
+            self._mark_song_write_pending(int(song_id))
 
         return SplitResult(moved=relink["moved"], new_tag_created=new_tag_created)
 
@@ -155,7 +166,7 @@ class TaggingCurationMixin:
         """
         self._reject_nom_prefix(name=name)
         set_song_tags(self.db, int(song_id), name, list(values))
-        transition_song_state(self.db, [int(song_id)], STATE_WRITTEN, STATE_NOT_WRITTEN)
+        self._mark_song_write_pending(int(song_id))
         tags = get_song_tags(self.db, int(song_id), name=name)
         if tags is None:
             tags_list: list[dict[str, Any]] = []
