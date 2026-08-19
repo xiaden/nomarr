@@ -14,7 +14,7 @@ import logging
 from unittest.mock import Mock
 
 import pytest
-from sqlalchemy.exc import IntegrityError, NoResultFound, OperationalError
+from sqlalchemy.exc import IntegrityError, NoResultFound, OperationalError, ProgrammingError
 
 from nomarr.helpers.exceptions import (
     DatabaseStateError,
@@ -54,6 +54,13 @@ def test_operational_error_maps_to_database_state_error():
     """OperationalError is translated to DatabaseStateError."""
     exc = OperationalError("connection lost", params=None, orig=Mock())
     with pytest.raises(DatabaseStateError, match="Database operational error"), map_persistence_exceptions():
+        raise exc
+
+
+def test_programming_error_maps_to_database_state_error():
+    """ProgrammingError is translated to DatabaseStateError."""
+    exc = ProgrammingError("invalid SQL", params=None, orig=Mock())
+    with pytest.raises(DatabaseStateError, match="Database programming error"), map_persistence_exceptions():
         raise exc
 
 

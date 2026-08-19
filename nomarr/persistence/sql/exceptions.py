@@ -15,7 +15,7 @@ import logging
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
-from sqlalchemy.exc import IntegrityError, NoResultFound, OperationalError, SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, NoResultFound, OperationalError, ProgrammingError, SQLAlchemyError
 
 from nomarr.helpers.exceptions import (
     DatabaseStateError,
@@ -48,6 +48,7 @@ def map_persistence_exceptions() -> Iterator[None]:
     * ``IntegrityError`` with pgcode 23503 (foreign_key_violation) → ``ReferentialIntegrityError``
     * ``IntegrityError`` with unknown/missing pgcode → ``DatabaseStateError`` (logged at WARNING)
     * ``OperationalError`` → ``DatabaseStateError``
+    * ``ProgrammingError`` → ``DatabaseStateError``
     """
     try:
         yield
@@ -63,6 +64,8 @@ def map_persistence_exceptions() -> Iterator[None]:
         raise DatabaseStateError(f"Database error (pgcode={pgcode}): {e}") from None
     except OperationalError as e:
         raise DatabaseStateError(f"Database operational error: {e}") from None
+    except ProgrammingError as e:
+        raise DatabaseStateError(f"Database programming error: {e}") from None
 
 
 # ---------------------------------------------------------------------------
