@@ -158,7 +158,7 @@ class TestWriteCalibratedTagsWorkflow:
             )
         ]
         mood_tags = _make_tags(**{"nom:mood-happy": "high"})
-        require_library_song_id = MagicMock(return_value=f"{'songs'}/1")
+        require_library_song_id = MagicMock(return_value=1)
         discover_heads = MagicMock(return_value=head_infos)
         build_output_stream_lookup = MagicMock(return_value={"ml_model_outputs/out-1": ("mood_multiclass", "happy")})
         load_output_streams_for_song = MagicMock(return_value=output_streams)
@@ -184,7 +184,7 @@ class TestWriteCalibratedTagsWorkflow:
         build_output_stream_lookup.assert_called_once_with(db, head_infos)
         load_output_streams_for_song.assert_called_once_with(
             db,
-            f"{'songs'}/1",
+            1,
             "/music/example.flac",
             head_infos,
             output_lookup={"ml_model_outputs/out-1": ("mood_multiclass", "happy")},
@@ -195,8 +195,8 @@ class TestWriteCalibratedTagsWorkflow:
             calibrations={"happy": {"p5": 0.1}},
         )
         aggregate_mood_tags.assert_called_once_with(head_outputs)
-        save_mood_tags.assert_called_once_with(db, f"{'songs'}/1", mood_tags)
-        update_file_calibration_hash.assert_called_once_with(db, f"{'songs'}/1")
+        save_mood_tags.assert_called_once_with(db, 1, mood_tags)
+        update_file_calibration_hash.assert_called_once_with(db, 1)
         assert db.segment_scores_stats.mock_calls == []
 
     def test_none_aggregation_still_writes_none_tiers_and_marks_hash(
@@ -232,7 +232,7 @@ class TestWriteCalibratedTagsWorkflow:
                 calibration_id=None,
             )
         ]
-        require_library_song_id = MagicMock(return_value=f"{'songs'}/1")
+        require_library_song_id = MagicMock(return_value=1)
         discover_heads = MagicMock(return_value=head_infos)
         build_output_stream_lookup = MagicMock(return_value={"ml_model_outputs/out-1": ("mood_multiclass", "happy")})
         load_output_streams_for_song = MagicMock(return_value=output_streams)
@@ -254,8 +254,8 @@ class TestWriteCalibratedTagsWorkflow:
 
         assert wf_module.write_calibrated_tags_wf(db, params) is True
 
-        save_mood_tags.assert_called_once_with(db, f"{'songs'}/1", None)
-        update_file_calibration_hash.assert_called_once_with(db, f"{'songs'}/1")
+        save_mood_tags.assert_called_once_with(db, 1, None)
+        update_file_calibration_hash.assert_called_once_with(db, 1)
 
     def test_batch_context_reuses_cached_output_lookup_and_defers_batch_writes(
         self,
@@ -323,7 +323,7 @@ class TestWriteCalibratedTagsWorkflow:
             calibrations={"happy": {"p5": 0.1}},
             calibration_version="cal-v1",
         )
-        require_library_song_id = MagicMock(side_effect=[f"{'songs'}/1", f"{'songs'}/2"])
+        require_library_song_id = MagicMock(side_effect=[1, 2])
         discover_heads = MagicMock()
         build_output_stream_lookup = MagicMock(return_value=lookup)
         load_output_streams_for_song = MagicMock(side_effect=[output_streams_1, output_streams_2])
@@ -340,8 +340,8 @@ class TestWriteCalibratedTagsWorkflow:
         monkeypatch.setattr(wf_module, "save_mood_tags", save_mood_tags)
         monkeypatch.setattr(wf_module, "update_file_calibration_hash", update_file_calibration_hash)
 
-        wf_module.write_calibrated_tags_wf(db, params_1, batch_ctx=batch_ctx)
-        wf_module.write_calibrated_tags_wf(db, params_2, batch_ctx=batch_ctx)
+        assert wf_module.write_calibrated_tags_wf(db, params_1, batch_ctx=batch_ctx) is True
+        assert wf_module.write_calibrated_tags_wf(db, params_2, batch_ctx=batch_ctx) is True
 
         discover_heads.assert_not_called()
         build_output_stream_lookup.assert_called_once_with(db, head_infos)
@@ -350,12 +350,12 @@ class TestWriteCalibratedTagsWorkflow:
         assert load_output_streams_for_song.call_args_list[0].kwargs["output_lookup"] is lookup
         assert load_output_streams_for_song.call_args_list[1].kwargs["output_lookup"] is lookup
         assert batch_ctx.pending_mood_tags == [
-            (f"{'songs'}/1", mood_tags_1),
-            (f"{'songs'}/2", mood_tags_2),
+            (1, mood_tags_1),
+            (2, mood_tags_2),
         ]
         assert batch_ctx.pending_calibration_hashes == [
-            f"{'songs'}/1",
-            f"{'songs'}/2",
+            1,
+            2,
         ]
         save_mood_tags.assert_not_called()
         update_file_calibration_hash.assert_not_called()
@@ -373,7 +373,7 @@ class TestWriteCalibratedTagsWorkflow:
             calibrate_heads=False,
         )
         head_infos = [_FakeHeadInfo(name="mood_multiclass", labels=["happy", "sad"], model_path="/models/mood.onnx")]
-        require_library_song_id = MagicMock(return_value=f"{'songs'}/1")
+        require_library_song_id = MagicMock(return_value=1)
         discover_heads = MagicMock(return_value=head_infos)
         build_output_stream_lookup = MagicMock(return_value={"ml_model_outputs/out-1": ("mood_multiclass", "happy")})
         load_output_streams_for_song = MagicMock(return_value=[])
@@ -395,3 +395,32 @@ class TestWriteCalibratedTagsWorkflow:
         save_mood_tags.assert_not_called()
         update_file_calibration_hash.assert_not_called()
         assert db.segment_scores_stats.mock_calls == []
+
+    def test_returns_false_when_calibrated_outputs_are_missing(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        db = MagicMock()
+        params = WriteCalibratedTagsParams(
+            file_path="/music/example.flac",
+            models_dir="/models",
+            namespace="nom",
+            version_tag_key="version",
+            calibrate_heads=False,
+        )
+        head_infos = [_FakeHeadInfo(name="mood_multiclass", labels=["happy"], model_path="/models/mood.onnx")]
+        monkeypatch.setattr(wf_module, "require_library_song_id", MagicMock(return_value=1))
+        monkeypatch.setattr(wf_module, "discover_heads", MagicMock(return_value=head_infos))
+        monkeypatch.setattr(wf_module, "build_output_stream_lookup", MagicMock(return_value={}))
+        monkeypatch.setattr(wf_module, "load_output_streams_for_song", MagicMock(return_value=[MagicMock()]))
+        monkeypatch.setattr(wf_module, "reconstruct_head_outputs_from_streams", MagicMock(return_value=[]))
+        save_mood_tags = MagicMock()
+        update_file_calibration_hash = MagicMock()
+        monkeypatch.setattr(wf_module, "save_mood_tags", save_mood_tags)
+        monkeypatch.setattr(wf_module, "update_file_calibration_hash", update_file_calibration_hash)
+        monkeypatch.setattr(wf_module, "load_calibration_lookup", MagicMock(return_value={}))
+
+        assert wf_module.write_calibrated_tags_wf(db, params) is False
+
+        save_mood_tags.assert_not_called()
+        update_file_calibration_hash.assert_not_called()

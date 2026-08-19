@@ -7,12 +7,14 @@ import math
 from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Protocol
 
+from nomarr.components.library.library_song_state_comp import transition_song_state
 from nomarr.components.ml.calibration.ml_calibration_state_comp import (
     get_calibration_version,
     update_file_calibration_hashes_batch,
 )
 from nomarr.components.ml.onnx.ml_discovery_comp import discover_heads
 from nomarr.components.processing.file_write_comp import save_mood_tags_batch
+from nomarr.helpers.constants.file_states import STATE_TAGS_CURRENT, STATE_TAGS_NOT_FRESH
 from nomarr.helpers.dto.calibration_dto import WriteCalibratedTagsParams
 from nomarr.helpers.dto.recalibration_dto import ApplyCalibrationResult
 from nomarr.helpers.time_helper import internal_ms
@@ -207,6 +209,11 @@ def apply_calibration_wf(
                     success_count -= failed_writes
                     fail_count += failed_writes
                     logger.warning(f"[apply_calibration] Batch calibration hash flush failed: {e}", exc_info=True)
+
+            if mood_flush_succeeded:
+                for song_id, _ in batch_ctx.pending_mood_tags:
+                    if STATE_TAGS_CURRENT in db.app.get_song_states(song_id):
+                        transition_song_state(db, [song_id], STATE_TAGS_CURRENT, STATE_TAGS_NOT_FRESH)
 
             logger.debug(f"[apply_calibration] Chunk {chunk_num}/{n_chunks} done in {_t_io_chunk:.2f}s I/O")
 
