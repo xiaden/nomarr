@@ -9,11 +9,11 @@ backbone's vectors.
 
 from __future__ import annotations
 
-import time
 from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import Table, delete, insert
 
+from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence.models.embedding import Embedding
 from nomarr.persistence.models.ml_output_stream import MlOutputStream
 from nomarr.persistence.sql.exceptions import map_persistence_exceptions
@@ -89,7 +89,7 @@ class MlInferenceRepo:
             output_id=payload["output_id"],
             output_index=payload.get("output_index"),
             values=payload["values"],
-            created_at=int(time.time()),
+            created_at=now_ms().value,
         )
         self._session.execute(stmt)
 
@@ -98,7 +98,7 @@ class MlInferenceRepo:
         embedding_vector = payload.get("embedding_vector")
         if embedding_vector is None:
             embedding_vector = payload["embedding"]
-        now = int(time.time())
+        now = now_ms().value
         stmt = insert(_T_VECTOR).values(
             song_id=song_id,
             backbone_id=payload.get("backbone_id", backbone),

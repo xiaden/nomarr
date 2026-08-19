@@ -7,12 +7,12 @@ embeddings.
 
 from __future__ import annotations
 
-import time
 from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import Table, delete, func, insert, select, text, update
 
 from nomarr.helpers.dto.vector_repo_dto import EmbeddingRecord, SimilarResult
+from nomarr.helpers.time_helper import now_ms
 from nomarr.helpers.vector_params_helper import get_ef_search
 from nomarr.persistence.models.embedding import Embedding
 from nomarr.persistence.sql.exceptions import map_persistence_exceptions
@@ -82,7 +82,7 @@ class VectorRepo:
         """
         with map_persistence_exceptions():
             with self._session.begin_nested():
-                now = int(time.time())
+                now = now_ms().value
                 stmt = (
                     insert(_T)
                     .values(
@@ -166,7 +166,7 @@ class VectorRepo:
         """
         with map_persistence_exceptions():
             with self._session.begin_nested():
-                now = int(time.time())
+                now = now_ms().value
                 stmt = (
                     update(_T)
                     .where(

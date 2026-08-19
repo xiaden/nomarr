@@ -6,7 +6,6 @@ upserts and joins.
 
 from __future__ import annotations
 
-import time
 from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import Table, delete, select, update
@@ -15,6 +14,7 @@ from nomarr.helpers.dto.calibration_repo_dto import (
     CalibrationHistoryRecord,
     CalibrationStateRecord,
 )
+from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence.models.calibration_history import CalibrationHistory
 from nomarr.persistence.models.calibration_state import CalibrationState
 from nomarr.persistence.models.ml_model import MlModel
@@ -75,7 +75,7 @@ class CalibrationRepo:
         this uses a select-then-insert-or-update pattern.
         """
         with map_persistence_exceptions():
-            now = int(time.time())
+            now = now_ms().value
             existing = self.get_state(model_id)
             if existing is not None:
                 with self._session.begin_nested():
@@ -159,7 +159,7 @@ class CalibrationRepo:
     def record_history(self, model_id: str, event: str, data: dict[str, Any]) -> CalibrationHistoryRecord:
         """Insert a calibration history event and return it."""
         with map_persistence_exceptions():
-            now = int(time.time())
+            now = now_ms().value
             with self._session.begin_nested():
                 row = insert_one(
                     _T_HISTORY,

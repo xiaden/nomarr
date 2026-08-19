@@ -6,12 +6,12 @@ filtered queries and deletes.
 
 from __future__ import annotations
 
-import time
 from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import Table, delete, select
 
 from nomarr.helpers.dto.output_repo_dto import ModelOutputRecord, OutputStreamRecord
+from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence.models.ml_model_output import MlModelOutput
 from nomarr.persistence.models.ml_output_stream import MlOutputStream
 from nomarr.persistence.sql.exceptions import map_persistence_exceptions
@@ -82,7 +82,7 @@ class OutputRepo:
         """
         with map_persistence_exceptions():
             with self._session.begin_nested():
-                now = int(time.time())
+                now = now_ms().value
                 row = insert_one(
                     _T_OUTPUT,
                     {
@@ -157,7 +157,7 @@ class OutputRepo:
         """Insert one canonical output stream row and return it."""
         with map_persistence_exceptions():
             with self._session.begin_nested():
-                now = int(time.time())
+                now = now_ms().value
                 row = insert_one(
                     _T_STREAM,
                     {

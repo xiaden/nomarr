@@ -6,7 +6,6 @@ filtered queries.
 
 from __future__ import annotations
 
-import time
 from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import Table, func, select, update
@@ -14,6 +13,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from nomarr.helpers.dto.model_repo_dto import ModelRecord
 from nomarr.helpers.exceptions import DatabaseStateError
+from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence.models.ml_model import MlModel
 from nomarr.persistence.sql.exceptions import map_persistence_exceptions
 from nomarr.persistence.sql.primitives import delete_by_key, select_by_key
@@ -128,7 +128,7 @@ class ModelRepo:
         through to the database verbatim.
         """
         with map_persistence_exceptions():
-            now = int(time.time())
+            now = now_ms().value
             data.setdefault("created_at", now)
             data["updated_at"] = now
 
@@ -155,7 +155,7 @@ class ModelRepo:
         Raises ``DatabaseStateError`` if no model with *model_id* exists.
         """
         with map_persistence_exceptions():
-            fields["updated_at"] = int(time.time())
+            fields["updated_at"] = now_ms().value
             stmt = select(_T).where(_T.c.id == model_id)
             result = self._session.execute(stmt)
             existing = result.fetchone()

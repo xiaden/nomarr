@@ -11,12 +11,12 @@ Field mapping note:
 
 from __future__ import annotations
 
-import time
 from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import Table, delete, select, update
 
 from nomarr.helpers.dto.embedding_stream_repo_dto import EmbeddingStreamRecord
+from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence.models.ml_embedding_stream import MlEmbeddingStream
 from nomarr.persistence.sql.exceptions import map_persistence_exceptions
 from nomarr.persistence.sql.primitives import insert_one
@@ -77,7 +77,7 @@ class EmbeddingStreamRepository:
                 assert row is not None
                 return _row_to_dto(row)
 
-            now = int(time.time())
+            now = now_ms().value
             with self._session.begin_nested():
                 row = insert_one(
                     _T,
