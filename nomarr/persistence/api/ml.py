@@ -7,12 +7,9 @@ intent facade wired as ``db.ml``.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, cast
-
-from sqlalchemy import text
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from sqlalchemy.engine import Engine
     from sqlalchemy.orm import Session, scoped_session
 
     from nomarr.helpers.dto.calibration_repo_dto import CalibrationHistoryRecord, CalibrationStateRecord
@@ -490,10 +487,7 @@ class MlDb:
         not used — the index covers all cold-tier rows regardless of backbone.
         """
         assert self._vector_repo is not None, "VectorRepo not wired"
-        result = self._vector_repo._session.execute(
-            text("SELECT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'ix_embeddings_cold_hnsw')"),
-        )
-        return bool(result.scalar())
+        return self._vector_repo.has_cold_hnsw_index()
 
     def build_vector_index(self, _embed_dim: int) -> None:
         """No-op — PG manages the cold HNSW index automatically via schema migration.
@@ -515,16 +509,8 @@ class MlDb:
         index dimension is fixed at schema creation time.
         """
         assert self._vector_repo is not None, "VectorRepo not wired"
-        try:
-            # The facade's session is backed by the application engine; cast the
-            # SQLAlchemy union return type so the dedicated connection is clear.
-            engine = cast("Engine", self._vector_repo._session.get_bind())
-            with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
-                connection.execute(text("REINDEX INDEX CONCURRENTLY ix_embeddings_cold_hnsw"))
-            logger.info("Successfully rebuilt cold HNSW index (ix_embeddings_cold_hnsw).")
-        except Exception:
-            logger.exception("Failed to rebuild cold HNSW index (ix_embeddings_cold_hnsw).")
-            raise
+        self._vector_repo.rebuild_cold_hnsw_index()
+        logger.info("Successfully rebuilt cold HNSW index (ix_embeddings_cold_hnsw).")
 
     def backfill_genres(self, backbone_id: str) -> int:
         """Count embeddings that need genre backfilling.
@@ -538,11 +524,7 @@ class MlDb:
 
         """
         assert self._vector_repo is not None, "VectorRepo not wired"
-        result = self._vector_repo._session.execute(
-            text("SELECT COUNT(*) FROM embeddings WHERE backbone_id = :backbone_id AND genres IS NULL"),
-            {"backbone_id": backbone_id},
-        )
-        count = int(result.scalar() or 0)
+        count = self._vector_repo.count_missing_genres(backbone_id)
         if count > 0:
             logger.warning(
                 "backfill_genres: %d embeddings for backbone '%s' have NULL genres. "

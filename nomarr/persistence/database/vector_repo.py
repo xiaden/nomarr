@@ -220,6 +220,28 @@ class VectorRepo:
                     counts["cold_count"] = cnt
             return counts
 
+    def has_cold_hnsw_index(self) -> bool:
+        """Return whether the shared cold-tier HNSW index exists."""
+        with map_persistence_exceptions():
+            result = self._session.execute(
+                text("SELECT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'ix_embeddings_cold_hnsw')"),
+            )
+            return bool(result.scalar())
+
+    def rebuild_cold_hnsw_index(self) -> None:
+        """Rebuild the shared cold-tier HNSW index outside a transaction."""
+        with map_persistence_exceptions():
+            engine = self._session.get_bind()
+            with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
+                connection.execute(text("REINDEX INDEX CONCURRENTLY ix_embeddings_cold_hnsw"))
+
+    def count_missing_genres(self, backbone_id: str) -> int:
+        """Count embeddings missing genres for a backbone."""
+        with map_persistence_exceptions():
+            stmt = select(func.count()).select_from(_T).where(_T.c.backbone_id == backbone_id, _T.c.genres.is_(None))
+            result = self._session.execute(stmt)
+            return int(result.scalar() or 0)
+
     # ── delete / truncate ───────────────────────────────────────
 
     def delete_all_embeddings(self) -> None:
