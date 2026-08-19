@@ -221,6 +221,23 @@ class TestHydrateSongsBatch:
             ("year", "1999"),
         }
 
+    def test_duplicate_song_ids_preserve_tag_rows_from_each_input(self, pg_session) -> None:
+        SongStateRepository(pg_session).bootstrap_states([])
+        _, song_id = _create_library_and_song(pg_session)
+
+        committed = _build_repo(pg_session).hydrate_songs_batch(
+            [
+                _make_input(song_id, parsed_nom_tags={"nom:first": ["a"]}),
+                _make_input(song_id, parsed_nom_tags={"nom:second": ["b"]}),
+            ]
+        )
+
+        assert committed == 2
+        assert _song_tags(pg_session, song_id) >= {
+            ("nom:first", "a"),
+            ("nom:second", "b"),
+        }
+
     def test_duplicate_tag_values_deduped(self, pg_session) -> None:
         SongStateRepository(pg_session).bootstrap_states([])
         _, song_id = _create_library_and_song(pg_session)
@@ -248,6 +265,19 @@ class TestHydrateSongsBatch:
         assert STATE_HYDRATED in SongStateRepository(pg_session).get_song_states(song2)
         # Missing song's chunk rolled back → song 999999 not written.
         assert _song_tags(pg_session, 999999) == set()
+
+    def test_failed_chunk_is_logged(self, pg_session, caplog) -> None:
+        SongStateRepository(pg_session).bootstrap_states([])
+        _, song_id = _create_library_and_song(pg_session)
+
+        with caplog.at_level("ERROR"):
+            committed = _build_repo(pg_session).hydrate_songs_batch(
+                [_make_input(999999), _make_input(song_id)], chunk_size=2
+            )
+
+        assert committed == 0
+        assert "Song hydration chunk failed" in caplog.text
+        assert STATE_HYDRATED not in SongStateRepository(pg_session).get_song_states(song_id)
 
     def test_repeated_identical_inputs_idempotent(self, pg_session) -> None:
         SongStateRepository(pg_session).bootstrap_states([])

@@ -14,6 +14,7 @@ surrounding unit of work — mirroring how the codebase composes repositories.
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any
 
 from nomarr.helpers.exceptions import EntityNotFoundError
@@ -36,6 +37,7 @@ _NOM_NAMESPACE = "nom"
 # Entity / canonical-metadata tags (artist, album, genre, year, …) live in the
 # default (empty) namespace.
 _DEFAULT_NAMESPACE = ""
+logger = logging.getLogger(__name__)
 
 
 def _expand_tag_rows(
@@ -148,8 +150,8 @@ class SongHydrationRepository:
 
         Chunk-unit semantics (per CONTRACTS.md): each chunk is one atomic unit
         of work.  A missing song or a database error inside a chunk fails that
-        chunk's unit, rolls back ALL of its writes, and the chunk's inputs are
-        not counted; remaining chunks still run and are counted normally.
+        chunk's unit, rolls back ALL of its writes, and is logged; remaining
+        chunks still run and are counted normally.
         Duplicate song ids / tag values within a chunk and repeated identical
         inputs across calls are harmless (dedup + conflict-safe inserts +
         full-replace edges make the operation idempotent).
@@ -170,7 +172,12 @@ class SongHydrationRepository:
             try:
                 self._hydrate_chunk(chunk)
             except Exception:
-                # Chunk unit already rolled back; skip it and keep going.
+                # Chunk unit already rolled back; keep going, but do not hide
+                # the failed chunk from operators.
+                logger.exception(
+                    "Song hydration chunk failed",
+                    extra={"song_ids": [input.song_id for input in chunk]},
+                )
                 continue
             committed += len(chunk)
         return committed
@@ -192,7 +199,7 @@ class SongHydrationRepository:
             tag_rows_by_song: dict[int, list[dict[str, Any]]] = {}
             for input in inputs:
                 rows = _expand_tag_rows(input.parsed_nom_tags, input.entity_tags)
-                tag_rows_by_song[input.song_id] = rows
+                tag_rows_by_song.setdefault(input.song_id, []).extend(rows)
                 all_tag_rows.extend(rows)
 
             edges: list[dict[str, Any]] = []
