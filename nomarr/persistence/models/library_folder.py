@@ -1,6 +1,6 @@
 """LibraryFolder ORM model."""
 
-from sqlalchemy import ForeignKey, String, Text
+from sqlalchemy import BigInteger, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from nomarr.persistence.models.base import Base
@@ -18,3 +18,6 @@ class LibraryFolder(Base):
     )
     path: Mapped[str] = mapped_column(Text, nullable=False)
     name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    mtime: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    file_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_scanned_at: Mapped[int | None] = mapped_column(BigInteger, nullable=True)

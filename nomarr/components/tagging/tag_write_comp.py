@@ -101,7 +101,7 @@ def relink_tag_edges(
     target_tag_id: int,
     song_ids: list[int] | None = None,
 ) -> RelinkResult:
-    """Move song tag references from one tag vertex to another via library intents."""
+    """Move references, removing source rows when the target already exists."""
     if source_tag_id == target_tag_id:
         return {"moved": 0, "skipped": 0, "source_orphaned": False}
 
@@ -117,7 +117,6 @@ def relink_tag_edges(
     selected_source_song_ids: list[int] = []
     moved = 0
     skipped = 0
-    source_outside_selection = False
 
     for song_id in all_song_ids:
         tag_docs = all_tags_by_song.get(song_id, [])
@@ -125,7 +124,6 @@ def relink_tag_edges(
         if not has_source:
             continue
         if allowed_song_ids is not None and song_id not in allowed_song_ids:
-            source_outside_selection = True
             continue
 
         selected_source_song_ids.append(song_id)
@@ -143,8 +141,13 @@ def relink_tag_edges(
     else:
         db.library.replace_selected_tag_references(selected_source_song_ids, source_tag_id, target_tag_id)
 
+    remaining_source_song_ids = db.library.list_song_ids_for_tag_id(source_tag_id, limit=None)
+    source_orphaned = not remaining_source_song_ids
+
     return {
         "moved": moved,
+        # Skipped source edges are removed because the target edge already
+        # exists; the count reports duplicate collisions, not retained edges.
         "skipped": skipped,
-        "source_orphaned": not source_outside_selection,
+        "source_orphaned": source_orphaned,
     }

@@ -41,8 +41,8 @@ from nomarr.helpers.constants.pipeline_states import (
     WRITE_NOT_WRITTEN,
     WRITE_STATE_FIELD,
 )
-from nomarr.helpers.dto.library_dto import LibraryDict
 from nomarr.helpers.dataclasses.song_dataclass import Song
+from nomarr.helpers.dto.library_dto import LibraryDict
 
 
 def _song(**overrides: object) -> Song:
@@ -433,11 +433,33 @@ class TestFolderCacheHelpers:
 
         inserted_doc = mock_db.library.replace_library_folder.call_args.args[2]
         assert inserted_doc["path"] == "Rock"
-        assert "library_key" not in inserted_doc
+        assert "key" not in inserted_doc
         assert inserted_doc["mtime"] == 123
         assert inserted_doc["file_count"] == 7
         assert inserted_doc["last_scanned_at"] == 456
         mock_db.library.replace_library_folder.assert_called_once_with(1, 10, inserted_doc)
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_save_folder_record_replaces_matching_path(self) -> None:
+        mock_db = MagicMock()
+        mock_db.library.list_folders_for_library.return_value = [{"id": 10, "path": "Rock"}]
+
+        save_folder_record(mock_db, 1, "Rock", 123, 7)
+
+        mock_db.library.replace_library_folder.assert_called_once()
+        mock_db.library.add_library_folder.assert_not_called()
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_save_folder_record_adds_missing_path(self) -> None:
+        mock_db = MagicMock()
+        mock_db.library.list_folders_for_library.return_value = []
+
+        save_folder_record(mock_db, 1, "Rock", 123, 7)
+
+        mock_db.library.add_library_folder.assert_called_once()
+        mock_db.library.replace_library_folder.assert_not_called()
 
     @pytest.mark.unit
     @pytest.mark.mocked

@@ -251,9 +251,9 @@ class SongTagRepository:
         limit: int | None = None,
         offset: int = 0,
     ) -> list[int]:
-        """Return song ids assigned to a tag with pagination."""
+        """Return song ids assigned to a tag with pagination, ordered by song id."""
         with map_persistence_exceptions():
-            stmt = select(_ST.c.song_id).where(_ST.c.tag_id == tag_id)
+            stmt = select(_ST.c.song_id).where(_ST.c.tag_id == tag_id).order_by(_ST.c.song_id)
             if offset:
                 stmt = stmt.offset(offset)
             if limit is not None:
@@ -509,15 +509,18 @@ class SongTagRepository:
         *,
         song_ids: list[int] | None = None,
     ) -> None:
-        """Re-point song-tag assignments from *source_tag_id* to *target_tag_id*."""
+        """Re-point assignments, removing source rows that would collide."""
         with map_persistence_exceptions():
             with self._session.begin_nested():
                 target_edges = _ST.alias("target_song_tags")
-                stmt = update(_ST).where(_ST.c.tag_id == source_tag_id)
+                # Remove source rows that would collide with an existing target
+                # row before moving the remaining source rows.  Merely excluding
+                # those rows from UPDATE leaves the source assignment behind.
+                delete_stmt = delete(_ST).where(_ST.c.tag_id == source_tag_id)
                 if song_ids is not None:
-                    stmt = stmt.where(_ST.c.song_id.in_(song_ids))
-                stmt = stmt.where(
-                    ~exists(
+                    delete_stmt = delete_stmt.where(_ST.c.song_id.in_(song_ids))
+                delete_stmt = delete_stmt.where(
+                    exists(
                         select(1)
                         .select_from(target_edges)
                         .where(
@@ -526,6 +529,11 @@ class SongTagRepository:
                         )
                     )
                 )
+                self._session.execute(delete_stmt)
+
+                stmt = update(_ST).where(_ST.c.tag_id == source_tag_id)
+                if song_ids is not None:
+                    stmt = stmt.where(_ST.c.song_id.in_(song_ids))
                 stmt = stmt.values(tag_id=target_tag_id)
                 self._session.execute(stmt)
             self._session.commit()

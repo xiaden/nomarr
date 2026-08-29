@@ -6,7 +6,6 @@ cache management, deleted-file cleanup, and state bootstrap.
 
 from __future__ import annotations
 
-import hashlib
 import logging
 from typing import TYPE_CHECKING, Any, cast
 
@@ -34,26 +33,13 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-def _folder_key(library_id: int, folder_path: str) -> str:
-    """Generate the legacy-stable folder ``key`` from library id and relative path."""
-    composite = f"{library_id}/{folder_path}"
-    return hashlib.md5(composite.encode("utf-8")).hexdigest()
-
-
-def _folder_doc_id(library_id: int, folder_path: str) -> str:
-    """Return the canonical folder document id for a library/path pair."""
-    return f"library_folders/{_folder_key(library_id, folder_path)}"
-
-
 def _folder_doc(
-    library_id: int,
     folder_path: str,
     mtime: int,
     file_count: int,
 ) -> dict[str, Any]:
     """Build the folder-cache document persisted for quick scans."""
     return {
-        "key": _folder_key(library_id, folder_path),
         "path": folder_path,
         "mtime": mtime,
         "file_count": file_count,
@@ -208,10 +194,8 @@ def save_folder_record(
     file_count: int,
     existing_folder_id: int | None = None,
 ) -> None:
-    """Upsert a folder cache record (keyed deterministically by library/path)."""
-    folder_doc = _folder_doc(library_id, rel_path, mtime, file_count)
-    folder_key = folder_doc["key"]
-
+    """Upsert a folder cache record matched by its library-scoped path."""
+    folder_doc = _folder_doc(rel_path, mtime, file_count)
     # Replace in one transaction so a failed insert cannot leave the cache
     # missing after the old record has been deleted.
     if existing_folder_id:
@@ -219,9 +203,9 @@ def save_folder_record(
     else:
         existing = db.library.list_folders_for_library(library_id)
         for folder in cast("list[dict[str, Any]]", existing):
-            if folder.get("key") == folder_key:
+            if folder.get("path") == rel_path:
                 fid = folder.get("id")
-                if fid:
+                if fid is not None:
                     db.library.replace_library_folder(library_id, fid, folder_doc)
                 break
         else:

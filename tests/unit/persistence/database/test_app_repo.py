@@ -12,6 +12,7 @@ from nomarr.helpers.exceptions import DuplicateEntityError
 from nomarr.persistence.database.app_repo import AppRepository
 from nomarr.persistence.models.health import Health
 from nomarr.persistence.models.worker_claim import WorkerClaim
+from nomarr.persistence.models.worker_restart_policy import WorkerRestartPolicy
 
 
 @pytest.mark.unit
@@ -665,14 +666,26 @@ class TestAppRepository:
         assert not any(p["id"] == 4 for p in result)
 
     # ── Worker restart policy ───────────────────────────────────
-    # Note: WorkerRestartPolicy doesn't have unique constraint on component_id
-    # so upsert methods won't work. Testing only the read methods.
 
     def test_get_worker_restart_policy_nonexistent(self, pg_session) -> None:
         """get_worker_restart_policy should return None for missing component."""
         repo = AppRepository(pg_session)
         result = repo.get_worker_restart_policy("nonexistent")
         assert result is None
+
+    def test_upsert_worker_restart_policy_insert_and_update(self, pg_session) -> None:
+        """Restart policy writes insert once and update the same component row."""
+        repo = AppRepository(pg_session)
+
+        repo.upsert_worker_restart_policy("worker-1", {"restart_count": 1})
+        repo.upsert_worker_restart_policy("worker-1", {"restart_count": 2, "failed": True})
+
+        result = repo.get_worker_restart_policy("worker-1")
+        assert result == {"restart_count": 2, "failed": True}
+        rows = pg_session.execute(
+            select(WorkerRestartPolicy).where(WorkerRestartPolicy.component_id == "worker-1")
+        ).all()
+        assert len(rows) == 1
 
     # ── maintenance ─────────────────────────────────────────────
 

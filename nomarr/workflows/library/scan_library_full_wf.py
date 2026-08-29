@@ -10,7 +10,6 @@ Pass 2 (audio tag extraction + entity seeding) runs in the background tag extrac
 from __future__ import annotations
 
 import logging
-import threading
 from collections import defaultdict
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -50,6 +49,8 @@ from nomarr.workflows.library.validate_library_tags_wf import validate_library_t
 from nomarr.workflows.metadata.cleanup_orphaned_entities_wf import cleanup_orphaned_entities_workflow
 
 if TYPE_CHECKING:
+    import threading
+
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)

@@ -34,6 +34,9 @@ def _row_to_dto(row: Row) -> LibraryFolderRow:
         parent_id=m["parent_id"],
         path=m["path"],
         name=m["name"],
+        mtime=m["mtime"],
+        file_count=m["file_count"],
+        last_scanned_at=m["last_scanned_at"],
     )
 
 

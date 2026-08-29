@@ -215,13 +215,20 @@ class TestTagRepository:
         """list_song_ids_for_tag should return song ids with pagination."""
         _, song_id1 = _create_library_and_song(pg_session)
         _, song_id2 = _create_library_and_song(pg_session)
+        _, song_id3 = _create_library_and_song(pg_session)
         tag_id = _create_tag(pg_session)
         song_tag_repo = SongTagRepository(pg_session)
         song_tag_repo.assign_tag_to_song(song_id1, tag_id)
+        song_tag_repo.assign_tag_to_song(song_id3, tag_id)
         song_tag_repo.assign_tag_to_song(song_id2, tag_id)
-        result = song_tag_repo.list_song_ids_for_tag(tag_id, limit=1, offset=0)
-        assert len(result) == 1
-        assert result[0] in (song_id1, song_id2)
+
+        first_page = song_tag_repo.list_song_ids_for_tag(tag_id, limit=1, offset=0)
+        second_page = song_tag_repo.list_song_ids_for_tag(tag_id, limit=1, offset=1)
+        third_page = song_tag_repo.list_song_ids_for_tag(tag_id, limit=1, offset=2)
+        expected_ids = sorted((song_id1, song_id2, song_id3))
+        assert first_page == expected_ids[:1]
+        assert second_page == expected_ids[1:2]
+        assert third_page == expected_ids[2:]
 
     def test_count_songs_for_tag(self, pg_session) -> None:
         """count_songs_for_tag should count song-tag assignments for a tag."""
@@ -456,8 +463,8 @@ class TestTagRepository:
         assert len(tags) == 1
         assert tags[0]["id"] == target_id
 
-    def test_replace_tag_references_skips_existing_target_edges(self, pg_session) -> None:
-        """replace_tag_references should skip songs already assigned to the target."""
+    def test_replace_tag_references_removes_source_when_target_exists(self, pg_session) -> None:
+        """replace_tag_references should remove source edges on target collisions."""
         _, song_with_source_id = _create_library_and_song(pg_session)
         _, song_with_both_id = _create_library_and_song(pg_session)
         source_id = _create_tag(pg_session, name="old", value="old", namespace="genre")
@@ -472,7 +479,24 @@ class TestTagRepository:
         source_tags = repo.get_tags_for_song(song_with_source_id)
         both_tags = repo.get_tags_for_song(song_with_both_id)
         assert [tag["id"] for tag in source_tags] == [target_id]
-        assert {tag["id"] for tag in both_tags} == {source_id, target_id}
+        assert {tag["id"] for tag in both_tags} == {target_id}
+
+    def test_replace_tag_references_scopes_collision_removal(self, pg_session) -> None:
+        """Scoped relinks remove selected collisions but preserve outside sources."""
+        _, selected_song_id = _create_library_and_song(pg_session)
+        _, outside_song_id = _create_library_and_song(pg_session)
+        source_id = _create_tag(pg_session, name="old", value="old", namespace="genre")
+        target_id = _create_tag(pg_session, name="new", value="new", namespace="genre")
+        repo = SongTagRepository(pg_session)
+        repo.assign_tag_to_song(selected_song_id, source_id)
+        repo.assign_tag_to_song(selected_song_id, target_id)
+        repo.assign_tag_to_song(outside_song_id, source_id)
+        repo.assign_tag_to_song(outside_song_id, target_id)
+
+        repo.replace_tag_references(source_id, target_id, song_ids=[selected_song_id])
+
+        assert {tag["id"] for tag in repo.get_tags_for_song(selected_song_id)} == {target_id}
+        assert {tag["id"] for tag in repo.get_tags_for_song(outside_song_id)} == {source_id, target_id}
 
     # ── Plan E facade support ───────────────────────────────────
 

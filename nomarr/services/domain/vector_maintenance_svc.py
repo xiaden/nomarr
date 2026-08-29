@@ -86,11 +86,12 @@ class VectorMaintenanceService:
             )
             raise
 
-    def get_hot_cold_stats(self, backbone_id: str) -> dict[str, int | bool]:
+    def get_hot_cold_stats(self, backbone_id: str, library_id: int | None = None) -> dict[str, int | bool]:
         """Get hot/cold statistics for a backbone.
 
         Args:
             backbone_id: Backbone identifier
+            library_id: Optional library ID to scope the counts
 
         Returns:
             Dict with keys:
@@ -99,10 +100,14 @@ class VectorMaintenanceService:
                 - index_exists: Whether cold tier has vector index
 
         """
-        return self.db.ml.get_embedding_stats(backbone_id)
+        stats = self.db.ml.get_embedding_stats(backbone_id, library_id=library_id)
+        return {
+            **stats,
+            "index_exists": self.db.ml.has_embedding_index(backbone_id),
+        }
 
-    def get_backbone_vector_stats(self) -> list[dict[str, str | int | bool]]:
-        """Get per-backbone vector statistics for all backbones.
+    def get_backbone_vector_stats(self, library_id: int | None = None) -> list[dict[str, str | int | bool]]:
+        """Get per-backbone vector statistics, optionally for one library.
 
         Iterates all discovered backbones and returns hot/cold stats for each.
 
@@ -114,7 +119,7 @@ class VectorMaintenanceService:
         stats: list[dict[str, str | int | bool]] = []
         for backbone_id in discover_backbones(self.models_dir):
             try:
-                backbone_stats = self.get_hot_cold_stats(backbone_id)
+                backbone_stats = self.get_hot_cold_stats(backbone_id, library_id=library_id)
                 stats.append(
                     {
                         "backbone_id": backbone_id,

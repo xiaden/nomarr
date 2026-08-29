@@ -55,6 +55,9 @@ class TestFolderRepository:
                 "parent_id": None,
                 "path": "/music/library1",
                 "name": "library1",
+                "mtime": 123,
+                "file_count": 7,
+                "last_scanned_at": 456,
             },
         )
         assert isinstance(folder_id, int)
@@ -63,6 +66,9 @@ class TestFolderRepository:
         assert result is not None
         assert result["library_id"] == lib_id
         assert result["path"] == "/music/library1"
+        assert result["mtime"] == 123
+        assert result["file_count"] == 7
+        assert result["last_scanned_at"] == 456
 
     def test_get_folder_existing(self, pg_session) -> None:
         """get_folder should return the folder as a dict."""

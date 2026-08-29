@@ -28,7 +28,8 @@ All four curation operations use a single persistence primitive: `relink_tag_edg
 
 - If `song_ids` is None → re-point ALL song_has_tags rows from source to target
 - If `song_ids` is provided → re-point only rows for those songs
-- Handles duplicates: songs already linked to target are skipped (no duplicate rows)
+- Handles duplicates: songs already linked to target have their source edge
+  removed (no duplicate rows are created)
 - Returns `RelinkResult(moved=int, skipped=int, source_orphaned=bool)`
 
 **Operation mapping:**
@@ -41,7 +42,7 @@ All four curation operations use a single persistence primitive: `relink_tag_edg
 **Implementation (2-3 SQL statements):**
 
 1. Find or create the target tag (upsert — `INSERT ... ON CONFLICT` on `(name, value)`)
-2. Re-point rows: UPDATE `song_has_tags` SET `tag_id = target_tag_id` WHERE `tag_id = source_tag_id` (AND `song_id IN song_ids` if scoped). Skip duplicates with a uniqueness guard on `(song_id, tag_id)`.
+2. Re-point rows: first DELETE source rows whose target edge already exists (correlated `EXISTS` on `(song_id, target_tag_id)`), then UPDATE the remaining source rows to `target_tag_id` (AND `song_id IN song_ids` if scoped). This preserves one edge per song without leaving the source assignment behind.
 3. Cleanup: run `cleanup_orphaned_tags()` to delete the source tag if zero referencing rows remain
 
 **Never mutates a tag value directly** — always re-points rows. This avoids unique index conflicts entirely.
@@ -54,7 +55,7 @@ All four curation operations use a single persistence primitive: `relink_tag_edg
 
 - Single primitive handles all four curation operations — minimal persistence surface area
 - Avoids unique index conflicts by never mutating tag values directly
-- Duplicate-safe: upsert semantics prevent duplicate rows during merge
+- Duplicate-safe: collision source rows are deleted before re-pointing, so no duplicate `(song_id, tag_id)` rows are created
 - Orphan cleanup is automatic — no dangling tags after rename/merge
 - Idempotent: safe to retry on partial failure
 

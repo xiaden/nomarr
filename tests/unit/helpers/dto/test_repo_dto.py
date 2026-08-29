@@ -93,11 +93,17 @@ class TestLibraryFolderRow:
             parent_id=None,
             path="/music/root",
             name="root",
+            mtime=123,
+            file_count=7,
+            last_scanned_at=456,
         )
         assert row["id"] == 1
         assert row["library_id"] == 1
         assert row["parent_id"] is None
         assert row["path"] == "/music/root"
+        assert row["mtime"] == 123
+        assert row["file_count"] == 7
+        assert row["last_scanned_at"] == 456
 
 
 @pytest.mark.unit

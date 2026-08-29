@@ -242,11 +242,13 @@ class TestRelinkTagEdges:
             1: [{"_id": "tags/source", "id": 100, "name": "genre", "value": "old-a"}],
             2: [{"_id": "tags/source", "id": 100, "name": "genre", "value": "old-b"}],
         }
+        mock_db.library.list_song_ids_for_tag_id.return_value = []
 
         result = relink_tag_edges(mock_db, 100, 200)
 
         assert result == {"moved": 2, "skipped": 0, "source_orphaned": True}
         mock_db.library.replace_tag_references.assert_called_once_with(100, 200)
+        mock_db.library.list_song_ids_for_tag_id.assert_called_once_with(100, limit=None)
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -264,11 +266,13 @@ class TestRelinkTagEdges:
             ],
             2: [{"_id": "tags/source", "id": 100, "name": "genre", "value": "old-b"}],
         }
+        mock_db.library.list_song_ids_for_tag_id.return_value = []
 
         result = relink_tag_edges(mock_db, 100, 200)
 
         assert result == {"moved": 1, "skipped": 1, "source_orphaned": True}
         mock_db.library.replace_tag_references.assert_called_once_with(100, 200)
+        mock_db.library.list_song_ids_for_tag_id.assert_called_once_with(100, limit=None)
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -288,6 +292,7 @@ class TestRelinkTagEdges:
             ],
             3: [{"_id": "tags/source", "id": 100, "name": "genre", "value": "old-c"}],
         }
+        mock_db.library.list_song_ids_for_tag_id.return_value = [3]
 
         result = relink_tag_edges(
             mock_db,
@@ -302,3 +307,4 @@ class TestRelinkTagEdges:
             100,
             200,
         )
+        mock_db.library.list_song_ids_for_tag_id.assert_called_once_with(100, limit=None)

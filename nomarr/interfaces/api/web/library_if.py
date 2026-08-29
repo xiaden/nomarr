@@ -42,7 +42,7 @@ class VectorStatsItem(BaseModel):
 
 
 class BackboneVectorStatsResponse(BaseModel):
-    """Vector statistics across all backbones.
+    """Vector statistics across all backbones for one library.
 
     ``library_key`` is removed because vector collections are per-backbone,
     not per-library. Use ``/api/web/vector/stats`` for global stats.
@@ -252,10 +252,10 @@ async def get_library_vector_stats(
     library_id: str,
     vector_maintenance_service: Annotated["VectorMaintenanceService", Depends(get_vector_maintenance_service)],
 ) -> BackboneVectorStatsResponse:
-    """Get vector statistics across all backbones."""
+    """Get vector statistics across all backbones for the requested library."""
     decoded_library_id: int = decode_path_id(library_id)
     try:
-        stats = await asyncio.to_thread(vector_maintenance_service.get_backbone_vector_stats)
+        stats = await asyncio.to_thread(vector_maintenance_service.get_backbone_vector_stats, decoded_library_id)
     except Exception as e:
         logger.exception(f"[Web API] Error getting vector stats for library {decoded_library_id}")
         raise HTTPException(

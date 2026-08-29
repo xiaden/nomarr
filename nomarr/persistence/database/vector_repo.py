@@ -15,6 +15,7 @@ from nomarr.helpers.dto.vector_repo_dto import EmbeddingRecord, SimilarResult
 from nomarr.helpers.time_helper import now_ms
 from nomarr.helpers.vector_params_helper import get_ef_search
 from nomarr.persistence.models.embedding import Embedding
+from nomarr.persistence.models.song import Song
 from nomarr.persistence.models.song_tag import SongTag
 from nomarr.persistence.models.tag import Tag
 from nomarr.persistence.sql.exceptions import map_persistence_exceptions
@@ -213,12 +214,15 @@ class VectorRepo:
             result = self._session.execute(stmt)
             return result.scalar() or 0
 
-    def get_embedding_stats(self, backbone_id: str) -> dict[str, int]:
-        """Return hot and cold embedding counts for a given backbone."""
+    def get_embedding_stats(self, backbone_id: str, library_id: int | None = None) -> dict[str, int]:
+        """Return hot and cold embedding counts, optionally scoped to a library."""
         with map_persistence_exceptions():
-            stmt = (
-                select(_T.c.tier, func.count().label("cnt")).where(_T.c.backbone_id == backbone_id).group_by(_T.c.tier)
-            )
+            stmt = select(_T.c.tier, func.count().label("cnt")).where(_T.c.backbone_id == backbone_id)
+            if library_id is not None:
+                stmt = stmt.join(Song.__table__, _T.c.song_id == Song.__table__.c.id).where(
+                    Song.__table__.c.library_id == library_id
+                )
+            stmt = stmt.group_by(_T.c.tier)
             result = self._session.execute(stmt)
             counts: dict[str, int] = {"hot_count": 0, "cold_count": 0}
             for row in result.all():

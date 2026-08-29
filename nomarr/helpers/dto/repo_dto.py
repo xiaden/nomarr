@@ -70,6 +70,9 @@ class LibraryFolderRow(TypedDict):
     parent_id: int | None
     path: str
     name: str | None
+    mtime: int | None
+    file_count: int | None
+    last_scanned_at: int | None
 
 
 class LibraryScanRow(TypedDict):

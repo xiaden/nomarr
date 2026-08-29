@@ -68,7 +68,7 @@ class TestGetBackboneVectorStats:
                 "index_exists": True,
             }
         ]
-        mock_get_hot_cold_stats.assert_called_once_with("effnet")
+        mock_get_hot_cold_stats.assert_called_once_with("effnet", library_id=None)
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -100,3 +100,42 @@ class TestGetBackboneVectorStats:
             }
         ]
         assert mock_get_hot_cold_stats.call_count == 2
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_scopes_stats_lookup_to_library(self) -> None:
+        """A library request should pass its ID through to each backbone lookup."""
+        service = _make_service(MagicMock())
+
+        with (
+            patch(
+                "nomarr.services.domain.vector_maintenance_svc.discover_backbones",
+                return_value=["effnet"],
+            ),
+            patch.object(
+                service,
+                "get_hot_cold_stats",
+                new_callable=MagicMock,
+                return_value={"hot_count": 2, "cold_count": 3, "index_exists": True},
+            ) as mock_get_hot_cold_stats,
+        ):
+            result = service.get_backbone_vector_stats(library_id=7)
+
+        assert result[0]["hot_count"] == 2
+        mock_get_hot_cold_stats.assert_called_once_with("effnet", library_id=7)
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+def test_get_hot_cold_stats_includes_index_status() -> None:
+    """Stats returned by the service include the shared vector index status."""
+    db = MagicMock()
+    db.ml.get_embedding_stats.return_value = {"hot_count": 2, "cold_count": 3}
+    db.ml.has_embedding_index.return_value = True
+    service = _make_service(db)
+
+    result = service.get_hot_cold_stats("effnet", library_id=7)
+
+    assert result == {"hot_count": 2, "cold_count": 3, "index_exists": True}
+    db.ml.get_embedding_stats.assert_called_once_with("effnet", library_id=7)
+    db.ml.has_embedding_index.assert_called_once_with("effnet")

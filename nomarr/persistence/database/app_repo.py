@@ -537,7 +537,7 @@ class AppRepository:
         """Insert-or-update a restart policy keyed on ``component_id``."""
         with map_persistence_exceptions():
             with self._session.begin_nested():
-                data = {**fields, "component_id": component_id}
+                data = {"component_id": component_id, "policy_data": {**fields}}
                 upsert_by_field(_WRP, "component_id", component_id, data, session=self._session)
             self._session.commit()
 

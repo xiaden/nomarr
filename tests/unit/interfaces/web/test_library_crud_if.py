@@ -282,7 +282,7 @@ class TestLibraryCrudEndpoints:
         client: TestClient,
         mock_vector_maintenance_service: MagicMock,
     ) -> None:
-        """GET vector stats should return per-backbone stats (global, no library_key)."""
+        """GET vector stats should scope per-backbone stats to the requested library."""
         mock_vector_maintenance_service.get_backbone_vector_stats = MagicMock(
             return_value=[
                 {
@@ -307,7 +307,7 @@ class TestLibraryCrudEndpoints:
                 }
             ],
         }
-        mock_vector_maintenance_service.get_backbone_vector_stats.assert_called_once()
+        mock_vector_maintenance_service.get_backbone_vector_stats.assert_called_once_with(1)
 
     def test_get_library_vector_stats_handles_service_error(
         self,
