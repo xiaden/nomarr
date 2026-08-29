@@ -654,7 +654,7 @@ def get_artist_album_frequencies(db: Database, limit: int) -> dict[str, list[tup
 
 
 def clear_library_data(db: Database) -> None:
-    """Truncate all library-song tables in dependency order (destructive full-reset)."""
+    """Perform a destructive full reset, including each library's pipeline state."""
     # Derived data
     from nomarr.components.ml.inference.ml_output_stream_store_comp import delete_output_streams
 
@@ -663,6 +663,7 @@ def clear_library_data(db: Database) -> None:
     for lib in db.library.list_libraries():
         for song_id in db.library.list_library_song_ids(lib["id"], limit=None):
             delete_output_streams(db, song_id)
+        db.app.remove_pipeline_state(lib["id"])
     # Link/junction tables
     db.library.truncate_song_tag_edges()
     db.app.truncate_song_state_edges()
@@ -673,10 +674,6 @@ def clear_library_data(db: Database) -> None:
     db.library.truncate_songs()
     db.library.truncate_folders()
     db.library.truncate_scan_records()
-    # Pipeline states live in the `pipeline_states` rows table (scan_state, ml_state, etc.),
-    # not as fields on library documents. They are not reset here: this clear wipes
-    # song/tag/folder/scan-record/edge/vector data and output streams, leaving
-    # pipeline-state rows intact.
 
 
 def search_songs_by_tag(

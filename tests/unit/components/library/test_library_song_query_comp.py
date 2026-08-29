@@ -755,9 +755,9 @@ def test_clear_library_data_truncates_all_facades() -> None:
     # so it must be a sync mock — AsyncMock would return a coroutine by default
     db.ml.list_vector_collection_names = MagicMock(return_value=["vectors_track__hot__effnet"])
 
-    db.library.list_libraries.return_value = [{"id": 1}]
+    db.library.list_libraries.return_value = [{"id": 1}, {"id": 2}, {"id": 3}]
 
-    db.library.list_library_song_ids.return_value = [1, 2]
+    db.library.list_library_song_ids.side_effect = [[1, 2], [3], []]
 
     with patch(
         "nomarr.components.ml.inference.ml_output_stream_store_comp.delete_output_streams"
@@ -766,11 +766,22 @@ def test_clear_library_data_truncates_all_facades() -> None:
 
     db.ml.clear_vector_collection.assert_called_once_with("vectors_track__hot__effnet")
 
-    db.library.list_library_song_ids.assert_called_once_with(1, limit=None)
+    assert db.library.list_library_song_ids.call_args_list == [
+        call(1, limit=None),
+        call(2, limit=None),
+        call(3, limit=None),
+    ]
 
     assert mock_delete_output_streams.call_args_list == [
         call(db, 1),
         call(db, 2),
+        call(db, 3),
+    ]
+
+    assert db.app.remove_pipeline_state.call_args_list == [
+        call(1),
+        call(2),
+        call(3),
     ]
 
     db.library.truncate_song_tag_edges.assert_called_once_with()
