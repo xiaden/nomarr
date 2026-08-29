@@ -773,7 +773,8 @@ def count_songs_by_tag(db: Database, tag_key: str, target_value: float | str) ->
     if not tag_ids:
         return 0
 
-    edges = cast("list[dict[str, Any]]", db.library.list_song_tag_edges(tag_ids))
+    edge_limit = DEFAULT_LIMIT if _is_numeric_target_value(target_value) else None
+    edges = cast("list[dict[str, Any]]", db.library.list_song_tag_edges(tag_ids, limit=edge_limit))
     return len({edge["song_id"] for edge in edges if isinstance(edge.get("song_id"), (int, str))})
 
 

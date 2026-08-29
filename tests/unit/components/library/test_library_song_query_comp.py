@@ -919,7 +919,7 @@ def test_count_files_by_tag_uses_library_facade_for_string_and_numeric_modes() -
     assert string_count == 2
     db.library.count_tags.assert_called_once_with()
     db.library.list_tags_by_name.assert_called_once_with("genre", limit=1)
-    db.library.list_song_tag_edges.assert_called_once_with([1])
+    db.library.list_song_tag_edges.assert_called_once_with([1], limit=None)
 
     db = make_db()
     db.library.count_tags.return_value = 2
@@ -934,7 +934,7 @@ def test_count_files_by_tag_uses_library_facade_for_string_and_numeric_modes() -
     assert numeric_count == 1
     db.library.count_tags.assert_called_once_with()
     db.library.list_tags_by_name.assert_called_once_with("nom:bpm", limit=2)
-    db.library.list_song_tag_edges.assert_called_once_with([1])
+    db.library.list_song_tag_edges.assert_called_once_with([1], limit=DEFAULT_LIMIT)
 
 
 @pytest.mark.unit
