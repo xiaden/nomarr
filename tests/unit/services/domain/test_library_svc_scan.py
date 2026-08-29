@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import functools
 from unittest.mock import MagicMock, patch
+from typing import cast
 
 import pytest
 
@@ -47,6 +49,7 @@ class TestScanDispatch:
             managed_task = mock_bts.start_task.call_args.args[0]
             assert isinstance(managed_task, ManagedTask)
             assert managed_task.task_id == "scan_library_1"
+            assert cast(functools.partial, managed_task.fn).keywords["stop_event"] is managed_task.stop_event
             assert managed_task.on_complete is not None
             managed_task.on_complete()
             mock_on_complete_hook.assert_called_once_with(service.db, 1)
@@ -72,10 +75,61 @@ class TestScanDispatch:
             managed_task = mock_bts.start_task.call_args.args[0]
             assert isinstance(managed_task, ManagedTask)
             assert managed_task.task_id == "scan_library_1"
+            assert cast(functools.partial, managed_task.fn).keywords["stop_event"] is managed_task.stop_event
             assert managed_task.on_complete is not None
             managed_task.on_complete()
             mock_on_complete_hook.assert_called_once_with(service.db, 1)
         assert result.job_ids == ["scan_library_1"]
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_cancel_scan_signals_library_task(self) -> None:
+        mock_bts = MagicMock()
+        mock_bts.cancel_task.return_value = True
+        service = _make_service(background_tasks=mock_bts)
+
+        assert service.cancel_scan(7) is True
+        mock_bts.cancel_task.assert_called_once_with("scan_library_7")
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_cancel_scan_without_library_id_returns_false(self) -> None:
+        service = _make_service()
+
+        assert service.cancel_scan() is False
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_cancel_scan_without_background_tasks_returns_false(self) -> None:
+        service = LibraryService(
+            cfg=LibraryServiceConfig(
+                models_dir="models",
+                namespace="nom",
+                tagger_version="tagger-v1",
+                library_root="/music",
+            ),
+            db=MagicMock(),
+            background_tasks=None,
+        )
+
+        assert service.cancel_scan(7) is False
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_cancel_scan_requires_configured_library(self) -> None:
+        service = LibraryService(
+            cfg=LibraryServiceConfig(
+                models_dir="models",
+                namespace="nom",
+                tagger_version="tagger-v1",
+                library_root=None,
+            ),
+            db=MagicMock(),
+            background_tasks=MagicMock(),
+        )
+
+        with pytest.raises(ValueError, match="Library scanning not configured"):
+            service.cancel_scan(7)
 
 
 class TestScanStateQueries:

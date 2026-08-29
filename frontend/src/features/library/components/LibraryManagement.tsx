@@ -34,6 +34,7 @@ import { useNotification } from "../../../hooks/useNotification";
 import { getConfig } from "../../../shared/api/config";
 import {
   create as createLibrary,
+  cancelScan,
   deleteLibrary,
   list as listLibraries,
   writeTags,
@@ -386,6 +387,22 @@ export function LibraryManagement() {
       setError(err instanceof Error ? err.message : "Failed to scan library");
     } finally {
       setScanningId(null);
+    }
+  };
+
+  const handleCancelScan = async (id: string) => {
+    try {
+      setError(null);
+      const { cancelled } = await cancelScan(id);
+      if (cancelled) {
+        showSuccess("Scan cancellation requested");
+      } else {
+        setError("No running scan to cancel");
+      }
+      await refreshLibraries();
+      await refreshWorkStatus();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to cancel scan");
     }
   };
 
@@ -893,6 +910,16 @@ export function LibraryManagement() {
                   {scanningId === lib.library_id || pipelineState === "scanning"
                     ? "Scanning..."
                     : "Full Scan"}
+                </Button>
+                <Button
+                  variant="outlined"
+                  color="warning"
+                  size="small"
+                  onClick={() => handleCancelScan(lib.library_id)}
+                  disabled={pipelineState !== "scanning"}
+                  title="Request cancellation of the running scan"
+                >
+                  Cancel Scan
                 </Button>
                 <Button
                   variant="outlined"

@@ -48,15 +48,27 @@ from nomarr.helpers.time_helper import internal_s, now_ms
 from nomarr.workflows.metadata.cleanup_orphaned_entities_wf import cleanup_orphaned_entities_workflow
 
 if TYPE_CHECKING:
+    import threading
+
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
+
+
+class ScanCancelledError(Exception):
+    """Raised when a cooperative scan cancellation is requested."""
+
+
+def _check_cancelled(stop_event: threading.Event | None) -> None:
+    if stop_event is not None and stop_event.is_set():
+        raise ScanCancelledError("Scan cancelled by user")
 
 
 def scan_library_quick_workflow(
     db: Database,
     library_id: int,
     tagger_version: str,
+    stop_event: threading.Event | None = None,
 ) -> dict[str, Any]:
     """Run a quick (incremental) library scan.
 
@@ -107,6 +119,7 @@ def scan_library_quick_workflow(
 
         # Step 5 — Per-folder scan with cache-check
         for folder in all_folders:
+            _check_cancelled(stop_event)
             # Cache check: skip if folder mtime and file_count match DB record
             cached = cached_folders.get(folder.rel_path)
             if cached and cached["mtime"] == folder.mtime and cached["file_count"] == folder.file_count:
@@ -194,6 +207,7 @@ def scan_library_quick_workflow(
 
         # Step 6 — Delete files from folders that vanished entirely from disk
         for folder_rel_path in vanished_folder_paths:
+            _check_cancelled(stop_event)
             vanished_files = get_songs_for_folder(db, library_id, folder_rel_path)
             if vanished_files:
                 stats["files_removed"] += remove_deleted_files(db, library_id, list(vanished_files.keys()))
@@ -235,6 +249,14 @@ def scan_library_quick_workflow(
         return {**stats, "scan_duration_s": scan_duration, "warnings": warnings, "scan_id": scan_id}
 
     except Exception as e:
+        if isinstance(e, ScanCancelledError):
+            logger.info("Quick scan cancelled for library %s", library_id)
+            update_scan_progress(db, library_id, status="error", scan_error=str(e))
+            try:
+                transition_pipeline_axis(db, library_id, SCAN_STATE_FIELD, SCAN_NOT_SCANNED)
+            except Exception:
+                logger.exception("Failed to reset scan axis after cancellation for library %s", library_id)
+            raise
         logger.error("Quick scan crashed: %s", e, exc_info=True)
         update_scan_progress(db, library_id, scan_error=str(e))
         try:

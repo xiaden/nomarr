@@ -344,10 +344,6 @@ def bootstrap_states():
     pass  # File state initialization
 
 
-def cancel_scan():
-    pass  # Scan control
-
-
 def clear_all_states():
     pass  # File state management
 

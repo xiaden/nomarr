@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import functools
 import logging
+import threading
 from typing import TYPE_CHECKING, Any
 
 from nomarr.components.library import (
@@ -71,6 +72,7 @@ class LibraryScanMixin:
         if self.background_tasks is None:
             msg = "Background task service is not available"
             raise RuntimeError(msg)
+        stop_event = threading.Event()
         task = ManagedTask(
             task_id=task_id,
             fn=functools.partial(
@@ -78,7 +80,9 @@ class LibraryScanMixin:
                 db=self.db,
                 library_id=int(library_id),
                 tagger_version=self.cfg.tagger_version,
+                stop_event=stop_event,
             ),
+            stop_event=stop_event,
             on_complete=on_complete,
             daemon=True,
         )
@@ -126,6 +130,7 @@ class LibraryScanMixin:
         if self.background_tasks is None:
             msg = "Background task service is not available"
             raise RuntimeError(msg)
+        stop_event = threading.Event()
         task = ManagedTask(
             task_id=task_id,
             fn=functools.partial(
@@ -136,7 +141,9 @@ class LibraryScanMixin:
                 models_dir=self.cfg.models_dir,
                 namespace=self.cfg.namespace,
                 skip_validation_autorepair=skip_validation_autorepair,
+                stop_event=stop_event,
             ),
+            stop_event=stop_event,
             on_complete=on_complete,
             daemon=True,
         )
@@ -149,17 +156,16 @@ class LibraryScanMixin:
             job_ids=[task_id],
         )
 
-    def cancel_scan(self, _library_id: int | None = None) -> bool:
+    def cancel_scan(self, library_id: int | None = None) -> bool:
         """Cancel the currently running scan.
 
-        Note: Cancellation support not yet implemented for direct scans.
-        This method is kept for API compatibility but currently returns False.
+        Cancellation is cooperative and is checked between scan batches.
 
         Args:
-            library_id: Optional library ID (uses default if None)
+            library_id: Library ID to cancel
 
         Returns:
-            False (cancellation not yet supported)
+            True when a running scan was signalled, otherwise False
 
         Raises:
             ValueError: If library not configured
@@ -168,8 +174,12 @@ class LibraryScanMixin:
         if not self.cfg.library_root:
             msg = "Library scanning not configured"
             raise ValueError(msg)
-        logger.warning("[LibraryService] Scan cancellation not yet implemented for direct scans")
-        return False
+        if self.background_tasks is None or library_id is None:
+            return False
+        task_id = f"scan_library_{int(library_id)}"
+        cancelled = self.background_tasks.cancel_task(task_id)
+        logger.info("[LibraryService] Requested cancellation for %s: cancelled=%s", task_id, cancelled)
+        return bool(cancelled)
 
     def repair_library_tags(self, library_id: int) -> StartScanResult:
         """Mark all files for tag re-hydration and start a full scan.

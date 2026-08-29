@@ -80,6 +80,25 @@ async def scan_library_full(
         ) from e
 
 
+@router.post("/{library_id}/scan/cancel", dependencies=[Depends(verify_session)])
+async def cancel_library_scan(
+    library_id: str,
+    library_service: Annotated["LibraryService", Depends(get_library_service)],
+) -> dict[str, bool]:
+    """Request cooperative cancellation of a running library scan."""
+    decoded_library_id = decode_path_id(library_id)
+    try:
+        cancelled = await asyncio.to_thread(library_service.cancel_scan, decoded_library_id)
+        return {"cancelled": cancelled}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
+    except Exception as e:
+        logger.exception("[Web API] Error cancelling scan for library %s", decoded_library_id)
+        raise HTTPException(
+            status_code=500, detail=sanitize_exception_message(e, "Failed to cancel library scan")
+        ) from e
+
+
 @router.post("/{library_id}/repair-tags", dependencies=[Depends(verify_session)])
 async def repair_library_tags(
     library_id: str,

@@ -162,6 +162,11 @@ export async function scanFull(id: string): Promise<ScanResult> {
   return post<ScanResult>(`/api/web/library/${id}/scan/full`, {});
 }
 
+/** Request cooperative cancellation of a running scan. */
+export async function cancelScan(id: string): Promise<{ cancelled: boolean }> {
+  return post<{ cancelled: boolean }>(`/api/web/library/${id}/scan/cancel`, {});
+}
+
 /**
  * Repair tags for a specific library by marking all files for re-hydration
  * and starting a full scan. This forces the tag extraction worker to re-read

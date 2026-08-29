@@ -10,6 +10,7 @@ Pass 2 (audio tag extraction + entity seeding) runs in the background tag extrac
 from __future__ import annotations
 
 import logging
+import threading
 from collections import defaultdict
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -54,6 +55,15 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+class ScanCancelledError(Exception):
+    """Raised when a cooperative scan cancellation is requested."""
+
+
+def _check_cancelled(stop_event: threading.Event | None) -> None:
+    if stop_event is not None and stop_event.is_set():
+        raise ScanCancelledError("Scan cancelled by user")
+
+
 def scan_library_full_workflow(
     db: Database,
     library_id: int,
@@ -61,6 +71,7 @@ def scan_library_full_workflow(
     models_dir: str | None = None,
     namespace: str = "nom",
     skip_validation_autorepair: bool = False,
+    stop_event: threading.Event | None = None,
 ) -> dict[str, Any]:
     """Run a full library scan (ignores folder cache).
 
@@ -118,6 +129,7 @@ def scan_library_full_workflow(
 
         # Step 5 — Per-folder scan
         for folder in all_folders:
+            _check_cancelled(stop_event)
             stats["folders_scanned"] += 1
             for attempt in range(2):
                 try:
@@ -194,6 +206,7 @@ def scan_library_full_workflow(
 
         # Step 6 — Delete files from folders that vanished entirely from disk
         for folder_rel_path in vanished_folder_paths:
+            _check_cancelled(stop_event)
             vanished_files = get_songs_for_folder(db, library_id, folder_rel_path)
             if vanished_files:
                 stats["files_removed"] += remove_deleted_files(db, library_id, list(vanished_files.keys()))
@@ -266,6 +279,14 @@ def scan_library_full_workflow(
         return {**stats, "scan_duration_s": scan_duration, "warnings": warnings, "scan_id": scan_id}
 
     except Exception as e:
+        if isinstance(e, ScanCancelledError):
+            logger.info("Full scan cancelled for library %s", library_id)
+            update_scan_progress(db, library_id, status="error", scan_error=str(e))
+            try:
+                transition_pipeline_axis(db, library_id, SCAN_STATE_FIELD, SCAN_NOT_SCANNED)
+            except Exception:
+                logger.exception("Failed to reset scan axis after cancellation for library %s", library_id)
+            raise
         logger.error("Full scan crashed: %s", e, exc_info=True)
         update_scan_progress(db, library_id, scan_error=str(e))
         try:
