@@ -10,10 +10,10 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import delete, exists, func, select, update
+from sqlalchemy import Float, and_, case, cast, delete, exists, func, literal, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from nomarr.helpers.dto.repo_dto import SongRow, TagRow
+from nomarr.helpers.dto.repo_dto import NumericSongTagMatchRow, SongRow, TagRow
 from nomarr.persistence.models.song import Song
 from nomarr.persistence.models.song_tag import SongTag
 from nomarr.persistence.models.tag import Tag
@@ -74,6 +74,38 @@ def _row_to_dto(row: Row) -> SongRow:
         scanned_at=m["scanned_at"],
         created_at=m["created_at"],
     )
+
+
+def _numeric_match_row_to_dto(row: Row) -> NumericSongTagMatchRow:
+    """Convert a SQLAlchemy ``Row`` to a ``NumericSongTagMatchRow`` TypedDict."""
+    m = row._mapping
+    return NumericSongTagMatchRow(
+        id=m["id"],
+        library_id=m["library_id"],
+        folder_id=m["folder_id"],
+        path=m["path"],
+        normalized_path=m["normalized_path"],
+        file_size=m["file_size"],
+        modified_time=m["modified_time"],
+        duration_seconds=m["duration_seconds"],
+        chromaprint=m["chromaprint"],
+        needs_tagging=m["needs_tagging"],
+        is_valid=m["is_valid"],
+        tagged=m["tagged"],
+        calibration_hash=m["calibration_hash"],
+        write_claimed_by=m["write_claimed_by"],
+        last_tagged_at=m["last_tagged_at"],
+        scanned_at=m["scanned_at"],
+        created_at=m["created_at"],
+        matched_tag=m["matched_tag"],
+        distance=m["distance"],
+    )
+
+
+#: Regex for a numeric text value: optional sign, int/decimal, optional exponent.
+#: Mirrors the acceptance rules of ``is_numeric_tag_value`` (int/float, non-bool)
+#: as applied to string-typed ``tags.value``.
+_NUMERIC_TEXT_RE = r"^[+-]?([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][+-]?[0-9]+)?$"
 
 
 class SongTagRepository:
@@ -291,6 +323,118 @@ class SongTagRepository:
             return [_tag_row_to_dto(r) for r in result.all()]
 
     # ── search ──────────────────────────────────────────────────
+
+    # ── numeric tag search ─────────────────────────────────────
+
+    @staticmethod
+    def _guarded_numeric_value(value_col: Any, dialect_name: str):
+        """Return a SQL expression yielding the numeric value of *value_col* or NULL.
+
+        The CASE guard ensures invalid numeric text in ``tags.value`` can NEVER
+        reach an unconditional ``CAST`` that raises: PostgreSQL's
+        ``CAST(text AS float)`` aborts the whole statement on bad input, so the
+        guard is essential there. SQLite's ``CAST`` never raises, but the same
+        guard stops non-numeric strings (e.g. ``"rock"``) from being coerced to
+        ``0.0`` and matching a bogus zero distance. The dialect-specific
+        regexp operator (``~`` on PostgreSQL, a GLOB character-class check on
+        SQLite) is selected here so the validity predicate stays explicit.
+        """
+        if dialect_name == "postgresql":
+            is_numeric = value_col.op("~")(_NUMERIC_TEXT_RE)
+        else:
+            # SQLite has no built-in regexp(); a GLOB character-class check is
+            # sufficient for the integer/decimal values in practice and rejects
+            # non-numeric text. Slightly more permissive than the PostgreSQL
+            # regex (e.g. "1.2.3") — acceptable and covered by query-shape tests.
+            is_numeric = and_(
+                value_col.op("GLOB")("*[0-9]*"),
+                ~value_col.op("GLOB")("*[^0-9.eE+-]*"),
+            )
+        return case((is_numeric, cast(value_col, Float)), else_=None)
+
+    def search_songs_by_numeric_tag(
+        self,
+        tag_key: str,
+        target_value: float | str,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[NumericSongTagMatchRow]:
+        """Return songs with a numeric *tag_key* tag, ordered by tag distance.
+
+        A set-based query over ``_S``/``_ST``/``_T`` keeps only tags whose
+        ``name`` is *tag_key* and whose ``value`` is valid numeric text, picks
+        the single closest tag per song (deterministic tie-break by tag id),
+        orders the result by ``distance ASC, song id ASC``, and applies
+        offset/limit in SQL before any rows are materialized in Python.
+        """
+        with map_persistence_exceptions():
+            bind = getattr(self._session, "bind", None)
+            dialect = getattr(bind, "dialect", None)
+            dialect_name = dialect.name if dialect is not None else "postgresql"
+
+            numeric_value = self._guarded_numeric_value(_T.c.value, dialect_name)
+            numeric_target = literal(float(target_value))
+            distance = func.abs(numeric_value - numeric_target)
+            row_number = (
+                func.row_number()
+                .over(
+                    partition_by=_ST.c.song_id,
+                    order_by=(distance.asc(), _T.c.id.asc()),
+                )
+                .label("rn")
+            )
+
+            inner = (
+                select(
+                    _S,
+                    _T.c.value.label("matched_tag"),
+                    distance.label("distance"),
+                    row_number,
+                )
+                .select_from(_S)
+                .join(_ST, _S.c.id == _ST.c.song_id)
+                .join(_T, _T.c.id == _ST.c.tag_id)
+                .where(
+                    _T.c.name == tag_key,
+                    distance.is_not(None),
+                )
+                .subquery()
+            )
+
+            stmt = select(inner).where(inner.c.rn == 1).order_by(inner.c.distance.asc(), inner.c.id.asc())
+            if offset:
+                stmt = stmt.offset(offset)
+            if limit is not None:
+                stmt = stmt.limit(limit)
+            result = self._session.execute(stmt)
+            return [_numeric_match_row_to_dto(r) for r in result.all()]
+
+    def count_songs_by_numeric_tag(self, tag_key: str, target_value: float | str) -> int:
+        """Count distinct songs matching a numeric *tag_key* tag.
+
+        Separate uncapped query using the SAME tag-key and safe-numeric
+        predicate as :meth:`search_songs_by_numeric_tag` — no edge limit and
+        no dependence on the paged query.
+        """
+        with map_persistence_exceptions():
+            bind = getattr(self._session, "bind", None)
+            dialect = getattr(bind, "dialect", None)
+            dialect_name = dialect.name if dialect is not None else "postgresql"
+
+            numeric_value = self._guarded_numeric_value(_T.c.value, dialect_name)
+            distance = func.abs(numeric_value - literal(float(target_value)))
+            stmt = (
+                select(func.count(func.distinct(_ST.c.song_id)))
+                .select_from(_ST)
+                .join(_T, _T.c.id == _ST.c.tag_id)
+                .where(
+                    _T.c.name == tag_key,
+                    distance.is_not(None),
+                )
+            )
+            result = self._session.execute(stmt)
+            return result.scalar() or 0
 
     def search_songs_by_tag(
         self,

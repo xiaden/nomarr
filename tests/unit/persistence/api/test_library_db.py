@@ -915,6 +915,38 @@ def test_count_songs_by_tag_delegates() -> None:
 
 
 @pytest.mark.unit
+def test_search_songs_by_numeric_tag_delegates() -> None:
+    db, _, _, _, _, _, song_tag_repo, _ = _make_library_db()
+    rows = [{"id": 1, "matched_tag": "118.0", "distance": 2.0}]
+    song_tag_repo.search_songs_by_numeric_tag = MagicMock(return_value=rows)
+
+    # LibraryTagsDb mirror via db.tags
+    via_tags = db.tags.search_songs_by_numeric_tag("nom:bpm", 120.0, limit=10, offset=20)
+    # LibraryDb convenience mirror
+    via_db = db.search_songs_by_numeric_tag("nom:bpm", 118.0, limit=5)
+
+    assert via_tags is rows
+    assert via_db is rows
+    song_tag_repo.search_songs_by_numeric_tag.assert_has_calls(
+        [
+            call("nom:bpm", 120.0, limit=10, offset=20),
+            call("nom:bpm", 118.0, limit=5, offset=0),
+        ]
+    )
+
+
+@pytest.mark.unit
+def test_count_songs_by_numeric_tag_delegates() -> None:
+    db, _, _, _, _, _, song_tag_repo, _ = _make_library_db()
+    song_tag_repo.count_songs_by_numeric_tag = MagicMock(return_value=7)
+
+    result = db.count_songs_by_numeric_tag("nom:bpm", 120.0)
+
+    assert result == 7
+    song_tag_repo.count_songs_by_numeric_tag.assert_called_once_with("nom:bpm", 120.0)
+
+
+@pytest.mark.unit
 def test_replace_song_tags_delegates() -> None:
     db, _, _, _, _, _, song_tag_repo, _ = _make_library_db()
     song_tag_repo.replace_song_tags = MagicMock()

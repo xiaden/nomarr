@@ -47,6 +47,21 @@ class SongRow(TypedDict):
     created_at: int
 
 
+class NumericSongTagMatchRow(SongRow):
+    """A song matched by numeric tag-distance, with its match metadata.
+
+    Transitional persistence-row DTO: carries the complete ``SongRow`` fields
+    plus the matched tag's string ``value`` (``matched_tag``) and the absolute
+    numeric ``distance`` from the requested target. This is a persistence-rows
+    projection for the SQL-paginated numeric search; it is not a domain-model
+    or feature-contract ledger addition (ADR-032/ADR-041 keep storage shapes
+    inside the persistence layer).
+    """
+
+    matched_tag: str
+    distance: float
+
+
 class LibraryFolderRow(TypedDict):
     """Single row from the ``library_folders`` table."""
 
@@ -179,6 +194,7 @@ __all__ = [
     "LibraryScanRow",
     "LockRow",
     "MetaRow",
+    "NumericSongTagMatchRow",
     "PipelineStateRow",
     "SessionRow",
     "SongRow",

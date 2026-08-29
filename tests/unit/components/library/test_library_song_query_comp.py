@@ -82,6 +82,31 @@ def _song(**overrides: object) -> Song:
     return Song(**base)
 
 
+def _numeric_match_row(song_id: int = 1, matched_tag: str = "120.0", distance: float = 0.0) -> dict:
+    """Build a ``NumericSongTagMatchRow``-shaped dict the SQL paged intent returns."""
+    return {
+        "id": song_id,
+        "library_id": 1,
+        "folder_id": None,
+        "path": f"/music/song{song_id}.mp3",
+        "normalized_path": f"song{song_id}.mp3",
+        "file_size": 100,
+        "modified_time": 1000,
+        "duration_seconds": 200.0,
+        "chromaprint": None,
+        "needs_tagging": False,
+        "is_valid": True,
+        "tagged": False,
+        "calibration_hash": None,
+        "write_claimed_by": None,
+        "last_tagged_at": None,
+        "scanned_at": None,
+        "created_at": 1000,
+        "matched_tag": matched_tag,
+        "distance": distance,
+    }
+
+
 @pytest.mark.unit
 def test_get_file_by_id_uses_library_facade() -> None:
 
@@ -906,6 +931,7 @@ def test_search_songs_with_tags_filters_and_hydrates_page() -> None:
 
 @pytest.mark.unit
 def test_count_files_by_tag_uses_library_facade_for_string_and_numeric_modes() -> None:
+    # String branch: unchanged legacy materialization path.
     db = make_db()
     db.library.count_tags.return_value = 1
     db.library.list_tags_by_name.return_value = [{"id": 1, "value": "rock"}]
@@ -921,43 +947,33 @@ def test_count_files_by_tag_uses_library_facade_for_string_and_numeric_modes() -
     db.library.list_tags_by_name.assert_called_once_with("genre", limit=1)
     db.library.list_song_tag_edges.assert_called_once_with([1], limit=None)
 
+    # Numeric branch: dedicated uncapped SQL count intent, no tag/edge materialization.
     db = make_db()
-    db.library.count_tags.return_value = 2
-    db.library.list_tags_by_name.return_value = [
-        {"id": 1, "value": 120.0},
-        {"id": 2, "value": True},
-    ]
-    db.library.list_song_tag_edges.return_value = [{"song_id": 1, "tag_id": 1}]
+    db.library.count_songs_by_numeric_tag.return_value = 7
 
     numeric_count = count_songs_by_tag(db, "nom:bpm", 120.0)
 
-    assert numeric_count == 1
-    db.library.count_tags.assert_called_once_with()
-    db.library.list_tags_by_name.assert_called_once_with("nom:bpm", limit=2)
-    db.library.list_song_tag_edges.assert_called_once_with([1], limit=DEFAULT_LIMIT)
+    assert numeric_count == 7
+    db.library.count_songs_by_numeric_tag.assert_called_once_with("nom:bpm", 120.0)
+    db.library.count_tags.assert_not_called()
+    db.library.list_tags_by_name.assert_not_called()
+    db.library.list_song_tag_edges.assert_not_called()
 
 
 @pytest.mark.unit
 def test_search_files_by_tag_numeric_sorts_by_distance_and_hydrates_tags() -> None:
     db = make_db()
-    db.library.count_tags.return_value = 2
-    db.library.list_tags_by_name.return_value = [
-        {"id": 1, "value": 118.0},
-        {"id": 2, "value": 121.0},
-    ]
-    db.library.list_song_tag_edges.return_value = [
-        {"song_id": 1, "tag_id": 1},
-        {"song_id": 2, "tag_id": 2},
-    ]
-    db.library.list_songs_by_ids.return_value = [
-        _song(song_id=1, path="D:/Music/one.flac", normalized_path="one.flac"),
-        _song(song_id=2, path="D:/Music/two.flac", normalized_path="two.flac"),
+    # SQL paged intent returns rows already ordered (distance ASC, song id ASC):
+    # song 2 (distance 1.0) before song 1 (distance 2.0).
+    db.library.search_songs_by_numeric_tag.return_value = [
+        _numeric_match_row(song_id=2, matched_tag="121.0", distance=1.0),
+        _numeric_match_row(song_id=1, matched_tag="118.0", distance=2.0),
     ]
     db.library.list_song_tags_for_songs.return_value = {
         1: [{"name": "nom:bpm", "value": 118.0}],
         2: [{"name": "nom:bpm", "value": 121.0}],
     }
-    db.library.get_library_ids_for_songs.return_value = {2: 1}
+    db.library.get_library_ids_for_songs.return_value = {1: 1, 2: 1}
 
     with patch(
         "nomarr.components.library.library_song_query_comp.hydrate_songs_with_metadata",
@@ -968,11 +984,79 @@ def test_search_files_by_tag_numeric_sorts_by_distance_and_hydrates_tags() -> No
     assert result[0]["id"] == 2
     assert result[0]["distance"] == 1.0
     assert result[0]["library_id"] == 1
-    db.library.count_tags.assert_called_once_with()
-    db.library.list_tags_by_name.assert_called_once_with("nom:bpm", limit=2)
-    db.library.list_song_tag_edges.assert_called_once_with([1, 2], limit=DEFAULT_LIMIT)
-    db.library.list_songs_by_ids.assert_called_once_with([1, 2])
-    db.library.list_song_tags_for_songs.assert_called_once_with([2])
+    assert result[0]["matched_tag"] == {"key": "nom:bpm", "value": 121.0}
+    assert result[1]["matched_tag"] == {"key": "nom:bpm", "value": 118.0}
+    db.library.search_songs_by_numeric_tag.assert_called_once_with("nom:bpm", 120.0, limit=1, offset=0)
+    # Legacy capped materialization path is dead for numeric search.
+    db.library.count_tags.assert_not_called()
+    db.library.list_tags_by_name.assert_not_called()
+    db.library.list_song_tag_edges.assert_not_called()
+    db.library.list_songs_by_ids.assert_not_called()
+    # Only the SQL page is hydrated (its own song ids, not the full result).
+    db.library.list_song_tags_for_songs.assert_called_once_with([2, 1])
+
+
+@pytest.mark.unit
+def test_search_files_by_tag_numeric_preserves_sql_row_order_without_python_resort() -> None:
+    """The component must NOT re-sort the SQL-returned page in Python."""
+    db = make_db()
+    # Deliberately scrambled (distance 2.0 before 1.0) — as the SQL would already
+    # have ordered it. The component must preserve the row order as given.
+    db.library.search_songs_by_numeric_tag.return_value = [
+        _numeric_match_row(song_id=1, matched_tag="118.0", distance=2.0),
+        _numeric_match_row(song_id=2, matched_tag="121.0", distance=1.0),
+    ]
+    db.library.list_song_tags_for_songs.return_value = {1: [], 2: []}
+    db.library.get_library_ids_for_songs.return_value = {1: 1, 2: 1}
+
+    with patch(
+        "nomarr.components.library.library_song_query_comp.hydrate_songs_with_metadata",
+        side_effect=lambda _db, docs: docs,
+    ):
+        result = search_songs_by_tag(db, "nom:bpm", 120.0, limit=10, offset=0)
+
+    assert [r["id"] for r in result] == [1, 2]
+    assert [r["distance"] for r in result] == [2.0, 1.0]
+
+
+@pytest.mark.unit
+def test_search_files_by_tag_numeric_page_total_equals_count() -> None:
+    """A full page's size equals the page limit and matches the uncapped count."""
+    db = make_db()
+    rows = [_numeric_match_row(song_id=i, matched_tag="120.0", distance=float(i)) for i in (1, 2, 3)]
+    db.library.search_songs_by_numeric_tag.return_value = rows
+    db.library.count_songs_by_numeric_tag.return_value = 3
+    db.library.list_song_tags_for_songs.return_value = {i: [] for i in (1, 2, 3)}
+    db.library.get_library_ids_for_songs.return_value = dict.fromkeys((1, 2, 3), 1)
+
+    with patch(
+        "nomarr.components.library.library_song_query_comp.hydrate_songs_with_metadata",
+        side_effect=lambda _db, docs: docs,
+    ):
+        result = search_songs_by_tag(db, "nom:bpm", 120.0, limit=3, offset=0)
+        total = count_songs_by_tag(db, "nom:bpm", 120.0)
+
+    assert len(result) == 3
+    assert total == 3
+
+
+@pytest.mark.unit
+def test_search_files_by_tag_numeric_empty_page_returns_empty() -> None:
+    """An empty SQL page short-circuits to an empty result without hydration."""
+    db = make_db()
+    db.library.search_songs_by_numeric_tag.return_value = []
+
+    with patch(
+        "nomarr.components.library.library_song_query_comp.hydrate_songs_with_metadata",
+    ):
+        result = search_songs_by_tag(db, "nom:bpm", 120.0, limit=10, offset=0)
+
+    assert result == []
+    db.library.search_songs_by_numeric_tag.assert_called_once_with("nom:bpm", 120.0, limit=10, offset=0)
+    db.library.count_tags.assert_not_called()
+    db.library.list_tags_by_name.assert_not_called()
+    db.library.list_song_tag_edges.assert_not_called()
+    db.library.list_songs_by_ids.assert_not_called()
 
 
 @pytest.mark.unit

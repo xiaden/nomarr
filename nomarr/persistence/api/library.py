@@ -21,6 +21,7 @@ if TYPE_CHECKING:
         LibraryFolderRow,
         LibraryRow,
         LibraryScanRow,
+        NumericSongTagMatchRow,
         TagRow,
     )
     from nomarr.persistence.api.library_regions import LibraryRegionsDb
@@ -370,6 +371,24 @@ class LibraryDb:
 
     def count_songs_by_tag(self, tag_key: str, target_value: str) -> int:
         return self._tags.count_songs_by_tag(tag_key, target_value)
+
+    def count_songs_by_numeric_tag(self, tag_key: str, target_value: float | str) -> int:
+        return self._tags.count_songs_by_numeric_tag(tag_key, target_value)
+
+    def search_songs_by_numeric_tag(
+        self,
+        tag_key: str,
+        target_value: float | str,
+        *,
+        limit: int | None,
+        offset: int = 0,
+    ) -> list[NumericSongTagMatchRow]:
+        return self._tags.search_songs_by_numeric_tag(
+            tag_key,
+            target_value,
+            limit=limit,
+            offset=offset,
+        )
 
     def search_songs_by_tag(
         self,

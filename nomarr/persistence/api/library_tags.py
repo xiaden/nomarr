@@ -17,6 +17,7 @@ from nomarr.helpers.dto.repo_dto import SongRow, TagRow
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session, scoped_session
 
+    from nomarr.helpers.dto.repo_dto import NumericSongTagMatchRow
     from nomarr.persistence.database.song_tag_repo import SongTagRepository
     from nomarr.persistence.database.tag_repo import TagRepository
 
@@ -171,6 +172,37 @@ class LibraryTagsDb:
     def count_songs_by_tag(self, tag_key: str, target_value: str) -> int:
         """Count songs that have a tag with the given key and value."""
         return self._song_tag_repo.count_songs_by_tag(tag_key, target_value)
+
+    def count_songs_by_numeric_tag(self, tag_key: str, target_value: float | str) -> int:
+        """Count distinct songs with a numeric *tag_key* tag.
+
+        Delegates to the uncapped ``COUNT(DISTINCT song_id)`` repository intent,
+        which uses the same tag-key and safe-numeric predicate as the paged
+        numeric search (no edge limit, no dependence on the paged query).
+        """
+        return self._song_tag_repo.count_songs_by_numeric_tag(tag_key, target_value)
+
+    def search_songs_by_numeric_tag(
+        self,
+        tag_key: str,
+        target_value: float | str,
+        *,
+        limit: int | None,
+        offset: int = 0,
+    ) -> list[NumericSongTagMatchRow]:
+        """Search songs with a numeric *tag_key* tag, ordered by tag distance.
+
+        SQL selects one closest numeric tag per song and returns only the
+        requested page (``distance ASC, song id ASC`` ordering, offset/limit
+        applied in SQL). Rows carry the matched tag's string ``value`` and the
+        absolute ``distance`` from the target.
+        """
+        return self._song_tag_repo.search_songs_by_numeric_tag(
+            tag_key,
+            target_value,
+            limit=limit,
+            offset=offset,
+        )
 
     def search_songs_by_tag(
         self,

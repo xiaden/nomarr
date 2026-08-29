@@ -563,3 +563,277 @@ class TestTagRepository:
 
         result = pg_session.execute(select(Tag))
         assert len(result.all()) == 0
+
+    # ── numeric tag search (Phase 1 SQL pagination) ─────────────
+
+    def test_search_songs_by_numeric_tag_orders_by_distance_and_paginates(self, pg_session) -> None:
+        """Numeric search orders by absolute distance and applies SQL offset/limit."""
+        _, s170 = _create_library_and_song(pg_session)
+        _, s175 = _create_library_and_song(pg_session)
+        _, s180 = _create_library_and_song(pg_session)
+        repo = SongTagRepository(pg_session)
+        repo.assign_tag_to_song(s170, _create_tag(pg_session, name="genre", value="170", namespace="genre"))
+        repo.assign_tag_to_song(s175, _create_tag(pg_session, name="genre", value="175", namespace="genre"))
+        repo.assign_tag_to_song(s180, _create_tag(pg_session, name="genre", value="180", namespace="genre"))
+
+        all_rows = repo.search_songs_by_numeric_tag("genre", 172)
+        # distances: |170-172|=2, |175-172|=3, |180-172|=8
+        assert [r["id"] for r in all_rows] == [s170, s175, s180]
+        assert [r["matched_tag"] for r in all_rows] == ["170", "175", "180"]
+        assert [r["distance"] for r in all_rows] == [2.0, 3.0, 8.0]
+
+        page = repo.search_songs_by_numeric_tag("genre", 172, limit=1, offset=1)
+        assert [r["id"] for r in page] == [s175]
+        page2 = repo.search_songs_by_numeric_tag("genre", 172, limit=2, offset=0)
+        assert [r["id"] for r in page2] == [s170, s175]
+
+    def test_search_songs_by_numeric_tag_excludes_non_numeric_values(self, pg_session) -> None:
+        """Non-numeric tag text must never be coerced and must not match."""
+        _, numeric_song = _create_library_and_song(pg_session)
+        _, text_song = _create_library_and_song(pg_session)
+        repo = SongTagRepository(pg_session)
+        repo.assign_tag_to_song(numeric_song, _create_tag(pg_session, name="genre", value="180", namespace="genre"))
+        repo.assign_tag_to_song(text_song, _create_tag(pg_session, name="genre", value="rock", namespace="genre"))
+
+        rows = repo.search_songs_by_numeric_tag("genre", 180)
+        assert [r["id"] for r in rows] == [numeric_song]
+        assert repo.count_songs_by_numeric_tag("genre", 180) == 1
+
+    def test_search_songs_by_numeric_tag_picks_closest_tag_per_song(self, pg_session) -> None:
+        """A song with several numeric tags yields exactly one (closest) match.
+
+        Two-sided: tags lie on both sides of the target, so the closest tag is
+        not merely the smallest value (regression for per-song winner ordering
+        by distance rather than by raw value).
+        """
+        _, song = _create_library_and_song(pg_session)
+        repo = SongTagRepository(pg_session)
+        # Tags on both sides of the target: 160 (distance 12) and 175 (distance 3) from 172.
+        repo.assign_tag_to_song(song, _create_tag(pg_session, name="genre", value="160", namespace="genre"))
+        repo.assign_tag_to_song(song, _create_tag(pg_session, name="genre", value="175", namespace="genre"))
+
+        rows = repo.search_songs_by_numeric_tag("genre", 172)
+        assert len(rows) == 1
+        assert rows[0]["id"] == song
+        assert rows[0]["matched_tag"] == "175"
+        assert rows[0]["distance"] == 3.0
+
+    def test_search_songs_by_numeric_tag_tie_breaks_by_tag_id(self, pg_session) -> None:
+        """Equal-distance tags on one song resolve deterministically by tag id."""
+        _, song = _create_library_and_song(pg_session)
+        repo = SongTagRepository(pg_session)
+        # Both distance 3 from 172; "175" created first gets the lower tag id.
+        repo.assign_tag_to_song(song, _create_tag(pg_session, name="genre", value="175", namespace="genre"))
+        repo.assign_tag_to_song(song, _create_tag(pg_session, name="genre", value="175.0", namespace="genre"))
+
+        rows = repo.search_songs_by_numeric_tag("genre", 172)
+        assert len(rows) == 1
+        assert rows[0]["matched_tag"] == "175"
+
+    def test_count_songs_by_numeric_tag_uncapped_distinct(self, pg_session) -> None:
+        """Numeric count is a separate uncapped distinct-song count."""
+        _, s1 = _create_library_and_song(pg_session)
+        _, s2 = _create_library_and_song(pg_session)
+        repo = SongTagRepository(pg_session)
+        tag_id = _create_tag(pg_session, name="genre", value="180", namespace="genre")
+        repo.assign_tag_to_song(s1, tag_id)
+        repo.assign_tag_to_song(s2, tag_id)
+        assert repo.count_songs_by_numeric_tag("genre", 180) == 2
+        # Any target still counts the full numeric-tag result universe.
+        assert repo.count_songs_by_numeric_tag("genre", 999) == 2
+
+    def test_numeric_guard_compiles_safely_per_dialect(self) -> None:
+        """Guarded numeric cast compiles for PostgreSQL and SQLite without a bare cast."""
+        from sqlalchemy.dialects import postgresql, sqlite
+
+        from nomarr.persistence.database.song_tag_repo import _NUMERIC_TEXT_RE
+
+        value_col = Tag.__table__.c.value
+
+        pg_expr = SongTagRepository._guarded_numeric_value(value_col, "postgresql")
+        pg_sql = str(pg_expr.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
+        # CASE guard wraps the CAST and the strict regex is used.
+        assert "CASE WHEN" in pg_sql
+        assert _NUMERIC_TEXT_RE in pg_sql
+        assert "CAST(tags.value AS FLOAT)" in pg_sql
+
+        sqlite_expr = SongTagRepository._guarded_numeric_value(value_col, "sqlite")
+        sqlite_sql = str(sqlite_expr.compile(dialect=sqlite.dialect(), compile_kwargs={"literal_binds": True}))
+        assert "CASE WHEN" in sqlite_sql
+        assert "GLOB" in sqlite_sql
+        assert "CAST(tags.value AS FLOAT)" in sqlite_sql
+        # Neither dialect may emit a bare (unguarded) cast of the value.
+        assert "CASE" in pg_sql and "CASE" in sqlite_sql
+
+    def test_search_songs_by_numeric_tag_deterministic_song_ties(self, pg_session) -> None:
+        """Songs at equal distance tie-break by song id ASC, independent of edge insert order."""
+        _, s_a = _create_library_and_song(pg_session)
+        _, s_b = _create_library_and_song(pg_session)
+        repo = SongTagRepository(pg_session)
+        # Both distance 10 from target 100 (values 90 and 110).
+        tag_a = _create_tag(pg_session, name="rating", value="90", namespace="genre")
+        tag_b = _create_tag(pg_session, name="rating", value="110", namespace="genre")
+        # Insert edges in reverse song-id order (higher id first) to prove the SQL
+        # orders by song id rather than by insertion order.
+        repo.assign_tag_to_song(s_b, tag_b)
+        repo.assign_tag_to_song(s_a, tag_a)
+
+        rows = repo.search_songs_by_numeric_tag("rating", 100)
+
+        # s_a was created first so it has the lower auto-increment id.
+        assert [r["id"] for r in rows] == sorted([s_a, s_b])
+        assert [r["distance"] for r in rows] == [10.0, 10.0]
+
+    def test_search_songs_by_numeric_tag_offset_beyond_end_returns_empty(self, pg_session) -> None:
+        """An offset past the result set yields an empty page."""
+        _, s1 = _create_library_and_song(pg_session)
+        repo = SongTagRepository(pg_session)
+        repo.assign_tag_to_song(s1, _create_tag(pg_session, name="rating", value="5", namespace="genre"))
+
+        rows = repo.search_songs_by_numeric_tag("rating", 5, limit=10, offset=100)
+
+        assert rows == []
+
+    def test_numeric_query_compiles_with_window_order_and_pagination(self, pg_session) -> None:
+        """The real paged query compiles with a guarded cast, row_number window, ORDER BY, and LIMIT/OFFSET.
+
+        Captures the exact statement ``search_songs_by_numeric_tag`` builds (running
+        against the SQLite-backed ``pg_session`` fixture) and compiles it through both
+        the SQLite and PostgreSQL dialect compilers. Ordering and pagination must live
+        in SQL, not Python slicing.
+        """
+        from sqlalchemy.dialects import postgresql, sqlite
+
+        _, s1 = _create_library_and_song(pg_session)
+        repo = SongTagRepository(pg_session)
+        repo.assign_tag_to_song(s1, _create_tag(pg_session, name="rating", value="5", namespace="genre"))
+
+        captured: dict = {}
+        real_execute = pg_session.execute
+
+        def _capture(stmt, *args, **kwargs):
+            captured["stmt"] = stmt
+            return real_execute(stmt, *args, **kwargs)
+
+        pg_session.execute = _capture
+        repo.search_songs_by_numeric_tag("rating", 5, limit=10, offset=20)
+
+        stmt = captured["stmt"]
+        assert stmt is not None
+        pg_sql = str(stmt.compile(dialect=postgresql.dialect()))
+        sqlite_sql = str(stmt.compile(dialect=sqlite.dialect()))
+
+        for sql in (pg_sql, sqlite_sql):
+            # Guarded numeric cast (no unconditional CAST of arbitrary text).
+            assert "CASE WHEN" in sql
+            assert "CAST(tags.value AS FLOAT)" in sql
+            # One closest tag per song via a row_number window with distance then tag-id tie-break.
+            assert "row_number() OVER" in sql
+            assert "PARTITION BY" in sql
+            assert "tags.id ASC" in sql
+            # SQL-level ordering and pagination (LIMIT/OFFSET bound parameters).
+            assert "ORDER BY" in sql
+            assert "LIMIT" in sql
+            assert "OFFSET" in sql
+        # The SQLite-built query uses the GLOB guard (no regexp() on SQLite).
+        assert "GLOB" in sqlite_sql
+
+    def test_search_songs_by_numeric_tag_uncapped_over_1000_matches(self, pg_session) -> None:
+        """>1000 matching edges are all searchable/countable with no arbitrary cap.
+
+        Insert 1005 songs with a matching numeric tag edge in REVERSED song-id order
+        so the regression is non-vacuous: correct ordering comes from SQL, not from
+        insertion order or a Python slice. Old code capped the edge materialization at
+        DEFAULT_LIMIT=1000, so a count/search over 1005 matches proves the paged intent.
+        """
+        from sqlalchemy import select
+
+        lib_id, _ = _create_library_and_song(pg_session)
+        repo = SongTagRepository(pg_session)
+        tag_id = _create_tag(pg_session, name="rating", value="5", namespace="genre")
+
+        n = 1005
+        song_rows = [
+            {
+                "library_id": lib_id,
+                "path": f"/tag/lib/song{i}.mp3",
+                "normalized_path": f"song{i}.mp3",
+                "file_size": 1000,
+                "modified_time": 1000,
+                "duration_seconds": None,
+                "needs_tagging": 0,
+                "is_valid": 1,
+                "tagged": 0,
+                "created_at": 1000,
+            }
+            for i in range(n)
+        ]
+        pg_session.execute(insert(Song), song_rows)
+        pg_session.commit()
+
+        # Only the bulk-inserted songs (the helper's first song has no numeric edge).
+        song_ids = [
+            r[0]
+            for r in pg_session.execute(select(Song.id).where(Song.normalized_path.like("song%")).order_by(Song.id))
+        ]
+        assert len(song_ids) == n
+
+        # Insert edges in REVERSED song-id order (non-vacuous).
+        edge_rows = [
+            {
+                "song_id": sid,
+                "tag_id": tag_id,
+                "confidence": 1.0,
+                "source": "nomarr",
+                "created_at": 1000,
+            }
+            for sid in reversed(song_ids)
+        ]
+        pg_session.execute(insert(SongTag), edge_rows)
+        pg_session.commit()
+
+        # Uncapped distinct-song count proves NO edge cap (old code capped at DEFAULT_LIMIT=1000).
+        assert repo.count_songs_by_numeric_tag("rating", 5) == n
+
+        # Paging through in chunks returns every match with no overlap/gaps.
+        pages = [
+            repo.search_songs_by_numeric_tag("rating", 5, limit=250, offset=offset)
+            for offset in (0, 250, 500, 750, 1000)
+        ]
+        concatenated = [r["id"] for page in pages for r in page]
+
+        assert len(concatenated) == n
+        assert len(set(concatenated)) == n  # no overlap
+        assert concatenated == sorted(song_ids)  # no gaps, SQL order by song id
+        assert len(pages[-1]) == n - 250 * 4  # last-page math: 1005 = 250*4 + 5
+
+        # Repeated page requests are identical (song_id, matched_tag, distance).
+        def _tuples(rows):
+            return [(r["id"], r["matched_tag"], r["distance"]) for r in rows]
+
+        page_a = repo.search_songs_by_numeric_tag("rating", 5, limit=250, offset=250)
+        page_b = repo.search_songs_by_numeric_tag("rating", 5, limit=250, offset=250)
+        assert _tuples(page_a) == _tuples(page_b)
+
+        # Page totals equal the separate uncapped count.
+        assert sum(len(page) for page in pages) == repo.count_songs_by_numeric_tag("rating", 5)
+
+    def test_count_songs_by_numeric_tag_no_match_returns_zero(self, pg_session) -> None:
+        """Count is 0 when no tag has the requested key (target value irrelevant)."""
+        _, s1 = _create_library_and_song(pg_session)
+        repo = SongTagRepository(pg_session)
+        repo.assign_tag_to_song(s1, _create_tag(pg_session, name="rating", value="5", namespace="genre"))
+
+        assert repo.count_songs_by_numeric_tag("nom:mood", 5) == 0
+
+    def test_count_songs_by_numeric_tag_only_counts_numeric_values(self, pg_session) -> None:
+        """Only songs whose tag value is valid numeric text are counted."""
+        _, s_numeric = _create_library_and_song(pg_session)
+        _, s_text = _create_library_and_song(pg_session)
+        _, s_decimal = _create_library_and_song(pg_session)
+        repo = SongTagRepository(pg_session)
+        repo.assign_tag_to_song(s_numeric, _create_tag(pg_session, name="rating", value="5", namespace="genre"))
+        repo.assign_tag_to_song(s_text, _create_tag(pg_session, name="rating", value="not-a-number", namespace="genre"))
+        repo.assign_tag_to_song(s_decimal, _create_tag(pg_session, name="rating", value="7.5", namespace="genre"))
+
+        assert repo.count_songs_by_numeric_tag("rating", 5) == 2

@@ -17,6 +17,7 @@ from nomarr.helpers.time_helper import now_ms
 
 if TYPE_CHECKING:
     from nomarr.helpers.dto.library_dto import FileTag
+    from nomarr.helpers.dto.repo_dto import NumericSongTagMatchRow
     from nomarr.persistence.db import Database
 
 DEFAULT_LIMIT = 1000
@@ -674,6 +675,34 @@ def clear_library_data(db: Database) -> None:
     db.library.truncate_scan_records()
 
 
+def _numeric_match_row_to_file_doc(row: NumericSongTagMatchRow) -> dict[str, Any]:
+    """Project a ``NumericSongTagMatchRow`` to the id-keyed song shape.
+
+    Mirrors ``Song.to_dict()`` (the storage-shaped mapping with the ``id`` key)
+    so hydration and tag enrichment consume the same dict shape as the other
+    search paths.
+    """
+    return {
+        "id": row["id"],
+        "library_id": row["library_id"],
+        "folder_id": row["folder_id"],
+        "path": row["path"],
+        "normalized_path": row["normalized_path"],
+        "file_size": row["file_size"],
+        "modified_time": row["modified_time"],
+        "duration_seconds": row["duration_seconds"],
+        "chromaprint": row["chromaprint"],
+        "needs_tagging": row["needs_tagging"],
+        "is_valid": row["is_valid"],
+        "tagged": row["tagged"],
+        "calibration_hash": row["calibration_hash"],
+        "write_claimed_by": row["write_claimed_by"],
+        "last_tagged_at": row["last_tagged_at"],
+        "scanned_at": row["scanned_at"],
+        "created_at": row["created_at"],
+    }
+
+
 def search_songs_by_tag(
     db: Database,
     tag_key: str,
@@ -683,61 +712,31 @@ def search_songs_by_tag(
 ) -> list[dict[str, Any]]:
     """Search songs by tag value with numeric-distance or exact-match semantics."""
     if _is_numeric_target_value(target_value):
+        # Numeric search is SQL-paginated (ADR-045: artist/album/title are
+        # tag-derived, not song columns, so the complete-result metadata sort no
+        # longer applies). PostgreSQL selects one closest numeric tag per song,
+        # orders by ``distance ASC`` then unique ``song id ASC`` (per-tag
+        # tie-break by tag id), and applies offset/limit before any rows reach
+        # Python. Only the SQL-returned page is hydrated.
         numeric_target = float(target_value)
-        total = db.library.count_tags()
-        all_tag_docs = cast("list[dict[str, Any]]", db.library.list_tags_by_name(tag_key, limit=total))
-        tag_value_by_id = {
-            tag_id: cast("float", tag_value)
-            for tag_doc in all_tag_docs
-            if isinstance((tag_id := tag_doc.get("id")), int)
-            and is_numeric_tag_value(tag_value := tag_doc.get("value"))
-        }
-        if not tag_value_by_id:
+        rows = db.library.search_songs_by_numeric_tag(
+            tag_key,
+            numeric_target,
+            limit=limit,
+            offset=offset,
+        )
+        if not rows:
             return []
-
-        edges = cast(
-            "list[dict[str, Any]]",
-            db.library.list_song_tag_edges(list(tag_value_by_id.keys()), limit=DEFAULT_LIMIT),
-        )
-        best_match_by_song_id: dict[int, dict[str, Any]] = {}
-        for edge in edges:
-            song_id = edge.get("song_id")
-            tag_id = edge.get("tag_id")
-            if not isinstance(song_id, int) or not isinstance(tag_id, int):
-                continue
-            tag_value = tag_value_by_id.get(tag_id)
-            if tag_value is None:
-                continue
-            distance = abs(tag_value - numeric_target)
-            prior_match = best_match_by_song_id.get(song_id)
-            if prior_match is None or distance < cast("float", prior_match["distance"]):
-                best_match_by_song_id[song_id] = {
-                    "matched_tag": {"key": tag_key, "value": tag_value},
-                    "distance": distance,
-                }
-
-        all_song_ids = list(best_match_by_song_id.keys())
-        file_docs_list = [song.to_dict() for song in db.library.list_songs_by_ids(all_song_ids)]
-        file_docs_list = hydrate_songs_with_metadata(db, file_docs_list)
-        file_docs_by_id = {
-            song_id: file_doc for file_doc in file_docs_list if isinstance((song_id := file_doc.get("id")), int)
-        }
-
-        sorted_matches = sorted(
-            (
-                (song_id, match_meta)
-                for song_id, match_meta in best_match_by_song_id.items()
-                if song_id in file_docs_by_id
-            ),
-            key=lambda item: (float(item[1]["distance"]), _library_song_sort_key(file_docs_by_id[item[0]])),
-        )
-        paged_matches = sorted_matches[offset : offset + limit]
-        paged_file_docs = [file_docs_by_id[song_id] for song_id, _ in paged_matches]
-        hydrated_files = _hydrate_files_with_tags(db, paged_file_docs)
+        file_docs = [_numeric_match_row_to_file_doc(row) for row in rows]
+        file_docs = hydrate_songs_with_metadata(db, file_docs)
+        hydrated_files = _hydrate_files_with_tags(db, file_docs)
         results: list[dict[str, Any]] = []
-        for hydrated_file, (_, match_meta) in zip(hydrated_files, paged_matches, strict=False):
-            hydrated_file["matched_tag"] = match_meta["matched_tag"]
-            hydrated_file["distance"] = match_meta["distance"]
+        for hydrated_file, row in zip(hydrated_files, rows, strict=False):
+            # Row's ``matched_tag`` is the matched tag's string value; convert to
+            # float to keep the exact public shape (old numeric branch emitted a
+            # float ``value``).
+            hydrated_file["matched_tag"] = {"key": tag_key, "value": float(row["matched_tag"])}
+            hydrated_file["distance"] = float(row["distance"])
             results.append(hydrated_file)
         return results
 
@@ -758,23 +757,21 @@ def search_songs_by_tag(
 
 def count_songs_by_tag(db: Database, tag_key: str, target_value: float | str) -> int:
     """Count songs matching a tag-value filter."""
+    if _is_numeric_target_value(target_value):
+        # Numeric count is a separate uncapped ``COUNT(DISTINCT song_id)`` SQL
+        # intent sharing the numeric search predicate (ADR-045); it must agree
+        # with the searchable result universe even beyond the legacy 1000-edge
+        # cap, so it never materializes tags/edges in Python.
+        return db.library.count_songs_by_numeric_tag(tag_key, float(target_value))
+
     total = db.library.count_tags()
     tag_docs = cast("list[dict[str, Any]]", db.library.list_tags_by_name(tag_key, limit=total))
-
-    if _is_numeric_target_value(target_value):
-        tag_ids = [
-            tag_id
-            for tag_doc in tag_docs
-            if isinstance((tag_id := tag_doc.get("id")), int) and is_numeric_tag_value(tag_doc.get("value"))
-        ]
-    else:
-        tag_ids = [tag_id for tag_doc in tag_docs if isinstance((tag_id := tag_doc.get("id")), int)]
+    tag_ids = [tag_id for tag_doc in tag_docs if isinstance((tag_id := tag_doc.get("id")), int)]
 
     if not tag_ids:
         return 0
 
-    edge_limit = DEFAULT_LIMIT if _is_numeric_target_value(target_value) else None
-    edges = cast("list[dict[str, Any]]", db.library.list_song_tag_edges(tag_ids, limit=edge_limit))
+    edges = cast("list[dict[str, Any]]", db.library.list_song_tag_edges(tag_ids, limit=None))
     return len({edge["song_id"] for edge in edges if isinstance(edge.get("song_id"), (int, str))})
 
 
