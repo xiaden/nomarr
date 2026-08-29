@@ -23,8 +23,9 @@ DEFAULT_LIMIT = 1000
 
 
 def get_song_by_id(db: Database, song_id: int) -> dict[str, Any] | None:
-    """Get one library-song document by ``id``."""
-    return cast("dict[str, Any] | None", db.library.get_song(song_id))
+    """Get one library-song document by ``song_id``."""
+    song = db.library.get_song(song_id)
+    return song.to_dict() if song is not None else None
 
 
 def count_recently_tagged(db: Database, window_seconds: int = 300) -> int:
@@ -118,7 +119,7 @@ def _path_parent(path_value: Any) -> str | None:
 def _get_songs_by_ids(db: Database, song_ids: list[int]) -> list[dict[str, Any]]:
     if not song_ids:
         return []
-    return cast("list[dict[str, Any]]", db.library.list_songs_by_ids(song_ids))
+    return [song.to_dict() for song in db.library.list_songs_by_ids(song_ids)]
 
 
 def _get_all_library_song_docs(db: Database, limit: int | None = DEFAULT_LIMIT) -> list[dict[str, Any]]:
@@ -130,7 +131,7 @@ def _get_all_library_song_docs(db: Database, limit: int | None = DEFAULT_LIMIT) 
     """
     docs: list[dict[str, Any]] = []
     for lib in db.library.list_libraries():
-        docs.extend(cast("list[dict[str, Any]]", db.library.list_songs(lib["id"])))
+        docs.extend(song.to_dict() for song in db.library.list_songs(lib["id"]))
     if limit is not None:
         docs = docs[:limit]
     return docs
@@ -257,17 +258,15 @@ def get_library_song(
     if library_id is not None:
         matching_docs = [
             file_doc
-            for file_doc in cast(
-                "list[dict[str, Any]]",
-                db.library.list_songs(library_id, limit=None),
-            )
+            for file_doc in (song.to_dict() for song in db.library.list_songs(library_id, limit=None))
             if _matches_requested_path(file_doc, path)
         ]
         if not matching_docs:
             return None
         return min(matching_docs, key=lambda file_doc: file_doc.get("id") or 0)
 
-    return cast("dict[str, Any] | None", db.library.find_song_by_path_any_library(path))
+    song = db.library.find_song_by_path_any_library(path)
+    return song.to_dict() if song is not None else None
 
 
 def require_library_song_id(
@@ -302,7 +301,7 @@ def detect_nd_path_prefix(db: Database, nd_path: str) -> str | None:
     normalized_paths.extend(
         str(file_doc["normalized_path"])
         for lib in db.library.list_libraries()
-        for file_doc in cast("list[dict[str, Any]]", db.library.list_songs(lib["id"], limit=DEFAULT_LIMIT))
+        for file_doc in (song.to_dict() for song in db.library.list_songs(lib["id"], limit=DEFAULT_LIMIT))
         if isinstance(file_doc.get("normalized_path"), str) and file_doc.get("normalized_path")
     )
     best_match = next(
@@ -328,10 +327,7 @@ def list_songs(
 ) -> tuple[list[dict[str, Any]], int]:
     """List library songs with optional filters; returns (rows, total_count)."""
     if library_id is not None:
-        file_docs = cast(
-            "list[dict[str, Any]]",
-            db.library.list_songs(library_id, limit=None),
-        )
+        file_docs = [song.to_dict() for song in db.library.list_songs(library_id, limit=None)]
     else:
         # Collect the complete global result before filtering and pagination.
         # Applying the helper's default cap here drops songs before an offset
@@ -355,8 +351,8 @@ def list_songs(
 
 def get_tagged_file_paths(db: Database) -> list[str]:
     """Return absolute paths for songs currently in the processed state."""
-    tagged_file_docs = db.app.list_song_docs_in_state(STATE_PROCESSED, limit=DEFAULT_LIMIT)
-    return [str(file_doc["path"]) for file_doc in tagged_file_docs if isinstance(file_doc.get("path"), str)]
+    tagged_songs = db.app.list_song_docs_in_state(STATE_PROCESSED, limit=DEFAULT_LIMIT)
+    return [song.path for song in tagged_songs if isinstance(song.path, str)]
 
 
 def search_songs_with_tags(
@@ -477,10 +473,9 @@ def get_recently_processed(
     library_id: int | None = None,
 ) -> list[dict[str, Any]]:
     """Return recently processed songs ordered by activity descending."""
-    tagged_file_docs: list[dict[str, Any]] = cast(
-        "list[dict[str, Any]]",
-        db.app.list_song_docs_in_state(STATE_PROCESSED, limit=DEFAULT_LIMIT),
-    )
+    tagged_file_docs: list[dict[str, Any]] = [
+        song.to_dict() for song in db.app.list_song_docs_in_state(STATE_PROCESSED, limit=DEFAULT_LIMIT)
+    ]
     if library_id is not None:
         library_song_ids = set(db.library.list_library_song_ids(library_id, limit=DEFAULT_LIMIT))
         tagged_file_docs = [file_doc for file_doc in tagged_file_docs if file_doc.get("id") in library_song_ids]
@@ -513,7 +508,7 @@ def get_all_library_paths(db: Database) -> list[str]:
     paths.extend(
         str(file_doc["path"])
         for lib in db.library.list_libraries()
-        for file_doc in cast("list[dict[str, Any]]", db.library.list_songs(lib["id"], limit=DEFAULT_LIMIT))
+        for file_doc in (song.to_dict() for song in db.library.list_songs(lib["id"], limit=DEFAULT_LIMIT))
         if isinstance(file_doc.get("path"), str)
     )
     return paths
@@ -522,7 +517,7 @@ def get_all_library_paths(db: Database) -> list[str]:
 def get_sample_normalized_path(db: Database) -> str | None:
     """Return one normalized_path from the library for diagnostic purposes."""
     for lib in db.library.list_libraries():
-        file_docs = cast("list[dict[str, Any]]", db.library.list_songs(lib["id"], limit=1))
+        file_docs = [song.to_dict() for song in db.library.list_songs(lib["id"], limit=1)]
         for file_doc in file_docs:
             if isinstance(file_doc.get("normalized_path"), str) and file_doc.get("normalized_path"):
                 return str(file_doc["normalized_path"])
@@ -553,7 +548,7 @@ def get_songs_for_folder(
     folder_rel_path: str,
 ) -> dict[str, dict[str, Any]]:
     """Get song documents for a single folder."""
-    file_docs = cast("list[dict[str, Any]]", db.library.list_songs_for_folder(library_id, folder_rel_path))
+    file_docs = [song.to_dict() for song in db.library.list_songs_for_folder(library_id, folder_rel_path)]
     return {file_doc["path"]: file_doc for file_doc in file_docs if isinstance(file_doc.get("path"), str)}
 
 
@@ -572,10 +567,7 @@ def get_songs_for_folders(
         return {}
     file_docs = _hydrate_files_with_tagged_state(
         db,
-        cast(
-            "list[dict[str, Any]]",
-            db.library.list_songs(library_id, limit=None),
-        ),
+        [song.to_dict() for song in db.library.list_songs(library_id, limit=None)],
     )
     return {
         file_doc["path"]: file_doc
@@ -594,17 +586,14 @@ def find_move_candidate_by_chromaprint(
     chromaprint: str,
 ) -> dict[str, Any] | None:
     """Return the library file matching ``chromaprint``, or ``None``. Used for DB-lookup move detection."""
-    result = db.library.find_library_song_by_chromaprint(library_id, chromaprint)
-    return cast("dict[str, Any] | None", result)
+    song = db.library.find_library_song_by_chromaprint(library_id, chromaprint)
+    return song.to_dict() if song is not None else None
 
 
 def get_library_stats(db: Database, library_id: int | None = None) -> dict[str, Any]:
     """Get aggregate library-song statistics (songs, artists, albums, duration, size)."""
     if library_id is not None:
-        file_docs = cast(
-            "list[dict[str, Any]]",
-            db.library.list_songs(library_id, limit=None),
-        )
+        file_docs = [song.to_dict() for song in db.library.list_songs(library_id, limit=None)]
         total_files = db.library.count_songs_for_library(library_id)
         song_ids = [doc["id"] for doc in file_docs if isinstance(doc.get("id"), int)]
         tags_by_file = db.library.list_song_tags_for_songs(song_ids)
@@ -646,7 +635,7 @@ def get_library_counts(db: Database) -> dict[int, dict[str, int]]:
     """Return song and folder counts for all libraries."""
     result: dict[int, dict[str, int]] = {}
     for library_id in db.library.list_library_keys():
-        file_docs = db.library.list_songs(library_id, limit=None)
+        file_docs = [song.to_dict() for song in db.library.list_songs(library_id, limit=None)]
         folder_paths = {parent for file_doc in file_docs if (parent := _path_parent(file_doc.get("path"))) is not None}
         result[library_id] = {
             "file_count": len(file_docs),
@@ -733,7 +722,7 @@ def search_songs_by_tag(
                 }
 
         all_song_ids = list(best_match_by_song_id.keys())
-        file_docs_list = cast("list[dict[str, Any]]", db.library.list_songs_by_ids(all_song_ids))
+        file_docs_list = [song.to_dict() for song in db.library.list_songs_by_ids(all_song_ids)]
         file_docs_list = hydrate_songs_with_metadata(db, file_docs_list)
         file_docs_by_id = {
             song_id: file_doc for file_doc in file_docs_list if isinstance((song_id := file_doc.get("id")), int)
@@ -802,10 +791,7 @@ def get_songs_by_chromaprint(
     if library_id is not None:
         return [
             file_doc
-            for file_doc in cast(
-                "list[dict[str, Any]]",
-                db.library.list_songs(library_id, limit=None),
-            )
+            for file_doc in (song.to_dict() for song in db.library.list_songs(library_id, limit=None))
             if file_doc.get("chromaprint") == chromaprint
         ]
 
@@ -813,7 +799,7 @@ def get_songs_by_chromaprint(
     for lib in db.library.list_libraries():
         match = db.library.find_library_song_by_chromaprint(lib["id"], chromaprint)
         if match is not None:
-            matches.append(cast("dict[str, Any]", match))
+            matches.append(match.to_dict())
     return matches
 
 
@@ -842,17 +828,13 @@ def get_tracks_by_song_ids(
 def get_tracks_for_matching(db: Database, library_id: int | None = None) -> list[dict[str, Any]]:
     """Get track rows for fuzzy playlist matching, optionally scoped to a library."""
     if library_id:
-        file_docs = cast(
-            "list[dict[str, Any]]",
-            db.library.list_tracks_for_matching(library_id, limit=DEFAULT_LIMIT),
-        )
+        file_docs = [song.to_dict() for song in db.library.list_tracks_for_matching(library_id, limit=DEFAULT_LIMIT)]
     else:
         file_docs = [
             file_doc
             for lib in db.library.list_libraries()
-            for file_doc in cast(
-                "list[dict[str, Any]]",
-                db.library.list_tracks_for_matching(lib["id"], limit=DEFAULT_LIMIT),
+            for file_doc in (
+                song.to_dict() for song in db.library.list_tracks_for_matching(lib["id"], limit=DEFAULT_LIMIT)
             )
         ]
 

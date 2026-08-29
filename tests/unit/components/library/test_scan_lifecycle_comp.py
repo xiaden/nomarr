@@ -42,6 +42,31 @@ from nomarr.helpers.constants.pipeline_states import (
     WRITE_STATE_FIELD,
 )
 from nomarr.helpers.dto.library_dto import LibraryDict
+from nomarr.helpers.dataclasses.song_dataclass import Song
+
+
+def _song(**overrides: object) -> Song:
+    base: dict = {
+        "song_id": 1,
+        "library_id": 1,
+        "folder_id": None,
+        "path": "/music/song.mp3",
+        "normalized_path": "song.mp3",
+        "file_size": 100,
+        "modified_time": 1000,
+        "duration_seconds": None,
+        "chromaprint": None,
+        "needs_tagging": False,
+        "is_valid": True,
+        "tagged": False,
+        "calibration_hash": None,
+        "write_claimed_by": None,
+        "last_tagged_at": None,
+        "scanned_at": None,
+        "created_at": 1000,
+    }
+    base.update(overrides)
+    return Song(**base)
 
 
 class TestBootstrapFileStateEdges:
@@ -441,8 +466,8 @@ class TestRemoveDeletedFiles:
         mock_db = MagicMock()
         paths = ["/music/a.mp3", "/music/b.mp3", "/music/c.mp3"]
         mock_db.library.get_song_by_path.side_effect = [
-            {"id": 1},
-            {"id": 2},
+            _song(song_id=1),
+            _song(song_id=2),
             None,
         ]
 

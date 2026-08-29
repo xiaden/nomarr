@@ -33,6 +33,6 @@ def get_song_tags_with_path(db: Database, song_id: int, nomarr_only: bool = Fals
     tags_data: list[FileTag] = [file_tag_from_tag_row(tag) for tag in tags]
 
     return {
-        "path": file_record["path"],
+        "path": file_record.path,
         "tags": tags_data,
     }

@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from nomarr.helpers.dataclasses.app_dataclasses import ConfigOption, LockEntry
+from nomarr.helpers.dataclasses.song_dataclass import Song
 from nomarr.helpers.time_helper import now_ms
 
 if TYPE_CHECKING:
@@ -17,7 +18,6 @@ if TYPE_CHECKING:
     from nomarr.helpers.dto.repo_dto import (
         HealthRow,
         SessionRow,
-        SongRow,
         WorkerClaimRow,
     )
     from nomarr.persistence.database.app_repo import AppRepository
@@ -88,8 +88,9 @@ class AppDb:
         state: str,
         *,
         limit: int | None = None,
-    ) -> list[SongRow]:
-        return self._pipeline_repo.list_song_docs_in_state(state, limit=limit)
+    ) -> list[Song]:
+        rows = self._pipeline_repo.list_song_docs_in_state(state, limit=limit)
+        return [Song.from_row(row) for row in rows]
 
     def count_songs_in_state(self, state: str) -> int:
         return self._song_state_repo.count_songs_in_state(state)

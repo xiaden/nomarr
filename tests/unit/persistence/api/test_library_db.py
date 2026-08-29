@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, call, sentinel
 
 import pytest
 
+from nomarr.helpers.dataclasses.song_dataclass import Song
 from nomarr.persistence.api.library import LibraryDb
 from nomarr.persistence.api.library_regions import LibraryRegionsDb
 from nomarr.persistence.api.library_scans import LibraryScansDb
@@ -14,6 +15,31 @@ from nomarr.persistence.api.library_songs import LibrarySongsDb
 from nomarr.persistence.api.library_tags import LibraryTagsDb
 
 # ── helpers ───────────────────────────────────────────────────────────────
+
+
+_SONG_ROW: dict = {
+    "id": 10,
+    "library_id": 1,
+    "folder_id": None,
+    "path": "/music/a.mp3",
+    "normalized_path": "a.mp3",
+    "file_size": 100,
+    "modified_time": 1000,
+    "duration_seconds": 120.5,
+    "chromaprint": None,
+    "needs_tagging": 1,
+    "is_valid": 1,
+    "tagged": 1,
+    "calibration_hash": None,
+    "write_claimed_by": None,
+    "last_tagged_at": None,
+    "scanned_at": 1000,
+    "created_at": 1000,
+}
+
+
+def _song_row() -> dict:
+    return dict(_SONG_ROW)
 
 
 def _make_library_db() -> tuple[LibraryDb, MagicMock, MagicMock, MagicMock, MagicMock, MagicMock, MagicMock, MagicMock]:
@@ -260,44 +286,50 @@ def test_get_libraries_in_axis_state_delegates() -> None:
 @pytest.mark.unit
 def test_get_song_delegates() -> None:
     db, _, song_repo, *_ = _make_library_db()
-    song_repo.get_song = MagicMock(return_value=sentinel.song_row)
+    song_repo.get_song = MagicMock(return_value=_song_row())
 
     result = db.get_song(10)
 
-    assert result is sentinel.song_row
+    assert isinstance(result, Song)
+    assert result.song_id == 10
+    assert result.path == "/music/a.mp3"
     song_repo.get_song.assert_called_once_with(10)
 
 
 @pytest.mark.unit
 def test_get_song_by_path_delegates() -> None:
     db, _, song_repo, *_ = _make_library_db()
-    song_repo.get_song_by_path = MagicMock(return_value=sentinel.song_row)
+    song_repo.get_song_by_path = MagicMock(return_value=_song_row())
 
     result = db.get_song_by_path("/music/song.mp3", library_id=1)
 
-    assert result is sentinel.song_row
+    assert isinstance(result, Song)
+    assert result.song_id == 10
     song_repo.get_song_by_path.assert_called_once_with("/music/song.mp3", 1)
 
 
 @pytest.mark.unit
 def test_find_song_by_path_any_library_delegates() -> None:
     db, _, song_repo, *_ = _make_library_db()
-    song_repo.get_song_by_path_unscoped = MagicMock(return_value=sentinel.song_row)
+    song_repo.get_song_by_path_unscoped = MagicMock(return_value=_song_row())
 
     result = db.find_song_by_path_any_library("/music/song.mp3")
 
-    assert result is sentinel.song_row
+    assert isinstance(result, Song)
+    assert result.song_id == 10
     song_repo.get_song_by_path_unscoped.assert_called_once_with("/music/song.mp3")
 
 
 @pytest.mark.unit
 def test_list_songs_by_ids_delegates() -> None:
     db, _, song_repo, *_ = _make_library_db()
-    song_repo.get_songs_by_ids = MagicMock(return_value=sentinel.songs)
+    song_repo.get_songs_by_ids = MagicMock(return_value=[_song_row()])
 
     result = db.list_songs_by_ids([1, 2, 3])
 
-    assert result is sentinel.songs
+    assert len(result) == 1
+    assert isinstance(result[0], Song)
+    assert result[0].song_id == 10
     song_repo.get_songs_by_ids.assert_called_once_with([1, 2, 3])
 
 
@@ -337,11 +369,13 @@ def test_list_library_song_ids_delegates() -> None:
 @pytest.mark.unit
 def test_list_songs_delegates() -> None:
     db, _, song_repo, *_ = _make_library_db()
-    song_repo.list_songs = MagicMock(return_value=sentinel.songs)
+    song_repo.list_songs = MagicMock(return_value=[_song_row()])
 
     result = db.list_songs(1)
 
-    assert result is sentinel.songs
+    assert len(result) == 1
+    assert isinstance(result[0], Song)
+    assert result[0].song_id == 10
     song_repo.list_songs.assert_called_once_with(1, limit=None)
 
 
@@ -370,33 +404,38 @@ def test_count_songs_for_library_delegates() -> None:
 @pytest.mark.unit
 def test_find_library_song_by_chromaprint_delegates() -> None:
     db, _, song_repo, *_ = _make_library_db()
-    song_repo.find_song_by_chromaprint = MagicMock(return_value=sentinel.song_row)
+    song_repo.find_song_by_chromaprint = MagicMock(return_value=_song_row())
 
     result = db.find_library_song_by_chromaprint(1, "abc123")
 
-    assert result is sentinel.song_row
+    assert isinstance(result, Song)
+    assert result.song_id == 10
     song_repo.find_song_by_chromaprint.assert_called_once_with(1, "abc123")
 
 
 @pytest.mark.unit
 def test_list_tracks_for_matching_delegates() -> None:
     db, _, song_repo, *_ = _make_library_db()
-    song_repo.list_tracks_for_matching = MagicMock(return_value=sentinel.tracks)
+    song_repo.list_tracks_for_matching = MagicMock(return_value=[_song_row()])
 
     result = db.list_tracks_for_matching(1, limit=50)
 
-    assert result is sentinel.tracks
+    assert len(result) == 1
+    assert isinstance(result[0], Song)
+    assert result[0].song_id == 10
     song_repo.list_tracks_for_matching.assert_called_once_with(1, limit=50)
 
 
 @pytest.mark.unit
 def test_list_songs_for_folder_delegates() -> None:
     db, _, song_repo, *_ = _make_library_db()
-    song_repo.list_songs_for_folder = MagicMock(return_value=sentinel.songs)
+    song_repo.list_songs_for_folder = MagicMock(return_value=[_song_row()])
 
     result = db.list_songs_for_folder(1, "Rock/ACDC")
 
-    assert result is sentinel.songs
+    assert len(result) == 1
+    assert isinstance(result[0], Song)
+    assert result[0].song_id == 10
     song_repo.list_songs_for_folder.assert_called_once_with(1, "Rock/ACDC")
 
 
@@ -485,10 +524,12 @@ def test_add_songs_to_library_matches_states_to_paths_when_upsert_order_differs(
     payloads = [{"path": "/a.mp3"}, {"path": "/b.mp3"}]
 
     assert db.add_songs_to_library(1, payloads, initial_state="pending") == [10, 20]
-    song_state_repo.ensure_song_state.assert_has_calls([
-        call(10, "pending"),
-        call(20, "pending"),
-    ])
+    song_state_repo.ensure_song_state.assert_has_calls(
+        [
+            call(10, "pending"),
+            call(20, "pending"),
+        ]
+    )
 
 
 @pytest.mark.unit

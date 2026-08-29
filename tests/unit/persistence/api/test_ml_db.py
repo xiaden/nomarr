@@ -129,9 +129,7 @@ def test_list_song_vectors_delegates_to_vector_repo() -> None:
     result = db.list_song_vectors("vectors_track_hot__model__lib", 1)
 
     assert result is sentinel.result
-    vector_repo.get_embeddings_for_song.assert_called_once_with(
-        1, "vectors_track_hot__model__lib", "cold"
-    )
+    vector_repo.get_embeddings_for_song.assert_called_once_with(1, "vectors_track_hot__model__lib", "cold")
 
 
 @pytest.mark.unit
@@ -443,9 +441,9 @@ def test_remove_vectors_for_songs_deletes_each_song_id() -> None:
     db.remove_vectors_for_songs("openl3", [10, 20, 30])
 
     assert vector_repo.delete_embeddings_for_song.call_count == 3
-    vector_repo.delete_embeddings_for_song.assert_any_call(10)
-    vector_repo.delete_embeddings_for_song.assert_any_call(20)
-    vector_repo.delete_embeddings_for_song.assert_any_call(30)
+    vector_repo.delete_embeddings_for_song.assert_any_call(10, "openl3")
+    vector_repo.delete_embeddings_for_song.assert_any_call(20, "openl3")
+    vector_repo.delete_embeddings_for_song.assert_any_call(30, "openl3")
 
 
 @pytest.mark.unit
@@ -669,13 +667,13 @@ def test_remove_calibration_state_delegates_to_calibration_repo() -> None:
 
 
 @pytest.mark.unit
-def test_remove_song_vectors_delegates_to_vector_repo_ignoring_collection_name() -> None:
+def test_remove_song_vectors_delegates_backbone_scope_to_vector_repo() -> None:
     db, vector_repo, _, _, _, _ = _make_ml_db()
     vector_repo.delete_embeddings_for_song = MagicMock()
 
     db.remove_song_vectors("vectors_track_hot__model__lib", 42)
 
-    vector_repo.delete_embeddings_for_song.assert_called_once_with(42)
+    vector_repo.delete_embeddings_for_song.assert_called_once_with(42, "vectors_track_hot__model__lib")
 
 
 # ---------------------------------------------------------------------------

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from nomarr.components.library.library_song_state_comp import get_stale_song_ids, transition_song_state
 from nomarr.components.workers.worker_discovery_comp import try_insert_or_steal_claim
@@ -44,19 +44,13 @@ def claim_files_for_reconciliation(
 
     """
     stale_ids = get_stale_song_ids(db, library_id=library_id)
-    library_song_ids = {
-        song["id"] for song in db.library.list_songs(library_id) if isinstance(song, dict) and "id" in song
-    }
+    library_song_ids = {song.song_id for song in db.library.list_songs(library_id)}
     pending_ids = [song_id for song_id in db.app.list_songs_in_state(STATE_NOT_WRITTEN) if song_id in library_song_ids]
     reconcile_ids = list(dict.fromkeys([*stale_ids, *pending_ids]))
     if not reconcile_ids:
         return []
 
-    candidates = [
-        candidate
-        for file_id in reconcile_ids
-        if (candidate := cast("dict[str, Any] | None", db.library.get_song(file_id))) is not None
-    ]
+    candidates = [song.to_dict() for file_id in reconcile_ids if (song := db.library.get_song(file_id)) is not None]
 
     claimed: list[dict[str, Any]] = []
     now = now_ms().value
@@ -102,8 +96,6 @@ def release_claim(db: Database, file_key: str, worker_id: str) -> None:
 def count_files_needing_reconciliation(db: Database, library_id: int) -> int:
     """Count files whose database tag projection needs writing to disk."""
     stale_ids = get_stale_song_ids(db, library_id=library_id)
-    library_song_ids = {
-        song["id"] for song in db.library.list_songs(library_id) if isinstance(song, dict) and "id" in song
-    }
+    library_song_ids = {song.song_id for song in db.library.list_songs(library_id)}
     pending_ids = [song_id for song_id in db.app.list_songs_in_state(STATE_NOT_WRITTEN) if song_id in library_song_ids]
     return len(set(stale_ids).union(pending_ids))

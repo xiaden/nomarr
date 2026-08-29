@@ -46,7 +46,33 @@ from nomarr.helpers.constants.file_states import (
     STATE_TAGS_NOT_FRESH,
     STATE_VECTORS_EXTRACTED,
 )
+from nomarr.helpers.dataclasses.song_dataclass import Song
 from nomarr.helpers.exceptions import DuplicateEntityError
+
+
+def _song(**overrides: object) -> Song:
+    """Build a minimal ``Song`` for mocking persistence-facade returns."""
+    base: dict = {
+        "song_id": 1,
+        "library_id": 1,
+        "folder_id": None,
+        "path": "/music/song.mp3",
+        "normalized_path": "song.mp3",
+        "file_size": 100,
+        "modified_time": 1000,
+        "duration_seconds": None,
+        "chromaprint": None,
+        "needs_tagging": False,
+        "is_valid": True,
+        "tagged": False,
+        "calibration_hash": None,
+        "write_claimed_by": None,
+        "last_tagged_at": None,
+        "scanned_at": None,
+        "created_at": 1000,
+    }
+    base.update(overrides)
+    return Song(**base)
 
 
 def _make_mock_db() -> MagicMock:
@@ -155,7 +181,9 @@ class TestClearAllStates:
             STATE_NOT_CALIBRATED,
             STATE_NOT_VECTORS_EXTRACTED,
         }
-        mock_db.app.list_song_docs_in_state.side_effect = lambda state: [{"id": 1}] if state in states_with_file else []
+        mock_db.app.list_song_docs_in_state.side_effect = lambda state: (
+            [_song(song_id=1)] if state in states_with_file else []
+        )
 
         result = clear_all_states(mock_db, 1)
 
@@ -171,17 +199,17 @@ class TestClearAllStatesBatch:
         mock_db = _make_mock_db()
         docs_by_state = {
             STATE_PROCESSED: [
-                {"id": 1},
-                {"id": 2},
+                _song(song_id=1),
+                _song(song_id=2),
             ],
-            STATE_TAGS_CURRENT: [{"id": 1}],
+            STATE_TAGS_CURRENT: [_song(song_id=1)],
             STATE_NOT_CALIBRATED: [
-                {"id": 1},
-                {"id": 2},
+                _song(song_id=1),
+                _song(song_id=2),
             ],
             STATE_NOT_VECTORS_EXTRACTED: [
-                {"id": 1},
-                {"id": 2},
+                _song(song_id=1),
+                _song(song_id=2),
             ],
         }
         mock_db.app.list_song_docs_in_state.side_effect = lambda state: docs_by_state.get(state, [])
@@ -227,12 +255,12 @@ class TestSimpleStateLookups:
     def test_library_has_tagged_files_intersects_tagged_and_library_membership(self) -> None:
         mock_db = _make_mock_db()
         mock_db.app.list_song_docs_in_state.return_value = [
-            {"id": 1},
-            {"id": 9},
+            _song(song_id=1),
+            _song(song_id=9),
         ]
         mock_db.library.list_songs.return_value = [
-            {"id": 2},
-            {"id": 9},
+            _song(song_id=2),
+            _song(song_id=9),
         ]
 
         result = library_has_tagged_files(mock_db, 1)
@@ -253,8 +281,8 @@ class TestSimpleStateLookups:
     @pytest.mark.unit
     def test_library_has_tagged_files_returns_false_when_no_intersection(self) -> None:
         mock_db = _make_mock_db()
-        mock_db.app.list_song_docs_in_state.return_value = [{"id": 1}]
-        mock_db.library.list_songs.return_value = [{"id": 2}]
+        mock_db.app.list_song_docs_in_state.return_value = [_song(song_id=1)]
+        mock_db.library.list_songs.return_value = [_song(song_id=2)]
 
         result = library_has_tagged_files(mock_db, 1)
 
@@ -269,23 +297,23 @@ class TestDiscoverNextUntaggedFile:
         mock_db = _make_mock_db()
         mock_db.app.list_song_docs_in_state.side_effect = [
             [
-                {"id": 3},
-                {"id": 1},
-                {"id": 2},
+                _song(song_id=3),
+                _song(song_id=1),
+                _song(song_id=2),
             ],
-            [{"id": 2}],
+            [_song(song_id=2)],
             [],
         ]
         mock_db.library.list_songs.return_value = [
-            {"id": 1},
-            {"id": 2},
-            {"id": 3},
+            _song(song_id=1),
+            _song(song_id=2),
+            _song(song_id=3),
         ]
         mock_db.app.list_claims.return_value = [{"key": "3"}]
 
         result = discover_next_untagged_file(mock_db, library_id=1)
 
-        assert result == {"id": 1}
+        assert result == _song(song_id=1).to_dict()
         assert mock_db.app.list_song_docs_in_state.call_args_list == [
             call(STATE_NOT_PROCESSED),
             call(STATE_ERRORED),
@@ -296,8 +324,8 @@ class TestDiscoverNextUntaggedFile:
     def test_returns_none_when_no_candidates_survive_filters(self) -> None:
         mock_db = _make_mock_db()
         mock_db.app.list_song_docs_in_state.side_effect = [
-            [{"id": 1}],
-            [{"id": 1}],  # same file is errored, so it's filtered out
+            [_song(song_id=1)],
+            [_song(song_id=1)],  # same file is errored, so it's filtered out
         ]
 
         result = discover_next_untagged_file(mock_db)
@@ -309,15 +337,15 @@ class TestDiscoverNextUntaggedFile:
         mock_db = _make_mock_db()
         mock_db.app.list_song_docs_in_state.side_effect = [
             [
-                {"id": 2},
-                {"id": 1},
+                _song(song_id=2),
+                _song(song_id=1),
             ],
             [],
         ]
 
         result = discover_next_untagged_file(mock_db, exclude_claimed=False)
 
-        assert result == {"id": 1}
+        assert result == _song(song_id=1).to_dict()
         mock_db.app.list_claims.assert_not_called()
 
 
@@ -329,14 +357,14 @@ class TestLibraryScopedStateQueries:
         mock_db = _make_mock_db()
         mock_db.app.list_song_docs_in_state.side_effect = [
             [
-                {"id": 1},
-                {"id": 2},
-                {"id": 3},
+                _song(song_id=1),
+                _song(song_id=2),
+                _song(song_id=3),
             ],
         ]
         mock_db.library.list_songs.return_value = [
-            {"id": 2},
-            {"id": 3},
+            _song(song_id=2),
+            _song(song_id=3),
         ]
 
         result = count_untagged_files(mock_db, library_id=1)
@@ -350,13 +378,13 @@ class TestLibraryScopedStateQueries:
     def test_get_errored_song_ids_normalizes_library_id_and_applies_limit_after_intersection(self) -> None:
         mock_db = _make_mock_db()
         mock_db.library.list_songs.return_value = [
-            {"id": 2},
-            {"id": 3},
+            _song(song_id=2),
+            _song(song_id=3),
         ]
         mock_db.app.list_song_docs_in_state.return_value = [
-            {"id": 9},
-            {"id": 2},
-            {"id": 3},
+            _song(song_id=9),
+            _song(song_id=2),
+            _song(song_id=3),
         ]
 
         result = get_errored_song_ids(mock_db, 1, limit=1)
@@ -369,12 +397,12 @@ class TestLibraryScopedStateQueries:
     def test_count_errored_files_counts_full_intersection(self) -> None:
         mock_db = _make_mock_db()
         mock_db.library.list_songs.return_value = [
-            {"id": 2},
-            {"id": 3},
+            _song(song_id=2),
+            _song(song_id=3),
         ]
         mock_db.app.list_song_docs_in_state.return_value = [
-            {"id": 2},
-            {"id": 3},
+            _song(song_id=2),
+            _song(song_id=3),
         ]
 
         result = count_errored_songs(mock_db, 1)
@@ -385,14 +413,14 @@ class TestLibraryScopedStateQueries:
     def test_get_errored_song_ids_returns_all_when_limit_is_none(self) -> None:
         mock_db = _make_mock_db()
         mock_db.library.list_songs.return_value = [
-            {"id": 1},
-            {"id": 2},
-            {"id": 3},
+            _song(song_id=1),
+            _song(song_id=2),
+            _song(song_id=3),
         ]
         mock_db.app.list_song_docs_in_state.return_value = [
-            {"id": 1},
-            {"id": 2},
-            {"id": 3},
+            _song(song_id=1),
+            _song(song_id=2),
+            _song(song_id=3),
         ]
 
         result = get_errored_song_ids(mock_db, 1, limit=None)
@@ -407,10 +435,10 @@ class TestLibraryScopedStateQueries:
     def test_get_stale_song_ids_scopes_to_library_membership(self) -> None:
         mock_db = _make_mock_db()
         mock_db.app.list_song_docs_in_state.return_value = [
-            {"id": 1},
-            {"id": 2},
+            _song(song_id=1),
+            _song(song_id=2),
         ]
-        mock_db.library.list_songs.return_value = [{"id": 2}]
+        mock_db.library.list_songs.return_value = [_song(song_id=2)]
 
         result = get_stale_song_ids(mock_db, library_id=1)
 
@@ -423,9 +451,9 @@ class TestLibraryScopedStateQueries:
         mock_db = _make_mock_db()
         mock_db.app.list_song_docs_in_state.side_effect = [
             [
-                {"id": 1},
-                {"id": 2},
-                {"id": 3},
+                _song(song_id=1),
+                _song(song_id=2),
+                _song(song_id=3),
             ],
         ]
 
@@ -438,8 +466,8 @@ class TestLibraryScopedStateQueries:
     def test_get_stale_song_ids_returns_all_ids_when_no_library_id(self) -> None:
         mock_db = _make_mock_db()
         mock_db.app.list_song_docs_in_state.return_value = [
-            {"id": 1},
-            {"id": 2},
+            _song(song_id=1),
+            _song(song_id=2),
         ]
 
         result = get_stale_song_ids(mock_db)
@@ -449,17 +477,15 @@ class TestLibraryScopedStateQueries:
 
     @pytest.mark.unit
     def test_get_stale_song_ids_scan_drops_raw_rows_without_an_id(self) -> None:
-        """The stale-scan boundary only admits raw rows carrying a valid ``id``.
+        """The stale-scan boundary now projects song docs to ``Song`` objects.
 
-        ``list_song_docs_in_state`` returns raw rows; rows that are not dicts or
-        lack an ``id`` key must be excluded from the returned song-ids.
+        ``list_song_docs_in_state`` returns ``Song`` objects; every song carries a
+        ``song_id`` which projects to the ``id`` key via ``to_dict``.
         """
         mock_db = _make_mock_db()
         mock_db.app.list_song_docs_in_state.return_value = [
-            {"id": 1},
-            {"name": "no identifier"},
-            "not-a-row",
-            {"id": 4},
+            _song(song_id=1),
+            _song(song_id=4),
         ]
 
         result = get_stale_song_ids(mock_db)
@@ -512,13 +538,13 @@ class TestMultiStateComposition:
     def test_get_uncalibrated_tagged_song_ids_intersects_state_sets_in_library_order(self) -> None:
         mock_db = _make_mock_db()
         mock_db.app.list_song_docs_in_state.side_effect = [
-            [{"id": 1}, {"id": 3}],
-            [{"id": 2}, {"id": 3}],
+            [_song(song_id=1), _song(song_id=3)],
+            [_song(song_id=2), _song(song_id=3)],
         ]
         mock_db.library.list_songs.return_value = [
-            {"id": 2},
-            {"id": 3},
-            {"id": 1},
+            _song(song_id=2),
+            _song(song_id=3),
+            _song(song_id=1),
         ]
 
         result = get_uncalibrated_tagged_song_ids(mock_db, 1)
@@ -529,16 +555,16 @@ class TestMultiStateComposition:
     def test_get_calibration_status_by_library_counts_intersections_per_library(self) -> None:
         mock_db = _make_mock_db()
         mock_db.app.list_song_docs_in_state.side_effect = [
-            [{"id": 1}, {"id": 2}],
-            [{"id": 3}, {"id": 4}],
+            [_song(song_id=1), _song(song_id=2)],
+            [_song(song_id=3), _song(song_id=4)],
         ]
         mock_db.library.list_libraries.return_value = [
             {"id": 1},
             {"id": 2},
         ]
         mock_db.library.list_songs.side_effect = [
-            [{"id": 1}, {"id": 3}],
-            [{"id": 2}, {"id": 4}],
+            [_song(song_id=1), _song(song_id=3)],
+            [_song(song_id=2), _song(song_id=4)],
         ]
 
         result = get_calibration_status_by_library(mock_db)
@@ -580,7 +606,7 @@ class TestIncompleteTags:
             {"head_key": "mood", "labels": ["mood"], "model_key_for_tag": "modelA"},
             {"head_key": "energy", "labels": ["energy"], "model_key_for_tag": "modelB"},
         ]
-        mock_db.app.list_song_docs_in_state.return_value = [{"id": 1}]
+        mock_db.app.list_song_docs_in_state.return_value = [_song(song_id=1)]
         mock_db.library.list_song_tags_for_songs.return_value = {
             1: [
                 {"name": "nom:mood_modelA_happy"},
@@ -614,10 +640,10 @@ class TestIncompleteTags:
             {"head_key": "energy", "labels": ["energy"], "model_key_for_tag": "modelB"},
         ]
         mock_db.app.list_song_docs_in_state.return_value = [
-            {"id": 1},
-            {"id": 2},
+            _song(song_id=1),
+            _song(song_id=2),
         ]
-        mock_db.library.list_songs.return_value = [{"id": 2}]
+        mock_db.library.list_songs.return_value = [_song(song_id=2)]
         mock_db.library.list_song_tags_for_songs.return_value = {
             2: [{"name": "nom:mood_modelA_happy"}],
         }
@@ -689,8 +715,10 @@ class TestBulkTransitions:
     def test_bulk_set_not_hydrated_repairs_missing_hydration_and_error_edges(self) -> None:
         mock_db = _make_mock_db()
         mock_db.library.list_libraries.return_value = [{"id": 1}]
-        mock_db.library.list_songs.return_value = [{"id": 7}]
-        mock_db.app.list_song_docs_in_state.side_effect = lambda state: [{"id": 7}] if state == STATE_ERRORED else []
+        mock_db.library.list_songs.return_value = [_song(song_id=7)]
+        mock_db.app.list_song_docs_in_state.side_effect = lambda state: (
+            [_song(song_id=7)] if state == STATE_ERRORED else []
+        )
 
         result = bulk_set_not_hydrated(mock_db)
 
@@ -708,7 +736,7 @@ class TestBulkTransitions:
         mock_db = _make_mock_db()
         calibrated_ids = [1, 2]
         mock_db.app.list_song_docs_in_state.side_effect = lambda state: list(
-            [{"id": song_id} for song_id in calibrated_ids] if state == STATE_CALIBRATED else []
+            [_song(song_id=song_id) for song_id in calibrated_ids] if state == STATE_CALIBRATED else []
         )
         mock_db.app.get_song_states_for_songs.return_value = {
             1: {STATE_CALIBRATED},
@@ -727,13 +755,13 @@ class TestBulkTransitions:
         mock_db = _make_mock_db()
         mock_db.app.list_song_docs_in_state.side_effect = lambda state: list(
             [
-                {"id": 1},
-                {"id": 2},
+                _song(song_id=1),
+                _song(song_id=2),
             ]
             if state == STATE_TAGS_CURRENT
             else []
         )
-        mock_db.library.list_songs.return_value = [{"id": 2}]
+        mock_db.library.list_songs.return_value = [_song(song_id=2)]
         mock_db.app.get_song_states_for_songs.return_value = {
             2: {STATE_TAGS_CURRENT},
         }
@@ -772,7 +800,7 @@ class TestBulkTransitions:
         mock_db = _make_mock_db()
         current_ids = [1, 2]
         mock_db.app.list_song_docs_in_state.side_effect = lambda state: list(
-            [{"id": song_id} for song_id in current_ids] if state == STATE_TAGS_CURRENT else []
+            [_song(song_id=song_id) for song_id in current_ids] if state == STATE_TAGS_CURRENT else []
         )
         mock_db.app.get_song_states_for_songs.return_value = {
             1: {STATE_TAGS_CURRENT},
@@ -802,7 +830,7 @@ class TestBulkTransitions:
         mock_db = _make_mock_db()
         vector_ids = [7]
         mock_db.app.list_song_docs_in_state.side_effect = lambda state: list(
-            [{"id": song_id} for song_id in vector_ids] if state == STATE_VECTORS_EXTRACTED else []
+            [_song(song_id=song_id) for song_id in vector_ids] if state == STATE_VECTORS_EXTRACTED else []
         )
         mock_db.app.get_song_states_for_songs.return_value = {
             7: {STATE_VECTORS_EXTRACTED},

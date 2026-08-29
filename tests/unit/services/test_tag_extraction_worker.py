@@ -13,14 +13,33 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nomarr.helpers.dataclasses.song_dataclass import Song
 from nomarr.helpers.dto.hydration_dto import HydrateSongInput
 from nomarr.services.infrastructure.workers.tag_extraction_worker import _process_file
 
 pytestmark = [pytest.mark.unit, pytest.mark.mocked]
 
 
-def _song_doc(song_id: int = 1) -> dict:
-    return {"id": song_id, "path": "/music/lib/track.flac", "namespace": "nom"}
+def _song_doc(song_id: int = 1) -> Song:
+    return Song(
+        song_id=song_id,
+        library_id=1,
+        folder_id=None,
+        path="/music/lib/track.flac",
+        normalized_path="track.flac",
+        file_size=100,
+        modified_time=1000,
+        duration_seconds=None,
+        chromaprint=None,
+        needs_tagging=False,
+        is_valid=True,
+        tagged=False,
+        calibration_hash=None,
+        write_claimed_by=None,
+        last_tagged_at=None,
+        scanned_at=None,
+        created_at=1000,
+    )
 
 
 def _make_db(song_id: int = 1) -> MagicMock:
@@ -80,7 +99,7 @@ class TestProcessFile:
 
     def test_uses_default_namespace_when_absent(self) -> None:
         db = _make_db()
-        db.library.get_song.return_value = {"id": 1, "path": "/music/lib/track.flac"}
+        db.library.get_song.return_value = _song_doc(1)
         metadata = {"duration": 100.0, "nom_tags": {"mood": "chill"}}
         path_mock = _valid_path_mock()
 

@@ -25,14 +25,14 @@ def _all_songs(db: Database) -> list[dict[str, Any]]:
     """
     docs: list[dict[str, Any]] = []
     for lib in db.library.list_libraries():
-        docs.extend(_narrow_tag_list(db.library.list_songs(lib["id"])))
+        docs.extend(_narrow_tag_list([song.to_dict() for song in db.library.list_songs(lib["id"])]))
     return docs
 
 
 def _songs(db: Database, library_id: int | None) -> list[dict[str, Any]]:
     """Return song documents scoped to one library or the whole collection."""
     if library_id is not None:
-        return _narrow_tag_list(db.library.list_songs(library_id))
+        return _narrow_tag_list([song.to_dict() for song in db.library.list_songs(library_id)])
     return _all_songs(db)
 
 
@@ -261,7 +261,7 @@ def get_year_distribution(db: Database, library_id: int | None = None) -> list[d
     if library_id is not None:
         library_song_ids = {
             file_id
-            for file_doc in _narrow_tag_list(db.library.list_songs(library_id))
+            for file_doc in _narrow_tag_list([song.to_dict() for song in db.library.list_songs(library_id)])
             if isinstance(file_id := file_doc.get("id"), int)
         }
     total_year = int(db.library.count_tags())
@@ -312,7 +312,7 @@ def get_genre_distribution(
     if library_id is not None:
         library_song_ids = {
             file_id
-            for file_doc in _narrow_tag_list(db.library.list_songs(library_id))
+            for file_doc in _narrow_tag_list([song.to_dict() for song in db.library.list_songs(library_id)])
             if isinstance(file_id := file_doc.get("id"), int)
         }
     total_genre = int(db.library.count_tags())

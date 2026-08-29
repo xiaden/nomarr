@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from nomarr.helpers.dataclasses.song_dataclass import Song
+
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session, scoped_session
 
@@ -19,7 +21,6 @@ if TYPE_CHECKING:
         LibraryFolderRow,
         LibraryRow,
         LibraryScanRow,
-        SongRow,
         TagRow,
     )
     from nomarr.persistence.api.library_regions import LibraryRegionsDb
@@ -159,20 +160,23 @@ class LibraryDb:
     # Song / folder forwarding (songs)
     # ------------------------------------------------------------------
 
-    def get_song(self, song_id: int) -> SongRow | None:
-        return self._songs.get_song(song_id)
+    def get_song(self, song_id: int) -> Song | None:
+        row = self._songs.get_song(song_id)
+        return Song.from_row(row) if row is not None else None
 
-    def get_song_by_path(self, path: str, library_id: int) -> SongRow | None:
-        return self._songs.get_song_by_path(path, library_id)
+    def get_song_by_path(self, path: str, library_id: int) -> Song | None:
+        row = self._songs.get_song_by_path(path, library_id)
+        return Song.from_row(row) if row is not None else None
 
-    def find_song_by_path_any_library(self, path: str) -> SongRow | None:
-        return self._songs.find_song_by_path_any_library(path)
+    def find_song_by_path_any_library(self, path: str) -> Song | None:
+        row = self._songs.find_song_by_path_any_library(path)
+        return Song.from_row(row) if row is not None else None
 
-    def list_songs_by_ids(self, song_ids: list[int]) -> list[SongRow]:
-        return self._songs.list_songs_by_ids(song_ids)
+    def list_songs_by_ids(self, song_ids: list[int]) -> list[Song]:
+        return [Song.from_row(row) for row in self._songs.list_songs_by_ids(song_ids)]
 
-    def list_songs(self, library_id: int, *, limit: int | None = None) -> list[SongRow]:
-        return self._songs.list_songs(library_id, limit=limit)
+    def list_songs(self, library_id: int, *, limit: int | None = None) -> list[Song]:
+        return [Song.from_row(row) for row in self._songs.list_songs(library_id, limit=limit)]
 
     def count_songs(self, library_id: int) -> int:
         return self._songs.count_songs(library_id)
@@ -193,8 +197,9 @@ class LibraryDb:
         self,
         library_id: int,
         chromaprint: str,
-    ) -> SongRow | None:
-        return self._songs.find_library_song_by_chromaprint(library_id, chromaprint)
+    ) -> Song | None:
+        row = self._songs.find_library_song_by_chromaprint(library_id, chromaprint)
+        return Song.from_row(row) if row is not None else None
 
     def add_song_to_library(self, library_id: int, payload: dict) -> int:
         return self._songs.add_song_to_library(library_id, payload)
@@ -277,11 +282,11 @@ class LibraryDb:
         self,
         library_id: int,
         folder_rel_path: str,
-    ) -> list[SongRow]:
-        return self._songs.list_songs_for_folder(library_id, folder_rel_path)
+    ) -> list[Song]:
+        return [Song.from_row(row) for row in self._songs.list_songs_for_folder(library_id, folder_rel_path)]
 
-    def list_tracks_for_matching(self, library_id: int, *, limit: int | None = None) -> list[SongRow]:
-        return self._songs.list_tracks_for_matching(library_id, limit=limit)
+    def list_tracks_for_matching(self, library_id: int, *, limit: int | None = None) -> list[Song]:
+        return [Song.from_row(row) for row in self._songs.list_tracks_for_matching(library_id, limit=limit)]
 
     # ------------------------------------------------------------------
     # Maintenance forwarding (songs)

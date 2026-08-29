@@ -79,8 +79,7 @@ def _insert_file_state_edges_ignoring_duplicates(db: Database, edge_docs: list[d
 
 
 def _state_song_docs(db: Database, state_id: str) -> list[Any]:
-    docs = db.app.list_song_docs_in_state(state_id)
-    return list(docs)
+    return [song.to_dict() for song in db.app.list_song_docs_in_state(state_id)]
 
 
 def _state_song_ids(db: Database, state_id: str) -> set[int]:
@@ -89,8 +88,7 @@ def _state_song_ids(db: Database, state_id: str) -> set[int]:
 
 
 def _library_song_docs(db: Database, library_id: int) -> list[Any]:
-    docs = db.library.list_songs(library_id)
-    return list(docs)
+    return [song.to_dict() for song in db.library.list_songs(library_id)]
 
 
 def _library_song_ids(db: Database, library_id: int) -> set[int]:
@@ -249,7 +247,7 @@ def count_pending_tag_writes(db: Database) -> int:
 def get_errored_song_ids(db: Database, library_id: int, limit: int | None = 500) -> list[int]:
     """Return errored song ids for one library."""
     library_song_ids = _library_song_ids(db, library_id)
-    errored_files = db.app.list_song_docs_in_state(STATE_ERRORED)
+    errored_files = [song.to_dict() for song in db.app.list_song_docs_in_state(STATE_ERRORED)]
     errored_song_ids = [
         doc["id"] for doc in errored_files if isinstance(doc, dict) and "id" in doc and doc["id"] in library_song_ids
     ]
@@ -431,7 +429,7 @@ def bulk_set_not_hydrated(db: Database, library_id: int | None = None) -> int:
         song_ids = [
             doc["id"]
             for lib in db.library.list_libraries()
-            for doc in db.library.list_songs(lib["id"], limit=None)
+            for doc in (song.to_dict() for song in db.library.list_songs(lib["id"], limit=None))
             if isinstance(doc, dict) and "id" in doc
         ]
 

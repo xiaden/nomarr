@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from nomarr.helpers.time_helper import now_ms
 
@@ -128,11 +128,7 @@ def bulk_delete_songs(db: Database, paths: list[str], library_id: int) -> int:
     if not paths:
         return 0
 
-    resolved = [
-        path
-        for path in paths
-        if cast("dict[str, Any] | None", db.library.get_song_by_path(path, library_id)) is not None
-    ]
+    resolved = [path for path in paths if db.library.get_song_by_path(path, library_id) is not None]
     matched_paths = list(dict.fromkeys(resolved))
     if not matched_paths:
         return 0

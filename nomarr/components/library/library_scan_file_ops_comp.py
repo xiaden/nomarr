@@ -179,11 +179,7 @@ def remove_deleted_files(db: Database, library_id: int, paths: list[str]) -> int
 
     Returns the number of files deleted.
     """
-    file_ids = [
-        file_doc["id"]
-        for path in paths
-        if (file_doc := cast("dict[str, Any] | None", db.library.get_song_by_path(path, library_id))) is not None
-    ]
+    file_ids = [song.song_id for path in paths if (song := db.library.get_song_by_path(path, library_id)) is not None]
     for file_id in file_ids:
         db.library.remove_song(file_id)
 

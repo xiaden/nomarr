@@ -453,13 +453,23 @@ class TestVectorRepo:
             model_id="test_model",
             embedding_vector=_random_vector(seed=601),
         )
+        repo.insert_embedding(
+            song_id=song_id1,
+            backbone_id="other_backbone",
+            model_id="other_model",
+            embedding_vector=_random_vector(seed=602),
+        )
 
-        # Delete only song_id1's embeddings
-        repo.delete_embeddings_for_song(song_id1)
+        # Delete only song_id1's embeddings for the selected backbone.
+        repo.delete_embeddings_for_song(song_id1, _BACKBONE)
 
         # song_id1 should have none
         results1 = repo.get_embeddings_for_song(song_id1, _BACKBONE)
         assert len(results1) == 0
+
+        # song_id1's other backbone should still be present.
+        other_results = repo.get_embeddings_for_song(song_id1, "other_backbone")
+        assert len(other_results) == 1
 
         # song_id2 should still have its embedding
         results2 = repo.get_embeddings_for_song(song_id2, _BACKBONE, tier="hot")

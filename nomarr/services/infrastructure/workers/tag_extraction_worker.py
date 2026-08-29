@@ -72,12 +72,12 @@ def _process_file(db: Database, song_id: int) -> None:
     from nomarr.components.tagging.tag_parsing_comp import parse_tag_values
     from nomarr.helpers.dto.hydration_dto import HydrateSongInput
 
-    song_doc = db.library.get_song(song_id)
-    if song_doc is None:
+    song = db.library.get_song(song_id)
+    if song is None:
         msg = f"Song not found: {song_id}"
         raise ValueError(msg)
-    path: str = str(song_doc["path"])
-    namespace: str = str(song_doc.get("namespace", "nom"))
+    path: str = song.path
+    namespace: str = "nom"
 
     library_path = build_library_path_from_input(path, db)
     if not library_path.is_valid():

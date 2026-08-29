@@ -285,11 +285,14 @@ class VectorRepo:
                 self._session.execute(delete(_T))
             self._session.commit()
 
-    def delete_embeddings_for_song(self, song_id: int) -> None:
-        """Delete all embeddings for a given song."""
+    def delete_embeddings_for_song(self, song_id: int, backbone_id: str) -> None:
+        """Delete one song's embeddings for a specific backbone."""
         with map_persistence_exceptions():
             with self._session.begin_nested():
-                stmt = delete(_T).where(_T.c.song_id == song_id)
+                stmt = delete(_T).where(
+                    _T.c.song_id == song_id,
+                    _T.c.backbone_id == backbone_id,
+                )
                 self._session.execute(stmt)
             self._session.commit()
 

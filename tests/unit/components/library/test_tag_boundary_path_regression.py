@@ -16,6 +16,31 @@ import pytest
 
 from nomarr.components.library.library_song_query_comp import _tags_for_song
 from nomarr.components.library.song_tags_comp import get_song_tags_with_path
+from nomarr.helpers.dataclasses.song_dataclass import Song
+
+
+def _song(**overrides: object) -> Song:
+    base: dict = {
+        "song_id": 1,
+        "library_id": 1,
+        "folder_id": None,
+        "path": "/music/song.mp3",
+        "normalized_path": "song.mp3",
+        "file_size": 100,
+        "modified_time": 1000,
+        "duration_seconds": None,
+        "chromaprint": None,
+        "needs_tagging": False,
+        "is_valid": True,
+        "tagged": False,
+        "calibration_hash": None,
+        "write_claimed_by": None,
+        "last_tagged_at": None,
+        "scanned_at": None,
+        "created_at": 1000,
+    }
+    base.update(overrides)
+    return Song(**base)
 
 
 class TestSongTagPathsProduceIdenticalFileTags:
@@ -31,7 +56,7 @@ class TestSongTagPathsProduceIdenticalFileTags:
         ]
 
         db_a = MagicMock()
-        db_a.library.get_song.return_value = {"path": "D:/Music/song.flac"}
+        db_a.library.get_song.return_value = _song(path="D:/Music/song.flac")
         db_a.library.list_tags_for_song.return_value = rows
         from_path = get_song_tags_with_path(db_a, 1)
         assert from_path is not None

@@ -107,7 +107,7 @@ def relink_tag_edges(
 
     all_song_docs: list[Mapping[str, Any]] = []
     for lib in db.library.list_libraries():
-        all_song_docs.extend(_narrow_tag_list(db.library.list_songs(lib["id"])))
+        all_song_docs.extend(_narrow_tag_list([song.to_dict() for song in db.library.list_songs(lib["id"])]))
     all_song_ids = [sid for song_doc in all_song_docs if isinstance((sid := song_doc.get("id")), int)]
     if not all_song_ids:
         return {"moved": 0, "skipped": 0, "source_orphaned": False}

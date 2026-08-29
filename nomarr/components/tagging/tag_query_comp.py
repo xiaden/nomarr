@@ -243,7 +243,7 @@ def get_file_ids_for_tags(
     if library_id is not None:
         library_ids = {
             file_id
-            for file_doc in _narrow_tag_list(db.library.list_songs(library_id))
+            for file_doc in _narrow_tag_list([song.to_dict() for song in db.library.list_songs(library_id)])
             if isinstance(file_id := file_doc.get("id"), int)
         }
 
@@ -302,7 +302,7 @@ def get_file_ids_for_mood_tags(
     if library_id is not None:
         library_ids = {
             file_id
-            for file_doc in _narrow_tag_list(db.library.list_songs(library_id))
+            for file_doc in _narrow_tag_list([song.to_dict() for song in db.library.list_songs(library_id)])
             if isinstance(file_id := file_doc.get("id"), int)
         }
 
@@ -369,7 +369,8 @@ def get_tag_songs_with_metadata(db: Database, tag_id: int, limit: int = 50, offs
     """Return song rows for a tag with basic file metadata."""
     result: list[TagSongItem] = []
     for song_id in list_songs_for_tag(db, tag_id, limit=limit, offset=offset):
-        song_doc = _narrow_tag_dict_opt(db.library.get_song(song_id))
+        song = db.library.get_song(song_id)
+        song_doc = _narrow_tag_dict_opt(song.to_dict() if song is not None else None)
         if song_doc is None:
             continue
         tag_docs = _narrow_tag_list(db.library.list_tags_for_song(song_id))

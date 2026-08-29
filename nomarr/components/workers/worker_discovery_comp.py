@@ -178,12 +178,12 @@ def cleanup_stale_claims(db: Database, heartbeat_timeout_ms: int) -> int:
     stale_song_ids: set[int] = set()
     candidate_song_ids = sorted({int(claim["file_id"]) for claim in active_ml_claims})
     if candidate_song_ids:
-        song_docs = cast("list[dict[str, Any]]", db.library.list_songs_by_ids(candidate_song_ids))
+        song_docs = [song.to_dict() for song in db.library.list_songs_by_ids(candidate_song_ids)]
         existing_song_ids = {doc["id"] for doc in song_docs if "id" in doc}
 
         tagged_song_ids = {
             song_doc["id"]
-            for song_doc in cast("list[dict[str, Any]]", db.app.list_song_docs_in_state(_TAGGED_STATE_ID))
+            for song_doc in (song.to_dict() for song in db.app.list_song_docs_in_state(_TAGGED_STATE_ID))
             if "id" in song_doc and song_doc["id"] in candidate_song_ids
         }
         stale_song_ids = {

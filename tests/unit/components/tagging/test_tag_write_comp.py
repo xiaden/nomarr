@@ -14,6 +14,32 @@ from nomarr.components.tagging.tag_write_comp import (
     set_song_tags,
     set_song_tags_batch,
 )
+from nomarr.helpers.dataclasses.song_dataclass import Song
+
+
+def _song(**overrides: object) -> Song:
+    """Build a minimal ``Song`` for mocking persistence-facade returns."""
+    base: dict = {
+        "song_id": 1,
+        "library_id": 1,
+        "folder_id": None,
+        "path": "/music/song.mp3",
+        "normalized_path": "song.mp3",
+        "file_size": 100,
+        "modified_time": 1000,
+        "duration_seconds": None,
+        "chromaprint": None,
+        "needs_tagging": False,
+        "is_valid": True,
+        "tagged": False,
+        "calibration_hash": None,
+        "write_claimed_by": None,
+        "last_tagged_at": None,
+        "scanned_at": None,
+        "created_at": 1000,
+    }
+    base.update(overrides)
+    return Song(**base)
 
 
 class TestFindOrCreateTag:
@@ -189,8 +215,8 @@ class TestRelinkTagEdges:
         mock_db = MagicMock()
         mock_db.library.list_libraries.return_value = [{"id": 1}]
         mock_db.library.list_songs.return_value = [
-            {"id": 1},
-            {"id": 2},
+            _song(song_id=1),
+            _song(song_id=2),
         ]
         mock_db.library.list_song_tags_for_songs.return_value = {
             1: [{"_id": "tags/other", "id": 999, "name": "genre", "value": "rock"}],
@@ -209,8 +235,8 @@ class TestRelinkTagEdges:
         mock_db = MagicMock()
         mock_db.library.list_libraries.return_value = [{"id": 1}]
         mock_db.library.list_songs.return_value = [
-            {"id": 1},
-            {"id": 2},
+            _song(song_id=1),
+            _song(song_id=2),
         ]
         mock_db.library.list_song_tags_for_songs.return_value = {
             1: [{"_id": "tags/source", "id": 100, "name": "genre", "value": "old-a"}],
@@ -228,8 +254,8 @@ class TestRelinkTagEdges:
         mock_db = MagicMock()
         mock_db.library.list_libraries.return_value = [{"id": 1}]
         mock_db.library.list_songs.return_value = [
-            {"id": 1},
-            {"id": 2},
+            _song(song_id=1),
+            _song(song_id=2),
         ]
         mock_db.library.list_song_tags_for_songs.return_value = {
             1: [
@@ -250,9 +276,9 @@ class TestRelinkTagEdges:
         mock_db = MagicMock()
         mock_db.library.list_libraries.return_value = [{"id": 1}]
         mock_db.library.list_songs.return_value = [
-            {"id": 1},
-            {"id": 2},
-            {"id": 3},
+            _song(song_id=1),
+            _song(song_id=2),
+            _song(song_id=3),
         ]
         mock_db.library.list_song_tags_for_songs.return_value = {
             1: [{"_id": "tags/source", "id": 100, "name": "genre", "value": "old-a"}],

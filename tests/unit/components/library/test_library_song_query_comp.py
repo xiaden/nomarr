@@ -40,6 +40,7 @@ from nomarr.components.library.library_song_query_comp import (
     search_songs_with_tags,
 )
 from nomarr.helpers.constants.file_states import STATE_PROCESSED
+from nomarr.helpers.dataclasses.song_dataclass import Song
 from nomarr.helpers.dto.library_dto import FileTag
 
 
@@ -56,16 +57,40 @@ def make_db() -> MagicMock:
     return db
 
 
+def _song(**overrides: object) -> Song:
+    base: dict = {
+        "song_id": 1,
+        "library_id": 1,
+        "folder_id": None,
+        "path": "/music/song.mp3",
+        "normalized_path": "song.mp3",
+        "file_size": 100,
+        "modified_time": 1000,
+        "duration_seconds": None,
+        "chromaprint": None,
+        "needs_tagging": False,
+        "is_valid": True,
+        "tagged": False,
+        "calibration_hash": None,
+        "write_claimed_by": None,
+        "last_tagged_at": None,
+        "scanned_at": None,
+        "created_at": 1000,
+    }
+    base.update(overrides)
+    return Song(**base)
+
+
 @pytest.mark.unit
 def test_get_file_by_id_uses_library_facade() -> None:
 
     db = make_db()
 
-    db.library.get_song.return_value = {"id": 1}
+    db.library.get_song.return_value = _song(song_id=1)
 
     result = get_song_by_id(db, 1)
 
-    assert result == {"id": 1}
+    assert result == _song(song_id=1).to_dict()
 
     db.library.get_song.assert_called_once_with(1)
 
@@ -108,7 +133,9 @@ def test_get_files_by_ids_with_tags_hydrates_tags_and_library_ids() -> None:
 
     db = make_db()
 
-    db.library.list_songs_by_ids.return_value = [{"id": 1, "path": "D:/Music/song.flac", "library_key": "1"}]
+    db.library.list_songs_by_ids.return_value = [
+        _song(song_id=1, path="D:/Music/song.flac", normalized_path="song.flac")
+    ]
 
     db.library.list_song_tags_for_songs.return_value = {
         1: [
@@ -122,9 +149,7 @@ def test_get_files_by_ids_with_tags_hydrates_tags_and_library_ids() -> None:
 
     assert result == [
         {
-            "id": 1,
-            "path": "D:/Music/song.flac",
-            "library_key": "1",
+            **_song(song_id=1, path="D:/Music/song.flac", normalized_path="song.flac").to_dict(),
             "tags": [
                 FileTag(key="genre", value="rock", tag_type="string", is_nomarr=False),
                 FileTag(key="nom:mood-tier-1", value="calm", tag_type="string", is_nomarr=True),
@@ -155,17 +180,13 @@ def test_get_library_file_scoped_filters_songs() -> None:
 
     db = make_db()
 
-    row = {
-        "id": 1,
-        "path": "D:/Music/song.flac",
-        "normalized_path": "song.flac",
-    }
+    row = _song(song_id=1, path="D:/Music/song.flac", normalized_path="song.flac")
 
     db.library.list_songs.return_value = [row]
 
     result = get_library_song(db, "song.flac", library_id=1)
 
-    assert result == row
+    assert result == row.to_dict()
 
     db.library.list_songs.assert_called_once_with(1, limit=None)
 
@@ -175,13 +196,13 @@ def test_get_library_file_unscoped_tries_normalized_then_unscoped_path() -> None
 
     db = make_db()
 
-    row = {"id": 1, "path": "D:/Music/song.flac"}
+    row = _song(song_id=1, path="D:/Music/song.flac", normalized_path="song.flac")
 
     db.library.find_song_by_path_any_library.return_value = row
 
     result = get_library_song(db, "D:/Music/song.flac")
 
-    assert result == row
+    assert result == row.to_dict()
 
     db.library.find_song_by_path_any_library.assert_called_once_with("D:/Music/song.flac")
 
@@ -222,8 +243,8 @@ def test_detect_nd_path_prefix_uses_longest_matching_normalized_path() -> None:
     db.library.list_libraries.return_value = [{"id": 1}]
 
     db.library.list_songs.return_value = [
-        {"normalized_path": "song.flac"},
-        {"normalized_path": "artist/song.flac"},
+        _song(normalized_path="song.flac"),
+        _song(normalized_path="artist/song.flac"),
     ]
 
     result = detect_nd_path_prefix(db, "/music/artist/song.flac")
@@ -251,17 +272,29 @@ def test_list_songs_unscoped_sorts_and_paginates() -> None:
     db.library.list_libraries.return_value = [{"id": 1}]
 
     db.library.list_songs.return_value = [
-        {"id": 2, "artist": "B", "album": "A", "title": "T2"},
-        {"id": 1, "artist": "A", "album": "A", "title": "T1"},
+        _song(song_id=2, path="D:/Music/two.flac", normalized_path="two.flac"),
+        _song(song_id=1, path="D:/Music/one.flac", normalized_path="one.flac"),
     ]
+
+    metadata = {
+        2: {"artist": "B", "album": "A", "title": "T2"},
+        1: {"artist": "A", "album": "A", "title": "T1"},
+    }
 
     with patch(
         "nomarr.components.library.library_song_query_comp.hydrate_songs_with_metadata",
-        side_effect=lambda _db, docs: docs,
+        side_effect=lambda _db, docs: [{**d, **metadata.get(d.get("id"), {})} for d in docs],
     ):
         rows, total = list_songs(db, limit=1, offset=1)
 
-    assert rows == [{"id": 2, "artist": "B", "album": "A", "title": "T2"}]
+    assert rows == [
+        {
+            **_song(song_id=2, path="D:/Music/two.flac", normalized_path="two.flac").to_dict(),
+            "artist": "B",
+            "album": "A",
+            "title": "T2",
+        }
+    ]
 
     assert total == 2
 
@@ -274,7 +307,8 @@ def test_list_songs_unscoped_paginates_beyond_default_collection_cap() -> None:
 
     db.library.list_libraries.return_value = [{"id": 1}]
     songs = [
-        {"id": song_id, "artist": "A", "album": "A", "title": f"T{song_id:04d}"} for song_id in range(DEFAULT_LIMIT + 1)
+        _song(song_id=song_id, path=f"D:/Music/s{song_id}.flac", normalized_path=f"s{song_id}.flac")
+        for song_id in range(DEFAULT_LIMIT + 1)
     ]
     db.library.list_songs.return_value = songs
 
@@ -284,7 +318,7 @@ def test_list_songs_unscoped_paginates_beyond_default_collection_cap() -> None:
     ):
         rows, total = list_songs(db, limit=1, offset=DEFAULT_LIMIT)
 
-    assert rows == [songs[-1]]
+    assert rows == [songs[-1].to_dict()]
     assert total == DEFAULT_LIMIT + 1
     db.library.list_songs.assert_called_once_with(1)
 
@@ -294,25 +328,32 @@ def test_list_songs_scoped_filters_in_python() -> None:
 
     db = make_db()
 
-    matching_row = {
-        "id": 9,
-        "artist": "Artist",
-        "album": "Album",
-        "title": "Song",
-    }
+    matching_row = _song(song_id=9, path="D:/Music/nine.flac", normalized_path="nine.flac")
 
     db.library.list_songs.return_value = [
-        {"id": 8, "artist": "Other", "album": "Album", "title": "Song"},
+        _song(song_id=8, path="D:/Music/eight.flac", normalized_path="eight.flac"),
         matching_row,
     ]
 
+    metadata = {
+        8: {"artist": "Other", "album": "Album", "title": "Song"},
+        9: {"artist": "Artist", "album": "Album", "title": "Song"},
+    }
+
     with patch(
         "nomarr.components.library.library_song_query_comp.hydrate_songs_with_metadata",
-        side_effect=lambda _db, docs: docs,
+        side_effect=lambda _db, docs: [{**d, **metadata.get(d.get("id"), {})} for d in docs],
     ):
         rows, total = list_songs(db, artist="Artist", album="Album", library_id=1)
 
-    assert rows == [matching_row]
+    assert rows == [
+        {
+            **matching_row.to_dict(),
+            "artist": "Artist",
+            "album": "Album",
+            "title": "Song",
+        }
+    ]
 
     assert total == 1
 
@@ -326,7 +367,10 @@ def test_get_all_library_paths_uses_list_files() -> None:
 
     db.library.list_libraries.return_value = [{"id": 1}]
 
-    db.library.list_songs.return_value = [{"path": "D:/Music/a.flac"}, {"path": "D:/Music/b.flac"}]
+    db.library.list_songs.return_value = [
+        _song(song_id=1, path="D:/Music/a.flac", normalized_path="a.flac"),
+        _song(song_id=2, path="D:/Music/b.flac", normalized_path="b.flac"),
+    ]
 
     result = get_all_library_paths(db)
 
@@ -343,9 +387,9 @@ def test_get_file_modified_times_builds_mapping_from_list_files() -> None:
     db.library.list_libraries.return_value = [{"id": 1}]
 
     db.library.list_songs.return_value = [
-        {"path": "D:/Music/a.flac", "modified_time": 10},
-        {"path": "D:/Music/b.flac", "modified_time": 20},
-        {"path": "D:/Music/skip.flac", "modified_time": None},
+        _song(song_id=1, path="D:/Music/a.flac", normalized_path="a.flac", modified_time=10),
+        _song(song_id=2, path="D:/Music/b.flac", normalized_path="b.flac", modified_time=20),
+        _song(song_id=3, path="D:/Music/skip.flac", normalized_path="skip.flac", modified_time=None),
     ]
 
     result = get_song_modified_times(db)
@@ -361,8 +405,8 @@ def test_get_tagged_file_paths_reads_tagged_file_docs_from_app_facade() -> None:
     db = make_db()
 
     db.app.list_song_docs_in_state.return_value = [
-        {"id": 1, "path": "D:/Music/a.flac"},
-        {"id": 2, "path": "D:/Music/b.flac"},
+        _song(song_id=1, path="D:/Music/a.flac", normalized_path="a.flac"),
+        _song(song_id=2, path="D:/Music/b.flac", normalized_path="b.flac"),
     ]
 
     result = get_tagged_file_paths(db)
@@ -391,18 +435,17 @@ def test_get_files_for_folder_marks_tagged_state_from_app_facade() -> None:
 
     db = make_db()
 
-    matching_doc = {
-        "id": 1,
-        "path": "D:/Music/Artist/Album/song.flac",
-        "normalized_path": "Artist/Album/song.flac",
-        "has_tagged_state": True,
-    }
+    matching_doc = _song(
+        song_id=1,
+        path="D:/Music/Artist/Album/song.flac",
+        normalized_path="Artist/Album/song.flac",
+    )
 
     db.library.list_songs_for_folder.return_value = [matching_doc]
 
     result = get_songs_for_folder(db, 1, "Artist/Album")
 
-    assert result == {matching_doc["path"]: matching_doc}
+    assert result == {matching_doc.to_dict()["path"]: matching_doc.to_dict()}
 
     db.library.list_songs_for_folder.assert_called_once_with(1, "Artist/Album")
 
@@ -412,17 +455,9 @@ def test_get_files_for_folders_matches_root_and_nested_paths() -> None:
 
     db = make_db()
 
-    root_doc = {
-        "id": 1,
-        "path": "D:/Music/root.flac",
-        "normalized_path": "root.flac",
-    }
+    root_doc = _song(song_id=1, path="D:/Music/root.flac", normalized_path="root.flac")
 
-    nested_doc = {
-        "id": 2,
-        "path": "D:/Music/Artist/song.flac",
-        "normalized_path": "Artist/song.flac",
-    }
+    nested_doc = _song(song_id=2, path="D:/Music/Artist/song.flac", normalized_path="Artist/song.flac")
 
     db.library.list_songs.return_value = [root_doc, nested_doc]
 
@@ -431,8 +466,8 @@ def test_get_files_for_folders_matches_root_and_nested_paths() -> None:
     result = get_songs_for_folders(db, 1, ["", "Artist"])
 
     assert result == {
-        root_doc["path"]: {**root_doc, "has_tagged_state": False},
-        nested_doc["path"]: {**nested_doc, "has_tagged_state": True},
+        root_doc.to_dict()["path"]: {**root_doc.to_dict(), "has_tagged_state": False},
+        nested_doc.to_dict()["path"]: {**nested_doc.to_dict(), "has_tagged_state": True},
     }
 
 
@@ -442,27 +477,18 @@ def test_get_recently_processed_sorts_by_latest_activity() -> None:
     db = make_db()
 
     db.app.list_song_docs_in_state.return_value = [
-        {
-            "id": 1,
-            "normalized_path": "Artist/older.flac",
-            "title": "Older",
-            "artist": "Artist",
-            "album": "Album",
-            "scanned_at": 10,
-        },
-        {
-            "id": 2,
-            "normalized_path": "Artist/newer.flac",
-            "title": "Newer",
-            "artist": "Artist",
-            "album": "Album",
-            "last_tagged_at": 20,
-        },
+        _song(song_id=1, path="D:/Music/older.flac", normalized_path="Artist/older.flac", scanned_at=10),
+        _song(song_id=2, path="D:/Music/newer.flac", normalized_path="Artist/newer.flac", last_tagged_at=20),
     ]
+
+    metadata = {
+        1: {"title": "Older", "artist": "Artist", "album": "Album"},
+        2: {"title": "Newer", "artist": "Artist", "album": "Album"},
+    }
 
     with patch(
         "nomarr.components.library.library_song_query_comp.hydrate_songs_with_metadata",
-        side_effect=lambda _db, docs: docs,
+        side_effect=lambda _db, docs: [{**d, **metadata.get(d.get("id"), {})} for d in docs],
     ):
         result = get_recently_processed(db, limit=1)
 
@@ -487,8 +513,8 @@ def test_get_recently_processed_scopes_to_library_ids() -> None:
     db = make_db()
 
     db.app.list_song_docs_in_state.return_value = [
-        {"id": 1, "normalized_path": "keep.flac", "scanned_at": 5},
-        {"id": 2, "normalized_path": "skip.flac", "scanned_at": 6},
+        _song(song_id=1, path="D:/Music/keep.flac", normalized_path="keep.flac", scanned_at=5),
+        _song(song_id=2, path="D:/Music/skip.flac", normalized_path="skip.flac", scanned_at=6),
     ]
 
     db.library.list_library_song_ids.return_value = [1]
@@ -509,16 +535,16 @@ def test_get_files_by_chromaprint_scoped_filters_songs() -> None:
 
     db = make_db()
 
-    matching_doc = {"id": 1, "chromaprint": "abc"}
+    matching_doc = _song(song_id=1, path="D:/Music/a.flac", chromaprint="abc")
 
     db.library.list_songs.return_value = [
         matching_doc,
-        {"id": 2, "chromaprint": "def"},
+        _song(song_id=2, path="D:/Music/b.flac", chromaprint="def"),
     ]
 
     result = get_songs_by_chromaprint(db, "abc", library_id=1)
 
-    assert result == [matching_doc]
+    assert result == [matching_doc.to_dict()]
 
     db.library.list_songs.assert_called_once_with(1, limit=None)
 
@@ -530,11 +556,13 @@ def test_get_files_by_chromaprint_unscoped_uses_filtered_list_files() -> None:
 
     db.library.list_libraries.return_value = [{"id": 1}]
 
-    db.library.find_library_song_by_chromaprint.return_value = {"id": 1, "chromaprint": "abc"}
+    db.library.find_library_song_by_chromaprint.return_value = _song(
+        song_id=1, path="D:/Music/a.flac", chromaprint="abc"
+    )
 
     result = get_songs_by_chromaprint(db, "abc")
 
-    assert result == [{"id": 1, "chromaprint": "abc"}]
+    assert result == [_song(song_id=1, path="D:/Music/a.flac", chromaprint="abc").to_dict()]
 
     db.library.find_library_song_by_chromaprint.assert_called_once_with(1, "abc")
 
@@ -545,8 +573,8 @@ def test_get_tracks_by_song_ids_sorts_and_applies_defaults() -> None:
     db = make_db()
 
     db.library.list_songs_by_ids.return_value = [
-        {"path": "D:/Music/one.flac", "title": None, "artist": None, "album": None, "sort_rank": 1},
-        {"path": "D:/Music/two.flac", "title": "Two", "artist": "Artist", "album": "Album", "sort_rank": 2},
+        _song(song_id=1, path="D:/Music/one.flac", normalized_path="one.flac"),
+        _song(song_id=2, path="D:/Music/two.flac", normalized_path="two.flac"),
     ]
 
     with patch(
@@ -560,7 +588,9 @@ def test_get_tracks_by_song_ids_sorts_and_applies_defaults() -> None:
             limit=1,
         )
 
-    assert result == [{"path": "D:/Music/two.flac", "title": "Two", "artist": "Artist", "album": "Album"}]
+    assert result == [
+        {"path": "D:/Music/one.flac", "title": "one", "artist": "Unknown Artist", "album": "Unknown Album"}
+    ]
 
     db.library.list_songs_by_ids.assert_called_once()
 
@@ -573,8 +603,8 @@ def test_get_library_stats_aggregates_global_file_docs() -> None:
     db.library.list_libraries.return_value = [{"id": 1}]
 
     db.library.list_songs.return_value = [
-        {"duration_seconds": 10.5, "file_size": 100},
-        {"duration_seconds": 9.5, "file_size": 200},
+        _song(song_id=1, duration_seconds=10.5, file_size=100),
+        _song(song_id=2, duration_seconds=9.5, file_size=200),
     ]
 
     db.library.count_tags.return_value = 10
@@ -614,8 +644,8 @@ def test_get_library_counts_groups_parent_folders_by_library() -> None:
     db.library.list_library_keys.return_value = [1]
 
     db.library.list_songs.return_value = [
-        {"path": "D:/Music/Artist A/song.flac"},
-        {"path": "D:/Music/Artist B/other.flac"},
+        _song(song_id=1, path="D:/Music/Artist A/song.flac", normalized_path="Artist A/song.flac"),
+        _song(song_id=2, path="D:/Music/Artist B/other.flac", normalized_path="Artist B/other.flac"),
     ]
 
     result = get_library_counts(db)
@@ -650,20 +680,16 @@ def test_get_tracks_for_matching_filters_valid_files_and_projects_isrc() -> None
     db.library.list_libraries.return_value = [{"id": 1}]
 
     db.library.list_tracks_for_matching.return_value = [
-        {
-            "id": 1,
-            "path": "D:/Music/song.flac",
-            "title": "Song",
-            "artist": "Artist",
-            "album": "Album",
-        }
+        _song(song_id=1, path="D:/Music/song.flac", normalized_path="song.flac"),
     ]
 
     db.library.list_song_tags_for_songs.return_value = {1: [{"name": "isrc", "value": "ABC123"}]}
 
+    metadata = {1: {"title": "Song", "artist": "Artist", "album": "Album"}}
+
     with patch(
         "nomarr.components.library.library_song_query_comp.hydrate_songs_with_metadata",
-        side_effect=lambda _db, docs: docs,
+        side_effect=lambda _db, docs: [{**d, **metadata.get(d.get("id"), {})} for d in docs],
     ):
         result = get_tracks_for_matching(db)
 
@@ -689,21 +715,16 @@ def test_get_tracks_for_matching_scopes_to_library_and_projects_isrc() -> None:
     db = make_db()
 
     db.library.list_tracks_for_matching.return_value = [
-        {
-            "id": 1,
-            "is_valid": True,
-            "path": "D:/Music/song.flac",
-            "title": "Song",
-            "artist": "Artist",
-            "album": "Album",
-        }
+        _song(song_id=1, path="D:/Music/song.flac", normalized_path="song.flac"),
     ]
 
     db.library.list_song_tags_for_songs.return_value = {1: [{"name": "isrc", "value": "XYZ789"}]}
 
+    metadata = {1: {"title": "Song", "artist": "Artist", "album": "Album"}}
+
     with patch(
         "nomarr.components.library.library_song_query_comp.hydrate_songs_with_metadata",
-        side_effect=lambda _db, docs: docs,
+        side_effect=lambda _db, docs: [{**d, **metadata.get(d.get("id"), {})} for d in docs],
     ):
         result = get_tracks_for_matching(db, library_id=1)
 
@@ -811,13 +832,15 @@ def test_search_songs_with_tags_filters_and_hydrates_page() -> None:
     db.library.list_tags_by_name.return_value = [{"id": 1, "value": "rock"}]
     db.library.list_song_tag_edges.return_value = [{"song_id": 1, "tag_id": 1}]
     db.app.list_songs_in_state.return_value = [1]
-    db.library.list_songs_by_ids.return_value = [{**file_docs[0], "library_key": "1"}]
+    db.library.list_songs_by_ids.return_value = [_song(song_id=1, path="D:/Music/one.flac", normalized_path="one.flac")]
     db.library.list_song_tags_for_songs.return_value = {1: [{"name": "genre", "value": "rock"}]}
     db.library.get_library_ids_for_songs.return_value = {1: 1}
 
+    metadata = {1: {"artist": "Artist", "album": "Album", "title": "Song One"}}
+
     with patch(
         "nomarr.components.library.library_song_query_comp.hydrate_songs_with_metadata",
-        side_effect=lambda _db, docs: docs,
+        side_effect=lambda _db, docs: [{**d, **metadata.get(d.get("id"), {})} for d in docs],
     ):
         rows, total = search_songs_with_tags(
             db,
@@ -834,12 +857,10 @@ def test_search_songs_with_tags_filters_and_hydrates_page() -> None:
     assert total == 1
     assert rows == [
         {
-            "id": 1,
+            **_song(song_id=1, path="D:/Music/one.flac", normalized_path="one.flac").to_dict(),
             "artist": "Artist",
             "album": "Album",
             "title": "Song One",
-            "path": "D:/Music/one.flac",
-            "library_key": "1",
             "tags": [FileTag(key="genre", value="rock", tag_type="string", is_nomarr=False)],
             "library_id": 1,
         }
@@ -903,20 +924,8 @@ def test_search_files_by_tag_numeric_sorts_by_distance_and_hydrates_tags() -> No
         {"song_id": 2, "tag_id": 2},
     ]
     db.library.list_songs_by_ids.return_value = [
-        {
-            "id": 1,
-            "artist": "B",
-            "album": "A",
-            "title": "Far",
-            "library_key": "1",
-        },
-        {
-            "id": 2,
-            "artist": "A",
-            "album": "A",
-            "title": "Near",
-            "library_key": "1",
-        },
+        _song(song_id=1, path="D:/Music/one.flac", normalized_path="one.flac"),
+        _song(song_id=2, path="D:/Music/two.flac", normalized_path="two.flac"),
     ]
     db.library.list_song_tags_for_songs.return_value = {
         1: [{"name": "nom:bpm", "value": 118.0}],
@@ -992,7 +1001,7 @@ def test_get_sample_normalized_path_returns_first_value() -> None:
 
     db.library.list_libraries.return_value = [{"id": 1}]
 
-    db.library.list_songs.return_value = [{"normalized_path": "Artist/Album/song.flac"}]
+    db.library.list_songs.return_value = [_song(normalized_path="Artist/Album/song.flac")]
 
     result = get_sample_normalized_path(db)
 
@@ -1006,12 +1015,12 @@ def test_find_move_candidate_by_chromaprint_normalizes_library_id() -> None:
 
     db = make_db()
 
-    candidate = {"id": 9, "chromaprint": "abc123"}
+    candidate = _song(song_id=9, path="D:/Music/cand.flac", normalized_path="cand.flac", chromaprint="abc123")
 
     db.library.find_library_song_by_chromaprint.return_value = candidate
 
     result = find_move_candidate_by_chromaprint(db, 9, "abc123")
 
-    assert result == candidate
+    assert result == candidate.to_dict()
 
     db.library.find_library_song_by_chromaprint.assert_called_once_with(9, "abc123")

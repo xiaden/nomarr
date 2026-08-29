@@ -14,7 +14,32 @@ from nomarr.components.workers.worker_discovery_comp import (
     release_claims_for_worker,
     try_insert_or_steal_claim,
 )
+from nomarr.helpers.dataclasses.song_dataclass import Song
 from nomarr.helpers.exceptions import DuplicateEntityError
+
+
+def _song(**overrides: object) -> Song:
+    base: dict = {
+        "song_id": 1,
+        "library_id": 1,
+        "folder_id": None,
+        "path": "/music/song.mp3",
+        "normalized_path": "song.mp3",
+        "file_size": 100,
+        "modified_time": 1000,
+        "duration_seconds": None,
+        "chromaprint": None,
+        "needs_tagging": False,
+        "is_valid": True,
+        "tagged": False,
+        "calibration_hash": None,
+        "write_claimed_by": None,
+        "last_tagged_at": None,
+        "scanned_at": None,
+        "created_at": 1000,
+    }
+    base.update(overrides)
+    return Song(**base)
 
 
 class TestDiscoverNextFile:
@@ -144,11 +169,11 @@ class TestCleanupStaleClaims:
             {"worker_id": "worker:active", "last_seen": 9001},
         ]
         mock_db.library.list_songs_by_ids.return_value = [
-            {"id": 3},
+            _song(song_id=3),
         ]
         mock_db.app.list_song_docs_in_state.return_value = [
-            {"id": 3},
-            {"id": 999},
+            _song(song_id=3),
+            _song(song_id=999),
         ]
         mock_db.app.remove_claims.side_effect = [1, 2]
 

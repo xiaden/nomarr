@@ -16,6 +16,31 @@ from nomarr.components.tagging.tag_stats_comp import (
     get_unique_names,
     get_year_distribution,
 )
+from nomarr.helpers.dataclasses.song_dataclass import Song
+
+
+def _song(**overrides: object) -> Song:
+    base: dict = {
+        "song_id": 1,
+        "library_id": 1,
+        "folder_id": None,
+        "path": "/music/song.mp3",
+        "normalized_path": "song.mp3",
+        "file_size": 100,
+        "modified_time": 1000,
+        "duration_seconds": None,
+        "chromaprint": None,
+        "needs_tagging": False,
+        "is_valid": True,
+        "tagged": False,
+        "calibration_hash": None,
+        "write_claimed_by": None,
+        "last_tagged_at": None,
+        "scanned_at": None,
+        "created_at": 1000,
+    }
+    base.update(overrides)
+    return Song(**base)
 
 
 class TestNumericValue:
@@ -133,9 +158,9 @@ class TestGetLibraryStats:
         mock_db = MagicMock()
         mock_db.library.list_libraries.return_value = [{"id": 1}]
         mock_db.library.list_songs.return_value = [
-            {"duration_seconds": 180.5, "file_size": 1_000},
-            {"duration_seconds": None, "file_size": 2_000},
-            {"duration_seconds": 59, "file_size": 500},
+            _song(duration_seconds=180.5, file_size=1_000),
+            _song(duration_seconds=None, file_size=2_000),
+            _song(duration_seconds=59, file_size=500),
         ]
 
         result = get_library_stats(mock_db)

@@ -36,11 +36,8 @@ def _get_library_song_ids(db: Database, library_id: int | None) -> set[int] | No
         return None
 
     file_ids: set[int] = set()
-    file_docs = db.library.list_songs(library_id)
-    for file_doc in file_docs:
-        f_id = file_doc.get("id")
-        if isinstance(f_id, int):
-            file_ids.add(f_id)
+    for song in db.library.list_songs(library_id):
+        file_ids.add(song.song_id)
 
     return file_ids
 

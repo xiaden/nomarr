@@ -344,16 +344,13 @@ class MlDb:
         assert self._output_repo is not None, "OutputRepo not wired"
         self._output_repo.delete_output_streams_for_song(song_id)
 
-    def remove_song_vectors(self, _collection_name: str, song_id: int) -> None:
-        """Delete all vector rows for one song.
-
-        ``collection_name`` is accepted for backwards compatibility but ignored.
-        """
+    def remove_song_vectors(self, collection_name: str, song_id: int) -> None:
+        """Delete one song's vectors for the requested backbone."""
         assert self._vector_repo is not None, "VectorRepo not wired"
-        self._vector_repo.delete_embeddings_for_song(song_id)
+        self._vector_repo.delete_embeddings_for_song(song_id, collection_name)
 
-    def remove_vectors_for_songs(self, _collection_name: str, song_ids: list[int]) -> None:
-        """Delete all vector rows for each song_id in song_ids.
+    def remove_vectors_for_songs(self, collection_name: str, song_ids: list[int]) -> None:
+        """Delete each song's vectors for the requested backbone.
 
         .. note::
            TODO: N+1 — loops ``delete_embeddings_for_song`` per song_id.
@@ -363,7 +360,7 @@ class MlDb:
         """
         assert self._vector_repo is not None, "VectorRepo not wired"
         for sid in song_ids:
-            self._vector_repo.delete_embeddings_for_song(sid)
+            self._vector_repo.delete_embeddings_for_song(sid, collection_name)
 
     def replace_model_output(
         self,
