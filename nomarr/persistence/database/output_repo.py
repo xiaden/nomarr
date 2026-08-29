@@ -97,8 +97,9 @@ class OutputRepo:
                     row = insert_one(_T_OUTPUT, values, session=self._session)
                 else:
                     self._session.execute(_T_OUTPUT.update().where(_T_OUTPUT.c.output_id == output_id).values(**values))
-                    row = self._session.execute(select(_T_OUTPUT).where(_T_OUTPUT.c.output_id == output_id)).first()
-                    assert row is not None
+                    fetched = self._session.execute(select(_T_OUTPUT).where(_T_OUTPUT.c.output_id == output_id)).first()
+                    assert fetched is not None
+                    row = fetched
             self._session.commit()
             return _row_to_output_record(row)
 

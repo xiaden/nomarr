@@ -20,11 +20,11 @@ _MIGRATION_PATH = _REPO_ROOT / "alembic" / "versions" / "005_stable_ml_output_id
 
 _TABLES_TOUCHED = {"ml_model_outputs"}
 # Tables whose schemas must NOT be altered by this migration.  ``songs`` is
-# deliberately excluded from the untouched set in a narrow sense: the upgrade
-# drops the FK *targeting* ``songs`` but does not alter ``songs``' schema —
-# see ``test_upgrade_drops_song_fk`` which checks the constraint by name.
+# deliberately excluded from this set: the downgrade re-creates the FK
+# *targeting* ``songs`` without altering ``songs``' schema (same treatment the
+# 003 migration test gives ``ml_models``).  ``test_downgrade_restores_song_fk``
+# pins the FK restoration by name.
 _UNRELATED_TABLES = {
-    "songs",
     "embeddings",
     "ml_output_streams",
     "tags",

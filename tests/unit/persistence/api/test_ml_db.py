@@ -400,9 +400,10 @@ def test_add_calibration_history_unpacks_payload() -> None:
     result = db.add_calibration_history(payload)
 
     assert result is sentinel.history_record
+    # record_history(model_id, event, data) has no output_id parameter —
+    # calibration history rows carry model_id only, not a fake output key.
     calibration_repo.record_history.assert_called_once_with(
         model_id="model1",
-        output_id="legacy_key",
         event="calibrated",
         data={"accuracy": 0.95},
     )

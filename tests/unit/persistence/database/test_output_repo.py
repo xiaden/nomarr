@@ -89,6 +89,38 @@ class TestOutputRepo:
         assert record["output_data"]["genre"] == "rock"
         assert record["created_at"] > 0
 
+    def test_store_model_output_updates_existing_by_output_id(self, pg_session) -> None:
+        """Storing again with the same output_id updates the row, not a second insert."""
+        lib_id = _insert_library(pg_session)
+        _insert_song(pg_session, lib_id)
+        _insert_model(pg_session, "upsert_model")
+
+        repo = OutputRepo(pg_session)
+        first = repo.store_model_output(
+            model_id="upsert_model",
+            output_id="output_1",
+            output_data={"genre": "rock"},
+            output_index=0,
+            label=None,
+            fully_labeled=False,
+        )
+        updated = repo.store_model_output(
+            model_id="upsert_model",
+            output_id="output_1",
+            output_data={"genre": "jazz"},
+            output_index=0,
+            label="moody",
+            fully_labeled=True,
+        )
+
+        assert updated["id"] == first["id"]
+        assert updated["output_id"] == "output_1"
+        assert updated["output_data"]["genre"] == "jazz"
+        assert updated["label"] == "moody"
+        assert updated["fully_labeled"] is True
+        assert len(repo.list_model_outputs("upsert_model")) == 1
+        assert repo.get_output("output_1")["output_data"]["genre"] == "jazz"
+
     def test_store_output_stream(self, pg_session) -> None:
         """store_output_stream should insert and return the canonical stream record."""
         lib_id = _insert_library(pg_session)
