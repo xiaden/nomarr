@@ -117,7 +117,11 @@ def try_insert_or_steal_claim(
         file_id = int(payload["file_id"])
         all_claims = _get_all_claims(db)
         existing_claim = next(
-            (claim for claim in all_claims if str(claim.get("file_id")) == str(file_id)),
+            (
+                claim
+                for claim in all_claims
+                if str(claim.get("file_id")) == str(file_id) and claim.get("claim_type") == claim_type
+            ),
             None,
         )
         if existing_claim is None:

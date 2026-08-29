@@ -118,6 +118,64 @@ class TestTryInsertOrStealClaim:
         assert mock_db.app.claim_song.call_count == 2
 
     @pytest.mark.unit
+    def test_matches_existing_claim_by_file_id_and_claim_type(self) -> None:
+        mock_db = MagicMock()
+        mock_db.app.claim_song.side_effect = [DuplicateEntityError(), 1]
+        mock_db.app.list_claims.return_value = [
+            {"file_id": 123, "worker_id": "worker-a", "claimed_at": 4500},
+            {
+                "file_id": 123,
+                "worker_id": "worker-b",
+                "claim_type": "reconcile",
+                "claimed_at": 1000,
+            },
+        ]
+
+        result = try_insert_or_steal_claim(
+            mock_db,
+            {
+                "file_id": 123,
+                "worker_id": "worker-c",
+                "claim_type": "reconcile",
+                "claimed_at": 5000,
+            },
+            now=5000,
+            lease_ms=1000,
+        )
+
+        assert result is True
+        mock_db.app.remove_claim_by_song.assert_called_once_with(123, "reconcile")
+
+    @pytest.mark.unit
+    def test_does_not_steal_expired_claim_of_different_type(self) -> None:
+        mock_db = MagicMock()
+        mock_db.app.claim_song.side_effect = DuplicateEntityError()
+        mock_db.app.list_claims.return_value = [
+            {"file_id": 123, "worker_id": "worker-a", "claimed_at": 1000},
+            {
+                "file_id": 123,
+                "worker_id": "worker-b",
+                "claim_type": "reconcile",
+                "claimed_at": 4500,
+            },
+        ]
+
+        result = try_insert_or_steal_claim(
+            mock_db,
+            {
+                "file_id": 123,
+                "worker_id": "worker-c",
+                "claim_type": "reconcile",
+                "claimed_at": 5000,
+            },
+            now=5000,
+            lease_ms=1000,
+        )
+
+        assert result is False
+        mock_db.app.remove_claim_by_song.assert_not_called()
+
+    @pytest.mark.unit
     def test_returns_false_when_duplicate_insert_raises(self) -> None:
         mock_db = MagicMock()
         mock_db.app.claim_song.side_effect = self._duplicate_claim_error()
