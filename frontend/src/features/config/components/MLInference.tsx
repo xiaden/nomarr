@@ -216,7 +216,7 @@ export function MLInference({ onVramProbe, actionLoading }: MLInferenceProps) {
                                 <Stack spacing={1.5}>
                                   {outputs.map((output) => (
                                     <Box
-                                      key={output.id}
+                                      key={output.output_id}
                                       sx={{
                                         display: "flex",
                                         alignItems: "center",
@@ -232,16 +232,16 @@ export function MLInference({ onVramProbe, actionLoading }: MLInferenceProps) {
                                       </Typography>
                                       <TextField
                                         size="small"
-                                        value={labelEdits[output.id] ?? ""}
+                                        value={labelEdits[output.output_id] ?? ""}
                                         onChange={(e) =>
                                           handleLabelChange(
-                                            output.id,
+                                            output.output_id,
                                             e.target.value
                                           )
                                         }
                                         placeholder="Output label"
                                         sx={{ flex: 1, maxWidth: 320 }}
-                                        disabled={savingLabel[output.id]}
+                                        disabled={savingLabel[output.output_id]}
                                       />
                                       <Button
                                         size="small"
@@ -249,10 +249,10 @@ export function MLInference({ onVramProbe, actionLoading }: MLInferenceProps) {
                                         onClick={() =>
                                           handleSaveLabel(
                                             model.id,
-                                            output.id
+                                            output.output_id
                                           )
                                         }
-                                        disabled={savingLabel[output.id]}
+                                        disabled={savingLabel[output.output_id]}
                                       >
                                         {savingLabel[output.id]
                                           ? "Saving…"

@@ -86,7 +86,7 @@ export function useMLModels() {
         // Pre-populate label edits with current DB values
         const edits: LabelEdits = {};
         for (const output of outputs) {
-          edits[output.id] = output.label ?? "";
+          edits[output.output_id] = output.label ?? "";
         }
         setLabelEdits((prev) => ({ ...prev, ...edits }));
       } catch (err) {
@@ -127,7 +127,7 @@ export function useMLModels() {
           return {
             ...prev,
             [modelId]: current.map((o) =>
-              o.id === outputId
+              o.output_id === outputId
                 ? { ...o, label, fully_labeled: true }
                 : o
             ),
