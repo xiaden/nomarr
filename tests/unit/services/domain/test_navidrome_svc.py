@@ -168,7 +168,7 @@ class TestNavidromeServiceDescriptorResolution:
         with (
             patch(
                 "nomarr.services.domain.navidrome_svc.get_songs_by_ids_with_tags",
-                return_value=[{"id": "1", "_key": "track-1"}],
+                return_value=[{"id": 1}],
             ) as mock_get_files,
             patch(
                 "nomarr.services.domain.navidrome_svc.build_track_descriptor",
@@ -185,7 +185,7 @@ class TestNavidromeServiceDescriptorResolution:
                 },
             ) as mock_build,
         ):
-            descriptors = service.resolve_files_to_descriptors([1])
+            descriptors = service.resolve_files_to_descriptors(["1"])
 
         assert descriptors == {
             "1": {
@@ -210,7 +210,7 @@ class TestNavidromeServiceDescriptorResolution:
             "nomarr.services.domain.navidrome_svc.get_songs_by_ids_with_tags",
             return_value=[{"_key": "missing-id"}],
         ):
-            descriptors = service.resolve_files_to_descriptors([1])
+            descriptors = service.resolve_files_to_descriptors(["1"])
 
         assert descriptors == {}
 
@@ -224,7 +224,7 @@ class TestNavidromeServiceDescriptorResolution:
             ),
             pytest.raises(RuntimeError, match="query failed"),
         ):
-            service.resolve_files_to_descriptors([1])
+            service.resolve_files_to_descriptors(["1"])
 
     def test_resolve_files_to_descriptors_propagates_build_errors(self) -> None:
         service, _ = _make_service()
@@ -232,7 +232,7 @@ class TestNavidromeServiceDescriptorResolution:
         with (
             patch(
                 "nomarr.services.domain.navidrome_svc.get_songs_by_ids_with_tags",
-                return_value=[{"id": "1"}],
+                return_value=[{"id": 1}],
             ),
             patch(
                 "nomarr.services.domain.navidrome_svc.build_track_descriptor",
@@ -240,7 +240,7 @@ class TestNavidromeServiceDescriptorResolution:
             ),
             pytest.raises(ValueError, match="bad descriptor"),
         ):
-            service.resolve_files_to_descriptors([1])
+            service.resolve_files_to_descriptors(["1"])
 
 
 @pytest.mark.unit

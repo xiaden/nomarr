@@ -464,9 +464,9 @@ class NavidromeService:
         descriptors_by_file_id: dict[str, TrackDescriptor] = {}
         for file_doc in file_docs:
             file_id = file_doc.get("id")
-            if not isinstance(file_id, str):
+            if not isinstance(file_id, int):
                 continue
-            descriptors_by_file_id[file_id] = build_track_descriptor(file_doc)
+            descriptors_by_file_id[str(file_id)] = build_track_descriptor(file_doc)
         return descriptors_by_file_id
 
     def generate_personal_playlists(

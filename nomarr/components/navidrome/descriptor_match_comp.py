@@ -68,7 +68,7 @@ def _descriptor_from_doc(file_doc: dict[str, Any]) -> TrackDescriptor:
         track_number=_tag_int(file_doc, "track_number", "tracknumber"),
         disc_number=_tag_int(file_doc, "disc_number", "discnumber"),
         year=_tag_int(file_doc, "year"),
-        nomarr_file_key=str(file_doc.get("key") or "") or None,
+        nomarr_file_key=str(file_doc.get("id") or "") or None,
     )
 
 
@@ -89,12 +89,12 @@ def _candidate_file_ids(db: Database, seed: TrackDescriptor) -> set[str]:
     title = seed.get("title", "")
     if title:
         title_docs = _search_candidate_docs(db, "title", title)
-        return {file_id for doc in title_docs if isinstance((file_id := doc.get("id")), str)}
+        return {str(file_id) for doc in title_docs if isinstance((file_id := doc.get("id")), int)}
 
     artist = seed.get("artist", "")
     if artist:
         artist_docs = cast("list[dict[str, Any]]", db.library.search_songs_by_tag("artist", artist, limit=None))
-        return {file_id for doc in artist_docs if isinstance((file_id := doc.get("id")), str)}
+        return {str(file_id) for doc in artist_docs if isinstance((file_id := doc.get("id")), int)}
 
     return set()
 
@@ -107,7 +107,9 @@ def resolve_seed_descriptor_to_file(db: Database, seed: TrackDescriptor) -> tupl
 
     docs = get_songs_by_ids_with_tags(db, [int(cid) for cid in sorted(candidate_ids)])
     descriptors_by_id = {
-        file_id: _descriptor_from_doc(file_doc) for file_doc in docs if isinstance((file_id := file_doc.get("id")), str)
+        str(file_id): _descriptor_from_doc(file_doc)
+        for file_doc in docs
+        if isinstance((file_id := file_doc.get("id")), int)
     }
 
     title = _normalize_title(seed.get("title", ""))

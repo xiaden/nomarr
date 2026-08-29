@@ -90,7 +90,6 @@ class TestFindSimilarTracksHappyPath:
             file_docs=[
                 {
                     "id": 2,
-                    "key": "match-1",
                     "duration_seconds": 201.2,
                     "tags": [
                         {"key": "title", "value": "Song A"},
@@ -117,7 +116,7 @@ class TestFindSimilarTracksHappyPath:
         assert result["track_number"] == 3
         assert result["disc_number"] == 1
         assert result["year"] == 2024
-        assert result["nomarr_file_key"] == "match-1"
+        assert result["nomarr_file_key"] == "2"
         assert result["score"] == 0.5
 
     @pytest.mark.unit
