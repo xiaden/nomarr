@@ -254,9 +254,7 @@ export function MLInference({ onVramProbe, actionLoading }: MLInferenceProps) {
                                         }
                                         disabled={savingLabel[output.output_id]}
                                       >
-                                        {savingLabel[output.id]
-                                          ? "Saving…"
-                                          : "Save"}
+                                      {savingLabel[output.output_id] ? "Saving…" : "Save"}
                                       </Button>
                                       {output.fully_labeled && (
                                         <Chip

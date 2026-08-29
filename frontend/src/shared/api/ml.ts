@@ -26,8 +26,8 @@ export interface MlModel {
  * A single output activation for a model.
  */
 export interface MlModelOutput {
-  id: string;
-  output_index: number;
+  output_id: string;
+  output_index: number | null;
   label: string | null;
   fully_labeled: boolean;
 }
