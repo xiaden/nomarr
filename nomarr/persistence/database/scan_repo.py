@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
-from sqlalchemy import Table, delete, select
+from sqlalchemy import Table, delete, func, select, update
 
 from nomarr.helpers.dto.repo_dto import LibraryScanRow
 from nomarr.persistence.models.library_scan import LibraryScan
@@ -108,6 +108,41 @@ class ScanRepository:
             with self._session.begin_nested():
                 update_by_field(_T, "id", scan_id, filtered, session=self._session)
             self._session.commit()
+
+    def update_current_scan(self, library_id: int, scan_id: int, fields: dict[str, Any]) -> bool:
+        """Update *scan_id* only while it remains the library's latest scan.
+
+        The latest-row lookup and update must be one SQL statement.  A caller
+        may have read an older row before another scan was created; the
+        correlated ``MAX(id)`` predicate turns that stale operation into a
+        no-op instead of mutating scan history after ownership moved on.
+        """
+        normalized = {
+            "progress": "files_processed",
+            "total": "files_found",
+            "scan_error": "error",
+        }
+        filtered = {
+            normalized.get(key, key): value
+            for key, value in fields.items()
+            if normalized.get(key, key) in _SCAN_COLUMNS
+        }
+        latest_scan_id = select(func.max(_T.c.id)).where(_T.c.library_id == library_id).scalar_subquery()
+        stmt = (
+            update(_T)
+            .where(
+                _T.c.id == scan_id,
+                _T.c.library_id == library_id,
+                _T.c.id == latest_scan_id,
+            )
+            .values(**filtered)
+            .returning(_T.c.id)
+        )
+        with map_persistence_exceptions():
+            with self._session.begin_nested():
+                updated = self._session.execute(stmt).fetchone() is not None
+            self._session.commit()
+        return updated
 
     def delete_scan_record(self, scan_id: int) -> None:
         """Delete a scan record by primary key."""

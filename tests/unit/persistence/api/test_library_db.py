@@ -1084,11 +1084,12 @@ def test_add_scan_merges_library_id() -> None:
 def test_record_scan_progress_translates_progress_fields() -> None:
     db, _, _, _, scan_repo, *_ = _make_library_db()
     scan_repo.get_scan_record = MagicMock(return_value={"id": 42})
-    scan_repo.update_scan = MagicMock()
+    scan_repo.update_current_scan = MagicMock()
 
     db.scans.record_scan_progress(1, heartbeat_at=123, progress=5, total=12, scan_error="boom")
 
-    scan_repo.update_scan.assert_called_once_with(
+    scan_repo.update_current_scan.assert_called_once_with(
+        1,
         42,
         {
             "heartbeat_at": 123,
@@ -1096,6 +1097,78 @@ def test_record_scan_progress_translates_progress_fields() -> None:
             "files_found": 12,
             "error": "boom",
         },
+    )
+
+
+@pytest.mark.unit
+def test_record_scan_progress_raises_when_scan_is_no_longer_current() -> None:
+    """A stale progress write must raise instead of silently no-op."""
+    db, _, _, _, scan_repo, *_ = _make_library_db()
+    scan_repo.get_scan_record = MagicMock(return_value={"id": 42})
+    scan_repo.update_current_scan = MagicMock(return_value=False)
+
+    with pytest.raises(
+        ValueError,
+        match=r"progress.*library 1.*no longer the current scan",
+    ):
+        db.scans.record_scan_progress(1, heartbeat_at=123, progress=5)
+
+    scan_repo.update_current_scan.assert_called_once_with(
+        1,
+        42,
+        {"heartbeat_at": 123, "files_processed": 5},
+    )
+
+
+@pytest.mark.unit
+def test_record_scan_progress_succeeds_when_scan_is_current() -> None:
+    """A current-scan progress write should not raise."""
+    db, _, _, _, scan_repo, *_ = _make_library_db()
+    scan_repo.get_scan_record = MagicMock(return_value={"id": 42})
+    scan_repo.update_current_scan = MagicMock(return_value=True)
+
+    db.scans.record_scan_progress(1, heartbeat_at=123, progress=5)
+
+    scan_repo.update_current_scan.assert_called_once_with(
+        1,
+        42,
+        {"heartbeat_at": 123, "files_processed": 5},
+    )
+
+
+@pytest.mark.unit
+def test_complete_scan_raises_when_scan_is_no_longer_current() -> None:
+    """A stale completion write must raise instead of silently no-op."""
+    db, _, _, _, scan_repo, *_ = _make_library_db()
+    scan_repo.get_scan_record = MagicMock(return_value={"id": 42})
+    scan_repo.update_current_scan = MagicMock(return_value=False)
+
+    with pytest.raises(
+        ValueError,
+        match=r"complete.*library 1.*no longer the current scan",
+    ):
+        db.scans.complete_scan(1, finished_at=999)
+
+    scan_repo.update_current_scan.assert_called_once_with(
+        1,
+        42,
+        {"status": "completed", "finished_at": 999},
+    )
+
+
+@pytest.mark.unit
+def test_complete_scan_succeeds_when_scan_is_current() -> None:
+    """A current-scan completion should not raise."""
+    db, _, _, _, scan_repo, *_ = _make_library_db()
+    scan_repo.get_scan_record = MagicMock(return_value={"id": 42})
+    scan_repo.update_current_scan = MagicMock(return_value=True)
+
+    db.scans.complete_scan(1, finished_at=999)
+
+    scan_repo.update_current_scan.assert_called_once_with(
+        1,
+        42,
+        {"status": "completed", "finished_at": 999},
     )
 
 

@@ -69,7 +69,12 @@ class LibraryScansDb:
         total: int | None = None,
         scan_error: str | None = None,
     ) -> None:
-        """Record validated progress fields for the current scan."""
+        """Record validated progress fields for the current scan.
+
+        Stale writes are rejected: if the read scan record is no longer the
+        library's latest scan by the time the update runs, a ``ValueError``
+        is raised rather than silently mutating scan history.
+        """
         scan = self._scan_repo.get_scan_record(library_id)
         if scan is None:
             raise ValueError(f"Cannot record progress for library {library_id}: no scan exists")
@@ -82,14 +87,29 @@ class LibraryScansDb:
             fields["files_found"] = total
         if scan_error is not None:
             fields["error"] = scan_error
-        self._scan_repo.update_scan(scan["id"], fields)
+        if not self._scan_repo.update_current_scan(library_id, scan["id"], fields):
+            raise ValueError(
+                f"Cannot record progress for library {library_id}: scan {scan['id']} is no longer the current scan"
+            )
 
     def complete_scan(self, library_id: int, finished_at: int) -> None:
-        """Mark the current scan as successfully completed."""
+        """Mark the current scan as successfully completed.
+
+        Stale writes are rejected: if the read scan record is no longer the
+        library's latest scan by the time the update runs, a ``ValueError``
+        is raised rather than silently mutating scan history.
+        """
         scan = self._scan_repo.get_scan_record(library_id)
         if scan is None:
             raise ValueError(f"Cannot complete scan for library {library_id}: no scan exists")
-        self._scan_repo.update_scan(scan["id"], {"status": "completed", "finished_at": finished_at})
+        if not self._scan_repo.update_current_scan(
+            library_id,
+            scan["id"],
+            {"status": "completed", "finished_at": finished_at},
+        ):
+            raise ValueError(
+                f"Cannot complete scan for library {library_id}: scan {scan['id']} is no longer the current scan"
+            )
 
     def remove_scan(self, library_id: int) -> None:
         """Delete the scan record for a library if one exists."""

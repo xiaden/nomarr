@@ -166,6 +166,76 @@ class TestScanRepository:
         assert result["files_processed"] == 50
         assert result["scan_type"] == "full"  # unchanged
 
+    def test_update_current_scan_does_not_mutate_an_older_scan(self, pg_session) -> None:
+        """A stale operation must not update after a newer row is inserted."""
+        lib_id = _create_library(pg_session)
+        repo = ScanRepository(pg_session)
+        old_scan_id = repo.create_scan(
+            {
+                "library_id": lib_id,
+                "scan_type": "full",
+                "status": "running",
+                "started_at": 4000,
+                "finished_at": None,
+                "files_found": 0,
+                "files_processed": 0,
+                "error": None,
+            }
+        )
+        new_scan_id = repo.create_scan(
+            {
+                "library_id": lib_id,
+                "scan_type": "incremental",
+                "status": "in_progress",
+                "started_at": 6000,
+                "finished_at": None,
+                "files_found": 0,
+                "files_processed": 0,
+                "error": None,
+            }
+        )
+
+        # Stale attempt to mark the older (non-current) scan completed is rejected.
+        assert repo.update_current_scan(lib_id, old_scan_id, {"status": "completed"}) is False
+
+        old_row = pg_session.execute(select(LibraryScan).where(LibraryScan.id == old_scan_id)).scalar_one()
+        latest_row = pg_session.execute(select(LibraryScan).where(LibraryScan.id == new_scan_id)).scalar_one()
+        # The distinguishing status proves the stale write was a no-op.
+        assert old_row.status == "running"
+        assert old_row.finished_at is None
+        assert latest_row.status == "in_progress"
+
+    def test_update_current_scan_updates_latest_scan(self, pg_session) -> None:
+        """update_current_scan should update the latest scan and return True."""
+        lib_id = _create_library(pg_session)
+        repo = ScanRepository(pg_session)
+        scan_id = repo.create_scan(
+            {
+                "library_id": lib_id,
+                "scan_type": "full",
+                "status": "running",
+                "started_at": 4000,
+                "finished_at": None,
+                "files_found": 0,
+                "files_processed": 0,
+                "error": None,
+            }
+        )
+
+        assert (
+            repo.update_current_scan(
+                lib_id, scan_id, {"status": "completed", "finished_at": 5000, "files_processed": 50}
+            )
+            is True
+        )
+
+        result = repo.get_scan_record(lib_id)
+        assert result is not None
+        assert result["status"] == "completed"
+        assert result["finished_at"] == 5000
+        assert result["files_processed"] == 50
+        assert result["started_at"] == 4000  # unchanged
+
     def test_delete_scan_record(self, pg_session) -> None:
         """delete_scan_record should remove the row."""
         lib_id = _create_library(pg_session)
