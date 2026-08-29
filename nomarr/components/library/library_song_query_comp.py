@@ -122,19 +122,19 @@ def _get_songs_by_ids(db: Database, song_ids: list[int]) -> list[dict[str, Any]]
     return [song.to_dict() for song in db.library.list_songs_by_ids(song_ids)]
 
 
-def _get_all_library_song_docs(db: Database, limit: int | None = DEFAULT_LIMIT) -> list[dict[str, Any]]:
-    """Return song docs across all libraries.
+def _get_all_library_songs(db: Database, limit: int | None = DEFAULT_LIMIT) -> list[dict[str, Any]]:
+    """Return songs across all libraries, optionally capped after aggregation.
 
     The intent-level facade has no global ``list_songs`` (song listing requires a
-    ``library_id``), so a whole-collection listing is assembled by iterating the
-    known libraries and collecting each library's songs, then applying the cap.
+    ``library_id``), so the full listing is assembled by iterating the
+    known libraries and collecting every song before applying the global cap.
     """
-    docs: list[dict[str, Any]] = []
+    songs: list[dict[str, Any]] = []
     for lib in db.library.list_libraries():
-        docs.extend(song.to_dict() for song in db.library.list_songs(lib["id"]))
+        songs.extend(song.to_dict() for song in db.library.list_songs(lib["id"], limit=None))
     if limit is not None:
-        docs = docs[:limit]
-    return docs
+        songs = songs[:limit]
+    return songs
 
 
 def _hydrate_files_with_tagged_state(db: Database, file_docs: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -332,7 +332,7 @@ def list_songs(
         # Collect the complete global result before filtering and pagination.
         # Applying the helper's default cap here drops songs before an offset
         # can be applied, making pages after the first 1,000 rows incorrect.
-        file_docs = _get_all_library_song_docs(db, limit=None)
+        file_docs = _get_all_library_songs(db, limit=None)
 
     file_docs = hydrate_songs_with_metadata(db, file_docs)
 
@@ -453,8 +453,8 @@ def search_songs_with_tags(
         _intersect(tagged_ids)
 
     if candidate_ids is None:
-        # No filters active — load all files up to the hard cap.
-        file_docs = _get_all_library_song_docs(db, DEFAULT_LIMIT)
+        # No filters active — load all songs up to the hard cap.
+        file_docs = _get_all_library_songs(db, DEFAULT_LIMIT)
     elif not candidate_ids:
         return [], 0
     else:
@@ -494,7 +494,7 @@ def get_recently_processed(
 
 def get_song_modified_times(db: Database) -> dict[str, int]:
     """Return absolute path to modified-time mapping for all files."""
-    file_docs = _get_all_library_song_docs(db, DEFAULT_LIMIT)
+    file_docs = _get_all_library_songs(db, DEFAULT_LIMIT)
     return {
         str(file_doc["path"]): int(file_doc["modified_time"])
         for file_doc in file_docs
@@ -614,7 +614,7 @@ def get_library_stats(db: Database, library_id: int | None = None) -> dict[str, 
             }
         )
     else:
-        file_docs = _get_all_library_song_docs(db, None)
+        file_docs = _get_all_library_songs(db, None)
         total_files = len(file_docs)
         total_artists = len(_tags_by_name(db, "artist"))
         total_albums = len(_tags_by_name(db, "album"))

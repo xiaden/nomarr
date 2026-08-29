@@ -298,7 +298,7 @@ def test_list_songs_unscoped_sorts_and_paginates() -> None:
 
     assert total == 2
 
-    db.library.list_songs.assert_called_once_with(1)
+    db.library.list_songs.assert_called_once_with(1, limit=None)
 
 
 @pytest.mark.unit
@@ -320,7 +320,7 @@ def test_list_songs_unscoped_paginates_beyond_default_collection_cap() -> None:
 
     assert rows == [songs[-1].to_dict()]
     assert total == DEFAULT_LIMIT + 1
-    db.library.list_songs.assert_called_once_with(1)
+    db.library.list_songs.assert_called_once_with(1, limit=None)
 
 
 @pytest.mark.unit
@@ -396,7 +396,7 @@ def test_get_file_modified_times_builds_mapping_from_list_files() -> None:
 
     assert result == {"D:/Music/a.flac": 10, "D:/Music/b.flac": 20}
 
-    db.library.list_songs.assert_called_once_with(1)
+    db.library.list_songs.assert_called_once_with(1, limit=None)
 
 
 @pytest.mark.unit
@@ -596,15 +596,15 @@ def test_get_tracks_by_song_ids_sorts_and_applies_defaults() -> None:
 
 
 @pytest.mark.unit
-def test_get_library_stats_aggregates_global_file_docs() -> None:
+def test_get_library_stats_aggregates_global_songs() -> None:
 
     db = make_db()
 
-    db.library.list_libraries.return_value = [{"id": 1}]
+    db.library.list_libraries.return_value = [{"id": 1}, {"id": 2}]
 
-    db.library.list_songs.return_value = [
-        _song(song_id=1, duration_seconds=10.5, file_size=100),
-        _song(song_id=2, duration_seconds=9.5, file_size=200),
+    db.library.list_songs.side_effect = [
+        [_song(song_id=1, duration_seconds=10.5, file_size=100)],
+        [_song(song_id=2, duration_seconds=9.5, file_size=200)],
     ]
 
     db.library.count_tags.return_value = 10
@@ -626,7 +626,7 @@ def test_get_library_stats_aggregates_global_file_docs() -> None:
         "needs_tagging_count": 4,
     }
 
-    db.library.list_songs.assert_called_once_with(1)
+    assert db.library.list_songs.call_args_list == [call(1, limit=None), call(2, limit=None)]
 
     assert db.library.count_tags.call_count == 2
 
