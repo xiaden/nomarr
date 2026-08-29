@@ -2,7 +2,7 @@
  * ML management API functions.
  */
 
-import { get, patch, post } from "./client";
+import { get, patch, post } from './client';
 
 export interface VramProbeResponse {
   status: string;
