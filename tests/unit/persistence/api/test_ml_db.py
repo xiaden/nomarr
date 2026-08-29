@@ -95,12 +95,19 @@ def test_add_vector_collection_removed() -> None:
 
 
 @pytest.mark.unit
-def test_list_vector_collection_names_returns_embeddings() -> None:
-    db, _, _, _, _, _ = _make_ml_db()
+def test_list_vector_collection_names_returns_registered_backbones() -> None:
+    db, _, model_repo, _, _, _ = _make_ml_db()
+    model_repo.list_models = MagicMock(
+        return_value=[
+            {"backbone_id": "musicnn"},
+            {"backbone_id": "effnet"},
+            {"backbone_id": "musicnn"},
+        ]
+    )
 
     result = db.list_vector_collection_names()
 
-    assert result == ["embeddings"]
+    assert result == ["effnet", "musicnn"]
 
 
 @pytest.mark.unit
@@ -765,3 +772,14 @@ def test_get_embedding_stats_delegates_to_vector_repo() -> None:
 
     assert result is sentinel.result
     vector_repo.get_embedding_stats.assert_called_once_with("openl3")
+
+
+@pytest.mark.unit
+def test_get_embedding_stats_delegates_library_scope_to_vector_repo() -> None:
+    db, vector_repo, _, _, _, _ = _make_ml_db()
+    vector_repo.get_embedding_stats = MagicMock(return_value=sentinel.result)
+
+    result = db.get_embedding_stats("openl3", library_id=7)
+
+    assert result is sentinel.result
+    vector_repo.get_embedding_stats.assert_called_once_with("openl3", library_id=7)

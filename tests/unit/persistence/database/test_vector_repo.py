@@ -333,6 +333,24 @@ class TestVectorRepo:
         assert stats["hot_count"] == 0
         assert stats["cold_count"] == 0
 
+    def test_get_embedding_stats_scopes_to_library(self, pg_session) -> None:
+        """Scoped stats should exclude embeddings belonging to another library."""
+        first_library_id, first_song_id = _create_library_and_song(pg_session)
+        _, second_song_id = _create_library_and_song(pg_session)
+        repo = VectorRepo(pg_session)
+
+        for song_id in (first_song_id, second_song_id):
+            repo.insert_embedding(
+                song_id=song_id,
+                backbone_id=_BACKBONE,
+                model_id="test_model",
+                embedding_vector=_random_vector(seed=500 + song_id),
+            )
+
+        stats = repo.get_embedding_stats(_BACKBONE, library_id=first_library_id)
+
+        assert stats == {"hot_count": 1, "cold_count": 0}
+
     # ── delete_all_embeddings ───────────────────────────────────
 
     def test_delete_all_embeddings(self, pg_session) -> None:
@@ -464,11 +482,11 @@ class TestVectorRepo:
         repo.delete_embeddings_for_song(song_id1, _BACKBONE)
 
         # song_id1 should have none
-        results1 = repo.get_embeddings_for_song(song_id1, _BACKBONE)
+        results1 = repo.get_embeddings_for_song(song_id1, _BACKBONE, tier="hot")
         assert len(results1) == 0
 
         # song_id1's other backbone should still be present.
-        other_results = repo.get_embeddings_for_song(song_id1, "other_backbone")
+        other_results = repo.get_embeddings_for_song(song_id1, "other_backbone", tier="hot")
         assert len(other_results) == 1
 
         # song_id2 should still have its embedding

@@ -101,8 +101,14 @@ class MlDb:
     # ------------------------------------------------------------------
 
     def list_vector_collection_names(self) -> list[str]:
-        """Return all registered vector collection names."""
-        return ["embeddings"]
+        """Return registered backbone identifiers used by vector storage.
+
+        PostgreSQL stores all vectors in one table, so these are logical
+        collection names rather than table names. Model registrations are the
+        authoritative source for available backbone identifiers.
+        """
+        assert self._model_repo is not None, "ModelRepo not wired"
+        return sorted({model["backbone_id"] for model in self._model_repo.list_models()})
 
     def clear_vector_collection(self, _collection_name: str) -> None:
         """Remove all vectors from the embeddings table.
@@ -435,10 +441,12 @@ class MlDb:
         int_ids: list[int] = [int(e) for e in entry_ids]
         self._calibration_repo.delete_history_entries(int_ids)
 
-    def get_embedding_stats(self, backbone_id: str) -> dict[str, int]:
-        """Return hot_count and cold_count for a backbone."""
+    def get_embedding_stats(self, backbone_id: str, library_id: int | None = None) -> dict[str, int]:
+        """Return hot_count and cold_count for a backbone, optionally by library."""
         assert self._vector_repo is not None, "VectorRepo not wired"
-        return self._vector_repo.get_embedding_stats(backbone_id)
+        if library_id is None:
+            return self._vector_repo.get_embedding_stats(backbone_id)
+        return self._vector_repo.get_embedding_stats(backbone_id, library_id=library_id)
 
     def has_embedding_index(self, _backbone_id: str) -> bool:
         """Return whether the backbone has an ANN index.
