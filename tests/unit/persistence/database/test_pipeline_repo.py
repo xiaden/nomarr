@@ -162,6 +162,61 @@ class TestPipelineRepository:
         assert len(result) >= 1
         assert any(s["id"] == song_id for s in result)
 
+    def test_list_song_docs_in_state_orders_activity_before_limit(self, pg_session) -> None:
+        """An activity-ordered limit should retain the newest processed song."""
+        from nomarr.helpers.constants.file_states import STATE_PROCESSED
+        from nomarr.persistence.database.song_state_repo import SongStateRepository
+
+        lib_id, older_id = _create_library_and_song(pg_session)
+        newer_result = pg_session.execute(
+            insert(Song).values(
+                library_id=lib_id,
+                folder_id=None,
+                path="/music/newer.mp3",
+                normalized_path="/music/newer.mp3",
+                file_size=1024,
+                modified_time=1000,
+                duration_seconds=180,
+                chromaprint=None,
+                needs_tagging=1,
+                is_valid=1,
+                tagged=0,
+                calibration_hash=None,
+                write_claimed_by=None,
+                last_tagged_at=2000,
+                scanned_at=1000,
+                created_at=1000,
+            )
+        )
+        newer_id = int(newer_result.inserted_primary_key[0])
+
+        state_repo = SongStateRepository(pg_session)
+        state_repo.bootstrap_states([])
+        state_repo.assign_state(older_id, STATE_PROCESSED)
+        state_repo.assign_state(newer_id, STATE_PROCESSED)
+
+        repo = PipelineRepository(pg_session)
+        result = repo.list_song_docs_in_state(STATE_PROCESSED, limit=1, order_by_activity=True)
+
+        assert [song["id"] for song in result] == [newer_id]
+
+    def test_list_song_docs_in_state_filters_by_library(self, pg_session) -> None:
+        """An optional library filter excludes processed songs from other libraries."""
+        from nomarr.helpers.constants.file_states import STATE_PROCESSED
+        from nomarr.persistence.database.song_state_repo import SongStateRepository
+
+        library_id, song_id = _create_library_and_song(pg_session)
+        _other_library_id, other_song_id = _create_library_and_song(pg_session)
+        state_repo = SongStateRepository(pg_session)
+        state_repo.bootstrap_states([])
+        state_repo.assign_state(song_id, STATE_PROCESSED)
+        state_repo.assign_state(other_song_id, STATE_PROCESSED)
+
+        repo = PipelineRepository(pg_session)
+        result = repo.list_song_docs_in_state(STATE_PROCESSED, library_id=library_id)
+
+        assert [song["id"] for song in result] == [song_id]
+
     def test_get_state_edges_for_songs(self, pg_session) -> None:
         """get_state_edges_for_songs should return pipeline states for song libraries."""
         lib_id, song_id = _create_library_and_song(pg_session)

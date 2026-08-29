@@ -9,7 +9,7 @@ import os
 import tempfile
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.dialects.sqlite.base import SQLiteTypeCompiler
 from sqlalchemy.orm import Session
 
@@ -45,6 +45,19 @@ def pg_engine():
     The temp file is cleaned up on process exit.
     """
     engine = create_engine(_SYNC_URL, echo=False)
+
+    @event.listens_for(engine, "connect")
+    def _register_sqlite_greatest(dbapi_connection, _connection_record) -> None:
+        """Expose ``greatest`` on SQLite, mirroring PostgreSQL semantics.
+
+        Production code uses ``func.greatest`` to order by the latest
+        scan/tag activity before applying a row cap. SQLite has no built-in
+        ``greatest`` function, so register a shim backed by the builtin
+        ``max`` so the ordering regression tests run against the same query.
+        PostgreSQL's own ``greatest`` ignores NULLs; the call sites pass both
+        args through ``func.coalesce(..., 0)``, making ``max`` equivalent.
+        """
+        dbapi_connection.create_function("greatest", -1, max)
 
     # Import all model modules so Base.metadata is fully populated
     import nomarr.persistence.models as _models  # noqa: F401 — registers tables

@@ -188,6 +188,20 @@ class TestAppDbFileStateMethods:
         mock_pipeline_repo.list_song_docs_in_state.assert_called_once_with("queued", limit=10)
 
     @pytest.mark.unit
+    def test_list_file_docs_in_state_passes_activity_query_options(
+        self, app_db: AppDb, mock_pipeline_repo: MagicMock
+    ) -> None:
+        expected: list[SongRow] = []
+        mock_pipeline_repo.list_song_docs_in_state.return_value = expected
+
+        result = app_db.list_song_docs_in_state("processed", limit=1000, library_id=3, order_by_activity=True)
+
+        assert result == expected
+        mock_pipeline_repo.list_song_docs_in_state.assert_called_once_with(
+            "processed", limit=1000, library_id=3, order_by_activity=True
+        )
+
+    @pytest.mark.unit
     def test_count_songs_in_state_delegates(self, app_db: AppDb, mock_song_state_repo: MagicMock) -> None:
         mock_song_state_repo.count_songs_in_state.return_value = 7
 

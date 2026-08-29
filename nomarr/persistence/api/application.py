@@ -6,7 +6,7 @@ VRAM-promise persistence into a single intent facade wired as ``db.app``.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from nomarr.helpers.dataclasses.app_dataclasses import ConfigOption, LockEntry
 from nomarr.helpers.dataclasses.song_dataclass import Song
@@ -88,8 +88,15 @@ class AppDb:
         state: str,
         *,
         limit: int | None = None,
+        library_id: int | None = None,
+        order_by_activity: bool = False,
     ) -> list[Song]:
-        rows = self._pipeline_repo.list_song_docs_in_state(state, limit=limit)
+        query_kwargs: dict[str, Any] = {"limit": limit}
+        if library_id is not None:
+            query_kwargs["library_id"] = library_id
+        if order_by_activity:
+            query_kwargs["order_by_activity"] = True
+        rows = self._pipeline_repo.list_song_docs_in_state(state, **query_kwargs)
         return [Song.from_row(row) for row in rows]
 
     def count_songs_in_state(self, state: str) -> int:

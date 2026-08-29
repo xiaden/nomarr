@@ -472,23 +472,21 @@ def get_recently_processed(
     limit: int = 20,
     library_id: int | None = None,
 ) -> list[dict[str, Any]]:
-    """Return recently processed songs ordered by activity descending."""
-    tagged_file_docs: list[dict[str, Any]] = [
-        song.to_dict() for song in db.app.list_song_docs_in_state(STATE_PROCESSED, limit=DEFAULT_LIMIT)
-    ]
+    """Return recently processed songs ordered by activity descending.
+
+    The query is capped at 1,000 rows; we do not support more than 1k recent
+    processed songs in one update.
+    """
+    query_kwargs: dict[str, Any] = {
+        "limit": DEFAULT_LIMIT,
+        "order_by_activity": True,
+    }
     if library_id is not None:
-        library_song_ids = set(db.library.list_library_song_ids(library_id, limit=DEFAULT_LIMIT))
-        tagged_file_docs = [file_doc for file_doc in tagged_file_docs if file_doc.get("id") in library_song_ids]
+        query_kwargs["library_id"] = library_id
+    tagged_file_docs: list[dict[str, Any]] = [
+        song.to_dict() for song in db.app.list_song_docs_in_state(STATE_PROCESSED, **query_kwargs)
+    ]
     tagged_file_docs = hydrate_songs_with_metadata(db, tagged_file_docs)
-    tagged_file_docs.sort(
-        key=lambda file_doc: _sort_key(
-            max(
-                (v for v in (file_doc.get("scanned_at"), file_doc.get("last_tagged_at")) if isinstance(v, int)),
-                default=None,
-            )
-        ),
-        reverse=True,
-    )
     return [_project_recently_processed_row(file_doc) for file_doc in tagged_file_docs[:limit]]
 
 

@@ -143,11 +143,22 @@ class PipelineRepository:
             result = self._session.execute(stmt)
             return result.scalar() or 0
 
-    def list_song_docs_in_state(self, state: str, *, limit: int | None = None) -> list[SongRow]:
+    def list_song_docs_in_state(
+        self,
+        state: str,
+        *,
+        limit: int | None = None,
+        library_id: int | None = None,
+        order_by_activity: bool = False,
+    ) -> list[SongRow]:
         """Return song rows that have been assigned the given song state.
 
         Traverses ``song_state_assignments`` → ``song_states`` to resolve
-        the state name, then joins ``songs`` for the full row.
+        the state name, then joins ``songs`` for the full row. When requested,
+        rows are ordered by the latest scan/tag activity before applying the
+        limit so a bounded result still contains the newest songs. The
+        ``greatest`` expression is PostgreSQL-specific, matching this repo's
+        supported database.
         """
         with map_persistence_exceptions():
             stmt = (
@@ -156,6 +167,14 @@ class PipelineRepository:
                 .join(_SS, _SS.c.id == _SSA.c.state_id)
                 .where(_SS.c.name == state)
             )
+            if library_id is not None:
+                stmt = stmt.where(_S.c.library_id == library_id)
+            if order_by_activity:
+                activity_at = func.greatest(
+                    func.coalesce(_S.c.scanned_at, 0),
+                    func.coalesce(_S.c.last_tagged_at, 0),
+                )
+                stmt = stmt.order_by(activity_at.desc(), _S.c.id.desc())
             if limit is not None:
                 stmt = stmt.limit(limit)
             result = self._session.execute(stmt)

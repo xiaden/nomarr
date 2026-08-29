@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import MagicMock, call, patch
 
 import pytest
@@ -477,8 +478,8 @@ def test_get_recently_processed_sorts_by_latest_activity() -> None:
     db = make_db()
 
     db.app.list_song_docs_in_state.return_value = [
-        _song(song_id=1, path="D:/Music/older.flac", normalized_path="Artist/older.flac", scanned_at=10),
         _song(song_id=2, path="D:/Music/newer.flac", normalized_path="Artist/newer.flac", last_tagged_at=20),
+        _song(song_id=1, path="D:/Music/older.flac", normalized_path="Artist/older.flac", scanned_at=10),
     ]
 
     metadata = {
@@ -504,7 +505,11 @@ def test_get_recently_processed_sorts_by_latest_activity() -> None:
         }
     ]
 
-    db.app.list_song_docs_in_state.assert_called_once_with(STATE_PROCESSED, limit=DEFAULT_LIMIT)
+    db.app.list_song_docs_in_state.assert_called_once_with(
+        STATE_PROCESSED,
+        limit=DEFAULT_LIMIT,
+        order_by_activity=True,
+    )
 
 
 @pytest.mark.unit
@@ -512,12 +517,16 @@ def test_get_recently_processed_scopes_to_library_ids() -> None:
 
     db = make_db()
 
-    db.app.list_song_docs_in_state.return_value = [
+    songs = [
         _song(song_id=1, path="D:/Music/keep.flac", normalized_path="keep.flac", scanned_at=5),
-        _song(song_id=2, path="D:/Music/skip.flac", normalized_path="skip.flac", scanned_at=6),
+        _song(song_id=2, library_id=2, path="D:/Music/skip.flac", normalized_path="skip.flac", scanned_at=6),
     ]
 
-    db.library.list_library_song_ids.return_value = [1]
+    def _filter_by_library(_state: str, **kwargs: Any) -> list[Song]:
+        selected_library_id = kwargs.get("library_id")
+        return [song for song in songs if selected_library_id is None or song.library_id == selected_library_id]
+
+    db.app.list_song_docs_in_state.side_effect = _filter_by_library
 
     with patch(
         "nomarr.components.library.library_song_query_comp.hydrate_songs_with_metadata",
@@ -527,7 +536,13 @@ def test_get_recently_processed_scopes_to_library_ids() -> None:
 
     assert [row["file_id"] for row in result] == [1]
 
-    db.library.list_library_song_ids.assert_called_once_with(1, limit=DEFAULT_LIMIT)
+    db.app.list_song_docs_in_state.assert_called_once_with(
+        STATE_PROCESSED,
+        limit=DEFAULT_LIMIT,
+        library_id=1,
+        order_by_activity=True,
+    )
+    db.library.list_library_song_ids.assert_not_called()
 
 
 @pytest.mark.unit
