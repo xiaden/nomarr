@@ -26,14 +26,14 @@ def _create_library(session) -> int:
     return r.inserted_primary_key[0]
 
 
-def _create_song(session, library_id: int, path: str = "/music/test.mp3") -> int:
+def _create_song(session, library_id: int, path: str = "/music/test.mp3", normalized_path: str | None = None) -> int:
     """Helper: insert a song row and return its id."""
     r = session.execute(
         insert(Song).values(
             library_id=library_id,
             folder_id=None,
             path=path,
-            normalized_path=path,
+            normalized_path=normalized_path if normalized_path is not None else path,
             file_size=1024,
             modified_time=1000,
             duration_seconds=180,
@@ -380,22 +380,37 @@ class TestSongRepository:
     def test_list_songs_for_folder(self, pg_session) -> None:
         """list_songs_for_folder should return songs in a folder."""
         lib_id = _create_library(pg_session)
-        _create_song(pg_session, lib_id, "/music/folder/file1.mp3")
-        _create_song(pg_session, lib_id, "/music/folder/file2.mp3")
-        _create_song(pg_session, lib_id, "/music/other/file3.mp3")
+        _create_song(pg_session, lib_id, "/music/folder/file1.mp3", "folder/file1.mp3")
+        _create_song(pg_session, lib_id, "/music/folder/file2.mp3", "folder/file2.mp3")
+        _create_song(pg_session, lib_id, "/music/other/file3.mp3", "other/file3.mp3")
         repo = SongRepository(pg_session)
-        result = repo.list_songs_for_folder(lib_id, "/music/folder")
+        result = repo.list_songs_for_folder(lib_id, "folder")
         assert len(result) == 2
         assert all(s["path"].startswith("/music/folder/") for s in result)
+        assert {s["normalized_path"] for s in result} == {"folder/file1.mp3", "folder/file2.mp3"}
+
+    def test_list_songs_for_folder_handles_root_and_library_scope(self, pg_session) -> None:
+        """Folder queries should include root files and exclude other libraries."""
+        lib_id = _create_library(pg_session)
+        other_lib_id = _create_library(pg_session)
+        _create_song(pg_session, lib_id, "/music/root.mp3", "root.mp3")
+        _create_song(pg_session, lib_id, "/music/folder/nested.mp3", "folder/nested.mp3")
+        _create_song(pg_session, other_lib_id, "/music/other-root.mp3", "other-root.mp3")
+        repo = SongRepository(pg_session)
+
+        result = repo.list_songs_for_folder(lib_id, "")
+
+        assert [song["normalized_path"] for song in result] == ["root.mp3"]
+        assert [song["normalized_path"] for song in repo.list_songs_for_folder(lib_id, ".")] == ["root.mp3"]
 
     def test_list_songs_for_folder_escapes_like_wildcards(self, pg_session) -> None:
         """Folder wildcard characters should be matched literally."""
         lib_id = _create_library(pg_session)
-        _create_song(pg_session, lib_id, "/music/100%_complete/file1.mp3")
-        _create_song(pg_session, lib_id, "/music/100Xacomplete/file2.mp3")
+        _create_song(pg_session, lib_id, "/music/100%_complete/file1.mp3", "100%_complete/file1.mp3")
+        _create_song(pg_session, lib_id, "/music/100Xacomplete/file2.mp3", "100Xacomplete/file2.mp3")
         repo = SongRepository(pg_session)
 
-        result = repo.list_songs_for_folder(lib_id, "/music/100%_complete")
+        result = repo.list_songs_for_folder(lib_id, "100%_complete")
 
         assert [song["path"] for song in result] == ["/music/100%_complete/file1.mp3"]
 

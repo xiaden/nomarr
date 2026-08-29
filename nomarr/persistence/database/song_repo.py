@@ -330,13 +330,21 @@ class SongRepository:
             return _row_to_dto(row) if row else None
 
     def list_songs_for_folder(self, library_id: int, folder_rel_path: str) -> list[SongRow]:
-        """Return songs whose path starts with the given folder relative path."""
+        """Return songs whose relative path is beneath the requested folder."""
         with map_persistence_exceptions():
+            if folder_rel_path in ("", "."):
+                stmt = select(_T).where(
+                    _T.c.library_id == library_id,
+                    ~_T.c.normalized_path.like("%/%"),
+                )
+                result = self._session.execute(stmt)
+                return [_row_to_dto(r) for r in result.all()]
+
             prefix = folder_rel_path.rstrip("/") + "/"
             escaped_prefix = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             stmt = select(_T).where(
                 _T.c.library_id == library_id,
-                _T.c.path.like(escaped_prefix + "%", escape="\\"),
+                _T.c.normalized_path.like(escaped_prefix + "%", escape="\\"),
             )
             result = self._session.execute(stmt)
             return [_row_to_dto(r) for r in result.all()]
