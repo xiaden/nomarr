@@ -776,10 +776,6 @@ def recover_stale_heartbeats():
     pass  # Heartbeat recovery
 
 
-def steal_claim():
-    pass  # Claim stealing
-
-
 # ---------------------------------------------------------------------------
 # 8. Event handlers and magic methods
 # ---------------------------------------------------------------------------

@@ -114,33 +114,14 @@ def try_insert_or_steal_claim(
     try:
         db.app.claim_song(file_id, worker_id, claim_type=claim_type, claimed_at=claimed_at)
     except DuplicateEntityError:
-        file_id = int(payload["file_id"])
-        all_claims = _get_all_claims(db)
-        existing_claim = next(
-            (
-                claim
-                for claim in all_claims
-                if str(claim.get("file_id")) == str(file_id) and claim.get("claim_type") == claim_type
-            ),
-            None,
+        return db.app.steal_claim(
+            file_id,
+            worker_id,
+            claim_type=claim_type,
+            claimed_at=claimed_at,
+            now=now,
+            lease_ms=lease_ms,
         )
-        if existing_claim is None:
-            try:
-                db.app.claim_song(file_id, worker_id, claim_type=claim_type, claimed_at=claimed_at)
-            except DuplicateEntityError:
-                return False
-            return True
-
-        claimed_at = int(existing_claim.get("claimed_at", 0))
-        if claimed_at > now - lease_ms:
-            return False
-
-        db.app.remove_claim_by_song(int(file_id), claim_type)
-        try:
-            db.app.claim_song(file_id, worker_id, claim_type=claim_type, claimed_at=claimed_at)
-        except DuplicateEntityError:
-            return False
-        return True
     return True
 
 

@@ -320,6 +320,7 @@ class TestAppRepository:
     def test_insert_worker_claim_rejects_missing_song(self, pg_session) -> None:
         repo = AppRepository(pg_session)
         from unittest.mock import MagicMock
+
         repo._song_repo = MagicMock()
         repo._song_repo.get_song.return_value = None
 
@@ -455,7 +456,12 @@ class TestAppRepository:
         )
         # Steal claim that expired (claimed_at + lease_ms < now)
         result = repo.steal_claim(
-            {"worker_id": "worker2", "value": {"status": "stolen"}},
+            {
+                "key": "30",
+                "worker_id": "worker2",
+                "value": {"status": "stolen"},
+                "claimed_at": 5000,
+            },
             now=5000,
             lease_ms=1000,
         )
@@ -464,6 +470,28 @@ class TestAppRepository:
         stolen = next((c for c in claims if c["key"] == "30"), None)
         assert stolen is not None
         assert stolen["worker_id"] == "worker2"
+
+    def test_steal_claim_only_updates_targeted_expired_claim(self, pg_session) -> None:
+        """A steal cannot update a different claim or an active claim."""
+        repo = AppRepository(pg_session)
+        repo.insert_worker_claim({"worker_id": "worker1", "key": "claim_31", "value": {}, "claimed_at": 1000})
+        repo.insert_worker_claim({"worker_id": "worker1", "key": "claim_32", "value": {}, "claimed_at": 4900})
+
+        result = repo.steal_claim(
+            {
+                "key": "claim_32",
+                "worker_id": "worker2",
+                "value": {},
+                "claimed_at": 5000,
+            },
+            now=5000,
+            lease_ms=1000,
+        )
+
+        assert result is False
+        claims = {claim["key"]: claim for claim in repo.list_claims()}
+        assert claims["claim_31"]["worker_id"] == "worker1"
+        assert claims["claim_32"]["worker_id"] == "worker1"
 
     def test_list_claims(self, pg_session) -> None:
         """list_claims should return all claims."""

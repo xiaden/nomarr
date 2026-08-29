@@ -412,13 +412,31 @@ class AppRepository:
             return int(result.rowcount)  # type: ignore[attr-defined]  # CursorResult vs Result — mypy sees Result but .rowcount exists at runtime
 
     def steal_claim(self, payload: dict[str, Any], now: int, lease_ms: int) -> bool:
-        """Steal an expired claim (``claimed_at + lease_ms < now``).
+        """Atomically replace one expired claim.
 
-        Returns ``True`` if a row was updated.
+        The claim key is part of the update predicate, and the expiry check is
+        evaluated by the database in the same ``UPDATE`` statement.  A caller
+        therefore cannot delete a claim that another worker acquired after it
+        read the old claim.
+
+        Returns ``True`` if the targeted expired row was updated.
         """
+        key = payload["key"]
+        data = {
+            "worker_id": payload["worker_id"],
+            "value": payload["value"],
+            "claimed_at": payload["claimed_at"],
+        }
         with map_persistence_exceptions():
             with self._session.begin_nested():
-                stmt = update(_WC).where(_WC.c.claimed_at + lease_ms < now).values(**payload)
+                stmt = (
+                    update(_WC)
+                    .where(
+                        _WC.c.key == key,
+                        _WC.c.claimed_at < now - lease_ms,
+                    )
+                    .values(**data)
+                )
                 result = self._session.execute(stmt)
             self._session.commit()
             return int(result.rowcount) > 0  # type: ignore[attr-defined]  # CursorResult vs Result — mypy sees Result but .rowcount exists at runtime

@@ -100,10 +100,10 @@ class TestTryInsertOrStealClaim:
         return DuplicateEntityError()
 
     @pytest.mark.unit
-    def test_steals_expired_claim_without_using_new_owner_for_release(self) -> None:
+    def test_forwards_steal_to_facade_on_duplicate_claim(self) -> None:
         mock_db = MagicMock()
-        mock_db.app.claim_song.side_effect = [DuplicateEntityError(), 1]
-        mock_db.app.list_claims.return_value = [{"file_id": 123, "worker_id": "worker-a", "claimed_at": 1000}]
+        mock_db.app.claim_song.side_effect = DuplicateEntityError()
+        mock_db.app.steal_claim.return_value = True
 
         result = try_insert_or_steal_claim(
             mock_db,
@@ -113,23 +113,24 @@ class TestTryInsertOrStealClaim:
         )
 
         assert result is True
-        mock_db.app.remove_claim_by_song.assert_called_once_with(123, None)
+        mock_db.app.steal_claim.assert_called_once_with(
+            123,
+            "worker-b",
+            claim_type=None,
+            claimed_at=5000,
+            now=5000,
+            lease_ms=1000,
+        )
+        mock_db.app.list_claims.assert_not_called()
+        mock_db.app.remove_claim_by_song.assert_not_called()
         mock_db.app.remove_claim.assert_not_called()
-        assert mock_db.app.claim_song.call_count == 2
+        assert mock_db.app.claim_song.call_count == 1
 
     @pytest.mark.unit
-    def test_matches_existing_claim_by_file_id_and_claim_type(self) -> None:
+    def test_forwards_typed_steal_to_facade_on_duplicate_claim(self) -> None:
         mock_db = MagicMock()
-        mock_db.app.claim_song.side_effect = [DuplicateEntityError(), 1]
-        mock_db.app.list_claims.return_value = [
-            {"file_id": 123, "worker_id": "worker-a", "claimed_at": 4500},
-            {
-                "file_id": 123,
-                "worker_id": "worker-b",
-                "claim_type": "reconcile",
-                "claimed_at": 1000,
-            },
-        ]
+        mock_db.app.claim_song.side_effect = DuplicateEntityError()
+        mock_db.app.steal_claim.return_value = True
 
         result = try_insert_or_steal_claim(
             mock_db,
@@ -144,21 +145,20 @@ class TestTryInsertOrStealClaim:
         )
 
         assert result is True
-        mock_db.app.remove_claim_by_song.assert_called_once_with(123, "reconcile")
+        mock_db.app.steal_claim.assert_called_once_with(
+            123,
+            "worker-c",
+            claim_type="reconcile",
+            claimed_at=5000,
+            now=5000,
+            lease_ms=1000,
+        )
 
     @pytest.mark.unit
-    def test_does_not_steal_expired_claim_of_different_type(self) -> None:
+    def test_returns_false_when_facade_steal_fails(self) -> None:
         mock_db = MagicMock()
         mock_db.app.claim_song.side_effect = DuplicateEntityError()
-        mock_db.app.list_claims.return_value = [
-            {"file_id": 123, "worker_id": "worker-a", "claimed_at": 1000},
-            {
-                "file_id": 123,
-                "worker_id": "worker-b",
-                "claim_type": "reconcile",
-                "claimed_at": 4500,
-            },
-        ]
+        mock_db.app.steal_claim.return_value = False
 
         result = try_insert_or_steal_claim(
             mock_db,
@@ -173,6 +173,8 @@ class TestTryInsertOrStealClaim:
         )
 
         assert result is False
+        mock_db.app.steal_claim.assert_called_once()
+        mock_db.app.list_claims.assert_not_called()
         mock_db.app.remove_claim_by_song.assert_not_called()
 
     @pytest.mark.unit

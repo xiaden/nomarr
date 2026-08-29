@@ -421,6 +421,49 @@ class TestAppDbClaimMethods:
         assert result == expected
         mock_app_repo.list_claims.assert_called_once_with()
 
+    @pytest.mark.unit
+    def test_steal_claim_delegates_atomic_claim_update(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
+        mock_app_repo.steal_claim.return_value = True
+
+        result = app_db.steal_claim(
+            42,
+            "w2",
+            claim_type="reconcile",
+            claimed_at=5000,
+            now=5000,
+            lease_ms=1000,
+        )
+
+        assert result is True
+        mock_app_repo.steal_claim.assert_called_once_with(
+            {
+                "key": "claim_reconcile_42",
+                "worker_id": "w2",
+                "value": {"file_id": 42, "claim_type": "reconcile"},
+                "claimed_at": 5000,
+            },
+            5000,
+            1000,
+        )
+
+    @pytest.mark.unit
+    def test_steal_claim_builds_untyped_key(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
+        mock_app_repo.steal_claim.return_value = True
+
+        result = app_db.steal_claim(42, "w2", claimed_at=5000, now=5000, lease_ms=1000)
+
+        assert result is True
+        mock_app_repo.steal_claim.assert_called_once_with(
+            {
+                "key": "claim_42",
+                "worker_id": "w2",
+                "value": {"file_id": 42},
+                "claimed_at": 5000,
+            },
+            5000,
+            1000,
+        )
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # AppDb — Health Methods
@@ -928,7 +971,6 @@ class TestAppDbSurface:
         assert not hasattr(app_db, "get_state_edges_for_files")
         assert not hasattr(app_db, "count_pipeline_states")
         assert not hasattr(app_db, "claim_file")
-        assert not hasattr(app_db, "steal_claim")
         assert not hasattr(app_db, "list_libraries_in_pipeline_state")
         assert not hasattr(app_db, "count_calibration_states")
 

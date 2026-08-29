@@ -186,6 +186,26 @@ class AppDb:
         """Remove a song claim regardless of its current worker owner."""
         self._app_repo.release_claim_by_song(song_id, claim_type)
 
+    def steal_claim(
+        self,
+        song_id: int,
+        worker_id: str,
+        *,
+        claim_type: str | None = None,
+        claimed_at: int,
+        now: int,
+        lease_ms: int,
+    ) -> bool:
+        """Atomically claim a song when its current claim has expired."""
+        key = f"claim_{claim_type}_{song_id}" if claim_type else f"claim_{song_id}"
+        payload: dict[str, object] = {
+            "key": key,
+            "worker_id": worker_id,
+            "value": {"file_id": song_id, **({"claim_type": claim_type} if claim_type is not None else {})},
+            "claimed_at": claimed_at,
+        }
+        return self._app_repo.steal_claim(payload, now, lease_ms)
+
     def remove_claims(
         self,
         *,
