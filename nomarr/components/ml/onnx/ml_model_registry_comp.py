@@ -156,11 +156,14 @@ def list_fully_labeled_model_outputs(db: Database, model_id: str) -> list[dict[s
     return [doc for doc in list_model_outputs_for_model(db, model_id) if bool(doc.get("fully_labeled"))]
 
 
-def ensure_model_outputs(db: Database, song_id: int, model_id: str, output_count: int) -> list[dict[str, Any]]:
-    """Ensure all expected output vertices exist for a model."""
+def ensure_model_outputs(db: Database, model_id: str, output_count: int) -> list[dict[str, Any]]:
+    """Ensure all expected output vertices exist for a model.
+
+    Model outputs are model-scoped metadata: no song context is involved.
+    """
     for output_index in range(output_count):
         output_key = _output_key(model_id, output_index)
-        existing = db.ml.get_model_output(output_index)
+        existing = db.ml.get_model_output(output_key)
         payload = {
             "id": output_key,
             "output_index": output_index,
@@ -171,19 +174,18 @@ def ensure_model_outputs(db: Database, song_id: int, model_id: str, output_count
             payload["label"] = existing.get("label")
             payload["fully_labeled"] = existing.get("fully_labeled", False)
 
-        db.ml.replace_model_output(song_id, model_id, output_key, payload)
+        db.ml.replace_model_output(model_id, output_key, payload)
 
     return list_model_outputs_for_model(db, model_id)
 
 
-def update_model_output_label(db: Database, song_id: int, model_id: str, output_id: str, label: str) -> None:
+def update_model_output_label(db: Database, model_id: str, output_id: str, label: str) -> None:
     """Write label metadata for one output vertex."""
-    existing_output = db.ml.get_model_output(output_id)  # type: ignore[arg-type]
+    existing_output = db.ml.get_model_output(output_id)
     if not isinstance(existing_output, dict):
         return
 
     db.ml.replace_model_output(
-        song_id,
         model_id,
         output_id,
         {
@@ -205,18 +207,16 @@ def build_model_output_index_map(db: Database) -> dict[str, dict[int, str]]:
             continue
         for output_doc in list_model_outputs_for_model(db, model_id):
             output_index = output_doc.get("output_index")
-            output_id_key = output_doc.get("id")
+            output_id_key = output_doc.get("output_id")
             if isinstance(output_index, int) and isinstance(output_id_key, str):
                 result.setdefault(model_path, {})[output_index] = output_id_key
     return result
 
 
 def delete_model_outputs_for_model(db: Database, model_id: str) -> list[str]:
-    """Delete all output vertices for one model."""
-    result = db.ml.remove_model_outputs_for_model(model_id)  # type: ignore[attr-defined]
-    if isinstance(result, list):
-        return [str(r) for r in result]
-    return []
+    """Delete all output vertices for one model and return their output_ids."""
+    result = db.ml.remove_model_outputs_for_model(model_id)
+    return [str(r) for r in result] if isinstance(result, list) else []
 
 
 def prune_registered_model(db: Database, model_id: str) -> dict[str, list[str]]:

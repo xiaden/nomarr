@@ -10,13 +10,15 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from nomarr.interfaces.api.id_codec import encode_id
-
 
 class MlModelResponse(BaseModel):
-    """Response model for a registered ML model vertex."""
+    """Response model for a registered ML model vertex.
 
-    id: int
+    ``id`` is the raw stable model key (16-hex sha256 of the model path) —
+    ML ids are strings, not int-encoded persistence PKs.
+    """
+
+    id: str
     backbone: str
     head_type: str
     model_stem: str
@@ -29,7 +31,7 @@ class MlModelResponse(BaseModel):
     def from_doc(cls, doc: dict[str, Any]) -> MlModelResponse:
         """Build response from an ml_models row."""
         return cls(
-            id=encode_id(doc["id"]),
+            id=doc["id"],
             backbone=doc["backbone"],
             head_type=doc["head_type"],
             model_stem=doc["model_stem"],
@@ -41,10 +43,14 @@ class MlModelResponse(BaseModel):
 
 
 class MlModelOutputResponse(BaseModel):
-    """Response model for a single model output activation."""
+    """Response model for a single model output activation.
 
-    id: int
-    output_index: int
+    ``output_id`` is the stable natural identity (sha256 ``_output_key``) —
+    it is the key the UI uses to address label edits.
+    """
+
+    output_id: str
+    output_index: int | None
     label: str | None
     fully_labeled: bool
 
@@ -52,8 +58,8 @@ class MlModelOutputResponse(BaseModel):
     def from_doc(cls, doc: dict[str, Any]) -> MlModelOutputResponse:
         """Build response from an ml_model_outputs row."""
         return cls(
-            id=encode_id(doc["id"]),
-            output_index=doc["output_index"],
+            output_id=doc["output_id"],
+            output_index=doc.get("output_index"),
             label=doc.get("label"),
             fully_labeled=doc.get("fully_labeled", False),
         )

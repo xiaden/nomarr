@@ -136,16 +136,16 @@ class MLService:
         """
         return list_model_outputs_for_model(self.db, model_id)
 
-    def update_output_label(self, model_id: str | int, output_id: str | int, label: str) -> None:
+    def update_output_label(self, model_id: str | int, output_id: str, label: str) -> None:
         """Write a human-readable label for a model output vertex.
 
         Args:
             model_id: Model identifier (e.g., 'effnet-v1' or int DB key).
-            output_id: Output identifier string or int DB key.
+            output_id: Stable output identifier.
             label: Human-readable tag label for this activation.
 
         """
-        update_model_output_label(self.db, song_id=0, model_id=str(model_id), output_id=str(output_id), label=label)
+        update_model_output_label(self.db, model_id=str(model_id), output_id=output_id, label=label)
 
     def mark_model_configured(self, model_id: str | int, value: bool) -> None:
         """Set the fully_configured flag on a model vertex.

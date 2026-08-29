@@ -45,13 +45,13 @@ class TestRegisterMlModelsWorkflow:
         model_id = "ml_models/model-1"
         outputs = [
             {
-                "id": "ml_model_outputs/output-0",
+                "output_id": "ml_model_outputs/output-0",
                 "output_index": 0,
                 "label": "custom-happy",
                 "fully_labeled": True,
             },
             {
-                "id": "ml_model_outputs/output-1",
+                "output_id": "ml_model_outputs/output-1",
                 "output_index": 1,
                 "label": None,
                 "fully_labeled": False,
@@ -78,8 +78,8 @@ class TestRegisterMlModelsWorkflow:
             patch(
                 "nomarr.workflows.platform.register_ml_models_wf.list_fully_labeled_model_outputs",
                 return_value=[
-                    {"id": "ml_model_outputs/output-0", "label": "custom-happy"},
-                    {"id": "ml_model_outputs/output-1", "label": "sad"},
+                    {"output_id": "ml_model_outputs/output-0", "label": "custom-happy"},
+                    {"output_id": "ml_model_outputs/output-1", "label": "sad"},
                 ],
             ),
             patch(
@@ -98,7 +98,6 @@ class TestRegisterMlModelsWorkflow:
 
         mock_update_label.assert_called_once_with(
             db,
-            song_id=0,
             model_id=model_id,
             output_id="ml_model_outputs/output-1",
             label="sad",
@@ -120,13 +119,13 @@ class TestRegisterMlModelsWorkflow:
         model_id = "ml_models/model-1"
         outputs = [
             {
-                "id": "ml_model_outputs/output-0",
+                "output_id": "ml_model_outputs/output-0",
                 "output_index": 0,
                 "label": None,
                 "fully_labeled": False,
             },
             {
-                "id": "ml_model_outputs/output-1",
+                "output_id": "ml_model_outputs/output-1",
                 "output_index": 1,
                 "label": None,
                 "fully_labeled": False,
@@ -153,8 +152,8 @@ class TestRegisterMlModelsWorkflow:
             patch(
                 "nomarr.workflows.platform.register_ml_models_wf.list_fully_labeled_model_outputs",
                 return_value=[
-                    {"id": "ml_model_outputs/output-0", "label": "happy"},
-                    {"id": "ml_model_outputs/output-1", "label": "sad"},
+                    {"output_id": "ml_model_outputs/output-0", "label": "happy"},
+                    {"output_id": "ml_model_outputs/output-1", "label": "sad"},
                 ],
             ),
             patch(
@@ -172,6 +171,6 @@ class TestRegisterMlModelsWorkflow:
             register_ml_models_workflow(db, str(tmp_path))
 
         assert mock_update_label.call_args_list == [
-            call(db, song_id=0, model_id=model_id, output_id="ml_model_outputs/output-0", label="happy"),
-            call(db, song_id=0, model_id=model_id, output_id="ml_model_outputs/output-1", label="sad"),
+            call(db, model_id=model_id, output_id="ml_model_outputs/output-0", label="happy"),
+            call(db, model_id=model_id, output_id="ml_model_outputs/output-1", label="sad"),
         ]

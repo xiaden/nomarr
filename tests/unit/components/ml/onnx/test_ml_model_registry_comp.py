@@ -285,13 +285,13 @@ class TestEnsureModelOutputs:
     def test_inserts_missing_output_and_upserts_edge(self) -> None:
         mock_db = MagicMock()
         mock_db.ml.get_model_output.return_value = None
-        mock_db.ml.list_model_outputs.return_value = [{"_id": "ml_model_outputs/new-output", "output_index": 0}]
+        output_key = hashlib.sha256(b"ml_models/abc:0").hexdigest()[:16]
+        mock_db.ml.list_model_outputs.return_value = [{"output_id": output_key, "output_index": 0}]
 
-        ensure_model_outputs(mock_db, song_id=1, model_id="ml_models/abc", output_count=1)
+        ensure_model_outputs(mock_db, model_id="ml_models/abc", output_count=1)
 
         output_key = hashlib.sha256(b"ml_models/abc:0").hexdigest()[:16]
         mock_db.ml.replace_model_output.assert_called_once_with(
-            1,
             "ml_models/abc",
             output_key,
             {
@@ -305,14 +305,13 @@ class TestEnsureModelOutputs:
     def test_skips_insert_when_output_exists(self) -> None:
         mock_db = MagicMock()
         output_key = hashlib.sha256(b"ml_models/abc:0").hexdigest()[:16]
-        existing_output = {"_id": "ml_model_outputs/existing", "_key": "existing", "output_index": 0}
+        existing_output = {"output_id": output_key, "output_index": 0, "label": "existing", "fully_labeled": True}
         mock_db.ml.get_model_output.return_value = existing_output
         mock_db.ml.list_model_outputs.return_value = [existing_output]
 
-        ensure_model_outputs(mock_db, song_id=1, model_id="ml_models/abc", output_count=1)
+        ensure_model_outputs(mock_db, model_id="ml_models/abc", output_count=1)
 
         mock_db.ml.replace_model_output.assert_called_once_with(
-            1,
             "ml_models/abc",
             output_key,
             {
@@ -335,12 +334,9 @@ class TestUpdateModelOutputLabel:
             "output_index": 7,
         }
 
-        update_model_output_label(
-            mock_db, song_id=1, model_id="ml_models/abc", output_id="ml_model_outputs/abc123", label="mood"
-        )
+        update_model_output_label(mock_db, model_id="ml_models/abc", output_id="ml_model_outputs/abc123", label="mood")
 
         mock_db.ml.replace_model_output.assert_called_once_with(
-            1,
             "ml_models/abc",
             "ml_model_outputs/abc123",
             {
@@ -372,21 +368,21 @@ class TestBuildModelOutputIndexMap:
         ]
         mock_db.ml.list_model_outputs.side_effect = [
             [
-                {"id": "ml_model_outputs/o1", "output_index": 0},
-                {"id": "ml_model_outputs/o2", "output_index": "1"},
-                {"id": 123, "output_index": 2},
+                {"output_id": "o1", "output_index": 0},
+                {"output_id": "o2", "output_index": "1"},
+                {"output_id": 123, "output_index": 2},
             ],
             [
-                {"id": "ml_model_outputs/o3", "output_index": 4},
-                {"id": "ml_model_outputs/o4", "output_index": None},
+                {"output_id": "o3", "output_index": 4},
+                {"output_id": "o4", "output_index": None},
             ],
         ]
 
         result = build_model_output_index_map(mock_db)
 
         assert result == {
-            "/effnet.onnx": {0: "ml_model_outputs/o1"},
-            "/ast.onnx": {4: "ml_model_outputs/o3"},
+            "/effnet.onnx": {0: "o1"},
+            "/ast.onnx": {4: "o3"},
         }
 
 

@@ -237,10 +237,10 @@ def test_get_model_output_delegates_to_output_repo() -> None:
     db, _, _, output_repo, _, _ = _make_ml_db()
     output_repo.get_output = MagicMock(return_value=sentinel.result)
 
-    result = db.get_model_output(1)
+    result = db.get_model_output("output1")
 
     assert result is sentinel.result
-    output_repo.get_output.assert_called_once_with(1)
+    output_repo.get_output.assert_called_once_with("output1")
 
 
 @pytest.mark.unit
@@ -339,7 +339,7 @@ def test_replace_song_inference_results_makes_single_aggregate_call() -> None:
     # repository aggregate, and NO independent destructive repo calls from the facade.
     db._ml_inference_repo.replace_song_inference_results.assert_called_once()
     vector_repo.delete_embeddings_for_song.assert_not_called()
-    output_repo.delete_outputs_for_song.assert_not_called()
+    output_repo.delete_output_streams_for_song.assert_not_called()
 
 
 @pytest.mark.unit
@@ -402,6 +402,7 @@ def test_add_calibration_history_unpacks_payload() -> None:
     assert result is sentinel.history_record
     calibration_repo.record_history.assert_called_once_with(
         model_id="model1",
+        output_id="legacy_key",
         event="calibrated",
         data={"accuracy": 0.95},
     )
@@ -577,18 +578,39 @@ def test_remove_embedding_streams_for_song_delegates_to_embedding_stream_repo() 
 
 
 @pytest.mark.unit
-def test_replace_model_output_delegates_to_output_repo_ignoring_output_key() -> None:
+def test_replace_model_output_delegates_to_output_repo() -> None:
     db, _, _, output_repo, _, _ = _make_ml_db()
     output_repo.store_model_output = MagicMock(return_value=sentinel.result)
-    payload = {"genre": "rock", "confidence": 0.95}
+    payload = {"genre": "rock", "confidence": 0.95, "output_index": 3, "label": "rock", "fully_labeled": True}
 
-    result = db.replace_model_output(42, "model1", "legacy_key", payload)
+    result = db.replace_model_output("model1", "legacy_key", payload)
 
     assert result is sentinel.result
     output_repo.store_model_output.assert_called_once_with(
-        song_id=42,
         model_id="model1",
+        output_id="legacy_key",
         output_data=payload,
+        output_index=3,
+        label="rock",
+        fully_labeled=True,
+    )
+
+
+@pytest.mark.unit
+def test_replace_model_output_defaults_metadata_when_absent() -> None:
+    db, _, _, output_repo, _, _ = _make_ml_db()
+    output_repo.store_model_output = MagicMock(return_value=sentinel.result)
+    payload = {"genre": "rock"}
+
+    db.replace_model_output("model1", "output_1", payload)
+
+    output_repo.store_model_output.assert_called_once_with(
+        model_id="model1",
+        output_id="output_1",
+        output_data=payload,
+        output_index=None,
+        label=None,
+        fully_labeled=False,
     )
 
 
@@ -597,19 +619,19 @@ def test_remove_model_output_delegates_to_output_repo() -> None:
     db, _, _, output_repo, _, _ = _make_ml_db()
     output_repo.delete_output = MagicMock()
 
-    db.remove_model_output(7)
+    db.remove_model_output("output_1")
 
-    output_repo.delete_output.assert_called_once_with(7)
+    output_repo.delete_output.assert_called_once_with("output_1")
 
 
 @pytest.mark.unit
 def test_remove_model_outputs_for_model_delegates_to_output_repo() -> None:
     db, _, _, output_repo, _, _ = _make_ml_db()
-    output_repo.delete_outputs_for_model = MagicMock(return_value=5)
+    output_repo.delete_outputs_for_model = MagicMock(return_value=["o1", "o2"])
 
     result = db.remove_model_outputs_for_model("model1")
 
-    assert result == 5
+    assert result == ["o1", "o2"]
     output_repo.delete_outputs_for_model.assert_called_once_with("model1")
 
 

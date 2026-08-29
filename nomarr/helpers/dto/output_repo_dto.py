@@ -27,10 +27,14 @@ class OutputStreamRecord(TypedDict):
 
 
 class ModelOutputRecord(TypedDict):
-    """Single row from the ``ml_model_outputs`` table."""
+    """Single row from the ``ml_model_outputs`` table.
+
+    Model-scoped metadata: no ``song_id``.  ``output_id`` is the stable natural
+    identity (sha256 ``_output_key`` from the model registry).
+    """
 
     id: int
-    song_id: int
+    output_id: str
     model_id: str
     output_data: dict[str, Any]
     created_at: int

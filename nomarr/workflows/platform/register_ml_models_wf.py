@@ -91,8 +91,8 @@ def register_ml_models_workflow(
         )
         model_id: str = model_doc["id"]
 
-        # Step 4: Ensure output vertices exist
-        outputs = ensure_model_outputs(db, song_id=0, model_id=model_id, output_count=output_count)
+        # Step 4: Ensure output vertices exist (model-scoped metadata — no song context)
+        outputs = ensure_model_outputs(db, model_id=model_id, output_count=output_count)
 
         # Step 5: Seed missing labels for known shipped models
         if known_outputs is not None:
@@ -102,9 +102,8 @@ def register_ml_models_workflow(
                     continue
                 update_model_output_label(
                     db,
-                    song_id=0,
                     model_id=model_id,
-                    output_id=output_doc["id"],
+                    output_id=output_doc["output_id"],
                     label=label,
                 )
             fully_labeled = list_fully_labeled_model_outputs(db, model_id)
@@ -141,12 +140,10 @@ def register_ml_models_workflow(
         stale_path: str = stale["path"]
         prune_result = prune_registered_model(db, stale_id)
         output_ids = cast("list[str]", prune_result["output_ids"])
-        edge_count = cast("int", prune_result["tag_model_output_edges_deleted"])
         logger.warning(
-            "Pruned stale model %s: removed %d output(s) and %d edge(s)",
+            "Pruned stale model %s: removed %d output(s)",
             stale_path,
             len(output_ids),
-            edge_count,
         )
 
     logger.info("Model registration complete")

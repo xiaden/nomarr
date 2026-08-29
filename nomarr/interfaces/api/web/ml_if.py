@@ -9,7 +9,6 @@ from pydantic import BaseModel
 
 from nomarr.helpers.logging_helper import sanitize_exception_message
 from nomarr.interfaces.api.auth import verify_session
-from nomarr.interfaces.api.id_codec import decode_path_id
 from nomarr.interfaces.api.types.info_types import WorkStatusResponse
 from nomarr.interfaces.api.types.ml_types import (
     MarkConfiguredRequest,
@@ -65,9 +64,8 @@ async def ml_get_model_outputs(
     ml_service: Annotated[MLService, Depends(get_ml_service)],
 ) -> list[MlModelOutputResponse]:
     """Return all output activation vertices for a model."""
-    decoded_model_id = decode_path_id(model_id)
     try:
-        docs = await asyncio.to_thread(ml_service.get_model_outputs, str(decoded_model_id))
+        docs = await asyncio.to_thread(ml_service.get_model_outputs, model_id)
         return [MlModelOutputResponse.from_doc(doc) for doc in docs]
     except Exception as e:
         logger.exception("[ml_if] Failed to get model outputs for %s", model_id)
@@ -91,13 +89,11 @@ async def ml_update_output_label(
     ml_service: Annotated[MLService, Depends(get_ml_service)],
 ) -> UpdateOutputLabelResponse:
     """Assign a human-readable label to a model output activation."""
-    decoded_model_id = decode_path_id(model_id)
-    decoded_output_id = decode_path_id(output_id)
     try:
         await asyncio.to_thread(
             ml_service.update_output_label,
-            model_id=decoded_model_id,
-            output_id=decoded_output_id,
+            model_id=model_id,
+            output_id=output_id,
             label=body.label,
         )
         return UpdateOutputLabelResponse(status="updated")
@@ -123,9 +119,8 @@ async def ml_mark_model_configured(
     ml_service: Annotated[MLService, Depends(get_ml_service)],
 ) -> MarkConfiguredResponse:
     """Set the fully_configured flag on a model, enabling or disabling it for inference."""
-    decoded_model_id = decode_path_id(model_id)
     try:
-        await asyncio.to_thread(ml_service.mark_model_configured, model_id=decoded_model_id, value=body.value)
+        await asyncio.to_thread(ml_service.mark_model_configured, model_id=model_id, value=body.value)
         return MarkConfiguredResponse(status="updated", fully_configured=str(body.value).lower())
     except Exception as e:
         logger.exception("[ml_if] Failed to mark model configured for %s", model_id)

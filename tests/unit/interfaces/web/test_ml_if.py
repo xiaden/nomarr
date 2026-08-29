@@ -158,45 +158,45 @@ class TestMlIfModelOutputRoutes:
         client: TestClient,
         mock_ml_service: MagicMock,
     ) -> None:
-        """GET /model/{model_id}/output decodes the model_id and returns serialised outputs."""
+        """GET /model/{model_id}/output passes the hex model id through and serialises outputs."""
         mock_ml_service.get_model_outputs.return_value = [
             {
-                "id": 1,
+                "output_id": "0123456789abcdef",
                 "output_index": 0,
                 "label": "happy",
                 "fully_labeled": True,
             },
         ]
 
-        response = client.get("/api/web/machine-learning/model/1/output")
+        response = client.get("/api/web/machine-learning/model/0123456789abcdef/output")
 
         assert response.status_code == 200
         assert response.json() == [
             {
-                "id": 1,
+                "output_id": "0123456789abcdef",
                 "output_index": 0,
                 "label": "happy",
                 "fully_labeled": True,
             },
         ]
-        mock_ml_service.get_model_outputs.assert_called_once_with("1")
+        mock_ml_service.get_model_outputs.assert_called_once_with("0123456789abcdef")
 
     def test_update_output_label_threads_model_id(
         self,
         client: TestClient,
         mock_ml_service: MagicMock,
     ) -> None:
-        """PATCH /model/{model_id}/output/{output_id} decodes both IDs and passes model_id."""
+        """PATCH /model/{model_id}/output/{output_id} passes hex ids through unchanged."""
         response = client.patch(
-            "/api/web/machine-learning/model/1/output/2",
+            "/api/web/machine-learning/model/0123456789abcdef/output/0123456789abcdef",
             json={"label": "happy"},
         )
 
         assert response.status_code == 200
         assert response.json() == {"status": "updated"}
         mock_ml_service.update_output_label.assert_called_once_with(
-            model_id=1,
-            output_id=2,
+            model_id="0123456789abcdef",
+            output_id="0123456789abcdef",
             label="happy",
         )
 
@@ -205,15 +205,15 @@ class TestMlIfModelOutputRoutes:
         client: TestClient,
         mock_ml_service: MagicMock,
     ) -> None:
-        """POST /model/{model_id}/mark-configured decodes the model_id and passes it."""
+        """POST /model/{model_id}/mark-configured passes the hex model id through."""
         response = client.post(
-            "/api/web/machine-learning/model/1/mark-configured",
+            "/api/web/machine-learning/model/0123456789abcdef/mark-configured",
             json={"value": True},
         )
 
         assert response.status_code == 200
         assert response.json() == {"status": "updated", "fully_configured": "true"}
-        mock_ml_service.mark_model_configured.assert_called_once_with(model_id=1, value=True)
+        mock_ml_service.mark_model_configured.assert_called_once_with(model_id="0123456789abcdef", value=True)
 
     def test_trigger_vram_probe_delegates_to_service(
         self,
