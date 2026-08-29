@@ -73,8 +73,7 @@ class TestOutputRepo:
 
     def test_store_model_output(self, pg_session) -> None:
         """store_model_output should insert and return the output record."""
-        lib_id = _insert_library(pg_session)
-        _insert_song(pg_session, lib_id)
+        _insert_library(pg_session)
         _insert_model(pg_session, "out_model_1")
 
         repo = OutputRepo(pg_session)
@@ -91,8 +90,7 @@ class TestOutputRepo:
 
     def test_store_model_output_updates_existing_by_output_id(self, pg_session) -> None:
         """Storing again with the same output_id updates the row, not a second insert."""
-        lib_id = _insert_library(pg_session)
-        _insert_song(pg_session, lib_id)
+        _insert_library(pg_session)
         _insert_model(pg_session, "upsert_model")
 
         repo = OutputRepo(pg_session)
@@ -118,6 +116,8 @@ class TestOutputRepo:
         assert updated["output_data"]["genre"] == "jazz"
         assert updated["label"] == "moody"
         assert updated["fully_labeled"] is True
+        # Upserting an existing output must preserve the original created_at
+        assert updated["created_at"] == first["created_at"]
         assert len(repo.list_model_outputs("upsert_model")) == 1
         assert repo.get_output("output_1")["output_data"]["genre"] == "jazz"
 
@@ -191,8 +191,7 @@ class TestOutputRepo:
 
     def test_get_output_existing(self, pg_session) -> None:
         """get_output should return the record for an existing output id."""
-        lib_id = _insert_library(pg_session)
-        _insert_song(pg_session, lib_id)
+        _insert_library(pg_session)
         _insert_model(pg_session, "get_model")
 
         repo = OutputRepo(pg_session)
@@ -214,8 +213,7 @@ class TestOutputRepo:
 
     def test_list_model_outputs(self, pg_session) -> None:
         """list_model_outputs should return all outputs for a model, ordered by index."""
-        lib_id = _insert_library(pg_session)
-        _insert_song(pg_session, lib_id)
+        _insert_library(pg_session)
         _insert_model(pg_session, "list_model")
 
         repo = OutputRepo(pg_session)
@@ -228,8 +226,7 @@ class TestOutputRepo:
 
     def test_list_model_outputs_orders_by_output_index(self, pg_session) -> None:
         """list_model_outputs should order rows by output_index ascending."""
-        lib_id = _insert_library(pg_session)
-        _insert_song(pg_session, lib_id)
+        _insert_library(pg_session)
         _insert_model(pg_session, "order_model")
 
         repo = OutputRepo(pg_session)
@@ -241,8 +238,7 @@ class TestOutputRepo:
 
     def test_delete_output(self, pg_session) -> None:
         """delete_output should remove a single output by id."""
-        lib_id = _insert_library(pg_session)
-        _insert_song(pg_session, lib_id)
+        _insert_library(pg_session)
         _insert_model(pg_session, "del_model")
 
         repo = OutputRepo(pg_session)
@@ -253,8 +249,7 @@ class TestOutputRepo:
 
     def test_delete_outputs_for_model(self, pg_session) -> None:
         """delete_outputs_for_model should remove all outputs for a model and return their ids."""
-        lib_id = _insert_library(pg_session)
-        _insert_song(pg_session, lib_id)
+        _insert_library(pg_session)
         _insert_model(pg_session, "del_fm")
 
         repo = OutputRepo(pg_session)

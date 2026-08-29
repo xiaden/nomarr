@@ -87,14 +87,14 @@ class OutputRepo:
                     "model_id": model_id,
                     "output_id": output_id,
                     "output_data": output_data,
-                    "created_at": now,
+                    # created_at is only set on insert; updates preserve the original
                     "output_index": output_index,
                     "label": label,
                     "fully_labeled": int(fully_labeled),
                 }
                 existing = self._session.execute(select(_T_OUTPUT).where(_T_OUTPUT.c.output_id == output_id)).first()
                 if existing is None:
-                    row = insert_one(_T_OUTPUT, values, session=self._session)
+                    row = insert_one(_T_OUTPUT, {**values, "created_at": now}, session=self._session)
                 else:
                     self._session.execute(_T_OUTPUT.update().where(_T_OUTPUT.c.output_id == output_id).values(**values))
                     fetched = self._session.execute(select(_T_OUTPUT).where(_T_OUTPUT.c.output_id == output_id)).first()
