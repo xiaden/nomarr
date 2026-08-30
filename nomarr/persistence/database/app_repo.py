@@ -521,6 +521,23 @@ class AppRepository:
             self._session.commit()
             return deleted
 
+    def delete_vram_promises_by_worker(self, worker_id: str) -> int:
+        """Delete every VRAM promise owned by a worker; return row count.
+
+        This is one database ``DELETE`` statement, enclosed by the
+        repository's savepoint/commit transaction. With PostgreSQL's default
+        READ COMMITTED isolation, the statement targets promises visible when
+        the DELETE starts. A promise committed after that statement snapshot
+        is a new promise and may remain for a subsequent release; no
+        read-modify-write snapshot is exposed to the facade.
+        """
+        with map_persistence_exceptions():
+            with self._session.begin_nested():
+                stmt = delete(_VP).where(_VP.c.worker_id == worker_id)
+                result = self._session.execute(stmt)
+            self._session.commit()
+            return int(result.rowcount)  # type: ignore[attr-defined]  # CursorResult vs Result — mypy sees Result but .rowcount exists at runtime
+
     # ── Worker restart policy ───────────────────────────────────
 
     def get_worker_restart_policy(self, component_id: str) -> dict[str, Any] | None:

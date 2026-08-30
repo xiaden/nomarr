@@ -642,15 +642,12 @@ class TestAppDbVramPromiseMethods:
 
     @pytest.mark.unit
     def test_release_all_for_worker_delegates(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        mock_app_repo.get_vram_promises.return_value = [
-            {"id": 1, "worker_id": "w1"},
-            {"id": 2, "worker_id": "w2"},
-            {"id": 3, "worker_id": "w1"},
-        ]
+        mock_app_repo.delete_vram_promises_by_worker.return_value = 3
 
-        app_db.release_all_for_worker(worker_id="w1")
+        deleted = app_db.release_all_for_worker(worker_id="w1")
 
-        assert mock_app_repo.delete_vram_promise.call_args_list == [call(1), call(3)]
+        assert deleted == 3
+        mock_app_repo.delete_vram_promises_by_worker.assert_called_once_with("w1")
 
     @pytest.mark.unit
     def test_release_all_for_worker_removes_matching_end_to_end(self, sqlite_app_db: AppDb) -> None:

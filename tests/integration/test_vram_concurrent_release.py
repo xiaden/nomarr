@@ -118,3 +118,63 @@ def test_concurrent_release_leaves_no_stale_promises(pg_session) -> None:
 
     survivors = [p for p in remaining if p["worker_id"] == OTHER_WORKER and p["model_path"] == OTHER_MODEL]
     assert len(survivors) == 1, f"non-matching promise was wrongly released: {survivors}"
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("n_threads", [1, 4])
+def test_concurrent_release_all_for_worker_leaves_no_stale_promises(pg_session, n_threads: int) -> None:
+    """Concurrent release_all_for_worker attempts leave zero rows for the worker.
+
+    The worker-wide facade path must release *all* promises for the worker as
+    one DELETE at the repository level (returning the rowcount), with no
+    pre-release snapshot read that could leave a stale count or stale row.
+    A non-matching worker's promise must survive the storm.
+    """
+    db = _make_app_db(pg_session)
+
+    db.promise_vram(
+        worker_id=WORKER_ID,
+        pid=1,
+        model_path=MODEL_PATH,
+        promised_mb=512.0,
+        total_mb=8000.0,
+        used_mb=1000.0,
+    )
+    db.promise_vram(
+        worker_id=WORKER_ID,
+        pid=2,
+        model_path=OTHER_MODEL,
+        promised_mb=256.0,
+        total_mb=8000.0,
+        used_mb=1000.0,
+    )
+    # A non-matching worker promise must survive the release storm.
+    db.promise_vram(
+        worker_id=OTHER_WORKER,
+        pid=3,
+        model_path=OTHER_MODEL,
+        promised_mb=128.0,
+        total_mb=8000.0,
+        used_mb=1000.0,
+    )
+
+    barrier = Barrier(n_threads)
+    session_lock = threading.Lock()
+
+    def _release() -> None:
+        barrier.wait()
+        with session_lock:
+            db.release_all_for_worker(worker_id=WORKER_ID)
+
+    with ThreadPoolExecutor(max_workers=n_threads) as pool:
+        futures = [pool.submit(_release) for _ in range(n_threads)]
+        for future in futures:
+            future.result(timeout=30)
+
+    remaining = db.list_vram_promises()
+
+    stale = [p for p in remaining if p["worker_id"] == WORKER_ID]
+    assert stale == [], f"stale promises survived concurrent worker-wide release: {stale}"
+
+    survivors = [p for p in remaining if p["worker_id"] == OTHER_WORKER]
+    assert len(survivors) == 1, f"non-matching worker promise was wrongly released: {survivors}"

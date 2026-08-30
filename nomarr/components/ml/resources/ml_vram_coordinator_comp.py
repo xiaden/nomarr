@@ -203,10 +203,9 @@ def release_worker_promises(
         Number of promise documents removed.
 
     """
-    # Count promises before releasing (AppDb.release_all_for_worker returns None)
-    promises = db.app.list_vram_promises()
-    count = sum(1 for p in promises if p.get("worker_id") == worker_id)
-    db.app.release_all_for_worker(worker_id=worker_id)
+    # The repository executes one DELETE and returns the rowcount; no
+    # snapshot read precedes the release.
+    count = db.app.release_all_for_worker(worker_id=worker_id)
     if count:
         logger.info(
             "[vram_coordinator] Released %d promise(s) for worker %s",

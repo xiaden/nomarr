@@ -132,13 +132,14 @@ class TestReleaseVramPromise:
 class TestReleaseWorkerPromises:
     def test_releases_all_for_worker_via_vram_facade(self) -> None:
         db = MagicMock()
-        db.app.list_vram_promises.return_value = [{"worker_id": "worker:1"}, {"worker_id": "worker:1"}]
+        db.app.release_all_for_worker.return_value = 2
 
         result = release_worker_promises(db, "worker:1")
 
         assert result == 2
-        db.app.list_vram_promises.assert_called_once_with()
         db.app.release_all_for_worker.assert_called_once_with(worker_id="worker:1")
+        # No snapshot read precedes the release.
+        db.app.list_vram_promises.assert_not_called()
 
 
 @pytest.mark.unit

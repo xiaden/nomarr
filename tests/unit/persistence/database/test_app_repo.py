@@ -665,6 +665,29 @@ class TestAppRepository:
         result = repo.get_vram_promises()
         assert not any(p["id"] == 4 for p in result)
 
+    def test_delete_vram_promises_by_worker(self, pg_session) -> None:
+        """Worker-wide deletion removes only that worker's promises."""
+        repo = AppRepository(pg_session)
+        for promise_id, worker_id in ((5, "worker1"), (6, "worker1"), (7, "worker2")):
+            repo.upsert_vram_promise(
+                {
+                    "id": promise_id,
+                    "worker_id": worker_id,
+                    "pid": 12345,
+                    "model_path": "/models/test.pt",
+                    "promised_mb": 1024,
+                    "total_mb": 8192,
+                    "used_mb": 2048,
+                }
+            )
+
+        deleted = repo.delete_vram_promises_by_worker("worker1")
+
+        assert deleted == 2
+        result = repo.get_vram_promises()
+        assert [p["id"] for p in result if p["worker_id"] == "worker1"] == []
+        assert [p["id"] for p in result if p["worker_id"] == "worker2"] == [7]
+
     # ── Worker restart policy ───────────────────────────────────
 
     def test_get_worker_restart_policy_nonexistent(self, pg_session) -> None:

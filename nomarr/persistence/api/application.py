@@ -312,20 +312,19 @@ class AppDb:
         """Release the VRAM promise(s) for a worker+model."""
         self._app_repo.delete_vram_promise_by_worker_model(worker_id, model_path)
 
-    def release_all_for_worker(self, *, worker_id: str) -> None:
-        """Release all VRAM promises held by a worker.
+    def release_all_for_worker(self, *, worker_id: str) -> int:
+        """Release all promises for *worker_id* in one database operation.
 
-        Preserves the list-then-remove loop semantics of the absorbed
-        VRAM-promises adapter (no ``FOR UPDATE`` — the plan does not
-        require row-locking for this method).
+        The repository executes one ``DELETE ... WHERE worker_id = ...``
+        statement in its transaction. Under PostgreSQL's default READ
+        COMMITTED isolation, the statement removes promises visible when the
+        DELETE starts; a promise committed after that statement snapshot is a
+        new promise and may be handled by a later release.
+
+        Returns:
+            Number of promise rows removed by the DELETE statement.
         """
-        for p in self.list_vram_promises():
-            if p.get("worker_id") == worker_id:
-                pid = p.get("id")
-                if pid:
-                    # Call the repo directly rather than remove_vram_promise
-                    # (which commits internally and would be redundant here).
-                    self._app_repo.delete_vram_promise(pid)
+        return self._app_repo.delete_vram_promises_by_worker(worker_id)
 
     def count_vram_promises(self) -> int:
         return len(self._app_repo.get_vram_promises())
