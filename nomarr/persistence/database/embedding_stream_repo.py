@@ -13,13 +13,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
-from sqlalchemy import Table, delete, select, update
+from sqlalchemy import Table, delete, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from nomarr.helpers.dto.embedding_stream_repo_dto import EmbeddingStreamRecord
 from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence.models.ml_embedding_stream import MlEmbeddingStream
 from nomarr.persistence.sql.exceptions import map_persistence_exceptions
-from nomarr.persistence.sql.primitives import insert_one
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Row
@@ -61,34 +61,29 @@ class EmbeddingStreamRepository:
         """Insert or update an embedding stream for a (song, backbone) pair.
 
         ``ml_embedding_streams`` stores one ``patches_emb`` payload per
-        ``(song_id, backbone_id)`` pair (uniqueness enforced by
-        ``uq_ml_embedding_streams_song_backbone``).  This uses a
-        select-then-insert-or-update pattern.
+        ``(song_id, backbone_id)`` pair, enforced by the
+        ``uq_ml_embedding_streams_song_backbone`` unique constraint.  A single
+        atomic ``INSERT … ON CONFLICT DO UPDATE`` replaces the payload in place,
+        so concurrent writers cannot create duplicate rows or lose updates.
         """
         with map_persistence_exceptions():
-            existing = self._get_existing(song_id, backbone)
-
-            if existing is not None:
-                with self._session.begin_nested():
-                    stmt = update(_T).where(_T.c.id == existing["id"]).values(patches_emb=patches_emb).returning(_T)
-                    result = self._session.execute(stmt)
-                    row = result.fetchone()
-                self._session.commit()
-                assert row is not None
-                return _row_to_dto(row)
-
             now = now_ms().value
             with self._session.begin_nested():
-                row = insert_one(
-                    _T,
-                    {
-                        "song_id": song_id,
-                        "backbone_id": backbone,
-                        "patches_emb": patches_emb,
-                        "created_at": now,
-                    },
-                    session=self._session,
+                insert_stmt = pg_insert(_T).values(
+                    song_id=song_id,
+                    backbone_id=backbone,
+                    patches_emb=patches_emb,
+                    created_at=now,
                 )
+                stmt = insert_stmt.on_conflict_do_update(
+                    constraint="uq_ml_embedding_streams_song_backbone",
+                    set_={"patches_emb": insert_stmt.excluded.patches_emb},
+                ).returning(_T)
+                result = self._session.execute(stmt)
+                row = result.fetchone()
+                if row is None:
+                    msg = "upsert returned no row"
+                    raise RuntimeError(msg)
             self._session.commit()
             return _row_to_dto(row)
 

@@ -1,6 +1,6 @@
 """MlEmbeddingStream ORM model — tracks embedding computation progress."""
 
-from sqlalchemy import BigInteger, ForeignKey, LargeBinary, String
+from sqlalchemy import BigInteger, ForeignKey, LargeBinary, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from nomarr.persistence.models.base import Base
@@ -10,6 +10,7 @@ class MlEmbeddingStream(Base):
     """Tracks embedding computation progress per song/backbone pair."""
 
     __tablename__ = "ml_embedding_streams"
+    __table_args__ = (UniqueConstraint("song_id", "backbone_id", name="uq_ml_embedding_streams_song_backbone"),)
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     song_id: Mapped[int] = mapped_column(ForeignKey("songs.id", ondelete="CASCADE"), nullable=False, index=True)

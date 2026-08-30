@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import insert
+from sqlalchemy import func, insert, select
 
 from nomarr.persistence.database.embedding_stream_repo import EmbeddingStreamRepository
 from nomarr.persistence.models.library import Library
+from nomarr.persistence.models.ml_embedding_stream import MlEmbeddingStream
 from nomarr.persistence.models.song import Song
 
 
@@ -61,7 +62,7 @@ class TestEmbeddingStreamRepository:
         record = repo.upsert_stream(
             song_id=song_id,
             backbone="bb_test",
-            stream_payload={"patches_emb": b"\x00\x01\x02"},
+            patches_emb=b"\x00\x01\x02",
         )
         assert record["id"] > 0
         assert record["song_id"] == song_id
@@ -77,11 +78,33 @@ class TestEmbeddingStreamRepository:
         song_id = _insert_song(pg_session, lib_id)
         repo = EmbeddingStreamRepository(pg_session)
 
-        repo.upsert_stream(song_id, "bb_upd", {"patches_emb": b"\x00"})
-        updated = repo.upsert_stream(song_id, "bb_upd", {"patches_emb": b"\xff\xfe"})
+        repo.upsert_stream(song_id, "bb_upd", b"\x00")
+        updated = repo.upsert_stream(song_id, "bb_upd", b"\xff\xfe")
         assert updated["song_id"] == song_id
         assert updated["backbone"] == "bb_upd"
         assert updated["patches_emb"] == b"\xff\xfe"
+
+    def test_upsert_stream_enforces_single_row(self, pg_session) -> None:
+        """upsert_stream must leave exactly one row per (song, backbone) pair."""
+        lib_id = _insert_library(pg_session)
+        song_id = _insert_song(pg_session, lib_id)
+        repo = EmbeddingStreamRepository(pg_session)
+
+        repo.upsert_stream(song_id, "bb_unique", b"\x01")
+        repo.upsert_stream(song_id, "bb_unique", b"\x02")
+
+        count_stmt = (
+            select(func.count())
+            .select_from(MlEmbeddingStream.__table__)
+            .where(
+                MlEmbeddingStream.__table__.c.song_id == song_id,
+                MlEmbeddingStream.__table__.c.backbone_id == "bb_unique",
+            )
+        )
+        assert pg_session.execute(count_stmt).scalar_one() == 1
+        stream = repo.get_stream(song_id, "bb_unique")
+        assert stream is not None
+        assert stream["patches_emb"] == b"\x02"
 
     def test_get_stream_existing(self, pg_session) -> None:
         """get_stream should return the stream for an existing (file, backbone) pair."""
@@ -89,7 +112,7 @@ class TestEmbeddingStreamRepository:
         song_id = _insert_song(pg_session, lib_id)
         repo = EmbeddingStreamRepository(pg_session)
 
-        repo.upsert_stream(song_id, "bb_get", {"patches_emb": b"\xab"})
+        repo.upsert_stream(song_id, "bb_get", b"\xab")
         result = repo.get_stream(song_id, "bb_get")
         assert result is not None
         assert result["song_id"] == song_id
@@ -109,9 +132,9 @@ class TestEmbeddingStreamRepository:
         song_id_2 = _insert_song(pg_session, lib_id, "/music/es_test/f2.mp3")
         repo = EmbeddingStreamRepository(pg_session)
 
-        repo.upsert_stream(song_id_1, "bb_list", {"patches_emb": b"\x01"})
-        repo.upsert_stream(song_id_2, "bb_list", {"patches_emb": b"\x02"})
-        repo.upsert_stream(song_id_1, "bb_other", {"patches_emb": b"\x03"})
+        repo.upsert_stream(song_id_1, "bb_list", b"\x01")
+        repo.upsert_stream(song_id_2, "bb_list", b"\x02")
+        repo.upsert_stream(song_id_1, "bb_other", b"\x03")
 
         results = repo.list_by_backbone("bb_list")
         assert len(results) == 2
@@ -126,7 +149,7 @@ class TestEmbeddingStreamRepository:
         # Insert 5 streams for the same backbone
         for i in range(5):
             sid = _insert_song(pg_session, lib_id, f"/music/es_test/pg_{i}.mp3")
-            repo.upsert_stream(sid, "bb_page", {"patches_emb": bytes([i])})
+            repo.upsert_stream(sid, "bb_page", bytes([i]))
 
         # Get first 2
         page_1 = repo.list_by_backbone("bb_page", limit=2, offset=0)
@@ -147,8 +170,8 @@ class TestEmbeddingStreamRepository:
         song_id = _insert_song(pg_session, lib_id)
         repo = EmbeddingStreamRepository(pg_session)
 
-        repo.upsert_stream(song_id, "bb_del_1", {"patches_emb": b"\x01"})
-        repo.upsert_stream(song_id, "bb_del_2", {"patches_emb": b"\x02"})
+        repo.upsert_stream(song_id, "bb_del_1", b"\x01")
+        repo.upsert_stream(song_id, "bb_del_2", b"\x02")
 
         repo.delete_for_song(song_id)
         assert repo.get_stream(song_id, "bb_del_1") is None
