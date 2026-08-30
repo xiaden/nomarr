@@ -108,11 +108,12 @@ def scan_library_full_workflow(
     warnings: list[str] = []
     scan_id = f"{library.name}_{now_ms()}"
 
-    # Step 1 — Resolve library and validate root
-    library = resolve_library_for_scan(db, library)
-    library_root = Path(library.root_path).resolve()
-    validate_library_root(library_root)
     try:
+        # Step 1 — Resolve library and validate root
+        library = resolve_library_for_scan(db, library)
+        library_root = Path(library.root_path).resolve()
+        validate_library_root(library_root)
+
         # Step 2 — Pre-scan DB lookups
         db_folder_paths = get_folder_rel_paths(db, library)
         file_count = db.library.count_songs_for_library(library)
@@ -281,14 +282,20 @@ def scan_library_full_workflow(
     except Exception as e:
         if isinstance(e, ScanCancelledError):
             logger.info("Full scan cancelled for library %s", library.name)
-            update_scan_progress(db, library, status="error", scan_error=str(e))
+            try:
+                update_scan_progress(db, library, status="error", scan_error=str(e))
+            except Exception:
+                logger.exception("Failed to record scan error after cancellation for library %s", library.name)
             try:
                 transition_pipeline_axis(db, library, SCAN_STATE_FIELD, SCAN_NOT_SCANNED)
             except Exception:
                 logger.exception("Failed to reset scan axis after cancellation for library %s", library.name)
             raise
         logger.error("Full scan crashed: %s", e, exc_info=True)
-        update_scan_progress(db, library, scan_error=str(e))
+        try:
+            update_scan_progress(db, library, scan_error=str(e))
+        except Exception:
+            logger.exception("Failed to record scan error after scan failure for library %s", library.name)
         try:
             transition_pipeline_axis(db, library, SCAN_STATE_FIELD, SCAN_NOT_SCANNED)
         except Exception:
