@@ -11,13 +11,22 @@ from typing import TYPE_CHECKING, Any
 
 from nomarr.helpers.dataclasses.ml_embedding_stream_dataclass import EmbeddingStream
 from nomarr.helpers.dataclasses.ml_output_stream_dataclass import OutputStream, OutputStreamWrite
+from nomarr.helpers.time_helper import now_ms
+from nomarr.persistence.mappers.model_mapper import (
+    registered_model_from_record,
+    registered_model_insert_payload,
+)
+
+# This mapper edit accompanies the concurrent ML facade migration: keeping the
+# conversion here makes the table repository's storage DTOs unable to escape.
+from nomarr.persistence.mappers.output_mapper import model_output_from_record
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session, scoped_session
 
+    from nomarr.helpers.dataclasses.ml_model_dataclass import RegisteredModel
+    from nomarr.helpers.dataclasses.ml_model_output_dataclass import ModelOutput
     from nomarr.helpers.dto.calibration_repo_dto import CalibrationHistoryRecord, CalibrationStateRecord
-    from nomarr.helpers.dto.model_repo_dto import ModelRecord
-    from nomarr.helpers.dto.output_repo_dto import ModelOutputRecord
     from nomarr.helpers.dto.vector_repo_dto import EmbeddingRecord, SimilarResult
     from nomarr.persistence.database.calibration_repo import CalibrationRepo
     from nomarr.persistence.database.embedding_stream_repo import EmbeddingStreamRepository
@@ -110,7 +119,7 @@ class MlDb:
         authoritative source for available backbone identifiers.
         """
         assert self._model_repo is not None, "ModelRepo not wired"
-        return sorted({model["backbone_id"] for model in self._model_repo.list_models()})
+        return sorted({model.backbone_id for model in self.list_models()})
 
     def clear_vector_collection(self, _collection_name: str) -> None:
         """Remove all vectors from the embeddings table.
@@ -164,59 +173,127 @@ class MlDb:
         assert self._vector_repo is not None, "VectorRepo not wired"
         return self._vector_repo.find_nearest(query_vector, backbone_id=collection_name, limit=limit)
 
-    def get_model(self, model_id: str) -> ModelRecord | None:
-        """Return the ml_models record for model_id, or None if absent."""
+    def get_model(self, model_id: str) -> RegisteredModel | None:
+        """Return the registered model for ``model_id``, or None if absent."""
         assert self._model_repo is not None, "ModelRepo not wired"
-        return self._model_repo.get_model(model_id)
+        record = self._model_repo.get_model(model_id)
+        return registered_model_from_record(record) if record else None
 
-    def get_model_by_type(self, type_str: str) -> ModelRecord | None:
-        """Return the ml_models record whose model_type matches, or None.
+    def get_model_by_path(self, path: str) -> RegisteredModel | None:
+        """Return the registered model for ``path``, or None if absent."""
+        assert self._model_repo is not None, "ModelRepo not wired"
+        record = self._model_repo.get_model_by_path(path)
+        return registered_model_from_record(record) if record else None
 
-        Replaces the former ``get_model_by_path`` — the relational schema
-        uses ``model_type`` rather than a filesystem path.
+    def get_model_by_type(self, model_type: str) -> RegisteredModel | None:
+        """Return the registered model whose ``model_type`` matches."""
+        assert self._model_repo is not None, "ModelRepo not wired"
+        record = self._model_repo.get_model_by_type(model_type)
+        return registered_model_from_record(record) if record else None
+
+    def register_model(
+        self,
+        *,
+        path: str,
+        backbone: str,
+        head_type: str,
+        model_stem: str,
+        output_count: int,
+        source: str = "discovered",
+        head_release_date: str = "",
+        embedder_release_date: str = "",
+    ) -> RegisteredModel:
+        """Insert or update one registered model and return its domain object.
+
+        The model's stable identity is derived from ``path``.  User-state flags
+        (``fully_configured``/``is_known``) are preserved across re-registration.
         """
         assert self._model_repo is not None, "ModelRepo not wired"
-        return self._model_repo.get_model_by_type(type_str)
+        timestamp = now_ms().value
+        existing = self._model_repo.get_model_by_path(path)
+        if existing is None:
+            fully_configured = False
+            is_known = False
+            registered_at: int | None = timestamp
+        else:
+            fully_configured = bool(existing.get("fully_configured", False))
+            is_known = bool(existing.get("is_known", False))
+            registered_at = existing.get("registered_at", timestamp)
+        payload = registered_model_insert_payload(
+            path=path,
+            model_id=existing.get("id") if existing is not None else None,
+            backbone=backbone,
+            head_type=head_type,
+            model_stem=model_stem,
+            output_count=output_count,
+            source=source,
+            head_release_date=head_release_date,
+            embedder_release_date=embedder_release_date,
+            fully_configured=fully_configured,
+            is_known=is_known,
+            registered_at=registered_at,
+        )
+        record = self._model_repo.upsert_model(payload)
+        return registered_model_from_record(record)
 
-    def add_model(self, payload: dict[str, Any]) -> ModelRecord:
-        """Upsert a model row and return the persisted ModelRecord."""
-        assert self._model_repo is not None, "ModelRepo not wired"
-        return self._model_repo.upsert_model(payload)
+    def mark_model_fully_configured(self, model_id: str, value: bool) -> None:
+        """Set the ``fully_configured`` flag on one registered model.
 
-    def update_model(self, model_id: str, fields: dict[str, Any]) -> None:
-        """Apply field updates to an existing ml_models row."""
+        Silently no-ops when the model is absent (preserves prior behaviour).
+        """
         assert self._model_repo is not None, "ModelRepo not wired"
-        self._model_repo.update_model(model_id, fields)
+        if self._model_repo.get_model(model_id) is None:
+            return
+        self._model_repo.update_model(model_id, {"fully_configured": int(value)})
+
+    def mark_model_known(self, model_id: str, value: bool) -> None:
+        """Set the ``is_known`` flag on one registered model.
+
+        Silently no-ops when the model is absent (preserves prior behaviour).
+        """
+        assert self._model_repo is not None, "ModelRepo not wired"
+        if self._model_repo.get_model(model_id) is None:
+            return
+        self._model_repo.update_model(model_id, {"is_known": int(value)})
 
     def remove_model(self, model_id: str) -> None:
-        """Delete one ml_models row by id."""
+        """Delete one registered model by id."""
         assert self._model_repo is not None, "ModelRepo not wired"
         self._model_repo.delete_model(model_id)
 
-    def list_models(self) -> list[ModelRecord]:
-        """Return all ml_models records."""
+    def list_models(self) -> list[RegisteredModel]:
+        """Return all registered models as domain objects."""
         assert self._model_repo is not None, "ModelRepo not wired"
-        return self._model_repo.list_models()
+        return [registered_model_from_record(r) for r in self._model_repo.list_models()]
+
+    def build_model_output_index_map(self) -> dict[str, dict[int, str]]:
+        """Return ``{model_path: {output_index: output_id}}`` across registered models."""
+        result: dict[str, dict[int, str]] = {}
+        for model in self.list_models():
+            for output in self.list_model_outputs(model.id):
+                if output.output_index is not None:
+                    result.setdefault(model.path, {})[output.output_index] = output.output_id
+        return result
 
     def count_models(self) -> int:
-        """Return the total number of registered ml_models rows."""
+        """Return the total number of registered models."""
         assert self._model_repo is not None, "ModelRepo not wired"
         return self._model_repo.count_models()
 
-    def list_models_by_ids(self, model_ids: list[str]) -> list[ModelRecord]:
-        """Return ml_models records whose ids are in model_ids."""
-        assert self._model_repo is not None, "ModelRepo not wired"
-        return self._model_repo.get_models_by_ids(model_ids)
+    def get_model_output(self, output_id: str) -> ModelOutput | None:
+        """Return one model output by stable output identity, or None.
 
-    def get_model_output(self, output_id: str) -> ModelOutputRecord | None:
-        """Return one ml_model_outputs record by stable output identity, or None."""
+        Maps the repository row to a domain :class:`ModelOutput` so callers never
+        depend on storage row fields (integer PK, raw JSONB blob, timestamps).
+        """
         assert self._output_repo is not None, "OutputRepo not wired"
-        return self._output_repo.get_output(output_id)
+        record = self._output_repo.get_output(output_id)
+        return model_output_from_record(record) if record else None
 
-    def list_model_outputs(self, model_id: str) -> list[ModelOutputRecord]:
-        """Return all ml_model_outputs records linked to one model, ordered by index."""
+    def list_model_outputs(self, model_id: str) -> list[ModelOutput]:
+        """Return all model outputs linked to one model, ordered by index, as domain objects."""
         assert self._output_repo is not None, "OutputRepo not wired"
-        return self._output_repo.list_model_outputs(model_id)
+        return [model_output_from_record(record) for record in self._output_repo.list_model_outputs(model_id)]
 
     def get_calibration_state(self, model_id: str) -> CalibrationStateRecord | None:
         """Return the calibration state for model_id, or None if absent."""
@@ -394,24 +471,30 @@ class MlDb:
     def replace_model_output(
         self,
         model_id: str,
-        output_key: str,
-        payload: dict[str, Any],
-    ) -> ModelOutputRecord:
-        """Store one model output and return the persisted record.
+        output_id: str,
+        *,
+        output_index: int | None = None,
+        label: str | None = None,
+        fully_labeled: bool = False,
+    ) -> ModelOutput:
+        """Store one model output vertex and return its domain representation.
 
-        ``output_key`` is the stable output identity generated by the model
-        registry.  ``payload`` may carry ``output_index``, ``label``, and
-        ``fully_labeled`` metadata.
+        ``output_id`` is the stable output identity from the model registry.
+        The caller supplies domain metadata only; the raw ``output_data`` JSONB
+        blob, integer primary key, and timestamps stay inside persistence.
         """
         assert self._output_repo is not None, "OutputRepo not wired"
-        return self._output_repo.store_model_output(
+        record = self._output_repo.store_model_output(
             model_id=model_id,
-            output_id=output_key,
-            output_data=payload,
-            output_index=payload.get("output_index"),
-            label=payload.get("label"),
-            fully_labeled=bool(payload.get("fully_labeled", False)),
+            output_id=output_id,
+            # output_data is a legacy JSONB column with no domain meaning; the
+            # typed metadata lives in the dedicated output_index/label/fully_labeled columns.
+            output_data={},
+            output_index=output_index,
+            label=label,
+            fully_labeled=fully_labeled,
         )
+        return model_output_from_record(record)
 
     def remove_model_output(self, output_id: str) -> None:
         """Delete one model output by stable output identity."""

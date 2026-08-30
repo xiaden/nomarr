@@ -6,9 +6,13 @@ listing models, reading/updating output labels, and marking models as configured
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
+
+if TYPE_CHECKING:
+    from nomarr.helpers.dataclasses.ml_model_dataclass import RegisteredModel
+    from nomarr.helpers.dataclasses.ml_model_output_dataclass import ModelOutput
 
 
 class MlModelResponse(BaseModel):
@@ -28,17 +32,17 @@ class MlModelResponse(BaseModel):
     source: str
 
     @classmethod
-    def from_doc(cls, doc: dict[str, Any]) -> MlModelResponse:
-        """Build response from an ml_models row."""
+    def from_model(cls, model: RegisteredModel) -> MlModelResponse:
+        """Build response from a domain :class:`RegisteredModel`."""
         return cls(
-            id=doc["id"],
-            backbone=doc["backbone"],
-            head_type=doc["head_type"],
-            model_stem=doc["model_stem"],
-            output_count=doc["output_count"],
-            fully_configured=doc.get("fully_configured", False),
-            is_known=doc.get("is_known", False),
-            source=doc.get("source", "discovered"),
+            id=model.id,
+            backbone=model.backbone,
+            head_type=model.head_type,
+            model_stem=model.model_stem,
+            output_count=model.output_count,
+            fully_configured=model.fully_configured,
+            is_known=model.is_known,
+            source=model.source,
         )
 
 
@@ -55,13 +59,13 @@ class MlModelOutputResponse(BaseModel):
     fully_labeled: bool
 
     @classmethod
-    def from_doc(cls, doc: dict[str, Any]) -> MlModelOutputResponse:
-        """Build response from an ml_model_outputs row."""
+    def from_domain(cls, output: ModelOutput) -> MlModelOutputResponse:
+        """Build response from a domain :class:`ModelOutput`."""
         return cls(
-            output_id=doc["output_id"],
-            output_index=doc.get("output_index"),
-            label=doc.get("label"),
-            fully_labeled=doc.get("fully_labeled", False),
+            output_id=output.output_id,
+            output_index=output.output_index,
+            label=output.label,
+            fully_labeled=output.fully_labeled,
         )
 
 

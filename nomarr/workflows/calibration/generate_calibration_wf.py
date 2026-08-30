@@ -51,7 +51,6 @@ from nomarr.components.ml.calibration.ml_calibration_state_comp import (
     set_calibration_version,
 )
 from nomarr.components.ml.onnx.ml_discovery_comp import discover_heads
-from nomarr.components.ml.onnx.ml_model_registry_comp import get_registered_model_by_path
 from nomarr.components.tagging.mood_labels_comp import normalize_tag_label
 
 if TYPE_CHECKING:
@@ -358,13 +357,13 @@ def generate_histogram_calibration_wf(
 
     for head_idx, head_info in enumerate(heads):
         # Resolve model_id from head's model_path
-        model_doc = get_registered_model_by_path(db, head_info.model_path)
+        model_doc = db.ml.get_model_by_path(head_info.model_path)
         if model_doc is None:
             logger.error(f"[histogram_calibration_wf] No model found for path: {head_info.model_path}")
             failed_count += 1
             continue
 
-        model_id = model_doc["id"]
+        model_id = model_doc.id
         head_name = head_info.name
         labels = head_info.labels
 

@@ -16,7 +16,7 @@ from nomarr.helpers.dto.ml_dto import SaveCalibrationSidecarsResult
 
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
-    from nomarr.helpers.dto.model_repo_dto import ModelRecord
+    from nomarr.helpers.dataclasses.ml_model_dataclass import RegisteredModel
     from nomarr.persistence.db import Database
 
 
@@ -242,8 +242,8 @@ def get_sparse_histogram(
     if model_doc is None:
         return []
 
-    backbone = model_doc.get("backbone", "")
-    release_date = model_doc.get("embedder_release_date", "")
+    backbone = model_doc.backbone
+    release_date = model_doc.embedder_release_date
     if not backbone or not release_date:
         return []
 
@@ -422,15 +422,15 @@ def export_calibration_state_to_json(db: Database, output_path: str) -> dict[str
     logger.info(f"[calibration] Exporting calibration_state to {output_path}")
     calibrations = db.ml.list_calibration_states()
     all_models = db.ml.list_models()
-    model_lookup: dict[str, ModelRecord] = {m["id"]: m for m in all_models}
+    model_lookup: dict[str, RegisteredModel] = {m.id: m for m in all_models}
 
     export_data = []
     for calib in calibrations:
         sd = calib.get("state_data", {})
-        model_info: ModelRecord | dict[str, Any] = model_lookup.get(calib.get("model_id", ""), {})
+        model_info = model_lookup.get(calib.get("model_id", ""))
         export_doc = {
-            "backbone": model_info.get("backbone", ""),
-            "embedder_release_date": model_info.get("embedder_release_date", ""),
+            "backbone": model_info.backbone if model_info else "",
+            "embedder_release_date": model_info.embedder_release_date if model_info else "",
             "head_name": sd.get("head_name", ""),
             "label": sd.get("label", ""),
             "calibration_def_hash": sd.get("calibration_def_hash", ""),
@@ -488,8 +488,8 @@ def import_calibration_state_from_json(db: Database, input_path: str, overwrite:
     all_models = db.ml.list_models()
     model_lookup: dict[tuple[str, str], str] = {}
     for model in all_models:
-        key = (model.get("backbone", ""), model.get("embedder_release_date", ""))
-        model_lookup[key] = model["id"]
+        key = (model.backbone, model.embedder_release_date)
+        model_lookup[key] = model.id
 
     imported_count = 0
     skipped_count = 0

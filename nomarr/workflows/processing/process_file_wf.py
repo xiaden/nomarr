@@ -22,7 +22,6 @@ from nomarr.components.ml.audio.ml_chromaprint_comp import compute_chromaprint
 from nomarr.components.ml.inference.ml_backbone_embed_comp import compute_backbone_embeddings
 from nomarr.components.ml.inference.ml_head_pipeline_comp import run_heads
 from nomarr.components.ml.onnx.ml_discovery_comp import compute_model_suite_hash
-from nomarr.components.ml.onnx.ml_model_registry_comp import build_model_output_index_map
 from nomarr.components.ml.resources.ml_timing_comp import build_timing_summary
 from nomarr.components.ml.vectors.ml_vector_persist_comp import persist_backbone_vector
 from nomarr.components.tagging.tagging_aggregation_comp import collect_mood_outputs
@@ -203,7 +202,7 @@ def process_file_workflow(
     tags_accum.update(mood_tags)
     resolved_output_streams: list[DeferredOutputStreamWrite] = []
     if all_raw_output_streams:
-        output_index_map = build_model_output_index_map(db)
+        output_index_map = db.ml.build_model_output_index_map()
         for model_path, output_streams in all_raw_output_streams.items():
             output_ids_by_index = output_index_map.get(model_path)
             if output_ids_by_index is None:

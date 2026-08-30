@@ -3,10 +3,13 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, sentinel
+from unittest.mock import MagicMock, call, sentinel
 
 import pytest
 
+from nomarr.helpers.dataclasses.ml_embedding_stream_dataclass import EmbeddingStream
+from nomarr.helpers.dataclasses.ml_model_dataclass import RegisteredModel
+from nomarr.helpers.dataclasses.ml_model_output_dataclass import ModelOutput
 from nomarr.helpers.dataclasses.ml_output_stream_dataclass import OutputStream, OutputStreamWrite
 from nomarr.persistence.api.ml import MlDb
 
@@ -100,9 +103,60 @@ def test_list_vector_collection_names_returns_registered_backbones() -> None:
     db, _, model_repo, _, _, _ = _make_ml_db()
     model_repo.list_models = MagicMock(
         return_value=[
-            {"backbone_id": "musicnn"},
-            {"backbone_id": "effnet"},
-            {"backbone_id": "musicnn"},
+            {
+                "id": "musicnn-id",
+                "model_type": "head",
+                "backbone_id": "musicnn",
+                "enabled": 1,
+                "created_at": 1,
+                "updated_at": 2,
+                "path": "musicnn.onnx",
+                "backbone": "musicnn",
+                "head_type": "classifier",
+                "model_stem": "m",
+                "output_count": 1,
+                "fully_configured": 0,
+                "is_known": 0,
+                "source": "discovered",
+                "head_release_date": "",
+                "embedder_release_date": "",
+            },
+            {
+                "id": "effnet-id",
+                "model_type": "head",
+                "backbone_id": "effnet",
+                "enabled": 1,
+                "created_at": 1,
+                "updated_at": 2,
+                "path": "effnet.onnx",
+                "backbone": "effnet",
+                "head_type": "classifier",
+                "model_stem": "e",
+                "output_count": 1,
+                "fully_configured": 0,
+                "is_known": 0,
+                "source": "discovered",
+                "head_release_date": "",
+                "embedder_release_date": "",
+            },
+            {
+                "id": "musicnn-id-2",
+                "model_type": "head",
+                "backbone_id": "musicnn",
+                "enabled": 1,
+                "created_at": 1,
+                "updated_at": 2,
+                "path": "musicnn-2.onnx",
+                "backbone": "musicnn",
+                "head_type": "classifier",
+                "model_stem": "m2",
+                "output_count": 1,
+                "fully_configured": 0,
+                "is_known": 0,
+                "source": "discovered",
+                "head_release_date": "",
+                "embedder_release_date": "",
+            },
         ]
     )
 
@@ -164,47 +218,202 @@ def test_search_vectors_delegates_to_vector_repo() -> None:
 
 
 @pytest.mark.unit
-def test_get_model_delegates_to_model_repo() -> None:
+def test_get_model_maps_repository_record_to_domain() -> None:
     db, _, model_repo, _, _, _ = _make_ml_db()
-    model_repo.get_model = MagicMock(return_value=sentinel.result)
+    model_repo.get_model = MagicMock(
+        return_value={
+            "id": "model1",
+            "model_type": "classifier",
+            "backbone_id": "effnet",
+            "enabled": 1,
+            "created_at": 1,
+            "updated_at": 2,
+            "path": "models/foo.onnx",
+            "backbone": "effnet",
+            "head_type": "classifier",
+            "model_stem": "foo",
+            "output_count": 2,
+            "fully_configured": 1,
+            "is_known": 0,
+            "source": "known",
+            "head_release_date": "",
+            "embedder_release_date": "",
+        }
+    )
 
     result = db.get_model("model1")
 
-    assert result is sentinel.result
+    assert result == RegisteredModel(
+        id="model1",
+        path="models/foo.onnx",
+        model_type="classifier",
+        backbone_id="effnet",
+        backbone="effnet",
+        head_type="classifier",
+        model_stem="foo",
+        output_count=2,
+        fully_configured=True,
+        is_known=False,
+        source="known",
+        head_release_date="",
+        embedder_release_date="",
+    )
     model_repo.get_model.assert_called_once_with("model1")
 
 
 @pytest.mark.unit
-def test_get_model_by_type_delegates_to_model_repo() -> None:
+def test_get_model_by_path_maps_repository_record_to_domain() -> None:
     db, _, model_repo, _, _, _ = _make_ml_db()
-    model_repo.get_model_by_type = MagicMock(return_value=sentinel.result)
+    model_repo.get_model_by_path = MagicMock(
+        return_value={
+            "id": "model1",
+            "model_type": "classifier",
+            "backbone_id": "effnet",
+            "enabled": 1,
+            "created_at": 1,
+            "updated_at": 2,
+            "path": "models/foo.onnx",
+            "backbone": "effnet",
+            "head_type": "classifier",
+            "model_stem": "foo",
+            "output_count": 2,
+            "fully_configured": 0,
+            "is_known": 0,
+            "source": "known",
+        }
+    )
 
-    result = db.get_model_by_type("genre")
+    result = db.get_model_by_path("models/foo.onnx")
 
-    assert result is sentinel.result
-    model_repo.get_model_by_type.assert_called_once_with("genre")
+    assert result is not None
+    assert result.id == "model1"
+    assert result.path == "models/foo.onnx"
+    model_repo.get_model_by_path.assert_called_once_with("models/foo.onnx")
 
 
 @pytest.mark.unit
-def test_add_model_upserts_via_model_repo() -> None:
+def test_get_model_by_type_is_separate_from_path_lookup() -> None:
     db, _, model_repo, _, _, _ = _make_ml_db()
-    payload = {"model_type": "genre", "path": "models/foo.onnx"}
-    model_repo.upsert_model = MagicMock(return_value=sentinel.result)
+    model_repo.get_model_by_type = MagicMock(return_value=None)
 
-    result = db.add_model(payload)
-
-    assert result is sentinel.result
-    model_repo.upsert_model.assert_called_once_with(payload)
+    assert db.get_model_by_type("classifier") is None
+    model_repo.get_model_by_type.assert_called_once_with("classifier")
+    model_repo.get_model_by_path.assert_not_called()
 
 
 @pytest.mark.unit
-def test_update_model_delegates_to_model_repo() -> None:
+def test_register_model_maps_complete_required_storage_payload() -> None:
     db, _, model_repo, _, _, _ = _make_ml_db()
-    model_repo.update_model = MagicMock()
+    model_repo.get_model_by_path = MagicMock(return_value=None)
+    model_repo.upsert_model = MagicMock(
+        return_value={
+            "id": "model1",
+            "model_type": "sigmoid",
+            "backbone_id": "effnet",
+            "enabled": 1,
+            "created_at": 1,
+            "updated_at": 2,
+            "path": "models/foo.onnx",
+            "backbone": "effnet",
+            "head_type": "sigmoid",
+            "model_stem": "foo",
+            "output_count": 2,
+            "fully_configured": 0,
+            "is_known": 0,
+            "source": "known",
+        }
+    )
 
-    db.update_model("model1", {"fully_configured": True})
+    result = db.register_model(
+        path="models/foo.onnx",
+        backbone="effnet",
+        head_type="sigmoid",
+        model_stem="foo",
+        output_count=2,
+        source="known",
+    )
 
-    model_repo.update_model.assert_called_once_with("model1", {"fully_configured": True})
+    payload = model_repo.upsert_model.call_args.args[0]
+    assert payload["path"] == "models/foo.onnx"
+    assert payload["model_type"] == "sigmoid"
+    assert payload["backbone_id"] == "effnet"
+    assert payload["backbone"] == "effnet"
+    assert payload["head_type"] == "sigmoid"
+    assert payload["output_count"] == 2
+    assert payload["fully_configured"] == 0
+    assert payload["is_known"] == 0
+    assert result.path == "models/foo.onnx"
+
+
+@pytest.mark.unit
+def test_register_model_preserves_existing_flags_for_idempotent_path_registration() -> None:
+    db, _, model_repo, _, _, _ = _make_ml_db()
+    existing = {
+        "id": "existing-id",
+        "model_type": "old-head",
+        "backbone_id": "old-backbone",
+        "enabled": 1,
+        "created_at": 1,
+        "updated_at": 2,
+        "path": "models/foo.onnx",
+        "fully_configured": 1,
+        "is_known": 1,
+        "registered_at": 42,
+    }
+    model_repo.get_model_by_path = MagicMock(return_value=existing)
+    model_repo.upsert_model = MagicMock(
+        return_value={
+            **existing,
+            "id": "existing-id",
+            "model_type": "sigmoid",
+            "backbone_id": "effnet",
+            "backbone": "effnet",
+            "head_type": "sigmoid",
+            "model_stem": "foo",
+            "output_count": 2,
+            "source": "known",
+        }
+    )
+
+    result = db.register_model(
+        path="models/foo.onnx",
+        backbone="effnet",
+        head_type="sigmoid",
+        model_stem="foo",
+        output_count=2,
+    )
+
+    assert result.path == "models/foo.onnx"
+    payload = model_repo.upsert_model.call_args.args[0]
+    assert payload["id"] == "existing-id"
+    assert payload["fully_configured"] == 1
+    assert payload["is_known"] == 1
+    assert payload["registered_at"] == 42
+    model_repo.get_model_by_path.assert_called_once_with("models/foo.onnx")
+
+
+@pytest.mark.unit
+def test_model_mutation_methods_expose_domain_operations() -> None:
+    db, _, model_repo, _, _, _ = _make_ml_db()
+    model_repo.get_model.return_value = {"id": "model1"}
+
+    db.mark_model_fully_configured("model1", True)
+    db.mark_model_known("model1", False)
+
+    assert model_repo.update_model.call_args_list == [
+        call("model1", {"fully_configured": 1}),
+        call("model1", {"is_known": 0}),
+    ]
+
+
+def test_model_mutation_methods_noop_for_missing_model() -> None:
+    db, _, model_repo, _, _, _ = _make_ml_db()
+    model_repo.get_model.return_value = None
+
+    db.mark_model_fully_configured("missing", True)
+    db.mark_model_known("missing", True)
+
+    model_repo.update_model.assert_not_called()
 
 
 @pytest.mark.unit
@@ -218,13 +427,36 @@ def test_remove_model_delegates_to_model_repo() -> None:
 
 
 @pytest.mark.unit
-def test_list_models_delegates_to_model_repo() -> None:
+def test_list_models_maps_repository_records_to_domain() -> None:
     db, _, model_repo, _, _, _ = _make_ml_db()
-    model_repo.list_models = MagicMock(return_value=sentinel.result)
+    model_repo.list_models = MagicMock(
+        return_value=[
+            {
+                "id": "model1",
+                "model_type": "classifier",
+                "backbone_id": "effnet",
+                "enabled": 1,
+                "created_at": 1,
+                "updated_at": 2,
+                "path": "models/foo.onnx",
+                "backbone": "effnet",
+                "head_type": "classifier",
+                "model_stem": "foo",
+                "output_count": 2,
+                "fully_configured": 0,
+                "is_known": 1,
+                "source": "known",
+                "head_release_date": "",
+                "embedder_release_date": "",
+            }
+        ]
+    )
 
     result = db.list_models()
 
-    assert result is sentinel.result
+    assert result[0].id == "model1"
+    assert result[0].fully_configured is False
+    assert result[0].is_known is True
     model_repo.list_models.assert_called_once_with()
 
 
@@ -240,36 +472,61 @@ def test_count_models_delegates_to_model_repo() -> None:
 
 
 @pytest.mark.unit
-def test_list_models_by_ids_delegates_to_model_repo() -> None:
-    db, _, model_repo, _, _, _ = _make_ml_db()
-    model_ids = ["model1", "model2"]
-    model_repo.get_models_by_ids = MagicMock(return_value=sentinel.result)
-
-    result = db.list_models_by_ids(model_ids)
-
-    assert result is sentinel.result
-    model_repo.get_models_by_ids.assert_called_once_with(model_ids)
-
-
-@pytest.mark.unit
 def test_get_model_output_delegates_to_output_repo() -> None:
     db, _, _, output_repo, _, _ = _make_ml_db()
-    output_repo.get_output = MagicMock(return_value=sentinel.result)
+    output_repo.get_output = MagicMock(
+        return_value={
+            "id": 1,
+            "output_id": "output1",
+            "model_id": "model1",
+            "output_data": {},
+            "created_at": 123,
+            "output_index": 2,
+            "label": "rock",
+            "fully_labeled": True,
+        }
+    )
 
     result = db.get_model_output("output1")
 
-    assert result is sentinel.result
+    assert result == ModelOutput(output_id="output1", output_index=2, label="rock", fully_labeled=True)
     output_repo.get_output.assert_called_once_with("output1")
 
 
 @pytest.mark.unit
 def test_list_model_outputs_delegates_to_output_repo() -> None:
     db, _, _, output_repo, _, _ = _make_ml_db()
-    output_repo.list_model_outputs = MagicMock(return_value=sentinel.result)
+    output_repo.list_model_outputs = MagicMock(
+        return_value=[
+            {
+                "id": 1,
+                "output_id": "a",
+                "model_id": "model1",
+                "output_data": {},
+                "created_at": 123,
+                "output_index": 0,
+                "label": "mood",
+                "fully_labeled": True,
+            },
+            {
+                "id": 2,
+                "output_id": "b",
+                "model_id": "model1",
+                "output_data": {},
+                "created_at": 124,
+                "output_index": 1,
+                "label": None,
+                "fully_labeled": False,
+            },
+        ]
+    )
 
     result = db.list_model_outputs("model1")
 
-    assert result is sentinel.result
+    assert result == [
+        ModelOutput(output_id="a", output_index=0, label="mood", fully_labeled=True),
+        ModelOutput(output_id="b", output_index=1, label=None, fully_labeled=False),
+    ]
     output_repo.list_model_outputs.assert_called_once_with("model1")
 
 
@@ -529,23 +786,22 @@ def test_count_calibration_history_returns_zero_for_empty() -> None:
 @pytest.mark.unit
 def test_replace_embedding_stream_for_song_delegates_to_embedding_stream_repo() -> None:
     db, _, _, _, _, embedding_stream_repo = _make_ml_db()
-    embedding_stream_repo.upsert_stream = MagicMock(return_value=sentinel.result)
-    payload = {"status": "success", "frame_count": 100}
+    embedding_stream_repo.upsert_stream = MagicMock(return_value={"backbone": "openl3", "patches_emb": b"\x00\x01"})
 
-    result = db.replace_embedding_stream_for_song(42, "openl3", payload)
+    result = db.replace_embedding_stream_for_song(42, "openl3", b"\x00\x01")
 
-    assert result is sentinel.result
-    embedding_stream_repo.upsert_stream.assert_called_once_with(42, "openl3", payload)
+    assert result == EmbeddingStream(backbone="openl3", patches_emb=b"\x00\x01")
+    embedding_stream_repo.upsert_stream.assert_called_once_with(42, "openl3", b"\x00\x01")
 
 
 @pytest.mark.unit
 def test_get_embedding_stream_for_song_delegates_to_embedding_stream_repo() -> None:
     db, _, _, _, _, embedding_stream_repo = _make_ml_db()
-    embedding_stream_repo.get_stream = MagicMock(return_value=sentinel.result)
+    embedding_stream_repo.get_stream = MagicMock(return_value={"backbone": "openl3", "patches_emb": b"\xab"})
 
     result = db.get_embedding_stream_for_song(42, "openl3")
 
-    assert result is sentinel.result
+    assert result == EmbeddingStream(backbone="openl3", patches_emb=b"\xab")
     embedding_stream_repo.get_stream.assert_called_once_with(42, "openl3")
 
 
@@ -563,22 +819,30 @@ def test_get_embedding_stream_for_song_returns_none_when_absent() -> None:
 @pytest.mark.unit
 def test_list_embedding_streams_by_backbone_default_params() -> None:
     db, _, _, _, _, embedding_stream_repo = _make_ml_db()
-    embedding_stream_repo.list_by_backbone = MagicMock(return_value=sentinel.result)
+    embedding_stream_repo.list_by_backbone = MagicMock(return_value=[{"backbone": "openl3", "patches_emb": b"\x01"}])
 
     result = db.list_embedding_streams_by_backbone("openl3")
 
-    assert result is sentinel.result
+    assert result == [EmbeddingStream(backbone="openl3", patches_emb=b"\x01")]
     embedding_stream_repo.list_by_backbone.assert_called_once_with("openl3", limit=50, offset=0)
 
 
 @pytest.mark.unit
 def test_list_embedding_streams_by_backbone_custom_pagination() -> None:
     db, _, _, _, _, embedding_stream_repo = _make_ml_db()
-    embedding_stream_repo.list_by_backbone = MagicMock(return_value=sentinel.result)
+    embedding_stream_repo.list_by_backbone = MagicMock(
+        return_value=[
+            {"backbone": "openl3", "patches_emb": b"\x01"},
+            {"backbone": "openl3", "patches_emb": b"\x02"},
+        ]
+    )
 
     result = db.list_embedding_streams_by_backbone("openl3", limit=10, offset=20)
 
-    assert result is sentinel.result
+    assert result == [
+        EmbeddingStream(backbone="openl3", patches_emb=b"\x01"),
+        EmbeddingStream(backbone="openl3", patches_emb=b"\x02"),
+    ]
     embedding_stream_repo.list_by_backbone.assert_called_once_with("openl3", limit=10, offset=20)
 
 
@@ -600,16 +864,32 @@ def test_remove_embedding_streams_for_song_delegates_to_embedding_stream_repo() 
 @pytest.mark.unit
 def test_replace_model_output_delegates_to_output_repo() -> None:
     db, _, _, output_repo, _, _ = _make_ml_db()
-    output_repo.store_model_output = MagicMock(return_value=sentinel.result)
-    payload = {"genre": "rock", "confidence": 0.95, "output_index": 3, "label": "rock", "fully_labeled": True}
+    output_repo.store_model_output = MagicMock(
+        return_value={
+            "id": 9,
+            "output_id": "legacy_key",
+            "model_id": "model1",
+            "output_data": {},
+            "created_at": 123,
+            "output_index": 3,
+            "label": "rock",
+            "fully_labeled": True,
+        }
+    )
 
-    result = db.replace_model_output("model1", "legacy_key", payload)
+    result = db.replace_model_output(
+        "model1",
+        "legacy_key",
+        output_index=3,
+        label="rock",
+        fully_labeled=True,
+    )
 
-    assert result is sentinel.result
+    assert result == ModelOutput(output_id="legacy_key", output_index=3, label="rock", fully_labeled=True)
     output_repo.store_model_output.assert_called_once_with(
         model_id="model1",
         output_id="legacy_key",
-        output_data=payload,
+        output_data={},
         output_index=3,
         label="rock",
         fully_labeled=True,
@@ -619,15 +899,26 @@ def test_replace_model_output_delegates_to_output_repo() -> None:
 @pytest.mark.unit
 def test_replace_model_output_defaults_metadata_when_absent() -> None:
     db, _, _, output_repo, _, _ = _make_ml_db()
-    output_repo.store_model_output = MagicMock(return_value=sentinel.result)
-    payload = {"genre": "rock"}
+    output_repo.store_model_output = MagicMock(
+        return_value={
+            "id": 10,
+            "output_id": "output_1",
+            "model_id": "model1",
+            "output_data": {},
+            "created_at": 123,
+            "output_index": None,
+            "label": None,
+            "fully_labeled": False,
+        }
+    )
 
-    db.replace_model_output("model1", "output_1", payload)
+    result = db.replace_model_output("model1", "output_1")
 
+    assert result == ModelOutput(output_id="output_1", output_index=None, label=None, fully_labeled=False)
     output_repo.store_model_output.assert_called_once_with(
         model_id="model1",
         output_id="output_1",
-        output_data=payload,
+        output_data={},
         output_index=None,
         label=None,
         fully_labeled=False,

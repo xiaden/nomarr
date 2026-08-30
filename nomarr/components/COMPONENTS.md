@@ -92,7 +92,7 @@ components/
 │   │   ├── ml_discovery_comp.py       # Model file discovery
 │   │   ├── ml_head.py                 # ONNX head model wrapper
 │   │   ├── ml_known_models_comp.py    # Known model registry
-│   │   ├── ml_model_registry_comp.py  # Model registration and output labeling
+│   │   ├── ml_model_registry_comp.py  # Model output vertex helpers (labeling)
 │   │   └── ml_session_comp.py         # ONNX session management
 │   │
 │   ├── resources/

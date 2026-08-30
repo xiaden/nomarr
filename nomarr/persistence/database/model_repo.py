@@ -64,12 +64,16 @@ class ModelRepo:
             row = select_by_key(_T, model_id, session=self._session)
             return _row_to_dto(row) if row else None
 
-    def get_model_by_type(self, model_type: str) -> ModelRecord | None:
-        """Fetch a model by its ``model_type`` column.
+    def get_model_by_path(self, path: str) -> ModelRecord | None:
+        """Fetch a single model by its ``path`` column (the registration identity)."""
+        with map_persistence_exceptions():
+            stmt = select(_T).where(_T.c.path == path)
+            result = self._session.execute(stmt)
+            row = result.fetchone()
+            return _row_to_dto(row) if row else None
 
-        ``MlModel`` has no ``path`` column; this searches by ``model_type``
-        which identifies the model architecture (e.g. ``'onnx_genre_v2'``).
-        """
+    def get_model_by_type(self, model_type: str) -> ModelRecord | None:
+        """Fetch a model by its ``model_type`` column."""
         with map_persistence_exceptions():
             stmt = select(_T).where(_T.c.model_type == model_type)
             result = self._session.execute(stmt)
@@ -132,7 +136,9 @@ class ModelRepo:
             data.setdefault("created_at", now)
             data["updated_at"] = now
 
-            set_clause = {k: v for k, v in data.items() if k != "id"}
+            # Creation time is immutable after insert; only refresh update time
+            # and the explicitly supplied mutable fields on conflict.
+            set_clause = {k: v for k, v in data.items() if k not in {"id", "created_at"}}
             with self._session.begin_nested():
                 stmt = (
                     pg_insert(_T)

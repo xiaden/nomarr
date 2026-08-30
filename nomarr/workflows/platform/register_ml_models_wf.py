@@ -14,19 +14,14 @@ from __future__ import annotations
 import glob
 import logging
 import os
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from nomarr.components.ml.onnx.ml_head import head_parts_from_path
 from nomarr.components.ml.onnx.ml_known_models_comp import get_known_outputs
 from nomarr.components.ml.onnx.ml_model_registry_comp import (
     ensure_model_outputs,
     list_fully_labeled_model_outputs,
-    list_registered_models,
-    mark_model_fully_configured,
-    mark_model_known,
-    prune_registered_model,
     update_model_output_label,
-    upsert_registered_model,
 )
 
 if TYPE_CHECKING:
@@ -80,8 +75,7 @@ def register_ml_models_workflow(
         # Step 3: Upsert model vertex
         known_outputs = get_known_outputs(model_stem)
         source = "known" if known_outputs is not None else "discovered"
-        model_doc = upsert_registered_model(
-            db,
+        model_doc = db.ml.register_model(
             path=onnx_path,
             backbone=backbone,
             head_type=head_type,
@@ -89,7 +83,7 @@ def register_ml_models_workflow(
             output_count=output_count,
             source=source,
         )
-        model_id: str = model_doc["id"]
+        model_id: str = model_doc.id
 
         # Step 4: Ensure output vertices exist (model-scoped metadata — no song context)
         outputs = ensure_model_outputs(db, model_id=model_id, output_count=output_count)
@@ -98,17 +92,17 @@ def register_ml_models_workflow(
         if known_outputs is not None:
             for output_index, label in known_outputs:
                 output_doc = outputs[output_index]
-                if output_doc.get("fully_labeled", False):
+                if output_doc.fully_labeled:
                     continue
                 update_model_output_label(
                     db,
                     model_id=model_id,
-                    output_id=output_doc["output_id"],
+                    output_id=output_doc.output_id,
                     label=label,
                 )
             fully_labeled = list_fully_labeled_model_outputs(db, model_id)
             if len(fully_labeled) == output_count:
-                mark_model_fully_configured(db, model_id, value=True)
+                db.ml.mark_model_fully_configured(model_id, value=True)
                 logger.debug(
                     "Model %s: known, %d/%d outputs labeled, fully_configured=True",
                     model_stem,
@@ -123,7 +117,7 @@ def register_ml_models_workflow(
                     len(fully_labeled),
                     output_count,
                 )
-            mark_model_known(db, model_id, value=True)
+            db.ml.mark_model_known(model_id, value=True)
         else:
             logger.warning(
                 "Model %s: unknown, %d outputs need labeling via UI",
@@ -133,13 +127,13 @@ def register_ml_models_workflow(
 
     # Prune stale model vertices — models in DB whose ONNX file no longer exists
     discovered_paths: set[str] = set(onnx_paths)
-    all_registered = list_registered_models(db)
-    stale_models = [m for m in all_registered if m["path"] not in discovered_paths]
+    all_registered = db.ml.list_models()
+    stale_models = [m for m in all_registered if m.path not in discovered_paths]
     for stale in stale_models:
-        stale_id: str = stale["id"]
-        stale_path: str = stale["path"]
-        prune_result = prune_registered_model(db, stale_id)
-        output_ids = cast("list[str]", prune_result["output_ids"])
+        stale_id: str = stale.id
+        stale_path: str = stale.path
+        output_ids = db.ml.remove_model_outputs_for_model(stale_id)
+        db.ml.remove_model(stale_id)
         logger.warning(
             "Pruned stale model %s: removed %d output(s)",
             stale_path,

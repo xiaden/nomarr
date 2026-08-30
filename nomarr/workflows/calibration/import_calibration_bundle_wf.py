@@ -31,7 +31,6 @@ from nomarr.components.ml.calibration.ml_calibration_state_comp import (
     save_calibration_state,
     set_calibration_version,
 )
-from nomarr.components.ml.onnx.ml_model_registry_comp import list_registered_models
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -100,13 +99,13 @@ def import_calibration_bundle_wf(
         raise ValueError(msg)
 
     # Build model lookup cache: (backbone, embedder_release_date) -> model_id
-    all_models = list_registered_models(db)
+    all_models = db.ml.list_models()
     model_lookup: dict[tuple[str, str], str] = {}
     for model in all_models:
-        backbone = model.get("backbone", "")
-        embedder_date = model.get("embedder_release_date", "")
+        backbone = model.backbone
+        embedder_date = model.embedder_release_date
         if backbone and embedder_date:
-            model_lookup[(backbone, embedder_date)] = model["id"]
+            model_lookup[(backbone, embedder_date)] = model.id
 
     # Import calibrations to database
     imported_count = 0

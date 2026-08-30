@@ -41,6 +41,9 @@ def test_process_file_workflow_packages_resolved_output_streams_and_skips_missin
         ),
     )
     mock_db = MagicMock()
+    mock_db.ml.build_model_output_index_map.return_value = {
+        model_path: {0: "ml_model_outputs/out-0", 2: "ml_model_outputs/out-2"}
+    }
     library_path = MagicMock()
     library_path.is_valid.return_value = True
     library_path.absolute = Path("/music/song.flac")
@@ -86,10 +89,6 @@ def test_process_file_workflow_packages_resolved_output_streams_and_skips_missin
             },
         ) as persist_vector_mock,
         patch("nomarr.workflows.processing.process_file_wf.collect_mood_outputs", return_value={}),
-        patch(
-            "nomarr.workflows.processing.process_file_wf.build_model_output_index_map",
-            return_value={model_path: {0: "ml_model_outputs/out-0", 2: "ml_model_outputs/out-2"}},
-        ) as build_output_index_map_mock,
         patch("nomarr.workflows.processing.process_file_wf.build_timing_summary", return_value="timing-summary"),
     ):
         result = process_file_workflow(
@@ -100,7 +99,7 @@ def test_process_file_workflow_packages_resolved_output_streams_and_skips_missin
             file_id=1,
         )
 
-    build_output_index_map_mock.assert_called_once_with(mock_db)
+    mock_db.ml.build_model_output_index_map.assert_called_once_with()
     persist_vector_mock.assert_called_once()
     assert persist_vector_mock.call_args.args[0] == "bb1"
     assert persist_vector_mock.call_args.args[2] == "suite-hash"

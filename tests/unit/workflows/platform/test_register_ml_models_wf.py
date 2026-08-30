@@ -8,6 +8,8 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
+from nomarr.helpers.dataclasses.ml_model_dataclass import RegisteredModel
+from nomarr.helpers.dataclasses.ml_model_output_dataclass import ModelOutput
 from nomarr.workflows.platform.register_ml_models_wf import register_ml_models_workflow
 
 if TYPE_CHECKING:
@@ -42,20 +44,20 @@ class TestRegisterMlModelsWorkflow:
         onnx_path.write_bytes(b"fake")
 
         db = MagicMock()
-        model_id = "ml_models/model-1"
+        model_id = "model-1"
         outputs = [
-            {
-                "output_id": "ml_model_outputs/output-0",
-                "output_index": 0,
-                "label": "custom-happy",
-                "fully_labeled": True,
-            },
-            {
-                "output_id": "ml_model_outputs/output-1",
-                "output_index": 1,
-                "label": None,
-                "fully_labeled": False,
-            },
+            ModelOutput(
+                output_id="ml_model_outputs/output-0",
+                output_index=0,
+                label="custom-happy",
+                fully_labeled=True,
+            ),
+            ModelOutput(
+                output_id="ml_model_outputs/output-1",
+                output_index=1,
+                label=None,
+                fully_labeled=False,
+            ),
         ]
 
         with (
@@ -64,9 +66,24 @@ class TestRegisterMlModelsWorkflow:
                 "nomarr.workflows.platform.register_ml_models_wf.get_known_outputs",
                 return_value=[(0, "happy"), (1, "sad")],
             ),
-            patch(
-                "nomarr.workflows.platform.register_ml_models_wf.upsert_registered_model",
-                return_value={"id": model_id},
+            patch.object(
+                db.ml,
+                "register_model",
+                return_value=RegisteredModel(
+                    id=model_id,
+                    path=str(onnx_path),
+                    model_type="sigmoid",
+                    backbone_id="effnet",
+                    backbone="effnet",
+                    head_type="sigmoid",
+                    model_stem="mood_happy",
+                    output_count=2,
+                    fully_configured=False,
+                    is_known=False,
+                    source="known",
+                    head_release_date="",
+                    embedder_release_date="",
+                ),
             ),
             patch(
                 "nomarr.workflows.platform.register_ml_models_wf.ensure_model_outputs",
@@ -78,21 +95,10 @@ class TestRegisterMlModelsWorkflow:
             patch(
                 "nomarr.workflows.platform.register_ml_models_wf.list_fully_labeled_model_outputs",
                 return_value=[
-                    {"output_id": "ml_model_outputs/output-0", "label": "custom-happy"},
-                    {"output_id": "ml_model_outputs/output-1", "label": "sad"},
+                    ModelOutput(output_id="ml_model_outputs/output-0", label="custom-happy"),
+                    ModelOutput(output_id="ml_model_outputs/output-1", label="sad"),
                 ],
             ),
-            patch(
-                "nomarr.workflows.platform.register_ml_models_wf.mark_model_fully_configured",
-            ) as mock_mark_configured,
-            patch(
-                "nomarr.workflows.platform.register_ml_models_wf.mark_model_known",
-            ) as mock_mark_known,
-            patch(
-                "nomarr.workflows.platform.register_ml_models_wf.list_registered_models",
-                return_value=[],
-            ),
-            patch("nomarr.workflows.platform.register_ml_models_wf.prune_registered_model") as mock_prune,
         ):
             register_ml_models_workflow(db, str(tmp_path))
 
@@ -102,9 +108,9 @@ class TestRegisterMlModelsWorkflow:
             output_id="ml_model_outputs/output-1",
             label="sad",
         )
-        mock_mark_configured.assert_called_once_with(db, model_id, value=True)
-        mock_mark_known.assert_called_once_with(db, model_id, value=True)
-        mock_prune.assert_not_called()
+        db.ml.mark_model_fully_configured.assert_called_once_with(model_id, value=True)
+        db.ml.mark_model_known.assert_called_once_with(model_id, value=True)
+        db.ml.remove_model.assert_not_called()
 
     def test_seeds_all_known_outputs_when_model_is_new(
         self,
@@ -116,20 +122,20 @@ class TestRegisterMlModelsWorkflow:
         onnx_path.write_bytes(b"fake")
 
         db = MagicMock()
-        model_id = "ml_models/model-1"
+        model_id = "model-1"
         outputs = [
-            {
-                "output_id": "ml_model_outputs/output-0",
-                "output_index": 0,
-                "label": None,
-                "fully_labeled": False,
-            },
-            {
-                "output_id": "ml_model_outputs/output-1",
-                "output_index": 1,
-                "label": None,
-                "fully_labeled": False,
-            },
+            ModelOutput(
+                output_id="ml_model_outputs/output-0",
+                output_index=0,
+                label=None,
+                fully_labeled=False,
+            ),
+            ModelOutput(
+                output_id="ml_model_outputs/output-1",
+                output_index=1,
+                label=None,
+                fully_labeled=False,
+            ),
         ]
 
         with (
@@ -138,9 +144,24 @@ class TestRegisterMlModelsWorkflow:
                 "nomarr.workflows.platform.register_ml_models_wf.get_known_outputs",
                 return_value=[(0, "happy"), (1, "sad")],
             ),
-            patch(
-                "nomarr.workflows.platform.register_ml_models_wf.upsert_registered_model",
-                return_value={"id": model_id},
+            patch.object(
+                db.ml,
+                "register_model",
+                return_value=RegisteredModel(
+                    id=model_id,
+                    path=str(onnx_path),
+                    model_type="sigmoid",
+                    backbone_id="effnet",
+                    backbone="effnet",
+                    head_type="sigmoid",
+                    model_stem="mood_happy",
+                    output_count=2,
+                    fully_configured=False,
+                    is_known=False,
+                    source="known",
+                    head_release_date="",
+                    embedder_release_date="",
+                ),
             ),
             patch(
                 "nomarr.workflows.platform.register_ml_models_wf.ensure_model_outputs",
@@ -152,21 +173,10 @@ class TestRegisterMlModelsWorkflow:
             patch(
                 "nomarr.workflows.platform.register_ml_models_wf.list_fully_labeled_model_outputs",
                 return_value=[
-                    {"output_id": "ml_model_outputs/output-0", "label": "happy"},
-                    {"output_id": "ml_model_outputs/output-1", "label": "sad"},
+                    ModelOutput(output_id="ml_model_outputs/output-0", label="happy"),
+                    ModelOutput(output_id="ml_model_outputs/output-1", label="sad"),
                 ],
             ),
-            patch(
-                "nomarr.workflows.platform.register_ml_models_wf.mark_model_fully_configured",
-            ),
-            patch(
-                "nomarr.workflows.platform.register_ml_models_wf.mark_model_known",
-            ),
-            patch(
-                "nomarr.workflows.platform.register_ml_models_wf.list_registered_models",
-                return_value=[],
-            ),
-            patch("nomarr.workflows.platform.register_ml_models_wf.prune_registered_model"),
         ):
             register_ml_models_workflow(db, str(tmp_path))
 

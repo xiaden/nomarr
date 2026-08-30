@@ -6,7 +6,6 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from nomarr.components.library.library_song_state_comp import transition_song_state
-from nomarr.components.ml.onnx.ml_model_registry_comp import build_model_output_index_map
 from nomarr.helpers.constants.file_states import STATE_NOT_PROCESSED, STATE_PROCESSED
 from nomarr.helpers.dataclasses.ml_output_stream_dataclass import OutputStream, OutputStreamWrite
 from nomarr.helpers.dto.ml_dto import LoadedOutputStream
@@ -65,7 +64,7 @@ def build_output_stream_lookup(
     head_infos: list[Any],
 ) -> dict[str, tuple[str, str]]:
     """Build ``{output_id: (head_name, label)}`` from registered outputs and heads."""
-    output_index_map = build_model_output_index_map(db)
+    output_index_map = db.ml.build_model_output_index_map()
     output_lookup: dict[str, tuple[str, str]] = {}
 
     for head_info in head_infos:

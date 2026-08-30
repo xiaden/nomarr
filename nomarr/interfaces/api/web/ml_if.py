@@ -65,7 +65,7 @@ async def ml_list_models(
     """Return all registered ML model vertices with their configuration status."""
     try:
         docs = await asyncio.to_thread(ml_service.list_all_models)
-        return [MlModelResponse.from_doc(doc) for doc in docs]
+        return [MlModelResponse.from_model(doc) for doc in docs]
     except Exception as e:
         logger.exception("[ml_if] Failed to list models")
         raise HTTPException(
@@ -81,8 +81,8 @@ async def ml_get_model_outputs(
 ) -> list[MlModelOutputResponse]:
     """Return all output activation vertices for a model."""
     try:
-        docs = await asyncio.to_thread(ml_service.get_model_outputs, model_id)
-        return [MlModelOutputResponse.from_doc(doc) for doc in docs]
+        outputs = await asyncio.to_thread(ml_service.get_model_outputs, model_id)
+        return [MlModelOutputResponse.from_domain(output) for output in outputs]
     except Exception as e:
         logger.exception("[ml_if] Failed to get model outputs for %s", model_id)
         raise HTTPException(

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from nomarr.components.ml.onnx.ml_discovery_comp import (
     discover_backbones,
@@ -17,14 +17,14 @@ from nomarr.components.ml.onnx.ml_discovery_comp import (
 )
 from nomarr.components.ml.onnx.ml_model_registry_comp import (
     list_model_outputs_for_model,
-    list_registered_models,
-    mark_model_fully_configured,
     update_model_output_label,
 )
 from nomarr.components.ml.resources.ml_vram_probe_comp import clear_model_vram_measurements
 from nomarr.helpers.dto.ml_head_dto import HeadInfo
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dataclasses.ml_model_dataclass import RegisteredModel
+    from nomarr.helpers.dataclasses.ml_model_output_dataclass import ModelOutput
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
@@ -115,44 +115,44 @@ class MLService:
         clear_model_vram_measurements(self.db)
         logger.info("[MLService] VRAM measurements cleared — probe will re-run on next worker start")
 
-    def list_all_models(self) -> list[dict[str, Any]]:
+    def list_all_models(self) -> list[RegisteredModel]:
         """Return all registered ML model vertices.
 
         Returns:
-            List of ml_models documents.
+            List of :class:`RegisteredModel` domain objects.
 
         """
-        return list_registered_models(self.db)
+        return self.db.ml.list_models()
 
-    def get_model_outputs(self, model_id: str) -> list[dict[str, Any]]:
-        """Return output vertices for a specific model.
+    def get_model_outputs(self, model_id: str) -> list[ModelOutput]:
+        """Return output metadata for a registered model.
 
         Args:
-            model_id: Primary key of the model row.
+            model_id: Stable domain identifier of the registered model.
 
         Returns:
-            List of ml_model_outputs documents ordered by output_index.
+            List of :class:`ModelOutput` domain objects ordered by output_index.
 
         """
         return list_model_outputs_for_model(self.db, model_id)
 
-    def update_output_label(self, model_id: str | int, output_id: str, label: str) -> None:
+    def update_output_label(self, model_id: str, output_id: str, label: str) -> None:
         """Write a human-readable label for a model output vertex.
 
         Args:
-            model_id: Model identifier (e.g., 'effnet-v1' or int DB key).
+            model_id: Stable domain identifier of the registered model.
             output_id: Stable output identifier.
             label: Human-readable tag label for this activation.
 
         """
-        update_model_output_label(self.db, model_id=str(model_id), output_id=output_id, label=label)
+        update_model_output_label(self.db, model_id=model_id, output_id=output_id, label=label)
 
-    def mark_model_configured(self, model_id: str | int, value: bool) -> None:
+    def mark_model_configured(self, model_id: str, value: bool) -> None:
         """Set the fully_configured flag on a model vertex.
 
         Args:
-            model_id: Model identifier (e.g., 'effnet-v1' or int DB key).
+            model_id: Stable domain identifier of the registered model.
             value: True to enable model for inference, False to disable.
 
         """
-        mark_model_fully_configured(self.db, str(model_id), value)
+        self.db.ml.mark_model_fully_configured(model_id, value)

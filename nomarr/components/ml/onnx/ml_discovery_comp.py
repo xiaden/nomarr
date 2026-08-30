@@ -191,13 +191,13 @@ def _discover_heads_from_db(models_dir: str, db: Database) -> list[HeadInfo]:
     all_models = db.ml.list_models()
 
     for doc in all_models:
-        if not doc.get("fully_configured", 0):
+        if not doc.fully_configured:
             continue
 
-        backbone: str = doc.get("backbone", "")
-        head_type: str = doc.get("head_type", "")
-        model_stem: str = doc.get("model_stem", "")
-        model_path: str = doc.get("path", "")
+        backbone: str = doc.backbone
+        head_type: str = doc.head_type
+        model_stem: str = doc.model_stem
+        model_path: str = doc.path
 
         embedding_graph = _resolve_embedding_graph(models_dir, backbone)
         if not embedding_graph:
@@ -209,11 +209,9 @@ def _discover_heads_from_db(models_dir: str, db: Database) -> list[HeadInfo]:
             continue
 
         # Labels from fully-labeled output vertices
-        model_id: str = doc["id"]
+        model_id: str = doc.id
         output_records = db.ml.list_model_outputs(model_id)
-        labels = [
-            lbl for od in output_records if od.get("fully_labeled", False) and (lbl := od.get("label")) is not None
-        ]
+        labels = [lbl for od in output_records if od.fully_labeled and (lbl := od.label) is not None]
 
         heads.append(
             HeadInfo(

@@ -207,15 +207,12 @@ class TestBuildOutputStreamLookup:
 
     def test_returns_empty_dict_when_head_infos_is_empty(self) -> None:
         mock_db = MagicMock()
+        mock_db.ml.build_model_output_index_map.return_value = {}
 
-        with patch(
-            "nomarr.components.ml.inference.ml_output_stream_store_comp.build_model_output_index_map",
-            return_value={},
-        ) as mock_build_index_map:
-            result = build_output_stream_lookup(mock_db, [])
+        result = build_output_stream_lookup(mock_db, [])
 
         assert result == {}
-        mock_build_index_map.assert_called_once_with(mock_db)
+        mock_db.ml.build_model_output_index_map.assert_called_once_with()
 
     def test_builds_lookup_from_head_infos_with_labels(self) -> None:
         mock_db = MagicMock()
@@ -224,14 +221,12 @@ class TestBuildOutputStreamLookup:
             SimpleNamespace(name="genre", model_path="models/genre.onnx", labels=["rock"]),
         ]
 
-        with patch(
-            "nomarr.components.ml.inference.ml_output_stream_store_comp.build_model_output_index_map",
-            return_value={
-                "models/mood.onnx": {0: "ml_model_outputs/out-1", 1: "ml_model_outputs/out-2"},
-                "models/genre.onnx": {0: "ml_model_outputs/out-3"},
-            },
-        ):
-            result = build_output_stream_lookup(mock_db, head_infos)
+        mock_db.ml.build_model_output_index_map.return_value = {
+            "models/mood.onnx": {0: "ml_model_outputs/out-1", 1: "ml_model_outputs/out-2"},
+            "models/genre.onnx": {0: "ml_model_outputs/out-3"},
+        }
+
+        result = build_output_stream_lookup(mock_db, head_infos)
 
         assert result == {
             "ml_model_outputs/out-1": ("mood", "sad"),

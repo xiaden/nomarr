@@ -34,7 +34,7 @@ class TestModelRepo:
     def test_upsert_model_update(self, pg_session) -> None:
         """upsert_model should update an existing model on conflict."""
         repo = ModelRepo(pg_session)
-        repo.upsert_model(
+        original = repo.upsert_model(
             {
                 "id": "model_b",
                 "model_type": "genre",
@@ -51,6 +51,7 @@ class TestModelRepo:
             }
         )
         assert updated["id"] == "model_b"
+        assert updated["created_at"] == original["created_at"]
         assert updated["model_type"] == "mood"
         assert updated["backbone_id"] == "bb_2"
         assert updated["enabled"] == 0
@@ -98,6 +99,35 @@ class TestModelRepo:
         repo = ModelRepo(pg_session)
         result = repo.get_model_by_type("no_such_type")
         assert result is None
+
+    def test_get_model_by_path_uses_path_identity(self, pg_session) -> None:
+        """Path lookup must distinguish rows sharing the same model type."""
+        repo = ModelRepo(pg_session)
+        repo.upsert_model(
+            {
+                "id": "model_path_a",
+                "model_type": "shared_type",
+                "backbone_id": "bb_1",
+                "enabled": 1,
+                "path": "/models/a.onnx",
+            }
+        )
+        repo.upsert_model(
+            {
+                "id": "model_path_b",
+                "model_type": "shared_type",
+                "backbone_id": "bb_2",
+                "enabled": 1,
+                "path": "/models/b.onnx",
+            }
+        )
+
+        result = repo.get_model_by_path("/models/b.onnx")
+
+        assert result is not None
+        assert result["id"] == "model_path_b"
+        assert result["path"] == "/models/b.onnx"
+        assert result["backbone_id"] == "bb_2"
 
     def test_upsert_model_extended_fields(self, pg_session) -> None:
         """upsert_model should persist and round-trip all 11 extended fields."""
