@@ -9,10 +9,29 @@ import pytest
 from nomarr.components.library.update_library_metadata_comp import (
     UpdateLibraryMetadataComp,
 )
+from nomarr.helpers.dataclasses.library_dataclass import Library
+from nomarr.helpers.exceptions import DuplicateEntityError
 
 
 class TestUpdateLibraryMetadataComp:
     """Tests for ``UpdateLibraryMetadataComp``."""
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_update_duplicate_name_is_value_error(self) -> None:
+        """Database name collisions are exposed as a client-facing validation error."""
+        mock_db = MagicMock()
+        component = UpdateLibraryMetadataComp(mock_db)
+        library = Library(name="Current", root_path="/music/current")
+
+        with (
+            patch(
+                "nomarr.components.library.update_library_metadata_comp.update_library_record",
+                side_effect=DuplicateEntityError("duplicate"),
+            ),
+            pytest.raises(ValueError, match="Library name already exists: Existing"),
+        ):
+            component.update(library, name="Existing")
 
     @pytest.mark.unit
     @pytest.mark.mocked

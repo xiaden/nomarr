@@ -20,7 +20,7 @@ from nomarr.components.library.library_root_comp import (
 from nomarr.components.library.library_scan_state_comp import get_libraries_in_axis_state
 from nomarr.components.library.library_song_query_comp import clear_library_data as clear_library_song_data
 from nomarr.helpers.constants.pipeline_states import SCAN_IN_PROGRESS, SCAN_STATE_FIELD
-from nomarr.helpers.exceptions import DatabaseStateError
+from nomarr.helpers.exceptions import DatabaseStateError, DuplicateEntityError
 
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
@@ -56,6 +56,11 @@ def create_library(
             file_write_mode=file_write_mode,
             library_auto_write=library_auto_write,
         )
+    except DuplicateEntityError as e:
+        # The pre-check above is not atomic; the database UNIQUE constraint on
+        # ``libraries.name`` is the authority. Surface the concurrent-create race
+        # as the same friendly error a pre-check collision produces.
+        raise ValueError(f"Library name already exists: {resolved_name}") from e
     except (ValueError, DatabaseStateError, OSError) as e:
         msg = f"Failed to create library: {e}"
         raise ValueError(msg) from e

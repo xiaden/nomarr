@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from nomarr.helpers.exceptions import DatabaseStateError, DuplicateEntityError
 from nomarr.persistence.database.library_repo import LibraryRepository
 
 
@@ -82,6 +83,25 @@ class TestLibraryRepository:
         repo = LibraryRepository(pg_session)
         result = repo.get_library_by_name("Does Not Exist")
         assert result is None
+
+    def test_add_library_duplicate_name_raises(self, pg_session) -> None:
+        """A duplicate ``name`` insert is rejected by the UNIQUE constraint."""
+        repo = LibraryRepository(pg_session)
+        payload = {
+            "name": "Dup Name",
+            "path": "/music/dup",
+            "library_type": "music",
+            "auto_tag": 0,
+            "auto_curate": 0,
+            "created_at": 3100,
+            "updated_at": 3100,
+        }
+        repo.add_library(payload)
+        with pytest.raises((DuplicateEntityError, DatabaseStateError)):
+            repo.add_library({**payload, "path": "/music/dup2"})
+        # No duplicate row was created.
+        names = [row["name"] for row in repo.list_libraries() if row["name"] == "Dup Name"]
+        assert len(names) == 1
 
     def test_list_libraries_all(self, pg_session) -> None:
         """list_libraries should return all libraries."""

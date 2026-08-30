@@ -1,6 +1,6 @@
 """Library ORM model."""
 
-from sqlalchemy import BigInteger, Integer, String, Text, text
+from sqlalchemy import BigInteger, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from nomarr.persistence.models.base import Base
@@ -10,6 +10,7 @@ class Library(Base):
     """Represents a music library directory."""
 
     __tablename__ = "libraries"
+    __table_args__ = (UniqueConstraint("name", name="uq_libraries_name"),)
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)

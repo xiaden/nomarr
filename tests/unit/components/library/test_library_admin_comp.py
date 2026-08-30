@@ -8,6 +8,7 @@ import pytest
 
 from nomarr.components.library.library_admin_comp import create_library, delete_library
 from nomarr.helpers.dataclasses.library_dataclass import Library
+from nomarr.helpers.exceptions import DuplicateEntityError
 
 
 @pytest.fixture(autouse=True)
@@ -107,6 +108,39 @@ class TestCreateLibrary:
             file_write_mode="full",
             library_auto_write=False,
         )
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_concurrent_duplicate_name_raises_value_error(self) -> None:
+        """A DB-enforced duplicate-name race surfaces as ValueError, not a leak."""
+        mock_db = MagicMock()
+
+        with (
+            patch(
+                "nomarr.components.library.library_admin_comp.get_base_library_root",
+                return_value="/music",
+            ),
+            patch(
+                "nomarr.components.library.library_admin_comp.normalize_library_root",
+                return_value="/music/rock",
+            ),
+            patch("nomarr.components.library.library_admin_comp.ensure_no_overlapping_library_root"),
+            patch(
+                "nomarr.components.library.library_admin_comp._resolve_library_name",
+                return_value="Rock Library",
+            ),
+            patch(
+                "nomarr.components.library.library_admin_comp.create_library_record",
+                side_effect=DuplicateEntityError("duplicate"),
+            ),
+            pytest.raises(ValueError, match="Library name already exists"),
+        ):
+            create_library(
+                db=mock_db,
+                base_library_root="/configured-music",
+                name=None,
+                root_path="rock",
+            )
 
 
 class TestDeleteLibrary:

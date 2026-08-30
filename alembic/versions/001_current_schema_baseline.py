@@ -43,6 +43,7 @@ def upgrade() -> None:
         sa.Column("created_at", sa.BigInteger(), nullable=False),
         sa.Column("updated_at", sa.BigInteger(), nullable=False),
         sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("name", name="uq_libraries_name"),
     )
 
     # library_folders

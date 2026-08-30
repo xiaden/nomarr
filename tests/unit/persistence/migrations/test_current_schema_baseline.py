@@ -78,6 +78,7 @@ class TestCurrentSchemaBaseline:
         source = _baseline_source()
         assert "uq_library_scans_one_in_progress" in source
         assert "uq_ml_embedding_streams_song_backbone" in source
+        assert "uq_libraries_name" in source
         assert "uq_ml_model_outputs_output_id" in source
         assert "uq_worker_restart_policies_component_id" in source
         assert 'sa.Column("heartbeat_at", sa.BigInteger(), nullable=True)' in source

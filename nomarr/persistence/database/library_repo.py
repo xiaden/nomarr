@@ -71,7 +71,15 @@ class LibraryRepository:
             return _row_to_dto(row) if row else None
 
     def get_library_by_name(self, name: str) -> LibraryRow | None:
-        """Fetch a single library by its unique ``name`` field."""
+        """Fetch a library by its globally-unique ``name`` field.
+
+        ``libraries.name`` carries the ``uq_libraries_name`` UNIQUE constraint,
+        so this name-only lookup is singular by construction and can never
+        return an arbitrary row from among duplicates. It backs the name-only
+        wire-identity resolver (mechanism A) and the creation-time uniqueness
+        pre-check; identity-scoped mutations still use the full
+        ``(name, root_path)`` natural key via :meth:`get_library_by_natural_key`.
+        """
         with map_persistence_exceptions():
             row = select_by_key(_T, name, session=self._session, key_col="name")
             return _row_to_dto(row) if row else None
@@ -79,10 +87,10 @@ class LibraryRepository:
     def get_library_by_natural_key(self, name: str, root_path: str) -> LibraryRow | None:
         """Fetch a single library by its natural ``(name, root_path)`` key.
 
-        The ``libraries`` table has no uniqueness constraint on ``name`` or
-        ``(name, path)`` (see 001_current_schema_baseline), so the full natural
-        identity — ``(name, root_path)`` — is resolved deterministically.
-        Returns the first matching row, or ``None`` when absent. Storage-shaped:
+        ``name`` is globally unique in storage, so this composite lookup is
+        deterministic by implication while retaining the domain's natural
+        ``(name, root_path)`` identity for mutations. Returns the matching row,
+        or ``None`` when absent. Storage-shaped:
         the facade maps the returned ``LibraryRow`` to a domain ``Library``.
         """
         with map_persistence_exceptions():

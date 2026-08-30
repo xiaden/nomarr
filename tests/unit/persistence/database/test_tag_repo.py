@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from itertools import count
+
 import pytest
 from sqlalchemy import insert
 
@@ -12,12 +14,14 @@ from nomarr.persistence.models.song import Song
 from nomarr.persistence.models.song_tag import SongTag
 from nomarr.persistence.models.tag import Tag
 
+_LIBRARY_NAMES = count(1)
+
 
 def _create_library_and_song(session) -> tuple[int, int]:
     """Helper: create a library and a song, return (library_id, song_id)."""
     lib_r = session.execute(
         insert(Library).values(
-            name="Tag Lib",
+            name=f"Tag Lib {next(_LIBRARY_NAMES)}",
             path="/tag/lib",
             library_type="music",
             auto_tag=0,
