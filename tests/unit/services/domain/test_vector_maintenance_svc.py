@@ -6,7 +6,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nomarr.helpers.dataclasses.library_dataclass import Library
 from nomarr.services.domain.vector_maintenance_svc import VectorMaintenanceService
+
+
+def _make_library(name: str = "Test Library") -> Library:
+    """Build a domain ``Library`` (natural identity) for stats tests."""
+    return Library(name=name, root_path="/music")
 
 
 def _make_service(db: MagicMock | None = None, models_dir: str = "/models") -> VectorMaintenanceService:
@@ -68,7 +74,7 @@ class TestGetBackboneVectorStats:
                 "index_exists": True,
             }
         ]
-        mock_get_hot_cold_stats.assert_called_once_with("effnet", library_id=None)
+        mock_get_hot_cold_stats.assert_called_once_with("effnet", library=None)
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -104,8 +110,9 @@ class TestGetBackboneVectorStats:
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_scopes_stats_lookup_to_library(self) -> None:
-        """A library request should pass its ID through to each backbone lookup."""
+        """A library request should pass the domain ``Library`` to each backbone lookup."""
         service = _make_service(MagicMock())
+        library = _make_library()
 
         with (
             patch(
@@ -119,23 +126,28 @@ class TestGetBackboneVectorStats:
                 return_value={"hot_count": 2, "cold_count": 3, "index_exists": True},
             ) as mock_get_hot_cold_stats,
         ):
-            result = service.get_backbone_vector_stats(library_id=7)
+            result = service.get_backbone_vector_stats(library=library)
 
         assert result[0]["hot_count"] == 2
-        mock_get_hot_cold_stats.assert_called_once_with("effnet", library_id=7)
+        mock_get_hot_cold_stats.assert_called_once_with("effnet", library=library)
 
 
 @pytest.mark.unit
 @pytest.mark.mocked
 def test_get_hot_cold_stats_includes_index_status() -> None:
-    """Stats returned by the service include the shared vector index status."""
+    """Stats returned by the service include the shared vector index status.
+
+    Per-library scoping falls back to global counts (no ``Library``->int
+    resolver above the ML facade); the underlying lookup stays global.
+    """
     db = MagicMock()
     db.ml.get_embedding_stats.return_value = {"hot_count": 2, "cold_count": 3}
     db.ml.has_embedding_index.return_value = True
     service = _make_service(db)
+    library = _make_library()
 
-    result = service.get_hot_cold_stats("effnet", library_id=7)
+    result = service.get_hot_cold_stats("effnet", library=library)
 
     assert result == {"hot_count": 2, "cold_count": 3, "index_exists": True}
-    db.ml.get_embedding_stats.assert_called_once_with("effnet", library_id=7)
+    db.ml.get_embedding_stats.assert_called_once_with("effnet", library_id=None)
     db.ml.has_embedding_index.assert_called_once_with("effnet")

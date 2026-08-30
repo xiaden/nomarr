@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from nomarr.helpers.time_helper import now_ms
 
@@ -66,37 +66,6 @@ def delete_library_song(db: Database, path: str, library: Library) -> None:
     exists at the path.
     """
     db.library.remove_song_by_path(path, library)
-
-
-def upsert_batch(db: Database, file_docs: list[dict[str, Any]]) -> list[int]:
-    """Batch-upsert library songs with ownership edges.
-
-    Each file_doc must include a ``library_id`` key. Returns id integers in
-    input order.
-    """
-    if not file_docs:
-        return []
-
-    grouped_docs: dict[int, list[tuple[int, dict[str, Any]]]] = {}
-    for index, file_doc in enumerate(file_docs):
-        library_id = file_doc.get("library_id")
-        if not isinstance(library_id, int):
-            msg = "library_id is required for upsert_batch"
-            raise ValueError(msg)
-        grouped_docs.setdefault(library_id, []).append(
-            (index, {k: v for k, v in file_doc.items() if k != "library_id"})
-        )
-
-    result = [0] * len(file_docs)
-    for library_id, entries in grouped_docs.items():
-        payloads = [payload for _, payload in entries]
-        song_ids = db.library.add_songs_to_library(library_id, payloads)
-        if len(song_ids) != len(entries):
-            msg = f"add_files_to_library() returned {len(song_ids)} ids for {len(entries)} payloads"
-            raise RuntimeError(msg)
-        for (index, _), song_id in zip(entries, song_ids, strict=True):
-            result[index] = song_id
-    return result
 
 
 def update_song_path(

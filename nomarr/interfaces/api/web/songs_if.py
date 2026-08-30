@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING, Annotated, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -38,7 +38,7 @@ async def _resolve_library(library_service, raw_name: str) -> Library:
     library = await asyncio.to_thread(library_service.get_library_by_name, name)
     if library is None:
         raise HTTPException(status_code=404, detail="Library not found")
-    return library
+    return cast("Library", library)
 
 
 class FileIdsRequest(BaseModel):

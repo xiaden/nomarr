@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
 from unittest.mock import MagicMock, call, patch
 
 import pytest
@@ -15,117 +14,9 @@ from nomarr.components.library.library_song_mutation_comp import (
     update_last_tagged_at,
     update_song_modified_time,
     update_song_path,
-    upsert_batch,
     upsert_library_song,
 )
 from nomarr.helpers.dataclasses.library_dataclass import Library
-
-
-class TestUpsertBatch:
-    """Tests for batch library-file mutation writes."""
-
-    @pytest.mark.unit
-    def test_empty_input_returns_empty_list_without_db_calls(self) -> None:
-        mock_db = MagicMock()
-
-        result = upsert_batch(mock_db, [])
-
-        assert result == []
-        mock_db.library.add_songs_to_library.assert_not_called()
-
-    @pytest.mark.unit
-    def test_batch_groups_payloads_by_library_and_preserves_input_order(self) -> None:
-        mock_db = MagicMock()
-        mock_db.library.add_songs_to_library.side_effect = [
-            [f"{'songs'}/rock-existing", f"{'songs'}/rock-new"],
-            [f"{'songs'}/jazz-new"],
-        ]
-        file_docs: list[dict[str, Any]] = [
-            {
-                "library_id": 1,
-                "path": "C:/music/existing.mp3",
-                "normalized_path": "existing.mp3",
-                "file_size": 111,
-                "modified_time": 1000,
-            },
-            {
-                "library_id": 2,
-                "path": "C:/music/jazz.mp3",
-                "normalized_path": "jazz.mp3",
-                "file_size": 222,
-                "modified_time": 2000,
-            },
-            {
-                "library_id": 1,
-                "path": "C:/music/new.mp3",
-                "normalized_path": "new.mp3",
-                "file_size": 333,
-                "modified_time": 3000,
-            },
-        ]
-
-        result = upsert_batch(mock_db, file_docs)
-
-        assert result == [
-            f"{'songs'}/rock-existing",
-            f"{'songs'}/jazz-new",
-            f"{'songs'}/rock-new",
-        ]
-        assert mock_db.library.add_songs_to_library.call_args_list == [
-            call(
-                1,
-                [
-                    {
-                        "path": "C:/music/existing.mp3",
-                        "normalized_path": "existing.mp3",
-                        "file_size": 111,
-                        "modified_time": 1000,
-                    },
-                    {
-                        "path": "C:/music/new.mp3",
-                        "normalized_path": "new.mp3",
-                        "file_size": 333,
-                        "modified_time": 3000,
-                    },
-                ],
-            ),
-            call(
-                2,
-                [
-                    {
-                        "path": "C:/music/jazz.mp3",
-                        "normalized_path": "jazz.mp3",
-                        "file_size": 222,
-                        "modified_time": 2000,
-                    }
-                ],
-            ),
-        ]
-
-    @pytest.mark.unit
-    def test_batch_requires_library_id_for_each_doc(self) -> None:
-        mock_db = MagicMock()
-        file_docs: list[dict[str, Any]] = [
-            {
-                "library_id": None,
-                "path": "C:/music/first.mp3",
-                "normalized_path": "first.mp3",
-                "file_size": 100,
-                "modified_time": 1000,
-            },
-            {
-                "library_id": "libraries/jazz",
-                "path": "C:/music/second.mp3",
-                "normalized_path": "second.mp3",
-                "file_size": 200,
-                "modified_time": 2000,
-            },
-        ]
-
-        with pytest.raises(ValueError, match="library_id is required for upsert_batch"):
-            upsert_batch(mock_db, file_docs)
-
-        mock_db.library.add_songs_to_library.assert_not_called()
 
 
 class TestDeleteLibraryFile:

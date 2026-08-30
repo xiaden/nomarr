@@ -63,11 +63,24 @@ def _make_tags_db() -> tuple[LibraryTagsDb, MagicMock, MagicMock, MagicMock, Mag
 @pytest.mark.unit
 class TestCompleteTagRefResolved:
     def test_get_tag_matches_complete_identity_value(self) -> None:
-        # get_tag resolves by (name, namespace) row and compares the value so the
-        # returned identity is the complete natural key.
+        # get_tag resolves the full (name, value, namespace) natural key exactly.
         tags, tag_repo, _, _, _ = _make_tags_db()
-        tag_repo.get_tag_by_name.return_value = {"name": "artist", "value": "X", "namespace": ""}
+        tag_repo.get_tag_ids_by_identities.return_value = {("artist", "X", ""): 11}
+        tag_repo.get_tags_by_ids.return_value = [{"name": "artist", "value": "X", "namespace": ""}]
         assert tags.get_tag(TagRef(name="artist", value="X")) == TagRef("artist", "X")
+        assert tags.get_tag(TagRef(name="artist", value="Z")) is None
+
+    def test_get_tag_resolves_exact_value_for_shared_name_namespace(self) -> None:
+        """get_tag returns the exact tag per value of a shared (name, namespace)."""
+        tags, tag_repo, _, _, _ = _make_tags_db()
+        rows = {
+            11: {"name": "artist", "value": "X", "namespace": ""},
+            12: {"name": "artist", "value": "Y", "namespace": ""},
+        }
+        tag_repo.get_tag_ids_by_identities.return_value = {("artist", "X", ""): 11, ("artist", "Y", ""): 12}
+        tag_repo.get_tags_by_ids.side_effect = lambda ids: [rows[i] for i in ids]
+        assert tags.get_tag(TagRef(name="artist", value="X")) == TagRef("artist", "X")
+        assert tags.get_tag(TagRef(name="artist", value="Y")) == TagRef("artist", "Y")
         assert tags.get_tag(TagRef(name="artist", value="Z")) is None
 
     def test_ensure_tag_returns_identity_never_id(self) -> None:
@@ -123,7 +136,7 @@ class TestMissingTargetsAreSafe:
 
     def test_get_tag_returns_none_when_tag_missing(self) -> None:
         tags, tag_repo, _, _, _ = _make_tags_db()
-        tag_repo.get_tag_by_name.return_value = None
+        tag_repo.get_tag_ids_by_identities.return_value = {}
         assert tags.get_tag(TagRef(name="artist", value="X")) is None
 
     def test_relink_returns_zero_when_source_tag_missing(self) -> None:
@@ -194,9 +207,21 @@ class TestTypedResultsAndUoW:
         tags, tag_repo, _, _, _ = _make_tags_db()
         tag_repo.get_orphaned_tag_ids.return_value = [3, 4]
         tag_repo.delete_tags_by_ids.return_value = 2
-        result = tags.cleanup_orphaned_tags()
+        result = tags.admin_cleanup_orphaned_tags()
         assert isinstance(result, TagCleanupResult)
         assert (result.deleted, result.orphaned) == (2, 2)
+
+    def test_count_orphaned_tags_is_count_only_read_intent(self) -> None:
+        """count_orphaned_tags returns a plain int and never deletes (dry_run)."""
+        tags, tag_repo, _, _, _ = _make_tags_db()
+        tag_repo.get_orphaned_tag_ids.return_value = [3, 4]
+
+        result = tags.count_orphaned_tags()
+
+        assert result == 2
+        assert isinstance(result, int)
+        # non-destructive: no deletion, no storage-id/row/edge leak to caller
+        tag_repo.delete_tags_by_ids.assert_not_called()
 
     def test_find_songs_with_tag_returns_domain_songs(self) -> None:
         tags, _, song_tag_repo, _, _ = _make_tags_db()

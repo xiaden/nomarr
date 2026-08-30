@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
+from nomarr.helpers.dataclasses.song_tag_dataclass import TagCleanupResult
 from nomarr.services.domain.metadata_svc import COLLECTION_REL_MAP, EntityCollection, MetadataService
 
 
@@ -247,3 +248,48 @@ class TestListSongsForEntity:
         assert result["offset"] == 50
         mock_list.assert_called_once_with(mock_db, 7, limit=25, offset=50)
         mock_count.assert_called_once_with(mock_db, 7)
+
+
+class TestCleanupOrphanedEntities:
+    """Tests for cleanup_orphaned_entities dry_run branching."""
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_dry_run_counts_but_does_not_delete(self) -> None:
+        mock_db = MagicMock()
+        service = _make_service(db=mock_db)
+        with (
+            patch(
+                "nomarr.services.domain.metadata_svc.count_orphaned_tags",
+                return_value=5,
+            ) as mock_count,
+            patch(
+                "nomarr.services.domain.metadata_svc.cleanup_orphaned_tags",
+            ) as mock_cleanup,
+        ):
+            result = service.cleanup_orphaned_entities(dry_run=True)
+
+        assert result == {"orphaned_count": 5, "deleted_count": 0}
+        mock_count.assert_called_once_with(mock_db)
+        mock_cleanup.assert_not_called()
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_live_run_deletes_and_reports_real_counts(self) -> None:
+        mock_db = MagicMock()
+        service = _make_service(db=mock_db)
+        with (
+            patch(
+                "nomarr.services.domain.metadata_svc.count_orphaned_tags",
+                return_value=9,
+            ) as mock_count,
+            patch(
+                "nomarr.services.domain.metadata_svc.cleanup_orphaned_tags",
+                return_value=TagCleanupResult(deleted=4, orphaned=7),
+            ) as mock_cleanup,
+        ):
+            result = service.cleanup_orphaned_entities(dry_run=False)
+
+        assert result == {"orphaned_count": 7, "deleted_count": 4}
+        mock_cleanup.assert_called_once_with(mock_db)
+        mock_count.assert_not_called()

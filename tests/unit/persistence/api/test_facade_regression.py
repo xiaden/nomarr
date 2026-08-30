@@ -25,6 +25,7 @@ from nomarr.helpers.dataclasses.song_tag_dataclass import (
     TagRef,
     TagUsage,
 )
+from nomarr.persistence.api.library import LibraryDb
 from nomarr.persistence.api.library_tags import LibraryTagsDb
 
 _LIBRARY = LibraryIdentity(name="TestLib", root_path="/music")
@@ -175,7 +176,7 @@ class TestRemoveAndOrphanCleanup:
         tag_repo.get_orphaned_tag_ids.return_value = [1, 2, 3]
         tag_repo.delete_tags_by_ids.return_value = 3
 
-        result = db.cleanup_orphaned_tags()
+        result = db.admin_cleanup_orphaned_tags()
 
         assert isinstance(result, TagCleanupResult)
         assert (result.deleted, result.orphaned) == (3, 3)
@@ -185,10 +186,63 @@ class TestRemoveAndOrphanCleanup:
         db, tag_repo, _, _, _ = _make_tags_db()
         tag_repo.get_orphaned_tag_ids.return_value = []
 
-        result = db.cleanup_orphaned_tags()
+        result = db.admin_cleanup_orphaned_tags()
 
         assert result == TagCleanupResult(deleted=0, orphaned=0)
         tag_repo.delete_tags_by_ids.assert_not_called()
+
+
+@pytest.mark.unit
+class TestCountOrphanedTags:
+    """Count-only orphan-discovery read intent (dry_run preview)."""
+
+    def test_returns_scalar_count(self) -> None:
+        db, tag_repo, _, _, _ = _make_tags_db()
+        tag_repo.get_orphaned_tag_ids.return_value = [1, 2, 3]
+
+        result = db.count_orphaned_tags()
+
+        assert result == 3
+        assert isinstance(result, int)
+        # count-only: discovers orphans but never deletes
+        tag_repo.delete_tags_by_ids.assert_not_called()
+
+    def test_zero_when_no_orphans(self) -> None:
+        db, tag_repo, _, _, _ = _make_tags_db()
+        tag_repo.get_orphaned_tag_ids.return_value = []
+
+        assert db.count_orphaned_tags() == 0
+        tag_repo.delete_tags_by_ids.assert_not_called()
+
+    def test_never_deletes_any_tag(self) -> None:
+        db, tag_repo, _, _, _ = _make_tags_db()
+        tag_repo.get_orphaned_tag_ids.return_value = [7]
+
+        db.count_orphaned_tags()
+
+        tag_repo.delete_tags_by_ids.assert_not_called()
+
+
+@pytest.mark.unit
+class TestLibraryDbCountForwarder:
+    """``LibraryDb.count_orphaned_tags`` mirrors the sub-facade exactly."""
+
+    def test_forwards_count_only_and_never_deletes(self) -> None:
+        tags = MagicMock(spec=LibraryTagsDb)
+        tags.count_orphaned_tags.return_value = 4
+        library = LibraryDb(
+            session=MagicMock(),
+            songs=MagicMock(),
+            tags=tags,
+            scans=MagicMock(),
+            regions=MagicMock(),
+        )
+
+        result = library.count_orphaned_tags()
+
+        assert result == 4
+        tags.count_orphaned_tags.assert_called_once_with()
+        tags.admin_cleanup_orphaned_tags.assert_not_called()
 
 
 @pytest.mark.unit

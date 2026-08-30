@@ -14,6 +14,8 @@ from alembic.config import Config as AlembicConfig
 from testcontainers.community.postgres import PostgresContainer
 
 from alembic import command
+from nomarr.helpers.dataclasses.library_dataclass import Library
+from nomarr.helpers.dataclasses.song_tag_dataclass import SongTagAssignment, TagRef
 from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence.db import Database
 
@@ -85,7 +87,7 @@ def db(run_alembic_migrations) -> Generator[Database, None, None]:
 
 @pytest.fixture()
 def seed_data(db):
-    """Insert seed data into the test database.
+    """Insert seed data into the test database via the sealed domain facade.
 
     Creates:
     - 2 libraries
@@ -93,39 +95,27 @@ def seed_data(db):
     - 5 tags
     - 1 scan record for library 1
 
-    Returns a dict with the created IDs for use in tests.
+    Returns a dict with the created domain values for use in tests.
     """
     # Clean up any existing data first (idempotent)
     _cleanup_seed_data(db)
 
-    created: dict[str, list[int]] = {
+    created: dict[str, list[object]] = {
         "libraries": [],
         "songs": [],
         "tags": [],
         "scans": [],
     }
 
-    # Create 2 libraries
-    lib1_id = db.library.add_library(
-        {
-            "name": "TestLib1",
-            "path": "/tmp/test1",
-            "library_type": "music",
-        }
-    )
-    lib2_id = db.library.add_library(
-        {
-            "name": "TestLib2",
-            "path": "/tmp/test2",
-            "library_type": "music",
-        }
-    )
-    created["libraries"] = [lib1_id, lib2_id]
+    # Create 2 libraries (domain values)
+    lib1 = db.library.create_library(Library(name="TestLib1", root_path="/tmp/test1"))
+    lib2 = db.library.create_library(Library(name="TestLib2", root_path="/tmp/test2"))
+    created["libraries"] = [lib1, lib2]
 
-    # Create 3 songs (2 in lib1, 1 in lib2)
+    # Create 3 songs (2 in lib1, 1 in lib2); returns storage song ids.
     now_ms_val = now_ms()
     song1_id = db.library.add_song_to_library(
-        lib1_id,
+        lib1,
         {
             "path": "/tmp/test1/song1.flac",
             "normalized_path": "/tmp/test1/song1.flac",
@@ -138,7 +128,7 @@ def seed_data(db):
         },
     )
     song2_id = db.library.add_song_to_library(
-        lib1_id,
+        lib1,
         {
             "path": "/tmp/test1/song2.mp3",
             "normalized_path": "/tmp/test1/song2.mp3",
@@ -151,7 +141,7 @@ def seed_data(db):
         },
     )
     song3_id = db.library.add_song_to_library(
-        lib2_id,
+        lib2,
         {
             "path": "/tmp/test2/song3.flac",
             "normalized_path": "/tmp/test2/song3.flac",
@@ -165,43 +155,35 @@ def seed_data(db):
     )
     created["songs"] = [song1_id, song2_id, song3_id]
 
-    # Create 5 tags
-    tag1_id = db.library.find_or_create_tag("nom:mood-strict", "happy", "nom")
-    tag2_id = db.library.find_or_create_tag("nom:mood-strict", "sad", "nom")
-    tag3_id = db.library.find_or_create_tag("nom:genre", "rock", "nom")
-    tag4_id = db.library.find_or_create_tag("nom:genre", "jazz", "nom")
-    tag5_id = db.library.find_or_create_tag("nom:tempo", "fast", "nom")
-    created["tags"] = [tag1_id, tag2_id, tag3_id, tag4_id, tag5_id]
+    # Create 5 tags via the domain identity (never a storage id).
+    tag1 = db.library.ensure_tag(TagRef(name="nom:mood-strict", value="happy", namespace="nom"))
+    tag2 = db.library.ensure_tag(TagRef(name="nom:mood-strict", value="sad", namespace="nom"))
+    tag3 = db.library.ensure_tag(TagRef(name="nom:genre", value="rock", namespace="nom"))
+    tag4 = db.library.ensure_tag(TagRef(name="nom:genre", value="jazz", namespace="nom"))
+    tag5 = db.library.ensure_tag(TagRef(name="nom:tempo", value="fast", namespace="nom"))
+    created["tags"] = [tag1, tag2, tag3, tag4, tag5]
 
-    # Assign tags to songs
+    # Assign tags to songs via the natural identity + domain assignments.
+    song1 = db.library.resolve_song_identity(song1_id)
+    song2 = db.library.resolve_song_identity(song2_id)
+    assert song1 is not None and song2 is not None
     db.library.replace_song_tags(
-        song1_id,
+        song1,
         [
-            {"tag_id": tag1_id, "confidence": 0.95, "source": "ml"},
-            {"tag_id": tag3_id, "confidence": 0.88, "source": "ml"},
+            SongTagAssignment(name="nom:mood-strict", value="happy", namespace="nom", confidence=0.95, source="ml"),
+            SongTagAssignment(name="nom:genre", value="rock", namespace="nom", confidence=0.88, source="ml"),
         ],
     )
     db.library.replace_song_tags(
-        song2_id,
+        song2,
         [
-            {"tag_id": tag2_id, "confidence": 0.72, "source": "ml"},
+            SongTagAssignment(name="nom:mood-strict", value="sad", namespace="nom", confidence=0.72, source="ml"),
         ],
     )
 
-    # Create 1 scan record for library 1
-    scan1_id = db.library.add_scan(
-        lib1_id,
-        {
-            "scan_type": "full",
-            "status": "completed",
-            "started_at": now_ms_val.value - 60000,
-            "finished_at": now_ms_val.value,
-            "files_found": 2,
-            "files_processed": 2,
-            "error": None,
-        },
-    )
-    created["scans"] = [scan1_id]
+    # Create 1 scan record for library 1 via start_scan.
+    scan = db.library.start_scan(lib1, scan_type="full", started_at=now_ms_val.value - 60000)
+    created["scans"] = [scan]
 
     yield created
 
@@ -210,18 +192,15 @@ def seed_data(db):
 
 
 def _cleanup_seed_data(db: Database) -> None:
-    """Remove all seed data from the database."""
-    try:
-        # Delete all tags (this also deletes song_tags via CASCADE)
-        all_tags = db.library.list_tags(limit=10000)
-        if all_tags:
-            tag_ids = [t["id"] for t in all_tags]
-            db.library.delete_tags_by_ids(tag_ids)
+    """Remove all seed data from the database via the sealed domain facade.
 
-        # Delete all libraries (cascades to songs and scans)
-        all_libs = db.library.list_libraries()
-        for lib in all_libs:
-            db.library.remove_library(lib["id"])
+    Called before and after each test to ensure isolation. Removes libraries
+    (cascades to songs, folders, and scans), then cleans up orphaned tags.
+    """
+    try:
+        for lib in db.library.list_libraries():
+            db.library.remove_library(lib)
+        db.library.admin_cleanup_orphaned_tags()
     except Exception:
         # If cleanup fails, continue (test database will be recreated)
         pass

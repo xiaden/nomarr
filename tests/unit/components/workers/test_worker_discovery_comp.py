@@ -14,6 +14,7 @@ from nomarr.components.workers.worker_discovery_comp import (
     release_claims_for_worker,
     try_insert_or_steal_claim,
 )
+from nomarr.helpers.constants.file_states import STATE_PROCESSED
 from nomarr.helpers.dataclasses.song_dataclass import Song
 from nomarr.helpers.exceptions import DuplicateEntityError
 
@@ -231,7 +232,7 @@ class TestCleanupStaleClaims:
         mock_db.library.list_songs_by_ids.return_value = [
             _song(song_id=3),
         ]
-        mock_db.app.list_song_docs_in_state.return_value = [
+        mock_db.app.songs_with_state.return_value = [
             _song(song_id=3),
             _song(song_id=999),
         ]
@@ -247,7 +248,7 @@ class TestCleanupStaleClaims:
         mock_db.app.list_claims.assert_called_once_with()
         mock_db.app.list_worker_health.assert_called_once_with()
         mock_db.library.list_songs_by_ids.assert_called_once_with([2, 3])
-        mock_db.app.list_song_docs_in_state.assert_called_once_with("tagged")
+        mock_db.app.songs_with_state.assert_called_once_with(STATE_PROCESSED)
         assert mock_db.app.remove_claims.call_args_list == [
             call(worker_ids=["worker:stale"]),
             call(
@@ -269,7 +270,7 @@ class TestCleanupStaleClaims:
         mock_db.app.list_claims.assert_called_once_with()
         mock_db.app.list_worker_health.assert_not_called()
         mock_db.library.list_songs_by_ids.assert_not_called()
-        mock_db.app.list_song_docs_in_state.assert_not_called()
+        mock_db.app.songs_with_state.assert_not_called()
         mock_db.app.remove_claims.assert_not_called()
 
 

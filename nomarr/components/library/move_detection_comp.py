@@ -293,7 +293,17 @@ def detect_file_move_via_db(
     if not chromaprint:
         return None
 
-    candidate = find_move_candidate_by_chromaprint(db, library_id, chromaprint)
+    # Resolve the numeric library handle to the Library domain object via the
+    # identity bridge before the chromaprint lookup (find_move_candidate_by_chromaprint
+    # now requires a Library, not an int library_id).
+    library_identity = db.library.resolve_library_identity(library_id)
+    if library_identity is None:
+        return None
+    library = db.library.get_library_by_name(library_identity.name)
+    if library is None:
+        return None
+
+    candidate = find_move_candidate_by_chromaprint(db, library, chromaprint)
     if candidate is None:
         return None
 

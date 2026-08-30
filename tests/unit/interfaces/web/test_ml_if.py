@@ -7,6 +7,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from nomarr.helpers.dataclasses.ml_model_output_dataclass import ModelOutput
 from nomarr.helpers.dto.info_dto import WorkStatusResult
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.web.dependencies import get_library_service, get_ml_service
@@ -160,12 +161,12 @@ class TestMlIfModelOutputRoutes:
     ) -> None:
         """GET /model/{model_id}/output passes the hex model id through and serialises outputs."""
         mock_ml_service.get_model_outputs.return_value = [
-            {
-                "output_id": "0123456789abcdef",
-                "output_index": 0,
-                "label": "happy",
-                "fully_labeled": True,
-            },
+            ModelOutput(
+                output_id="0123456789abcdef",
+                output_index=0,
+                label="happy",
+                fully_labeled=True,
+            ),
         ]
 
         response = client.get("/api/web/machine-learning/model/0123456789abcdef/output")

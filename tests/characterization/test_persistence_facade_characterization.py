@@ -165,7 +165,7 @@ class TestLibraryDbFacadeCharacterization:
         db.library.ensure_tag(TagRef(name="temp:delete1", value="val1", namespace="temp"))
         db.library.ensure_tag(TagRef(name="temp:delete2", value="val2", namespace="temp"))
 
-        result = db.library.cleanup_orphaned_tags()
+        result = db.library.admin_cleanup_orphaned_tags()
         assert_snapshot_matches("LibraryDb_maintenance_cleanup_orphaned_tags", result)
 
     def test_start_scan(self, db, seed_data):

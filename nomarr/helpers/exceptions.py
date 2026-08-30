@@ -8,6 +8,8 @@ Rules:
 
 from __future__ import annotations
 
+from typing import Any
+
 
 class PlaylistQueryError(Exception):
     """Raised when a smart playlist query is invalid or cannot be parsed."""
@@ -66,4 +68,18 @@ class DatabaseStateError(Exception):
     """Raised for unknown database errors, operational failures, or unrecognized pgcodes."""
 
     def __init__(self, message: str | None = None) -> None:
+        super().__init__(message)
+
+
+class TaskCancelledError(Exception):
+    """Raised by a managed task to signal cooperative cancellation.
+
+    The BackgroundTaskService catches this and records a ``cancelled`` terminal
+    status instead of ``complete`` (and does not invoke the completion callback).
+    ``result`` carries the partial work product produced before cancellation,
+    when available.
+    """
+
+    def __init__(self, message: str = "Task cancelled", *, result: Any | None = None) -> None:
+        self.result = result
         super().__init__(message)

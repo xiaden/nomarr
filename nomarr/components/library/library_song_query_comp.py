@@ -189,11 +189,6 @@ def _tags_by_name_value(db: Database, name: str, value: str) -> list[TagRef]:
     return [identity for identity in _tags_by_name(db, name) if identity.value == value]
 
 
-def _library_id_from_file_doc(file_doc: dict[str, Any]) -> int | None:
-    library_id = file_doc.get("library_id")
-    return library_id if isinstance(library_id, int) else None
-
-
 def _hydrate_files_with_tags(db: Database, file_docs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Hydrate many song docs with tags and owning library ids in batched lookups."""
     song_ids = [song_id for file_doc in file_docs if isinstance(song_id := file_doc.get("id"), int)]
@@ -642,12 +637,12 @@ def clear_library_data(db: Database) -> None:
             delete_output_streams(db, song_id)
         db.library.remove_pipeline_state(library)
     # Link/junction tables
-    db.library.truncate_song_tag_assignments()
+    db.library.admin_truncate_song_tag_assignments()
     db.app.truncate_song_state_edges()
     db.library.truncate_song_links()
     db.library.truncate_folder_links()
     # Core tables
-    db.library.truncate_tags()
+    db.library.admin_truncate_tags()
     db.library.truncate_songs()
     db.library.truncate_folders()
     db.library.truncate_scan_records()

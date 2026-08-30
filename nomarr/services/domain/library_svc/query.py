@@ -20,6 +20,7 @@ from nomarr.components.library.library_song_query_comp import (
     count_recently_tagged,
     count_songs_by_tag,
     get_all_library_paths,
+    get_library_counts,
     get_library_stats,
     get_recently_processed,
     get_songs_by_ids_with_tags,
@@ -139,6 +140,18 @@ class LibraryQueryMixin:
             total_size=stats.get("total_size"),
             needs_tagging_count=stats.get("needs_tagging_count", 0),
         )
+
+    def get_library_counts(self) -> dict[str, dict[str, int]]:
+        """Return song and folder counts per library, keyed by natural name.
+
+        Mechanism A: counts are keyed by ``Library.name`` (natural identity),
+        not by any generated library id.
+
+        Returns:
+            Mapping of ``{library_name: {"file_count": int, "folder_count": int}}``.
+
+        """
+        return get_library_counts(self.db)
 
     def get_all_library_paths(self) -> list[str]:
         """Get all file paths in the library.

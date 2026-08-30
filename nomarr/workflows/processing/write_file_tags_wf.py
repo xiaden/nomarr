@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from nomarr.components.infrastructure.path_comp import build_library_path_from_db
+from nomarr.components.library.library_records_comp import find_library_containing_path
 from nomarr.components.library.library_song_mutation_comp import update_song_modified_time
 from nomarr.components.library.reconciliation_comp import set_file_written
 from nomarr.components.processing.file_write_comp import (
@@ -35,6 +36,7 @@ from nomarr.components.tagging.tagging_writer_comp import TagWriter
 from nomarr.helpers.dataclasses.tags_dataclass import Tags
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dataclasses.library_dataclass import Library
     from nomarr.helpers.dto.path_dto import LibraryPath
     from nomarr.persistence.db import Database
 
@@ -100,19 +102,34 @@ def _filter_tags_for_mode(
 def _resolve_library_path(
     file_doc: dict[str, Any],
     db: Database,
-) -> LibraryPath | None:
-    """Resolve file_doc to a validated LibraryPath."""
+) -> tuple[LibraryPath | None, Library | None]:
+    """Resolve ``file_doc`` to a validated ``LibraryPath`` and its domain ``Library``.
+
+    Both the library path and the owning library root are derived from the
+    file's physical ``path`` using ``find_library_containing_path`` (path-based
+    natural identity), never from the integer storage ``library_id``. Returns
+    ``(None, None)`` when no library contains the path, and ``(None, library)``
+    when the library is known but the path is otherwise invalid (e.g. missing
+    on disk).
+    """
     stored_path = file_doc.get("path", "")
-    library_id = file_doc.get("library_id")
+    if not stored_path:
+        return None, None
+
+    library = find_library_containing_path(db, stored_path)
+    if not library:
+        return None, None
 
     library_path = build_library_path_from_db(
         stored_path=stored_path,
         db=db,
-        library_id=library_id,
+        library_id=library.name,
         check_disk=True,
     )
 
-    return library_path if library_path.is_valid() else None
+    if not library_path.is_valid():
+        return None, library
+    return library_path, library
 
 
 def _release_failed_write(db: Database, file_key: str, worker_id: str) -> None:
@@ -170,8 +187,8 @@ def write_file_tags_workflow(
                 error=f"File not found: {file_id}",
             )
 
-        # Resolve library path
-        library_path = _resolve_library_path(file_doc, db)
+        # Resolve library path + owning domain Library from the file's path.
+        library_path, library = _resolve_library_path(file_doc, db)
         if not library_path:
             _release_failed_write(db, file_key, worker_id)
             return WriteResult(
@@ -182,18 +199,17 @@ def write_file_tags_workflow(
                 error=f"Invalid path: {file_doc.get('path')}",
             )
 
-        # Get library root for safe write
-        library_id = file_doc.get("library_id")
-        if not library_id or not isinstance(library_id, int):
+        # Get library root for safe write (domain Library, path-derived).
+        if library is None:
             _release_failed_write(db, file_key, worker_id)
             return WriteResult(
                 file_key=file_key,
                 tags_written=0,
                 tags_filtered=0,
                 success=False,
-                error=f"Invalid library_id: {library_id}",
+                error=f"Invalid library for path: {file_doc.get('path')}",
             )
-        library_root = resolve_library_root(db, library_id)
+        library_root = resolve_library_root(db, library)
         if not library_root:
             _release_failed_write(db, file_key, worker_id)
             return WriteResult(
@@ -201,7 +217,7 @@ def write_file_tags_workflow(
                 tags_written=0,
                 tags_filtered=0,
                 success=False,
-                error=f"Library not found: {library_id}",
+                error=f"Library not found: {library.name}",
             )
 
         # Require known mtime to prevent writing to externally-modified files

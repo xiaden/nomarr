@@ -25,6 +25,8 @@ from nomarr.helpers.constants.file_states import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from nomarr.helpers.dataclasses.library_dataclass import Library
     from nomarr.persistence.db import Database
 
@@ -100,7 +102,7 @@ def _state_membership_for_songs(db: Database, song_ids: list[int]) -> dict[int, 
 
 
 def _extract_matching_head_keys(
-    tags: list[Any],
+    tags: Sequence[Any],
     expected_heads: list[dict[str, Any]],
     namespace_prefix: str,
 ) -> list[str]:
@@ -108,7 +110,7 @@ def _extract_matching_head_keys(
     matched_heads: list[str] = []
     seen_heads: set[str] = set()
     for tag in tags:
-        name = tag.get("name")
+        name = tag.name
         if not isinstance(name, str) or not name.startswith(namespace_prefix):
             continue
         name_without_prefix = name[4:]
@@ -306,7 +308,8 @@ def get_songs_with_incomplete_tags(
         expected_heads: List of dicts where each item defines ``head_key``,
             ``labels``, and ``model_key_for_tag`` for one expected model head.
         namespace_prefix: Tag name prefix used to identify model-generated tags, such as ``"nom:"``.
-        library_id: Optional library ID used to restrict the scan to one library.
+        library: Optional domain ``Library`` used to restrict the scan to one
+            library.
 
     Returns:
         List of dicts with ``file_id``, ``file_key``, ``library_id``,
@@ -319,7 +322,23 @@ def get_songs_with_incomplete_tags(
         library_song_ids = _library_song_ids(db, library)
         written_files = [doc for doc in written_files if isinstance(doc, dict) and doc.get("id") in library_song_ids]
     song_ids = [doc["id"] for doc in written_files if isinstance(doc, dict) and "id" in doc]
-    tags_by_file = db.library.list_song_tags_for_songs(song_ids, name_starts_with=namespace_prefix) if song_ids else {}
+    # Resolve the numeric state-document handles to domain identities before the
+    # sealed tag facade (never pass integer song ids to the tag facade). Empty
+    # song_ids yields an empty mapping without any facade call.
+    identity_map = db.library.resolve_song_identities(song_ids) if song_ids else {}
+    if identity_map:
+        tags_by_identity = db.library.list_song_tags_for_songs(
+            list(identity_map.values()), name_starts_with=namespace_prefix
+        )
+        # Re-key the identity-keyed assignments back to the integer file ids so
+        # the per-file lookup below keeps working unchanged against int keys.
+        tags_by_file = {
+            song_id: tags_by_identity[identity]
+            for song_id, identity in identity_map.items()
+            if identity in tags_by_identity
+        }
+    else:
+        tags_by_file = {}
 
     results: list[dict[str, Any]] = []
     for file_doc in written_files:

@@ -84,6 +84,8 @@ def scan_library_quick_workflow(
         db: Database instance
         library: Domain ``Library`` (natural identity) to scan
         tagger_version: Model suite hash for version comparison
+        stop_event: Cooperative cancellation signal. When set, the scan aborts
+            at the next folder checkpoint and raises ``ScanCancelledError``.
 
     Returns:
         Dict with scan statistics (files_discovered, files_added,
@@ -91,6 +93,9 @@ def scan_library_quick_workflow(
         files_failed, scan_duration_s, warnings, scan_id)
 
     Raises:
+        ScanCancelledError: If ``stop_event`` is set mid-scan. The scan records
+            the cancellation as a scan error and resets the scan axis to
+            ``not_scanned`` before re-raising.
         ValueError: If library not found
         OSError: If library root is inaccessible
 

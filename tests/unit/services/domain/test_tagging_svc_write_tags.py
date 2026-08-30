@@ -4,14 +4,22 @@ from __future__ import annotations
 
 import threading
 from types import SimpleNamespace
+from typing import Literal
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from nomarr.helpers import ManagedTask
 from nomarr.helpers.dataclasses.app_dataclasses import ConfigOption
+from nomarr.helpers.dataclasses.library_dataclass import Library
 from nomarr.helpers.dto.library_dto import WriteTagsResult
+from nomarr.helpers.exceptions import TaskCancelledError
 from nomarr.services.domain.tagging_svc import TaggingService, TaggingServiceConfig
+
+
+def _make_library(name: str = "lib1", file_write_mode: Literal["none", "minimal", "full"] = "full") -> Library:
+    """Build a domain ``Library`` (natural identity) for write-tags tests."""
+    return Library(name=name, root_path="/music", file_write_mode=file_write_mode)
 
 
 def _make_service(*, db: MagicMock | None = None, bts: MagicMock | None = None) -> TaggingService:
@@ -38,12 +46,13 @@ class TestStartWriteTagsBackground:
         mock_bts = MagicMock()
         mock_bts.start_task.return_value = "write_tags:lib1"
         service = _make_service(bts=mock_bts)
+        library = _make_library()
         with patch.object(
             service,
             "write_tags_to_files",
             return_value=SimpleNamespace(remaining=0),
         ) as mock_write_tags:
-            task_id = service.start_write_tags_background("lib1", threading.Event())
+            task_id = service.start_write_tags_background(library, threading.Event())
 
             assert task_id == "write_tags:lib1"
             mock_bts.start_task.assert_called_once()
@@ -53,7 +62,7 @@ class TestStartWriteTagsBackground:
 
             managed_task.fn()
 
-            mock_write_tags.assert_called_once_with("lib1")
+            mock_write_tags.assert_called_once_with(library)
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -70,13 +79,14 @@ class TestStartWriteTagsBackground:
             stop_event = threading.Event()
             stop_event.set()
 
-            service.start_write_tags_background("lib1", stop_event)
+            service.start_write_tags_background(_make_library(), stop_event)
 
             managed_task = mock_bts.start_task.call_args.args[0]
             assert isinstance(managed_task, ManagedTask)
             assert managed_task.stop_event is stop_event
 
-            managed_task.fn()
+            with pytest.raises(TaskCancelledError):
+                managed_task.fn()
 
             mock_write_tags.assert_not_called()
 
@@ -89,7 +99,7 @@ class TestStartWriteTagsBackground:
         service = _make_service(bts=mock_bts)
         my_callback = MagicMock()
 
-        service.start_write_tags_background("lib1", threading.Event(), on_complete=my_callback)
+        service.start_write_tags_background(_make_library(), threading.Event(), on_complete=my_callback)
 
         managed_task = mock_bts.start_task.call_args.args[0]
         assert managed_task.on_complete is my_callback
@@ -107,7 +117,7 @@ class TestStartWriteTagsBackground:
             SimpleNamespace(remaining=0),
         ]
         with patch.object(service, "write_tags_to_files", side_effect=write_results) as mock_write_tags:
-            service.start_write_tags_background("lib1", threading.Event())
+            service.start_write_tags_background(_make_library(), threading.Event())
 
             managed_task = mock_bts.start_task.call_args.args[0]
             managed_task.fn()
@@ -129,18 +139,14 @@ class TestGetReconcileStatus:
 
         with (
             patch(
-                "nomarr.services.domain.tagging_svc.write.get_library_record",
-                return_value={"_id": "lib1"},
-            ),
-            patch(
                 "nomarr.services.domain.tagging_svc.write.count_files_needing_reconciliation",
                 return_value=4,
             ),
         ):
-            result = service.get_reconcile_status(1)
+            result = service.get_reconcile_status(_make_library())
 
         assert result == {"pending_count": 4, "failed_count": 0, "in_progress": True}
-        mock_bts.get_task_status.assert_called_once_with("write_tags:1")
+        mock_bts.get_task_status.assert_called_once_with("write_tags:lib1")
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -153,15 +159,11 @@ class TestGetReconcileStatus:
 
         with (
             patch(
-                "nomarr.services.domain.tagging_svc.write.get_library_record",
-                return_value={"_id": "lib1"},
-            ),
-            patch(
                 "nomarr.services.domain.tagging_svc.write.count_files_needing_reconciliation",
                 return_value=2,
             ),
         ):
-            result = service.get_reconcile_status(1)
+            result = service.get_reconcile_status(_make_library())
 
         assert result == {"pending_count": 2, "failed_count": 0, "in_progress": False}
 
@@ -179,15 +181,11 @@ class TestGetReconcileStatus:
 
         with (
             patch(
-                "nomarr.services.domain.tagging_svc.write.get_library_record",
-                return_value={"_id": "lib1"},
-            ),
-            patch(
                 "nomarr.services.domain.tagging_svc.write.count_files_needing_reconciliation",
                 return_value=2,
             ),
         ):
-            result = service.get_reconcile_status(1)
+            result = service.get_reconcile_status(_make_library())
 
         assert result == {"pending_count": 2, "failed_count": 2, "in_progress": False}
 
@@ -202,53 +200,13 @@ class TestGetReconcileStatus:
         mock_bts.start_task.side_effect = lambda task: task.fn()
 
         with patch.object(service, "write_tags_to_files", return_value=batch_result):
-            result = service.start_write_tags_background(1, threading.Event())
+            result = service.start_write_tags_background(_make_library(), threading.Event())
 
         assert result == batch_result
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
-    def test_get_reconcile_status_raises_for_unknown_library(self) -> None:
-        """Unknown libraries should raise ValueError before BTS status is queried."""
-        mock_db = MagicMock()
-        mock_bts = MagicMock()
-        service = _make_service(db=mock_db, bts=mock_bts)
-
-        with (
-            patch(
-                "nomarr.services.domain.tagging_svc.write.get_library_record",
-                return_value=None,
-            ),
-            pytest.raises(ValueError, match="Library not found: 1"),
-        ):
-            service.get_reconcile_status(1)
-
-        mock_bts.get_task_status.assert_not_called()
 
 
 class TestWriteTagsToFiles:
     """Tests for direct write-tags batch processing."""
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
-    def test_write_tags_to_files_raises_for_unknown_library(self) -> None:
-        """Unknown libraries should raise ValueError before claiming files."""
-        mock_db = MagicMock()
-        service = _make_service(db=mock_db)
-
-        with (
-            patch(
-                "nomarr.services.domain.tagging_svc.write.get_library_record",
-                return_value=None,
-            ),
-            patch(
-                "nomarr.services.domain.tagging_svc.write.claim_files_for_reconciliation",
-            ) as mock_claim,
-            pytest.raises(ValueError, match="Library not found: 1"),
-        ):
-            service.write_tags_to_files(1)
-
-        mock_claim.assert_not_called()
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -259,12 +217,9 @@ class TestWriteTagsToFiles:
             return_value=ConfigOption(key="calibration_version", value="calibration-v1")
         )
         service = _make_service(db=mock_db)
+        library = _make_library(file_write_mode="full")
 
         with (
-            patch(
-                "nomarr.services.domain.tagging_svc.write.get_library_record",
-                return_value={"file_write_mode": "full"},
-            ),
             patch(
                 "nomarr.services.domain.tagging_svc.write.claim_files_for_reconciliation",
                 return_value=[{"id": "file1"}, {"id": "file2"}],
@@ -284,7 +239,7 @@ class TestWriteTagsToFiles:
                 ],
             ) as mock_workflow,
         ):
-            result = service.write_tags_to_files(1)
+            result = service.write_tags_to_files(library)
 
         assert result == WriteTagsResult(processed=2, remaining=0, failed=0)
         assert mock_workflow.call_count == 2
@@ -299,12 +254,9 @@ class TestWriteTagsToFiles:
             return_value=ConfigOption(key="calibration_version", value="calibration-v1")
         )
         service = _make_service(db=mock_db)
+        library = _make_library(file_write_mode="minimal")
 
         with (
-            patch(
-                "nomarr.services.domain.tagging_svc.write.get_library_record",
-                return_value={"file_write_mode": "minimal"},
-            ),
             patch(
                 "nomarr.services.domain.tagging_svc.write.claim_files_for_reconciliation",
                 return_value=[{"id": "file1"}, {"id": "file2"}],
@@ -324,10 +276,10 @@ class TestWriteTagsToFiles:
                 ],
             ),
         ):
-            result = service.write_tags_to_files(1)
+            result = service.write_tags_to_files(library)
 
         assert result == WriteTagsResult(processed=1, remaining=0, failed=1)
-        mock_release_claim.assert_called_once_with(mock_db, "file2", "reconcile:1")
+        mock_release_claim.assert_called_once_with(mock_db, "file2", "reconcile:lib1")
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -336,12 +288,9 @@ class TestWriteTagsToFiles:
         mock_db = MagicMock()
         mock_db.app.get_config_option = MagicMock(return_value=None)
         service = _make_service(db=mock_db)
+        library = _make_library(file_write_mode="full")
 
         with (
-            patch(
-                "nomarr.services.domain.tagging_svc.write.get_library_record",
-                return_value={"file_write_mode": "full"},
-            ),
             patch(
                 "nomarr.services.domain.tagging_svc.write.claim_files_for_reconciliation",
                 return_value=[{"id": "file1"}],
@@ -358,10 +307,10 @@ class TestWriteTagsToFiles:
                 return_value=SimpleNamespace(success=False, error="file_modified_externally"),
             ),
         ):
-            result = service.write_tags_to_files(1)
+            result = service.write_tags_to_files(library)
 
         assert result == WriteTagsResult(processed=0, remaining=0, failed=0)
-        mock_release_claim.assert_called_once_with(mock_db, "file1", "reconcile:1")
+        mock_release_claim.assert_called_once_with(mock_db, "file1", "reconcile:lib1")
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -372,12 +321,9 @@ class TestWriteTagsToFiles:
             return_value=ConfigOption(key="calibration_version", value="calibration-v1")
         )
         service = _make_service(db=mock_db)
+        library = _make_library(file_write_mode="full")
 
         with (
-            patch(
-                "nomarr.services.domain.tagging_svc.write.get_library_record",
-                return_value={"file_write_mode": "full"},
-            ),
             patch(
                 "nomarr.services.domain.tagging_svc.write.claim_files_for_reconciliation",
                 return_value=[{"id": "file1"}],
@@ -394,7 +340,7 @@ class TestWriteTagsToFiles:
                 side_effect=RuntimeError("boom"),
             ),
         ):
-            result = service.write_tags_to_files(1)
+            result = service.write_tags_to_files(library)
 
         assert result == WriteTagsResult(processed=0, remaining=0, failed=1)
-        mock_release_claim.assert_called_once_with(mock_db, "file1", "reconcile:1")
+        mock_release_claim.assert_called_once_with(mock_db, "file1", "reconcile:lib1")

@@ -15,7 +15,13 @@ from nomarr.components.processing.file_write_comp import (
     save_mood_tags,
     save_mood_tags_batch,
 )
+from nomarr.helpers.dataclasses.library_dataclass import Library
 from nomarr.helpers.dataclasses.tags_dataclass import Tag, Tags
+
+
+def _make_library() -> Library:
+    """Build a domain ``Library`` (natural identity) for write tests."""
+    return Library(name="Test Library", root_path="/music")
 
 
 class TestGetFileForWriting:
@@ -73,29 +79,31 @@ class TestResolveLibraryRoot:
     @pytest.mark.mocked
     def test_returns_none_when_library_missing(self) -> None:
         mock_db = MagicMock()
+        library = _make_library()
 
         with patch(
             "nomarr.components.processing.file_write_comp.get_library_record",
             return_value=None,
         ) as mock_get_library_record:
-            result = resolve_library_root(mock_db, 1)
+            result = resolve_library_root(mock_db, library)
 
         assert result is None
-        mock_get_library_record.assert_called_once_with(mock_db, 1, include_scan=False)
+        mock_get_library_record.assert_called_once_with(mock_db, library, include_scan=False)
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_returns_path_for_existing_library(self) -> None:
         mock_db = MagicMock()
+        library = _make_library()
 
         with patch(
             "nomarr.components.processing.file_write_comp.get_library_record",
-            return_value={"root_path": "/music"},
+            return_value=Library(name="Test Library", root_path="/music"),
         ) as mock_get_library_record:
-            result = resolve_library_root(mock_db, 1)
+            result = resolve_library_root(mock_db, library)
 
         assert result == Path("/music")
-        mock_get_library_record.assert_called_once_with(mock_db, 1, include_scan=False)
+        mock_get_library_record.assert_called_once_with(mock_db, library, include_scan=False)
 
 
 class TestGetNomarrTags:

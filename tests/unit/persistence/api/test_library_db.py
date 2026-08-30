@@ -196,7 +196,7 @@ def test_exposes_library_maintenance_surface() -> None:
     # storage-id maintenance methods (delete_tags_by_ids / list_orphaned_tag_ids)
     # are removed per the song-tag hard-cut.
     assert hasattr(db, "list_orphaned_song_ids")
-    assert hasattr(db, "cleanup_orphaned_tags")
+    assert hasattr(db, "admin_cleanup_orphaned_tags")
     assert not hasattr(db, "delete_tags_by_ids")
     assert not hasattr(db, "list_orphaned_tag_ids")
     assert not hasattr(db, "list_song_tag_edges")
@@ -205,8 +205,8 @@ def test_exposes_library_maintenance_surface() -> None:
     assert hasattr(db, "truncate_song_links")
     assert hasattr(db, "truncate_folder_links")
     assert hasattr(db, "truncate_folders")
-    assert hasattr(db, "truncate_tags")
-    assert hasattr(db, "truncate_song_tag_assignments")
+    assert hasattr(db, "admin_truncate_tags")
+    assert hasattr(db, "admin_truncate_song_tag_assignments")
     assert hasattr(db, "truncate_scan_records")
 
     # Forwarders route to the correct sub-facade repo
@@ -214,7 +214,7 @@ def test_exposes_library_maintenance_surface() -> None:
     song_repo.list_orphaned_song_ids.assert_called_once_with()
 
     tag_repo.get_orphaned_tag_ids = MagicMock(return_value=[])
-    db.cleanup_orphaned_tags()
+    db.admin_cleanup_orphaned_tags()
     tag_repo.get_orphaned_tag_ids.assert_called_once_with()
 
     db.truncate_songs()
@@ -229,10 +229,10 @@ def test_exposes_library_maintenance_surface() -> None:
     db.truncate_folders()
     folder_repo.truncate_folders.assert_called_once_with()
 
-    db.truncate_tags()
+    db.admin_truncate_tags()
     tag_repo.truncate_tags.assert_called_once_with()
 
-    db.truncate_song_tag_assignments()
+    db.admin_truncate_song_tag_assignments()
     song_tag_repo.truncate_song_tag_assignments.assert_called_once_with()
 
     # LibraryMaintenanceDb no longer exists
@@ -588,12 +588,13 @@ def test_remove_song_by_path_returns_silently_when_not_found() -> None:
 @pytest.mark.unit
 def test_get_tag_accepts_tag_identity() -> None:
     db, _, _, _, _, tag_repo, *_ = _make_library_db()
-    tag_repo.get_tag_by_name = MagicMock(return_value={"name": "artist", "value": "X", "namespace": ""})
+    tag_repo.get_tag_ids_by_identities = MagicMock(return_value={("artist", "X", ""): 5})
+    tag_repo.get_tags_by_ids = MagicMock(return_value=[{"name": "artist", "value": "X", "namespace": ""}])
 
     result = db.get_tag(_tag())
 
     assert result == _tag()
-    tag_repo.get_tag_by_name.assert_called_once_with("artist", "")
+    tag_repo.get_tag_ids_by_identities.assert_called_once()
 
 
 @pytest.mark.unit
@@ -871,7 +872,7 @@ def test_cleanup_orphaned_tags_returns_typed_result() -> None:
     tag_repo.get_orphaned_tag_ids = MagicMock(return_value=[1, 2, 3])
     tag_repo.delete_tags_by_ids = MagicMock(return_value=3)
 
-    result = db.cleanup_orphaned_tags()
+    result = db.admin_cleanup_orphaned_tags()
 
     assert result == TagCleanupResult(deleted=3, orphaned=3)
     tag_repo.get_orphaned_tag_ids.assert_called_once_with()
@@ -1156,7 +1157,7 @@ def test_maintenance_cleanup_orphaned_tags() -> None:
     tag_repo.get_orphaned_tag_ids = MagicMock(return_value=[1])
     tag_repo.delete_tags_by_ids = MagicMock(return_value=1)
 
-    result = db.cleanup_orphaned_tags()
+    result = db.admin_cleanup_orphaned_tags()
 
     assert result == TagCleanupResult(deleted=1, orphaned=1)
 
@@ -1206,7 +1207,7 @@ def test_maintenance_truncate_tags() -> None:
     db, tag_repo, _ = _make_tags_db()
     tag_repo.truncate_tags = MagicMock()
 
-    db.truncate_tags()
+    db.admin_truncate_tags()
 
     tag_repo.truncate_tags.assert_called_once_with()
 
@@ -1216,7 +1217,7 @@ def test_maintenance_truncate_song_tag_assignments() -> None:
     db, _, song_tag_repo = _make_tags_db()
     song_tag_repo.truncate_song_tag_assignments = MagicMock()
 
-    db.truncate_song_tag_assignments()
+    db.admin_truncate_song_tag_assignments()
 
     song_tag_repo.truncate_song_tag_assignments.assert_called_once_with()
 

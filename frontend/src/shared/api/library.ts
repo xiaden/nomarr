@@ -72,7 +72,7 @@ export async function list(enabledOnly = false): Promise<Library[]> {
 }
 
 /**
- * Get a specific library by ID.
+ * Get a specific library by its natural library name (wire identity).
  */
 export async function getLibrary(id: string): Promise<Library> {
   // `id` is the natural library name (wire identity); URL-encode as a path segment.

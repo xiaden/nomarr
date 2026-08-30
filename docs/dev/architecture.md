@@ -99,15 +99,21 @@ Rules:
 ```python
 # ✅ Preferred: intent-level persistence access
 # READ methods use SQLAlchemy autobegin — no explicit transaction required.
-song = db.library.get_song(song_id)
-tags_by_song = db.library.list_song_tags_for_songs(song_ids)
+song_identity = SongIdentity(
+    library=LibraryIdentity(name="TestLib", root_path="/music"),
+    normalized_path="track.mp3",
+)
+tags_by_song = db.library.list_song_tags_for_songs([song_identity])
 
 # WRITE methods execute directly (AR-SDR-4) — no transaction() context,
 # no caller-managed transaction contract. Repos own short internal
 # transactions (begin_nested + commit), so just call the intent method.
-db.library.replace_song_tags(song_id, tags)
+db.library.replace_song_tags(
+    song_identity,
+    [SongTagAssignment(name="genre", value="rock", namespace="nom")],
+)
 
-tagged_song_ids = db.app.list_songs_in_state(STATE_TAGGED)
+tagged_song_ids = db.app.song_ids_with_state("tagged")
 model = db.ml.get_model(model_id)
 outputs = db.ml.list_model_outputs(model_id)
 similar = db.ml.search_vectors("discogs_effnet", query_vector, limit=10)
@@ -128,7 +134,7 @@ similar = db.ml.search_vectors("discogs_effnet", query_vector, limit=10)
 | Sub-facade | Namespace | Domain |
 | --- | --- | --- |
 | `LibrarySongsDb` | `db.library.songs` | Song/folder domain (incl. `list_orphaned_song_ids`, `truncate_songs`, `truncate_song_links`, `truncate_folder_links`, `truncate_folders`) |
-| `LibraryTagsDb` | `db.library.tags` | Tag/song-tag domain (incl. `list_orphaned_tag_ids`, `delete_tags_by_ids`, `truncate_tags`, `truncate_song_tag_edges`) |
+| `LibraryTagsDb` | `db.library.tags` | Tag/song-tag domain (incl. `admin_cleanup_orphaned_tags` → `TagCleanupResult`, `count_orphaned_tags`, `admin_truncate_tags`, `admin_truncate_song_tag_assignments`) |
 | `LibraryScansDb` | `db.library.scans` | Scan lifecycle (incl. `truncate_scan_records`) |
 | `LibraryRegionsDb` | `db.library.regions` | Library/pipeline-state domain |
 

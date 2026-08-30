@@ -23,6 +23,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
+from nomarr.helpers.dataclasses.library_dataclass import Library
 from nomarr.persistence.api.application import AppDb
 from nomarr.persistence.api.library import LibraryDb
 from nomarr.persistence.api.library_regions import LibraryRegionsDb
@@ -127,14 +128,16 @@ def test_facades_do_not_expose_transaction(session: Session) -> None:
 def test_write_succeeds_without_transaction(session: Session) -> None:
     db, library_repo = _make_library(session)
     db.regions.create_library(
-        name="music",
-        root_path="/music",
-        is_enabled=True,
-        watch_mode="manual",
-        file_write_mode="never",
-        library_auto_write=False,
-        created_at=1,
-        updated_at=1,
+        Library(
+            name="music",
+            root_path="/music",
+            is_enabled=True,
+            watch_mode="manual",
+            file_write_mode="never",
+            library_auto_write=False,
+            created_at=1,
+            updated_at=1,
+        )
     )
     library_repo.add_library.assert_called_once_with(
         {
@@ -154,14 +157,16 @@ def test_write_succeeds_without_transaction(session: Session) -> None:
 def test_write_via_forwarder_succeeds_without_transaction(session: Session) -> None:
     db, library_repo = _make_library(session)
     db.create_library(
-        name="music",
-        root_path="/music",
-        is_enabled=True,
-        watch_mode="manual",
-        file_write_mode="never",
-        library_auto_write=False,
-        created_at=1,
-        updated_at=1,
+        Library(
+            name="music",
+            root_path="/music",
+            is_enabled=True,
+            watch_mode="manual",
+            file_write_mode="never",
+            library_auto_write=False,
+            created_at=1,
+            updated_at=1,
+        )
     )
     library_repo.add_library.assert_called_once()
 
@@ -180,8 +185,8 @@ def test_app_db_write_succeeds_without_transaction(session: Session) -> None:
 
 def test_ml_db_write_succeeds_without_transaction(session: Session) -> None:
     ml_db = _make_ml(session)
-    ml_db.add_model({"model_id": "m1"})
-    ml_db._model_repo.upsert_model.assert_called_once_with({"model_id": "m1"})
+    ml_db.remove_model("m1")
+    ml_db._model_repo.delete_model.assert_called_once_with("m1")
 
 
 # ── (3) READ methods succeed without transaction() (autobegin) ──────────────
@@ -189,8 +194,27 @@ def test_ml_db_write_succeeds_without_transaction(session: Session) -> None:
 
 def test_read_without_transaction_succeeds(session: Session) -> None:
     db, library_repo = _make_library(session)
-    library_repo.get_library.return_value = {"id": 1, "name": "music"}
-    assert db.get_library(1) == {"id": 1, "name": "music"}
+    library_repo.get_library_by_natural_key.return_value = {"id": 1}
+    library_repo.get_library.return_value = {
+        "id": 1,
+        "name": "music",
+        "path": "/music",
+        "library_type": "music",
+        "watch_mode": "off",
+        "file_write_mode": "full",
+        "auto_tag": 0,
+        "auto_curate": 0,
+        "created_at": 1000,
+        "updated_at": 1000,
+    }
+    library = Library(name="music", root_path="/music")
+    result = db.get_library(library)
+
+    assert result is not None
+    assert result.name == "music"
+    assert result.root_path == "/music"
+    assert result.is_enabled is True
+    library_repo.get_library_by_natural_key.assert_called_once_with("music", "/music")
     library_repo.get_library.assert_called_once_with(1)
 
 

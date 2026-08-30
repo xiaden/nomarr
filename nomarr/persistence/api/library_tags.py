@@ -124,10 +124,26 @@ class LibraryTagsDb:
     # ------------------------------------------------------------------
 
     def get_tag(self, identity: TagRef) -> TagRef | None:
-        """Find a tag by its complete domain identity, never exposing its database ID."""
-        row = self._tag_repo.get_tag_by_name(identity.name, identity.namespace)
-        if row is None or row["value"] != str(identity.value):
+        """Find a tag by its complete domain identity, never exposing its database ID.
+
+        Matches the full ``(name, value, namespace)`` natural key exactly. The
+        identity is resolved set-based via ``get_tag_ids_by_identities`` (not the
+        value-blind name+namespace-only ``get_tag_by_name`` fetch), then the
+        matching row is read by primary key, so a shared ``(name, namespace)``
+        pair with multiple values resolves to the exact tag for each value and
+        ``None`` for a non-matching value.
+        """
+        tag_ids = self._tag_repo.get_tag_ids_by_identities(
+            [{"name": identity.name, "value": str(identity.value), "namespace": identity.namespace}]
+        )
+        key = (identity.name, str(identity.value), identity.namespace)
+        tag_id = tag_ids.get(key)
+        if tag_id is None:
             return None
+        rows = self._tag_repo.get_tags_by_ids([tag_id])
+        if not rows:
+            return None
+        row = rows[0]
         return TagRef(name=row["name"], value=row["value"], namespace=row["namespace"])
 
     def ensure_tag(self, identity: TagRef) -> TagRef:
@@ -374,10 +390,15 @@ class LibraryTagsDb:
         song: SongIdentity,
         identities: Sequence[TagRef] | None = None,
     ) -> None:
-        """Remove tag edges for one song and clean up orphaned tags.
+        """Remove tag edges for one song and run a DB-wide orphaned-tag cleanup.
 
         ``identities`` is optional: when ``None`` all tag edges for the song are
         removed. Resolves the identities set-based without creating tags.
+
+        Side effect: after every per-song removal a DB-wide
+        ``cleanup_orphaned_tags()`` is run to preserve provenance cleanup (tags
+        that lost their last song assignment are deleted). This behavior is
+        intentional and unchanged.
         """
         song_id = self._resolve_song_id(song)
         if song_id is None:
@@ -405,16 +426,30 @@ class LibraryTagsDb:
     # Maintenance
     # ------------------------------------------------------------------
 
-    def cleanup_orphaned_tags(self) -> TagCleanupResult:
-        """Delete orphaned tags (no song assignment) and report the outcome."""
+    def count_orphaned_tags(self) -> int:
+        """Count orphaned tags (no song assignment) without deleting any.
+
+        Non-destructive read intent backing ``dry_run=True`` previews. Set-based
+        over the persistence-private ``get_orphaned_tag_ids`` primitive; returns
+        a plain scalar count (``0`` when none), never storage ids, rows, or edge
+        dictionaries. No tag is deleted and no transaction context is exposed.
+        """
+        return len(self._tag_repo.get_orphaned_tag_ids())
+
+    def admin_cleanup_orphaned_tags(self) -> TagCleanupResult:
+        """Delete orphaned tags (no song assignment) and report the outcome.
+
+        Sole destructive orphan-cleanup intent. Use ``count_orphaned_tags()``
+        for a non-destructive preview.
+        """
         orphaned_ids = self._tag_repo.get_orphaned_tag_ids()
         deleted = self._tag_repo.delete_tags_by_ids(orphaned_ids) if orphaned_ids else 0
         return TagCleanupResult(deleted=deleted, orphaned=len(orphaned_ids))
 
-    def truncate_tags(self) -> None:
+    def admin_truncate_tags(self) -> None:
         """Remove all tag rows."""
         return self._tag_repo.truncate_tags()
 
-    def truncate_song_tag_assignments(self) -> None:
+    def admin_truncate_song_tag_assignments(self) -> None:
         """Remove all song-to-tag assignment edges."""
         return self._song_tag_repo.truncate_song_tag_assignments()

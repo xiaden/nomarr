@@ -45,9 +45,12 @@ from nomarr.helpers.constants.file_states import (
     STATE_TAGS_CURRENT,
     STATE_TAGS_NOT_FRESH,
     STATE_VECTORS_EXTRACTED,
+    STATE_WRITTEN,
 )
 from nomarr.helpers.dataclasses.library_dataclass import Library
+from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
 from nomarr.helpers.dataclasses.song_dataclass import Song
+from nomarr.helpers.dataclasses.song_tag_dataclass import SongTagAssignment
 from nomarr.helpers.exceptions import DuplicateEntityError
 
 
@@ -616,6 +619,17 @@ class TestMultiStateComposition:
 class TestIncompleteTags:
     """Tests for ``get_songs_with_incomplete_tags()``."""
 
+    @staticmethod
+    def _identity(song_id: int) -> SongIdentity:
+        return SongIdentity(
+            library=LibraryIdentity(name="Music", root_path="/music"),
+            normalized_path=f"song{song_id}.mp3",
+        )
+
+    @staticmethod
+    def _assignment(name: str) -> SongTagAssignment:
+        return SongTagAssignment(name=name, value="x", namespace="nom")
+
     @pytest.mark.unit
     def test_preserves_head_matching_logic_for_matching_and_missing_heads(self) -> None:
         mock_db = _make_mock_db()
@@ -623,13 +637,15 @@ class TestIncompleteTags:
             {"head_key": "mood", "labels": ["mood"], "model_key_for_tag": "modelA"},
             {"head_key": "energy", "labels": ["energy"], "model_key_for_tag": "modelB"},
         ]
-        mock_db.app.list_song_docs_in_state.return_value = [_song(song_id=1)]
+        identity = self._identity(1)
+        mock_db.app.songs_with_state.return_value = [_song(song_id=1)]
+        mock_db.library.resolve_song_identities.return_value = {1: identity}
         mock_db.library.list_song_tags_for_songs.return_value = {
-            1: [
-                {"name": "nom:mood_modelA_happy"},
-                {"name": "nom:energy_modelB_high"},
-                {"name": "nom:energy_other_model"},
-            ]
+            identity: (
+                self._assignment("nom:mood_modelA_happy"),
+                self._assignment("nom:energy_modelB_high"),
+                self._assignment("nom:energy_other_model"),
+            )
         }
 
         result = get_songs_with_incomplete_tags(mock_db, expected_heads, namespace_prefix="nom:")
@@ -644,8 +660,10 @@ class TestIncompleteTags:
                 "missing_heads": [],
             }
         ]
+        mock_db.app.songs_with_state.assert_called_once_with(STATE_WRITTEN)
+        mock_db.library.resolve_song_identities.assert_called_once_with([1])
         mock_db.library.list_song_tags_for_songs.assert_called_once_with(
-            [1],
+            [identity],
             name_starts_with="nom:",
         )
 
@@ -656,14 +674,14 @@ class TestIncompleteTags:
             {"head_key": "mood", "labels": ["mood"], "model_key_for_tag": "modelA"},
             {"head_key": "energy", "labels": ["energy"], "model_key_for_tag": "modelB"},
         ]
-        mock_db.app.list_song_docs_in_state.return_value = [
+        identity = self._identity(2)
+        mock_db.app.songs_with_state.return_value = [
             _song(song_id=1),
             _song(song_id=2),
         ]
         mock_db.library.list_songs.return_value = [_song(song_id=2)]
-        mock_db.library.list_song_tags_for_songs.return_value = {
-            2: [{"name": "nom:mood_modelA_happy"}],
-        }
+        mock_db.library.resolve_song_identities.return_value = {2: identity}
+        mock_db.library.list_song_tags_for_songs.return_value = {identity: (self._assignment("nom:mood_modelA_happy"),)}
 
         result = get_songs_with_incomplete_tags(mock_db, expected_heads, namespace_prefix="nom:", library=_library())
 
@@ -678,10 +696,43 @@ class TestIncompleteTags:
             }
         ]
         mock_db.library.list_songs.assert_called_once_with(_library())
+        mock_db.library.resolve_song_identities.assert_called_once_with([2])
         mock_db.library.list_song_tags_for_songs.assert_called_once_with(
-            [2],
+            [identity],
             name_starts_with="nom:",
         )
+
+    @pytest.mark.unit
+    def test_empty_song_ids_returns_empty_without_calling_tag_facade(self) -> None:
+        mock_db = _make_mock_db()
+        mock_db.app.songs_with_state.return_value = []
+
+        result = get_songs_with_incomplete_tags(mock_db, [], namespace_prefix="nom:")
+
+        assert result == []
+        mock_db.library.resolve_song_identities.assert_not_called()
+        mock_db.library.list_song_tags_for_songs.assert_not_called()
+
+    @pytest.mark.unit
+    def test_unresolved_identities_return_empty_mapping_without_calling_tag_facade(self) -> None:
+        mock_db = _make_mock_db()
+        mock_db.app.songs_with_state.return_value = [_song(song_id=1)]
+        mock_db.library.resolve_song_identities.return_value = {}
+
+        result = get_songs_with_incomplete_tags(mock_db, [], namespace_prefix="nom:")
+
+        assert result == [
+            {
+                "file_id": 1,
+                "file_key": 1,
+                "library_id": None,
+                "matched_count": 0,
+                "missing_count": 0,
+                "missing_heads": [],
+            }
+        ]
+        mock_db.library.resolve_song_identities.assert_called_once_with([1])
+        mock_db.library.list_song_tags_for_songs.assert_not_called()
 
 
 class TestTransitionFileState:

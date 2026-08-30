@@ -434,14 +434,23 @@ class LibraryDb:
     # Maintenance forwarding (tags)
     # ------------------------------------------------------------------
 
-    def cleanup_orphaned_tags(self) -> TagCleanupResult:
-        return self._tags.cleanup_orphaned_tags()
+    def count_orphaned_tags(self) -> int:
+        """Count orphaned tags (no song assignment) without deleting any.
 
-    def truncate_tags(self) -> None:
-        return self._tags.truncate_tags()
+        Non-destructive count-only read intent backing ``dry_run=True`` previews;
+        returns a plain scalar count (``0`` when none), never storage ids, rows, or
+        edge dictionaries. No tag is deleted and no transaction context is exposed.
+        """
+        return self._tags.count_orphaned_tags()
 
-    def truncate_song_tag_assignments(self) -> None:
-        return self._tags.truncate_song_tag_assignments()
+    def admin_cleanup_orphaned_tags(self) -> TagCleanupResult:
+        return self._tags.admin_cleanup_orphaned_tags()
+
+    def admin_truncate_tags(self) -> None:
+        return self._tags.admin_truncate_tags()
+
+    def admin_truncate_song_tag_assignments(self) -> None:
+        return self._tags.admin_truncate_song_tag_assignments()
 
     # ------------------------------------------------------------------
     # Scan forwarding (scans)

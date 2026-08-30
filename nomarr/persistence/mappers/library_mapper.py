@@ -1,68 +1,23 @@
-"""Persistence-layer mappers for the library surface.
-
-Ownership (per artifacts/designs/parts/library-domain-facades/CONTRACTS.md and
-ADR-032/ADR-041): ``Library`` (in ``nomarr/helpers/dataclasses/library_dataclass.py``)
-is the natural ``(name, root_path)`` domain object; this module lives in the
-persistence layer and owns the row-to-domain and domain-to-storage-payload
-conversions. It imports helpers dataclasses/DTOs only — never components,
-services, workflows, or interfaces.
-
-Storage aliases that stay inside persistence and are translated here:
-- ``path``        -> ``root_path``
-- ``library_type``-> ``is_enabled`` (``"music"``/``"disabled"`` are storage values)
-- ``auto_tag``    -> derived ``watch_mode``: ``auto_tag = int(watch_mode != "off")``
-- ``auto_curate`` -> ``library_auto_write``
-Generated ``id`` and ``LibraryRow`` never cross this module's public boundary.
-
-Timestamp convention (per Nomarr time-unit conventions and the existing facade):
-``created_at``/``updated_at`` are epoch-millisecond integers. ``Library``
-carries them as optional pre-persistence; the facade supplies ``now_ms()`` when
-a created library has none, and persisted timestamps are always returned.
-"""
+"""Persistence-only mapping for library and scan rows."""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import Any
+
+from collections.abc import Mapping
 
 from nomarr.helpers.dataclasses.library_dataclass import Library
-from nomarr.helpers.dataclasses.library_domain_dataclasses import LibraryScan
-
-if TYPE_CHECKING:
-    from nomarr.helpers.dataclasses.library_domain_dataclasses import LibraryUpdate
-    from nomarr.helpers.dto.repo_dto import LibraryRow, LibraryScanRow
-
-__all__ = [
-    "library_from_row",
-    "library_insert_payload",
-    "library_update_payload",
-    "scan_from_row",
-]
+from nomarr.helpers.dataclasses.library_domain_dataclasses import LibraryScan, LibraryUpdate
 
 
-def library_from_row(row: LibraryRow) -> Library:
-    """Map a storage ``LibraryRow`` to a domain ``Library``.
-
-    Translation decisions:
-    - ``path`` -> ``root_path``
-    - ``library_type`` -> ``is_enabled`` (``"disabled"`` is the only disabled pole)
-    - ``watch_mode`` -> ``watch_mode`` directly; when the stored ``watch_mode``
-      is empty/legacy, fall back to ``"event"`` when ``auto_tag`` is truthy else
-      ``"off"`` (mirrors the pre-facade ``_row_to_library_doc`` behavior).
-    - ``auto_curate`` -> ``library_auto_write`` (int -> bool)
-    - ``created_at``/``updated_at`` are carried through as persisted values.
-    The generated ``id`` is dropped here.
-    """
-    auto_tag = bool(row.get("auto_tag"))
-    watch_mode = cast(
-        "Literal['off', 'event', 'poll']",
-        row.get("watch_mode") or ("event" if auto_tag else "off"),
-    )
+def library_from_row(row: Mapping[str, Any]) -> Library:
+    """Map a repository row to a storage-independent library."""
     return Library(
         name=row["name"],
         root_path=row["path"],
-        is_enabled=row.get("library_type") != "disabled",
-        watch_mode=watch_mode,
-        file_write_mode=cast("Literal['none', 'minimal', 'full']", row.get("file_write_mode") or "full"),
+        is_enabled=row["library_type"] != "disabled",
+        watch_mode=row.get("watch_mode") or ("event" if row.get("auto_tag") else "off"),
+        file_write_mode=row.get("file_write_mode") or "full",
         library_auto_write=bool(row.get("auto_curate")),
         created_at=row.get("created_at"),
         updated_at=row.get("updated_at"),
@@ -70,13 +25,7 @@ def library_from_row(row: LibraryRow) -> Library:
 
 
 def library_insert_payload(library: Library) -> dict[str, Any]:
-    """Translate a domain ``Library`` into the ``libraries`` insert payload.
-
-    Storage-side derivations: ``path`` from ``root_path``, ``library_type`` from
-    ``is_enabled``, ``auto_tag`` from ``watch_mode``, ``auto_curate`` from
-    ``library_auto_write``. ``created_at``/``updated_at`` are passed through as
-    the caller supplied them (the facade fills ``now_ms()`` when absent).
-    """
+    """Map a domain library to repository insert fields."""
     return {
         "name": library.name,
         "path": library.root_path,
@@ -90,32 +39,8 @@ def library_insert_payload(library: Library) -> dict[str, Any]:
     }
 
 
-def scan_from_row(row: LibraryScanRow) -> LibraryScan:
-    """Map a storage ``LibraryScanRow`` to a domain ``LibraryScan``.
-
-    The generated scan ``id`` and the storage ``library_id`` foreign key are
-    dropped here — they never cross the facade boundary. ``files_found`` /
-    ``files_processed`` map to the domain counters; timestamps are epoch-ms.
-    """
-    return LibraryScan(
-        scan_type=row["scan_type"],
-        status=row["status"],
-        started_at=row["started_at"],
-        heartbeat_at=row["heartbeat_at"],
-        files_processed=row["files_processed"],
-        files_found=row["files_found"],
-        error=row["error"],
-        finished_at=row["finished_at"],
-    )
-
-
 def library_update_payload(changes: LibraryUpdate) -> dict[str, Any]:
-    """Translate a typed ``LibraryUpdate`` into a ``libraries`` column payload.
-
-    Only the fields that are set (non-``None``) appear in the payload, mirroring
-    the old ``update_library(fields)`` dict semantics. ``watch_mode`` also sets
-    the derived ``auto_tag`` column; ``is_enabled`` maps to ``library_type``.
-    """
+    """Map typed domain changes to repository update fields."""
     payload: dict[str, Any] = {}
     if changes.name is not None:
         payload["name"] = changes.name
@@ -133,3 +58,17 @@ def library_update_payload(changes: LibraryUpdate) -> dict[str, Any]:
     if changes.updated_at is not None:
         payload["updated_at"] = changes.updated_at
     return payload
+
+
+def scan_from_row(row: Mapping[str, Any]) -> LibraryScan:
+    """Map a scan repository row without exposing row identifiers."""
+    return LibraryScan(
+        scan_type=row["scan_type"],
+        status=row["status"],
+        started_at=row["started_at"],
+        heartbeat_at=row.get("heartbeat_at"),
+        finished_at=row.get("finished_at"),
+        files_found=row.get("files_found", 0),
+        files_processed=row.get("files_processed", 0),
+        error=row.get("error"),
+    )

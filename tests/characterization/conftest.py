@@ -226,7 +226,7 @@ def _cleanup_seed_data(db: Database) -> None:
     try:
         for lib in db.library.list_libraries():
             db.library.remove_library(lib)
-        db.library.cleanup_orphaned_tags()
+        db.library.admin_cleanup_orphaned_tags()
     except Exception:
         # If cleanup fails, continue (test database will be recreated)
         pass

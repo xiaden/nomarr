@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from nomarr.components.tagging.tag_cleanup_comp import cleanup_orphaned_tags
+from nomarr.components.tagging.tag_cleanup_comp import cleanup_orphaned_tags, count_orphaned_tags
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -21,9 +21,14 @@ def cleanup_orphaned_entities_workflow(db: Database, dry_run: bool = False) -> d
 
     Note: Function name kept for API compatibility, but now cleans tags.
 
+    Branches on ``dry_run`` at the workflow boundary: a preview counts orphaned
+    tags via the non-destructive ``count_orphaned_tags`` intent and performs NO
+    deletion; a live run calls the destructive ``cleanup_orphaned_tags`` intent
+    and reports its real ``TagCleanupResult``.
+
     Args:
         db: Database instance
-        dry_run: If True, report deleted counts as 0 (preview)
+        dry_run: If True, count orphaned tags but do not delete them (preview)
 
     Returns:
         Dict with:
@@ -35,23 +40,30 @@ def cleanup_orphaned_entities_workflow(db: Database, dry_run: bool = False) -> d
     """
     logger.debug("[tag_cleanup] Starting orphaned tag cleanup workflow")
 
+    if dry_run:
+        orphaned_count = count_orphaned_tags(db)
+        orphaned_log = logger.info if orphaned_count > 0 else logger.debug
+        orphaned_log("[tag_cleanup] Found %d orphaned tags (dry run)", orphaned_count)
+        logger.info("[tag_cleanup] Dry run - no tags deleted")
+        return {
+            "orphaned_counts": {"tags": orphaned_count},
+            "deleted_counts": {"tags": 0},
+            "total_orphaned": orphaned_count,
+            "total_deleted": 0,
+        }
+
     result = cleanup_orphaned_tags(db)
     orphaned_count = result.orphaned
-    deleted_count = 0 if dry_run else result.deleted
+    deleted_count = result.deleted
 
     orphaned_log = logger.info if orphaned_count > 0 else logger.debug
     orphaned_log("[tag_cleanup] Found %d orphaned tags", orphaned_count)
-
-    orphaned_counts = {"tags": orphaned_count}
-
-    if dry_run:
-        logger.info("[tag_cleanup] Dry run - no tags deleted")
 
     deleted_log = logger.info if deleted_count > 0 else logger.debug
     deleted_log("[tag_cleanup] Deleted %d orphaned tags", deleted_count)
 
     return {
-        "orphaned_counts": orphaned_counts,
+        "orphaned_counts": {"tags": orphaned_count},
         "deleted_counts": {"tags": deleted_count},
         "total_orphaned": orphaned_count,
         "total_deleted": deleted_count,

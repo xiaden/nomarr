@@ -123,6 +123,23 @@ class TestSongTagAssignmentFromBatchRow:
         # The storage song_id stays internal to the row; never crosses.
         assert not hasattr(assignment, "song_id")
 
+    def test_zero_confidence_is_preserved_not_defaulted(self) -> None:
+        # A stored confidence of exactly 0.0 is a genuine value, not a falsy
+        # sentinel: the batch mapper must preserve it rather than substituting 1.0.
+        assignment = song_tag_assignment_from_batch_row(
+            {
+                "song_id": 7,
+                "tag_id": 1,
+                "tag_name": "artist",
+                "tag_value": "X",
+                "namespace": "nom",
+                "source": "ml",
+                "confidence": 0.0,
+            },
+            _SONG,
+        )
+        assert assignment.confidence == 0.0
+
 
 @pytest.mark.unit
 class TestSongFromRow:

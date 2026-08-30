@@ -824,7 +824,7 @@ def test_clear_library_data_truncates_all_facades() -> None:
         call({"id": 3}),
     ]
 
-    db.library.truncate_song_tag_assignments.assert_called_once_with()
+    db.library.admin_truncate_song_tag_assignments.assert_called_once_with()
 
     db.app.truncate_song_state_edges.assert_called_once_with()
 
@@ -832,7 +832,7 @@ def test_clear_library_data_truncates_all_facades() -> None:
 
     db.library.truncate_folder_links.assert_called_once_with()
 
-    db.library.truncate_tags.assert_called_once_with()
+    db.library.admin_truncate_tags.assert_called_once_with()
 
     db.library.truncate_songs.assert_called_once_with()
 
@@ -1100,16 +1100,18 @@ def test_get_sample_normalized_path_returns_first_value() -> None:
 
 
 @pytest.mark.unit
-def test_find_move_candidate_by_chromaprint_normalizes_library_id() -> None:
+def test_find_move_candidate_by_chromaprint_passes_library_domain_object() -> None:
 
     db = make_db()
+
+    library = Library(name="main", root_path="/music")
 
     candidate = _song(song_id=9, path="D:/Music/cand.flac", normalized_path="cand.flac", chromaprint="abc123")
 
     db.library.find_library_song_by_chromaprint.return_value = candidate
 
-    result = find_move_candidate_by_chromaprint(db, 9, "abc123")
+    result = find_move_candidate_by_chromaprint(db, library, "abc123")
 
     assert result == candidate.to_dict()
 
-    db.library.find_library_song_by_chromaprint.assert_called_once_with(9, "abc123")
+    db.library.find_library_song_by_chromaprint.assert_called_once_with(library, "abc123")

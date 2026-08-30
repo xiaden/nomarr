@@ -64,9 +64,9 @@ from functools import partial
 
 from nomarr.helpers import ManagedTask
 
-task = ManagedTask(
-   task_id="write_tags:library_id",
-   fn=partial(run_reconcile_once, library_id="library_id"),
+ task = ManagedTask(
+   task_id="write_tags:<library.name>",
+   fn=partial(tagging_service.write_tags_to_files, library),
 )
 ```
 
@@ -77,7 +77,7 @@ task = ManagedTask(
  | `task_id` | Stable identifier used for deduplication, cancellation, and polling |
  | `fn` | Zero-argument callable executed on the background thread; prefer `functools.partial(...)` when you need to bind arguments |
  | `stop_event` | Cooperative cancellation signal checked by the task at safe checkpoints |
- | `on_complete` | Optional callback invoked after successful completion |
+ | `on_complete` | Optional callback invoked after the task's work succeeds. BTS records `complete` only once this callback itself succeeds; if it raises, the task is recorded as `error` instead |
  | `daemon` | Whether the thread runs as a daemon; BTS tasks default to `True` |
 
 ### Canonical Dispatch Example: Write-Tags
@@ -87,9 +87,11 @@ The write-tags flow is the canonical BTS example. `TaggingService.start_write_ta
 ```python
 import threading
 
+library = library_service.get_library_by_name("library_name")
+stop_event = threading.Event()
 task_id = tagging_service.start_write_tags_background(
-   library_id="library_id",
-   stop_event=threading.Event(),
+   library,
+   stop_event,
    on_complete=lambda: navidrome_service.trigger_rescan(),
 )
 ```
@@ -101,7 +103,7 @@ from nomarr.helpers import ManagedTask
 
 task_id = self._bts.start_task(
    ManagedTask(
-      task_id=f"write_tags:{library_id}",
+       task_id=f"write_tags:{library.name}",
       fn=_task,
       stop_event=stop_event,
       on_complete=on_complete,
@@ -114,16 +116,16 @@ The `_task` function loops until the library is fully reconciled (`remaining == 
 
 ### Cancellation Protocol
 
-BTS uses a **signal-and-move-on** cancellation model:
+BTS uses **cooperative** cancellation — it never forcibly kills threads:
 
-1. Call `bts.cancel_task(task_id)`
+1. Call `bts.cancel_task(task_id)` to signal cancellation, or `bts.cancel_and_join(task_id, timeout)` to signal *and* wait for the task to finish
 2. BTS sets the task's `stop_event` and returns immediately
 3. The task exits cooperatively when it next checks `stop_event.is_set()`
 
 Example:
 
 ```python
-was_signaled = bts.cancel_task("write_tags:library_id")
+was_signaled = bts.cancel_task("write_tags:<library.name>")
 
 if was_signaled:
    logger.info("Write-tags cancellation requested")
@@ -131,19 +133,22 @@ if was_signaled:
 
 Tasks should check `stop_event.is_set()` at natural checkpoints inside loops, before starting another batch, or before expensive follow-up work. BTS does not forcibly kill threads.
 
+A task that stops cooperatively with work still pending is **not** considered complete: it records `{"status": "cancelled"}` and its `on_complete` callback is skipped. For the write-tags flow this keeps the library's `tag_write` axis resumable — `pipeline_svc.stop_write()` resets it back to `not_written` so pending writes can be re-dispatched later.
+
 ### Status Querying
 
 Use `bts.get_task_status(task_id)` to inspect current state:
 
 ```python
-status = bts.get_task_status("write_tags:library_id")
+status = bts.get_task_status("write_tags:<library.name>")
 ```
 
 Return values:
 
 - `{"status": "running"}` while the task is active
-- `{"status": "complete"}` after successful completion
-- `{"status": "error"}` if the task raised an exception
+- `{"status": "complete"}` after the task's work *and* its `on_complete` callback both succeed
+- `{"status": "cancelled"}` after cooperative cancellation (the task stopped at a checkpoint with work pending; `on_complete` is skipped)
+- `{"status": "error"}` if the task raised an exception, or if its `on_complete` callback raised
 - `None` if BTS has never seen that `task_id`
 
 Interface code can combine BTS status with database state for richer polling responses, such as "pending files remaining" plus "is a background reconcile loop still running?"

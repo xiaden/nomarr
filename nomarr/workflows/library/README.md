@@ -38,4 +38,4 @@ Workflows for library scanning, file synchronization, tag I/O, path reconciliati
 
 - **Called by**: `services/domain/library_svc/` (scan, files, admin mixins)
 - **Calls**: `components/library/*` (scanning, sync, metadata extraction), `components/tagging/*` (tag parsing), `components/metadata/*` (entity seeding, cache)
-- **Receives**: `Database`, library_id, tagger_version, namespace
+- **Receives**: `Database`, `Library`, tagger_version, namespace

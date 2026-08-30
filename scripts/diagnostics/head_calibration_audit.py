@@ -287,32 +287,18 @@ def main() -> None:
             p5 = float(sd.get("p5", 0.0))
             p95 = float(sd.get("p95", 1.0))
             cal_n = int(sd.get("n", 0))
-            model_id = state.get("model_id", "")
 
             # Compute scale factor
             span = p95 - p5
             scale = 1.0 / span if span > 1e-9 else 1.0
 
             # ── Fetch segment scores ─────────────────────────────────
+            # Segment statistics were previously read from the raw ``output_data``
+            # JSONB blob on each model output.  That blob is no longer exposed by
+            # the MlDb intent facade (it is a persistence concern), so per-model
+            # segment means/stds are unavailable here and remain empty.
             seg_means: list[float] = []
             seg_stds: list[float] = []
-            if model_id:
-                outputs = db.ml.list_model_outputs(model_id)
-                for out in outputs:
-                    od = out.get("output_data", {})
-                    if not isinstance(od, dict):
-                        continue
-                    # If the output has a label column, filter by it
-                    out_label = out.get("label")
-                    if out_label is not None and out_label != label:
-                        continue
-                    # Also check output_data's own label field
-                    od_label = od.get("label")
-                    if od_label is not None and out_label is None and od_label != label:
-                        continue
-                    em, es = _extract_segment_arrays(od, target_label=label)
-                    seg_means.extend(em)
-                    seg_stds.extend(es)
 
             means_arr = np.array(seg_means, dtype=np.float64)
             stds_arr = np.array(seg_stds, dtype=np.float64)

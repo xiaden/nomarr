@@ -1,10 +1,8 @@
 """Tag curation endpoints for web UI."""
 
-from __future__ import annotations
-
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Annotated
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -13,12 +11,10 @@ from nomarr.helpers.logging_helper import sanitize_exception_message
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.id_codec import decode_library_name
 from nomarr.interfaces.api.web.dependencies import get_library_service, get_tagging_service
+from nomarr.services.domain.library_svc import LibraryService
 from nomarr.services.domain.tagging_svc import (
-    TaggingService,  # noqa: TC001  # FastAPI resolves Annotated[...] at route registration
+    TaggingService,  # FastAPI resolves Annotated[...] at route registration
 )
-
-if TYPE_CHECKING:
-    from nomarr.services.domain.library_svc import LibraryService
 
 logger = logging.getLogger(__name__)
 
@@ -256,8 +252,12 @@ async def commit_pending_tags(
     request: CommitRequest,
     tagging_service: Annotated[TaggingService, Depends(get_tagging_service)],
     library_service: Annotated[
-        LibraryService, Depends(get_library_service)
-    ],  # LibraryService is TYPE_CHECKING-only; quoted so FastAPI resolves Depends at route registration (P6-S4 API fix; sibling overwrote unquoted form — keep quoted)
+        "LibraryService", Depends(get_library_service)
+    ],  # LibraryService is a RUNTIME import above (not TYPE_CHECKING-only), so
+    #  FastAPI can resolve this Annotated dependency when it analyzes routes at
+    #  registration. Keep the runtime import; the quoted form is equivalent to
+    #  the unquoted form here and neither is what fixes the 3 TestCommitPendingTags
+    #  422s — the runtime-resolvable import is.
 ) -> CommitResponse:
     """Commit pending tag writes to files."""
     try:

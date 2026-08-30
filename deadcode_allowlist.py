@@ -513,7 +513,7 @@ def get_embedding_output_node():
     pass  # ONNX model inspection
 
 
-def get_embedding_stream_for_file():
+def get_embedding_stream_for_song():
     pass  # Embedding stream
 
 
@@ -535,10 +535,6 @@ def has_embedding_index():
 
 def list_embedding_streams_by_backbone():
     pass  # Stream listing
-
-
-def list_models_by_ids():
-    pass  # Model listing
 
 
 def ml_get_model_outputs():
@@ -577,7 +573,7 @@ def reconstruct_head_outputs_from_stats():
     pass  # Output reconstruction
 
 
-def remove_embedding_streams_for_file():
+def remove_embedding_streams_for_song():
     pass  # Stream removal
 
 
@@ -589,7 +585,7 @@ def remove_output_streams_for_file():
     pass  # Stream removal
 
 
-def replace_embedding_stream_for_file():
+def replace_embedding_stream_for_song():
     pass  # Stream replacement
 
 
@@ -786,10 +782,6 @@ def __getattr__(name: str):
 # ---------------------------------------------------------------------------
 # 9. Helper functions (used by other modules)
 # ---------------------------------------------------------------------------
-def decode_library_id():
-    pass  # ID decoding
-
-
 def get_component_ids():
     pass  # Component ID retrieval
 
@@ -923,10 +915,6 @@ def _hydrate_file_with_tags():
 
 def _interleave_per_cluster():
     pass  # Cluster interleaving
-
-
-def _library_id_from_file_doc():
-    pass  # ID extraction
 
 
 def _normalize_file_id():

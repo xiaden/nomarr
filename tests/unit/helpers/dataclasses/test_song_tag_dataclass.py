@@ -73,6 +73,14 @@ class TestTagRef:
         assert TagRef("rating", 4.5).value == 4.5
         assert TagRef("compilation", True).value is True
 
+    def test_exposes_no_storage_api(self) -> None:
+        # TagRef is a pure persistence-free natural key: no row/table
+        # constructors and no database-storage id field cross the boundary.
+        assert not hasattr(TagRef, "from_db_doc")
+        assert not hasattr(TagRef, "from_row")
+        tag = TagRef(name="artist", value="X")
+        assert not hasattr(tag, "id")
+
 
 # ── SongTagAssignment ────────────────────────────────────────────────────────
 
@@ -214,6 +222,12 @@ class TestTagCleanupResult:
             TagCleanupResult(deleted=-1, orphaned=0)
         with pytest.raises(TypeError):
             TagCleanupResult(deleted=4.0, orphaned=0)  # type: ignore[arg-type]
+
+    def test_is_frozen_and_slotted(self) -> None:
+        result = TagCleanupResult(deleted=4, orphaned=7)
+        with pytest.raises(AttributeError):
+            result.deleted = 9  # type: ignore[misc]
+        assert not hasattr(result, "__dict__")
 
     def test_zero_result_semantics(self) -> None:
         assert TagCleanupResult(deleted=0, orphaned=0) == TagCleanupResult(deleted=0, orphaned=0)

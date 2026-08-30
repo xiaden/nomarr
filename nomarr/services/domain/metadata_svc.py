@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Literal
 
-from nomarr.components.tagging.tag_cleanup_comp import cleanup_orphaned_tags
+from nomarr.components.tagging.tag_cleanup_comp import cleanup_orphaned_tags, count_orphaned_tags
 from nomarr.components.tagging.tag_query_comp import (
     count_songs_for_tag,
     count_tags_by_name,
@@ -254,16 +254,19 @@ class MetadataService:
         """Clean up orphaned tags (tags with no edges).
 
         Args:
-            dry_run: If True, count orphaned tags but don't delete them
+            dry_run: If True, count orphaned tags but don't delete them (preview)
 
         Returns:
-            Dict with orphaned_count and deleted_count
+            Dict with orphaned_count and deleted_count (deleted_count=0 if dry_run)
 
         """
+        if dry_run:
+            return {
+                "orphaned_count": count_orphaned_tags(self.db),
+                "deleted_count": 0,
+            }
         result = cleanup_orphaned_tags(self.db)
-        orphaned_count = result.orphaned
-        deleted_count = 0 if dry_run else result.deleted
         return {
-            "orphaned_count": orphaned_count,
-            "deleted_count": deleted_count,
+            "orphaned_count": result.orphaned,
+            "deleted_count": result.deleted,
         }

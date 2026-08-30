@@ -172,15 +172,17 @@ def process_file_workflow(
 # ✅ Good — dependencies injected
 def scan_library_workflow(
     db: Database,
-    library_id: str,
+    library: Library,
     models_dir: str,
 ) -> ScanResult:
     ...
 
 # ❌ Bad — reading config at runtime
-def scan_library_workflow(library_id: str) -> ScanResult:
+def scan_library_workflow(library: Library) -> ScanResult:
     from nomarr.config import db  # ← No globals
 ```
+
+Callers resolve a library's natural name to a domain `Library` value before invoking a workflow.
 
 ### Return DTOs
 
@@ -202,13 +204,13 @@ Workflows receive `Database` and pass it to components — never calling persist
 
 ```python
 # ✅ Good — pass db to component
-def cleanup_workflow(db: Database, library_id: str) -> CleanupResult:
-    orphans = find_orphaned_tags(db, library_id)  # component calls db
-    removed = remove_tags(db, orphans)             # component calls db
+def cleanup_workflow(db: Database, library: Library) -> CleanupResult:
+    orphans = find_orphaned_tags(db, library)  # component calls db
+    removed = remove_tags(db, orphans)           # component calls db
     return CleanupResult(removed=removed)
 
 # ❌ Bad — workflow calling persistence
-def cleanup_workflow(db: Database, library_id: str) -> CleanupResult:
+def cleanup_workflow(db: Database, library: Library) -> CleanupResult:
     tags = db.library.list_tags(limit=100)  # ← Only components may call db.*
 ```
 

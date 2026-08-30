@@ -93,6 +93,8 @@ def scan_library_full_workflow(
         skip_validation_autorepair: If True, tag validation will not auto-repair
             incomplete files by transitioning them to not_processed. Used during
             repair operations to avoid triggering ML reruns.
+        stop_event: Cooperative cancellation signal. When set, the scan aborts
+            at the next folder checkpoint and raises ``ScanCancelledError``.
 
     Returns:
         Dict with scan statistics (files_discovered, files_added,
@@ -100,6 +102,9 @@ def scan_library_full_workflow(
         files_skipped, scan_duration_s, warnings, scan_id)
 
     Raises:
+        ScanCancelledError: If ``stop_event`` is set mid-scan. The scan records
+            the cancellation as a scan error and resets the scan axis to
+            ``not_scanned`` before re-raising.
         ValueError: If library not found
         OSError: If library root is inaccessible
 

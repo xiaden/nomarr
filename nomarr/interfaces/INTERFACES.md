@@ -121,12 +121,12 @@ Service (DTO) → .from_dto() → Pydantic Response Model → JSON
 Each route handler follows the same pattern: authenticate, call **one** service method, return a Pydantic response.
 
 ```python
-@router.get("/library/{library_id}")
+@router.get("/library/{library_name}")
 def get_library(
-    library_id: str,
+    library_name: str,
     library_service: LibraryService = Depends(get_library_service),
 ) -> LibraryResponse:
-    library = library_service.get_library(library_id)
+    library = library_service.get_library_by_name(decode_library_name(library_name))
     return LibraryResponse.from_dto(library)
 ```
 
@@ -136,17 +136,17 @@ Extract a service method that orchestrates them:
 
 ```python
 # ✅ In service
-def start_processing(self, library_id: str) -> StartProcessingResult:
-    library = self.get_library(library_id)
+def start_processing(self, library: Library) -> StartProcessingResult:
     return self._start_scan(library)
 
 # ✅ In interface — still one service call
-@router.post("/process/{library_id}")
+@router.post("/process/{library_name}")
 def process(
-    library_id: str,
+    library_name: str,
     processing_service: ProcessingService = Depends(...),
 ) -> ProcessingResponse:
-    result = processing_service.start_processing(library_id)
+    library = processing_service.get_library_by_name(decode_library_name(library_name))
+    result = processing_service.start_processing(library)
     return ProcessingResponse.from_dto(result)
 ```
 
@@ -164,11 +164,11 @@ from nomarr.helpers.dto.library import LibraryDict
 from nomarr.interfaces.api.types.library_types import LibraryResponse
 
 def get_library(
-    library_id: str,
+    library_name: str,
     library_service: LibraryService = Depends(...),
 ) -> LibraryResponse:
-    library_dto = library_service.get_library(library_id)  # Returns LibraryDict
-    return LibraryResponse.from_dto(library_dto)           # Converts to Pydantic
+    library = library_service.get_library_by_name(decode_library_name(library_name))
+    return LibraryResponse.from_dto(library)               # Converts to Pydantic
 ```
 
 ---
@@ -180,12 +180,12 @@ def get_library(
 - Let domain exceptions propagate from services — catch and map here
 
 ```python
-@router.get("/library/{library_id}")
+@router.get("/library/{library_name}")
 def get_library(
-    library_id: str,
+    library_name: str,
     library_service: LibraryService = Depends(...),
 ) -> LibraryResponse:
-    library = library_service.get_library(library_id)
+    library = library_service.get_library_by_name(decode_library_name(library_name))
     if not library:
         raise HTTPException(status_code=404, detail="Library not found")
     return LibraryResponse.from_dto(library)

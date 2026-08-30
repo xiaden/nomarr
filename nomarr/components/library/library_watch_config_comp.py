@@ -27,14 +27,14 @@ def get_library_watch_config(db: Database, library: Library) -> dict[str, Any] |
 
     Returns ``{"root_path", "watch_mode", "is_enabled"}``.
     """
-    library = get_library_record(db, library, include_scan=False)
-    if library is None:
+    resolved = get_library_record(db, library, include_scan=False)
+    if resolved is None:
         return None
 
     return {
-        "root_path": library.root_path,
-        "watch_mode": library.watch_mode,
-        "is_enabled": library.is_enabled,
+        "root_path": resolved.root_path,
+        "watch_mode": resolved.watch_mode,
+        "is_enabled": resolved.is_enabled,
     }
 
 

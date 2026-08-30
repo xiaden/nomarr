@@ -150,8 +150,6 @@ class TestLibraryDict:
             name="Music",
             root_path="/music",
             is_enabled=True,
-            created_at=1704067200000,
-            updated_at=1704067200000,
         )
         assert lib.id == 12345
         assert lib.name == "Music"
@@ -164,8 +162,6 @@ class TestLibraryDict:
             name="Music",
             root_path="/music",
             is_enabled=True,
-            created_at=1700000000000,
-            updated_at=1700000000000,
             scan_status="scanning",
             scan_progress=250,
             scan_total=500,
@@ -185,8 +181,6 @@ class TestLibraryDict:
             name="Music",
             root_path="/music",
             is_enabled=True,
-            created_at=1700000000000,
-            updated_at=1700000000000,
             # Joined scan state fields
             scan_status="complete",
             scan_progress=1000,
@@ -208,8 +202,6 @@ class TestLibraryDict:
             name="Music",
             root_path="/music",
             is_enabled=True,
-            created_at=1700000000000,
-            updated_at=1700000000000,
             scan_status="scanning",
             scan_progress=250,
             scan_total=1000,
