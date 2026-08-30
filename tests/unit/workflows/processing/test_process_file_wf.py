@@ -11,6 +11,7 @@ import pytest
 
 from nomarr.components.ml.audio.ml_audio_comp import AudioLoadCrashError
 from nomarr.components.ml.inference.ml_backbone_embed_comp import BackboneEmbedding, BackboneEmbeddingResult
+from nomarr.helpers.dataclasses.library_dataclass import Library
 from nomarr.helpers.dto.ml_dto import LoadAudioMonoResult, ProcessHeadPredictionsResult, RawOutputStream
 from nomarr.helpers.dto.processing_dto import DeferredBackboneVectorWrite, DeferredOutputStreamWrite, ProcessorConfig
 from nomarr.workflows.processing.process_file_wf import process_file_workflow
@@ -184,11 +185,13 @@ def test_not_found_path_returns_result_with_tags_none() -> None:
     )
     cache = cast("Any", SimpleNamespace(warm=False))
     db = MagicMock()
+    library = Library(name="music", root_path="C:/music")
+    db.library.get_library_by_name.return_value = library
     library_path = MagicMock()
     library_path.is_valid.return_value = False
     library_path.status = "not_found"
     library_path.reason = "file missing on disk"
-    library_path.library_id = "libraries/lib1"
+    library_path.library_id = "music"
 
     with (
         patch("nomarr.workflows.processing.process_file_wf.build_library_path_from_db", return_value=library_path),
@@ -196,7 +199,40 @@ def test_not_found_path_returns_result_with_tags_none() -> None:
     ):
         result = process_file_workflow("song.flac", config, cache, db, file_id="1")
 
-    delete_mock.assert_called_once()
+    delete_mock.assert_called_once_with(db, ["song.flac"], library)
+    assert result.tags is None
+    assert result.head_results == {"_not_found": {"status": "not_found", "reason": "file missing on disk"}}
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+def test_not_found_path_skips_delete_when_library_gone() -> None:
+    """When the library no longer exists, missing-file cleanup is skipped without error."""
+    config = ProcessorConfig(
+        models_dir="models",
+        min_duration_s=30,
+        allow_short=False,
+        batch_size=4,
+        namespace="nom",
+        version_tag_key="tagger_version",
+        tagger_version="v-test",
+    )
+    cache = cast("Any", SimpleNamespace(warm=False))
+    db = MagicMock()
+    db.library.get_library_by_name.return_value = None
+    library_path = MagicMock()
+    library_path.is_valid.return_value = False
+    library_path.status = "not_found"
+    library_path.reason = "file missing on disk"
+    library_path.library_id = "music"
+
+    with (
+        patch("nomarr.workflows.processing.process_file_wf.build_library_path_from_db", return_value=library_path),
+        patch("nomarr.workflows.processing.process_file_wf.bulk_delete_songs") as delete_mock,
+    ):
+        result = process_file_workflow("song.flac", config, cache, db, file_id="1")
+
+    delete_mock.assert_not_called()
     assert result.tags is None
     assert result.head_results == {"_not_found": {"status": "not_found", "reason": "file missing on disk"}}
 

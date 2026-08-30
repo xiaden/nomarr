@@ -18,6 +18,7 @@ from nomarr.components.library.library_song_mutation_comp import (
     upsert_batch,
     upsert_library_song,
 )
+from nomarr.helpers.dataclasses.library_dataclass import Library
 
 
 class TestUpsertBatch:
@@ -131,21 +132,23 @@ class TestDeleteLibraryFile:
     """Tests for single-file deletion cleanup."""
 
     @pytest.mark.unit
-    def test_deletes_file_id_via_library_intent(self) -> None:
+    def test_deletes_song_by_natural_path_and_library_identity(self) -> None:
         mock_db = MagicMock()
+        library = Library(name="music", root_path="C:/music")
 
-        delete_library_song(mock_db, 123)
+        delete_library_song(mock_db, "C:/music/song.mp3", library)
 
-        mock_db.library.remove_song.assert_called_once_with(123)
-        mock_db.library.remove_song_by_path.assert_not_called()
+        mock_db.library.remove_song_by_path.assert_called_once_with("C:/music/song.mp3", library)
+        mock_db.library.remove_song.assert_not_called()
 
     @pytest.mark.unit
-    def test_resolves_path_delete_via_path_intent(self) -> None:
+    def test_numeric_looking_path_is_treated_as_path_not_id(self) -> None:
         mock_db = MagicMock()
+        library = Library(name="music", root_path="C:/music")
 
-        delete_library_song(mock_db, "C:/music/song.mp3", library_id=1)
+        delete_library_song(mock_db, "12345", library)
 
-        mock_db.library.remove_song_by_path.assert_called_once_with("C:/music/song.mp3", 1)
+        mock_db.library.remove_song_by_path.assert_called_once_with("12345", library)
         mock_db.library.remove_song.assert_not_called()
 
 
@@ -155,31 +158,33 @@ class TestBulkDeleteFiles:
     @pytest.mark.unit
     def test_bulk_delete_resolves_paths_and_removes_each_found_file_once(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.get_song_by_path.side_effect = [
-            {"_id": f"{'songs'}/a"},
-            None,
-            {"_id": f"{'songs'}/c"},
-        ]
+        library = Library(name="music", root_path="C:/music")
+        mock_db.library.get_song_by_path.side_effect = [object(), None, object()]
 
-        result = bulk_delete_songs(mock_db, ["C:/music/a.mp3", "C:/music/missing.mp3", "C:/music/c.mp3"], 1)
+        result = bulk_delete_songs(
+            mock_db,
+            ["C:/music/a.mp3", "C:/music/missing.mp3", "C:/music/c.mp3"],
+            library,
+        )
 
         assert result == 2
         assert mock_db.library.get_song_by_path.call_args_list == [
-            call("C:/music/a.mp3", 1),
-            call("C:/music/missing.mp3", 1),
-            call("C:/music/c.mp3", 1),
+            call("C:/music/a.mp3", library),
+            call("C:/music/missing.mp3", library),
+            call("C:/music/c.mp3", library),
         ]
         assert mock_db.library.remove_song_by_path.call_args_list == [
-            call("C:/music/a.mp3", 1),
-            call("C:/music/c.mp3", 1),
+            call("C:/music/a.mp3", library),
+            call("C:/music/c.mp3", library),
         ]
 
     @pytest.mark.unit
     def test_bulk_delete_returns_zero_when_no_paths_match(self) -> None:
         mock_db = MagicMock()
+        library = Library(name="music", root_path="C:/music")
         mock_db.library.get_song_by_path.return_value = None
 
-        result = bulk_delete_songs(mock_db, ["C:/music/missing.mp3"], 1)
+        result = bulk_delete_songs(mock_db, ["C:/music/missing.mp3"], library)
 
         assert result == 0
         mock_db.library.remove_song_by_path.assert_not_called()
