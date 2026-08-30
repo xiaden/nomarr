@@ -10,6 +10,7 @@ import pytest
 from nomarr.helpers import ManagedTask
 from nomarr.helpers.dataclasses.library_dataclass import Library
 from nomarr.helpers.dataclasses.library_domain_dataclasses import LibraryPipelineState, LibraryScan
+from nomarr.helpers.exceptions import LibraryAlreadyScanningError
 from nomarr.services.domain.library_svc import LibraryService, LibraryServiceConfig
 from nomarr.services.domain.library_svc.task_ids import library_task_id
 
@@ -363,3 +364,68 @@ class TestValidateLibraryTags:
 
         mock_resolve_library_for_scan.assert_called_once_with(service.db, library)
         mock_validate_library_tags_workflow.assert_not_called()
+
+
+class TestRepairLibraryTags:
+    """Tests for tag-repair admission ordering and side-effect safety."""
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_repair_library_tags_admits_before_mutating_state(self) -> None:
+        """Tag repair must claim the scan row before transitioning song state."""
+        mock_bts = MagicMock()
+        service = _make_service(background_tasks=mock_bts)
+        library = _make_library()
+        expected_task_id = library_task_id(library, "scan")
+
+        with (
+            patch("nomarr.services.domain.library_svc.scan.resolve_library_for_scan") as mock_resolve,
+            patch("nomarr.services.domain.library_svc.scan.scan_setup_workflow") as mock_admit,
+            patch(
+                "nomarr.services.domain.library_svc.scan.bulk_set_not_hydrated",
+                return_value=42,
+            ) as mock_bulk,
+            patch("nomarr.services.domain.library_svc.scan.on_scan_complete_pipeline_hook"),
+        ):
+            parent = MagicMock()
+            parent.attach_mock(mock_resolve, "resolve")
+            parent.attach_mock(mock_admit, "admit")
+            parent.attach_mock(mock_bulk, "bulk")
+
+            result = service.repair_library_tags(library)
+
+        order = [call[0] for call in parent.method_calls]
+        assert order.index("admit") < order.index("bulk")
+
+        mock_resolve.assert_called_once_with(service.db, library)
+        mock_admit.assert_called_once_with(service.db, library, scan_type="full")
+        mock_bulk.assert_called_once_with(service.db, library)
+        mock_bts.start_task.assert_called_once()
+        managed_task = mock_bts.start_task.call_args.args[0]
+        assert isinstance(managed_task, ManagedTask)
+        # The repair path must keep the ML pipeline hook suppressed.
+        assert cast("functools.partial", managed_task.fn).keywords["skip_validation_autorepair"] is True
+        assert result.files_queued == 42
+        assert result.job_ids == [expected_task_id]
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_repair_library_tags_rejected_scan_is_side_effect_free(self) -> None:
+        """A rejected repair request must not mutate any song hydration state."""
+        mock_bts = MagicMock()
+        service = _make_service(background_tasks=mock_bts)
+        library = _make_library()
+
+        with (
+            patch("nomarr.services.domain.library_svc.scan.resolve_library_for_scan"),
+            patch(
+                "nomarr.services.domain.library_svc.scan.scan_setup_workflow",
+                side_effect=LibraryAlreadyScanningError("already scanning"),
+            ),
+            patch("nomarr.services.domain.library_svc.scan.bulk_set_not_hydrated") as mock_bulk,
+            pytest.raises(LibraryAlreadyScanningError, match="already scanning"),
+        ):
+            service.repair_library_tags(library)
+
+        mock_bulk.assert_not_called()
+        mock_bts.start_task.assert_not_called()

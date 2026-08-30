@@ -119,6 +119,25 @@ class LibraryScanMixin:
 
         """
         scan_setup_workflow(self.db, library, scan_type="full")
+        return self._dispatch_full_scan(library, skip_validation_autorepair=skip_validation_autorepair)
+
+    def _dispatch_full_scan(self, library: Library, skip_validation_autorepair: bool = False) -> StartScanResult:
+        """Dispatch an admitted full scan as a background task.
+
+        Assumes scan admission has already been acquired (via
+        ``scan_setup_workflow``); it does not re-check the active scan row.
+        Callers that must mutate library state between admission and dispatch
+        (e.g. tag repair) use this directly after claiming the scan.
+
+        Args:
+            library: Domain ``Library`` (natural identity) to scan.
+            skip_validation_autorepair: If True, tag validation will not auto-repair
+                incomplete files and the pipeline completion hook is suppressed.
+
+        Returns:
+            StartScanResult DTO with scan statistics and task_id
+
+        """
         task_id = library_task_id(library, "scan")
         # Repair scans must not change ML pipeline state — they exist to re-extract
         # tags, not to trigger a new ML pass.  The skip_validation_autorepair flag
@@ -192,6 +211,11 @@ class LibraryScanMixin:
         re-creates tag edges (artist, album, genre, etc.), then starts a
         normal full scan.
 
+        Scan admission is acquired before any song state is mutated: if the
+        library is already being scanned, or another request wins the scan
+        row race, ``scan_setup_workflow`` raises ``LibraryAlreadyScanningError``
+        and the library's hydration state is left untouched.
+
         Args:
             library: Domain ``Library`` (natural identity) to repair.
 
@@ -204,9 +228,13 @@ class LibraryScanMixin:
 
         """
         resolve_library_for_scan(self.db, library)
+        # Claim the scan row before mutating any song state.  This is the atomic
+        # admission gate; a concurrent scan that already holds the row makes this
+        # raise LibraryAlreadyScanningError, leaving the library side-effect free.
+        scan_setup_workflow(self.db, library, scan_type="full")
         files_queued = bulk_set_not_hydrated(self.db, library)
         logger.info("[LibraryService] Marked %d files for tag re-hydration in library %s", files_queued, library.name)
-        scan_result = self.start_full_scan(library, skip_validation_autorepair=True)
+        scan_result = self._dispatch_full_scan(library, skip_validation_autorepair=True)
         scan_result.files_queued = files_queued
         return scan_result
 
