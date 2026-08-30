@@ -25,6 +25,7 @@ from nomarr.components.tagging.tag_query_comp import (
     list_songs_for_tag,
     list_tags_by_name,
 )
+from nomarr.helpers.dataclasses.song_tag_dataclass import TagRef
 from nomarr.helpers.dto.metadata_dto import EntityDict, EntityListResult, SongListForEntityResult
 
 if TYPE_CHECKING:
@@ -96,40 +97,28 @@ class MetadataService:
             offset=offset,
         )
 
-    def get_entity(self, entity_id: int) -> EntityDict | None:
-        """Get entity (tag) details by ID.
-
-        Args:
-            entity_id: Tag primary key (integer)
-
-        Returns:
-            EntityDict or None if not found
-
-        """
-        tag = get_tag(self.db, entity_id)
-        if not tag:
+    def get_entity(self, collection: EntityCollection, entity_id: str) -> EntityDict | None:
+        """Get an entity by collection and its natural tag value."""
+        identity = TagRef(name=COLLECTION_REL_MAP[collection], value=entity_id)
+        if self.db.library.get_tag(identity) is None:
             return None
-
-        song_count = count_songs_for_tag(self.db, entity_id)
-
-        return EntityDict(
-            id=tag["id"],
-            display_name=str(tag["value"]),
-            song_count=song_count,
-        )
+        song_count = len(self.db.library.find_songs_with_tag(identity, limit=None))
+        return EntityDict(id=entity_id, display_name=entity_id, song_count=song_count)
 
     def list_songs_for_entity(
         self,
-        entity_id: int,
-        name: str,  # noqa: ARG002 (intentionally unused; kept for API compatibility, tag knows its name)
+        collection: EntityCollection,
+        entity_id: str,
+        name: str,  # noqa: ARG002 (intentionally unused; kept for API compatibility)
         limit: int = 100,
         offset: int = 0,
     ) -> SongListForEntityResult:
         """List songs connected to an entity (tag).
 
         Args:
-            entity_id: Tag primary key (integer)
-            name: Ignored (kept for API compatibility, tag knows its name)
+            collection: Entity collection containing the tag
+            entity_id: Natural tag value
+            name: Ignored (kept for API compatibility)
             limit: Maximum results
             offset: Skip first N results
 
@@ -137,8 +126,9 @@ class MetadataService:
             SongListForEntityResult with integer song_ids, total, limit, offset
 
         """
-        song_ids = list_songs_for_tag(self.db, entity_id, limit=limit, offset=offset)
-        total = count_songs_for_tag(self.db, entity_id)
+        identity = TagRef(name=COLLECTION_REL_MAP[collection], value=entity_id)
+        song_ids = [song.id for song in self.db.library.find_songs_with_tag(identity, limit=limit, offset=offset)]
+        total = len(self.db.library.find_songs_with_tag(identity, limit=None))
 
         return SongListForEntityResult(
             song_ids=song_ids,
@@ -147,7 +137,7 @@ class MetadataService:
             offset=offset,
         )
 
-    def list_artists_for_album(self, album_id: int, limit: int = 100) -> list[EntityDict]:
+    def list_artists_for_album(self, album_id: str, limit: int = 100) -> list[EntityDict]:
         """List artists for an album via traversal (album→songs→artists).
 
         Traverses: album tag → songs → artist tags
@@ -161,8 +151,10 @@ class MetadataService:
             List of EntityDict (artists)
 
         """
-        # Get all songs for this album
-        song_ids = list_songs_for_tag(self.db, album_id, limit=10000)
+        # Get all songs for this album by its natural tag identity.
+        song_ids = [
+            song.id for song in self.db.library.find_songs_with_tag(TagRef(name="album", value=album_id), limit=10000)
+        ]
 
         # For each song, get primary artist tags. Entity identity is the natural
         # tag value (no tag PK exists); dedupe on the value itself.
@@ -191,7 +183,7 @@ class MetadataService:
         artists.sort(key=lambda a: a["display_name"])
         return artists[:limit]
 
-    def list_albums_for_artist(self, artist_id: int, limit: int = 100) -> list[EntityDict]:
+    def list_albums_for_artist(self, artist_id: str, limit: int = 100) -> list[EntityDict]:
         """List albums for an artist via traversal (artist→songs→albums).
 
         Traverses: artist tag → songs → album tags
@@ -205,8 +197,10 @@ class MetadataService:
             List of EntityDict (albums)
 
         """
-        # Get all songs for this artist
-        song_ids = list_songs_for_tag(self.db, artist_id, limit=10000)
+        # Get all songs for this artist by its natural tag identity.
+        song_ids = [
+            song.id for song in self.db.library.find_songs_with_tag(TagRef(name="artist", value=artist_id), limit=10000)
+        ]
 
         # For each song, get album tags. Entity identity is the natural tag
         # value (no tag PK exists); dedupe on the value itself.

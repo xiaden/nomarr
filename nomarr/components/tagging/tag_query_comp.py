@@ -151,8 +151,8 @@ def list_tags_by_name(
 ) -> list[dict[str, Any]]:
     """List tag values, optionally filtered by tag name and search text.
 
-    Tag ``id`` is the tag's natural ``value`` (tags have no storage primary key
-    in the domain facade); the interface layer re-encodes it as needed (P5).
+    Tag ``id`` is the natural tag value. Tag storage primary keys stay inside
+    persistence and are not exposed through the domain browse contract.
     """
     if sort_by_count:
         # Fetch all matching usages sorted by count desc, then page in Python.

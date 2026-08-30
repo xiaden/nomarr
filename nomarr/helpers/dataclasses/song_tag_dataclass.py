@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from numbers import Real
+from typing import TYPE_CHECKING
 
-from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
+if TYPE_CHECKING:
+    from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
 
 
 @dataclass(frozen=True, slots=True)

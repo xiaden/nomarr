@@ -45,7 +45,7 @@ from nomarr.helpers.constants.file_states import (
 )
 from nomarr.helpers.constants.pipeline_states import SCAN_NOT_SCANNED, SCAN_STATE_FIELD
 from nomarr.helpers.exceptions import TaskCancelledError
-from nomarr.helpers.time_helper import internal_ms, now_ms
+from nomarr.helpers.time_helper import internal_s, now_ms
 from nomarr.workflows.library.validate_library_tags_wf import validate_library_tags_workflow
 from nomarr.workflows.metadata.cleanup_orphaned_entities_wf import cleanup_orphaned_entities_workflow
 
@@ -109,7 +109,7 @@ def scan_library_full_workflow(
         OSError: If library root is inaccessible
 
     """
-    start_time = internal_ms()
+    start_time = internal_s()
     stats: dict[str, int] = defaultdict(int)
     warnings: list[str] = []
     scan_id = f"{library.name}_{now_ms()}"
@@ -262,7 +262,7 @@ def scan_library_full_workflow(
                 warnings.append(f"Tag validation error: {e}")
 
         # Step 10 — Finalize
-        scan_duration = internal_ms().value - start_time.value
+        scan_duration = internal_s().value - start_time.value
         mark_scan_completed(db, library)
         update_scan_progress(
             db,
@@ -273,7 +273,7 @@ def scan_library_full_workflow(
         )
 
         logger.info(
-            "Full scan complete in %.1fms: folders=%d, added=%d, updated=%d, skipped=%d, removed=%d, failed=%d",
+            "Full scan complete in %.1fs: folders=%d, added=%d, updated=%d, skipped=%d, removed=%d, failed=%d",
             scan_duration,
             stats["folders_scanned"],
             stats["files_added"],

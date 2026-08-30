@@ -212,8 +212,9 @@ def find_library_containing_path(db: Database, file_path: str) -> Library | None
 def find_ml_complete_libraries(db: Database, min_files: int) -> list[dict[str, Any]]:
     """Return ML-running libraries whose file set is fully tagged.
 
-    Each result dict contains ``library_id`` (the library's natural ``name``)
-    and ``tagged_count``.
+    Each result dict contains the domain ``Library`` value and ``tagged_count``.
+    The domain value is retained so downstream pipeline operations can resolve
+    the library's complete natural identity (name and root path).
     """
     del min_files
     libraries = db.library.list_libraries()
@@ -228,7 +229,7 @@ def find_ml_complete_libraries(db: Database, min_files: int) -> list[dict[str, A
             continue
 
         tagged_count = counts.get(library.name, {}).get("file_count", 0)
-        completed.append({"library_id": library.name, "tagged_count": tagged_count})
+        completed.append({"library": library, "tagged_count": tagged_count})
 
     return completed
 
