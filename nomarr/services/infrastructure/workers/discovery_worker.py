@@ -518,10 +518,7 @@ class DiscoveryWorker(multiprocessing.Process):
                         logger.debug("[%s] Sent idle frame to main process", self.worker_id)
                     logger.debug("[%s] No work found, sleeping %.1fs", self.worker_id, IDLE_SLEEP_S)
                     onnx_cache, cache_warmed = self._evict_idle_cache(onnx_cache, last_work_time, cache_warmed)
-                    try:
-                        _check_idle_pipeline_completion(db, self._health_pipe)
-                    except Exception:
-                        logger.warning("[%s] _check_idle_pipeline_completion failed", self.worker_id, exc_info=True)
+                    _check_idle_pipeline_completion(db, self._health_pipe)
                     time.sleep(IDLE_SLEEP_S)
                     continue
 
