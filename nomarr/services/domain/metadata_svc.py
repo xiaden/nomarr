@@ -18,11 +18,8 @@ from typing import TYPE_CHECKING, Literal
 
 from nomarr.components.tagging.tag_cleanup_comp import cleanup_orphaned_tags, count_orphaned_tags
 from nomarr.components.tagging.tag_query_comp import (
-    count_songs_for_tag,
     count_tags_by_name,
     get_song_tags,
-    get_tag,
-    list_songs_for_tag,
     list_tags_by_name,
 )
 from nomarr.helpers.dataclasses.song_tag_dataclass import TagRef
@@ -100,10 +97,12 @@ class MetadataService:
     def get_entity(self, collection: EntityCollection, entity_id: str) -> EntityDict | None:
         """Get an entity by collection and its natural tag value."""
         identity = TagRef(name=COLLECTION_REL_MAP[collection], value=entity_id)
-        if self.db.library.get_tag(identity) is None:
+        resolved_identity = self.db.library.get_tag(identity)
+        if resolved_identity is None:
             return None
-        song_count = len(self.db.library.find_songs_with_tag(identity, limit=None))
-        return EntityDict(id=entity_id, display_name=entity_id, song_count=song_count)
+        display_name = str(resolved_identity.value)
+        song_count = len(self.db.library.find_songs_with_tag(resolved_identity, limit=None))
+        return EntityDict(id=display_name, display_name=display_name, song_count=song_count)
 
     def list_songs_for_entity(
         self,
@@ -127,7 +126,7 @@ class MetadataService:
 
         """
         identity = TagRef(name=COLLECTION_REL_MAP[collection], value=entity_id)
-        song_ids = [song.id for song in self.db.library.find_songs_with_tag(identity, limit=limit, offset=offset)]
+        song_ids = [song.song_id for song in self.db.library.find_songs_with_tag(identity, limit=limit, offset=offset)]
         total = len(self.db.library.find_songs_with_tag(identity, limit=None))
 
         return SongListForEntityResult(
@@ -144,7 +143,7 @@ class MetadataService:
         Deduplicates and sorts by value.
 
         Args:
-            album_id: Album tag primary key (integer)
+            album_id: Album natural tag value
             limit: Maximum artists to return
 
         Returns:
@@ -153,7 +152,8 @@ class MetadataService:
         """
         # Get all songs for this album by its natural tag identity.
         song_ids = [
-            song.id for song in self.db.library.find_songs_with_tag(TagRef(name="album", value=album_id), limit=10000)
+            song.song_id
+            for song in self.db.library.find_songs_with_tag(TagRef(name="album", value=album_id), limit=10000)
         ]
 
         # For each song, get primary artist tags. Entity identity is the natural
@@ -190,7 +190,7 @@ class MetadataService:
         Deduplicates and sorts by value.
 
         Args:
-            artist_id: Artist tag primary key (integer)
+            artist_id: Artist natural tag value
             limit: Maximum albums to return
 
         Returns:
@@ -199,7 +199,8 @@ class MetadataService:
         """
         # Get all songs for this artist by its natural tag identity.
         song_ids = [
-            song.id for song in self.db.library.find_songs_with_tag(TagRef(name="artist", value=artist_id), limit=10000)
+            song.song_id
+            for song in self.db.library.find_songs_with_tag(TagRef(name="artist", value=artist_id), limit=10000)
         ]
 
         # For each song, get album tags. Entity identity is the natural tag

@@ -6,7 +6,8 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from nomarr.helpers.dataclasses.song_tag_dataclass import TagCleanupResult
+from nomarr.helpers.dataclasses.song_tag_dataclass import TagCleanupResult, TagRef
+from nomarr.helpers.dataclasses.tags_dataclass import Tag, Tags
 from nomarr.services.domain.metadata_svc import COLLECTION_REL_MAP, EntityCollection, MetadataService
 
 
@@ -83,7 +84,7 @@ class TestListEntities:
         mock_db = MagicMock()
         listed_tags = [
             {
-                "id": 1,
+                "id": "The Artist",
                 "value": "The Artist",
                 "song_count": 12,
             },
@@ -99,7 +100,7 @@ class TestListEntities:
         assert result == {
             "entities": [
                 {
-                    "id": 1,
+                    "id": "The Artist",
                     "display_name": "The Artist",
                     "song_count": 12,
                 },
@@ -128,37 +129,29 @@ class TestGetEntity:
         mock_db = MagicMock()
         service = _make_service(db=mock_db)
 
-        with patch("nomarr.services.domain.metadata_svc.get_tag", MagicMock(return_value=None)) as mock_get_tag:
-            result = service.get_entity(999)
+        mock_db.library.get_tag.return_value = None
+        result = service.get_entity("artist", "Metallica")
 
         assert result is None
-        mock_get_tag.assert_called_once_with(mock_db, 999)
-        mock_db.song_has_tags.count.assert_not_called()
+        mock_db.library.get_tag.assert_called_once_with(TagRef(name="artist", value="Metallica"))
+        mock_db.library.find_songs_with_tag.assert_not_called()
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_returns_entity_dict_when_tag_found(self) -> None:
         """Existing tags should be transformed into an entity dict."""
         mock_db = MagicMock()
-        tag_doc = {
-            "id": 1,
-            "value": "The Artist",
-        }
+        mock_db.library.get_tag.return_value = TagRef(name="artist", value="The Artist")
+        mock_db.library.find_songs_with_tag.return_value = (MagicMock(),) * 7
         service = _make_service(db=mock_db)
 
-        with (
-            patch("nomarr.services.domain.metadata_svc.get_tag", MagicMock(return_value=tag_doc)) as mock_get_tag,
-            patch("nomarr.services.domain.metadata_svc.count_songs_for_tag", MagicMock(return_value=7)) as mock_count,
-        ):
-            result = service.get_entity(5)
+        result = service.get_entity("artist", "The Artist")
 
-        assert result == {
-            "id": 1,
-            "display_name": "The Artist",
-            "song_count": 7,
-        }
-        mock_get_tag.assert_called_once_with(mock_db, 5)
-        mock_count.assert_called_once_with(mock_db, 5)
+        assert result == {"id": "The Artist", "display_name": "The Artist", "song_count": 7}
+        mock_db.library.get_tag.assert_called_once_with(TagRef(name="artist", value="The Artist"))
+        mock_db.library.find_songs_with_tag.assert_called_once_with(
+            TagRef(name="artist", value="The Artist"), limit=None
+        )
 
 
 class TestGetEntityCounts:
@@ -209,45 +202,32 @@ class TestListSongsForEntity:
     def test_returns_song_ids_and_count_via_flat_api(self) -> None:
         mock_db = MagicMock()
         service = _make_service(db=mock_db)
-        with (
-            patch(
-                "nomarr.services.domain.metadata_svc.list_songs_for_tag",
-                MagicMock(return_value=[1, 2]),
-            ) as mock_list,
-            patch(
-                "nomarr.services.domain.metadata_svc.count_songs_for_tag",
-                MagicMock(return_value=5),
-            ) as mock_count,
-        ):
-            result = service.list_songs_for_entity(1, "artist", limit=10, offset=0)
+        songs = [MagicMock(song_id=1), MagicMock(song_id=2)]
+        mock_db.library.find_songs_with_tag.side_effect = [songs, [MagicMock() for _ in range(5)]]
+        result = service.list_songs_for_entity("artist", "Metallica", "artist", limit=10, offset=0)
         assert result["song_ids"] == [1, 2]
         assert all(isinstance(song_id, int) for song_id in result["song_ids"])
         assert result["total"] == 5
         assert result["limit"] == 10
         assert result["offset"] == 0
-        mock_list.assert_called_once_with(mock_db, 1, limit=10, offset=0)
-        mock_count.assert_called_once_with(mock_db, 1)
+        assert mock_db.library.find_songs_with_tag.call_args_list == [
+            call(TagRef(name="artist", value="Metallica"), limit=10, offset=0),
+            call(TagRef(name="artist", value="Metallica"), limit=None),
+        ]
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_paging_params_forwarded(self) -> None:
         mock_db = MagicMock()
         service = _make_service(db=mock_db)
-        with (
-            patch(
-                "nomarr.services.domain.metadata_svc.list_songs_for_tag",
-                MagicMock(return_value=[]),
-            ) as mock_list,
-            patch(
-                "nomarr.services.domain.metadata_svc.count_songs_for_tag",
-                MagicMock(return_value=100),
-            ) as mock_count,
-        ):
-            result = service.list_songs_for_entity(7, "genre", limit=25, offset=50)
+        mock_db.library.find_songs_with_tag.side_effect = [[], [MagicMock() for _ in range(100)]]
+        result = service.list_songs_for_entity("genre", "Electronic", "genre", limit=25, offset=50)
         assert result["limit"] == 25
         assert result["offset"] == 50
-        mock_list.assert_called_once_with(mock_db, 7, limit=25, offset=50)
-        mock_count.assert_called_once_with(mock_db, 7)
+        assert mock_db.library.find_songs_with_tag.call_args_list == [
+            call(TagRef(name="genre", value="Electronic"), limit=25, offset=50),
+            call(TagRef(name="genre", value="Electronic"), limit=None),
+        ]
 
 
 class TestCleanupOrphanedEntities:
@@ -293,3 +273,43 @@ class TestCleanupOrphanedEntities:
         assert result == {"orphaned_count": 7, "deleted_count": 4}
         mock_cleanup.assert_called_once_with(mock_db)
         mock_count.assert_not_called()
+
+
+class TestMetadataTraversal:
+    """Tests for natural-ID artist and album traversal."""
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_lists_deduplicated_sorted_albums_for_artist(self) -> None:
+        mock_db = MagicMock()
+        mock_db.library.find_songs_with_tag.return_value = [MagicMock(song_id=1), MagicMock(song_id=2)]
+        service = _make_service(db=mock_db)
+        with patch(
+            "nomarr.services.domain.metadata_svc.get_song_tags",
+            side_effect=[
+                Tags(items=(Tag(name="album", values=("Zeta", "Alpha")),)),
+                Tags(items=(Tag(name="album", values=("Alpha",)),)),
+            ],
+        ):
+            result = service.list_albums_for_artist("Metallica", limit=10)
+        assert [album["id"] for album in result] == ["Alpha", "Zeta"]
+        mock_db.library.find_songs_with_tag.assert_called_once_with(
+            TagRef(name="artist", value="Metallica"), limit=10000
+        )
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_lists_deduplicated_sorted_artists_for_album_with_limit(self) -> None:
+        mock_db = MagicMock()
+        mock_db.library.find_songs_with_tag.return_value = [MagicMock(song_id=3), MagicMock(song_id=4)]
+        service = _make_service(db=mock_db)
+        with patch(
+            "nomarr.services.domain.metadata_svc.get_song_tags",
+            side_effect=[
+                Tags(items=(Tag(name="artist", values=("Zeta", "Alpha")),)),
+                None,
+            ],
+        ):
+            result = service.list_artists_for_album("Record", limit=1)
+        assert [artist["id"] for artist in result] == ["Alpha"]
+        mock_db.library.find_songs_with_tag.assert_called_once_with(TagRef(name="album", value="Record"), limit=10000)

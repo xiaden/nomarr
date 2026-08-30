@@ -11,7 +11,6 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from nomarr.interfaces.api.auth import verify_session
-from nomarr.interfaces.api.id_codec import decode_path_id
 from nomarr.interfaces.api.types.metadata_types import (
     EntityCountsResponse,
     EntityListResponse,
@@ -54,17 +53,15 @@ async def list_entities(
 
 @router.get("/{collection}/{entity_id}", dependencies=[Depends(verify_session)])
 async def get_entity(
-    collection: EntityCollection,  # noqa: ARG001  # FastAPI path param name is part of the URL contract
+    collection: EntityCollection,  # FastAPI path param name is part of the URL contract
     entity_id: str,
     metadata_service: Annotated[MetadataService, Depends(get_metadata_service)],
 ) -> EntityResponse:
-    """Get entity details by ID.
+    """Get entity details by natural tag value.
 
-    Note: entity_id should be encoded (e.g., artists:v1_abc123).
-    Collection parameter is informational only (entity_id already contains collection).
+    ``entity_id`` is URL-encoded by the client; ``collection`` selects the tag name.
     """
-    decoded_entity_id: int = decode_path_id(entity_id)
-    entity = await asyncio.to_thread(metadata_service.get_entity, decoded_entity_id)
+    entity = await asyncio.to_thread(metadata_service.get_entity, collection, entity_id)
     if not entity:
         raise HTTPException(status_code=404, detail="Entity not found")
     return EntityResponse.from_dto(entity)
@@ -72,7 +69,7 @@ async def get_entity(
 
 @router.get("/{collection}/{entity_id}/song", dependencies=[Depends(verify_session)])
 async def list_songs_for_entity(
-    collection: EntityCollection,  # noqa: ARG001  # FastAPI path param name is part of the URL contract
+    collection: EntityCollection,  # FastAPI path param name is part of the URL contract
     entity_id: str,
     name: Annotated[str, Query(description="Relation type (artist, album, label, genre, year)")],
     limit: Annotated[int, Query(ge=1, le=1000)] = 100,
@@ -81,12 +78,11 @@ async def list_songs_for_entity(
 ) -> SongListResponse:
     """List songs connected to an entity.
 
-    Example: GET /metadata/artist/artists:v1_abc.../song?name=artist
+    Example: GET /metadata/artist/Metallica/song?name=artist
     Returns all songs where this artist is the primary credited artist.
     """
-    decoded_entity_id: int = decode_path_id(entity_id)
     result = await asyncio.to_thread(
-        metadata_service.list_songs_for_entity, decoded_entity_id, name, limit=limit, offset=offset
+        metadata_service.list_songs_for_entity, collection, entity_id, name, limit=limit, offset=offset
     )
     return SongListResponse.from_dto(result)
 
@@ -101,8 +97,7 @@ async def list_artists_for_album(
 
     Returns deduplicated artists sorted by display_name.
     """
-    decoded_album_id: int = decode_path_id(album_id)
-    artists = await asyncio.to_thread(metadata_service.list_artists_for_album, decoded_album_id, limit=limit)
+    artists = await asyncio.to_thread(metadata_service.list_artists_for_album, album_id, limit=limit)
     return [EntityResponse.from_dto(a) for a in artists]
 
 
@@ -115,8 +110,7 @@ async def list_albums_for_artist(
     """List albums for an artist via traversal (artist→songs→albums).
 
     Returns deduplicated albums sorted by display_name.
-    Each album includes song_count (number of songs by this artist on that album).
+    Traversal album results currently omit song counts.
     """
-    decoded_artist_id: int = decode_path_id(artist_id)
-    albums = await asyncio.to_thread(metadata_service.list_albums_for_artist, decoded_artist_id, limit=limit)
+    albums = await asyncio.to_thread(metadata_service.list_albums_for_artist, artist_id, limit=limit)
     return [EntityResponse.from_dto(a) for a in albums]
