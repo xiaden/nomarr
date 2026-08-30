@@ -10,7 +10,7 @@
 // ──────────────────────────────────────────────────────────────────────
 
 export interface Library {
-  library_id: string; // HTTP-encoded database ID (e.g., "libraries:123")
+  library_id: string; // Natural library name (wire identity)
   name: string;
   rootPath: string; // maps to backend root_path
   isEnabled: boolean;

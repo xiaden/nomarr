@@ -68,7 +68,7 @@ vi.mock("@mui/x-charts/PieChart", () => ({
 }));
 
 const libraryFixture: Library = {
-  library_id: "libraries:123",
+  library_id: "library name",
   name: "library name",
   rootPath: "/music/library-name",
   isEnabled: true,
@@ -85,13 +85,13 @@ const workStatusFixture = {
   scanning_libraries: [],
   pipeline_libraries: [
     {
-      library_id: "libraries:123",
+      library_id: "library name",
       name: "library name",
       state: "write_ready",
       library_auto_write: false,
     },
     {
-      library_id: "libraries:456",
+      library_id: "tiny library",
       name: "tiny library",
       state: "cal_ready",
       library_auto_write: true,
@@ -141,7 +141,7 @@ describe("LibraryManagement", () => {
     await user.click(screen.getByRole("button", { name: "Write Tags" }));
 
     await waitFor(() => {
-      expect(writeTags).toHaveBeenCalledWith("libraries:123");
+      expect(writeTags).toHaveBeenCalledWith("library name");
     });
     expect(mockShowSuccess).toHaveBeenCalledWith("Tag write started");
   });
@@ -261,7 +261,7 @@ describe("LibraryManagement", () => {
 
     await waitFor(() => {
       expect(update).toHaveBeenCalledWith(
-        "libraries:123",
+        "library name",
         expect.objectContaining({
           libraryAutoWrite: true,
         }),

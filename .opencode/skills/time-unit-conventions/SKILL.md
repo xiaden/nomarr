@@ -50,6 +50,6 @@ description_expanded: |
   ## Sources
   - `nomarr/helpers/time_helper.py` (canonical module)
   - All affected repos listed above; schema models `nomarr/persistence/models/{ml_model,embedding,ml_output_stream,ml_model_output,ml_embedding_stream,calibration_state,calibration_history}.py`
-  - Alembic: `alembic/versions/001_initial_v1_baseline_schema.py`, `003_canonical_ml_output_streams.py` (BigInteger defs)
+  - Alembic: `alembic/versions/001_current_schema_baseline.py` (BigInteger defs)
   - Tests: `tests/unit/persistence/database/test_{ml_inference,model,vector,output,calibration,embedding_stream}_repo.py` — assertions are only `> 0`, no unit assertions
   - Consumer: `nomarr/services/domain/calibration_svc.py:413-472`, `nomarr/components/ml/calibration/ml_calibration_state_comp.py`, `nomarr/interfaces/api/web/calibration_if.py:126-133`

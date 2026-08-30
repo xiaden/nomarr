@@ -95,9 +95,7 @@ class TestReleaseDistributedLock:
 
     def test_returns_false_for_missing_or_foreign_lock(self) -> None:
         db = MagicMock()
-        db.app.get_lock.return_value = LockEntry(
-            key="vector_promotion:file-1", value={"holder": "worker-2"}
-        )
+        db.app.get_lock.return_value = LockEntry(key="vector_promotion:file-1", value={"holder": "worker-2"})
 
         result = release_distributed_lock(db, "vector_promotion", "file-1", "worker-1")
 

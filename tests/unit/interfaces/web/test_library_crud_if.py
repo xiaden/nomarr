@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from nomarr.helpers.dto.library_dto import LibraryDict, LibraryStatsResult
+from nomarr.helpers.dataclasses.library_dataclass import Library
+from nomarr.helpers.dto.library_dto import LibraryStatsResult
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.web.dependencies import (
     get_config_service,
@@ -21,20 +22,15 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
 
-def make_library(*, auto_write: bool = False, name: str = "Test Library") -> LibraryDict:
-    """Build a minimal LibraryDict fixture for interface tests."""
-    return LibraryDict(
-        id=1,
+def make_library(*, auto_write: bool = False, name: str = "Test Library") -> Library:
+    """Build a domain ``Library`` fixture for interface tests (natural identity)."""
+    return Library(
         name=name,
         root_path="D:/Music/Test",
         is_enabled=True,
-        created_at="2026-04-06T00:00:00+00:00",
-        updated_at="2026-04-06T00:00:00+00:00",
         watch_mode="off",
         file_write_mode="full",
         library_auto_write=auto_write,
-        file_count=12,
-        folder_count=3,
     )
 
 
@@ -130,24 +126,30 @@ class TestLibraryCrudEndpoints:
         client: TestClient,
         mock_library_service: MagicMock,
     ) -> None:
-        """GET collection should return the wrapped library list response."""
+        """GET collection should return the wrapped library list with natural-name ids."""
         mock_library_service.list_libraries.return_value = [make_library()]
-
-        response = client.get("/api/web/library")
+        # The interface adapter builds the name-keyed counts and per-library scan
+        # status; a missing status projects to None.
+        mock_library_service.get_status.return_value = None
+        with patch(
+            "nomarr.interfaces.api.web.library_if.get_library_counts",
+            return_value={"Test Library": {"file_count": 12, "folder_count": 3}},
+        ):
+            response = client.get("/api/web/library")
 
         assert response.status_code == 200
         assert response.json() == {
             "libraries": [
                 {
-                    "library_id": 1,
+                    "library_id": "Test Library",
                     "name": "Test Library",
                     "root_path": "D:/Music/Test",
                     "is_enabled": True,
                     "watch_mode": "off",
                     "file_write_mode": "full",
                     "library_auto_write": False,
-                    "created_at": "2026-04-06T00:00:00+00:00",
-                    "updated_at": "2026-04-06T00:00:00+00:00",
+                    "created_at": "",
+                    "updated_at": "",
                     "scan_status": None,
                     "scan_progress": None,
                     "scan_total": None,
@@ -165,19 +167,18 @@ class TestLibraryCrudEndpoints:
         client: TestClient,
         mock_library_service: MagicMock,
     ) -> None:
-        """GET item should decode the path ID and serialize the returned library."""
-        # Use sync MagicMock because the endpoint calls get_library()
-        # without await (the service returns a sync value).
-        mock_library_service.get_library = MagicMock(return_value=make_library())
+        """GET item should decode the URL-encoded natural name and serialize the library."""
+        library = make_library()
+        mock_library_service.get_library_by_name.return_value = library
 
-        response = client.get("/api/web/library/1")
+        response = client.get("/api/web/library/Test%20Library")
 
         assert response.status_code == 200
-        assert response.json()["library_id"] == 1
+        assert response.json()["library_id"] == "Test Library"
         assert response.json()["name"] == "Test Library"
-        mock_library_service.get_library.assert_called_once_with(1)
-        # HTTP path ID "1" must be decoded to int at the interface boundary.
-        assert isinstance(mock_library_service.get_library.call_args.args[0], int)
+        # Mechanism A: the wire identity is the decoded natural name, never an int PK.
+        mock_library_service.get_library_by_name.assert_called_once_with("Test Library")
+        assert isinstance(mock_library_service.get_library_by_name.call_args.args[0], str)
 
     def test_get_library_returns_404_when_missing(
         self,
@@ -185,16 +186,13 @@ class TestLibraryCrudEndpoints:
         mock_library_service: MagicMock,
     ) -> None:
         """Missing libraries should surface as HTTP 404."""
-        # Use sync MagicMock because the endpoint calls get_library()
-        # without await; an AsyncMock would return a coroutine instead of
-        # raising the ValueError.
-        mock_library_service.get_library = MagicMock(side_effect=ValueError("missing"))
+        mock_library_service.get_library_by_name.return_value = None
 
-        response = client.get("/api/web/library/1")
+        response = client.get("/api/web/library/Test%20Library")
 
         assert response.status_code == 404
         assert response.json() == {"detail": "Library not found"}
-        mock_library_service.get_library.assert_called_once_with(1)
+        mock_library_service.get_library_by_name.assert_called_once_with("Test Library")
 
     def test_create_library_returns_response(
         self,
@@ -248,17 +246,19 @@ class TestLibraryCrudEndpoints:
         client: TestClient,
         mock_library_service: MagicMock,
     ) -> None:
-        """DELETE should return the success envelope when the service deletes the library."""
+        """DELETE should return the success envelope with the natural library name."""
+        library = make_library()
+        mock_library_service.get_library_by_name.return_value = library
         mock_library_service.delete_library.return_value = True
 
-        response = client.delete("/api/web/library/1")
+        response = client.delete("/api/web/library/Test%20Library")
 
         assert response.status_code == 200
         assert response.json() == {
             "status": "success",
-            "message": "Library 1 deleted",
+            "message": "Library Test Library deleted",
         }
-        mock_library_service.delete_library.assert_called_once_with(1)
+        mock_library_service.delete_library.assert_called_once_with(library)
 
     def test_delete_library_returns_404_when_not_found(
         self,
@@ -266,13 +266,14 @@ class TestLibraryCrudEndpoints:
         mock_library_service: MagicMock,
     ) -> None:
         """DELETE should return HTTP 404 when the service reports no deletion."""
+        mock_library_service.get_library_by_name.return_value = make_library()
         mock_library_service.delete_library.return_value = False
 
-        response = client.delete("/api/web/library/1")
+        response = client.delete("/api/web/library/Test%20Library")
 
         assert response.status_code == 404
         assert response.json() == {"detail": "Library not found"}
-        mock_library_service.delete_library.assert_called_once_with(1)
+        mock_library_service.delete_library.assert_called_once_with(make_library())
 
     # Per-library vector config endpoints removed per ADR-036/037
     # vector_group_size is now global-only, managed via general config
@@ -280,9 +281,12 @@ class TestLibraryCrudEndpoints:
     def test_get_library_vector_stats_returns_response(
         self,
         client: TestClient,
+        mock_library_service: MagicMock,
         mock_vector_maintenance_service: MagicMock,
     ) -> None:
-        """GET vector stats should scope per-backbone stats to the requested library."""
+        """GET vector stats should scope per-backbone stats to the resolved Library."""
+        library = make_library()
+        mock_library_service.get_library_by_name.return_value = library
         mock_vector_maintenance_service.get_backbone_vector_stats = MagicMock(
             return_value=[
                 {
@@ -294,7 +298,7 @@ class TestLibraryCrudEndpoints:
             ]
         )
 
-        response = client.get("/api/web/library/1/vector-stats")
+        response = client.get("/api/web/library/Test%20Library/vector-stats")
 
         assert response.status_code == 200
         assert response.json() == {
@@ -307,18 +311,20 @@ class TestLibraryCrudEndpoints:
                 }
             ],
         }
-        mock_vector_maintenance_service.get_backbone_vector_stats.assert_called_once_with(1)
+        mock_vector_maintenance_service.get_backbone_vector_stats.assert_called_once_with(library)
 
     def test_get_library_vector_stats_handles_service_error(
         self,
         client: TestClient,
+        mock_library_service: MagicMock,
         mock_vector_maintenance_service: MagicMock,
     ) -> None:
         """Service errors should map to HTTP 500 with sanitized message."""
+        mock_library_service.get_library_by_name.return_value = make_library()
         mock_vector_maintenance_service.get_backbone_vector_stats = MagicMock(
             side_effect=RuntimeError("internal error")
         )
 
-        response = client.get("/api/web/library/1/vector-stats")
+        response = client.get("/api/web/library/Test%20Library/vector-stats")
 
         assert response.status_code == 500

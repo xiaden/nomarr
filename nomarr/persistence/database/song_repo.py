@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
-from sqlalchemy import Table, case, delete, func, select, update
+from sqlalchemy import Table, and_, case, delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from nomarr.helpers.dto.repo_dto import SongRow
@@ -305,6 +305,24 @@ class SongRepository:
             )
             result = self._session.execute(stmt)
             return [row[0] for row in result.all()]
+
+    def get_song_ids_by_normalized_paths(self, identities: list[tuple[int, str]]) -> dict[tuple[int, str], int]:
+        """Resolve ``(library_id, normalized_path)`` natural keys to song primary keys.
+
+        Set-based: one query for the whole batch (no per-song lookup loop).
+        Returns ``{(library_id, normalized_path): song_id}``. This is the
+        storage-side resolver the tag facade uses to translate domain
+        ``SongIdentity`` values into internal song primary keys.
+        """
+        if not identities:
+            return {}
+        conditions = [
+            and_(_T.c.library_id == library_id, _T.c.normalized_path == normalized_path)
+            for (library_id, normalized_path) in identities
+        ]
+        stmt = select(_T.c.library_id, _T.c.normalized_path, _T.c.id).where(or_(*conditions))
+        result = self._session.execute(stmt)
+        return {(row[0], row[1]): row[2] for row in result.all()}
 
     def get_song_ids_by_paths(self, library_id: int, paths: list[str]) -> dict[str, int]:
         """Return song IDs keyed by path within a library."""

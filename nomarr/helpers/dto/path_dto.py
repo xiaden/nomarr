@@ -18,7 +18,7 @@ class LibraryPath:
     This DTO encodes:
     - relative: Normalized path relative to library root
     - absolute: Resolved absolute path
-    - library_id: Which library configuration this path belongs to (if known)
+    - library_id: Natural name of the library configuration this path belongs to (if known)
     - status: Current validation state under the active configuration
     - reason: Optional diagnostic message for non-valid states
 
@@ -42,7 +42,7 @@ class LibraryPath:
 
     relative: str  # Path relative to library root (normalized, forward slashes)
     absolute: Path  # Absolute path (current container/system resolution)
-    library_id: int | None  # Which library this belongs to (PostgreSQL library id or None)
+    library_id: str | None  # Natural library name this path belongs to (or None)
     status: PathStatus  # Validation status under current config
     reason: str | None = None  # Diagnostic message for non-valid status
 

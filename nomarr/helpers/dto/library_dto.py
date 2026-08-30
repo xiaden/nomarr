@@ -49,14 +49,17 @@ class LibraryStatsResult:
 
 @dataclass
 class LibraryDict:
-    """Single library record from library_service.list_libraries or get_library."""
+    """Single library transport projection (library_service.list_libraries or get_library).
 
-    id: int  # PostgreSQL primary key
+    Built from a domain ``Library`` value (P4-S1) — the storage primary key no
+    longer crosses the component boundary, so ``id`` is ``None``. Wire ids live
+    only in the interface adapter layer.
+    """
+
     name: str
     root_path: str
     is_enabled: bool
-    created_at: int  # Unix timestamp (ms), matching the persistence row
-    updated_at: int  # Unix timestamp (ms), matching the persistence row
+    id: int | None = None  # storage PK (None post hard-cut)
     watch_mode: Literal["off", "event", "poll"] = "off"  # File watching mode (default: off)
     file_write_mode: Literal["none", "minimal", "full"] = "full"  # Tag write mode (default: full)
     library_auto_write: bool = False
@@ -240,7 +243,7 @@ class WriteTagsResult:
 class LibraryPipelineStatusDTO:
     """Pipeline status payload for a single library."""
 
-    library_id: int  # PostgreSQL primary key
+    library_id: str  # natural library name (mechanism A)
     scan_state: str
     ml_state: str
     calibration_state: str

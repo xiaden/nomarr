@@ -8,7 +8,7 @@ This module handles:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from nomarr.components.library.library_records_comp import get_library_record
 from nomarr.components.library.library_root_comp import resolve_path_within_library
@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from nomarr.components.library.reconcile_paths_comp import ReconcilePolicy, ReconcileResult
+    from nomarr.helpers.dataclasses.library_dataclass import Library
     from nomarr.persistence.db import Database
 
     from .config import LibraryServiceConfig
@@ -39,11 +40,22 @@ class LibrarySongsMixin:
     db: Database
     cfg: LibraryServiceConfig
 
-    def _get_library_or_error(self, library_id: int) -> dict[str, Any]:
-        """Get a library by ID or raise an error."""
-        result = get_library_record(self.db, int(library_id))
+    def _get_library_or_error(self, library: Library) -> Library:
+        """Re-fetch a library by its natural identity or raise an error.
+
+        Args:
+            library: Domain ``Library`` (natural identity).
+
+        Returns:
+            The persisted domain ``Library`` value.
+
+        Raises:
+            ValueError: If the library does not exist.
+
+        """
+        result = get_library_record(self.db, library)
         if result is None:
-            msg = f"Library not found: {library_id}"
+            msg = f"Library not found: {library.name}"
             raise ValueError(msg)
         return result
 
@@ -93,7 +105,7 @@ class LibrarySongsMixin:
 
     def reconcile_library_paths(
         self,
-        library_id: int,
+        library: Library,
         policy: ReconcilePolicy = "mark_invalid",
         batch_size: int = 1000,
     ) -> ReconcileResult:
@@ -104,7 +116,7 @@ class LibrarySongsMixin:
         Useful after modifying library configurations or recovering from filesystem changes.
 
         Args:
-            library_id: Library document id to scope reconciliation to
+            library: Domain ``Library`` (natural identity) to scope reconciliation to.
             policy: What to do with invalid paths:
                 - "dry_run": Only report, don't modify database
                 - "mark_invalid": Keep files but log warnings (default)
@@ -127,7 +139,7 @@ class LibrarySongsMixin:
         Example:
             # After changing library root configuration
             result = library_service.reconcile_library_paths(
-                library_id=1,
+                library=library,
                 policy="delete_invalid",
                 batch_size=500
             )
@@ -136,7 +148,7 @@ class LibrarySongsMixin:
         """
         return reconcile_library_paths_workflow(
             db=self.db,
-            library_id=library_id,
+            library=library,
             library_root=self.cfg.library_root,
             policy=policy,
             batch_size=batch_size,
@@ -169,13 +181,13 @@ class LibrarySongsMixin:
 
     def retry_errored_songs(
         self,
-        library_id: int,
+        library: Library,
         song_ids: list[int] | None = None,
     ) -> RetryErroredResult:
         """Clear errored state for songs and re-queue them for discovery.
 
         Args:
-            library_id: Library ID to scope the operation
+            library: Domain ``Library`` (natural identity) to scope the operation.
             song_ids: Optional subset of song IDs to retry. If None, retries all errored.
 
         Returns:
@@ -185,8 +197,8 @@ class LibrarySongsMixin:
             ValueError: If library does not exist
 
         """
-        self._get_library_or_error(library_id)
-        errored_ids = get_errored_song_ids(self.db, int(library_id))
+        self._get_library_or_error(library)
+        errored_ids = get_errored_song_ids(self.db, library)
         if song_ids:
             allowed = set(song_ids)
             errored_ids = [fid for fid in errored_ids if fid in allowed]

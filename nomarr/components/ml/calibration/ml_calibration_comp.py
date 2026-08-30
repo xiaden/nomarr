@@ -267,11 +267,9 @@ def get_sparse_histogram(
 
     _raw_bins: dict[int, int] = {}
     for tag_name in sorted(matching_names):
-        tag_docs = db.library.list_tags_by_name(name=tag_name, limit=50000)
+        tag_docs = db.library.list_tags(name=tag_name, limit=50000)
         for tag_doc in tag_docs:
-            raw_value = tag_doc.get("value")
-            if raw_value is None:
-                continue
+            raw_value = tag_doc.value
             try:
                 value = float(raw_value)
             except (ValueError, TypeError):

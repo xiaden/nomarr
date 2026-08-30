@@ -1,9 +1,18 @@
-"""Library document composition helpers."""
+"""Library document composition helpers.
+
+Migrated to the library-domain boundary (P4-S1 of TASK-library-domain-facades-A):
+components operate on domain ``Library`` values (natural ``(name, root_path)``
+identity) and typed ``LibraryUpdate`` commands. No storage row, dictionary, or
+generated library id crosses this component's public surface. The scan/stat
+transport projection (``LibraryDict``) is built here FROM domain values
+(``Library`` + ``LibraryScan`` + ``LibraryPipelineState``); its wire shape is
+unchanged but it no longer carries a storage primary key.
+"""
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from nomarr.components.library.library_scan_state_comp import (
     _pipeline_state_to_scan_status,
@@ -13,11 +22,26 @@ from nomarr.components.library.library_scan_state_comp import (
 from nomarr.components.library.library_song_query_comp import get_library_counts
 from nomarr.components.library.library_song_state_comp import count_untagged_files
 from nomarr.helpers.constants.pipeline_states import ML_IN_PROGRESS
+from nomarr.helpers.dataclasses.library_dataclass import Library
+from nomarr.helpers.dataclasses.library_domain_dataclasses import LibraryUpdate
 from nomarr.helpers.dto.library_dto import LibraryDict
 from nomarr.helpers.time_helper import now_ms
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
+
+_WATCH_MODES = ("off", "event", "poll")
+_FILE_WRITE_MODES = ("none", "minimal", "full")
+
+
+def _cast_watch_mode(watch_mode: str) -> Literal["off", "event", "poll"]:
+    """Cast a validated watch-mode string to the ``Library`` literal."""
+    return cast("Literal['off', 'event', 'poll']", watch_mode)
+
+
+def _cast_file_write_mode(file_write_mode: str) -> Literal["none", "minimal", "full"]:
+    """Cast a validated file-write-mode string to the ``Library`` literal."""
+    return cast("Literal['none', 'minimal', 'full']", file_write_mode)
 
 
 def create_library_record(
@@ -29,41 +53,43 @@ def create_library_record(
     watch_mode: str = "off",
     file_write_mode: str = "full",
     library_auto_write: bool = False,
-) -> int:
-    """Insert a library document.
+) -> Library:
+    """Insert a library and return the persisted domain ``Library``.
 
-    Raises ValueError if watch_mode or file_write_mode is invalid.
+    Raises ValueError if watch_mode or file_write_mode is invalid. Validation is
+    delegated to ``LibraryUpdate`` (which enforces the same literals as the
+    removed ``_validate_watch_mode``/``_validate_file_write_mode`` helpers).
     """
-    _validate_watch_mode(watch_mode)
-    _validate_file_write_mode(file_write_mode)
-
-    timestamp = now_ms().value
-    result = db.library.create_library(
+    LibraryUpdate(
+        watch_mode=_cast_watch_mode(watch_mode),
+        file_write_mode=_cast_file_write_mode(file_write_mode),
+    )
+    library = Library(
         name=name,
         root_path=root_path,
         is_enabled=is_enabled,
-        watch_mode=watch_mode,
-        file_write_mode=file_write_mode,
+        watch_mode=_cast_watch_mode(watch_mode),
+        file_write_mode=_cast_file_write_mode(file_write_mode),
         library_auto_write=library_auto_write,
-        created_at=timestamp,
-        updated_at=timestamp,
     )
-    return cast("int", result)
+    return db.library.create_library(library)
 
 
 def get_library_record(
     db: Database,
-    library_id: int,
+    library: Library,
     *,
     include_scan: bool = True,
-) -> dict[str, Any] | None:
-    """Get one library by ``id`` and optionally merge scan state."""
-    row = cast("dict[str, Any] | None", db.library.get_library(library_id))
-    doc = None if row is None else _row_to_library_doc(row)
+) -> Library | None:
+    """Get one library by its natural ``(name, root_path)`` identity.
 
-    if doc is None or not include_scan:
-        return doc
-    return _merge_scan_state(db, doc)
+    Returns the domain ``Library`` value. ``include_scan`` is retained for
+    signature stability but the domain return carries no scan fields — the
+    scan/stat transport projection is built separately (see
+    ``_project_library_dict``).
+    """
+    del include_scan
+    return db.library.get_library(library)
 
 
 def get_library_by_name(
@@ -71,13 +97,10 @@ def get_library_by_name(
     name: str,
     *,
     include_scan: bool = False,
-) -> dict[str, Any] | None:
-    """Get one library by unique name."""
-    row = cast("dict[str, Any] | None", db.library.get_library_by_name(name))
-    doc = None if row is None else _row_to_library_doc(row)
-    if doc is None or not include_scan:
-        return doc
-    return _merge_scan_state(db, doc)
+) -> Library | None:
+    """Get one library by its natural name."""
+    del include_scan
+    return db.library.get_library_by_name(name)
 
 
 def list_library_records(
@@ -86,68 +109,53 @@ def list_library_records(
     enabled_only: bool = False,
     include_scan: bool = True,
 ) -> list[LibraryDict]:
-    """List libraries through constructor verbs, preserving legacy sort order."""
-    docs = cast(
-        "list[dict[str, Any]]",
-        db.library.list_libraries(enabled_only=enabled_only),
-    )
-    docs = [_row_to_library_doc(doc) for doc in docs]
-    if include_scan:
-        docs = [_merge_scan_state(db, doc) for doc in docs]
-    return [LibraryDict(**doc) for doc in docs]
+    """List libraries, projected to the transport ``LibraryDict`` shape.
+
+    ``LibraryDict`` is built from domain ``Library`` values (plus scan/pipeline
+    state when ``include_scan``) — no storage row or generated id is used.
+    """
+    libraries = db.library.list_libraries(enabled_only=enabled_only)
+    return [_project_library_dict(db, library, include_scan=include_scan) for library in libraries]
 
 
 def list_watchable_library_records(db: Database) -> list[LibraryDict]:
-    """Return enabled libraries with file watching turned on."""
-    libraries = list_library_records(db, enabled_only=True, include_scan=False)
-    return [lib for lib in libraries if lib.watch_mode not in (None, "off")]
+    """Return enabled libraries with file watching turned on (as projections)."""
+    libraries = db.library.list_libraries(enabled_only=True)
+    return [
+        _project_library_dict(db, library, include_scan=False)
+        for library in libraries
+        if library.watch_mode not in (None, "off")
+    ]
 
 
 def update_library_record(
     db: Database,
-    library_id: int,
+    library: Library,
     **fields: Any,
 ) -> None:
-    """Update a library document by ``id`` through the constructor namespace."""
-    update_fields: dict[str, Any] = {"updated_at": now_ms().value}
+    """Update a library's configuration fields through a typed ``LibraryUpdate``.
 
-    # The component API uses intent names, while the repository accepts only
-    # columns from the libraries table.
-    column_fields = {
-        "name": "name",
-        "root_path": "path",
-        "is_enabled": "library_type",
-        "watch_mode": "watch_mode",
-        "file_write_mode": "file_write_mode",
-        "library_auto_write": "auto_curate",
-    }
-    for intent_name, column_name in column_fields.items():
-        value = fields.get(intent_name)
-        if value is None:
-            continue
-        if intent_name == "is_enabled":
-            value = "music" if value else "disabled"
-        elif intent_name == "library_auto_write":
-            value = int(value)
-        update_fields[column_name] = value
-
-    if "watch_mode" in fields and fields["watch_mode"] is not None:
-        update_fields["auto_tag"] = int(fields["watch_mode"] != "off")
-
-    if "watch_mode" in fields and fields["watch_mode"] is not None:
-        _validate_watch_mode(cast("str", fields["watch_mode"]))
-    if "file_write_mode" in fields and fields["file_write_mode"] is not None:
-        _validate_file_write_mode(cast("str", fields["file_write_mode"]))
-
-    # Send all changes through one repository transaction.  The old per-field
-    # calls committed independently, so a later failure could leave a library
-    # only partially updated.
-    db.library.update_library(library_id, update_fields)
+    ``library`` supplies the natural ``(name, root_path)`` identity; ``fields``
+    map to the domain ``LibraryUpdate`` command (mode literals are validated by
+    ``LibraryUpdate`` itself).
+    """
+    changes = LibraryUpdate(
+        name=fields.get("name"),
+        root_path=fields.get("root_path"),
+        is_enabled=fields.get("is_enabled"),
+        watch_mode=_cast_watch_mode(fields["watch_mode"]) if fields.get("watch_mode") is not None else None,
+        file_write_mode=(
+            _cast_file_write_mode(fields["file_write_mode"]) if fields.get("file_write_mode") is not None else None
+        ),
+        library_auto_write=fields.get("library_auto_write"),
+        updated_at=now_ms().value,
+    )
+    db.library.update_library(library, changes)
 
 
 def update_library_config_fields(
     db: Database,
-    library_id: int,
+    library: Library,
     set_fields: dict[str, Any] | None = None,
     unset_fields: list[str] | None = None,
 ) -> None:
@@ -164,28 +172,34 @@ def update_library_config_fields(
     if not update_fields:
         return
 
-    update_library_record(db, library_id, **update_fields)
+    update_library_record(db, library, **update_fields)
 
 
-def list_all_library_keys(db: Database) -> list[int]:
-    """Return all library document keys for bootstrap-style callers."""
-    return db.library.list_library_keys()
+def list_all_libraries(db: Database) -> list[Library]:
+    """Return all libraries as domain ``Library`` values for bootstrap callers.
+
+    Previously returned generated library primary-key ids (``list_library_keys``);
+    the facade now exposes ``Library`` values and no component depends on a
+    generated library id (P2-S4).
+    """
+    return db.library.list_libraries()
 
 
-def find_library_containing_path(db: Database, file_path: str) -> LibraryDict | None:
-    """Find the most specific library root containing ``file_path``."""
+def find_library_containing_path(db: Database, file_path: str) -> Library | None:
+    """Find the most specific library root containing ``file_path``.
+
+    Returns the domain ``Library`` whose ``root_path`` contains ``file_path``.
+    """
     try:
         normalized_path = Path(file_path).resolve()
     except (ValueError, OSError):
         return None
 
-    libraries = list_library_records(db, enabled_only=False, include_scan=False)
+    libraries = db.library.list_libraries(enabled_only=False)
     libraries.sort(key=lambda lib: len(str(lib.root_path)), reverse=True)
 
     for library in libraries:
         library_root = library.root_path
-        if not isinstance(library_root, str):
-            continue
         try:
             normalized_path.relative_to(Path(library_root).resolve())
             return library
@@ -195,125 +209,70 @@ def find_library_containing_path(db: Database, file_path: str) -> LibraryDict | 
     return None
 
 
-def _row_to_library_doc(row: dict[str, Any]) -> dict[str, Any]:
-    """Translate repository column names into the library intent shape.
-
-    The repository returns ``LibraryRow`` keys, while callers consume the
-    public ``LibraryDict`` vocabulary.  Keep this boundary explicit and omit
-    persistence-only columns rather than passing them to the DTO constructor.
-    """
-    if "path" in row:
-        return {
-            "id": row.get("id"),
-            "name": row.get("name"),
-            "root_path": row["path"],
-            "is_enabled": row.get("library_type") != "disabled",
-            "created_at": row.get("created_at"),
-            "updated_at": row.get("updated_at"),
-            "watch_mode": row.get("watch_mode") or ("event" if row.get("auto_tag") else "off"),
-            "library_auto_write": bool(row.get("auto_curate")),
-            "file_write_mode": row.get("file_write_mode") or "full",
-        }
-
-    # Accept already-projected records from component-level test doubles and
-    # legacy callers while still dropping unknown keys before LibraryDict.
-    allowed = {
-        "id",
-        "name",
-        "root_path",
-        "is_enabled",
-        "created_at",
-        "updated_at",
-        "watch_mode",
-        "file_write_mode",
-        "library_auto_write",
-        "scan_status",
-        "scan_progress",
-        "scan_total",
-        "scanned_at",
-        "scan_error",
-        "last_scan_started_at",
-        "last_scan_at",
-        "scan_type_in_progress",
-        "scan_state",
-        "ml_state",
-        "calibration_state",
-        "tag_write_state",
-        "vector_search_thoroughness",
-        "vector_group_size",
-        "file_count",
-        "folder_count",
-    }
-    return {key: value for key, value in row.items() if key in allowed}
-
-
 def find_ml_complete_libraries(db: Database, min_files: int) -> list[dict[str, Any]]:
     """Return ML-running libraries whose file set is fully tagged.
 
-    Each result dict contains ``library_id`` and ``tagged_count``.
+    Each result dict contains ``library_id`` (the library's natural ``name``)
+    and ``tagged_count``.
     """
     del min_files
-    library_docs = cast("list[dict[str, Any]]", db.library.list_libraries())
+    libraries = db.library.list_libraries()
     counts = get_library_counts(db)
     completed: list[dict[str, Any]] = []
 
-    for library_doc in library_docs:
-        library_ref = library_doc.get("id")
-        if not isinstance(library_ref, int):
+    for library in libraries:
+        pipeline_state = db.library.get_pipeline_state(library)
+        if pipeline_state.ml_state != ML_IN_PROGRESS:
             continue
-        library_id = library_ref
-        pipeline_state = db.library.get_pipeline_state(library_id)
-        if not pipeline_state or pipeline_state.get("ml_state") != ML_IN_PROGRESS:
-            continue
-        if count_untagged_files(db, library_id) != 0:
+        if count_untagged_files(db, library) != 0:
             continue
 
-        tagged_count = counts.get(library_id, {}).get("file_count", 0)
-        completed.append({"library_id": library_id, "tagged_count": tagged_count})
+        tagged_count = counts.get(library.name, {}).get("file_count", 0)
+        completed.append({"library_id": library.name, "tagged_count": tagged_count})
 
     return completed
 
 
-def _merge_scan_state(db: Database, library: dict[str, Any]) -> dict[str, Any]:
-    """Merge current status with statistics from the latest successful scan.
+def _project_library_dict(
+    db: Database,
+    library: Library,
+    *,
+    include_scan: bool,
+) -> LibraryDict:
+    """Build the ``LibraryDict`` transport projection from domain values.
 
-    The newest row may represent an active or failed attempt, so it supplies
-    status, progress, and errors while the successful row supplies the last
-    completed scan timestamp and total.
+    The generated library id does not cross the component boundary, so
+    ``LibraryDict.id`` is ``None`` (wire ids live only in the interface layer).
     """
-    library_id = library["id"]
-    scan_doc = get_scan_state(db, library_id)
-    successful_scan = db.library.get_latest_successful_scan(library_id)
+    base: dict[str, Any] = {
+        "id": None,
+        "name": library.name,
+        "root_path": library.root_path,
+        "is_enabled": library.is_enabled,
+        "watch_mode": library.watch_mode,
+        "file_write_mode": library.file_write_mode,
+        "library_auto_write": library.library_auto_write,
+    }
+    if not include_scan:
+        return LibraryDict(**base)
+
+    scan_doc = get_scan_state(db, library)
+    successful_scan = db.library.get_latest_successful_scan(library)
     try:
-        pipeline_state = get_pipeline_state(db, library_id)
+        pipeline_state = get_pipeline_state(db, library)
     except ValueError:
         pipeline_state = None
 
-    return {
-        **library,
-        "scan_status": _pipeline_state_to_scan_status(pipeline_state, scan_doc),
-        "scan_progress": 0 if scan_doc is None else scan_doc.get("files_processed", 0),
+    return LibraryDict(
+        **base,
+        scan_status=_pipeline_state_to_scan_status(pipeline_state, scan_doc),
+        scan_progress=0 if scan_doc is None else scan_doc.files_processed,
         # The newest row may be a failed/interrupted attempt. Keep summary
         # fields sourced from the most recent successful scan instead.
-        "scan_total": 0 if successful_scan is None else successful_scan.get("files_found", 0),
-        # The current row describes the active/failed attempt. Keep the
-        # successful summary independent so an interrupted attempt cannot
-        # erase the last known library statistics.
-        "scanned_at": None if successful_scan is None else successful_scan.get("finished_at"),
-        "scan_error": None if scan_doc is None else scan_doc.get("error"),
-        "last_scan_started_at": None if scan_doc is None else scan_doc.get("started_at"),
-        "scan_type_in_progress": None if scan_doc is None else scan_doc.get("scan_type"),
-        "last_scan_at": None if successful_scan is None else successful_scan.get("finished_at"),
-    }
-
-
-def _validate_watch_mode(watch_mode: str) -> None:
-    if watch_mode not in {"off", "event", "poll"}:
-        msg = f"Invalid watch_mode: {watch_mode}. Must be 'off', 'event', or 'poll'"
-        raise ValueError(msg)
-
-
-def _validate_file_write_mode(file_write_mode: str) -> None:
-    if file_write_mode not in {"none", "minimal", "full"}:
-        msg = f"Invalid file_write_mode: {file_write_mode}. Must be 'none', 'minimal', or 'full'"
-        raise ValueError(msg)
+        scan_total=0 if successful_scan is None else successful_scan.files_found,
+        scanned_at=None if successful_scan is None else successful_scan.finished_at,
+        scan_error=None if scan_doc is None else scan_doc.error,
+        last_scan_started_at=None if scan_doc is None else scan_doc.started_at,
+        scan_type_in_progress=None if scan_doc is None else scan_doc.scan_type,
+        last_scan_at=None if successful_scan is None else successful_scan.finished_at,
+    )

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
-from sqlalchemy import Table, select
+from sqlalchemy import Table, and_, or_, select
 
 from nomarr.helpers.constants.pipeline_states import PIPELINE_AXIS_FIELDS, PIPELINE_DEFAULTS
 from nomarr.helpers.dto.repo_dto import LibraryRow
@@ -75,6 +75,52 @@ class LibraryRepository:
         with map_persistence_exceptions():
             row = select_by_key(_T, name, session=self._session, key_col="name")
             return _row_to_dto(row) if row else None
+
+    def get_library_by_natural_key(self, name: str, root_path: str) -> LibraryRow | None:
+        """Fetch a single library by its natural ``(name, root_path)`` key.
+
+        The ``libraries`` table has no uniqueness constraint on ``name`` or
+        ``(name, path)`` (see 001_current_schema_baseline), so the full natural
+        identity — ``(name, root_path)`` — is resolved deterministically.
+        Returns the first matching row, or ``None`` when absent. Storage-shaped:
+        the facade maps the returned ``LibraryRow`` to a domain ``Library``.
+        """
+        with map_persistence_exceptions():
+            stmt = select(_T).where(_T.c.name == name, _T.c.path == root_path)
+            result = self._session.execute(stmt)
+            row = result.fetchone()
+            return _row_to_dto(row) if row else None
+
+    def get_library_ids_by_natural_keys(self, rows: list[tuple[str, str]]) -> dict[tuple[str, str], int]:
+        """Resolve ``(name, root_path)`` natural keys to library IDs in one query.
+
+        Set-based: a single query for the whole batch (no per-library lookup
+        loop), so intent facades can translate a batch of ``LibraryIdentity``
+        values without opening N queries. Returns ``{(name, root_path): id}``;
+        keys absent from the table are omitted.
+        """
+        if not rows:
+            return {}
+        conditions = [and_(_T.c.name == name, _T.c.path == root_path) for (name, root_path) in rows]
+        with map_persistence_exceptions():
+            stmt = select(_T.c.name, _T.c.path, _T.c.id).where(or_(*conditions))
+            result = self._session.execute(stmt)
+            return {(row[0], row[1]): row[2] for row in result.all()}
+
+    def get_libraries_by_ids(self, library_ids: list[int]) -> list[LibraryRow]:
+        """Fetch libraries by their primary keys in one set-based query.
+
+        Persistence-private primary-key batch read added for the song-side
+        identity bridge (P3 of TASK-song-intent-facade-correction-A), which
+        resolves numeric library handles to their natural ``LibraryIdentity``
+        references. Missing ids are simply absent from the result.
+        """
+        if not library_ids:
+            return []
+        with map_persistence_exceptions():
+            stmt = select(_T).where(_T.c.id.in_(library_ids))
+            result = self._session.execute(stmt)
+            return [_row_to_dto(r) for r in result.all()]
 
     def list_libraries(self, *, enabled_only: bool = False) -> list[LibraryRow]:
         """Return all libraries, optionally filtering to enabled types only."""

@@ -16,7 +16,14 @@ from nomarr.components.tagging.tag_stats_comp import (
     get_unique_names,
     get_year_distribution,
 )
+from nomarr.helpers.dataclasses.library_dataclass import Library
 from nomarr.helpers.dataclasses.song_dataclass import Song
+from nomarr.helpers.dataclasses.song_tag_dataclass import TagRef, TagUsage
+
+
+def _usage(name: str, value: str | int | float | bool, song_count: int, namespace: str = "") -> TagUsage:
+    """Build a domain ``TagUsage`` (typed tag-with-count result)."""
+    return TagUsage(identity=TagRef(name=name, value=value, namespace=namespace), song_count=song_count)
 
 
 def _song(**overrides: object) -> Song:
@@ -156,7 +163,8 @@ class TestGetLibraryStats:
     @pytest.mark.mocked
     def test_returns_aggregated_stats_for_files(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.list_libraries.return_value = [{"id": 1}]
+        library = Library(name="main", root_path="/music")
+        mock_db.library.list_libraries.return_value = [library]
         mock_db.library.list_songs.return_value = [
             _song(duration_seconds=180.5, file_size=1_000),
             _song(duration_seconds=None, file_size=2_000),
@@ -172,7 +180,7 @@ class TestGetLibraryStats:
             "avg_track_length_ms": pytest.approx(79833.33333333333),
         }
         mock_db.library.list_libraries.assert_called_once_with()
-        mock_db.library.list_songs.assert_called_once_with(1)
+        mock_db.library.list_songs.assert_called_once_with(library, limit=None)
 
 
 class TestGetTagValueCounts:
@@ -182,39 +190,29 @@ class TestGetTagValueCounts:
     @pytest.mark.mocked
     def test_returns_value_to_song_count_mapping(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.count_tags.return_value = 3
-        mock_db.library.list_tags.return_value = [
-            {"id": 1, "value": "Rock"},
-            {"id": 2, "value": "Jazz"},
-            {"id": 3, "value": "Skip"},
-        ]
-
-        mock_db.library.list_song_tag_edges.return_value = [
-            {"tag_id": 1},
-            {"tag_id": 1},
-            {"tag_id": 1},
-            {"tag_id": 1},
-            {"tag_id": 2},
-            {"tag_id": 2},
+        mock_db.library.count_tags_filtered.return_value = 3
+        mock_db.library.list_tags_with_song_count.return_value = [
+            _usage("genre", "Rock", 4),
+            _usage("genre", "Jazz", 2),
+            _usage("genre", "Skip", 0),
         ]
 
         result = get_tag_value_counts(mock_db, "genre")
 
         assert result == {"Rock": 4, "Jazz": 2, "Skip": 0}
-        mock_db.library.list_tags.assert_called_once_with(name="genre", limit=3)
-        mock_db.library.list_song_tag_edges.assert_called_once_with([1, 2, 3])
+        mock_db.library.count_tags_filtered.assert_called_once_with(name="genre")
+        mock_db.library.list_tags_with_song_count.assert_called_once_with(name="genre", limit=3, offset=0)
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_returns_empty_dict_when_no_tags_exist_for_relation(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.count_tags.return_value = 0
+        mock_db.library.count_tags_filtered.return_value = 0
 
         result = get_tag_value_counts(mock_db, "genre")
 
         assert result == {}
-        mock_db.library.list_tags.assert_not_called()
-        mock_db.library.list_song_tag_edges.assert_not_called()
+        mock_db.library.list_tags_with_song_count.assert_not_called()
 
 
 class TestGetAllTagStatsBatched:
@@ -236,20 +234,10 @@ class TestGetAllTagStatsBatched:
     def test_uses_aggregate_counts_for_relation_summaries(self) -> None:
         mock_db = MagicMock()
         mock_db.library.count_tags.return_value = 3
-        mock_db.library.list_all_tag_names.return_value = ["genre", "year"]
-        mock_db.library.list_tags.return_value = [
-            {"id": 1, "name": "genre", "value": "Rock"},
-            {"id": 2, "name": "genre", "value": "Jazz"},
-            {"id": 3, "name": "year", "value": 1999},
-        ]
-        mock_db.library.list_song_tag_edges.return_value = [
-            {"tag_id": 1},
-            {"tag_id": 1},
-            {"tag_id": 1},
-            {"tag_id": 1},
-            {"tag_id": 2},
-            {"tag_id": 2},
-            {"tag_id": 3},
+        mock_db.library.list_tags_with_song_count.return_value = [
+            _usage("genre", "Rock", 4),
+            _usage("genre", "Jazz", 2),
+            _usage("year", 1999, 1),
         ]
 
         result = get_all_tag_stats_batched(mock_db)
@@ -268,8 +256,7 @@ class TestGetAllTagStatsBatched:
                 "total_count": 1,
             },
         }
-        mock_db.library.list_tags.assert_called_once_with(limit=3)
-        mock_db.library.list_song_tag_edges.assert_called_once_with([1, 2, 3])
+        mock_db.library.list_tags_with_song_count.assert_called_once_with(limit=3, offset=0)
 
 
 class TestGetYearDistribution:
@@ -279,30 +266,23 @@ class TestGetYearDistribution:
     @pytest.mark.mocked
     def test_returns_empty_list_when_no_tags_exist(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.count_tags.return_value = 0
+        mock_db.library.count_tags_filtered.return_value = 0
 
         result = get_year_distribution(mock_db)
 
         assert result == []
+        mock_db.library.list_tags_with_song_count.assert_not_called()
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_returns_year_rows_sorted_descending_and_excludes_zero_counts(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.count_tags.return_value = 4
-        mock_db.library.list_tags.return_value = [
-            {"id": 1, "value": 2019},
-            {"id": 2, "value": 2021},
-            {"id": 3, "value": "2020"},
-            {"id": 4, "value": 2022},
-        ]
-        mock_db.library.list_song_tag_edges.return_value = [
-            {"tag_id": 1},
-            {"tag_id": 1},
-            {"tag_id": 2},
-            {"tag_id": 3},
-            {"tag_id": 3},
-            {"tag_id": 3},
+        mock_db.library.count_tags_filtered.return_value = 4
+        mock_db.library.list_tags_with_song_count.return_value = [
+            _usage("year", 2019, 2),
+            _usage("year", 2021, 1),
+            _usage("year", "2020", 3),
+            _usage("year", 2022, 0),
         ]
 
         result = get_year_distribution(mock_db)
@@ -312,8 +292,8 @@ class TestGetYearDistribution:
             {"year": "2020", "count": 3},
             {"year": 2019, "count": 2},
         ]
-        mock_db.library.list_tags.assert_called_once_with(name="year", limit=4)
-        mock_db.library.list_song_tag_edges.assert_called_once_with([1, 2, 3, 4])
+        mock_db.library.count_tags_filtered.assert_called_once_with(name="year")
+        mock_db.library.list_tags_with_song_count.assert_called_once_with(name="year", limit=4, offset=0)
 
 
 class TestGetGenreDistribution:
@@ -323,35 +303,23 @@ class TestGetGenreDistribution:
     @pytest.mark.mocked
     def test_returns_empty_list_when_no_tags_exist(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.count_tags.return_value = 0
+        mock_db.library.count_tags_filtered.return_value = 0
 
         result = get_genre_distribution(mock_db)
 
         assert result == []
+        mock_db.library.list_tags_with_song_count.assert_not_called()
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_returns_rows_sorted_by_count_desc_then_genre_and_respects_limit(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.count_tags.return_value = 4
-        mock_db.library.list_tags.return_value = [
-            {"id": 1, "value": "Rock"},
-            {"id": 2, "value": "Jazz"},
-            {"id": 3, "value": "Blues"},
-            {"id": 4, "value": 123},
-        ]
-        mock_db.library.list_song_tag_edges.return_value = [
-            {"tag_id": 1},
-            {"tag_id": 1},
-            {"tag_id": 2},
-            {"tag_id": 2},
-            {"tag_id": 2},
-            {"tag_id": 2},
-            {"tag_id": 2},
-            {"tag_id": 3},
-            {"tag_id": 3},
-            {"tag_id": 3},
-            {"tag_id": 3},
+        mock_db.library.count_tags_filtered.return_value = 4
+        mock_db.library.list_tags_with_song_count.return_value = [
+            _usage("genre", "Rock", 2),
+            _usage("genre", "Jazz", 5),
+            _usage("genre", "Blues", 4),
+            _usage("genre", 123, 0),
         ]
 
         result = get_genre_distribution(mock_db, limit=2)
@@ -360,5 +328,5 @@ class TestGetGenreDistribution:
             {"genre": "Jazz", "count": 5},
             {"genre": "Blues", "count": 4},
         ]
-        mock_db.library.list_tags.assert_called_once_with(name="genre", limit=4)
-        mock_db.library.list_song_tag_edges.assert_called_once_with([1, 2, 3])
+        mock_db.library.count_tags_filtered.assert_called_once_with(name="genre")
+        mock_db.library.list_tags_with_song_count.assert_called_once_with(name="genre", limit=4, offset=0)

@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 from nomarr.helpers.time_helper import now_ms
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dataclasses.library_dataclass import Library
     from nomarr.helpers.dto import LibraryPath
     from nomarr.persistence.db import Database
 
@@ -14,13 +15,22 @@ if TYPE_CHECKING:
 def upsert_library_song(
     db: Database,
     path: LibraryPath,
-    library_id: int,
+    library: Library,
     file_size: int,
     modified_time: int,
     duration_seconds: float | None = None,
     last_tagged_at: int | None = None,
 ) -> int:
     """Insert or update a library-song document and its ownership/state edges.
+
+    Args:
+        db: Database instance.
+        path: Validated ``LibraryPath`` for the song.
+        library: Domain ``Library`` (natural identity) that owns the song.
+        file_size: File size in bytes.
+        modified_time: File mtime in ms since epoch.
+        duration_seconds: Optional audio duration.
+        last_tagged_at: Optional wall-clock timestamp of last tag write.
 
     Raises ValueError if the path is not valid.
     """
@@ -32,7 +42,7 @@ def upsert_library_song(
     normalized_path = str(path.relative)
     absolute_path = str(path.absolute)
     return db.library.add_song_to_library(
-        library_id,
+        library,
         {
             "path": absolute_path,
             "normalized_path": normalized_path,

@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from nomarr.components.library.library_records_comp import get_library_record
 from nomarr.components.library.library_song_state_comp import bulk_set_tags_not_fresh
 from nomarr.components.library.reconciliation_comp import (
     claim_files_for_reconciliation,
@@ -21,6 +20,7 @@ if TYPE_CHECKING:
     import threading
     from collections.abc import Callable
 
+    from nomarr.helpers.dataclasses.library_dataclass import Library
     from nomarr.persistence.db import Database
     from nomarr.services.infrastructure.background_tasks_svc import BackgroundTaskService
 
@@ -70,7 +70,7 @@ class TaggingWriteMixin:
 
     def write_tags_to_files(
         self,
-        library_id: int,
+        library: Library,
         batch_size: int = 100,
         namespace: str = "nom",
     ) -> WriteTagsResult:
@@ -83,7 +83,7 @@ class TaggingWriteMixin:
         - New ML results (files analyzed but never written)
 
         Args:
-            library_id: Library database ID
+            library: Domain ``Library`` (natural identity) to write.
             batch_size: Number of files to process per batch
             namespace: Tag namespace (default: "nom")
 
@@ -91,20 +91,15 @@ class TaggingWriteMixin:
             WriteTagsResult with processed, remaining, and failed counts
 
         """
-        library = get_library_record(self.db, int(library_id))
-        if not library:
-            msg = f"Library not found: {library_id}"
-            raise ValueError(msg)
-
-        target_mode = library.get("file_write_mode", "full")
+        target_mode = library.file_write_mode
         calibration_doc = self.db.app.get_config_option("calibration_version")
         calibration_hash = None if calibration_doc is None else calibration_doc.value
         has_calibration = bool(calibration_hash)
 
-        worker_id = f"reconcile:{library_id}"
+        worker_id = f"reconcile:{library.name}"
         claimed_files = claim_files_for_reconciliation(
             self.db,
-            library_id=library_id,
+            library=library,
             worker_id=worker_id,
             batch_size=batch_size,
         )
@@ -142,9 +137,11 @@ class TaggingWriteMixin:
                 except Exception as release_err:
                     logger.warning(f"[reconcile] Failed to release claim for {file_key}: {release_err}", exc_info=True)
 
-        remaining = count_files_needing_reconciliation(self.db, library_id=library_id)
+        remaining = count_files_needing_reconciliation(self.db, library=library)
 
-        logger.info(f"[reconcile] Library {library_id}: processed={processed}, failed={failed}, remaining={remaining}")
+        logger.info(
+            f"[reconcile] Library {library.name}: processed={processed}, failed={failed}, remaining={remaining}"
+        )
 
         return WriteTagsResult(
             processed=processed,
@@ -154,7 +151,7 @@ class TaggingWriteMixin:
 
     def start_write_tags_background(
         self,
-        library_id: int,
+        library: Library,
         stop_event: threading.Event,
         on_complete: Callable[[], None] | None = None,
     ) -> str:
@@ -166,29 +163,27 @@ class TaggingWriteMixin:
         set.
 
         Args:
-            library_id: Library database ID to write
+            library: Domain ``Library`` (natural identity) to write.
             stop_event: Cooperative cancellation event. The background loop exits
                 when this event is set.
             on_complete: Optional callback invoked after successful completion
                 when reconciliation finishes with no remaining files.
 
         Returns:
-            Task ID string in the form ``"write_tags:{library_id}"`` returned by
+            Task ID string in the form ``"write_tags:{library.name}"`` returned by
             the background task service. Use this ID for status polling and
             cancellation.
 
         """
-        task_id = f"write_tags:{library_id}"
+        task_id = f"write_tags:{library.name}"
 
         def _task() -> WriteTagsResult:
             last_result = WriteTagsResult(processed=0, remaining=0, failed=0)
             while not stop_event.is_set():
-                result = self.write_tags_to_files(library_id)
+                result = self.write_tags_to_files(library)
                 last_result = result
                 if result.remaining == 0:
                     break
-                # Avoid hammering the database when a batch cannot make progress,
-                # while still allowing cancellation to interrupt the wait.
                 stop_event.wait(1.0)
             return last_result
 
@@ -202,35 +197,30 @@ class TaggingWriteMixin:
             ),
         )
 
-    def mark_tags_not_fresh(self, library_id: int) -> int:
+    def mark_tags_not_fresh(self, library: Library) -> int:
         """Mark all file tags in a library as not fresh.
 
         Args:
-            library_id: Library database ID
+            library: Domain ``Library`` (natural identity).
 
         Returns:
             Number of files marked not fresh
 
         """
-        return bulk_set_tags_not_fresh(self.db, int(library_id))
+        return bulk_set_tags_not_fresh(self.db, library)
 
-    def get_reconcile_status(self, library_id: int) -> dict[str, Any]:
+    def get_reconcile_status(self, library: Library) -> dict[str, Any]:
         """Get reconciliation status for a library.
 
         Args:
-            library_id: Library database ID
+            library: Domain ``Library`` (natural identity).
 
         Returns:
             Dict with pending_count, failed_count, and in_progress status
 
         """
-        library = get_library_record(self.db, int(library_id))
-        if not library:
-            msg = f"Library not found: {library_id}"
-            raise ValueError(msg)
-
-        pending_count = count_files_needing_reconciliation(self.db, library_id=library_id)
-        task_status = self._bts.get_task_status(f"write_tags:{library_id}")
+        pending_count = count_files_needing_reconciliation(self.db, library=library)
+        task_status = self._bts.get_task_status(f"write_tags:{library.name}")
         in_progress = task_status is not None and task_status["status"] == "running"
         task_result = task_status.get("result") if task_status is not None else None
         failed_count = task_result.failed if isinstance(task_result, WriteTagsResult) else 0

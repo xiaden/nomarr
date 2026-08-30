@@ -7,7 +7,6 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from nomarr.helpers.constants.file_states import (
-    ALL_STATE_VERTICES,
     AXIS_PAIRS,
     STATE_CALIBRATED,
     STATE_ERRORED,
@@ -24,9 +23,9 @@ from nomarr.helpers.constants.file_states import (
     STATE_VECTORS_EXTRACTED,
     STATE_WRITTEN,
 )
-from nomarr.helpers.exceptions import DuplicateEntityError
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dataclasses.library_dataclass import Library
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
@@ -66,45 +65,27 @@ def transition_song_state(db: Database, song_ids: list[int], from_state: str, to
         return
 
     unique_song_ids = list(dict.fromkeys(song_ids))
-    # Touch only the requested axis.  Rewriting all assignments from a stale
-    # snapshot can lose unrelated edges and can race with another transition.
-    db.app.remove_song_state(unique_song_ids, from_state)
-    db.app.add_song_states(unique_song_ids, to_state)
+    # The facade owns the assignment transaction and changes only this axis;
+    # callers must not coordinate primitive remove/insert operations.
+    db.app.transition_song_states(unique_song_ids, from_state, to_state)
 
 
-def _insert_file_state_edges_ignoring_duplicates(db: Database, edge_docs: list[dict[str, Any]]) -> None:
-    for edge_doc in edge_docs:
-        with contextlib.suppress(DuplicateEntityError):
-            db.app.add_song_states([edge_doc["_from"]], edge_doc["_to"])
+def _state_song_docs(db: Database, state: str) -> list[Any]:
+    return [song.to_dict() for song in db.app.songs_with_state(state)]
 
 
-def _state_song_docs(db: Database, state_id: str) -> list[Any]:
-    return [song.to_dict() for song in db.app.list_song_docs_in_state(state_id)]
-
-
-def _state_song_ids(db: Database, state_id: str) -> set[int]:
-    docs = _state_song_docs(db, state_id)
+def _state_song_ids(db: Database, state: str) -> set[int]:
+    docs = _state_song_docs(db, state)
     return {doc["id"] for doc in docs if isinstance(doc, dict) and "id" in doc}
 
 
-def _library_song_docs(db: Database, library_id: int) -> list[Any]:
-    return [song.to_dict() for song in db.library.list_songs(library_id)]
+def _library_song_docs(db: Database, library: Library) -> list[Any]:
+    return [song.to_dict() for song in db.library.list_songs(library)]
 
 
-def _library_song_ids(db: Database, library_id: int) -> set[int]:
-    docs = _library_song_docs(db, library_id)
+def _library_song_ids(db: Database, library: Library) -> set[int]:
+    docs = _library_song_docs(db, library)
     return {doc["id"] for doc in docs if isinstance(doc, dict) and "id" in doc}
-
-
-def _count_state_edges_for_songs(db: Database, song_ids: list[int]) -> int:
-    if not song_ids:
-        return 0
-    song_id_set = set(song_ids)
-    total = 0
-    for state_id in ALL_STATE_VERTICES:
-        state_ids = _state_song_ids(db, state_id)
-        total += len(state_ids & song_id_set)
-    return total
 
 
 def _state_membership_for_songs(db: Database, song_ids: list[int]) -> dict[int, set[str]]:
@@ -115,7 +96,7 @@ def _state_membership_for_songs(db: Database, song_ids: list[int]) -> dict[int, 
     """
     if not song_ids:
         return {}
-    return db.app.get_song_states_for_songs(song_ids)
+    return db.app.song_state_memberships(song_ids)
 
 
 def _extract_matching_head_keys(
@@ -147,40 +128,33 @@ def _extract_matching_head_keys(
 
 
 def initialize_song_states(db: Database, song_id: int) -> None:
-    """Create all-negative state edges for one song."""
-    negative_states = [state for state in ALL_STATE_VERTICES if state in _NEGATIVE_STATE_VERTICES]
-    edge_docs = [{"_from": song_id, "_to": state} for state in negative_states]
-    _insert_file_state_edges_ignoring_duplicates(db, edge_docs)
+    """Initialize all canonical negative state poles for one song."""
+    # This overlaps concurrent state-component cleanup: keep the public helper,
+    # but delegate initialization as one persistence intent operation.
+    db.app.initialize_song_states([song_id])
 
 
 def initialize_song_states_batch(db: Database, song_ids: list[int]) -> None:
-    """Create all-negative state edges for multiple songs."""
-    if not song_ids:
-        return
-    negative_states = [state for state in ALL_STATE_VERTICES if state in _NEGATIVE_STATE_VERTICES]
-    edge_docs = [{"_from": song_id, "_to": state} for song_id in song_ids for state in negative_states]
-    _insert_file_state_edges_ignoring_duplicates(db, edge_docs)
+    """Initialize all canonical negative state poles for multiple songs."""
+    if song_ids:
+        # Keep this helper's existing component contract while avoiding state
+        # edge payloads that expose the underlying assignment table.
+        db.app.initialize_song_states(song_ids)
 
 
 def clear_all_states(db: Database, song_id: int) -> int:
-    """Remove all state edges for one song."""
-    deleted_count = _count_state_edges_for_songs(db, [song_id])
-    db.app.remove_song_states([song_id])
-    return deleted_count
+    """Remove all processing-state membership for one song."""
+    return db.app.clear_song_states([song_id])
 
 
 def clear_all_states_batch(db: Database, song_ids: list[int]) -> int:
-    """Remove all state edges for a batch of songs."""
-    if not song_ids:
-        return 0
-    deleted_count = _count_state_edges_for_songs(db, song_ids)
-    db.app.remove_song_states(song_ids)
-    return deleted_count
+    """Remove all processing-state membership for multiple songs."""
+    return db.app.clear_song_states(song_ids)
 
 
 def discover_next_untagged_file(
     db: Database,
-    library_id: int | None = None,
+    library: Library | None = None,
     exclude_claimed: bool = True,
 ) -> dict[str, Any] | None:
     """Find the next song eligible for ML discovery, excluding errored songs."""
@@ -188,15 +162,17 @@ def discover_next_untagged_file(
     candidate_ids = {doc["id"] for doc in untagged_files if isinstance(doc, dict) and "id" in doc}
     errored_ids = _state_song_ids(db, STATE_ERRORED)
     candidate_ids -= errored_ids
-    if library_id is not None:
-        library_song_ids = _library_song_ids(db, library_id)
+    if library is not None:
+        library_song_ids = _library_song_ids(db, library)
         candidate_ids &= library_song_ids
     if exclude_claimed:
         claims = db.app.list_claims()
         claimed_ids: set[int] = set()
-        for c in claims:
-            with contextlib.suppress(ValueError, KeyError):
-                claimed_ids.add(int(c["file_id"]))
+        for claim in claims:
+            file_id = claim.get("file_id")
+            if isinstance(file_id, (int, str)):
+                with contextlib.suppress(ValueError):
+                    claimed_ids.add(int(file_id))
         candidate_ids -= claimed_ids
     candidate_docs = [doc for doc in untagged_files if doc.get("id") in candidate_ids]
     if not candidate_docs:
@@ -204,18 +180,18 @@ def discover_next_untagged_file(
     return min(candidate_docs, key=lambda doc: str(doc.get("id") or ""))  # type: ignore[no-any-return]
 
 
-def count_untagged_files(db: Database, library_id: int | None = None) -> int:
+def count_untagged_files(db: Database, library: Library | None = None) -> int:
     """Count songs in the ``not_processed`` state that are still taggable."""
     untagged_ids = _state_song_ids(db, STATE_NOT_PROCESSED)
-    if library_id is not None:
-        library_song_ids = _library_song_ids(db, library_id)
+    if library is not None:
+        library_song_ids = _library_song_ids(db, library)
         untagged_ids &= library_song_ids
     return len(untagged_ids)
 
 
 def discover_next_file_needing_tags(
     db: Database,
-    library_id: int | None = None,
+    library: Library | None = None,
     exclude_claimed: bool = True,
 ) -> dict[str, Any] | None:
     """Find the next song needing audio tag extraction, excluding errored songs."""
@@ -223,15 +199,17 @@ def discover_next_file_needing_tags(
     candidate_ids = {doc["id"] for doc in pending_files if isinstance(doc, dict) and "id" in doc}
     errored_ids = _state_song_ids(db, STATE_ERRORED)
     candidate_ids -= errored_ids
-    if library_id is not None:
-        library_song_ids = _library_song_ids(db, library_id)
+    if library is not None:
+        library_song_ids = _library_song_ids(db, library)
         candidate_ids &= library_song_ids
     if exclude_claimed:
         claims = db.app.list_claims()
         claimed_ids: set[int] = set()
-        for c in claims:
-            with contextlib.suppress(ValueError, KeyError):
-                claimed_ids.add(int(c["file_id"]))
+        for claim in claims:
+            file_id = claim.get("file_id")
+            if isinstance(file_id, (int, str)):
+                with contextlib.suppress(ValueError):
+                    claimed_ids.add(int(file_id))
         candidate_ids -= claimed_ids
     candidate_docs = [doc for doc in pending_files if doc.get("id") in candidate_ids]
     if not candidate_docs:
@@ -241,54 +219,47 @@ def discover_next_file_needing_tags(
 
 def count_pending_tag_writes(db: Database) -> int:
     """Count songs still waiting for tag writeback."""
-    return db.app.count_songs_in_state(STATE_NOT_WRITTEN)
+    return db.app.count_songs_with_state(STATE_NOT_WRITTEN)
 
 
-def get_errored_song_ids(db: Database, library_id: int, limit: int | None = 500) -> list[int]:
+def get_errored_song_ids(db: Database, library: Library, limit: int | None = 500) -> list[int]:
     """Return errored song ids for one library."""
-    library_song_ids = _library_song_ids(db, library_id)
-    errored_files = [song.to_dict() for song in db.app.list_song_docs_in_state(STATE_ERRORED)]
+    library_song_ids = _library_song_ids(db, library)
+    errored_files = [song.to_dict() for song in db.app.songs_with_state(STATE_ERRORED)]
     errored_song_ids = [
         doc["id"] for doc in errored_files if isinstance(doc, dict) and "id" in doc and doc["id"] in library_song_ids
     ]
     return errored_song_ids if limit is None else errored_song_ids[:limit]
 
 
-def count_errored_songs(db: Database, library_id: int) -> int:
+def count_errored_songs(db: Database, library: Library) -> int:
     """Count errored songs for one library."""
-    errored = get_errored_song_ids(db, library_id, limit=None)
+    errored = get_errored_song_ids(db, library, limit=None)
     return len(errored)
 
 
 def mark_song_errored(db: Database, song_id: int) -> None:
-    """Transition a song from its current positive state to errored."""
-    membership = _state_membership_for_songs(db, [song_id])
-    current_states = membership.get(song_id, set())
-    positive_states = [s for s in current_states if s not in _NEGATIVE_STATE_VERTICES]
-    if not positive_states:
-        logger.warning("Song %s has no positive state to transition from", song_id)
-        return
-    from_state = positive_states[0]
-    transition_song_state(db, [song_id], from_state, STATE_ERRORED)
-    logger.info("Song %s transitioned to errored from %s", song_id, from_state)
+    """Mark a song errored while preserving every unrelated state axis."""
+    transition_song_state(db, [song_id], STATE_NOT_ERRORED, STATE_ERRORED)
+    logger.info("Song %s transitioned to errored", song_id)
 
 
-def get_uncalibrated_tagged_song_ids(db: Database, library_id: int) -> list[int]:
+def get_uncalibrated_tagged_song_ids(db: Database, library: Library) -> list[int]:
     """Return ids that are tagged and not calibrated within one library."""
     tagged_ids = _state_song_ids(db, STATE_PROCESSED)
     not_calibrated_ids = _state_song_ids(db, STATE_NOT_CALIBRATED)
-    library_docs = _library_song_docs(db, library_id)
+    library_docs = _library_song_docs(db, library)
     library_song_ids = [doc["id"] for doc in library_docs if isinstance(doc, dict) and "id" in doc]
     eligible_ids = tagged_ids & not_calibrated_ids
     return [song_id for song_id in library_song_ids if song_id in eligible_ids]
 
 
-def get_stale_song_ids(db: Database, library_id: int | None = None) -> list[int]:
+def get_stale_song_ids(db: Database, library: Library | None = None) -> list[int]:
     """Return song ids in the ``tags_not_fresh`` state."""
     stale_files = _state_song_docs(db, STATE_TAGS_NOT_FRESH)
-    if library_id is None:
+    if library is None:
         return [doc["id"] for doc in stale_files if isinstance(doc, dict) and "id" in doc]
-    library_song_ids = _library_song_ids(db, library_id)
+    library_song_ids = _library_song_ids(db, library)
     return [doc["id"] for doc in stale_files if isinstance(doc, dict) and "id" in doc and doc["id"] in library_song_ids]
 
 
@@ -299,11 +270,10 @@ def get_calibration_status_by_library(db: Database) -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
     libraries = db.library.list_libraries()
     for library in libraries:
-        library_id = library["id"]
-        library_song_ids = _library_song_ids(db, library_id)
+        library_song_ids = _library_song_ids(db, library)
         results.append(
             {
-                "library_id": library_id,
+                "library_id": library.name,
                 "calibrated_count": len(calibrated_ids & library_song_ids),
                 "not_calibrated_count": len(not_calibrated_ids & library_song_ids),
             }
@@ -311,23 +281,23 @@ def get_calibration_status_by_library(db: Database) -> list[dict[str, Any]]:
     return results
 
 
-def library_has_tagged_files(db: Database, library_id: int) -> bool:
+def library_has_tagged_files(db: Database, library: Library) -> bool:
     """Return whether a library contains at least one tagged song."""
     tagged_ids = _state_song_ids(db, STATE_PROCESSED)
-    lib_ids = _library_song_ids(db, library_id)
+    lib_ids = _library_song_ids(db, library)
     return bool(tagged_ids & lib_ids)
 
 
 def song_has_tagged_state(db: Database, song_id: int) -> bool:
-    """Return whether one song currently has the tagged-state edge."""
-    return STATE_PROCESSED in db.app.get_song_states(song_id)
+    """Return whether one song is currently marked as processed."""
+    return STATE_PROCESSED in db.app.song_state_membership(song_id)
 
 
 def get_songs_with_incomplete_tags(
     db: Database,
     expected_heads: list[dict[str, Any]],
     namespace_prefix: str,
-    library_id: int | None = None,
+    library: Library | None = None,
 ) -> list[dict[str, Any]]:
     """Return written songs missing one or more expected model heads.
 
@@ -345,8 +315,8 @@ def get_songs_with_incomplete_tags(
 
     """
     written_files = _state_song_docs(db, STATE_WRITTEN)
-    if library_id is not None:
-        library_song_ids = _library_song_ids(db, library_id)
+    if library is not None:
+        library_song_ids = _library_song_ids(db, library)
         written_files = [doc for doc in written_files if isinstance(doc, dict) and doc.get("id") in library_song_ids]
     song_ids = [doc["id"] for doc in written_files if isinstance(doc, dict) and "id" in doc]
     tags_by_file = db.library.list_song_tags_for_songs(song_ids, name_starts_with=namespace_prefix) if song_ids else {}
@@ -367,7 +337,7 @@ def get_songs_with_incomplete_tags(
             {
                 "file_id": file_doc["id"],
                 "file_key": file_doc.get("id"),
-                "library_id": library_id,
+                "library_id": library,
                 "matched_count": len(matched_heads),
                 "missing_count": len(missing_heads),
                 "missing_heads": missing_heads,
@@ -386,12 +356,12 @@ def bulk_set_not_calibrated(db: Database) -> int:
     return len(song_ids)
 
 
-def bulk_set_tags_not_fresh(db: Database, library_id: int | None = None) -> int:
+def bulk_set_tags_not_fresh(db: Database, library: Library | None = None) -> int:
     """Transition ``tags_current`` songs to ``tags_not_fresh``."""
     docs = _state_song_docs(db, STATE_TAGS_CURRENT)
     song_ids = [doc["id"] for doc in docs if isinstance(doc, dict) and "id" in doc]
-    if library_id is not None:
-        library_song_ids = _library_song_ids(db, library_id)
+    if library is not None:
+        library_song_ids = _library_song_ids(db, library)
         song_ids = [song_id for song_id in song_ids if song_id in library_song_ids]
     if not song_ids:
         return 0
@@ -409,7 +379,7 @@ def bulk_set_not_vectors_extracted(db: Database) -> int:
     return len(song_ids)
 
 
-def bulk_set_not_hydrated(db: Database, library_id: int | None = None) -> int:
+def bulk_set_not_hydrated(db: Database, library: Library | None = None) -> int:
     """Transition all library songs needing it to not_hydrated, forcing re-hydration.
 
     Songs can exist without any hydration-state edge at all (hydration axis
@@ -420,16 +390,16 @@ def bulk_set_not_hydrated(db: Database, library_id: int | None = None) -> int:
 
     Returns the number of songs that were changed.
     """
-    if library_id is not None:
-        docs = _library_song_docs(db, library_id)
+    if library is not None:
+        docs = _library_song_docs(db, library)
         song_ids = [doc["id"] for doc in docs if isinstance(doc, dict) and "id" in doc]
     else:
         # All songs globally (no library scope) — assemble by iterating libraries,
-        # since the intent-level facade requires a library_id for song listing.
+        # since the intent-level facade requires a Library scope for song listing.
         song_ids = [
             doc["id"]
             for lib in db.library.list_libraries()
-            for doc in (song.to_dict() for song in db.library.list_songs(lib["id"], limit=None))
+            for doc in (song.to_dict() for song in db.library.list_songs(lib, limit=None))
             if isinstance(doc, dict) and "id" in doc
         ]
 
@@ -447,7 +417,7 @@ def bulk_set_not_hydrated(db: Database, library_id: int | None = None) -> int:
     if to_transition:
         transition_song_state(db, to_transition, STATE_HYDRATED, STATE_NOT_HYDRATED)
     if to_add:
-        db.app.add_song_states(to_add, STATE_NOT_HYDRATED)
+        db.app.set_song_state(to_add, STATE_NOT_HYDRATED)
     if to_recover:
         transition_song_state(db, to_recover, STATE_ERRORED, STATE_NOT_ERRORED)
 

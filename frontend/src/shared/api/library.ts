@@ -75,8 +75,8 @@ export async function list(enabledOnly = false): Promise<Library[]> {
  * Get a specific library by ID.
  */
 export async function getLibrary(id: string): Promise<Library> {
-  // ID is already HTTP-encoded (e.g., "libraries:3970")
-  const response = await get<LibraryResponse>(`/api/web/library/${id}`);
+  // `id` is the natural library name (wire identity); URL-encode as a path segment.
+  const response = await get<LibraryResponse>(`/api/web/library/${encodeURIComponent(id)}`);
   return mapLibraryResponse(response);
 }
 
@@ -128,9 +128,8 @@ export async function update(
   if (payload.fileWriteMode !== undefined) body.file_write_mode = payload.fileWriteMode;
   if (payload.libraryAutoWrite !== undefined) body.library_auto_write = payload.libraryAutoWrite;
 
-  // ID is already HTTP-encoded (e.g., "libraries:3970")
   const response = await patch<LibraryResponse>(
-    `/api/web/library/${id}`,
+    `/api/web/library/${encodeURIComponent(id)}`,
     body
   );
   return mapLibraryResponse(response);
@@ -140,42 +139,38 @@ export async function update(
  * Delete a library.
  */
 export async function deleteLibrary(id: string): Promise<void> {
-  // ID is already HTTP-encoded (e.g., "libraries:3970")
-  await del(`/api/web/library/${id}`);
+  await del(`/api/web/library/${encodeURIComponent(id)}`);
 }
 
 /**
  * Start a quick scan for a specific library (skips unchanged files).
- * @param id - Library ID
+ * @param id - Natural library name (wire identity), URL-encoded in the path
  */
 export async function scanQuick(id: string): Promise<ScanResult> {
-  // ID is already HTTP-encoded (e.g., "libraries:3970")
-  return post<ScanResult>(`/api/web/library/${id}/scan/quick`, {});
+  return post<ScanResult>(`/api/web/library/${encodeURIComponent(id)}/scan/quick`, {});
 }
 
 /**
  * Start a full scan for a specific library (rescans all files).
- * @param id - Library ID
+ * @param id - Natural library name (wire identity), URL-encoded in the path
  */
 export async function scanFull(id: string): Promise<ScanResult> {
-  // ID is already HTTP-encoded (e.g., "libraries:3970")
-  return post<ScanResult>(`/api/web/library/${id}/scan/full`, {});
+  return post<ScanResult>(`/api/web/library/${encodeURIComponent(id)}/scan/full`, {});
 }
 
 /** Request cooperative cancellation of a running scan. */
 export async function cancelScan(id: string): Promise<{ cancelled: boolean }> {
-  return post<{ cancelled: boolean }>(`/api/web/library/${id}/scan/cancel`, {});
+  return post<{ cancelled: boolean }>(`/api/web/library/${encodeURIComponent(id)}/scan/cancel`, {});
 }
 
 /**
  * Repair tags for a specific library by marking all files for re-hydration
  * and starting a full scan. This forces the tag extraction worker to re-read
  * audio metadata and re-create tag edges (artist, album, genre, etc.).
- * @param id - Library ID
+ * @param id - Natural library name (wire identity), URL-encoded in the path
  */
 export async function repairTags(id: string): Promise<ScanResult> {
-  // ID is already HTTP-encoded (e.g., "libraries:3970")
-  return post<ScanResult>(`/api/web/library/${id}/repair-tags`, {});
+  return post<ScanResult>(`/api/web/library/${encodeURIComponent(id)}/repair-tags`, {});
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -195,13 +190,13 @@ export interface StartTagWriteResult {
  * Start a background tag-write job for a library and return immediately.
  * Writes tags from the database to audio files based on the library's `file_write_mode`.
  *
- * @param libraryId - Library ID
+ * @param libraryId - Natural library name (wire identity), URL-encoded in the path
  * @returns Immediate job start result.
  */
 export async function writeTags(
   libraryId: string
 ): Promise<StartTagWriteResult> {
-  return post(`/api/web/library/${libraryId}/write-tag`);
+  return post(`/api/web/library/${encodeURIComponent(libraryId)}/write-tag`);
 }
 
 export interface LibraryPipelineStatus {
@@ -218,13 +213,13 @@ export interface LibraryPipelineStatus {
  * Fetch the current pipeline processing state for a library.
  * Returns pipeline status details including pending counts and auto-write configuration.
  *
- * @param libraryId - Library ID
+ * @param libraryId - Natural library name (wire identity), URL-encoded in the path
  * @returns Current pipeline status including counts and auto-write config.
  */
 export async function getPipelineStatus(
   libraryId: string
 ): Promise<LibraryPipelineStatus> {
-  return get(`/api/web/library/${libraryId}/pipeline`);
+  return get(`/api/web/library/${encodeURIComponent(libraryId)}/pipeline`);
 }
 
 export interface UpdateWriteModeResult {
@@ -240,7 +235,7 @@ export async function updateWriteMode(
   libraryId: string,
   mode: "none" | "minimal" | "full"
 ): Promise<UpdateWriteModeResult> {
-  return patch(`/api/web/library/${libraryId}/write-mode?file_write_mode=${mode}`);
+  return patch(`/api/web/library/${encodeURIComponent(libraryId)}/write-mode?file_write_mode=${mode}`);
 }
 
 // ────────────────────────────────────────────────────────────────────────────────
@@ -290,7 +285,7 @@ export interface LibraryVectorStatsResponse {
  * Get per-library vector statistics (hot/cold counts per backbone, index status).
  */
 export async function getLibraryVectorStats(libraryId: string): Promise<LibraryVectorStatsResponse> {
-  return get(`/api/web/library/${libraryId}/vector-stats`);
+  return get(`/api/web/library/${encodeURIComponent(libraryId)}/vector-stats`);
 }
 
 // ────────────────────────────────────────────────────────────────────────────────
@@ -314,6 +309,6 @@ export interface ErroredFilesResult {
  * Get errored files for a library.
  */
 export async function getErroredFiles(libraryId: string): Promise<ErroredFilesResult> {
-  return get(`/api/web/library/${libraryId}/errored-file`);
+  return get(`/api/web/library/${encodeURIComponent(libraryId)}/errored-file`);
 }
 

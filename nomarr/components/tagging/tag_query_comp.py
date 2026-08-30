@@ -1,32 +1,29 @@
-"""Tag query helpers extracted from legacy tag persistence."""
+"""Tag query helpers extracted from legacy tag persistence.
+
+All reads route through the sealed intent-level tag facade (``LibraryTagsDb``)
+using domain identities (``TagRef`` / ``SongIdentity``) and typed domain
+results (``SongTagAssignment`` / ``Song`` / ``SongTagMatch`` / ``TagUsage``).
+Numeric song handles are translated with the song-side identity bridge
+(``db.library.resolve_song_identity(s)``); numeric tag handles come from the
+root ``db.resolve_tag_identity`` (opaque external tag ids only).
+"""
 
 from __future__ import annotations
 
 import contextlib
 from typing import TYPE_CHECKING, Any
 
+from nomarr.helpers.dataclasses.song_tag_dataclass import TagRef
 from nomarr.helpers.dto.tag_curation_dto import TagSongItem
 from nomarr.persistence.mappers.tag_mapper import tags_from_tag_rows
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from nomarr.helpers.dataclasses.library_dataclass import Library
+    from nomarr.helpers.dataclasses.song_tag_dataclass import SongTagAssignment
     from nomarr.helpers.dataclasses.tags_dataclass import Tags, TagValue
     from nomarr.persistence.db import Database
-
-
-def _narrow_tag_list(result: object) -> list[dict[str, Any]]:
-    """Runtime type-narrowing for DB query results expected to be tag lists."""
-    if isinstance(result, list):
-        return result
-    return []
-
-
-def _narrow_tag_dict_opt(result: object) -> dict[str, Any] | None:
-    """Runtime type-narrowing for DB query results expected to be optional tag dicts."""
-    if result is None:
-        return None
-    if isinstance(result, dict):
-        return result
-    return None
 
 
 def _numeric_value(value: object) -> float | None:
@@ -97,28 +94,51 @@ def _candidate_filter_values(value: str) -> list[TagValue]:
     return candidates
 
 
-def _first_name_value(tag_docs: list[dict[str, Any]], name: str) -> str:
+def _first_assignment_value(assignments: Sequence[SongTagAssignment], name: str) -> str:
     """Return the first string value for a tag name, or an empty string."""
-    for tag in tag_docs:
-        if tag.get("name") != name:
+    for assignment in assignments:
+        if assignment.name != name:
             continue
-        value = tag.get("value")
-        if isinstance(value, str):
-            return value
+        if isinstance(assignment.value, str):
+            return assignment.value
     return ""
 
 
+def _library_song_ids(db: Database, library_id: int) -> set[int] | None:
+    """Resolve a numeric library handle to its song-id set (or None if missing)."""
+    library_identity = db.library.resolve_library_identity(library_id)
+    if library_identity is None:
+        return None
+    library = db.library.get_library_by_name(library_identity.name)
+    if library is None:
+        return None
+    return set(db.library.list_library_song_ids(library, limit=None))
+
+
 def get_tag(db: Database, tag_id: int) -> dict[str, Any] | None:
-    """Get one tag document by ``id``."""
-    return _narrow_tag_dict_opt(db.library.get_tag(tag_id))
+    """Resolve one opaque external tag id to a tag document.
+
+    Returns a dict with ``id`` (the external tag id), ``name``, ``value`` and
+    ``namespace`` so the caller-facing dict shape is preserved while the lookup
+    goes through the root tag-identity bridge (never an integer tag facade).
+    """
+    identity = db.resolve_tag_identity(tag_id)
+    if identity is None:
+        return None
+    return {
+        "id": tag_id,
+        "name": identity.name,
+        "value": identity.value,
+        "namespace": identity.namespace,
+    }
 
 
 def count_songs_for_tag(db: Database, tag_id: int) -> int:
-    """Count files linked to one tag using the intent-level library facade."""
-    tag = get_tag(db, tag_id)
-    if tag is None:
+    """Count files linked to one opaque external tag id."""
+    identity = db.resolve_tag_identity(tag_id)
+    if identity is None:
         return 0
-    return len(db.library.list_song_ids_for_tag_id(tag_id, limit=None))
+    return len(db.library.find_songs_with_tag(identity, limit=None))
 
 
 def list_tags_by_name(
@@ -129,21 +149,30 @@ def list_tags_by_name(
     search: str | None = None,
     sort_by_count: bool = False,
 ) -> list[dict[str, Any]]:
-    """List tag values, optionally filtered by tag name and search text."""
-    if sort_by_count:
-        # For sort_by_count we need all matching tags sorted by count desc — fetch all, then sort.
-        # This is an uncommon path so the cost is acceptable.
-        total = db.library.count_tags_filtered(name=name, search=search)
-        raw_tags = _narrow_tag_list(
-            db.library.list_tags_with_song_count(name=name, search=search, limit=total, offset=0),
-        )
-        raw_tags.sort(key=lambda item: (-item.get("song_count", 0), str(item.get("value", "")).lower()))
-        return raw_tags[offset : offset + limit]
+    """List tag values, optionally filtered by tag name and search text.
 
-    # Default path: sort by value, paginated server-side
-    return _narrow_tag_list(
-        db.library.list_tags_with_song_count(name=name, search=search, limit=limit, offset=offset),
-    )
+    Tag ``id`` is the tag's natural ``value`` (tags have no storage primary key
+    in the domain facade); the interface layer re-encodes it as needed (P5).
+    """
+    if sort_by_count:
+        # Fetch all matching usages sorted by count desc, then page in Python.
+        total = db.library.count_tags_filtered(name=name, search=search)
+        usages = list(db.library.list_tags_with_song_count(name=name, search=search, limit=total, offset=0))
+        usages.sort(key=lambda usage: (-usage.song_count, str(usage.identity.value).lower()))
+        usages = usages[offset : offset + limit]
+    else:
+        # Default path: sort by value, paginated server-side
+        usages = list(db.library.list_tags_with_song_count(name=name, search=search, limit=limit, offset=offset))
+
+    return [
+        {
+            "id": usage.identity.value,
+            "name": usage.identity.name,
+            "value": usage.identity.value,
+            "song_count": usage.song_count,
+        }
+        for usage in usages
+    ]
 
 
 def count_tags_by_name(db: Database, name: str | None = None, search: str | None = None) -> int:
@@ -153,17 +182,17 @@ def count_tags_by_name(db: Database, name: str | None = None, search: str | None
 
 def get_song_tags(db: Database, song_id: int, name: str | None = None, nomarr_only: bool = False) -> Tags | None:
     """Return tags for one song as a ``Tags`` DTO, or ``None`` if no tags match."""
-    tag_docs = _narrow_tag_list(db.library.list_tags_for_song(song_id))
+    song_identity = db.library.resolve_song_identity(song_id)
+    if song_identity is None:
+        return None
+    assignments = db.library.list_tags_for_song(song_identity)
     rows: list[dict[str, Any]] = []
-    for tag in tag_docs:
-        tag_name = tag.get("name")
-        if not isinstance(tag_name, str) or "value" not in tag:
+    for assignment in assignments:
+        if name is not None and assignment.name != name:
             continue
-        if name is not None and tag_name != name:
+        if nomarr_only and assignment.namespace != "nom":
             continue
-        if nomarr_only and tag.get("namespace") != "nom":
-            continue
-        rows.append({"name": tag_name, "value": tag["value"]})
+        rows.append({"name": assignment.name, "value": assignment.value})
     if not rows:
         return None
     return tags_from_tag_rows(rows)
@@ -174,111 +203,70 @@ def get_nomarr_tags_bulk(db: Database, file_ids: list[int]) -> dict[int, Tags]:
     if not file_ids:
         return {}
 
-    result_raw = db.library.list_song_tags_for_songs(
-        file_ids,
-        name_starts_with="nom:",
-    )
-    if not isinstance(result_raw, dict):
+    identity_map = db.library.resolve_song_identities(file_ids)
+    if not identity_map:
         return {}
-    tags_by_file = {int(k): list(v) if isinstance(v, list) else [] for k, v in result_raw.items() if isinstance(k, int)}
+    id_to_identity = {identity: song_id for song_id, identity in identity_map.items()}
+    by_identity = db.library.list_song_tags_for_songs(list(identity_map.values()), name_starts_with="nom:")
+
     result: dict[int, Tags] = {}
-    for file_id, tag_docs in tags_by_file.items():
-        rows = [
-            {"name": tag_name, "value": tag["value"]}
-            for tag in tag_docs
-            if isinstance(tag_name := tag.get("name"), str) and "value" in tag
-        ]
+    for identity, assignments in by_identity.items():
+        song_id = id_to_identity.get(identity)
+        if song_id is None:
+            continue
+        rows = [{"name": assignment.name, "value": assignment.value} for assignment in assignments]
         if rows:
-            result[file_id] = tags_from_tag_rows(rows)
+            result[song_id] = tags_from_tag_rows(rows)
     return result
 
 
 def list_songs_for_tag(db: Database, tag_id: int, limit: int = 100, offset: int = 0) -> list[int]:
-    """List song ids connected to one tag via the intent-level library facade."""
-    tag = get_tag(db, tag_id)
-    if tag is None:
+    """List song ids connected to one opaque external tag id."""
+    identity = db.resolve_tag_identity(tag_id)
+    if identity is None:
         return []
-    result = db.library.list_song_ids_for_tag_id(tag_id, limit=limit, offset=offset)
-    if isinstance(result, list):
-        return [fid for fid in result if isinstance(fid, int)]
-    return []
+    return [song.song_id for song in db.library.find_songs_with_tag(identity, limit=limit, offset=offset)]
 
 
 def get_file_ids_matching_tag(db: Database, name: str, operator: str, value: TagValue) -> set[int]:
     """Return file ids matching one tag comparison."""
-    total = db.library.count_tags()
-    if total <= 0:
-        return set()
-
-    all_tags = _narrow_tag_list(
-        db.library.list_tags(name=name, limit=total) if name is not None else db.library.list_tags(limit=total)
+    all_tags = (
+        list(db.library.list_tags(name=name, limit=None))
+        if name is not None
+        else list(db.library.list_tags(limit=None))
     )
-    matching_tags = [tag for tag in all_tags if _matches_tag_operator(tag.get("value"), operator, value)]
+    matching_tags = [identity for identity in all_tags if _matches_tag_operator(identity.value, operator, value)]
 
     file_ids: set[int] = set()
-    for tag in matching_tags:
-        tag_name = tag.get("name")
-        tag_value = tag.get("value")
-        if not isinstance(tag_name, str) or tag_value is None:
-            continue
-        for file_doc in _narrow_tag_list(
-            db.library.search_songs_by_tag(tag_name, str(tag_value), limit=None),
-        ):
-            file_id = file_doc.get("id")
-            if isinstance(file_id, int):
-                file_ids.add(file_id)
+    for identity in matching_tags:
+        for song in db.library.find_songs_with_tag(identity, limit=None):
+            file_ids.add(song.song_id)
     return file_ids
 
 
 def get_file_ids_for_tags(
     db: Database,
     tag_specs: list[tuple[str, str]],
-    library_id: int | None = None,
+    library: Library | None = None,
 ) -> dict[tuple[str, str], set[int]]:
     """Get file-id sets for many ``(name, value)`` tag specs."""
     result: dict[tuple[str, str], set[int]] = {}
 
     # Resolve library-scoped file ids when a library is provided
-    library_ids: set[int] | None = None
-    if library_id is not None:
-        library_ids = {
-            file_id
-            for file_doc in _narrow_tag_list([song.to_dict() for song in db.library.list_songs(library_id)])
-            if isinstance(file_id := file_doc.get("id"), int)
-        }
-
-    total = db.library.count_tags()
+    library_ids: set[int] | None = (
+        {song.song_id for song in db.library.list_songs(library, limit=None)} if library is not None else None
+    )
 
     for name, value in tag_specs:
-        if value == "*":
-            tags: list[dict[str, Any]] = (
-                _narrow_tag_list(db.library.list_tags(name=name, limit=total)) if total > 0 else []
-            )
-        else:
-            tags = []
-            seen_ids: set[int] = set()
-            for candidate in _candidate_filter_values(value):
-                for tag in _narrow_tag_list(
-                    db.library.list_tags(name=name, value=candidate, limit=total),
-                ):
-                    tag_id = tag.get("id")
-                    if not isinstance(tag_id, int) or tag_id in seen_ids:
-                        continue
-                    seen_ids.add(tag_id)
-                    tags.append(tag)
+        tags = list(db.library.list_tags(name=name, limit=None))
+        if value != "*":
+            candidates = _candidate_filter_values(value)
+            tags = [identity for identity in tags if identity.value in candidates]
 
         file_ids: set[int] = set()
-        for tag in tags:
-            tag_name = tag.get("name")
-            tag_value = tag.get("value")
-            if not isinstance(tag_name, str) or tag_value is None:
-                continue
-            for file_doc in _narrow_tag_list(
-                db.library.search_songs_by_tag(tag_name, str(tag_value), limit=None),
-            ):
-                file_id = file_doc.get("id")
-                if isinstance(file_id, int):
-                    file_ids.add(file_id)
+        for identity in tags:
+            for song in db.library.find_songs_with_tag(identity, limit=None):
+                file_ids.add(song.song_id)
 
         if library_ids is not None:
             file_ids &= library_ids
@@ -291,26 +279,20 @@ def get_file_ids_for_mood_tags(
     db: Database,
     mood_values: list[str],
     mood_tier: str = "mood-strict",
-    library_id: int | None = None,
+    library: Library | None = None,
 ) -> dict[str, set[int]]:
     """Return file-id sets for mood values using CONTAINS array matching."""
     result: dict[str, set[int]] = {}
     name = f"nom:{mood_tier}" if not mood_tier.startswith("nom:") else mood_tier
 
-    # Resolve library-scoped file ids when a library is provided
-    library_ids: set[int] | None = None
-    if library_id is not None:
-        library_ids = {
-            file_id
-            for file_doc in _narrow_tag_list([song.to_dict() for song in db.library.list_songs(library_id)])
-            if isinstance(file_id := file_doc.get("id"), int)
-        }
+    library_ids: set[int] | None = (
+        {song.song_id for song in db.library.list_songs(library, limit=None)} if library is not None else None
+    )
 
     for mood_value in mood_values:
-        file_docs = _narrow_tag_list(
-            db.library.search_songs_by_tag_contains(name, mood_value, limit=None),
-        )
-        file_ids: set[int] = {file_id for file_doc in file_docs if isinstance((file_id := file_doc.get("id")), int)}
+        identity = TagRef(name=name, value=mood_value, namespace="nom")
+        songs = db.library.find_songs_with_tag_contains(identity, limit=None)
+        file_ids: set[int] = {song.song_id for song in songs}
         if library_ids is not None:
             file_ids &= library_ids
         result[mood_value] = file_ids
@@ -331,15 +313,15 @@ def get_distinct_tag_values_for_files(db: Database, file_ids: list[int], name: s
     if not file_ids:
         return []
 
-    raw = db.library.list_song_tags_for_songs(file_ids)
-    if not isinstance(raw, dict):
+    identity_map = db.library.resolve_song_identities(file_ids)
+    if not identity_map:
         return []
-    tags_by_file = {k: list(v) if isinstance(v, list) else [] for k, v in raw.items() if isinstance(k, int)}
+    by_identity = db.library.list_song_tags_for_songs(list(identity_map.values()))
     values = {
-        value
-        for tag_docs in tags_by_file.values()
-        for tag in tag_docs
-        if tag.get("name") == name and isinstance(value := tag.get("value"), str)
+        str(assignment.value)
+        for assignments in by_identity.values()
+        for assignment in assignments
+        if assignment.name == name and isinstance(assignment.value, str)
     }
     return sorted(values)
 
@@ -349,19 +331,20 @@ def get_tag_values_grouped_by_file(db: Database, file_ids: list[int], name: str)
     if not file_ids:
         return {}
 
-    raw = db.library.list_song_tags_for_songs(file_ids)
-    if not isinstance(raw, dict):
+    identity_map = db.library.resolve_song_identities(file_ids)
+    if not identity_map:
         return {}
-    tags_by_file = {k: list(v) if isinstance(v, list) else [] for k, v in raw.items() if isinstance(k, int)}
+    id_to_identity = {identity: song_id for song_id, identity in identity_map.items()}
+    by_identity = db.library.list_song_tags_for_songs(list(identity_map.values()))
     result: dict[int, set[str]] = {}
-    for file_id, tag_docs in tags_by_file.items():
-        for tag in tag_docs:
-            if tag.get("name") != name:
+    for identity, assignments in by_identity.items():
+        song_id = id_to_identity.get(identity)
+        if song_id is None:
+            continue
+        for assignment in assignments:
+            if assignment.name != name or not isinstance(assignment.value, str):
                 continue
-            value = tag.get("value")
-            if not isinstance(value, str):
-                continue
-            result.setdefault(file_id, set()).add(value)
+            result.setdefault(song_id, set()).add(assignment.value)
     return result
 
 
@@ -370,17 +353,19 @@ def get_tag_songs_with_metadata(db: Database, tag_id: int, limit: int = 50, offs
     result: list[TagSongItem] = []
     for song_id in list_songs_for_tag(db, tag_id, limit=limit, offset=offset):
         song = db.library.get_song(song_id)
-        song_doc = _narrow_tag_dict_opt(song.to_dict() if song is not None else None)
-        if song_doc is None:
+        if song is None:
             continue
-        tag_docs = _narrow_tag_list(db.library.list_tags_for_song(song_id))
+        song_identity = db.library.resolve_song_identity(song_id)
+        if song_identity is None:
+            continue
+        assignments = db.library.list_tags_for_song(song_identity)
         result.append(
             TagSongItem(
                 file_id=song_id,
-                title=_first_name_value(tag_docs, "title"),
-                artist=_first_name_value(tag_docs, "artist"),
-                album=_first_name_value(tag_docs, "album"),
-                path=str(song_doc.get("path", "")),
+                title=_first_assignment_value(assignments, "title"),
+                artist=_first_assignment_value(assignments, "artist"),
+                album=_first_assignment_value(assignments, "album"),
+                path=song.path,
             ),
         )
     return result

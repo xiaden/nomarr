@@ -12,20 +12,19 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from nomarr.helpers.dataclasses.song_tag_dataclass import SongTagAssignment
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
 
 
-def extract_canonical_metadata(song_tags: list[dict[str, Any]]) -> dict[str, Any]:
-    """Derive canonical metadata from a song's tags.
-
-    Accepts a list of tag entries (each with a "name" and "value") and returns
-    a dict of derived metadata fields suitable for display and sorting.
+def extract_canonical_metadata(song_tags: Sequence[SongTagAssignment]) -> dict[str, Any]:
+    """Derive canonical metadata from a song's tag assignments.
 
     Args:
-        song_tags: Tag entries for one song. Each dict has "name" (tag name)
-                   and "value" (list of values) fields.
+        song_tags: ``SongTagAssignment`` entries for one song.
 
     Returns:
         Dict with keys: artist, album, title, artists, labels, genres, year.
@@ -84,8 +83,9 @@ def hydrate_songs_with_metadata(db: Database, songs: list[dict[str, Any]]) -> li
 
     Returns:
         List of new dicts with metadata fields merged in. Songs without a
-        string id are returned as shallow copies. Songs with no tags are
-        returned as-is (no ``None``-valued metadata keys are injected).
+        string/int id are returned as shallow copies. Songs that do not resolve
+        to a domain song identity (or have no tags) are returned as-is (no
+        ``None``-valued metadata keys are injected) — ADR-045.
 
     """
     song_ids: list[int] = []
@@ -98,7 +98,14 @@ def hydrate_songs_with_metadata(db: Database, songs: list[dict[str, Any]]) -> li
     if not song_ids:
         return [{**song} for song in songs]
 
-    tags_by_song = db.library.list_song_tags_for_songs(song_ids)
+    # Batch-resolve the numeric song handles to domain identities before the
+    # sealed tag call (never pass ints to the tag facade).
+    identity_map = db.library.resolve_song_identities(song_ids)
+    if not identity_map:
+        return [{**song} for song in songs]
+    id_to_identity = {identity: song_id for song_id, identity in identity_map.items()}
+    tags_by_identity = db.library.list_song_tags_for_songs(list(identity_map.values()))
+    tags_by_song = {song_id: tags_by_identity.get(identity, ()) for identity, song_id in id_to_identity.items()}
 
     result: list[dict[str, Any]] = []
     for song in songs:
@@ -112,8 +119,8 @@ def hydrate_songs_with_metadata(db: Database, songs: list[dict[str, Any]]) -> li
             result.append({**song})
             continue
 
-        song_tags = tags_by_song.get(lookup_id, [])
-        metadata = extract_canonical_metadata(song_tags)  # type: ignore[arg-type]
+        song_tags = tags_by_song.get(lookup_id, ())
+        metadata = extract_canonical_metadata(song_tags)
         # Strip None values so they don't override tag-derived metadata
         # (ADR-045: metadata is derived from source tags, no cache columns)
         metadata = {k: v for k, v in metadata.items() if v is not None}
@@ -133,19 +140,19 @@ def hydrate_song_with_metadata(db: Database, song: dict[str, Any]) -> dict[str, 
         song: Single song dict to hydrate
 
     Returns:
-        New dict with metadata fields merged in. If the song has no string id,
-        returns a shallow copy unchanged.
+        New dict with metadata fields merged in. If the song has no string/int
+        id, returns a shallow copy unchanged.
 
     """
     result = hydrate_songs_with_metadata(db, [song])
     return result[0]
 
 
-def _group_tags_by_name(song_tags: list[dict[str, Any]]) -> dict[str, list[Any]]:
-    """Group tag entries by name, collecting all values per name.
+def _group_tags_by_name(song_tags: Sequence[SongTagAssignment]) -> dict[str, list[Any]]:
+    """Group tag assignments by name, collecting all values per name.
 
     Args:
-        song_tags: Tag entries, each with "name" and "value" fields.
+        song_tags: ``SongTagAssignment`` entries for one song.
 
     Returns:
         Dict mapping tag name to list of all values for that name.
@@ -153,13 +160,8 @@ def _group_tags_by_name(song_tags: list[dict[str, Any]]) -> dict[str, list[Any]]
     """
     grouped: dict[str, list[Any]] = {}
     for tag in song_tags:
-        name = tag.get("name", tag.get("key"))
+        name = tag.name
         if name is None:
             continue
-        value = tag.get("value", [])
-        if not isinstance(value, list):
-            value = [value]
-        if name not in grouped:
-            grouped[name] = []
-        grouped[name].extend(value)
+        grouped.setdefault(name, []).append(tag.value)
     return grouped

@@ -131,7 +131,7 @@ class TestMlIfRoutes:
                 },
             ],
         }
-        mock_library_service.get_recently_processed.assert_called_once_with(limit=20, library_id=None)
+        mock_library_service.get_recently_processed.assert_called_once_with(limit=20, library=None)
 
     def test_list_models_is_reachable_at_machine_learning_prefix(
         self,

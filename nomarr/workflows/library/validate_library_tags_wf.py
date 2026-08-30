@@ -11,6 +11,7 @@ from nomarr.components.ml.onnx.ml_discovery_comp import discover_heads
 from nomarr.helpers.constants.file_states import STATE_NOT_WRITTEN, STATE_WRITTEN
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dataclasses.library_dataclass import Library
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
@@ -19,7 +20,7 @@ logger = logging.getLogger(__name__)
 def validate_library_tags_workflow(
     db: Database,
     models_dir: str,
-    library_id: int | None = None,
+    library: Library | None = None,
     namespace: str = "nom",
     auto_repair: bool = True,
 ) -> dict[str, Any]:
@@ -29,6 +30,19 @@ def validate_library_tags_workflow(
     at least one tag edge for every discovered head (model_key + label) under
     the namespace.  Missing any head name marks the file incomplete.  Auto-repair
     removes the ``written`` edge so the file is rediscovered for tag writing.
+
+    Args:
+        db: Database instance
+        models_dir: Path to ML models
+        library: Optional domain ``Library`` to restrict validation scope; when
+            None, every written file across all libraries is validated.
+        namespace: Tag namespace (default ``"nom"``)
+        auto_repair: If True, transition incomplete files back to not_written
+            so the tag worker reprocesses them.
+
+    Returns:
+        Validation summary dict with files_checked/complete_files/\n        incomplete_files/files_repaired/missing_names_summary/expected_heads/details.
+
     """
     heads = discover_heads(models_dir, db)
     expected_heads: list[dict[str, Any]] = []
@@ -60,7 +74,7 @@ def validate_library_tags_workflow(
         db,
         expected_heads=expected_heads,
         namespace_prefix=namespace_prefix,
-        library_id=library_id,
+        library=library,
     )
 
     incomplete = [r for r in results if r["missing_count"] > 0]

@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 from nomarr.components.library.library_song_query_comp import get_tracks_for_matching
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dataclasses.library_dataclass import Library
     from nomarr.persistence.db import Database
 
 from nomarr.components.playlist_import.deezer_fetcher_comp import (
@@ -48,7 +49,7 @@ def convert_playlist_workflow(
     db: Database,
     playlist_url: str,
     *,
-    library_id: int | None = None,
+    library: Library | None = None,
     spotify_client_id: str | None = None,
     spotify_client_secret: str | None = None,
 ) -> PlaylistConversionResult:
@@ -64,7 +65,8 @@ def convert_playlist_workflow(
     Args:
         db: PostgreSQL database connection
         playlist_url: Spotify or Deezer playlist URL
-        library_id: Optional library ID to restrict matching scope
+        library: Optional domain ``Library`` (natural identity) to restrict
+            matching scope; when None, matches across every library.
         spotify_client_id: Spotify API client ID (required for Spotify playlists)
         spotify_client_secret: Spotify API client secret (required for Spotify playlists)
 
@@ -89,7 +91,7 @@ def convert_playlist_workflow(
     logger.info(f"Fetched {len(input_tracks)} tracks from '{metadata.name}'")
 
     # Step 3: Load library tracks
-    library_rows = get_tracks_for_matching(db, library_id=library_id)
+    library_rows = get_tracks_for_matching(db, library=library)
     library_tracks = [LibraryTrack.from_db_row(row) for row in library_rows]
 
     logger.info(f"Loaded {len(library_tracks)} library tracks for matching")

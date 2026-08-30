@@ -10,7 +10,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from nomarr.components.library.library_records_comp import get_library_record, list_library_records
+from nomarr.components.library.library_records_comp import (
+    get_library_record,
+    list_all_libraries,
+    list_library_records,
+)
 from nomarr.components.library.library_scan_state_comp import get_libraries_in_axis_state
 from nomarr.components.library.library_song_query_comp import (
     count_recently_tagged,
@@ -56,6 +60,7 @@ from nomarr.helpers.dto.library_dto import (
 )
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dataclasses.library_dataclass import Library
     from nomarr.helpers.dto.info_dto import WorkStatusResult
     from nomarr.persistence.db import Database
 
@@ -68,11 +73,22 @@ class LibraryQueryMixin:
     db: Database
     cfg: LibraryServiceConfig
 
-    def _get_library_or_error(self, library_id: int) -> dict[str, Any]:
-        """Get a library by ID or raise an error."""
-        result = get_library_record(self.db, int(library_id))
+    def _get_library_or_error(self, library: Library) -> Library:
+        """Re-fetch a library by its natural identity or raise an error.
+
+        Args:
+            library: Domain ``Library`` (natural identity).
+
+        Returns:
+            The persisted domain ``Library`` value.
+
+        Raises:
+            ValueError: If the library does not exist.
+
+        """
+        result = get_library_record(self.db, library)
         if result is None:
-            msg = f"Library not found: {library_id}"
+            msg = f"Library not found: {library.name}"
             raise ValueError(msg)
         return result
 
@@ -121,11 +137,10 @@ class LibraryQueryMixin:
             List of absolute file paths needing calibration.
 
         """
-        libraries = list_library_records(self.db, enabled_only=True)
+        libraries = [lib for lib in list_all_libraries(self.db) if lib.is_enabled]
         all_file_ids: list[int] = []
         for lib in libraries:
-            file_ids = get_uncalibrated_tagged_song_ids(self.db, lib.id)
-            all_file_ids.extend(file_ids)
+            all_file_ids.extend(get_uncalibrated_tagged_song_ids(self.db, lib))
         if not all_file_ids:
             return []
         files = get_songs_by_ids_with_tags(self.db, all_file_ids)
@@ -249,29 +264,29 @@ class LibraryQueryMixin:
         stats = self.get_library_stats()
         recently_tagged = count_recently_tagged(self.db)
 
-        # Build per-axis pipeline states for all libraries
-        scan_not_set = get_libraries_in_axis_state(self.db, SCAN_STATE_FIELD, SCAN_NOT_SCANNED)
-        scan_ing_set = get_libraries_in_axis_state(self.db, SCAN_STATE_FIELD, SCAN_IN_PROGRESS)
-        ml_set = get_libraries_in_axis_state(self.db, ML_STATE_FIELD, ML_NOT_PROCESSED)
-        cal_set = get_libraries_in_axis_state(self.db, CAL_STATE_FIELD, CAL_NOT_CALIBRATED)
-        tw_set = get_libraries_in_axis_state(self.db, WRITE_STATE_FIELD, WRITE_NOT_WRITTEN)
+        # Build per-axis pipeline states for all libraries, keyed by natural name.
+        scan_not_names = {lib.name for lib in get_libraries_in_axis_state(self.db, SCAN_STATE_FIELD, SCAN_NOT_SCANNED)}
+        scan_ing_names = {lib.name for lib in get_libraries_in_axis_state(self.db, SCAN_STATE_FIELD, SCAN_IN_PROGRESS)}
+        ml_names = {lib.name for lib in get_libraries_in_axis_state(self.db, ML_STATE_FIELD, ML_NOT_PROCESSED)}
+        cal_names = {lib.name for lib in get_libraries_in_axis_state(self.db, CAL_STATE_FIELD, CAL_NOT_CALIBRATED)}
+        tw_names = {lib.name for lib in get_libraries_in_axis_state(self.db, WRITE_STATE_FIELD, WRITE_NOT_WRITTEN)}
 
         pipeline_states: dict[str, dict[str, str]] = {}
         for lib in libraries:
-            lib_id = str(lib.id)
+            name = lib.name
 
-            if lib_id in scan_ing_set:
+            if name in scan_ing_names:
                 scan_state = SCAN_IN_PROGRESS
-            elif lib_id in scan_not_set:
+            elif name in scan_not_names:
                 scan_state = SCAN_NOT_SCANNED
             else:
                 scan_state = "scanned"
 
-            pipeline_states[lib_id] = {
+            pipeline_states[name] = {
                 SCAN_STATE_FIELD: scan_state,
-                ML_STATE_FIELD: "not_ML_processed" if lib_id in ml_set else "ML_processed",
-                CAL_STATE_FIELD: "not_calibrated" if lib_id in cal_set else "calibrated",
-                WRITE_STATE_FIELD: "not_written" if lib_id in tw_set else "written",
+                ML_STATE_FIELD: "not_ML_processed" if name in ml_names else "ML_processed",
+                CAL_STATE_FIELD: "not_calibrated" if name in cal_names else "calibrated",
+                WRITE_STATE_FIELD: "not_written" if name in tw_names else "written",
             }
 
         return compute_work_status(
@@ -285,39 +300,37 @@ class LibraryQueryMixin:
     def get_recently_processed(
         self,
         limit: int = 20,
-        library_id: str | None = None,
+        library: Library | None = None,
     ) -> list[dict[str, Any]]:
         """Get recently processed files.
 
         Args:
             limit: Maximum number of files to return.
-            library_id: Optional library id to filter by.
+            library: Optional ``Library`` scope to filter by (natural identity).
 
         Returns:
             List of {file_id, path, title, artist, album, scanned_at}
             sorted by scanned_at DESC.
 
         """
-        return get_recently_processed(
-            self.db, limit=limit, library_id=int(library_id) if library_id is not None else None
-        )
+        return get_recently_processed(self.db, limit=limit, library=library)
 
-    def get_errored_files(self, library_id: int) -> ErroredFilesResult:
+    def get_errored_files(self, library: Library) -> ErroredFilesResult:
         """Get errored files for a library with basic metadata.
 
         Args:
-            library_id: Library key to query
+            library: Domain ``Library`` (natural identity).
 
         Returns:
-            ErroredFilesResult with file list and total count
+            ErroredFilesResult with file list and total count.
 
         Raises:
-            ValueError: If library does not exist
+            ValueError: If library does not exist.
 
         """
-        self._get_library_or_error(library_id)
-        total = count_errored_songs(self.db, int(library_id))
-        errored_ids = get_errored_song_ids(self.db, int(library_id))
+        self._get_library_or_error(library)
+        total = count_errored_songs(self.db, library)
+        errored_ids = get_errored_song_ids(self.db, library)
         files_raw = get_songs_by_ids_with_tags(self.db, errored_ids)
         files: list[ErroredFileItem] = [
             ErroredFileItem(

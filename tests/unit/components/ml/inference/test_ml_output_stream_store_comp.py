@@ -18,6 +18,7 @@ from nomarr.components.ml.inference.ml_output_stream_store_comp import (
     load_output_streams_for_song,
     resolve_output_stream_lookup,
 )
+from nomarr.helpers.dataclasses.ml_output_stream_dataclass import OutputStream, OutputStreamWrite
 
 
 @pytest.mark.unit
@@ -37,8 +38,8 @@ class TestBuildOutputStreamPayloads:
         )
 
         assert result == [
-            {"output_id": "out-1", "values": [0.1, 0.2], "output_index": None},
-            {"output_id": "ml_model_outputs/out-2", "values": [0.3, 0.4], "output_index": None},
+            OutputStreamWrite(output_id="out-1", values=[0.1, 0.2]),
+            OutputStreamWrite(output_id="ml_model_outputs/out-2", values=[0.3, 0.4]),
         ]
 
     def test_last_stream_for_output_wins_within_batch(self) -> None:
@@ -50,8 +51,8 @@ class TestBuildOutputStreamPayloads:
         )
 
         assert result == [
-            {"output_id": "out-1", "values": [0.1], "output_index": None},
-            {"output_id": "ml_model_outputs/out-1", "values": [0.9, 1.1], "output_index": None},
+            OutputStreamWrite(output_id="out-1", values=[0.1]),
+            OutputStreamWrite(output_id="ml_model_outputs/out-1", values=[0.9, 1.1]),
         ]
 
     def test_duplicate_output_id_normalized_last_wins(self) -> None:
@@ -62,7 +63,7 @@ class TestBuildOutputStreamPayloads:
             ]
         )
 
-        assert result == [{"output_id": "head_0", "values": [0.4, 0.6], "output_index": None}]
+        assert result == [OutputStreamWrite(output_id="head_0", values=[0.4, 0.6])]
 
     def test_live_shape_payload_carries_output_index(self) -> None:
         """The live write shape threads ``output_index`` through the payload."""
@@ -74,8 +75,8 @@ class TestBuildOutputStreamPayloads:
         )
 
         assert result == [
-            {"output_id": "ml_model_outputs/out-0", "values": [0.1, 0.9], "output_index": 0},
-            {"output_id": "ml_model_outputs/out-1", "values": [0.3, 0.7], "output_index": 1},
+            OutputStreamWrite(output_id="ml_model_outputs/out-0", values=[0.1, 0.9], output_index=0),
+            OutputStreamWrite(output_id="ml_model_outputs/out-1", values=[0.3, 0.7], output_index=1),
         ]
 
 
@@ -96,25 +97,9 @@ class TestFetchOutputStreams:
     def test_fetches_stream_records_sorted_by_output_index_then_id(self) -> None:
         mock_db = MagicMock()
         mock_db.ml.list_output_streams_for_song.return_value = [
-            {
-                "_id": "ml_output_streams/stream-b",
-                "output_id": "ml_model_outputs/out-b",
-                "output_index": 2,
-                "values": [1, 2],
-            },
-            {
-                "_id": "ml_output_streams/stream-a",
-                "output_id": "ml_model_outputs/out-a",
-                "output_index": 1,
-                "values": [3.5, 4.5],
-            },
-            {"_id": None, "output_id": "ml_model_outputs/out-z", "output_index": 9, "values": [9.9]},
-            {
-                "_id": "ml_output_streams/stream-c",
-                "output_id": "ml_model_outputs/out-c",
-                "output_index": 3,
-                "values": "bad",
-            },
+            OutputStream(output_id="ml_model_outputs/out-b", output_index=2, values=[1, 2]),
+            OutputStream(output_id="ml_model_outputs/out-a", output_index=1, values=[3.5, 4.5]),
+            OutputStream(output_id="ml_model_outputs/out-z", output_index=9, values=[9.9]),
         ]
 
         result = fetch_output_streams(mock_db, song_id=f"{'songs'}/file-2")
@@ -127,16 +112,9 @@ class TestFetchOutputStreams:
 
     def test_skips_streams_without_valid_output_metadata(self) -> None:
         mock_db = MagicMock()
-        mock_db.ml.list_output_streams_for_song.return_value = [
-            {"_id": "ml_output_streams/stream-1", "values": [0.1]},
-            {"_id": "ml_output_streams/stream-2", "output_id": None, "output_index": 0, "values": [0.2]},
-            {
-                "_id": "ml_output_streams/stream-3",
-                "output_id": "ml_model_outputs/out-3",
-                "output_index": "bad",
-                "values": [0.3],
-            },
-        ]
+        # Invalid storage rows are rejected by the persistence facade before
+        # this component is called; this test exercises the empty domain result.
+        mock_db.ml.list_output_streams_for_song.return_value = []
 
         result = fetch_output_streams(mock_db, song_id=f"{'songs'}/file-3")
 
@@ -159,13 +137,20 @@ class TestFetchOutputStreams:
             ]
         )
         assert payloads == [
-            {"output_id": "ml_model_outputs/out-0", "values": [0.1, 0.9], "output_index": 0},
-            {"output_id": "ml_model_outputs/out-1", "values": [0.3, 0.7], "output_index": 1},
+            StreamWrite(output_id="ml_model_outputs/out-0", values=[0.1, 0.9], output_index=0),
+            StreamWrite(output_id="ml_model_outputs/out-1", values=[0.3, 0.7], output_index=1),
         ]
 
         # The read side: the persisted rows (as the facade returns them) must
         # round-trip the index through fetch_output_streams.
-        mock_db.ml.list_output_streams_for_song.return_value = payloads
+        mock_db.ml.list_output_streams_for_song.return_value = [
+            StreamRecord(
+                output_id=payload.output_id,
+                values=payload.values,
+                output_index=payload.output_index,
+            )
+            for payload in payloads
+        ]
         records = fetch_output_streams(mock_db, song_id=7)
 
         assert records == [
@@ -173,17 +158,20 @@ class TestFetchOutputStreams:
             StreamRecord(output_id="ml_model_outputs/out-1", output_index=1, values=[0.3, 0.7]),
         ]
 
-    def test_fetch_skips_none_output_index_row_without_dropping_siblings(self) -> None:
-        """A legacy output_index=None row is skipped; valid siblings survive."""
+    def test_fetch_places_legacy_none_output_index_after_indexed_rows(self) -> None:
+        """Legacy output_index=None streams remain valid domain objects."""
         mock_db = MagicMock()
         mock_db.ml.list_output_streams_for_song.return_value = [
-            {"output_id": "ml_model_outputs/out-null", "output_index": None, "values": [0.1]},
-            {"output_id": "ml_model_outputs/out-ok", "output_index": 1, "values": [0.5]},
+            OutputStream(output_id="ml_model_outputs/out-null", output_index=None, values=[0.1]),
+            OutputStream(output_id="ml_model_outputs/out-ok", output_index=1, values=[0.5]),
         ]
 
         result = fetch_output_streams(mock_db, song_id=7)
 
-        assert result == [StreamRecord(output_id="ml_model_outputs/out-ok", output_index=1, values=[0.5])]
+        assert result == [
+            StreamRecord(output_id="ml_model_outputs/out-ok", output_index=1, values=[0.5]),
+            StreamRecord(output_id="ml_model_outputs/out-null", output_index=None, values=[0.1]),
+        ]
 
 
 @pytest.mark.unit
@@ -191,28 +179,24 @@ class TestFetchOutputStreams:
 class TestDeleteOutputStreams:
     """Tests for ``delete_output_streams``."""
 
-    def test_returns_zero_when_file_has_no_streams(self) -> None:
+    def test_returns_facade_deletion_count_when_file_has_no_streams(self) -> None:
         mock_db = MagicMock()
-        mock_db.ml.list_output_streams_for_song.return_value = []
+        mock_db.ml.remove_output_streams_for_song.return_value = 0
 
         result = delete_output_streams(mock_db, song_id=9)
 
         assert result == 0
-        mock_db.ml.list_output_streams_for_song.assert_called_once_with(9)
-        mock_db.ml.remove_output_streams_for_song.assert_not_called()
+        mock_db.ml.list_output_streams_for_song.assert_not_called()
+        mock_db.ml.remove_output_streams_for_song.assert_called_once_with(9)
 
-    def test_deletes_stream_docs_for_song_once(self) -> None:
+    def test_returns_facade_deletion_count_without_reading_storage_rows(self) -> None:
         mock_db = MagicMock()
-        mock_db.ml.list_output_streams_for_song.return_value = [
-            {"id": "stream-b"},
-            {"id": "stream-a"},
-            {"id": "stream-a"},
-            {"values": [0.2]},
-        ]
+        mock_db.ml.remove_output_streams_for_song.return_value = 2
 
         result = delete_output_streams(mock_db, song_id=4)
 
         assert result == 2
+        mock_db.ml.list_output_streams_for_song.assert_not_called()
         mock_db.ml.remove_output_streams_for_song.assert_called_once_with(4)
 
 

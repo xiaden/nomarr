@@ -10,6 +10,7 @@ from nomarr.components.library.library_watch_config_comp import (
     get_library_watch_config,
     list_watchable_libraries,
 )
+from nomarr.helpers.dataclasses.library_dataclass import Library
 from nomarr.helpers.dto.library_dto import LibraryDict
 
 
@@ -22,21 +23,15 @@ class TestListWatchableLibraries:
         mock_db = MagicMock()
         libraries = [
             LibraryDict(
-                id=1,
                 name="Main Library",
                 root_path="C:/music/one",
                 is_enabled=True,
-                created_at=0,
-                updated_at=0,
                 watch_mode="poll",
             ),
             LibraryDict(
-                id=2,
                 name="Lib",
                 root_path="C:/music/two",
                 is_enabled=True,
-                created_at=0,
-                updated_at=0,
                 watch_mode="event",
             ),
         ]
@@ -49,12 +44,12 @@ class TestListWatchableLibraries:
 
         assert result == [
             {
-                "id": 1,
+                "id": "Main Library",
                 "root_path": "C:/music/one",
                 "watch_mode": "poll",
             },
             {
-                "id": 2,
+                "id": "Lib",
                 "root_path": "C:/music/two",
                 "watch_mode": "event",
             },
@@ -83,37 +78,36 @@ class TestGetLibraryWatchConfig:
     @pytest.mark.mocked
     def test_returns_none_when_library_is_missing(self) -> None:
         mock_db = MagicMock()
+        library = Library(name="Missing Library", root_path="/music")
         with patch(
             "nomarr.components.library.library_watch_config_comp.get_library_record",
             return_value=None,
         ) as get_record:
-            result = get_library_watch_config(mock_db, 999)
+            result = get_library_watch_config(mock_db, library)
 
         assert result is None
-        get_record.assert_called_once_with(mock_db, 999, include_scan=False)
+        get_record.assert_called_once_with(mock_db, library, include_scan=False)
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_returns_projected_watch_config_fields_only(self) -> None:
         mock_db = MagicMock()
-        library_doc = {
-            "id": 1,
-            "root_path": "C:/music/one",
-            "watch_mode": "poll",
-            "is_enabled": False,
-            "name": "Main Library",
-            "scan_status": "idle",
-        }
+        library = Library(
+            name="Main Library",
+            root_path="C:/music/one",
+            watch_mode="poll",
+            is_enabled=False,
+        )
 
         with patch(
             "nomarr.components.library.library_watch_config_comp.get_library_record",
-            return_value=library_doc,
+            return_value=library,
         ) as get_record:
-            result = get_library_watch_config(mock_db, 1)
+            result = get_library_watch_config(mock_db, library)
 
         assert result == {
             "root_path": "C:/music/one",
             "watch_mode": "poll",
             "is_enabled": False,
         }
-        get_record.assert_called_once_with(mock_db, 1, include_scan=False)
+        get_record.assert_called_once_with(mock_db, library, include_scan=False)

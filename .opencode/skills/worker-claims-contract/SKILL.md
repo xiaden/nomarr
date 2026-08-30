@@ -48,9 +48,9 @@ Nomarr workers reserve files by inserting a row into `worker_claims` (key unique
 ### `update_songs` (library_songs.py:158-210) — full-library diff with `remove_missing=True` (UNCHANGED, latent)
 - **What:** `remove_missing=True` diffs against `list_library_song_ids` (all songs in library). No production callers (facade `library.py:211` + test only; `deadcode_allowlist.py:917`); a partial payload would delete songs not in the payload. Latent footgun, not live.
 
-### Embedding-stream race — unique constraint ADDED in migration 003, ORM/repo NOT updated (PARTIAL)
-- **Location:** `alembic/versions/003_canonical_ml_output_streams.py` (adds `uq_ml_embedding_streams_song_backbone` on (song_id, backbone_id)); `nomarr/persistence/models/ml_embedding_stream.py` (NO constraint declared); `nomarr/persistence/database/embedding_stream_repo.py:55-93` (`upsert_stream` select-then-insert-or-update; docstring at :63-65 still claims no constraint)
-- **What:** Alembic-managed prod DBs now enforce the unique constraint, but test DBs built via `Base.metadata.create_all` do not (schema divergence). A concurrent race in prod now surfaces as `IntegrityError` (23505 → `DuplicateEntityError`) instead of duplicate rows. `replace_embedding_stream_for_song` has zero production callers (only `test_ml_db.py:488`).
+### Embedding-stream race — baseline constraint, ORM/repo NOT updated (PARTIAL)
+- **Location:** `alembic/versions/001_current_schema_baseline.py` (creates `uq_ml_embedding_streams_song_backbone` on (song_id, backbone_id)); `nomarr/persistence/models/ml_embedding_stream.py` (NO constraint declared); `nomarr/persistence/database/embedding_stream_repo.py:55-93` (`upsert_stream` select-then-insert-or-update; docstring at :63-65 still claims no constraint)
+- **What:** Alembic-managed prod DBs enforce the unique constraint, but test DBs built via `Base.metadata.create_all` do not (schema divergence). A concurrent race in prod now surfaces as `IntegrityError` (23505 → `DuplicateEntityError`) instead of duplicate rows. `replace_embedding_stream_for_song` has zero production callers (only `test_ml_db.py:488`).
 - `add_songs_to_library` state bootstrap semantics (existing_paths from DB before upsert; bootstrap only for paths not in existing_paths) are correct.
 
 ### `steal_claim` (app_repo.py:370-380) — no row filter (UNCHANGED, latent)

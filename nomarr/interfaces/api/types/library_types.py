@@ -20,6 +20,7 @@ from pydantic import BaseModel
 from nomarr.helpers.dto import LibraryPipelineStatusDTO
 from nomarr.helpers.dto.library_dto import (
     FileTagsResult,
+    LibraryScanStatusResult,
     SearchFilesResult,
     TagCleanupResult,
     UniqueTagKeysResult,
@@ -28,7 +29,18 @@ from nomarr.helpers.dto.library_dto import (
 from nomarr.interfaces.api.id_codec import encode_id
 
 if TYPE_CHECKING:
-    from nomarr.helpers.dto.library_dto import LibraryDict, LibraryStatsResult, ReconcileResult, StartScanResult
+    from nomarr.helpers.dataclasses.library_dataclass import Library
+    from nomarr.helpers.dto.library_dto import LibraryStatsResult, ReconcileResult, StartScanResult
+
+
+def _to_iso(value: int | str | None) -> str | None:
+    """Convert an integer millisecond timestamp (or ISO string) to ISO 8601."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    return datetime.fromtimestamp(value / 1000, tz=UTC).isoformat()
+
 
 # ──────────────────────────────────────────────────────────────────────
 # Library Response Types (DTO → Pydantic mappings)
@@ -38,10 +50,14 @@ if TYPE_CHECKING:
 class LibraryResponse(BaseModel):
     """Single library response.
 
-    Maps directly to LibraryDict DTO from helpers/dto/library_dto.py
+    Mechanism A (TASK-library-domain-facades-A): the wire identity is the
+    URL-encoded natural ``Library.name`` (``library_id`` is a string natural-name
+    token, never a generated primary key). Built from a domain ``Library`` plus
+    optional per-library scan status and file/folder counts supplied by the
+    interface adapter.
     """
 
-    library_id: int  # Primary key
+    library_id: str  # natural library name (mechanism A)
     name: str
     root_path: str
     is_enabled: bool
@@ -60,51 +76,43 @@ class LibraryResponse(BaseModel):
     folder_count: int = 0
 
     @classmethod
-    def from_dto(cls, library: LibraryDict) -> Self:
-        """Transform internal LibraryDict DTO to external API response.
+    def from_dto(
+        cls,
+        library: Library,
+        *,
+        scan: LibraryScanStatusResult | None = None,
+        file_count: int = 0,
+        folder_count: int = 0,
+    ) -> Self:
+        """Transform a domain ``Library`` to the external API response.
 
         Args:
-            library: Internal library DTO from service layer
+            library: Domain ``Library`` value from the service layer.
+            scan: Optional per-library scan status for projection.
+            file_count: Per-library file count from the name-keyed counts map.
+            folder_count: Per-library folder count from the name-keyed counts map.
 
         Returns:
-            API response model
+            API response model with natural-name identity.
 
         """
-        # Convert timestamps: if int (ms), convert to ISO format; if already string, pass through
-        created_at = library.created_at
-        updated_at = library.updated_at
-
-        if isinstance(created_at, int):
-            created_at = datetime.fromtimestamp(created_at / 1000, tz=UTC).isoformat()
-
-        if isinstance(updated_at, int):
-            updated_at = datetime.fromtimestamp(updated_at / 1000, tz=UTC).isoformat()
-
-        # Convert scanned_at timestamp if present
-        scanned_at_raw = library.scanned_at
-        scanned_at: str | None = None
-        if isinstance(scanned_at_raw, int):
-            scanned_at = datetime.fromtimestamp(scanned_at_raw / 1000, tz=UTC).isoformat()
-        elif isinstance(scanned_at_raw, str):
-            scanned_at = scanned_at_raw
-
         return cls(
-            library_id=encode_id(library.id),
+            library_id=library.name,
             name=library.name,
             root_path=library.root_path,
             is_enabled=library.is_enabled,
             watch_mode=library.watch_mode,
             file_write_mode=library.file_write_mode,
             library_auto_write=library.library_auto_write,
-            created_at=created_at,
-            updated_at=updated_at,
-            scan_status=library.scan_status,
-            scan_progress=library.scan_progress,
-            scan_total=library.scan_total,
-            scanned_at=scanned_at,
-            scan_error=library.scan_error,
-            file_count=library.file_count,
-            folder_count=library.folder_count,
+            created_at=_to_iso(library.created_at) or "",
+            updated_at=_to_iso(library.updated_at) or "",
+            scan_status=scan.scan_status if scan is not None else None,
+            scan_progress=scan.scan_progress if scan is not None else None,
+            scan_total=scan.scan_total if scan is not None else None,
+            scanned_at=_to_iso(scan.scanned_at) if scan is not None else None,
+            scan_error=scan.scan_error if scan is not None else None,
+            file_count=file_count,
+            folder_count=folder_count,
         )
 
 
@@ -182,12 +190,12 @@ class StartScanWithStatusResponse(BaseModel):
     stats: StartScanResponse
 
     @classmethod
-    def from_dto(cls, result: StartScanResult, library_id: int) -> Self:
+    def from_dto(cls, result: StartScanResult, library_name: str) -> Self:
         """Transform internal StartScanResult DTO to wrapped API response.
 
         Args:
             result: Internal scan result from service layer
-            library_id: Library ID for message generation
+            library_name: Natural library name for the message
 
         Returns:
             API response model with status wrapper
@@ -196,7 +204,7 @@ class StartScanWithStatusResponse(BaseModel):
         stats = StartScanResponse.from_dto(result)
         return cls(
             status="started",
-            message=f"Scan started for library {library_id}: {stats.files_queued} files discovered",
+            message=f"Scan started for library {library_name}: {stats.files_queued} files discovered",
             stats=stats,
         )
 
@@ -234,9 +242,40 @@ class ListLibrariesResponse(BaseModel):
     libraries: list[LibraryResponse]
 
     @classmethod
-    def from_dto(cls, libraries: list[LibraryDict]) -> ListLibrariesResponse:
-        """Convert list of LibraryDict DTOs to response model."""
-        return cls(libraries=[LibraryResponse.from_dto(lib) for lib in libraries])
+    def from_dto(
+        cls,
+        libraries: list[Library],
+        *,
+        counts: dict[str, dict[str, int]] | None = None,
+        scans: dict[str, LibraryScanStatusResult] | None = None,
+    ) -> ListLibrariesResponse:
+        """Convert a list of domain ``Library`` values to the response model.
+
+        The interface adapter supplies the name-keyed file/folder ``counts`` and
+        per-library ``scans`` for the transport projection (P4-S8).
+
+        Args:
+            libraries: Domain ``Library`` values.
+            counts: ``{name: {"file_count": int, "folder_count": int}}``.
+            scans: ``{name: LibraryScanStatusResult}``.
+
+        Returns:
+            Response model with natural-name wire identity.
+
+        """
+        counts = counts or {}
+        scans = scans or {}
+        return cls(
+            libraries=[
+                LibraryResponse.from_dto(
+                    lib,
+                    scan=scans.get(lib.name),
+                    file_count=counts.get(lib.name, {}).get("file_count", 0),
+                    folder_count=counts.get(lib.name, {}).get("folder_count", 0),
+                )
+                for lib in libraries
+            ]
+        )
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -417,9 +456,12 @@ class WriteTagsResponse(BaseModel):
 
 
 class PipelineStatusResponse(BaseModel):
-    """Response for the per-library pipeline status endpoint."""
+    """Response for the per-library pipeline status endpoint.
 
-    library_id: int
+    ``library_id`` is the natural library name (mechanism A).
+    """
+
+    library_id: str
     scan_state: str
     ml_state: str
     calibration_state: str

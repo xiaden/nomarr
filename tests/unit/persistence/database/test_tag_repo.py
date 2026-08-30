@@ -458,7 +458,7 @@ class TestTagRepository:
         song_tag_repo = SongTagRepository(pg_session)
         TagRepository(pg_session)
         song_tag_repo.assign_tag_to_song(song_id, source_id)
-        song_tag_repo.replace_tag_references(source_id, target_id)
+        song_tag_repo.relink_song_tags(source_id, target_id)
         tags = song_tag_repo.get_tags_for_song(song_id)
         assert len(tags) == 1
         assert tags[0]["id"] == target_id
@@ -474,7 +474,7 @@ class TestTagRepository:
         repo.assign_tag_to_song(song_with_both_id, source_id)
         repo.assign_tag_to_song(song_with_both_id, target_id)
 
-        repo.replace_tag_references(source_id, target_id)
+        repo.relink_song_tags(source_id, target_id)
 
         source_tags = repo.get_tags_for_song(song_with_source_id)
         both_tags = repo.get_tags_for_song(song_with_both_id)
@@ -493,7 +493,7 @@ class TestTagRepository:
         repo.assign_tag_to_song(outside_song_id, source_id)
         repo.assign_tag_to_song(outside_song_id, target_id)
 
-        repo.replace_tag_references(source_id, target_id, song_ids=[selected_song_id])
+        repo.relink_song_tags(source_id, target_id, song_ids=[selected_song_id])
 
         assert {tag["id"] for tag in repo.get_tags_for_song(selected_song_id)} == {target_id}
         assert {tag["id"] for tag in repo.get_tags_for_song(outside_song_id)} == {source_id, target_id}

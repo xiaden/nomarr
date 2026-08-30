@@ -15,13 +15,12 @@ from nomarr.components.library.scan_lifecycle_comp import (
     check_interrupted_scan,
     is_library_scanning,
     mark_scan_started,
-    resolve_library_for_scan,
     transition_to_scanning,
 )
 from nomarr.helpers.exceptions import DuplicateEntityError, LibraryAlreadyScanningError
 
 if TYPE_CHECKING:
-    from nomarr.helpers.dto.library_dto import LibraryDict
+    from nomarr.helpers.dataclasses.library_dataclass import Library
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
@@ -29,9 +28,9 @@ logger = logging.getLogger(__name__)
 
 def scan_setup_workflow(
     db: Database,
-    library_id: int,
+    library: Library,
     scan_type: str,
-) -> LibraryDict:
+) -> Library:
     """Validate a library and prepare it for scanning.
 
     This workflow runs synchronously in the service layer before a scan
@@ -40,24 +39,21 @@ def scan_setup_workflow(
 
     Args:
         db: Database instance.
-        library_id: Library document ``id``.
+        library: Domain ``Library`` (natural identity) to scan.
         scan_type: ``"quick"`` or ``"full"`` (used only for logging).
 
     Returns:
-        The library document dict.
+        The domain ``Library`` value being scanned.
 
     Raises:
-        LibraryNotFoundError: If no library with the given ID exists.
         LibraryAlreadyScanningError: If the library is already being scanned.
 
     """
-    library = resolve_library_for_scan(db, int(library_id))  # raises LibraryNotFoundError
-
-    if is_library_scanning(db, int(library_id)):
-        msg = f"Library {library_id} is already being scanned"
+    if is_library_scanning(db, library):
+        msg = f"Library {library.name} is already being scanned"
         raise LibraryAlreadyScanningError(msg)
 
-    interrupted, prev_scan_type = check_interrupted_scan(db, int(library_id))
+    interrupted, prev_scan_type = check_interrupted_scan(db, library)
     if interrupted:
         logger.warning(
             "Detected interrupted %s scan for library %s — continuing with new %s scan",
@@ -69,7 +65,7 @@ def scan_setup_workflow(
     logger.info(
         "Starting %s scan for library %s (%s)",
         scan_type,
-        library_id,
+        library.name,
         library.name,
     )
 
@@ -79,11 +75,11 @@ def scan_setup_workflow(
         # The database enforces one in-progress row per library.  This insert
         # is the atomic part of the guard: two requests may both observe the
         # old axis value, but only one can claim the active scan row.
-        mark_scan_started(db, int(library_id), scan_type)
+        mark_scan_started(db, library, scan_type)
     except DuplicateEntityError:
-        msg = f"Library {library_id} is already being scanned"
+        msg = f"Library {library.name} is already being scanned"
         raise LibraryAlreadyScanningError(msg) from None
 
-    transition_to_scanning(db, int(library_id))
+    transition_to_scanning(db, library)
 
     return library

@@ -70,6 +70,40 @@ class TagRepository:
             row = select_by_key(_T, tag_id, session=self._session)
             return _tag_row_to_dto(row) if row else None
 
+    def get_tags_by_ids(self, tag_ids: list[int]) -> list[TagRow]:
+        """Fetch tags by their primary keys in one set-based query.
+
+        Persistence-private primary-key batch read backing the root-database
+        tag boundary resolver (P3 of TASK-song-intent-facade-correction-A) for
+        callers that still receive an opaque external tag ID. Missing ids are
+        simply absent from the result.
+        """
+        if not tag_ids:
+            return []
+        with map_persistence_exceptions():
+            stmt = select(_T).where(_T.c.id.in_(tag_ids))
+            result = self._session.execute(stmt)
+            return [_tag_row_to_dto(r) for r in result.all()]
+
+    def get_tag_ids_by_identities(self, rows: list[dict[str, Any]]) -> dict[tuple[str, str, str], int]:
+        """Resolve ``(name, value, namespace)`` natural keys to tag IDs without creating.
+
+        Set-based: one query for the whole batch. Missing keys are absent from
+        the result (no tag creation) — safe for idempotent lookups such as tag
+        removal or relink where silently creating a tag would be wrong.
+        ``rows`` items use ``{"name": str, "value": str, "namespace": str}``.
+        Returns ``{(name, value, namespace): tag_id}``.
+        """
+        if not rows:
+            return {}
+        conditions = [
+            and_(_T.c.name == name, _T.c.value == value, _T.c.namespace == namespace)
+            for (name, value, namespace) in rows
+        ]
+        stmt = select(_T.c.name, _T.c.value, _T.c.namespace, _T.c.id).where(or_(*conditions))
+        result = self._session.execute(stmt)
+        return {(row[0], row[1], row[2]): row[3] for row in result.all()}
+
     def get_tag_by_name(self, name: str, namespace: str) -> TagRow | None:
         """Fetch a tag by ``name`` AND ``namespace``."""
         with map_persistence_exceptions():
@@ -224,16 +258,20 @@ class TagRepository:
         *,
         name: str | None = None,
         value: Any = None,
+        search: str | None = None,
         limit: int | None = None,
         offset: int = 0,
     ) -> list[TagRow]:
-        """Return tags with optional name/value filters and pagination."""
+        """Return tags with optional name/value/search filters and pagination."""
         with map_persistence_exceptions():
             stmt = select(_T)
             if name is not None:
                 stmt = stmt.where(_T.c.name == name)
             if value is not None:
                 stmt = stmt.where(_T.c.value == value)
+            if search is not None:
+                escaped = _escape_like_search(search)
+                stmt = stmt.where(_T.c.value.ilike(f"%{escaped}%", escape="\\"))
             if offset:
                 stmt = stmt.offset(offset)
             if limit is not None:

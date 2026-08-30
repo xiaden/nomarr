@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Literal
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nomarr.helpers.dto.library_dto import LibraryDict
+from nomarr.helpers.dataclasses.library_dataclass import Library
 from nomarr.services.domain.library_svc.admin import LibraryAdminMixin
 
 
@@ -20,28 +20,19 @@ class _ConcreteAdminMixin(LibraryAdminMixin):
         self.file_watcher_service = None
 
 
-def _library_record(*, file_write_mode: str = "full", library_auto_write: bool = False) -> dict[str, Any]:
-    """Build a valid library record for ``LibraryDict`` construction."""
-    return {
-        "id": 1,
-        "name": "Rock Library",
-        "root_path": "/music/rock",
-        "is_enabled": True,
-        "created_at": 1,
-        "updated_at": 2,
-        "watch_mode": "off",
-        "file_write_mode": file_write_mode,
-        "library_auto_write": library_auto_write,
-    }
-
-
-def _library_dto(*, file_write_mode: str = "full", library_auto_write: bool = False) -> LibraryDict:
-    """Build a ``LibraryDict`` instance for assertions."""
-    return LibraryDict(
-        **cast(
-            "dict[str, Any]",
-            _library_record(file_write_mode=file_write_mode, library_auto_write=library_auto_write),
-        )
+def _make_library(
+    *,
+    file_write_mode: Literal["none", "minimal", "full"] = "full",
+    library_auto_write: bool = False,
+) -> Library:
+    """Build a domain ``Library`` (natural identity) fixture."""
+    return Library(
+        name="Rock Library",
+        root_path="/music/rock",
+        is_enabled=True,
+        watch_mode="off",
+        file_write_mode=file_write_mode,
+        library_auto_write=library_auto_write,
     )
 
 
@@ -58,17 +49,10 @@ class TestCreateLibrary:
         mock_cfg.models_dir = "/models"
         mixin = _ConcreteAdminMixin(mock_db, mock_cfg)
 
-        with (
-            patch.object(
-                mixin,
-                "_get_library_or_error",
-                return_value=_library_record(file_write_mode="minimal"),
-            ),
-            patch(
-                "nomarr.services.domain.library_svc.admin.create_library",
-                return_value="libraries/1",
-            ) as mock_create_library,
-        ):
+        with patch(
+            "nomarr.services.domain.library_svc.admin.create_library",
+            return_value=_make_library(file_write_mode="minimal"),
+        ) as mock_create_library:
             result = mixin.create_library(
                 name="Rock Library",
                 root_path="rock",
@@ -85,7 +69,7 @@ class TestCreateLibrary:
             file_write_mode="minimal",
             library_auto_write=False,
         )
-        assert result == _library_dto(file_write_mode="minimal")
+        assert result == _make_library(file_write_mode="minimal")
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -97,13 +81,10 @@ class TestCreateLibrary:
         mock_cfg.models_dir = "/models"
         mixin = _ConcreteAdminMixin(mock_db, mock_cfg)
 
-        with (
-            patch.object(mixin, "_get_library_or_error", return_value=_library_record()),
-            patch(
-                "nomarr.services.domain.library_svc.admin.create_library",
-                return_value="libraries/1",
-            ) as mock_create_library,
-        ):
+        with patch(
+            "nomarr.services.domain.library_svc.admin.create_library",
+            return_value=_make_library(),
+        ) as mock_create_library:
             result = mixin.create_library(
                 name="Rock Library",
                 root_path="rock",
@@ -119,7 +100,7 @@ class TestCreateLibrary:
             file_write_mode="full",
             library_auto_write=False,
         )
-        assert result == _library_dto()
+        assert result == _make_library()
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -131,16 +112,13 @@ class TestCreateLibrary:
         mock_cfg.models_dir = "/models"
         mixin = _ConcreteAdminMixin(mock_db, mock_cfg)
 
-        with (
-            patch.object(mixin, "_get_library_or_error", return_value=_library_record()),
-            patch(
-                "nomarr.services.domain.library_svc.admin.create_library",
-                return_value=1,
-            ),
+        with patch(
+            "nomarr.services.domain.library_svc.admin.create_library",
+            return_value=_make_library(),
         ):
             result = mixin.create_library(name="Rock Library", root_path="rock")
 
-        assert result == _library_dto()
+        assert result == _make_library()
 
 
 class TestUpdateLibrary:
@@ -151,24 +129,26 @@ class TestUpdateLibrary:
     def test_update_library_passes_file_write_mode_to_metadata(self) -> None:
         """Explicit file_write_mode should be forwarded to metadata updates."""
         mixin = _ConcreteAdminMixin(MagicMock(), MagicMock())
-        expected_result = _library_dto(file_write_mode="none")
+        library = _make_library()
+        expected_result = _make_library(file_write_mode="none")
 
         with (
-            patch.object(mixin, "_get_library_or_error", return_value=_library_record()),
+            patch.object(mixin, "_get_library_or_error", return_value=library) as mock_get_library_or_error,
             patch.object(mixin, "update_library_metadata") as mock_update_library_metadata,
             patch.object(mixin, "get_library", return_value=expected_result) as mock_get_library,
         ):
-            result = mixin.update_library("libraries/1", file_write_mode="none")
+            result = mixin.update_library(library, file_write_mode="none")
 
+        mock_get_library_or_error.assert_called_once_with(library)
         mock_update_library_metadata.assert_called_once_with(
-            "libraries/1",
+            library,
             name=None,
             is_enabled=None,
             watch_mode=None,
             file_write_mode="none",
             library_auto_write=None,
         )
-        mock_get_library.assert_called_once_with("libraries/1")
+        mock_get_library.assert_called_once_with(library)
         assert result == expected_result
 
     @pytest.mark.unit
@@ -176,15 +156,16 @@ class TestUpdateLibrary:
     def test_update_library_skips_metadata_when_only_none_values(self) -> None:
         """Metadata update should be skipped when every optional field is ``None``."""
         mixin = _ConcreteAdminMixin(MagicMock(), MagicMock())
-        expected_result = _library_dto()
+        library = _make_library()
+        expected_result = _make_library()
 
         with (
-            patch.object(mixin, "_get_library_or_error", return_value=_library_record()) as mock_get_library_or_error,
+            patch.object(mixin, "_get_library_or_error", return_value=library) as mock_get_library_or_error,
             patch.object(mixin, "update_library_metadata") as mock_update_library_metadata,
             patch.object(mixin, "get_library", return_value=expected_result) as mock_get_library,
         ):
             result = mixin.update_library(
-                "libraries/1",
+                library,
                 name=None,
                 root_path=None,
                 is_enabled=None,
@@ -193,9 +174,9 @@ class TestUpdateLibrary:
                 library_auto_write=None,
             )
 
-        mock_get_library_or_error.assert_called_once_with("libraries/1")
+        mock_get_library_or_error.assert_called_once_with(library)
         mock_update_library_metadata.assert_not_called()
-        mock_get_library.assert_called_once_with("libraries/1")
+        mock_get_library.assert_called_once_with(library)
         assert result == expected_result
 
     @pytest.mark.unit
@@ -203,24 +184,26 @@ class TestUpdateLibrary:
     def test_update_library_passes_library_auto_write_to_metadata(self) -> None:
         """Explicit library_auto_write should be forwarded to metadata updates."""
         mixin = _ConcreteAdminMixin(MagicMock(), MagicMock())
-        expected_result = _library_dto(library_auto_write=True)
+        library = _make_library()
+        expected_result = _make_library(library_auto_write=True)
 
         with (
-            patch.object(mixin, "_get_library_or_error", return_value=_library_record()),
+            patch.object(mixin, "_get_library_or_error", return_value=library) as mock_get_library_or_error,
             patch.object(mixin, "update_library_metadata") as mock_update_library_metadata,
             patch.object(mixin, "get_library", return_value=expected_result) as mock_get_library,
         ):
-            result = mixin.update_library("libraries/1", library_auto_write=True)
+            result = mixin.update_library(library, library_auto_write=True)
 
+        mock_get_library_or_error.assert_called_once_with(library)
         mock_update_library_metadata.assert_called_once_with(
-            "libraries/1",
+            library,
             name=None,
             is_enabled=None,
             watch_mode=None,
             file_write_mode=None,
             library_auto_write=True,
         )
-        mock_get_library.assert_called_once_with("libraries/1")
+        mock_get_library.assert_called_once_with(library)
         assert result == expected_result
 
 
@@ -232,15 +215,16 @@ class TestDeleteLibrary:
     def test_deletes_library_without_watcher_service(self) -> None:
         """Delete should still delegate when no watcher service is configured."""
         mixin = _ConcreteAdminMixin(MagicMock(), MagicMock())
+        library = _make_library()
 
         with patch(
             "nomarr.services.domain.library_svc.admin.delete_library",
             return_value=True,
         ) as mock_delete_library:
-            result = mixin.delete_library(1)
+            result = mixin.delete_library(library)
 
         assert result is True
-        mock_delete_library.assert_called_once_with(db=mixin.db, library_id=1)
+        mock_delete_library.assert_called_once_with(db=mixin.db, library=library)
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -248,17 +232,18 @@ class TestDeleteLibrary:
         """Watcher stop should be skipped when the library is not being observed."""
         mixin = _ConcreteAdminMixin(MagicMock(), MagicMock())
         mixin.file_watcher_service = MagicMock()
-        mixin.file_watcher_service.observers = {2: object()}
+        mixin.file_watcher_service.observers = {"Other Library": object()}
+        library = _make_library()
 
         with patch(
             "nomarr.services.domain.library_svc.admin.delete_library",
             return_value=False,
         ) as mock_delete_library:
-            result = mixin.delete_library(1)
+            result = mixin.delete_library(library)
 
         assert result is False
         mixin.file_watcher_service.stop_watching_library.assert_not_called()
-        mock_delete_library.assert_called_once_with(db=mixin.db, library_id=1)
+        mock_delete_library.assert_called_once_with(db=mixin.db, library=library)
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -266,14 +251,15 @@ class TestDeleteLibrary:
         """Observed libraries should stop watching before persistence delete runs."""
         mixin = _ConcreteAdminMixin(MagicMock(), MagicMock())
         mixin.file_watcher_service = MagicMock()
-        mixin.file_watcher_service.observers = {"1": object()}
+        mixin.file_watcher_service.observers = {"Rock Library": object()}
+        library = _make_library()
         call_order: list[str] = []
 
-        def _delete_library(*, db: MagicMock, library_id: int) -> bool:
+        def _delete_library(*, db: MagicMock, library: Library) -> bool:
             call_order.append("delete")
             return True
 
-        def _stop_watching_library(library_id: str) -> None:
+        def _stop_watching_library(library_name: str) -> None:
             call_order.append("stop")
 
         mixin.file_watcher_service.stop_watching_library.side_effect = _stop_watching_library
@@ -282,9 +268,9 @@ class TestDeleteLibrary:
             "nomarr.services.domain.library_svc.admin.delete_library",
             side_effect=_delete_library,
         ) as mock_delete_library:
-            result = mixin.delete_library(1)
+            result = mixin.delete_library(library)
 
         assert result is True
         assert call_order == ["stop", "delete"]
-        mixin.file_watcher_service.stop_watching_library.assert_called_once_with("1")
-        mock_delete_library.assert_called_once_with(db=mixin.db, library_id=1)
+        mixin.file_watcher_service.stop_watching_library.assert_called_once_with("Rock Library")
+        mock_delete_library.assert_called_once_with(db=mixin.db, library=library)

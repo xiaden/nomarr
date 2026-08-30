@@ -7,9 +7,11 @@ from typing import TYPE_CHECKING, Annotated
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from nomarr.components.library.library_song_query_comp import get_library_counts
+from nomarr.helpers.dataclasses.library_dataclass import Library
 from nomarr.helpers.logging_helper import sanitize_exception_message
 from nomarr.interfaces.api.auth import verify_session
-from nomarr.interfaces.api.id_codec import decode_path_id
+from nomarr.interfaces.api.id_codec import decode_library_name
 from nomarr.interfaces.api.types.library_types import (
     CreateLibraryRequest,
     LibraryResponse,
@@ -30,6 +32,30 @@ if TYPE_CHECKING:
     from nomarr.services.domain.vector_maintenance_svc import VectorMaintenanceService
 
 router = APIRouter(prefix="/library", tags=["Library"])
+
+
+async def _resolve_library(library_service, raw_name: str) -> Library:
+    """Resolve a URL-encoded natural library name to a domain ``Library``.
+
+    Mechanism A (TASK-library-domain-facades-A): the wire identity is the
+    natural ``Library.name``. Missing names map to 404.
+
+    Args:
+        library_service: LibraryService instance.
+        raw_name: URL-encoded natural library name from a path segment.
+
+    Returns:
+        Resolved domain ``Library``.
+
+    Raises:
+        HTTPException: 404 if the library does not exist.
+
+    """
+    name = decode_library_name(raw_name)
+    library = await asyncio.to_thread(library_service.get_library_by_name, name)
+    if library is None:
+        raise HTTPException(status_code=404, detail="Library not found")
+    return library
 
 
 class VectorStatsItem(BaseModel):
@@ -86,26 +112,29 @@ async def list_libraries(
     """List all configured libraries."""
     try:
         libraries = await asyncio.to_thread(library_service.list_libraries, enabled_only=enabled_only)
-        return ListLibrariesResponse.from_dto(libraries)
+        # Transport projection: build the name-keyed file/folder counts and
+        # per-library scan status in the interface adapter (P4-S8).
+        counts = await asyncio.to_thread(get_library_counts, library_service.db)
+        scans = {lib.name: await asyncio.to_thread(library_service.get_status, lib) for lib in libraries}
+        return ListLibrariesResponse.from_dto(libraries, counts=counts, scans=scans)
     except Exception as e:
         logger.exception("[Web API] Error listing libraries")
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to list libraries")) from e
 
 
-@router.get("/{library_id}", dependencies=[Depends(verify_session)])
+@router.get("/{library_name}", dependencies=[Depends(verify_session)])
 async def get_library(
-    library_id: str,
+    library_name: str,
     library_service: Annotated["LibraryService", Depends(get_library_service)],
 ) -> LibraryResponse:
-    """Get a library by ID."""
-    decoded_library_id: int = decode_path_id(library_id)
+    """Get a library by natural name (mechanism A)."""
     try:
-        library = library_service.get_library(decoded_library_id)
+        library = await _resolve_library(library_service, library_name)
         return LibraryResponse.from_dto(library)
-    except ValueError:
-        raise HTTPException(status_code=404, detail="Library not found") from None
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.exception(f"[Web API] Error getting library {decoded_library_id}")
+        logger.exception(f"[Web API] Error getting library {decode_library_name(library_name)}")
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get library")) from e
 
 
@@ -134,9 +163,9 @@ async def create_library(
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to create library")) from e
 
 
-@router.patch("/{library_id}", dependencies=[Depends(verify_session)])
+@router.patch("/{library_name}", dependencies=[Depends(verify_session)])
 async def update_library(
-    library_id: str,
+    library_name: str,
     request: UpdateLibraryRequest,
     library_service: Annotated["LibraryService", Depends(get_library_service)],
     pipeline_service: Annotated[LibraryPipelineService, Depends(get_pipeline_service)],
@@ -151,14 +180,16 @@ async def update_library(
     - Disabling auto-write while the pipeline is ``writing`` → requests
       graceful write cancellation.
     """
-    decoded_library_id: int = decode_path_id(library_id)
     try:
-        current_library = None
+        current_library = await _resolve_library(library_service, library_name)
         if request.library_auto_write is not None:
-            current_library = library_service.get_library(decoded_library_id)
+            # Re-fetch current value so the auto-write transition check is
+            # based on persisted state, not the incoming (possibly unchanged) one.
+            current_library = await asyncio.to_thread(library_service.get_library, current_library)
 
-        library = library_service.update_library(
-            decoded_library_id,
+        library = await asyncio.to_thread(
+            library_service.update_library,
+            current_library,
             name=request.name,
             root_path=request.root_path,
             is_enabled=request.is_enabled,
@@ -167,21 +198,21 @@ async def update_library(
             library_auto_write=request.library_auto_write,
         )
 
-        if current_library is not None and current_library.library_auto_write != library.library_auto_write:
-            pipeline_status = await asyncio.to_thread(pipeline_service.get_pipeline_status, decoded_library_id)
+        if current_library.library_auto_write != library.library_auto_write:
+            pipeline_status = await asyncio.to_thread(pipeline_service.get_pipeline_status, library)
             if pipeline_status is not None:
                 if (
                     not current_library.library_auto_write
                     and library.library_auto_write
                     and pipeline_status.tag_write_state == "not_written"
                 ):
-                    pipeline_service.handle_auto_write_enabled(decoded_library_id)
+                    pipeline_service.handle_auto_write_enabled(library)
                 elif (
                     current_library.library_auto_write
                     and not library.library_auto_write
                     and pipeline_status.tag_write_state == "writing"
                 ):
-                    pipeline_service.handle_auto_write_disabled(decoded_library_id)
+                    pipeline_service.handle_auto_write_disabled(library)
 
         return LibraryResponse.from_dto(library)
     except ValueError:
@@ -189,31 +220,31 @@ async def update_library(
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception(f"[Web API] Error updating library {decoded_library_id}")
+        logger.exception(f"[Web API] Error updating library {decode_library_name(library_name)}")
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to update library")) from e
 
 
-@router.delete("/{library_id}", dependencies=[Depends(verify_session)])
+@router.delete("/{library_name}", dependencies=[Depends(verify_session)])
 async def delete_library(
-    library_id: str,
+    library_name: str,
     library_service: Annotated["LibraryService", Depends(get_library_service)],
 ) -> DeleteLibraryResponse:
     """Delete a library.
 
     Removes the library entry but does NOT delete files on disk.
     """
-    decoded_library_id: int = decode_path_id(library_id)
     try:
-        deleted = await asyncio.to_thread(library_service.delete_library, decoded_library_id)
+        library = await _resolve_library(library_service, library_name)
+        deleted = await asyncio.to_thread(library_service.delete_library, library)
         if not deleted:
             raise HTTPException(status_code=404, detail="Library not found")
-        return DeleteLibraryResponse(status="success", message=f"Library {decoded_library_id} deleted")
+        return DeleteLibraryResponse(status="success", message=f"Library {library.name} deleted")
     except ValueError:
         raise HTTPException(status_code=400, detail="Cannot delete library") from None
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception(f"[Web API] Error deleting library {decoded_library_id}")
+        logger.exception(f"[Web API] Error deleting library {decode_library_name(library_name)}")
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to delete library")) from e
 
 
@@ -247,17 +278,20 @@ async def clear_library_data(
 # config from the config service or /api/web/config endpoint.
 
 
-@router.get("/{library_id}/vector-stats", dependencies=[Depends(verify_session)])
+@router.get("/{library_name}/vector-stats", dependencies=[Depends(verify_session)])
 async def get_library_vector_stats(
-    library_id: str,
+    library_name: str,
+    library_service: Annotated["LibraryService", Depends(get_library_service)],
     vector_maintenance_service: Annotated["VectorMaintenanceService", Depends(get_vector_maintenance_service)],
 ) -> BackboneVectorStatsResponse:
     """Get vector statistics across all backbones for the requested library."""
-    decoded_library_id: int = decode_path_id(library_id)
     try:
-        stats = await asyncio.to_thread(vector_maintenance_service.get_backbone_vector_stats, decoded_library_id)
+        library = await _resolve_library(library_service, library_name)
+        stats = await asyncio.to_thread(vector_maintenance_service.get_backbone_vector_stats, library)
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.exception(f"[Web API] Error getting vector stats for library {decoded_library_id}")
+        logger.exception(f"[Web API] Error getting vector stats for library {decode_library_name(library_name)}")
         raise HTTPException(
             status_code=500,
             detail=sanitize_exception_message(e, "Failed to get vector stats"),

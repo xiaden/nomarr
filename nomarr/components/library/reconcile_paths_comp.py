@@ -15,6 +15,7 @@ from nomarr.components.library.library_song_query_comp import get_library_stats,
 
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
+    from nomarr.helpers.dataclasses.library_dataclass import Library
     from nomarr.helpers.dto.library_dto import ReconcileResult
     from nomarr.helpers.dto.path_dto import LibraryPath
     from nomarr.persistence.db import Database
@@ -23,7 +24,7 @@ ReconcilePolicy = Literal["mark_invalid", "delete_invalid", "dry_run"]
 
 def reconcile_library_paths(
     db: Database,
-    library_id: int,
+    library: Library,
     policy: ReconcilePolicy = "mark_invalid",
     batch_size: int = 1000,
 ) -> ReconcileResult:
@@ -35,7 +36,7 @@ def reconcile_library_paths(
 
     Args:
         db: Database instance
-        library_id: Library document id to scope reconciliation to
+        library: Domain ``Library`` (natural identity) to scope reconciliation to
         policy: What to do with invalid paths:
             - "dry_run": Only report, don't modify database
             - "mark_invalid": Keep files but log warnings
@@ -56,12 +57,12 @@ def reconcile_library_paths(
         "deleted_files": 0,
         "errors": 0,
     }
-    stats = get_library_stats(db)
+    stats = get_library_stats(db, library)
     total_count = stats.get("total_files", 0)
     logger.info(f"[reconcile_library_paths] Found {total_count} files to validate")
     offset = 0
     while True:
-        files, _ = list_songs(db, library_id=library_id, limit=batch_size, offset=offset)
+        files, _ = list_songs(db, library=library, limit=batch_size, offset=offset)
         if not files:
             break
         logger.debug(f"[reconcile_library_paths] Processing batch at offset {offset} ({len(files)} files)")
@@ -69,19 +70,18 @@ def reconcile_library_paths(
         for file_record in files:
             result["total_files"] += 1
             file_path = file_record["path"]
-            file_library_id = file_record.get("library_id", library_id)
             try:
                 library_path = build_library_path_from_db(
-                    stored_path=file_path, db=db, library_id=file_library_id, check_disk=True
+                    stored_path=file_path, db=db, library_id=library.name, check_disk=True
                 )
                 if library_path.is_valid():
                     result["valid_files"] += 1
                 elif library_path.status == "invalid_config":
                     result["invalid_config"] += 1
-                    _handle_invalid_path(db, file_path, library_path, policy, result)
+                    _handle_invalid_path(db, file_path, library_path, policy, result, library)
                 elif library_path.status == "not_found":
                     result["not_found"] += 1
-                    _handle_invalid_path(db, file_path, library_path, policy, result)
+                    _handle_invalid_path(db, file_path, library_path, policy, result, library)
                 elif library_path.status == "unknown":
                     result["unknown_status"] += 1
                     logger.warning(f"[reconcile_library_paths] Unknown status for {file_path}: {library_path.reason}")
@@ -115,7 +115,12 @@ def reconcile_library_paths(
 
 
 def _handle_invalid_path(
-    db: Database, file_path: str, library_path: LibraryPath, policy: ReconcilePolicy, result: ReconcileResult
+    db: Database,
+    file_path: str,
+    library_path: LibraryPath,
+    policy: ReconcilePolicy,
+    result: ReconcileResult,
+    library: Library,
 ) -> None:
     """Handle an invalid path based on policy.
 
@@ -125,6 +130,7 @@ def _handle_invalid_path(
         library_path: Re-validated LibraryPath with status
         policy: Reconciliation policy
         result: Result dict to update
+        library: Domain ``Library`` scoping the reconciliation
 
     """
     reason = library_path.reason or "unknown"
@@ -135,7 +141,7 @@ def _handle_invalid_path(
         logger.warning(f"[reconcile_library_paths] Invalid path ({status}): {file_path} - {reason}")
     elif policy == "delete_invalid":
         try:
-            db.library.remove_song_by_path(file_path)
+            db.library.remove_song_by_path(file_path, library)
             result["deleted_files"] += 1
             logger.info(f"[reconcile_library_paths] Deleted invalid path ({status}): {file_path} - {reason}")
         except RuntimeError as e:

@@ -6,6 +6,7 @@ import logging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dataclasses.library_dataclass import Library
     from nomarr.persistence.db import Database
     from nomarr.services.infrastructure.config_svc import ConfigService
 
@@ -86,12 +87,16 @@ class VectorMaintenanceService:
             )
             raise
 
-    def get_hot_cold_stats(self, backbone_id: str, library_id: int | None = None) -> dict[str, int | bool]:
+    def get_hot_cold_stats(self, backbone_id: str, library: Library | None = None) -> dict[str, int | bool]:  # noqa: ARG002
         """Get hot/cold statistics for a backbone.
 
         Args:
             backbone_id: Backbone identifier
-            library_id: Optional library ID to scope the counts
+            library: Optional domain ``Library`` (natural identity) to scope the
+                counts. Note: per-library scoping is handed off to the ML plan
+                (P4-S8 residual) because the ML persistence filter joins on an
+                int library PK with no ``Library``-to-int resolver above the
+                facade; a ``library`` scope therefore resolves to global counts.
 
         Returns:
             Dict with keys:
@@ -100,16 +105,20 @@ class VectorMaintenanceService:
                 - index_exists: Whether cold tier has vector index
 
         """
-        stats = self.db.ml.get_embedding_stats(backbone_id, library_id=library_id)
+        stats = self.db.ml.get_embedding_stats(backbone_id, library_id=None)
         return {
             **stats,
             "index_exists": self.db.ml.has_embedding_index(backbone_id),
         }
 
-    def get_backbone_vector_stats(self, library_id: int | None = None) -> list[dict[str, str | int | bool]]:
+    def get_backbone_vector_stats(self, library: Library | None = None) -> list[dict[str, str | int | bool]]:
         """Get per-backbone vector statistics, optionally for one library.
 
         Iterates all discovered backbones and returns hot/cold stats for each.
+
+        Args:
+            library: Optional domain ``Library`` (natural identity). Per-library
+                scoping is currently global (see ``get_hot_cold_stats``).
 
         Returns:
             List of stats rows containing ``backbone_id``, ``hot_count``,
@@ -119,7 +128,7 @@ class VectorMaintenanceService:
         stats: list[dict[str, str | int | bool]] = []
         for backbone_id in discover_backbones(self.models_dir):
             try:
-                backbone_stats = self.get_hot_cold_stats(backbone_id, library_id=library_id)
+                backbone_stats = self.get_hot_cold_stats(backbone_id, library=library)
                 stats.append(
                     {
                         "backbone_id": backbone_id,

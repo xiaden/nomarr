@@ -2,11 +2,11 @@
 
 Nomarr uses **Alembic** for PostgreSQL schema migrations. Alembic provides a battle-tested, version-controlled approach to database schema evolution.
 
-## Core Principle: Version-Controlled Migrations
+## Core Principle: One Baseline Until Stable
 
-**Every schema change is a migration.** When you need a new table, column, index, constraint, or data transformation, you generate and write an Alembic migration. You do NOT edit the SQLAlchemy models and hope they sync — migrations are the single source of truth for production schema state.
+Nomarr currently uses one Alembic baseline for fresh PostgreSQL installations. The project has not been stable enough to support installed-database upgrade paths, so the pre-stability revision chain was consolidated into `001_current_schema_baseline.py`.
 
-This eliminates the drift problem: there is exactly one place that defines each schema change.
+Existing databases created from an earlier revision are unsupported and must be recreated. Once the application is stable enough to preserve upgrade compatibility, future schema changes may be added as normal Alembic revisions after the baseline.
 
 ## Architecture
 
@@ -15,13 +15,13 @@ Startup Flow:
   validate_environment()
   → ConfigService
   → Database()
-  → alembic upgrade head         # Applies all pending migrations
+  → alembic upgrade head         # Creates the baseline schema
   → Application.start()          # Services initialize
 ```
 
-**Fresh install:** `alembic upgrade head` creates the full schema from all migrations.
+**Fresh install:** `alembic upgrade head` creates the complete current schema from the single baseline.
 
-**Existing install:** Alembic detects the current revision and applies only pending migrations.
+**Existing pre-baseline install:** Recreate the database before running Nomarr. The consolidated history intentionally does not provide an upgrade path from old revisions.
 
 ### Migration Tracking
 
@@ -31,14 +31,14 @@ Alembic tracks applied migrations in the `alembic_version` table:
 SELECT * FROM alembic_version;
 --  version_num
 -- ------------
---  a1b2c3d4e5f6
+--  baseline_20260830
 ```
 
 Alembic's built-in version table ensures each migration runs exactly once.
 
 ### Execution Order
 
-Migrations execute in **revision chain order** following the dependency graph defined by `down_revision`. Alembic handles ordering, detection of already-applied migrations, and sequential application automatically.
+The baseline is the only revision and has no predecessor. Future revisions will execute in chain order following the dependency graph defined by `down_revision`.
 
 The runner:
 
@@ -58,22 +58,22 @@ The runner:
 
 ### Workflow
 
-1. **Create a migration** using Alembic's autogenerate or manually:
+1. Before stability, update the single baseline directly.
+2. Review the baseline against the SQLAlchemy models and fresh-database behavior.
+3. Once upgrade compatibility is explicitly supported, create a new revision with:
    ```bash
    alembic revision --autogenerate -m "add_playlist_table"
    ```
-2. **Review and refine** the generated migration in `nomarr/migrations/versions/`
-3. **Do NOT edit SQLAlchemy models and skip migrations** — the migration is the source of truth
-4. **Run `lint_project_backend`** to verify
-5. Test on a fresh database (all migrations must produce correct state)
+4. **Do NOT edit SQLAlchemy models and skip migrations** — Alembic remains the schema source of truth.
+5. Run `lint_project_backend` and test on a fresh database.
 
 ### File Location
 
-All migration files live in `nomarr/migrations/versions/`.
+All Alembic revision files live in `alembic/versions/`.
 
-### Naming Convention
+### Naming Convention for Future Revisions
 
-Alembic auto-generates revision IDs with descriptive slugs:
+After upgrade-compatible deployments are explicitly supported, Alembic may generate revision IDs with descriptive slugs:
 
 ```
 {revision_id}_{description}.py
@@ -85,7 +85,9 @@ Examples:
 - `b2c3d4e5f6a7_normalize_tag_values.py`
 - `c3d4e5f6a7b8_drop_legacy_table.py`
 
-### Required Interface
+### Required Interface for Future Revisions
+
+The baseline itself uses the same Alembic interface. Future revisions should follow this shape:
 
 ```python
 """Add playlist table.
@@ -130,9 +132,9 @@ def downgrade() -> None:
     op.drop_table("playlists")
 ```
 
-### Migration Responsibilities
+### Migration Responsibilities for Future Revisions
 
-Migrations must handle ALL DDL for the change:
+Future revisions must handle ALL DDL for their change:
 
 - **New tables**: create with `op.create_table()`
 - **New columns**: add with `op.add_column()`
@@ -146,7 +148,7 @@ All operations should be guarded for idempotency where possible:
 - Check table existence before dropping
 - Use `IF NOT EXISTS` / `IF EXISTS` clauses in raw SQL
 
-### Best Practices
+### Best Practices for Future Revisions
 
 1. **Make migrations idempotent** where possible. If a migration partially completes
    and fails, guard destructive operations:
@@ -209,19 +211,16 @@ These rules were learned from production migration experience:
    natural keys (like `path`, `name`) for lookups in data migrations, not surrogate
    IDs that differ between environments.
 
-## Testing Migrations
+## Testing the Baseline and Future Migrations
 
-### Requirements
+### Baseline Requirements
 
-Every migration must:
+The baseline must:
 
-1. **Pass lint**: `lint_project_backend(path="nomarr/migrations")` reports zero errors
-2. **Have correct metadata**: Valid `revision`, `down_revision`, and docstring
-3. **Have contiguous chain**: `down_revision` of migration N+1 equals `revision` of migration N
-4. **Be idempotent**: Running the migration twice on the same database must not fail
-   or corrupt data
-5. **Work on fresh install**: All migrations from base to head must produce the correct final state
-6. **Have a working downgrade**: `alembic downgrade -1` must cleanly revert the migration
+1. **Pass lint**: `lint_project_backend(path="alembic/versions")` reports zero errors
+2. **Have correct metadata**: Valid `revision`, `down_revision=None`, and docstring
+3. **Work on fresh install**: `alembic upgrade head` must produce the complete current schema
+4. **Have a working downgrade**: `alembic downgrade base` must cleanly remove the baseline schema
 
 ### Manual Testing
 
@@ -244,24 +243,26 @@ docker exec -it nomarr-postgres psql -U nomarr -d nomarr -c "\dt"
 
 ```
 INFO  Running alembic upgrade head
-INFO  Running upgrade  -> a1b2c3d4e5f6, add_library_table
-INFO  Running upgrade a1b2c3d4e5f6 -> b2c3d4e5f6a7, add_file_table
-...
+INFO  Running upgrade  -> baseline_20260830, current schema baseline
 INFO  Migrations complete
 ```
 
-### Existing database (all migrations applied)
+### Existing database (baseline applied)
 
 ```
 INFO  Running alembic upgrade head
 INFO  Database already at head revision
 ```
 
-### New migration pending
+A database stamped with one of the removed pre-baseline revisions is not supported; recreate it instead.
+
+### Future migration pending
+
+Once upgrade-compatible deployments are supported, a future revision may follow the baseline:
 
 ```
 INFO  Running alembic upgrade head
-INFO  Running upgrade b2c3d4e5f6a7 -> c3d4e5f6a7b8, add_playlist_table
+INFO  Running upgrade baseline_20260830 -> c3d4e5f6a7b8, add_playlist_table
 INFO  Migrations complete
 ```
 
@@ -283,11 +284,12 @@ The app will not start until the migration succeeds. Check logs for the specific
 Alembic rolls back the failed migration's transaction automatically.
 Fix the migration code and restart.
 
-### Fresh install schema doesn't match migrated install
+### Fresh install schema doesn't match the models
 
-This means your SQLAlchemy models are out of sync with the migration chain.
-Regenerate the migration with `--autogenerate`, review carefully, and ensure
-the new migration captures the model changes correctly.
+This means the baseline and SQLAlchemy models are out of sync. Before the project
+supports upgrade-compatible deployments, update the single baseline and review it
+carefully against the models. After that point, add a new revision with
+`--autogenerate` and review the generated operations.
 
 ## Alembic Commands
 
@@ -301,8 +303,8 @@ alembic revision -m "description_of_change"
 # Apply all pending migrations
 alembic upgrade head
 
-# Roll back one migration
-alembic downgrade -1
+# Remove the baseline schema
+alembic downgrade base
 
 # Show current revision
 alembic current

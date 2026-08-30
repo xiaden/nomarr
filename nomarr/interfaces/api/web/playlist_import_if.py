@@ -17,11 +17,13 @@ from nomarr.interfaces.api.types.playlist_import_types import (
     ConvertPlaylistResponse,
     SpotifyCredentialsStatusResponse,
 )
-from nomarr.interfaces.api.web.dependencies import get_playlist_import_service
+from nomarr.interfaces.api.web.dependencies import get_library_service, get_playlist_import_service
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dataclasses.library_dataclass import Library
+    from nomarr.services.domain.library_svc import LibraryService
     from nomarr.services.domain.playlist_import_svc import PlaylistImportService
 
 router = APIRouter(prefix="/playlist-import", tags=["Playlist Import"])
@@ -31,6 +33,7 @@ router = APIRouter(prefix="/playlist-import", tags=["Playlist Import"])
 async def web_convert_playlist(
     request: ConvertPlaylistRequest,
     playlist_service: Annotated["PlaylistImportService", Depends(get_playlist_import_service)],
+    library_service: Annotated["LibraryService", Depends(get_library_service)],
 ) -> ConvertPlaylistResponse:
     """Convert a streaming playlist URL to local M3U playlist.
 
@@ -43,13 +46,20 @@ async def web_convert_playlist(
     Deezer works immediately (public API).
     """
     try:
+        library: Library | None = None
+        if request.library_id:
+            library = await asyncio.to_thread(library_service.get_library_by_name, request.library_id)
+            if library is None:
+                raise HTTPException(status_code=422, detail="Unknown library")
         result_dto = await asyncio.to_thread(
             playlist_service.convert_playlist,
             playlist_url=request.playlist_url,
-            library_id=request.library_id,
+            library=library,
         )
         return ConvertPlaylistResponse.from_dto(result_dto)
 
+    except HTTPException:
+        raise
     except PlaylistConversionError as e:
         # User-facing error (bad URL, API failure, etc.)
         raise HTTPException(status_code=400, detail=str(e)) from None

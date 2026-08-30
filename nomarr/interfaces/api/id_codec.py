@@ -13,9 +13,17 @@ Architecture:
 - DecodedPathId: FastAPI Path parameter with automatic decoding
 - encode_id(): For encoding single IDs in responses (pass-through for integers)
 - encode_ids(): For recursively encoding all id fields in response data (pass-through)
+
+Library natural-name identity (mechanism A, TASK-library-domain-facades-A):
+- The sole wire identity for a library is the URL-encoded natural ``Library.name``.
+- ``encode_library_name`` / ``decode_library_name`` quote/unquote the natural name
+  with no safe characters so names containing spaces, slashes, Unicode, percent
+  signs, and reserved characters round-trip unambiguously. They are independent of
+  the integer codec above and do not change song/file/tag ID encoding.
 """
 
 from typing import Annotated, Any
+from urllib.parse import quote, unquote
 
 from fastapi import HTTPException
 from pydantic import BeforeValidator
@@ -91,12 +99,17 @@ EncodedId = Annotated[int, BeforeValidator(_validate_and_decode_id)]
 def decode_path_id(path_id: str | int) -> int:
     """Decode a path parameter ID, raising HTTPException on invalid format.
 
-    Use this at the start of route handlers for path parameters:
+    Use this at the start of route handlers for **non-library** path parameters
+    that carry an integer storage id (e.g. a song/file id):
 
-        @router.get("/{library_id}")
-        async def get_library(library_id: int):
-            library_id = decode_path_id(library_id)
+        @router.get("/{file_id}")
+        async def get_file(file_id: str):
+            file_id = decode_path_id(file_id)
             ...
+
+    Do **not** use this for library identity. Library routes must use the
+    mechanism-A natural-name wire adapter (:func:`decode_library_name`) and a
+    ``/{library_name}`` path segment — never an integer ``{library_id}`` route.
 
     Args:
         path_id: ID from path parameter
@@ -112,6 +125,42 @@ def decode_path_id(path_id: str | int) -> int:
         return decode_id(path_id)
     except InvalidIdFormatError:
         raise HTTPException(status_code=400, detail="Invalid ID format") from None
+
+
+def encode_library_name(name: str) -> str:
+    """Encode a natural library name for HTTP transport (URL path/query segment).
+
+    Mechanism A (CONTRACTS.md): the sole library wire identity is the URL-encoded
+    natural ``Library.name``. The name is percent-quoted with no safe characters
+    (``quote(name, safe="")``) so spaces, slashes, Unicode, percent signs, and
+    reserved characters round-trip unambiguously and cannot collide with a route
+    separator. This mirrors ``library_task_id`` in the service layer so an encoded
+    name used in a URL and a task key agree on the same quoting.
+
+    Args:
+        name: Natural library name.
+
+    Returns:
+        URL-encoded natural name.
+    """
+    return quote(name, safe="")
+
+
+def decode_library_name(value: str) -> str:
+    """Decode a URL-encoded natural library name to its plain-text form.
+
+    Inverse of :func:`encode_library_name`. Pure percent-decoding; it does not
+    validate that the library exists. Callers resolve the decoded name to a
+    ``Library`` via ``LibraryService.get_library_by_name`` and map a missing
+    value to the route's 404/validation error.
+
+    Args:
+        value: URL-encoded library name from a path/query/request field.
+
+    Returns:
+        The decoded natural library name.
+    """
+    return unquote(value)
 
 
 # Fields that should be encoded when found in response data

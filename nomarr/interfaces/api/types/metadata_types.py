@@ -9,7 +9,7 @@ from nomarr.interfaces.api.id_codec import encode_id
 class EntityResponse(BaseModel):
     """Single entity response."""
 
-    entity_id: int = Field(description="Entity primary key (integer)")
+    entity_id: int | str = Field(description="Entity natural value or external handle")
     display_name: str = Field(description="Exact raw string for display")
     song_count: int | None = Field(None, description="Optional: count of songs for this entity")
 

@@ -257,19 +257,24 @@ class FileWatcherService:
             ValueError: If library not found or path invalid
 
         """
-        # Get library info
-        library = get_library_watch_config(self._db, int(library_id))
-        if not library:
+        # Get library info (resolve by natural name, mechanism A)
+        library = self.library_service.get_library_by_name(library_id)
+        if library is None:
             msg = f"Library {library_id} not found"
             raise ValueError(msg)
 
-        library_root = Path(library["root_path"])
+        library_config = get_library_watch_config(self._db, library)
+        if not library_config:
+            msg = f"Library {library_id} not found"
+            raise ValueError(msg)
+
+        library_root = Path(library_config["root_path"])
         if not library_root.exists():
             msg = f"Library path does not exist: {library_root}"
             raise ValueError(msg)
 
         # Get watch mode from library config (default to 'off')
-        watch_mode = library.get("watch_mode", "off")
+        watch_mode = library_config.get("watch_mode", "off")
 
         # If watch_mode is 'off', don't start anything
         if watch_mode == "off":
@@ -364,14 +369,20 @@ class FileWatcherService:
                 break
 
             # Validate library still exists and should be watched
-            library = get_library_watch_config(self._db, int(library_id))
-            if not library:
+            library = self.library_service.get_library_by_name(library_id)
+            if library is None:
                 logger.info(f"Library {library_id} no longer exists, stopping watcher")
                 self._schedule_cleanup(library_id)
                 return
 
-            watch_mode = library.get("watch_mode", "off")
-            if watch_mode == "off" or not library.get("is_enabled", True):
+            library_config = get_library_watch_config(self._db, library)
+            if not library_config:
+                logger.info(f"Library {library_id} no longer exists, stopping watcher")
+                self._schedule_cleanup(library_id)
+                return
+
+            watch_mode = library_config.get("watch_mode", "off")
+            if watch_mode == "off" or not library_config.get("is_enabled", True):
                 logger.info(f"Library {library_id} watch_mode is '{watch_mode}' or disabled, stopping watcher")
                 self._schedule_cleanup(library_id)
                 return
@@ -382,7 +393,7 @@ class FileWatcherService:
             logger.debug(f"Polling library {library_id}: triggering quick scan")
 
             try:
-                self.library_service.start_quick_scan(int(library_id))
+                self.library_service.start_quick_scan(library)
             except LibraryNotFoundError:
                 logger.warning(f"Library {library_id} no longer exists, stopping watcher")
                 self._schedule_cleanup(library_id)
@@ -459,9 +470,9 @@ class FileWatcherService:
             msg = f"Invalid watch_mode: {new_mode}. Must be 'off', 'event', or 'poll'"
             raise ValueError(msg)
 
-        # Verify library exists
-        library = get_library_watch_config(self._db, int(library_id))
-        if not library:
+        # Verify library exists (resolve by natural name, mechanism A)
+        library = self.library_service.get_library_by_name(library_id)
+        if library is None:
             msg = f"Library {library_id} not found"
             raise ValueError(msg)
 
@@ -475,7 +486,7 @@ class FileWatcherService:
             self.pending_changes = {(lib_id, path) for lib_id, path in self.pending_changes if lib_id != library_id}
 
         # Update watch_mode in database
-        UpdateLibraryMetadataComp(self._db).update(int(library_id), watch_mode=new_mode)
+        UpdateLibraryMetadataComp(self._db).update(library, watch_mode=new_mode)
         logger.info(f"Updated library {library_id} watch_mode to '{new_mode}'")
 
         # Start new mode if not 'off'
@@ -535,6 +546,10 @@ class FileWatcherService:
         # folders are actually re-scanned.
         for library_id in affected_libraries:
             try:
-                self.library_service.start_quick_scan(int(library_id))
+                library = self.library_service.get_library_by_name(library_id)
+                if library is None:
+                    logger.error(f"Library {library_id} not found during debounce scan")
+                    continue
+                self.library_service.start_quick_scan(library)
             except Exception as e:
                 logger.error(f"Failed to trigger scan for library {library_id}: {e}", exc_info=True)

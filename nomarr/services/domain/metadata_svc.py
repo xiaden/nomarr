@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Literal
 
-from nomarr.components.tagging.tag_cleanup_comp import cleanup_orphaned_tags, get_orphaned_tag_count
+from nomarr.components.tagging.tag_cleanup_comp import cleanup_orphaned_tags
 from nomarr.components.tagging.tag_query_comp import (
     count_songs_for_tag,
     count_tags_by_name,
@@ -25,7 +25,6 @@ from nomarr.components.tagging.tag_query_comp import (
     list_songs_for_tag,
     list_tags_by_name,
 )
-from nomarr.components.tagging.tag_write_comp import find_or_create_tag
 from nomarr.helpers.dto.metadata_dto import EntityDict, EntityListResult, SongListForEntityResult
 
 if TYPE_CHECKING:
@@ -165,8 +164,9 @@ class MetadataService:
         # Get all songs for this album
         song_ids = list_songs_for_tag(self.db, album_id, limit=10000)
 
-        # For each song, get primary artist tags
-        artist_ids_seen: set[int] = set()
+        # For each song, get primary artist tags. Entity identity is the natural
+        # tag value (no tag PK exists); dedupe on the value itself.
+        artist_ids_seen: set[str] = set()
         artists: list[EntityDict] = []
 
         for song_id in song_ids:
@@ -174,20 +174,18 @@ class MetadataService:
             if artist_tags is None:
                 continue
             for artist_tag in artist_tags:
-                # Get the values from the tag (always a non-empty tuple now)
                 for value in artist_tag.values:
-                    tag_id = find_or_create_tag(self.db, "artist", value)
-                    if tag_id not in artist_ids_seen:
-                        artist_ids_seen.add(tag_id)
-                        tag = get_tag(self.db, tag_id)
-                        if tag:
-                            artists.append(
-                                EntityDict(
-                                    id=tag["id"],
-                                    display_name=str(tag["value"]),
-                                    song_count=None,
-                                ),
-                            )
+                    value_str = str(value)
+                    if value_str in artist_ids_seen:
+                        continue
+                    artist_ids_seen.add(value_str)
+                    artists.append(
+                        EntityDict(
+                            id=value_str,
+                            display_name=value_str,
+                            song_count=None,
+                        ),
+                    )
 
         # Sort by display_name and limit
         artists.sort(key=lambda a: a["display_name"])
@@ -210,8 +208,9 @@ class MetadataService:
         # Get all songs for this artist
         song_ids = list_songs_for_tag(self.db, artist_id, limit=10000)
 
-        # For each song, get album tags
-        album_ids_seen: set[int] = set()
+        # For each song, get album tags. Entity identity is the natural tag
+        # value (no tag PK exists); dedupe on the value itself.
+        album_ids_seen: set[str] = set()
         albums: list[EntityDict] = []
 
         for song_id in song_ids:
@@ -219,20 +218,18 @@ class MetadataService:
             if album_tags is None:
                 continue
             for album_tag in album_tags:
-                # Get the values from the tag (always a non-empty tuple now)
                 for value in album_tag.values:
-                    tag_id = find_or_create_tag(self.db, "album", value)
-                    if tag_id not in album_ids_seen:
-                        album_ids_seen.add(tag_id)
-                        tag = get_tag(self.db, tag_id)
-                        if tag:
-                            albums.append(
-                                EntityDict(
-                                    id=tag["id"],
-                                    display_name=str(tag["value"]),
-                                    song_count=None,
-                                ),
-                            )
+                    value_str = str(value)
+                    if value_str in album_ids_seen:
+                        continue
+                    album_ids_seen.add(value_str)
+                    albums.append(
+                        EntityDict(
+                            id=value_str,
+                            display_name=value_str,
+                            song_count=None,
+                        ),
+                    )
 
         # Sort by display_name and limit
         albums.sort(key=lambda a: a["display_name"])
@@ -263,14 +260,10 @@ class MetadataService:
             Dict with orphaned_count and deleted_count
 
         """
-        if dry_run:
-            orphan_count = get_orphaned_tag_count(self.db)
-            return {
-                "orphaned_count": orphan_count,
-                "deleted_count": 0,
-            }
-        deleted_count = cleanup_orphaned_tags(self.db)
+        result = cleanup_orphaned_tags(self.db)
+        orphaned_count = result.orphaned
+        deleted_count = 0 if dry_run else result.deleted
         return {
-            "orphaned_count": deleted_count,  # Was orphaned, now deleted
+            "orphaned_count": orphaned_count,
             "deleted_count": deleted_count,
         }

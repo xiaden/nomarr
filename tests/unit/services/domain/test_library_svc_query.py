@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nomarr.helpers.dataclasses.library_dataclass import Library
 from nomarr.helpers.dto.info_dto import WorkStatusResult
 from nomarr.helpers.dto.library_dto import LibraryDict, LibraryStatsResult
 from nomarr.services.domain.library_svc.query import LibraryQueryMixin
@@ -17,6 +18,11 @@ class _ConcreteQueryMixin(LibraryQueryMixin):
     def __init__(self, db: MagicMock) -> None:
         self.db = db
         self.cfg = MagicMock()
+
+
+def _make_library(*, name: str = "L1") -> Library:
+    """Build a domain ``Library`` (natural identity) fixture."""
+    return Library(name=name, root_path="/p1", is_enabled=True)
 
 
 class TestGetLibraryStats:
@@ -71,7 +77,7 @@ class TestGetPathsNeedingCalibration:
         mock_db = MagicMock()
         mixin = _ConcreteQueryMixin(mock_db)
 
-        with patch("nomarr.services.domain.library_svc.query.list_library_records", return_value=[]):
+        with patch("nomarr.services.domain.library_svc.query.list_all_libraries", return_value=[]):
             result = mixin.get_paths_needing_calibration()
 
         assert result == []
@@ -80,20 +86,12 @@ class TestGetPathsNeedingCalibration:
     def test_no_uncalibrated_files_returns_empty(self) -> None:
         mock_db = MagicMock()
         mixin = _ConcreteQueryMixin(mock_db)
+        library = _make_library()
 
         with (
             patch(
-                "nomarr.services.domain.library_svc.query.list_library_records",
-                return_value=[
-                    LibraryDict(
-                        id=1,
-                        name="L1",
-                        root_path="/p1",
-                        is_enabled=True,
-                        created_at=0,
-                        updated_at=0,
-                    )
-                ],
+                "nomarr.services.domain.library_svc.query.list_all_libraries",
+                return_value=[library],
             ),
             patch(
                 "nomarr.services.domain.library_svc.query.get_uncalibrated_tagged_song_ids",
@@ -103,26 +101,18 @@ class TestGetPathsNeedingCalibration:
             result = mixin.get_paths_needing_calibration()
 
         assert result == []
-        mock_uncalibrated.assert_called_once_with(mock_db, 1)
+        mock_uncalibrated.assert_called_once_with(mock_db, library)
 
     @pytest.mark.unit
     def test_uncalibrated_files_resolves_to_paths(self) -> None:
         mock_db = MagicMock()
         mixin = _ConcreteQueryMixin(mock_db)
+        library = _make_library()
 
         with (
             patch(
-                "nomarr.services.domain.library_svc.query.list_library_records",
-                return_value=[
-                    LibraryDict(
-                        id=1,
-                        name="L1",
-                        root_path="/p1",
-                        is_enabled=True,
-                        created_at=0,
-                        updated_at=0,
-                    )
-                ],
+                "nomarr.services.domain.library_svc.query.list_all_libraries",
+                return_value=[library],
             ),
             patch(
                 "nomarr.services.domain.library_svc.query.get_uncalibrated_tagged_song_ids",
@@ -146,12 +136,13 @@ class TestGetErroredFiles:
     def test_returns_errored_files_result(self) -> None:
         mock_db = MagicMock()
         mixin = _ConcreteQueryMixin(mock_db)
+        library = _make_library()
 
         with (
             patch.object(
                 mixin,
                 "_get_library_or_error",
-                return_value={"_id": 123},
+                return_value=library,
             ),
             patch(
                 "nomarr.services.domain.library_svc.query.count_errored_songs",
@@ -181,7 +172,7 @@ class TestGetErroredFiles:
                 ],
             ),
         ):
-            result = mixin.get_errored_files(123)
+            result = mixin.get_errored_files(library)
 
         assert result["total"] == 2
         assert len(result["files"]) == 2
@@ -196,18 +187,19 @@ class TestGetErroredFiles:
             patch.object(mixin, "_get_library_or_error", side_effect=ValueError("not found")),
             pytest.raises(ValueError, match="not found"),
         ):
-            mixin.get_errored_files("bad_id")
+            mixin.get_errored_files(_make_library())
 
     @pytest.mark.unit
     def test_returns_empty_when_no_errored_files(self) -> None:
         mock_db = MagicMock()
         mixin = _ConcreteQueryMixin(mock_db)
+        library = _make_library()
 
         with (
             patch.object(
                 mixin,
                 "_get_library_or_error",
-                return_value={"_id": 123},
+                return_value=library,
             ),
             patch(
                 "nomarr.services.domain.library_svc.query.count_errored_songs",
@@ -222,7 +214,7 @@ class TestGetErroredFiles:
                 return_value=[],
             ),
         ):
-            result = mixin.get_errored_files(123)
+            result = mixin.get_errored_files(library)
 
         assert result["total"] == 0
         assert result["files"] == []
@@ -241,6 +233,15 @@ class TestGetWorkStatus:
             needs_tagging_count=0,
         )
 
+    def _make_library_doc(self) -> LibraryDict:
+        """Build a ``LibraryDict`` transport projection (no storage PK / timestamps)."""
+        return LibraryDict(
+            name="Rock Library",
+            root_path="/music",
+            is_enabled=True,
+            library_auto_write=False,
+        )
+
     @pytest.mark.unit
     def test_returns_work_status_result(self) -> None:
         """Should return a WorkStatusResult instance."""
@@ -252,17 +253,7 @@ class TestGetWorkStatus:
         with (
             patch(
                 "nomarr.services.domain.library_svc.query.list_library_records",
-                return_value=[
-                    LibraryDict(
-                        id=1,
-                        name="Rock Library",
-                        root_path="/music",
-                        is_enabled=True,
-                        created_at=0,
-                        updated_at=0,
-                        library_auto_write=False,
-                    )
-                ],
+                return_value=[self._make_library_doc()],
             ),
             patch.object(
                 LibraryQueryMixin,
@@ -286,25 +277,17 @@ class TestGetWorkStatus:
         mock_db.library.count_recently_tagged = MagicMock(return_value=0)
         mixin = _ConcreteQueryMixin(mock_db)
 
-        def _state_side_effect(_db: MagicMock, axis_field: str, axis_value: str) -> list[str]:
+        def _state_side_effect(_db: MagicMock, axis_field: str, axis_value: str) -> list[Library]:
+            # get_libraries_in_axis_state returns domain Libraries; names key the
+            # per-library pipeline states.
             if axis_field == "tag_write_state" and axis_value == "not_written":
-                return ["1"]
+                return [_make_library(name="Rock Library")]
             return []
 
         with (
             patch(
                 "nomarr.services.domain.library_svc.query.list_library_records",
-                return_value=[
-                    LibraryDict(
-                        id=1,
-                        name="Rock Library",
-                        root_path="/music",
-                        is_enabled=True,
-                        created_at=0,
-                        updated_at=0,
-                        library_auto_write=False,
-                    )
-                ],
+                return_value=[self._make_library_doc()],
             ),
             patch.object(
                 LibraryQueryMixin,

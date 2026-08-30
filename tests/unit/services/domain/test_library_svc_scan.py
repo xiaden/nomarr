@@ -2,14 +2,24 @@
 
 from __future__ import annotations
 
-import functools
+from typing import TYPE_CHECKING, cast
 from unittest.mock import MagicMock, patch
-from typing import cast
 
 import pytest
 
 from nomarr.helpers import ManagedTask
+from nomarr.helpers.dataclasses.library_dataclass import Library
+from nomarr.helpers.dataclasses.library_domain_dataclasses import LibraryPipelineState, LibraryScan
 from nomarr.services.domain.library_svc import LibraryService, LibraryServiceConfig
+from nomarr.services.domain.library_svc.task_ids import library_task_id
+
+if TYPE_CHECKING:
+    import functools
+
+
+def _make_library(*, name: str = "Rock Library") -> Library:
+    """Build a domain ``Library`` (natural identity) fixture."""
+    return Library(name=name, root_path="/music")
 
 
 def _make_service(*, background_tasks: MagicMock | None = None) -> LibraryService:
@@ -26,15 +36,27 @@ def _make_service(*, background_tasks: MagicMock | None = None) -> LibraryServic
     )
 
 
+def _make_pipeline_state(scan_state: str) -> LibraryPipelineState:
+    """Build a canonical ``LibraryPipelineState`` with the given scan axis."""
+    return LibraryPipelineState(
+        scan_state=scan_state,
+        ml_state="not_ML_processed",
+        calibration_state="not_calibrated",
+        tag_write_state="not_written",
+    )
+
+
 class TestScanDispatch:
     """Tests for ManagedTask-backed scan dispatch methods."""
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_start_quick_scan_registers_managed_task(self) -> None:
-        """Quick scan should register a ManagedTask with the expected task id."""
+        """Quick scan should register a ManagedTask with the deterministic natural task id."""
         mock_bts = MagicMock()
         service = _make_service(background_tasks=mock_bts)
+        library = _make_library()
+        expected_task_id = library_task_id(library, "scan")
 
         with (
             patch("nomarr.services.domain.library_svc.scan.scan_setup_workflow") as mock_scan_setup,
@@ -42,25 +64,27 @@ class TestScanDispatch:
                 "nomarr.services.domain.library_svc.scan.on_scan_complete_pipeline_hook",
             ) as mock_on_complete_hook,
         ):
-            result = service.start_quick_scan(1)
+            result = service.start_quick_scan(library)
 
-            mock_scan_setup.assert_called_once_with(service.db, 1, scan_type="quick")
+            mock_scan_setup.assert_called_once_with(service.db, library, scan_type="quick")
             mock_bts.start_task.assert_called_once()
             managed_task = mock_bts.start_task.call_args.args[0]
             assert isinstance(managed_task, ManagedTask)
-            assert managed_task.task_id == "scan_library_1"
-            assert cast(functools.partial, managed_task.fn).keywords["stop_event"] is managed_task.stop_event
+            assert managed_task.task_id == expected_task_id
+            assert cast("functools.partial", managed_task.fn).keywords["stop_event"] is managed_task.stop_event
             assert managed_task.on_complete is not None
             managed_task.on_complete()
-            mock_on_complete_hook.assert_called_once_with(service.db, 1)
-        assert result.job_ids == ["scan_library_1"]
+            mock_on_complete_hook.assert_called_once_with(service.db, library)
+        assert result.job_ids == [expected_task_id]
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_start_full_scan_registers_managed_task(self) -> None:
-        """Full scan should register a ManagedTask with the expected task id."""
+        """Full scan should register a ManagedTask with the deterministic natural task id."""
         mock_bts = MagicMock()
         service = _make_service(background_tasks=mock_bts)
+        library = _make_library()
+        expected_task_id = library_task_id(library, "scan")
 
         with (
             patch("nomarr.services.domain.library_svc.scan.scan_setup_workflow") as mock_scan_setup,
@@ -68,32 +92,56 @@ class TestScanDispatch:
                 "nomarr.services.domain.library_svc.scan.on_scan_complete_pipeline_hook",
             ) as mock_on_complete_hook,
         ):
-            result = service.start_full_scan(1)
+            result = service.start_full_scan(library)
 
-            mock_scan_setup.assert_called_once_with(service.db, 1, scan_type="full")
+            mock_scan_setup.assert_called_once_with(service.db, library, scan_type="full")
             mock_bts.start_task.assert_called_once()
             managed_task = mock_bts.start_task.call_args.args[0]
             assert isinstance(managed_task, ManagedTask)
-            assert managed_task.task_id == "scan_library_1"
-            assert cast(functools.partial, managed_task.fn).keywords["stop_event"] is managed_task.stop_event
+            assert managed_task.task_id == expected_task_id
+            assert cast("functools.partial", managed_task.fn).keywords["stop_event"] is managed_task.stop_event
             assert managed_task.on_complete is not None
             managed_task.on_complete()
-            mock_on_complete_hook.assert_called_once_with(service.db, 1)
-        assert result.job_ids == ["scan_library_1"]
+            mock_on_complete_hook.assert_called_once_with(service.db, library)
+        assert result.job_ids == [expected_task_id]
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_cancel_scan_signals_library_task(self) -> None:
+        """Cancelling a scan must target the same natural task id used by start/status."""
         mock_bts = MagicMock()
         mock_bts.cancel_task.return_value = True
         service = _make_service(background_tasks=mock_bts)
+        library = _make_library()
+        expected_task_id = library_task_id(library, "scan")
 
-        assert service.cancel_scan(7) is True
-        mock_bts.cancel_task.assert_called_once_with("scan_library_7")
+        assert service.cancel_scan(library) is True
+        mock_bts.cancel_task.assert_called_once_with(expected_task_id)
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_cancel_scan_without_library_id_returns_false(self) -> None:
+    def test_start_and_cancel_resolve_to_same_task_id(self) -> None:
+        """start_quick_scan and cancel_scan must derive the identical escaped task key."""
+        mock_bts = MagicMock()
+        mock_bts.cancel_task.return_value = True
+        service = _make_service(background_tasks=mock_bts)
+        library = _make_library(name="Rock/Acoustic & Chill")
+        expected_task_id = library_task_id(library, "scan")
+
+        with (
+            patch("nomarr.services.domain.library_svc.scan.scan_setup_workflow"),
+            patch("nomarr.services.domain.library_svc.scan.on_scan_complete_pipeline_hook"),
+        ):
+            started = service.start_quick_scan(library)
+            cancelled = service.cancel_scan(library)
+
+        assert started.job_ids == [expected_task_id]
+        mock_bts.cancel_task.assert_called_once_with(expected_task_id)
+        assert cancelled is True
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_cancel_scan_without_library_returns_false(self) -> None:
         service = _make_service()
 
         assert service.cancel_scan() is False
@@ -112,7 +160,7 @@ class TestScanDispatch:
             background_tasks=None,
         )
 
-        assert service.cancel_scan(7) is False
+        assert service.cancel_scan(_make_library()) is False
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -129,7 +177,7 @@ class TestScanDispatch:
         )
 
         with pytest.raises(ValueError, match="Library scanning not configured"):
-            service.cancel_scan(7)
+            service.cancel_scan(_make_library())
 
 
 class TestScanStateQueries:
@@ -147,14 +195,17 @@ class TestScanStateQueries:
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_get_status_library_scan_status_reflects_pipeline_state(self) -> None:
-        """Per-library scan_status should come from pipeline state."""
+        """Per-library scan_status should come from the domain pipeline state."""
         service = _make_service()
-        scan_state = {
-            "files_processed": 5,
-            "files_total": 10,
-            "error": None,
-            "completed_at": None,
-        }
+        library = _make_library()
+        scan_state = LibraryScan(
+            scan_type="quick",
+            status="in_progress",
+            started_at=0,
+            files_processed=5,
+            files_found=10,
+        )
+        pipeline_state = _make_pipeline_state(scan_state="scanning")
 
         with (
             patch("nomarr.services.domain.library_svc.scan.resolve_library_for_scan"),
@@ -164,29 +215,29 @@ class TestScanStateQueries:
             ),
             patch(
                 "nomarr.services.domain.library_svc.scan.get_pipeline_state",
-                return_value={
-                    "scan_state": "scanning",
-                    "ml_state": "not_ML_processed",
-                    "calibration_state": "not_calibrated",
-                    "tag_write_state": "not_written",
-                },
+                return_value=pipeline_state,
             ),
         ):
-            result = service.get_status(1)
+            result = service.get_status(library)
 
         assert result.scan_status == "scanning"
+        assert result.scan_progress == 5
+        assert result.scan_total == 10
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_get_status_library_idle_pipeline_state_returns_idle_scan_status(self) -> None:
-        """Per-library scan_status should be idle when pipeline state is idle."""
+        """Per-library scan_status should be idle when pipeline state is not scanning."""
         service = _make_service()
-        scan_state = {
-            "files_processed": 0,
-            "files_total": 0,
-            "error": None,
-            "completed_at": None,
-        }
+        library = _make_library()
+        scan_state = LibraryScan(
+            scan_type="quick",
+            status="in_progress",
+            started_at=0,
+            files_processed=0,
+            files_found=0,
+        )
+        pipeline_state = _make_pipeline_state(scan_state="not_scanned")
 
         with (
             patch("nomarr.services.domain.library_svc.scan.resolve_library_for_scan"),
@@ -196,15 +247,10 @@ class TestScanStateQueries:
             ),
             patch(
                 "nomarr.services.domain.library_svc.scan.get_pipeline_state",
-                return_value={
-                    "scan_state": "not_scanned",
-                    "ml_state": "not_ML_processed",
-                    "calibration_state": "not_calibrated",
-                    "tag_write_state": "not_written",
-                },
+                return_value=pipeline_state,
             ),
         ):
-            result = service.get_status(1)
+            result = service.get_status(library)
 
         assert result.scan_status == "idle"
 
@@ -234,7 +280,7 @@ class TestGetScanHistory:
         service = _make_service()
         expected = [
             {
-                "library_id": "libraries/lib1",
+                "library_id": "Rock Library",
                 "name": "Rock Library",
                 "scan_status": "idle",
             },
@@ -269,7 +315,7 @@ class TestValidateLibraryTags:
     @pytest.mark.mocked
     def test_validate_library_tags_calls_resolve_then_workflow(self) -> None:
         service = _make_service()
-        library_id = 1
+        library = _make_library()
         expected = {
             "files_checked": 10,
             "incomplete_files": 2,
@@ -285,13 +331,13 @@ class TestValidateLibraryTags:
                 return_value=expected,
             ) as mock_validate_library_tags_workflow,
         ):
-            result = service.validate_library_tags(library_id)
+            result = service.validate_library_tags(library)
 
-        mock_resolve_library_for_scan.assert_called_once_with(service.db, library_id)
+        mock_resolve_library_for_scan.assert_called_once_with(service.db, library)
         mock_validate_library_tags_workflow.assert_called_once_with(
             db=service.db,
             models_dir=service.cfg.models_dir,
-            library_id=library_id,
+            library=library,
             namespace=service.cfg.namespace,
             auto_repair=True,
         )
@@ -301,7 +347,7 @@ class TestValidateLibraryTags:
     @pytest.mark.mocked
     def test_validate_library_tags_propagates_library_not_found(self) -> None:
         service = _make_service()
-        library_id = 999
+        library = _make_library()
 
         with (
             patch(
@@ -313,7 +359,7 @@ class TestValidateLibraryTags:
             ) as mock_validate_library_tags_workflow,
             pytest.raises(ValueError, match="not found"),
         ):
-            service.validate_library_tags(library_id)
+            service.validate_library_tags(library)
 
-        mock_resolve_library_for_scan.assert_called_once_with(service.db, library_id)
+        mock_resolve_library_for_scan.assert_called_once_with(service.db, library)
         mock_validate_library_tags_workflow.assert_not_called()

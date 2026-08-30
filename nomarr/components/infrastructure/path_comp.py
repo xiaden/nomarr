@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from nomarr.components.library.library_records_comp import find_library_containing_path, get_library_record
+from nomarr.components.library.library_records_comp import find_library_containing_path, get_library_by_name
 from nomarr.helpers.dto.path_dto import LibraryPath
 from nomarr.helpers.files_helper import is_audio_file
 from nomarr.persistence.db import Database
@@ -55,7 +55,7 @@ def build_library_path_from_input(raw_path: str, db: Database) -> LibraryPath:
         return LibraryPath(
             relative="",
             absolute=absolute,
-            library_id=library.id,
+            library_id=library.name,
             status="invalid_config",
             reason=f"Path not relative to library root: {library_root}",
         )
@@ -65,7 +65,7 @@ def build_library_path_from_input(raw_path: str, db: Database) -> LibraryPath:
         return LibraryPath(
             relative=relative_str,
             absolute=absolute,
-            library_id=library.id,
+            library_id=library.name,
             status="not_found",
             reason="File does not exist on disk",
         )
@@ -75,7 +75,7 @@ def build_library_path_from_input(raw_path: str, db: Database) -> LibraryPath:
         return LibraryPath(
             relative=relative_str,
             absolute=absolute,
-            library_id=library.id,
+            library_id=library.name,
             status="invalid_config",
             reason="Path is a directory, not a file",
         )
@@ -85,7 +85,7 @@ def build_library_path_from_input(raw_path: str, db: Database) -> LibraryPath:
         return LibraryPath(
             relative=relative_str,
             absolute=absolute,
-            library_id=library.id,
+            library_id=library.name,
             status="invalid_config",
             reason="Not a supported audio file format",
         )
@@ -94,7 +94,7 @@ def build_library_path_from_input(raw_path: str, db: Database) -> LibraryPath:
     return LibraryPath(
         relative=relative_str,
         absolute=absolute,
-        library_id=library.id,
+        library_id=library.name,
         status="valid",
         reason=None,
     )
@@ -103,7 +103,7 @@ def build_library_path_from_input(raw_path: str, db: Database) -> LibraryPath:
 def build_library_path_from_db(
     stored_path: str,
     db: Database,
-    library_id: int | None = None,
+    library_id: str | None = None,
     check_disk: bool = True,
 ) -> LibraryPath:
     """Build LibraryPath from database-stored path.
@@ -117,17 +117,17 @@ def build_library_path_from_db(
     Args:
         stored_path: Path as stored in database (may be relative or absolute)
         db: Database instance to look up current library configuration
-        library_id: Optional library ID if known from DB join
+        library_id: Optional natural library ``name`` if known from DB join
         check_disk: Whether to check if file exists (default: True)
 
     Returns:
         LibraryPath with status reflecting current config validity
 
     """
-    # If we have a library_id, fetch that library's configuration
+    # If we have a library name, fetch that library's configuration
     if library_id:
-        library = get_library_record(db, library_id, include_scan=False)
-        if not library or not library["is_enabled"]:
+        library = get_library_by_name(db, library_id)
+        if not library or not library.is_enabled:
             # Library was disabled or deleted
             return LibraryPath(
                 relative=stored_path,
@@ -137,7 +137,7 @@ def build_library_path_from_db(
                 reason=f"Library {library_id} is disabled or no longer exists",
             )
 
-        library_root = Path(library["root_path"]).resolve()
+        library_root = Path(library.root_path).resolve()
 
         # Try to construct absolute path
         # stored_path might be relative or absolute
@@ -190,12 +190,12 @@ def build_library_path_from_db(
             return LibraryPath(
                 relative=stored_path,
                 absolute=absolute,
-                library_id=found.id,
+                library_id=found.name,
                 status="invalid_config",
                 reason=f"Stored path not relative to library root: {library_root}",
             )
 
-        library_id = found.id
+        library_id = found.name
 
     # Optionally check disk
     if check_disk:
@@ -250,8 +250,8 @@ def get_library_root(library_path: LibraryPath, db: Database) -> Path | None:
     if not library_path.library_id:
         return None
 
-    library = get_library_record(db, library_path.library_id, include_scan=False)
+    library = get_library_by_name(db, library_path.library_id)
     if not library:
         return None
 
-    return Path(library["root_path"]).resolve()
+    return Path(library.root_path).resolve()

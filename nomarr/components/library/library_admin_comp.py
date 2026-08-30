@@ -24,6 +24,7 @@ from nomarr.helpers.exceptions import DatabaseStateError
 
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
+    from nomarr.helpers.dataclasses.library_dataclass import Library
     from nomarr.persistence.db import Database
 
 
@@ -36,17 +37,17 @@ def create_library(
     watch_mode: str = "off",
     file_write_mode: str = "full",
     library_auto_write: bool = False,
-) -> int:
-    """Create a new library.
+) -> Library:
+    """Create a new library and return the persisted domain ``Library``.
 
     Raises ValueError if the name already exists or the path is invalid.
     """
     base_root = get_base_library_root(base_library_root)
     abs_path = normalize_library_root(base_root, root_path)
-    ensure_no_overlapping_library_root(db, abs_path, ignore_id=None)
+    ensure_no_overlapping_library_root(db, abs_path)
     resolved_name = _resolve_library_name(db, name, abs_path)
     try:
-        library_id = create_library_record(
+        return create_library_record(
             db,
             name=resolved_name,
             root_path=abs_path,
@@ -58,43 +59,37 @@ def create_library(
     except (ValueError, DatabaseStateError, OSError) as e:
         msg = f"Failed to create library: {e}"
         raise ValueError(msg) from e
-    logger.info(f"[LibraryAdmin] Created library: {resolved_name} at {abs_path}")
-    return library_id
 
 
-def resolve_library_root(db: Database, base_library_root: str | None, library_id: int, root_path: str) -> str:
+def resolve_library_root(db: Database, base_library_root: str | None, library: Library, root_path: str) -> str:
     """Validate and normalize a library root without persisting it."""
-    library = get_library_record(db, library_id)
-    if not library:
-        msg = f"Library not found: {library_id}"
-        raise ValueError(msg)
     base_root = get_base_library_root(base_library_root)
     abs_path = normalize_library_root(base_root, root_path)
-    ensure_no_overlapping_library_root(db, abs_path, ignore_id=str(library_id))
+    ensure_no_overlapping_library_root(db, abs_path, ignore=library)
     return abs_path
 
 
-def update_library_root(db: Database, base_library_root: str | None, library_id: int, root_path: str) -> None:
+def update_library_root(db: Database, base_library_root: str | None, library: Library, root_path: str) -> None:
     """Update a library's root path.
 
     Raises ValueError if the library is not found or the path is invalid.
     """
-    abs_path = resolve_library_root(db, base_library_root, library_id, root_path)
-    update_library_record(db, library_id, root_path=abs_path)
-    logger.info(f"[LibraryAdmin] Updated library {library_id} root path to {abs_path}")
+    abs_path = resolve_library_root(db, base_library_root, library, root_path)
+    update_library_record(db, library, root_path=abs_path)
+    logger.info(f"[LibraryAdmin] Updated library {library.name} root path to {abs_path}")
 
 
-def delete_library(db: Database, library_id: int) -> bool:
+def delete_library(db: Database, library: Library) -> bool:
     """Delete a library and all associated data.
 
     Returns True if deleted, False if not found.
     """
-    library = get_library_record(db, library_id)
-    if not library:
+    existing = get_library_record(db, library)
+    if not existing:
         return False
 
-    db.library.remove_library(library_id)
-    logger.info(f"[LibraryAdmin] Deleted library {library_id}: {library.get('name')}")
+    db.library.remove_library(existing)
+    logger.info(f"[LibraryAdmin] Deleted library {existing.name}")
     return True
 
 

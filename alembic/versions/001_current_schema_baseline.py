@@ -1,8 +1,12 @@
-"""V1 baseline schema.
+"""Current PostgreSQL schema baseline.
 
-Revision ID: 001_initial
+This is the complete schema for fresh Nomarr installations. The pre-stability
+revision history was intentionally collapsed; databases created from prior
+revisions are unsupported and must be recreated.
+
+Revision ID: baseline_20260830
 Revises:
-Create Date: 2026-07-14 10:00:00.000000
+Create Date: 2026-08-30 00:00:00.000000
 """
 
 from collections.abc import Sequence
@@ -14,7 +18,7 @@ from sqlalchemy.dialects import postgresql
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "001_initial"
+revision: str = "baseline_20260830"
 down_revision: str | None = None
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
@@ -49,6 +53,9 @@ def upgrade() -> None:
         sa.Column("parent_id", sa.Integer(), nullable=True),
         sa.Column("path", sa.Text(), nullable=False),
         sa.Column("name", sa.String(length=255), nullable=True),
+        sa.Column("mtime", sa.BigInteger(), nullable=True),
+        sa.Column("file_count", sa.Integer(), nullable=True),
+        sa.Column("last_scanned_at", sa.BigInteger(), nullable=True),
         sa.ForeignKeyConstraint(["library_id"], ["libraries.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["parent_id"], ["library_folders.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
@@ -185,6 +192,13 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_library_scans_library_id", "library_scans", ["library_id"])
+    op.create_index(
+        "uq_library_scans_one_in_progress",
+        "library_scans",
+        ["library_id"],
+        unique=True,
+        postgresql_where=sa.text("status = 'in_progress'"),
+    )
 
     # ml_models
     op.create_table(
@@ -218,15 +232,15 @@ def upgrade() -> None:
         "ml_output_streams",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.Column("song_id", sa.Integer(), nullable=False),
-        sa.Column("model_id", sa.String(length=255), nullable=False),
-        sa.Column("status", sa.String(length=50), nullable=False),
+        sa.Column("output_id", sa.String(length=255), nullable=False),
+        sa.Column("output_index", sa.Integer(), nullable=True),
+        sa.Column("values", postgresql.JSONB(), nullable=False),
         sa.Column("created_at", sa.BigInteger(), nullable=False),
         sa.ForeignKeyConstraint(["song_id"], ["songs.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["model_id"], ["ml_models.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_ml_output_streams_song_id", "ml_output_streams", ["song_id"])
-    op.create_index("ix_ml_output_streams_model_id", "ml_output_streams", ["model_id"])
+    op.create_index("ix_ml_output_streams_output_id", "ml_output_streams", ["output_id"])
 
     # ml_embedding_streams
     op.create_table(
@@ -241,23 +255,28 @@ def upgrade() -> None:
     )
     op.create_index("ix_ml_embedding_streams_song_id", "ml_embedding_streams", ["song_id"])
     op.create_index("ix_ml_embedding_streams_backbone_id", "ml_embedding_streams", ["backbone_id"])
+    op.create_unique_constraint(
+        "uq_ml_embedding_streams_song_backbone",
+        "ml_embedding_streams",
+        ["song_id", "backbone_id"],
+    )
 
     # ml_model_outputs
     op.create_table(
         "ml_model_outputs",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("song_id", sa.Integer(), nullable=False),
+        sa.Column("output_id", sa.String(length=255), nullable=False),
         sa.Column("model_id", sa.String(length=255), nullable=False),
         sa.Column("output_data", postgresql.JSONB(), nullable=False),
         sa.Column("output_index", sa.Integer(), nullable=True),
         sa.Column("label", sa.String(length=255), nullable=True),
         sa.Column("fully_labeled", sa.Integer(), nullable=False, server_default=sa.text("0")),
         sa.Column("created_at", sa.BigInteger(), nullable=False),
-        sa.ForeignKeyConstraint(["song_id"], ["songs.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["model_id"], ["ml_models.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("output_id", name="uq_ml_model_outputs_output_id"),
     )
-    op.create_index("ix_ml_model_outputs_song_id", "ml_model_outputs", ["song_id"])
+    op.create_index("ix_ml_model_outputs_output_id", "ml_model_outputs", ["output_id"])
     op.create_index("ix_ml_model_outputs_model_id", "ml_model_outputs", ["model_id"])
 
     # calibration_states
@@ -285,56 +304,6 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_calibration_history_model_id", "calibration_history", ["model_id"])
-
-    # navidrome_tracks
-    op.create_table(
-        "navidrome_tracks",
-        sa.Column("id", sa.Text(), nullable=False),
-        sa.Column("title", sa.Text(), nullable=False),
-        sa.Column("artist", sa.Text(), nullable=False),
-        sa.Column("album", sa.Text(), nullable=False),
-        sa.Column("file_path", sa.Text(), nullable=False),
-        sa.Column("created_at", sa.BigInteger(), nullable=False),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index("ix_navidrome_tracks_file_path", "navidrome_tracks", ["file_path"])
-
-    # navidrome_track_maps
-    op.create_table(
-        "navidrome_track_maps",
-        sa.Column("navidrome_track_id", sa.Text(), nullable=False),
-        sa.Column("song_id", sa.Integer(), nullable=False),
-        sa.Column("created_at", sa.BigInteger(), nullable=False),
-        sa.ForeignKeyConstraint(["navidrome_track_id"], ["navidrome_tracks.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["song_id"], ["songs.id"], ondelete="CASCADE"),
-        sa.PrimaryKeyConstraint("navidrome_track_id", "song_id"),
-    )
-    op.create_index("ix_navidrome_track_maps_song_id", "navidrome_track_maps", ["song_id"])
-
-    # navidrome_plays
-    op.create_table(
-        "navidrome_plays",
-        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("navidrome_track_id", sa.Text(), nullable=False),
-        sa.Column("played_at", sa.BigInteger(), nullable=False),
-        sa.Column("user_id", sa.String(length=255), nullable=True),
-        sa.ForeignKeyConstraint(["navidrome_track_id"], ["navidrome_tracks.id"], ondelete="CASCADE"),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index("ix_navidrome_plays_navidrome_track_id", "navidrome_plays", ["navidrome_track_id"])
-    op.create_index("ix_navidrome_plays_played_at", "navidrome_plays", ["played_at"])
-
-    # navidrome_play_maps
-    op.create_table(
-        "navidrome_play_maps",
-        sa.Column("play_id", sa.Integer(), nullable=False),
-        sa.Column("song_id", sa.Integer(), nullable=False),
-        sa.Column("created_at", sa.BigInteger(), nullable=False),
-        sa.ForeignKeyConstraint(["play_id"], ["navidrome_plays.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["song_id"], ["songs.id"], ondelete="CASCADE"),
-        sa.PrimaryKeyConstraint("play_id", "song_id"),
-    )
-    op.create_index("ix_navidrome_play_maps_song_id", "navidrome_play_maps", ["song_id"])
 
     # meta
     op.create_table(
@@ -394,8 +363,8 @@ def upgrade() -> None:
         sa.Column("component_id", sa.String(length=255), nullable=False),
         sa.Column("policy_data", postgresql.JSONB(), nullable=False),
         sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("component_id", name="uq_worker_restart_policies_component_id"),
     )
-    op.create_index("ix_worker_restart_policies_component_id", "worker_restart_policies", ["component_id"])
 
     # applied_migrations
     op.create_table(
@@ -467,10 +436,15 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Drop the complete baseline schema."""
     op.drop_index("ix_vram_promises_worker_id", table_name="vram_promises")
     op.drop_table("vram_promises")
     op.drop_table("applied_migrations")
-    op.drop_index("ix_worker_restart_policies_component_id", table_name="worker_restart_policies")
+    op.drop_constraint(
+        "uq_worker_restart_policies_component_id",
+        "worker_restart_policies",
+        type_="unique",
+    )
     op.drop_table("worker_restart_policies")
     op.drop_table("locks")
     op.drop_index("ix_worker_claims_claimed_at", table_name="worker_claims")
@@ -481,31 +455,30 @@ def downgrade() -> None:
     op.drop_index("ix_sessions_expires_at", table_name="sessions")
     op.drop_table("sessions")
     op.drop_table("meta")
-    op.drop_index("ix_navidrome_play_maps_song_id", table_name="navidrome_play_maps")
-    op.drop_table("navidrome_play_maps")
-    op.drop_index("ix_navidrome_plays_played_at", table_name="navidrome_plays")
-    op.drop_index("ix_navidrome_plays_navidrome_track_id", table_name="navidrome_plays")
-    op.drop_table("navidrome_plays")
-    op.drop_index("ix_navidrome_track_maps_song_id", table_name="navidrome_track_maps")
-    op.drop_table("navidrome_track_maps")
-    op.drop_index("ix_navidrome_tracks_file_path", table_name="navidrome_tracks")
-    op.drop_table("navidrome_tracks")
     op.drop_index("ix_calibration_history_model_id", table_name="calibration_history")
     op.drop_table("calibration_history")
     op.drop_index("ix_calibration_states_updated_at", table_name="calibration_states")
     op.drop_index("ix_calibration_states_model_id", table_name="calibration_states")
     op.drop_table("calibration_states")
     op.drop_index("ix_ml_model_outputs_model_id", table_name="ml_model_outputs")
-    op.drop_index("ix_ml_model_outputs_song_id", table_name="ml_model_outputs")
+    op.drop_index("ix_ml_model_outputs_output_id", table_name="ml_model_outputs")
     op.drop_table("ml_model_outputs")
+    op.drop_constraint(
+        "uq_ml_embedding_streams_song_backbone",
+        "ml_embedding_streams",
+        type_="unique",
+    )
     op.drop_index("ix_ml_embedding_streams_backbone_id", table_name="ml_embedding_streams")
     op.drop_index("ix_ml_embedding_streams_song_id", table_name="ml_embedding_streams")
     op.drop_table("ml_embedding_streams")
-    op.drop_index("ix_ml_output_streams_model_id", table_name="ml_output_streams")
+    op.drop_index("ix_ml_output_streams_output_id", table_name="ml_output_streams")
     op.drop_index("ix_ml_output_streams_song_id", table_name="ml_output_streams")
     op.drop_table("ml_output_streams")
     op.drop_index("ix_ml_models_updated_at", table_name="ml_models")
+    op.drop_index("ix_ml_models_backbone", table_name="ml_models")
+    op.drop_index("ix_ml_models_path", table_name="ml_models")
     op.drop_table("ml_models")
+    op.drop_index("uq_library_scans_one_in_progress", table_name="library_scans")
     op.drop_index("ix_library_scans_library_id", table_name="library_scans")
     op.drop_table("library_scans")
     op.drop_index("ix_pipeline_states_library_id", table_name="pipeline_states")

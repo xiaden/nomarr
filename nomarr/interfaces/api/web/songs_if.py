@@ -7,10 +7,11 @@ from typing import TYPE_CHECKING, Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from nomarr.helpers.dataclasses.library_dataclass import Library
 from nomarr.helpers.dto.library_dto import SearchFilesQuery
 from nomarr.helpers.logging_helper import sanitize_exception_message
 from nomarr.interfaces.api.auth import verify_session
-from nomarr.interfaces.api.id_codec import decode_path_id, encode_id
+from nomarr.interfaces.api.id_codec import decode_library_name, decode_path_id, encode_id
 from nomarr.interfaces.api.types.library_types import (
     ErroredFileItemResponse,
     ErroredFilesResponse,
@@ -29,6 +30,15 @@ if TYPE_CHECKING:
     from nomarr.services.domain.tagging_svc import TaggingService
 
 router = APIRouter(prefix="/library", tags=["Library"])
+
+
+async def _resolve_library(library_service, raw_name: str) -> Library:
+    """Resolve a URL-encoded natural library name to a domain ``Library`` (mechanism A)."""
+    name = decode_library_name(raw_name)
+    library = await asyncio.to_thread(library_service.get_library_by_name, name)
+    if library is None:
+        raise HTTPException(status_code=404, detail="Library not found")
+    return library
 
 
 class FileIdsRequest(BaseModel):
@@ -225,15 +235,15 @@ async def get_file_tags(
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get file tags")) from e
 
 
-@router.get("/{library_id}/errored-file", dependencies=[Depends(verify_session)])
+@router.get("/{library_name}/errored-file", dependencies=[Depends(verify_session)])
 async def get_errored_files(
-    library_id: str,
+    library_name: str,
     library_service: "LibraryService" = Depends(get_library_service),
 ) -> ErroredFilesResponse:
     """Get errored files for a library."""
-    decoded_library_id: int = decode_path_id(library_id)
     try:
-        result = await asyncio.to_thread(library_service.get_errored_files, library_id=decoded_library_id)
+        library = await _resolve_library(library_service, library_name)
+        result = await asyncio.to_thread(library_service.get_errored_files, library)
         return ErroredFilesResponse(
             files=[
                 ErroredFileItemResponse(
@@ -247,31 +257,29 @@ async def get_errored_files(
             ],
             total=result["total"],
         )
-    except ValueError:
-        raise HTTPException(status_code=404, detail="Library not found") from None
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.exception(f"[Web API] Error getting errored files for library {decoded_library_id}")
+        logger.exception(f"[Web API] Error getting errored files for library {decode_library_name(library_name)}")
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get errored files")) from e
 
 
-@router.post("/{library_id}/retry-errored", dependencies=[Depends(verify_session)])
+@router.post("/{library_name}/retry-errored", dependencies=[Depends(verify_session)])
 async def retry_errored_files(
-    library_id: str,
+    library_name: str,
     request: RetryErroredRequest | None = None,
     library_service: "LibraryService" = Depends(get_library_service),
 ) -> RetryErroredResponse:
     """Retry errored songs by clearing their errored state and re-queuing for tagging."""
-    decoded_library_id: int = decode_path_id(library_id)
     song_ids = [decode_path_id(fid) for fid in request.file_ids] if request and request.file_ids else None
     try:
-        result = await asyncio.to_thread(
-            library_service.retry_errored_songs, library_id=decoded_library_id, song_ids=song_ids
-        )
+        library = await _resolve_library(library_service, library_name)
+        result = await asyncio.to_thread(library_service.retry_errored_songs, library, song_ids=song_ids)
         return RetryErroredResponse(**result)
-    except ValueError:
-        raise HTTPException(status_code=404, detail="Library not found") from None
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.exception(f"[Web API] Error retrying errored files for library {decoded_library_id}")
+        logger.exception(f"[Web API] Error retrying errored files for library {decode_library_name(library_name)}")
         raise HTTPException(
             status_code=500,
             detail=sanitize_exception_message(e, "Failed to retry errored files"),

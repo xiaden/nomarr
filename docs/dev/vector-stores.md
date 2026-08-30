@@ -13,7 +13,7 @@ The live persistence API is intent-facade based. The former `nomarr/persistence/
 ## Migration Path (Alembic)
 
 Schema is versioned via Alembic migrations in `alembic/versions/` (e.g.
-`001_initial_v1_baseline_schema.py`, `002_add_ml_model_fields.py`).
+`001_current_schema_baseline.py`).
 
 All embeddings live in a single `embeddings` table, addressed by a
 `backbone_id` column. There is no hot/cold split — no per-backbone

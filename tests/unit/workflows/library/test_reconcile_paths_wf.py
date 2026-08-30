@@ -6,7 +6,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nomarr.helpers.dataclasses.library_dataclass import Library
 from nomarr.workflows.library.reconcile_paths_wf import reconcile_library_paths_workflow
+
+
+def _make_library() -> Library:
+    """Build a domain ``Library`` (natural identity) fixture."""
+    return Library(name="Rock Library", root_path="/music")
 
 
 class TestReconcileLibraryPathsWorkflow:
@@ -20,7 +26,7 @@ class TestReconcileLibraryPathsWorkflow:
         with pytest.raises(ValueError, match="Library root not configured"):
             reconcile_library_paths_workflow(
                 db=MagicMock(),
-                library_id=1,
+                library=_make_library(),
                 library_root=library_root,
             )
 
@@ -31,7 +37,7 @@ class TestReconcileLibraryPathsWorkflow:
         with pytest.raises(ValueError, match="Invalid policy 'bad_policy'"):
             reconcile_library_paths_workflow(
                 db=MagicMock(),
-                library_id=1,
+                library=_make_library(),
                 library_root="/music",
                 policy="bad_policy",  # type: ignore[arg-type]
             )
@@ -39,8 +45,9 @@ class TestReconcileLibraryPathsWorkflow:
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_delegates_to_component_with_expected_arguments(self) -> None:
-        """Valid calls should forward library_id, policy, and batch_size unchanged."""
+        """Valid calls should forward the Library, policy, and batch_size unchanged."""
         mock_db = MagicMock()
+        library = _make_library()
         expected_result = {
             "total_files": 10,
             "valid_files": 8,
@@ -57,7 +64,7 @@ class TestReconcileLibraryPathsWorkflow:
         ) as mock_reconcile_library_paths:
             result = reconcile_library_paths_workflow(
                 db=mock_db,
-                library_id=1,
+                library=library,
                 library_root="/music",
                 policy="delete_invalid",
                 batch_size=250,
@@ -66,7 +73,7 @@ class TestReconcileLibraryPathsWorkflow:
         assert result is expected_result
         mock_reconcile_library_paths.assert_called_once_with(
             db=mock_db,
-            library_id=1,
+            library=library,
             policy="delete_invalid",
             batch_size=250,
         )

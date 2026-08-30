@@ -17,7 +17,7 @@ The critical gap: **ADR-041 mandates domain dataclasses as the persistence-compo
 
 **Not yet documented:** Detailed per-repo method API, V2 dataclass→V1 integration plan, frontend persistence coupling, Navidrome-specific persistence patterns
 
-**Last extended:** 2026-08-19 (audit verification appended, log L114)
+**Last extended:** 2026-08-30 (song-tag facade migration state, log L126)
 
 ## Key Files
 
@@ -46,7 +46,7 @@ The critical gap: **ADR-041 mandates domain dataclasses as the persistence-compo
 | Arango-naming sabotage enforcement | `tests/sabotage/test_no_arango_naming.py` |
 | Architecture enforcement tests | `tests/test_architecture_qc.py` (tier bans) + import-linter contracts |
 | Alembic migration env | `alembic/env.py` |
-| Alembic baseline migration | `alembic/versions/001_initial_v1_baseline_schema.py` |
+| Alembic baseline migration | `alembic/versions/001_current_schema_baseline.py` |
 | App DI container | `nomarr/app.py` |
 
 ## Critical Invariants
@@ -183,6 +183,18 @@ All inventory duplicate-family claims RE-VERIFIED against the current tree (post
 - **Type-drift correction:** `TagSongItem.file_id: int` (`tag_curation_dto.py:46-52`) — earlier L107 note said str; CURRENT tree is int (inventory's `:46` int claim correct).
 - **ADR contradiction re-verified:** the persistence facade (`application.py`) returns `MetaRow`/`LockRow` storage shapes — direct violation of ADR-032 point 1 ("persistence methods accept and return only domain objects — no raw dicts") and ADR-041 (facade mediates with domain dataclasses). Zero facade methods comply; repo_dto row TypedDicts remain the live contract.
 - **Baseline CHANGE (contradicts inventory §1):** the inventory's "2 dirty files" (`file_write_comp.py`, `playlist_import_types.py`) are now COMMITTED (650383d4/672179f5 repair checkpoints, 514dab9c DTO encoding fix). The nomarr codebase tree is now CLEAN — only `.opencode/commands/correct.md` (M) + `bulk_correct.md` (??) dirty (non-code). Any remediation now starts from a clean tree.
+
+## Song-Tag Intent Facade Migration State (2026-08-30, working tree `feat/develop-branch-migration`)
+
+First real ADR-041 compliance work landed as a PARTIAL migration of the tag sub-facade (`LibraryTagsDb`) — the tree is currently **not importable** (`import nomarr.persistence.db` → `ModuleNotFoundError`). See log L126 for the full method-by-method report.
+
+- **Import blocker (separate concurrent folder-domain stream):** `nomarr/persistence/database/folder_repo.py:13` imports `nomarr.helpers.dataclasses.library_folder_dataclass` whose source was DELETED (only a stale 14:05 `.pyc` remains). `db.py:17` imports folder_repo at runtime. folder_repo.py body is also mid-migration (still calls removed `select_by_key`/`_row_to_dto`/`LibraryFolderRow`/`Any`; header defines unused `_row_to_domain`).
+- **Migrated (domain-shaped, coherent):** `LibraryTagsDb.get_tag(TagIdentity) -> TagIdentity|None` (L49), `find_or_create_tag(TagIdentity) -> TagIdentity` (L56), `list_tags_for_song -> list[SongTagAssignment]` (L61); `search_songs_by_numeric_tag -> list[SongTagMatch]`; `search_songs_by_tag/_contains/_pattern -> list[Song]`. New domain dataclasses: `song_tag_dataclass.py` (`TagIdentity`, `SongTagAssignment` — no `.get()`), `song_dataclass.py` (`Song` with `from_row`/`to_dict`, `SongTagMatch`).
+- **Broken (mypy/pyright-verified):** `library_tags.py` `TagRow` undefined at L86/122/126/135/154 (annotations only) **and L159 (RUNTIME NameError — `TagRow(...)` ctor in `list_song_tags_for_songs`)**, `replace_song_tags` L312 calls `find_or_create_tag` with 3 args (TypeError; even fixed it returns `TagIdentity` not int → repo insert breaks). `LibraryDb` forwarders broken: `get_tag(tag_id: int)` L323, `find_or_create_tag(name, value, namespace)` L326 (3-arg vs 1-arg), `list_tags_for_song -> list[TagRow]` L329.
+- **Correctness bug:** new `get_tag` resolves via `tag_repo.get_tag_by_name(name, namespace)` — a `fetchone` on a NON-unique key (unique is `(name, value, namespace)`); multi-value names (e.g. `genre`) → false negatives. Needs a value-aware lookup.
+- **Callers NOT migrated (latent runtime AttributeError/TypeError):** tag_query_comp (L111 get_tag int, L156/224/276/310 `.get` on domain objects), tag_write_comp (L19 3-arg find_or_create_tag), tag_stats_comp (L41/50), song_tags_comp (L28), mood_analysis_comp (L83), descriptor_match_comp (L85/96 cast-to-dict), move_detection_comp (L257 replace_song_tags dict path), library_song_query_comp `_tags_for_song` L171-176 (missed in the concurrent stream). SAFE: tag_cleanup_comp; `list_song_tags_for_songs` dict consumers (once L159 is fixed).
+- **Write path needs an int resolver:** curation.py L74/146 and metadata_svc.py L179/224 call `tag_write_comp.find_or_create_tag(...)` and use the returned int. Minimal fix: `replace_song_tags` should resolve new tags via `self._tag_repo.get_or_create_tag(name, str(value), namespace)` (returns int) directly.
+- **Concurrent song-domain stream is COHERENT (do not touch):** library_songs.py returns `Song` everywhere; library_regions.py (`set_pipeline_axis`/`remove_pipeline_state`, `get_pipeline_state` non-None, `pipeline_repo` param); library_song_query_comp search paths consume `Song`/`SongTagMatch` via `to_dict()`/`match.matched_tag`/`match.distance`; db.py wiring (`pipeline_repo` → LibraryRegionsDb; `library_repo` removed from AppDb); curation/apply_calibration renamed `get_song_states` → `song_state_membership`. song_state_repo.py:326 new `result.rowcount` — typing-only mypy error (runtime OK).
 
 ## Sources
 

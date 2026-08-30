@@ -1,4 +1,13 @@
-"""Tests for nomarr.components.tagging.tag_write_comp module."""
+"""Tests for nomarr.components.tagging.tag_write_comp module.
+
+Phase 6 rewrite: asserts the migrated domain-facing API. All writes route
+through the sealed ``LibraryTagsDb`` facade using ``SongIdentity`` /
+``TagRef`` and typed ``SongTagAssignment`` commands / ``RelinkResult``
+results. Numeric song handles are translated with the identity bridge
+(``db.library.resolve_song_identity(s)`` / ``resolve_song_identities``). The
+deleted ``find_or_create_tag`` and raw replacement-dict/edge-scan behavior are
+gone from this layer.
+"""
 
 from __future__ import annotations
 
@@ -9,52 +18,19 @@ import pytest
 from nomarr.components.tagging.tag_write_comp import (
     add_song_tag,
     delete_song_tags,
-    find_or_create_tag,
     relink_tag_edges,
     set_song_tags,
     set_song_tags_batch,
 )
-from nomarr.helpers.dataclasses.song_dataclass import Song
+from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
+from nomarr.helpers.dataclasses.song_tag_dataclass import RelinkResult, SongTagAssignment, TagRef
 
 
-def _song(**overrides: object) -> Song:
-    """Build a minimal ``Song`` for mocking persistence-facade returns."""
-    base: dict = {
-        "song_id": 1,
-        "library_id": 1,
-        "folder_id": None,
-        "path": "/music/song.mp3",
-        "normalized_path": "song.mp3",
-        "file_size": 100,
-        "modified_time": 1000,
-        "duration_seconds": None,
-        "chromaprint": None,
-        "needs_tagging": False,
-        "is_valid": True,
-        "tagged": False,
-        "calibration_hash": None,
-        "write_claimed_by": None,
-        "last_tagged_at": None,
-        "scanned_at": None,
-        "created_at": 1000,
-    }
-    base.update(overrides)
-    return Song(**base)
-
-
-class TestFindOrCreateTag:
-    """Tests for find_or_create_tag."""
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
-    def test_returns_tag_id_from_library_facade(self) -> None:
-        mock_db = MagicMock()
-        mock_db.library.find_or_create_tag.return_value = 42
-
-        result = find_or_create_tag(mock_db, "genre", "rock")
-
-        assert result == 42
-        mock_db.library.find_or_create_tag.assert_called_once_with("genre", "rock", "")
+def _song_identity(song_id: int) -> SongIdentity:
+    return SongIdentity(
+        library=LibraryIdentity(name="Music", root_path="/music"),
+        normalized_path=f"song{song_id}.mp3",
+    )
 
 
 class TestSetSongTags:
@@ -64,21 +40,22 @@ class TestSetSongTags:
     @pytest.mark.mocked
     def test_replaces_requested_tag_name_and_keeps_other_tags(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.list_song_tags_for_songs.return_value = {
-            1: [
-                {"_id": "tags/old-genre", "name": "genre", "value": "old"},
-                {"_id": "tags/mood", "name": "mood", "value": "happy"},
-            ]
-        }
+        song_identity = _song_identity(1)
+        mock_db.library.resolve_song_identity.return_value = song_identity
+        mock_db.library.list_tags_for_song.return_value = (
+            SongTagAssignment(name="genre", value="old"),
+            SongTagAssignment(name="mood", value="happy"),
+        )
 
         set_song_tags(mock_db, 1, "genre", ["rock"])
 
-        mock_db.library.list_song_tags_for_songs.assert_called_once_with([1])
+        mock_db.library.resolve_song_identity.assert_called_once_with(1)
+        mock_db.library.list_tags_for_song.assert_called_once_with(song_identity)
         mock_db.library.replace_song_tags.assert_called_once_with(
-            1,
+            song_identity,
             [
-                {"_id": "tags/mood", "name": "mood", "value": "happy"},
-                {"name": "genre", "value": "rock"},
+                SongTagAssignment(name="mood", value="happy"),
+                SongTagAssignment(name="genre", value="rock"),
             ],
         )
 
@@ -86,32 +63,45 @@ class TestSetSongTags:
     @pytest.mark.mocked
     def test_empty_values_remove_only_requested_name(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.list_song_tags_for_songs.return_value = {
-            1: [
-                {"_id": "tags/old-genre", "name": "genre", "value": "old"},
-                {"_id": "tags/mood", "name": "mood", "value": "happy"},
-            ]
-        }
+        song_identity = _song_identity(1)
+        mock_db.library.resolve_song_identity.return_value = song_identity
+        mock_db.library.list_tags_for_song.return_value = (
+            SongTagAssignment(name="genre", value="old"),
+            SongTagAssignment(name="mood", value="happy"),
+        )
 
         set_song_tags(mock_db, 1, "genre", [])
 
         mock_db.library.replace_song_tags.assert_called_once_with(
-            1,
-            [{"_id": "tags/mood", "name": "mood", "value": "happy"}],
+            song_identity,
+            [SongTagAssignment(name="mood", value="happy")],
         )
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_handles_missing_existing_tags(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.list_song_tags_for_songs.return_value = {}
+        song_identity = _song_identity(1)
+        mock_db.library.resolve_song_identity.return_value = song_identity
+        mock_db.library.list_tags_for_song.return_value = ()
 
         set_song_tags(mock_db, 1, "genre", ["rock"])
 
         mock_db.library.replace_song_tags.assert_called_once_with(
-            1,
-            [{"name": "genre", "value": "rock"}],
+            song_identity,
+            [SongTagAssignment(name="genre", value="rock")],
         )
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_is_noop_when_song_identity_not_found(self) -> None:
+        mock_db = MagicMock()
+        mock_db.library.resolve_song_identity.return_value = None
+
+        set_song_tags(mock_db, 999, "genre", ["rock"])
+
+        mock_db.library.list_tags_for_song.assert_not_called()
+        mock_db.library.replace_song_tags.assert_not_called()
 
 
 class TestSetSongTagsBatch:
@@ -124,6 +114,7 @@ class TestSetSongTagsBatch:
 
         set_song_tags_batch(mock_db, [])
 
+        mock_db.library.resolve_song_identities.assert_not_called()
         mock_db.library.list_song_tags_for_songs.assert_not_called()
         mock_db.library.replace_song_tags.assert_not_called()
 
@@ -136,34 +127,36 @@ class TestSetSongTagsBatch:
             {"song_id": 1, "name": "mood", "values": ["happy", "bright"]},
             {"song_id": 2, "name": "genre", "values": ["jazz"]},
         ]
+        id1 = _song_identity(1)
+        id2 = _song_identity(2)
+        mock_db.library.resolve_song_identities.return_value = {1: id1, 2: id2}
         mock_db.library.list_song_tags_for_songs.return_value = {
-            1: [
-                {"_id": "tags/old-genre", "name": "genre", "value": "old"},
-                {"_id": "tags/year", "name": "year", "value": 1999},
-            ],
-            2: [
-                {"_id": "tags/old-mood", "id": 888, "name": "mood", "value": "calm"},
-            ],
+            id1: (
+                SongTagAssignment(name="genre", value="old"),
+                SongTagAssignment(name="year", value=1999),
+            ),
+            id2: (SongTagAssignment(name="mood", value="calm"),),
         }
 
         set_song_tags_batch(mock_db, entries)
 
-        mock_db.library.list_song_tags_for_songs.assert_called_once_with([1, 2])
+        mock_db.library.resolve_song_identities.assert_called_once_with([1, 2])
+        mock_db.library.list_song_tags_for_songs.assert_called_once_with([id1, id2])
         assert mock_db.library.replace_song_tags.call_args_list == [
             call(
-                1,
+                id1,
                 [
-                    {"_id": "tags/year", "name": "year", "value": 1999},
-                    {"name": "genre", "value": "rock"},
-                    {"name": "mood", "value": "happy"},
-                    {"name": "mood", "value": "bright"},
+                    SongTagAssignment(name="year", value=1999),
+                    SongTagAssignment(name="genre", value="rock"),
+                    SongTagAssignment(name="mood", value="happy"),
+                    SongTagAssignment(name="mood", value="bright"),
                 ],
             ),
             call(
-                2,
+                id2,
                 [
-                    {"_id": "tags/old-mood", "id": 888, "name": "mood", "value": "calm"},
-                    {"name": "genre", "value": "jazz"},
+                    SongTagAssignment(name="mood", value="calm"),
+                    SongTagAssignment(name="genre", value="jazz"),
                 ],
             ),
         ]
@@ -174,23 +167,32 @@ class TestAddSongTag:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_appends_tag_via_replace_file_tags(self) -> None:
+    def test_appends_tag_via_replace_song_tags(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.list_song_tags_for_songs.return_value = {
-            1: [
-                {"_id": "tags/existing", "name": "mood", "value": "happy"},
-            ]
-        }
+        song_identity = _song_identity(1)
+        mock_db.library.resolve_song_identity.return_value = song_identity
+        mock_db.library.list_tags_for_song.return_value = (SongTagAssignment(name="mood", value="happy"),)
 
         add_song_tag(mock_db, 1, "genre", "rock")
 
         mock_db.library.replace_song_tags.assert_called_once_with(
-            1,
+            song_identity,
             [
-                {"_id": "tags/existing", "name": "mood", "value": "happy"},
-                {"name": "genre", "value": "rock"},
+                SongTagAssignment(name="mood", value="happy"),
+                SongTagAssignment(name="genre", value="rock"),
             ],
         )
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_is_noop_when_song_identity_not_found(self) -> None:
+        mock_db = MagicMock()
+        mock_db.library.resolve_song_identity.return_value = None
+
+        add_song_tag(mock_db, 999, "genre", "rock")
+
+        mock_db.library.list_tags_for_song.assert_not_called()
+        mock_db.library.replace_song_tags.assert_not_called()
 
 
 class TestDeleteSongTags:
@@ -200,10 +202,23 @@ class TestDeleteSongTags:
     @pytest.mark.mocked
     def test_deletes_all_edges_for_song(self) -> None:
         mock_db = MagicMock()
+        song_identity = _song_identity(1)
+        mock_db.library.resolve_song_identity.return_value = song_identity
 
         delete_song_tags(mock_db, 1)
 
-        mock_db.library.remove_song_tags.assert_called_once_with(1)
+        mock_db.library.resolve_song_identity.assert_called_once_with(1)
+        mock_db.library.remove_song_tags.assert_called_once_with(song_identity)
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_is_noop_when_song_identity_not_found(self) -> None:
+        mock_db = MagicMock()
+        mock_db.library.resolve_song_identity.return_value = None
+
+        delete_song_tags(mock_db, 999)
+
+        mock_db.library.remove_song_tags.assert_not_called()
 
 
 class TestRelinkTagEdges:
@@ -211,100 +226,38 @@ class TestRelinkTagEdges:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_returns_zero_moved_when_no_source_tags_exist(self) -> None:
+    def test_returns_zero_result_when_source_equals_target(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.list_libraries.return_value = [{"id": 1}]
-        mock_db.library.list_songs.return_value = [
-            _song(song_id=1),
-            _song(song_id=2),
-        ]
-        mock_db.library.list_song_tags_for_songs.return_value = {
-            1: [{"_id": "tags/other", "id": 999, "name": "genre", "value": "rock"}],
-            2: [{"_id": "tags/another", "id": 777, "name": "mood", "value": "happy"}],
-        }
+        tag = TagRef(name="genre", value="rock")
 
-        result = relink_tag_edges(mock_db, 100, 200)
+        result = relink_tag_edges(mock_db, tag, tag)
 
-        assert result == {"moved": 0, "skipped": 0, "source_orphaned": False}
-        mock_db.library.replace_tag_references.assert_not_called()
-        mock_db.library.replace_selected_tag_references.assert_not_called()
+        assert result == RelinkResult(moved=0, skipped=0, source_orphaned=0)
+        mock_db.library.relink_tags.assert_not_called()
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_moves_edges_to_target(self) -> None:
+    def test_delegates_relink_to_facade(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.list_libraries.return_value = [{"id": 1}]
-        mock_db.library.list_songs.return_value = [
-            _song(song_id=1),
-            _song(song_id=2),
-        ]
-        mock_db.library.list_song_tags_for_songs.return_value = {
-            1: [{"_id": "tags/source", "id": 100, "name": "genre", "value": "old-a"}],
-            2: [{"_id": "tags/source", "id": 100, "name": "genre", "value": "old-b"}],
-        }
-        mock_db.library.list_song_ids_for_tag_id.return_value = []
+        source = TagRef(name="genre", value="old")
+        target = TagRef(name="genre", value="rock")
+        mock_db.library.relink_tags.return_value = RelinkResult(moved=2, skipped=0, source_orphaned=1)
 
-        result = relink_tag_edges(mock_db, 100, 200)
+        result = relink_tag_edges(mock_db, source, target)
 
-        assert result == {"moved": 2, "skipped": 0, "source_orphaned": True}
-        mock_db.library.replace_tag_references.assert_called_once_with(100, 200)
-        mock_db.library.list_song_ids_for_tag_id.assert_called_once_with(100, limit=None)
+        assert result == RelinkResult(moved=2, skipped=0, source_orphaned=1)
+        mock_db.library.relink_tags.assert_called_once_with(source, target, songs=None)
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_skips_already_existing_target_tags(self) -> None:
+    def test_passes_song_identities_when_provided(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.list_libraries.return_value = [{"id": 1}]
-        mock_db.library.list_songs.return_value = [
-            _song(song_id=1),
-            _song(song_id=2),
-        ]
-        mock_db.library.list_song_tags_for_songs.return_value = {
-            1: [
-                {"_id": "tags/source", "id": 100, "name": "genre", "value": "old-a"},
-                {"_id": "tags/target", "id": 200, "name": "genre", "value": "new-a"},
-            ],
-            2: [{"_id": "tags/source", "id": 100, "name": "genre", "value": "old-b"}],
-        }
-        mock_db.library.list_song_ids_for_tag_id.return_value = []
+        source = TagRef(name="genre", value="old")
+        target = TagRef(name="genre", value="rock")
+        song_identities = [_song_identity(1), _song_identity(2)]
+        mock_db.library.relink_tags.return_value = RelinkResult(moved=1, skipped=1, source_orphaned=0)
 
-        result = relink_tag_edges(mock_db, 100, 200)
+        result = relink_tag_edges(mock_db, source, target, song_identities=song_identities)
 
-        assert result == {"moved": 1, "skipped": 1, "source_orphaned": True}
-        mock_db.library.replace_tag_references.assert_called_once_with(100, 200)
-        mock_db.library.list_song_ids_for_tag_id.assert_called_once_with(100, limit=None)
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
-    def test_filters_by_song_ids_and_reports_remaining_source_refs(self) -> None:
-        mock_db = MagicMock()
-        mock_db.library.list_libraries.return_value = [{"id": 1}]
-        mock_db.library.list_songs.return_value = [
-            _song(song_id=1),
-            _song(song_id=2),
-            _song(song_id=3),
-        ]
-        mock_db.library.list_song_tags_for_songs.return_value = {
-            1: [{"_id": "tags/source", "id": 100, "name": "genre", "value": "old-a"}],
-            2: [
-                {"_id": "tags/source", "id": 100, "name": "genre", "value": "old-b"},
-                {"_id": "tags/target", "id": 200, "name": "genre", "value": "new-b"},
-            ],
-            3: [{"_id": "tags/source", "id": 100, "name": "genre", "value": "old-c"}],
-        }
-        mock_db.library.list_song_ids_for_tag_id.return_value = [3]
-
-        result = relink_tag_edges(
-            mock_db,
-            100,
-            200,
-            song_ids=[1, 2],
-        )
-
-        assert result == {"moved": 1, "skipped": 1, "source_orphaned": False}
-        mock_db.library.replace_selected_tag_references.assert_called_once_with(
-            [1, 2],
-            100,
-            200,
-        )
-        mock_db.library.list_song_ids_for_tag_id.assert_called_once_with(100, limit=None)
+        assert result == RelinkResult(moved=1, skipped=1, source_orphaned=0)
+        mock_db.library.relink_tags.assert_called_once_with(source, target, songs=song_identities)

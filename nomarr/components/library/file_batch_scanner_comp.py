@@ -35,7 +35,6 @@ class FileBatchResult:
 def scan_folder_files(
     folder_path: Path,
     library_root: Path,
-    library_id: int,
     existing_files: dict[str, dict],
     tagger_version: str,
     db: Database,
@@ -48,7 +47,6 @@ def scan_folder_files(
     Args:
         folder_path: Absolute folder path to scan
         library_root: Library root for normalization
-        library_id: Integer library identifier required by persistence
         existing_files: Path → existing file dict (for determining if file is new/updated)
         tagger_version: Current model suite hash (used for ml-tagged bootstrap)
         db: Database instance (for build_library_path_from_input)
@@ -131,10 +129,12 @@ def scan_folder_files(
                     )
 
             # Prepare batch entry — pure file data, no state fields, no metadata
+            # No library_id is stuffed into the batch entry: the library scope is
+            # carried by the ``library`` argument to ``upsert_scanned_files``, and
+            # ``_upsert_batch`` strips any library_id key from persisted docs anyway.
             file_entry = {
                 "path": file_path_str,
                 "normalized_path": normalized_path,
-                "library_id": library_id,
                 "file_size": file_size,
                 "modified_time": modified_time,
                 "scanned_at": now_ms().value,

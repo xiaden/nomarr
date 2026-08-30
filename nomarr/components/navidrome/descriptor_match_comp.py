@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 from nomarr.components.library.library_song_query_comp import get_songs_by_ids_with_tags
 from nomarr.components.playlist_import.metadata_normalizer_comp import normalize_artist, normalize_title
+from nomarr.helpers.dataclasses.song_tag_dataclass import TagRef
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -81,20 +82,16 @@ def build_track_descriptor(file_doc: dict[str, Any]) -> TrackDescriptor:
     return _descriptor_from_doc(file_doc)
 
 
-def _search_candidate_docs(db: Database, field_name: str, value: str) -> list[dict[str, Any]]:
-    return cast("list[dict[str, Any]]", db.library.search_songs_by_tag_pattern(field_name, value))
-
-
 def _candidate_file_ids(db: Database, seed: TrackDescriptor) -> set[str]:
     title = seed.get("title", "")
     if title:
-        title_docs = _search_candidate_docs(db, "title", title)
-        return {str(file_id) for doc in title_docs if isinstance((file_id := doc.get("id")), int)}
+        title_songs = db.library.find_songs_with_tag_pattern("title", title, limit=None)
+        return {str(song.song_id) for song in title_songs}
 
     artist = seed.get("artist", "")
     if artist:
-        artist_docs = cast("list[dict[str, Any]]", db.library.search_songs_by_tag("artist", artist, limit=None))
-        return {str(file_id) for doc in artist_docs if isinstance((file_id := doc.get("id")), int)}
+        artist_songs = db.library.find_songs_with_tag(TagRef(name="artist", value=artist), limit=None)
+        return {str(song.song_id) for song in artist_songs}
 
     return set()
 

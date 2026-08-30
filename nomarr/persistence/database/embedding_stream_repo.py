@@ -56,16 +56,16 @@ class EmbeddingStreamRepository:
         self,
         song_id: int,
         backbone: str,
-        stream_payload: dict[str, Any],
+        patches_emb: bytes,
     ) -> EmbeddingStreamRecord:
         """Insert or update an embedding stream for a (song, backbone) pair.
 
-        ``ml_embedding_streams`` has no unique constraint on
-        ``(song_id, backbone_id)``, so this uses a select-then-insert-or-update
-        pattern.  ``patches_emb`` is extracted from *stream_payload*.
+        ``ml_embedding_streams`` stores one ``patches_emb`` payload per
+        ``(song_id, backbone_id)`` pair (uniqueness enforced by
+        ``uq_ml_embedding_streams_song_backbone``).  This uses a
+        select-then-insert-or-update pattern.
         """
         with map_persistence_exceptions():
-            patches_emb: bytes = stream_payload["patches_emb"]
             existing = self._get_existing(song_id, backbone)
 
             if existing is not None:

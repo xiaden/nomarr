@@ -1,26 +1,24 @@
-"""Tag cleanup helpers."""
+"""Tag cleanup helpers.
+
+Delegates orphan-tag cleanup to the sealed tag facade
+(``db.library.cleanup_orphaned_tags``) and returns the typed ``TagCleanupResult``
+(deleted/orphaned counts). No integer tag-id bookkeeping or raw edge scans
+remain at this layer.
+"""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dataclasses.song_tag_dataclass import TagCleanupResult
     from nomarr.persistence.db import Database
 
 
-def _get_orphaned_tag_ids(db: Database) -> list[int]:
-    """Return IDs of tags that have no song_tags rows."""
-    return db.library.list_orphaned_tag_ids()
+def cleanup_orphaned_tags(db: Database) -> TagCleanupResult:
+    """Delete orphaned tags and return the typed domain result.
 
-
-def cleanup_orphaned_tags(db: Database) -> int:
-    """Delete tags that have no song_tags rows."""
-    orphan_ids = _get_orphaned_tag_ids(db)
-    if not orphan_ids:
-        return 0
-    return db.library.delete_tags_by_ids(orphan_ids)
-
-
-def get_orphaned_tag_count(db: Database) -> int:
-    """Count tags that currently have no song_tags rows."""
-    return len(_get_orphaned_tag_ids(db))
+    Delegates the whole orphan discovery + deletion to the sealed domain
+    intent; callers never list or delete tag ids themselves.
+    """
+    return db.library.cleanup_orphaned_tags()

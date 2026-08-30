@@ -12,6 +12,7 @@ from nomarr.helpers.constants.file_states import (
     STATE_NOT_PROCESSED,
     STATE_PROCESSED,
 )
+from nomarr.helpers.dataclasses.library_dataclass import Library
 from nomarr.helpers.dto.library_dto import RetryErroredResult
 from nomarr.services.domain.library_svc.songs import LibrarySongsMixin
 
@@ -24,6 +25,11 @@ class _ConcreteSongsMixin(LibrarySongsMixin):
         self.cfg = MagicMock()
 
 
+def _make_library() -> Library:
+    """Build a domain ``Library`` (natural identity) fixture."""
+    return Library(name="Rock Library", root_path="/music")
+
+
 class TestRetryErroredSongs:
     """Tests for retry_errored_songs."""
 
@@ -31,7 +37,7 @@ class TestRetryErroredSongs:
     @patch("nomarr.services.domain.library_svc.songs.transition_song_state")
     @patch(
         "nomarr.services.domain.library_svc.songs.get_errored_song_ids",
-        return_value=[f"{'songs'}/1", f"{'songs'}/2"],
+        return_value=[1, 2],
     )
     def test_retries_all_errored_when_no_song_ids(
         self,
@@ -39,25 +45,23 @@ class TestRetryErroredSongs:
         mock_transition_song_state: MagicMock,
     ) -> None:
         mock_db = MagicMock()
-        mock_db.library.get_library = MagicMock(return_value={"_id": 123, "id": 123})
-        mock_db.library.get_scan = MagicMock(return_value=None)
-        mock_db.app.get_pipeline_state = MagicMock(return_value=None)
         mixin = _ConcreteSongsMixin(mock_db)
+        library = _make_library()
 
-        result = mixin.retry_errored_songs(123)
+        result = mixin.retry_errored_songs(library)
 
         assert result == RetryErroredResult(retried=2)
-        mock_get_errored_song_ids.assert_called_once_with(mock_db, 123)
+        mock_get_errored_song_ids.assert_called_once_with(mock_db, library)
         assert mock_transition_song_state.call_args_list == [
             call(
                 mock_db,
-                [f"{'songs'}/1", f"{'songs'}/2"],
+                [1, 2],
                 STATE_ERRORED,
                 STATE_NOT_ERRORED,
             ),
             call(
                 mock_db,
-                [f"{'songs'}/1", f"{'songs'}/2"],
+                [1, 2],
                 STATE_PROCESSED,
                 STATE_NOT_PROCESSED,
             ),
@@ -67,11 +71,7 @@ class TestRetryErroredSongs:
     @patch("nomarr.services.domain.library_svc.songs.transition_song_state")
     @patch(
         "nomarr.services.domain.library_svc.songs.get_errored_song_ids",
-        return_value=[
-            f"{'songs'}/1",
-            f"{'songs'}/2",
-            f"{'songs'}/3",
-        ],
+        return_value=[1, 2, 3],
     )
     def test_filters_to_specified_song_ids(
         self,
@@ -79,27 +79,25 @@ class TestRetryErroredSongs:
         mock_transition_song_state: MagicMock,
     ) -> None:
         mock_db = MagicMock()
-        mock_db.library.get_library = MagicMock(return_value={"_id": 123, "id": 123})
-        mock_db.library.get_scan = MagicMock(return_value=None)
-        mock_db.app.get_pipeline_state = MagicMock(return_value=None)
         mixin = _ConcreteSongsMixin(mock_db)
+        library = _make_library()
 
         mixin.retry_errored_songs(
-            123,
-            song_ids=[f"{'songs'}/1", f"{'songs'}/3"],
+            library,
+            song_ids=[1, 3],
         )
 
-        mock_get_errored_song_ids.assert_called_once_with(mock_db, 123)
+        mock_get_errored_song_ids.assert_called_once_with(mock_db, library)
         assert mock_transition_song_state.call_args_list == [
             call(
                 mock_db,
-                [f"{'songs'}/1", f"{'songs'}/3"],
+                [1, 3],
                 STATE_ERRORED,
                 STATE_NOT_ERRORED,
             ),
             call(
                 mock_db,
-                [f"{'songs'}/1", f"{'songs'}/3"],
+                [1, 3],
                 STATE_PROCESSED,
                 STATE_NOT_PROCESSED,
             ),
@@ -109,7 +107,7 @@ class TestRetryErroredSongs:
     @patch("nomarr.services.domain.library_svc.songs.transition_song_state")
     @patch(
         "nomarr.services.domain.library_svc.songs.get_errored_song_ids",
-        return_value=[f"{'songs'}/1"],
+        return_value=[1],
     )
     def test_calls_transition_helper_twice_for_errored_songs(
         self,
@@ -117,12 +115,10 @@ class TestRetryErroredSongs:
         mock_transition_song_state: MagicMock,
     ) -> None:
         mock_db = MagicMock()
-        mock_db.library.get_library = MagicMock(return_value={"_id": 123, "id": 123})
-        mock_db.library.get_scan = MagicMock(return_value=None)
-        mock_db.app.get_pipeline_state = MagicMock(return_value=None)
         mixin = _ConcreteSongsMixin(mock_db)
+        library = _make_library()
 
-        mixin.retry_errored_songs(123)
+        mixin.retry_errored_songs(library)
 
         assert mock_transition_song_state.call_count == 2
 
@@ -137,7 +133,7 @@ class TestRetryErroredSongs:
                 match="not found",
             ),
         ):
-            mixin.retry_errored_songs("bad_id")
+            mixin.retry_errored_songs(_make_library())
 
 
 class TestReconcileLibraryPaths:
@@ -150,6 +146,7 @@ class TestReconcileLibraryPaths:
         mock_db = MagicMock()
         mixin = _ConcreteSongsMixin(mock_db)
         mixin.cfg.library_root = "/music"
+        library = _make_library()
         expected_result = {
             "total_files": 10,
             "valid_files": 8,
@@ -165,7 +162,7 @@ class TestReconcileLibraryPaths:
             return_value=expected_result,
         ) as mock_reconcile_library_paths_workflow:
             result = mixin.reconcile_library_paths(
-                "libraries/1",
+                library,
                 policy="delete_invalid",
                 batch_size=250,
             )
@@ -173,7 +170,7 @@ class TestReconcileLibraryPaths:
         assert result is expected_result
         mock_reconcile_library_paths_workflow.assert_called_once_with(
             db=mock_db,
-            library_id="libraries/1",
+            library=library,
             library_root="/music",
             policy="delete_invalid",
             batch_size=250,
@@ -186,6 +183,7 @@ class TestReconcileLibraryPaths:
         mock_db = MagicMock()
         mixin = _ConcreteSongsMixin(mock_db)
         mixin.cfg.library_root = "/music"
+        library = _make_library()
         expected_result = {
             "total_files": 0,
             "valid_files": 0,
@@ -200,12 +198,12 @@ class TestReconcileLibraryPaths:
             "nomarr.services.domain.library_svc.songs.reconcile_library_paths_workflow",
             return_value=expected_result,
         ) as mock_reconcile_library_paths_workflow:
-            result = mixin.reconcile_library_paths("libraries/1")
+            result = mixin.reconcile_library_paths(library)
 
         assert result is expected_result
         mock_reconcile_library_paths_workflow.assert_called_once_with(
             db=mock_db,
-            library_id="libraries/1",
+            library=library,
             library_root="/music",
             policy="mark_invalid",
             batch_size=1000,

@@ -5,14 +5,15 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from nomarr.components.library.library_song_state_comp import transition_song_state
-from nomarr.components.tagging.tag_query_comp import get_song_tags, get_tag, list_songs_for_tag
-from nomarr.components.tagging.tag_write_comp import find_or_create_tag, relink_tag_edges, set_song_tags
+from nomarr.components.tagging.tag_query_comp import get_song_tags
+from nomarr.components.tagging.tag_write_comp import relink_tag_edges, set_song_tags
 from nomarr.helpers.constants.file_states import (
     STATE_NOT_WRITTEN,
     STATE_TAGS_CURRENT,
     STATE_TAGS_NOT_FRESH,
     STATE_WRITTEN,
 )
+from nomarr.helpers.dataclasses.song_tag_dataclass import TagRef
 from nomarr.helpers.dto.tag_curation_dto import MergeResult, RenameResult, SplitResult
 
 if TYPE_CHECKING:
@@ -27,29 +28,26 @@ class TaggingCurationMixin:
     def _mark_song_write_pending(self, song_id: int) -> None:
         """Queue a curated song for both projection and file write-back."""
         transition_song_state(self.db, [song_id], STATE_WRITTEN, STATE_NOT_WRITTEN)
-        if STATE_TAGS_CURRENT in self.db.app.get_song_states(song_id):
+        if STATE_TAGS_CURRENT in self.db.app.song_state_membership(song_id):
             transition_song_state(self.db, [song_id], STATE_TAGS_CURRENT, STATE_TAGS_NOT_FRESH)
 
     @staticmethod
-    def _reject_nom_prefix(name: str | None = None, *, tag_doc: dict[str, Any] | None = None) -> None:
+    def _reject_nom_prefix(name: str | None = None, *, identity: TagRef | None = None) -> None:
         """Raise ValueError if the tag or name has the read-only nom: prefix (ADR-009)."""
         if name is not None and name.startswith("nom:"):
             msg = f"Tags with 'nom:' prefix are read-only and cannot be edited: name={name}"
             raise ValueError(msg)
-        if tag_doc is not None and str(tag_doc.get("name", "")).startswith("nom:"):
-            msg = (
-                "Tags with 'nom:' prefix are read-only and cannot be edited: "
-                f"{tag_doc.get('name')}={tag_doc.get('value')}"
-            )
+        if identity is not None and identity.name.startswith("nom:"):
+            msg = f"Tags with 'nom:' prefix are read-only and cannot be edited: {identity.name}={identity.value}"
             raise ValueError(msg)
 
-    def _get_tag_or_error(self, tag_id: str) -> dict[str, Any]:
-        """Fetch a tag document or raise ValueError."""
-        tag = get_tag(self.db, int(tag_id))
-        if not tag:
+    def _get_tag_or_error(self, tag_id: str) -> TagRef:
+        """Resolve an opaque external tag id to its domain identity, or raise ValueError."""
+        identity = self.db.resolve_tag_identity(int(tag_id))
+        if identity is None:
             msg = f"Tag not found: {tag_id}"
             raise ValueError(msg)
-        return tag
+        return identity
 
     def rename_tag(self, tag_id: str, new_value: str) -> RenameResult:
         """Rename a tag to a new value.
@@ -69,18 +67,17 @@ class TaggingCurationMixin:
 
         """
         source_tag = self._get_tag_or_error(tag_id)
-        self._reject_nom_prefix(tag_doc=source_tag)
+        self._reject_nom_prefix(identity=source_tag)
 
-        target_tag_id = find_or_create_tag(self.db, source_tag["name"], new_value)
-        merged_into_existing = target_tag_id != int(tag_id)
+        target_identity = self.db.library.ensure_tag(TagRef(name=source_tag.name, value=new_value, namespace=""))
+        merged_into_existing = target_identity != source_tag
 
-        relink = relink_tag_edges(self.db, int(tag_id), target_tag_id)
+        relink = relink_tag_edges(self.db, source_tag, target_identity)
 
-        song_ids = list_songs_for_tag(self.db, target_tag_id)
-        for song_id in song_ids:
-            self._mark_song_write_pending(int(song_id))
+        for song in self.db.library.find_songs_with_tag(target_identity, limit=None):
+            self._mark_song_write_pending(song.song_id)
 
-        return RenameResult(moved=relink["moved"], merged_into_existing=merged_into_existing)
+        return RenameResult(moved=relink.moved, merged_into_existing=merged_into_existing)
 
     def merge_tags(self, source_tag_ids: list[str], canonical_tag_id: str) -> MergeResult:
         """Merge multiple source tags into a canonical tag.
@@ -100,7 +97,7 @@ class TaggingCurationMixin:
 
         """
         canonical_tag = self._get_tag_or_error(canonical_tag_id)
-        self._reject_nom_prefix(tag_doc=canonical_tag)
+        self._reject_nom_prefix(identity=canonical_tag)
 
         total_moved = 0
         sources_removed = 0
@@ -109,16 +106,15 @@ class TaggingCurationMixin:
             if source_id == canonical_tag_id:
                 continue
             source_tag = self._get_tag_or_error(source_id)
-            self._reject_nom_prefix(tag_doc=source_tag)
+            self._reject_nom_prefix(identity=source_tag)
 
-            relink = relink_tag_edges(self.db, int(source_id), int(canonical_tag_id))
-            total_moved += relink["moved"]
-            if relink["source_orphaned"]:
+            relink = relink_tag_edges(self.db, source_tag, canonical_tag)
+            total_moved += relink.moved
+            if relink.source_orphaned:
                 sources_removed += 1
 
-        song_ids = list_songs_for_tag(self.db, int(canonical_tag_id))
-        for song_id in song_ids:
-            self._mark_song_write_pending(int(song_id))
+        for song in self.db.library.find_songs_with_tag(canonical_tag, limit=None):
+            self._mark_song_write_pending(song.song_id)
 
         return MergeResult(total_moved=total_moved, sources_removed=sources_removed)
 
@@ -141,17 +137,23 @@ class TaggingCurationMixin:
 
         """
         source_tag = self._get_tag_or_error(source_tag_id)
-        self._reject_nom_prefix(tag_doc=source_tag)
+        self._reject_nom_prefix(identity=source_tag)
 
-        target_tag_id = find_or_create_tag(self.db, source_tag["name"], new_value)
-        new_tag_created = target_tag_id != int(source_tag_id)
+        target_identity = self.db.library.ensure_tag(TagRef(name=source_tag.name, value=new_value, namespace=""))
+        new_tag_created = target_identity != source_tag
 
-        relink = relink_tag_edges(self.db, int(source_tag_id), target_tag_id, song_ids=[int(sid) for sid in song_ids])
+        song_identity_map = self.db.library.resolve_song_identities([int(sid) for sid in song_ids])
+        relink = relink_tag_edges(
+            self.db,
+            source_tag,
+            target_identity,
+            song_identities=list(song_identity_map.values()),
+        )
 
         for song_id in song_ids:
             self._mark_song_write_pending(int(song_id))
 
-        return SplitResult(moved=relink["moved"], new_tag_created=new_tag_created)
+        return SplitResult(moved=relink.moved, new_tag_created=new_tag_created)
 
     def update_song_tags(self, song_id: str, name: str, values: list[str]) -> dict:
         """Update the value of a single tag on a song.

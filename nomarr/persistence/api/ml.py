@@ -9,13 +9,15 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from nomarr.helpers.dataclasses.ml_embedding_stream_dataclass import EmbeddingStream
+from nomarr.helpers.dataclasses.ml_output_stream_dataclass import OutputStream, OutputStreamWrite
+
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session, scoped_session
 
     from nomarr.helpers.dto.calibration_repo_dto import CalibrationHistoryRecord, CalibrationStateRecord
-    from nomarr.helpers.dto.embedding_stream_repo_dto import EmbeddingStreamRecord
     from nomarr.helpers.dto.model_repo_dto import ModelRecord
-    from nomarr.helpers.dto.output_repo_dto import ModelOutputRecord, OutputStreamRecord
+    from nomarr.helpers.dto.output_repo_dto import ModelOutputRecord
     from nomarr.helpers.dto.vector_repo_dto import EmbeddingRecord, SimilarResult
     from nomarr.persistence.database.calibration_repo import CalibrationRepo
     from nomarr.persistence.database.embedding_stream_repo import EmbeddingStreamRepository
@@ -119,10 +121,19 @@ class MlDb:
         assert self._vector_repo is not None, "VectorRepo not wired"
         self._vector_repo.delete_all_embeddings()
 
-    def list_output_streams_for_song(self, song_id: int) -> list[OutputStreamRecord]:
-        """Return all canonical output stream records linked to one song."""
+    def list_output_streams_for_song(self, song_id: int) -> list[OutputStream]:
+        """Return output streams for a song without exposing persistence row fields."""
         assert self._output_repo is not None, "OutputRepo not wired"
-        return self._output_repo.list_output_streams_for_song(song_id)
+        # Concurrent ML output-stream work also touches this boundary; this mapper
+        # is intentionally kept here so callers never depend on repository rows.
+        return [
+            OutputStream(
+                output_id=record["output_id"],
+                output_index=record["output_index"],
+                values=record["values"],
+            )
+            for record in self._output_repo.list_output_streams_for_song(song_id)
+        ]
 
     def list_song_vectors(self, collection_name: str, song_id: int, *, tier: str = "cold") -> list[EmbeddingRecord]:
         """Return embedding records for one song, backbone, and tier.
@@ -269,23 +280,27 @@ class MlDb:
         self,
         song_id: int,
         backbone: str,
-        stream_payload: dict[str, Any],
-    ) -> EmbeddingStreamRecord:
+        patches_emb: bytes,
+    ) -> EmbeddingStream:
         """Upsert an embedding stream for a (song, backbone) pair.
 
-        Returns the persisted ``EmbeddingStreamRecord``.
+        Returns the persisted stream without exposing persistence row fields.
         """
         assert self._embedding_stream_repo is not None, "EmbeddingStreamRepository not wired"
-        return self._embedding_stream_repo.upsert_stream(song_id, backbone, stream_payload)
+        record = self._embedding_stream_repo.upsert_stream(song_id, backbone, patches_emb)
+        return EmbeddingStream(backbone=record["backbone"], patches_emb=record["patches_emb"])
 
     def get_embedding_stream_for_song(
         self,
         song_id: int,
         backbone: str,
-    ) -> EmbeddingStreamRecord | None:
+    ) -> EmbeddingStream | None:
         """Return the embedding stream for ``(song_id, backbone)``, or ``None``."""
         assert self._embedding_stream_repo is not None, "EmbeddingStreamRepository not wired"
-        return self._embedding_stream_repo.get_stream(song_id, backbone)
+        record = self._embedding_stream_repo.get_stream(song_id, backbone)
+        if record is None:
+            return None
+        return EmbeddingStream(backbone=record["backbone"], patches_emb=record["patches_emb"])
 
     def list_embedding_streams_by_backbone(
         self,
@@ -293,10 +308,13 @@ class MlDb:
         *,
         limit: int = 50,
         offset: int = 0,
-    ) -> list[EmbeddingStreamRecord]:
+    ) -> list[EmbeddingStream]:
         """List all embedding streams for a backbone with pagination."""
         assert self._embedding_stream_repo is not None, "EmbeddingStreamRepository not wired"
-        return self._embedding_stream_repo.list_by_backbone(backbone, limit=limit, offset=offset)
+        return [
+            EmbeddingStream(backbone=record["backbone"], patches_emb=record["patches_emb"])
+            for record in self._embedding_stream_repo.list_by_backbone(backbone, limit=limit, offset=offset)
+        ]
 
     def remove_embedding_streams_for_song(self, song_id: int) -> None:
         """Delete all embedding streams linked to one song."""
@@ -313,20 +331,18 @@ class MlDb:
         backbone: str,
         *,
         vectors: list[dict[str, Any]],
-        output_streams: list[dict[str, Any]],
+        output_streams: list[OutputStreamWrite],
     ) -> None:
         """Atomically replace a song's output streams and a backbone's vectors.
 
         Sole live aggregate intent for ML inference persistence. Delegates the
-        whole replacement to :class:`MlInferenceRepo`, which owns ONE short
-        repository-level transaction (``begin_nested`` SAVEPOINT + single
-        ``commit``). No facade-level transaction wrapper is used (AR-SDR-4).
+        whole replacement to :class:`MlInferenceRepo`, which owns the transaction.
+        No facade-level transaction wrapper is used (AR-SDR-4).
 
-        Output streams use the canonical ``{output_id, values}`` payload shape
-        and persist to ``ml_output_streams``; ``ml_model_outputs`` remains
-        metadata used to enrich reads. Vector replacement is scoped to
-        ``(song_id, backbone)`` so sequentially-persisted backbones preserve
-        one another's vectors.
+        Output streams are domain commands; row identifiers, song foreign keys,
+        timestamps, and table names remain inside persistence. Vector replacement
+        is scoped to ``(song_id, backbone)`` so sequentially-persisted backbones
+        preserve one another's vectors.
 
         Args:
             song_id: Song whose output streams are replaced and whose vectors
@@ -334,21 +350,28 @@ class MlDb:
             backbone: Backbone identifier scoping vector deletion/insertion.
             vectors: Canonical vector payloads
                 ``{embedding_vector | embedding, model_id, backbone_id?, genres?}``.
-            output_streams: Canonical stream payloads
-                ``{output_id, values, output_index?}``.
+            output_streams: Domain commands describing the output streams to
+                replace.
         """
         assert self._ml_inference_repo is not None, "MlInferenceRepo not wired"
         self._ml_inference_repo.replace_song_inference_results(
             song_id=song_id,
             backbone=backbone,
             vectors=vectors,
-            output_streams=output_streams,
+            output_streams=[
+                {
+                    "output_id": stream.output_id,
+                    "values": stream.values,
+                    "output_index": stream.output_index,
+                }
+                for stream in output_streams
+            ],
         )
 
-    def remove_output_streams_for_song(self, song_id: int) -> None:
-        """Delete all canonical output streams linked to one song."""
+    def remove_output_streams_for_song(self, song_id: int) -> int:
+        """Delete a song's output streams and return the number removed."""
         assert self._output_repo is not None, "OutputRepo not wired"
-        self._output_repo.delete_output_streams_for_song(song_id)
+        return self._output_repo.delete_output_streams_for_song(song_id)
 
     def remove_song_vectors(self, collection_name: str, song_id: int) -> None:
         """Delete one song's vectors for the requested backbone."""

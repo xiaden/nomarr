@@ -21,16 +21,49 @@ describe("writeTags", () => {
     const response = { status: "started", task_id: "task123" };
     vi.mocked(post).mockResolvedValue(response);
 
-    await expect(writeTags("library-123")).resolves.toEqual(response);
+    await expect(writeTags("My Library")).resolves.toEqual(response);
 
-    expect(post).toHaveBeenCalledWith("/api/web/library/library-123/write-tag");
+    expect(post).toHaveBeenCalledWith("/api/web/library/My%20Library/write-tag");
+  });
+
+  it("URL-encodes special characters in the natural library name", async () => {
+    const response = { status: "started", task_id: "task123" };
+    vi.mocked(post).mockResolvedValue(response);
+
+    await expect(writeTags("Rock/Acoustic & Chill")).resolves.toEqual(response);
+
+    expect(post).toHaveBeenCalledWith(
+      "/api/web/library/Rock%2FAcoustic%20%26%20Chill/write-tag",
+    );
+  });
+
+  it("URL-encodes Unicode names (UTF-8 percent-escaped)", async () => {
+    const response = { status: "started", task_id: "task123" };
+    vi.mocked(post).mockResolvedValue(response);
+
+    await expect(writeTags("École de Musique")).resolves.toEqual(response);
+
+    expect(post).toHaveBeenCalledWith(
+      "/api/web/library/%C3%89cole%20de%20Musique/write-tag",
+    );
+  });
+
+  it("doubly-encodes literal percent signs in the natural name", async () => {
+    const response = { status: "started", task_id: "task123" };
+    vi.mocked(post).mockResolvedValue(response);
+
+    await expect(writeTags("100% Pure")).resolves.toEqual(response);
+
+    expect(post).toHaveBeenCalledWith(
+      "/api/web/library/100%25%20Pure/write-tag",
+    );
   });
 
   it("lets ApiError from post bubble up", async () => {
     const error = new ApiError(500, "Tag write failed");
     vi.mocked(post).mockRejectedValue(error);
 
-    await expect(writeTags("library-123")).rejects.toBe(error);
+    await expect(writeTags("My Library")).rejects.toBe(error);
   });
 });
 
@@ -41,7 +74,7 @@ describe("getPipelineStatus", () => {
 
   it("gets pipeline status for a library", async () => {
     const response = {
-      library_id: "library-123",
+      library_id: "My Library",
       state: "write_ready",
       untagged_count: null,
       uncalibrated_count: null,
@@ -51,9 +84,9 @@ describe("getPipelineStatus", () => {
     };
     vi.mocked(get).mockResolvedValue(response);
 
-    await expect(getPipelineStatus("library-123")).resolves.toEqual(response);
+    await expect(getPipelineStatus("My Library")).resolves.toEqual(response);
 
-    expect(get).toHaveBeenCalledWith("/api/web/library/library-123/pipeline");
+    expect(get).toHaveBeenCalledWith("/api/web/library/My%20Library/pipeline");
   });
 });
 
@@ -66,8 +99,8 @@ describe("getErroredFiles", () => {
     const response = { files: [], total: 0 };
     vi.mocked(get).mockResolvedValue(response);
 
-    await expect(getErroredFiles("library-123")).resolves.toEqual(response);
+    await expect(getErroredFiles("My Library")).resolves.toEqual(response);
 
-    expect(get).toHaveBeenCalledWith("/api/web/library/library-123/errored-file");
+    expect(get).toHaveBeenCalledWith("/api/web/library/My%20Library/errored-file");
   });
 });

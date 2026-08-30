@@ -7,9 +7,16 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from nomarr.helpers.dataclasses.library_dataclass import Library
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.web import tag_curation_if
-from nomarr.interfaces.api.web.dependencies import get_tagging_service
+from nomarr.interfaces.api.web.dependencies import get_library_service, get_tagging_service
+
+
+@pytest.fixture
+def mock_library_service() -> MagicMock:
+    """Create a mock library service."""
+    return MagicMock()
 
 
 @pytest.fixture
@@ -19,7 +26,10 @@ def mock_tagging_service() -> MagicMock:
 
 
 @pytest.fixture
-def app(mock_tagging_service: MagicMock) -> FastAPI:
+def app(
+    mock_library_service: MagicMock,
+    mock_tagging_service: MagicMock,
+) -> FastAPI:
     """Create a test FastAPI app with mocked dependencies."""
     test_app = FastAPI()
     test_app.include_router(tag_curation_if.router)
@@ -28,6 +38,7 @@ def app(mock_tagging_service: MagicMock) -> FastAPI:
         return None
 
     test_app.dependency_overrides[verify_session] = mock_verify_session
+    test_app.dependency_overrides[get_library_service] = lambda: mock_library_service
     test_app.dependency_overrides[get_tagging_service] = lambda: mock_tagging_service
 
     return test_app
@@ -386,9 +397,12 @@ class TestCommitPendingTags:
     def test_commit_pending_tags_success(
         self,
         client: TestClient,
+        mock_library_service: MagicMock,
         mock_tagging_service: MagicMock,
     ) -> None:
         """Should commit pending tags and return result."""
+        library = Library(name="lib1", root_path="/music")
+        mock_library_service.get_library_by_name.return_value = library
         mock_tagging_service.commit_pending_tags.return_value = {
             "started": True,
             "pending_files": 5,
@@ -403,14 +417,17 @@ class TestCommitPendingTags:
         data = response.json()
         assert data["started"] is True
         assert data["pending_files"] == 5
-        mock_tagging_service.commit_pending_tags.assert_called_once_with(library_id="lib1")
+        mock_library_service.get_library_by_name.assert_called_once_with("lib1")
+        mock_tagging_service.commit_pending_tags.assert_called_once_with(library=library)
 
     def test_commit_pending_tags_no_library(
         self,
         client: TestClient,
+        mock_library_service: MagicMock,
         mock_tagging_service: MagicMock,
     ) -> None:
         """Should commit without library_id."""
+        mock_library_service.get_library_by_name.return_value = None
         mock_tagging_service.commit_pending_tags.return_value = {
             "started": True,
             "pending_files": 0,
@@ -419,14 +436,17 @@ class TestCommitPendingTags:
         response = client.post("/tag-curation/commit", json={})
 
         assert response.status_code == 200
-        mock_tagging_service.commit_pending_tags.assert_called_once_with(library_id=None)
+        mock_library_service.get_library_by_name.assert_not_called()
+        mock_tagging_service.commit_pending_tags.assert_called_once_with(library=None)
 
     def test_commit_pending_tags_exception(
         self,
         client: TestClient,
+        mock_library_service: MagicMock,
         mock_tagging_service: MagicMock,
     ) -> None:
         """Should return 500 when exception raised."""
+        mock_library_service.get_library_by_name.return_value = None
         mock_tagging_service.commit_pending_tags.side_effect = RuntimeError("Database error")
 
         response = client.post("/tag-curation/commit", json={})

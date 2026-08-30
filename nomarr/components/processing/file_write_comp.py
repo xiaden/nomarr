@@ -17,6 +17,7 @@ from nomarr.components.tagging.tag_query_comp import get_song_tags
 from nomarr.components.tagging.tag_write_comp import set_song_tags, set_song_tags_batch
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dataclasses.library_dataclass import Library
     from nomarr.helpers.dataclasses.tags_dataclass import Tags
     from nomarr.persistence.db import Database
 
@@ -53,13 +54,13 @@ def get_file_for_writing(
 
 def resolve_library_root(
     db: Database,
-    library_id: int,
+    library: Library,
 ) -> Path | None:
     """Return the library's root path, or ``None`` if the library is missing."""
-    library_doc = get_library_record(db, library_id, include_scan=False)
+    library_doc = get_library_record(db, library, include_scan=False)
     if not library_doc:
         return None
-    return Path(library_doc["root_path"])
+    return Path(library_doc.root_path)
 
 
 # ---------------------------------------------------------------------------

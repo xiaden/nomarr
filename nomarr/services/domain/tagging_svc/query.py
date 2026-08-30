@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Protocol
 
-from nomarr.components.library.library_records_comp import list_library_records
+from nomarr.components.library.library_records_comp import list_all_libraries
 from nomarr.components.library.library_song_query_comp import count_songs_by_tag, search_songs_by_tag
 from nomarr.components.library.library_song_state_comp import count_pending_tag_writes
 from nomarr.components.library.search_files_comp import get_unique_tag_values
@@ -28,6 +28,7 @@ from nomarr.helpers.dto.tag_curation_dto import CommitResult, TagListResult, Tag
 from nomarr.workflows.library.cleanup_orphaned_tags_wf import cleanup_orphaned_tags_workflow
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dataclasses.library_dataclass import Library
     from nomarr.helpers.dto.library_dto import WriteTagsResult
     from nomarr.persistence.db import Database
 
@@ -39,7 +40,7 @@ class _TaggingQueryService(Protocol):
 
     def write_tags_to_files(
         self,
-        library_id: int,
+        library: Library,
         batch_size: int = 100,
         namespace: str = "nom",
     ) -> WriteTagsResult: ...
@@ -125,27 +126,28 @@ class TaggingQueryMixin:
         """
         return count_pending_tag_writes(self.db)
 
-    def commit_pending_tags(self: _TaggingQueryService, library_id: str | None = None) -> CommitResult:
+    def commit_pending_tags(self: _TaggingQueryService, library: Library | None = None) -> CommitResult:
         """Commit pending tag writes by writing tags for affected libraries.
 
         Args:
-            library_id: Optional library id to scope. If None, finds libraries
-                        with pending files.
+            library: Optional domain ``Library`` (natural identity) to scope.
+                If None, finds libraries with pending files.
 
         Returns:
             CommitResult with started flag and pending file count.
 
         """
+        # overlap: mechanism-A natural-name threading (P4-S8) - sibling
+        # curation.py is under concurrent edit; preserve adjacent hunks.
         pending = count_pending_tag_writes(self.db)
         if pending == 0:
             return CommitResult(started=False, pending_files=0)
 
-        if library_id:
-            self.write_tags_to_files(int(library_id))
+        if library is not None:
+            self.write_tags_to_files(library)
         else:
-            libraries = list_library_records(self.db, include_scan=False)
-            for lib in libraries:
-                self.write_tags_to_files(lib.id)
+            for lib in list_all_libraries(self.db):
+                self.write_tags_to_files(lib)
 
         return CommitResult(started=True, pending_files=pending)
 

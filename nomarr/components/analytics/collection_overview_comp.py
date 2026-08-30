@@ -11,6 +11,7 @@ from nomarr.components.tagging.tag_stats_comp import (
 )
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dataclasses.library_dataclass import Library
     from nomarr.persistence.db import Database
 
 
@@ -24,17 +25,17 @@ class CollectionOverviewResult(TypedDict):
 
 def compute_collection_overview(
     db: Database,
-    library_id: int | None = None,
+    library: Library | None = None,
 ) -> CollectionOverviewResult:
     """Get collection overview: library stats, year/genre distributions.
 
     Args:
         db: Database instance.
-        library_id: Optional library id to filter by.
+        library: Optional domain ``Library`` (natural identity) to filter by.
 
     """
     return {
-        "stats": get_library_stats(db, library_id),
-        "year_distribution": get_year_distribution(db, library_id),
-        "genre_distribution": get_genre_distribution(db, library_id, limit=None),
+        "stats": get_library_stats(db, library),
+        "year_distribution": get_year_distribution(db, library),
+        "genre_distribution": get_genre_distribution(db, library, limit=None),
     }

@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from nomarr.helpers.logging_helper import sanitize_exception_message
 from nomarr.interfaces.api.auth import verify_session
+from nomarr.interfaces.api.id_codec import decode_library_name
 from nomarr.interfaces.api.types.analytics_types import (
     CollectionOverviewResponse,
     MoodAnalysisResponse,
@@ -17,12 +18,28 @@ from nomarr.interfaces.api.types.analytics_types import (
     TagCorrelationsResponse,
     TagFrequenciesResponse,
 )
-from nomarr.interfaces.api.web.dependencies import get_analytics_service
+from nomarr.interfaces.api.web.dependencies import get_analytics_service, get_library_service
 
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from nomarr.services.domain.analytics_svc import AnalyticsService
+    from nomarr.services.domain.library_svc import LibraryService
 router = APIRouter(prefix="/analytics", tags=["Analytics"])
+
+
+async def _resolve_optional_library(
+    library_service: "LibraryService",
+    raw_name: str | None,
+):
+    """Resolve an optional URL-encoded natural library name to a domain ``Library``.
+
+    Returns ``None`` when absent/blank (global scope) or when the library does
+    not exist.
+    """
+    if not raw_name:
+        return None
+    name = decode_library_name(raw_name)
+    return await asyncio.to_thread(library_service.get_library_by_name, name)
 
 
 @router.get("/tag-frequencies", dependencies=[Depends(verify_session)])
@@ -45,14 +62,16 @@ async def web_analytics_tag_frequencies(
 @router.get("/mood-distribution", dependencies=[Depends(verify_session)])
 async def web_analytics_mood_distribution(
     analytics_service: Annotated["AnalyticsService", Depends(get_analytics_service)],
+    library_service: Annotated["LibraryService", Depends(get_library_service)],
     library_id: str | None = None,
 ) -> MoodDistributionResponse:
     """Get mood tag distribution.
 
-    Optionally filtered by library_id.
+    Optionally filtered by library name.
     """
     try:
-        result = await asyncio.to_thread(analytics_service.get_mood_distribution_with_result, library_id=library_id)
+        library = await _resolve_optional_library(library_service, library_id)
+        result = await asyncio.to_thread(analytics_service.get_mood_distribution_with_result, library=library)
         return MoodDistributionResponse.from_dto(result)
     except Exception as e:
         logger.exception("[Web API] Error getting mood distribution")
@@ -86,13 +105,14 @@ async def web_analytics_tag_correlations(
 async def web_analytics_tag_co_occurrences(
     request: TagCoOccurrenceRequest,
     analytics_service: Annotated["AnalyticsService", Depends(get_analytics_service)],
+    library_service: Annotated["LibraryService", Depends(get_library_service)],
     library_id: str | None = None,
 ) -> TagCoOccurrencesResponse:
     """Get tag co-occurrence matrix for arbitrary tag sets.
 
     Computes a matrix where matrix[j][i] = count of files having both x[i] and y[j].
     Maximum 16x16 matrix size. Inputs exceeding limits are trimmed with warning.
-    Optionally filtered by library_id.
+    Optionally filtered by library name.
     """
     try:
         x_tags = request.x_axis[:16]
@@ -104,11 +124,12 @@ async def web_analytics_tag_co_occurrences(
             )
         x_tuples = [(tag.key, tag.value) for tag in x_tags]
         y_tuples = [(tag.key, tag.value) for tag in y_tags]
+        library = await _resolve_optional_library(library_service, library_id)
         result_dto = await asyncio.to_thread(
             analytics_service.get_tag_co_occurrence,
             x_tags=x_tuples,
             y_tags=y_tuples,
-            library_id=library_id,
+            library=library,
         )
         return TagCoOccurrencesResponse.from_dto(result_dto)
     except Exception as e:
@@ -122,15 +143,17 @@ async def web_analytics_tag_co_occurrences(
 @router.get("/collection-overview", dependencies=[Depends(verify_session)])
 async def web_analytics_collection_overview(
     analytics_service: Annotated["AnalyticsService", Depends(get_analytics_service)],
+    library_service: Annotated["LibraryService", Depends(get_library_service)],
     library_id: str | None = None,
 ) -> CollectionOverviewResponse:
     """Get collection overview statistics.
 
     Returns library stats, year/genre distributions.
-    Optionally filtered by library_id.
+    Optionally filtered by library name.
     """
     try:
-        result = await asyncio.to_thread(analytics_service.get_collection_overview, library_id=library_id)
+        library = await _resolve_optional_library(library_service, library_id)
+        result = await asyncio.to_thread(analytics_service.get_collection_overview, library=library)
         return CollectionOverviewResponse.from_dto(result)  # type: ignore[arg-type]
     except Exception as e:
         logger.exception("[Web API] Error getting collection overview")
@@ -143,15 +166,17 @@ async def web_analytics_collection_overview(
 @router.get("/mood-analysis", dependencies=[Depends(verify_session)])
 async def web_analytics_mood_analysis(
     analytics_service: Annotated["AnalyticsService", Depends(get_analytics_service)],
+    library_service: Annotated["LibraryService", Depends(get_library_service)],
     library_id: str | None = None,
 ) -> MoodAnalysisResponse:
     """Get mood analysis statistics.
 
     Returns mood coverage, balance, top pairs by tier, and dominant vibes.
-    Optionally filtered by library_id.
+    Optionally filtered by library name.
     """
     try:
-        result = await asyncio.to_thread(analytics_service.get_mood_analysis, library_id=library_id)
+        library = await _resolve_optional_library(library_service, library_id)
+        result = await asyncio.to_thread(analytics_service.get_mood_analysis, library=library)
         return MoodAnalysisResponse.from_dto(result)  # type: ignore[arg-type]
     except Exception as e:
         logger.exception("[Web API] Error getting mood analysis")

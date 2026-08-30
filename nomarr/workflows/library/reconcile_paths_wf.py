@@ -9,13 +9,14 @@ from nomarr.components.library.reconcile_paths_comp import ReconcilePolicy, reco
 
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
+    from nomarr.helpers.dataclasses.library_dataclass import Library
     from nomarr.helpers.dto.library_dto import ReconcileResult
     from nomarr.persistence.db import Database
 
 
 def reconcile_library_paths_workflow(
     db: Database,
-    library_id: int,
+    library: Library,
     library_root: str | None,
     policy: ReconcilePolicy = "mark_invalid",
     batch_size: int = 1000,
@@ -28,7 +29,7 @@ def reconcile_library_paths_workflow(
 
     Args:
         db: Database instance
-        library_id: Library document id to scope reconciliation to
+        library: Domain ``Library`` (natural identity) to scope reconciliation to
         library_root: Library root configuration (must be set)
         policy: What to do with invalid paths:
             - "dry_run": Only report, don't modify database
@@ -58,7 +59,7 @@ def reconcile_library_paths_workflow(
         msg = f"Invalid policy '{policy}'. Must be one of: {valid_policies}"
         raise ValueError(msg)
     logger.info(f"[reconcile_paths] Starting reconciliation: policy={policy}, batch_size={batch_size}")
-    result = reconcile_library_paths(db=db, library_id=library_id, policy=policy, batch_size=batch_size)
+    result = reconcile_library_paths(db=db, library=library, policy=policy, batch_size=batch_size)
     logger.info(
         f"[reconcile_paths] Reconciliation complete: "
         f"{result['total_files']} files checked, {result['valid_files']} valid, "

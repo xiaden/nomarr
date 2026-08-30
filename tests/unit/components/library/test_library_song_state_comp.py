@@ -46,6 +46,7 @@ from nomarr.helpers.constants.file_states import (
     STATE_TAGS_NOT_FRESH,
     STATE_VECTORS_EXTRACTED,
 )
+from nomarr.helpers.dataclasses.library_dataclass import Library
 from nomarr.helpers.dataclasses.song_dataclass import Song
 from nomarr.helpers.exceptions import DuplicateEntityError
 
@@ -73,6 +74,22 @@ def _song(**overrides: object) -> Song:
     }
     base.update(overrides)
     return Song(**base)
+
+
+def _library(**overrides: object) -> Library:
+    """Build a minimal ``Library`` for mocking persistence-facade returns."""
+    base: dict = {
+        "name": "Music",
+        "root_path": "/music",
+        "is_enabled": True,
+        "watch_mode": "off",
+        "file_write_mode": "full",
+        "library_auto_write": False,
+        "created_at": None,
+        "updated_at": None,
+    }
+    base.update(overrides)
+    return Library(**base)
 
 
 def _make_mock_db() -> MagicMock:
@@ -263,11 +280,11 @@ class TestSimpleStateLookups:
             _song(song_id=9),
         ]
 
-        result = library_has_tagged_files(mock_db, 1)
+        result = library_has_tagged_files(mock_db, _library())
 
         assert result is True
         mock_db.app.list_song_docs_in_state.assert_called_once_with(STATE_PROCESSED)
-        mock_db.library.list_songs.assert_called_once_with(1)
+        mock_db.library.list_songs.assert_called_once_with(_library())
 
     @pytest.mark.unit
     def test_file_has_tagged_state_returns_false_when_count_is_zero(self) -> None:
@@ -284,7 +301,7 @@ class TestSimpleStateLookups:
         mock_db.app.list_song_docs_in_state.return_value = [_song(song_id=1)]
         mock_db.library.list_songs.return_value = [_song(song_id=2)]
 
-        result = library_has_tagged_files(mock_db, 1)
+        result = library_has_tagged_files(mock_db, _library())
 
         assert result is False
 
@@ -311,7 +328,7 @@ class TestDiscoverNextUntaggedFile:
         ]
         mock_db.app.list_claims.return_value = [{"key": "3"}]
 
-        result = discover_next_untagged_file(mock_db, library_id=1)
+        result = discover_next_untagged_file(mock_db, library=_library())
 
         assert result == _song(song_id=1).to_dict()
         assert mock_db.app.list_song_docs_in_state.call_args_list == [
@@ -367,7 +384,7 @@ class TestLibraryScopedStateQueries:
             _song(song_id=3),
         ]
 
-        result = count_untagged_files(mock_db, library_id=1)
+        result = count_untagged_files(mock_db, library=_library())
 
         assert result == 2
         assert mock_db.app.list_song_docs_in_state.call_args_list == [
@@ -387,10 +404,10 @@ class TestLibraryScopedStateQueries:
             _song(song_id=3),
         ]
 
-        result = get_errored_song_ids(mock_db, 1, limit=1)
+        result = get_errored_song_ids(mock_db, _library(), limit=1)
 
         assert result == [2]
-        mock_db.library.list_songs.assert_called_once_with(1)
+        mock_db.library.list_songs.assert_called_once_with(_library())
         mock_db.app.list_song_docs_in_state.assert_called_once_with(STATE_ERRORED)
 
     @pytest.mark.unit
@@ -405,7 +422,7 @@ class TestLibraryScopedStateQueries:
             _song(song_id=3),
         ]
 
-        result = count_errored_songs(mock_db, 1)
+        result = count_errored_songs(mock_db, _library())
 
         assert result == 2
 
@@ -423,7 +440,7 @@ class TestLibraryScopedStateQueries:
             _song(song_id=3),
         ]
 
-        result = get_errored_song_ids(mock_db, 1, limit=None)
+        result = get_errored_song_ids(mock_db, _library(), limit=None)
 
         assert result == [
             1,
@@ -440,11 +457,11 @@ class TestLibraryScopedStateQueries:
         ]
         mock_db.library.list_songs.return_value = [_song(song_id=2)]
 
-        result = get_stale_song_ids(mock_db, library_id=1)
+        result = get_stale_song_ids(mock_db, library=_library())
 
         assert result == [2]
         mock_db.app.list_song_docs_in_state.assert_called_once_with(STATE_TAGS_NOT_FRESH)
-        mock_db.library.list_songs.assert_called_once_with(1)
+        mock_db.library.list_songs.assert_called_once_with(_library())
 
     @pytest.mark.unit
     def test_count_untagged_files_returns_global_count_when_no_library_id(self) -> None:
@@ -547,7 +564,7 @@ class TestMultiStateComposition:
             _song(song_id=1),
         ]
 
-        result = get_uncalibrated_tagged_song_ids(mock_db, 1)
+        result = get_uncalibrated_tagged_song_ids(mock_db, _library())
 
         assert result == [3]
 
@@ -559,8 +576,8 @@ class TestMultiStateComposition:
             [_song(song_id=3), _song(song_id=4)],
         ]
         mock_db.library.list_libraries.return_value = [
-            {"id": 1},
-            {"id": 2},
+            _library(name="A"),
+            _library(name="B"),
         ]
         mock_db.library.list_songs.side_effect = [
             [_song(song_id=1), _song(song_id=3)],
@@ -571,12 +588,12 @@ class TestMultiStateComposition:
 
         assert result == [
             {
-                "library_id": 1,
+                "library_id": "A",
                 "calibrated_count": 1,
                 "not_calibrated_count": 1,
             },
             {
-                "library_id": 2,
+                "library_id": "B",
                 "calibrated_count": 1,
                 "not_calibrated_count": 1,
             },
@@ -648,19 +665,19 @@ class TestIncompleteTags:
             2: [{"name": "nom:mood_modelA_happy"}],
         }
 
-        result = get_songs_with_incomplete_tags(mock_db, expected_heads, namespace_prefix="nom:", library_id=1)
+        result = get_songs_with_incomplete_tags(mock_db, expected_heads, namespace_prefix="nom:", library=_library())
 
         assert result == [
             {
                 "file_id": 2,
                 "file_key": 2,
-                "library_id": 1,
+                "library_id": _library(),
                 "matched_count": 1,
                 "missing_count": 1,
                 "missing_heads": ["energy"],
             }
         ]
-        mock_db.library.list_songs.assert_called_once_with(1)
+        mock_db.library.list_songs.assert_called_once_with(_library())
         mock_db.library.list_song_tags_for_songs.assert_called_once_with(
             [2],
             name_starts_with="nom:",
@@ -714,7 +731,7 @@ class TestBulkTransitions:
     @pytest.mark.unit
     def test_bulk_set_not_hydrated_repairs_missing_hydration_and_error_edges(self) -> None:
         mock_db = _make_mock_db()
-        mock_db.library.list_libraries.return_value = [{"id": 1}]
+        mock_db.library.list_libraries.return_value = [_library()]
         mock_db.library.list_songs.return_value = [_song(song_id=7)]
         mock_db.app.list_song_docs_in_state.side_effect = lambda state: (
             [_song(song_id=7)] if state == STATE_ERRORED else []
@@ -766,13 +783,13 @@ class TestBulkTransitions:
             2: {STATE_TAGS_CURRENT},
         }
 
-        result = bulk_set_tags_not_fresh(mock_db, library_id=1)
+        result = bulk_set_tags_not_fresh(mock_db, library=_library())
 
         assert result == 1
         mock_db.app.remove_song_state.assert_called_once_with([2], STATE_TAGS_CURRENT)
         mock_db.app.add_song_states.assert_called_once_with([2], STATE_TAGS_NOT_FRESH)
         mock_db.app.list_song_docs_in_state.assert_any_call(STATE_TAGS_CURRENT)
-        mock_db.library.list_songs.assert_called_once_with(1)
+        mock_db.library.list_songs.assert_called_once_with(_library())
 
     @pytest.mark.unit
     def test_bulk_set_not_vectors_extracted_skips_empty_transition(self) -> None:

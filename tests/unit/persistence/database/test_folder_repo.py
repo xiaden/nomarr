@@ -64,14 +64,14 @@ class TestFolderRepository:
         assert folder_id > 0
         result = repo.get_folder(folder_id)
         assert result is not None
-        assert result["library_id"] == lib_id
-        assert result["path"] == "/music/library1"
-        assert result["mtime"] == 123
-        assert result["file_count"] == 7
-        assert result["last_scanned_at"] == 456
+        assert result.path == "/music/library1"
+        assert result.name == "library1"
+        assert result.mtime == 123
+        assert result.file_count == 7
+        assert result.last_scanned_at == 456
 
     def test_get_folder_existing(self, pg_session) -> None:
-        """get_folder should return the folder as a dict."""
+        """get_folder should return the folder domain value."""
         lib_id = _create_library(pg_session)
         repo = FolderRepository(pg_session)
         folder_id = repo.add_folder(
@@ -84,8 +84,8 @@ class TestFolderRepository:
         )
         result = repo.get_folder(folder_id)
         assert result is not None
-        assert result["id"] == folder_id
-        assert result["path"] == "/music/test"
+        assert result.path == "/music/test"
+        assert result.name == "test"
 
     def test_get_folder_nonexistent(self, pg_session) -> None:
         """get_folder should return None for missing id."""
@@ -107,8 +107,8 @@ class TestFolderRepository:
         )
         result = repo.get_folder_by_path(lib_id, "/music/unique")
         assert result is not None
-        assert result["path"] == "/music/unique"
-        assert result["library_id"] == lib_id
+        assert result.path == "/music/unique"
+        assert result.name == "unique"
 
     def test_get_folder_by_path_nonexistent(self, pg_session) -> None:
         """get_folder_by_path should return None for missing path."""
@@ -138,7 +138,7 @@ class TestFolderRepository:
         )
         result = repo.list_folders_for_library(lib_id)
         assert len(result) == 2
-        paths = [f["path"] for f in result]
+        paths = [f.path for f in result]
         assert "/music/lib1/root" in paths
         assert "/music/lib1/sub" in paths
 
@@ -164,8 +164,8 @@ class TestFolderRepository:
         )
         result = repo.get_root_folders(lib_id)
         assert len(result) == 1
-        assert result[0]["id"] == root_id
-        assert result[0]["parent_id"] is None
+        assert result[0].path == "/music/root"
+        assert result[0].parent_path is None
 
     def test_get_by_parent(self, pg_session) -> None:
         """get_by_parent should return child folders."""
@@ -197,7 +197,7 @@ class TestFolderRepository:
         )
         result = repo.get_by_parent(lib_id, parent_id)
         assert len(result) == 2
-        names = [f["name"] for f in result]
+        names = [f.name for f in result]
         assert "child1" in names
         assert "child2" in names
 
@@ -218,7 +218,7 @@ class TestFolderRepository:
         assert result is None
 
     def test_replace_library_folders(self, pg_session) -> None:
-        """replace_library_folders should delete all and insert new ones."""
+        """replace_library_folders should reconcile the library's folders."""
         lib_id = _create_library(pg_session)
         repo = FolderRepository(pg_session)
         repo.add_folder(
@@ -244,7 +244,7 @@ class TestFolderRepository:
         repo.replace_library_folders(lib_id, new_folders)
         result = repo.list_folders_for_library(lib_id)
         assert len(result) == 2
-        paths = [f["path"] for f in result]
+        paths = [f.path for f in result]
         assert "/music/new1" in paths
         assert "/music/new2" in paths
         assert "/music/old1" not in paths

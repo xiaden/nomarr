@@ -2,48 +2,25 @@
 
 from __future__ import annotations
 
-import hashlib
 import logging
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from nomarr.components.library.library_song_state_comp import transition_song_state
 from nomarr.components.ml.onnx.ml_model_registry_comp import build_model_output_index_map
 from nomarr.helpers.constants.file_states import STATE_NOT_PROCESSED, STATE_PROCESSED
+from nomarr.helpers.dataclasses.ml_output_stream_dataclass import OutputStream, OutputStreamWrite
 from nomarr.helpers.dto.ml_dto import LoadedOutputStream
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 
-_STREAM_TABLE = "ml_output_streams"
-_FILE_TABLE = "songs"
-_OUTPUT_TABLE = "ml_model_outputs"
-
 logger = logging.getLogger(__name__)
 
-
-@dataclass(frozen=True)
-class StreamWrite:
-    """Canonical write payload for one output stream."""
-
-    output_id: str
-    values: list[float]
-    output_index: int | None = None
-
-
-@dataclass(frozen=True)
-class StreamRecord:
-    """Fetched canonical stream for one model output."""
-
-    output_id: str
-    output_index: int
-    values: list[float]
-
-
-def _stream_key(song_id: int, output_id: str | int) -> str:
-    """Build the stable key for one canonical output stream."""
-    return hashlib.sha1(f"{song_id}|{output_id}".encode()).hexdigest()
+# Compatibility aliases keep the component vocabulary stable while the domain
+# value objects become the sole stream contract across persistence boundaries.
+StreamWrite = OutputStreamWrite
+StreamRecord = OutputStream
 
 
 def _normalize_streams(streams: list[StreamWrite]) -> list[StreamWrite]:
@@ -53,53 +30,34 @@ def _normalize_streams(streams: list[StreamWrite]) -> list[StreamWrite]:
         output_id = stream.output_id
         deduped[output_id] = StreamWrite(
             output_id=output_id,
-            values=[float(value) for value in stream.values],
+            values=list(stream.values),
             output_index=stream.output_index,
         )
     return list(deduped.values())
 
 
-def build_output_stream_payloads(streams: list[StreamWrite]) -> list[dict[str, Any]]:
-    """Build canonical ``{output_id, values, output_index}`` stream payloads.
+def build_output_stream_payloads(streams: list[StreamWrite]) -> list[StreamWrite]:
+    """Normalize a batch of output-stream commands by stable output identity.
 
-    Normalizes the write batch (last stream wins per output id) and returns the
-    canonical payloads that ``db.ml.replace_song_inference_results`` persists to
-    ``ml_output_streams``. Each payload carries the output's ``output_index`` so
-    the live write→read round-trip preserves it (the read side drops rows whose
-    index is not an int). The live write path no longer upserts streams directly
-    — it forwards these payloads through the aggregate alongside the song's
-    backbone vector payloads in one atomic replacement.
+    The result remains domain-shaped. Persistence serialization belongs to
+    ``db.ml`` rather than this component, so callers never construct or consume
+    table-shaped stream payloads.
     """
-    return [
-        {"output_id": stream.output_id, "values": stream.values, "output_index": stream.output_index}
-        for stream in _normalize_streams(streams)
-    ]
+    return _normalize_streams(streams)
 
 
 def fetch_output_streams(db: Database, song_id: int) -> list[StreamRecord]:
     """Fetch all canonical output streams linked to one song."""
-    stream_docs = db.ml.list_output_streams_for_song(song_id)
-    if not stream_docs:
-        return []
-
-    records: list[StreamRecord] = []
-    for stream_doc in stream_docs:
-        output_id = stream_doc.get("output_id")
-        output_index = stream_doc.get("output_index")
-        values = stream_doc.get("values", [])
-        if not isinstance(output_id, str) or not isinstance(output_index, int) or not isinstance(values, list):
-            continue
-
-        records.append(
-            StreamRecord(
-                output_id=output_id,
-                output_index=output_index,
-                values=[float(value) for value in values],
-            )
-        )
-
-    records.sort(key=lambda record: (record.output_index, record.output_id))
-    return records
+    # Concurrent persistence-facade work owns row-to-domain mapping; this
+    # component consumes only the resulting domain objects.
+    records = db.ml.list_output_streams_for_song(song_id)
+    return sorted(
+        records,
+        key=lambda record: (
+            record.output_index if record.output_index is not None else float("inf"),
+            record.output_id,
+        ),
+    )
 
 
 def build_output_stream_lookup(
@@ -174,6 +132,10 @@ def load_output_streams_for_song(
     unmatched_output_ids: list[str] = []
 
     for stream_record in stream_records:
+        if stream_record.output_index is None:
+            # Legacy rows without ordering metadata cannot be reconstructed into
+            # the indexed LoadedOutputStream contract.
+            continue
         output_meta = lookup.get(stream_record.output_id)
         if output_meta is None:
             unmatched_output_ids.append(stream_record.output_id)
@@ -210,13 +172,5 @@ def load_output_streams_for_song(
 
 
 def delete_output_streams(db: Database, song_id: int) -> int:
-    """Delete all canonical output streams for one song."""
-    stream_docs = db.ml.list_output_streams_for_song(song_id)
-    stream_ids = sorted(
-        {stream_id for stream_doc in stream_docs if isinstance((stream_id := stream_doc.get("id")), (str, int))}
-    )
-    if not stream_ids:
-        return 0
-
-    db.ml.remove_output_streams_for_song(song_id)
-    return len(stream_ids)
+    """Delete all canonical output streams for one song and return its count."""
+    return db.ml.remove_output_streams_for_song(song_id)

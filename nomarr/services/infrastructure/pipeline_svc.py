@@ -6,7 +6,6 @@ import logging
 import threading
 from typing import TYPE_CHECKING
 
-from nomarr.components.library.library_records_comp import get_library_record
 from nomarr.components.library.library_scan_state_comp import (
     bulk_transition_pipeline_axis,
     get_libraries_in_axis_state,
@@ -36,9 +35,11 @@ from nomarr.helpers.constants.pipeline_states import (
 )
 from nomarr.helpers.dto.library_dto import LibraryPipelineStatusDTO
 from nomarr.services.domain.calibration_svc import CALIBRATION_GENERATE_TASK_ID, CalibrationService
+from nomarr.services.domain.library_svc.task_ids import library_task_id
 from nomarr.services.domain.tagging_svc import CALIBRATION_APPLY_TASK_ID, TaggingService
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dataclasses.library_dataclass import Library
     from nomarr.persistence.db import Database
     from nomarr.services.domain.navidrome_svc import NavidromeService
     from nomarr.services.infrastructure.background_tasks_svc import BackgroundTaskService
@@ -106,24 +107,20 @@ class LibraryPipelineService:
         # Recover stale scanning
         scanning_libraries = get_libraries_in_axis_state(self.db, SCAN_STATE_FIELD, SCAN_IN_PROGRESS)
         stale_scanning = [
-            library_id
-            for library_id in scanning_libraries
-            if not self._is_task_running(self._scan_task_id(int(library_id)))
+            library for library in scanning_libraries if not self._is_task_running(self._scan_task_id(library))
         ]
-        for library_id in stale_scanning:
-            transition_pipeline_axis(self.db, library_id, SCAN_STATE_FIELD, SCAN_NOT_SCANNED)
+        for library in stale_scanning:
+            transition_pipeline_axis(self.db, library, SCAN_STATE_FIELD, SCAN_NOT_SCANNED)
             try:
                 update_scan_progress(
                     self.db,
-                    library_id,
+                    library,
                     scan_error="Scan interrupted by server restart",
                 )
             except ValueError:
-                # Pipeline state can outlive its scan row after an interrupted
-                # transaction. State recovery must still complete at startup.
                 logger.warning(
                     "Could not record restart interruption for library %s: scan row is missing",
-                    library_id,
+                    library.name,
                 )
         recovery_counts["scanning"] = len(stale_scanning)
         if stale_scanning:
@@ -143,12 +140,12 @@ class LibraryPipelineService:
 
         # Recover stale writing
         writing_libraries = get_libraries_in_axis_state(self.db, WRITE_STATE_FIELD, WRITE_IN_PROGRESS)
-        for library_id in writing_libraries:
-            if self._is_task_running(self._write_task_id(int(library_id))):
+        for library in writing_libraries:
+            if self._is_task_running(self._write_task_id(library)):
                 continue
-            transition_pipeline_axis(self.db, library_id, WRITE_STATE_FIELD, WRITE_NOT_WRITTEN)
+            transition_pipeline_axis(self.db, library, WRITE_STATE_FIELD, WRITE_NOT_WRITTEN)
             recovery_counts["writing"] += 1
-            logger.info("Recovered stale writing library %s to not_written", library_id)
+            logger.info("Recovered stale writing library %s to not_written", library.name)
 
         return recovery_counts
 
@@ -165,25 +162,24 @@ class LibraryPipelineService:
         """
         scanning_libraries = get_libraries_in_axis_state(self.db, SCAN_STATE_FIELD, SCAN_IN_PROGRESS)
         recovered = 0
-        for library_id in scanning_libraries:
-            if is_scan_stale(self.db, int(library_id), timeout_ms):
-                transition_pipeline_axis(self.db, library_id, SCAN_STATE_FIELD, SCAN_NOT_SCANNED)
+        for library in scanning_libraries:
+            if is_scan_stale(self.db, library, timeout_ms):
+                transition_pipeline_axis(self.db, library, SCAN_STATE_FIELD, SCAN_NOT_SCANNED)
                 try:
                     update_scan_progress(
                         self.db,
-                        library_id,
+                        library,
                         scan_error="Scan timed out: no heartbeat received",
                     )
                 except ValueError:
-                    # A missing scan row is a recoverable state/row divergence.
                     logger.warning(
                         "Could not record heartbeat timeout for library %s: scan row is missing",
-                        library_id,
+                        library.name,
                     )
                 recovered += 1
                 logger.warning(
                     "Recovered scanning library %s due to stale heartbeat",
-                    library_id,
+                    library.name,
                 )
         return recovered
 
@@ -268,32 +264,27 @@ class LibraryPipelineService:
         """After calibration apply, check if auto-write should start."""
         # Find libraries that were calibrating and are now calibrated
         calibrated_libraries = get_libraries_in_axis_state(self.db, CAL_STATE_FIELD, CAL_COMPLETE)
-        for library_id in calibrated_libraries:
-            state = get_pipeline_state(self.db, int(library_id))
-            if state.get(WRITE_STATE_FIELD) == WRITE_IN_PROGRESS:
+        for library in calibrated_libraries:
+            state = get_pipeline_state(self.db, library)
+            if getattr(state, WRITE_STATE_FIELD) == WRITE_IN_PROGRESS:
                 continue  # Already writing
 
-            library = get_library_record(self.db, int(library_id), include_scan=False)
-            if library is None:
-                logger.warning("Library %s was missing during apply completion", library_id)
-                continue
-
-            library_auto_write = bool(library.get("library_auto_write", False))
-            file_write_mode = str(library.get("file_write_mode", "none"))
+            library_auto_write = library.library_auto_write
+            file_write_mode = library.file_write_mode
             if library_auto_write and file_write_mode != "none":
-                transition_pipeline_axis(self.db, library_id, WRITE_STATE_FIELD, WRITE_IN_PROGRESS)
+                transition_pipeline_axis(self.db, library, WRITE_STATE_FIELD, WRITE_IN_PROGRESS)
                 logger.info(
                     "Library %s entering writing stage after calibration apply completion",
-                    library_id,
+                    library.name,
                 )
-                self._dispatch_write(int(library_id))
+                self._dispatch_write(library)
             else:
                 logger.info(
                     "Library %s calibrated; tag_write axis stays not_written (auto-write disabled)",
-                    library_id,
+                    library.name,
                 )
 
-    def get_pipeline_status(self, library_id: int) -> LibraryPipelineStatusDTO | None:
+    def get_pipeline_status(self, library: Library) -> LibraryPipelineStatusDTO | None:
         """Return state-aware pipeline status details for a library.
 
         Queries all four pipeline axes (scan, ML, calibration, tag-write) and
@@ -301,81 +292,77 @@ class LibraryPipelineService:
         pending writes).
 
         Args:
-            library_id: Library database ID.
+            library: Domain ``Library`` (natural identity).
 
         Returns:
             ``LibraryPipelineStatusDTO`` with per-axis state and optional
-            domain counts, or ``None`` if the library does not exist.
+            domain counts.
 
         """
-        library = get_library_record(self.db, int(library_id), include_scan=False)
-        if library is None:
-            return None
-
-        state = get_pipeline_state(self.db, int(library_id))
+        state = get_pipeline_state(self.db, library)
 
         untagged_count: int | None = None
         uncalibrated_count: int | None = None
         pending_write_count: int | None = None
 
-        if state.get(ML_STATE_FIELD) == ML_IN_PROGRESS:
-            untagged_count = count_untagged_files(self.db, int(library_id))
-        elif state.get(CAL_STATE_FIELD) in {CAL_NOT_CALIBRATED, CAL_IN_PROGRESS}:
-            uncalibrated_count = len(get_uncalibrated_tagged_song_ids(self.db, int(library_id)))
-        elif state.get(WRITE_STATE_FIELD) in {WRITE_NOT_WRITTEN, WRITE_IN_PROGRESS}:
-            reconcile_status = self.tagging_svc.get_reconcile_status(library_id)
+        if getattr(state, ML_STATE_FIELD) == ML_IN_PROGRESS:
+            untagged_count = count_untagged_files(self.db, library)
+        elif getattr(state, CAL_STATE_FIELD) in {CAL_NOT_CALIBRATED, CAL_IN_PROGRESS}:
+            uncalibrated_count = len(get_uncalibrated_tagged_song_ids(self.db, library))
+        elif getattr(state, WRITE_STATE_FIELD) in {WRITE_NOT_WRITTEN, WRITE_IN_PROGRESS}:
+            reconcile_status = self.tagging_svc.get_reconcile_status(library)
             pending_write_count = int(reconcile_status["pending_count"])
 
         return LibraryPipelineStatusDTO(
-            library_id=int(library_id),
-            scan_state=state.get(SCAN_STATE_FIELD, "not_scanned"),
-            ml_state=state.get(ML_STATE_FIELD, "not_ML_processed"),
-            calibration_state=state.get(CAL_STATE_FIELD, "not_calibrated"),
-            tag_write_state=state.get(WRITE_STATE_FIELD, "not_written"),
+            library_id=library.name,
+            scan_state=getattr(state, SCAN_STATE_FIELD, "not_scanned"),
+            ml_state=getattr(state, ML_STATE_FIELD, "not_ML_processed"),
+            calibration_state=getattr(state, CAL_STATE_FIELD, "not_calibrated"),
+            tag_write_state=getattr(state, WRITE_STATE_FIELD, "not_written"),
             untagged_count=untagged_count,
             uncalibrated_count=uncalibrated_count,
             pending_write_count=pending_write_count,
-            library_auto_write=bool(library.get("library_auto_write", False)),
-            file_write_mode=str(library.get("file_write_mode", "full")),
+            library_auto_write=library.library_auto_write,
+            file_write_mode=library.file_write_mode,
         )
 
-    def _dispatch_write(self, library_id: int) -> None:
+    def _dispatch_write(self, library: Library) -> None:
         """Dispatch write-tags background work for a single library."""
         stop_event = threading.Event()
         try:
             task_id = self.tagging_svc.start_write_tags_background(
-                library_id,
+                library,
                 stop_event,
-                on_complete=lambda: self.on_write_complete(library_id),
+                on_complete=lambda: self.on_write_complete(library),
             )
         except ValueError:
-            logger.warning("Write-tags task already running for library %s", library_id)
+            logger.warning("Write-tags task already running for library %s", library.name)
             return
 
-        logger.info("Started write-tags task %s for library %s", task_id, library_id)
+        logger.info("Started write-tags task %s for library %s", task_id, library.name)
 
-    def stop_write(self, library_id: int) -> None:
+    def stop_write(self, library: Library) -> None:
         """Request graceful cancellation of an in-flight write task."""
-        task_id = self._write_task_id(library_id)
+        task_id = self._write_task_id(library)
         cancelled = self.bts.cancel_task(task_id)
         logger.info("Requested stop for write-tags task %s: cancelled=%s", task_id, cancelled)
 
-    def handle_auto_write_enabled(self, library_id: int) -> None:
+    def handle_auto_write_enabled(self, library: Library) -> None:
         """React to auto-write being enabled for a library."""
-        self._dispatch_write(library_id)
+        self._dispatch_write(library)
 
-    def handle_auto_write_disabled(self, library_id: int) -> None:
+    def handle_auto_write_disabled(self, library: Library) -> None:
         """React to auto-write being disabled for a library."""
-        self.stop_write(library_id)
+        self.stop_write(library)
 
-    def on_write_complete(self, library_id: int) -> None:
+    def on_write_complete(self, library: Library) -> None:
         """Mark tag_write axis as complete and trigger Navidrome rescan."""
-        transition_pipeline_axis(self.db, int(library_id), WRITE_STATE_FIELD, WRITE_COMPLETE)
-        logger.info("Library %s tag_write axis transitioned to written", library_id)
+        transition_pipeline_axis(self.db, library, WRITE_STATE_FIELD, WRITE_COMPLETE)
+        logger.info("Library %s tag_write axis transitioned to written", library.name)
         rescan_triggered = self.navidrome_svc.trigger_rescan()
         logger.info(
             "Navidrome rescan triggered after write completion for %s: %s",
-            library_id,
+            library.name,
             rescan_triggered,
         )
 
@@ -384,10 +371,10 @@ class LibraryPipelineService:
         task_status = self.bts.get_task_status(task_id)
         return task_status is not None and task_status.get("status") == "running"
 
-    def _scan_task_id(self, library_id: int) -> str:
+    def _scan_task_id(self, library: Library) -> str:
         """Build the BTS task identifier used for library scans."""
-        return f"scan_library_{library_id}"
+        return library_task_id(library, "scan")
 
-    def _write_task_id(self, library_id: int) -> str:
+    def _write_task_id(self, library: Library) -> str:
         """Build the BTS task identifier used for tag writing."""
-        return f"write_tags:{library_id}"
+        return f"write_tags:{library.name}"

@@ -17,10 +17,10 @@ Each library scan writes a row to the `library_scans` table (one per scan run, m
 
 ## Key Findings
 
-### `library_scans` table has NO heartbeat column
-- **Location:** `nomarr/persistence/models/library_scan.py:14-22` (ORM; columns: id, library_id, scan_type, status, started_at, finished_at, files_found, files_processed, error), baseline migration `alembic/versions/001_initial_v1_baseline_schema.py:169-184`
-- **What:** No `heartbeat_at`. The legacy Arango-era doc key `scan_heartbeat` is dropped at the insert write boundary (`nomarr/persistence/database/scan_repo.py:31,63-68`) and would raise a compile error on the update path (`update_by_field` passes raw fields unfiltered, `scan_repo.py:78-83` → `sql/primitives.py:104-118`).
-- **Why it matters:** `update_scan_progress` cannot persist a heartbeat until a real column exists. `_SCAN_COLUMNS` is derived from `_T.columns.keys()`, so adding the ORM column automatically includes it in the insert filter.
+### `library_scans` table includes a heartbeat column
+- **Location:** `nomarr/persistence/models/library_scan.py:14-23` (ORM; includes nullable `heartbeat_at`), baseline migration `alembic/versions/001_current_schema_baseline.py:178-201`
+- **What:** Nullable `heartbeat_at` is persisted by the PostgreSQL scan row. The legacy Arango-era doc key `scan_heartbeat` is still dropped at the insert write boundary (`nomarr/persistence/database/scan_repo.py:31,63-68`).
+- **Why it matters:** `_SCAN_COLUMNS` is derived from `_T.columns.keys()`, so the ORM column is included in the insert filter; writers can persist scan activity using the canonical `heartbeat_at` field.
 
 ### Staleness compares against `started_at`, not last activity
 - **Location:** `is_scan_stale` `nomarr/components/library/scan_lifecycle_comp.py:259-287`
@@ -42,9 +42,9 @@ Each library scan writes a row to the `library_scans` table (one per scan run, m
 - **Why it matters:** Not required for the heartbeat fix, but any scan-row schema work should note readers still keyed on the pre-PostgreSQL doc shape; `_DEFAULT_SCAN_FIELDS` (`library_scan_state_comp.py:20-28`) still lists `scan_heartbeat`/`files_total`/`completed_at`.
 
 ### Migration pattern (Alembic)
-- **Location:** `alembic/env.py` (target_metadata = Base.metadata), `alembic/versions/001_initial_v1_baseline_schema.py` (revision `001_initial`), `alembic/versions/002_add_ml_model_fields.py` (revision = file stem `002_add_ml_model_fields`, `down_revision="001_initial"`, `op.add_column(...)` / `op.drop_column(...)` in downgrade, reverse order)
-- **What:** Column additions are plain `op.add_column("table", sa.Column(name, sa.BigInteger(), nullable=True))`. Two versions exist; the next is `003_*` with `down_revision="002_add_ml_model_fields"`. Migrations run automatically at container startup (`docker` skill) — no manual step.
-- **Note:** `tests/unit/migrations/test_migration_uniqueness.py` targets the nonexistent `nomarr/migrations/` package (V*.py) — it passes vacuously; there is NO active automated alembic migration test.
+- **Location:** `alembic/env.py` (target_metadata = Base.metadata), `alembic/versions/001_current_schema_baseline.py` (revision `baseline_20260830`, no parent revision)
+- **What:** The complete current schema is created by one baseline revision. Migrations run automatically at container startup (`docker` skill) — no manual step.
+- **Note:** Pre-baseline PostgreSQL databases are unsupported and must be recreated. The baseline contract is covered by `tests/unit/persistence/migrations/test_current_schema_baseline.py`.
 
 ### Test patterns for scan code
 - **Location:** `tests/unit/components/library/test_scan_lifecycle_comp.py` (component; `test_update_scan_progress_delegates_to_database_facade:351-367` asserts the EXACT payload `{"progress":5,"total":12,"scan_error":"boom"}` — breaks when a heartbeat field is added; **no `is_scan_stale` test exists**); `tests/unit/persistence/database/test_scan_repo.py` (real `pg_session` fixture; `test_create_scan_drops_legacy_keys_at_write_boundary:53-83` asserts legacy `scan_heartbeat` dropped — unaffected by a new `heartbeat_at` column); `tests/unit/persistence/api/test_library_db.py:973-1030` (MagicMock delegation tests — unaffected); `tests/unit/services/infrastructure/test_pipeline_svc.py:154-188` (covers `recover_stale_states` only, no `recover_stale_heartbeats` coverage); characterization `tests/characterization/test_persistence_facade_characterization.py:139-183` snapshots `LibraryDb_get_scan`/`LibraryDb_update_scan` — snapshots self-create at `tests/characterization/snapshots/` (conftest.py:356-382), so a new row field changes the baseline on next run.

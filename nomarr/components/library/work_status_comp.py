@@ -17,7 +17,6 @@ if TYPE_CHECKING:
 class _LibrarySnapshot(TypedDict):
     """Shape of a library document consumed by ``compute_work_status``."""
 
-    id: int
     name: str
     scan_status: str | None
     scan_progress: int | None
@@ -48,7 +47,7 @@ def compute_work_status(
     """
     scanning_libraries = [
         ScanningLibraryInfo(
-            library_id=lib.id,
+            library_id=lib.name,
             name=lib.name or "Unknown",
             progress=lib.scan_progress or 0,
             total=lib.scan_total or 0,
@@ -57,8 +56,8 @@ def compute_work_status(
         if lib.scan_status == "scanning"
         or (
             pipeline_states
-            and str(lib.id) in pipeline_states
-            and pipeline_states[str(lib.id)].get("scan_state") == "scanning"
+            and lib.name in pipeline_states
+            and pipeline_states[lib.name].get("scan_state") == "scanning"
         )
     ]
     is_scanning = len(scanning_libraries) > 0
@@ -68,12 +67,12 @@ def compute_work_status(
     pipeline_source = library_docs if library_docs is not None else libraries
     pipeline_states = pipeline_states or {}
     for lib in pipeline_source:
-        lib_id = lib.id
-        lib_state = pipeline_states.get(str(lib_id), {})
+        lib_name = lib.name
+        lib_state = pipeline_states.get(lib_name, {})
         state = _derive_pipeline_state(lib_state)
         pipeline_libraries.append(
             LibraryPipelineInfo(
-                library_id=lib_id,
+                library_id=lib_name,
                 name=lib.name or "Unknown",
                 state=state,
                 library_auto_write=bool(lib.library_auto_write),

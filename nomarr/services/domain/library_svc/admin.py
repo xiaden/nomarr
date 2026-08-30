@@ -8,7 +8,7 @@ This module handles:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from nomarr.components.library.library_admin_comp import (
     clear_library_data,
@@ -18,15 +18,17 @@ from nomarr.components.library.library_admin_comp import (
     update_library_root,
 )
 from nomarr.components.library.library_records_comp import (
+    get_library_by_name as component_get_library_by_name,
+)
+from nomarr.components.library.library_records_comp import (
     get_library_record,
-    list_library_records,
+    list_all_libraries,
     update_library_record,
 )
-from nomarr.components.library.library_song_query_comp import get_library_counts
 from nomarr.components.library.update_library_metadata_comp import UpdateLibraryMetadataComp
-from nomarr.helpers.dto.library_dto import LibraryDict
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dataclasses.library_dataclass import Library
     from nomarr.persistence.db import Database
     from nomarr.services.infrastructure.file_watcher_svc import FileWatcherService
 
@@ -41,26 +43,40 @@ class LibraryAdminMixin:
     db: Database
     file_watcher_service: FileWatcherService | None
 
-    def _get_library_or_error(self, library_id: int) -> dict[str, Any]:
-        """Get a library by ID or raise an error.
+    def get_library_by_name(self, name: str) -> Library | None:
+        """Resolve a library by its natural name.
 
-        Libraries are used only to determine scan roots. This method retrieves
-        library metadata (name, root_path, enabled status) but does NOT propagate
-        library_id to scanning workflows or persistence operations.
+        This is the ONLY name resolver above persistence. It delegates to the
+        natural-name component (``library_records_comp.get_library_by_name``).
+        The interface adapter (P4-S8) resolves a decoded wire name exactly once
+        via this method before invoking any other service method; services never
+        perform wire-ID decoding or an integer-to-library lookup.
 
         Args:
-            library_id: ID of the library to retrieve
+            name: Natural library name.
 
         Returns:
-            Library dict with keys: id, name, root_path, is_enabled, etc.
-
-        Raises:
-            ValueError: If library does not exist
+            The matching domain ``Library``, or ``None`` when no such library exists.
 
         """
-        result = get_library_record(self.db, int(library_id))
+        return component_get_library_by_name(self.db, name)
+
+    def _get_library_or_error(self, library: Library) -> Library:
+        """Re-fetch a library by its natural identity or raise an error.
+
+        Args:
+            library: Domain ``Library`` (natural identity).
+
+        Returns:
+            The persisted domain ``Library`` value.
+
+        Raises:
+            ValueError: If the library does not exist.
+
+        """
+        result = get_library_record(self.db, library)
         if result is None:
-            msg = f"Library not found: {library_id}"
+            msg = f"Library not found: {library.name}"
             raise ValueError(msg)
         return result
 
@@ -73,46 +89,38 @@ class LibraryAdminMixin:
         """
         return self.cfg.library_root is not None
 
-    def list_libraries(self, enabled_only: bool = False) -> list[LibraryDict]:
-        """List all configured libraries.
+    def list_libraries(self, enabled_only: bool = False) -> list[Library]:
+        """List all configured libraries as domain ``Library`` values.
 
         Args:
-            enabled_only: Only return enabled libraries
+            enabled_only: Only return enabled libraries.
 
         Returns:
-            List of LibraryDict DTOs with file/folder counts
+            List of domain ``Library`` values. Transport projections and the
+            per-library file/folder counts are built by the interface adapter
+            (P4-S8) from the name-keyed ``get_library_counts`` mapping; services
+            no longer construct ``LibraryDict`` or expose generated ids.
 
         """
-        libraries = list_library_records(self.db, enabled_only=enabled_only)
+        libraries = list_all_libraries(self.db)
+        if enabled_only:
+            libraries = [lib for lib in libraries if lib.is_enabled]
+        return libraries
 
-        # Get file/folder counts for all libraries
-        counts = get_library_counts(self.db)
-
-        result = []
-        for lib in libraries:
-            # Augment with counts (default to 0 if not in counts dict)
-            lib_counts = counts.get(lib.id, {"file_count": 0, "folder_count": 0})
-            lib.file_count = lib_counts["file_count"]
-            lib.folder_count = lib_counts["folder_count"]
-            result.append(lib)
-
-        return result
-
-    def get_library(self, library_id: int) -> LibraryDict:
-        """Get a library by ID.
+    def get_library(self, library: Library) -> Library:
+        """Get a library by its natural identity.
 
         Args:
-            library_id: Library ID
+            library: Domain ``Library`` (natural identity).
 
         Returns:
-            LibraryDict DTO
+            The persisted domain ``Library`` value.
 
         Raises:
-            ValueError: If library not found
+            ValueError: If library not found.
 
         """
-        library = self._get_library_or_error(library_id)
-        return LibraryDict(**library)
+        return self._get_library_or_error(library)
 
     def create_library(
         self,
@@ -122,8 +130,8 @@ class LibraryAdminMixin:
         watch_mode: str = "off",
         file_write_mode: str = "full",
         library_auto_write: bool = False,
-    ) -> LibraryDict:
-        """Create a new library record.
+    ) -> Library:
+        """Create a new library record and return the domain ``Library``.
 
         Creates the library record. Per-backbone vector collections are
         created once during schema setup (not per-library), so no vector
@@ -138,10 +146,10 @@ class LibraryAdminMixin:
             library_auto_write: Whether to enable automatic tag writing for the library.
 
         Returns:
-            LibraryDict DTO for the created library record.
+            The persisted domain ``Library`` value for the created library.
 
         """
-        library_id = create_library(
+        return create_library(
             db=self.db,
             base_library_root=self.cfg.library_root,
             name=name,
@@ -152,23 +160,28 @@ class LibraryAdminMixin:
             library_auto_write=library_auto_write,
         )
 
-        library = self._get_library_or_error(library_id)
-        return LibraryDict(**library)
+    def update_library_root(self, library: Library, root_path: str) -> Library:
+        """Update a library's root path.
 
-    def update_library_root(self, library_id: int, root_path: str) -> LibraryDict:
-        """Update a library's root path."""
+        Args:
+            library: Domain ``Library`` (natural identity).
+            root_path: New filesystem root path.
+
+        Returns:
+            The updated domain ``Library`` value.
+
+        """
         update_library_root(
             db=self.db,
             base_library_root=self.cfg.library_root,
-            library_id=library_id,
+            library=library,
             root_path=root_path,
         )
-        updated = self._get_library_or_error(library_id)
-        return LibraryDict(**updated)
+        return self._get_library_or_error(library)
 
     def update_library(
         self,
-        library_id: int,
+        library: Library,
         *,
         name: str | None = None,
         root_path: str | None = None,
@@ -176,11 +189,11 @@ class LibraryAdminMixin:
         watch_mode: str | None = None,
         file_write_mode: str | None = None,
         library_auto_write: bool | None = None,
-    ) -> LibraryDict:
+    ) -> Library:
         """Update library properties.
 
         Args:
-            library_id: Library database ID.
+            library: Domain ``Library`` (natural identity).
             name: New display name (optional).
             root_path: New filesystem root path (optional).
             is_enabled: New enabled state (optional).
@@ -189,20 +202,20 @@ class LibraryAdminMixin:
             library_auto_write: New auto-write setting (optional).
 
         Returns:
-            Updated LibraryDict DTO.
+            The updated domain ``Library`` value.
 
         """
         # Validate library exists
-        self._get_library_or_error(library_id)
+        self._get_library_or_error(library)
 
         normalized_root_path = None
         if root_path is not None:
-            normalized_root_path = resolve_library_root(self.db, self.cfg.library_root, library_id, root_path)
+            normalized_root_path = resolve_library_root(self.db, self.cfg.library_root, library, root_path)
 
         if normalized_root_path is not None:
             update_library_record(
                 self.db,
-                library_id,
+                library,
                 name=name,
                 root_path=normalized_root_path,
                 is_enabled=is_enabled,
@@ -218,7 +231,7 @@ class LibraryAdminMixin:
             or library_auto_write is not None
         ):
             self.update_library_metadata(
-                library_id,
+                library,
                 name=name,
                 is_enabled=is_enabled,
                 watch_mode=watch_mode,
@@ -226,32 +239,38 @@ class LibraryAdminMixin:
                 library_auto_write=library_auto_write,
             )
 
-        return self.get_library(library_id)
+        return self.get_library(library)
 
-    def delete_library(self, library_id: int) -> bool:
+    def delete_library(self, library: Library) -> bool:
         """Stop file watching for a library and delete it.
 
         Args:
-            library_id: Library database ID to delete.
+            library: Domain ``Library`` (natural identity) to delete.
 
         Returns:
             True if the library was deleted, False if it was not found.
 
+        Note:
+            The watcher service keys observers by ``str``; the natural
+            ``Library.name`` is used as the watcher key. The watcher service
+            internals still refer to the key as a "library database ID" and need
+            a natural-name pass (P4-S8).
+
         """
-        if self.file_watcher_service is not None and str(library_id) in self.file_watcher_service.observers:
-            self.file_watcher_service.stop_watching_library(str(library_id))
-        return delete_library(db=self.db, library_id=int(library_id))
+        if self.file_watcher_service is not None and library.name in self.file_watcher_service.observers:
+            self.file_watcher_service.stop_watching_library(library.name)
+        return delete_library(db=self.db, library=library)
 
     def update_library_metadata(
         self,
-        library_id: int,
+        library: Library,
         *,
         name: str | None = None,
         is_enabled: bool | None = None,
         watch_mode: str | None = None,
         file_write_mode: str | None = None,
         library_auto_write: bool | None = None,
-    ) -> LibraryDict:
+    ) -> Library:
         """Update library metadata fields.
 
         Only the provided keyword arguments are updated; omitted fields are
@@ -259,7 +278,7 @@ class LibraryAdminMixin:
         component for persistence.
 
         Args:
-            library_id: Library database ID to update.
+            library: Domain ``Library`` (natural identity) to update.
             name: Optional new display name for the library.
             is_enabled: Optionally enable or disable the library.
             watch_mode: Optional watch mode (e.g. ``"polling"``, ``"inotify"``).
@@ -268,15 +287,15 @@ class LibraryAdminMixin:
                 ML processing completes.
 
         Returns:
-            Updated LibraryDict with the current library state.
+            The updated domain ``Library`` value.
 
         Raises:
             ValueError: If the library does not exist.
 
         """
-        self._get_library_or_error(library_id)
+        self._get_library_or_error(library)
         UpdateLibraryMetadataComp(self.db).update(
-            library_id,
+            library,
             name=name,
             is_enabled=is_enabled,
             watch_mode=watch_mode,
@@ -284,8 +303,7 @@ class LibraryAdminMixin:
             library_auto_write=library_auto_write,
         )
 
-        updated = self._get_library_or_error(library_id)
-        return LibraryDict(**updated)
+        return self._get_library_or_error(library)
 
     def clear_library_data(self) -> None:
         """Clear all library data (files, tags, scan queue).

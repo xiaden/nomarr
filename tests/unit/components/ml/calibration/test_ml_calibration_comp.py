@@ -15,6 +15,7 @@ from nomarr.components.ml.calibration.ml_calibration_comp import (
     get_default_histogram_spec,
     get_sparse_histogram,
 )
+from nomarr.helpers.dataclasses.song_tag_dataclass import TagRef
 
 
 @pytest.mark.unit
@@ -38,15 +39,16 @@ class TestGetSparseHistogram:
                 "genre",
             ]
         )
-        mock_db.library.list_tags_by_name = MagicMock(
-            return_value=[
-                {"value": -0.2},
-                {"value": 0.1},
-                {"value": 0.11},
-                {"value": 1.2},
-                {"value": "0.3"},
-                {"value": True},
-            ]
+        tag_name = "nom:sigmoid_happy_ast_20260101"
+        mock_db.library.list_tags = MagicMock(
+            return_value=(
+                TagRef(name=tag_name, value=-0.2, namespace="nom"),
+                TagRef(name=tag_name, value=0.1, namespace="nom"),
+                TagRef(name=tag_name, value=0.11, namespace="nom"),
+                TagRef(name=tag_name, value=1.2, namespace="nom"),
+                TagRef(name=tag_name, value="0.3", namespace="nom"),
+                TagRef(name=tag_name, value=True, namespace="nom"),
+            )
         )
 
         result = get_sparse_histogram(
@@ -64,7 +66,7 @@ class TestGetSparseHistogram:
             {"min_val": 0.9, "count": 1, "underflow_count": 3, "overflow_count": 0},
         ]
         mock_db.library.list_all_tag_names.assert_called_once_with(limit=10000)
-        mock_db.library.list_tags_by_name.assert_called_once_with(name="nom:sigmoid_happy_ast_20260101", limit=50000)
+        mock_db.library.list_tags.assert_called_once_with(name=tag_name, limit=50000)
 
     def test_returns_empty_when_model_metadata_is_missing(self) -> None:
         mock_db = MagicMock()

@@ -12,17 +12,29 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from nomarr.helpers.dataclasses.song_dataclass import Song
-
 if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+
     from sqlalchemy.orm import Session, scoped_session
 
-    from nomarr.helpers.dto.repo_dto import (
-        LibraryFolderRow,
-        LibraryRow,
-        LibraryScanRow,
-        NumericSongTagMatchRow,
-        TagRow,
+    from nomarr.helpers.dataclasses.library_dataclass import Library
+    from nomarr.helpers.dataclasses.library_domain_dataclasses import (
+        LibraryFolder,
+        LibraryPipelineState,
+        LibraryScan,
+        LibraryUpdate,
+    )
+    from nomarr.helpers.dataclasses.song_command_dataclass import (
+        LibraryIdentity,
+        SongIdentity,
+    )
+    from nomarr.helpers.dataclasses.song_dataclass import Song, SongTagMatch
+    from nomarr.helpers.dataclasses.song_tag_dataclass import (
+        RelinkResult,
+        SongTagAssignment,
+        TagCleanupResult,
+        TagRef,
+        TagUsage,
     )
     from nomarr.persistence.api.library_regions import LibraryRegionsDb
     from nomarr.persistence.api.library_scans import LibraryScansDb
@@ -77,110 +89,88 @@ class LibraryDb:
     # Library / pipeline-state forwarding (regions)
     # ------------------------------------------------------------------
 
-    def create_library(
-        self,
-        *,
-        name: str,
-        root_path: str,
-        is_enabled: bool,
-        watch_mode: str,
-        file_write_mode: str,
-        library_auto_write: bool,
-        created_at: int,
-        updated_at: int,
-    ) -> int:
-        """Create a library from the supported library properties."""
-        return self._regions.create_library(
-            name=name,
-            root_path=root_path,
-            is_enabled=is_enabled,
-            watch_mode=watch_mode,
-            file_write_mode=file_write_mode,
-            library_auto_write=library_auto_write,
-            created_at=created_at,
-            updated_at=updated_at,
-        )
+    def create_library(self, library: Library) -> Library:
+        """Create a library and return the persisted ``Library``.
 
-    def get_library(self, library_id: int) -> LibraryRow | None:
-        return self._regions.get_library(library_id)
+        Timestamps are supplied by persistence when absent on the input.
+        """
+        return self._regions.create_library(library)
 
-    def get_library_by_name(self, name: str) -> LibraryRow | None:
+    def get_library(self, library: Library) -> Library | None:
+        """Get a library by its natural ``(name, root_path)`` identity."""
+        return self._regions.get_library(library)
+
+    def get_library_by_name(self, name: str) -> Library | None:
+        """Get a library by its name."""
         return self._regions.get_library_by_name(name)
 
-    def list_libraries(self, *, enabled_only: bool = False) -> list[LibraryRow]:
+    def list_libraries(self, *, enabled_only: bool = False) -> list[Library]:
+        """List all libraries, optionally filtering to enabled only."""
         return self._regions.list_libraries(enabled_only=enabled_only)
 
-    def list_library_keys(self) -> list[int]:
-        return self._regions.list_library_keys()
+    def update_library(self, library: Library, changes: LibraryUpdate) -> Library:
+        """Apply a typed ``LibraryUpdate`` and return the updated ``Library``."""
+        return self._regions.update_library(library, changes)
 
-    def update_library(self, library_id: int, fields: dict[str, object]) -> None:
-        """Update all supplied library columns in one transaction."""
-        self._regions.update_library(library_id, fields)
+    def remove_library(self, library: Library) -> bool:
+        """Delete a library, returning True if it was found and deleted."""
+        return self._regions.remove_library(library)
 
-    def rename_library(self, library_id: int, name: str, *, updated_at: int) -> None:
-        self._regions.update_library(library_id, {"name": name, "updated_at": updated_at})
+    def get_pipeline_state(self, library: Library) -> LibraryPipelineState:
+        """Return the pipeline state for a library (defaults when no rows)."""
+        return self._regions.get_pipeline_state(library)
 
-    def change_library_root(self, library_id: int, root_path: str, *, updated_at: int) -> None:
-        self._regions.update_library(library_id, {"path": root_path, "updated_at": updated_at})
+    def set_pipeline_axis(self, library: Library, axis: str, state: str) -> LibraryPipelineState:
+        """Set one library pipeline axis and return the updated state."""
+        return self._regions.set_pipeline_axis(library, axis, state)
 
-    def enable_library(self, library_id: int, is_enabled: bool, *, updated_at: int) -> None:
-        self._regions.update_library(
-            library_id,
-            {"library_type": "music" if is_enabled else "disabled", "updated_at": updated_at},
-        )
+    def get_libraries_in_axis_state(self, axis: str, state: str) -> list[Library]:
+        """Return ``Library`` values whose pipeline axis equals ``state``."""
+        return self._regions.get_libraries_in_axis_state(axis, state)
 
-    def update_library_metadata(
-        self,
-        library_id: int,
-        *,
-        watch_mode: str | None = None,
-        file_write_mode: str | None = None,
-        library_auto_write: bool | None = None,
-        updated_at: int,
-    ) -> None:
-        fields: dict[str, object] = {"updated_at": updated_at}
-        if watch_mode is not None:
-            fields["auto_tag"] = int(watch_mode != "off")
-            fields["watch_mode"] = watch_mode
-        if file_write_mode is not None:
-            fields["file_write_mode"] = file_write_mode
-        if library_auto_write is not None:
-            fields["auto_curate"] = int(library_auto_write)
-        self._regions.update_library(library_id, fields)
-
-    def get_pipeline_state(self, library_id: int) -> dict[str, str] | None:
-        return self._regions.get_pipeline_state(library_id)
-
-    def get_libraries_in_axis_state(self, axis_field: str, axis_value: str) -> list[int]:
-        return self._regions.get_libraries_in_axis_state(axis_field, axis_value)
-
-    def remove_library(self, library_id: int) -> bool:
-        return self._regions.remove_library(library_id)
+    def remove_pipeline_state(self, library: Library) -> None:
+        """Remove all pipeline axes for a library."""
+        self._regions.remove_pipeline_state(library)
 
     # ------------------------------------------------------------------
     # Song / folder forwarding (songs)
     # ------------------------------------------------------------------
 
     def get_song(self, song_id: int) -> Song | None:
-        row = self._songs.get_song(song_id)
-        return Song.from_row(row) if row is not None else None
+        return self._songs.get_song(song_id)
 
-    def get_song_by_path(self, path: str, library_id: int) -> Song | None:
-        row = self._songs.get_song_by_path(path, library_id)
-        return Song.from_row(row) if row is not None else None
+    # Numeric-handle identity bridge (P3, song-tag correction) — non-tag
+    # forwarders delegating to the song-side bridge on ``LibrarySongsDb``.
+
+    def resolve_song_identity(self, song_id: int) -> SongIdentity | None:
+        return self._songs.resolve_song_identity(song_id)
+
+    def resolve_song_identities(self, song_ids: Sequence[int]) -> Mapping[int, SongIdentity]:
+        return self._songs.resolve_song_identities(song_ids)
+
+    def resolve_library_identity(self, library_id: int) -> LibraryIdentity | None:
+        return self._songs.resolve_library_identity(library_id)
+
+    def resolve_library_identities(self, library_ids: Sequence[int]) -> Mapping[int, LibraryIdentity]:
+        return self._songs.resolve_library_identities(library_ids)
+
+    def get_song_by_path(self, path: str, library: Library) -> Song | None:
+        return self._songs.get_song_by_path(path, library)
+
+    def get_song_by_normalized_path(self, normalized_path: str, library: Library) -> Song | None:
+        return self._songs.get_song_by_normalized_path(normalized_path, library)
 
     def find_song_by_path_any_library(self, path: str) -> Song | None:
-        row = self._songs.find_song_by_path_any_library(path)
-        return Song.from_row(row) if row is not None else None
+        return self._songs.find_song_by_path_any_library(path)
 
     def list_songs_by_ids(self, song_ids: list[int]) -> list[Song]:
-        return [Song.from_row(row) for row in self._songs.list_songs_by_ids(song_ids)]
+        return self._songs.list_songs_by_ids(song_ids)
 
-    def list_songs(self, library_id: int, *, limit: int | None = None) -> list[Song]:
-        return [Song.from_row(row) for row in self._songs.list_songs(library_id, limit=limit)]
+    def list_songs(self, library: Library, *, limit: int | None = None) -> list[Song]:
+        return self._songs.list_songs(library, limit=limit)
 
-    def count_songs(self, library_id: int) -> int:
-        return self._songs.count_songs(library_id)
+    def count_songs(self, library: Library) -> int:
+        return self._songs.count_songs(library)
 
     def get_library_ids_for_songs(self, song_ids: list[int]) -> dict[int, int]:
         return self._songs.get_library_ids_for_songs(song_ids)
@@ -188,40 +178,39 @@ class LibraryDb:
     def count_recently_tagged(self, cutoff_ms: int) -> int:
         return self._songs.count_recently_tagged(cutoff_ms)
 
-    def list_library_song_ids(self, library_id: int, *, limit: int | None = None) -> list[int]:
-        return self._songs.list_library_song_ids(library_id, limit=limit)
+    def list_library_song_ids(self, library: Library, *, limit: int | None = None) -> list[int]:
+        return self._songs.list_library_song_ids(library, limit=limit)
 
-    def count_songs_for_library(self, library_id: int) -> int:
-        return self._songs.count_songs_for_library(library_id)
+    def count_songs_for_library(self, library: Library) -> int:
+        return self._songs.count_songs_for_library(library)
 
     def find_library_song_by_chromaprint(
         self,
-        library_id: int,
+        library: Library,
         chromaprint: str,
     ) -> Song | None:
-        row = self._songs.find_library_song_by_chromaprint(library_id, chromaprint)
-        return Song.from_row(row) if row is not None else None
+        return self._songs.find_library_song_by_chromaprint(library, chromaprint)
 
-    def add_song_to_library(self, library_id: int, payload: dict) -> int:
-        return self._songs.add_song_to_library(library_id, payload)
+    def add_song_to_library(self, library: Library, payload: dict) -> int:
+        return self._songs.add_song_to_library(library, payload)
 
     def add_songs_to_library(
         self,
-        library_id: int,
+        library: Library,
         payloads: list[dict[str, Any]],
-        *,
-        initial_state: str = "not_processed",
     ) -> list[int]:
-        return self._songs.add_songs_to_library(library_id, payloads, initial_state=initial_state)
+        # Preserve the concurrent Song-domain facade migration; state
+        # initialization is now an internal persistence intent.
+        return self._songs.add_songs_to_library(library, payloads)
 
     def update_songs(
         self,
-        library_id: int,
+        library: Library,
         payloads: list[dict[str, Any]],
         *,
         remove_missing: bool = True,
     ) -> dict[str, int]:
-        return self._songs.update_songs(library_id, payloads, remove_missing=remove_missing)
+        return self._songs.update_songs(library, payloads, remove_missing=remove_missing)
 
     def update_library_song_path(self, song_id: int, new_path: str) -> None:
         return self._songs.update_library_song_path(song_id, new_path)
@@ -255,39 +244,44 @@ class LibraryDb:
     def remove_song(self, song_id: int) -> None:
         return self._songs.remove_song(song_id)
 
-    def remove_song_by_path(self, path: str, library_id: int) -> None:
-        return self._songs.remove_song_by_path(path, library_id)
+    def remove_song_by_path(self, path: str, library: Library) -> None:
+        return self._songs.remove_song_by_path(path, library)
 
-    def list_existing_song_paths(self, library_id: int, paths: list[str]) -> list[str]:
-        return self._songs.list_existing_song_paths(library_id, paths)
+    def list_existing_song_paths(self, library: Library, paths: list[str]) -> list[str]:
+        return self._songs.list_existing_song_paths(library, paths)
 
-    def get_folder(self, folder_id: int) -> LibraryFolderRow | None:
-        return self._songs.get_folder(folder_id)
+    def get_folder(self, library: Library, folder_path: str) -> LibraryFolder | None:
+        return self._songs.get_folder(library, folder_path)
 
-    def list_folders_for_library(self, library_id: int) -> list[LibraryFolderRow]:
-        return self._songs.list_folders_for_library(library_id)
+    def list_folders_for_library(self, library: Library) -> list[LibraryFolder]:
+        return self._songs.list_folders_for_library(library)
 
-    def add_library_folder(self, library_id: int, payload: dict[str, Any]) -> int:
-        return self._songs.add_library_folder(library_id, payload)
+    def add_library_folder(self, library: Library, folder: LibraryFolder) -> LibraryFolder:
+        return self._songs.add_library_folder(library, folder)
 
-    def replace_library_folder(self, library_id: int, folder_id: int, payload: dict[str, Any]) -> None:
-        return self._songs.replace_library_folder(library_id, folder_id, payload)
+    def replace_library_folder(
+        self,
+        library: Library,
+        folder_path: str,
+        folder: LibraryFolder,
+    ) -> LibraryFolder:
+        return self._songs.replace_library_folder(library, folder_path, folder)
 
-    def remove_library_folder(self, library_id: int, folder_id: int) -> None:
-        return self._songs.remove_library_folder(library_id, folder_id)
+    def remove_library_folder(self, library: Library, folder_path: str) -> None:
+        return self._songs.remove_library_folder(library, folder_path)
 
-    def replace_library_folders(self, library_id: int, payloads: list[dict[str, Any]]) -> None:
-        return self._songs.replace_library_folders(library_id, payloads)
+    def replace_library_folders(self, library: Library, folders: list[LibraryFolder]) -> None:
+        return self._songs.replace_library_folders(library, folders)
 
     def list_songs_for_folder(
         self,
-        library_id: int,
+        library: Library,
         folder_rel_path: str,
     ) -> list[Song]:
-        return [Song.from_row(row) for row in self._songs.list_songs_for_folder(library_id, folder_rel_path)]
+        return self._songs.list_songs_for_folder(library, folder_rel_path)
 
-    def list_tracks_for_matching(self, library_id: int, *, limit: int | None = None) -> list[Song]:
-        return [Song.from_row(row) for row in self._songs.list_tracks_for_matching(library_id, limit=limit)]
+    def list_tracks_for_matching(self, library: Library, *, limit: int | None = None) -> list[Song]:
+        return self._songs.list_tracks_for_matching(library, limit=limit)
 
     # ------------------------------------------------------------------
     # Maintenance forwarding (songs)
@@ -312,14 +306,14 @@ class LibraryDb:
     # Tag / song-tag forwarding (tags)
     # ------------------------------------------------------------------
 
-    def get_tag(self, tag_id: int) -> TagRow | None:
-        return self._tags.get_tag(tag_id)
+    def get_tag(self, tag: TagRef) -> TagRef | None:
+        return self._tags.get_tag(tag)
 
-    def find_or_create_tag(self, name: str, value: str, namespace: str) -> int:
-        return self._tags.find_or_create_tag(name, value, namespace)
+    def ensure_tag(self, tag: TagRef) -> TagRef:
+        return self._tags.ensure_tag(tag)
 
-    def list_tags_for_song(self, song_id: int) -> list[TagRow]:
-        return self._tags.list_tags_for_song(song_id)
+    def list_tags_for_song(self, song: SongIdentity) -> tuple[SongTagAssignment, ...]:
+        return self._tags.list_tags_for_song(song)
 
     def list_all_tag_names(self, limit: int) -> list[str]:
         return self._tags.list_all_tag_names(limit)
@@ -328,11 +322,11 @@ class LibraryDb:
         self,
         *,
         name: str | None = None,
-        value: Any = None,
+        search: str | None = None,
         limit: int | None = None,
         offset: int = 0,
-    ) -> list[TagRow]:
-        return self._tags.list_tags(name=name, value=value, limit=limit, offset=offset)
+    ) -> tuple[TagRef, ...]:
+        return self._tags.list_tags(name=name, search=search, limit=limit, offset=offset)
 
     def count_tags(self) -> int:
         return self._tags.count_tags()
@@ -352,22 +346,19 @@ class LibraryDb:
         search: str | None = None,
         limit: int = 100,
         offset: int = 0,
-    ) -> list[dict]:
+    ) -> tuple[TagUsage, ...]:
         return self._tags.list_tags_with_song_count(name=name, search=search, limit=limit, offset=offset)
 
-    def list_tags_by_name(self, name: str, limit: int) -> list[TagRow]:
-        return self._tags.list_tags_by_name(name, limit)
-
-    def list_genre_tags_for_songs(self, song_ids: list[int]) -> list[TagRow]:
-        return self._tags.list_genre_tags_for_songs(song_ids)
+    def list_genre_tags_for_songs(self, songs: Sequence[SongIdentity]) -> tuple[SongTagAssignment, ...]:
+        return self._tags.list_genre_tags_for_songs(songs)
 
     def list_song_tags_for_songs(
         self,
-        song_ids: list[int],
+        songs: Sequence[SongIdentity],
         *,
         name_starts_with: str | None = None,
-    ) -> dict[int, list[TagRow]]:
-        return self._tags.list_song_tags_for_songs(song_ids, name_starts_with=name_starts_with)
+    ) -> Mapping[SongIdentity, tuple[SongTagAssignment, ...]]:
+        return self._tags.list_song_tags_for_songs(songs, name_starts_with=name_starts_with)
 
     def count_songs_by_tag(self, tag_key: str, target_value: str) -> int:
         return self._tags.count_songs_by_tag(tag_key, target_value)
@@ -375,75 +366,66 @@ class LibraryDb:
     def count_songs_by_numeric_tag(self, tag_key: str, target_value: float | str) -> int:
         return self._tags.count_songs_by_numeric_tag(tag_key, target_value)
 
-    def search_songs_by_numeric_tag(
+    def find_songs_with_numeric_tag(
         self,
-        tag_key: str,
-        target_value: float | str,
+        identity: TagRef,
         *,
         limit: int | None,
         offset: int = 0,
-    ) -> list[NumericSongTagMatchRow]:
-        return self._tags.search_songs_by_numeric_tag(
-            tag_key,
-            target_value,
+    ) -> tuple[SongTagMatch, ...]:
+        return self._tags.find_songs_with_numeric_tag(
+            identity,
             limit=limit,
             offset=offset,
         )
 
-    def search_songs_by_tag(
+    def find_songs_with_tag(
         self,
-        tag_key: str,
-        value: str,
+        identity: TagRef,
         *,
-        limit: int | None,
-    ) -> list[SongRow]:
-        return self._tags.search_songs_by_tag(tag_key, value, limit=limit)
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> tuple[Song, ...]:
+        return self._tags.find_songs_with_tag(identity, limit=limit, offset=offset)
 
-    def search_songs_by_tag_contains(
+    def find_songs_with_tag_contains(
         self,
-        tag_key: str,
-        value: str,
+        identity: TagRef,
         *,
-        limit: int | None,
-    ) -> list[SongRow]:
-        return self._tags.search_songs_by_tag_contains(tag_key, value, limit=limit)
+        limit: int | None = None,
+    ) -> tuple[Song, ...]:
+        return self._tags.find_songs_with_tag_contains(identity, limit=limit)
 
-    def search_songs_by_tag_pattern(
+    def find_songs_with_tag_pattern(
         self,
         tag_name: str,
         pattern: str,
         *,
         limit: int | None = None,
-    ) -> list[SongRow]:
-        return self._tags.search_songs_by_tag_pattern(tag_name, pattern, limit=limit)
+    ) -> tuple[Song, ...]:
+        return self._tags.find_songs_with_tag_pattern(tag_name, pattern, limit=limit)
 
-    def list_song_ids_for_tag_id(self, tag_id: int, *, limit: int | None, offset: int = 0) -> list[int]:
-        return self._tags.list_song_ids_for_tag_id(tag_id, limit=limit, offset=offset)
-
-    def list_song_tag_edges(
+    def replace_song_tags(
         self,
-        tag_ids: list[int],
-        *,
-        limit: int | None = None,
-    ) -> list[dict[str, Any]]:
-        return self._tags.list_song_tag_edges(tag_ids, limit=limit)
-
-    def replace_song_tags(self, song_id: int, tags: list[dict]) -> None:
-        return self._tags.replace_song_tags(song_id, tags)
-
-    def replace_tag_references(self, source_tag_id: int, target_tag_id: int) -> None:
-        return self._tags.replace_tag_references(source_tag_id, target_tag_id)
-
-    def replace_selected_tag_references(
-        self,
-        song_ids: list[int],
-        source_tag_id: int,
-        target_tag_id: int,
+        song: SongIdentity,
+        assignments: Sequence[SongTagAssignment],
     ) -> None:
-        return self._tags.replace_selected_tag_references(song_ids, source_tag_id, target_tag_id)
+        return self._tags.replace_song_tags(song, assignments)
 
-    def remove_song_tags(self, song_id: int, tag_keys: list[int] | None = None) -> None:
-        return self._tags.remove_song_tags(song_id, tag_keys)
+    def relink_tags(
+        self,
+        source: TagRef,
+        target: TagRef,
+        songs: Sequence[SongIdentity] | None = None,
+    ) -> RelinkResult:
+        return self._tags.relink_tags(source, target, songs=songs)
+
+    def remove_song_tags(
+        self,
+        song: SongIdentity,
+        identities: Sequence[TagRef] | None = None,
+    ) -> None:
+        return self._tags.remove_song_tags(song, identities)
 
     def list_tag_value_frequencies(self, tag_names: list[str], limit: int) -> dict[str, list[tuple[str, int]]]:
         return self._tags.list_tag_value_frequencies(tag_names, limit)
@@ -452,47 +434,43 @@ class LibraryDb:
     # Maintenance forwarding (tags)
     # ------------------------------------------------------------------
 
-    def list_orphaned_tag_ids(self) -> list[int]:
-        return self._tags.list_orphaned_tag_ids()
-
-    def delete_tags_by_ids(self, tag_ids: list[int]) -> int:
-        return self._tags.delete_tags_by_ids(tag_ids)
+    def cleanup_orphaned_tags(self) -> TagCleanupResult:
+        return self._tags.cleanup_orphaned_tags()
 
     def truncate_tags(self) -> None:
         return self._tags.truncate_tags()
 
-    def truncate_song_tag_edges(self) -> None:
-        return self._tags.truncate_song_tag_edges()
+    def truncate_song_tag_assignments(self) -> None:
+        return self._tags.truncate_song_tag_assignments()
 
     # ------------------------------------------------------------------
     # Scan forwarding (scans)
     # ------------------------------------------------------------------
 
-    def get_scan(self, library_id: int) -> LibraryScanRow | None:
-        return self._scans.get_scan(library_id)
+    def get_scan(self, library: Library) -> LibraryScan | None:
+        """Return the latest scan summary for a domain ``Library``."""
+        return self._scans.get_scan(library)
 
-    def get_latest_successful_scan(self, library_id: int) -> LibraryScanRow | None:
-        """Return the latest completed scan row for a library."""
-        return self._scans.get_latest_successful_scan(library_id)
+    def get_latest_successful_scan(self, library: Library) -> LibraryScan | None:
+        """Return the latest completed scan for a library."""
+        return self._scans.get_latest_successful_scan(library)
 
-    def add_scan(self, library_id: int, payload: dict[str, Any]) -> int:
-        return self._scans.add_scan(library_id, payload)
-
-    def start_scan(self, library_id: int, scan_type: str, started_at: int) -> int:
-        return self._scans.start_scan(library_id, scan_type, started_at)
+    def start_scan(self, library: Library, scan_type: str, started_at: int) -> LibraryScan:
+        """Start a scan and return its domain summary, never its row id."""
+        return self._scans.start_scan(library, scan_type, started_at)
 
     def record_scan_progress(
         self,
-        library_id: int,
+        library: Library,
         *,
         heartbeat_at: int,
         status: str | None = None,
         progress: int | None = None,
         total: int | None = None,
         scan_error: str | None = None,
-    ) -> None:
+    ) -> LibraryScan:
         return self._scans.record_scan_progress(
-            library_id,
+            library,
             heartbeat_at=heartbeat_at,
             status=status,
             progress=progress,
@@ -500,11 +478,14 @@ class LibraryDb:
             scan_error=scan_error,
         )
 
-    def complete_scan(self, library_id: int, finished_at: int) -> None:
-        return self._scans.complete_scan(library_id, finished_at)
+    def complete_scan(self, library: Library, finished_at: int) -> LibraryScan:
+        """Complete the current scan and return its domain summary."""
+        return self._scans.complete_scan(library, finished_at)
 
-    def remove_scan(self, library_id: int) -> None:
-        return self._scans.remove_scan(library_id)
+    def remove_scan(self, library: Library) -> None:
+        """Remove the latest scan for a domain ``Library``."""
+        return self._scans.remove_scan(library)
 
     def truncate_scan_records(self) -> None:
+        """Remove all scan history through the administrative scan intent."""
         return self._scans.truncate_scan_records()

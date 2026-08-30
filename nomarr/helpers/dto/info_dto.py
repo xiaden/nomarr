@@ -106,9 +106,12 @@ class PublicInfoResult:
 
 @dataclass
 class ScanningLibraryInfo:
-    """Info about a library currently being scanned."""
+    """Info about a library currently being scanned.
 
-    library_id: int
+    ``library_id`` is the natural library name (mechanism A).
+    """
+
+    library_id: str
     name: str
     progress: int
     total: int
@@ -116,9 +119,12 @@ class ScanningLibraryInfo:
 
 @dataclass
 class LibraryPipelineInfo:
-    """Per-library pipeline state info for dashboard work-status polling."""
+    """Per-library pipeline state info for dashboard work-status polling.
 
-    library_id: int
+    ``library_id`` is the natural library name (mechanism A).
+    """
+
+    library_id: str
     name: str
     state: str
     library_auto_write: bool

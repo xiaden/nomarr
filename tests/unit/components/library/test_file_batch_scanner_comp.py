@@ -79,7 +79,6 @@ class TestScanFolderFiles:
             result = scan_folder_files(
                 folder_path=folder_path,
                 library_root=library_root,
-                library_id="libraries/1",
                 existing_files={},
                 tagger_version="suite-v1",
                 db=mock_db,
@@ -108,7 +107,6 @@ class TestScanFolderFiles:
             result = scan_folder_files(
                 folder_path=folder_path,
                 library_root=library_root,
-                library_id="libraries/1",
                 existing_files={str(track_path): {"modified_time": modified_time}},
                 tagger_version="suite-v1",
                 db=mock_db,
@@ -135,7 +133,6 @@ class TestScanFolderFiles:
             result = scan_folder_files(
                 folder_path=folder_path,
                 library_root=library_root,
-                library_id="libraries/1",
                 existing_files={},
                 tagger_version="suite-v1",
                 db=mock_db,
@@ -163,7 +160,6 @@ class TestScanFolderFiles:
             result = scan_folder_files(
                 folder_path=folder_path,
                 library_root=library_root,
-                library_id="libraries/1",
                 existing_files={},
                 tagger_version="suite-v1",
                 db=mock_db,
@@ -194,7 +190,6 @@ class TestScanFolderFiles:
             result = scan_folder_files(
                 folder_path=folder_path,
                 library_root=library_root,
-                library_id="libraries/1",
                 existing_files={},
                 tagger_version="suite-v1",
                 db=mock_db,
@@ -204,7 +199,7 @@ class TestScanFolderFiles:
         entry = result.file_entries[0]
         assert entry["path"] == str(track_path)
         assert entry["normalized_path"] == "Rock/song.mp3"
-        assert entry["library_id"] == "libraries/1"
+        assert "library_id" not in entry
         assert entry["scanned_at"] == 1234567890
         assert "duration_seconds" not in entry
         assert "title" not in entry
@@ -232,7 +227,6 @@ class TestScanFolderFiles:
             result = scan_folder_files(
                 folder_path=folder_path,
                 library_root=library_root,
-                library_id="libraries/1",
                 existing_files={
                     str(track_path): {
                         "modified_time": 0,

@@ -442,6 +442,7 @@ class SongTagRepository:
         value: str,
         *,
         limit: int | None = None,
+        offset: int = 0,
     ) -> list[SongRow]:
         """Return songs that have a tag with exact *tag_key* name and *value*."""
         with map_persistence_exceptions():
@@ -451,6 +452,8 @@ class SongTagRepository:
                 .join(_T, _T.c.id == _ST.c.tag_id)
                 .where(_T.c.name == tag_key, _T.c.value == value)
             )
+            if offset:
+                stmt = stmt.offset(offset)
             if limit is not None:
                 stmt = stmt.limit(limit)
             result = self._session.execute(stmt)
@@ -502,41 +505,73 @@ class SongTagRepository:
             result = self._session.execute(stmt)
             return [_row_to_dto(r) for r in result.all()]
 
-    def replace_tag_references(
+    def relink_song_tags(
         self,
         source_tag_id: int,
         target_tag_id: int,
         *,
         song_ids: list[int] | None = None,
-    ) -> None:
-        """Re-point assignments, removing source rows that would collide."""
+    ) -> dict[str, int]:
+        """Re-point assignments, removing collisions; return moved/skipped counts.
+
+        ADR-014 duplicate-safe relink: source rows that would collide with an
+        existing target row are deleted (``skipped``) before the remaining
+        source rows are re-pointed to the target (``moved``). ``source_orphaned``
+        is 1 when the source tag lost all of its assignments as a result of this
+        operation (and was not already orphaned), else 0.
+
+        The whole operation runs in one short repository-owned transaction.
+        Returns ``{"moved": int, "skipped": int, "source_orphaned": int}``.
+        """
         with map_persistence_exceptions():
             with self._session.begin_nested():
                 target_edges = _ST.alias("target_song_tags")
+
+                in_scope = [_ST.c.tag_id == source_tag_id]
+                if song_ids is not None:
+                    in_scope.append(_ST.c.song_id.in_(song_ids))
+
+                source_total = (
+                    self._session.execute(select(func.count()).select_from(_ST).where(*in_scope)).scalar() or 0
+                )
+
+                collision = exists(
+                    select(1)
+                    .select_from(target_edges)
+                    .where(
+                        target_edges.c.song_id == _ST.c.song_id,
+                        target_edges.c.tag_id == target_tag_id,
+                    )
+                )
+                skipped = (
+                    self._session.execute(
+                        select(func.count()).select_from(_ST).where(*in_scope).where(collision)
+                    ).scalar()
+                    or 0
+                )
+
                 # Remove source rows that would collide with an existing target
                 # row before moving the remaining source rows.  Merely excluding
                 # those rows from UPDATE leaves the source assignment behind.
-                delete_stmt = delete(_ST).where(_ST.c.tag_id == source_tag_id)
-                if song_ids is not None:
-                    delete_stmt = delete_stmt.where(_ST.c.song_id.in_(song_ids))
-                delete_stmt = delete_stmt.where(
-                    exists(
-                        select(1)
-                        .select_from(target_edges)
-                        .where(
-                            target_edges.c.song_id == _ST.c.song_id,
-                            target_edges.c.tag_id == target_tag_id,
-                        )
-                    )
-                )
+                delete_stmt = delete(_ST).where(*in_scope).where(collision)
                 self._session.execute(delete_stmt)
 
-                stmt = update(_ST).where(_ST.c.tag_id == source_tag_id)
-                if song_ids is not None:
-                    stmt = stmt.where(_ST.c.song_id.in_(song_ids))
-                stmt = stmt.values(tag_id=target_tag_id)
-                self._session.execute(stmt)
+                update_stmt = update(_ST).where(*in_scope).values(tag_id=target_tag_id)
+                self._session.execute(update_stmt)
+
+                remaining = (
+                    self._session.execute(
+                        select(func.count()).select_from(_ST).where(_ST.c.tag_id == source_tag_id)
+                    ).scalar()
+                    or 0
+                )
             self._session.commit()
+            source_orphaned = 1 if remaining == 0 and source_total > 0 else 0
+            return {
+                "moved": int(source_total - skipped),
+                "skipped": int(skipped),
+                "source_orphaned": int(source_orphaned),
+            }
 
     # ── Plan E facade support ───────────────────────────────────
 

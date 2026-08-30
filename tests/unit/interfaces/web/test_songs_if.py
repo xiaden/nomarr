@@ -7,6 +7,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from nomarr.helpers.dataclasses.library_dataclass import Library
 from nomarr.helpers.dto.library_dto import (
     FileTag,
     FileTagsResult,
@@ -52,6 +53,11 @@ def make_library_file(file_id: int = 1) -> LibrarySongWithTags:
             )
         ],
     )
+
+
+def make_library() -> Library:
+    """Build a domain ``Library`` fixture for interface tests (natural identity)."""
+    return Library(name="Test Library", root_path="D:/Music/Test")
 
 
 def make_search_result() -> SearchFilesResult:
@@ -362,15 +368,18 @@ class TestLibraryFilesEndpoints:
         client: TestClient,
         mock_library_service: MagicMock,
     ) -> None:
-        """POST retry-errored should default to retrying the entire library when no body is sent."""
+        """POST retry-errored should scope to the resolved Library when no body is sent."""
+        library = make_library()
+        mock_library_service.get_library_by_name.return_value = library
         mock_library_service.retry_errored_songs.return_value = {"retried": 3}
 
-        response = client.post("/api/web/library/1/retry-errored")
+        response = client.post("/api/web/library/Test%20Library/retry-errored")
 
         assert response.status_code == 200
         assert response.json() == {"retried": 3}
+        mock_library_service.get_library_by_name.assert_called_once_with("Test Library")
         mock_library_service.retry_errored_songs.assert_called_once_with(
-            library_id=1,
+            library,
             song_ids=None,
         )
 
@@ -380,13 +389,11 @@ class TestLibraryFilesEndpoints:
         mock_library_service: MagicMock,
     ) -> None:
         """Missing libraries should surface as HTTP 404 for retry-errored."""
-        mock_library_service.retry_errored_songs.side_effect = ValueError("missing")
+        mock_library_service.get_library_by_name.return_value = None
 
-        response = client.post("/api/web/library/1/retry-errored")
+        response = client.post("/api/web/library/Test%20Library/retry-errored")
 
         assert response.status_code == 404
         assert response.json() == {"detail": "Library not found"}
-        mock_library_service.retry_errored_songs.assert_called_once_with(
-            library_id=1,
-            song_ids=None,
-        )
+        mock_library_service.get_library_by_name.assert_called_once_with("Test Library")
+        mock_library_service.retry_errored_songs.assert_not_called()

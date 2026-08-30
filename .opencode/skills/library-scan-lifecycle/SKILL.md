@@ -96,6 +96,6 @@ inconsistent).
 - `nomarr/persistence/database/scan_repo.py`, `nomarr/persistence/api/library_scans.py`, `nomarr/persistence/api/library.py`
 - `nomarr/services/infrastructure/pipeline_svc.py` (recover_stale_states, recover_stale_heartbeats)
 - `nomarr/workflows/library/scan_library_quick_wf.py`, `scan_library_full_wf.py`, `scan_setup_wf.py`
-- `alembic/versions/004_add_library_scan_heartbeat.py`, `001_initial_v1_baseline_schema.py`
+- `alembic/versions/001_current_schema_baseline.py`
 - `nomarr/persistence/sql/primitives.py`, `nomarr/persistence/sql/exceptions.py`
 - Tests: `tests/unit/components/library/test_scan_lifecycle_comp.py`, `tests/unit/persistence/database/test_scan_repo.py`, `tests/unit/services/infrastructure/test_pipeline_svc.py`

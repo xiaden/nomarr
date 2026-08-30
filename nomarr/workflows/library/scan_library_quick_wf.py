@@ -50,6 +50,7 @@ from nomarr.workflows.metadata.cleanup_orphaned_entities_wf import cleanup_orpha
 if TYPE_CHECKING:
     import threading
 
+    from nomarr.helpers.dataclasses.library_dataclass import Library
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
@@ -66,7 +67,7 @@ def _check_cancelled(stop_event: threading.Event | None) -> None:
 
 def scan_library_quick_workflow(
     db: Database,
-    library_id: int,
+    library: Library,
     tagger_version: str,
     stop_event: threading.Event | None = None,
 ) -> dict[str, Any]:
@@ -80,7 +81,7 @@ def scan_library_quick_workflow(
 
     Args:
         db: Database instance
-        library_id: Library document ``id``
+        library: Domain ``Library`` (natural identity) to scan
         tagger_version: Model suite hash for version comparison
 
     Returns:
@@ -96,22 +97,22 @@ def scan_library_quick_workflow(
     start_time = internal_s()
     stats: dict[str, int] = defaultdict(int)
     warnings: list[str] = []
-    scan_id = f"{library_id}_{now_ms()}"
+    scan_id = f"{library.name}_{now_ms()}"
 
     # Step 1 — Resolve library and validate root
-    library = resolve_library_for_scan(db, library_id)
+    library = resolve_library_for_scan(db, library)
     library_root = Path(library.root_path).resolve()
     validate_library_root(library_root)
     try:
         # Step 2 — Pre-scan DB lookups
-        db_folder_paths = get_folder_rel_paths(db, library_id)
-        cached_folders = get_cached_folders(db, library_id)
+        db_folder_paths = get_folder_rel_paths(db, library)
+        cached_folders = get_cached_folders(db, library)
 
         # Step 3 — Discover folders on disk
         all_folders = discover_library_folders(library_root, [library_root])
         discovered_folder_paths = {f.rel_path for f in all_folders}
 
-        update_scan_progress(db, library_id, total=sum(f.file_count for f in all_folders))
+        update_scan_progress(db, library, total=sum(f.file_count for f in all_folders))
 
         # Step 4 — Track which folders vanished so their files can be deleted after the loop
         vanished_folder_paths = db_folder_paths - discovered_folder_paths
@@ -122,22 +123,21 @@ def scan_library_quick_workflow(
             _check_cancelled(stop_event)
             # Cache check: skip if folder mtime and file_count match DB record
             cached = cached_folders.get(folder.rel_path)
-            if cached and cached["mtime"] == folder.mtime and cached["file_count"] == folder.file_count:
+            if cached and cached.mtime == folder.mtime and cached.file_count == folder.file_count:
                 stats["folders_skipped"] += 1
                 logger.debug("Skipping unchanged folder: %s", folder.rel_path)
                 processed_file_count += folder.file_count
-                update_scan_progress(db, library_id, progress=processed_file_count)
+                update_scan_progress(db, library, progress=processed_file_count)
                 continue
 
             stats["folders_scanned"] += 1
 
             for attempt in range(2):
                 try:
-                    existing_for_folder = get_songs_for_folder(db, library_id, folder.rel_path)
+                    existing_for_folder = get_songs_for_folder(db, library, folder.rel_path)
                     batch = scan_folder_files(
                         folder_path=Path(folder.abs_path),
                         library_root=library_root,
-                        library_id=library_id,
                         existing_files=existing_for_folder,
                         tagger_version=tagger_version,
                         db=db,
@@ -153,7 +153,8 @@ def scan_library_quick_workflow(
                     if batch.file_entries:
                         new_paths = batch.discovered_paths - set(existing_for_folder)
                         file_ids = cast(
-                            "list[int]", upsert_scanned_files(db, batch.file_entries, batch.edge_bootstraps)
+                            "list[int]",
+                            upsert_scanned_files(db, library, batch.file_entries, batch.edge_bootstraps),
                         )
                         transition_song_state(db, file_ids, STATE_NOT_SCANNED, STATE_SCANNED)
                         transition_song_state(db, file_ids, STATE_ERRORED, STATE_NOT_ERRORED)
@@ -172,16 +173,14 @@ def scan_library_quick_workflow(
                     # Files in DB for this folder no longer on disk → delete
                     deleted_paths = [p for p in existing_for_folder if p not in batch.discovered_paths]
                     if deleted_paths:
-                        stats["files_removed"] += remove_deleted_files(db, library_id, deleted_paths)
+                        stats["files_removed"] += remove_deleted_files(db, library, deleted_paths)
 
-                    cached_folder = cached_folders.get(folder.rel_path)
                     save_folder_record(
                         db,
-                        library_id,
+                        library,
                         folder.rel_path,
                         folder.mtime,
                         folder.file_count,
-                        existing_folder_id=cached_folder["id"] if cached_folder is not None else None,
                     )
                     break
 
@@ -203,17 +202,17 @@ def scan_library_quick_workflow(
                         warnings.append(f"Folder {folder.rel_path!r} skipped after error: {e}")
 
             processed_file_count += folder.file_count
-            update_scan_progress(db, library_id, progress=processed_file_count)
+            update_scan_progress(db, library, progress=processed_file_count)
 
         # Step 6 — Delete files from folders that vanished entirely from disk
         for folder_rel_path in vanished_folder_paths:
             _check_cancelled(stop_event)
-            vanished_files = get_songs_for_folder(db, library_id, folder_rel_path)
+            vanished_files = get_songs_for_folder(db, library, folder_rel_path)
             if vanished_files:
-                stats["files_removed"] += remove_deleted_files(db, library_id, list(vanished_files.keys()))
+                stats["files_removed"] += remove_deleted_files(db, library, list(vanished_files.keys()))
 
         # Step 7 — Clean up stale folder records
-        cleanup_stale_folders(db, library_id, discovered_folder_paths)
+        cleanup_stale_folders(db, library, discovered_folder_paths)
 
         # Step 8 — Entity graph cleanup (skip when scan was a no-op)
         has_changes = stats["files_added"] + stats["files_updated"] + stats["files_removed"] > 0
@@ -225,10 +224,10 @@ def scan_library_quick_workflow(
 
         # Step 9 — Finalize
         scan_duration = internal_s().value - start_time.value
-        mark_scan_completed(db, library_id)
+        mark_scan_completed(db, library)
         update_scan_progress(
             db,
-            library_id,
+            library,
             progress=processed_file_count,
             scan_error=None,
         )
@@ -250,20 +249,20 @@ def scan_library_quick_workflow(
 
     except Exception as e:
         if isinstance(e, ScanCancelledError):
-            logger.info("Quick scan cancelled for library %s", library_id)
-            update_scan_progress(db, library_id, status="error", scan_error=str(e))
+            logger.info("Quick scan cancelled for library %s", library.name)
+            update_scan_progress(db, library, status="error", scan_error=str(e))
             try:
-                transition_pipeline_axis(db, library_id, SCAN_STATE_FIELD, SCAN_NOT_SCANNED)
+                transition_pipeline_axis(db, library, SCAN_STATE_FIELD, SCAN_NOT_SCANNED)
             except Exception:
-                logger.exception("Failed to reset scan axis after cancellation for library %s", library_id)
+                logger.exception("Failed to reset scan axis after cancellation for library %s", library.name)
             raise
         logger.error("Quick scan crashed: %s", e, exc_info=True)
-        update_scan_progress(db, library_id, scan_error=str(e))
+        update_scan_progress(db, library, scan_error=str(e))
         try:
-            transition_pipeline_axis(db, library_id, SCAN_STATE_FIELD, SCAN_NOT_SCANNED)
+            transition_pipeline_axis(db, library, SCAN_STATE_FIELD, SCAN_NOT_SCANNED)
         except Exception:
             logger.exception(
                 "Failed to reset scan axis to not_scanned after scan failure for library %s",
-                library_id,
+                library.name,
             )
         raise

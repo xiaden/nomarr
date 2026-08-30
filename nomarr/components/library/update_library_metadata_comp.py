@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from nomarr.components.library.library_records_comp import update_library_record
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dataclasses.library_dataclass import Library
     from nomarr.persistence.db import Database
 
 
@@ -18,7 +19,7 @@ class UpdateLibraryMetadataComp:
 
     def update(
         self,
-        library_id: int,
+        library: Library,
         *,
         name: str | None = None,
         is_enabled: bool | None = None,
@@ -29,7 +30,7 @@ class UpdateLibraryMetadataComp:
         """Update library metadata fields via library_records_comp."""
         update_library_record(
             self.db,
-            library_id,
+            library,
             name=name,
             is_enabled=is_enabled,
             watch_mode=watch_mode,

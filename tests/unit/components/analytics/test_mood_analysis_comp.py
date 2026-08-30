@@ -13,6 +13,38 @@ from nomarr.components.analytics.mood_analysis_comp import (
     get_mood_coverage,
     get_mood_distribution_data,
 )
+from nomarr.helpers.dataclasses.library_dataclass import Library
+from nomarr.helpers.dataclasses.song_dataclass import Song
+from nomarr.helpers.dataclasses.song_tag_dataclass import TagRef
+
+
+def _song(song_id: int, **overrides: object) -> Song:
+    base: dict = {
+        "song_id": song_id,
+        "library_id": 1,
+        "folder_id": None,
+        "path": f"/music/{song_id}.mp3",
+        "normalized_path": f"{song_id}.mp3",
+        "file_size": 100,
+        "modified_time": 1000,
+        "duration_seconds": None,
+        "chromaprint": None,
+        "needs_tagging": False,
+        "is_valid": True,
+        "tagged": False,
+        "calibration_hash": None,
+        "write_claimed_by": None,
+        "last_tagged_at": None,
+        "scanned_at": None,
+        "created_at": 1000,
+    }
+    base.update(overrides)
+    return Song(**base)
+
+
+def _identity(name: str, value: str | int | float | bool) -> TagRef:
+    """Build a domain ``TagRef`` for the sealed tag facade."""
+    return TagRef(name=name, value=value)
 
 
 class TestGetMoodCoverage:
@@ -50,17 +82,9 @@ class TestGetMoodCoverage:
             patch(
                 "nomarr.components.analytics.mood_analysis_comp._get_tag_edge_rows",
                 side_effect=[
-                    [
-                        (f"{'songs'}/1", "happy"),
-                        (f"{'songs'}/2", "calm"),
-                        (f"{'songs'}/1", "happy"),
-                    ],
-                    [
-                        (f"{'songs'}/3", "warm"),
-                        (f"{'songs'}/4", "bright"),
-                        (f"{'songs'}/3", "warm"),
-                    ],
-                    [(f"{'songs'}/5", "dreamy")],
+                    [(1, "happy"), (2, "calm"), (1, "happy")],
+                    [(3, "warm"), (4, "bright"), (3, "warm")],
+                    [(5, "dreamy")],
                 ],
             ) as get_tag_edge_rows_mock,
             patch(
@@ -107,10 +131,7 @@ class TestGetMoodBalance:
         with patch(
             "nomarr.components.analytics.mood_analysis_comp._get_tag_edge_rows",
             side_effect=[
-                [
-                    (f"{'songs'}/1", "happy"),
-                    (f"{'songs'}/2", "happy"),
-                ],
+                [(1, "happy"), (2, "happy")],
                 [],
                 [],
             ],
@@ -130,7 +151,7 @@ class TestGetMoodBalance:
         mock_db = MagicMock()
         with patch(
             "nomarr.components.analytics.mood_analysis_comp._get_tag_edge_rows",
-            side_effect=[[(f"{'songs'}/1", "(happy,sad)")], [], []],
+            side_effect=[[(1, "(happy,sad)")], [], []],
         ):
             result = get_mood_balance(mock_db)
 
@@ -156,11 +177,11 @@ class TestGetMoodAndTierTagsForCorrelation:
             patch(
                 "nomarr.components.analytics.mood_analysis_comp._get_tag_edge_rows",
                 side_effect=[
-                    [(f"{'songs'}/1", "happy")],
-                    [(f"{'songs'}/2", "calm")],
+                    [(1, "happy")],
+                    [(2, "calm")],
                     [],
-                    [(f"{'songs'}/1", "high")],
-                    [(f"{'songs'}/2", "fast")],
+                    [(1, "high")],
+                    [(2, "fast")],
                 ],
             ) as get_tag_edge_rows_mock,
             patch(
@@ -172,13 +193,13 @@ class TestGetMoodAndTierTagsForCorrelation:
 
         assert result == {
             "mood_tag_rows": [
-                (f"{'songs'}/1", "happy"),
-                (f"{'songs'}/2", "calm"),
+                (1, "happy"),
+                (2, "calm"),
             ],
             "tier_tag_keys": ["nom:energy_tier", "nom:tempo_tier"],
             "tier_tag_rows": {
-                "nom:energy_tier": [(f"{'songs'}/1", "high")],
-                "nom:tempo_tier": [(f"{'songs'}/2", "fast")],
+                "nom:energy_tier": [(1, "high")],
+                "nom:tempo_tier": [(2, "fast")],
             },
         }
         get_tier_tag_keys_mock.assert_called_once_with(mock_db)
@@ -195,9 +216,9 @@ class TestGetMoodDistributionData:
         with patch(
             "nomarr.components.analytics.mood_analysis_comp._get_tag_edge_rows",
             side_effect=[
-                [(f"{'songs'}/1", "happy")],
-                [(f"{'songs'}/2", "calm")],
-                [(f"{'songs'}/3", "dreamy")],
+                [(1, "happy")],
+                [(2, "calm")],
+                [(3, "dreamy")],
             ],
         ) as get_tag_edge_rows_mock:
             result = get_mood_distribution_data(mock_db)
@@ -211,17 +232,19 @@ class TestGetMoodDistributionData:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_passes_library_id_when_filtering_distribution(self) -> None:
+    def test_passes_library_when_filtering_distribution(self) -> None:
+        """The natural ``Library`` scope is forwarded to the edge-row query."""
         mock_db = MagicMock()
+        library = Library(name="main", root_path="/music")
         with patch(
             "nomarr.components.analytics.mood_analysis_comp._get_tag_edge_rows",
-            side_effect=[[], [(f"{'songs'}/2", "warm")], []],
+            side_effect=[[], [(2, "warm")], []],
         ) as get_tag_edge_rows_mock:
-            result = get_mood_distribution_data(mock_db, library_id="libraries/1")
+            result = get_mood_distribution_data(mock_db, library=library)
 
         assert result == [("nom:mood-regular", "warm")]
         for call in get_tag_edge_rows_mock.call_args_list:
-            assert call.args[2] == "libraries/1"
+            assert call.args[2] == library
 
 
 class TestGetTagEdgeRows:
@@ -229,28 +252,21 @@ class TestGetTagEdgeRows:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_batches_tag_edge_lookup_with_single_in_query(self) -> None:
+    def test_resolves_identities_and_searches_songs_per_value(self) -> None:
         mock_db = MagicMock()
         mock_db.library.list_tags.side_effect = [
             [
-                {"id": 1, "value": "happy"},
-                {"id": 2, "value": "calm"},
+                _identity("nom:mood-strict", "happy"),
+                _identity("nom:mood-strict", "calm"),
             ],
             [],
         ]
 
-        def search_files_by_tag_side_effect(
-            _name: str,
-            tag_value: str,
-            **kwargs: object,
-        ) -> list[dict[str, str]]:
-            assert kwargs == {"limit": None}
-            return {
-                "happy": [{"id": 1}],
-                "calm": [{"id": 2}],
-            }[tag_value]
+        def find_songs_side_effect(identity: TagRef, *, limit: int | None) -> tuple[Song, ...]:
+            assert limit is None
+            return {"happy": (_song(1),), "calm": (_song(2),)}[str(identity.value)]
 
-        mock_db.library.search_songs_by_tag.side_effect = search_files_by_tag_side_effect
+        mock_db.library.find_songs_with_tag.side_effect = find_songs_side_effect
 
         result = _get_tag_edge_rows(mock_db, "nom:mood-strict")
 
@@ -258,6 +274,7 @@ class TestGetTagEdgeRows:
             (1, "happy"),
             (2, "calm"),
         ]
-        mock_db.library.search_songs_by_tag.assert_any_call("nom:mood-strict", "happy", limit=None)
-        mock_db.library.search_songs_by_tag.assert_any_call("nom:mood-strict", "calm", limit=None)
-        assert mock_db.library.search_songs_by_tag.call_count == 2
+        mock_db.library.list_tags.assert_any_call(name="nom:mood-strict", limit=1000, offset=0)
+        mock_db.library.find_songs_with_tag.assert_any_call(_identity("nom:mood-strict", "happy"), limit=None)
+        mock_db.library.find_songs_with_tag.assert_any_call(_identity("nom:mood-strict", "calm"), limit=None)
+        assert mock_db.library.find_songs_with_tag.call_count == 2

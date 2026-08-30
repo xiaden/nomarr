@@ -53,13 +53,21 @@ def _make_library(session: Session) -> tuple[LibraryDb, MagicMock]:
         folder_repo=MagicMock(),
         song_state_repo=MagicMock(),
         song_hydration_repo=MagicMock(),
+        library_repo=library_repo,
     )
-    tags = LibraryTagsDb(session=session, tag_repo=MagicMock(), song_tag_repo=MagicMock())
-    scans = LibraryScansDb(session=session, scan_repo=MagicMock())
+    tags = LibraryTagsDb(
+        session=session,
+        tag_repo=MagicMock(),
+        song_tag_repo=MagicMock(),
+        song_repo=MagicMock(),
+        library_repo=library_repo,
+    )
+    scans = LibraryScansDb(session=session, scan_repo=MagicMock(), library_repo=library_repo)
     regions = LibraryRegionsDb(
         session=session,
         library_repo=library_repo,
         song_state_repo=MagicMock(),
+        pipeline_repo=MagicMock(),
     )
     db = LibraryDb(session=session, songs=songs, tags=tags, scans=scans, regions=regions)
     return db, library_repo
@@ -73,6 +81,7 @@ def _make_songs(session: Session) -> tuple[LibrarySongsDb, MagicMock]:
         folder_repo=MagicMock(),
         song_state_repo=MagicMock(),
         song_hydration_repo=MagicMock(),
+        library_repo=MagicMock(),
     )
     return db, song_repo
 
@@ -81,7 +90,6 @@ def _make_app(session: Session) -> AppDb:
     return AppDb(
         session=session,
         app_repo=MagicMock(),
-        library_repo=MagicMock(),
         song_state_repo=MagicMock(),
         pipeline_repo=MagicMock(),
     )

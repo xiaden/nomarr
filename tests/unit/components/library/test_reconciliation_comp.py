@@ -18,6 +18,7 @@ from nomarr.helpers.constants.file_states import (
     STATE_TAGS_NOT_FRESH,
     STATE_WRITTEN,
 )
+from nomarr.helpers.dataclasses.library_dataclass import Library
 from nomarr.helpers.dataclasses.song_dataclass import Song
 from nomarr.helpers.time_helper import Milliseconds
 
@@ -46,6 +47,11 @@ def _song(**overrides: object) -> Song:
     return Song(**base)
 
 
+def _library() -> Library:
+    """Construct a domain ``Library`` scoping reconciliation claims/counts."""
+    return Library(name="Test Library", root_path="/music")
+
+
 class TestClaimFilesForReconciliation:
     """Tests for claim_files_for_reconciliation."""
 
@@ -58,7 +64,7 @@ class TestClaimFilesForReconciliation:
             "nomarr.components.library.reconciliation_comp.get_stale_song_ids",
             return_value=[],
         ):
-            result = claim_files_for_reconciliation(mock_db, "libraries/test", "workers/test")
+            result = claim_files_for_reconciliation(mock_db, _library(), "workers/test")
 
         assert result == []
         mock_db.library.get_song.assert_not_called()
@@ -86,7 +92,7 @@ class TestClaimFilesForReconciliation:
                 return_value=True,
             ) as mock_try_claim,
         ):
-            result = claim_files_for_reconciliation(mock_db, 1, "workers/test")
+            result = claim_files_for_reconciliation(mock_db, _library(), "workers/test")
 
             assert result == [candidate.to_dict()]
         mock_db.library.get_song.assert_called_once_with(123)
@@ -113,7 +119,7 @@ class TestClaimFilesForReconciliation:
             patch("nomarr.components.library.reconciliation_comp.now_ms", return_value=Milliseconds(10_000)),
             patch("nomarr.components.library.reconciliation_comp.try_insert_or_steal_claim", return_value=True),
         ):
-            result = claim_files_for_reconciliation(mock_db, 1, "workers/test")
+            result = claim_files_for_reconciliation(mock_db, _library(), "workers/test")
 
             assert result == [candidate.to_dict()]
 
@@ -143,7 +149,7 @@ class TestClaimFilesForReconciliation:
         ):
             result = claim_files_for_reconciliation(
                 mock_db,
-                1,
+                _library(),
                 "workers/test",
                 batch_size=2,
             )
@@ -182,7 +188,7 @@ class TestClaimFilesForReconciliation:
         ):
             result = claim_files_for_reconciliation(
                 mock_db,
-                1,
+                _library(),
                 "workers/test",
                 lease_ms=60_000,
             )
@@ -225,7 +231,7 @@ class TestClaimFilesForReconciliation:
         ):
             result = claim_files_for_reconciliation(
                 mock_db,
-                1,
+                _library(),
                 "workers/test",
                 lease_ms=60_000,
             )
@@ -355,7 +361,7 @@ class TestCountFilesNeedingReconciliation:
             ),
             patch.object(mock_db.app, "list_songs_in_state", return_value=[]),
         ):
-            result = count_files_needing_reconciliation(mock_db, 1)
+            result = count_files_needing_reconciliation(mock_db, _library())
 
         assert result == 3
 
@@ -371,7 +377,7 @@ class TestCountFilesNeedingReconciliation:
             ),
             patch.object(mock_db.app, "list_songs_in_state", return_value=[]),
         ):
-            result = count_files_needing_reconciliation(mock_db, 1)
+            result = count_files_needing_reconciliation(mock_db, _library())
 
         assert result == 0
 
@@ -385,6 +391,6 @@ class TestCountFilesNeedingReconciliation:
             patch("nomarr.components.library.reconciliation_comp.get_stale_song_ids", return_value=[]),
             patch.object(mock_db.app, "list_songs_in_state", return_value=[100]),
         ):
-            result = count_files_needing_reconciliation(mock_db, 1)
+            result = count_files_needing_reconciliation(mock_db, _library())
 
         assert result == 1

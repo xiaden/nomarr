@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from nomarr.components.tagging.tag_cleanup_comp import cleanup_orphaned_tags, get_orphaned_tag_count
+from nomarr.components.tagging.tag_cleanup_comp import cleanup_orphaned_tags
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
@@ -23,7 +23,7 @@ def cleanup_orphaned_entities_workflow(db: Database, dry_run: bool = False) -> d
 
     Args:
         db: Database instance
-        dry_run: If True, count orphaned tags but don't delete them
+        dry_run: If True, report deleted counts as 0 (preview)
 
     Returns:
         Dict with:
@@ -35,8 +35,9 @@ def cleanup_orphaned_entities_workflow(db: Database, dry_run: bool = False) -> d
     """
     logger.debug("[tag_cleanup] Starting orphaned tag cleanup workflow")
 
-    # Count orphaned tags
-    orphaned_count = get_orphaned_tag_count(db)
+    result = cleanup_orphaned_tags(db)
+    orphaned_count = result.orphaned
+    deleted_count = 0 if dry_run else result.deleted
 
     orphaned_log = logger.info if orphaned_count > 0 else logger.debug
     orphaned_log("[tag_cleanup] Found %d orphaned tags", orphaned_count)
@@ -45,15 +46,6 @@ def cleanup_orphaned_entities_workflow(db: Database, dry_run: bool = False) -> d
 
     if dry_run:
         logger.info("[tag_cleanup] Dry run - no tags deleted")
-        return {
-            "orphaned_counts": orphaned_counts,
-            "deleted_counts": {"tags": 0},
-            "total_orphaned": orphaned_count,
-            "total_deleted": 0,
-        }
-
-    # Delete orphaned tags
-    deleted_count = cleanup_orphaned_tags(db)
 
     deleted_log = logger.info if deleted_count > 0 else logger.debug
     deleted_log("[tag_cleanup] Deleted %d orphaned tags", deleted_count)

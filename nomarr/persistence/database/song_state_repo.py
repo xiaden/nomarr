@@ -17,6 +17,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from nomarr.helpers.constants.file_states import (
     ALL_STATE_VERTICES,
+    AXIS_PAIRS,
     STATE_HYDRATED,
     STATE_NOT_HYDRATED,
     STATE_PROCESSED,
@@ -33,6 +34,26 @@ if TYPE_CHECKING:
 
 _A: Table = SongStateAssignment.__table__  # type: ignore[assignment]  # Model.__table__ is typed as FromClause; we know it's Table
 _S: Table = SongState.__table__  # type: ignore[assignment]  # Model.__table__ is typed as FromClause; we know it's Table
+
+_NEGATIVE_STATE_VERTICES = tuple(negative for _, negative in AXIS_PAIRS.values())
+_STATE_DESCRIPTIONS = {
+    "processed": "Tags have been applied",
+    "not_processed": "Tags have not been applied",
+    "calibrated": "Tags have been calibrated",
+    "not_calibrated": "Tags have not been calibrated",
+    "written": "Tags written to file metadata",
+    "not_written": "Tags not written to file metadata",
+    "tags_current": "Tags are current for the song",
+    "tags_not_fresh": "Tags are not fresh for the song",
+    "hydrated": "Song metadata has been hydrated",
+    "not_hydrated": "Song metadata has not been hydrated",
+    "scanned": "Song has been scanned",
+    "not_scanned": "Song has not been scanned",
+    "vectors_extracted": "Embedding vectors have been extracted",
+    "not_vectors_extracted": "Embedding vectors have not been extracted",
+    "errored": "Processing error occurred",
+    "not_errored": "No processing error",
+}
 
 
 def _assignment_row_to_dto(row: Row) -> SongStateAssignmentRow:
@@ -150,36 +171,93 @@ class SongStateRepository:
                 )
             self._session.commit()
 
-    def replace_state_for_songs(self, song_ids: list[int], state: str) -> None:
-        """Atomically replace all state assignments for the given songs.
+    def transition_state_for_songs(
+        self,
+        song_ids: list[int],
+        from_state: str,
+        to_state: str,
+    ) -> None:
+        """Atomically move songs between two poles of one state axis.
 
-        The delete and insert share one transaction so a retry cannot leave a
-        song without a state.  Existing assignments are ignored to make the
-        operation idempotent after a partially completed retry.
+        Only ``from_state`` is removed; assignments for every other axis are
+        preserved.  This is the repository operation behind the caller-facing
+        transition intent and prevents the old remove-all/re-add data-loss
+        behavior.
         """
+        if (from_state, to_state) not in {(positive, negative) for positive, negative in AXIS_PAIRS.values()} | {
+            (negative, positive) for positive, negative in AXIS_PAIRS.values()
+        }:
+            raise ValueError(f"Invalid state transition: {from_state!r} -> {to_state!r}")
+        unique_song_ids = list(dict.fromkeys(song_ids))
+        if not unique_song_ids:
+            return
+
         with map_persistence_exceptions():
-            if not song_ids:
-                return
-
             with self._session.begin_nested():
-                state_stmt = select(_S.c.id).where(_S.c.name == state)
-                state_row = self._session.execute(state_stmt).fetchone()
-                if state_row is None:
-                    msg = f"Unknown song state: {state!r}"
-                    raise ValueError(msg)
-
-                unique_song_ids = list(dict.fromkeys(song_ids))
-                self._session.execute(delete(_A).where(_A.c.song_id.in_(unique_song_ids)))
-                assignment_rows = [
-                    {
-                        "song_id": song_id,
-                        "state_id": state_row[0],
-                        "created_at": int(time.time() * 1000),
-                    }
+                state_rows = self._session.execute(
+                    select(_S.c.name, _S.c.id).where(_S.c.name.in_([from_state, to_state]))
+                ).all()
+                state_ids = {str(name): int(state_id) for name, state_id in state_rows}
+                if len(state_ids) != 2:
+                    missing = from_state if from_state not in state_ids else to_state
+                    raise ValueError(f"Unknown song state: {missing!r}")
+                self._session.execute(
+                    delete(_A).where(
+                        _A.c.song_id.in_(unique_song_ids),
+                        _A.c.state_id == state_ids[from_state],
+                    )
+                )
+                now_ms = int(time.time() * 1000)
+                rows = [
+                    {"song_id": song_id, "state_id": state_ids[to_state], "created_at": now_ms}
                     for song_id in unique_song_ids
                 ]
                 self._session.execute(
-                    pg_insert(_A).values(assignment_rows).on_conflict_do_nothing(index_elements=["song_id", "state_id"])
+                    pg_insert(_A).values(rows).on_conflict_do_nothing(index_elements=["song_id", "state_id"])
+                )
+            self._session.commit()
+
+    def set_state_for_songs(self, song_ids: list[int], state: str) -> None:
+        """Set one axis pole while preserving all assignments on other axes."""
+        axis_pair = next((pair for pair in AXIS_PAIRS.values() if state in pair), None)
+        if axis_pair is None:
+            raise ValueError(f"Unknown song state: {state!r}")
+        opposite = axis_pair[1] if state == axis_pair[0] else axis_pair[0]
+        self.transition_state_for_songs(song_ids, opposite, state)
+
+    def replace_state_for_songs(self, song_ids: list[int], state: str) -> None:
+        """Compatibility name for the axis-preserving state-set intent.
+
+        State replacement never removes unrelated axes.  New callers should
+        use :meth:`set_state_for_songs` or :meth:`transition_state_for_songs`.
+        """
+        self.set_state_for_songs(song_ids, state)
+
+    def initialize_song_states(self, song_ids: list[int]) -> None:
+        """Ensure canonical state vertices and initial negative memberships exist."""
+        unique_song_ids = list(dict.fromkeys(song_ids))
+        if not unique_song_ids:
+            return
+        with map_persistence_exceptions():
+            with self._session.begin_nested():
+                self._session.execute(
+                    pg_insert(_S)
+                    .values([{"name": name, "description": _STATE_DESCRIPTIONS[name]} for name in ALL_STATE_VERTICES])
+                    .on_conflict_do_nothing(index_elements=["name"])
+                )
+                state_rows = self._session.execute(
+                    select(_S.c.name, _S.c.id).where(_S.c.name.in_(_NEGATIVE_STATE_VERTICES))
+                )
+                state_ids = {str(name): int(state_id) for name, state_id in state_rows}
+                now_ms = int(time.time() * 1000)
+                assignments = [
+                    {"song_id": song_id, "state_id": state_ids[state], "created_at": now_ms}
+                    for song_id in unique_song_ids
+                    for state in _NEGATIVE_STATE_VERTICES
+                    if state in state_ids
+                ]
+                self._session.execute(
+                    pg_insert(_A).values(assignments).on_conflict_do_nothing(index_elements=["song_id", "state_id"])
                 )
             self._session.commit()
 
@@ -239,15 +317,18 @@ class SongStateRepository:
                 pg_insert(_A).values(rows).on_conflict_do_nothing(index_elements=["song_id", "state_id"])
             )
 
-    def remove_states_for_songs(self, song_ids: list[int]) -> None:
+    def remove_states_for_songs(self, song_ids: list[int]) -> int:
         """Delete all state assignments for the given song ids."""
         with map_persistence_exceptions():
             if not song_ids:
-                return
+                return 0
+            unique_song_ids = list(dict.fromkeys(song_ids))
             with self._session.begin_nested():
-                stmt = delete(_A).where(_A.c.song_id.in_(song_ids))
-                self._session.execute(stmt)
+                count_stmt = select(func.count()).select_from(_A).where(_A.c.song_id.in_(unique_song_ids))
+                deleted_count = int(self._session.execute(count_stmt).scalar() or 0)
+                self._session.execute(delete(_A).where(_A.c.song_id.in_(unique_song_ids)))
             self._session.commit()
+            return deleted_count
 
     def remove_state_for_songs(self, song_ids: list[int], state: str) -> None:
         """Delete one named state assignment from the given songs."""
@@ -280,26 +361,8 @@ class SongStateRepository:
                 if (result.scalar() or 0) > 0:
                     return
 
-                descriptions = {
-                    "processed": "Tags have been applied",
-                    "not_processed": "Tags have not been applied",
-                    "calibrated": "Tags have been calibrated",
-                    "not_calibrated": "Tags have not been calibrated",
-                    "written": "Tags written to file metadata",
-                    "not_written": "Tags not written to file metadata",
-                    "tags_current": "Tags are current for the song",
-                    "tags_not_fresh": "Tags are not fresh for the song",
-                    "hydrated": "Song metadata has been hydrated",
-                    "not_hydrated": "Song metadata has not been hydrated",
-                    "scanned": "Song has been scanned",
-                    "not_scanned": "Song has not been scanned",
-                    "vectors_extracted": "Embedding vectors have been extracted",
-                    "not_vectors_extracted": "Embedding vectors have not been extracted",
-                    "errored": "Processing error occurred",
-                    "not_errored": "No processing error",
-                }
                 for name in ALL_STATE_VERTICES:
-                    insert_one(_S, {"name": name, "description": descriptions[name]}, session=self._session)
+                    insert_one(_S, {"name": name, "description": _STATE_DESCRIPTIONS[name]}, session=self._session)
 
                 # Assign the positive vertex (STATE_PROCESSED) to each song.
                 state_stmt = select(_S.c.id).where(_S.c.name == STATE_PROCESSED)

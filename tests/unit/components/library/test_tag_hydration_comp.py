@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -11,6 +12,21 @@ from nomarr.components.library.tag_hydration_comp import (
     hydrate_song_with_metadata,
     hydrate_songs_with_metadata,
 )
+from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
+from nomarr.helpers.dataclasses.song_tag_dataclass import SongTagAssignment
+
+
+def _identity(song_id: int) -> SongIdentity:
+    """Build a domain ``SongIdentity`` for a numeric song handle."""
+    return SongIdentity(
+        library=LibraryIdentity(name="main", root_path="/music"),
+        normalized_path=f"song{song_id}.flac",
+    )
+
+
+def _assign(name: str, value: str | int | float | bool) -> SongTagAssignment:
+    """Build a domain ``SongTagAssignment`` (scalar value) for one song."""
+    return SongTagAssignment(name=name, value=value, namespace="")
 
 
 class TestExtractCanonicalMetadata:
@@ -20,13 +36,16 @@ class TestExtractCanonicalMetadata:
     @pytest.mark.mocked
     def test_all_fields_present(self) -> None:
         tag_docs = [
-            {"name": "artist", "value": ["Artist Name"]},
-            {"name": "album", "value": ["Album Name"]},
-            {"name": "title", "value": ["Song Title"]},
-            {"name": "artists", "value": ["Artist A", "Artist B"]},
-            {"name": "label", "value": ["Label Z", "Label A"]},
-            {"name": "genre", "value": ["Rock", "Pop"]},
-            {"name": "year", "value": ["2023"]},
+            _assign("artist", "Artist Name"),
+            _assign("album", "Album Name"),
+            _assign("title", "Song Title"),
+            _assign("artists", "Artist A"),
+            _assign("artists", "Artist B"),
+            _assign("label", "Label Z"),
+            _assign("label", "Label A"),
+            _assign("genre", "Rock"),
+            _assign("genre", "Pop"),
+            _assign("year", "2023"),
         ]
 
         result = extract_canonical_metadata(tag_docs)
@@ -60,7 +79,8 @@ class TestExtractCanonicalMetadata:
     @pytest.mark.mocked
     def test_artist_fallback_to_artists_tag(self) -> None:
         tag_docs = [
-            {"name": "artists", "value": ["Fallback Artist", "Other Artist"]},
+            _assign("artists", "Fallback Artist"),
+            _assign("artists", "Other Artist"),
         ]
 
         result = extract_canonical_metadata(tag_docs)
@@ -71,7 +91,7 @@ class TestExtractCanonicalMetadata:
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_year_int_coercion(self) -> None:
-        tag_docs = [{"name": "year", "value": ["2023"]}]
+        tag_docs = [_assign("year", "2023")]
 
         result = extract_canonical_metadata(tag_docs)
 
@@ -81,7 +101,7 @@ class TestExtractCanonicalMetadata:
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_year_parse_failure_returns_none(self) -> None:
-        tag_docs = [{"name": "year", "value": ["not-a-year"]}]
+        tag_docs = [_assign("year", "not-a-year")]
 
         result = extract_canonical_metadata(tag_docs)
 
@@ -91,9 +111,14 @@ class TestExtractCanonicalMetadata:
     @pytest.mark.mocked
     def test_sorted_list_normalization(self) -> None:
         tag_docs = [
-            {"name": "artists", "value": ["Z Artist", "A Artist", "M Artist"]},
-            {"name": "label", "value": ["Z Label", "A Label"]},
-            {"name": "genre", "value": ["Rock", "Electronic", "Ambient"]},
+            _assign("artists", "Z Artist"),
+            _assign("artists", "A Artist"),
+            _assign("artists", "M Artist"),
+            _assign("label", "Z Label"),
+            _assign("label", "A Label"),
+            _assign("genre", "Rock"),
+            _assign("genre", "Electronic"),
+            _assign("genre", "Ambient"),
         ]
 
         result = extract_canonical_metadata(tag_docs)
@@ -106,8 +131,8 @@ class TestExtractCanonicalMetadata:
     @pytest.mark.mocked
     def test_partial_tags(self) -> None:
         tag_docs = [
-            {"name": "artist", "value": ["Some Artist"]},
-            {"name": "year", "value": ["1999"]},
+            _assign("artist", "Some Artist"),
+            _assign("year", "1999"),
         ]
 
         result = extract_canonical_metadata(tag_docs)
@@ -132,6 +157,7 @@ class TestHydrateFileDocsWithMetadata:
         result = hydrate_songs_with_metadata(mock_db, [])
 
         assert result == []
+        mock_db.library.resolve_song_identities.assert_not_called()
         mock_db.library.list_song_tags_for_songs.assert_not_called()
 
     @pytest.mark.unit
@@ -142,30 +168,34 @@ class TestHydrateFileDocsWithMetadata:
             {"id": 1, "path": "/music/song1.flac"},
             {"id": 2, "path": "/music/song2.flac"},
         ]
+        ident1 = _identity(1)
+        ident2 = _identity(2)
+        mock_db.library.resolve_song_identities.return_value = {1: ident1, 2: ident2}
         mock_db.library.list_song_tags_for_songs.return_value = {
-            1: [
-                {"name": "artist", "value": ["Artist One"]},
-                {"name": "album", "value": ["Album One"]},
-                {"name": "title", "value": ["Title One"]},
-                {"name": "artists", "value": ["Artist One"]},
-                {"name": "label", "value": ["Label One"]},
-                {"name": "genre", "value": ["Rock"]},
-                {"name": "year", "value": ["2020"]},
-            ],
-            2: [
-                {"name": "artist", "value": ["Artist Two"]},
-                {"name": "album", "value": ["Album Two"]},
-                {"name": "title", "value": ["Title Two"]},
-                {"name": "artists", "value": ["Artist Two"]},
-                {"name": "label", "value": ["Label Two"]},
-                {"name": "genre", "value": ["Pop"]},
-                {"name": "year", "value": ["2021"]},
-            ],
+            ident1: (
+                _assign("artist", "Artist One"),
+                _assign("album", "Album One"),
+                _assign("title", "Title One"),
+                _assign("artists", "Artist One"),
+                _assign("label", "Label One"),
+                _assign("genre", "Rock"),
+                _assign("year", "2020"),
+            ),
+            ident2: (
+                _assign("artist", "Artist Two"),
+                _assign("album", "Album Two"),
+                _assign("title", "Title Two"),
+                _assign("artists", "Artist Two"),
+                _assign("label", "Label Two"),
+                _assign("genre", "Pop"),
+                _assign("year", "2021"),
+            ),
         }
 
         result = hydrate_songs_with_metadata(mock_db, file_docs)
 
-        mock_db.library.list_song_tags_for_songs.assert_called_once_with([1, 2])
+        mock_db.library.resolve_song_identities.assert_called_once_with([1, 2])
+        mock_db.library.list_song_tags_for_songs.assert_called_once_with([ident1, ident2])
         assert len(result) == 2
         assert result[0]["artist"] == "Artist One"
         assert result[0]["album"] == "Album One"
@@ -183,9 +213,9 @@ class TestHydrateFileDocsWithMetadata:
     def test_file_with_no_tags_gets_none_fields(self) -> None:
         mock_db = MagicMock()
         file_docs = [{"id": 1, "path": "/music/song.flac"}]
-        mock_db.library.list_song_tags_for_songs.return_value = {
-            1: [],
-        }
+        ident = _identity(1)
+        mock_db.library.resolve_song_identities.return_value = {1: ident}
+        mock_db.library.list_song_tags_for_songs.return_value = {ident: ()}
 
         result = hydrate_songs_with_metadata(mock_db, file_docs)
 
@@ -206,10 +236,10 @@ class TestHydrateFileDocsWithMetadata:
     def test_original_docs_not_mutated(self) -> None:
         mock_db = MagicMock()
         file_docs = [{"id": 1, "path": "/music/song.flac"}]
+        ident = _identity(1)
+        mock_db.library.resolve_song_identities.return_value = {1: ident}
         mock_db.library.list_song_tags_for_songs.return_value = {
-            1: [
-                {"name": "artist", "value": ["New Artist"]},
-            ],
+            ident: (_assign("artist", "New Artist"),),
         }
 
         result = hydrate_songs_with_metadata(mock_db, file_docs)
@@ -221,19 +251,21 @@ class TestHydrateFileDocsWithMetadata:
     @pytest.mark.mocked
     def test_docs_without_string_id_returned_unchanged(self) -> None:
         mock_db = MagicMock()
-        file_docs = [
+        file_docs: list[dict[str, Any]] = [
             {"path": "/music/no_id.flac"},
             {"id": 123, "path": "/music/int_id.flac"},
             {"id": None, "path": "/music/none_id.flac"},
         ]
 
-        # Mock list_song_tags_for_songs to return empty for the valid id
+        # Mock resolve_song_identities to resolve the valid id only.
+        mock_db.library.resolve_song_identities.return_value = {123: _identity(123)}
         mock_db.library.list_song_tags_for_songs.return_value = {}
 
         result = hydrate_songs_with_metadata(mock_db, file_docs)
 
         # Doc with id=123 triggers tag lookup; docs with missing or None id don't
-        mock_db.library.list_song_tags_for_songs.assert_called_once_with([123])
+        mock_db.library.resolve_song_identities.assert_called_once_with([123])
+        mock_db.library.list_song_tags_for_songs.assert_called_once_with([_identity(123)])
         assert len(result) == 3
         assert result[0] == {"path": "/music/no_id.flac"}
         assert "id" in result[1] and result[1]["id"] == 123
@@ -253,16 +285,18 @@ class TestHydrateFileDocWithMetadata:
     def test_single_file_hydration(self) -> None:
         mock_db = MagicMock()
         file_doc = {"id": 1, "path": "/music/song.flac"}
+        ident = _identity(1)
+        mock_db.library.resolve_song_identities.return_value = {1: ident}
         mock_db.library.list_song_tags_for_songs.return_value = {
-            1: [
-                {"name": "artist", "value": ["Solo Artist"]},
-                {"name": "album", "value": ["Solo Album"]},
-                {"name": "title", "value": ["Solo Title"]},
-                {"name": "artists", "value": ["Solo Artist"]},
-                {"name": "label", "value": ["Solo Label"]},
-                {"name": "genre", "value": ["Jazz"]},
-                {"name": "year", "value": ["2022"]},
-            ],
+            ident: (
+                _assign("artist", "Solo Artist"),
+                _assign("album", "Solo Album"),
+                _assign("title", "Solo Title"),
+                _assign("artists", "Solo Artist"),
+                _assign("label", "Solo Label"),
+                _assign("genre", "Jazz"),
+                _assign("year", "2022"),
+            ),
         }
 
         result = hydrate_song_with_metadata(mock_db, file_doc)
@@ -275,4 +309,5 @@ class TestHydrateFileDocWithMetadata:
         assert result["genres"] == ["Jazz"]
         assert result["year"] == 2022
         assert result["path"] == "/music/song.flac"
-        mock_db.library.list_song_tags_for_songs.assert_called_once_with([1])
+        mock_db.library.resolve_song_identities.assert_called_once_with([1])
+        mock_db.library.list_song_tags_for_songs.assert_called_once_with([ident])

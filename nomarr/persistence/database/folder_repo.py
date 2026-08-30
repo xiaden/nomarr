@@ -2,6 +2,16 @@
 
 Replaces ``folder_has_folder`` edge traversals with ``parent_id``
 self-reference FK and ``library_id`` FK column.
+
+Overlap: a concurrent song-domain agent (TASK-song-intent-facade-correction-A)
+is mid-refactor of this file (they moved read mapping from ``LibraryFolderRow``
+to the domain ``LibraryFolder`` and removed ``_row_to_dto``/``select_by_key``).
+This change completes that mapping toward the facade contract of
+``TASK-library-domain-facades-A`` (P3-S2): read methods return the domain
+``LibraryFolder`` value object, ``parent_id`` is expressed as ``parent_path``,
+and folder ids / parent ids / payload dictionaries stay repository-internal.
+Write methods keep their storage-shaped signatures so the persistence facade
+resolves ids/payloads internally.
 """
 
 from __future__ import annotations
@@ -10,30 +20,25 @@ from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import Table, delete, select, update
 
-from nomarr.helpers.dto.repo_dto import LibraryFolderRow
-from nomarr.persistence.models.library_folder import LibraryFolder
+from nomarr.helpers.dataclasses.library_domain_dataclasses import LibraryFolder
+from nomarr.persistence.models.library_folder import LibraryFolder as LibraryFolderModel
 from nomarr.persistence.sql.exceptions import map_persistence_exceptions
-from nomarr.persistence.sql.primitives import (
-    insert_one,
-    select_by_key,
-)
+from nomarr.persistence.sql.primitives import insert_one
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Row
     from sqlalchemy.orm import Session, scoped_session
 
-_T = cast("Table", LibraryFolder.__table__)
+_T = cast("Table", LibraryFolderModel.__table__)
 
 
-def _row_to_dto(row: Row) -> LibraryFolderRow:
-    """Convert a SQLAlchemy ``Row`` to a ``LibraryFolderRow`` TypedDict."""
+def _row_to_domain(row: Row, parent_path: str | None = None) -> LibraryFolder:
+    """Map a storage row to the caller-facing folder value object."""
     m = row._mapping
-    return LibraryFolderRow(
-        id=m["id"],
-        library_id=m["library_id"],
-        parent_id=m["parent_id"],
+    return LibraryFolder(
         path=m["path"],
         name=m["name"],
+        parent_path=parent_path,
         mtime=m["mtime"],
         file_count=m["file_count"],
         last_scanned_at=m["last_scanned_at"],
@@ -45,6 +50,25 @@ class FolderRepository:
 
     def __init__(self, session: scoped_session[Session]) -> None:
         self._session = session
+
+    # ── internal helpers ─────────────────────────────────────────
+
+    def _path_by_id(self, library_id: int) -> dict[int, str]:
+        """Return ``{folder_id: path}`` for a library (id stays internal)."""
+        rows = self._session.execute(select(_T.c.id, _T.c.path).where(_T.c.library_id == library_id)).all()
+        return {int(row.id): row.path for row in rows}
+
+    def _resolve_parent_path(self, row: Row, path_by_id: dict[int, str]) -> str | None:
+        """Express a row's ``parent_id`` as the parent's domain ``parent_path``."""
+        parent_id = row._mapping["parent_id"]
+        if parent_id is None:
+            return None
+        return path_by_id.get(int(parent_id))
+
+    def _single_to_domain(self, row: Row, library_id: int) -> LibraryFolder:
+        """Map one row, resolving its parent path with a focused lookup."""
+        path_by_id = self._path_by_id(library_id)
+        return _row_to_domain(row, self._resolve_parent_path(row, path_by_id))
 
     # ── basic CRUD ──────────────────────────────────────────────
 
@@ -74,13 +98,18 @@ class FolderRepository:
                 )
             self._session.commit()
 
-    def get_folder(self, folder_id: int) -> LibraryFolderRow | None:
-        """Fetch a single folder by primary key."""
-        with map_persistence_exceptions():
-            row = select_by_key(_T, folder_id, session=self._session)
-            return _row_to_dto(row) if row else None
+    def get_folder_id_by_path(self, library_id: int, path: str) -> int | None:
+        """Resolve a folder's storage id by path (id never leaves persistence).
 
-    def get_folder_by_path(self, library_id: int, path: str) -> LibraryFolderRow | None:
+        Used by the persistence facade to translate a domain ``folder_path``
+        into the storage id needed for replace/remove mutations.
+        """
+        with map_persistence_exceptions():
+            stmt = select(_T.c.id).where(_T.c.library_id == library_id, _T.c.path == path)
+            row = self._session.execute(stmt).fetchone()
+            return int(row[0]) if row is not None else None
+
+    def get_folder_by_path(self, library_id: int, path: str) -> LibraryFolder | None:
         """Fetch a folder by path within a specific library."""
         with map_persistence_exceptions():
             stmt = select(_T).where(
@@ -89,34 +118,46 @@ class FolderRepository:
             )
             result = self._session.execute(stmt)
             row = result.fetchone()
-            return _row_to_dto(row) if row else None
+            return None if row is None else self._single_to_domain(row, library_id)
 
-    def list_folders_for_library(self, library_id: int) -> list[LibraryFolderRow]:
-        """Return all folders belonging to a library."""
+    def get_folder(self, folder_id: int) -> LibraryFolder | None:
+        """Fetch a single folder by primary key."""
+        with map_persistence_exceptions():
+            stmt = select(_T).where(_T.c.id == folder_id)
+            result = self._session.execute(stmt)
+            row = result.fetchone()
+            if row is None:
+                return None
+            library_id = int(row._mapping["library_id"])
+            return self._single_to_domain(row, library_id)
+
+    def list_folders_for_library(self, library_id: int) -> list[LibraryFolder]:
+        """Return all folders belonging to a library, with parent paths."""
         with map_persistence_exceptions():
             stmt = select(_T).where(_T.c.library_id == library_id)
-            result = self._session.execute(stmt)
-            return [_row_to_dto(r) for r in result.all()]
+            rows = self._session.execute(stmt).all()
+            path_by_id = self._path_by_id(library_id)
+            return [_row_to_domain(row, self._resolve_parent_path(row, path_by_id)) for row in rows]
 
-    def get_root_folders(self, library_id: int) -> list[LibraryFolderRow]:
+    def get_root_folders(self, library_id: int) -> list[LibraryFolder]:
         """Return top-level folders (``parent_id IS NULL``) for a library."""
         with map_persistence_exceptions():
             stmt = select(_T).where(
                 _T.c.library_id == library_id,
                 _T.c.parent_id.is_(None),
             )
-            result = self._session.execute(stmt)
-            return [_row_to_dto(r) for r in result.all()]
+            return [_row_to_domain(r) for r in self._session.execute(stmt).all()]
 
-    def get_by_parent(self, library_id: int, parent_id: int) -> list[LibraryFolderRow]:
+    def get_by_parent(self, library_id: int, parent_id: int) -> list[LibraryFolder]:
         """Return child folders of a given parent within a library."""
         with map_persistence_exceptions():
             stmt = select(_T).where(
                 _T.c.library_id == library_id,
                 _T.c.parent_id == parent_id,
             )
-            result = self._session.execute(stmt)
-            return [_row_to_dto(r) for r in result.all()]
+            rows = self._session.execute(stmt).all()
+            path_by_id = self._path_by_id(library_id)
+            return [_row_to_domain(row, self._resolve_parent_path(row, path_by_id)) for row in rows]
 
     def remove_library_folder(self, library_id: int, folder_id: int) -> None:
         """Delete a folder by id, scoped to a library."""

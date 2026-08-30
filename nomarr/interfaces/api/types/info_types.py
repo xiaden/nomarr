@@ -9,8 +9,6 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 
-from nomarr.interfaces.api.id_codec import encode_id
-
 if TYPE_CHECKING:
     from nomarr.helpers.dto.info_dto import (
         GPUHealthResult,
@@ -173,7 +171,7 @@ class PublicInfoResponse(BaseModel):
 class ScanningLibraryResponse(BaseModel):
     """Info about a library currently being scanned."""
 
-    library_id: int = Field(..., description="Library document id")
+    library_id: str = Field(..., description="Natural library name (mechanism A)")
     name: str = Field(..., description="Library name")
     progress: int = Field(..., description="Files processed so far")
     total: int = Field(..., description="Total files to process")
@@ -182,7 +180,7 @@ class ScanningLibraryResponse(BaseModel):
     def from_dto(cls, dto: ScanningLibraryInfo) -> ScanningLibraryResponse:
         """Convert ScanningLibraryInfo DTO to Pydantic response model."""
         return cls(
-            library_id=encode_id(dto.library_id),
+            library_id=dto.library_id,
             name=dto.name,
             progress=dto.progress,
             total=dto.total,
@@ -192,7 +190,7 @@ class ScanningLibraryResponse(BaseModel):
 class LibraryPipelineInfoResponse(BaseModel):
     """Per-library pipeline state info for dashboard work-status polling."""
 
-    library_id: int = Field(..., description="Library document id")
+    library_id: str = Field(..., description="Natural library name (mechanism A)")
     name: str = Field(..., description="Library name")
     state: str = Field(..., description="Current pipeline state key")
     library_auto_write: bool = Field(..., description="Whether the library auto-writes tags")
@@ -201,7 +199,7 @@ class LibraryPipelineInfoResponse(BaseModel):
     def from_dto(cls, dto: LibraryPipelineInfo) -> LibraryPipelineInfoResponse:
         """Convert LibraryPipelineInfo DTO to Pydantic response model."""
         return cls(
-            library_id=encode_id(dto.library_id),
+            library_id=dto.library_id,
             name=dto.name,
             state=dto.state,
             library_auto_write=dto.library_auto_write,

@@ -6,10 +6,11 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from nomarr.components.library.library_records_comp import list_library_records
+from nomarr.components.library.library_records_comp import list_all_libraries
 from nomarr.helpers.files_helper import resolve_library_path
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dataclasses.library_dataclass import Library
     from nomarr.persistence.db import Database
 
 
@@ -74,18 +75,26 @@ def normalize_library_root(base_library_root: Path, raw_root: str | Path) -> str
     return str(resolved)
 
 
-def ensure_no_overlapping_library_root(db: Database, candidate_root: str, *, ignore_id: str | None = None) -> None:
+def ensure_no_overlapping_library_root(
+    db: Database,
+    candidate_root: str,
+    *,
+    ignore: Library | None = None,
+) -> None:
     """Ensure a candidate library root does not overlap with any existing library.
+
+    ``ignore`` is the domain ``Library`` being modified (matched by natural
+    ``name``); it is skipped so the caller can move/validate its own root.
 
     Raises ValueError if roots overlap — library roots must be disjoint.
     """
     # Resolve candidate to canonical absolute path
     candidate_path = Path(candidate_root).resolve()
 
-    existing_libraries = list_library_records(db, enabled_only=False, include_scan=False)
+    existing_libraries = list_all_libraries(db)
 
     for library in existing_libraries:
-        if ignore_id is not None and library.id == ignore_id:
+        if ignore is not None and library.name == ignore.name:
             continue
 
         existing_path = Path(library.root_path).resolve()

@@ -4,21 +4,40 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from nomarr.helpers.logging_helper import sanitize_exception_message
 from nomarr.interfaces.api.auth import verify_session
-from nomarr.interfaces.api.web.dependencies import get_tagging_service
+from nomarr.interfaces.api.id_codec import decode_library_name
+from nomarr.interfaces.api.web.dependencies import get_library_service, get_tagging_service
 from nomarr.services.domain.tagging_svc import (
     TaggingService,  # noqa: TC001  # FastAPI resolves Annotated[...] at route registration
 )
 
+if TYPE_CHECKING:
+    from nomarr.services.domain.library_svc import LibraryService
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/tag-curation", tags=["Tag Curation"])
+
+
+async def _resolve_optional_library(
+    library_service: LibraryService,
+    raw_name: str | None,
+):
+    """Resolve an optional URL-encoded natural library name to a domain ``Library``.
+
+    Returns ``None`` when absent/blank (global scope) or when the library does
+    not exist.
+    """
+    if not raw_name:
+        return None
+    name = decode_library_name(raw_name)
+    return await asyncio.to_thread(library_service.get_library_by_name, name)
 
 
 class RenameTagRequest(BaseModel):
@@ -236,12 +255,16 @@ async def get_tag_songs(
 async def commit_pending_tags(
     request: CommitRequest,
     tagging_service: Annotated[TaggingService, Depends(get_tagging_service)],
+    library_service: Annotated[
+        LibraryService, Depends(get_library_service)
+    ],  # LibraryService is TYPE_CHECKING-only; quoted so FastAPI resolves Depends at route registration (P6-S4 API fix; sibling overwrote unquoted form — keep quoted)
 ) -> CommitResponse:
     """Commit pending tag writes to files."""
     try:
+        library = await _resolve_optional_library(library_service, request.library_id)
         result = await asyncio.to_thread(
             tagging_service.commit_pending_tags,
-            library_id=request.library_id,
+            library=library,
         )
         return CommitResponse.model_validate(result)
     except Exception as e:

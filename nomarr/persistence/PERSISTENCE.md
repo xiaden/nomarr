@@ -64,6 +64,11 @@ persistence/
 │   ├── scan_repo.py             # Library scan record operations
 │   ├── tag_repo.py              # Tag CRUD and search
 │   └── vector_repo.py           # Vector/embedding persistence and similarity search
+├── mappers/
+│   ├── __init__.py
+│   ├── library_mapper.py        # Library row → Library / insert / update / scan payloads
+│   ├── song_tag_mapper.py       # Row/dict → TagRef / SongTagAssignment / TagUsage / Song / SongTagMatch
+│   └── tag_mapper.py            # TagRow → domain Tag
 └── models/
     ├── __init__.py
     ├── base.py                  # SQLAlchemy declarative base
@@ -129,9 +134,27 @@ It wraps operations such as:
 - library CRUD and library-domain queries
 - song and folder queries plus intent-level song lifecycle operations
 - tag lookup, replacement, aggregation, and cleanup routed through library-domain methods
-- maintenance-only routines (orphan cleanup, destructive resets) are flat on the facade: `db.library.list_orphaned_song_ids()`, `db.library.list_orphaned_tag_ids()`, `db.library.delete_tags_by_ids(...)`, `db.library.truncate_songs()`, `db.library.truncate_song_links()`, `db.library.truncate_folder_links()`, `db.library.truncate_folders()`, `db.library.truncate_tags()`, `db.library.truncate_song_tag_edges()`, `db.library.truncate_scan_records()`
+- maintenance-only routines (orphan cleanup, destructive resets) are flat on the facade: `db.library.list_orphaned_song_ids()`, `db.library.cleanup_orphaned_tags()` (returns a typed `TagCleanupResult`), `db.library.truncate_songs()`, `db.library.truncate_song_links()`, `db.library.truncate_folder_links()`, `db.library.truncate_folders()`, `db.library.truncate_tags()`, `db.library.truncate_song_tag_assignments()`, `db.library.truncate_scan_records()`
+
+**Sealed tag facade** (`LibraryTagsDb` via `db.library.tags`, and its forwarders on `db.library`): tags and songs are addressed by **natural domain identity**, never integer tag/song ids. `get_tag`/`ensure_tag` take/return `TagRef`; `list_tags_for_song` takes a `SongIdentity` and returns `SongTagAssignment` values; reads return typed domain objects (`TagRef`, `SongTagAssignment`, `TagUsage`, `RelinkResult`, `TagCleanupResult`, `Song`, `SongTagMatch`) — no `TagRow`/`SongRow`/raw-dict projections, and no integer tag-id facade contracts. Storage ids resolve internally (set-based), and the facade exposes no transaction context (repos own short internal transactions).
 
 Use `db.library` when the caller thinks in terms of libraries, songs, folders, and tags rather than specific database tables.
+
+**Row → domain conversion is persistence-owned.** All row/dict → domain conversion (e.g. `song_tag_mapper.tag_identity_from_row`, `song_tag_assignment_from_row`, `tag_usage_from_row`, `song_from_row`, `song_tag_match_from_row`) lives in `persistence/mappers/` and is called *inside* the facade sub-facades. Higher layers never construct storage row shapes, edge dicts, or table/primary-key payloads.
+
+**Identity bridge (song-side).** `db.library.resolve_song_identity(song_id: int) -> SongIdentity | None` and `db.library.resolve_song_identities(song_ids) -> Mapping[int, SongIdentity]` (with `resolve_library_identity(s)` / `resolve_library_identities(s)`) are the *only* documented int→domain conversion point at the library boundary. They exist for callers that hold a legacy storage song id (e.g. read a `Song.song_id` and need the natural identity for a song-tag operation). `HydrateSongInput.song_id: int` is the sole documented narrow semantic handle; `FileTag` and `(file_id, tag_value)` analytics tuples are interface/physical-file projections allowed at the boundary.
+
+**Removed legacy tag methods.** The sealed tag facade no longer exposes any of: `search_songs_by_tag`/`search_songs_by_tag_contains`/`search_songs_by_tag_pattern` (use `find_songs_with_tag`/`_contains`/`_pattern`), `list_song_ids_for_tag_id`, `list_song_tag_edges`, `list_tags_by_name` (use `list_tags(name=...)`), `delete_tags_by_ids` (use `cleanup_orphaned_tags`), `find_or_create_tag` (use `ensure_tag(TagRef)`), `replace_tag_references`/`replace_selected_tag_references` (use `relink_tags(source, target, songs)`), and `list_orphaned_tag_ids`. These must not reappear as facade methods; the sabotage suites `tests/sabotage/test_song_tag_facade_boundary.py` and `tests/sabotage/test_sealed_tag_facade_boundary.py` enforce this.
+
+**Sealed library-region facade** (`LibraryRegionsDb` via `db.library.regions`, and its forwarders on `db.library`): library CRUD and pipeline state address libraries by **natural `(name, root_path)` identity** (ADR-032/041). All methods take/return domain `Library` values — the storage row's `id`/`path`/`library_type`/`auto_tag`/`auto_curate` columns never cross the boundary. `create_library(Library) -> Library`, `get_library(Library)`, `get_library_by_name(str)`, `list_libraries(*, enabled_only)`, `update_library(Library, LibraryUpdate) -> Library` (a **typed `LibraryUpdate` command**, never an arbitrary storage-column dict), and `remove_library(Library) -> bool`. Pipeline state is row-backed inside persistence with a single canonical owner: `get_pipeline_state(Library) -> LibraryPipelineState`, `set_pipeline_axis(Library, axis, state)` (validates axis + pole via `VALID_PIPELINE_TRANSITIONS`), and `get_libraries_in_axis_state(axis, state) -> list[Library]` — no `pipeline_states` row payloads leak. `remove_library` delegates the FK cascade delete to the repository; the facade performs no tag/song teardown of its own. `list_library_keys` (generated-id enumeration) was **removed** from the facade. Duplicate-insert policy is persistence-owned: `create_library` does not upsert/reject, it forwards to `add_library`. The facade exposes no transaction/session context (UoW lives in the repos).
+
+**Sealed library-scan facade** (`LibraryScansDb` via `db.library.scans`): scan lifecycle intents take a `Library` and return domain `LibraryScan` values — the storage scan `id` and `library_id` FK never cross. The natural key is resolved to a storage library id *internally*. `get_scan`/`get_latest_successful_scan`/`start_scan`/`record_scan_progress`/`complete_scan`/`remove_scan` follow the sealed contracts; `record_scan_progress`/`complete_scan` **reject stale writes** (when the underlying scan row is no longer current) with a `ValueError`, and `start_scan` returns a `LibraryScan`, never a generated id. `add_scan` (the old row/dict-payload escape) is gone.
+
+**Sealed folder + library-scoped song facade** (`LibrarySongsDb` via `db.library.songs`): folder intents take a `Library` + a domain `LibraryFolder` and resolve `parent_path` → storage `parent_id` internally; `replace_library_folders` is path-stable so songs keep their folder linkage. Library-scoped song methods (`get_song_by_path`, `list_songs`, `count_songs_for_library`, `list_songs_for_folder`, …) take a `Library` and return domain `Song` values. Song-only/id-scoped methods are owned by the song-tag plan.
+
+**Mapper ownership.** All row/dict → domain conversion for libraries is owned by `persistence/mappers/library_mapper.py` (`library_from_row`, `library_insert_payload`, `library_update_payload`), called only *inside* the facade sub-facades — higher layers never construct `LibraryRow` shapes or storage-column payloads.
+
+**Mechanism-A natural-name wire identity.** At the interface layer the sole library wire identity is the URL-encoded natural `Library.name` (see `nomarr/interfaces/api/id_codec.py` `encode_library_name`/`decode_library_name`; all library routes use `/{library_name}` segments and resolve once via `LibraryService.get_library_by_name`). No integer library route decoding or generated-id identity remains. **Enforcement:** `tests/unit/architecture/test_library_domain_boundary.py` statically proves non-persistence code cannot import `LibraryRow`/`LibraryFolderRow`/`LibraryScanRow`/`TagRow`, repository classes, the `nomarr.persistence.database` namespace, or call `list_library_keys`, and that no `{library_id}` route segment exists.
 
 ### `db.app`
 
@@ -286,7 +309,10 @@ Within higher layers, do **not** drop to raw SQL just because the session is ava
 
 ```python
 song = db.library.get_song(song_id)
-db.library.replace_song_tags(song_id, [{"name": "genre", "value": "rock"}])
+db.library.replace_song_tags(
+    SongIdentity(library=LibraryIdentity(name="TestLib", root_path="/music"), normalized_path="track.mp3"),
+    [SongTagAssignment(name="genre", value="rock", namespace="nom")],
+)
 db.library.update_scan(library_id, {"status": "complete"})
 db.app.replace_song_states(song_ids, "processing")
 ```

@@ -171,7 +171,11 @@ class OutputRepo:
     def list_output_streams_for_song(self, song_id: int) -> list[OutputStreamRecord]:
         """Return all canonical output streams for a given song."""
         with map_persistence_exceptions():
-            stmt = select(_T_STREAM).where(_T_STREAM.c.song_id == song_id)
+            stmt = (
+                select(_T_STREAM)
+                .where(_T_STREAM.c.song_id == song_id)
+                .order_by(_T_STREAM.c.output_index, _T_STREAM.c.output_id)
+            )
             result = self._session.execute(stmt)
             return [_row_to_stream_record(r) for r in result.all()]
 

@@ -15,12 +15,13 @@ from nomarr.helpers.constants.file_states import (
 from nomarr.helpers.time_helper import now_ms
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dataclasses.library_dataclass import Library
     from nomarr.persistence.db import Database
 
 
 def claim_files_for_reconciliation(
     db: Database,
-    library_id: int,
+    library: Library,
     worker_id: str,
     batch_size: int = 100,
     lease_ms: int = 60000,
@@ -29,7 +30,7 @@ def claim_files_for_reconciliation(
 
     Args:
         db: Database handle used to read stale library files and manage worker claims.
-        library_id: Library whose stale files should be considered for reconciliation.
+        library: Domain ``Library`` whose stale files should be considered.
         worker_id: Worker identity recorded on each claim so the claiming worker can
             own the lease or replace an expired one.
         batch_size: Maximum number of stale file candidates to claim in this call.
@@ -43,9 +44,11 @@ def claim_files_for_reconciliation(
         worker.
 
     """
-    stale_ids = get_stale_song_ids(db, library_id=library_id)
-    library_song_ids = {song.song_id for song in db.library.list_songs(library_id)}
-    pending_ids = [song_id for song_id in db.app.list_songs_in_state(STATE_NOT_WRITTEN) if song_id in library_song_ids]
+    # overlap: mechanism-A natural-name threading (P4-S8) - this file is under
+    # concurrent reconciliation cleanup; preserve adjacent hunks.
+    stale_ids = get_stale_song_ids(db, library)
+    library_song_ids = {song.song_id for song in db.library.list_songs(library)}
+    pending_ids = [song_id for song_id in db.app.song_ids_with_state(STATE_NOT_WRITTEN) if song_id in library_song_ids]
     reconcile_ids = list(dict.fromkeys([*stale_ids, *pending_ids]))
     if not reconcile_ids:
         return []
@@ -79,7 +82,7 @@ def set_file_written(db: Database, file_key: str, worker_id: str) -> None:
     """
     file_id = int(file_key)
     transition_song_state(db, [file_id], STATE_NOT_WRITTEN, STATE_WRITTEN)
-    if STATE_TAGS_NOT_FRESH in db.app.get_song_states(file_id):
+    if STATE_TAGS_NOT_FRESH in db.app.song_state_membership(file_id):
         transition_song_state(db, [file_id], STATE_TAGS_NOT_FRESH, STATE_TAGS_CURRENT)
     db.app.release_claim(worker_id, file_id, "reconcile")
 
@@ -93,9 +96,9 @@ def release_claim(db: Database, file_key: str, worker_id: str) -> None:
     db.app.release_claim(worker_id, file_id, "reconcile")
 
 
-def count_files_needing_reconciliation(db: Database, library_id: int) -> int:
+def count_files_needing_reconciliation(db: Database, library: Library) -> int:
     """Count files whose database tag projection needs writing to disk."""
-    stale_ids = get_stale_song_ids(db, library_id=library_id)
-    library_song_ids = {song.song_id for song in db.library.list_songs(library_id)}
-    pending_ids = [song_id for song_id in db.app.list_songs_in_state(STATE_NOT_WRITTEN) if song_id in library_song_ids]
+    stale_ids = get_stale_song_ids(db, library)
+    library_song_ids = {song.song_id for song in db.library.list_songs(library)}
+    pending_ids = [song_id for song_id in db.app.song_ids_with_state(STATE_NOT_WRITTEN) if song_id in library_song_ids]
     return len(set(stale_ids).union(pending_ids))

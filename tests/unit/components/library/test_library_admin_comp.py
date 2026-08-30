@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from nomarr.components.library.library_admin_comp import create_library, delete_library
+from nomarr.helpers.dataclasses.library_dataclass import Library
 
 
 @pytest.fixture(autouse=True)
@@ -116,15 +117,16 @@ class TestDeleteLibrary:
     def test_returns_false_when_library_not_found(self) -> None:
         """Missing libraries should short-circuit without any deletion."""
         mock_db = MagicMock()
+        library = Library(name="Missing", root_path="/missing")
 
         with patch(
             "nomarr.components.library.library_admin_comp.get_library_record",
             return_value=None,
         ) as get_library_record_mock:
-            result = delete_library(mock_db, "libraries/missing")
+            result = delete_library(mock_db, library)
 
         assert result is False
-        get_library_record_mock.assert_called_once_with(mock_db, "libraries/missing")
+        get_library_record_mock.assert_called_once_with(mock_db, library)
         mock_db.library.delete_library.assert_not_called()
 
     @pytest.mark.unit
@@ -132,14 +134,14 @@ class TestDeleteLibrary:
     def test_deletes_library_and_returns_true(self) -> None:
         """Existing libraries should delegate cascade to db.library.remove_library and return True."""
         mock_db = MagicMock()
-        library = {"name": "Main Library"}
+        library = Library(name="Main Library", root_path="/music")
 
         with patch(
             "nomarr.components.library.library_admin_comp.get_library_record",
             return_value=library,
         ) as get_library_record_mock:
-            result = delete_library(mock_db, "libraries/1")
+            result = delete_library(mock_db, library)
 
         assert result is True
-        get_library_record_mock.assert_called_once_with(mock_db, "libraries/1")
-        mock_db.library.remove_library.assert_called_once_with("libraries/1")
+        get_library_record_mock.assert_called_once_with(mock_db, library)
+        mock_db.library.remove_library.assert_called_once_with(library)

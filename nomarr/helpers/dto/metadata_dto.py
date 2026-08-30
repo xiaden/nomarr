@@ -6,7 +6,7 @@ from typing import TypedDict
 class EntityDict(TypedDict):
     """Entity result (artist, album, genre, label, year)."""
 
-    id: int  # PostgreSQL primary key
+    id: int | str  # Natural tag value (or external numeric handle)
     display_name: str  # Exact raw string
     song_count: int | None  # Optional: count of songs for this entity
 

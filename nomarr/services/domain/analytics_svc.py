@@ -47,6 +47,7 @@ from nomarr.helpers.dto.analytics_dto import (
 )
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dataclasses.library_dataclass import Library
     from nomarr.persistence.db import Database
 
 
@@ -165,17 +166,17 @@ class AnalyticsService:
         )
         return cast("TagCorrelationData", compute_tag_correlation_matrix(params=params))
 
-    def get_mood_distribution(self, library_id: str | None = None) -> list[MoodDistributionItem]:
+    def get_mood_distribution(self, library: Library | None = None) -> list[MoodDistributionItem]:
         """Get mood distribution across all tiers.
 
         Args:
-            library_id: Optional library ID to filter by.
+            library: Optional domain ``Library`` (natural identity) to filter by.
 
         Returns:
             List of MoodDistributionItem DTOs
 
         """
-        mood_rows = get_mood_distribution_data(self._db, int(library_id) if library_id is not None else None)
+        mood_rows = get_mood_distribution_data(self._db, library)
         result = compute_mood_distribution(mood_rows=mood_rows)
 
         # Transform to list format with percentages
@@ -191,34 +192,34 @@ class AnalyticsService:
             for mood, count in top_moods
         ]
 
-    def get_mood_distribution_with_result(self, library_id: str | None = None) -> MoodDistributionResult:
+    def get_mood_distribution_with_result(self, library: Library | None = None) -> MoodDistributionResult:
         """Get mood distribution with wrapper DTO.
 
         Same data as ``get_mood_distribution`` but wrapped in a
         ``MoodDistributionResult`` DTO suitable for API responses.
 
         Args:
-            library_id: Optional library ``id`` to filter by.
+            library: Optional domain ``Library`` (natural identity) to filter by.
 
         Returns:
             MoodDistributionResult DTO with mood_distribution list.
 
         """
-        mood_distribution = self.get_mood_distribution(library_id=library_id)
+        mood_distribution = self.get_mood_distribution(library=library)
         return MoodDistributionResult(mood_distribution=mood_distribution)
 
     def get_tag_co_occurrence(
         self,
         x_tags: list[tuple[str, str]],
         y_tags: list[tuple[str, str]],
-        library_id: str | None = None,
+        library: Library | None = None,
     ) -> TagCoOccurrenceData:
         """Get co-occurrence matrix for two sets of tag specifications.
 
         Args:
             x_tags: List of (key, value) tuples for X-axis
             y_tags: List of (key, value) tuples for Y-axis
-            library_id: Optional library ID to filter by.
+            library: Optional domain ``Library`` (natural identity) to filter by.
 
         Returns:
             TagCoOccurrenceData with matrix where matrix[j][i] = count of files with both
@@ -247,12 +248,11 @@ class AnalyticsService:
         tag_data: dict[tuple[str, str], set[int]] = {}
 
         # Regular tags: use exact match
-        lib_id = int(library_id) if library_id is not None else None
         if regular_specs:
             regular_tag_data = get_file_ids_for_tags(
                 self._db,
                 tag_specs=regular_specs,
-                library_id=lib_id,
+                library=library,
             )
             for tag_key, file_ids in regular_tag_data.items():
                 tag_data[tag_key] = set(file_ids)
@@ -263,7 +263,7 @@ class AnalyticsService:
                 self._db,
                 mood_values=values,
                 mood_tier=tier,
-                library_id=lib_id,
+                library=library,
             )
             # Convert mood_value -> file_ids to (key, value) -> file_ids format
             for mood_value, file_ids in mood_data.items():
@@ -278,34 +278,34 @@ class AnalyticsService:
 
     def get_collection_overview(
         self,
-        library_id: str | None = None,
+        library: Library | None = None,
     ) -> CollectionOverviewResult:
         """Get collection overview data for Insights tab.
 
         Simple persistence pass-through: library stats, year/genre distributions.
 
         Args:
-            library_id: Optional library ID to filter by.
+            library: Optional domain ``Library`` (natural identity) to filter by.
 
         Returns:
             Dict with: stats, year_distribution, genre_distribution
 
         """
-        return compute_collection_overview(self._db, library_id=int(library_id) if library_id is not None else None)
+        return compute_collection_overview(self._db, library=library)
 
     def get_mood_analysis(
         self,
-        library_id: str | None = None,
+        library: Library | None = None,
     ) -> MoodAnalysisResult:
         """Get mood analysis data for Insights tab.
 
         Delegates to compute_mood_analysis component.
 
         Args:
-            library_id: Optional library ID to filter by.
+            library: Optional domain ``Library`` (natural identity) to filter by.
 
         Returns:
             Dict with: coverage, balance, top_pairs_by_tier, dominant_vibes
 
         """
-        return compute_mood_analysis(self._db, library_id=int(library_id) if library_id is not None else None)
+        return compute_mood_analysis(self._db, library=library)

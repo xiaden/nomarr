@@ -9,6 +9,8 @@ is compute-only: it never writes to the database.
 
 from typing import Any
 
+from nomarr.helpers.dataclasses.song_tag_dataclass import SongTagAssignment
+
 _ENTITY_TAG_KEYS = ("artist", "artists", "album", "label", "genre", "year")
 
 
@@ -89,6 +91,21 @@ def _build_song_tag_entries(song_id: int, tags: dict[str, Any]) -> list[dict[str
         return []
 
     return [{"song_id": song_id, "tags": tag_payloads}]
+
+
+def build_song_tag_assignments(song_id: int, tags: dict[str, Any]) -> list[SongTagAssignment]:
+    """Map raw entity tags to domain assignment commands for one song.
+
+    Compute-only: resolves nothing against the database. The caller resolves
+    the song's :class:`SongIdentity` and persists through the sealed facade, so
+    no raw tag payload dict ever crosses into the facade.
+
+    Returns an empty list when the raw tags contain no entity fields.
+    """
+    entries = _build_song_tag_entries(song_id, tags)
+    if not entries:
+        return []
+    return [SongTagAssignment(name=str(tag["name"]), value=tag["value"]) for entry in entries for tag in entry["tags"]]
 
 
 def extract_entity_tag_mapping(metadata: dict[str, Any]) -> dict[str, list[str | int | float]]:

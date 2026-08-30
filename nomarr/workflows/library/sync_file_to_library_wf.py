@@ -15,11 +15,12 @@ from nomarr.components.library.library_records_comp import find_library_containi
 from nomarr.components.library.library_song_mutation_comp import set_chromaprint, upsert_library_song
 from nomarr.components.library.library_song_query_comp import get_library_song
 from nomarr.components.library.song_sync_comp import mark_song_processed, save_song_tags
-from nomarr.components.metadata.entity_seeding_comp import _build_song_tag_entries
+from nomarr.components.metadata.entity_seeding_comp import build_song_tag_assignments
 from nomarr.components.tagging.tag_parsing_comp import parse_tag_values
 
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
+    from nomarr.helpers.dataclasses.library_dataclass import Library
     from nomarr.persistence.db import Database
 
 
@@ -74,10 +75,11 @@ def _sync_tags_and_entities(
             "genre": metadata.get("genre"),
             "year": metadata.get("year"),
         }
-        entries = _build_song_tag_entries(file_id, entity_tags)
-        if entries:
-            for entry in entries:
-                db.library.replace_song_tags(entry["song_id"], entry["tags"])
+        assignments = build_song_tag_assignments(file_id, entity_tags)
+        if assignments:
+            song_identity = db.library.resolve_song_identity(file_id)
+            if song_identity is not None:
+                db.library.replace_song_tags(song_identity, assignments)
         logger.debug(f"[sync_file_to_library] Seeded entities for {file_path}")
     except Exception as entity_error:
         logger.warning(f"[sync_file_to_library] Failed to seed entities: {entity_error}", exc_info=True)
@@ -99,7 +101,7 @@ def sync_file_to_library(
     metadata: dict[str, Any],
     namespace: str,
     tagged_version: str | None,
-    library_id: int | None,
+    library: Library | None,
     file_id: int | None = None,
 ) -> None:
     """Sync a file's metadata and tags to the library database.
@@ -118,7 +120,8 @@ def sync_file_to_library(
         metadata: Pre-extracted metadata dict from extract_metadata()
         namespace: Tag namespace (e.g., "nom")
         tagged_version: Tagger version if file was tagged, None otherwise
-        library_id: Optional library ID (will auto-detect if None)
+        library: Optional domain ``Library`` (natural identity). When None,
+            the owning library is auto-detected from the file path.
         file_id: File row ID (Postgres primary key). When provided, skips
             path-based upsert and uses direct file_id lookup instead.
 
@@ -138,14 +141,12 @@ def sync_file_to_library(
 
         # Slow path: no track identifier provided, need path-based lookup
         # This path is used by the scanner's initial sync
-        if library_id is None:
+        if library is None:
             library = find_library_containing_path(db, file_path)
             if not library:
                 logger.warning(f"[sync_file_to_library] File path not in any library: {file_path}")
                 return
-            library_id = library.id
 
-        assert library_id is not None
         file_stat = os.stat(file_path)
         file_size = file_stat.st_size
         modified_time = int(file_stat.st_mtime * 1000)
@@ -160,13 +161,13 @@ def sync_file_to_library(
         upsert_library_song(
             db,
             path=library_path,
-            library_id=library_id,
+            library=library,
             file_size=file_size,
             modified_time=modified_time,
             duration_seconds=metadata.get("duration"),
         )
 
-        file_record = get_library_song(db, file_path)
+        file_record = get_library_song(db, file_path, library)
         if not file_record:
             logger.warning(f"[sync_file_to_library] File record not found after upsert: {file_path}")
             return

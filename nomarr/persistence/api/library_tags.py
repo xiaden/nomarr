@@ -2,22 +2,50 @@
 
 Holds all tag-domain (``tags`` table) and song-tag edge (``song_tags``
 junction) intent methods. Wired into ``LibraryDb`` as its ``tags``
-namespace (namespaced-forwarding split per
-DD-persistence-intent-facade-rebuild §Phase 1). Methods moved verbatim
-from ``LibraryDb`` — including the former maintenance surface —
-signatures and behavior unchanged.
+namespace.
+
+Domain boundary (per artifacts/designs/parts/song-domain-repair/CONTRACTS.md —
+song-tag migration contract, 2026-08-30):
+
+- Tags are addressed by ``TagRef(name, value, namespace)``, never by a
+  database primary key.
+- Songs are addressed by ``SongIdentity(library: LibraryIdentity, normalized_path)`` (natural library key + normalized path), resolved internally to the storage song id.
+- Read results are typed domain values (``TagRef``, ``SongTagAssignment``,
+  ``TagUsage``, ``RelinkResult``, ``TagCleanupResult``) — no ``TagRow``,
+  ``SongRow``, or raw ``dict`` projections leak to callers.
+- Mutations resolve natural keys set-based and delegate transaction ownership
+  to the repository layer; the facade exposes no transaction context.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
-from nomarr.helpers.dto.repo_dto import SongRow, TagRow
+from nomarr.helpers.dataclasses.song_tag_dataclass import (
+    RelinkResult,
+    SongTagAssignment,
+    TagCleanupResult,
+    TagRef,
+    TagUsage,
+)
+from nomarr.persistence.mappers.song_tag_mapper import (
+    song_from_row,
+    song_tag_assignment_from_batch_row,
+    song_tag_assignment_from_row,
+    song_tag_match_from_row,
+    tag_identity_from_row,
+    tag_usage_from_row,
+)
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from sqlalchemy.orm import Session, scoped_session
 
-    from nomarr.helpers.dto.repo_dto import NumericSongTagMatchRow
+    from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
+    from nomarr.helpers.dataclasses.song_dataclass import Song, SongTagMatch
+    from nomarr.persistence.database.library_repo import LibraryRepository
+    from nomarr.persistence.database.song_repo import SongRepository
     from nomarr.persistence.database.song_tag_repo import SongTagRepository
     from nomarr.persistence.database.tag_repo import TagRepository
 
@@ -25,10 +53,10 @@ if TYPE_CHECKING:
 class LibraryTagsDb:
     """Persistence sub-facade for tag and song-tag edge operations.
 
-    Domain identity: ``(name, value, namespace)`` tag natural key. Tag
-    rows are keyed by their integer primary key internally; callers
-    address tags by name/value/namespace where the intent method allows
-    it.
+    Domain identity: ``TagRef(name, value, namespace)`` tag natural key
+    and ``SongIdentity(library: LibraryIdentity, normalized_path)`` song
+    natural key. Tag and song rows are keyed by integer primary keys internally;
+    callers address tags and songs exclusively by their domain identities.
     """
 
     def __init__(
@@ -37,39 +65,86 @@ class LibraryTagsDb:
         session: scoped_session[Session],
         tag_repo: TagRepository,
         song_tag_repo: SongTagRepository,
+        song_repo: SongRepository,
+        library_repo: LibraryRepository,
     ) -> None:
         self._session = session
         self._tag_repo = tag_repo
         self._song_tag_repo = song_tag_repo
+        self._song_repo = song_repo
+        self._library_repo = library_repo
+
+    # ------------------------------------------------------------------
+    # Identity helpers (set-based; never leak storage ids to callers)
+    # ------------------------------------------------------------------
+
+    def _resolve_song_id(self, song: SongIdentity) -> int | None:
+        """Resolve one song natural key to its storage id, or ``None`` if absent.
+
+        ``SongIdentity.library`` is a natural ``LibraryIdentity`` reference, so
+        it is first resolved to a library primary key, then the song's
+        normalized path is resolved within that library.
+        """
+        library_row = self._library_repo.get_library_by_natural_key(
+            song.library.name,
+            song.library.root_path,
+        )
+        if library_row is None:
+            return None
+        row = self._song_repo.get_song_by_normalized_path(library_row["id"], song.normalized_path)
+        return row["id"] if row is not None else None
+
+    def _resolve_song_ids_map(self, songs: Sequence[SongIdentity]) -> dict[SongIdentity, int]:
+        """Resolve a batch of song natural keys to storage ids, keyed by identity.
+
+        Set-based: libraries are resolved in one query and songs in one query —
+        no per-song/per-library SQL loop in the facade (P2-S6).
+        """
+        if not songs:
+            return {}
+        library_id_map = self._library_repo.get_library_ids_by_natural_keys(
+            list({(s.library.name, s.library.root_path) for s in songs})
+        )
+        resolved = [s for s in songs if (s.library.name, s.library.root_path) in library_id_map]
+        song_id_map = self._song_repo.get_song_ids_by_normalized_paths(
+            [(library_id_map[(s.library.name, s.library.root_path)], s.normalized_path) for s in resolved]
+        )
+        return {
+            s: song_id_map[(library_id_map[(s.library.name, s.library.root_path)], s.normalized_path)]
+            for s in resolved
+            if (library_id_map[(s.library.name, s.library.root_path)], s.normalized_path) in song_id_map
+        }
+
+    def _resolve_song_ids(self, songs: Sequence[SongIdentity]) -> list[int]:
+        """Resolve a batch of song natural keys to storage ids (set-based)."""
+        return list(self._resolve_song_ids_map(songs).values())
 
     # ------------------------------------------------------------------
     # Tag lookups
     # ------------------------------------------------------------------
 
-    def get_tag(self, tag_id: int) -> TagRow | None:
-        """Get a tag by its ID."""
-        return self._tag_repo.get_tag(tag_id)
+    def get_tag(self, identity: TagRef) -> TagRef | None:
+        """Find a tag by its complete domain identity, never exposing its database ID."""
+        row = self._tag_repo.get_tag_by_name(identity.name, identity.namespace)
+        if row is None or row["value"] != str(identity.value):
+            return None
+        return TagRef(name=row["name"], value=row["value"], namespace=row["namespace"])
 
-    def find_or_create_tag(self, name: str, value: str, namespace: str) -> int:
-        """Return the ID of an existing tag or create a new one.
+    def ensure_tag(self, identity: TagRef) -> TagRef:
+        """Find or create a tag identified by its domain identity, returning it (never an ID)."""
+        self._tag_repo.get_or_create_tag(identity.name, str(identity.value), identity.namespace)
+        return identity
 
-        Looks up a tag by its ``(name, value, namespace)`` triple.  If no
-        matching row exists a new tag is inserted and its ID is returned.
+    def list_tags_for_song(self, song: SongIdentity) -> tuple[SongTagAssignment, ...]:
+        """Return domain tag assignments for a song identified by its natural key.
 
-        Args:
-            name: Tag name (e.g. ``"nom:mood-strict"``).
-            value: Tag value string.
-            namespace: Tag namespace (empty string for the default namespace).
-
-        Returns:
-            The integer ID of the found or created tag row.
-
+        Empty tuple when the song does not exist or has no tags.
         """
-        return self._tag_repo.get_or_create_tag(name, value, namespace)
-
-    def list_tags_for_song(self, song_id: int) -> list[TagRow]:
-        """Return all tags assigned to a song."""
-        return self._song_tag_repo.get_tags_for_song(song_id)
+        song_id = self._resolve_song_id(song)
+        if song_id is None:
+            return ()
+        rows = self._song_tag_repo.get_tags_for_song(song_id)
+        return tuple(song_tag_assignment_from_row(r, song=song) for r in rows)
 
     def list_all_tag_names(self, limit: int) -> list[str]:
         """Return distinct tag names, up to the given limit."""
@@ -79,20 +154,13 @@ class LibraryTagsDb:
         self,
         *,
         name: str | None = None,
-        value: Any = None,
+        search: str | None = None,
         limit: int | None = None,
         offset: int = 0,
-    ) -> list[TagRow]:
-        """Return tag rows matching the optional equality filters and paging arguments.
-
-        Args:
-            name: Optional tag name to match exactly.
-            value: Optional tag value to match exactly.
-            limit: Maximum number of tag rows to return.
-            offset: Number of matching tag rows to skip.
-
-        """
-        return self._tag_repo.list_tags(name=name, value=value, limit=limit, offset=offset)
+    ) -> tuple[TagRef, ...]:
+        """Return domain tag identities, optionally filtered by exact name and value search."""
+        rows = self._tag_repo.list_tags(name=name, search=search, limit=limit, offset=offset)
+        return tuple(tag_identity_from_row(r) for r in rows)
 
     def count_tags(self) -> int:
         """Return the total number of tag rows."""
@@ -114,60 +182,50 @@ class LibraryTagsDb:
         search: str | None = None,
         limit: int = 100,
         offset: int = 0,
-    ) -> list[dict]:
-        """List tags with pre-computed song counts in a single query."""
-        return self._tag_repo.list_tags_with_song_count(name=name, search=search, limit=limit, offset=offset)
+    ) -> tuple[TagUsage, ...]:
+        """List tags with pre-computed song counts as typed ``TagUsage`` values."""
+        rows = self._tag_repo.list_tags_with_song_count(name=name, search=search, limit=limit, offset=offset)
+        return tuple(tag_usage_from_row(r) for r in rows)
 
-    def list_tags_by_name(self, name: str, limit: int) -> list[TagRow]:
-        """Return tags matching an exact name, up to the given limit."""
-        return self._tag_repo.list_tags(name=name, limit=limit)
-
-    def list_genre_tags_for_songs(self, song_ids: list[int]) -> list[TagRow]:
-        """Return genre tags assigned to any of the given songs."""
-        return self._song_tag_repo.get_genre_tags_for_songs(song_ids)
+    def list_genre_tags_for_songs(
+        self,
+        songs: Sequence[SongIdentity],
+    ) -> tuple[SongTagAssignment, ...]:
+        """Return genre tags assigned to any of the given songs (domain assignments)."""
+        song_ids = self._resolve_song_ids(songs)
+        if not song_ids:
+            return ()
+        rows = self._song_tag_repo.get_genre_tags_for_songs(song_ids)
+        return tuple(song_tag_assignment_from_row(r) for r in rows)
 
     def list_song_tags_for_songs(
         self,
-        song_ids: list[int],
+        songs: Sequence[SongIdentity],
         *,
         name_starts_with: str | None = None,
-    ) -> dict[int, list[TagRow]]:
-        """Return tags for many songs, grouped by song id.
+    ) -> dict[SongIdentity, tuple[SongTagAssignment, ...]]:
+        """Return tags for many songs, grouped by domain song identity.
 
-        Uses a single batch read for all supplied songs. When
-        ``name_starts_with`` is provided, only tags whose names start with that
-        prefix are included.
-
-        Args:
-            song_ids: Songs whose tags should be fetched.
-            name_starts_with: Optional prefix filter for tag names.
-
-        Returns:
-            A mapping from song id to the list of matching tag rows.
-
+        Uses a single batch read for all supplied songs. When ``name_starts_with``
+        is provided, only tags whose names start with that prefix are included.
+        Empty mapping when no songs resolve or none have tags.
         """
+        song_ids_by_identity = self._resolve_song_ids_map(songs)
+        if not song_ids_by_identity:
+            return {}
         rows = self._song_tag_repo.get_tags_for_songs_batch(
-            song_ids,
+            list(song_ids_by_identity.values()),
             name_starts_with=name_starts_with,
         )
-        grouped: dict[int, list[TagRow]] = {sid: [] for sid in song_ids}
+        song_by_id = {song_id: ident for ident, song_id in song_ids_by_identity.items()}
+        grouped: dict[SongIdentity, list[SongTagAssignment]] = {ident: [] for ident in song_ids_by_identity}
         for row in rows:
-            sid = row.get("song_id")
-            if not isinstance(sid, int):
+            song_id = row.get("song_id")
+            identity = song_by_id.get(song_id) if isinstance(song_id, int) else None
+            if identity is None:
                 continue
-            tag_row = TagRow(
-                id=row["tag_id"],
-                name=row["tag_name"],
-                value=row["tag_value"],
-                namespace=row.get("namespace", ""),
-                parent_tag_id=row.get("parent_tag_id"),
-                source=row.get("source", ""),
-                confidence=row.get("confidence"),
-                tier=row.get("tier"),
-                created_at=row.get("created_at", 0),
-            )
-            grouped.setdefault(sid, []).append(tag_row)
-        return grouped
+            grouped[identity].append(song_tag_assignment_from_batch_row(row, identity))
+        return {ident: tuple(assignments) for ident, assignments in grouped.items()}
 
     def count_songs_by_tag(self, tag_key: str, target_value: str) -> int:
         """Count songs that have a tag with the given key and value."""
@@ -182,154 +240,161 @@ class LibraryTagsDb:
         """
         return self._song_tag_repo.count_songs_by_numeric_tag(tag_key, target_value)
 
-    def search_songs_by_numeric_tag(
+    def find_songs_with_numeric_tag(
         self,
-        tag_key: str,
-        target_value: float | str,
+        identity: TagRef,
         *,
         limit: int | None,
         offset: int = 0,
-    ) -> list[NumericSongTagMatchRow]:
-        """Search songs with a numeric *tag_key* tag, ordered by tag distance.
-
-        SQL selects one closest numeric tag per song and returns only the
-        requested page (``distance ASC, song id ASC`` ordering, offset/limit
-        applied in SQL). Rows carry the matched tag's string ``value`` and the
-        absolute ``distance`` from the target.
-        """
-        return self._song_tag_repo.search_songs_by_numeric_tag(
-            tag_key,
-            target_value,
+    ) -> tuple[SongTagMatch, ...]:
+        """Search songs with a numeric tag and return domain match objects."""
+        rows = self._song_tag_repo.search_songs_by_numeric_tag(
+            identity.name,
+            str(identity.value),
             limit=limit,
             offset=offset,
         )
+        return tuple(song_tag_match_from_row(row) for row in rows)
 
-    def search_songs_by_tag(
+    def find_songs_with_tag(
         self,
-        tag_key: str,
-        value: str,
+        identity: TagRef,
         *,
-        limit: int | None,
-    ) -> list[SongRow]:
-        """Search for songs with an exact tag key/value match."""
-        return self._song_tag_repo.search_songs_by_tag(tag_key, value, limit=limit)
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> tuple[Song, ...]:
+        """Search for domain songs with an exact tag key/value match."""
+        return tuple(
+            song_from_row(row)
+            for row in self._song_tag_repo.search_songs_by_tag(
+                identity.name,
+                str(identity.value),
+                limit=limit,
+                offset=offset,
+            )
+        )
 
-    def search_songs_by_tag_contains(
+    def find_songs_with_tag_contains(
         self,
-        tag_key: str,
-        value: str,
+        identity: TagRef,
         *,
-        limit: int | None,
-    ) -> list[SongRow]:
-        """Return songs whose tag value contains *value* (ILIKE substring match).
+        limit: int | None = None,
+    ) -> tuple[Song, ...]:
+        """Return domain songs whose tag value contains ``identity.value`` (ILIKE substring)."""
+        return tuple(
+            song_from_row(row)
+            for row in self._song_tag_repo.search_songs_by_tag_contains(
+                identity.name,
+                str(identity.value),
+                limit=limit,
+            )
+        )
 
-        Args:
-            tag_key: Tag name to search for (e.g., "nom:mood-strict").
-            value: Substring to match within the tag's value string.
-            limit: Maximum number of song rows to return.
-
-        Returns:
-            List of song rows that have a tag with the given key whose value
-            contains *value* (case-insensitive).
-
-        """
-        return self._song_tag_repo.search_songs_by_tag_contains(tag_key, value, limit=limit)
-
-    def search_songs_by_tag_pattern(
+    def find_songs_with_tag_pattern(
         self,
         tag_name: str,
         pattern: str,
         *,
         limit: int | None = None,
-    ) -> list[SongRow]:
-        """Return songs whose tag value matches an ILIKE *pattern*.
-
-        Joins library songs to their tag edges and tag rows, filtering on
-        exact ``tag_name`` match and ILIKE ``pattern`` against the tag value.
-
-        Args:
-            tag_name: Tag name to match exactly (e.g. ``"artist"``).
-            pattern: SQL ILIKE pattern for the tag value (e.g. ``"%Beatles%"``).
-            limit: Optional maximum number of song rows to return.
-
-        Returns:
-            List of matching :class:`SongRow` dicts.
-
-        """
-        return self._song_tag_repo.search_songs_by_tag_pattern(tag_name, pattern, limit=limit)
-
-    def list_song_ids_for_tag_id(self, tag_id: int, *, limit: int | None, offset: int = 0) -> list[int]:
-        """Return song IDs assigned to a tag, with paging."""
-        return self._song_tag_repo.list_song_ids_for_tag(tag_id, limit=limit, offset=offset)
-
-    def list_song_tag_edges(
-        self,
-        tag_ids: list[int],
-        *,
-        limit: int | None = None,
-    ) -> list[dict[str, Any]]:
-        """Return song-tag edge rows for the given tag IDs.
-
-        Each returned dict contains ``song_id``, ``tag_id``, ``confidence``,
-        and ``source`` keys.
-
-        Args:
-            tag_ids: Tag IDs whose edges should be returned.
-            limit: Optional maximum number of edges to return.
-
-        Returns:
-            List of edge dicts.
-
-        """
-        return self._song_tag_repo.get_song_tag_edges_for_tags(tag_ids, limit=limit)
+    ) -> tuple[Song, ...]:
+        """Return domain songs whose tag value matches an ILIKE *pattern*."""
+        return tuple(
+            song_from_row(row)
+            for row in self._song_tag_repo.search_songs_by_tag_pattern(tag_name, pattern, limit=limit)
+        )
 
     # ------------------------------------------------------------------
     # Song-tag mutations
     # ------------------------------------------------------------------
 
-    def replace_song_tags(self, song_id: int, tags: list[dict]) -> None:
+    def replace_song_tags(
+        self,
+        song: SongIdentity,
+        assignments: Sequence[SongTagAssignment],
+    ) -> None:
         """Replace all tag associations for a song.
 
-        Callers provide tag documents using the public ``name``/``value``
-        shape.  Resolve documents without an existing database ID before
-        delegating to the junction-table repository, whose contract is
-        intentionally ID-based.
+        Resolves tag natural keys set-based (no per-tag SQL loop) and delegates
+        the delete-and-insert to the repository's short-owned transaction. A
+        ``song`` that does not exist is a no-op.
         """
-        resolved_tags: list[dict[str, Any]] = []
-        for tag in tags:
-            tag_id = tag.get("tag_id", tag.get("id"))
-            if not isinstance(tag_id, int):
-                name = tag["name"]
-                value = tag["value"]
-                tag_id = self.find_or_create_tag(str(name), str(value), str(tag.get("namespace", "")))
-            resolved_tag = dict(tag)
-            resolved_tag["tag_id"] = tag_id
-            resolved_tags.append(resolved_tag)
-        self._song_tag_repo.replace_song_tags(song_id, resolved_tags)
+        song_id = self._resolve_song_id(song)
+        if song_id is None:
+            return
+        tag_rows = [{"name": a.name, "value": str(a.value), "namespace": a.namespace} for a in assignments]
+        tag_ids = self._tag_repo.get_or_create_tags_batch(tag_rows)
+        edges = [
+            {
+                "song_id": song_id,
+                "tag_id": tag_ids[(a.name, str(a.value), a.namespace)],
+                "confidence": a.confidence,
+                "source": a.source,
+            }
+            for a in assignments
+        ]
+        # Repo-owned short transaction: commits the pending tag inserts from
+        # get_or_create_tags_batch together with the edge replacement.
+        self._song_tag_repo.replace_song_tags(song_id, edges)
 
-    def replace_tag_references(self, source_tag_id: int, target_tag_id: int) -> None:
-        """Remap song→tag edges from one tag to another across all affected songs."""
-        self._song_tag_repo.replace_tag_references(source_tag_id, target_tag_id)
-
-    def replace_selected_tag_references(
+    def relink_tags(
         self,
-        song_ids: list[int],
-        source_tag_id: int,
-        target_tag_id: int,
-    ) -> None:
-        """Remap song→tag edges for a selected set of songs."""
-        self._song_tag_repo.replace_tag_references(
-            source_tag_id,
-            target_tag_id,
-            song_ids=song_ids,
+        source: TagRef,
+        target: TagRef,
+        songs: Sequence[SongIdentity] | None = None,
+    ) -> RelinkResult:
+        """Remap song→tag edges from *source* to *target* (ADR-014 duplicate-safe).
+
+        Source edges colliding with an existing target edge are dropped
+        (``skipped``); the rest are re-pointed (``moved``). ``source_orphaned``
+        reports whether the source tag lost all of its assignments. Returns a
+        typed ``RelinkResult``; a source tag that does not exist yields
+        ``RelinkResult(0, 0, 0)``.
+        """
+        source_ids = self._tag_repo.get_tag_ids_by_identities(
+            [{"name": source.name, "value": str(source.value), "namespace": source.namespace}]
+        )
+        source_key = (source.name, str(source.value), source.namespace)
+        source_id = source_ids.get(source_key)
+        if source_id is None:
+            return RelinkResult(moved=0, skipped=0, source_orphaned=0)
+        target_ids = self._tag_repo.get_or_create_tags_batch(
+            [{"name": target.name, "value": str(target.value), "namespace": target.namespace}]
+        )
+        target_id = target_ids[(target.name, str(target.value), target.namespace)]
+        song_ids = self._resolve_song_ids(songs) if songs is not None else None
+        counts = self._song_tag_repo.relink_song_tags(source_id, target_id, song_ids=song_ids)
+        return RelinkResult(
+            moved=counts["moved"],
+            skipped=counts["skipped"],
+            source_orphaned=counts["source_orphaned"],
         )
 
-    def remove_song_tags(self, song_id: int, tag_keys: list[int] | None = None) -> None:
-        """Remove tag edges for one song and clean up orphaned tags."""
-        if tag_keys is None:
+    def remove_song_tags(
+        self,
+        song: SongIdentity,
+        identities: Sequence[TagRef] | None = None,
+    ) -> None:
+        """Remove tag edges for one song and clean up orphaned tags.
+
+        ``identities`` is optional: when ``None`` all tag edges for the song are
+        removed. Resolves the identities set-based without creating tags.
+        """
+        song_id = self._resolve_song_id(song)
+        if song_id is None:
+            return
+        if identities is None:
             self._song_tag_repo.replace_song_tags(song_id, [])
         else:
-            self._song_tag_repo.remove_tags_from_song(song_id, tag_keys)
+            tag_ids = self._tag_repo.get_tag_ids_by_identities(
+                [{"name": i.name, "value": str(i.value), "namespace": i.namespace} for i in identities]
+            )
+            resolved = [
+                tag_ids[(i.name, str(i.value), i.namespace)]
+                for i in identities
+                if (i.name, str(i.value), i.namespace) in tag_ids
+            ]
+            if resolved:
+                self._song_tag_repo.remove_tags_from_song(song_id, resolved)
         self._tag_repo.cleanup_orphaned_tags()
 
     def list_tag_value_frequencies(self, tag_names: list[str], limit: int) -> dict[str, list[tuple[str, int]]]:
@@ -340,23 +405,16 @@ class LibraryTagsDb:
     # Maintenance
     # ------------------------------------------------------------------
 
-    def list_orphaned_tag_ids(self) -> list[int]:
-        """List tag IDs that have no matching song assignment."""
-        return self._tag_repo.get_orphaned_tag_ids()
-
-    def delete_tags_by_ids(self, tag_ids: list[int]) -> int:
-        """Delete tags by their IDs.
-
-        Returns:
-            The number of tags deleted.
-
-        """
-        return self._tag_repo.delete_tags_by_ids(tag_ids)
+    def cleanup_orphaned_tags(self) -> TagCleanupResult:
+        """Delete orphaned tags (no song assignment) and report the outcome."""
+        orphaned_ids = self._tag_repo.get_orphaned_tag_ids()
+        deleted = self._tag_repo.delete_tags_by_ids(orphaned_ids) if orphaned_ids else 0
+        return TagCleanupResult(deleted=deleted, orphaned=len(orphaned_ids))
 
     def truncate_tags(self) -> None:
         """Remove all tag rows."""
         return self._tag_repo.truncate_tags()
 
-    def truncate_song_tag_edges(self) -> None:
+    def truncate_song_tag_assignments(self) -> None:
         """Remove all song-to-tag assignment edges."""
         return self._song_tag_repo.truncate_song_tag_assignments()

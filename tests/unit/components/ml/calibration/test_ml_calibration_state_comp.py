@@ -574,9 +574,7 @@ class TestCalibrationVersionMeta:
     @pytest.mark.mocked
     def test_get_calibration_last_run_returns_value_from_doc(self) -> None:
         mock_db = MagicMock()
-        mock_db.app.get_config_option.return_value = ConfigOption(
-            key="calibration_last_run", value="1712345678901"
-        )
+        mock_db.app.get_config_option.return_value = ConfigOption(key="calibration_last_run", value="1712345678901")
 
         result = get_calibration_last_run(mock_db)
 

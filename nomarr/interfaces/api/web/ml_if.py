@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from nomarr.helpers.logging_helper import sanitize_exception_message
 from nomarr.interfaces.api.auth import verify_session
+from nomarr.interfaces.api.id_codec import decode_library_name
 from nomarr.interfaces.api.types.info_types import WorkStatusResponse
 from nomarr.interfaces.api.types.ml_types import (
     MarkConfiguredRequest,
@@ -22,6 +23,21 @@ from nomarr.services.infrastructure.ml_svc import MLService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/machine-learning", tags=["Machine Learning"])
+
+
+async def _resolve_optional_library(
+    library_service: LibraryService,
+    raw_name: str | None,
+):
+    """Resolve an optional URL-encoded natural library name to a domain ``Library``.
+
+    Returns ``None`` when absent/blank (global scope) or when the library does
+    not exist.
+    """
+    if not raw_name:
+        return None
+    name = decode_library_name(raw_name)
+    return await asyncio.to_thread(library_service.get_library_by_name, name)
 
 
 class RecentFileItem(BaseModel):
@@ -191,7 +207,8 @@ async def web_recent_activity(
     Returns files sorted by scanned_at descending.
     """
     try:
-        files = await asyncio.to_thread(library_service.get_recently_processed, limit=limit, library_id=library_id)
+        library = await _resolve_optional_library(library_service, library_id)
+        files = await asyncio.to_thread(library_service.get_recently_processed, limit=limit, library=library)
         return RecentFilesResponse(files=[RecentFileItem(**file_doc) for file_doc in files])
     except Exception as e:
         logger.exception("[ml_if] Failed to get recent activity")

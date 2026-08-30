@@ -10,6 +10,7 @@ import logging
 from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.components.library.library_song_state_comp import discover_next_untagged_file
+from nomarr.helpers.constants.file_states import STATE_PROCESSED
 from nomarr.helpers.exceptions import DuplicateEntityError
 from nomarr.helpers.time_helper import now_ms
 
@@ -17,7 +18,7 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
-_TAGGED_STATE_ID = "tagged"
+_TAGGED_STATE_ID = STATE_PROCESSED
 
 
 def _claim_key(file_id: str | int) -> str:
@@ -168,7 +169,7 @@ def cleanup_stale_claims(db: Database, heartbeat_timeout_ms: int) -> int:
 
         tagged_song_ids = {
             song_doc["id"]
-            for song_doc in (song.to_dict() for song in db.app.list_song_docs_in_state(_TAGGED_STATE_ID))
+            for song_doc in (song.to_dict() for song in db.app.songs_with_state(STATE_PROCESSED))
             if "id" in song_doc and song_doc["id"] in candidate_song_ids
         }
         stale_song_ids = {

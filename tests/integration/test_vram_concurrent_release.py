@@ -33,7 +33,6 @@ import pytest
 
 from nomarr.persistence.api.application import AppDb
 from nomarr.persistence.database.app_repo import AppRepository
-from nomarr.persistence.database.library_repo import LibraryRepository
 from nomarr.persistence.database.pipeline_repo import PipelineRepository
 from nomarr.persistence.database.song_state_repo import SongStateRepository
 
@@ -57,7 +56,6 @@ def _make_app_db(session: Session) -> AppDb:
     return AppDb(
         session=session,
         app_repo=AppRepository(session),
-        library_repo=MagicMock(spec=LibraryRepository),
         song_state_repo=MagicMock(spec=SongStateRepository),
         pipeline_repo=MagicMock(spec=PipelineRepository),
     )

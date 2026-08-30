@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, sentinel
 
 import pytest
 
+from nomarr.helpers.dataclasses.ml_output_stream_dataclass import OutputStream, OutputStreamWrite
 from nomarr.persistence.api.ml import MlDb
 
 
@@ -118,13 +119,24 @@ def test_list_vector_namespaces_removed() -> None:
 
 
 @pytest.mark.unit
-def test_list_output_streams_for_song_delegates_to_output_repo() -> None:
+def test_list_output_streams_for_song_maps_repository_rows_to_domain() -> None:
     db, _, _, output_repo, _, _ = _make_ml_db()
-    output_repo.list_output_streams_for_song = MagicMock(return_value=sentinel.result)
+    output_repo.list_output_streams_for_song = MagicMock(
+        return_value=[
+            {
+                "id": 12,
+                "song_id": 1,
+                "output_id": "out-1",
+                "output_index": 2,
+                "values": [0.1, 0.2],
+                "created_at": 123,
+            }
+        ]
+    )
 
     result = db.list_output_streams_for_song(1)
 
-    assert result is sentinel.result
+    assert result == [OutputStream(output_id="out-1", output_index=2, values=[0.1, 0.2])]
     output_repo.list_output_streams_for_song.assert_called_once_with(1)
 
 
@@ -322,7 +334,7 @@ def test_truncate_calibration_history_delegates_to_calibration_repo() -> None:
 def test_replace_song_inference_results_delegates_to_aggregate_repo() -> None:
     db, _, _, _, _, _ = _make_ml_db()
     vectors = [{"model_id": "model_a", "embedding_vector": [0.1, 0.2]}]
-    output_streams = [{"output_id": "head_0", "values": [0.9, 0.1]}]
+    output_streams = [OutputStreamWrite(output_id="head_0", values=[0.9, 0.1])]
 
     db.replace_song_inference_results(42, "openl3", vectors=vectors, output_streams=output_streams)
 
@@ -332,7 +344,7 @@ def test_replace_song_inference_results_delegates_to_aggregate_repo() -> None:
         song_id=42,
         backbone="openl3",
         vectors=vectors,
-        output_streams=output_streams,
+        output_streams=[{"output_id": "head_0", "values": [0.9, 0.1], "output_index": None}],
     )
 
 
@@ -646,10 +658,11 @@ def test_remove_model_outputs_for_model_delegates_to_output_repo() -> None:
 @pytest.mark.unit
 def test_remove_output_streams_for_song_delegates_to_output_repo() -> None:
     db, _, _, output_repo, _, _ = _make_ml_db()
-    output_repo.delete_output_streams_for_song = MagicMock()
+    output_repo.delete_output_streams_for_song = MagicMock(return_value=3)
 
-    db.remove_output_streams_for_song(42)
+    result = db.remove_output_streams_for_song(42)
 
+    assert result == 3
     output_repo.delete_output_streams_for_song.assert_called_once_with(42)
 
 

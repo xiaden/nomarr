@@ -8,6 +8,7 @@ scoped session, and all repository instances, and exposes the ``app``,
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import scoped_session
 
@@ -27,7 +28,13 @@ from nomarr.persistence.database.song_state_repo import SongStateRepository
 from nomarr.persistence.database.song_tag_repo import SongTagRepository
 from nomarr.persistence.database.tag_repo import TagRepository
 from nomarr.persistence.database.vector_repo import VectorRepo
+from nomarr.persistence.mappers.song_tag_mapper import tag_identity_from_row
 from nomarr.persistence.pg_engine import create_pg_engine, session_factory
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+
+    from nomarr.helpers.dataclasses.song_tag_dataclass import TagRef
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +114,6 @@ class Database:
         self.app = AppDb(
             session=self._scoped,
             app_repo=self._app_repo,
-            library_repo=self._library_repo,
             song_state_repo=self._song_state_repo,
             pipeline_repo=self._pipeline_repo,
         )
@@ -117,17 +123,38 @@ class Database:
             folder_repo=self._folder_repo,
             song_state_repo=self._song_state_repo,
             song_hydration_repo=self._song_hydration_repo,
+            # TASK-library-domain-facades-A P3-S3/P3-S5: LibrarySongsDb now
+            # resolves the Library natural key -> storage library_id internally
+            # for folder + library-scoped song intents, so it needs the library
+            # repository. Added additively; the concurrent song-facade hunks
+            # above are preserved.
+            library_repo=self._library_repo,
         )
         tags = LibraryTagsDb(
             session=self._scoped,
             tag_repo=self._tag_repo,
             song_tag_repo=self._song_tag_repo,
+            # Phase 2 (TASK-song-intent-facade-correction-A): LibraryTagsDb now
+            # resolves SongIdentity -> storage song_id internally (library natural
+            # key first), so it needs the song + library repositories. Added
+            # additively to a block the concurrent regions work does not touch
+            # (preserve concurrent hunks).
+            song_repo=self._song_repo,
+            library_repo=self._library_repo,
         )
-        scans = LibraryScansDb(session=self._scoped, scan_repo=self._scan_repo)
+        # TASK-library-domain-facades-A P3-S1: LibraryScansDb now resolves the
+        # Library natural key -> storage library_id internally, so it needs the
+        # library repository.
+        scans = LibraryScansDb(
+            session=self._scoped,
+            scan_repo=self._scan_repo,
+            library_repo=self._library_repo,
+        )
         regions = LibraryRegionsDb(
             session=self._scoped,
             library_repo=self._library_repo,
             song_state_repo=self._song_state_repo,
+            pipeline_repo=self._pipeline_repo,
         )
         self.library = LibraryDb(
             session=self._scoped,
@@ -158,3 +185,34 @@ class Database:
     def set_version(self, version: str) -> None:
         """Update the schema version in the config table."""
         self.app.update_config_option("version", {"value": version})
+
+    # ------------------------------------------------------------------
+    # Tag boundary resolver (P3, song-tag correction)
+    # ------------------------------------------------------------------
+    # Lookup-only root-database conversion for callers that still receive an
+    # opaque external tag ID. Backed by a set-based TagRepository primary-key
+    # read + song_tag_mapper.tag_identity_from_row. Never creates tags; not a
+    # LibraryTagsDb/LibraryDb tag method or forwarder; no tag ID ever passes
+    # into an ordinary tag-facade method.
+
+    def resolve_tag_identity(self, tag_id: int) -> TagRef | None:
+        """Resolve an opaque external tag handle to its domain identity.
+
+        ``None`` when the tag is missing. Lookup-only: never creates tags.
+        """
+        result = self.resolve_tag_identities([tag_id])
+        return result.get(tag_id)
+
+    def resolve_tag_identities(
+        self,
+        tag_ids: Sequence[int],
+    ) -> Mapping[int, TagRef]:
+        """Resolve a batch of opaque external tag handles (set-based).
+
+        One set-based ``TagRepository`` primary-key read; unresolved ids are
+        omitted and empty input yields ``{}``.
+        """
+        if not tag_ids:
+            return {}
+        rows = self._tag_repo.get_tags_by_ids(list(tag_ids))
+        return {int(r["id"]): tag_identity_from_row(r) for r in rows}

@@ -13,6 +13,31 @@ from nomarr.components.navidrome.descriptor_match_comp import (
     build_track_descriptor,
     resolve_seed_descriptor_to_file,
 )
+from nomarr.helpers.dataclasses.song_dataclass import Song
+from nomarr.helpers.dataclasses.song_tag_dataclass import TagRef
+
+
+def _song(song_id: int) -> Song:
+    """Build a minimal domain ``Song`` for facade song-read mocks."""
+    return Song(
+        song_id=song_id,
+        library_id=1,
+        folder_id=None,
+        path=f"/music/{song_id}.flac",
+        normalized_path=f"music/{song_id}.flac",
+        file_size=0,
+        modified_time=0,
+        duration_seconds=201.0,
+        chromaprint=None,
+        needs_tagging=False,
+        is_valid=True,
+        tagged=True,
+        calibration_hash=None,
+        write_claimed_by=None,
+        last_tagged_at=None,
+        scanned_at=None,
+        created_at=0,
+    )
 
 
 def _seed(**overrides: object) -> TrackDescriptor:
@@ -35,8 +60,8 @@ def _seed(**overrides: object) -> TrackDescriptor:
 @pytest.mark.mocked
 def test_resolve_seed_descriptor_uses_targeted_title_query() -> None:
     db = MagicMock()
-    db.library.search_songs_by_tag_pattern = MagicMock(return_value=[{"id": 1}])
-    db.library.search_songs_by_tag.return_value = []
+    db.library.find_songs_with_tag_pattern = MagicMock(return_value=(_song(1),))
+    db.library.find_songs_with_tag.return_value = ()
 
     with patch(
         "nomarr.components.navidrome.descriptor_match_comp.get_songs_by_ids_with_tags",
@@ -58,8 +83,8 @@ def test_resolve_seed_descriptor_uses_targeted_title_query() -> None:
     assert status == ""
     assert resolved == "1"
     mock_get_songs.assert_called_once_with(db, [1])
-    db.library.search_songs_by_tag_pattern.assert_called_once_with("title", "Song A")
-    db.library.search_songs_by_tag.assert_not_called()
+    db.library.find_songs_with_tag_pattern.assert_called_once_with("title", "Song A", limit=None)
+    db.library.find_songs_with_tag.assert_not_called()
 
 
 @pytest.mark.unit
@@ -79,12 +104,12 @@ def test_build_track_descriptor_uses_integer_song_id_as_file_key() -> None:
 @pytest.mark.mocked
 def test_resolve_seed_descriptor_returns_unresolved_when_title_empty() -> None:
     db = MagicMock()
-    db.library.search_songs_by_tag.return_value = [{"id": 7}]
+    db.library.find_songs_with_tag = MagicMock(return_value=(_song(7),))
 
     assert _candidate_file_ids(db, _seed(title="")) == {"7"}
-    db.library.search_songs_by_tag.reset_mock()
+    db.library.find_songs_with_tag.reset_mock()
     resolved, status = resolve_seed_descriptor_to_file(db, _seed(title=""))
 
     assert status == "descriptor_unresolved"
     assert resolved is None
-    db.library.search_songs_by_tag.assert_called_once_with("artist", "Artist A", limit=None)
+    db.library.find_songs_with_tag.assert_called_once_with(TagRef(name="artist", value="Artist A"), limit=None)

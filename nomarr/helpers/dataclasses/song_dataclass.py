@@ -7,8 +7,8 @@ or column names.
 
 Natural domain identity is ``song_id`` — a stable, caller-facing handle for a
 library song (not a storage-internal name). All persistence-owned fields are
-expressed in domain terms; the class carries no ``_id``/``_key``/``_rev`` or
-table/collection references.
+expressed in domain terms; the class carries no storage-internal identifiers
+or table/collection references.
 
 ``to_dict()`` is a transitional projection back to the storage-shaped mapping
 (``id`` key) used by the downstream component layer, which still consumes song
@@ -107,4 +107,13 @@ class Song:
         )
 
 
-__all__ = ["Song"]
+@dataclass(frozen=True, slots=True)
+class SongTagMatch:
+    """A song returned by a tag search with match metadata."""
+
+    song: Song
+    matched_tag: str
+    distance: float
+
+
+__all__ = ["Song", "SongTagMatch"]

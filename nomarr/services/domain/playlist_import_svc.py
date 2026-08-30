@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dataclasses.library_dataclass import Library
     from nomarr.persistence.db import Database
     from nomarr.services.infrastructure.config_svc import ConfigService
 
@@ -46,7 +47,7 @@ class PlaylistImportService:
         self,
         playlist_url: str,
         *,
-        library_id: int | None = None,
+        library: Library | None = None,
     ) -> PlaylistConversionResult:
         """Convert a streaming playlist URL to local M3U playlist.
 
@@ -56,7 +57,8 @@ class PlaylistImportService:
 
         Args:
             playlist_url: Full URL to a Spotify or Deezer playlist
-            library_id: Optional library id to restrict matching scope
+            library: Optional domain ``Library`` (natural identity) to restrict
+                matching scope; when None, matches across every library.
 
         Returns:
             PlaylistConversionResult with:
@@ -71,7 +73,7 @@ class PlaylistImportService:
         return convert_playlist_workflow(
             self._db,
             playlist_url,
-            library_id=library_id,
+            library=library,
             spotify_client_id=self._config_service.get("spotify_client_id"),
             spotify_client_secret=self._config_service.get("spotify_client_secret"),
         )
