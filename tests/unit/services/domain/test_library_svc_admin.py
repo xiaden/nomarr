@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from nomarr.helpers.dataclasses.library_dataclass import Library
+from nomarr.helpers.exceptions import DuplicateEntityError
 from nomarr.services.domain.library_svc.admin import LibraryAdminMixin
 from nomarr.services.domain.library_svc.task_ids import library_task_id, write_tags_task_id
 
@@ -125,6 +126,27 @@ class TestCreateLibrary:
 
 class TestUpdateLibrary:
     """Tests for ``LibraryAdminMixin.update_library``."""
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_update_library_maps_duplicate_name_with_root_path_to_value_error(self) -> None:
+        """A combined root/name update should expose a friendly collision error."""
+        mixin = _ConcreteAdminMixin(MagicMock(), MagicMock())
+        library = _make_library()
+
+        with (
+            patch.object(mixin, "_get_library_or_error", return_value=library),
+            patch(
+                "nomarr.services.domain.library_svc.admin.resolve_library_root",
+                return_value="/music/new",
+            ),
+            patch(
+                "nomarr.services.domain.library_svc.admin.update_library_record",
+                side_effect=DuplicateEntityError("duplicate"),
+            ),
+            pytest.raises(ValueError, match="Library name already exists: Existing"),
+        ):
+            mixin.update_library(library, name="Existing", root_path="new")
 
     @pytest.mark.unit
     @pytest.mark.mocked

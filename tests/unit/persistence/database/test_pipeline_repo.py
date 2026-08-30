@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from itertools import count
+
 import pytest
 from sqlalchemy import insert
 
@@ -9,12 +11,14 @@ from nomarr.persistence.database.pipeline_repo import PipelineRepository
 from nomarr.persistence.models.library import Library
 from nomarr.persistence.models.song import Song
 
+_LIBRARY_NAMES = count(1)
+
 
 def _create_library(session) -> int:
     """Helper: insert a library row and return its id."""
     r = session.execute(
         insert(Library).values(
-            name="Pipeline Lib",
+            name=f"Pipeline Lib {next(_LIBRARY_NAMES)}",
             path="/pipeline/lib",
             library_type="music",
             auto_tag=0,

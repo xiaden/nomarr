@@ -26,6 +26,7 @@ from nomarr.components.library.library_records_comp import (
     update_library_record,
 )
 from nomarr.components.library.update_library_metadata_comp import UpdateLibraryMetadataComp
+from nomarr.helpers.exceptions import DuplicateEntityError
 
 from .task_ids import library_task_id, write_tags_task_id
 
@@ -222,16 +223,19 @@ class LibraryAdminMixin:
             normalized_root_path = resolve_library_root(self.db, self.cfg.library_root, library, root_path)
 
         if normalized_root_path is not None:
-            update_library_record(
-                self.db,
-                library,
-                name=name,
-                root_path=normalized_root_path,
-                is_enabled=is_enabled,
-                watch_mode=watch_mode,
-                file_write_mode=file_write_mode,
-                library_auto_write=library_auto_write,
-            )
+            try:
+                update_library_record(
+                    self.db,
+                    library,
+                    name=name,
+                    root_path=normalized_root_path,
+                    is_enabled=is_enabled,
+                    watch_mode=watch_mode,
+                    file_write_mode=file_write_mode,
+                    library_auto_write=library_auto_write,
+                )
+            except DuplicateEntityError as error:
+                raise ValueError(f"Library name already exists: {name}") from error
         elif (
             name is not None
             or is_enabled is not None

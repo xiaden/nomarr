@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from itertools import count
+
 import numpy as np
 import pytest
 from sqlalchemy import insert, update
@@ -16,13 +18,14 @@ from nomarr.persistence.models.song import Song
 # Embedding dimension must match HALFVEC(1280) in the Embedding model.
 _EMBED_DIM = 1280
 _BACKBONE = "test_backbone"
+_LIBRARY_NAMES = count(1)
 
 
 def _create_library_and_song(session) -> tuple[int, int]:
     """Helper: create a library and a song, return (library_id, song_id)."""
     lib_r = session.execute(
         insert(Library).values(
-            name="Vector Lib",
+            name=f"Vector Lib {next(_LIBRARY_NAMES)}",
             path="/vector/lib",
             library_type="music",
             auto_tag=0,
@@ -379,7 +382,7 @@ class TestVectorRepo:
         # Create a second library + song
         lib_r = pg_session.execute(
             insert(Library).values(
-                name="Truncate Lib 2",
+                name=f"Vector Lib {next(_LIBRARY_NAMES)}",
                 path="/vector/lib/truncate2",
                 library_type="music",
                 auto_tag=0,

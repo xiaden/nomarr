@@ -27,6 +27,7 @@ cover only in isolation:
 
 from __future__ import annotations
 
+from itertools import count
 from typing import TYPE_CHECKING
 
 import pytest
@@ -48,6 +49,8 @@ from nomarr.persistence.models.song import Song
 from nomarr.persistence.models.song_tag import SongTag
 from nomarr.persistence.models.tag import Tag
 
+_LIBRARY_NAMES = count(1)
+
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
@@ -56,7 +59,7 @@ def _create_library_and_song(session, path: str = "/pgint/lib/test.mp3") -> tupl
     """Insert a library + song; return ``(library_id, song_id)``."""
     lib_r = session.execute(
         insert(Library).values(
-            name="PG Int Lib",
+            name=f"PG Int Lib {next(_LIBRARY_NAMES)}",
             path="/pgint/lib",
             library_type="music",
             auto_tag=0,
