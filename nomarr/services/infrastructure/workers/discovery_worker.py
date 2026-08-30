@@ -69,13 +69,23 @@ def _check_idle_pipeline_completion(db: Database, health_pipe: multiprocessing.c
     completed = find_ml_complete_libraries(db, INTERNAL_CALIBRATION_MIN_FILES)
     transitions_fired = 0
     for result in completed:
-        library_id = result["library_id"]
+        library = result["library"]
         tagged_count = result["tagged_count"]
-        # Mark ML axis as complete
-        transition_pipeline_axis(db, library_id, ML_STATE_FIELD, ML_COMPLETE)
-        # If enough files, mark calibration axis as needing work
-        if tagged_count >= INTERNAL_CALIBRATION_MIN_FILES:
-            transition_pipeline_axis(db, library_id, CAL_STATE_FIELD, CAL_NOT_CALIBRATED)
+        try:
+            # Mark ML axis as complete
+            transition_pipeline_axis(db, library, ML_STATE_FIELD, ML_COMPLETE)
+            # If enough files, mark calibration axis as needing work
+            if tagged_count >= INTERNAL_CALIBRATION_MIN_FILES:
+                transition_pipeline_axis(db, library, CAL_STATE_FIELD, CAL_NOT_CALIBRATED)
+        except (LookupError, ValueError) as exc:
+            logger.warning(
+                "Could not complete idle pipeline for library %s (%s): %s",
+                library.name,
+                library.root_path,
+                exc,
+                exc_info=True,
+            )
+            continue
         transitions_fired += 1
     if transitions_fired > 0 and health_pipe is not None:
         try:

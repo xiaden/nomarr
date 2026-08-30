@@ -377,7 +377,7 @@ class TestFindMlCompleteLibraries:
         ):
             result = find_ml_complete_libraries(mock_db, min_files=99)
 
-        assert result == [{"library_id": "lib-42", "tagged_count": 12}]
+        assert result == [{"library": library, "tagged_count": 12}]
         mock_count_untagged_files.assert_called_once_with(mock_db, library)
 
     @pytest.mark.unit
@@ -416,7 +416,7 @@ class TestFindMlCompleteLibraries:
         ):
             result = find_ml_complete_libraries(mock_db, min_files=2)
 
-        assert result == [{"library_id": "lib-42", "tagged_count": 12}]
+        assert result == [{"library": lib42, "tagged_count": 12}]
         assert mock_count_untagged_files.call_args_list == [
             ((mock_db, lib7),),
             ((mock_db, lib42),),
