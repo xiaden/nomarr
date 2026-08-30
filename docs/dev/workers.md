@@ -64,7 +64,7 @@ from functools import partial
 
 from nomarr.helpers import ManagedTask
 
- task = ManagedTask(
+task = ManagedTask(
    task_id="write_tags:<library.name>",
    fn=partial(tagging_service.write_tags_to_files, library),
 )
