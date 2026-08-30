@@ -6,6 +6,7 @@ import logging
 import threading
 from typing import TYPE_CHECKING
 
+from nomarr.components.library.library_records_comp import get_library_record
 from nomarr.components.library.library_scan_state_comp import (
     bulk_transition_pipeline_axis,
     get_libraries_in_axis_state,
@@ -35,7 +36,7 @@ from nomarr.helpers.constants.pipeline_states import (
 )
 from nomarr.helpers.dto.library_dto import LibraryPipelineStatusDTO
 from nomarr.services.domain.calibration_svc import CALIBRATION_GENERATE_TASK_ID, CalibrationService
-from nomarr.services.domain.library_svc.task_ids import library_task_id
+from nomarr.services.domain.library_svc.task_ids import library_task_id, write_tags_task_id
 from nomarr.services.domain.tagging_svc import CALIBRATION_APPLY_TASK_ID, TaggingService
 
 if TYPE_CHECKING:
@@ -265,6 +266,11 @@ class LibraryPipelineService:
         # Find libraries that were calibrating and are now calibrated
         calibrated_libraries = get_libraries_in_axis_state(self.db, CAL_STATE_FIELD, CAL_COMPLETE)
         for library in calibrated_libraries:
+            if get_library_record(self.db, library) is None:
+                # Library deleted while calibration apply was running; skip it
+                # rather than re-dispatching a write task against removed state.
+                logger.info("Library %s deleted during calibration apply; skipping write dispatch", library.name)
+                continue
             state = get_pipeline_state(self.db, library)
             if getattr(state, WRITE_STATE_FIELD) == WRITE_IN_PROGRESS:
                 continue  # Already writing
@@ -328,12 +334,31 @@ class LibraryPipelineService:
 
     def _dispatch_write(self, library: Library) -> None:
         """Dispatch write-tags background work for a single library."""
+        if get_library_record(self.db, library) is None:
+            # Library was deleted after auto-write/apply completed but before
+            # dispatch; refuse to start a write task against removed state.
+            logger.info("Library %s no longer exists; skipping write dispatch", library.name)
+            return
+
         stop_event = threading.Event()
+
+        def on_complete() -> None:
+            try:
+                reconcile_status = self.tagging_svc.get_reconcile_status(library)
+                remaining = reconcile_status.get("pending_count")
+                self.on_write_complete(library, remaining=remaining)
+            except Exception:
+                # A callback failure is a terminal write failure, not a
+                # successful completion. Make the work resumable before BTS
+                # records the callback error.
+                transition_pipeline_axis(self.db, library, WRITE_STATE_FIELD, WRITE_NOT_WRITTEN)
+                raise
+
         try:
             task_id = self.tagging_svc.start_write_tags_background(
                 library,
                 stop_event,
-                on_complete=lambda: self.on_write_complete(library),
+                on_complete=on_complete,
             )
         except ValueError:
             logger.warning("Write-tags task already running for library %s", library.name)
@@ -341,11 +366,30 @@ class LibraryPipelineService:
 
         logger.info("Started write-tags task %s for library %s", task_id, library.name)
 
-    def stop_write(self, library: Library) -> None:
-        """Request graceful cancellation of an in-flight write task."""
+    def stop_write(self, library: Library, timeout: float | None = None) -> None:
+        """Gracefully stop an in-flight write task and wait for it to finish.
+
+        Cooperatively signals the write-tags task to stop and joins its thread
+        so callers can guarantee no tag-write work is still mutating source files
+        when this returns. If the task stopped with pending work (``cancelled``)
+        or failed (``error``), the library's ``tag_write`` axis is reset to
+        ``not_written`` so the work remains resumable.
+
+        Args:
+            library: Library whose write task to stop.
+            timeout: Maximum seconds to wait for the task to finish before giving
+                up. ``None`` waits indefinitely.
+        """
         task_id = self._write_task_id(library)
-        cancelled = self.bts.cancel_task(task_id)
-        logger.info("Requested stop for write-tags task %s: cancelled=%s", task_id, cancelled)
+        finished = self.bts.cancel_and_join(task_id, timeout)
+        if finished:
+            task_status = self.bts.get_task_status(task_id)
+            if task_status is not None and task_status.get("status") in {"cancelled", "error"}:
+                transition_pipeline_axis(self.db, library, WRITE_STATE_FIELD, WRITE_NOT_WRITTEN)
+                logger.info(
+                    "Library %s tag_write axis reset to not_written after %s", library.name, task_status["status"]
+                )
+        logger.info("Stopped write-tags task %s: finished=%s", task_id, finished)
 
     def handle_auto_write_enabled(self, library: Library) -> None:
         """React to auto-write being enabled for a library."""
@@ -355,8 +399,20 @@ class LibraryPipelineService:
         """React to auto-write being disabled for a library."""
         self.stop_write(library)
 
-    def on_write_complete(self, library: Library) -> None:
-        """Mark tag_write axis as complete and trigger Navidrome rescan."""
+    def on_write_complete(self, library: Library, *, remaining: int | None = None) -> None:
+        """Mark tag_write complete only after all pending writes are drained.
+
+        Args:
+            library: Library whose tag writes completed.
+            remaining: Reconciliation count observed by the managed task's
+                completion callback. ``None`` is retained for direct callers
+                that already have an authoritative completion guarantee.
+
+        Raises:
+            RuntimeError: If the completion callback observes pending writes.
+        """
+        if remaining is not None and remaining != 0:
+            raise RuntimeError(f"Cannot complete tag writes for {library.name}: {remaining} files remain")
         transition_pipeline_axis(self.db, library, WRITE_STATE_FIELD, WRITE_COMPLETE)
         logger.info("Library %s tag_write axis transitioned to written", library.name)
         rescan_triggered = self.navidrome_svc.trigger_rescan()
@@ -377,4 +433,4 @@ class LibraryPipelineService:
 
     def _write_task_id(self, library: Library) -> str:
         """Build the BTS task identifier used for tag writing."""
-        return f"write_tags:{library.name}"
+        return write_tags_task_id(library)

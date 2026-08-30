@@ -19,7 +19,7 @@ from urllib.parse import quote
 if TYPE_CHECKING:
     from nomarr.helpers.dataclasses.library_dataclass import Library
 
-__all__ = ["library_task_id"]
+__all__ = ["library_task_id", "write_tags_task_id"]
 
 _PREFIX = "library"
 _DELIMITER = "-"
@@ -45,3 +45,20 @@ def library_task_id(library: Library, operation: str) -> str:
     """
     encoded_name = quote(library.name, safe="")
     return f"{_PREFIX}{_DELIMITER}{operation}{_DELIMITER}{encoded_name}"
+
+
+def write_tags_task_id(library: Library) -> str:
+    """Return the BTS task identifier for a library's tag-write task.
+
+    Matches the identifier produced by ``TaggingService.start_write_tags_background``
+    (``"write_tags:{library.name}"``). Kept as a shared helper so start, status,
+    stop, and deletion all resolve the same task id without reconstructing the
+    string at each call site.
+
+    Args:
+        library: Domain ``Library`` (natural identity) the write task operates on.
+
+    Returns:
+        The tag-write task key string.
+    """
+    return f"write_tags:{library.name}"

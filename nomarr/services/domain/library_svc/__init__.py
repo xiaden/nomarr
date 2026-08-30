@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
+    from nomarr.services.infrastructure.background_tasks_svc import BackgroundTaskService
     from nomarr.services.infrastructure.file_watcher_svc import FileWatcherService
 
 from .admin import LibraryAdminMixin
@@ -59,7 +60,7 @@ class LibraryService(LibraryAdminMixin, LibraryScanMixin, LibraryQueryMixin, Lib
         self,
         cfg: LibraryServiceConfig,
         db: Database,
-        background_tasks: object | None = None,
+        background_tasks: BackgroundTaskService | None = None,
         file_watcher_service: FileWatcherService | None = None,
     ) -> None:
         """Initialize LibraryService.

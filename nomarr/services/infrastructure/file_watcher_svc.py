@@ -441,6 +441,12 @@ class FileWatcherService:
             watcher.join(timeout=5.0)
 
         del self.observers[library_id]
+
+        # Drop any pending debounced changes for this library so a queued
+        # debounce timer cannot re-trigger a scan after the watcher is gone.
+        with self._lock:
+            self.pending_changes = {(lib_id, path) for lib_id, path in self.pending_changes if lib_id != library_id}
+
         logger.info(f"Stopped watching library {library_id}")
 
     def stop_all(self) -> None:

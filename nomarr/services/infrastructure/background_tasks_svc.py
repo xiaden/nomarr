@@ -5,6 +5,7 @@ import threading
 from typing import Any
 
 from nomarr.helpers import ManagedTask
+from nomarr.helpers.exceptions import TaskCancelledError
 
 logger = logging.getLogger(__name__)
 
@@ -29,13 +30,13 @@ class BackgroundTaskService:
         self._lock = threading.Lock()
 
     def _evict_old_results(self) -> None:
-        """Remove oldest completed/errored results when over limit. Must hold lock."""
+        """Remove oldest completed/cancelled/errored results when over limit. Must hold lock."""
         evicted = 0
         while len(self._task_results) > MAX_TASK_RESULTS and self._task_order:
             oldest_id = self._task_order[0]
             result = self._task_results.get(oldest_id)
-            # Only evict completed/errored tasks, never running ones
-            if result and result["status"] in ("complete", "error"):
+            # Only evict terminal tasks, never running ones
+            if result and result["status"] in ("complete", "cancelled", "error"):
                 self._task_order.pop(0)
                 del self._task_results[oldest_id]
                 if oldest_id in self._tasks:
@@ -70,17 +71,15 @@ class BackgroundTaskService:
         def wrapper() -> None:
             try:
                 result = task.fn()
+            except TaskCancelledError as cancelled:
+                logger.info("Task %s cancelled: %s", task_id, cancelled)
                 with self._lock:
                     self._task_results[task_id] = {
-                        "status": "complete",
-                        "result": result,
+                        "status": "cancelled",
+                        "result": cancelled.result,
                         "error": None,
                     }
-                if task.on_complete is not None:
-                    try:
-                        task.on_complete()
-                    except Exception as e:
-                        logger.error("Task %s completion callback failed: %s", task_id, e, exc_info=True)
+                return
             except Exception as e:
                 logger.error(f"Task {task_id} failed: {e}", exc_info=True)
                 with self._lock:
@@ -91,6 +90,29 @@ class BackgroundTaskService:
                     }
                 # Re-raise to crash container (loud failure for alpha)
                 raise
+
+            # A task is only "complete" once its required completion callback
+            # has succeeded. Running the callback first means a failure cannot
+            # publish a false "complete" terminal state.
+            if task.on_complete is not None:
+                try:
+                    task.on_complete()
+                except Exception as e:
+                    logger.error("Task %s completion callback failed: %s", task_id, e, exc_info=True)
+                    with self._lock:
+                        self._task_results[task_id] = {
+                            "status": "error",
+                            "result": result,
+                            "error": f"on_complete failed: {e}",
+                        }
+                    return
+
+            with self._lock:
+                self._task_results[task_id] = {
+                    "status": "complete",
+                    "result": result,
+                    "error": None,
+                }
 
         thread = threading.Thread(target=wrapper)
         thread.daemon = task.daemon
@@ -138,8 +160,39 @@ class BackgroundTaskService:
             managed_task.stop_event.set()
             return True
 
+    def cancel_and_join(self, task_id: str, timeout: float | None = None) -> bool:
+        """Signal a running task to stop and wait for it to finish.
+
+        Cooperatively sets the task's ``stop_event`` and joins its thread so
+        callers can guarantee the task — including its ``on_complete`` callback —
+        has fully finished before continuing (e.g. before deleting the resource
+        the task operates on).
+
+        Args:
+            task_id: Task identifier.
+            timeout: Maximum seconds to wait for the task to finish. ``None``
+                waits indefinitely.
+
+        Returns:
+            True when the task is no longer running (it was never started,
+            already finished, or finished within ``timeout`` after being
+            signalled). False when the task is still running after ``timeout``
+            elapsed.
+
+        """
+        with self._lock:
+            entry = self._tasks.get(task_id)
+            if entry is None:
+                return True
+            thread, managed_task = entry
+            if not thread.is_alive():
+                return True
+            managed_task.stop_event.set()
+        thread.join(timeout)
+        return not thread.is_alive()
+
     def get_task_status(self, task_id: str) -> dict[str, Any] | None:
-        """Get task status (running, complete, error).
+        """Get task status (running, complete, cancelled, error).
 
         Args:
             task_id: Task identifier
@@ -163,7 +216,7 @@ class BackgroundTaskService:
             return list(self._task_order)
 
     def cleanup_completed_tasks(self, max_count: int = 10) -> int:
-        """Remove oldest completed/errored tasks.
+        """Remove oldest completed/cancelled/errored tasks.
 
         Args:
             max_count: Maximum number of tasks to remove per call
@@ -178,7 +231,7 @@ class BackgroundTaskService:
             while removed < max_count and self._task_order:
                 oldest_id = self._task_order[0]
                 result = self._task_results.get(oldest_id)
-                if result and result["status"] in ("complete", "error"):
+                if result and result["status"] in ("complete", "cancelled", "error"):
                     self._task_order.pop(0)
                     del self._task_results[oldest_id]
                     if oldest_id in self._tasks:

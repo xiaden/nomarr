@@ -2,12 +2,11 @@
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING, Annotated, cast
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from nomarr.components.library.library_song_query_comp import get_library_counts
 from nomarr.helpers.dataclasses.library_dataclass import Library
 from nomarr.helpers.logging_helper import sanitize_exception_message
 from nomarr.interfaces.api.auth import verify_session
@@ -55,7 +54,7 @@ async def _resolve_library(library_service, raw_name: str) -> Library:
     library = await asyncio.to_thread(library_service.get_library_by_name, name)
     if library is None:
         raise HTTPException(status_code=404, detail="Library not found")
-    return library
+    return cast("Library", library)
 
 
 class VectorStatsItem(BaseModel):
@@ -112,9 +111,9 @@ async def list_libraries(
     """List all configured libraries."""
     try:
         libraries = await asyncio.to_thread(library_service.list_libraries, enabled_only=enabled_only)
-        # Transport projection: build the name-keyed file/folder counts and
-        # per-library scan status in the interface adapter (P4-S8).
-        counts = await asyncio.to_thread(get_library_counts, library_service.db)
+        # Transport projection: build the name-keyed file/folder counts via the
+        # service (mechanism A) and per-library scan status (P4-S8).
+        counts = await asyncio.to_thread(library_service.get_library_counts)
         scans = {lib.name: await asyncio.to_thread(library_service.get_status, lib) for lib in libraries}
         return ListLibrariesResponse.from_dto(libraries, counts=counts, scans=scans)
     except Exception as e:
@@ -241,6 +240,8 @@ async def delete_library(
         return DeleteLibraryResponse(status="success", message=f"Library {library.name} deleted")
     except ValueError:
         raise HTTPException(status_code=400, detail="Cannot delete library") from None
+    except RuntimeError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from None
     except HTTPException:
         raise
     except Exception as e:

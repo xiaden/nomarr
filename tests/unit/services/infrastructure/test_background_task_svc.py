@@ -7,6 +7,7 @@ import threading
 import pytest
 
 from nomarr.helpers import ManagedTask
+from nomarr.helpers.exceptions import TaskCancelledError
 from nomarr.services.infrastructure.background_tasks_svc import BackgroundTaskService
 
 pytestmark = pytest.mark.unit
@@ -131,11 +132,70 @@ class TestBackgroundTaskService:
         """cancel_task should return False for a task that was never started."""
         assert background_task_service.cancel_task("never-started") is False
 
-    def test_on_complete_fires_after_success_status_is_written(
+    def test_cancel_and_join_waits_for_task_to_finish(
         self,
         background_task_service: BackgroundTaskService,
     ) -> None:
-        """on_complete should run after status is marked complete."""
+        """cancel_and_join should signal the task and wait for it to finish."""
+        task_started = threading.Event()
+        stop_event = threading.Event()
+
+        def task_fn() -> str:
+            task_started.set()
+            stop_event.wait(timeout=1.0)
+            return "stopped"
+
+        managed_task = ManagedTask(task_id="join-task", fn=task_fn, stop_event=stop_event)
+        task_id = background_task_service.start_task(managed_task)
+
+        try:
+            assert task_started.wait(timeout=1.0)
+            assert background_task_service.cancel_and_join(task_id, timeout=1.0) is True
+            assert stop_event.is_set()
+        finally:
+            stop_event.set()
+
+        status = background_task_service.get_task_status(task_id)
+        assert status == {"status": "complete", "result": "stopped", "error": None}
+
+    def test_cancel_and_join_returns_true_for_unknown_task(
+        self,
+        background_task_service: BackgroundTaskService,
+    ) -> None:
+        """cancel_and_join should return True when the task was never started."""
+        assert background_task_service.cancel_and_join("never-started") is True
+
+    def test_cancel_and_join_returns_false_when_task_still_running(
+        self,
+        background_task_service: BackgroundTaskService,
+    ) -> None:
+        """cancel_and_join should return False when the task ignores the signal."""
+        task_started = threading.Event()
+        allow_finish = threading.Event()
+        stop_event = threading.Event()
+
+        def task_fn() -> str:
+            task_started.set()
+            allow_finish.wait(timeout=2.0)
+            return "done"
+
+        managed_task = ManagedTask(task_id="stubborn-task", fn=task_fn, stop_event=stop_event)
+        task_id = background_task_service.start_task(managed_task)
+        thread = background_task_service._tasks[task_id][0]
+
+        try:
+            assert task_started.wait(timeout=1.0)
+            assert background_task_service.cancel_and_join(task_id, timeout=0.1) is False
+            assert stop_event.is_set()
+        finally:
+            allow_finish.set()
+            _join_thread(thread)
+
+    def test_on_complete_fires_before_complete_status_is_published(
+        self,
+        background_task_service: BackgroundTaskService,
+    ) -> None:
+        """on_complete should run before status is marked complete."""
         callback_statuses: list[str] = []
         callback_called = threading.Event()
         task_id = "callback-success"
@@ -157,13 +217,17 @@ class TestBackgroundTaskService:
         _join_thread(thread)
 
         assert callback_called.is_set()
-        assert callback_statuses == ["complete"]
+        # The completion callback runs before "complete" is published, so it
+        # observes the still-"running" status.
+        assert callback_statuses == ["running"]
+        status = background_task_service.get_task_status(task_id)
+        assert status == {"status": "complete", "result": "done", "error": None}
 
-    def test_on_complete_callback_errors_are_swallowed(
+    def test_on_complete_callback_errors_mark_task_error(
         self,
         background_task_service: BackgroundTaskService,
     ) -> None:
-        """Task should still complete when on_complete raises an exception."""
+        """A task whose on_complete raises must not be reported complete."""
         task_id = "callback-raises"
 
         def on_complete() -> None:
@@ -181,9 +245,61 @@ class TestBackgroundTaskService:
 
         status = background_task_service.get_task_status(task_id)
         assert status is not None
-        assert status["status"] == "complete"
+        assert status["status"] == "error"
         assert status["result"] == "done"
-        assert status["error"] is None
+        assert status["error"] == "on_complete failed: cb_boom"
+
+    def test_task_cancelled_records_cancelled_status_and_skips_on_complete(
+        self,
+        background_task_service: BackgroundTaskService,
+    ) -> None:
+        """fn raising TaskCancelled should record 'cancelled' and skip on_complete."""
+        callback_calls: list[str] = []
+        task_id = "task-cancelled"
+
+        def task_fn() -> None:
+            raise TaskCancelledError("cancelled by user", result={"partial": 1})
+
+        managed_task = ManagedTask(
+            task_id=task_id,
+            fn=task_fn,
+            on_complete=lambda: callback_calls.append("called"),
+        )
+        started_task_id = background_task_service.start_task(managed_task)
+        thread = background_task_service._tasks[started_task_id][0]
+        _join_thread(thread)
+
+        assert callback_calls == []
+        status = background_task_service.get_task_status(task_id)
+        assert status == {"status": "cancelled", "result": {"partial": 1}, "error": None}
+
+    def test_cancel_task_produces_cancelled_terminal_status(
+        self,
+        background_task_service: BackgroundTaskService,
+    ) -> None:
+        """A cooperatively-cancelled task should end in 'cancelled', not 'complete'."""
+        task_started = threading.Event()
+        stop_event = threading.Event()
+
+        def task_fn() -> None:
+            task_started.set()
+            stop_event.wait(timeout=1.0)
+            if stop_event.is_set():
+                raise TaskCancelledError("cancelled")
+
+        managed_task = ManagedTask(task_id="cancel-coop", fn=task_fn, stop_event=stop_event)
+        task_id = background_task_service.start_task(managed_task)
+        thread = background_task_service._tasks[task_id][0]
+
+        try:
+            assert task_started.wait(timeout=1.0)
+            assert background_task_service.cancel_task(task_id) is True
+            _join_thread(thread)
+        finally:
+            stop_event.set()
+
+        status = background_task_service.get_task_status(task_id)
+        assert status == {"status": "cancelled", "result": None, "error": None}
 
     @pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
     def test_on_complete_does_not_fire_when_task_errors(
@@ -261,6 +377,21 @@ class TestBackgroundTaskService:
 
 class TestCleanupCompletedTasks:
     """Tests for BackgroundTaskService.cleanup_completed_tasks."""
+
+    def test_removes_cancelled_tasks(
+        self,
+        background_task_service: BackgroundTaskService,
+    ) -> None:
+        """cleanup_completed_tasks should remove cancelled terminal tasks."""
+        managed_task = ManagedTask(
+            task_id="cleanup-cancelled",
+            fn=lambda: (_ for _ in ()).throw(TaskCancelledError("cancelled")),
+        )
+        task_id = background_task_service.start_task(managed_task)
+        _join_thread(background_task_service._tasks[task_id][0])
+
+        assert background_task_service.cleanup_completed_tasks() == 1
+        assert background_task_service.get_task_status(task_id) is None
 
     def test_removes_completed_tasks_up_to_max_count(
         self,

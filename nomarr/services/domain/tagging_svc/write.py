@@ -13,6 +13,8 @@ from nomarr.components.library.reconciliation_comp import (
 )
 from nomarr.helpers import ManagedTask
 from nomarr.helpers.dto.library_dto import WriteTagsResult
+from nomarr.helpers.exceptions import TaskCancelledError
+from nomarr.services.domain.library_svc.task_ids import write_tags_task_id
 from nomarr.workflows.library.file_tags_io_wf import read_file_tags_workflow, remove_file_tags_workflow
 from nomarr.workflows.processing.write_file_tags_wf import write_file_tags_workflow
 
@@ -162,12 +164,18 @@ class TaggingWriteMixin:
         tag writes have been processed (``remaining == 0``) or ``stop_event`` is
         set.
 
+        If the loop is cancelled while files remain pending, it raises
+        ``TaskCancelledError`` so the background task service records the task as
+        ``cancelled`` (never ``complete``) and skips ``on_complete`` — leaving the
+        library's tag-write work resumable rather than falsely reported written.
+
         Args:
             library: Domain ``Library`` (natural identity) to write.
             stop_event: Cooperative cancellation event. The background loop exits
                 when this event is set.
-            on_complete: Optional callback invoked after successful completion
-                when reconciliation finishes with no remaining files.
+            on_complete: Optional callback invoked only after the loop drains all
+                pending writes (``remaining == 0``). It is skipped on
+                cancellation or failure.
 
         Returns:
             Task ID string in the form ``"write_tags:{library.name}"`` returned by
@@ -175,7 +183,7 @@ class TaggingWriteMixin:
             cancellation.
 
         """
-        task_id = f"write_tags:{library.name}"
+        task_id = write_tags_task_id(library)
 
         def _task() -> WriteTagsResult:
             last_result = WriteTagsResult(processed=0, remaining=0, failed=0)
@@ -183,9 +191,13 @@ class TaggingWriteMixin:
                 result = self.write_tags_to_files(library)
                 last_result = result
                 if result.remaining == 0:
-                    break
+                    return last_result
                 stop_event.wait(1.0)
-            return last_result
+            # The loop exited before reconciliation drained. This is cooperative
+            # cancellation with pending work: raise so BTS records "cancelled"
+            # instead of "complete" and does not run on_complete (which would
+            # otherwise mark the write axis written).
+            raise TaskCancelledError("Write cancelled with pending work remaining", result=last_result)
 
         return self._bts.start_task(
             ManagedTask(
@@ -220,7 +232,7 @@ class TaggingWriteMixin:
 
         """
         pending_count = count_files_needing_reconciliation(self.db, library=library)
-        task_status = self._bts.get_task_status(f"write_tags:{library.name}")
+        task_status = self._bts.get_task_status(write_tags_task_id(library))
         in_progress = task_status is not None and task_status["status"] == "running"
         task_result = task_status.get("result") if task_status is not None else None
         failed_count = task_result.failed if isinstance(task_result, WriteTagsResult) else 0

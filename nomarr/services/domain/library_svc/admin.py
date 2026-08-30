@@ -27,12 +27,20 @@ from nomarr.components.library.library_records_comp import (
 )
 from nomarr.components.library.update_library_metadata_comp import UpdateLibraryMetadataComp
 
+from .task_ids import library_task_id, write_tags_task_id
+
 if TYPE_CHECKING:
     from nomarr.helpers.dataclasses.library_dataclass import Library
     from nomarr.persistence.db import Database
+    from nomarr.services.infrastructure.background_tasks_svc import BackgroundTaskService
     from nomarr.services.infrastructure.file_watcher_svc import FileWatcherService
 
     from .config import LibraryServiceConfig
+
+
+# Maximum seconds to wait for library-scoped background tasks (scan, tag-write)
+# to quiesce before rejecting deletion.
+_QUIESCE_TIMEOUT_SECONDS = 60.0
 
 
 class LibraryAdminMixin:
@@ -42,6 +50,7 @@ class LibraryAdminMixin:
     cfg: LibraryServiceConfig
     db: Database
     file_watcher_service: FileWatcherService | None
+    background_tasks: BackgroundTaskService | None
 
     def get_library_by_name(self, name: str) -> Library | None:
         """Resolve a library by its natural name.
@@ -96,10 +105,10 @@ class LibraryAdminMixin:
             enabled_only: Only return enabled libraries.
 
         Returns:
-            List of domain ``Library`` values. Transport projections and the
-            per-library file/folder counts are built by the interface adapter
-            (P4-S8) from the name-keyed ``get_library_counts`` mapping; services
-            no longer construct ``LibraryDict`` or expose generated ids.
+            List of domain ``Library`` values. Transport projections are built
+            by the interface adapter (P4-S8); per-library file/folder counts are
+            exposed via ``LibraryService.get_library_counts`` (mechanism A).
+            Services no longer construct ``LibraryDict`` or expose generated ids.
 
         """
         libraries = list_all_libraries(self.db)
@@ -242,13 +251,22 @@ class LibraryAdminMixin:
         return self.get_library(library)
 
     def delete_library(self, library: Library) -> bool:
-        """Stop file watching for a library and delete it.
+        """Stop all library-scoped work and delete the library.
+
+        Coordinated lifecycle: stops the file watcher, cooperatively cancels and
+        joins the library's scan and tag-write background tasks, verifies
+        quiescence, then removes the library's persistence state. Rejects
+        deletion if any library-scoped task refuses to quiesce.
 
         Args:
             library: Domain ``Library`` (natural identity) to delete.
 
         Returns:
             True if the library was deleted, False if it was not found.
+
+        Raises:
+            RuntimeError: If library-scoped work cannot be quiesced within the
+                configured timeout.
 
         Note:
             The watcher service keys observers by ``str``; the natural
@@ -259,7 +277,38 @@ class LibraryAdminMixin:
         """
         if self.file_watcher_service is not None and library.name in self.file_watcher_service.observers:
             self.file_watcher_service.stop_watching_library(library.name)
+
+        self._quiesce_library_tasks(library)
+
         return delete_library(db=self.db, library=library)
+
+    def _quiesce_library_tasks(self, library: Library) -> None:
+        """Cancel and join all library-scoped background tasks.
+
+        Signals and joins the library's scan and tag-write tasks, then verifies
+        both have fully stopped (including their completion callbacks) before
+        returning.
+
+        Raises:
+            RuntimeError: If a task is still running after the quiescence timeout.
+
+        """
+        if self.background_tasks is None:
+            return
+        background_tasks = self.background_tasks
+
+        scan_task_id = library_task_id(library, "scan")
+        write_task_id = write_tags_task_id(library)
+
+        scan_finished = background_tasks.cancel_and_join(scan_task_id, _QUIESCE_TIMEOUT_SECONDS)
+        write_finished = background_tasks.cancel_and_join(write_task_id, _QUIESCE_TIMEOUT_SECONDS)
+
+        if not scan_finished:
+            msg = f"Cannot delete library {library.name!r}: scan task is still running"
+            raise RuntimeError(msg)
+        if not write_finished:
+            msg = f"Cannot delete library {library.name!r}: tag-write task is still running"
+            raise RuntimeError(msg)
 
     def update_library_metadata(
         self,

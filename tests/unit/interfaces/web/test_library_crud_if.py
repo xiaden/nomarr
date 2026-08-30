@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi import FastAPI
@@ -128,14 +128,12 @@ class TestLibraryCrudEndpoints:
     ) -> None:
         """GET collection should return the wrapped library list with natural-name ids."""
         mock_library_service.list_libraries.return_value = [make_library()]
-        # The interface adapter builds the name-keyed counts and per-library scan
-        # status; a missing status projects to None.
+        # The service exposes the name-keyed counts (mechanism A); the interface
+        # adapter builds the per-library scan status (a missing status projects
+        # to None).
+        mock_library_service.get_library_counts.return_value = {"Test Library": {"file_count": 12, "folder_count": 3}}
         mock_library_service.get_status.return_value = None
-        with patch(
-            "nomarr.interfaces.api.web.library_if.get_library_counts",
-            return_value={"Test Library": {"file_count": 12, "folder_count": 3}},
-        ):
-            response = client.get("/api/web/library")
+        response = client.get("/api/web/library")
 
         assert response.status_code == 200
         assert response.json() == {
@@ -274,6 +272,22 @@ class TestLibraryCrudEndpoints:
         assert response.status_code == 404
         assert response.json() == {"detail": "Library not found"}
         mock_library_service.delete_library.assert_called_once_with(make_library())
+
+    def test_delete_library_returns_409_when_quiescence_fails(
+        self,
+        client: TestClient,
+        mock_library_service: MagicMock,
+    ) -> None:
+        """DELETE should return 409 when deletion is rejected due to active work."""
+        library = make_library()
+        mock_library_service.get_library_by_name.return_value = library
+        mock_library_service.delete_library.side_effect = RuntimeError("scan task is still running")
+
+        response = client.delete("/api/web/library/Test%20Library")
+
+        assert response.status_code == 409
+        assert response.json() == {"detail": "scan task is still running"}
+        mock_library_service.delete_library.assert_called_once_with(library)
 
     # Per-library vector config endpoints removed per ADR-036/037
     # vector_group_size is now global-only, managed via general config
