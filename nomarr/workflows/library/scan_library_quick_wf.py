@@ -44,6 +44,7 @@ from nomarr.helpers.constants.file_states import (
     STATE_SCANNED,
 )
 from nomarr.helpers.constants.pipeline_states import SCAN_NOT_SCANNED, SCAN_STATE_FIELD
+from nomarr.helpers.exceptions import TaskCancelledError
 from nomarr.helpers.time_helper import internal_s, now_ms
 from nomarr.workflows.metadata.cleanup_orphaned_entities_wf import cleanup_orphaned_entities_workflow
 
@@ -56,7 +57,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class ScanCancelledError(Exception):
+class ScanCancelledError(TaskCancelledError):
     """Raised when a cooperative scan cancellation is requested."""
 
 
