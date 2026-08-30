@@ -81,7 +81,7 @@ class TestClaimFilesForReconciliation:
                 "nomarr.components.library.reconciliation_comp.get_stale_song_ids",
                 return_value=[123],
             ),
-            patch.object(mock_db.app, "list_songs_in_state", return_value=[]),
+            patch.object(mock_db.app, "song_ids_with_state", return_value=[]),
             patch(
                 "nomarr.components.library.reconciliation_comp.now_ms",
                 return_value=Milliseconds(10_000),
@@ -115,7 +115,7 @@ class TestClaimFilesForReconciliation:
 
         with (
             patch("nomarr.components.library.reconciliation_comp.get_stale_song_ids", return_value=[]),
-            patch.object(mock_db.app, "list_songs_in_state", return_value=[123]),
+            patch.object(mock_db.app, "song_ids_with_state", return_value=[123]),
             patch("nomarr.components.library.reconciliation_comp.now_ms", return_value=Milliseconds(10_000)),
             patch("nomarr.components.library.reconciliation_comp.try_insert_or_steal_claim", return_value=True),
         ):
@@ -136,7 +136,7 @@ class TestClaimFilesForReconciliation:
                 "nomarr.components.library.reconciliation_comp.get_stale_song_ids",
                 return_value=stale_ids,
             ),
-            patch.object(mock_db.app, "list_songs_in_state", return_value=[]),
+            patch.object(mock_db.app, "song_ids_with_state", return_value=[]),
             patch(
                 "nomarr.components.library.reconciliation_comp.now_ms",
                 return_value=Milliseconds(20_000),
@@ -259,7 +259,7 @@ class TestSetFileWritten:
     def test_normalizes_bare_key_to_full_id(self) -> None:
         mock_db = MagicMock()
 
-        mock_db.app.get_song_states.return_value = {STATE_TAGS_NOT_FRESH}
+        mock_db.app.song_state_membership.return_value = {STATE_TAGS_NOT_FRESH}
         with patch("nomarr.components.library.reconciliation_comp.transition_song_state") as mock_transition:
             set_file_written(mock_db, 123, "worker:reconcile:0")
 
@@ -288,7 +288,7 @@ class TestSetFileWritten:
     @pytest.mark.mocked
     def test_transitions_tag_state_edges(self) -> None:
         mock_db = MagicMock()
-        mock_db.app.get_song_states.return_value = {STATE_TAGS_NOT_FRESH}
+        mock_db.app.song_state_membership.return_value = {STATE_TAGS_NOT_FRESH}
 
         with patch("nomarr.components.library.reconciliation_comp.transition_song_state") as mock_transition:
             set_file_written(mock_db, 123, "worker:reconcile:0")
@@ -359,7 +359,7 @@ class TestCountFilesNeedingReconciliation:
                     102,
                 ],
             ),
-            patch.object(mock_db.app, "list_songs_in_state", return_value=[]),
+            patch.object(mock_db.app, "song_ids_with_state", return_value=[]),
         ):
             result = count_files_needing_reconciliation(mock_db, _library())
 
@@ -375,7 +375,7 @@ class TestCountFilesNeedingReconciliation:
                 "nomarr.components.library.reconciliation_comp.get_stale_song_ids",
                 return_value=[],
             ),
-            patch.object(mock_db.app, "list_songs_in_state", return_value=[]),
+            patch.object(mock_db.app, "song_ids_with_state", return_value=[]),
         ):
             result = count_files_needing_reconciliation(mock_db, _library())
 
@@ -389,7 +389,7 @@ class TestCountFilesNeedingReconciliation:
 
         with (
             patch("nomarr.components.library.reconciliation_comp.get_stale_song_ids", return_value=[]),
-            patch.object(mock_db.app, "list_songs_in_state", return_value=[100]),
+            patch.object(mock_db.app, "song_ids_with_state", return_value=[100]),
         ):
             result = count_files_needing_reconciliation(mock_db, _library())
 

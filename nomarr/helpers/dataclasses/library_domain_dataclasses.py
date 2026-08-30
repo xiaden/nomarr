@@ -6,8 +6,12 @@ from dataclasses import dataclass
 from typing import Literal
 
 from nomarr.helpers.constants.pipeline_states import (
+    CAL_AXIS,
+    ML_AXIS,
     PIPELINE_AXIS_FIELDS,
     PIPELINE_DEFAULTS,
+    SCAN_AXIS,
+    WRITE_AXIS,
 )
 
 WatchMode = Literal["off", "event", "poll"]
@@ -37,10 +41,10 @@ class LibraryUpdate:
 class LibraryPipelineState:
     """The four user-visible processing states for a library."""
 
-    scan_state: str
-    ml_state: str
-    calibration_state: str
-    tag_write_state: str
+    scan_state: str = PIPELINE_DEFAULTS["scan_state"]
+    ml_state: str = PIPELINE_DEFAULTS["ml_state"]
+    calibration_state: str = PIPELINE_DEFAULTS["calibration_state"]
+    tag_write_state: str = PIPELINE_DEFAULTS["tag_write_state"]
 
     @classmethod
     def defaults(cls) -> LibraryPipelineState:
@@ -49,6 +53,13 @@ class LibraryPipelineState:
     @classmethod
     def from_mapping(cls, values: dict[str, str]) -> LibraryPipelineState:
         return cls(*(values.get(axis, PIPELINE_DEFAULTS[axis]) for axis in PIPELINE_AXIS_FIELDS))
+
+    def __post_init__(self) -> None:
+        valid_values = dict(zip(PIPELINE_AXIS_FIELDS, (SCAN_AXIS, ML_AXIS, CAL_AXIS, WRITE_AXIS), strict=True))
+        for axis, values in valid_values.items():
+            value = getattr(self, axis)
+            if value not in values:
+                raise ValueError(f"Invalid {axis}: {value}")
 
     def to_state_mapping(self) -> dict[str, str]:
         return {axis: getattr(self, axis) for axis in PIPELINE_AXIS_FIELDS}
@@ -75,8 +86,8 @@ class LibraryScan:
     """Latest scan summary for a domain library."""
 
     scan_type: str
-    status: str
-    started_at: int
+    status: str = "in_progress"
+    started_at: int = 0
     heartbeat_at: int | None = None
     finished_at: int | None = None
     files_found: int = 0

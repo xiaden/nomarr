@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any
-
-from collections.abc import Mapping
+from typing import TYPE_CHECKING, Any
 
 from nomarr.helpers.dataclasses.library_dataclass import Library
 from nomarr.helpers.dataclasses.library_domain_dataclasses import LibraryScan, LibraryUpdate
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 
 def library_from_row(row: Mapping[str, Any]) -> Library:

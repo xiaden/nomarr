@@ -98,20 +98,15 @@ class TestBootstrapFileStateEdges:
 
     @pytest.mark.unit
     def test_ml_tagged_type_creates_edge_via_transition(self) -> None:
+        """A ``ml_tagged`` bootstrap transitions the song out of not-processed."""
         mock_db = MagicMock()
-        mock_db.library.list_song_docs_in_state.side_effect = lambda state: list(
-            [{"id": 123}] if state == STATE_NOT_PROCESSED else []
-        )
-        mock_db.app.get_song_states_for_songs.return_value = {}
-        bootstraps = [
-            {"normalized_path": "/music/song.mp3", "type": "ml_tagged"},
-        ]
+        bootstraps = [{"normalized_path": "/music/song.mp3", "type": "ml_tagged"}]
         file_id_by_path = {"/music/song.mp3": 123}
+
         result = bootstrap_file_state_edges(mock_db, bootstraps, file_id_by_path)
+
         assert result == 1
-        mock_db.app.remove_song_state.assert_called_once_with([123], STATE_NOT_PROCESSED)
-        mock_db.app.remove_song_states.assert_not_called()
-        mock_db.app.add_song_states.assert_called_once_with([123], STATE_PROCESSED)
+        mock_db.app.transition_song_states.assert_called_once_with([123], STATE_NOT_PROCESSED, STATE_PROCESSED)
 
     @pytest.mark.unit
     def test_unknown_bootstrap_type_is_skipped(self) -> None:
@@ -327,14 +322,15 @@ class TestScanStateHelpers:
     def test_get_scan_state_returns_scan_doc_directly_without_repair(self) -> None:
         mock_db = MagicMock()
         library = _library()
-        mock_db.library.get_scan.return_value = LibraryScan(scan_type="quick", status="idle")
+        scan = LibraryScan(scan_type="quick", status="idle", started_at=0)
+        mock_db.library.get_scan.return_value = scan
 
         result = get_scan_state(mock_db, library)
 
         mock_db.library.get_scan.assert_called_once_with(library)
         mock_db.library.remove_scan.assert_not_called()
         mock_db.library.add_scan.assert_not_called()
-        assert result == LibraryScan(scan_type="quick", status="idle")
+        assert result == scan
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -381,7 +377,12 @@ class TestScanStateHelpers:
     def test_is_scan_stale_uses_recent_heartbeat(self) -> None:
         mock_db = MagicMock()
         library = _library()
-        mock_db.library.get_pipeline_state.return_value = LibraryPipelineState(scan_state=SCAN_IN_PROGRESS)
+        mock_db.library.get_pipeline_state.return_value = LibraryPipelineState(
+            scan_state=SCAN_IN_PROGRESS,
+            ml_state=ML_NOT_PROCESSED,
+            calibration_state=CAL_NOT_CALIBRATED,
+            tag_write_state=WRITE_NOT_WRITTEN,
+        )
         mock_db.library.get_scan.return_value = LibraryScan(
             scan_type="quick",
             status="in_progress",
@@ -398,7 +399,12 @@ class TestScanStateHelpers:
     def test_is_scan_stale_falls_back_to_started_at(self) -> None:
         mock_db = MagicMock()
         library = _library()
-        mock_db.library.get_pipeline_state.return_value = LibraryPipelineState(scan_state=SCAN_IN_PROGRESS)
+        mock_db.library.get_pipeline_state.return_value = LibraryPipelineState(
+            scan_state=SCAN_IN_PROGRESS,
+            ml_state=ML_NOT_PROCESSED,
+            calibration_state=CAL_NOT_CALIBRATED,
+            tag_write_state=WRITE_NOT_WRITTEN,
+        )
         mock_db.library.get_scan.return_value = LibraryScan(
             scan_type="quick",
             status="in_progress",
@@ -414,7 +420,7 @@ class TestScanStateHelpers:
     def test_check_interrupted_scan_delegates_to_database_facade(self) -> None:
         mock_db = MagicMock()
         library = _library()
-        mock_db.library.get_scan.return_value = LibraryScan(scan_type="quick", status="in_progress")
+        mock_db.library.get_scan.return_value = LibraryScan(scan_type="quick", status="in_progress", started_at=0)
 
         assert check_interrupted_scan(mock_db, library) == (True, "quick")
         mock_db.library.get_scan.assert_called_once_with(library)
@@ -585,7 +591,12 @@ class TestOnScanCompletePipelineHook:
         mock_db = MagicMock()
         library = _library()
         mock_db.library.list_library_song_ids.return_value = ["file1", "file2"]
-        mock_db.library.get_pipeline_state.return_value = LibraryPipelineState(ml_state=ML_NOT_PROCESSED)
+        mock_db.library.get_pipeline_state.return_value = LibraryPipelineState(
+            scan_state="scanned",
+            ml_state=ML_NOT_PROCESSED,
+            calibration_state=CAL_NOT_CALIBRATED,
+            tag_write_state=WRITE_NOT_WRITTEN,
+        )
 
         with patch(
             "nomarr.components.library.scan_lifecycle_comp.transition_pipeline_axis"
@@ -603,7 +614,12 @@ class TestOnScanCompletePipelineHook:
         mock_db = MagicMock()
         library = _library()
         mock_db.library.list_library_song_ids.return_value = []
-        mock_db.library.get_pipeline_state.return_value = LibraryPipelineState(ml_state=ML_IN_PROGRESS)
+        mock_db.library.get_pipeline_state.return_value = LibraryPipelineState(
+            scan_state="scanned",
+            ml_state=ML_IN_PROGRESS,
+            calibration_state=CAL_NOT_CALIBRATED,
+            tag_write_state=WRITE_NOT_WRITTEN,
+        )
 
         with patch(
             "nomarr.components.library.scan_lifecycle_comp.transition_pipeline_axis"
