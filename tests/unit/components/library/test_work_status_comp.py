@@ -229,3 +229,51 @@ class TestComputeWorkStatus:
             pipeline_states={"Rock Library": _make_pipeline_state(scan="scanning")},
         )
         assert result.is_busy is True
+
+    @pytest.mark.unit
+    def test_is_busy_when_ml_processing_active(self) -> None:
+        """is_busy is True when ML processing is actively in progress."""
+        libraries = [_make_library(name="Rock Library", library_auto_write=False)]
+        result = compute_work_status(
+            libraries=libraries,
+            stats=_make_stats(total=100, needs_tagging=0),
+            recently_tagged_count=0,
+            pipeline_states={"Rock Library": _make_pipeline_state(ml="ML_processing")},
+        )
+        assert result.is_busy is True
+
+    @pytest.mark.unit
+    def test_is_busy_when_calibrating(self) -> None:
+        """is_busy is True when calibration is actively in progress."""
+        libraries = [_make_library(name="Rock Library", library_auto_write=False)]
+        result = compute_work_status(
+            libraries=libraries,
+            stats=_make_stats(total=100, needs_tagging=0),
+            recently_tagged_count=0,
+            pipeline_states={"Rock Library": _make_pipeline_state(cal="calibrating")},
+        )
+        assert result.is_busy is True
+
+    @pytest.mark.unit
+    def test_is_busy_when_writing(self) -> None:
+        """is_busy is True when tag writing is actively in progress."""
+        libraries = [_make_library(name="Rock Library", library_auto_write=False)]
+        result = compute_work_status(
+            libraries=libraries,
+            stats=_make_stats(total=100, needs_tagging=0),
+            recently_tagged_count=0,
+            pipeline_states={"Rock Library": _make_pipeline_state(tw="writing")},
+        )
+        assert result.is_busy is True
+
+    @pytest.mark.unit
+    def test_is_busy_false_when_all_axes_terminal(self) -> None:
+        """is_busy is False when every pipeline axis is terminal and nothing is pending."""
+        libraries = [_make_library(name="Rock Library", library_auto_write=False)]
+        result = compute_work_status(
+            libraries=libraries,
+            stats=_make_stats(total=100, needs_tagging=0),
+            recently_tagged_count=0,
+            pipeline_states={"Rock Library": _make_pipeline_state()},
+        )
+        assert result.is_busy is False

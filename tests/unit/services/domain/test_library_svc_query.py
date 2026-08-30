@@ -337,3 +337,88 @@ class TestGetWorkStatus:
             result = mixin.get_work_status()
 
         assert result.pipeline_libraries == []
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        ("axis_field", "axis_value", "expected_state"),
+        [
+            ("scan_state", "scanning", "scanning"),
+            ("ml_state", "ML_processing", "ml_running"),
+            ("calibration_state", "calibrating", "calibrating"),
+            ("tag_write_state", "writing", "writing"),
+        ],
+    )
+    def test_active_pole_propagates_and_marks_busy(
+        self,
+        axis_field: str,
+        axis_value: str,
+        expected_state: str,
+    ) -> None:
+        """Any single active (in-progress) pole propagates and yields busy semantics."""
+        mock_db = MagicMock()
+        mock_db.app.get_file_query_stats = MagicMock(return_value={})
+        mock_db.library.count_recently_tagged = MagicMock(return_value=0)
+        mixin = _ConcreteQueryMixin(mock_db)
+
+        def _state_side_effect(_db: MagicMock, current_axis: str, current_value: str) -> list[Library]:
+            if current_axis == axis_field and current_value == axis_value:
+                return [_make_library(name="Rock Library")]
+            return []
+
+        with (
+            patch(
+                "nomarr.services.domain.library_svc.query.list_library_records",
+                return_value=[self._make_library_doc()],
+            ),
+            patch.object(
+                LibraryQueryMixin,
+                "get_library_stats",
+                return_value=self._make_stats(),
+            ),
+            patch(
+                "nomarr.services.domain.library_svc.query.get_libraries_in_axis_state",
+                side_effect=_state_side_effect,
+            ),
+        ):
+            result = mixin.get_work_status()
+
+        assert len(result.pipeline_libraries) == 1
+        assert result.pipeline_libraries[0].state == expected_state
+        assert result.is_busy is True
+
+    @pytest.mark.unit
+    def test_axis_in_progress_states_propagate(self) -> None:
+        """In-progress calibration and write poles reach pipeline states (not terminal)."""
+        mock_db = MagicMock()
+        mock_db.app.get_file_query_stats = MagicMock(return_value={})
+        mock_db.library.count_recently_tagged = MagicMock(return_value=0)
+        mixin = _ConcreteQueryMixin(mock_db)
+
+        def _state_side_effect(_db: MagicMock, axis_field: str, axis_value: str) -> list[Library]:
+            if axis_field == "calibration_state" and axis_value == "calibrating":
+                return [_make_library(name="Rock Library")]
+            if axis_field == "tag_write_state" and axis_value == "writing":
+                return [_make_library(name="Rock Library")]
+            return []
+
+        with (
+            patch(
+                "nomarr.services.domain.library_svc.query.list_library_records",
+                return_value=[self._make_library_doc()],
+            ),
+            patch.object(
+                LibraryQueryMixin,
+                "get_library_stats",
+                return_value=self._make_stats(),
+            ),
+            patch(
+                "nomarr.services.domain.library_svc.query.get_libraries_in_axis_state",
+                side_effect=_state_side_effect,
+            ),
+        ):
+            result = mixin.get_work_status()
+
+        assert len(result.pipeline_libraries) == 1
+        # _derive_pipeline_state reports the first incomplete axis: calibrating.
+        assert result.pipeline_libraries[0].state == "calibrating"
+        assert result.is_busy is True

@@ -48,15 +48,16 @@ export interface WorkStatus {
   files_per_minute: number;
   estimated_minutes_remaining: number | null;
 
-  // Overall activity indicator
+  // Overall activity indicator — true while any pipeline stage is active
+  // (scan, ML processing, calibration, or tag writing) or files are pending.
   is_busy: boolean;
 }
 
 /**
  * Get unified work status for the system.
  *
- * Returns status of scanning, ML processing, and overall activity.
- * Use this for polling - poll at 1s when busy, 30s when idle.
+ * Returns status of scanning, ML processing, calibration, tag writing, and
+ * overall activity. Use this for polling - poll fast when busy, slow when idle.
  */
 export async function getWorkStatus(): Promise<WorkStatus> {
   return get<WorkStatus>("/api/web/machine-learning/work-status");

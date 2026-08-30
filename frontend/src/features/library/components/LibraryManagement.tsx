@@ -206,7 +206,7 @@ export function LibraryManagement() {
 
         setPipelineLibraries(status.pipeline_libraries ?? []);
 
-        // If busy (scanning or processing), poll with silent refresh
+        // If busy (any pipeline stage active), poll with silent refresh
         if (status.is_busy) {
           if (!interval) {
             // Use 500ms for smoother updates during active work

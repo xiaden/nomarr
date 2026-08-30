@@ -6,21 +6,22 @@ processing velocity, and ETA.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING
 
+from nomarr.helpers.constants.pipeline_states import (
+    CAL_IN_PROGRESS,
+    CAL_STATE_FIELD,
+    ML_IN_PROGRESS,
+    ML_STATE_FIELD,
+    SCAN_IN_PROGRESS,
+    SCAN_STATE_FIELD,
+    WRITE_IN_PROGRESS,
+    WRITE_STATE_FIELD,
+)
 from nomarr.helpers.dto.info_dto import LibraryPipelineInfo, ScanningLibraryInfo, WorkStatusResult
 
 if TYPE_CHECKING:
     from nomarr.helpers.dto.library_dto import LibraryDict, LibraryStatsResult
-
-
-class _LibrarySnapshot(TypedDict):
-    """Shape of a library document consumed by ``compute_work_status``."""
-
-    name: str
-    scan_status: str | None
-    scan_progress: int | None
-    scan_total: int | None
 
 
 def compute_work_status(
@@ -37,7 +38,8 @@ def compute_work_status(
         libraries: All library domain objects (with scan_status, scan_progress, etc.)
         stats: Aggregated library stats (total_files, needs_tagging_count, etc.)
         recently_tagged_count: Number of files tagged in the velocity window.
-        pipeline_states: Per-library pipeline states (``{lib_id: {state_fields}}``).
+        pipeline_states: Per-library pipeline states keyed by natural library name
+            (``{library_name: {state_fields}}``).
         velocity_window_seconds: Window size for velocity calculation (default 5 min).
         library_docs: Alternative library docs used for pipeline_libraries building.
 
@@ -66,6 +68,22 @@ def compute_work_status(
     pipeline_libraries: list[LibraryPipelineInfo] = []
     pipeline_source = library_docs if library_docs is not None else libraries
     pipeline_states = pipeline_states or {}
+
+    # Active (in-progress) pole per axis. Any library in one of these poles
+    # means user-visible work is underway (scan, ML inference, calibration, or
+    # tag writing), so the frontend must keep fast-polling (ASR-0006).
+    _active_axis_poles = {
+        SCAN_STATE_FIELD: SCAN_IN_PROGRESS,
+        ML_STATE_FIELD: ML_IN_PROGRESS,
+        CAL_STATE_FIELD: CAL_IN_PROGRESS,
+        WRITE_STATE_FIELD: WRITE_IN_PROGRESS,
+    }
+    has_active_work = any(
+        lib_state.get(axis) == pole
+        for lib_state in pipeline_states.values()
+        for axis, pole in _active_axis_poles.items()
+    )
+
     for lib in pipeline_source:
         lib_name = lib.name
         lib_state = pipeline_states.get(lib_name, {})
@@ -100,7 +118,7 @@ def compute_work_status(
         total_files=stats.total_files,
         files_per_minute=files_per_minute,
         estimated_minutes_remaining=estimated_minutes_remaining,
-        is_busy=is_scanning or is_processing,
+        is_busy=is_scanning or is_processing or has_active_work,
     )
 
 

@@ -974,10 +974,6 @@ class HealthComp:
     pass  # Health check component class
 
 
-class _LibrarySnapshot:
-    pass  # Internal snapshot class
-
-
 # ---------------------------------------------------------------------------
 # 13. Additional TypedDict fields and dataclass attributes
 # ---------------------------------------------------------------------------

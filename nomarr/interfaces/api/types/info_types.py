@@ -232,7 +232,10 @@ class WorkStatusResponse(BaseModel):
     estimated_minutes_remaining: float | None = Field(None, description="Estimated minutes to finish pending files")
 
     # Overall activity indicator
-    is_busy: bool = Field(..., description="System is doing any work (scanning or processing)")
+    is_busy: bool = Field(
+        ...,
+        description="System is doing work: scanning, ML processing, calibration, or tag writing is active (or files are pending)",
+    )
 
     @classmethod
     def from_dto(cls, dto: WorkStatusResult) -> WorkStatusResponse:

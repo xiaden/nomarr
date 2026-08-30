@@ -152,5 +152,6 @@ class WorkStatusResult:
     files_per_minute: float
     estimated_minutes_remaining: float | None
 
-    # Overall activity indicator
+    # Overall activity indicator — True while any pipeline stage is active
+    # (scanning, ML processing, calibration, or tag writing) or work is pending.
     is_busy: bool

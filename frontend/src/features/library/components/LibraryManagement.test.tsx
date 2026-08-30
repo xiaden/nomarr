@@ -269,6 +269,43 @@ describe("LibraryManagement", () => {
     });
   });
 
+  it.each(["calibrating", "writing"])(
+    "keeps fast polling active while %s pipeline state is busy",
+    async (pipelineState: string) => {
+      vi.useFakeTimers();
+
+      const busyStatus = {
+        ...workStatusFixture,
+        is_busy: true,
+        pipeline_libraries: [
+          {
+            library_id: "library name",
+            name: "library name",
+            state: pipelineState,
+            library_auto_write: false,
+          },
+        ],
+      };
+      vi.mocked(getWorkStatus).mockResolvedValue(busyStatus);
+
+      renderWithProviders(<LibraryManagement />);
+
+      // Initial work-status check: is_busy true => fast polling interval starts.
+      await vi.advanceTimersByTimeAsync(0);
+
+      const callsBeforePollingCycle = vi.mocked(list).mock.calls.length;
+
+      // Two 500ms fast-polling cycles: each should trigger a silent list refresh.
+      await vi.advanceTimersByTimeAsync(1000);
+
+      expect(vi.mocked(list).mock.calls.length).toBeGreaterThan(
+        callsBeforePollingCycle,
+      );
+
+      vi.useRealTimers();
+    },
+  );
+
   it("renders the dashboard pipeline section with library badges", async () => {
     vi.mocked(getWorkStatus).mockResolvedValue(workStatusFixture);
 

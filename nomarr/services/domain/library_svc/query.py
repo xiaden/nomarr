@@ -39,13 +39,20 @@ from nomarr.components.library.work_status_comp import compute_work_status
 from nomarr.components.tagging.tag_query_comp import get_unique_mood_values
 from nomarr.components.tagging.tag_stats_comp import get_unique_names
 from nomarr.helpers.constants.pipeline_states import (
+    CAL_COMPLETE,
+    CAL_IN_PROGRESS,
     CAL_NOT_CALIBRATED,
     CAL_STATE_FIELD,
+    ML_COMPLETE,
+    ML_IN_PROGRESS,
     ML_NOT_PROCESSED,
     ML_STATE_FIELD,
+    SCAN_COMPLETE,
     SCAN_IN_PROGRESS,
     SCAN_NOT_SCANNED,
     SCAN_STATE_FIELD,
+    WRITE_COMPLETE,
+    WRITE_IN_PROGRESS,
     WRITE_NOT_WRITTEN,
     WRITE_STATE_FIELD,
 )
@@ -65,6 +72,30 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
     from .config import LibraryServiceConfig
+
+
+def _resolve_axis_state(
+    name: str,
+    in_progress_names: set[str],
+    not_started_names: set[str],
+    *,
+    in_progress: str,
+    not_started: str,
+    complete: str,
+) -> str:
+    """Resolve one pipeline axis to its persisted three-pole state.
+
+    A library in the axis's ``in_progress`` pole (scanning / ML_processing /
+    calibrating / writing) stays visible as active rather than being collapsed
+    to a terminal pole. ``complete`` is the fallback for libraries whose axis
+    row is genuinely terminal. Absent rows are folded by persistence into the
+    axis's not-started default, so those libraries resolve to ``not_started``.
+    """
+    if name in in_progress_names:
+        return in_progress
+    if name in not_started_names:
+        return not_started
+    return complete
 
 
 class LibraryQueryMixin:
@@ -252,12 +283,15 @@ class LibraryQueryMixin:
         Returns status of:
         - Scanning: Any library currently being scanned
         - Processing: ML inference on audio files (pending/processed counts)
+        - Calibration and tag writing: Active pipeline stages for any library
         - Velocity: Rolling 5-minute processing rate from actual timestamps
 
-        This method is designed for frontend polling to show activity indicators.
+        ``is_busy`` is true while scanning, ML processing, calibration, or tag
+        writing is active, or while files remain pending. This method is
+        designed for frontend polling to show activity indicators.
 
         Returns:
-            WorkStatusResult DTO with scanning and processing status
+            WorkStatusResult DTO with pipeline, scanning, processing, and velocity status
 
         """
         libraries = list_library_records(self.db, enabled_only=False)
@@ -265,28 +299,58 @@ class LibraryQueryMixin:
         recently_tagged = count_recently_tagged(self.db)
 
         # Build per-axis pipeline states for all libraries, keyed by natural name.
-        scan_not_names = {lib.name for lib in get_libraries_in_axis_state(self.db, SCAN_STATE_FIELD, SCAN_NOT_SCANNED)}
+        # Each axis resolves to its full three-pole state (not_started /
+        # in_progress / complete) so active calibration, ML, and write work
+        # stays visible instead of being collapsed to a terminal pole.
         scan_ing_names = {lib.name for lib in get_libraries_in_axis_state(self.db, SCAN_STATE_FIELD, SCAN_IN_PROGRESS)}
-        ml_names = {lib.name for lib in get_libraries_in_axis_state(self.db, ML_STATE_FIELD, ML_NOT_PROCESSED)}
-        cal_names = {lib.name for lib in get_libraries_in_axis_state(self.db, CAL_STATE_FIELD, CAL_NOT_CALIBRATED)}
-        tw_names = {lib.name for lib in get_libraries_in_axis_state(self.db, WRITE_STATE_FIELD, WRITE_NOT_WRITTEN)}
+        scan_not_names = {lib.name for lib in get_libraries_in_axis_state(self.db, SCAN_STATE_FIELD, SCAN_NOT_SCANNED)}
+        ml_ing_names = {lib.name for lib in get_libraries_in_axis_state(self.db, ML_STATE_FIELD, ML_IN_PROGRESS)}
+        ml_not_names = {lib.name for lib in get_libraries_in_axis_state(self.db, ML_STATE_FIELD, ML_NOT_PROCESSED)}
+        cal_ing_names = {lib.name for lib in get_libraries_in_axis_state(self.db, CAL_STATE_FIELD, CAL_IN_PROGRESS)}
+        cal_not_names = {lib.name for lib in get_libraries_in_axis_state(self.db, CAL_STATE_FIELD, CAL_NOT_CALIBRATED)}
+        write_ing_names = {
+            lib.name for lib in get_libraries_in_axis_state(self.db, WRITE_STATE_FIELD, WRITE_IN_PROGRESS)
+        }
+        write_not_names = {
+            lib.name for lib in get_libraries_in_axis_state(self.db, WRITE_STATE_FIELD, WRITE_NOT_WRITTEN)
+        }
 
         pipeline_states: dict[str, dict[str, str]] = {}
         for lib in libraries:
             name = lib.name
-
-            if name in scan_ing_names:
-                scan_state = SCAN_IN_PROGRESS
-            elif name in scan_not_names:
-                scan_state = SCAN_NOT_SCANNED
-            else:
-                scan_state = "scanned"
-
             pipeline_states[name] = {
-                SCAN_STATE_FIELD: scan_state,
-                ML_STATE_FIELD: "not_ML_processed" if name in ml_names else "ML_processed",
-                CAL_STATE_FIELD: "not_calibrated" if name in cal_names else "calibrated",
-                WRITE_STATE_FIELD: "not_written" if name in tw_names else "written",
+                SCAN_STATE_FIELD: _resolve_axis_state(
+                    name,
+                    scan_ing_names,
+                    scan_not_names,
+                    in_progress=SCAN_IN_PROGRESS,
+                    not_started=SCAN_NOT_SCANNED,
+                    complete=SCAN_COMPLETE,
+                ),
+                ML_STATE_FIELD: _resolve_axis_state(
+                    name,
+                    ml_ing_names,
+                    ml_not_names,
+                    in_progress=ML_IN_PROGRESS,
+                    not_started=ML_NOT_PROCESSED,
+                    complete=ML_COMPLETE,
+                ),
+                CAL_STATE_FIELD: _resolve_axis_state(
+                    name,
+                    cal_ing_names,
+                    cal_not_names,
+                    in_progress=CAL_IN_PROGRESS,
+                    not_started=CAL_NOT_CALIBRATED,
+                    complete=CAL_COMPLETE,
+                ),
+                WRITE_STATE_FIELD: _resolve_axis_state(
+                    name,
+                    write_ing_names,
+                    write_not_names,
+                    in_progress=WRITE_IN_PROGRESS,
+                    not_started=WRITE_NOT_WRITTEN,
+                    complete=WRITE_COMPLETE,
+                ),
             }
 
         return compute_work_status(
