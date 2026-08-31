@@ -68,10 +68,13 @@ class TestProcessFile:
         with (
             patch("nomarr.components.infrastructure.path_comp.build_library_path_from_input", return_value=path_mock),
             patch("nomarr.components.library.metadata_extraction_comp.extract_metadata", return_value=metadata),
-            patch("nomarr.components.tagging.tag_parsing_comp.parse_tag_values", return_value={"mood": ["chill"]}),
+            patch(
+                "nomarr.components.tagging.tag_parsing_comp.parse_tag_values",
+                return_value={"mood": ["chill"]},
+            ),
             patch(
                 "nomarr.components.metadata.entity_seeding_comp.extract_entity_tag_mapping",
-                return_value={"genre": ["rock"]},
+                return_value={"genre": ["rock"], "title": ["Xtal"]},
             ),
             patch(
                 "nomarr.components.metadata.metadata_cache_comp.compute_metadata_cache_fields",
@@ -87,7 +90,7 @@ class TestProcessFile:
         assert input_arg.song_id == 1
         # parsed_nom_tags are namespace-prefixed.
         assert input_arg.parsed_nom_tags == {"nom:mood": ["chill"]}
-        assert input_arg.entity_tags == {"genre": ["rock"]}
+        assert input_arg.entity_tags == {"genre": ["rock"], "title": ["Xtal"]}
         assert input_arg.metadata_cache == {"artist": "The Test"}
         assert input_arg.duration_seconds == 245.5
 

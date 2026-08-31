@@ -1,6 +1,6 @@
 """Entity seeding component - derive entities from raw metadata tags.
 
-Derives entity/tag relationship mappings (artist, artists, album, label,
+Derives entity/tag relationship mappings (artist, artists, album, title, label,
 genre, year) from raw extraction metadata for callers that need
 pre-prepared entity tags — e.g. the hydration intent via
 :func:`extract_entity_tag_mapping`, and manual sync workflows.  This module
@@ -11,7 +11,7 @@ from typing import Any
 
 from nomarr.helpers.dataclasses.song_tag_dataclass import SongTagAssignment
 
-_ENTITY_TAG_KEYS = ("artist", "artists", "album", "label", "genre", "year")
+_ENTITY_TAG_KEYS = ("artist", "artists", "album", "title", "label", "genre", "year")
 
 
 def _extract_entity_tags(metadata: dict[str, Any]) -> dict[str, Any]:
@@ -30,11 +30,11 @@ def _extract_entity_tags(metadata: dict[str, Any]) -> dict[str, Any]:
 def _build_song_tag_entries(song_id: int, tags: dict[str, Any]) -> list[dict[str, Any]]:
     """Build song-tag entries from raw entity tags.
 
-    Returns a list with zero or one entry.  Each entry has ``"song_id"``
+    Returns a list with zero or one entry. Each entry has ``"song_id"``
     and ``"tags"`` keys, where ``"tags"`` is a list of flat
     ``{name, value}`` payloads derived from the entity tag mappings:
-    artist (primary) + artists (multi), album, label, genre, and year
-    (coerced to int).
+    artist (primary) + artists (multi), album, title, label, genre, and
+    year (coerced to int).
 
     Returns an empty list when the raw tags contain no entity fields.
 
@@ -68,6 +68,12 @@ def _build_song_tag_entries(song_id: int, tags: dict[str, Any]) -> list[dict[str
     if album_raw:
         album_str = album_raw[0] if isinstance(album_raw, list) else album_raw
         tag_payloads.append({"name": "album", "value": album_str})
+
+    # — title (singular) —
+    title_raw = tags.get("title")
+    if title_raw:
+        title_str = title_raw[0] if isinstance(title_raw, list) else title_raw
+        tag_payloads.append({"name": "title", "value": title_str})
 
     # — label (multi) —
     label_raw = tags.get("label")
@@ -113,8 +119,9 @@ def extract_entity_tag_mapping(metadata: dict[str, Any]) -> dict[str, list[str |
 
     Produces the shape expected by the hydration intent's ``entity_tags``
     member (``Mapping[str, Sequence[str | int | float]]``): keys are entity tag
-    names (artist, artists, album, label, genre, year) and values are the
-    corresponding lists of tag values.  Reuses the canonical entity-tag
+    names (artist, artists, album, title, label, genre, year) and values are
+    the corresponding lists of tag values. Includes the canonical title tag
+    used by read-side metadata hydration. Reuses the canonical entity-tag
     derivation from :func:`_build_song_tag_entries`; does not touch the DB.
 
     Returns an empty dict when the metadata carries no entity fields.

@@ -18,6 +18,7 @@ class TestExtractEntityTagMapping:
             "artist": "Canonical Artist",
             "artists": ["Canonical Artist", "Guest Artist"],
             "album": "Selected Ambient Works",
+            "title": "Xtal",
             "label": "Warp",
             "genre": ["Ambient", "Drone"],
             "year": 1994,
@@ -28,6 +29,7 @@ class TestExtractEntityTagMapping:
         assert mapping["artist"] == ["Canonical Artist"]
         assert mapping["artists"] == ["Canonical Artist", "Guest Artist"]
         assert mapping["album"] == ["Selected Ambient Works"]
+        assert mapping["title"] == ["Xtal"]
         assert mapping["label"] == ["Warp"]
         assert mapping["genre"] == ["Ambient", "Drone"]
         assert mapping["year"] == [1994]
@@ -46,8 +48,9 @@ class TestExtractEntityTagMapping:
 
         mapping = extract_entity_tag_mapping(metadata)
 
-        # ``artist`` derives ``artists`` too, but title/bpm/key are dropped.
-        assert set(mapping.keys()) == {"artist", "artists", "genre"}
+        # ``artist`` derives ``artists`` too, while unrelated fields are dropped.
+        assert set(mapping.keys()) == {"artist", "artists", "title", "genre"}
+        assert mapping["title"] == ["Some Title"]
         assert mapping["artist"] == ["Artist"]
         assert mapping["artists"] == ["Artist"]
         assert mapping["genre"] == ["Rock"]

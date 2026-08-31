@@ -152,6 +152,14 @@ class TestHydrateSong:
         row = pg_session.execute(select(Song.__table__).where(Song.__table__.c.id == song_id)).fetchone()
         assert row.duration_seconds == 200.0
 
+    def test_hydrate_song_persists_canonical_title_tag(self, pg_session) -> None:
+        SongStateRepository(pg_session).bootstrap_states([])
+        _, song_id = _create_library_and_song(pg_session)
+
+        _build_repo(pg_session).hydrate_song(_make_input(song_id, entity_tags={"title": ["Xtal"]}))
+
+        assert ("title", "Xtal") in _song_tags(pg_session, song_id)
+
     def test_hydrate_song_duration_is_one_shot(self, pg_session) -> None:
         SongStateRepository(pg_session).bootstrap_states([])
         _, song_id = _create_library_and_song(pg_session)
