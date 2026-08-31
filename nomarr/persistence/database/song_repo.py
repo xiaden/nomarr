@@ -12,6 +12,7 @@ from sqlalchemy import Table, and_, case, delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from nomarr.helpers.dto.repo_dto import SongRow
+from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence.models.song import Song
 from nomarr.persistence.models.song_tag import SongTag
 from nomarr.persistence.sql.exceptions import map_persistence_exceptions
@@ -65,6 +66,7 @@ class SongRepository:
         """Insert a new song row and return its ``id``."""
         with map_persistence_exceptions():
             with self._session.begin_nested():
+                payload = {**payload, "created_at": payload.get("created_at", now_ms().value)}
                 row = insert_one(_T, payload, session=self._session)
             self._session.commit()
             return int(row._mapping["id"])
@@ -111,6 +113,7 @@ class SongRepository:
         """Insert or update a song, keyed on ``(library_id, path)`` unique constraint."""
         with map_persistence_exceptions():
             with self._session.begin_nested():
+                payload = {**payload, "created_at": payload.get("created_at", now_ms().value)}
                 stmt = (
                     pg_insert(_T)
                     .values(**payload)
@@ -138,7 +141,10 @@ class SongRepository:
             if not payloads:
                 return []
             with self._session.begin_nested():
-                rows_data = [{**p, "library_id": library_id} for p in payloads]
+                created_at = now_ms().value
+                rows_data = [
+                    {**p, "library_id": library_id, "created_at": p.get("created_at", created_at)} for p in payloads
+                ]
                 columns = set().union(*(row.keys() for row in rows_data))
                 rows_data = [{column: row.get(column) for column in columns} for row in rows_data]
                 insert_stmt = pg_insert(_T).values(rows_data)
