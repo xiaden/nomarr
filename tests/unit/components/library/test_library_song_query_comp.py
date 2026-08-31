@@ -435,7 +435,7 @@ def test_get_tagged_file_paths_reads_processed_songs_from_app_facade() -> None:
 
     assert result == ["D:/Music/a.flac", "D:/Music/b.flac"]
 
-    db.app.songs_with_state.assert_called_once_with(STATE_PROCESSED, limit=DEFAULT_LIMIT)
+    db.app.songs_with_state.assert_called_once_with(STATE_PROCESSED, limit=None)
 
 
 @pytest.mark.unit
@@ -892,7 +892,7 @@ def test_search_songs_with_tags_filters_and_hydrates_page() -> None:
     ]
     db.library.list_tags.assert_called_once_with(name="genre", limit=None)
     db.library.find_songs_with_tag.assert_called_once_with(TagRef(name="genre", value="rock"), limit=None)
-    db.app.song_ids_with_state.assert_called_once_with(STATE_PROCESSED, limit=DEFAULT_LIMIT)
+    db.app.song_ids_with_state.assert_called_once_with(STATE_PROCESSED, limit=None)
     db.library.list_songs_by_ids.assert_called_once_with([1])
     db.library.list_song_tags_for_songs.assert_called_once_with([identity])
 
@@ -1115,3 +1115,61 @@ def test_find_move_candidate_by_chromaprint_passes_library_domain_object() -> No
     assert result == candidate.to_dict()
 
     db.library.find_library_song_by_chromaprint.assert_called_once_with(library, "abc123")
+
+
+@pytest.mark.unit
+def test_search_songs_with_tags_unfiltered_paginates_beyond_default_limit() -> None:
+    """Broad searches include songs after the former 1,000-song cap."""
+    db = make_db()
+    songs = [
+        _song(song_id=song_id, path=f"D:/Music/s{song_id}.flac", normalized_path=f"s{song_id}.flac")
+        for song_id in range(DEFAULT_LIMIT + 1)
+    ]
+    db.library.list_libraries.return_value = [{"id": 1}]
+    db.library.list_songs.return_value = songs
+
+    with (
+        patch(
+            "nomarr.components.library.library_song_query_comp.hydrate_songs_with_metadata",
+            side_effect=lambda _db, docs: docs,
+        ),
+        patch(
+            "nomarr.components.library.library_song_query_comp._hydrate_files_with_tags",
+            side_effect=lambda _db, docs: docs,
+        ),
+    ):
+        rows, total = search_songs_with_tags(db, limit=1, offset=DEFAULT_LIMIT)
+
+    assert rows == [songs[-1].to_dict()]
+    assert total == DEFAULT_LIMIT + 1
+    db.library.list_songs.assert_called_once_with({"id": 1}, limit=None)
+
+
+@pytest.mark.unit
+def test_search_songs_with_tags_tagged_only_paginates_beyond_default_limit() -> None:
+    """Tagged-only searches use every processed song id, not only the first 1,000."""
+    db = make_db()
+    song_ids = list(range(DEFAULT_LIMIT + 1))
+    songs = [
+        _song(song_id=song_id, path=f"D:/Music/s{song_id}.flac", normalized_path=f"s{song_id}.flac")
+        for song_id in song_ids
+    ]
+    db.app.song_ids_with_state.return_value = song_ids
+    db.library.list_songs_by_ids.return_value = songs
+
+    with (
+        patch(
+            "nomarr.components.library.library_song_query_comp.hydrate_songs_with_metadata",
+            side_effect=lambda _db, docs: docs,
+        ),
+        patch(
+            "nomarr.components.library.library_song_query_comp._hydrate_files_with_tags",
+            side_effect=lambda _db, docs: docs,
+        ),
+    ):
+        rows, total = search_songs_with_tags(db, tagged_only=True, limit=1, offset=DEFAULT_LIMIT)
+
+    assert rows == [songs[-1].to_dict()]
+    assert total == DEFAULT_LIMIT + 1
+    db.app.song_ids_with_state.assert_called_once_with(STATE_PROCESSED, limit=None)
+    db.library.list_songs_by_ids.assert_called_once_with(song_ids)

@@ -130,12 +130,12 @@ def _get_songs_by_ids(db: Database, song_ids: list[int]) -> list[dict[str, Any]]
     return [song.to_dict() for song in db.library.list_songs_by_ids(song_ids)]
 
 
-def _get_all_library_songs(db: Database, limit: int | None = DEFAULT_LIMIT) -> list[dict[str, Any]]:
+def _get_all_library_songs(db: Database, limit: int | None = None) -> list[dict[str, Any]]:
     """Return songs across all libraries, optionally capped after aggregation.
 
     The intent-level facade has no global ``list_songs`` (song listing requires a
-    ``library_id``), so the full listing is assembled by iterating the
-    known libraries and collecting every song before applying the global cap.
+    ``library_id``), so the full listing is assembled by iterating the known
+    libraries and collecting every song before applying an optional cap.
     """
     songs: list[dict[str, Any]] = []
     for library in db.library.list_libraries():
@@ -352,7 +352,7 @@ def list_songs(
 
 def get_tagged_file_paths(db: Database) -> list[str]:
     """Return absolute paths for songs currently in the processed state."""
-    tagged_songs = db.app.songs_with_state(STATE_PROCESSED, limit=DEFAULT_LIMIT)
+    tagged_songs = db.app.songs_with_state(STATE_PROCESSED, limit=None)
     return [song.path for song in tagged_songs if isinstance(song.path, str)]
 
 
@@ -419,12 +419,12 @@ def search_songs_with_tags(
         _intersect(tag_matched)
 
     if tagged_only:
-        tagged_ids = set(db.app.song_ids_with_state(STATE_PROCESSED, limit=DEFAULT_LIMIT))
+        tagged_ids = set(db.app.song_ids_with_state(STATE_PROCESSED, limit=None))
         _intersect(tagged_ids)
 
     if candidate_ids is None:
-        # No filters active — load all songs up to the hard cap.
-        file_docs = _get_all_library_songs(db, DEFAULT_LIMIT)
+        # No filters active — load the complete universe before pagination.
+        file_docs = _get_all_library_songs(db, limit=None)
     elif not candidate_ids:
         return [], 0
     else:
