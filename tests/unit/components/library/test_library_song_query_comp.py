@@ -719,7 +719,7 @@ def test_get_tracks_for_matching_filters_valid_files_and_projects_isrc() -> None
 
     db.library.resolve_song_identities.return_value = {1: identity}
 
-    db.library.list_song_tags_for_songs.return_value = {identity: (SongTagAssignment(name="isrc", value="ABC123"),)}
+    db.library.list_song_tags_for_songs.return_value = {identity: (SongTagAssignment(name="nom:isrc", value="ABC123"),)}
 
     metadata = {1: {"title": "Song", "artist": "Artist", "album": "Album"}}
 
@@ -758,7 +758,7 @@ def test_get_tracks_for_matching_scopes_to_library_and_projects_isrc() -> None:
 
     db.library.resolve_song_identities.return_value = {1: identity}
 
-    db.library.list_song_tags_for_songs.return_value = {identity: (SongTagAssignment(name="isrc", value="XYZ789"),)}
+    db.library.list_song_tags_for_songs.return_value = {identity: (SongTagAssignment(name="nom:isrc", value="XYZ789"),)}
 
     metadata = {1: {"title": "Song", "artist": "Artist", "album": "Album"}}
 

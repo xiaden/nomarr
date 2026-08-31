@@ -773,7 +773,7 @@ def get_tracks_for_matching(db: Database, library: Library | None = None) -> lis
     tags_by_identity = db.library.list_song_tags_for_songs(list(identity_map.values())) if identity_map else {}
     isrc_by_file = {
         song_id: next(
-            (assignment.value for assignment in assignments if assignment.name == "isrc"),
+            (assignment.value for assignment in assignments if assignment.name == "nom:isrc"),
             None,
         )
         for identity, assignments in tags_by_identity.items()
