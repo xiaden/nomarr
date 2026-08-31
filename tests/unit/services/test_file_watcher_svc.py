@@ -9,6 +9,7 @@ Tests verify:
 
 import threading
 import time
+from dataclasses import replace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -28,8 +29,15 @@ def _library_name(value) -> str:
 
 
 def _mock_get_library_watch_config(mock_db, library):
-    """Return watch config from the fixture-backed mock database."""
-    return mock_db.library.get_library(library)
+    """Return the watch projection for a domain library from the mock database."""
+    resolved = mock_db.library.get_library(library)
+    if resolved is None:
+        return None
+    return {
+        "root_path": resolved.root_path,
+        "watch_mode": resolved.watch_mode,
+        "is_enabled": resolved.is_enabled,
+    }
 
 
 @pytest.fixture
@@ -62,13 +70,12 @@ def mock_db(temp_library):
                 if name in self.libraries:
                     return self.libraries[name]
 
-                # Default library (for backward compat with existing tests)
-                return {
-                    "name": name,
-                    "root_path": str(self.library_root),
-                    "is_enabled": True,
-                    "watch_mode": "off",  # Default to 'off'
-                }
+                return Library(
+                    name=name,
+                    root_path=str(self.library_root),
+                    is_enabled=True,
+                    watch_mode="off",
+                )
 
             def update_library(self, library_id, **kwargs):
                 """Update library document (mock implementation)."""
@@ -77,9 +84,7 @@ def mock_db(temp_library):
                     # Initialize if doesn't exist
                     self.libraries[name] = self.get_library(name)
 
-                # Apply updates
-                for key, value in kwargs.items():
-                    self.libraries[name][key] = value
+                self.libraries[name] = replace(self.libraries[name], **kwargs)
 
         def __init__(self):
             self.library = self.LibrariesOps(temp_library)
@@ -451,7 +456,7 @@ class TestPerLibraryWatchMode:
 
         # Verify database was updated
         library = mock_db.library.get_library("Test Library")
-        assert library["watch_mode"] == "event"
+        assert library.watch_mode == "event"
 
         # Cleanup
         watcher.stop_watching_library("Test Library")
@@ -492,7 +497,7 @@ class TestPerLibraryWatchMode:
 
         # Verify database was updated
         library = mock_db.library.get_library("Test Library")
-        assert library["watch_mode"] == "poll"
+        assert library.watch_mode == "poll"
 
         # Cleanup
         watcher.stop_watching_library("Test Library")
@@ -532,7 +537,7 @@ class TestPerLibraryWatchMode:
 
         # Verify database was updated
         library = mock_db.library.get_library("Test Library")
-        assert library["watch_mode"] == "off"
+        assert library.watch_mode == "off"
 
     def test_switch_watch_mode_idempotent(self, mock_db, mock_library_service, temp_library):
         """Switching to same mode multiple times should be idempotent."""
@@ -692,12 +697,12 @@ class TestPerLibraryWatchMode:
         mock_db.library.update_library("Test Library", watch_mode="event")
 
         # Create library with poll mode
-        mock_db.library.libraries["Test Library 2"] = {
-            "name": "Test Library 2",
-            "root_path": str(temp_library),
-            "is_enabled": True,
-            "watch_mode": "poll",
-        }
+        mock_db.library.libraries["Test Library 2"] = Library(
+            name="Test Library 2",
+            root_path=str(temp_library),
+            is_enabled=True,
+            watch_mode="poll",
+        )
 
         watcher = FileWatcherService(
             db=mock_db,
