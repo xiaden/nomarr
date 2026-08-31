@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging as _logging
 import time
-from pathlib import Path as _Path
+from typing import TYPE_CHECKING
 from typing import Any as _Any
 
 import numpy as _np
@@ -19,6 +19,9 @@ from scripts.embedding_research.config import path_to_meta as _path_to_meta
 from scripts.embedding_research.config import song_id as _song_id
 from scripts.embedding_research.db import song_exists as _song_exists
 from scripts.embedding_research.db import upsert_song as _upsert_song
+
+if TYPE_CHECKING:
+    from pathlib import Path as _Path
 
 _log = _logging.getLogger(__name__)
 

@@ -71,8 +71,8 @@ def test_gp_segment_fn_medoid_returns_observed_patch() -> None:
 
 def test_global_pool_medoid_identity_is_backbone_scoped() -> None:
     """EffNet and MusicNN each get their own independently keyed medoid."""
-    effnet = f"global_pool:effnet:medoid"
-    musicnn = f"global_pool:musicnn:medoid"
+    effnet = "global_pool:effnet:medoid"
+    musicnn = "global_pool:musicnn:medoid"
     assert effnet != musicnn
     assert effnet.startswith("global_pool:effnet:")
     assert musicnn.startswith("global_pool:musicnn:")
@@ -84,9 +84,10 @@ def test_medoid_cache_identity_is_backbone_scoped(tmp_path, monkeypatch) -> None
     effnet = flat_vecs._vec_path("s1", "effnet", "medoid")
     musicnn = flat_vecs._vec_path("s1", "musicnn", "medoid")
     assert effnet != musicnn
-    assert effnet.parents[1].name == "effnet"
-    assert musicnn.parents[1].name == "musicnn"
-    assert effnet.parents[2].name == "medoid"
+    assert effnet.parents[2].name == "effnet"
+    assert musicnn.parents[2].name == "musicnn"
+    assert effnet.parents[1].name == "medoid"
+    assert effnet.parents[0].name == "flat"
     assert effnet.name == "s1.npy"
 
 
@@ -100,3 +101,47 @@ def test_pool_medoid_never_mixes_backbones() -> None:
 
     assert any(np.array_equal(e_medoid, row) for row in effnet)
     assert any(np.array_equal(m_medoid, row) for row in musicnn)
+
+
+def test_configured_flat_strategies_preserved_when_medoid_present() -> None:
+    """An explicit strategy config keeps every requested strategy, medoid included.
+
+    segment_fn produces a correct, independently keyed result for each configured
+    flat strategy — configuring medoid does not drop mean/median/max_norm.
+    """
+    patches = np.random.rand(5, 8).astype(np.float32)
+    for strategy_name in ("mean", "median", "max_norm", "medoid"):
+        result = segment_fn(patches, backbone="bb", strategy_name=strategy_name)
+        assert set(result) == {strategy_name}
+        pooled = result[strategy_name]
+        assert pooled.ndim == 1
+        assert pooled.shape == (8,)
+        assert pooled.dtype == np.float32
+
+
+def test_medoid_cache_write_load_roundtrip_is_backbone_scoped(tmp_path, monkeypatch) -> None:
+    """EffNet and MusicNN medoids write/load to distinct cache paths and survive a roundtrip.
+
+    Each backbone's medoid is saved under its own {backbone}/medoid/flat path and
+    loaded back as the identical observed patch — proving the independent keyed
+    identity is honoured end-to-end through cache/flat_vecs.py.
+    """
+    monkeypatch.setattr(flat_vecs, "_CACHE_ROOT", tmp_path / "cache")
+
+    eff_patches = np.array([[1.0, 0.0, 0.0], [0.8, 0.6, 0.0]], dtype=np.float32)
+    mus_patches = np.array([[0.0, 1.0, 0.0], [0.0, 0.8, 0.6]], dtype=np.float32)
+
+    e = segment_fn(eff_patches, backbone="effnet", strategy_name="medoid")["medoid"]
+    m = segment_fn(mus_patches, backbone="musicnn", strategy_name="medoid")["medoid"]
+
+    flat_vecs.save_pooled("s1", "effnet", "medoid", e)
+    flat_vecs.save_pooled("s1", "musicnn", "medoid", m)
+
+    loaded_e = flat_vecs.load_pooled("s1", "effnet", "medoid")
+    loaded_m = flat_vecs.load_pooled("s1", "musicnn", "medoid")
+
+    np.testing.assert_array_equal(loaded_e, e)
+    np.testing.assert_array_equal(loaded_m, m)
+    assert any(np.array_equal(e, row) for row in eff_patches)
+    assert any(np.array_equal(m, row) for row in mus_patches)
+    assert flat_vecs._vec_path("s1", "effnet", "medoid") != flat_vecs._vec_path("s1", "musicnn", "medoid")

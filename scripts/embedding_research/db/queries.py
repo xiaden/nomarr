@@ -1,7 +1,7 @@
 """Progress-check query helpers — return sets of already-completed work tuples.
 
 Note: flat pooled vector status is no longer tracked in DuckDB. Use
-``strategy_flat._cache.list_done_sids()`` / ``list_configs()`` instead.
+``cache.flat_vecs.list_done_sids()`` / ``list_configs()`` instead.
 """
 
 from __future__ import annotations

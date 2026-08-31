@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import duckdb
 import pytest
 
 from scripts.embedding_research.db._schema import ensure_schema
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.fixture

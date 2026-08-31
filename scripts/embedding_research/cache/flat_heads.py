@@ -14,13 +14,16 @@ from __future__ import annotations
 
 import contextlib
 import logging
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as _np
 
 from scripts.embedding_research.config import OUTPUT_ROOT as _OUTPUT_ROOT
 from scripts.embedding_research.helpers.cache_utils import build_done_set as _build_done_set
 from scripts.embedding_research.helpers.cache_utils import missing_sids as _missing_sids
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 _log = logging.getLogger(__name__)
 

@@ -33,8 +33,8 @@ import csv
 import hashlib
 import logging
 import random
-from collections.abc import Callable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -54,6 +54,9 @@ from scripts.embedding_research.strategy_binned._process import (
     compute_retrieval_rows,
 )
 from scripts.embedding_research.vector_types import RawTensor, UnitTensor
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 _log = logging.getLogger(__name__)
 
@@ -438,11 +441,11 @@ def optimize_std_threshold(
     k:
         k for retrieval metrics.
     objective:
-        Disc metric to maximize: ``disc_artist``, ``disc_album``,
-        ``disc_genre``, or ``disc_general``.
+        Disc metric to maximize: ``disc_artist``, ``disc_genre``,
+        or ``disc_general``.
     search_range:
         ``(low, high)`` bounds for dist_thresh search (cosine distance in
-        [0, 2]; typical useful range 0.1–1.2).
+        [0, 2]; typical useful range 0.1-1.2).
     subsample_size:
         Number of songs to evaluate on (random sample).
     tolerance:

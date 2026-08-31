@@ -20,13 +20,16 @@ The DB table ``binned_ctp_vecs`` has been removed; this module replaces it.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from scripts.embedding_research.config import OUTPUT_ROOT as _OUTPUT_ROOT
 from scripts.embedding_research.helpers.binning import cache_semantics_tag as _cache_semantics_tag
 from scripts.embedding_research.helpers.binning import threshold_key as _threshold_key
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 _log = logging.getLogger(__name__)
 

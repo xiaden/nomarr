@@ -119,10 +119,10 @@ def stratify_songs(songs: list[dict], limit: int | None) -> list[dict]:
     key is used when present to guarantee ≥2 songs per genre as well.
 
     Selection passes (in priority order):
-      Pass 1 – guarantee ≥2 songs per artist       (essential for disc_artist)
-      Pass 2 – guarantee ≥2 songs per album        (essential for disc_album)
-      Pass 3 – guarantee ≥2 songs per genre        (only when genre != 'unknown')
-      Pass 4 – fill remaining capacity round-robin by artist/album interleave
+      Pass 1 - guarantee ≥2 songs per artist       (essential for disc_artist)
+      Pass 2 - guarantee ≥2 songs per album        (ensures album metadata coverage)
+      Pass 3 - guarantee ≥2 songs per genre        (only when genre != 'unknown')
+      Pass 4 - fill remaining capacity round-robin by artist/album interleave
 
     Within each pass songs are picked in sorted order so results are
     deterministic across runs.

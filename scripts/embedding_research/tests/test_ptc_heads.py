@@ -7,12 +7,15 @@ Covers:
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
 
 from scripts.embedding_research.classify import _compute_ptc_head_acts_for_bins
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # ---------------------------------------------------------------------------
 # _compute_ptc_head_acts_for_bins

@@ -44,7 +44,6 @@ Infrastructure:
 
 from __future__ import annotations
 
-from collections.abc import Generator
 from contextlib import contextmanager
 
 # Lazy import so the module can be imported without duckdb installed
@@ -56,7 +55,12 @@ try:
 except ImportError:
     _HAS_DUCKDB = False
 
+from typing import TYPE_CHECKING
+
 from scripts.embedding_research.config import DB_PATH
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
 
 _DDL = """
 CREATE TABLE IF NOT EXISTS songs (

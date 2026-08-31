@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json as _json
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import pandas as pd
-import plotly.graph_objects as go
+
+if TYPE_CHECKING:
+    import plotly.graph_objects as go
 
 # ---------------------------------------------------------------------------
 # Plotly theme constants

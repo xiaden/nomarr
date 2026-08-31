@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
-from pathlib import Path
 from time import perf_counter
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 from alive_progress import alive_it
@@ -21,6 +19,10 @@ from .helpers.binning import CTP_SCORE_THRESHOLDS as DEFAULT_CTP_THRESHOLDS
 from .helpers.binning import global_dist, temporal_segment
 from .helpers.cache_utils import build_done_set as _build_done_set
 from .pooling import STRATEGIES
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from pathlib import Path
 
 __all__ = ["run_binned", "run_flat", "run_ptc_heads"]
 

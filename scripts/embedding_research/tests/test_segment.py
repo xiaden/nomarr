@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import Mock
 
 import numpy as np
@@ -10,6 +10,9 @@ import pytest
 
 import scripts.embedding_research.common.segment as segment_mod
 from scripts.embedding_research.common.segment import _skip_never, segment
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _make_alive_it_stub():

@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as _np
-import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
@@ -20,6 +21,9 @@ from ._base import (
     make_table,
     table_exists,
 )
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 _PALETTE = [
     "#7aa2f7",

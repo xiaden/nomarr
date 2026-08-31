@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path as _Path
+from typing import TYPE_CHECKING
 from typing import Any as _Any
 from typing import cast as _cast
 
@@ -11,6 +11,9 @@ import numpy as _np
 from nomarr.components.ml.audio import load_audio_mono as _load_audio_mono
 
 from ._constants import _BACKBONE_SR
+
+if TYPE_CHECKING:
+    from pathlib import Path as _Path
 
 try:
     import librosa as _librosa  # type: ignore[import]

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path as _Path
+from typing import TYPE_CHECKING
 from typing import Any as _Any
 from typing import cast as _cast
 
@@ -15,6 +15,9 @@ from scripts.embedding_research.helpers.binning import BIN_MODES
 from scripts.embedding_research.helpers.binning import DIST_FNS as _DIST_FNS
 from scripts.embedding_research.similarity import l2_normalise as _l2_normalise
 from scripts.embedding_research.vector_types import RawTensor as _RawTensor
+
+if TYPE_CHECKING:
+    from pathlib import Path as _Path
 
 
 def _load_cached_calibration(con, backbone: str) -> dict[str, dict] | None:

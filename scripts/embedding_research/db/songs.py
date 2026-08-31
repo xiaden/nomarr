@@ -59,7 +59,11 @@ def load_sids_and_artists(
 
 
 def load_song_albums(con, sids: list[str]) -> list[str]:
-    """Return one album label per song_id (preserves input order). Used for disc_album."""
+    """Return one album label per song_id (preserves input order).
+
+    Album labels feed metadata in the analyze/report layers; there is no
+    ``disc_album`` metric in the pipeline.
+    """
     if not sids:
         return []
     placeholders = ",".join(["?"] * len(sids))

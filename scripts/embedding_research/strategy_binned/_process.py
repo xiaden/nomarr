@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from typing import NamedTuple as _NamedTuple
 
 import numpy as _np
@@ -9,7 +10,6 @@ import scipy.stats as _scipy_stats
 
 from scripts.embedding_research import db as _db
 from scripts.embedding_research.similarity import compute_retrieval_metrics as _compute_retrieval_metrics
-from scripts.embedding_research.vector_types import UnitTensor as _UnitTensor
 
 try:
     from scripts.embedding_research.db._types import BinnedRetrievalRow as _BinnedRetrievalRow
@@ -103,6 +103,9 @@ except ImportError:
 
 from ._constants import AGG_METHODS
 
+if TYPE_CHECKING:
+    from scripts.embedding_research.vector_types import UnitTensor as _UnitTensor
+
 
 def _compute_song_stats(
     sid: str,
@@ -149,7 +152,8 @@ def compute_agg_mats(
     norm_a, norm_b:
         Per-song bin vectors as UnitTensor, each ``[n_bins, D] float32``.  Rows
         are guaranteed unit-normalised by the UnitTensor setter (old cache files
-        are re-normalised on load in ``_analyze.py``).
+        are re-normalised by the UnitTensor setter on load via
+        ``cache.binned_ptc.load_norm_pair`` / ``cache.binned_ctp.load_all_reps``).
     bin_counts:
         Number of bins per song ``[n_songs] float32``.
     metric:
@@ -333,8 +337,9 @@ def _process_group(
     head_names: list[str] | None = None,
     n_songs: int = 0,
 ) -> tuple[list[_BinnedRetrievalRow], list[tuple]]:
-    """Legacy wrapper used by ``analyze_ctp``.  New code should call
-    ``compute_agg_mats`` + ``compute_retrieval_rows`` directly."""
+    """Compatibility wrapper retained for legacy callers; the live shared
+    analysis path (``common.analyze.analyze``) composes ``compute_agg_mats`` +
+    ``compute_retrieval_rows`` directly."""
     # reps_a / reps_b are unused (computation operates on norms only)
     agg_mats = compute_agg_mats(norm_a, norm_b, bin_counts, metric, progress=progress)
     return compute_retrieval_rows(

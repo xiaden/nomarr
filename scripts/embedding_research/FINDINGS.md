@@ -39,6 +39,21 @@ Ongoing notes from research runs. Add findings as they emerge — don't wait for
 
 `bin_div_std` measures the mean pairwise cosine distance between bin mean vectors for a given (song, backbone, bin_mode, std_thresh). High values confirm the threshold creates geometrically diverse windows but do not confirm semantic meaningfulness — any segmentation scheme that creates geometrically spread windows (including random) achieves equally high values. The metric provides no semantic quality signal and was removed from `binned_song_stats` and all DB writes.
 
+### Explicit flat global-medoid baseline established
+
+- **Status**: Established (2026-08)
+- **What**: The flat (global-pool) pipeline now has an explicit **observed-patch global medoid**
+  baseline for EffNet (`global_pool:effnet:medoid`) and an independent one for MusicNN
+  (`global_pool:musicnn:medoid`). `pool_medoid` row-L2-normalizes the raw patches for cosine
+  centrality, chooses the observed row with maximum mean cosine centrality, breaks ties to the
+  smallest index, and returns the raw float32 patch — never a synthetic centroid.
+- **Key distinction**: `rep_type="medoid"` (an observed per-bin segment representation) is
+  allowed; `agg_method="medoid"` (aggregation-level) is intentionally rejected. The flat medoid
+  is a *strategy* under `global_pool:{backbone}:medoid`, distinct from the per-bin binned medoid
+  and from coordinate-wise `median`.
+- **Cache identity**: each backbone's medoid is independently keyed at
+  `cache/{backbone}/medoid/flat/{sid}.npy`; the two backbones are never cross-averaged.
+
 ### Noise metric removed: bin_flat_dist
 
 **Status**: Concluded (2026-05-25)

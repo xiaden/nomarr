@@ -2,17 +2,19 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 from scripts.embedding_research.cache import binned_ptc
-from scripts.embedding_research.common.segment import SegmentFn
 from scripts.embedding_research.helpers.binning import BIN_MODES, DIST_FNS, temporal_segment
 from scripts.embedding_research.helpers.binning import DIST_THRESHOLDS as STD_THRESHOLDS
 from scripts.embedding_research.strategy_binned._calibrate import _load_cached_calibration
 from scripts.embedding_research.strategy_binned._pool import _pool_segment
 from scripts.embedding_research.vector_types import RawTensor, UnitTensor
+
+if TYPE_CHECKING:
+    from scripts.embedding_research.common.segment import SegmentFn
 
 STRATEGY_NAMES: list[str] = [
     f"ptc_{bin_mode}_{std_thresh:.2f}" for bin_mode in BIN_MODES for std_thresh in STD_THRESHOLDS

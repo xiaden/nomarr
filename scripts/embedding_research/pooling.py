@@ -5,11 +5,12 @@ All functions return float32 numpy arrays.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 _FLAT_STRATEGY_KEY = "flat_strategies"
 

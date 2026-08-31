@@ -25,7 +25,7 @@ analysis results and song metadata.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -35,6 +35,9 @@ from scripts.embedding_research.helpers.binning import threshold_key as _thresho
 from scripts.embedding_research.helpers.cache_utils import build_done_set as _build_done_set
 from scripts.embedding_research.helpers.cache_utils import missing_sids as _missing_sids
 from scripts.embedding_research.vector_types import UnitTensor
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 _log = logging.getLogger(__name__)
 

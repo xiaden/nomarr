@@ -28,10 +28,9 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import duckdb
 import numpy as np
@@ -47,7 +46,6 @@ if str(_pkg_root) not in sys.path:
 
 from scripts.embedding_research import common, db, pooling
 from scripts.embedding_research.cache import binned_ctp, binned_ptc, flat_vecs
-from scripts.embedding_research.common.analyze import AnalyzeCfg
 from scripts.embedding_research.config import DB_PATH, HEAD_LABELS, HEADS, OUTPUT_ROOT, PATCHES_DIR
 from scripts.embedding_research.helpers.binning import BIN_MODES, CTP_SCORE_THRESHOLDS
 from scripts.embedding_research.helpers.binning import DIST_THRESHOLDS as STD_THRESHOLDS
@@ -58,6 +56,11 @@ from scripts.embedding_research.strategy_ctp import segment_fn as _ctp_seg_fn
 from scripts.embedding_research.strategy_global_pool import segment_fn as _gp_seg_fn
 from scripts.embedding_research.strategy_ptc import segment_fn as _ptc_seg_fn
 from scripts.embedding_research.vector_types import UnitTensor
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from scripts.embedding_research.common.analyze import AnalyzeCfg
 
 _REQ = Path(__file__).parent / "requirements.txt"
 _log = logging.getLogger(__name__)

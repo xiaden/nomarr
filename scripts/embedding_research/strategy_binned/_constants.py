@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable as _Callable
-from collections.abc import Iterable as _Iterable
+from typing import TYPE_CHECKING
 
 import numpy as _np
 
 from scripts.embedding_research.helpers.toml import load_research_config as _load_research_config
+
+if TYPE_CHECKING:
+    from collections.abc import Callable as _Callable
+    from collections.abc import Iterable as _Iterable
 
 _cfg = _load_research_config()
 

@@ -128,12 +128,11 @@ def compute_retrieval_metrics(
     Discrimination metrics (mean within-group sim minus mean cross-group sim,
     computed over upper-triangle pairs):
       disc_artist    : artist-level discrimination (``labels``)
-      disc_album     : album-level; 0.0 if ``albums`` not provided or unusable
       disc_genre     : genre-level; 0.0 if ``genres`` not provided or unusable
       disc_head      : window-based discrimination — mean over heads of
-                       (in-set mean − out-set mean), where in-set = songs within
+                       (in-set mean - out-set mean), where in-set = songs within
                        DISC_HEAD_WINDOW of the query head score, out-set = songs
-                       below score_i − DISC_HEAD_GAP
+                       below score_i - DISC_HEAD_GAP
       disc_general   : mean of whichever disc components had valid data
       per_head_corr  : dict[head_name, corr] — Spearman r per head (empty if
                        ``head_names`` absent)

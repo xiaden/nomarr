@@ -6,11 +6,14 @@ import pure algorithms from the ``strategy_binned`` strategy-implementation modu
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from .toml import load_research_config
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 _cfg = load_research_config()
 

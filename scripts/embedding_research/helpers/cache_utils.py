@@ -7,8 +7,11 @@ knowledge. They form the canonical skip-guard for all embed phases.
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable
-from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+    from pathlib import Path
 
 _log = logging.getLogger(__name__)
 

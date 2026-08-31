@@ -131,3 +131,25 @@ def test_pool_medoid_is_not_coordinate_median() -> None:
     # The coordinate-wise median (0,0) is NOT an observed row here, so medoid
     # must pick one of the observed unit rows instead.
     assert any(np.array_equal(pooled, row) for row in patches)
+
+
+def test_pool_medoid_considers_all_patches() -> None:
+    """The flat medoid is computed over every temporal patch, not a fixed subset.
+
+    Two near-duplicate inlier patches together outweigh a single distant outlier,
+    so the medoid lands on one of the inliers — the outlier row alone would have
+    been the median if patches were ignored. This proves every patch feeds the
+    centrality computation.
+    """
+    patches = np.array(
+        [
+            [0.0, 1.0, 0.0],  # lone distant outlier
+            [1.0, 0.0, 0.0],  # inlier pair
+            [0.98, 0.02, 0.0],  # inlier pair
+        ],
+        dtype=np.float32,
+    )
+    idx, _ = select_global_medoid_index(patches)
+    assert idx in (1, 2)
+    pooled = pool_medoid(patches)
+    assert any(np.array_equal(pooled, patches[i]) for i in (1, 2))

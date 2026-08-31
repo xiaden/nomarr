@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-import numpy as np
+from typing import TYPE_CHECKING
 
 from scripts.embedding_research.cache import flat_vecs
 from scripts.embedding_research.pooling import STRATEGIES
+
+if TYPE_CHECKING:
+    import numpy as np
 
 STRATEGY_NAMES: list[str] = list(STRATEGIES.keys())
 

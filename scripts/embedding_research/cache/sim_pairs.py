@@ -7,11 +7,14 @@ under OUTPUT_ROOT/cache/sim_pairs/. The pair key is order-independent:
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from scripts.embedding_research.config import OUTPUT_ROOT
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _pair_path(backbone: str, strategy_name: str, sid_a: str, sid_b: str) -> Path:
