@@ -98,11 +98,36 @@ describe("getErroredFiles", () => {
     vi.clearAllMocks();
   });
 
-  it("gets the singular errored-file endpoint", async () => {
-    const response = { files: [], total: 0 };
+  it("gets the singular errored-file endpoint with the full backend shape", async () => {
+    const response = {
+      files: [
+        {
+          file_id: 42,
+          path: "/music/album/01-broken.mp3",
+          duration_seconds: 214.5,
+          artist: "Some Artist",
+          title: "Some Title",
+        },
+        {
+          file_id: 7,
+          path: "/music/album/02-unreadable.flac",
+          duration_seconds: null,
+          artist: null,
+          title: null,
+        },
+      ],
+      total: 2,
+    };
     vi.mocked(get).mockResolvedValue(response);
 
-    await expect(getErroredFiles("My Library")).resolves.toEqual(response);
+    const result = await getErroredFiles("My Library");
+    expect(result).toEqual(response);
+    // Numeric file_id matches backend ErroredFileItemResponse.file_id:int.
+    expect(result.files[0].file_id).toBeTypeOf("number");
+    expect(result.files[1].file_id).toBeTypeOf("number");
+    // Optional metadata fields stay nullable per backend model.
+    expect(result.files[0].duration_seconds).toBeTypeOf("number");
+    expect(result.files[1].duration_seconds).toBeNull();
 
     expect(get).toHaveBeenCalledWith("/api/web/library/My%20Library/errored-file");
   });

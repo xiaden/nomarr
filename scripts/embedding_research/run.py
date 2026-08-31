@@ -63,7 +63,6 @@ _REQ = Path(__file__).parent / "requirements.txt"
 _log = logging.getLogger(__name__)
 
 
-GLOBAL_POOL_STRATEGY_NAMES = _gp_seg_fn.STRATEGY_NAMES
 PTC_STRATEGY_NAMES = _ptc_seg_fn.STRATEGY_NAMES
 # All possible CTP strategy names across every backbone — used by the analyze phase.
 # The segment phase must NOT use this; it calls _ctp_seg_fn.make_strategy_names(head_sessions.keys()) instead.
@@ -456,7 +455,7 @@ def _segment_phase(con, cfg: dict) -> None:
     common.segment.segment(
         con,
         _gp_seg_fn.segment_fn,
-        GLOBAL_POOL_STRATEGY_NAMES,
+        cfg["flat_strategies"],
         **_kw,
         extra_cfg={"skip_check_fn": _gp_seg_fn.SKIP_CHECK_FN, "cache_write_fn": _gp_seg_fn.CACHE_WRITE_FN},
     )
@@ -526,7 +525,9 @@ def _classify_phase(con, cfg: dict) -> None:
 def _analyze_phase(con, cfg: dict) -> None:
     con.execute("DELETE FROM analyze_metrics")
     _kw = {"song_ids": cfg["song_ids"], "force": cfg["force"], "backbones": cfg["backbones"], "k": cfg["k"]}
-    common.analyze.analyze(con, GLOBAL_POOL_ANALYZE_CFG, **_kw)
+    _gp_cfg = dict(GLOBAL_POOL_ANALYZE_CFG)
+    _gp_cfg["strategy_names"] = cfg["flat_strategies"]
+    common.analyze.analyze(con, _gp_cfg, **_kw)
     common.analyze.analyze(con, PTC_ANALYZE_CFG, **_kw)
     common.analyze.analyze(con, CTP_ANALYZE_CFG, **_kw)
 
@@ -659,12 +660,16 @@ def main() -> None:
         "device": "gpu" if str(_pipe.get("device", "cpu")).lower() in ("cuda", "gpu") else "cpu",
         "backbones": _pipe.get("backbones") or None,  # None = all
         "heads": _pipe.get("heads") or None,  # None = all
-        "flat_strategies": _pooling.get("rep_types") or None,  # None = all cached strategies
         "k": int(_analysis.get("k", 10)),
         "workers": int(_analysis.get("workers", 4)),
         "blas_threads": int(_analysis.get("blas_threads", 1)) or None,
         "song_ids": None,  # populated below after discover_audio
     }
+    # Live flat-strategy list: validated explicit config or all known strategies.
+    # This replaces the previously dead `cfg["flat_strategies"] = rep_types`
+    # assignment (which was never consumed). Each backbone keeps its own
+    # independently keyed strategy set via `global_pool:{backbone}:{strategy}`.
+    cfg["flat_strategies"] = pooling.load_flat_strategy_names(_toml)
     _log.info(
         "Config: limit=%s (stratify budget target)  force=%s  device=%s  backbones=%s  heads=%s",
         cfg["limit"],
@@ -673,6 +678,7 @@ def main() -> None:
         cfg["backbones"],
         cfg["heads"],
     )
+    _log.info("Config: flat_strategies=%s", cfg["flat_strategies"])
 
     _watcher = _MemoryWatcher(interval=120.0)
     _watcher.start()

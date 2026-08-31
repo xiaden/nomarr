@@ -8,9 +8,9 @@ Generates an HTML report showing:
 - Source files where endpoints are called
 
 Usage:
-    python scripts/check_api_coverage.py
-    python scripts/check_api_coverage.py --unused-only
-    python scripts/check_api_coverage.py --used-only
+    python scripts/human-scripts/check_api_coverage.py
+    python scripts/human-scripts/check_api_coverage.py --unused-only
+    python scripts/human-scripts/check_api_coverage.py --used-only
 """
 
 import argparse
@@ -24,7 +24,7 @@ from tools.api_coverage.discovery import get_backend_routes, scan_frontend_usage
 from tools.api_coverage.matcher import match_endpoint_usage
 from tools.api_coverage.report import generate_html_report
 
-project_root = Path(__file__).parent.parent
+project_root = Path(__file__).resolve().parents[2]
 
 
 def main() -> int:

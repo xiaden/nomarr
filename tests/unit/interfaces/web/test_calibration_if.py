@@ -20,7 +20,7 @@ from fastapi.testclient import TestClient
 from nomarr.helpers.dataclasses.calibration_state_dataclass import CalibrationState
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.web.calibration_if import router as calibration_router
-from nomarr.interfaces.api.web.dependencies import get_calibration_service
+from nomarr.interfaces.api.web.dependencies import get_calibration_service, get_tagging_service
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -33,7 +33,16 @@ def mock_calibration_service() -> MagicMock:
 
 
 @pytest.fixture
-def app(mock_calibration_service: MagicMock) -> Iterator[FastAPI]:
+def mock_tagging_service() -> MagicMock:
+    """Provide a mocked tagging service dependency."""
+    return MagicMock()
+
+
+@pytest.fixture
+def app(
+    mock_calibration_service: MagicMock,
+    mock_tagging_service: MagicMock,
+) -> Iterator[FastAPI]:
     """Build a minimal FastAPI app for calibration endpoints."""
     test_app = FastAPI()
     test_app.include_router(calibration_router, prefix="/api/web")
@@ -43,6 +52,7 @@ def app(mock_calibration_service: MagicMock) -> Iterator[FastAPI]:
 
     test_app.dependency_overrides[verify_session] = allow_session
     test_app.dependency_overrides[get_calibration_service] = lambda: mock_calibration_service
+    test_app.dependency_overrides[get_tagging_service] = lambda: mock_tagging_service
 
     yield test_app
 
@@ -139,3 +149,262 @@ def json_dumps(obj: object) -> str:
     import json
 
     return json.dumps(obj)
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+class TestApplyCalibrationStatus:
+    """``GET /calibration/apply/status`` nullable apply lifecycle snapshot."""
+
+    def test_returns_running_with_nullable_result_and_current_file(
+        self,
+        client: TestClient,
+        mock_tagging_service: MagicMock,
+    ) -> None:
+        """A running apply projects nullable ``result``/``error``/``current_file``."""
+        mock_tagging_service.get_apply_combined_status.return_value = {
+            "status": "running",
+            "result": None,
+            "error": None,
+            "total_files": 10,
+            "completed_files": 3,
+            "current_file": None,
+            "is_running": True,
+        }
+
+        resp = client.get("/api/web/calibration/apply/status")
+
+        assert resp.status_code == 200
+        assert resp.json() == {
+            "status": "running",
+            "result": None,
+            "error": None,
+            "total_files": 10,
+            "completed_files": 3,
+            "current_file": None,
+            "is_running": True,
+        }
+        mock_tagging_service.get_apply_combined_status.assert_called_once_with()
+
+    def test_completed_apply_projects_structured_result(
+        self,
+        client: TestClient,
+        mock_tagging_service: MagicMock,
+    ) -> None:
+        """A completed apply projects the typed result envelope, not a raw blob."""
+        mock_tagging_service.get_apply_combined_status.return_value = {
+            "status": "completed",
+            "result": {"processed": 5, "failed": 1, "total": 6, "message": "done"},
+            "error": None,
+            "total_files": 6,
+            "completed_files": 6,
+            "current_file": None,
+            "is_running": False,
+        }
+
+        resp = client.get("/api/web/calibration/apply/status")
+
+        assert resp.status_code == 200
+        assert resp.json()["result"] == {"processed": 5, "failed": 1, "total": 6, "message": "done"}
+
+    def test_failed_apply_projects_error_without_result(
+        self,
+        client: TestClient,
+        mock_tagging_service: MagicMock,
+    ) -> None:
+        """A failed apply projects ``error`` while ``result`` stays null."""
+        mock_tagging_service.get_apply_combined_status.return_value = {
+            "status": "failed",
+            "result": None,
+            "error": "boom",
+            "total_files": 0,
+            "completed_files": 0,
+            "current_file": None,
+            "is_running": False,
+        }
+
+        resp = client.get("/api/web/calibration/apply/status")
+
+        assert resp.json()["status"] == "failed"
+        assert resp.json()["error"] == "boom"
+        assert resp.json()["result"] is None
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+class TestCalibrationStatus:
+    """``GET /calibration/status`` nullable global version/last run."""
+
+    def test_returns_nullable_global_fields_with_empty_libraries(
+        self,
+        client: TestClient,
+        mock_tagging_service: MagicMock,
+    ) -> None:
+        """A never-run calibration projects null ``global_version``/``last_run``."""
+        mock_tagging_service.get_calibration_status.return_value = {
+            "global_version": None,
+            "last_run": None,
+            "libraries": [],
+        }
+
+        resp = client.get("/api/web/calibration/status")
+
+        assert resp.status_code == 200
+        assert resp.json() == {"global_version": None, "last_run": None, "libraries": []}
+
+    def test_returns_per_library_breakdown(
+        self,
+        client: TestClient,
+        mock_tagging_service: MagicMock,
+    ) -> None:
+        """The per-library breakdown projects the typed status envelope."""
+        mock_tagging_service.get_calibration_status.return_value = {
+            "global_version": "cal-v1",
+            "last_run": 1_712_345_678,
+            "libraries": [
+                {
+                    "library_id": "Test Library",
+                    "library_name": "Test Library",
+                    "total_files": 10,
+                    "current_count": 6,
+                    "outdated_count": 4,
+                    "percentage": 60.0,
+                }
+            ],
+        }
+
+        resp = client.get("/api/web/calibration/status")
+
+        assert resp.status_code == 200
+        assert resp.json()["global_version"] == "cal-v1"
+        assert resp.json()["last_run"] == 1_712_345_678
+        assert resp.json()["libraries"] == [
+            {
+                "library_id": "Test Library",
+                "library_name": "Test Library",
+                "total_files": 10,
+                "current_count": 6,
+                "outdated_count": 4,
+                "percentage": 60.0,
+            }
+        ]
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+class TestHistogramGenerationStatus:
+    """``GET /calibration/histogram/status`` nullable generation lifecycle."""
+
+    def test_returns_running_with_nullable_fields(
+        self,
+        client: TestClient,
+        mock_calibration_service: MagicMock,
+    ) -> None:
+        """A running generation projects nullable ``error``/``result``/head fields."""
+        mock_calibration_service.get_generation_combined_status.return_value = {
+            "running": True,
+            "completed": False,
+            "error": None,
+            "result": None,
+            "current_head": None,
+            "current_head_index": None,
+            "total_heads": 22,
+            "completed_heads": 4,
+            "remaining_heads": 18,
+            "last_updated": None,
+            "is_running": True,
+        }
+
+        resp = client.get("/api/web/calibration/histogram/status")
+
+        assert resp.status_code == 200
+        assert resp.json() == {
+            "running": True,
+            "completed": False,
+            "error": None,
+            "result": None,
+            "current_head": None,
+            "current_head_index": None,
+            "total_heads": 22,
+            "completed_heads": 4,
+            "remaining_heads": 18,
+            "last_updated": None,
+            "is_running": True,
+        }
+        mock_calibration_service.get_generation_combined_status.assert_called_once_with()
+
+    def test_completed_generation_projects_typed_fields(
+        self,
+        client: TestClient,
+        mock_calibration_service: MagicMock,
+    ) -> None:
+        """A completed generation projects its result and head identity fields."""
+        mock_calibration_service.get_generation_combined_status.return_value = {
+            "running": False,
+            "completed": True,
+            "error": None,
+            "result": {"heads": 22},
+            "current_head": "mood_happy",
+            "current_head_index": 21,
+            "total_heads": 22,
+            "completed_heads": 22,
+            "remaining_heads": 0,
+            "last_updated": 1_712_345_678,
+            "is_running": False,
+        }
+
+        resp = client.get("/api/web/calibration/histogram/status")
+
+        assert resp.json()["completed"] is True
+        assert resp.json()["result"] == {"heads": 22}
+        assert resp.json()["current_head"] == "mood_happy"
+        assert resp.json()["current_head_index"] == 21
+        assert resp.json()["last_updated"] == 1_712_345_678
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+class TestCalibrationBackgroundStart:
+    """``POST /calibration/apply/start`` and ``/histogram/start``."""
+
+    def test_apply_start_returns_started(
+        self,
+        client: TestClient,
+        mock_tagging_service: MagicMock,
+    ) -> None:
+        """POST apply/start returns the background-start envelope."""
+        mock_tagging_service.is_apply_running.return_value = False
+
+        resp = client.post("/api/web/calibration/apply/start")
+
+        assert resp.status_code == 200
+        assert resp.json() == {"status": "started", "message": "Calibration apply started in background"}
+        mock_tagging_service.start_apply_calibration_background.assert_called_once_with()
+
+    def test_apply_start_returns_already_running(
+        self,
+        client: TestClient,
+        mock_tagging_service: MagicMock,
+    ) -> None:
+        """A running apply returns the already_running envelope without a second start."""
+        mock_tagging_service.is_apply_running.return_value = True
+
+        resp = client.post("/api/web/calibration/apply/start")
+
+        assert resp.status_code == 200
+        assert resp.json() == {"status": "already_running", "message": "Calibration apply already in progress"}
+        mock_tagging_service.start_apply_calibration_background.assert_not_called()
+
+    def test_histogram_start_returns_started(
+        self,
+        client: TestClient,
+        mock_calibration_service: MagicMock,
+    ) -> None:
+        """POST histogram/start returns the background-start envelope."""
+        mock_calibration_service.is_generation_running.return_value = False
+
+        resp = client.post("/api/web/calibration/histogram/start")
+
+        assert resp.status_code == 200
+        assert resp.json() == {"status": "started", "message": "Calibration generation started in background"}
+        mock_calibration_service.start_histogram_calibration_background.assert_called_once_with()

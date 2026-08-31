@@ -48,7 +48,7 @@ class TestLoadOutputStreamsForFile:
 
         result = stream_store_module.load_output_streams_for_song(
             db,
-            f"{'songs'}/1",
+            1,
             "/music/example.flac",
             head_infos,
             output_lookup={
@@ -73,7 +73,7 @@ class TestLoadOutputStreamsForFile:
                 values=[0.2, 0.3],
             ),
         ]
-        fetch_output_streams.assert_called_once_with(db, f"{'songs'}/1")
+        fetch_output_streams.assert_called_once_with(db, 1)
 
     def test_returns_empty_and_skips_lookup_when_streams_are_missing(self, monkeypatch: pytest.MonkeyPatch) -> None:
         db = MagicMock()
@@ -86,7 +86,7 @@ class TestLoadOutputStreamsForFile:
 
         result = stream_store_module.load_output_streams_for_song(
             db,
-            f"{'songs'}/1",
+            1,
             "/music/example.flac",
             head_infos,
             output_lookup={"ml_model_outputs/out-1": ("mood_multiclass", "happy")},
@@ -111,7 +111,7 @@ class TestLoadOutputStreamsForFile:
 
         result = stream_store_module.load_output_streams_for_song(
             db,
-            f"{'songs'}/1",
+            1,
             "/music/example.flac",
             head_infos,
             output_lookup={"ml_model_outputs/out-1": ("mood_multiclass", "happy")},

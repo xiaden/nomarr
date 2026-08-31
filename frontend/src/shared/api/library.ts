@@ -280,7 +280,6 @@ export interface VectorStatsItem {
 }
 
 export interface LibraryVectorStatsResponse {
-  library_key: string;
   stats: VectorStatsItem[];
 }
 
@@ -296,7 +295,7 @@ export async function getLibraryVectorStats(libraryId: string): Promise<LibraryV
 // ────────────────────────────────────────────────────────────────────────────────
 
 export interface ErroredFileItem {
-  file_id: string;
+  file_id: number;
   path: string;
   duration_seconds: number | null;
   artist: string | null;

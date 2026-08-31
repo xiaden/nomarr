@@ -83,3 +83,72 @@ Also grep these 7 files before submitting: `db/_schema.py`, `db/_types.py`, `db/
 - Passing `act[0]` instead of `act[1]` for head scores → all bins 5–9, bins 0–4 unreachable
 - Stale ALTER TABLE guards adding back removed columns on every run → schema drift
 - Fixing a crash in one layer without checking all 5 connected layers → new crash on next run
+
+## Known Gaps — Flat-Medoid Baseline & Report Pooling (audit 2026-08-31)
+
+### The flat baseline is NOT medoid
+- `pooling.STRATEGIES` (pooling.py:43-50) = `mean`, `trimmed_10`, `trimmed_20`, `median` (coordinate-wise `np.median(axis=0)` — synthetic, NOT medoid), `max_norm`, `l2norm_mean`. **No medoid exists in the flat pool.**
+- Medoid exists ONLY for binned per-bin reps: `strategy_binned/_constants.py:50` `_BIN_POOL_STRATEGIES["medoid"]` = observed patch closest to centroid.
+- `[pooling] rep_types` in research_config.toml is wired to `cfg["flat_strategies"]` (run.py:662) but that key is **dead config** — never consumed. `_segment_phase` and `GLOBAL_POOL_ANALYZE_CFG` run all 6 pooling strategies regardless. If the intent is a flat-medoid-only baseline run, it is not achievable via config today.
+
+### The report pools strategies (confirmed)
+- `report/_summary.py:33-35`: flat baseline = **MAX over all 6 flat strategies** of disc_genre; dominance rate = fraction of ALL PTC+CTP configs beating that max. Headline verdict uses disc_genre only.
+- `report/_retrieval.py:212`: every flat row is labeled `config="flat"` — strategy identity (mean/median/max_norm/...) is dropped from the top-20 table (cols at 326-346 omit `strategy` and `sim_metric`).
+- `report/_retrieval.py:482`: per-backbone delta-bar baseline = **MEDIAN over all 6 flat strategies**.
+- `report/_binned.py:96-99`: threshold-sweep flat reference = **MEAN over all 6 flat strategies**.
+- Three different flat "baselines" across report sections; none is medoid; none is a per-strategy comparison.
+
+### Other confirmed facts
+- DB is per-strategy: `analyze_metrics` PK = (strategy_key, sim_metric, k, metric) (db/_schema.py:89-97); `common/analyze.py` writes each strategy independently. No cross-strategy mixing in DB.
+- `similarity.METRICS` is hardcoded to `{"cosine": ...}` (similarity.py:71-73) regardless of config — sim-metric dimension is effectively 1.
+- `flat_binned_spearman` / `flat_binned_beneficial_reorder_rate` are **never populated** in the main pipeline (only `_optimize.py:311` calls `compute_retrieval_rows`, without `flat_upper_tri`; `common/analyze.py` uses `similarity.compute_retrieval_metrics`). `section_flat_binned_correlation` always renders empty.
+- Corpus alignment: flat loads all cached sids; binned loads only sids with bins + rep keys (run.py `_load_ptc/_load_ctp_analyze_vecs`). Different strategies can run on different song sets — summary warns on n_songs mismatch, but no per-backbone alignment exists.
+
+## Structural Map (research 2026-08-31, for repair/simplification planning)
+
+### Phase boundaries (run.py main L593-723)
+`ingest → embed → stratify → segment → classify → analyze → report`. **No optimize phase** (`[optimization] enabled=false`, `optimize_std_threshold` is manual); **no truncation phase** — `truncation_robustness_rows` table + `db/truncation.py` writer exist but nothing calls them, so `section_truncation` always renders empty.
+
+### Identity keys (run.py:188-203; decode at report/_base.py:139-177)
+- `global_pool`: `"global_pool:{backbone}:{strategy}"` — 6 flat strategies, no medoid.
+- `ptc`: `"ptc:{bb}:{bin_mode}:{std_thresh:.2f}:{rep_a}:{rep_b}:{agg_method}"`
+- `ctp`: `"ctp:{bb}:{head}:{std_thresh:.2f}:{rep_a}:{rep_b}:{agg_method}"` — CTP decode sets `bin_mode=None` (report/_base.py:170-175), so CTP rows have NaN bin_mode; `section_bin_mode_comparison` filters them out (report/_binned.py:685).
+- Live TOML dims: `rep_types=["median","medoid"]`, `agg_methods=["median"]`, `metrics=["cosine"]` → 4 strategy keys per PTC/CTP config; analyze_metrics PK (strategy_key, sim_metric, k, metric).
+
+### Segmentation semantics (unit normalization)
+- `helpers/binning.py:90-171 temporal_segment`: running spherical mean centroid; `global_dist` = L2 on unit vectors (threshold is a DIRECT distance, not std multiplier); `perdim_dist` = Chebyshev max|Δ|; outlier_window=3, hard-split semantics.
+- **PTC** (strategy_ptc/segment_fn.py:148): threshold = `std_thresh × p50` (p50 calibration per bin_mode) — std_thresh is a MULTIPLIER of p50. Segments+pool **unit** patches.
+- **CTP** (strategy_ctp/segment_fn.py:184): threshold = `std_thresh × per-song score_std` on raw `acts[:,1]`; segments raw 1-D scores; pools **RAW** patch segments then `_l2_normalise_vec(pooled)` (L213). Asymmetry vs PTC: PTC pools unit patches, CTP pools raw then normalizes.
+- **CONTRADICTION**: research_config.toml [binning] comment claims dist_thresholds are "Normalized L2 distance thresholds" but the PTC path multiplies by p50; the optimizer (`_optimize.py`) treats them as direct L2. One number, two semantics.
+
+### Pair matrix / reduction — weights are dropped
+- `compute_agg_mats` (strategy_binned/_process.py:137-218): mean fast path = `Σ bin-vecs / n_bins` — UNWEIGHTED mean over bin vectors. Per-bin patch counts (`weights` in cache npz) are never loaded by `_load_ptc/_load_ctp_analyze_vecs`; `bin_counts` = number of bins per song only. `loop_aggs` (median/max/min) also treat bin vectors equally; "medoid" agg raises.
+- `sim_pairs` cache (analyze.py:369-374) is **write-only and mis-keyed**: raw_sim computed per (rep_a, rep_b) payload but keyed `(bb, strategy_name, sid-pair)` WITHOUT rep_a/rep_b (cache/sim_pairs.py) → the first rep combo to run populates it and later combos skip via `sim_pair_exists`; the stored value is never read back (agg_mats come from compute_agg_mats). Vestigial overhead + cross-rep collision.
+- `cache/sim.py` (`load_sim`/`save_sim`): **0 callers — dead module**.
+
+### Cache key map
+- flat_vecs: `{OUT}/cache/{bb}/{strategy}/flat/{sid}.npy`
+- binned_ptc: `{OUT}/cache/binned_ptc/{vsX_tsY_osZ_bpW}/{bb}/{bin_mode}/{thresh:.3f}/{sid}.npz` (semantics tag from `helpers/binning.py cache_semantics_tag`)
+- binned_ctp: `{OUT}/cache/binned_ctp/{tag}/{bb}/{head}/{thresh:.3f}/{sid}.npz`
+- sim_pairs: `{OUT}/cache/sim_pairs/{bb}/{strategy_name}/{min_sid}_{max_sid}.npz` (order-independent)
+- sim: `{OUT}/cache/sim/{bb}/{bin_mode}/{thresh}/{rep_a}_{rep_b}_{metric}.npz` — DEAD
+- flat_heads: `{OUT}/cache/{bb}/heads/{head}/{strategy}/{ptc|ctp}/{sid}.npy` (head_scores for analysis read strategy="mean" pathway="ptc" only, analyze.py:211-242, `act[-1]`)
+- binned_ptc_heads / binned_ctp_heads: `{OUT}/cache/binned_ptc_heads|binned_ctp_heads/{bb}/{head}[/{bin_mode}]/{thresh}/{sid}.npz`
+
+### Dead / stale code (simplification targets)
+- `db/_types.py` is an empty stub ("legacy dataclasses removed"); `_process.py` imports `_BinnedRetrievalRow` from it but the live class is the local fallback NamedTuple (L18-50). Skill's FLAT_COLUMNS/BINNED_COLUMNS (above) are stale — actual lists are `ANALYZE_METRICS_COLUMNS` (report/_base.py:66-125, 59 cols) and `flat_columns`/`binned_columns` (report/_retrieval.py:95-202).
+- `_process_group` (strategy_binned/_process.py:317-355): **0 callers** (legacy analyze_ctp wrapper). `compute_retrieval_rows` reachable only via `_process_group` + `_optimize.py:311`.
+- `_EXPECTED_ROWS_PER_CONFIG` (strategy_binned/_constants.py:43): computed, never used.
+- `flat_strategies` config (run.py:662): dead (segment phase runs all 6 pooling strategies; GLOBAL_POOL_ANALYZE_CFG uses `pooling.STRATEGIES`).
+- `binned_ctp_vecs` table still DDL'd (db/_schema.py:207-220) though the cache module says the DB table was removed.
+- `head_agreement_rows`, `binned_pair_sims` (schema comment: "upsert_binned_pair_sims_bulk() exists but is not called"), `binned_ptc_ctp_metrics`: DDL'd, never written by the pipeline.
+- CONTRACTS.md stale: `strategy_flat/` module refs (L11, 1941, 2767, 4601, 4692, 4740, 4925) — module is now `strategy_global_pool/`; `_optimize.py` docstring mentions `disc_album` (does not exist).
+
+### Tests by area (exact change surface)
+- flat: `test_gp_embed.py`, `test_gp_segment_fn.py`, `test_segment.py` (segment skeleton), `test_embed.py`
+- similarity/metrics: `test_similarity.py`, `test_per_song_metrics.py`
+- analysis/identity: `test_analysis.py` (expected identifiers L159-203, var_kurt L270-335, map_k_general L338-432)
+- segment fns: `test_ptc_segment_fn.py`, `test_ctp_segment_fn.py`; agg mats: `test_binned_process.py`
+- caches: `test_flat_heads_cache.py`, `test_ptc_heads.py`, `test_sim_pair_cache.py`
+- db: `test_db.py` (schema table list L52-59 includes the dead tables); report: `test_report.py` (decode strategy keys, unified table, summary, threshold sweep, bin-mode comparison)
+- stratify: `test_stratify.py`; toml: `test_toml.py`

@@ -6,7 +6,7 @@ from collections import defaultdict
 from pathlib import Path
 
 # Add project root to path for imports
-project_root = Path(__file__).parent.parent.parent.parent
+project_root = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(project_root))
 
 

@@ -54,6 +54,13 @@ overbudget_quad_weight = 0.05
 hard_overbudget_multiplier = 3.0
 
 [pooling]
+# Explicit flat (global-pool) strategy list. This is the benchmark-baseline
+# configuration and MUST include "medoid" (the observed-patch baseline). Each
+# configured backbone (EffNet, MusicNN) gets its own independently keyed set.
+# Omit this key to run every known flat strategy (including "medoid").
+# Available: mean, trimmed_10, trimmed_20, median (coordinate-wise synthetic),
+#            max_norm, l2norm_mean, medoid (observed patch)
+flat_strategies = ["mean", "trimmed_10", "trimmed_20", "median", "max_norm", "l2norm_mean", "medoid"]
 # Representations computed per bin segment and used to build the sim matrix
 # Available: mean, median (coordinate-wise synthetic), medoid (observed segment), max, min
 rep_types   = ["median", "medoid"]
