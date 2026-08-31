@@ -29,7 +29,7 @@ def _library_name(value) -> str:
 
 def _mock_get_library_watch_config(mock_db, library):
     """Return watch config from the fixture-backed mock database."""
-    return mock_db.library.get_library(_library_name(library))
+    return mock_db.library.get_library(library)
 
 
 @pytest.fixture

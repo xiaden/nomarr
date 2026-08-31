@@ -50,7 +50,7 @@ def _lib1(seed_data: dict) -> Library:
 def _song_identity(db, song_id: int) -> SongIdentity:
     identity = db.library.resolve_song_identity(song_id)
     assert identity is not None
-    return cast(SongIdentity, identity)
+    return cast("SongIdentity", identity)
 
 
 @pytest.mark.characterization

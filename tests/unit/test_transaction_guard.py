@@ -239,6 +239,6 @@ def test_boot_path_write_sequence_succeeds(session: Session) -> None:
     """
     app_db = _make_app(session)
     app_db.truncate_health()
-    app_db.update_health("app", {"status": "starting"})
+    app_db.update_health("app", status="starting", last_seen=0)
     app_db.set_schema_version("001")
     app_db._app_repo.truncate_health.assert_called_once()

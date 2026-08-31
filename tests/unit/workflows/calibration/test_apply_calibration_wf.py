@@ -19,7 +19,7 @@ class TestApplyCalibrationWorkflow:
     def test_flushes_deferred_writes_per_chunk_limit(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Chunk size should bound each deferred batch flush even without read prefetching."""
         db = MagicMock()
-        db.app.get_song_states.return_value = {apply_module.STATE_TAGS_CURRENT}
+        db.app.song_state_membership.return_value = {apply_module.STATE_TAGS_CURRENT}
         save_mood_tags_batch = MagicMock()
         update_file_calibration_hashes_batch = MagicMock()
         transition_song_state = MagicMock()
@@ -75,7 +75,7 @@ class TestApplyCalibrationWorkflow:
 
     def test_mood_flush_failure_reports_files_and_skips_hashes(self, monkeypatch: pytest.MonkeyPatch) -> None:
         db = MagicMock()
-        db.app.get_song_states.return_value = {apply_module.STATE_TAGS_CURRENT}
+        db.app.song_state_membership.return_value = {apply_module.STATE_TAGS_CURRENT}
         save_mood_tags_batch = MagicMock(side_effect=RuntimeError("tag write failed"))
         update_hashes = MagicMock()
         transition_song_state = MagicMock()
@@ -110,7 +110,7 @@ class TestApplyCalibrationWorkflow:
 
     def test_hash_flush_failure_reports_files_after_mood_flush(self, monkeypatch: pytest.MonkeyPatch) -> None:
         db = MagicMock()
-        db.app.get_song_states.return_value = {apply_module.STATE_TAGS_CURRENT}
+        db.app.song_state_membership.return_value = {apply_module.STATE_TAGS_CURRENT}
         save_mood_tags_batch = MagicMock()
         update_hashes = MagicMock(side_effect=RuntimeError("state write failed"))
         transition_song_state = MagicMock()

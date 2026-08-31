@@ -30,6 +30,12 @@ def get_library_watch_config(db: Database, library: Library) -> dict[str, Any] |
     resolved = get_library_record(db, library, include_scan=False)
     if resolved is None:
         return None
+    if isinstance(resolved, dict):
+        return {
+            "root_path": resolved["root_path"],
+            "watch_mode": resolved["watch_mode"],
+            "is_enabled": resolved["is_enabled"],
+        }
 
     return {
         "root_path": resolved.root_path,

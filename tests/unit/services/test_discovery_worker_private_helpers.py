@@ -12,6 +12,7 @@ from nomarr.helpers.constants.file_states import (
     STATE_NOT_PROCESSED,
     STATE_PROCESSED,
 )
+from nomarr.helpers.dataclasses.ml_output_stream_dataclass import OutputStreamWrite
 from nomarr.helpers.dto.processing_dto import (
     DeferredBackboneVectorWrite,
     DeferredFileWrites,
@@ -592,7 +593,7 @@ class TestExecuteDeferredWrites:
                     "num_segments": 3,
                 }
             ],
-            output_streams=[{"output_id": "out-0", "values": [0.1, 0.9], "output_index": 0}],
+            output_streams=[OutputStreamWrite(output_id="out-0", values=[0.1, 0.9], output_index=0)],
         )
         mock_release.assert_called_once_with(db, 42, "worker:tag:0")
 
@@ -605,7 +606,7 @@ class TestExecuteDeferredWrites:
             song_id=42,
             backbone="",
             vectors=[],
-            output_streams=[{"output_id": "out-0", "values": [0.1, 0.9], "output_index": 0}],
+            output_streams=[OutputStreamWrite(output_id="out-0", values=[0.1, 0.9], output_index=0)],
         )
         mock_release.assert_called_once()
 
@@ -618,7 +619,7 @@ class TestExecuteDeferredWrites:
             namespace="nom",
             tagger_version="v-test",
             chromaprint=None,
-            raw_output_streams=[DeferredOutputStreamWrite(output_id="out-0", values=[0.1, 0.9], output_index=0)],
+            raw_output_streams=[OutputStreamWrite(output_id="out-0", values=[0.1, 0.9], output_index=0)],
             backbone_vectors=[
                 DeferredBackboneVectorWrite(
                     backbone="bb1",
@@ -637,7 +638,7 @@ class TestExecuteDeferredWrites:
         assert bb1_call.kwargs["backbone"] == "bb1"
         assert openl3_call.kwargs["backbone"] == "openl3"
         # each per-backbone call carries the full canonical stream set (with index)
-        expected_streams = [{"output_id": "out-0", "values": [0.1, 0.9], "output_index": 0}]
+        expected_streams = [OutputStreamWrite(output_id="out-0", values=[0.1, 0.9], output_index=0)]
         assert bb1_call.kwargs["output_streams"] == expected_streams
         assert openl3_call.kwargs["output_streams"] == expected_streams
         mock_release.assert_called_once()
