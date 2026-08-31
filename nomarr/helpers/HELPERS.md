@@ -98,6 +98,7 @@ Custom exception types used across multiple layers. Inherit from appropriate bas
 ```python
 class PlaylistQueryError(Exception):
     """Raised when a smart playlist query is invalid."""
+
     pass
 ```
 
@@ -163,6 +164,7 @@ def now_ms() -> Milliseconds:
 @dataclass
 class LibraryDict:
     """Library representation for API responses."""
+
     id: str
     name: str
     root_path: str

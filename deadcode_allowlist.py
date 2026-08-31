@@ -253,10 +253,6 @@ def probe():
     pass  # VRAM probe entry point
 
 
-def _promise_key():
-    pass  # Internal VRAM helper
-
-
 # ---------------------------------------------------------------------------
 # 5. Pydantic Settings attributes (accessed via model_dump(), dict(), etc.)
 # ---------------------------------------------------------------------------

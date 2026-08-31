@@ -61,10 +61,10 @@ def load_calibrations_from_db_wf(db: Database) -> dict[str, dict[str, Any]]:
         calibrations: dict[str, dict[str, Any]] = {}
 
         for state in calibration_states:
-            label = state.get("label")
-            p5 = state.get("p5")
-            p95 = state.get("p95")
-            calib_hash = state.get("calibration_def_hash")
+            label = state.label
+            p5 = state.p5
+            p95 = state.p95
+            calib_hash = state.calibration_def_hash
 
             if label and p5 is not None and p95 is not None:
                 calibrations[label] = {"p5": p5, "p95": p95, "calibration_def_hash": calib_hash}

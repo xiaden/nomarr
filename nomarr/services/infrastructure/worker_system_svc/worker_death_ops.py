@@ -5,12 +5,11 @@ from __future__ import annotations
 import logging
 import threading
 from multiprocessing import Event, Pipe
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 
 from nomarr.components.ml.resources.ml_vram_coordinator_comp import release_worker_promises
 from nomarr.components.workers import should_restart_worker
 from nomarr.components.workers.worker_discovery_comp import release_claims_for_worker
-from nomarr.helpers.time_helper import now_ms
 
 from ._helpers import DEFAULT_WORKER_POLICY
 
@@ -62,18 +61,8 @@ class WorkerDeathOpsMixin:
         counts from earlier sessions or restart cycles.
         """
         try:
-            restart_state = self.db.app.get_worker_restart_policy(component_id)
-            if isinstance(restart_state, dict) and int(restart_state.get("restart_count", 0)) > 0:
-                timestamp = now_ms().value
-                self.db.app.update_worker_restart_policy(
-                    component_id,
-                    {
-                        "restart_count": 0,
-                        "last_restart_wall_ms": None,
-                        "updated_at_wall_ms": timestamp,
-                    },
-                )
-                logger.info("[WorkerSystemService] Reset restart count for %s (worker confirmed healthy)", component_id)
+            self.db.app.reset_worker_restart_count(component_id)
+            logger.info("[WorkerSystemService] Reset restart count for %s (worker confirmed healthy)", component_id)
         except Exception:
             logger.warning("[WorkerSystemService] Failed to reset restart count for %s", component_id, exc_info=True)
 
@@ -98,14 +87,9 @@ class WorkerDeathOpsMixin:
         if existing_timer:
             existing_timer.cancel()
             logger.debug("[WorkerSystemService] Cancelled existing restart timer for %s", component_id)
-        restart_state = cast(
-            "dict[str, Any] | None",
-            self.db.app.get_worker_restart_policy(component_id),
-        )
-        restart_count = int(restart_state.get("restart_count", 0)) if restart_state is not None else 0
-        last_restart_wall_ms = (
-            cast("int | None", restart_state.get("last_restart_wall_ms")) if restart_state is not None else None
-        )
+        restart_state = self.db.app.get_worker_restart_policy(component_id)
+        restart_count = restart_state.restart_count if restart_state is not None else 0
+        last_restart_wall_ms = restart_state.last_restart_wall_ms if restart_state is not None else None
         decision = should_restart_worker(restart_count, last_restart_wall_ms)
         logger.info(
             "[WorkerSystemService] Restart decision for %s: %s (reason: %s)",
@@ -114,27 +98,7 @@ class WorkerDeathOpsMixin:
             decision.reason,
         )
         if decision.action == "restart":
-            timestamp = now_ms().value
-            if restart_state is None:
-                self.db.app.upsert_worker_restart_policy(
-                    component_id,
-                    {
-                        "restart_count": 1,
-                        "last_restart_wall_ms": timestamp,
-                        "failed_at_wall_ms": None,
-                        "failure_reason": None,
-                        "updated_at_wall_ms": timestamp,
-                    },
-                )
-            else:
-                self.db.app.update_worker_restart_policy(
-                    component_id,
-                    {
-                        "restart_count": restart_count + 1,
-                        "last_restart_wall_ms": timestamp,
-                        "updated_at_wall_ms": timestamp,
-                    },
-                )
+            self.db.app.record_worker_restart(component_id)
             timer = threading.Timer(decision.backoff_seconds, self._restart_worker, args=(component_id,))
             self._pending_restart_timers[component_id] = timer
             timer.start()
@@ -142,27 +106,7 @@ class WorkerDeathOpsMixin:
         if self.health_monitor:
             self.health_monitor.set_failed(component_id)
         failure_reason = decision.failure_reason or "Restart limit exceeded"
-        timestamp = now_ms().value
-        if restart_state is None:
-            self.db.app.upsert_worker_restart_policy(
-                component_id,
-                {
-                    "restart_count": 0,
-                    "last_restart_wall_ms": None,
-                    "failed_at_wall_ms": timestamp,
-                    "failure_reason": failure_reason,
-                    "updated_at_wall_ms": timestamp,
-                },
-            )
-        else:
-            self.db.app.update_worker_restart_policy(
-                component_id,
-                {
-                    "failed_at_wall_ms": timestamp,
-                    "failure_reason": failure_reason,
-                    "updated_at_wall_ms": timestamp,
-                },
-            )
+        self.db.app.mark_worker_restart_failed(component_id, failure_reason)
         logger.error(
             "[WorkerSystemService] Worker %s marked as permanently failed: %s", component_id, decision.failure_reason
         )

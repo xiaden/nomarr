@@ -12,6 +12,7 @@ import logging
 import os
 from typing import TYPE_CHECKING, Any, cast
 
+from nomarr.helpers.dataclasses.calibration_state_dataclass import CalibrationState
 from nomarr.helpers.dto.ml_dto import SaveCalibrationSidecarsResult
 
 logger = logging.getLogger(__name__)
@@ -426,21 +427,20 @@ def export_calibration_state_to_json(db: Database, output_path: str) -> dict[str
 
     export_data = []
     for calib in calibrations:
-        sd = calib.get("state_data", {})
-        model_info = model_lookup.get(calib.get("model_id", ""))
+        model_info = model_lookup.get(calib.model_id)
         export_doc = {
             "backbone": model_info.backbone if model_info else "",
             "embedder_release_date": model_info.embedder_release_date if model_info else "",
-            "head_name": sd.get("head_name", ""),
-            "label": sd.get("label", ""),
-            "calibration_def_hash": sd.get("calibration_def_hash", ""),
-            "histogram": sd.get("histogram", []),
-            "histogram_bins": sd.get("histogram_bins"),
-            "p5": sd.get("p5", 0.0),
-            "p95": sd.get("p95", 1.0),
-            "n": sd.get("n", 0),
-            "underflow_count": sd.get("underflow_count", 0),
-            "overflow_count": sd.get("overflow_count", 0),
+            "head_name": calib.head_name,
+            "label": calib.label,
+            "calibration_def_hash": calib.calibration_def_hash,
+            "histogram": calib.histogram,
+            "histogram_bins": calib.histogram_bins,
+            "p5": calib.p5,
+            "p95": calib.p95,
+            "n": calib.sample_count,
+            "underflow_count": calib.underflow_count,
+            "overflow_count": calib.overflow_count,
         }
         export_data.append(export_doc)
 
@@ -514,28 +514,26 @@ def import_calibration_state_from_json(db: Database, input_path: str, overwrite:
             # Check if calibration already exists
             existing = db.ml.get_calibration_state_view(head_name, label)
             calibration_def_hash = calib.get("calibration_def_hash", "")
-            if (
-                existing
-                and (not overwrite)
-                and (existing.get("state_data", {}).get("calibration_def_hash") == calibration_def_hash)
-            ):
+            if existing and (not overwrite) and existing.calibration_def_hash == calibration_def_hash:
                 logger.debug(f"[calibration] Skipping {head_name}:{label} (already exists)")
                 skipped_count += 1
                 continue
 
-            state_data = {
-                "head_name": head_name,
-                "label": label,
-                "calibration_def_hash": calibration_def_hash,
-                "histogram": calib.get("histogram", []),
-                "p5": calib.get("p5", 0.0),
-                "p95": calib.get("p95", 1.0),
-                "n": calib.get("n", 0),
-                "underflow_count": calib.get("underflow_count", 0),
-                "overflow_count": calib.get("overflow_count", 0),
-                "histogram_bins": calib.get("histogram_bins"),
-            }
-            db.ml.replace_calibration_state(model_id, payload=state_data)
+            db.ml.replace_calibration_state(
+                CalibrationState(
+                    model_id=model_id,
+                    head_name=head_name,
+                    label=label,
+                    calibration_def_hash=calibration_def_hash,
+                    histogram=calib.get("histogram", {}),
+                    p5=float(calib.get("p5", 0.0)),
+                    p95=float(calib.get("p95", 1.0)),
+                    sample_count=int(calib.get("n", 0)),
+                    underflow_count=int(calib.get("underflow_count", 0)),
+                    overflow_count=int(calib.get("overflow_count", 0)),
+                    histogram_bins=calib.get("histogram_bins"),
+                )
+            )
             logger.info(f"[calibration] Imported {head_name}:{label}")
             imported_count += 1
 

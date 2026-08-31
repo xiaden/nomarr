@@ -204,14 +204,7 @@ class Application:
         def heartbeat_loop() -> None:
             while self._running:
                 try:
-                    db.app.update_health(
-                        "app",
-                        {
-                            "component_type": "app",
-                            "status": "healthy",
-                            "last_seen": now_ms().value,
-                        },
-                    )
+                    db.app.update_health("app", status="healthy", last_seen=now_ms().value)
                 except Exception as e:
                     logger.exception(f"[Application] Heartbeat error: {e}")
                 time.sleep(5)

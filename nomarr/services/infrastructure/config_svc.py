@@ -224,7 +224,7 @@ class ConfigService:
                 url=os.environ.get("PG_DATABASE_URL", "postgresql+psycopg2://nomarr:nomarr@localhost:5432/nomarr")
             )
             try:
-                db.app.update_config_option(f"config_{key}", {"value": value})
+                db.app.set_config_option(key, value)
             finally:
                 db.close()
         except Exception:
@@ -323,20 +323,20 @@ class ConfigService:
             )
             try:
                 # Batch-read existing config keys from DB
-                docs = db.app.list_config_options(prefix="config_")
+                docs = db.app.list_config_options()
                 existing_keys = {str(doc.key)[7:] for doc in docs}  # Strip 'config_' prefix
 
                 # Seed: write only keys NOT already in DB
                 for key in _ALLOWED_CONFIG_KEYS:
                     if key not in existing_keys and key in bootstrap_config:
                         value = bootstrap_config[key]
-                        db.app.update_config_option(
-                            f"config_{key}",
-                            {"value": str(value) if value is not None else ""},
+                        db.app.set_config_option(
+                            key,
+                            str(value) if value is not None else "",
                         )
 
                 # Load: read all config_* keys back into cache
-                all_docs = db.app.list_config_options(prefix="config_")
+                all_docs = db.app.list_config_options()
                 for meta_doc in all_docs:
                     meta_key = str(meta_doc.key)
                     config_key = meta_key[7:]  # Strip 'config_' prefix

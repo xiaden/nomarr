@@ -33,6 +33,7 @@ from nomarr.workflows.calibration.generate_calibration_wf import (
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from nomarr.helpers.dataclasses.calibration_state_dataclass import CalibrationState
     from nomarr.persistence.db import Database
     from nomarr.services.infrastructure.background_tasks_svc import BackgroundTaskService
 
@@ -525,14 +526,14 @@ class CalibrationService:
             "model_key": model_key,
             "head_name": head_name,
             "label": label,
-            "histogram_bins": state.get("histogram_bins", []),
-            "p5": state.get("p5"),
-            "p95": state.get("p95"),
-            "n": state.get("n"),
-            "histogram_spec": state.get("histogram", {}),
+            "histogram_bins": state.histogram_bins or [],
+            "p5": state.p5,
+            "p95": state.p95,
+            "n": state.sample_count,
+            "histogram_spec": state.histogram,
         }
 
-    def get_all_calibration_states(self) -> list[dict[str, Any]]:
+    def get_all_calibration_states(self) -> list[CalibrationState]:
         """Get all calibration states with histogram bins.
 
         Returns:

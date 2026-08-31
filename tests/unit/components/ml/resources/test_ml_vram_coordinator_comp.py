@@ -12,6 +12,7 @@ from nomarr.components.ml.resources.ml_vram_coordinator_comp import (
     release_vram_promise,
     release_worker_promises,
 )
+from nomarr.helpers.dataclasses.app_dataclasses import VramPromise
 
 
 @pytest.mark.unit
@@ -60,8 +61,22 @@ class TestRegisterVramPromise:
     def test_headroom_fit_check_accepts_when_under_90_percent(self) -> None:
         db = MagicMock()
         db.app.list_vram_promises.return_value = [
-            {"promised_mb": 1000},
-            {"promised_mb": 1000},
+            VramPromise(
+                worker_id="w1",
+                pid=1,
+                model_path="a.onnx",
+                promised_mb=1000,
+                total_mb=8000,
+                used_mb=3000,
+            ),
+            VramPromise(
+                worker_id="w2",
+                pid=2,
+                model_path="b.onnx",
+                promised_mb=1000,
+                total_mb=8000,
+                used_mb=3000,
+            ),
         ]
 
         with (
@@ -80,8 +95,22 @@ class TestRegisterVramPromise:
     def test_headroom_fit_check_rejects_when_over_90_percent(self) -> None:
         db = MagicMock()
         db.app.list_vram_promises.return_value = [
-            {"promised_mb": 3500},
-            {"promised_mb": 3000},
+            VramPromise(
+                worker_id="w1",
+                pid=1,
+                model_path="a.onnx",
+                promised_mb=3500,
+                total_mb=8000,
+                used_mb=3000,
+            ),
+            VramPromise(
+                worker_id="w2",
+                pid=2,
+                model_path="b.onnx",
+                promised_mb=3000,
+                total_mb=8000,
+                used_mb=3000,
+            ),
         ]
 
         with (
@@ -100,8 +129,22 @@ class TestRegisterVramPromise:
     def test_headroom_fit_check_accepts_at_exact_90_percent(self) -> None:
         db = MagicMock()
         db.app.list_vram_promises.return_value = [
-            {"promised_mb": 3200},
-            {"promised_mb": 3000},
+            VramPromise(
+                worker_id="w1",
+                pid=1,
+                model_path="a.onnx",
+                promised_mb=3200,
+                total_mb=8000,
+                used_mb=3000,
+            ),
+            VramPromise(
+                worker_id="w2",
+                pid=2,
+                model_path="b.onnx",
+                promised_mb=3000,
+                total_mb=8000,
+                used_mb=3000,
+            ),
         ]
 
         with (
@@ -147,8 +190,22 @@ class TestGetFleetVramState:
     def test_get_fleet_vram_state_returns_promises_and_vram(self) -> None:
         db = MagicMock()
         mock_promises = [
-            {"worker_id": "worker:1", "model_path": "a.onnx", "promised_mb": 512},
-            {"worker_id": "worker:2", "model_path": "b.onnx", "promised_mb": 256},
+            VramPromise(
+                worker_id="worker:1",
+                pid=1,
+                model_path="a.onnx",
+                promised_mb=512,
+                total_mb=8000,
+                used_mb=2000,
+            ),
+            VramPromise(
+                worker_id="worker:2",
+                pid=2,
+                model_path="b.onnx",
+                promised_mb=256,
+                total_mb=8000,
+                used_mb=2000,
+            ),
         ]
         db.app.list_vram_promises.return_value = mock_promises
 

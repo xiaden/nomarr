@@ -38,8 +38,8 @@ class TestWriteToDb:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_calls_update_config_option_api(self) -> None:
-        """Writes should use ``db.app.update_config_option``."""
+    def test_calls_set_config_option_api(self) -> None:
+        """Writes should use ``db.app.set_config_option`` with a scalar value."""
         service = _make_service()
 
         with patch("nomarr.services.infrastructure.config_svc.Database") as mock_database:
@@ -47,10 +47,7 @@ class TestWriteToDb:
 
             service._write_to_db("namespace", "myns")
 
-        mock_db_instance.app.update_config_option.assert_called_once_with(
-            "config_namespace",
-            {"value": "myns"},
-        )
+        mock_db_instance.app.set_config_option.assert_called_once_with("namespace", "myns")
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -123,14 +120,14 @@ class TestBootstrapAndLoad:
         with patch("nomarr.services.infrastructure.config_svc.Database") as mock_database:
             mock_db_instance = mock_database.return_value
             mock_db_instance.app.list_config_options = MagicMock(return_value=[])
-            mock_db_instance.app.update_config_option = MagicMock()
+            mock_db_instance.app.set_config_option = MagicMock()
             mock_db_instance.close = MagicMock()
 
             service._bootstrap_and_load()
 
         assert mock_db_instance.app.list_config_options.call_count == 2
         mock_db_instance.app.list_config_options.assert_has_calls(
-            [call(prefix="config_"), call(prefix="config_")],
+            [call(), call()],
         )
 
     @pytest.mark.unit
@@ -143,15 +140,12 @@ class TestBootstrapAndLoad:
         with patch("nomarr.services.infrastructure.config_svc.Database") as mock_database:
             mock_db_instance = mock_database.return_value
             mock_db_instance.app.list_config_options = MagicMock(side_effect=[[], []])
-            mock_db_instance.app.update_config_option = MagicMock()
+            mock_db_instance.app.set_config_option = MagicMock()
             mock_db_instance.close = MagicMock()
 
             service._bootstrap_and_load()
 
-        mock_db_instance.app.update_config_option.assert_called_once_with(
-            "config_library_root",
-            {"value": "/test-root"},
-        )
+        mock_db_instance.app.set_config_option.assert_called_once_with("library_root", "/test-root")
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -170,7 +164,7 @@ class TestBootstrapAndLoad:
                     [ConfigOption(key="config_library_root", value="/myns")],
                 ]
             )
-            mock_db_instance.app.update_config_option = MagicMock()
+            mock_db_instance.app.set_config_option = MagicMock()
             mock_db_instance.close = MagicMock()
 
             service._bootstrap_and_load()

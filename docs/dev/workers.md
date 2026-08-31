@@ -65,8 +65,8 @@ from functools import partial
 from nomarr.helpers import ManagedTask
 
 task = ManagedTask(
-   task_id="write_tags:<library.name>",
-   fn=partial(tagging_service.write_tags_to_files, library),
+    task_id="write_tags:<library.name>",
+    fn=partial(tagging_service.write_tags_to_files, library),
 )
 ```
 
@@ -90,9 +90,9 @@ import threading
 library = library_service.get_library_by_name("library_name")
 stop_event = threading.Event()
 task_id = tagging_service.start_write_tags_background(
-   library,
-   stop_event,
-   on_complete=lambda: navidrome_service.trigger_rescan(),
+    library,
+    stop_event,
+    on_complete=lambda: navidrome_service.trigger_rescan(),
 )
 ```
 
@@ -102,13 +102,13 @@ Inside the service, the task is dispatched as a managed in-process thread:
 from nomarr.helpers import ManagedTask
 
 task_id = self._bts.start_task(
-   ManagedTask(
-       task_id=f"write_tags:{library.name}",
-      fn=_task,
-      stop_event=stop_event,
-      on_complete=on_complete,
-      daemon=True,
-   ),
+    ManagedTask(
+        task_id=f"write_tags:{library.name}",
+        fn=_task,
+        stop_event=stop_event,
+        on_complete=on_complete,
+        daemon=True,
+    ),
 )
 ```
 
@@ -128,7 +128,7 @@ Example:
 was_signaled = bts.cancel_task("write_tags:<library.name>")
 
 if was_signaled:
-   logger.info("Write-tags cancellation requested")
+    logger.info("Write-tags cancellation requested")
 ```
 
 Tasks should check `stop_event.is_set()` at natural checkpoints inside loops, before starting another batch, or before expensive follow-up work. BTS does not forcibly kill threads.
@@ -256,7 +256,7 @@ PIPELINE|calibration_trigger
 
 ```python
 worker_svc.disable_worker_system()  # Disables processing, stops workers
-worker_svc.enable_worker_system()   # Enables processing, starts workers
+worker_svc.enable_worker_system()  # Enables processing, starts workers
 ```
 
 ### 6. Graceful Termination

@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from nomarr.components.workers import RestartDecision
+from nomarr.helpers.dataclasses.app_dataclasses import WorkerRestartPolicy
 from nomarr.helpers.dto.health_dto import StatusChangeContext
 from nomarr.services.infrastructure.worker_system_svc import WorkerSystemService
 
@@ -91,13 +92,9 @@ class TestOnStatusChangeRestartLogic:
             reason="Under restart limit",
         )
         mock_db.app.get_worker_restart_policy = MagicMock(
-            return_value={
-                "component_id": "worker_1",
-                "restart_count": 2,
-                "last_restart_wall_ms": 1234567890,
-            }
+            return_value=WorkerRestartPolicy(restart_count=2, last_restart_wall_ms=1234567890)
         )
-        mock_db.app.update_worker_restart_policy = MagicMock()
+        mock_db.app.record_worker_restart = MagicMock()
 
         with patch("threading.Timer") as mock_timer_class:
             mock_timer = MagicMock()
@@ -122,11 +119,8 @@ class TestOnStatusChangeRestartLogic:
             assert "worker_1" in worker_service._pending_restart_timers
             assert worker_service._pending_restart_timers["worker_1"] == mock_timer
 
-            # Verify restart count incremented
-            mock_db.app.update_worker_restart_policy.assert_called_once()
-            update_args, _ = mock_db.app.update_worker_restart_policy.call_args
-            assert update_args[0] == "worker_1"
-            assert update_args[1]["restart_count"] == 3
+            # Verify restart count incremented through the intent facade
+            mock_db.app.record_worker_restart.assert_called_once_with("worker_1")
 
     @patch(
         "nomarr.services.infrastructure.worker_system_svc.worker_death_ops.release_worker_promises",
@@ -146,24 +140,17 @@ class TestOnStatusChangeRestartLogic:
             reason="Too many restarts",
         )
         mock_db.app.get_worker_restart_policy = MagicMock(
-            return_value={
-                "component_id": "worker_2",
-                "restart_count": 5,
-                "last_restart_wall_ms": 1234567890,
-            }
+            return_value=WorkerRestartPolicy(restart_count=5, last_restart_wall_ms=1234567890)
         )
-        mock_db.app.update_worker_restart_policy = MagicMock()
+        mock_db.app.mark_worker_restart_failed = MagicMock()
 
         worker_service.on_status_change("worker_2", "healthy", "dead", StatusChangeContext())
 
         # Verify health monitor called
         worker_service.health_monitor.set_failed.assert_called_once_with("worker_2")
 
-        # Verify DB persistence
-        mock_db.app.update_worker_restart_policy.assert_called_once()
-        update_args, _ = mock_db.app.update_worker_restart_policy.call_args
-        assert update_args[0] == "worker_2"
-        assert update_args[1]["failure_reason"] == "Restart limit exceeded"
+        # Verify DB persistence through the intent facade
+        mock_db.app.mark_worker_restart_failed.assert_called_once_with("worker_2", "Restart limit exceeded")
 
         # Verify no timer scheduled
         assert "worker_2" not in worker_service._pending_restart_timers
@@ -185,14 +172,9 @@ class TestOnStatusChangeRestartLogic:
             reason="Under restart limit",
         )
         mock_db.app.get_worker_restart_policy = MagicMock(
-            return_value={
-                "component_id": "worker_3",
-                "restart_count": 1,
-                "last_restart_wall_ms": 1234567890,
-            }
+            return_value=WorkerRestartPolicy(restart_count=1, last_restart_wall_ms=1234567890)
         )
-        mock_db.app.upsert_worker_restart_policy = MagicMock()
-        mock_db.app.update_worker_restart_policy = MagicMock()
+        mock_db.app.record_worker_restart = MagicMock()
 
         with patch("threading.Timer") as mock_timer_class:
             # First crash - create timer

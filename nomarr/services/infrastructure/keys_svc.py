@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, cast
 
 import bcrypt
 
+from nomarr.helpers.dataclasses.session_dataclass import AuthSession
 from nomarr.helpers.time_helper import now_s
 
 logger = logging.getLogger(__name__)
@@ -204,15 +205,7 @@ class KeyManagementService:
         session_token = secrets.token_urlsafe(32)
         expiry = now_s().value + SESSION_TIMEOUT_SECONDS
         _session_cache[session_token] = expiry
-        self._db.app.insert_session(
-            [
-                {
-                    "session_id": session_token,
-                    "user_id": "admin",
-                    "expiry_timestamp": int(expiry * 1000),
-                }
-            ],
-        )
+        self._db.app.save_session(AuthSession(token=session_token, expires_at=expiry, data={"user": "admin"}))
         logger.info(f"[KeyManagement] Created new session (expires in {SESSION_TIMEOUT_SECONDS}s)")
         return session_token
 
@@ -262,14 +255,10 @@ class KeyManagementService:
         expired = [token for token, expiry in _session_cache.items() if expiry < now]
         for token in expired:
             _session_cache.pop(token, None)
-        session_count = self._db.app.count_sessions()
-        expired_docs = self._db.app.get_sessions_expiring_before(
-            int(now * 1000),
-            session_count,
-        )
-        if expired_docs:
-            self._db.app.delete_sessions_by_ids([doc["id"] for doc in expired_docs])
-        db_count = len(expired_docs)
+        expired_sessions = self._db.app.find_expired_sessions(now)
+        if expired_sessions:
+            self._db.app.delete_sessions(expired_sessions)
+        db_count = len(expired_sessions)
         if expired or db_count:
             logger.info(f"[KeyManagement] Cleaned up {len(expired)} expired session(s) from cache, {db_count} from DB")
         return len(expired)
@@ -281,12 +270,8 @@ class KeyManagementService:
             Number of sessions loaded
 
         """
-        session_count = self._db.app.count_sessions()
-        sessions = self._db.app.get_active_sessions(
-            int(now_s().value * 1000),
-            session_count,
-        )
-        _session_cache.update((s["id"], s["expires_at"] / 1000.0) for s in sessions)
+        sessions = self._db.app.find_active_sessions(now_s().value)
+        _session_cache.update((session.token, session.expires_at) for session in sessions)
         logger.debug(f"[KeyManagement] Loaded {len(sessions)} active session(s) from database")
         return len(sessions)
 

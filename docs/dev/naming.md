@@ -85,54 +85,54 @@ This document defines public-facing naming rules for all code.
 **Read Operations:**
 
 ```python
-get_      # Retrieve single item (get_library, get_config)
-list_     # Retrieve multiple items (list_libraries, list_models)
-exists_   # Check existence (exists_library)
-count_    # Count items (count_pending_files)
+get_  # Retrieve single item (get_library, get_config)
+list_  # Retrieve multiple items (list_libraries, list_models)
+exists_  # Check existence (exists_library)
+count_  # Count items (count_pending_files)
 ```
 
 **Write Operations:**
 
 ```python
-create_   # Create new item (create_library)
-add_      # Add item (add_library)
-update_   # Modify existing item (update_library)
-delete_   # Remove item (delete_library)
-remove_   # Remove item (remove_library_file)
-set_      # Set value (set_threshold)
+create_  # Create new item (create_library)
+add_  # Add item (add_library)
+update_  # Modify existing item (update_library)
+delete_  # Remove item (delete_library)
+remove_  # Remove item (remove_library_file)
+set_  # Set value (set_threshold)
 ```
 
 **Domain Operations:**
 
 ```python
-scan_     # Scan library (scan_library)
+scan_  # Scan library (scan_library)
 process_  # Process file (process_file)
-tag_      # Tag file (tag_file)
-export_   # Export data (export_playlists)
-import_   # Import data (import_library)
-sync_     # Synchronize (sync_file_to_library)
+tag_  # Tag file (tag_file)
+export_  # Export data (export_playlists)
+import_  # Import data (import_library)
+sync_  # Synchronize (sync_file_to_library)
 promote_  # Promote vectors (promote_and_rebuild)
 ```
 
 **State Operations:**
 
 ```python
-start_    # Start workers (start_workers)
-stop_     # Stop workers (stop_workers)
-pause_    # Pause workers (pause_workers)
-resume_   # Resume workers (resume_workers)
+start_  # Start workers (start_workers)
+stop_  # Stop workers (stop_workers)
+pause_  # Pause workers (pause_workers)
+resume_  # Resume workers (resume_workers)
 restart_  # Restart workers (restart_workers)
-enable_   # Enable feature (enable_calibration)
+enable_  # Enable feature (enable_calibration)
 disable_  # Disable feature (disable_calibration)
 ```
 
 **Complex Operations:**
 
 ```python
-generate_ # Generate data (generate_calibration)
-apply_    # Apply changes (apply_calibration)
-clear_    # Clear data (clear_completed)
-retry_    # Retry failed (retry_errors)
+generate_  # Generate data (generate_calibration)
+apply_  # Apply changes (apply_calibration)
+clear_  # Clear data (clear_completed)
+retry_  # Retry failed (retry_errors)
 rebuild_  # Rebuild index or cache (rebuild_vector_index)
 ```
 
@@ -191,19 +191,24 @@ New verbs require:
 ```python
 class LibraryDict(TypedDict):
     """Library metadata."""
+
     id: str
     name: str
     path: str
     created_at: int
 
+
 class HealthStatusDict(TypedDict):
     """Component health report."""
+
     component: str
     status: str
     last_heartbeat: float
 
+
 class CalibrationResultDict(TypedDict):
     """Calibration operation result."""
+
     tags_calibrated: int
     tracks_updated: int
 ```
@@ -214,6 +219,7 @@ class CalibrationResultDict(TypedDict):
 @dataclass
 class MLModelConfig:
     """ML model configuration."""
+
     backbone: str
     batch_size: int = 8
     device: str = "cpu"
@@ -320,6 +326,7 @@ helpers/dto/
 from nomarr.persistence.db import Database
 from nomarr.helpers.dto.analytics_dto import TagStatsDict
 
+
 class AnalyticsService:
     """Manage analytics operations."""
 
@@ -359,8 +366,10 @@ from .files import LibraryFilesMixin
 from .query import LibraryQueryMixin
 from .scan import LibraryScanMixin
 
+
 class LibraryService(LibraryAdminMixin, LibraryScanMixin, LibraryQueryMixin, LibraryFilesMixin):
     """Unified library service composed from mixins."""
+
     pass
 ```
 

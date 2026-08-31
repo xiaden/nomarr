@@ -71,12 +71,11 @@ def idle_promotion_vectors_workflow(db: Database, worker_id: str, models_dir: st
     ttl_seconds = 1800  # 30 minutes
     for backbone_id in targets:
         resource_id = f"{backbone_id}"
-        lock_reference = locks_comp.make_lock_reference("vector_promotion", resource_id)
         if not locks_comp.acquire_distributed_lock(db, "vector_promotion", resource_id, worker_id, ttl_seconds):
             logger.debug(
                 "[%s] Lock held for %s — skipping",
                 worker_id,
-                lock_reference,
+                resource_id,
             )
             continue
 

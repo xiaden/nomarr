@@ -28,6 +28,7 @@ from nomarr.components.ml.calibration.ml_calibration_state_comp import (
 )
 from nomarr.helpers.constants.file_states import STATE_CALIBRATED, STATE_NOT_CALIBRATED
 from nomarr.helpers.dataclasses.app_dataclasses import ConfigOption
+from nomarr.helpers.dataclasses.calibration_state_dataclass import CalibrationState
 from nomarr.helpers.dto.library_dto import LibraryDict
 
 
@@ -100,8 +101,7 @@ class TestComputeReconciliationInfo:
                 name="L1",
                 root_path="/p1",
                 is_enabled=True,
-                created_at=0,
-                updated_at=0,
+                scan_status="complete",
                 file_write_mode="none",
             ),
             LibraryDict(
@@ -109,8 +109,7 @@ class TestComputeReconciliationInfo:
                 name="L2",
                 root_path="/p2",
                 is_enabled=True,
-                created_at=0,
-                updated_at=0,
+                scan_status="complete",
                 file_write_mode="disabled",
             ),
         ]
@@ -131,8 +130,7 @@ class TestComputeReconciliationInfo:
                 name="Music",
                 root_path="/music",
                 is_enabled=True,
-                created_at=0,
-                updated_at=0,
+                scan_status="complete",
                 file_write_mode="full",
             ),
         ]
@@ -167,8 +165,7 @@ class TestComputeReconciliationInfo:
                 name="Writable",
                 root_path="/p1",
                 is_enabled=True,
-                created_at=0,
-                updated_at=0,
+                scan_status="complete",
                 file_write_mode="minimal",
             ),
             LibraryDict(
@@ -176,8 +173,7 @@ class TestComputeReconciliationInfo:
                 name="ReadOnly",
                 root_path="/p2",
                 is_enabled=True,
-                created_at=0,
-                updated_at=0,
+                scan_status="complete",
                 file_write_mode="none",
             ),
             LibraryDict(
@@ -185,8 +181,7 @@ class TestComputeReconciliationInfo:
                 name="AlsoWritable",
                 root_path="/p3",
                 is_enabled=True,
-                created_at=0,
-                updated_at=0,
+                scan_status="complete",
                 file_write_mode="full",
             ),
         ]
@@ -218,9 +213,9 @@ class TestCalibrationStateQueries:
     def test_count_recent_uses_updated_at_range_lookup(self) -> None:
         mock_db = MagicMock()
         mock_db.ml.list_calibration_states.return_value = [
-            {"_id": "calibration_state/a", "updated_at": 1_000},
-            {"_id": "calibration_state/b", "updated_at": 2_000},
-            {"_id": "calibration_state/c", "updated_at": 999},
+            CalibrationState(model_id="m", head_name="h", label="a", updated_at=1_000),
+            CalibrationState(model_id="m", head_name="h", label="b", updated_at=2_000),
+            CalibrationState(model_id="m", head_name="h", label="c", updated_at=999),
         ]
 
         result = count_recent_calibration_states(mock_db, 1_000)
@@ -232,9 +227,9 @@ class TestCalibrationStateQueries:
     def test_latest_updated_at_returns_max_timestamp(self) -> None:
         mock_db = MagicMock()
         mock_db.ml.list_calibration_states.return_value = [
-            {"updated_at": 1_000},
-            {"updated_at": 2_500},
-            {"updated_at": 1_750},
+            CalibrationState(model_id="m", head_name="h", label="a", updated_at=1_000),
+            CalibrationState(model_id="m", head_name="h", label="b", updated_at=2_500),
+            CalibrationState(model_id="m", head_name="h", label="c", updated_at=1_750),
         ]
 
         result = get_latest_calibration_state_updated_at(mock_db)
@@ -270,20 +265,20 @@ class TestCalibrationStateCrud:
             )
 
         mock_db.ml.replace_calibration_state.assert_called_once_with(
-            model_id="ml_models/model-1",
-            payload={
-                "head_name": "mood_happy",
-                "label": "happy",
-                "calibration_def_hash": "hash-1",
-                "histogram": {"lo": 0.0, "hi": 1.0, "bins": 10, "bin_width": 0.1},
-                "histogram_bins": [{"val": 0.1, "count": 4}],
-                "p5": 0.1,
-                "p95": 0.9,
-                "n": 42,
-                "underflow_count": 1,
-                "overflow_count": 2,
-                "updated_at": 123_456,
-            },
+            CalibrationState(
+                model_id="ml_models/model-1",
+                head_name="mood_happy",
+                label="happy",
+                calibration_def_hash="hash-1",
+                histogram={"lo": 0.0, "hi": 1.0, "bins": 10, "bin_width": 0.1},
+                histogram_bins=[{"val": 0.1, "count": 4}],
+                p5=0.1,
+                p95=0.9,
+                sample_count=42,
+                underflow_count=1,
+                overflow_count=2,
+                updated_at=123_456,
+            )
         )
 
     @pytest.mark.unit
@@ -308,11 +303,15 @@ class TestCalibrationStateCrud:
     @pytest.mark.unit
     def test_delete_removes_edge_and_state_by_constructor_ids(self) -> None:
         mock_db = MagicMock()
-        mock_db.ml.get_calibration_state_view.return_value = {"id": 42}
+        mock_db.ml.get_calibration_state_view.return_value = CalibrationState(
+            model_id="model-1", head_name="mood_happy", label="happy"
+        )
 
         delete_calibration_state(mock_db, "mood_happy", "happy")
 
-        mock_db.ml.remove_calibration_state.assert_called_once_with(calibration_id=42)
+        mock_db.ml.remove_calibration_state.assert_called_once_with(
+            CalibrationState(model_id="model-1", head_name="mood_happy", label="happy")
+        )
 
 
 class TestClearAllCalibrationData:
@@ -514,11 +513,18 @@ class TestLoadCalibrationLookup:
     def test_filters_invalid_states_and_returns_valid_lookup_entries(self) -> None:
         mock_db = MagicMock()
         states = [
-            {"label": "happy", "p5": 0.1, "p95": 0.9, "calibration_def_hash": "hash-happy"},
-            {"label": None, "p5": 0.2, "p95": 0.8, "calibration_def_hash": "hash-missing-label"},
-            {"label": "sad", "p95": 0.7, "calibration_def_hash": "hash-missing-p5"},
-            {"label": "angry", "p5": 0.3, "calibration_def_hash": "hash-missing-p95"},
-            {"label": "calm", "p5": 0.25, "p95": 0.75, "calibration_def_hash": "hash-calm"},
+            CalibrationState(
+                model_id="m", head_name="h", label="happy", p5=0.1, p95=0.9, calibration_def_hash="hash-happy"
+            ),
+            CalibrationState(
+                model_id="m", head_name="h", label="sad", p5=None, p95=0.7, calibration_def_hash="hash-missing-p5"
+            ),
+            CalibrationState(
+                model_id="m", head_name="h", label="angry", p5=0.3, p95=None, calibration_def_hash="hash-missing-p95"
+            ),
+            CalibrationState(
+                model_id="m", head_name="h", label="calm", p5=0.25, p95=0.75, calibration_def_hash="hash-calm"
+            ),
         ]
 
         with patch(

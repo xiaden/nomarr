@@ -176,6 +176,7 @@ All operations should be guarded for idempotency where possible:
 
    ```python
    import logging
+
    logger = logging.getLogger(__name__)
    logger.info("Migrating %d rows...", count)
    ```

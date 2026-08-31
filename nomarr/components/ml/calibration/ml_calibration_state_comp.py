@@ -18,6 +18,7 @@ from nomarr.components.library.library_song_state_comp import (
     transition_song_state,
 )
 from nomarr.helpers.constants.file_states import STATE_CALIBRATED, STATE_NOT_CALIBRATED
+from nomarr.helpers.dataclasses.calibration_state_dataclass import CalibrationState
 from nomarr.helpers.time_helper import now_ms
 
 if TYPE_CHECKING:
@@ -34,14 +35,14 @@ def _make_calibration_state_key(head_name: str, label: str) -> str:
 
 def count_recent_calibration_states(db: Database, threshold: int) -> int:
     """Count calibration state records updated at or after ``threshold``."""
-    docs = db.ml.list_calibration_states()
-    return sum(1 for doc in docs if isinstance(doc.get("updated_at"), int) and int(doc["updated_at"]) >= threshold)
+    states = db.ml.list_calibration_states()
+    return sum(1 for state in states if state.updated_at is not None and state.updated_at >= threshold)
 
 
 def get_latest_calibration_state_updated_at(db: Database) -> int | None:
     """Return the most recent non-null ``updated_at`` timestamp."""
-    docs = db.ml.list_calibration_states()
-    timestamps = [value for doc in docs if isinstance((value := doc.get("updated_at")), int)]
+    states = db.ml.list_calibration_states()
+    timestamps = [state.updated_at for state in states if state.updated_at is not None]
     return max(timestamps) if timestamps else None
 
 
@@ -49,9 +50,9 @@ def load_calibration_state(
     db: Database,
     head_name: str,
     label: str,
-) -> dict[str, Any] | None:
-    """Load one calibration state record by its logical identity."""
-    return cast("dict[str, Any] | None", db.ml.get_calibration_state_view(head_name, label))
+) -> CalibrationState | None:
+    """Load one calibration state by its logical identity."""
+    return db.ml.get_calibration_state_view(head_name, label)
 
 
 # ---------------------------------------------------------------------------
@@ -78,7 +79,7 @@ def save_calibration_state(
 
     Args:
         db: Database instance
-        model_id: Integer ID of the parent model row
+        model_id: Stable model identity
         head_name: Head name (e.g., "mood_happy")
         label: Label to calibrate (e.g., "happy")
         calibration_def_hash: MD5 hash of calibration definition
@@ -91,31 +92,27 @@ def save_calibration_state(
         histogram_bins: Sparse histogram bins
 
     """
-    _key = _make_calibration_state_key(head_name, label)
-    doc = {
-        "key": _key,
-        "head_name": head_name,
-        "label": label,
-        "calibration_def_hash": calibration_def_hash,
-        "histogram": histogram_spec,
-        "histogram_bins": histogram_bins,
-        "p5": p5,
-        "p95": p95,
-        "n": sample_count,
-        "underflow_count": underflow_count,
-        "overflow_count": overflow_count,
-        "updated_at": now_ms().value,
-    }
-    db.ml.replace_calibration_state(
+    state = CalibrationState(
         model_id=model_id,
-        payload={key: value for key, value in doc.items() if key != "key"},
+        head_name=head_name,
+        label=label,
+        calibration_def_hash=calibration_def_hash,
+        histogram=histogram_spec,
+        histogram_bins=histogram_bins,
+        p5=p5,
+        p95=p95,
+        sample_count=sample_count,
+        underflow_count=underflow_count,
+        overflow_count=overflow_count,
+        updated_at=now_ms().value,
     )
+    db.ml.replace_calibration_state(state)
 
 
 def load_all_calibration_states(
     db: Database,
-) -> list[dict[str, Any]]:
-    """Return every calibration state record enriched with model metadata."""
+) -> list[CalibrationState]:
+    """Return every calibration state enriched with model metadata."""
     return db.ml.list_all_calibration_states_with_models()
 
 
@@ -128,10 +125,10 @@ def load_calibration_lookup(db: Database) -> dict[str, dict[str, Any]]:
 
     calibrations: dict[str, dict[str, Any]] = {}
     for state in calibration_states:
-        label = state.get("label")
-        p5 = state.get("p5")
-        p95 = state.get("p95")
-        calibration_def_hash = state.get("calibration_def_hash")
+        label = state.label
+        p5 = state.p5
+        p95 = state.p95
+        calibration_def_hash = state.calibration_def_hash
         if label and p5 is not None and p95 is not None:
             calibrations[str(label)] = {
                 "p5": p5,
@@ -153,10 +150,7 @@ def delete_calibration_state(
     if calibration_doc is None:
         return
 
-    calibration_id = calibration_doc.get("id")
-    if calibration_id is None:
-        return
-    db.ml.remove_calibration_state(calibration_id=int(calibration_id))
+    db.ml.remove_calibration_state(calibration_doc)
 
 
 def create_calibration_history_snapshot(

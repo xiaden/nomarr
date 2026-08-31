@@ -163,6 +163,7 @@ def scan_library(self, library_id: str) -> ScanResult:
         models_dir=self.config.models_dir,
     )
 
+
 # ❌ Bad — too much logic in service
 def scan_library(self, library_id: str) -> ScanResult:
     files = find_unprocessed_files(self.db, library_id)

@@ -65,16 +65,20 @@ Direct persistence access is **private** to the domain. Other domains CANNOT cal
 # components/library/library_file_mutation_comp.py
 from nomarr.persistence.db import Database
 
+
 def upsert_library_file(db: Database, library_id: int, file_path: str) -> dict:
     return db.library.update_songs(...)
+
 
 # ✅ GOOD — Workflow calls component
 # workflows/library/scan_library_full_wf.py
 from nomarr.components.library import upsert_library_file
 
+
 def scan_library(db, library_id):
     for path in discovered:
         upsert_library_file(db, library_id, path)
+
 
 # ❌ BAD — Workflow imports persistence
 db.library.update_songs(...)  # BYPASSES INVARIANTS!
@@ -88,9 +92,11 @@ db.library.update_songs(...)  # BYPASSES INVARIANTS!
 # ✅ GOOD — Library workflow calls metadata domain component
 from nomarr.components.metadata.entity_seeding_comp import seed_entities_for_scan_batch
 
+
 def scan_song_workflow(db, library_id, song, tags):
-    song_id = db.library.add_song_to_library(library_id, song)          # Library domain
+    song_id = db.library.add_song_to_library(library_id, song)  # Library domain
     seed_entities_for_scan_batch(db, [str(song["id"])], {song["id"]: tags})  # Metadata domain
+
 
 # ❌ BAD — Library workflow bypasses metadata domain
 db.entities.insert({"id": artist_id})  # No invariant enforcement!

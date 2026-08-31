@@ -15,18 +15,24 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from nomarr.helpers.dataclasses.app_dataclasses import ConfigOption, LockEntry
+from nomarr.helpers.dataclasses.app_dataclasses import (
+    ConfigOption,
+    LockEntry,
+    VramPromise,
+    WorkerRestartPolicy,
+)
+from nomarr.helpers.dataclasses.session_dataclass import AuthSession
+from nomarr.helpers.dto.health_dto import WorkerHealth
 from nomarr.persistence.api.application import AppDb
 from nomarr.persistence.database.app_repo import AppRepository
 from nomarr.persistence.database.pipeline_repo import PipelineRepository
 from nomarr.persistence.database.song_state_repo import SongStateRepository
 from nomarr.persistence.models.base import Base
-from nomarr.persistence.models.vram_promise import VramPromise
+from nomarr.persistence.models.vram_promise import VramPromise as VramPromiseModel
 
 if TYPE_CHECKING:
     from nomarr.helpers.dto.repo_dto import (
         HealthRow,
-        SessionRow,
         WorkerClaimRow,
     )
 
@@ -79,7 +85,7 @@ def sqlite_app_db() -> AppDb:
     like the missing-``id`` insert failure.
     """
     engine = create_engine("sqlite://")
-    Base.metadata.create_all(engine, tables=[VramPromise.__table__])
+    Base.metadata.create_all(engine, tables=[VramPromiseModel.__table__])
     conn = engine.connect()
     conn.begin()
     conn.begin_nested()
@@ -227,10 +233,15 @@ class TestAppDbFileStateMethods:
 class TestAppDbLockMethods:
     @pytest.mark.unit
     def test_get_lock_delegates(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        expected: LockEntry = LockEntry(key="scan:1", value={"owner": "w1"})
-        mock_app_repo.get_lock.return_value = {"key": "scan:1", "value": {"owner": "w1"}}
+        expected = LockEntry(
+            lock_type="scan", resource_id="1", holder="w1", expires_at=0.0, acquired_at=0.0, status="active"
+        )
+        mock_app_repo.get_lock.return_value = {
+            "key": "scan:1",
+            "value": {"holder": "w1"},
+        }
 
-        result = app_db.get_lock("scan:1")
+        result = app_db.get_lock("scan", "1")
 
         assert result == expected
         mock_app_repo.get_lock.assert_called_once_with("scan:1")
@@ -239,24 +250,40 @@ class TestAppDbLockMethods:
     def test_get_lock_returns_none_when_not_found(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
         mock_app_repo.get_lock.return_value = None
 
-        result = app_db.get_lock("missing")
+        result = app_db.get_lock("scan", "missing")
 
         assert result is None
 
     @pytest.mark.unit
     def test_add_lock_delegates_to_insert_lock(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        payload = {"document_reference": "scan:1", "holder": "w1", "expires_at": 123}
-        mock_app_repo.insert_lock.return_value = "scan:1"
+        lock = LockEntry("scan", "1", "w1", 123.0, 100.0, "active")
 
-        result = app_db.add_lock(payload)
+        app_db.add_lock(lock)
 
-        assert result == "scan:1"
-        mock_app_repo.insert_lock.assert_called_once_with({"key": "scan:1", "value": payload})
+        mock_app_repo.insert_lock.assert_called_once_with(
+            {
+                "key": "scan:1",
+                "value": {
+                    "lock_type": "scan",
+                    "resource_id": "1",
+                    "holder": "w1",
+                    "expires_at": 123.0,
+                    "acquired_at": 100.0,
+                    "status": "active",
+                },
+            }
+        )
 
     @pytest.mark.unit
     def test_list_locks_delegates(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        expected: list[LockEntry] = [LockEntry(key="a", value={}), LockEntry(key="b", value={})]
-        mock_app_repo.list_locks.return_value = [{"key": "a", "value": {}}, {"key": "b", "value": {}}]
+        expected = [
+            LockEntry("a", "1", "", 0.0, 0.0, "active"),
+            LockEntry("b", "2", "", 0.0, 0.0, "active"),
+        ]
+        mock_app_repo.list_locks.return_value = [
+            {"key": "a:1", "value": {}},
+            {"key": "b:2", "value": {}},
+        ]
 
         result = app_db.list_locks()
 
@@ -265,32 +292,57 @@ class TestAppDbLockMethods:
 
     @pytest.mark.unit
     def test_remove_lock_delegates_to_release_lock(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        app_db.remove_lock("scan:1")
+        app_db.remove_lock("scan", "1")
 
         mock_app_repo.release_lock.assert_called_once_with("scan:1")
 
     @pytest.mark.unit
     def test_upsert_lock_delegates(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        payload = {"owner": "w1"}
+        lock = LockEntry("scan", "1", "w1", 123.0, 100.0, "active")
 
-        app_db.upsert_lock("scan:1", payload)
+        app_db.upsert_lock(lock)
 
-        mock_app_repo.upsert_lock.assert_called_once_with("scan:1", {"value": payload})
+        mock_app_repo.upsert_lock.assert_called_once_with(
+            "scan:1",
+            {
+                "value": {
+                    "lock_type": "scan",
+                    "resource_id": "1",
+                    "holder": "w1",
+                    "expires_at": 123.0,
+                    "acquired_at": 100.0,
+                    "status": "active",
+                }
+            },
+        )
 
     @pytest.mark.unit
     def test_acquire_lock_returns_true_on_success(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
         mock_app_repo.acquire_lock.return_value = True
+        lock = LockEntry("scan", "1", "w1", 123.0, 100.0, "active")
 
-        result = app_db.acquire_lock("scan:1", {"owner": "w1"})
+        result = app_db.acquire_lock(lock)
 
         assert result is True
-        mock_app_repo.acquire_lock.assert_called_once_with("scan:1", {"value": {"owner": "w1"}})
+        mock_app_repo.acquire_lock.assert_called_once_with(
+            "scan:1",
+            {
+                "value": {
+                    "lock_type": "scan",
+                    "resource_id": "1",
+                    "holder": "w1",
+                    "expires_at": 123.0,
+                    "acquired_at": 100.0,
+                    "status": "active",
+                }
+            },
+        )
 
-    @pytest.mark.unit
     def test_acquire_lock_returns_false_on_conflict(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
         mock_app_repo.acquire_lock.return_value = False
+        lock = LockEntry("scan", "1", "w1", 123.0, 100.0, "active")
 
-        result = app_db.acquire_lock("scan:1", {"owner": "w1"})
+        result = app_db.acquire_lock(lock)
 
         assert result is False
 
@@ -428,7 +480,7 @@ class TestAppDbHealthMethods:
 
         result = app_db.get_health("ml-worker")
 
-        assert result == expected
+        assert result == WorkerHealth(worker_id="ml-worker", status="healthy", last_seen=1000)
         mock_app_repo.get_health.assert_called_once_with("ml-worker")
 
     @pytest.mark.unit
@@ -455,24 +507,20 @@ class TestAppDbHealthMethods:
 
         result = app_db.list_worker_health()
 
-        assert result == expected
+        assert result == [WorkerHealth(worker_id="w1", status="healthy", last_seen=100)]
         mock_app_repo.list_worker_health.assert_called_once_with()
 
     @pytest.mark.unit
     def test_update_health_delegates(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        fields = {"status": "healthy", "heartbeat_ms": 1234}
+        app_db.update_health("ml-worker", status="healthy", last_seen=1234)
 
-        app_db.update_health("ml-worker", fields)
-
-        mock_app_repo.update_health.assert_called_once_with("ml-worker", fields)
+        mock_app_repo.update_health.assert_called_once_with("ml-worker", {"status": "healthy", "last_seen": 1234})
 
     @pytest.mark.unit
     def test_upsert_health_delegates(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        fields = {"status": "healthy"}
+        app_db.upsert_health("ml-worker", status="healthy", last_seen=1234)
 
-        app_db.upsert_health("ml-worker", fields)
-
-        mock_app_repo.upsert_health.assert_called_once_with("ml-worker", fields)
+        mock_app_repo.upsert_health.assert_called_once_with("ml-worker", {"status": "healthy", "last_seen": 1234})
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -505,16 +553,17 @@ class TestAppDbMigrationMethods:
 
 class TestAppDbVramPromiseMethods:
     @pytest.mark.unit
-    def test_add_vram_promise_delegates_to_upsert(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        payload = {"id": 1, "worker_id": "w1", "promised_mb": 512}
-
-        app_db.add_vram_promise(payload)
-
-        mock_app_repo.upsert_vram_promise.assert_called_once_with(payload)
-
-    @pytest.mark.unit
-    def test_list_vram_promises_delegates(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        expected = [{"id": 1, "worker_id": "w1"}]
+    def test_list_vram_promises_returns_domain_values(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
+        expected = [
+            VramPromise(
+                worker_id="w1",
+                pid=1,
+                model_path="/m.onnx",
+                promised_mb=512,
+                total_mb=8000,
+                used_mb=1000,
+            )
+        ]
         mock_app_repo.get_vram_promises.return_value = expected
 
         result = app_db.list_vram_promises()
@@ -523,29 +572,15 @@ class TestAppDbVramPromiseMethods:
         mock_app_repo.get_vram_promises.assert_called_once_with()
 
     @pytest.mark.unit
-    def test_remove_vram_promise_delegates(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        app_db.remove_vram_promise(42)
+    def test_count_vram_promises_delegates_to_count(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
+        mock_app_repo.count_vram_promises.return_value = 3
 
-        mock_app_repo.delete_vram_promise.assert_called_once_with(42)
-
-    @pytest.mark.unit
-    def test_count_vram_promises_returns_length(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        mock_app_repo.get_vram_promises.return_value = [{"id": 1}, {"id": 2}, {"id": 3}]
-
-        result = app_db.count_vram_promises()
-
-        assert result == 3
+        assert app_db.count_vram_promises() == 3
+        mock_app_repo.count_vram_promises.assert_called_once_with()
+        mock_app_repo.get_vram_promises.assert_not_called()
 
     @pytest.mark.unit
-    def test_count_vram_promises_empty(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        mock_app_repo.get_vram_promises.return_value = []
-
-        result = app_db.count_vram_promises()
-
-        assert result == 0
-
-    @pytest.mark.unit
-    def test_promise_vram_delegates_to_upsert(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
+    def test_promise_vram_delegates_to_insert(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
         app_db.promise_vram(
             worker_id="w1",
             pid=1,
@@ -555,27 +590,17 @@ class TestAppDbVramPromiseMethods:
             used_mb=1000.0,
         )
 
-        # Payload must NOT contain an 'id' — the repo plain-inserts and the
-        # autoincrement column assigns it.
-        mock_app_repo.upsert_vram_promise.assert_called_once_with(
-            {
-                "worker_id": "w1",
-                "pid": 1,
-                "model_path": "/m.onnx",
-                "promised_mb": 512.0,
-                "total_mb": 8000.0,
-                "used_mb": 1000.0,
-            }
+        mock_app_repo.insert_vram_promise.assert_called_once_with(
+            worker_id="w1",
+            pid=1,
+            model_path="/m.onnx",
+            promised_mb=512.0,
+            total_mb=8000.0,
+            used_mb=1000.0,
         )
 
     @pytest.mark.unit
     def test_promise_vram_inserts_end_to_end(self, sqlite_app_db: AppDb) -> None:
-        """promise_vram must insert a real row through the repo SQL layer.
-
-        Regression test for the latent KeyError: the old ``upsert_vram_promise``
-        unconditionally read ``payload["id"]``, which promise_vram's payload
-        does not contain.
-        """
         sqlite_app_db.promise_vram(
             worker_id="worker:1",
             pid=999,
@@ -586,30 +611,26 @@ class TestAppDbVramPromiseMethods:
         )
 
         promises = sqlite_app_db.list_vram_promises()
-        assert len(promises) == 1
-        row = promises[0]
-        assert row["id"] is not None
-        assert row["worker_id"] == "worker:1"
-        assert row["pid"] == 999
-        assert row["model_path"] == "/models/a.onnx"
-        assert row["promised_mb"] == 512.0
-        assert row["total_mb"] == 8000.0
-        assert row["used_mb"] == 1000.0
+        assert promises == [
+            VramPromise(
+                worker_id="worker:1",
+                pid=999,
+                model_path="/models/a.onnx",
+                promised_mb=512.0,
+                total_mb=8000.0,
+                used_mb=1000.0,
+            )
+        ]
 
     @pytest.mark.unit
     def test_release_vram_delegates_to_repo(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        app_db.release_vram(worker_id="w1", model_path="/m.onnx")
+        mock_app_repo.delete_vram_promise_by_worker_model.return_value = 1
 
+        assert app_db.release_vram(worker_id="w1", model_path="/m.onnx") == 1
         mock_app_repo.delete_vram_promise_by_worker_model.assert_called_once_with("w1", "/m.onnx")
 
     @pytest.mark.unit
     def test_release_vram_removes_promise_end_to_end(self, sqlite_app_db: AppDb) -> None:
-        """promise then release → zero rows remain for that worker+model.
-
-        Two promises are inserted for the SAME pair: the absorbed adapter's
-        release only deleted the first match it found (list-then-break), so
-        this is a deterministic regression guard for the atomic delete.
-        """
         sqlite_app_db.promise_vram(
             worker_id="worker:1",
             pid=1,
@@ -634,52 +655,41 @@ class TestAppDbVramPromiseMethods:
             total_mb=8000.0,
             used_mb=1000.0,
         )
+
         sqlite_app_db.release_vram(worker_id="worker:1", model_path="/models/a.onnx")
 
         remaining = sqlite_app_db.list_vram_promises()
         assert len(remaining) == 1
-        assert remaining[0]["worker_id"] == "worker:2"
+        assert remaining[0].worker_id == "worker:2"
 
     @pytest.mark.unit
     def test_release_all_for_worker_delegates(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
         mock_app_repo.delete_vram_promises_by_worker.return_value = 3
 
-        deleted = app_db.release_all_for_worker(worker_id="w1")
-
-        assert deleted == 3
+        assert app_db.release_all_for_worker(worker_id="w1") == 3
         mock_app_repo.delete_vram_promises_by_worker.assert_called_once_with("w1")
 
     @pytest.mark.unit
     def test_release_all_for_worker_removes_matching_end_to_end(self, sqlite_app_db: AppDb) -> None:
-        sqlite_app_db.promise_vram(
-            worker_id="worker:1",
-            pid=1,
-            model_path="/models/a.onnx",
-            promised_mb=512.0,
-            total_mb=8000.0,
-            used_mb=1000.0,
-        )
-        sqlite_app_db.promise_vram(
-            worker_id="worker:1",
-            pid=2,
-            model_path="/models/b.onnx",
-            promised_mb=256.0,
-            total_mb=8000.0,
-            used_mb=1000.0,
-        )
-        sqlite_app_db.promise_vram(
-            worker_id="worker:2",
-            pid=3,
-            model_path="/models/c.onnx",
-            promised_mb=128.0,
-            total_mb=8000.0,
-            used_mb=1000.0,
-        )
+        for worker_id, model_path in (
+            ("worker:1", "/models/a.onnx"),
+            ("worker:1", "/models/b.onnx"),
+            ("worker:2", "/models/c.onnx"),
+        ):
+            sqlite_app_db.promise_vram(
+                worker_id=worker_id,
+                pid=1,
+                model_path=model_path,
+                promised_mb=512.0,
+                total_mb=8000.0,
+                used_mb=1000.0,
+            )
+
         sqlite_app_db.release_all_for_worker(worker_id="worker:1")
 
         remaining = sqlite_app_db.list_vram_promises()
         assert len(remaining) == 1
-        assert remaining[0]["worker_id"] == "worker:2"
+        assert remaining[0].worker_id == "worker:2"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -689,38 +699,44 @@ class TestAppDbVramPromiseMethods:
 
 class TestAppDbWorkerRestartPolicyMethods:
     @pytest.mark.unit
-    def test_get_worker_restart_policy_delegates(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        expected = {"max_retries": 3}
-        mock_app_repo.get_worker_restart_policy.return_value = expected
+    def test_get_worker_restart_policy_maps_storage_to_domain(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
+        mock_app_repo.get_worker_restart_policy.return_value = {
+            "restart_count": 3,
+            "last_restart_wall_ms": 10,
+            "failure_reason": None,
+        }
 
         result = app_db.get_worker_restart_policy("ml-worker")
 
-        assert result == expected
-        mock_app_repo.get_worker_restart_policy.assert_called_once_with("ml-worker")
+        assert result == WorkerRestartPolicy(restart_count=3, last_restart_wall_ms=10)
 
     @pytest.mark.unit
     def test_get_worker_restart_policy_returns_none(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
         mock_app_repo.get_worker_restart_policy.return_value = None
 
-        result = app_db.get_worker_restart_policy("unknown")
-
-        assert result is None
+        assert app_db.get_worker_restart_policy("unknown") is None
 
     @pytest.mark.unit
-    def test_update_worker_restart_policy_delegates(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        fields = {"max_retries": 5}
+    def test_record_worker_restart_persists_domain_fields(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
+        mock_app_repo.get_worker_restart_policy.return_value = None
 
-        app_db.update_worker_restart_policy("ml-worker", fields)
+        app_db.record_worker_restart("ml-worker")
 
-        mock_app_repo.upsert_worker_restart_policy.assert_called_once_with("ml-worker", fields)
+        mock_app_repo.upsert_worker_restart_policy.assert_called_once()
+        component_id, fields = mock_app_repo.upsert_worker_restart_policy.call_args.args
+        assert component_id == "ml-worker"
+        assert fields["restart_count"] == 1
+        assert fields["last_restart_wall_ms"] is not None
 
     @pytest.mark.unit
-    def test_upsert_worker_restart_policy_delegates(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        fields = {"max_retries": 5}
+    def test_mark_worker_restart_failed_persists_reason(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
+        mock_app_repo.get_worker_restart_policy.return_value = None
 
-        app_db.upsert_worker_restart_policy("ml-worker", fields)
+        app_db.mark_worker_restart_failed("ml-worker", "crash loop")
 
-        mock_app_repo.upsert_worker_restart_policy.assert_called_once_with("ml-worker", fields)
+        _, fields = mock_app_repo.upsert_worker_restart_policy.call_args.args
+        assert fields["failure_reason"] == "crash loop"
+        assert fields["failed_at_wall_ms"] is not None
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -730,53 +746,48 @@ class TestAppDbWorkerRestartPolicyMethods:
 
 class TestAppDbSessionMethods:
     @pytest.mark.unit
-    def test_insert_session_delegates(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        payloads = [{"id": "s1", "data": {}, "expires_at": 9999}]
+    def test_save_session_maps_domain_object_to_storage(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
+        session = AuthSession(token="s1", data={"user": "admin"}, expires_at=9.999)
 
-        app_db.insert_session(payloads)
+        app_db.save_session(session)
 
-        mock_app_repo.insert_session.assert_called_once_with(payloads)
+        mock_app_repo.insert_session.assert_called_once_with(
+            [{"id": "s1", "data": {"user": "admin"}, "expires_at": 9999}]
+        )
 
     @pytest.mark.unit
-    def test_delete_session_delegates(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
+    def test_delete_session_delegates_by_token(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
         app_db.delete_session("s1")
 
         mock_app_repo.delete_session.assert_called_once_with("s1")
 
     @pytest.mark.unit
-    def test_get_sessions_expiring_before_delegates(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        expected: list[SessionRow] = [{"id": "s1", "data": {}, "expires_at": 100}]
-        mock_app_repo.get_sessions_expiring_before.return_value = expected
+    def test_find_expired_sessions_maps_repository_rows(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
+        mock_app_repo.get_sessions_expiring_before.return_value = [
+            {"id": "s1", "data": {"user": "admin"}, "expires_at": 9999}
+        ]
 
-        result = app_db.get_sessions_expiring_before(500, 10)
+        result = app_db.find_expired_sessions(10.0)
 
-        assert result == expected
-        mock_app_repo.get_sessions_expiring_before.assert_called_once_with(500, 10)
-
-    @pytest.mark.unit
-    def test_count_sessions_delegates(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        mock_app_repo.count_sessions.return_value = 5
-
-        result = app_db.count_sessions()
-
-        assert result == 5
-        mock_app_repo.count_sessions.assert_called_once_with()
+        assert result == [AuthSession(token="s1", data={"user": "admin"}, expires_at=9.999)]
+        mock_app_repo.get_sessions_expiring_before.assert_called_once_with(10000)
 
     @pytest.mark.unit
-    def test_delete_sessions_by_ids_delegates(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        app_db.delete_sessions_by_ids(["s1", "s2"])
+    def test_delete_sessions_maps_domain_objects_to_tokens(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
+        sessions = [AuthSession(token="s1", expires_at=1.0), AuthSession(token="s2", expires_at=2.0)]
+
+        app_db.delete_sessions(sessions)
 
         mock_app_repo.delete_sessions_by_ids.assert_called_once_with(["s1", "s2"])
 
     @pytest.mark.unit
-    def test_get_active_sessions_delegates(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        expected: list[SessionRow] = []
-        mock_app_repo.get_active_sessions.return_value = expected
+    def test_find_active_sessions_maps_repository_rows(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
+        mock_app_repo.get_active_sessions.return_value = [{"id": "s1", "data": {}, "expires_at": 1000}]
 
-        result = app_db.get_active_sessions(1000, 50)
+        result = app_db.find_active_sessions(1.0)
 
-        assert result == expected
-        mock_app_repo.get_active_sessions.assert_called_once_with(1000, 50)
+        assert result == [AuthSession(token="s1", expires_at=1.0)]
+        mock_app_repo.get_active_sessions.assert_called_once_with(1000)
 
 
 # ══════════════════════════════════════════════════════════════════════════════

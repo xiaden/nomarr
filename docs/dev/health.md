@@ -96,11 +96,11 @@ failed → (terminal)          (no further transitions; set via set_failed())
 ```python
 @dataclass
 class ComponentPolicy:
-    startup_timeout_s: float = 30.0     # Max time in 'pending' before -> dead
-    staleness_interval_s: float = 5.0   # Seconds between expected frames
-    max_consecutive_misses: int = 3     # Misses before -> dead
-    min_recovery_s: float = 5.0         # Minimum recovery deadline
-    max_recovery_s: float = 60.0        # Maximum recovery deadline
+    startup_timeout_s: float = 30.0  # Max time in 'pending' before -> dead
+    staleness_interval_s: float = 5.0  # Seconds between expected frames
+    max_consecutive_misses: int = 3  # Misses before -> dead
+    min_recovery_s: float = 5.0  # Minimum recovery deadline
+    max_recovery_s: float = 60.0  # Maximum recovery deadline
 ```
 
 Domain services provide a `ComponentPolicy` at registration time to configure monitoring behavior per component. If omitted, defaults apply.
@@ -109,9 +109,9 @@ Domain services provide a `ComponentPolicy` at registration time to configure mo
 
 ```python
 DEFAULT_WORKER_POLICY = ComponentPolicy(
-    startup_timeout_s=60.0,     # Workers load ONNX models at startup (slow)
-    staleness_interval_s=9.0,   # Health frames every 3s; miss window = 3 intervals
-    max_consecutive_misses=3,   # 3 misses = ~27s of silence before dead
+    startup_timeout_s=60.0,  # Workers load ONNX models at startup (slow)
+    staleness_interval_s=9.0,  # Health frames every 3s; miss window = 3 intervals
+    max_consecutive_misses=3,  # 3 misses = ~27s of silence before dead
     min_recovery_s=5.0,
     max_recovery_s=60.0,
 )
@@ -141,8 +141,8 @@ Domain services implement this protocol to receive callbacks when component stat
 ```python
 @dataclass
 class StatusChangeContext:
-    consecutive_misses: int = 0            # Number of missed frames
-    recovery_deadline: float | None = None # When recovery must complete
+    consecutive_misses: int = 0  # Number of missed frames
+    recovery_deadline: float | None = None  # When recovery must complete
     reported_recover_for_s: float | None = None  # Worker-reported recovery duration
 ```
 
@@ -160,10 +160,10 @@ Components are registered individually with `HealthMonitorService`:
 
 ```python
 health_monitor.register_component(
-    component_id="worker:discovery:0",    # Unique identifier
-    handler=worker_system_service,         # Implements ComponentLifecycleHandler
-    pipe_conn=parent_pipe_end,             # Read-end of OS pipe
-    policy=ComponentPolicy(                # Optional; defaults if None
+    component_id="worker:discovery:0",  # Unique identifier
+    handler=worker_system_service,  # Implements ComponentLifecycleHandler
+    pipe_conn=parent_pipe_end,  # Read-end of OS pipe
+    policy=ComponentPolicy(  # Optional; defaults if None
         startup_timeout_s=60.0,
         staleness_interval_s=9.0,
     ),
@@ -228,8 +228,8 @@ HealthMonitorService(
 ```python
 @dataclass
 class HealthMonitorConfig:
-    monitor_poll_timeout_s: float = 1.0      # Pipe poll timeout
-    history_snapshot_interval_s: int = 30     # DB snapshot frequency
+    monitor_poll_timeout_s: float = 1.0  # Pipe poll timeout
+    history_snapshot_interval_s: int = 30  # DB snapshot frequency
 ```
 
 ### Key Methods

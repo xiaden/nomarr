@@ -174,8 +174,8 @@ def scan_library_workflow(
     db: Database,
     library: Library,
     models_dir: str,
-) -> ScanResult:
-    ...
+) -> ScanResult: ...
+
 
 # ❌ Bad — reading config at runtime
 def scan_library_workflow(library: Library) -> ScanResult:
@@ -206,8 +206,9 @@ Workflows receive `Database` and pass it to components — never calling persist
 # ✅ Good — pass db to component
 def cleanup_workflow(db: Database, library: Library) -> CleanupResult:
     orphans = find_orphaned_tags(db, library)  # component calls db
-    removed = remove_tags(db, orphans)           # component calls db
+    removed = remove_tags(db, orphans)  # component calls db
     return CleanupResult(removed=removed)
+
 
 # ❌ Bad — workflow calling persistence
 def cleanup_workflow(db: Database, library: Library) -> CleanupResult:

@@ -113,10 +113,10 @@ def test_concurrent_release_leaves_no_stale_promises(pg_session) -> None:
 
     remaining = db.list_vram_promises()
 
-    stale = [p for p in remaining if p["worker_id"] == WORKER_ID and p["model_path"] == MODEL_PATH]
+    stale = [p for p in remaining if p.worker_id == WORKER_ID and p.model_path == MODEL_PATH]
     assert stale == [], f"stale promises survived concurrent release: {stale}"
 
-    survivors = [p for p in remaining if p["worker_id"] == OTHER_WORKER and p["model_path"] == OTHER_MODEL]
+    survivors = [p for p in remaining if p.worker_id == OTHER_WORKER and p.model_path == OTHER_MODEL]
     assert len(survivors) == 1, f"non-matching promise was wrongly released: {survivors}"
 
 
@@ -173,8 +173,8 @@ def test_concurrent_release_all_for_worker_leaves_no_stale_promises(pg_session, 
 
     remaining = db.list_vram_promises()
 
-    stale = [p for p in remaining if p["worker_id"] == WORKER_ID]
+    stale = [p for p in remaining if p.worker_id == WORKER_ID]
     assert stale == [], f"stale promises survived concurrent worker-wide release: {stale}"
 
-    survivors = [p for p in remaining if p["worker_id"] == OTHER_WORKER]
+    survivors = [p for p in remaining if p.worker_id == OTHER_WORKER]
     assert len(survivors) == 1, f"non-matching worker promise was wrongly released: {survivors}"

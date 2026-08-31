@@ -138,7 +138,7 @@ class MetaRow(TypedDict):
 
 
 class LockRow(TypedDict):
-    """Single row from the ``locks`` KV table."""
+    """Internal repository row for lock persistence."""
 
     key: str
     value: dict

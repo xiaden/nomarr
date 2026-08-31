@@ -52,7 +52,8 @@ The 4-step tag re-link operation moves to the component layer:
 # nomarr/components/tags/tag_curation_comp.py
 def relink_tag_edges(db, source_tag_id, target_tag_id, song_ids=None):
     edges = db.song_has_tags._to.get.many(source_tag_id)
-    if song_ids: edges = [e for e in edges if e["_from"] in song_ids]
+    if song_ids:
+        edges = [e for e in edges if e["_from"] in song_ids]
     db.song_has_tags.insert([{"_from": e["_from"], "_to": target_tag_id} for e in edges])
     db.song_has_tags._to.delete(source_tag_id)
     db.tags.cascade([source_tag_id])

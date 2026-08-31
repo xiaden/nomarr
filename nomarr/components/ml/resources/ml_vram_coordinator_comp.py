@@ -19,13 +19,14 @@ Typical call sequence (executed in ml_onnx_cache or ml_onnx_base):
 
 from __future__ import annotations
 
-import hashlib
 import logging
-from typing import TYPE_CHECKING, Any, TypedDict
+from typing import TYPE_CHECKING, TypedDict
 
 from nomarr.components.platform import resource_monitor_comp as _resource_monitor
 
 if TYPE_CHECKING:
+    from nomarr.components.platform.resource_monitor_comp import VramTelemetry
+    from nomarr.helpers.dataclasses.app_dataclasses import VramPromise
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
@@ -34,14 +35,8 @@ logger = logging.getLogger(__name__)
 class FleetVramState(TypedDict):
     """Snapshot of fleet VRAM promises and GPU telemetry."""
 
-    promises: list[dict[str, Any]]
-    vram: dict[str, Any]
-
-
-def _promise_key(worker_id: str, model_path: str) -> str:
-    """Compute a stable key for a worker+model VRAM promise."""
-    raw = f"{worker_id}:{model_path}"
-    return hashlib.sha256(raw.encode()).hexdigest()[:32]
+    promises: list[VramPromise]
+    vram: VramTelemetry
 
 
 def register_vram_promise(
@@ -102,7 +97,7 @@ def register_vram_promise(
     # Fleet headroom fit-check: reject if adding this promise would exceed
     # 90% of total GPU VRAM (10% headroom for driver overhead/fragmentation).
     existing = db.app.list_vram_promises()
-    committed_mb = sum(float(p.get("promised_mb", 0)) for p in existing)
+    committed_mb = sum(p.promised_mb for p in existing)
     if committed_mb + promised_mb > total_mb * 0.90:
         logger.debug(
             "[vram_coordinator] Headroom exhausted: worker=%s model=%s promised=%.0f MB "
@@ -177,9 +172,9 @@ def get_fleet_vram_state(
         FleetVramState with ``promises`` list and ``vram`` telemetry snapshot.
 
     """
-    promises: list[dict[str, Any]] = db.app.list_vram_promises()
+    promises = db.app.list_vram_promises()
     vram = _resource_monitor.get_vram_usage_mb()
-    return FleetVramState(promises=promises, vram=vram)  # type: ignore[typeddict-item]
+    return FleetVramState(promises=promises, vram=vram)
 
 
 def release_worker_promises(

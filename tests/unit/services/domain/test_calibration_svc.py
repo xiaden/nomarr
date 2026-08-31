@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from nomarr.helpers import ManagedTask
+from nomarr.helpers.dataclasses.calibration_state_dataclass import CalibrationState
 from nomarr.services.domain.calibration_svc import (
     CALIBRATION_GENERATE_TASK_ID,
     CalibrationConfig,
@@ -327,13 +328,16 @@ class TestGetHistogramForHead:
     @pytest.mark.mocked
     def test_get_histogram_for_head_returns_histogram_payload_when_state_exists(self) -> None:
         service = _make_service()
-        state = {
-            "histogram_bins": [{"val": 0.1, "count": 2}],
-            "p5": 0.1,
-            "p95": 0.9,
-            "n": 12,
-            "histogram": {"lo": 0.0, "hi": 1.0, "bins": 10, "bin_width": 0.1},
-        }
+        state = CalibrationState(
+            model_id="model-1",
+            head_name="mood_happy",
+            label="happy",
+            histogram_bins=[{"val": 0.1, "count": 2}],
+            p5=0.1,
+            p95=0.9,
+            sample_count=12,
+            histogram={"lo": 0.0, "hi": 1.0, "bins": 10, "bin_width": 0.1},
+        )
 
         with patch(
             "nomarr.services.domain.calibration_svc.load_calibration_state",

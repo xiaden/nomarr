@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from nomarr.helpers.dataclasses.app_dataclasses import LockEntry
 from nomarr.helpers.exceptions import DuplicateEntityError
 from nomarr.helpers.time_helper import now_ms
 
@@ -12,11 +13,6 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
-
-
-def make_lock_reference(lock_type: str, resource_id: str) -> str:
-    """Build the deterministic lock reference stored in the app lock facade."""
-    return f"{lock_type}:{resource_id}"
 
 
 def acquire_distributed_lock(
@@ -27,28 +23,27 @@ def acquire_distributed_lock(
     ttl_seconds: int,
 ) -> bool:
     """Acquire a distributed lock when absent, expired, or already owned by the holder."""
-    reference = make_lock_reference(lock_type, resource_id)
     now = float(now_ms().value)
     expires_at = now + float(ttl_seconds * 1000)
 
-    existing_row = db.app.get_lock(reference)
-    existing = existing_row.value if existing_row is not None else None
+    existing = db.app.get_lock(lock_type, resource_id)
     if existing is not None:
-        existing_expires_at = float(existing.get("expires_at", 0.0))
-        if existing_expires_at >= now and existing.get("holder") != holder:
+        if existing.expires_at >= now and existing.holder != holder:
             return False
-        db.app.remove_lock(reference)
+        db.app.remove_lock(lock_type, resource_id)
 
-    payload = {
-        "document_reference": reference,
-        "lock_type": lock_type,
-        "holder": holder,
-        "expires_at": expires_at,
-        "acquired_at": now,
-        "status": "active",
-    }
     try:
-        db.app.add_lock(payload)
+        if not db.app.acquire_lock(
+            LockEntry(
+                lock_type=lock_type,
+                resource_id=resource_id,
+                holder=holder,
+                expires_at=expires_at,
+                acquired_at=now,
+                status="active",
+            )
+        ):
+            return False
     except DuplicateEntityError:
         return False
     return True
@@ -56,16 +51,13 @@ def acquire_distributed_lock(
 
 def release_distributed_lock(db: Database, lock_type: str, resource_id: str, holder: str) -> bool:
     """Release a distributed lock only when it is still owned by the holder."""
-    reference = make_lock_reference(lock_type, resource_id)
-    existing_row = db.app.get_lock(reference)
-    existing = existing_row.value if existing_row is not None else None
-    if existing is None or existing.get("holder") != holder:
+    existing = db.app.get_lock(lock_type, resource_id)
+    if existing is None or existing.holder != holder:
         return False
 
-    db.app.remove_lock(reference)
-    remaining_row = db.app.get_lock(reference)
-    remaining = remaining_row.value if remaining_row is not None else None
-    return remaining is None or remaining.get("holder") != holder
+    db.app.remove_lock(lock_type, resource_id)
+    remaining = db.app.get_lock(lock_type, resource_id)
+    return remaining is None or remaining.holder != holder
 
 
 def reap_stale_locks(db: Database, worker_id: str, stale_after_ms: int) -> None:
@@ -73,23 +65,17 @@ def reap_stale_locks(db: Database, worker_id: str, stale_after_ms: int) -> None:
     stale_threshold = float(now_ms().value - stale_after_ms)
     stale_locks = db.app.list_locks()
     for lock in stale_locks:
-        if lock.value.get("lock_type") != "vector_promotion":
+        if lock.lock_type != "vector_promotion":
             continue
-        acquired_at = float(lock.value.get("acquired_at", 0.0))
-        if acquired_at >= stale_threshold:
-            continue
-
-        reference = str(lock.value["document_reference"])
-        current_row = db.app.get_lock(reference)
-        current = current_row.value if current_row is not None else None
-        if current is None:
-            continue
-        if current.get("lock_type") != "vector_promotion":
-            continue
-        current_acquired_at = float(current.get("acquired_at", 0.0))
-        if current_acquired_at >= stale_threshold:
+        if lock.acquired_at >= stale_threshold:
             continue
 
-        resource_id = reference.split(":", maxsplit=1)[1]
-        db.app.remove_lock(reference)
+        current = db.app.get_lock(lock.lock_type, lock.resource_id)
+        if current is None or current.lock_type != "vector_promotion":
+            continue
+        if current.acquired_at >= stale_threshold:
+            continue
+
+        db.app.remove_lock(lock.lock_type, lock.resource_id)
+        resource_id = lock.resource_id
         logger.warning("[locks] %s reaped stale promotion lock for %s", worker_id, resource_id)

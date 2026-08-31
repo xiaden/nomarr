@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, call, sentinel
 
 import pytest
 
+from nomarr.helpers.dataclasses.calibration_state_dataclass import CalibrationState
 from nomarr.helpers.dataclasses.ml_embedding_stream_dataclass import EmbeddingStream
 from nomarr.helpers.dataclasses.ml_model_dataclass import RegisteredModel
 from nomarr.helpers.dataclasses.ml_model_output_dataclass import ModelOutput
@@ -201,7 +202,7 @@ def test_list_song_vectors_delegates_to_vector_repo() -> None:
 
     result = db.list_song_vectors("vectors_track_hot__model__lib", 1)
 
-    assert result is sentinel.result
+    assert result == sentinel.result
     vector_repo.get_embeddings_for_song.assert_called_once_with(1, "vectors_track_hot__model__lib", "cold")
 
 
@@ -533,22 +534,28 @@ def test_list_model_outputs_delegates_to_output_repo() -> None:
 @pytest.mark.unit
 def test_get_calibration_state_delegates_to_calibration_repo() -> None:
     db, _, _, _, calibration_repo, _ = _make_ml_db()
-    calibration_repo.get_state = MagicMock(return_value=sentinel.result)
+    calibration_repo.get_state = MagicMock(
+        return_value={
+            "model_id": "model1",
+            "state_data": {"head_name": "genre", "label": "rock", "p5": 0.0, "p95": 1.0},
+            "updated_at": 1,
+        }
+    )
 
     result = db.get_calibration_state("model1")
 
-    assert result is sentinel.result
+    assert result == CalibrationState(model_id="model1", head_name="genre", label="rock", updated_at=1, p5=0.0, p95=1.0)
     calibration_repo.get_state.assert_called_once_with("model1")
 
 
 @pytest.mark.unit
 def test_list_calibration_states_delegates_to_calibration_repo() -> None:
     db, _, _, _, calibration_repo, _ = _make_ml_db()
-    calibration_repo.list_states = MagicMock(return_value=sentinel.result)
+    calibration_repo.list_states = MagicMock(return_value=[])
 
     result = db.list_calibration_states()
 
-    assert result is sentinel.result
+    assert result == []
     calibration_repo.list_states.assert_called_once_with()
 
 
@@ -637,20 +644,23 @@ def test_ml_db_exposes_no_facade_transaction_api() -> None:
 @pytest.mark.unit
 def test_get_calibration_state_view_returns_matching_state() -> None:
     db, _, _, _, calibration_repo, _ = _make_ml_db()
-    state_a = {"state_data": {"head_name": "genre", "label": "rock"}, "id": 1}
-    state_b = {"state_data": {"head_name": "mood", "label": "happy"}, "id": 2}
-    calibration_repo.list_states = MagicMock(return_value=[state_a, state_b])
+    state_b = {
+        "state_data": {"head_name": "mood", "label": "happy"},
+        "id": 2,
+        "model_id": "model2",
+        "updated_at": 1,
+    }
+    calibration_repo.get_state_by_head_label = MagicMock(return_value=state_b)
 
     result = db.get_calibration_state_view("mood", "happy")
 
-    assert result is state_b
+    assert result == CalibrationState(model_id="model2", head_name="mood", label="happy", updated_at=1, p5=0.0, p95=1.0)
 
 
 @pytest.mark.unit
 def test_get_calibration_state_view_returns_none_when_no_match() -> None:
     db, _, _, _, calibration_repo, _ = _make_ml_db()
-    state_a = {"state_data": {"head_name": "genre", "label": "rock"}, "id": 1}
-    calibration_repo.list_states = MagicMock(return_value=[state_a])
+    calibration_repo.get_state_by_head_label = MagicMock(return_value=None)
 
     result = db.get_calibration_state_view("mood", "happy")
 
@@ -660,7 +670,7 @@ def test_get_calibration_state_view_returns_none_when_no_match() -> None:
 @pytest.mark.unit
 def test_get_calibration_state_view_returns_none_for_empty_list() -> None:
     db, _, _, _, calibration_repo, _ = _make_ml_db()
-    calibration_repo.list_states = MagicMock(return_value=[])
+    calibration_repo.get_state_by_head_label = MagicMock(return_value=None)
 
     result = db.get_calibration_state_view("genre", "rock")
 
@@ -965,34 +975,55 @@ def test_remove_output_streams_for_song_delegates_to_output_repo() -> None:
 @pytest.mark.unit
 def test_list_all_calibration_states_with_models_delegates_to_calibration_repo() -> None:
     db, _, _, _, calibration_repo, _ = _make_ml_db()
-    calibration_repo.list_states_with_models = MagicMock(return_value=sentinel.result)
+    calibration_repo.list_states_with_models = MagicMock(return_value=[])
 
     result = db.list_all_calibration_states_with_models()
 
-    assert result is sentinel.result
+    assert result == []
     calibration_repo.list_states_with_models.assert_called_once_with()
 
 
 @pytest.mark.unit
 def test_replace_calibration_state_delegates_to_calibration_repo_ignoring_key() -> None:
     db, _, _, _, calibration_repo, _ = _make_ml_db()
-    calibration_repo.set_state = MagicMock(return_value=sentinel.result)
-    payload = {"head_name": "genre", "label": "rock"}
+    calibration_repo.set_state = MagicMock(
+        return_value={
+            "model_id": "model1",
+            "state_data": {"head_name": "genre", "label": "rock"},
+            "updated_at": 1,
+        }
+    )
+    state = CalibrationState(model_id="model1", head_name="genre", label="rock")
 
-    result = db.replace_calibration_state("model1", payload)
+    result = db.replace_calibration_state(state)
 
-    assert result is sentinel.result
-    calibration_repo.set_state.assert_called_once_with("model1", state_data=payload)
+    assert result == CalibrationState(model_id="model1", head_name="genre", label="rock", updated_at=1, p5=0.0, p95=1.0)
+    calibration_repo.set_state.assert_called_once_with(
+        "model1",
+        state_data={
+            "head_name": "genre",
+            "label": "rock",
+            "calibration_def_hash": "",
+            "histogram": {},
+            "histogram_bins": None,
+            "p5": None,
+            "p95": None,
+            "n": 0,
+            "underflow_count": 0,
+            "overflow_count": 0,
+        },
+    )
 
 
 @pytest.mark.unit
 def test_remove_calibration_state_delegates_to_calibration_repo() -> None:
     db, _, _, _, calibration_repo, _ = _make_ml_db()
     calibration_repo.delete_state = MagicMock()
+    state = CalibrationState(model_id="model1", head_name="genre", label="rock")
 
-    db.remove_calibration_state(3)
+    db.remove_calibration_state(state)
 
-    calibration_repo.delete_state.assert_called_once_with(3)
+    calibration_repo.delete_state.assert_called_once_with("model1", "genre", "rock")
 
 
 # ---------------------------------------------------------------------------

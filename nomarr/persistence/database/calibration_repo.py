@@ -76,7 +76,11 @@ class CalibrationRepo:
         """
         with map_persistence_exceptions():
             now = now_ms().value
-            existing = self.get_state(model_id)
+            existing = self.get_state_by_identity(
+                model_id,
+                str(state_data.get("head_name", "")),
+                str(state_data.get("label", "")),
+            )
             if existing is not None:
                 with self._session.begin_nested():
                     stmt = (
@@ -103,6 +107,29 @@ class CalibrationRepo:
                 )
             self._session.commit()
             return _row_to_state_record(row)
+
+    def get_state_by_identity(self, model_id: str, head_name: str, label: str) -> CalibrationStateRecord | None:
+        """Fetch one state by owning model and logical head/label identity."""
+        with map_persistence_exceptions():
+            stmt = select(_T_STATE).where(
+                _T_STATE.c.model_id == model_id,
+                _T_STATE.c.state_data["head_name"].astext == head_name,
+                _T_STATE.c.state_data["label"].astext == label,
+            )
+            result = self._session.execute(stmt)
+            row = result.fetchone()
+            return _row_to_state_record(row) if row else None
+
+    def get_state_by_head_label(self, head_name: str, label: str) -> CalibrationStateRecord | None:
+        """Fetch one state by its logical head and label identity."""
+        with map_persistence_exceptions():
+            stmt = select(_T_STATE).where(
+                _T_STATE.c.state_data["head_name"].astext == head_name,
+                _T_STATE.c.state_data["label"].astext == label,
+            )
+            result = self._session.execute(stmt)
+            row = result.fetchone()
+            return _row_to_state_record(row) if row else None
 
     def list_states(self) -> list[CalibrationStateRecord]:
         """Return all calibration state rows."""
@@ -139,11 +166,15 @@ class CalibrationRepo:
                 for r in result.all()
             ]
 
-    def delete_state(self, calibration_id: int) -> None:
-        """Delete a single calibration state by its primary key."""
+    def delete_state(self, model_id: str, head_name: str, label: str) -> None:
+        """Delete a state by its owning model and logical calibration identity."""
         with map_persistence_exceptions():
             with self._session.begin_nested():
-                stmt = delete(_T_STATE).where(_T_STATE.c.id == calibration_id)
+                stmt = delete(_T_STATE).where(
+                    _T_STATE.c.model_id == model_id,
+                    _T_STATE.c.state_data["head_name"].astext == head_name,
+                    _T_STATE.c.state_data["label"].astext == label,
+                )
                 self._session.execute(stmt)
             self._session.commit()
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from nomarr.helpers.dto.repo_dto import HealthRow
+    from nomarr.helpers.dto.health_dto import WorkerHealth
     from nomarr.persistence.db import Database
 
 
@@ -26,7 +26,7 @@ class HealthComp:
     def __init__(self, db: Database) -> None:
         self.db = db
 
-    def get_all_workers(self) -> list[HealthRow]:
+    def get_all_workers(self) -> list[WorkerHealth]:
         """Get all registered workers from health monitoring.
 
         Returns:
@@ -35,7 +35,7 @@ class HealthComp:
         """
         return self.db.app.list_worker_health()
 
-    def get_component(self, component: str) -> HealthRow | None:
+    def get_component(self, component: str) -> WorkerHealth | None:
         """Get health status for a specific component.
 
         Args:
@@ -48,7 +48,7 @@ class HealthComp:
         return self.db.app.get_health(component)
 
 
-def get_all_workers(db: Database) -> list[HealthRow]:
+def get_all_workers(db: Database) -> list[WorkerHealth]:
     """Get all registered workers from health monitoring.
 
     Canonical function entry point per COMPONENTS.md conventions.
@@ -56,7 +56,7 @@ def get_all_workers(db: Database) -> list[HealthRow]:
     return db.app.list_worker_health()
 
 
-def get_component(db: Database, component: str) -> HealthRow | None:
+def get_component(db: Database, component: str) -> WorkerHealth | None:
     """Get health status for a specific component.
 
     Canonical function entry point per COMPONENTS.md conventions.

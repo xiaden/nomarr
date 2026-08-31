@@ -6,23 +6,38 @@ VRAM-promise persistence into a single intent facade wired as ``db.app``.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
-from nomarr.helpers.dataclasses.app_dataclasses import ConfigOption, LockEntry
+from nomarr.helpers.dataclasses.app_dataclasses import (
+    CapacityEstimate,
+    ConfigOption,
+    GpuResourceSnapshot,
+    LockEntry,
+    ModelVramLimit,
+    VramPromise,
+    WorkerRestartPolicy,
+)
+from nomarr.helpers.dataclasses.session_dataclass import AuthSession
 from nomarr.helpers.dataclasses.song_dataclass import Song
+from nomarr.helpers.dto.health_dto import WorkerHealth
 from nomarr.helpers.time_helper import now_ms
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session, scoped_session
 
-    from nomarr.helpers.dto.repo_dto import (
-        HealthRow,
-        SessionRow,
-        WorkerClaimRow,
-    )
+    from nomarr.helpers.dto.repo_dto import SessionRow, WorkerClaimRow
     from nomarr.persistence.database.app_repo import AppRepository
     from nomarr.persistence.database.pipeline_repo import PipelineRepository
     from nomarr.persistence.database.song_state_repo import SongStateRepository
+
+
+def _session_row_to_domain(row: SessionRow) -> AuthSession:
+    """Map a repository session row to the domain session object."""
+    return AuthSession(
+        token=row["id"],
+        data=row["data"],
+        expires_at=row["expires_at"] / 1000.0,
+    )
 
 
 class AppDb:
@@ -138,28 +153,75 @@ class AppDb:
         """Remove one named state without disturbing the other axes."""
         self._song_state_repo.remove_state_for_songs(list(dict.fromkeys(song_ids)), state)
 
-    def get_lock(self, resource_id: str) -> LockEntry | None:
-        row = self._app_repo.get_lock(resource_id)
-        return LockEntry(key=row["key"], value=row["value"]) if row is not None else None
+    @staticmethod
+    def _lock_key(lock_type: str, resource_id: str) -> str:
+        """Build the repository key for a logical lock identity."""
+        if not lock_type or not resource_id:
+            raise ValueError("lock type and resource ID are required")
+        return f"{lock_type}:{resource_id}"
 
-    def add_lock(self, payload: dict) -> str:
-        """Add a lock using its resource key and JSON ownership payload."""
-        resource_id = payload.get("document_reference") or payload.get("resource_id")
-        if not isinstance(resource_id, str):
-            raise ValueError("lock payload must include a resource identifier")
-        return self._app_repo.insert_lock({"key": resource_id, "value": payload})
+    @classmethod
+    def _lock_payload(cls, lock: LockEntry) -> dict[str, Any]:
+        """Serialize a domain lock for the internal repository boundary."""
+        return {
+            "key": cls._lock_key(lock.lock_type, lock.resource_id),
+            "value": {
+                "lock_type": lock.lock_type,
+                "resource_id": lock.resource_id,
+                "holder": lock.holder,
+                "expires_at": lock.expires_at,
+                "acquired_at": lock.acquired_at,
+                "status": lock.status,
+            },
+        }
+
+    @staticmethod
+    def _lock_from_row(row: Any) -> LockEntry:
+        """Map an internal repository row to the lock domain object."""
+        key = str(row["key"])
+        value = row["value"]
+        if not isinstance(value, dict):
+            raise ValueError("persisted lock value must be an object")
+        lock_type, separator, resource_id = key.partition(":")
+        if not separator or not lock_type or not resource_id:
+            raise ValueError("persisted lock key must contain a lock type and resource ID")
+        return LockEntry(
+            # The repository key is the authoritative logical identity.  Do not
+            # allow a stale JSON payload to change which lock was read.
+            lock_type=lock_type,
+            resource_id=resource_id,
+            holder=str(value.get("holder", "")),
+            expires_at=float(value.get("expires_at", 0.0)),
+            acquired_at=float(value.get("acquired_at", 0.0)),
+            status=str(value.get("status", "active")),
+        )
+
+    def get_lock(self, lock_type: str, resource_id: str) -> LockEntry | None:
+        """Return lock state by its logical type and resource identity."""
+        row = self._app_repo.get_lock(self._lock_key(lock_type, resource_id))
+        return self._lock_from_row(row) if row is not None else None
+
+    def add_lock(self, lock: LockEntry) -> None:
+        """Create a lock from a domain lock value."""
+        self._app_repo.insert_lock(self._lock_payload(lock))
 
     def list_locks(self) -> list[LockEntry]:
-        return [LockEntry(key=row["key"], value=row["value"]) for row in self._app_repo.list_locks()]
+        """Return all locks as domain values."""
+        return [self._lock_from_row(row) for row in self._app_repo.list_locks()]
 
-    def remove_lock(self, resource_id: str) -> None:
-        self._app_repo.release_lock(resource_id)
+    def remove_lock(self, lock_type: str, resource_id: str) -> None:
+        """Remove a lock by its logical identity."""
+        self._app_repo.release_lock(self._lock_key(lock_type, resource_id))
 
-    def upsert_lock(self, resource_id: str, payload: dict) -> None:
-        self._app_repo.upsert_lock(resource_id, {"value": payload})
+    def upsert_lock(self, lock: LockEntry) -> None:
+        """Replace lock state for a logical lock identity."""
+        payload = self._lock_payload(lock)
+        self._app_repo.upsert_lock(payload["key"], {"value": payload["value"]})
 
-    def acquire_lock(self, resource_id: str, payload: dict) -> bool:
-        return self._app_repo.acquire_lock(resource_id, {"value": payload})
+    def acquire_lock(self, lock: LockEntry) -> bool:
+        """Atomically create a lock, returning false when already present."""
+        payload = self._lock_payload(lock)
+        return self._app_repo.acquire_lock(payload["key"], {"value": payload["value"]})
 
     def claim_song(
         self,
@@ -231,20 +293,31 @@ class AppDb:
     def list_claims(self) -> list[WorkerClaimRow]:
         return self._app_repo.list_claims()
 
-    def get_health(self, component_id: str) -> HealthRow | None:
-        return self._app_repo.get_health(component_id)
+    def get_health(self, worker_id: str) -> WorkerHealth | None:
+        """Return the current health status for a worker or component."""
+        row = cast("dict[str, Any] | None", self._app_repo.get_health(worker_id))
+        return (
+            WorkerHealth(worker_id=row["worker_id"], status=row["status"], last_seen=row["last_seen"]) if row else None
+        )
 
     def count_healthy(self) -> int:
+        """Return the number of workers currently reporting healthy."""
         return self._app_repo.count_healthy()
 
-    def list_worker_health(self) -> list[HealthRow]:
-        return self._app_repo.list_worker_health()
+    def list_worker_health(self) -> list[WorkerHealth]:
+        """Return health status for every monitored worker or component."""
+        return [
+            WorkerHealth(worker_id=row["worker_id"], status=row["status"], last_seen=row["last_seen"])
+            for row in cast("list[dict[str, Any]]", self._app_repo.list_worker_health())
+        ]
 
-    def update_health(self, component_id: str, fields: dict) -> None:
-        self._app_repo.update_health(component_id, fields)
+    def update_health(self, worker_id: str, *, status: str, last_seen: int) -> None:
+        """Record a worker heartbeat, creating its status record if needed."""
+        self._app_repo.update_health(worker_id, {"status": status, "last_seen": last_seen})
 
-    def upsert_health(self, component_id: str, fields: dict) -> None:
-        self._app_repo.upsert_health(component_id, fields)
+    def upsert_health(self, worker_id: str, *, status: str, last_seen: int) -> None:
+        """Create or replace a worker's health status."""
+        self._app_repo.upsert_health(worker_id, {"status": status, "last_seen": last_seen})
 
     def release_claim(self, worker_id: str, song_id: int, claim_type: str | None = None) -> None:
         """Release one worker's claim for a song."""
@@ -277,9 +350,6 @@ class AppDb:
         """Mark a migration as successfully applied."""
         self.upsert_migration(migration_id, {"status": "applied"})
 
-    def add_vram_promise(self, payload: dict) -> None:
-        self._app_repo.upsert_vram_promise(payload)
-
     def promise_vram(
         self,
         *,
@@ -291,26 +361,30 @@ class AppDb:
         used_mb: float,
     ) -> None:
         """Record a VRAM promise from a worker (plain insert, id autoincrements)."""
-        self._app_repo.upsert_vram_promise(
-            {
-                "worker_id": worker_id,
-                "pid": pid,
-                "model_path": model_path,
-                "promised_mb": promised_mb,
-                "total_mb": total_mb,
-                "used_mb": used_mb,
-            }
+        self._app_repo.insert_vram_promise(
+            worker_id=worker_id,
+            pid=pid,
+            model_path=model_path,
+            promised_mb=promised_mb,
+            total_mb=total_mb,
+            used_mb=used_mb,
         )
 
-    def list_vram_promises(self) -> list[dict]:
+    def list_vram_promises(self) -> list[VramPromise]:
+        """Return active reservations as domain values.
+
+        The persistence-generated row id and storage row shape remain inside
+        the repository; callers address reservations by worker and model.
+        """
         return self._app_repo.get_vram_promises()
 
-    def remove_vram_promise(self, promise_id: int) -> None:
-        self._app_repo.delete_vram_promise(promise_id)
+    def release_vram(self, *, worker_id: str, model_path: str) -> int:
+        """Release reservations for a worker/model pair.
 
-    def release_vram(self, *, worker_id: str, model_path: str) -> None:
-        """Release the VRAM promise(s) for a worker+model."""
-        self._app_repo.delete_vram_promise_by_worker_model(worker_id, model_path)
+        Returns the number of reservations released. The pair is the domain
+        identity; persistence-generated row identifiers are never required.
+        """
+        return self._app_repo.delete_vram_promise_by_worker_model(worker_id, model_path)
 
     def release_all_for_worker(self, *, worker_id: str) -> int:
         """Release all promises for *worker_id* in one database operation.
@@ -327,58 +401,265 @@ class AppDb:
         return self._app_repo.delete_vram_promises_by_worker(worker_id)
 
     def count_vram_promises(self) -> int:
-        return len(self._app_repo.get_vram_promises())
+        """Return the number of active VRAM reservations."""
+        return self._app_repo.count_vram_promises()
 
-    def get_worker_restart_policy(self, component_id: str) -> dict | None:
-        return self._app_repo.get_worker_restart_policy(component_id)
+    def get_worker_restart_policy(self, component_id: str) -> WorkerRestartPolicy | None:
+        """Return restart state for a worker component."""
+        fields = self._app_repo.get_worker_restart_policy(component_id)
+        if fields is None:
+            return None
+        return WorkerRestartPolicy(
+            restart_count=int(fields.get("restart_count", 0)),
+            last_restart_wall_ms=fields.get("last_restart_wall_ms"),
+            failed_at_wall_ms=fields.get("failed_at_wall_ms"),
+            failure_reason=fields.get("failure_reason"),
+            updated_at_wall_ms=fields.get("updated_at_wall_ms"),
+        )
 
-    def update_worker_restart_policy(self, component_id: str, fields: dict) -> None:
-        self._app_repo.upsert_worker_restart_policy(component_id, fields)
+    def record_worker_restart(self, component_id: str) -> WorkerRestartPolicy:
+        """Record one restart attempt and return the resulting policy."""
+        existing = self.get_worker_restart_policy(component_id)
+        timestamp = now_ms().value
+        policy = WorkerRestartPolicy(
+            restart_count=(existing.restart_count if existing else 0) + 1,
+            last_restart_wall_ms=timestamp,
+            failed_at_wall_ms=existing.failed_at_wall_ms if existing else None,
+            failure_reason=existing.failure_reason if existing else None,
+            updated_at_wall_ms=timestamp,
+        )
+        self._store_worker_restart_policy(component_id, policy)
+        return policy
 
-    def upsert_worker_restart_policy(self, component_id: str, fields: dict) -> None:
-        self._app_repo.upsert_worker_restart_policy(component_id, fields)
+    def reset_worker_restart_count(self, component_id: str) -> None:
+        """Clear restart history after a worker has recovered successfully."""
+        existing = self.get_worker_restart_policy(component_id)
+        if existing is None or existing.restart_count == 0:
+            return
+        timestamp = now_ms().value
+        self._store_worker_restart_policy(
+            component_id,
+            WorkerRestartPolicy(updated_at_wall_ms=timestamp),
+        )
 
-    def insert_session(self, payloads: list[dict]) -> None:
-        self._app_repo.insert_session(payloads)
+    def mark_worker_restart_failed(self, component_id: str, reason: str) -> WorkerRestartPolicy:
+        """Record that a worker exceeded restart limits."""
+        existing = self.get_worker_restart_policy(component_id)
+        timestamp = now_ms().value
+        policy = WorkerRestartPolicy(
+            restart_count=existing.restart_count if existing else 0,
+            last_restart_wall_ms=existing.last_restart_wall_ms if existing else None,
+            failed_at_wall_ms=timestamp,
+            failure_reason=reason,
+            updated_at_wall_ms=timestamp,
+        )
+        self._store_worker_restart_policy(component_id, policy)
+        return policy
 
-    def delete_session(self, session_id: str) -> None:
-        self._app_repo.delete_session(session_id)
+    def _store_worker_restart_policy(self, component_id: str, policy: WorkerRestartPolicy) -> None:
+        """Persist a domain policy without exposing its storage representation."""
+        self._app_repo.upsert_worker_restart_policy(
+            component_id,
+            {
+                "restart_count": policy.restart_count,
+                "last_restart_wall_ms": policy.last_restart_wall_ms,
+                "failed_at_wall_ms": policy.failed_at_wall_ms,
+                "failure_reason": policy.failure_reason,
+                "updated_at_wall_ms": policy.updated_at_wall_ms,
+            },
+        )
 
-    def get_sessions_expiring_before(self, timestamp_ms: int, limit: int) -> list[SessionRow]:
-        return self._app_repo.get_sessions_expiring_before(timestamp_ms, limit)
+    def save_session(self, session: AuthSession) -> None:
+        """Persist an authenticated session."""
+        self._app_repo.insert_session(
+            [
+                {
+                    "id": session.token,
+                    "data": session.data,
+                    "expires_at": int(session.expires_at * 1000),
+                }
+            ]
+        )
 
-    def count_sessions(self) -> int:
-        return self._app_repo.count_sessions()
+    def delete_session(self, session_token: str) -> None:
+        """Remove an authenticated session by its natural token key."""
+        self._app_repo.delete_session(session_token)
 
-    def delete_sessions_by_ids(self, session_ids: list[str]) -> None:
-        self._app_repo.delete_sessions_by_ids(session_ids)
+    def find_expired_sessions(self, now: float) -> list[AuthSession]:
+        """Return sessions whose domain expiry is before ``now``."""
+        rows = self._app_repo.get_sessions_expiring_before(int(now * 1000))
+        return [_session_row_to_domain(row) for row in rows]
 
-    def get_active_sessions(self, not_before_ms: int, limit: int) -> list[SessionRow]:
-        return self._app_repo.get_active_sessions(not_before_ms, limit)
+    def delete_sessions(self, sessions: list[AuthSession]) -> None:
+        """Remove authenticated sessions without exposing storage identifiers."""
+        self._app_repo.delete_sessions_by_ids([session.token for session in sessions])
+
+    def find_active_sessions(self, now: float) -> list[AuthSession]:
+        """Return sessions that have not expired at ``now``."""
+        rows = self._app_repo.get_active_sessions(int(now * 1000))
+        return [_session_row_to_domain(row) for row in rows]
+
+    # ------------------------------------------------------------------
+    # User configuration (config_* meta keys)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _config_storage_key(key: str) -> str:
+        """Build the physical storage identity for a user-configuration key.
+
+        Callers address configuration by its bare configuration-domain key
+        (e.g. ``"scan_interval"``); the ``config_`` storage prefix is an
+        internal detail owned by this facade, mirroring the lock/claim key
+        encodings below.
+        """
+        return f"config_{key}"
 
     def get_config_option(self, key: str) -> ConfigOption | None:
-        row = self._app_repo.get_meta(key)
-        return ConfigOption(key=row["key"], value=row["value"]) if row is not None else None
+        """Return a user configuration value by its configuration identity."""
+        return self._app_repo.get_config_option(self._config_storage_key(key))
 
-    def get_schema_version(self) -> str | None:
-        """Get the schema version (stored as key='version' in meta)."""
-        option = self.get_config_option("version")
-        if option is None:
-            return None
-        value = option.value
-        return str(value) if value is not None else None
+    def list_config_options(self) -> list[ConfigOption]:
+        """Return every user configuration value.
 
-    def list_config_options(self, prefix: str | None = None) -> list[ConfigOption]:
-        keys = self._app_repo.list_meta_keys_by_prefix(prefix or "")
-        results: list[ConfigOption] = []
-        for key in keys:
-            row = self._app_repo.get_meta(key)
-            if row is not None:
-                results.append(ConfigOption(key=row["key"], value=row["value"]))
-        return results
+        Only ``config_*`` keys are returned; the caller does not supply the
+        physical ``config_`` prefix.
+        """
+        return self._app_repo.list_config_options()
 
-    def update_config_option(self, key: str, payload: dict) -> None:
-        self._app_repo.upsert_meta(key, payload)
+    def set_config_option(self, key: str, value: Any) -> None:
+        """Set a user configuration value from a scalar/domain value.
+
+        A storage-shaped ``{"value": ...}`` payload is rejected: configuration
+        writes take the configuration value directly, never a storage payload.
+        """
+        if isinstance(value, dict):
+            raise ValueError("configuration value must be a scalar/domain value, not a storage payload")
+        self._app_repo.set_config_option(self._config_storage_key(key), value)
 
     def remove_config_option(self, key: str) -> None:
-        self._app_repo.delete_meta(key)
+        """Remove a user configuration value by its configuration identity."""
+        self._app_repo.remove_config_option(self._config_storage_key(key))
+
+    def update_config_option(self, key: str, payload: dict) -> None:
+        """Legacy compatibility bridge for storage-payload writes.
+
+        Kept only while callers migrate to the semantic surface; removed in
+        Phase 4 once ``set_config_option``/semantic methods cover all callers.
+        """
+        self._app_repo.upsert_meta(key, payload)
+
+    # ------------------------------------------------------------------
+    # Schema version
+    # ------------------------------------------------------------------
+
+    def get_schema_version(self) -> str | None:
+        """Return the schema version, or ``None`` when not set."""
+        return self._app_repo.get_schema_version()
+
+    def set_schema_version(self, version: str) -> None:
+        """Persist the schema version."""
+        self._app_repo.set_schema_version(version)
+
+    # ------------------------------------------------------------------
+    # API key / admin credentials
+    # ------------------------------------------------------------------
+
+    def get_api_key(self) -> str | None:
+        """Return the stored API key, or ``None`` when not set."""
+        return self._app_repo.get_api_key()
+
+    def set_api_key(self, value: str) -> None:
+        """Persist the API key. Key generation stays with the key service."""
+        self._app_repo.set_api_key(value)
+
+    def get_admin_password_hash(self) -> str | None:
+        """Return the stored admin password hash, or ``None`` when not set."""
+        return self._app_repo.get_admin_password_hash()
+
+    def set_admin_password_hash(self, value: str) -> None:
+        """Persist the admin password hash. Hashing stays with the key service."""
+        self._app_repo.set_admin_password_hash(value)
+
+    # ------------------------------------------------------------------
+    # Calibration bookkeeping
+    # ------------------------------------------------------------------
+
+    def get_calibration_version(self) -> str | None:
+        """Return the calibration version hash, or ``None`` when not set."""
+        return self._app_repo.get_calibration_version()
+
+    def set_calibration_version(self, version_hash: str) -> None:
+        """Persist the calibration version hash."""
+        self._app_repo.set_calibration_version(version_hash)
+
+    def get_calibration_last_run(self) -> int | None:
+        """Return the calibration last-run timestamp (ms), or ``None`` when not set."""
+        return self._app_repo.get_calibration_last_run()
+
+    def set_calibration_last_run(self, timestamp_ms: str) -> None:
+        """Persist the calibration last-run timestamp as a string (read back as int)."""
+        self._app_repo.set_calibration_last_run(timestamp_ms)
+
+    def clear_calibration_metadata(self) -> int:
+        """Atomically clear calibration bookkeeping values; return how many were removed."""
+        return self._app_repo.clear_calibration_metadata()
+
+    # ------------------------------------------------------------------
+    # Model VRAM limits
+    # ------------------------------------------------------------------
+
+    def get_model_vram_limit(self, model_path: str) -> int | None:
+        """Return a model's VRAM limit in bytes, or ``None`` when not measured."""
+        return self._app_repo.get_model_vram_limit(model_path)
+
+    def set_model_vram_limit(self, model_path: str, limit_bytes: int) -> None:
+        """Persist a model's VRAM limit in bytes."""
+        self._app_repo.set_model_vram_limit(model_path, limit_bytes)
+
+    def list_model_vram_limits(self) -> list[ModelVramLimit]:
+        """Return every stored per-model VRAM limit as a domain value."""
+        return self._app_repo.list_model_vram_limits()
+
+    def clear_model_vram_limits(self) -> int:
+        """Atomically clear all stored VRAM limits; return how many were removed."""
+        return self._app_repo.clear_model_vram_limits()
+
+    # ------------------------------------------------------------------
+    # Capacity estimates
+    # ------------------------------------------------------------------
+
+    def get_capacity_estimate(self, model_set_hash: str) -> CapacityEstimate | None:
+        """Return the stored capacity estimate for a model set, or ``None``."""
+        return self._app_repo.get_capacity_estimate(model_set_hash)
+
+    def set_capacity_estimate(self, estimate: CapacityEstimate) -> None:
+        """Persist a capacity estimate for its model set."""
+        self._app_repo.set_capacity_estimate(estimate)
+
+    def remove_capacity_estimate(self, model_set_hash: str) -> None:
+        """Remove the stored capacity estimate for a model set."""
+        self._app_repo.remove_capacity_estimate(model_set_hash)
+
+    # ------------------------------------------------------------------
+    # GPU resource snapshots
+    # ------------------------------------------------------------------
+
+    def get_gpu_resource_snapshot(self) -> GpuResourceSnapshot | None:
+        """Return the stored GPU resource snapshot, or ``None`` when absent."""
+        return self._app_repo.get_gpu_resource_snapshot()
+
+    def set_gpu_resource_snapshot(self, snapshot: GpuResourceSnapshot) -> None:
+        """Persist a GPU resource snapshot."""
+        self._app_repo.set_gpu_resource_snapshot(snapshot)
+
+    # ------------------------------------------------------------------
+    # Worker-system enabled state
+    # ------------------------------------------------------------------
+
+    def get_worker_system_enabled(self) -> bool | None:
+        """Return whether the worker system is enabled, or ``None`` when not set."""
+        return self._app_repo.get_worker_system_enabled()
+
+    def set_worker_system_enabled(self, enabled: bool) -> None:
+        """Persist the worker-system enabled state as a boolean."""
+        self._app_repo.set_worker_system_enabled(enabled)

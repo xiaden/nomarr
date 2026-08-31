@@ -179,12 +179,12 @@ class Database:
         self._pg_engine.dispose()
 
     def get_version(self) -> str | None:
-        """Return the current schema version from the config table."""
+        """Return the current schema version."""
         return self.app.get_schema_version()
 
     def set_version(self, version: str) -> None:
-        """Update the schema version in the config table."""
-        self.app.update_config_option("version", {"value": version})
+        """Persist the schema version."""
+        self.app.set_schema_version(version)
 
     # ------------------------------------------------------------------
     # Tag boundary resolver (P3, song-tag correction)

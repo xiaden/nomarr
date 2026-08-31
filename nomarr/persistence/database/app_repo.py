@@ -8,11 +8,21 @@ app_health_repo.py, app_session_repo.py, app_claim_repo.py).
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import Table, delete, func, insert, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from nomarr.helpers.dataclasses.app_dataclasses import (
+    CapacityEstimate,
+    ConfigOption,
+    GpuResourceSnapshot,
+    ModelVramLimit,
+)
+from nomarr.helpers.dataclasses.app_dataclasses import (
+    VramPromise as DomainVramPromise,
+)
 from nomarr.helpers.dto.repo_dto import (
     HealthRow,
     LockRow,
@@ -246,6 +256,183 @@ class AppRepository:
             result = self._session.execute(stmt)
             return [row[0] for row in result.all()]
 
+    def _delete_meta_keys_atomic(self, keys: list[str]) -> None:
+        """Delete multiple meta rows in a single transaction."""
+        if not keys:
+            return
+        with map_persistence_exceptions():
+            with self._session.begin_nested():
+                for key in keys:
+                    delete_by_key(_M, key, session=self._session, key_col="key")
+            self._session.commit()
+
+    # ── Semantic config / app-state methods ──────────────────────
+    # These map domain inputs/returns onto the raw meta primitives above. They
+    # intentionally never expose raw storage rows, payload dicts, or key encodings
+    # to higher layers.
+
+    def get_config_option(self, key: str) -> ConfigOption | None:
+        """Return a user configuration value by its full storage identity."""
+        row = self.get_meta(key)
+        return ConfigOption(key=row["key"], value=row["value"]) if row is not None else None
+
+    def list_config_options(self) -> list[ConfigOption]:
+        """Return every ``config_*`` configuration value."""
+        results: list[ConfigOption] = []
+        for key in self.list_meta_keys_by_prefix("config_"):
+            row = self.get_meta(key)
+            if row is not None:
+                results.append(ConfigOption(key=row["key"], value=row["value"]))
+        return results
+
+    def set_config_option(self, key: str, value: Any) -> None:
+        """Persist a user configuration value under its full storage identity."""
+        self.upsert_meta(key, {"value": value})
+
+    def remove_config_option(self, key: str) -> None:
+        """Remove a user configuration value by its full storage identity."""
+        self.delete_meta(key)
+
+    def get_schema_version(self) -> str | None:
+        """Return the schema version, coercing non-string stored values to ``str``."""
+        row = self.get_meta("version")
+        if row is None:
+            return None
+        value = row["value"]
+        return str(value) if value is not None else None
+
+    def set_schema_version(self, version: str) -> None:
+        """Persist the schema version."""
+        self.upsert_meta("version", {"value": version})
+
+    def get_api_key(self) -> str | None:
+        """Return the stored API key, or ``None`` when not set."""
+        row = self.get_meta("api_key")
+        return cast("str", row["value"]) if row is not None else None
+
+    def set_api_key(self, value: str) -> None:
+        """Persist the API key."""
+        self.upsert_meta("api_key", {"value": value})
+
+    def get_admin_password_hash(self) -> str | None:
+        """Return the stored admin password hash, or ``None`` when not set."""
+        row = self.get_meta("admin_password_hash")
+        return cast("str", row["value"]) if row is not None else None
+
+    def set_admin_password_hash(self, value: str) -> None:
+        """Persist the admin password hash."""
+        self.upsert_meta("admin_password_hash", {"value": value})
+
+    def get_calibration_version(self) -> str | None:
+        """Return the calibration version hash, or ``None`` when not set."""
+        row = self.get_meta("calibration_version")
+        return cast("str", row["value"]) if row is not None else None
+
+    def set_calibration_version(self, version_hash: str) -> None:
+        """Persist the calibration version hash."""
+        self.upsert_meta("calibration_version", {"value": version_hash})
+
+    def get_calibration_last_run(self) -> int | None:
+        """Return the calibration last-run timestamp (ms), or ``None`` when not set."""
+        row = self.get_meta("calibration_last_run")
+        if row is None:
+            return None
+        value = row["value"]
+        return int(cast("str", value)) if value is not None else None
+
+    def set_calibration_last_run(self, timestamp_ms: str) -> None:
+        """Persist the calibration last-run timestamp as a string (read back as int)."""
+        self.upsert_meta("calibration_last_run", {"value": timestamp_ms})
+
+    def clear_calibration_metadata(self) -> int:
+        """Atomically clear calibration bookkeeping values; return how many were removed."""
+        keys = [k for k in ("calibration_version", "calibration_last_run") if self.get_meta(k) is not None]
+        self._delete_meta_keys_atomic(keys)
+        return len(keys)
+
+    def get_model_vram_limit(self, model_path: str) -> int | None:
+        """Return a model's VRAM limit in bytes, or ``None`` when not measured."""
+        row = self.get_meta(f"ml_model_vram:{model_path}")
+        if row is None:
+            return None
+        return int(cast("str", row["value"]))
+
+    def set_model_vram_limit(self, model_path: str, limit_bytes: int) -> None:
+        """Persist a model's VRAM limit in bytes (stored as a string)."""
+        self.upsert_meta(f"ml_model_vram:{model_path}", {"value": str(limit_bytes)})
+
+    def list_model_vram_limits(self) -> list[ModelVramLimit]:
+        """Return every stored per-model VRAM limit as a domain value."""
+        prefix = "ml_model_vram:"
+        results: list[ModelVramLimit] = []
+        for key in self.list_meta_keys_by_prefix(prefix):
+            row = self.get_meta(key)
+            if row is not None:
+                results.append(
+                    ModelVramLimit(model_path=key[len(prefix) :], limit_bytes=int(cast("str", row["value"])))
+                )
+        return results
+
+    def clear_model_vram_limits(self) -> int:
+        """Atomically clear all stored VRAM limits; return how many were removed."""
+        keys = self.list_meta_keys_by_prefix("ml_model_vram:")
+        self._delete_meta_keys_atomic(keys)
+        return len(keys)
+
+    def get_capacity_estimate(self, model_set_hash: str) -> CapacityEstimate | None:
+        """Return the stored capacity estimate for a model set, or ``None``."""
+        row = self.get_meta(f"capacity_estimate:{model_set_hash}")
+        if row is None:
+            return None
+        value = row["value"]
+        return CapacityEstimate(
+            model_set_hash=value.get("model_set_hash", model_set_hash),
+            measured_backbone_vram_mb=value["measured_backbone_vram_mb"],
+            estimated_worker_ram_mb=value["estimated_worker_ram_mb"],
+            gpu_capable=value.get("gpu_capable", False),
+            is_conservative=value.get("is_conservative", False),
+        )
+
+    def set_capacity_estimate(self, estimate: CapacityEstimate) -> None:
+        """Persist a capacity estimate for its model set."""
+        self.upsert_meta(
+            f"capacity_estimate:{estimate.model_set_hash}",
+            {"value": asdict(estimate)},
+        )
+
+    def remove_capacity_estimate(self, model_set_hash: str) -> None:
+        """Remove the stored capacity estimate for a model set."""
+        self.delete_meta(f"capacity_estimate:{model_set_hash}")
+
+    def get_gpu_resource_snapshot(self) -> GpuResourceSnapshot | None:
+        """Return the stored GPU resource snapshot, or ``None`` when absent."""
+        row = self.get_meta("gpu_resources")
+        if row is None:
+            return None
+        value = row["value"]
+        return GpuResourceSnapshot(
+            gpu_available=bool(value.get("gpu_available", False)),
+            error_summary=value.get("error_summary"),
+        )
+
+    def set_gpu_resource_snapshot(self, snapshot: GpuResourceSnapshot) -> None:
+        """Persist a GPU resource snapshot."""
+        self.upsert_meta(
+            "gpu_resources",
+            {"value": {"gpu_available": snapshot.gpu_available, "error_summary": snapshot.error_summary}},
+        )
+
+    def get_worker_system_enabled(self) -> bool | None:
+        """Return whether the worker system is enabled, or ``None`` when not set."""
+        row = self.get_meta("worker_enabled")
+        if row is None:
+            return None
+        return row["value"] == "true"
+
+    def set_worker_system_enabled(self, enabled: bool) -> None:
+        """Persist the worker-system enabled state as a boolean."""
+        self.upsert_meta("worker_enabled", {"value": "true" if enabled else "false"})
+
     # ── Session ─────────────────────────────────────────────────
 
     def insert_session(self, payloads: list[dict[str, Any]]) -> None:
@@ -264,17 +451,21 @@ class AppRepository:
                 delete_by_key(_S, session_id, session=self._session, key_col="id")
             self._session.commit()
 
-    def get_sessions_expiring_before(self, timestamp_ms: int, limit: int) -> list[SessionRow]:
+    def get_sessions_expiring_before(self, timestamp_ms: int, limit: int | None = None) -> list[SessionRow]:
         """Return sessions expiring before *timestamp_ms*."""
         with map_persistence_exceptions():
-            stmt = select(_S).where(_S.c.expires_at < timestamp_ms).limit(limit)
+            stmt = select(_S).where(_S.c.expires_at < timestamp_ms)
+            if limit is not None:
+                stmt = stmt.limit(limit)
             result = self._session.execute(stmt)
             return [_session_row_to_dto(r) for r in result.all()]
 
-    def get_active_sessions(self, not_before_ms: int, limit: int) -> list[SessionRow]:
+    def get_active_sessions(self, not_before_ms: int, limit: int | None = None) -> list[SessionRow]:
         """Return sessions whose expiry is at or after *not_before_ms*."""
         with map_persistence_exceptions():
-            stmt = select(_S).where(_S.c.expires_at >= not_before_ms).limit(limit)
+            stmt = select(_S).where(_S.c.expires_at >= not_before_ms)
+            if limit is not None:
+                stmt = stmt.limit(limit)
             result = self._session.execute(stmt)
             return [_session_row_to_dto(r) for r in result.all()]
 
@@ -465,34 +656,46 @@ class AppRepository:
 
     # ── VRAM promises ───────────────────────────────────────────
 
-    def upsert_vram_promise(self, payload: dict[str, Any]) -> None:
-        """Insert-or-update a VRAM promise keyed on ``id``.
-
-        When ``payload`` has no ``id`` (e.g. a fresh promise from
-        ``AppDb.promise_vram``), the row is plain-inserted and ``id`` is
-        filled by the autoincrement column.
-        """
+    def insert_vram_promise(
+        self,
+        *,
+        worker_id: str,
+        pid: int,
+        model_path: str,
+        promised_mb: float,
+        total_mb: float,
+        used_mb: float,
+    ) -> None:
+        """Insert one VRAM promise, leaving generated ids repository-internal."""
         with map_persistence_exceptions():
             with self._session.begin_nested():
-                if "id" not in payload:
-                    self._session.execute(insert(_VP).values(**payload))
-                else:
-                    promise_id = payload["id"]
-                    upsert_by_field(_VP, "id", promise_id, payload, session=self._session)
+                self._session.execute(
+                    insert(_VP).values(
+                        worker_id=worker_id,
+                        pid=pid,
+                        model_path=model_path,
+                        promised_mb=promised_mb,
+                        total_mb=total_mb,
+                        used_mb=used_mb,
+                    )
+                )
             self._session.commit()
 
-    def get_vram_promises(self) -> list[dict[str, Any]]:
-        """Return all VRAM promise rows as dicts."""
+    def get_vram_promises(self) -> list[DomainVramPromise]:
+        """Return VRAM promises as domain values, hiding row identifiers."""
         with map_persistence_exceptions():
             result = self._session.execute(select(_VP))
-            return [dict(r._mapping) for r in result.all()]
-
-    def delete_vram_promise(self, promise_id: int) -> None:
-        """Delete a VRAM promise by primary key."""
-        with map_persistence_exceptions():
-            with self._session.begin_nested():
-                delete_by_key(_VP, promise_id, session=self._session)
-            self._session.commit()
+            return [
+                DomainVramPromise(
+                    worker_id=row.worker_id,
+                    pid=row.pid,
+                    model_path=row.model_path,
+                    promised_mb=row.promised_mb,
+                    total_mb=row.total_mb,
+                    used_mb=row.used_mb,
+                )
+                for row in result
+            ]
 
     def delete_vram_promise_by_worker_model(self, worker_id: str, model_path: str) -> int:
         """Delete all VRAM promises for a worker+model pair; return row count.
@@ -520,6 +723,12 @@ class AppRepository:
                     deleted = int(result.rowcount)  # type: ignore[attr-defined]  # CursorResult vs Result — mypy sees Result but .rowcount exists at runtime
             self._session.commit()
             return deleted
+
+    def count_vram_promises(self) -> int:
+        """Return the number of currently persisted VRAM promises."""
+        with map_persistence_exceptions():
+            result = self._session.execute(select(func.count()).select_from(_VP))
+            return int(result.scalar_one())
 
     def delete_vram_promises_by_worker(self, worker_id: str) -> int:
         """Delete every VRAM promise owned by a worker; return row count.

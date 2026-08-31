@@ -126,9 +126,7 @@ Example:
 ROUTE_DECORATORS = ["@router.get", "@router.post"]
 
 # After
-DEFAULT_CONFIG = {
-    "backend": {"routes": {"decorators": ["@router.get", "@router.post"]}}
-}
+DEFAULT_CONFIG = {"backend": {"routes": {"decorators": ["@router.get", "@router.post"]}}}
 
 config = load_config()  # Returns merged config
 decorators = config["backend"]["routes"]["decorators"]

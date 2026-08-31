@@ -581,112 +581,80 @@ class TestAppRepository:
 
     # ── VRAM promises ───────────────────────────────────────────
 
-    def test_upsert_vram_promise_insert(self, pg_session) -> None:
-        """upsert_vram_promise should insert if not exists."""
+    def test_insert_vram_promise(self, pg_session) -> None:
         repo = AppRepository(pg_session)
-        repo.upsert_vram_promise(
-            {
-                "id": 1,
-                "worker_id": "worker1",
-                "pid": 12345,
-                "model_path": "/models/test.pt",
-                "promised_mb": 1024,
-                "total_mb": 8192,
-                "used_mb": 2048,
-            }
+        repo.insert_vram_promise(
+            worker_id="worker1",
+            pid=12345,
+            model_path="/models/test.pt",
+            promised_mb=1024,
+            total_mb=8192,
+            used_mb=2048,
         )
-        result = repo.get_vram_promises()
-        assert len(result) >= 1
-        assert any(p["id"] == 1 for p in result)
 
-    def test_upsert_vram_promise_update(self, pg_session) -> None:
-        """upsert_vram_promise should update if exists."""
-        repo = AppRepository(pg_session)
-        repo.upsert_vram_promise(
-            {
-                "id": 2,
-                "worker_id": "worker1",
-                "pid": 12345,
-                "model_path": "/models/test.pt",
-                "promised_mb": 1024,
-                "total_mb": 8192,
-                "used_mb": 2048,
-            }
-        )
-        repo.upsert_vram_promise(
-            {
-                "id": 2,
-                "worker_id": "worker1",
-                "pid": 12345,
-                "model_path": "/models/test.pt",
-                "promised_mb": 2048,
-                "total_mb": 8192,
-                "used_mb": 4096,
-            }
-        )
         result = repo.get_vram_promises()
-        promise = next((p for p in result if p["id"] == 2), None)
-        assert promise is not None
-        assert promise["promised_mb"] == 2048
-        assert promise["used_mb"] == 4096
+        assert any(p.worker_id == "worker1" and p.model_path == "/models/test.pt" for p in result)
 
     def test_get_vram_promises(self, pg_session) -> None:
-        """get_vram_promises should return all promises."""
         repo = AppRepository(pg_session)
-        repo.upsert_vram_promise(
-            {
-                "id": 3,
-                "worker_id": "worker1",
-                "pid": 12345,
-                "model_path": "/models/test.pt",
-                "promised_mb": 1024,
-                "total_mb": 8192,
-                "used_mb": 2048,
-            }
+        repo.insert_vram_promise(
+            worker_id="worker1",
+            pid=12345,
+            model_path="/models/test.pt",
+            promised_mb=1024,
+            total_mb=8192,
+            used_mb=2048,
         )
+
         result = repo.get_vram_promises()
         assert len(result) >= 1
+        assert all(not hasattr(p, "id") for p in result)
 
-    def test_delete_vram_promise(self, pg_session) -> None:
-        """delete_vram_promise should remove the row."""
+    def test_count_vram_promises(self, pg_session) -> None:
         repo = AppRepository(pg_session)
-        repo.upsert_vram_promise(
-            {
-                "id": 4,
-                "worker_id": "worker1",
-                "pid": 12345,
-                "model_path": "/models/test.pt",
-                "promised_mb": 1024,
-                "total_mb": 8192,
-                "used_mb": 2048,
-            }
-        )
-        repo.delete_vram_promise(4)
+        assert repo.count_vram_promises() >= 0
+
+    def test_delete_vram_promise_by_worker_model(self, pg_session) -> None:
+        repo = AppRepository(pg_session)
+        for worker_id, model_path in (
+            ("worker1", "/models/test.pt"),
+            ("worker1", "/models/test.pt"),
+            ("worker2", "/models/test.pt"),
+        ):
+            repo.insert_vram_promise(
+                worker_id=worker_id,
+                pid=12345,
+                model_path=model_path,
+                promised_mb=1024,
+                total_mb=8192,
+                used_mb=2048,
+            )
+
+        deleted = repo.delete_vram_promise_by_worker_model("worker1", "/models/test.pt")
+
+        assert deleted == 2
         result = repo.get_vram_promises()
-        assert not any(p["id"] == 4 for p in result)
+        assert not any(p.worker_id == "worker1" for p in result)
+        assert any(p.worker_id == "worker2" for p in result)
 
     def test_delete_vram_promises_by_worker(self, pg_session) -> None:
-        """Worker-wide deletion removes only that worker's promises."""
         repo = AppRepository(pg_session)
-        for promise_id, worker_id in ((5, "worker1"), (6, "worker1"), (7, "worker2")):
-            repo.upsert_vram_promise(
-                {
-                    "id": promise_id,
-                    "worker_id": worker_id,
-                    "pid": 12345,
-                    "model_path": "/models/test.pt",
-                    "promised_mb": 1024,
-                    "total_mb": 8192,
-                    "used_mb": 2048,
-                }
+        for worker_id in ("worker1", "worker1", "worker2"):
+            repo.insert_vram_promise(
+                worker_id=worker_id,
+                pid=12345,
+                model_path="/models/test.pt",
+                promised_mb=1024,
+                total_mb=8192,
+                used_mb=2048,
             )
 
         deleted = repo.delete_vram_promises_by_worker("worker1")
 
         assert deleted == 2
         result = repo.get_vram_promises()
-        assert [p["id"] for p in result if p["worker_id"] == "worker1"] == []
-        assert [p["id"] for p in result if p["worker_id"] == "worker2"] == [7]
+        assert not any(p.worker_id == "worker1" for p in result)
+        assert any(p.worker_id == "worker2" for p in result)
 
     # ── Worker restart policy ───────────────────────────────────
 

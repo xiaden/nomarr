@@ -17,7 +17,7 @@ from nomarr.helpers.dataclasses.app_dataclasses import LockEntry
 
 @pytest.mark.unit
 class TestAcquireDistributedLock:
-    def test_calls_app_add_lock_with_expected_payload(self) -> None:
+    def test_calls_app_add_lock_with_domain_lock(self) -> None:
         db = MagicMock()
         db.app.get_lock.return_value = None
 
@@ -28,24 +28,14 @@ class TestAcquireDistributedLock:
             result = acquire_distributed_lock(db, "vector_promotion", "file-1", "worker-1", 30)
 
         assert result is True
-        db.app.get_lock.assert_called_once_with("vector_promotion:file-1")
-        db.app.add_lock.assert_called_once_with(
-            {
-                "document_reference": "vector_promotion:file-1",
-                "lock_type": "vector_promotion",
-                "holder": "worker-1",
-                "expires_at": 40_000.0,
-                "acquired_at": 10_000.0,
-                "status": "active",
-            }
+        db.app.get_lock.assert_called_once_with("vector_promotion", "file-1")
+        db.app.acquire_lock.assert_called_once_with(
+            LockEntry("vector_promotion", "file-1", "worker-1", 40_000.0, 10_000.0, "active")
         )
 
     def test_returns_false_when_active_lock_is_held_by_other_owner(self) -> None:
         db = MagicMock()
-        db.app.get_lock.return_value = LockEntry(
-            key="vector_promotion:file-1",
-            value={"expires_at": 10_000.0, "holder": "worker-2"},
-        )
+        db.app.get_lock.return_value = LockEntry("vector_promotion", "file-1", "worker-2", 10_000.0, 1_000.0, "active")
 
         with patch(
             "nomarr.components.platform.locks_comp.now_ms",
@@ -55,14 +45,11 @@ class TestAcquireDistributedLock:
 
         assert result is False
         db.app.remove_lock.assert_not_called()
-        db.app.add_lock.assert_not_called()
+        db.app.acquire_lock.assert_not_called()
 
     def test_releases_expired_lock_before_reacquiring(self) -> None:
         db = MagicMock()
-        db.app.get_lock.return_value = LockEntry(
-            key="vector_promotion:file-1",
-            value={"expires_at": 5_000.0, "holder": "worker-2"},
-        )
+        db.app.get_lock.return_value = LockEntry("vector_promotion", "file-1", "worker-2", 5_000.0, 1_000.0, "active")
 
         with patch(
             "nomarr.components.platform.locks_comp.now_ms",
@@ -71,8 +58,8 @@ class TestAcquireDistributedLock:
             result = acquire_distributed_lock(db, "vector_promotion", "file-1", "worker-1", 30)
 
         assert result is True
-        db.app.remove_lock.assert_called_once_with("vector_promotion:file-1")
-        db.app.add_lock.assert_called_once()
+        db.app.remove_lock.assert_called_once_with("vector_promotion", "file-1")
+        db.app.acquire_lock.assert_called_once()
 
 
 @pytest.mark.unit
@@ -80,7 +67,7 @@ class TestReleaseDistributedLock:
     def test_releases_lock_for_matching_owner(self) -> None:
         db = MagicMock()
         db.app.get_lock.side_effect = [
-            LockEntry(key="vector_promotion:file-1", value={"holder": "worker-1"}),
+            LockEntry("vector_promotion", "file-1", "worker-1", 10_000.0, 1_000.0, "active"),
             None,
         ]
 
@@ -88,14 +75,14 @@ class TestReleaseDistributedLock:
 
         assert result is True
         assert db.app.get_lock.call_args_list == [
-            call("vector_promotion:file-1"),
-            call("vector_promotion:file-1"),
+            call("vector_promotion", "file-1"),
+            call("vector_promotion", "file-1"),
         ]
-        db.app.remove_lock.assert_called_once_with("vector_promotion:file-1")
+        db.app.remove_lock.assert_called_once_with("vector_promotion", "file-1")
 
     def test_returns_false_for_missing_or_foreign_lock(self) -> None:
         db = MagicMock()
-        db.app.get_lock.return_value = LockEntry(key="vector_promotion:file-1", value={"holder": "worker-2"})
+        db.app.get_lock.return_value = LockEntry("vector_promotion", "file-1", "worker-2", 10_000.0, 1_000.0, "active")
 
         result = release_distributed_lock(db, "vector_promotion", "file-1", "worker-1")
 
@@ -108,48 +95,12 @@ class TestReapStaleLocks:
     def test_releases_only_stale_vector_promotion_locks(self) -> None:
         db = MagicMock()
         db.app.list_locks.return_value = [
-            LockEntry(
-                key="vector_promotion:file-1",
-                value={
-                    "document_reference": "vector_promotion:file-1",
-                    "lock_type": "vector_promotion",
-                    "acquired_at": 100.0,
-                },
-            ),
-            LockEntry(
-                key="vector_promotion:file-2",
-                value={
-                    "document_reference": "vector_promotion:file-2",
-                    "lock_type": "vector_promotion",
-                    "acquired_at": 9_500.0,
-                },
-            ),
-            LockEntry(
-                key="other:file-3",
-                value={
-                    "document_reference": "other:file-3",
-                    "lock_type": "other",
-                    "acquired_at": 100.0,
-                },
-            ),
+            LockEntry("vector_promotion", "file-1", "worker-1", 0.0, 100.0, "active"),
+            LockEntry("vector_promotion", "file-2", "worker-1", 0.0, 9_500.0, "active"),
+            LockEntry("other", "file-3", "worker-1", 0.0, 100.0, "active"),
         ]
         db.app.get_lock.side_effect = [
-            LockEntry(
-                key="vector_promotion:file-1",
-                value={
-                    "document_reference": "vector_promotion:file-1",
-                    "lock_type": "vector_promotion",
-                    "acquired_at": 100.0,
-                },
-            ),
-            LockEntry(
-                key="vector_promotion:file-2",
-                value={
-                    "document_reference": "vector_promotion:file-2",
-                    "lock_type": "vector_promotion",
-                    "acquired_at": 9_500.0,
-                },
-            ),
+            LockEntry("vector_promotion", "file-1", "worker-1", 0.0, 100.0, "active"),
         ]
 
         with patch(
@@ -159,4 +110,4 @@ class TestReapStaleLocks:
             reap_stale_locks(db, "worker-1", stale_after_ms=1000)
 
         db.app.list_locks.assert_called_once_with()
-        assert db.app.remove_lock.call_args_list == [call("vector_promotion:file-1")]
+        assert db.app.remove_lock.call_args_list == [call("vector_promotion", "file-1")]

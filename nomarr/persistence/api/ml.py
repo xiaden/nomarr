@@ -12,21 +12,27 @@ from typing import TYPE_CHECKING, Any
 from nomarr.helpers.dataclasses.ml_embedding_stream_dataclass import EmbeddingStream
 from nomarr.helpers.dataclasses.ml_output_stream_dataclass import OutputStream, OutputStreamWrite
 from nomarr.helpers.time_helper import now_ms
+
+# This mapper edit accompanies the concurrent ML facade migration: keeping the
+# conversion here makes the table repository's storage DTOs unable to escape.
+from nomarr.persistence.mappers.calibration_mapper import (
+    calibration_state_from_joined_record,
+    calibration_state_from_record,
+    calibration_state_payload,
+)
 from nomarr.persistence.mappers.model_mapper import (
     registered_model_from_record,
     registered_model_insert_payload,
 )
-
-# This mapper edit accompanies the concurrent ML facade migration: keeping the
-# conversion here makes the table repository's storage DTOs unable to escape.
 from nomarr.persistence.mappers.output_mapper import model_output_from_record
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session, scoped_session
 
+    from nomarr.helpers.dataclasses.calibration_state_dataclass import CalibrationState
     from nomarr.helpers.dataclasses.ml_model_dataclass import RegisteredModel
     from nomarr.helpers.dataclasses.ml_model_output_dataclass import ModelOutput
-    from nomarr.helpers.dto.calibration_repo_dto import CalibrationHistoryRecord, CalibrationStateRecord
+    from nomarr.helpers.dto.calibration_repo_dto import CalibrationHistoryRecord
     from nomarr.helpers.dto.vector_repo_dto import EmbeddingRecord, SimilarResult
     from nomarr.persistence.database.calibration_repo import CalibrationRepo
     from nomarr.persistence.database.embedding_stream_repo import EmbeddingStreamRepository
@@ -295,34 +301,22 @@ class MlDb:
         assert self._output_repo is not None, "OutputRepo not wired"
         return [model_output_from_record(record) for record in self._output_repo.list_model_outputs(model_id)]
 
-    def get_calibration_state(self, model_id: str) -> CalibrationStateRecord | None:
-        """Return the calibration state for model_id, or None if absent."""
+    def get_calibration_state(self, model_id: str) -> CalibrationState | None:
+        """Return the calibration state owned by a stable model identity."""
         assert self._calibration_repo is not None, "CalibrationRepo not wired"
-        return self._calibration_repo.get_state(model_id)
+        record = self._calibration_repo.get_state(model_id)
+        return calibration_state_from_record(record) if record else None
 
-    def get_calibration_state_view(self, head_name: str, label: str) -> CalibrationStateRecord | None:
-        """Return a calibration state by logical (head_name, label) identity.
-
-        Scans all calibration states and filters by composite key in Python
-        since CalibrationRepo indexes by model_id only.
-
-        .. note::
-           For production scaling, a dedicated DB query should be added to
-           CalibrationRepo (e.g. ``get_state_by_head_and_label``) to avoid
-           the full-table scan.
-        """
+    def get_calibration_state_view(self, head_name: str, label: str) -> CalibrationState | None:
+        """Return a calibration state by logical head and label identity."""
         assert self._calibration_repo is not None, "CalibrationRepo not wired"
-        states = self._calibration_repo.list_states()
-        for state in states:
-            sd = state["state_data"]
-            if sd.get("head_name") == head_name and sd.get("label") == label:
-                return state
-        return None
+        record = self._calibration_repo.get_state_by_head_label(head_name, label)
+        return calibration_state_from_record(record) if record else None
 
-    def list_calibration_states(self) -> list[CalibrationStateRecord]:
-        """Return all calibration state records."""
+    def list_calibration_states(self) -> list[CalibrationState]:
+        """Return calibration states as domain objects."""
         assert self._calibration_repo is not None, "CalibrationRepo not wired"
-        return self._calibration_repo.list_states()
+        return [calibration_state_from_record(r) for r in self._calibration_repo.list_states()]
 
     def list_calibration_history_snapshots(self, calibration_key: str) -> list[CalibrationHistoryRecord]:
         """Return all calibration history records for one model.
@@ -509,31 +503,21 @@ class MlDb:
         assert self._output_repo is not None, "OutputRepo not wired"
         return self._output_repo.delete_outputs_for_model(model_id)
 
-    def list_all_calibration_states_with_models(self) -> list[dict[str, Any]]:
-        """Return all calibration states enriched with their owning model metadata."""
+    def list_all_calibration_states_with_models(self) -> list[CalibrationState]:
+        """Return calibration states with available owning-model metadata."""
         assert self._calibration_repo is not None, "CalibrationRepo not wired"
-        return self._calibration_repo.list_states_with_models()
+        return [calibration_state_from_joined_record(r) for r in self._calibration_repo.list_states_with_models()]
 
-    def replace_calibration_state(
-        self,
-        model_id: str,
-        payload: dict[str, Any],
-    ) -> CalibrationStateRecord:
-        """Upsert calibration state for a model.
-
-        PostgreSQL uses auto-generated integer primary keys.
-        """
+    def replace_calibration_state(self, state: CalibrationState) -> CalibrationState:
+        """Create or replace a calibration state using domain semantics."""
         assert self._calibration_repo is not None, "CalibrationRepo not wired"
-        return self._calibration_repo.set_state(model_id, state_data=payload)
+        record = self._calibration_repo.set_state(state.model_id, state_data=calibration_state_payload(state))
+        return calibration_state_from_record(record)
 
-    def remove_calibration_state(self, calibration_id: int) -> None:
-        """Delete one calibration state by primary key.
-
-        ``calibration_id`` is now an ``int`` (PostgreSQL PK).
-        Edge deletion (model_has_calibration) is no longer needed.
-        """
+    def remove_calibration_state(self, state: CalibrationState) -> None:
+        """Delete a calibration state by stable model/head/label identity."""
         assert self._calibration_repo is not None, "CalibrationRepo not wired"
-        self._calibration_repo.delete_state(calibration_id)
+        self._calibration_repo.delete_state(state.model_id, state.head_name, state.label)
 
     def remove_calibration_history_for_model(self, model_id: str) -> None:
         """Delete all calibration history entries for one model."""

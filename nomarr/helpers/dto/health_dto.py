@@ -54,6 +54,21 @@ from typing import Literal, Protocol, runtime_checkable
 # The six allowed statuses for health monitoring.
 ComponentStatus = Literal["pending", "healthy", "unhealthy", "recovering", "dead", "failed"]
 
+
+@dataclass(frozen=True, slots=True)
+class WorkerHealth:
+    """Domain health status for a monitored worker or application component.
+
+    This is the persistence-component contract.  It intentionally contains no
+    database surrogate key and does not expose the ``worker_health`` table's
+    storage representation.
+    """
+
+    worker_id: str
+    status: ComponentStatus
+    last_seen: int
+
+
 HEALTH_FRAME_PREFIX = "HEALTH|"
 PIPELINE_FRAME_PREFIX = "PIPELINE|"
 

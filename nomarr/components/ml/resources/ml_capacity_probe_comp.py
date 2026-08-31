@@ -17,6 +17,10 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from nomarr.components.platform.locks_comp import (
+    acquire_distributed_lock,
+    release_distributed_lock,
+)
 from nomarr.components.platform.resource_monitor_comp import (
     check_nvidia_gpu_capability,
     get_ram_usage_mb,
@@ -132,9 +136,12 @@ def get_or_run_capacity_probe(
         )
 
     # Try to acquire probe lock
-    lock_acquired = db.app.acquire_lock(
-        resource_id=f"capacity_probe:{model_set_hash}",
-        payload={"worker_id": worker_id, "status": "probing"},
+    lock_acquired = acquire_distributed_lock(
+        db=db,
+        lock_type="capacity_probe",
+        resource_id=model_set_hash,
+        holder=worker_id,
+        ttl_seconds=180,
     )
 
     if lock_acquired:
@@ -208,7 +215,7 @@ def _run_capacity_probe(
                 "[ml_capacity_probe] No heads found in %s, using conservative estimates",
                 models_dir,
             )
-            db.app.remove_lock(resource_id=f"capacity_probe:{model_set_hash}")
+            release_distributed_lock(db, "capacity_probe", model_set_hash, worker_id)
             return CapacityEstimate(
                 model_set_hash=model_set_hash,
                 measured_backbone_vram_mb=CONSERVATIVE_BACKBONE_VRAM_MB if gpu_capable else 0,
@@ -270,11 +277,8 @@ def _run_capacity_probe(
             },
         )
 
-        # Mark lock as complete
-        db.app.upsert_lock(
-            resource_id=f"capacity_probe:{model_set_hash}",
-            payload={"worker_id": "", "status": "complete"},
-        )
+        # The estimate is published before releasing the coordination lock.
+        release_distributed_lock(db, "capacity_probe", model_set_hash, worker_id)
 
         return CapacityEstimate(
             model_set_hash=model_set_hash,
@@ -286,8 +290,8 @@ def _run_capacity_probe(
 
     except (OSError, ImportError, RuntimeError) as e:
         logger.exception("[ml_capacity_probe] Probe failed: %s", e)
-        # Release lock on failure so another worker can try
-        db.app.remove_lock(resource_id=f"capacity_probe:{model_set_hash}")
+        # Release lock on failure so another worker can try.
+        release_distributed_lock(db, "capacity_probe", model_set_hash, worker_id)
 
         # Return conservative estimates
         return CapacityEstimate(
@@ -339,7 +343,7 @@ def _wait_for_probe_completion(
             )
 
         # Check if lock is still held
-        lock = db.app.get_lock(resource_id=f"capacity_probe:{model_set_hash}")
+        lock = db.app.get_lock("capacity_probe", model_set_hash)
         if lock is None:
             # Lock was released (probe failed), check for estimate one more time
             raw = db.app.get_config_option(key=f"capacity_estimate:{model_set_hash}")
@@ -355,8 +359,8 @@ def _wait_for_probe_completion(
             # Lock released but no estimate - use conservative
             break
 
-        if lock.value.get("status") == "complete":
-            # Probe completed but we missed the estimate query - retry
+        if lock.status == "complete":
+            # Probe completed but we missed the estimate query - retry.
             continue
 
         time.sleep(PROBE_POLL_INTERVAL_MS / 1000)

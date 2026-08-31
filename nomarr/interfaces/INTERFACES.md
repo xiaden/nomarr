@@ -139,6 +139,7 @@ Extract a service method that orchestrates them:
 def start_processing(self, library: Library) -> StartProcessingResult:
     return self._start_scan(library)
 
+
 # ✅ In interface — still one service call
 @router.post("/process/{library_name}")
 def process(
@@ -163,12 +164,13 @@ def process(
 from nomarr.helpers.dto.library import LibraryDict
 from nomarr.interfaces.api.types.library_types import LibraryResponse
 
+
 def get_library(
     library_name: str,
     library_service: LibraryService = Depends(...),
 ) -> LibraryResponse:
     library = library_service.get_library_by_name(decode_library_name(library_name))
-    return LibraryResponse.from_dto(library)               # Converts to Pydantic
+    return LibraryResponse.from_dto(library)  # Converts to Pydantic
 ```
 
 ---
