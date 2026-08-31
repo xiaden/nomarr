@@ -262,8 +262,25 @@ class LibraryPipelineService:
         logger.info("Started calibration apply in background via pipeline service")
 
     def on_apply_complete(self) -> None:
-        """After calibration apply, check if auto-write should start."""
-        # Find libraries that were calibrating and are now calibrated
+        """Complete calibration and start auto-write after calibration apply.
+
+        Histogram generation completes the calibration axis before apply starts,
+        while applying existing calibration data starts with the axis in
+        ``calibrating``.  Completing the latter here keeps both paths aligned
+        before evaluating the auto-write gate.
+        """
+        completed_count = bulk_transition_pipeline_axis(
+            self.db,
+            CAL_STATE_FIELD,
+            CAL_IN_PROGRESS,
+            CAL_COMPLETE,
+        )
+        if completed_count:
+            logger.info(
+                "Calibration apply completed; transitioned %s libraries to calibrated",
+                completed_count,
+            )
+
         calibrated_libraries = get_libraries_in_axis_state(self.db, CAL_STATE_FIELD, CAL_COMPLETE)
         for library in calibrated_libraries:
             if get_library_record(self.db, library) is None:

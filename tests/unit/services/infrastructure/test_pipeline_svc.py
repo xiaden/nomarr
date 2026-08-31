@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -14,6 +15,7 @@ from nomarr.helpers.constants.pipeline_states import (
     SCAN_NOT_SCANNED,
     SCAN_STATE_FIELD,
     WRITE_COMPLETE,
+    WRITE_IN_PROGRESS,
     WRITE_NOT_WRITTEN,
     WRITE_STATE_FIELD,
 )
@@ -242,16 +244,48 @@ class TestOnCalibrationComplete:
 class TestOnApplyComplete:
     """Tests for calibration apply completion handling."""
 
-    def test_on_apply_complete_does_not_crash(
+    def test_on_apply_complete_transitions_in_progress_to_calibrated(
         self,
         pipeline_service: LibraryPipelineService,
         mock_db: MagicMock,
     ) -> None:
-        """Apply completion should not crash."""
+        """Apply completion should complete libraries bypassing generation."""
+        mock_db.library.bulk_transition_pipeline_axis.return_value = 1
         mock_db.library.get_libraries_in_axis_state.return_value = []
 
-        # Should not raise
         pipeline_service.on_apply_complete()
+
+        mock_db.library.bulk_transition_pipeline_axis.assert_called_once_with(
+            CAL_STATE_FIELD,
+            CAL_IN_PROGRESS,
+            CAL_COMPLETE,
+        )
+
+    def test_on_apply_complete_dispatches_auto_write_for_calibrated_library(
+        self,
+        pipeline_service: LibraryPipelineService,
+        mock_db: MagicMock,
+        mock_tagging_svc: MagicMock,
+    ) -> None:
+        """Completed calibration should dispatch writeback when auto-write is enabled."""
+        library = Library(
+            name="Test Library",
+            root_path="/music",
+            library_auto_write=True,
+        )
+        mock_db.library.bulk_transition_pipeline_axis.return_value = 1
+        mock_db.library.get_libraries_in_axis_state.return_value = [library]
+        mock_db.library.get_library.return_value = library
+        mock_db.library.get_pipeline_state.return_value = SimpleNamespace(tag_write_state=WRITE_NOT_WRITTEN)
+
+        pipeline_service.on_apply_complete()
+
+        mock_db.app.upsert_pipeline_state.assert_called_once_with(
+            library,
+            WRITE_STATE_FIELD,
+            {"state": WRITE_IN_PROGRESS},
+        )
+        mock_tagging_svc.start_write_tags_background.assert_called_once()
 
     def test_on_apply_complete_skips_deleted_library(
         self,
@@ -260,6 +294,7 @@ class TestOnApplyComplete:
     ) -> None:
         """Apply completion must not dispatch write work for a deleted library."""
         library = _make_library()
+        mock_db.library.bulk_transition_pipeline_axis.return_value = 1
         mock_db.library.get_libraries_in_axis_state.return_value = [library]
         mock_db.library.get_library.return_value = None  # library deleted
 
