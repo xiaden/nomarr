@@ -50,13 +50,17 @@ class MlInferenceRepo:
         Args:
             song_id: Song whose output streams are replaced and whose vectors
                 (scoped to *backbone*) are replaced.
-            backbone: Backbone identifier scoping vector deletion/insertion.
+            backbone: Authoritative backbone identifier scoping vector
+                deletion and insertion.
             vectors: Canonical vector payloads
                 ``{embedding_vector | embedding, model_id, backbone_id?, genres?}``.
+                If ``backbone_id`` is present, it must match ``backbone``;
+                otherwise this method raises ``ValueError`` before mutation.
             output_streams: Canonical stream payloads
                 ``{output_id, values, output_index?}``.
 
         """
+        self._validate_vector_backbones(backbone, vectors)
         with map_persistence_exceptions():
             with self._session.begin_nested():
                 self._delete_vectors_for_song_backbone(song_id, backbone)
@@ -66,6 +70,16 @@ class MlInferenceRepo:
                 for payload in vectors:
                     self._insert_vector(song_id, backbone, payload)
             self._session.commit()
+
+    @staticmethod
+    def _validate_vector_backbones(backbone: str, vectors: list[dict[str, Any]]) -> None:
+        """Reject vector payloads that contradict the aggregate backbone scope."""
+        for payload in vectors:
+            if "backbone_id" in payload and payload["backbone_id"] != backbone:
+                raise ValueError(
+                    "Vector payload backbone_id does not match aggregate backbone: "
+                    f"{payload['backbone_id']!r} != {backbone!r}"
+                )
 
     # ── no-commit internal SQL helpers ─────────────────────────
 
@@ -101,7 +115,7 @@ class MlInferenceRepo:
         now = now_ms().value
         stmt = insert(_T_VECTOR).values(
             song_id=song_id,
-            backbone_id=payload.get("backbone_id", backbone),
+            backbone_id=backbone,
             model_id=payload["model_id"],
             embed_dim=len(embedding_vector),
             # The canonical vector payload carries the model suite hash in

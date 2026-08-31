@@ -424,9 +424,12 @@ class MlDb:
         Args:
             song_id: Song whose output streams are replaced and whose vectors
                 (scoped to *backbone*) are replaced.
-            backbone: Backbone identifier scoping vector deletion/insertion.
+            backbone: Authoritative backbone identifier scoping vector
+                deletion and insertion.
             vectors: Canonical vector payloads
                 ``{embedding_vector | embedding, model_id, backbone_id?, genres?}``.
+                If ``backbone_id`` is present, it must match ``backbone``;
+                otherwise the repository raises ``ValueError`` before mutation.
             output_streams: Domain commands describing the output streams to
                 replace.
         """

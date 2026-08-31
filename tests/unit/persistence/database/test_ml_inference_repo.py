@@ -101,7 +101,11 @@ class TestMlInferenceRepo:
             song_id,
             "backbone_a",
             vectors=[
-                {"embedding_vector": _random_vector(seed=3), "model_id": "new_model_a"},
+                {
+                    "embedding_vector": _random_vector(seed=3),
+                    "model_id": "new_model_a",
+                    "backbone_id": "backbone_a",
+                },
             ],
             output_streams=[
                 {"output_id": "new_stream", "values": [1.0, 2.0], "output_index": 0},
