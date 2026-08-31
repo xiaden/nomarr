@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import pytest
 
+from nomarr.helpers.dataclasses.library_dataclass import Library
+
 # ---------------------------------------------------------------------------
 # Test 1: FacadeMisuseError is no longer importable
 # ---------------------------------------------------------------------------
@@ -33,7 +35,7 @@ class TestFacadeMisuseErrorRemoved:
     def test_facade_misuse_error_not_importable(self):
         """Importing FacadeMisuseError from nomarr.helpers.exceptions raises ImportError."""
         with pytest.raises(ImportError):
-            from nomarr.helpers.exceptions import FacadeMisuseError  # noqa: F401
+            exec("from nomarr.helpers.exceptions import FacadeMisuseError", {})
 
 
 # ---------------------------------------------------------------------------
@@ -52,14 +54,9 @@ class TestWriteMethodsWorkWithoutTransaction:
     @pytest.mark.requires_database
     def test_write_method_succeeds_without_transaction(self, db, seed_data):
         """Calling a WRITE facade method without transaction() succeeds."""
-        result = db.library.add_library(
-            {
-                "name": "SabotageTestLib",
-                "path": "/tmp/sabotage_test",
-                "library_type": "music",
-            }
-        )
-        assert isinstance(result, int), "add_library should return an integer ID"
+        library = Library(name="SabotageTestLib", root_path="/tmp/sabotage_test")
+        result = db.library.create_library(library)
+        assert result.name == library.name
         db.library.remove_library(result)
 
 
@@ -117,8 +114,8 @@ class TestReadMethodsWorkWithoutTransaction:
         assert isinstance(result, list), "READ methods should return results without requiring transaction()"
 
         # get_library is also a READ method
-        lib_id = seed_data["libraries"][0]
-        lib = db.library.get_library(lib_id)
+        library = seed_data["libraries"][0]
+        lib = db.library.get_library(library)
         assert lib is not None, "get_library should return a result for a valid library ID"
 
 
@@ -151,7 +148,7 @@ class TestFacadeMethodsReturnDomainObjects:
 
         # Check that the result has expected domain fields
         # (TypedDict or dataclass with these keys/attributes)
-        expected_fields = {"id", "name", "path"}
+        expected_fields = {"name", "root_path"}
         if isinstance(result, dict):
             actual_keys = set(result.keys())
         else:
@@ -243,16 +240,7 @@ class TestFacadeMethodsAcceptDomainIdentifiers:
         Checks that add_library accepts a dict with 'name', 'path', 'library_type'.
         This verifies the API contract — callers pass domain payloads.
         """
-        # add_library should accept a domain-shaped payload (dict with name, path)
-        # This is the current API shape and should continue to work
-        payload = {
-            "name": "DomainShapeTestLib",
-            "path": "/tmp/domain_shape_test",
-            "library_type": "music",
-        }
-
-        # Verify the method accepts this payload shape and returns an integer ID
-        result = db.library.add_library(payload)
-        assert isinstance(result, int), "add_library should return an integer ID"
-        # Cleanup
+        library = Library(name="DomainShapeTestLib", root_path="/tmp/domain_shape_test")
+        result = db.library.create_library(library)
+        assert result.name == library.name
         db.library.remove_library(result)

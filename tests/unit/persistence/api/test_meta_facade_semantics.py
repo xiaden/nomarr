@@ -281,7 +281,7 @@ class TestGpuSnapshotSemantics:
         assert app_db.get_gpu_resource_snapshot() is None
 
     # GpuResourceSnapshot lives in app_dataclasses.py; the setter is exercised
-    # through the passing semantic contract in test_app_db.py.
+    # at the repo layer in test_app_repo.py (lines 537 and 544).
 
 
 # ── Worker-control state ────────────────────────────────────────────────────

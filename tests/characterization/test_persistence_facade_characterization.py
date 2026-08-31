@@ -29,7 +29,7 @@ Marked with @pytest.mark.characterization.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
@@ -44,13 +44,13 @@ if TYPE_CHECKING:
 
 
 def _lib1(seed_data: dict) -> Library:
-    return seed_data["libraries"][0]
+    return cast("Library", seed_data["libraries"][0])
 
 
 def _song_identity(db, song_id: int) -> SongIdentity:
     identity = db.library.resolve_song_identity(song_id)
     assert identity is not None
-    return identity
+    return cast(SongIdentity, identity)
 
 
 @pytest.mark.characterization
@@ -173,10 +173,10 @@ class TestLibraryDbFacadeCharacterization:
         from nomarr.helpers.time_helper import now_ms
 
         now_ms_val = now_ms()
-        result = db.library.start_scan(_lib1(seed_data), scan_type="incremental", started_at=now_ms_val.value)
+        result = db.library.start_scan(seed_data["libraries"][1], scan_type="incremental", started_at=now_ms_val.value)
         assert_snapshot_matches("LibraryDb_start_scan", result)
         # Cleanup
-        db.library.remove_scan(_lib1(seed_data))
+        db.library.remove_scan(seed_data["libraries"][1])
 
     def test_get_scan(self, db, seed_data):
         """Snapshot: get_scan(Library) → LibraryScan | None."""
@@ -191,8 +191,8 @@ class TestLibraryDbFacadeCharacterization:
         from nomarr.helpers.time_helper import now_ms
 
         now_ms_val = now_ms()
-        db.library.start_scan(_lib1(seed_data), scan_type="incremental", started_at=now_ms_val.value)
-        result = db.library.complete_scan(_lib1(seed_data), finished_at=now_ms_val.value + 1000)
+        db.library.start_scan(seed_data["libraries"][1], scan_type="incremental", started_at=now_ms_val.value)
+        result = db.library.complete_scan(seed_data["libraries"][1], finished_at=now_ms_val.value + 1000)
         assert_snapshot_matches("LibraryDb_complete_scan", result)
 
     def test_remove_scan(self, db, seed_data):

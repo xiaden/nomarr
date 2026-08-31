@@ -48,7 +48,8 @@ def _expand_tag_rows(
 
     Each mapping value is a sequence of values for a tag name; one row is
     produced per ``(name, value)`` pair.  Parsed ``nom:`` tags get the
-    ``nom`` namespace, entity/canonical tags get the default (empty) namespace.
+    ``nom`` namespace, entity/canonical tags get the literal ``default``
+    namespace.
     """
     rows: list[dict[str, Any]] = []
     rows.extend(
