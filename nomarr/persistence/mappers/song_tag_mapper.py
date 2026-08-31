@@ -25,22 +25,39 @@ from nomarr.helpers.dataclasses.song_tag_dataclass import (
     TagUsage,
 )
 
+_DEFAULT_NAMESPACE = "default"
+
+
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
 
 
+def _row_namespace(row: Mapping[str, Any]) -> str:
+    """Normalize a row's ``namespace`` value to a literal namespace.
+
+    Missing/blank (``None``, ``""``, whitespace) ordinary namespace becomes the
+    literal ``default``; an explicit ``nom`` is preserved and remains protected.
+    No path treats ``NULL`` as an ordinary namespace.
+    """
+    ns = row.get("namespace")
+    if not ns or not str(ns).strip():
+        return _DEFAULT_NAMESPACE
+    return str(ns)
+
+
 def tag_identity_from_row(row: Mapping[str, Any]) -> TagRef:
     """Map a ``TagRow``/batch row mapping to a domain ``TagRef``.
 
-    Preserves the independent ``namespace`` column. ``value`` is coerced to a
+    Preserves the independent ``namespace`` column (normalized: blank ordinary
+    becomes ``default``, explicit ``nom`` kept). ``value`` is coerced to a
     string because tag values persist as strings in storage.
     """
     return TagRef(
         name=row["name"],
         value=str(row["value"]),
-        namespace=row.get("namespace", ""),
+        namespace=_row_namespace(row),
     )
 
 
@@ -58,7 +75,7 @@ def song_tag_assignment_from_row(
     return SongTagAssignment(
         name=row["name"],
         value=str(row["value"]),
-        namespace=row.get("namespace", ""),
+        namespace=_row_namespace(row),
         confidence=(float(row["confidence"]) if row.get("confidence") is not None else 1.0),
         source=row.get("source") or "nomarr",
         song=song,
@@ -78,7 +95,7 @@ def song_tag_assignment_from_batch_row(
     return SongTagAssignment(
         name=row["tag_name"],
         value=str(row["tag_value"]),
-        namespace=row.get("namespace", ""),
+        namespace=_row_namespace(row),
         confidence=(float(row["confidence"]) if row.get("confidence") is not None else 1.0),
         source=row.get("source") or "nomarr",
         song=song,
@@ -113,7 +130,7 @@ def tag_usage_from_row(row: Mapping[str, Any]) -> TagUsage:
         identity=TagRef(
             name=row["name"],
             value=str(row["value"]),
-            namespace=row.get("namespace", ""),
+            namespace=_row_namespace(row),
         ),
         song_count=int(row["song_count"]),
     )

@@ -282,7 +282,9 @@ class TestSearchesAndStatistics:
         assert isinstance(result[0], SongTagMatch)
         assert result[0].matched_tag == "118.0"
         assert result[0].distance == 2.0
-        song_tag_repo.search_songs_by_numeric_tag.assert_called_once_with("nom:bpm", "118", limit=5, offset=0)
+        song_tag_repo.search_songs_by_numeric_tag.assert_called_once_with(
+            "nom:bpm", "118", namespace="default", limit=5, offset=0
+        )
 
     def test_list_tags_returns_domain_identities(self) -> None:
         db, tag_repo, _, _, _ = _make_tags_db()

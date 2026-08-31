@@ -211,11 +211,19 @@ class TestSongTagAssignmentHasNoSongId:
 
         from nomarr.helpers.dataclasses.song_tag_dataclass import SongTagAssignment
 
-        assert "song_id" not in {f.name for f in dataclasses.fields(SongTagAssignment)}, (
+        fields = {f.name for f in dataclasses.fields(SongTagAssignment)}
+        assert "song_id" not in fields, (
             "SongTagAssignment must carry the domain song handle (SongIdentity), not a "
             "storage integer song_id crossing the facade."
         )
-        assert "song" in {f.name for f in dataclasses.fields(SongTagAssignment)}
+        assert "song" in fields
+        # (a) No storage tag primary key and no removed ``tags`` metadata crosses
+        # the boundary — only the sanctioned edge provenance (confidence/source).
+        assert not ({"tag_id", "tier", "created_at", "parent_tag_id"} & fields), (
+            "SongTagAssignment must not expose a storage tag_id or removed tags "
+            "metadata (tier/created_at/parent_tag_id); only the identity tuple and "
+            "edge provenance (confidence/source) belong on the domain assignment."
+        )
 
     def test_sealed_facade_has_no_transaction_context(self) -> None:
         """The tag facade exposes no transaction context to callers."""

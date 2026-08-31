@@ -21,7 +21,7 @@ export interface LibraryFile {
   artist?: string;
   album?: string;
   title?: string;
-  calibration?: string;
+  calibration_version?: string;
   scanned_at?: number;
   tagged: boolean;
   tagged_version?: string;
@@ -75,7 +75,7 @@ export async function search(params?: SearchFilesParams): Promise<SearchFilesRes
  * Get files by their IDs with full metadata and tags.
  * Used for batch lookup (e.g., when browsing songs for an entity).
  */
-export async function getFilesByIds(fileIds: string[]): Promise<SearchFilesResponse> {
+export async function getFilesByIds(fileIds: Array<string | number>): Promise<SearchFilesResponse> {
   return post("/api/web/library/file/by-ids", { file_ids: fileIds });
 }
 

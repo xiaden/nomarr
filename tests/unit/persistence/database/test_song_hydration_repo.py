@@ -22,7 +22,10 @@ from nomarr.helpers.constants.file_states import (
 )
 from nomarr.helpers.dto.hydration_dto import HydrateSongInput
 from nomarr.helpers.exceptions import EntityNotFoundError
-from nomarr.persistence.database.song_hydration_repo import SongHydrationRepository
+from nomarr.persistence.database.song_hydration_repo import (
+    SongHydrationRepository,
+    _expand_tag_rows,
+)
 from nomarr.persistence.database.song_repo import SongRepository
 from nomarr.persistence.database.song_state_repo import SongStateRepository
 from nomarr.persistence.database.song_tag_repo import SongTagRepository
@@ -127,6 +130,72 @@ def _song_tags(session, song_id: int) -> set[tuple[str, str]]:
     return {(r[0], r[1]) for r in session.execute(stmt)}
 
 
+def _song_tag_rows(session, song_id: int) -> set[tuple[str, str, str]]:
+    """Return complete ``(namespace, name, value)`` identity triples assigned to a song."""
+    stmt = (
+        select(Tag.__table__.c.namespace, Tag.__table__.c.name, Tag.__table__.c.value)
+        .join(SongTag.__table__, SongTag.__table__.c.tag_id == Tag.__table__.c.id)
+        .where(SongTag.__table__.c.song_id == song_id)
+    )
+    return {(r[0], r[1], r[2]) for r in session.execute(stmt)}
+
+
+def _song_tag_edges(session, song_id: int) -> set[tuple[str, str, str, float, str]]:
+    """Return ``(namespace, name, value, confidence, source)`` edges for a song.
+
+    Edge metadata (confidence/source) is read from ``song_tags`` only — the
+    ``tags`` table is identity-only and carries no such columns.
+    """
+    stmt = (
+        select(
+            Tag.__table__.c.namespace,
+            Tag.__table__.c.name,
+            Tag.__table__.c.value,
+            SongTag.__table__.c.confidence,
+            SongTag.__table__.c.source,
+        )
+        .join(SongTag.__table__, SongTag.__table__.c.tag_id == Tag.__table__.c.id)
+        .where(SongTag.__table__.c.song_id == song_id)
+    )
+    return {(r[0], r[1], r[2], float(r[3]), str(r[4])) for r in session.execute(stmt)}
+
+
+@pytest.mark.unit
+class TestExpandTagRows:
+    """Direct unit tests for the ``_expand_tag_rows`` tag-row projection.
+
+    Proves the (namespace, name, value) row mapping that drives the identity
+    ledger: entity/canonical tags land in the literal ``default`` namespace,
+    parsed ``nom:`` ML tags land in ``nom``, and a same (name, value) pair in
+    two different namespaces yields two DISTINCT rows — never deduped.
+    """
+
+    def test_entity_tags_map_to_literal_default_namespace(self) -> None:
+        rows = _expand_tag_rows({}, entity_tags={"genre": ["Rock"], "year": [1999]})
+        assert ("default", "genre", "Rock") in {_key(r) for r in rows}
+        assert all(r["namespace"] == "default" for r in rows)
+
+    def test_parsed_nom_tags_map_to_nom_namespace(self) -> None:
+        rows = _expand_tag_rows({"nom:mood": ["happy"]}, entity_tags={})
+        assert rows == [{"name": "nom:mood", "value": "happy", "namespace": "nom"}]
+
+    def test_same_name_value_in_different_namespaces_yield_distinct_rows(self) -> None:
+        rows = _expand_tag_rows({"genre": ["Rock"]}, entity_tags={"genre": ["Rock"]})
+        keys = {_key(r) for r in rows}
+        # (default, genre, Rock) and (nom, genre, Rock) are separate identities.
+        assert ("default", "genre", "Rock") in keys
+        assert ("nom", "genre", "Rock") in keys
+        assert len(rows) == 2
+
+    def test_values_are_string_coerced(self) -> None:
+        rows = _expand_tag_rows({"nom:year": [1999]}, entity_tags={"year": [1999]})
+        assert all(r["value"] == "1999" for r in rows)
+
+
+def _key(row: dict) -> tuple[str, str, str]:
+    return (row["namespace"], row["name"], row["value"])
+
+
 @pytest.mark.unit
 @pytest.mark.integration
 class TestHydrateSong:
@@ -151,6 +220,70 @@ class TestHydrateSong:
         assert STATE_PROCESSED in states  # unrelated axis preserved
         row = pg_session.execute(select(Song.__table__).where(Song.__table__.c.id == song_id)).fetchone()
         assert row.duration_seconds == 200.0
+
+    def test_hydrate_song_entity_and_nom_namespaces(self, pg_session) -> None:
+        """Entity tags persist in ``default``; parsed Nomarr tags in ``nom``."""
+        SongStateRepository(pg_session).bootstrap_states([])
+        _, song_id = _create_library_and_song(pg_session)
+
+        _build_repo(pg_session).hydrate_song(_make_input(song_id))
+
+        rows = _song_tag_rows(pg_session, song_id)
+        assert ("default", "genre", "rock") in rows  # entity/canonical metadata
+        assert ("default", "year", "1999") in rows  # entity/canonical metadata
+        assert ("nom", "nom:mood-strict", "happy") in rows  # parsed ML tags
+
+    def test_hydrate_song_same_name_value_across_namespaces_not_deduped(self, pg_session) -> None:
+        """A (name, value) pair supplied in both namespaces persists as two distinct rows.
+
+        Dedup happens on the COMPLETE identity key (namespace, name, value): the
+        same ``genre=Rock`` as an entity tag (default) and as a parsed nom tag
+        (nom) must NOT collapse into one row (requirement: ``(default, genre,
+        Rock)`` and ``(nom, genre, Rock)`` are distinct identities).
+        """
+        SongStateRepository(pg_session).bootstrap_states([])
+        _, song_id = _create_library_and_song(pg_session)
+
+        _build_repo(pg_session).hydrate_song(
+            _make_input(song_id, parsed_nom_tags={"genre": ["Rock"]}, entity_tags={"genre": ["Rock"]})
+        )
+
+        rows = _song_tag_rows(pg_session, song_id)
+        assert ("default", "genre", "Rock") in rows
+        assert ("nom", "genre", "Rock") in rows
+        # Exactly one physical tags row per complete identity.
+        default_count = pg_session.execute(
+            select(Tag.__table__.c.id).where(
+                (Tag.__table__.c.namespace == "default")
+                & (Tag.__table__.c.name == "genre")
+                & (Tag.__table__.c.value == "Rock")
+            )
+        ).all()
+        nom_count = pg_session.execute(
+            select(Tag.__table__.c.id).where(
+                (Tag.__table__.c.namespace == "nom")
+                & (Tag.__table__.c.name == "genre")
+                & (Tag.__table__.c.value == "Rock")
+            )
+        ).all()
+        assert len(default_count) == 1
+        assert len(nom_count) == 1
+
+    def test_hydrate_song_edges_carry_confidence_source_not_tag_metadata(self, pg_session) -> None:
+        """Confidence/source live on the song-tag edge; the tags row stays identity-only."""
+        SongStateRepository(pg_session).bootstrap_states([])
+        _, song_id = _create_library_and_song(pg_session)
+
+        _build_repo(pg_session).hydrate_song(_make_input(song_id))
+
+        edges = _song_tag_edges(pg_session, song_id)
+        # Edge metadata from replace_song_tags_batch defaults (confidence=1.0, source="nomarr").
+        assert ("default", "genre", "rock", 1.0, "nomarr") in edges
+        assert ("nom", "nom:mood-strict", "happy", 1.0, "nomarr") in edges
+        # The tags table exposes exactly the identity columns — no metadata leaks.
+        tag_columns = {col.name for col in Tag.__table__.c}
+        assert {"namespace", "name", "value"} <= tag_columns
+        assert not ({"confidence", "source", "tier", "created_at", "parent_tag_id"} & tag_columns)
 
     def test_hydrate_song_persists_canonical_title_tag(self, pg_session) -> None:
         SongStateRepository(pg_session).bootstrap_states([])
@@ -307,6 +440,29 @@ class TestHydrateSongsBatch:
             ("year", "1999"),
         }
         assert STATE_HYDRATED in SongStateRepository(pg_session).get_song_states(song_id)
+
+    def test_repeated_hydration_deduplicates_complete_identities(self, pg_session) -> None:
+        """Repeated hydration never creates duplicate ``(namespace, name, value)`` rows."""
+        SongStateRepository(pg_session).bootstrap_states([])
+        _, song_id = _create_library_and_song(pg_session)
+        repo = _build_repo(pg_session)
+        inp = _make_input(song_id, parsed_nom_tags={"nom:dup": ["a"]}, entity_tags={"genre": ["rock"]})
+
+        repo.hydrate_songs_batch([inp, inp])
+        repo.hydrate_songs_batch([inp, inp])
+
+        # The song carries exactly one edge per complete identity.
+        assert _song_tag_rows(pg_session, song_id) == {
+            ("nom", "nom:dup", "a"),
+            ("default", "genre", "rock"),
+        }
+        # Only one physical (default, genre, rock) tag row exists across the DB.
+        genre_rows = pg_session.execute(
+            select(Tag.__table__.c.id).where(
+                (Tag.__table__.c.namespace == "default") & (Tag.__table__.c.name == "genre")
+            )
+        ).all()
+        assert len(genre_rows) == 1
 
     def test_empty_tags_replace_existing_edges(self, pg_session) -> None:
         SongStateRepository(pg_session).bootstrap_states([])

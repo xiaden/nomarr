@@ -201,12 +201,15 @@ export async function writeTags(
 
 export interface LibraryPipelineStatus {
   library_id: string;
-  state: string;
+  scan_state: string;
+  ml_state: string;
+  calibration_state: string;
+  tag_write_state: string;
   untagged_count: number | null;
   uncalibrated_count: number | null;
   pending_write_count: number | null;
   library_auto_write: boolean;
-  file_write_mode: "none" | "minimal" | "full";
+  file_write_mode: string;
 }
 
 /**

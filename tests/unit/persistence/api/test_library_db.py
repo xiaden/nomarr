@@ -610,6 +610,33 @@ def test_ensure_tag_returns_tag_identity() -> None:
 
 
 @pytest.mark.unit
+def test_get_tag_preserves_nom_namespace() -> None:
+    db, _, _, _, _, tag_repo, *_ = _make_library_db()
+    tag_repo.get_tag_ids_by_identities = MagicMock(return_value={("nom", "artist", "X"): 5})
+    tag_repo.get_tags_by_ids = MagicMock(return_value=[{"name": "artist", "value": "X", "namespace": "nom"}])
+
+    result = db.get_tag(_tag("artist", "X", namespace="nom"))
+
+    assert result == _tag("artist", "X", namespace="nom")
+    assert result.namespace == "nom"
+    tag_repo.get_tag_ids_by_identities.assert_called_once_with([{"namespace": "nom", "name": "artist", "value": "X"}])
+
+
+@pytest.mark.unit
+def test_domain_tag_identities_hide_storage_ids() -> None:
+    """TagRef/TagUsage returned by the facade carry no storage primary keys (ADR-032/041)."""
+    db, _, _, _, _, tag_repo, *_ = _make_library_db()
+    tag_repo.list_tags = MagicMock(return_value=[{"id": 7, "name": "artist", "value": "X", "namespace": ""}])
+
+    result = db.list_tags()
+
+    assert isinstance(result[0], TagRef)
+    assert not hasattr(result[0], "id")
+    assert not hasattr(result[0], "tag_id")
+    assert result[0].namespace == "default"
+
+
+@pytest.mark.unit
 def test_find_songs_with_tag_returns_domain_songs() -> None:
     db, _, _, _, _, _, song_tag_repo, *_ = _make_library_db()
     song_tag_repo.search_songs_by_tag = MagicMock(return_value=[_song_row()])
@@ -619,7 +646,7 @@ def test_find_songs_with_tag_returns_domain_songs() -> None:
     assert len(result) == 1
     assert isinstance(result[0], Song)
     assert result[0].song_id == 10
-    song_tag_repo.search_songs_by_tag.assert_called_once_with("genre", "Rock", limit=10, offset=0)
+    song_tag_repo.search_songs_by_tag.assert_called_once_with("genre", "Rock", namespace="default", limit=10, offset=0)
 
 
 @pytest.mark.unit
@@ -631,7 +658,9 @@ def test_find_songs_with_tag_contains_returns_domain_songs() -> None:
 
     assert len(result) == 1
     assert isinstance(result[0], Song)
-    song_tag_repo.search_songs_by_tag_contains.assert_called_once_with("nom:mood-strict", "happy", limit=5)
+    song_tag_repo.search_songs_by_tag_contains.assert_called_once_with(
+        "nom:mood-strict", "happy", namespace="default", limit=5
+    )
 
 
 @pytest.mark.unit
@@ -643,7 +672,9 @@ def test_find_songs_with_tag_pattern_returns_domain_songs() -> None:
 
     assert len(result) == 1
     assert isinstance(result[0], Song)
-    song_tag_repo.search_songs_by_tag_pattern.assert_called_once_with("artist", "%Beatles%", limit=5)
+    song_tag_repo.search_songs_by_tag_pattern.assert_called_once_with(
+        "artist", "%Beatles%", namespace="default", limit=5
+    )
 
 
 @pytest.mark.unit
@@ -658,7 +689,9 @@ def test_find_songs_with_numeric_tag_returns_domain_matches() -> None:
 
     assert len(result) == 1
     assert isinstance(result[0], SongTagMatch)
-    song_tag_repo.search_songs_by_numeric_tag.assert_called_once_with("nom:bpm", "120", limit=5, offset=20)
+    song_tag_repo.search_songs_by_numeric_tag.assert_called_once_with(
+        "nom:bpm", "120", namespace="default", limit=5, offset=20
+    )
 
 
 @pytest.mark.unit
@@ -775,7 +808,7 @@ def test_count_songs_by_tag_delegates() -> None:
     song_tag_repo.count_songs_by_tag = MagicMock(return_value=15)
 
     assert db.count_songs_by_tag("genre", "Rock") == 15
-    song_tag_repo.count_songs_by_tag.assert_called_once_with("genre", "Rock")
+    song_tag_repo.count_songs_by_tag.assert_called_once_with("genre", "Rock", namespace="default")
 
 
 @pytest.mark.unit
@@ -784,7 +817,7 @@ def test_count_songs_by_numeric_tag_delegates() -> None:
     song_tag_repo.count_songs_by_numeric_tag = MagicMock(return_value=7)
 
     assert db.count_songs_by_numeric_tag("nom:bpm", 120.0) == 7
-    song_tag_repo.count_songs_by_numeric_tag.assert_called_once_with("nom:bpm", 120.0)
+    song_tag_repo.count_songs_by_numeric_tag.assert_called_once_with("nom:bpm", 120.0, namespace="default")
 
 
 @pytest.mark.unit

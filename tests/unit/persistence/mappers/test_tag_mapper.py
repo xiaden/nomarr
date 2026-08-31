@@ -56,6 +56,11 @@ class TestTagsFromTagRows:
         assert not hasattr(tag, "namespace")
         assert not hasattr(tag, "source")
         assert not hasattr(tag, "id")
+        # Removed tag metadata is not constructible on the domain Tag.
+        assert not hasattr(tag, "confidence")
+        assert not hasattr(tag, "tier")
+        assert not hasattr(tag, "created_at")
+        assert not hasattr(tag, "parent_tag_id")
         assert tag.name == "genre"
         assert tag.values == ("rock",)
 
@@ -78,10 +83,10 @@ class TestTagsFromTagRows:
 class TestTagRowsFromTags:
     def test_one_row_per_value(self) -> None:
         tags = tags_from_tag_rows([{"name": "genre", "value": "rock"}, {"name": "genre", "value": "pop"}])
-        rows = tag_rows_from_tags(tags, namespace="nom", source="curation")
+        rows = tag_rows_from_tags(tags, namespace="nom")
         assert rows == [
-            {"name": "genre", "value": "rock", "namespace": "nom", "source": "curation"},
-            {"name": "genre", "value": "pop", "namespace": "nom", "source": "curation"},
+            {"name": "genre", "value": "rock", "namespace": "nom"},
+            {"name": "genre", "value": "pop", "namespace": "nom"},
         ]
 
     def test_multiple_tags_are_ordered(self) -> None:
@@ -91,18 +96,39 @@ class TestTagRowsFromTags:
                 {"name": "genre", "value": "rock"},
             ]
         )
-        rows = tag_rows_from_tags(tags, namespace="", source="s")
+        rows = tag_rows_from_tags(tags, namespace="")
         assert [r["name"] for r in rows] == ["artist", "genre"]
+        # Empty ordinary namespace normalizes to literal ``default``.
+        assert {r["namespace"] for r in rows} == {"default"}
 
-    def test_applies_namespace_and_source_keywords(self) -> None:
+    def test_applies_namespace_keyword(self) -> None:
         tags = tags_from_tag_rows([{"name": "mood", "value": "calm"}])
-        rows = tag_rows_from_tags(tags, namespace="nom", source="ml")
+        rows = tag_rows_from_tags(tags, namespace="nom")
         assert rows == [
-            {"name": "mood", "value": "calm", "namespace": "nom", "source": "ml"},
+            {"name": "mood", "value": "calm", "namespace": "nom"},
         ]
+
+    def test_blank_namespace_normalizes_to_default(self) -> None:
+        tags = tags_from_tag_rows([{"name": "mood", "value": "calm"}])
+        assert tag_rows_from_tags(tags, namespace="") == [{"name": "mood", "value": "calm", "namespace": "default"}]
+        assert tag_rows_from_tags(tags, namespace="   ") == [{"name": "mood", "value": "calm", "namespace": "default"}]
+
+    def test_emits_only_identity_fields_never_source_or_metadata(self) -> None:
+        # The payload is identity-only: ``source`` and any removed tag metadata
+        # keys are never emitted (the storage writer rejects them).
+        tags = tags_from_tag_rows([{"name": "genre", "value": "rock"}])
+        rows = tag_rows_from_tags(tags, namespace="nom")
+        assert rows == [{"name": "genre", "value": "rock", "namespace": "nom"}]
+        assert all(set(row) == {"name", "value", "namespace"} for row in rows)
+        # No removed metadata key is ever emitted on the write payload.
+        assert all("source" not in row for row in rows)
+        assert all("confidence" not in row for row in rows)
+        assert all("tier" not in row for row in rows)
+        assert all("created_at" not in row for row in rows)
+        assert all("parent_tag_id" not in row for row in rows)
 
     def test_does_not_mutate_domain_tags(self) -> None:
         tags = tags_from_tag_rows([{"name": "genre", "value": "rock"}])
         before = tags.to_dict()
-        tag_rows_from_tags(tags, namespace="nom", source="curation")
+        tag_rows_from_tags(tags, namespace="nom")
         assert tags.to_dict() == before

@@ -86,6 +86,13 @@ class TestCompleteTagRefResolved:
         assert tags.get_tag(TagRef(name="artist", value="Y")) == TagRef("artist", "Y")
         assert tags.get_tag(TagRef(name="artist", value="Z")) is None
 
+    def test_get_tag_preserves_explicit_nom_namespace(self) -> None:
+        """A ``nom`` tag read keeps its distinct namespace — never normalized to ``default``."""
+        tags, tag_repo, _, _, _ = _make_tags_db()
+        tag_repo.get_tag_ids_by_identities.return_value = {("nom", "artist", "X"): 11}
+        tag_repo.get_tags_by_ids.return_value = [{"name": "artist", "value": "X", "namespace": "nom"}]
+        assert tags.get_tag(TagRef(name="artist", value="X", namespace="nom")) == TagRef("artist", "X", "nom")
+
     def test_ensure_tag_returns_identity_never_id(self) -> None:
         tags, tag_repo, _, _, _ = _make_tags_db()
         identity = TagRef(name="artist", value="X", namespace="nom")

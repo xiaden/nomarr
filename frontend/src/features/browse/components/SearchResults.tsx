@@ -87,7 +87,7 @@ export function SearchResults({ results, onNavigate }: SearchResultsProps) {
 
   const handleArtistClick = useCallback(
     async (artistName: string) => {
-      let artist: Entity = { entity_id: "", key: "", display_name: artistName };
+      let artist: Entity = { entity_id: "", display_name: artistName };
       try {
         const result = await listEntities("artist", { search: artistName, limit: 5 });
         const match = result.entities.find(
@@ -104,8 +104,11 @@ export function SearchResults({ results, onNavigate }: SearchResultsProps) {
 
   const handleAlbumClick = useCallback(
     async (albumName: string, artistName: string) => {
-      let artist: Entity = { entity_id: "", key: "", display_name: artistName };
-      let album = { entity_id: "", display_name: albumName };
+      let artist: Entity = { entity_id: "", display_name: artistName };
+      let album: { entity_id: string | number; display_name: string } = {
+        entity_id: "",
+        display_name: albumName,
+      };
       try {
         const artistResult = await listEntities("artist", { search: artistName, limit: 5 });
         const artistMatch =
@@ -136,7 +139,7 @@ export function SearchResults({ results, onNavigate }: SearchResultsProps) {
       const albumName = track.album ?? "Unknown Album";
       onNavigate({
         type: "tags",
-        artist: { entity_id: "", key: "", display_name: artistName },
+        artist: { entity_id: "", display_name: artistName },
         album: { entity_id: "", display_name: albumName },
         track,
       });

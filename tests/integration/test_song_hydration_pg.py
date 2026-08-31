@@ -16,13 +16,15 @@ cover only in isolation:
   chunks still commit and are counted.
 
 .. note::
-   This environment has no PostgreSQL (no Docker), so these tests run against
-   the repo's standard SQLite-backed ``pg_session`` fixture (same as the unit
-   suite). They are marked ``requires_database`` per the repo convention and
-   are the module to run against a real PostgreSQL session to obtain
-   PG-specific transaction semantics. SQLite-only success is not treated as
-   evidence for transaction behavior; the atomicity/rollback assertions must
-   be re-run against real PostgreSQL in a PG environment.
+   This suite runs on the SQLite-backed ``pg_session`` fixture from
+   ``tests/integration/conftest.py`` (a temp-file SQLite database with
+   ``Base.metadata.create_all``). It is NOT live PostgreSQL, and it does NOT
+   claim a PostgreSQL startup gate: the corrected fresh-schema initialization
+   against a real PostgreSQL instance is covered by the Phase 3 gate of
+   ``TASK-tag-persistence-ownership-C-tests-and-verification`` (see P3-S1/P3-S2).
+   These tests remain useful for fast repository behavior and transaction
+   rollback semantics, but SQLite-only success must not be treated as evidence
+   for PG-specific behavior or for a PG startup.
 """
 
 from __future__ import annotations
@@ -126,6 +128,32 @@ def _song_tags(session, song_id: int) -> set[tuple[str, str]]:
     return {(r[0], r[1]) for r in session.execute(stmt)}
 
 
+def _song_tag_rows(session, song_id: int) -> set[tuple[str, str, str]]:
+    """Return complete ``(namespace, name, value)`` identity triples assigned to a song."""
+    stmt = (
+        select(Tag.__table__.c.namespace, Tag.__table__.c.name, Tag.__table__.c.value)
+        .join(SongTag.__table__, SongTag.__table__.c.tag_id == Tag.__table__.c.id)
+        .where(SongTag.__table__.c.song_id == song_id)
+    )
+    return {(r[0], r[1], r[2]) for r in session.execute(stmt)}
+
+
+def _song_tag_edges(session, song_id: int) -> set[tuple[str, str, str, float, str]]:
+    """Return ``(namespace, name, value, confidence, source)`` edges for a song (edge metadata)."""
+    stmt = (
+        select(
+            Tag.__table__.c.namespace,
+            Tag.__table__.c.name,
+            Tag.__table__.c.value,
+            SongTag.__table__.c.confidence,
+            SongTag.__table__.c.source,
+        )
+        .join(SongTag.__table__, SongTag.__table__.c.tag_id == Tag.__table__.c.id)
+        .where(SongTag.__table__.c.song_id == song_id)
+    )
+    return {(r[0], r[1], r[2], float(r[3]), str(r[4])) for r in session.execute(stmt)}
+
+
 def _pending_song(session) -> int:
     """Create a not_hydrated+processed song with no tags yet."""
     state_repo = SongStateRepository(session)
@@ -193,6 +221,49 @@ class TestHydrateSongPgAtomicity:
             select(Song.__table__.c.duration_seconds).where(Song.__table__.c.id == song_id)
         ).scalar_one()
         assert duration == 222.0
+
+    def test_hydrated_edges_carry_namespace_and_edge_metadata(self, pg_session) -> None:
+        """Entity tags are ``default``, Nomarr tags ``nom``; confidence/source stay on edges."""
+        song_id = _pending_song(pg_session)
+
+        _build_repo(pg_session).hydrate_song(_make_input(song_id))
+
+        # Complete identity triples: entity -> default, parsed nom -> nom.
+        rows = _song_tag_rows(pg_session, song_id)
+        assert ("default", "genre", "rock") in rows
+        assert ("default", "year", "1999") in rows
+        assert ("nom", "nom:mood-strict", "happy") in rows
+        # Edge metadata (confidence/source) is read from song_tags, not tag rows.
+        assert ("default", "genre", "rock", 1.0, "nomarr") in _song_tag_edges(pg_session, song_id)
+        # The tags table remains identity-only.
+        tag_columns = {col.name for col in Tag.__table__.c}
+        assert not ({"confidence", "source", "tier", "created_at", "parent_tag_id"} & tag_columns)
+
+    def test_same_name_value_across_namespaces_are_distinct_rows(self, pg_session) -> None:
+        """Dedup uses the complete (namespace, name, value) key.
+
+        ``genre=Rock`` as an entity tag (default) and as a parsed nom tag (nom)
+        persist as two distinct identities with independent edges — never merged.
+        """
+        song_id = _pending_song(pg_session)
+
+        _build_repo(pg_session).hydrate_song(
+            _make_input(song_id, parsed_nom_tags={"genre": ["Rock"]}, entity_tags={"genre": ["Rock"]})
+        )
+
+        rows = _song_tag_rows(pg_session, song_id)
+        assert ("default", "genre", "Rock") in rows
+        assert ("nom", "genre", "Rock") in rows
+        # Each complete identity maps to exactly one physical tags row.
+        for ns in ("default", "nom"):
+            count = pg_session.execute(
+                select(Tag.__table__.c.id).where(
+                    (Tag.__table__.c.namespace == ns)
+                    & (Tag.__table__.c.name == "genre")
+                    & (Tag.__table__.c.value == "Rock")
+                )
+            ).all()
+            assert len(count) == 1
 
 
 @pytest.mark.integration

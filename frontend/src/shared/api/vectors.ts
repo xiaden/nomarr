@@ -19,13 +19,11 @@ export interface VectorSearchRequest {
   limit?: number;
   /** Minimum similarity score threshold */
   min_score?: number;
-  /** Search scope: 'own' (same library), 'all' (fan-out), or a specific library _key */
-  library_scope?: string | null;
 }
 
 export interface VectorSearchResultItem {
   /** Library file document ID */
-  file_id: string;
+  file_id: number;
   /** Similarity score */
   score: number;
   /** Stored embedding vector */
@@ -75,7 +73,7 @@ export interface VectorBackbonesResponse {
 }
 export interface VectorGetResponse {
   /** Library file document ID */
-  file_id: string;
+  file_id: number;
   /** Backbone identifier */
   backbone_id: string;
   /** Embedding vector */
@@ -109,7 +107,6 @@ export async function listBackbones(): Promise<VectorBackbonesResponse> {
  * @param file_id - Library file document ID to find similar tracks for
  * @param limit - Maximum number of results (default 10, max 100)
  * @param min_score - Minimum similarity score threshold (default 0)
- * @param library_scope - Search scope: 'own', 'all', or specific library _key
  * @returns List of matching vectors with scores
  * @throws ApiError with status 503 if no vector index exists
  */
@@ -117,15 +114,13 @@ export async function searchVectors(
   backbone_id: string,
   file_id: string,
   limit = 10,
-  min_score = 0.0,
-  library_scope?: string | null
+  min_score = 0.0
 ): Promise<VectorSearchResponse> {
   const body: VectorSearchRequest = {
     file_id,
     backbone_id,
     limit,
     min_score,
-    library_scope: library_scope ?? null,
   };
   return post("/api/web/vector/search", body);
 }

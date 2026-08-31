@@ -46,7 +46,7 @@ export async function listEntities(
  */
 export async function getEntity(
   collection: EntityCollection,
-  entityId: string
+  entityId: string | number
 ): Promise<Entity> {
   return get(
     `/api/web/metadata/${collection}/${encodeURIComponent(entityId)}`
@@ -63,7 +63,7 @@ export interface ListSongsOptions {
  */
 export async function listSongsForEntity(
   collection: EntityCollection,
-  entityId: string,
+  entityId: string | number,
   name: string,
   options?: ListSongsOptions
 ): Promise<SongListResult> {
@@ -78,7 +78,7 @@ export async function listSongsForEntity(
 }
 
 export interface Album {
-  entity_id: string;
+  entity_id: string | number;
   display_name: string;
   song_count?: number;
 }
@@ -87,7 +87,7 @@ export interface Album {
  * List albums for an artist via traversal (artist→songs→albums).
  */
 export async function listAlbumsForArtist(
-  artistId: string,
+  artistId: string | number,
   limit = 100
 ): Promise<Album[]> {
   const params = new URLSearchParams();

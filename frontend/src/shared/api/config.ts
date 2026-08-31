@@ -12,7 +12,7 @@ export async function getConfig(): Promise<Record<string, unknown>> {
 }
 
 export interface UpdateConfigResponse {
-  success: boolean;
+  status: string;
   message: string;
 }
 

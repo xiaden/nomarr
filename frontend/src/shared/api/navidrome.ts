@@ -53,7 +53,6 @@ export async function getPreview(): Promise<NavidromePreviewResponse> {
 }
 
 export interface NavidromeConfigResponse {
-  namespace: string;
   config: string;
 }
 
@@ -92,9 +91,8 @@ export interface GeneratePlaylistParams {
 }
 
 export interface GeneratePlaylistResponse {
-  playlist_name: string;
-  query: string;
-  content: string;
+  /** Navidrome .nsp playlist structure (nested all/any rule dict). */
+  playlist_structure: Record<string, unknown>;
 }
 
 /**
@@ -107,16 +105,13 @@ export async function generatePlaylist(
 }
 
 export interface PlaylistTemplate {
-  id: string;
+  template_id: string;
   name: string;
   description: string;
-  query: string;
-  category?: string;
 }
 
 export interface GetTemplatesResponse {
   templates: PlaylistTemplate[];
-  total_count: number;
 }
 
 /**
@@ -126,17 +121,9 @@ export async function getTemplates(): Promise<GetTemplatesResponse> {
   return get("/api/web/navidrome/template");
 }
 
-export interface GeneratedTemplate {
-  id: string;
-  name: string;
-  filename: string;
-  success: boolean;
-  error?: string;
-}
-
 export interface GenerateTemplatesResponse {
-  templates: GeneratedTemplate[];
-  total_count: number;
+  /** Map of template_id -> generated file_path. */
+  files_generated: Record<string, string>;
 }
 
 /**
@@ -291,8 +278,23 @@ export interface TriggerPersonalPlaylistsResponse {
 }
 
 /**
- * Generate personal playlists for the configured Navidrome user and return track descriptors.
+ * One play-history entry supplied by the Navidrome plugin (PersonalPlaylistsRequest.top_plays).
+ * `file_id` is the integer primary key of the library file.
  */
-export async function triggerPersonalPlaylists(): Promise<TriggerPersonalPlaylistsResponse> {
-  return post<TriggerPersonalPlaylistsResponse>("/api/web/navidrome/generate-personal-playlists");
+export interface TrackPlayRequestItem {
+  file_id: string;
+  playcount: number;
+  last_played?: number | null;
+}
+
+/**
+ * Generate personal playlists for the configured Navidrome user and return track descriptors.
+ * Backend requires `top_plays` (min_length 1) — sends the exact `{ top_plays }` body.
+ */
+export async function triggerPersonalPlaylists(
+  topPlays: TrackPlayRequestItem[],
+): Promise<TriggerPersonalPlaylistsResponse> {
+  return post<TriggerPersonalPlaylistsResponse>("/api/web/navidrome/generate-personal-playlists", {
+    top_plays: topPlays,
+  });
 }

@@ -109,7 +109,7 @@ def upgrade() -> None:
         sa.UniqueConstraint("namespace", "name", "value", name="uq_tags_name_value_ns"),
     )
 
-    # GIN trigram indexes for fuzzy search
+    # GIN trigram index for fuzzy search
     op.execute("CREATE INDEX ix_songs_normalized_path_trgm ON songs USING gin (normalized_path gin_trgm_ops)")
 
     # song_tags

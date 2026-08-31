@@ -158,7 +158,7 @@ export function VectorSearchPage() {
     setPlaylistError(null);
     setPlaylistSuccess(null);
     try {
-      const fileIds = results.map((r) => r.file_id).slice(0, 200);
+      const fileIds = results.map((r) => String(r.file_id)).slice(0, 200);
       const artist = selectedTrack?.artist ?? "Unknown";
       const title = selectedTrack?.title ?? "Unknown";
       const playlistName = `Songs like ${artist} - ${title}`;

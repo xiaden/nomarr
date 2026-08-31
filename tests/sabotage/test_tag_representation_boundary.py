@@ -36,6 +36,34 @@ SERVICE_DIRS = [Path("nomarr/services/domain/tagging_svc"), Path("nomarr/service
 API_TYPES_DIR = Path("nomarr/interfaces/api/types")
 API_WEB_DIR = Path("nomarr/interfaces/api/web")
 
+# (TASK-tag-persistence-ownership-B Phase 3) Active persistence files that own
+# tags identity reads/writes — the static-scan targets for namespace and
+# identity-only ownership drift guards.
+TAG_MAPPER_FILE = Path("nomarr/persistence/mappers/tag_mapper.py")
+TAG_DB_FILES = [
+    Path("nomarr/persistence/database/tag_repo.py"),
+    Path("nomarr/persistence/database/song_tag_repo.py"),
+    Path("nomarr/persistence/database/song_hydration_repo.py"),
+]
+
+# Removed ``tags`` metadata columns: ``tags`` is identity-only (id, namespace,
+# name, value). Edge metadata (confidence/source) lives on ``song_tags`` and is
+# the only sanctioned home — never on tag identity rows.
+REMOVED_TAG_METADATA_KEYS = ("source", "confidence", "tier", "created_at", "parent_tag_id")
+
+# A removed tag-metadata name referenced as a ``tags``-table column (a read of a
+# column that no longer exists on the identity-only table).
+TAGS_REMOVED_COLUMN_READ_PATTERN = re.compile(r"_T\.c\.(source|confidence|tier|created_at|parent_tag_id)\b")
+
+# A removed tag-metadata name used as a dict key literal in a row/projection.
+REMOVED_META_KEY_LITERAL_PATTERN = re.compile(r"""["'](source|confidence|tier|created_at|parent_tag_id)["']\s*:""")
+
+# Persisting an empty/NULL ordinary namespace literal. Only the canonical
+# blank -> "default" normalization is allowed (TagRef/SongTagAssignment
+# __post_init__, mapper ``_row_namespace`` / ``_normalize_namespace``); a raw
+# ``namespace=""`` / ``namespace=None`` fallback is a NULL-as-ordinary bug.
+EMPTY_NAMESPACE_LITERAL_PATTERN = re.compile(r"""namespace\s*[:=]\s*["']{2}|namespace\s*[:=]\s*None\b""")
+
 # Persistence-only field names that must never appear in the domain dataclass.
 PERSISTENCE_FIELD_PATTERN = re.compile(
     r"\bnamespace\b|\bprovenance\b|\bconfidence\b|\btier\b|\bcreated_at\b|\bupdated_at\b"
@@ -265,4 +293,169 @@ class TestNoFromDbRowsAnywhere:
                         violations.append((str(py_file.relative_to(project_root)), line_num, line.strip()))
         assert len(violations) == 0, (
             f"from_db_rows must be gone — row-to-domain conversion is the persistence mapper.\n{_format(violations)}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Test 6 (TASK-tag-persistence-ownership-B Phase 3): namespace + identity-only
+# ownership in active persistence reads/writes
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.sabotage_check
+class TestTagPersistenceOwnership:
+    """``tags`` is identity-only and ordinary namespaces are never NULL/empty.
+
+    Phase 3 ownership rules:
+    - No active persistence read/write touches removed ``tags`` metadata columns
+      (source/confidence/tier/created_at/parent_tag_id) on the identity-only
+      table; edge metadata lives only on ``song_tags``.
+    - No persistence code persists an empty/NULL ordinary namespace; the only
+      sanctioned rule is blank -> ``default`` normalization.
+    - The namespace-free ``Tags`` projection stays a documented physical/API
+      boundary and is never used to resolve or persist assignments.
+    """
+
+    def test_no_tags_table_read_of_removed_metadata(self) -> None:
+        """No read of a removed column from the identity-only ``tags`` table."""
+        violations: list[tuple[str, int, str]] = []
+        for rel in TAG_DB_FILES:
+            for line_num, line in enumerate(_read(rel).splitlines(), start=1):
+                if TAGS_REMOVED_COLUMN_READ_PATTERN.search(line):
+                    violations.append((str(rel), line_num, line.strip()))
+        assert len(violations) == 0, (
+            "tags is identity-only; removed metadata columns (source/confidence/"
+            "tier/created_at/parent_tag_id) must never be read from the tags "
+            "table in active persistence code. Edge metadata comes only from "
+            f"song_tags.\n{_format(violations)}"
+        )
+
+    def test_tag_mapper_emits_identity_only_rows(self) -> None:
+        """tag_mapper row/projection payloads never include removed metadata keys."""
+        content = _read(TAG_MAPPER_FILE)
+        violations = [
+            (str(TAG_MAPPER_FILE), line_num, line.strip())
+            for line_num, line in enumerate(content.splitlines(), start=1)
+            if REMOVED_META_KEY_LITERAL_PATTERN.search(line)
+        ]
+        assert len(violations) == 0, (
+            "tag_mapper must emit identity-only rows shaped {name, value, "
+            "namespace}; no removed tag-metadata dict keys "
+            f"(source/confidence/tier/created_at/parent_tag_id).\n{_format(violations)}"
+        )
+
+    def test_no_empty_or_null_ordinary_namespace_in_persistence(self) -> None:
+        """No persistence code persists an empty/NULL ordinary namespace."""
+        violations = _scan_dir(PERSISTENCE_DIR, EMPTY_NAMESPACE_LITERAL_PATTERN)
+        assert len(violations) == 0, (
+            "Persistence code must never persist an empty/NULL ordinary "
+            "namespace; only the canonical blank -> 'default' normalization "
+            f"is allowed.\n{_format(violations)}"
+        )
+
+    def test_namespace_free_tags_projection_is_documented(self) -> None:
+        """tags_from_tag_rows stays the documented namespace-free physical boundary."""
+        content = _read(TAG_MAPPER_FILE)
+        assert "namespace-free physical-file projection boundary" in content, (
+            "tags_from_tag_rows must remain the documented namespace-free physical/analytics projection boundary."
+        )
+        # The projection body maps only name/value and never reads namespace.
+        assert 'row["namespace"]' not in content, (
+            "tags_from_tag_rows is the name/value-only physical projection; it must not read namespace from rows."
+        )
+
+    def test_facade_value_frequency_reduction_documented(self) -> None:
+        """LibraryTagsDb value-only frequency reduction is a documented display boundary."""
+        content = _read(Path("nomarr/persistence/api/library_tags.py"))
+        assert "list_tag_value_frequencies" in content
+        # The repo grouping is namespace-bearing; the facade may drop namespace
+        # only at a documented display boundary, never merging distinct
+        # namespaces into one (value, count) row.
+        assert "display boundary" in content, (
+            "The facade value-only frequency reduction must document its display "
+            "boundary so namespace is not silently merged."
+        )
+
+    # ── (a) removed metadata absent from tag ORM / DTO / repository projections ─
+
+    def test_tag_orm_model_is_identity_only(self) -> None:
+        """The ``tags`` ORM model declares no removed metadata columns/attributes."""
+        orm_file = Path("nomarr/persistence/models/tag.py")
+        content = _read(orm_file)
+        column_pattern = re.compile(r"^\s*(source|confidence|tier|created_at|parent_tag_id)\s*[:=]")
+        violations = [
+            (str(orm_file), i, line.strip())
+            for i, line in enumerate(content.splitlines(), start=1)
+            if column_pattern.search(line)
+        ]
+        assert len(violations) == 0, (
+            "tags is identity-only; the ORM model must define only id/namespace/name/"
+            "value and no removed metadata columns "
+            f"(source/confidence/tier/created_at/parent_tag_id).\n{_format(violations)}"
+        )
+
+    def test_tag_row_dto_is_identity_only(self) -> None:
+        """repo_dto ``TagRow`` declares only id/namespace/name/value."""
+        dto_file = Path("nomarr/helpers/dto/repo_dto.py")
+        content = _read(dto_file)
+        assert "class TagRow" in content, "TagRow must remain defined in repo_dto."
+        body = content.split("class TagRow", 1)[1].split("\nclass ", 1)[0]
+        field_pattern = re.compile(r"^\s*(source|confidence|tier|created_at|parent_tag_id)\s*:")
+        violations = [
+            (str(dto_file), i, line.strip())
+            for i, line in enumerate(body.splitlines(), start=1)
+            if field_pattern.match(line)
+        ]
+        assert len(violations) == 0, (
+            "TagRow is the tags storage shape and must expose only id/namespace/name/"
+            "value — no removed metadata fields "
+            f"(source/confidence/tier/created_at/parent_tag_id).\n{_format(violations)}"
+        )
+
+    def test_tag_repo_projection_dicts_have_no_removed_metadata(self) -> None:
+        """tag_repo/tag_mapper projections never include removed tag-metadata dict keys."""
+        violations: list[tuple[str, int, str]] = []
+        for rel in (Path("nomarr/persistence/database/tag_repo.py"), TAG_MAPPER_FILE):
+            for line_num, line in enumerate(_read(rel).splitlines(), start=1):
+                if REMOVED_META_KEY_LITERAL_PATTERN.search(line):
+                    violations.append((str(rel), line_num, line.strip()))
+        assert len(violations) == 0, (
+            "tags identity projections must not emit removed tag-metadata dict keys "
+            f"(source/confidence/tier/created_at/parent_tag_id).\n{_format(violations)}"
+        )
+
+    # ── (b) namespace-dropping projection absent from assignment paths ─────────
+
+    def test_assignment_paths_never_import_namespace_free_projection(self) -> None:
+        """Assignment mappers/facades never import ``tags_from_tag_rows`` (namespace-free)."""
+        namespace_dropping_import = re.compile(
+            r"\btags_from_tag_rows\b|from\s+nomarr\.persistence\.mappers\.tag_mapper\s+import"
+        )
+        violations: list[tuple[str, int, str]] = []
+        for rel in (
+            Path("nomarr/persistence/mappers/song_tag_mapper.py"),
+            Path("nomarr/persistence/api/library_tags.py"),
+        ):
+            for line_num, line in enumerate(_read(rel).splitlines(), start=1):
+                if namespace_dropping_import.search(line) and not line.lstrip().startswith("#"):
+                    violations.append((str(rel), line_num, line.strip()))
+        assert len(violations) == 0, (
+            "Assignments must be mapped via the namespace-bearing song_tag_mapper "
+            "paths (TagRef/SongTagAssignment); the namespace-free tags_from_tag_rows "
+            "projection must not be imported/used to resolve or persist "
+            f"assignments.\n{_format(violations)}"
+        )
+
+    # ── (c) documented physical/API/analytics projections remain allowed ───────
+
+    def test_documented_projections_still_exist(self) -> None:
+        """The sanctioned namespace-free and physical-file projections remain defined."""
+        mapper = _read(TAG_MAPPER_FILE)
+        assert "def tags_from_tag_rows" in mapper
+        assert "def tag_rows_from_tags" in mapper
+        mapping_comp = _read(Path("nomarr/components/library/tag_mapping_comp.py"))
+        assert "def file_tag_from_tag_row" in mapping_comp, (
+            "The physical/API row-to-FileTag projection must remain defined "
+            "(tags_from_tag_rows / file_tag_from_tag_row are the documented "
+            "namespace-free projection boundary)."
         )

@@ -53,8 +53,7 @@ export interface FsEntry {
 // ──────────────────────────────────────────────────────────────────────
 
 export interface Entity {
-  entity_id: string; // Entity primary key
-  key: string; // Entity natural key
+  entity_id: string | number; // Entity natural value or external handle (int | string on the wire)
   display_name: string; // Display string
   song_count?: number; // Optional song count
 }
@@ -67,7 +66,7 @@ export interface EntityListResult {
 }
 
 export interface SongListResult {
-  song_ids: string[];
+  song_ids: number[];
   total: number;
   limit: number;
   offset: number;

@@ -499,7 +499,7 @@ class TestUpdateFileTags:
     ) -> None:
         """Should update file tags and return result."""
         mock_tagging_service.update_song_tags.return_value = {
-            "file_id": "file1",
+            "file_id": "123",
             "name": "genre",
             "tags": [
                 {
@@ -518,13 +518,15 @@ class TestUpdateFileTags:
         }
 
         response = client.patch(
-            "/tag-curation/file/file1/tag",
+            "/tag-curation/file/123/tag",
             json={"name": "genre", "values": ["rock", "alternative"]},
         )
 
         assert response.status_code == 200
         data = response.json()
-        assert data["file_id"] == "file1"
+        # The numeric path ID passes the boundary decode gate; the digit-string is
+        # forwarded to the service, which echoes it into the string ``file_id``.
+        assert data["file_id"] == "123"
         assert data["name"] == "genre"
         assert data["tags"] == [
             {
@@ -541,7 +543,7 @@ class TestUpdateFileTags:
             },
         ]
         mock_tagging_service.update_song_tags.assert_called_once_with(
-            song_id="file1", name="genre", values=["rock", "alternative"]
+            song_id="123", name="genre", values=["rock", "alternative"]
         )
 
     def test_update_file_tags_value_error(
@@ -553,12 +555,13 @@ class TestUpdateFileTags:
         mock_tagging_service.update_song_tags.side_effect = ValueError("Invalid file ID")
 
         response = client.patch(
-            "/tag-curation/file/invalid/tag",
+            "/tag-curation/file/999/tag",
             json={"name": "genre", "values": ["rock"]},
         )
 
         assert response.status_code == 400
         assert "Invalid file ID" in response.json()["detail"]
+        mock_tagging_service.update_song_tags.assert_called_once_with(song_id="999", name="genre", values=["rock"])
 
     def test_update_file_tags_exception(
         self,
@@ -569,9 +572,44 @@ class TestUpdateFileTags:
         mock_tagging_service.update_song_tags.side_effect = RuntimeError("Database error")
 
         response = client.patch(
-            "/tag-curation/file/file1/tag",
+            "/tag-curation/file/123/tag",
             json={"name": "genre", "values": ["rock"]},
         )
 
         assert response.status_code == 500
         assert "Failed to update file tags" in response.json()["detail"]
+
+    def test_update_file_tags_decodes_numeric_id_and_rejects_non_numeric(
+        self,
+        client: TestClient,
+        mock_tagging_service: MagicMock,
+    ) -> None:
+        """Regression: the route validates the path ID at the boundary like songs_if.
+
+        A non-numeric ``file_id`` must 400 via ``decode_path_id`` (never reaching the
+        service); a numeric ID passes the gate and is forwarded to the service.
+        """
+        mock_tagging_service.update_song_tags.return_value = {
+            "file_id": "456",
+            "name": "genre",
+            "tags": [],
+        }
+
+        # Non-numeric → 400 at the boundary, service not called.
+        response = client.patch(
+            "/tag-curation/file/not-a-number/tag",
+            json={"name": "genre", "values": ["rock"]},
+        )
+
+        assert response.status_code == 400
+        assert "Invalid ID format" in response.json()["detail"]
+        mock_tagging_service.update_song_tags.assert_not_called()
+
+        # Numeric → passes the boundary gate and is forwarded to the service.
+        response = client.patch(
+            "/tag-curation/file/456/tag",
+            json={"name": "genre", "values": ["rock"]},
+        )
+
+        assert response.status_code == 200
+        mock_tagging_service.update_song_tags.assert_called_once_with(song_id="456", name="genre", values=["rock"])

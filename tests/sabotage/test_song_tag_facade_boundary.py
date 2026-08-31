@@ -213,7 +213,38 @@ class TestFacadeDoesNotImportRowDto:
 
 
 # ---------------------------------------------------------------------------
-# Test 5: Sanctioned int→domain exceptions are preserved
+# Test 5 (P1-S5b): Assignment paths never import the namespace-free projection
+# ---------------------------------------------------------------------------
+# ``tags_from_tag_rows`` is the documented namespace-free physical/analytics
+# boundary; resolving/persisting assignments must go through the namespace-
+# bearing ``song_tag_mapper`` (TagRef / SongTagAssignment). The facade modules
+# must therefore never import that namespace-dropping projection.
+
+NAMESPACE_FREE_IMPORT_PATTERN = re.compile(
+    r"\btags_from_tag_rows\b|from\s+nomarr\.persistence\.mappers\.tag_mapper\s+import"
+)
+
+
+@pytest.mark.sabotage_check
+class TestFacadeNeverImportsNamespaceFreeProjection:
+    """The tag facade never resolves/persists assignments via the namespace-free projection."""
+
+    def test_facade_modules_do_not_import_namespace_free_projection(self) -> None:
+        violations: list[tuple[str, int, str]] = []
+        for module in FACADE_MODULES:
+            for filepath, line_num, line_text in _scan_file_lines(module, NAMESPACE_FREE_IMPORT_PATTERN.search):
+                if line_text.lstrip().startswith("#"):
+                    continue
+                violations.append((filepath, line_num, line_text))
+        assert len(violations) == 0, (
+            "Assignment resolution/persistence must use the namespace-bearing "
+            "song_tag_mapper paths; the namespace-free tags_from_tag_rows "
+            f"projection must not be imported by the facade.\n{_format(violations)}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Test 6: Sanctioned int→domain exceptions are preserved
 # ---------------------------------------------------------------------------
 
 BRIDGE_SONG_PATTERN = re.compile(r"def\s+resolve_song_identity\s*\(")

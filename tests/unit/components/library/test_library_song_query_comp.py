@@ -906,7 +906,7 @@ def test_count_files_by_tag_uses_library_facade_for_string_and_numeric_modes() -
     string_count = count_songs_by_tag(db, "genre", "rock")
 
     assert string_count == 2
-    db.library.count_songs_by_tag.assert_called_once_with("genre", "rock")
+    db.library.count_songs_by_tag.assert_called_once_with("genre", "rock", namespace="default")
 
     # Numeric branch: dedicated uncapped SQL count intent, no tag/edge materialization.
     db = make_db()
@@ -915,7 +915,7 @@ def test_count_files_by_tag_uses_library_facade_for_string_and_numeric_modes() -
     numeric_count = count_songs_by_tag(db, "nom:bpm", 120.0)
 
     assert numeric_count == 7
-    db.library.count_songs_by_numeric_tag.assert_called_once_with("nom:bpm", 120.0)
+    db.library.count_songs_by_numeric_tag.assert_called_once_with("nom:bpm", 120.0, namespace="nom")
     db.library.count_songs_by_tag.assert_not_called()
 
 
@@ -951,7 +951,7 @@ def test_search_files_by_tag_numeric_sorts_by_distance_and_hydrates_tags() -> No
     assert result[0]["matched_tag"] == {"key": "nom:bpm", "value": 121.0}
     assert result[1]["matched_tag"] == {"key": "nom:bpm", "value": 118.0}
     db.library.find_songs_with_numeric_tag.assert_called_once_with(
-        TagRef(name="nom:bpm", value=120.0), limit=1, offset=0
+        TagRef(name="nom:bpm", value=120.0, namespace="nom"), limit=1, offset=0
     )
     # Legacy capped materialization path is dead for numeric search.
     db.library.count_songs_by_tag.assert_not_called()
@@ -1031,7 +1031,7 @@ def test_search_files_by_tag_numeric_empty_page_returns_empty() -> None:
 
     assert result == []
     db.library.find_songs_with_numeric_tag.assert_called_once_with(
-        TagRef(name="nom:bpm", value=120.0), limit=10, offset=0
+        TagRef(name="nom:bpm", value=120.0, namespace="nom"), limit=10, offset=0
     )
     db.library.count_songs_by_tag.assert_not_called()
     db.library.list_tags.assert_not_called()

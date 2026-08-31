@@ -46,6 +46,7 @@ export interface TagSongItem {
   title: string;
   artist: string;
   album: string;
+  path: string;
 }
 
 export interface TagSongsResult {
@@ -54,6 +55,8 @@ export interface TagSongsResult {
 }
 
 export interface UpdateFileTagsResult {
+  file_id: string;
+  name: string;
   tags: FileTag[];
 }
 
@@ -67,7 +70,7 @@ export interface CleanupTagsResult {
 }
 
 export interface FileTagsResult {
-  file_id: string;
+  file_id: number;
   path: string;
   tags: FileTag[];
 }
@@ -100,9 +103,10 @@ export async function getFileTags(
   if (nomarrOnly) queryParams.append("nomarr_only", "true");
 
   const query = queryParams.toString();
+  const encodedFileId = encodeURIComponent(fileId);
   const endpoint = query
-    ? `/api/web/library/file/${fileId}/tag?${query}`
-    : `/api/web/library/file/${fileId}/tag`;
+    ? `/api/web/library/file/${encodedFileId}/tag?${query}`
+    : `/api/web/library/file/${encodedFileId}/tag`;
 
   return get(endpoint);
 }

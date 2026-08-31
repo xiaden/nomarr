@@ -11,6 +11,7 @@ import {
     previewPlaylist as apiPreviewPlaylist,
     getConfig,
     getPreview,
+    type GeneratePlaylistResponse,
     type PlaylistPreviewResponse,
 } from "../../../shared/api/navidrome";
 import {
@@ -52,7 +53,7 @@ export function useNavidromeData() {
   const [playlistLimit, setPlaylistLimit] = useState<number | undefined>(undefined);
   const [playlistSort, setPlaylistSort] = useState("");
   const [playlistPreview, setPlaylistPreview] = useState<PlaylistPreviewResponse | null>(null);
-  const [playlistContent, setPlaylistContent] = useState<string | null>(null);
+  const [playlistStructure, setPlaylistStructure] = useState<GeneratePlaylistResponse | null>(null);
   const [playlistLoading, setPlaylistLoading] = useState(false);
   const [playlistError, setPlaylistError] = useState<string | null>(null);
   const playlistRequestVersion = useRef(0);
@@ -60,7 +61,7 @@ export function useNavidromeData() {
   const invalidatePlaylistResults = () => {
     playlistRequestVersion.current += 1;
     setPlaylistPreview(null);
-    setPlaylistContent(null);
+    setPlaylistStructure(null);
   };
 
   // Config actions
@@ -146,7 +147,7 @@ export function useNavidromeData() {
         sort: playlistSort || undefined,
       });
       if (requestVersion === playlistRequestVersion.current) {
-        setPlaylistContent(data.content);
+        setPlaylistStructure(data);
       }
     } catch (err) {
       setPlaylistError(err instanceof Error ? err.message : "Failed to generate playlist");
@@ -168,7 +169,7 @@ export function useNavidromeData() {
     playlistLimit,
     playlistSort,
     playlistPreview,
-    playlistContent,
+    playlistStructure,
     playlistLoading,
     playlistError,
     // Config actions

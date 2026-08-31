@@ -164,9 +164,8 @@ class TestTagSchemaIdentityContract:
     These assertions pin the immutable user ledger: exactly the columns ``id``,
     ``namespace``, ``name``, ``value``; ``namespace`` NOT NULL; uniqueness on
     the complete ``(namespace, name, value)`` tuple; and no metadata, FK, or
-    index columns. They are expected to FAIL against the current legacy
-    baseline (which still has ``parent_tag_id``/``source``/``confidence``/
-    ``tier``/``created_at``) until Phase 2 trims the schema.
+    index columns. The fresh-start baseline implements this contract exactly
+    (Phase 2); all assertions pass.
     """
 
     def test_tags_columns_are_exactly_identity_ordered(self) -> None:
@@ -202,9 +201,9 @@ class TestTagAndSongTagModelContract:
     """Spec-first: the ORM models mirror the identity-only ``tags`` and edge-owned ``song_tags``.
 
     ``Tag`` exposes only identity fields; ``SongTag`` retains only the
-    relationship metadata owned by the ``song_tags`` edge. Expected to FAIL
-    against the current ``Tag`` model (which still mirrors the legacy columns)
-    until Phase 2 (P2-S2/P2-S4) trims it.
+    relationship metadata owned by the ``song_tags`` edge. The ``Tag`` model
+    mirrors the identity-only baseline and ``SongTag`` retains the edge
+    metadata (P2-S2/P2-S4); all assertions pass.
     """
 
     def test_tag_model_columns_are_identity_only(self) -> None:

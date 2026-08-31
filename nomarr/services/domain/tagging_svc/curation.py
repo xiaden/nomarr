@@ -69,7 +69,7 @@ class TaggingCurationMixin:
         source_tag = self._get_tag_or_error(tag_id)
         self._reject_nom_prefix(identity=source_tag)
 
-        target_identity = self.db.library.ensure_tag(TagRef(name=source_tag.name, value=new_value, namespace=""))
+        target_identity = self.db.library.ensure_tag(TagRef(name=source_tag.name, value=new_value, namespace="default"))
         merged_into_existing = target_identity != source_tag
 
         relink = relink_tag_edges(self.db, source_tag, target_identity)
@@ -139,7 +139,7 @@ class TaggingCurationMixin:
         source_tag = self._get_tag_or_error(source_tag_id)
         self._reject_nom_prefix(identity=source_tag)
 
-        target_identity = self.db.library.ensure_tag(TagRef(name=source_tag.name, value=new_value, namespace=""))
+        target_identity = self.db.library.ensure_tag(TagRef(name=source_tag.name, value=new_value, namespace="default"))
         new_tag_created = target_identity != source_tag
 
         song_identity_map = self.db.library.resolve_song_identities([int(sid) for sid in song_ids])

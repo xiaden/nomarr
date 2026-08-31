@@ -47,11 +47,16 @@ class TestTagRefFromRow:
         identity = tag_identity_from_row({"name": "year", "value": 1999, "namespace": ""})
         assert identity.value == "1999"
 
-    def test_missing_namespace_defaults_to_empty(self) -> None:
-        assert tag_identity_from_row({"name": "artist", "value": "X"}).namespace == ""
+    def test_missing_namespace_defaults_to_literal_default(self) -> None:
+        assert tag_identity_from_row({"name": "artist", "value": "X"}).namespace == "default"
+
+    def test_blank_namespace_normalizes_to_default_nom_preserved(self) -> None:
+        assert tag_identity_from_row({"name": "artist", "value": "X", "namespace": ""}).namespace == "default"
+        assert tag_identity_from_row({"name": "artist", "value": "X", "namespace": None}).namespace == "default"
+        assert tag_identity_from_row({"name": "artist", "value": "X", "namespace": "nom"}).namespace == "nom"
 
     def test_never_leaks_tag_row_id(self) -> None:
-        identity = tag_identity_from_row({"id": 5, "name": "artist", "value": "X", "namespace": ""})
+        identity = tag_identity_from_row({"id": 5, "name": "artist", "value": "X", "namespace": "default"})
         assert isinstance(identity, TagRef)
         assert not isinstance(identity, dict)
         assert not hasattr(identity, "id")
@@ -79,6 +84,17 @@ class TestSongTagAssignmentFromRow:
         )
         assert assignment.confidence == 1.0
         assert assignment.source == "nomarr"
+
+    def test_missing_and_blank_namespace_normalize_to_default(self) -> None:
+        assert song_tag_assignment_from_row({"name": "artist", "value": "X"}, song=_SONG).namespace == "default"
+        assert (
+            song_tag_assignment_from_row({"name": "artist", "value": "X", "namespace": ""}, song=_SONG).namespace
+            == "default"
+        )
+        assert (
+            song_tag_assignment_from_row({"name": "artist", "value": "X", "namespace": "nom"}, song=_SONG).namespace
+            == "nom"
+        )
 
     def test_zero_confidence_is_preserved_not_defaulted(self) -> None:
         # A stored confidence of exactly 0.0 is a genuine value, not a falsy
@@ -139,6 +155,13 @@ class TestSongTagAssignmentFromBatchRow:
             _SONG,
         )
         assert assignment.confidence == 0.0
+
+    def test_blank_batch_namespace_normalizes_to_default(self) -> None:
+        assignment = song_tag_assignment_from_batch_row(
+            {"song_id": 7, "tag_id": 1, "tag_name": "artist", "tag_value": "X", "namespace": ""},
+            _SONG,
+        )
+        assert assignment.namespace == "default"
 
 
 @pytest.mark.unit
@@ -208,10 +231,14 @@ class TestTagUsageFromRow:
     def test_maps_identity_and_count(self) -> None:
         usage = tag_usage_from_row({"id": 5, "name": "artist", "value": "X", "namespace": "", "song_count": 3})
         assert isinstance(usage, TagUsage)
-        assert usage.identity == TagRef(name="artist", value="X", namespace="")
+        assert usage.identity == TagRef(name="artist", value="X", namespace="default")
         assert usage.song_count == 3
 
+    def test_nom_namespace_preserved(self) -> None:
+        usage = tag_usage_from_row({"id": 5, "name": "artist", "value": "X", "namespace": "nom", "song_count": 3})
+        assert usage.identity == TagRef(name="artist", value="X", namespace="nom")
+
     def test_storage_id_not_projected(self) -> None:
-        usage = tag_usage_from_row({"id": 5, "name": "artist", "value": "X", "namespace": "", "song_count": 3})
+        usage = tag_usage_from_row({"id": 5, "name": "artist", "value": "X", "namespace": "default", "song_count": 3})
         assert not isinstance(usage, dict)
         assert not hasattr(usage, "id")

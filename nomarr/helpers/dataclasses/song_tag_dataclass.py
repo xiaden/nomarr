@@ -16,13 +16,19 @@ class TagRef:
 
     name: str
     value: object | None = None
-    namespace: str = ""
+    namespace: str = "default"
 
     def __post_init__(self) -> None:
         if not self.name.strip():
             raise ValueError("TagRef.name must not be blank")
         if not isinstance(self.namespace, str):
             raise TypeError("TagRef.namespace must be a string")
+        if not self.namespace.strip():
+            # Ordinary namespace normalization is one canonical rule: omitted or
+            # empty ordinary namespace becomes the literal ``default``. An
+            # explicit ``nom`` is preserved (non-blank). No path treats NULL as
+            # an ordinary namespace (non-str ``None`` is rejected above).
+            object.__setattr__(self, "namespace", "default")
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,7 +37,7 @@ class SongTagAssignment:
 
     name: str
     value: object
-    namespace: str = ""
+    namespace: str = "default"
     confidence: float = 1.0
     source: str = "nomarr"
     song: SongIdentity | None = None
@@ -41,6 +47,10 @@ class SongTagAssignment:
             raise ValueError("SongTagAssignment.name must not be blank")
         if not isinstance(self.namespace, str):
             raise TypeError("SongTagAssignment.namespace must be a string")
+        if not self.namespace.strip():
+            # Ordinary namespace normalization: blank becomes literal
+            # ``default``; explicit ``nom`` is preserved. No NULL-as-ordinary.
+            object.__setattr__(self, "namespace", "default")
         if isinstance(self.confidence, bool) or not isinstance(self.confidence, Real):
             raise TypeError("SongTagAssignment.confidence must be numeric")
         if not self.source:

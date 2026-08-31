@@ -408,10 +408,6 @@ def get_root_folders():
     pass  # Root folder listing
 
 
-def get_tag_by_name():
-    pass  # Tag lookup
-
-
 def get_tagged_library_paths():
     pass  # Tag path retrieval
 

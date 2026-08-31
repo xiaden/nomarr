@@ -52,10 +52,23 @@ class TestTagRef:
     def test_equality_by_value(self) -> None:
         assert TagRef("artist", "X") == TagRef("artist", "X")
         assert TagRef("artist", "X") != TagRef("artist", "Y")
-        assert TagRef("artist", "X", "nom") != TagRef("artist", "X", "")
+        # ``nom`` is a distinct namespace from the ordinary ``default``.
+        assert TagRef("artist", "X", "nom") != TagRef("artist", "X", "default")
 
-    def test_namespace_defaults_to_empty_string(self) -> None:
-        assert TagRef("artist", "X").namespace == ""
+    def test_namespace_defaults_to_literal_default(self) -> None:
+        assert TagRef("artist", "X").namespace == "default"
+
+    def test_blank_namespace_normalizes_to_default(self) -> None:
+        assert TagRef("artist", "X", namespace="").namespace == "default"
+        assert TagRef("artist", "X", namespace="   ").namespace == "default"
+        # Explicit ``nom`` is preserved, never collapsed into ``default``.
+        assert TagRef("artist", "X", namespace="nom").namespace == "nom"
+
+    def test_empty_namespace_equals_default_identity(self) -> None:
+        # Complete-tuple identity equality uses the normalized namespace, so a
+        # blank-supplied ordinary tag is the same identity as ``default``.
+        assert TagRef("artist", "X", namespace="") == TagRef("artist", "X", namespace="default")
+        assert TagRef("artist", "X", namespace="") != TagRef("artist", "X", namespace="nom")
 
     def test_blank_name_rejected(self) -> None:
         with pytest.raises(ValueError):
@@ -81,6 +94,23 @@ class TestTagRef:
         tag = TagRef(name="artist", value="X")
         assert not hasattr(tag, "id")
 
+    def test_hash_consistent_with_namespace_sensitive_equality(self) -> None:
+        """Equality is namespace-sensitive, so equal objects hash equal and
+        distinct-namespace identities hash differently (hash follows equality)."""
+        same = TagRef("genre", "Rock", "default")
+        assert same == TagRef("genre", "Rock", "default")
+        assert hash(same) == hash(TagRef("genre", "Rock", "default"))
+        # ``nom`` is a distinct identity from ``default``; their hashes differ.
+        assert TagRef("genre", "Rock", "default") != TagRef("genre", "Rock", "nom")
+        assert hash(TagRef("genre", "Rock", "default")) != hash(TagRef("genre", "Rock", "nom"))
+
+    def test_exposes_no_removed_tag_metadata(self) -> None:
+        """TagRef carries only (name, value, namespace) — removed tag metadata
+        (source/confidence/tier/created_at/parent_tag_id) is not constructible."""
+        tag = TagRef(name="genre", value="Rock", namespace="default")
+        for field in ("source", "confidence", "tier", "created_at", "parent_tag_id", "id"):
+            assert not hasattr(tag, field), f"TagRef must not expose removed metadata field '{field}'"
+
 
 # ── SongTagAssignment ────────────────────────────────────────────────────────
 
@@ -102,11 +132,26 @@ class TestSongTagAssignment:
         assert assignment.confidence == 1.0
         assert assignment.source == "nomarr"
         assert assignment.song is None
-        assert assignment.namespace == ""
+        assert assignment.namespace == "default"
+
+    def test_blank_namespace_normalizes_to_default(self) -> None:
+        assert SongTagAssignment(name="artist", value="X", namespace="").namespace == "default"
+        assert SongTagAssignment(name="artist", value="X", namespace="   ").namespace == "default"
+        assert SongTagAssignment(name="artist", value="X", namespace="nom").namespace == "nom"
 
     def test_identity_property_returns_persistence_free_tag_identity(self) -> None:
         assignment = SongTagAssignment(name="artist", value="X", namespace="nom")
         assert assignment.identity == TagRef(name="artist", value="X", namespace="nom")
+
+    def test_identity_property_returns_complete_normalized_tagref(self) -> None:
+        # The identity carries the complete normalized TagRef: default ordinary
+        # namespace is surfaced as ``default``, and ``nom`` stays distinct.
+        assert SongTagAssignment(name="artist", value="X").identity == TagRef(
+            name="artist", value="X", namespace="default"
+        )
+        assert SongTagAssignment(name="artist", value="X", namespace="nom").identity == TagRef(
+            name="artist", value="X", namespace="nom"
+        )
 
     def test_blank_name_rejected(self) -> None:
         with pytest.raises(ValueError):

@@ -170,6 +170,16 @@ def _is_numeric_target_value(value: float | str) -> bool:
     return is_numeric_tag_value(value)
 
 
+def _tag_key_namespace(tag_key: str) -> str:
+    """Return the persistence namespace for a search tag key.
+
+    Nomarr ML keys carry a ``nom:`` prefix in their stored ``name`` and live in
+    the ``nom`` namespace (see song_hydration_repo ``_expand_tag_rows``); every
+    other key is an ordinary tag in the ``default`` namespace.
+    """
+    return "nom" if tag_key.startswith("nom:") else "default"
+
+
 def _tags_for_song(db: Database, song_id: int) -> list[FileTag]:
     song_identity = db.library.resolve_song_identity(song_id)
     if song_identity is None:
@@ -669,7 +679,7 @@ def search_songs_by_tag(
         # tie-break by tag id), and applies offset/limit before any rows reach
         # Python. Only the SQL-returned page is hydrated.
         numeric_target = float(target_value)
-        identity = TagRef(name=tag_key, value=numeric_target)
+        identity = TagRef(name=tag_key, value=numeric_target, namespace=_tag_key_namespace(tag_key))
         rows = db.library.find_songs_with_numeric_tag(identity, limit=limit, offset=offset)
         if not rows:
             return []
@@ -686,7 +696,7 @@ def search_songs_by_tag(
             results.append(hydrated_file)
         return results
 
-    identity = TagRef(name=tag_key, value=str(target_value))
+    identity = TagRef(name=tag_key, value=str(target_value), namespace=_tag_key_namespace(tag_key))
     file_docs = [song.to_dict() for song in db.library.find_songs_with_tag(identity, limit=None)]
     file_docs = hydrate_songs_with_metadata(db, file_docs)
     file_docs.sort(key=_library_song_sort_key)
@@ -700,15 +710,16 @@ def search_songs_by_tag(
 
 
 def count_songs_by_tag(db: Database, tag_key: str, target_value: float | str) -> int:
-    """Count songs matching a tag-value filter."""
+    """Count songs matching a tag-value filter, scoped to the key's namespace."""
+    namespace = _tag_key_namespace(tag_key)
     if _is_numeric_target_value(target_value):
         # Numeric count is a separate uncapped ``COUNT(DISTINCT song_id)`` SQL
         # intent sharing the numeric search predicate (ADR-045); it must agree
         # with the searchable result universe even beyond the legacy 1000-edge
         # cap, so it never materializes tags/edges in Python.
-        return db.library.count_songs_by_numeric_tag(tag_key, float(target_value))
+        return db.library.count_songs_by_numeric_tag(tag_key, float(target_value), namespace=namespace)
 
-    return db.library.count_songs_by_tag(tag_key, str(target_value))
+    return db.library.count_songs_by_tag(tag_key, str(target_value), namespace=namespace)
 
 
 def get_songs_by_chromaprint(

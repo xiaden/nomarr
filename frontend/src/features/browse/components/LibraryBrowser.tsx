@@ -111,7 +111,7 @@ export function LibraryBrowser({ initialStep }: LibraryBrowserProps) {
   }, []);
 
   // Load albums for artist
-  const loadAlbums = useCallback(async (artistId: string) => {
+  const loadAlbums = useCallback(async (artistId: string | number) => {
     const version = ++requestVersion.current;
     try {
       setLoading(true);
@@ -128,7 +128,7 @@ export function LibraryBrowser({ initialStep }: LibraryBrowserProps) {
   }, []);
 
   // Load tracks for album
-  const loadTracks = useCallback(async (albumId: string) => {
+  const loadTracks = useCallback(async (albumId: string | number) => {
     const version = ++requestVersion.current;
     try {
       setLoading(true);
@@ -219,7 +219,7 @@ export function LibraryBrowser({ initialStep }: LibraryBrowserProps) {
       const albumName = track.album ?? "Unknown Album";
       navigateTo({
         type: "tags",
-        artist: { entity_id: "", key: "", display_name: artistName },
+        artist: { entity_id: "", display_name: artistName },
         album: { entity_id: "", display_name: albumName },
         track,
       });

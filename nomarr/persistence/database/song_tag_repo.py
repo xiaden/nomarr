@@ -386,6 +386,7 @@ class SongTagRepository:
         tag_key: str,
         target_value: float | str,
         *,
+        namespace: str,
         limit: int | None = None,
         offset: int = 0,
     ) -> list[NumericSongTagMatchRow]:
@@ -425,6 +426,7 @@ class SongTagRepository:
                 .join(_ST, _S.c.id == _ST.c.song_id)
                 .join(_T, _T.c.id == _ST.c.tag_id)
                 .where(
+                    _T.c.namespace == namespace,
                     _T.c.name == tag_key,
                     distance.is_not(None),
                 )
@@ -439,12 +441,12 @@ class SongTagRepository:
             result = self._session.execute(stmt)
             return [_numeric_match_row_to_dto(r) for r in result.all()]
 
-    def count_songs_by_numeric_tag(self, tag_key: str, target_value: float | str) -> int:
-        """Count distinct songs matching a numeric *tag_key* tag.
+    def count_songs_by_numeric_tag(self, tag_key: str, target_value: float | str, *, namespace: str) -> int:
+        """Count distinct songs matching a numeric *tag_key* tag in *namespace*.
 
-        Separate uncapped query using the SAME tag-key and safe-numeric
-        predicate as :meth:`search_songs_by_numeric_tag` — no edge limit and
-        no dependence on the paged query.
+        Separate uncapped query using the SAME tag-key, namespace, and
+        safe-numeric predicate as :meth:`search_songs_by_numeric_tag` — no edge
+        limit and no dependence on the paged query.
         """
         with map_persistence_exceptions():
             bind = getattr(self._session, "bind", None)
@@ -458,6 +460,7 @@ class SongTagRepository:
                 .select_from(_ST)
                 .join(_T, _T.c.id == _ST.c.tag_id)
                 .where(
+                    _T.c.namespace == namespace,
                     _T.c.name == tag_key,
                     distance.is_not(None),
                 )
@@ -470,16 +473,17 @@ class SongTagRepository:
         tag_key: str,
         value: str,
         *,
+        namespace: str,
         limit: int | None = None,
         offset: int = 0,
     ) -> list[SongRow]:
-        """Return songs that have a tag with exact *tag_key* name and *value*."""
+        """Return songs that have a tag with exact *tag_key* name and *value* in *namespace*."""
         with map_persistence_exceptions():
             stmt = (
                 select(_S)
                 .join(_ST, _S.c.id == _ST.c.song_id)
                 .join(_T, _T.c.id == _ST.c.tag_id)
-                .where(_T.c.name == tag_key, _T.c.value == value)
+                .where(_T.c.namespace == namespace, _T.c.name == tag_key, _T.c.value == value)
             )
             if offset:
                 stmt = stmt.offset(offset)
@@ -493,15 +497,17 @@ class SongTagRepository:
         tag_key: str,
         value: str,
         *,
+        namespace: str,
         limit: int | None = None,
     ) -> list[SongRow]:
-        """Return songs whose tag value contains *value* (ILIKE)."""
+        """Return songs whose tag value contains *value* (ILIKE) in *namespace*."""
         with map_persistence_exceptions():
             stmt = (
                 select(_S)
                 .join(_ST, _S.c.id == _ST.c.song_id)
                 .join(_T, _T.c.id == _ST.c.tag_id)
                 .where(
+                    _T.c.namespace == namespace,
                     _T.c.name == tag_key,
                     _T.c.value.ilike(f"%{_escape_like_search(value)}%", escape="\\"),
                 )
@@ -516,15 +522,17 @@ class SongTagRepository:
         tag_name: str,
         pattern: str,
         *,
+        namespace: str,
         limit: int | None = None,
     ) -> list[SongRow]:
-        """Return songs whose tag value matches an ILIKE *pattern*."""
+        """Return songs whose tag value matches an ILIKE *pattern* in *namespace*."""
         with map_persistence_exceptions():
             stmt = (
                 select(_S)
                 .join(_ST, _S.c.id == _ST.c.song_id)
                 .join(_T, _T.c.id == _ST.c.tag_id)
                 .where(
+                    _T.c.namespace == namespace,
                     _T.c.name == tag_name,
                     _T.c.value.ilike(pattern),
                 )
@@ -604,11 +612,13 @@ class SongTagRepository:
 
     # ── Plan E facade support ───────────────────────────────────
 
-    def get_genre_tags_for_songs(self, song_ids: list[int]) -> list[dict[str, Any]]:
+    def get_genre_tags_for_songs(self, song_ids: list[int], *, namespace: str = "default") -> list[dict[str, Any]]:
         """Return genre tags assigned to the given song ids.
 
         Each row carries identity fields from ``tags`` plus edge metadata
-        (confidence, source, created_at) from ``song_tags``.
+        (confidence, source, created_at) from ``song_tags``. Genre is an
+        ordinary tag, so the query is constrained to *namespace* (``default``
+        for ordinary genre tags).
         """
         with map_persistence_exceptions():
             if not song_ids:
@@ -627,6 +637,7 @@ class SongTagRepository:
                 .where(
                     _ST.c.song_id.in_(song_ids),
                     _T.c.name == "genre",
+                    _T.c.namespace == namespace,
                 )
             )
             result = self._session.execute(stmt)
@@ -648,13 +659,14 @@ class SongTagRepository:
             result = self._session.execute(stmt)
             return result.scalar() or 0
 
-    def count_songs_by_tag(self, tag_key: str, target_value: str) -> int:
-        """Count distinct songs assigned to tags matching *tag_key* and *target_value*."""
+    def count_songs_by_tag(self, tag_key: str, target_value: str, *, namespace: str) -> int:
+        """Count distinct songs assigned to tags matching *tag_key*, *target_value*, and *namespace*."""
         with map_persistence_exceptions():
             stmt = (
                 select(func.count(func.distinct(_ST.c.song_id)))
                 .join(_T, _T.c.id == _ST.c.tag_id)
                 .where(
+                    _T.c.namespace == namespace,
                     _T.c.name == tag_key,
                     _T.c.value == target_value,
                 )

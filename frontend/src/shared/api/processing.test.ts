@@ -20,6 +20,14 @@ describe("getWorkStatus", () => {
     const response = {
       is_scanning: false,
       scanning_libraries: [],
+      pipeline_libraries: [
+        {
+          library_id: "My Library",
+          name: "My Library",
+          state: "idle",
+          library_auto_write: true,
+        },
+      ],
       is_processing: false,
       pending_files: 0,
       processed_files: 0,

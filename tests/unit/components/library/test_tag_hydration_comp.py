@@ -26,7 +26,7 @@ def _identity(song_id: int) -> SongIdentity:
 
 def _assign(name: str, value: str | int | float | bool) -> SongTagAssignment:
     """Build a domain ``SongTagAssignment`` (scalar value) for one song."""
-    return SongTagAssignment(name=name, value=value, namespace="")
+    return SongTagAssignment(name=name, value=value, namespace="default")
 
 
 class TestExtractCanonicalMetadata:

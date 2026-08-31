@@ -236,11 +236,17 @@ function processHistogram(head: HeadHistogramResponse): ProcessedHistogram {
   let p5Dist = Infinity;
   let p95Dist = Infinity;
 
+  const p5 = head.p5;
+  const p95 = head.p95;
   binValues.forEach((val, i) => {
-    const d5 = Math.abs(val - head.p5);
-    const d95 = Math.abs(val - head.p95);
-    if (d5 < p5Dist) { p5Dist = d5; p5Index = i; }
-    if (d95 < p95Dist) { p95Dist = d95; p95Index = i; }
+    if (p5 !== null) {
+      const d5 = Math.abs(val - p5);
+      if (d5 < p5Dist) { p5Dist = d5; p5Index = i; }
+    }
+    if (p95 !== null) {
+      const d95 = Math.abs(val - p95);
+      if (d95 < p95Dist) { p95Dist = d95; p95Index = i; }
+    }
   });
 
   return { xLabels, counts, binValues, p5Index, p95Index };
@@ -430,8 +436,12 @@ export function HistogramCharts({ data, loading, error, sx }: HistogramChartsPro
               {shortLabel(selectedData.head_name)} - {selectedData.label}
             </Typography>
             <Box sx={{ display: "flex", gap: 3 }}>
-              <ReferenceLineInfo label="P5" value={selectedData.p5} color="#2196f3" />
-              <ReferenceLineInfo label="P95" value={selectedData.p95} color="#f44336" />
+              {selectedData.p5 !== null && (
+                <ReferenceLineInfo label="P5" value={selectedData.p5} color="#2196f3" />
+              )}
+              {selectedData.p95 !== null && (
+                <ReferenceLineInfo label="P95" value={selectedData.p95} color="#f44336" />
+              )}
               <Typography variant="body2" color="text.secondary">
                 Samples: <strong>{selectedData.n.toLocaleString()}</strong>
               </Typography>

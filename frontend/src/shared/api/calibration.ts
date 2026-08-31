@@ -50,8 +50,8 @@ export interface LibraryCalibrationStatus {
 }
 
 export interface CalibrationStatus {
-  global_version: string;
-  last_run: number;
+  global_version: string | null;
+  last_run: number | null;
   libraries: LibraryCalibrationStatus[];
 }
 
@@ -132,12 +132,11 @@ export interface HeadHistogramResponse {
   head_name: string;
   label: string;
   histogram_bins: HistogramBin[];
-  p5: number;
-  p95: number;
+  p5: number | null;
+  p95: number | null;
   n: number;
   histogram_spec: HistogramSpec;
   calibration_def_hash?: string;
-  version?: number;
   underflow_count?: number;
   overflow_count?: number;
 }

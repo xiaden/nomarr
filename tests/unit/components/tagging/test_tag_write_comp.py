@@ -44,7 +44,7 @@ class TestSetSongTags:
         mock_db.library.resolve_song_identity.return_value = song_identity
         mock_db.library.list_tags_for_song.return_value = (
             SongTagAssignment(name="genre", value="old"),
-            SongTagAssignment(name="mood", value="happy"),
+            SongTagAssignment(name="mood", value="happy", namespace="default"),
         )
 
         set_song_tags(mock_db, 1, "genre", ["rock"])
@@ -54,8 +54,8 @@ class TestSetSongTags:
         mock_db.library.replace_song_tags.assert_called_once_with(
             song_identity,
             [
-                SongTagAssignment(name="mood", value="happy"),
-                SongTagAssignment(name="genre", value="rock"),
+                SongTagAssignment(name="mood", value="happy", namespace="default"),
+                SongTagAssignment(name="genre", value="rock", namespace="default"),
             ],
         )
 
@@ -67,14 +67,14 @@ class TestSetSongTags:
         mock_db.library.resolve_song_identity.return_value = song_identity
         mock_db.library.list_tags_for_song.return_value = (
             SongTagAssignment(name="genre", value="old"),
-            SongTagAssignment(name="mood", value="happy"),
+            SongTagAssignment(name="mood", value="happy", namespace="default"),
         )
 
         set_song_tags(mock_db, 1, "genre", [])
 
         mock_db.library.replace_song_tags.assert_called_once_with(
             song_identity,
-            [SongTagAssignment(name="mood", value="happy")],
+            [SongTagAssignment(name="mood", value="happy", namespace="default")],
         )
 
     @pytest.mark.unit
@@ -89,7 +89,7 @@ class TestSetSongTags:
 
         mock_db.library.replace_song_tags.assert_called_once_with(
             song_identity,
-            [SongTagAssignment(name="genre", value="rock")],
+            [SongTagAssignment(name="genre", value="rock", namespace="default")],
         )
 
     @pytest.mark.unit
@@ -133,9 +133,9 @@ class TestSetSongTagsBatch:
         mock_db.library.list_song_tags_for_songs.return_value = {
             id1: (
                 SongTagAssignment(name="genre", value="old"),
-                SongTagAssignment(name="year", value=1999),
+                SongTagAssignment(name="year", value=1999, namespace="default"),
             ),
-            id2: (SongTagAssignment(name="mood", value="calm"),),
+            id2: (SongTagAssignment(name="mood", value="calm", namespace="default"),),
         }
 
         set_song_tags_batch(mock_db, entries)
@@ -146,17 +146,17 @@ class TestSetSongTagsBatch:
             call(
                 id1,
                 [
-                    SongTagAssignment(name="year", value=1999),
-                    SongTagAssignment(name="genre", value="rock"),
-                    SongTagAssignment(name="mood", value="happy"),
-                    SongTagAssignment(name="mood", value="bright"),
+                    SongTagAssignment(name="year", value=1999, namespace="default"),
+                    SongTagAssignment(name="genre", value="rock", namespace="default"),
+                    SongTagAssignment(name="mood", value="happy", namespace="default"),
+                    SongTagAssignment(name="mood", value="bright", namespace="default"),
                 ],
             ),
             call(
                 id2,
                 [
-                    SongTagAssignment(name="mood", value="calm"),
-                    SongTagAssignment(name="genre", value="jazz"),
+                    SongTagAssignment(name="mood", value="calm", namespace="default"),
+                    SongTagAssignment(name="genre", value="jazz", namespace="default"),
                 ],
             ),
         ]
@@ -171,15 +171,17 @@ class TestAddSongTag:
         mock_db = MagicMock()
         song_identity = _song_identity(1)
         mock_db.library.resolve_song_identity.return_value = song_identity
-        mock_db.library.list_tags_for_song.return_value = (SongTagAssignment(name="mood", value="happy"),)
+        mock_db.library.list_tags_for_song.return_value = (
+            SongTagAssignment(name="mood", value="happy", namespace="default"),
+        )
 
         add_song_tag(mock_db, 1, "genre", "rock")
 
         mock_db.library.replace_song_tags.assert_called_once_with(
             song_identity,
             [
-                SongTagAssignment(name="mood", value="happy"),
-                SongTagAssignment(name="genre", value="rock"),
+                SongTagAssignment(name="mood", value="happy", namespace="default"),
+                SongTagAssignment(name="genre", value="rock", namespace="default"),
             ],
         )
 
@@ -228,7 +230,7 @@ class TestRelinkTagEdges:
     @pytest.mark.mocked
     def test_returns_zero_result_when_source_equals_target(self) -> None:
         mock_db = MagicMock()
-        tag = TagRef(name="genre", value="rock")
+        tag = TagRef(name="genre", value="rock", namespace="default")
 
         result = relink_tag_edges(mock_db, tag, tag)
 
@@ -239,8 +241,8 @@ class TestRelinkTagEdges:
     @pytest.mark.mocked
     def test_delegates_relink_to_facade(self) -> None:
         mock_db = MagicMock()
-        source = TagRef(name="genre", value="old")
-        target = TagRef(name="genre", value="rock")
+        source = TagRef(name="genre", value="old", namespace="default")
+        target = TagRef(name="genre", value="rock", namespace="default")
         mock_db.library.relink_tags.return_value = RelinkResult(moved=2, skipped=0, source_orphaned=1)
 
         result = relink_tag_edges(mock_db, source, target)
@@ -252,8 +254,8 @@ class TestRelinkTagEdges:
     @pytest.mark.mocked
     def test_passes_song_identities_when_provided(self) -> None:
         mock_db = MagicMock()
-        source = TagRef(name="genre", value="old")
-        target = TagRef(name="genre", value="rock")
+        source = TagRef(name="genre", value="old", namespace="default")
+        target = TagRef(name="genre", value="rock", namespace="default")
         song_identities = [_song_identity(1), _song_identity(2)]
         mock_db.library.relink_tags.return_value = RelinkResult(moved=1, skipped=1, source_orphaned=0)
 

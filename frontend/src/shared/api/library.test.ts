@@ -72,15 +72,18 @@ describe("getPipelineStatus", () => {
     vi.clearAllMocks();
   });
 
-  it("gets pipeline status for a library", async () => {
+  it("gets pipeline status for a library with the full four-axis shape", async () => {
     const response = {
       library_id: "My Library",
-      state: "write_ready",
+      scan_state: "idle",
+      ml_state: "idle",
+      calibration_state: "idle",
+      tag_write_state: "idle",
       untagged_count: null,
       uncalibrated_count: null,
       pending_write_count: 12,
       library_auto_write: true,
-      file_write_mode: "full" as const,
+      file_write_mode: "full",
     };
     vi.mocked(get).mockResolvedValue(response);
 

@@ -24,8 +24,27 @@ describe("search", () => {
     vi.clearAllMocks();
   });
 
-  it("gets the singular file search endpoint", async () => {
-    const response = { files: [], total: 0, limit: 100, offset: 0 };
+  it("gets the singular file search endpoint with backend-shaped file entries", async () => {
+    const response = {
+      files: [
+        {
+          file_id: 42,
+          path: "/music/house.mp3",
+          library_id: 7,
+          duration_seconds: 240.5,
+          artist: "Some Artist",
+          album: "Some Album",
+          title: "House Track",
+          calibration_version: "v3.2",
+          tagged: true,
+          skip_auto_tag: false,
+          tags: [],
+        },
+      ],
+      total: 1,
+      limit: 100,
+      offset: 0,
+    };
     vi.mocked(get).mockResolvedValue(response);
 
     await expect(search()).resolves.toEqual(response);
@@ -39,14 +58,14 @@ describe("getFilesByIds", () => {
     vi.clearAllMocks();
   });
 
-  it("posts to the singular file by-ids endpoint", async () => {
+  it("posts numeric encoded file ids to the singular file by-ids endpoint", async () => {
     const response = { files: [], total: 0, limit: 2, offset: 0 };
     vi.mocked(post).mockResolvedValue(response);
 
-    await expect(getFilesByIds(["file-1", "file-2"])).resolves.toEqual(response);
+    await expect(getFilesByIds([1, 2])).resolves.toEqual(response);
 
     expect(post).toHaveBeenCalledWith("/api/web/library/file/by-ids", {
-      file_ids: ["file-1", "file-2"],
+      file_ids: [1, 2],
     });
   });
 });

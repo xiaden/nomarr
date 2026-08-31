@@ -231,7 +231,8 @@ class TestGetTag:
 
         result = get_tag(mock_db, 5)
 
-        assert result == {"id": 5, "name": "genre", "value": "rock", "namespace": ""}
+        # Ordinary tags normalize to the literal "default" namespace.
+        assert result == {"id": 5, "name": "genre", "value": "rock", "namespace": "default"}
         mock_db.resolve_tag_identity.assert_called_once_with(5)
 
     @pytest.mark.unit
@@ -503,7 +504,7 @@ class TestGetSongTags:
         song_identity = _song_identity(1)
         mock_db.library.resolve_song_identity.return_value = song_identity
         mock_db.library.list_tags_for_song.return_value = (
-            SongTagAssignment(name="genre", value="Rock", namespace=""),
+            SongTagAssignment(name="genre", value="Rock", namespace="default"),
             SongTagAssignment(name="nom:mood-tier-1", value="calm", namespace="nom"),
             SongTagAssignment(name="nom:mood-tier-1", value="bright", namespace="nom"),
         )

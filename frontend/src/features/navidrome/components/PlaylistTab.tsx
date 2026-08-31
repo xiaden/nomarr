@@ -12,7 +12,7 @@ import {
   Typography,
 } from "@mui/material";
 
-import type { PlaylistPreviewResponse } from "@shared/api/navidrome";
+import type { GeneratePlaylistResponse, PlaylistPreviewResponse } from "@shared/api/navidrome";
 import { ErrorMessage, Panel, SectionHeader } from "@shared/components/ui";
 
 import { useTagMetadata } from "../hooks/useTagMetadata";
@@ -30,7 +30,7 @@ interface PlaylistTabProps {
   limit: number | undefined;
   sort: string;
   preview: PlaylistPreviewResponse | null;
-  content: string | null;
+  structure: GeneratePlaylistResponse | null;
   loading: boolean;
   error: string | null;
   onGroupChange: (group: RuleGroup) => void;
@@ -49,7 +49,7 @@ export function PlaylistTab({
   limit,
   sort,
   preview,
-  content,
+  structure,
   loading,
   error,
   onGroupChange,
@@ -66,7 +66,8 @@ export function PlaylistTab({
   const hasValidRules = assembledQuery.length > 0;
 
   const handleDownload = () => {
-    if (content) {
+    if (structure) {
+      const content = JSON.stringify(structure.playlist_structure, null, 2);
       const blob = new Blob([content], { type: "text/plain" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -206,14 +207,14 @@ export function PlaylistTab({
         </Panel>
       )}
 
-      {/* Generated playlist content */}
-      {content && (
+      {/* Generated playlist structure */}
+      {structure && (
         <Panel>
           <SectionHeader title="Generated Playlist (.nsp)" />
           <TextField
             multiline
             rows={15}
-            value={content}
+            value={JSON.stringify(structure.playlist_structure, null, 2)}
             fullWidth
             slotProps={{
               input: {

@@ -135,16 +135,55 @@ class TestTagDomainBaseline:
         assert isinstance(assignment, SongTagAssignment)
         assert assignment.name == "artist"
         assert assignment.value == "X"
+        assert assignment.namespace == "default"  # blank ordinary row normalizes
         assert assignment.confidence == 0.9
         assert assignment.source == "nomarr"
         assert assignment.song == song
+
+    def test_list_tags_for_song_preserves_nom_namespace(self) -> None:
+        """A ``nom`` row maps to a domain assignment carrying ``namespace == 'nom'``."""
+        tags, _, song_tag_repo = _make_tags_db()
+        song_tag_repo.get_tags_for_song.return_value = [
+            {"name": "genre", "value": "Rock", "namespace": "nom", "confidence": 0.7, "source": "user"}
+        ]
+        result = tags.list_tags_for_song(_song())
+        assignment = result[0]
+        assert isinstance(assignment, SongTagAssignment)
+        assert assignment.namespace == "nom"
+        assert assignment.confidence == 0.7
+        assert assignment.source == "user"
+
+    def test_domain_values_expose_no_removed_metadata_or_storage_ids(self) -> None:
+        """ADR-032/041: domain TagRef/SongTagAssignment carry only domain fields.
+
+        No removed ``tags`` metadata (tier/created_at/parent_tag_id) and no
+        storage primary keys (tag_id/song_id) cross the facade boundary; the
+        only sanctioned edge provenance (confidence/source) is retained.
+        """
+        import dataclasses
+
+        tag_ref_fields = {f.name for f in dataclasses.fields(TagRef)}
+        assert tag_ref_fields == {"name", "value", "namespace"}
+
+        assignment_fields = {f.name for f in dataclasses.fields(SongTagAssignment)}
+        assert not ({"song_id", "tag_id", "tier", "created_at", "parent_tag_id"} & assignment_fields)
+        assert {"confidence", "source", "name", "value", "namespace"} <= assignment_fields
 
     def test_get_tag_returns_tag_identity(self) -> None:
         tags, tag_repo, _ = _make_tags_db()
         tag_repo.get_tag_ids_by_identities.return_value = {("default", "artist", "X"): 11}
         tag_repo.get_tags_by_ids.return_value = [{"name": "artist", "value": "X", "namespace": ""}]
         result = tags.get_tag(TagRef(name="artist", value="X"))
-        assert result == TagRef(name="artist", value="X", namespace="")
+        assert result == TagRef(name="artist", value="X", namespace="default")
+        assert result.namespace == "default"
+
+    def test_get_tag_preserves_nom_namespace(self) -> None:
+        tags, tag_repo, _ = _make_tags_db()
+        tag_repo.get_tag_ids_by_identities.return_value = {("nom", "artist", "X"): 11}
+        tag_repo.get_tags_by_ids.return_value = [{"name": "artist", "value": "X", "namespace": "nom"}]
+        result = tags.get_tag(TagRef(name="artist", value="X", namespace="nom"))
+        assert result == TagRef(name="artist", value="X", namespace="nom")
+        assert result.namespace == "nom"
 
     def test_ensure_tag_returns_tag_identity(self) -> None:
         tags, tag_repo, _ = _make_tags_db()

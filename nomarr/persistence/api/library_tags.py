@@ -42,9 +42,10 @@ def _ordinary_namespace(namespace: str) -> str:
     """Normalize an empty ordinary namespace to the literal ``default``.
 
     ``tags`` rows are stored with ``namespace NOT NULL``; the ordinary
-    namespace is the literal ``"default"``. ``TagRef`` uses ``""`` for the
-    ordinary namespace, so every natural key built here must normalize before
-    matching the stored ``(namespace, name, value)`` identity.
+    namespace is the literal ``"default"``. ``TagRef`` normalizes blank
+    ordinary namespaces to ``default`` at construction; natural keys built here
+    are normalized again so no empty namespace can reach a stored
+    ``(namespace, name, value)`` predicate.
     """
     return namespace or "default"
 
@@ -147,7 +148,7 @@ class LibraryTagsDb:
 
         Matches the full ``(name, value, namespace)`` natural key exactly. The
         identity is resolved set-based via ``get_tag_ids_by_identities`` (not the
-        value-blind name+namespace-only ``get_tag_by_name`` fetch), then the
+        value-blind name+namespace-only fetch), then the
         matching row is read by primary key, so a shared ``(name, namespace)``
         pair with multiple values resolves to the exact tag for each value and
         ``None`` for a non-matching value.
@@ -263,18 +264,19 @@ class LibraryTagsDb:
             grouped[identity].append(song_tag_assignment_from_batch_row(row, identity))
         return {ident: tuple(assignments) for ident, assignments in grouped.items()}
 
-    def count_songs_by_tag(self, tag_key: str, target_value: str) -> int:
-        """Count songs that have a tag with the given key and value."""
-        return self._song_tag_repo.count_songs_by_tag(tag_key, target_value)
+    def count_songs_by_tag(self, tag_key: str, target_value: str, *, namespace: str = "default") -> int:
+        """Count songs that have a tag with the given key and value in *namespace*."""
+        return self._song_tag_repo.count_songs_by_tag(tag_key, target_value, namespace=namespace)
 
-    def count_songs_by_numeric_tag(self, tag_key: str, target_value: float | str) -> int:
-        """Count distinct songs with a numeric *tag_key* tag.
+    def count_songs_by_numeric_tag(self, tag_key: str, target_value: float | str, *, namespace: str = "default") -> int:
+        """Count distinct songs with a numeric *tag_key* tag in *namespace*.
 
         Delegates to the uncapped ``COUNT(DISTINCT song_id)`` repository intent,
-        which uses the same tag-key and safe-numeric predicate as the paged
-        numeric search (no edge limit, no dependence on the paged query).
+        which uses the same tag-key, namespace, and safe-numeric predicate as
+        the paged numeric search (no edge limit, no dependence on the paged
+        query).
         """
-        return self._song_tag_repo.count_songs_by_numeric_tag(tag_key, target_value)
+        return self._song_tag_repo.count_songs_by_numeric_tag(tag_key, target_value, namespace=namespace)
 
     def find_songs_with_numeric_tag(
         self,
@@ -287,6 +289,7 @@ class LibraryTagsDb:
         rows = self._song_tag_repo.search_songs_by_numeric_tag(
             identity.name,
             str(identity.value),
+            namespace=_ordinary_namespace(identity.namespace),
             limit=limit,
             offset=offset,
         )
@@ -305,6 +308,7 @@ class LibraryTagsDb:
             for row in self._song_tag_repo.search_songs_by_tag(
                 identity.name,
                 str(identity.value),
+                namespace=_ordinary_namespace(identity.namespace),
                 limit=limit,
                 offset=offset,
             )
@@ -322,6 +326,7 @@ class LibraryTagsDb:
             for row in self._song_tag_repo.search_songs_by_tag_contains(
                 identity.name,
                 str(identity.value),
+                namespace=_ordinary_namespace(identity.namespace),
                 limit=limit,
             )
         )
@@ -333,10 +338,17 @@ class LibraryTagsDb:
         *,
         limit: int | None = None,
     ) -> tuple[Song, ...]:
-        """Return domain songs whose tag value matches an ILIKE *pattern*."""
+        """Return domain songs whose tag value matches an ILIKE *pattern*.
+
+        Ordinary name-only pattern search: entity tag names (artist/album/
+        title/…) are always looked up in the ``default`` namespace. This is not
+        an exact identity-equality claim; it is a value-pattern projection.
+        """
         return tuple(
             song_from_row(row)
-            for row in self._song_tag_repo.search_songs_by_tag_pattern(tag_name, pattern, limit=limit)
+            for row in self._song_tag_repo.search_songs_by_tag_pattern(
+                tag_name, pattern, namespace="default", limit=limit
+            )
         )
 
     # ------------------------------------------------------------------

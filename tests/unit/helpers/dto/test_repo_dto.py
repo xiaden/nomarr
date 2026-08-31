@@ -298,10 +298,9 @@ class TestTagIdentityDtoContract:
 
     Pins the immutable user ledger: ``TagRow`` exposes exactly ``id``,
     ``namespace``, ``name``, ``value``; ``SongTagRow`` exposes exactly the
-    relationship metadata owned by the ``song_tags`` edge. The ``TagRow``
-    assertion is expected to FAIL against the current DTO (which still declares
-    ``parent_tag_id``/``source``/``confidence``/``tier``/``created_at``) until
-    Phase 3 (P3-S1) trims it.
+    relationship metadata owned by the ``song_tags`` edge. ``TagRow`` exposes
+    exactly these fields and ``SongTagRow`` exactly the edge fields, matching
+    the implemented P3-S1 contract.
     """
 
     def test_tag_row_exposes_only_identity_fields(self) -> None:

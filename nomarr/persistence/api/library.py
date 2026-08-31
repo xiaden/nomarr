@@ -360,11 +360,11 @@ class LibraryDb:
     ) -> Mapping[SongIdentity, tuple[SongTagAssignment, ...]]:
         return self._tags.list_song_tags_for_songs(songs, name_starts_with=name_starts_with)
 
-    def count_songs_by_tag(self, tag_key: str, target_value: str) -> int:
-        return self._tags.count_songs_by_tag(tag_key, target_value)
+    def count_songs_by_tag(self, tag_key: str, target_value: str, *, namespace: str = "default") -> int:
+        return self._tags.count_songs_by_tag(tag_key, target_value, namespace=namespace)
 
-    def count_songs_by_numeric_tag(self, tag_key: str, target_value: float | str) -> int:
-        return self._tags.count_songs_by_numeric_tag(tag_key, target_value)
+    def count_songs_by_numeric_tag(self, tag_key: str, target_value: float | str, *, namespace: str = "default") -> int:
+        return self._tags.count_songs_by_numeric_tag(tag_key, target_value, namespace=namespace)
 
     def find_songs_with_numeric_tag(
         self,

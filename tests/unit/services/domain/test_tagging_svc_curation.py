@@ -73,7 +73,7 @@ class TestTagCurationRejectNomPrefix:
     def test_reject_nom_prefix_by_identity_raises(self) -> None:
         """A TagRef with a 'nom:' name should raise ValueError (ADR-009)."""
         with pytest.raises(ValueError, match="read-only"):
-            TaggingCurationMixin._reject_nom_prefix(identity=TagRef(name="nom:genre", value="rock", namespace=""))
+            TaggingCurationMixin._reject_nom_prefix(identity=TagRef(name="nom:genre", value="rock", namespace="nom"))
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -95,7 +95,7 @@ class TestGetTagOrError:
     @pytest.mark.mocked
     def test_get_tag_or_error_returns_tag(self) -> None:
         """Should return the domain tag identity when resolved."""
-        identity = TagRef(name="genre", value="rock", namespace="")
+        identity = TagRef(name="genre", value="rock", namespace="default")
         service = _make_service()
         service.db.resolve_tag_identity = MagicMock(return_value=identity)
 
@@ -123,8 +123,8 @@ class TestRenameTag:
     def test_rename_tag_success(self) -> None:
         """Successful rename should return moved count and merged_into_existing flag."""
         service = _make_service()
-        source = TagRef(name="genre", value="genre", namespace="")
-        target = TagRef(name="genre", value="music_genre", namespace="")
+        source = TagRef(name="genre", value="genre", namespace="default")
+        target = TagRef(name="genre", value="music_genre", namespace="default")
         service.db.library.ensure_tag = MagicMock(return_value=target)
         service.db.library.find_songs_with_tag = MagicMock(return_value=(_song(10), _song(20)))
         with (
@@ -141,7 +141,37 @@ class TestRenameTag:
 
         assert result == RenameResult(moved=5, merged_into_existing=True)
         assert mock_transition.call_count == 2
-        service.db.library.ensure_tag.assert_called_once_with(TagRef(name="genre", value="music_genre", namespace=""))
+        service.db.library.ensure_tag.assert_called_once_with(
+            TagRef(name="genre", value="music_genre", namespace="default")
+        )
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_rename_never_mutates_shared_source_identity(self) -> None:
+        """Curation builds a fresh target identity and never mutates the shared source TagRef."""
+        service = _make_service()
+        source = TagRef(name="genre", value="old", namespace="default")
+        service.db.library.ensure_tag = MagicMock(return_value=TagRef(name="genre", value="new", namespace="default"))
+        service.db.library.find_songs_with_tag = MagicMock(return_value=())
+        with (
+            patch.object(service, "_get_tag_or_error", return_value=source),
+            patch(
+                "nomarr.services.domain.tagging_svc.curation.relink_tag_edges",
+                return_value=RelinkResult(moved=0, skipped=0, source_orphaned=0),
+            ),
+            patch("nomarr.services.domain.tagging_svc.curation.transition_song_state"),
+        ):
+            service.rename_tag("1", "new")
+
+        # The shared source identity is untouched (frozen, still carries the old value).
+        assert source.value == "old"
+        assert source.name == "genre"
+        assert source.namespace == "default"
+        # The ordinary target is a distinct identity with the new value in "default".
+        called = service.db.library.ensure_tag.call_args.args[0]
+        assert called.value == "new"
+        assert called.namespace == "default"
+        assert called is not source
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -152,7 +182,7 @@ class TestRenameTag:
             patch.object(
                 service,
                 "_get_tag_or_error",
-                return_value=TagRef(name="nom:genre", value="x", namespace=""),
+                return_value=TagRef(name="nom:genre", value="x", namespace="nom"),
             ),
             pytest.raises(ValueError, match="read-only"),
         ):
@@ -173,8 +203,8 @@ class TestMergeTags:
                 service,
                 "_get_tag_or_error",
                 side_effect=[
-                    TagRef(name="genre", value="genre", namespace=""),  # canonical
-                    TagRef(name="genre", value="rock", namespace=""),  # source
+                    TagRef(name="genre", value="genre", namespace="default"),  # canonical
+                    TagRef(name="genre", value="rock", namespace="default"),  # source
                 ],
             ),
             patch(
@@ -200,7 +230,7 @@ class TestMergeTags:
             patch.object(
                 service,
                 "_get_tag_or_error",
-                return_value=TagRef(name="genre", value="genre", namespace=""),
+                return_value=TagRef(name="genre", value="genre", namespace="default"),
             ) as mock_get_tag,
             patch(
                 "nomarr.services.domain.tagging_svc.curation.relink_tag_edges",
@@ -226,7 +256,7 @@ class TestMergeTags:
             patch.object(
                 service,
                 "_get_tag_or_error",
-                return_value=TagRef(name="nom:genre", value="x", namespace=""),
+                return_value=TagRef(name="nom:genre", value="x", namespace="nom"),
             ),
             pytest.raises(ValueError, match="read-only"),
         ):
@@ -244,13 +274,13 @@ class TestSplitTag:
         lib = LibraryIdentity(name="music", root_path="/music")
         si_10 = SongIdentity(library=lib, normalized_path="10.flac")
         si_20 = SongIdentity(library=lib, normalized_path="20.flac")
-        service.db.library.ensure_tag = MagicMock(return_value=TagRef(name="genre", value="rock", namespace=""))
+        service.db.library.ensure_tag = MagicMock(return_value=TagRef(name="genre", value="rock", namespace="default"))
         service.db.library.resolve_song_identities = MagicMock(return_value={10: si_10, 20: si_20})
         with (
             patch.object(
                 service,
                 "_get_tag_or_error",
-                return_value=TagRef(name="genre", value="genre", namespace=""),
+                return_value=TagRef(name="genre", value="genre", namespace="default"),
             ),
             patch(
                 "nomarr.services.domain.tagging_svc.curation.relink_tag_edges",
@@ -264,6 +294,42 @@ class TestSplitTag:
 
         assert result == SplitResult(moved=2, new_tag_created=True)
         assert mock_transition.call_count == 2
+        # The split creates an ordinary target in the literal "default" namespace.
+        service.db.library.ensure_tag.assert_called_once_with(TagRef(name="genre", value="rock", namespace="default"))
+
+
+class TestRenameTagWritePending:
+    """Deferred write-back (ADR-008) on rename: curation enqueues write-pending states."""
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_rename_marks_target_song_write_pending(self) -> None:
+        """Rename transitions the target song to not-written / not-fresh."""
+        service = _make_service()
+        source = TagRef(name="genre", value="old", namespace="default")
+        target = TagRef(name="genre", value="new", namespace="default")
+        service.db.library.ensure_tag = MagicMock(return_value=target)
+        service.db.library.find_songs_with_tag = MagicMock(return_value=(_song(10), _song(20)))
+        service.db.app.song_state_membership = MagicMock(return_value={STATE_WRITTEN, STATE_TAGS_CURRENT})
+        with (
+            patch.object(service, "_get_tag_or_error", return_value=source),
+            patch(
+                "nomarr.services.domain.tagging_svc.curation.relink_tag_edges",
+                return_value=RelinkResult(moved=2, skipped=0, source_orphaned=0),
+            ),
+            patch(
+                "nomarr.services.domain.tagging_svc.curation.transition_song_state",
+            ) as mock_transition,
+        ):
+            service.rename_tag("1", "new")
+
+        # ADR-008: each curated song is queued for both projection and write-back.
+        assert [call.args[1:] for call in mock_transition.call_args_list] == [
+            ([10], STATE_WRITTEN, STATE_NOT_WRITTEN),
+            ([10], STATE_TAGS_CURRENT, STATE_TAGS_NOT_FRESH),
+            ([20], STATE_WRITTEN, STATE_NOT_WRITTEN),
+            ([20], STATE_TAGS_CURRENT, STATE_TAGS_NOT_FRESH),
+        ]
 
 
 class TestUpdateSongTags:

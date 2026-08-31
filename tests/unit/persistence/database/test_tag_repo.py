@@ -237,7 +237,7 @@ class TestTagRepository:
         song_tag_repo = SongTagRepository(pg_session)
         song_tag_repo.assign_tag_to_song(song_id1, tag_id)
         song_tag_repo.assign_tag_to_song(song_id2, tag_id)
-        result = song_tag_repo.count_songs_by_tag("genre", "rock")
+        result = song_tag_repo.count_songs_by_tag("genre", "rock", namespace="genre")
         assert result == 2
 
     def test_count_songs_by_tag_non_matching_value(self, pg_session) -> None:
@@ -246,7 +246,7 @@ class TestTagRepository:
         tag_id = _create_tag(pg_session, name="genre", value="rock", namespace="genre")
         song_tag_repo = SongTagRepository(pg_session)
         song_tag_repo.assign_tag_to_song(song_id, tag_id)
-        result = song_tag_repo.count_songs_by_tag("genre", "pop")
+        result = song_tag_repo.count_songs_by_tag("genre", "pop", namespace="genre")
         assert result == 0
 
     def test_get_song_tag_edges_for_tags(self, pg_session) -> None:
@@ -367,7 +367,7 @@ class TestTagRepository:
         tag_id = _create_tag(pg_session, name="genre", value="rock", namespace="genre")
         song_tag_repo = SongTagRepository(pg_session)
         song_tag_repo.assign_tag_to_song(song_id, tag_id)
-        result = song_tag_repo.search_songs_by_tag("genre", "rock")
+        result = song_tag_repo.search_songs_by_tag("genre", "rock", namespace="genre")
         assert len(result) == 1
         assert result[0]["id"] == song_id
 
@@ -377,7 +377,7 @@ class TestTagRepository:
         tag_id = _create_tag(pg_session, name="genre", value="progressive rock", namespace="genre")
         song_tag_repo = SongTagRepository(pg_session)
         song_tag_repo.assign_tag_to_song(song_id, tag_id)
-        result = song_tag_repo.search_songs_by_tag_contains("genre", "rock")
+        result = song_tag_repo.search_songs_by_tag_contains("genre", "rock", namespace="genre")
         assert len(result) == 1
         assert result[0]["id"] == song_id
 
@@ -397,8 +397,8 @@ class TestTagRepository:
         song_tag_repo.assign_tag_to_song(underscore_match_id, underscore_match_tag_id)
         song_tag_repo.assign_tag_to_song(underscore_wildcard_id, underscore_wildcard_tag_id)
 
-        result = song_tag_repo.search_songs_by_tag_contains("genre", "100%")
-        underscore_result = song_tag_repo.search_songs_by_tag_contains("genre", "100_")
+        result = song_tag_repo.search_songs_by_tag_contains("genre", "100%", namespace="genre")
+        underscore_result = song_tag_repo.search_songs_by_tag_contains("genre", "100_", namespace="genre")
 
         assert [song["id"] for song in result] == [matching_song_id]
         assert [song["id"] for song in underscore_result] == [underscore_match_id]
@@ -526,7 +526,7 @@ class TestTagRepository:
     def test_get_genre_tags_for_songs(self, pg_session) -> None:
         """get_genre_tags_for_songs should return genre tags for songs."""
         _, song_id = _create_library_and_song(pg_session)
-        genre_id = _create_tag(pg_session, name="genre", value="rock", namespace="genre")
+        genre_id = _create_tag(pg_session, name="genre", value="rock", namespace="default")
         other_id = _create_tag(pg_session, name="mood", value="happy", namespace="mood")
         song_tag_repo = SongTagRepository(pg_session)
         song_tag_repo.assign_tag_to_song(song_id, genre_id)
@@ -541,7 +541,7 @@ class TestTagRepository:
         tag_id = _create_tag(pg_session, name="genre", value="progressive rock", namespace="genre")
         song_tag_repo = SongTagRepository(pg_session)
         song_tag_repo.assign_tag_to_song(song_id, tag_id)
-        result = song_tag_repo.search_songs_by_tag_pattern("genre", "%rock%")
+        result = song_tag_repo.search_songs_by_tag_pattern("genre", "%rock%", namespace="genre")
         assert len(result) == 1
         assert result[0]["id"] == song_id
 
@@ -581,15 +581,15 @@ class TestTagRepository:
         repo.assign_tag_to_song(s175, _create_tag(pg_session, name="genre", value="175", namespace="genre"))
         repo.assign_tag_to_song(s180, _create_tag(pg_session, name="genre", value="180", namespace="genre"))
 
-        all_rows = repo.search_songs_by_numeric_tag("genre", 172)
+        all_rows = repo.search_songs_by_numeric_tag("genre", 172, namespace="genre")
         # distances: |170-172|=2, |175-172|=3, |180-172|=8
         assert [r["id"] for r in all_rows] == [s170, s175, s180]
         assert [r["matched_tag"] for r in all_rows] == ["170", "175", "180"]
         assert [r["distance"] for r in all_rows] == [2.0, 3.0, 8.0]
 
-        page = repo.search_songs_by_numeric_tag("genre", 172, limit=1, offset=1)
+        page = repo.search_songs_by_numeric_tag("genre", 172, namespace="genre", limit=1, offset=1)
         assert [r["id"] for r in page] == [s175]
-        page2 = repo.search_songs_by_numeric_tag("genre", 172, limit=2, offset=0)
+        page2 = repo.search_songs_by_numeric_tag("genre", 172, namespace="genre", limit=2, offset=0)
         assert [r["id"] for r in page2] == [s170, s175]
 
     def test_search_songs_by_numeric_tag_excludes_non_numeric_values(self, pg_session) -> None:
@@ -600,9 +600,9 @@ class TestTagRepository:
         repo.assign_tag_to_song(numeric_song, _create_tag(pg_session, name="genre", value="180", namespace="genre"))
         repo.assign_tag_to_song(text_song, _create_tag(pg_session, name="genre", value="rock", namespace="genre"))
 
-        rows = repo.search_songs_by_numeric_tag("genre", 180)
+        rows = repo.search_songs_by_numeric_tag("genre", 180, namespace="genre")
         assert [r["id"] for r in rows] == [numeric_song]
-        assert repo.count_songs_by_numeric_tag("genre", 180) == 1
+        assert repo.count_songs_by_numeric_tag("genre", 180, namespace="genre") == 1
 
     def test_search_songs_by_numeric_tag_picks_closest_tag_per_song(self, pg_session) -> None:
         """A song with several numeric tags yields exactly one (closest) match.
@@ -617,7 +617,7 @@ class TestTagRepository:
         repo.assign_tag_to_song(song, _create_tag(pg_session, name="genre", value="160", namespace="genre"))
         repo.assign_tag_to_song(song, _create_tag(pg_session, name="genre", value="175", namespace="genre"))
 
-        rows = repo.search_songs_by_numeric_tag("genre", 172)
+        rows = repo.search_songs_by_numeric_tag("genre", 172, namespace="genre")
         assert len(rows) == 1
         assert rows[0]["id"] == song
         assert rows[0]["matched_tag"] == "175"
@@ -631,7 +631,7 @@ class TestTagRepository:
         repo.assign_tag_to_song(song, _create_tag(pg_session, name="genre", value="175", namespace="genre"))
         repo.assign_tag_to_song(song, _create_tag(pg_session, name="genre", value="175.0", namespace="genre"))
 
-        rows = repo.search_songs_by_numeric_tag("genre", 172)
+        rows = repo.search_songs_by_numeric_tag("genre", 172, namespace="genre")
         assert len(rows) == 1
         assert rows[0]["matched_tag"] == "175"
 
@@ -643,9 +643,9 @@ class TestTagRepository:
         tag_id = _create_tag(pg_session, name="genre", value="180", namespace="genre")
         repo.assign_tag_to_song(s1, tag_id)
         repo.assign_tag_to_song(s2, tag_id)
-        assert repo.count_songs_by_numeric_tag("genre", 180) == 2
+        assert repo.count_songs_by_numeric_tag("genre", 180, namespace="genre") == 2
         # Any target still counts the full numeric-tag result universe.
-        assert repo.count_songs_by_numeric_tag("genre", 999) == 2
+        assert repo.count_songs_by_numeric_tag("genre", 999, namespace="genre") == 2
 
     def test_numeric_guard_compiles_safely_per_dialect(self) -> None:
         """Guarded numeric cast compiles for PostgreSQL and SQLite without a bare cast."""
@@ -683,7 +683,7 @@ class TestTagRepository:
         repo.assign_tag_to_song(s_b, tag_b)
         repo.assign_tag_to_song(s_a, tag_a)
 
-        rows = repo.search_songs_by_numeric_tag("rating", 100)
+        rows = repo.search_songs_by_numeric_tag("rating", 100, namespace="genre")
 
         # s_a was created first so it has the lower auto-increment id.
         assert [r["id"] for r in rows] == sorted([s_a, s_b])
@@ -695,7 +695,7 @@ class TestTagRepository:
         repo = SongTagRepository(pg_session)
         repo.assign_tag_to_song(s1, _create_tag(pg_session, name="rating", value="5", namespace="genre"))
 
-        rows = repo.search_songs_by_numeric_tag("rating", 5, limit=10, offset=100)
+        rows = repo.search_songs_by_numeric_tag("rating", 5, namespace="genre", limit=10, offset=100)
 
         assert rows == []
 
@@ -721,7 +721,7 @@ class TestTagRepository:
             return real_execute(stmt, *args, **kwargs)
 
         pg_session.execute = _capture
-        repo.search_songs_by_numeric_tag("rating", 5, limit=10, offset=20)
+        repo.search_songs_by_numeric_tag("rating", 5, namespace="genre", limit=10, offset=20)
 
         stmt = captured["stmt"]
         assert stmt is not None
@@ -798,11 +798,11 @@ class TestTagRepository:
         pg_session.commit()
 
         # Uncapped distinct-song count proves NO edge cap (old code capped at DEFAULT_LIMIT=1000).
-        assert repo.count_songs_by_numeric_tag("rating", 5) == n
+        assert repo.count_songs_by_numeric_tag("rating", 5, namespace="genre") == n
 
         # Paging through in chunks returns every match with no overlap/gaps.
         pages = [
-            repo.search_songs_by_numeric_tag("rating", 5, limit=250, offset=offset)
+            repo.search_songs_by_numeric_tag("rating", 5, namespace="genre", limit=250, offset=offset)
             for offset in (0, 250, 500, 750, 1000)
         ]
         concatenated = [r["id"] for page in pages for r in page]
@@ -816,12 +816,12 @@ class TestTagRepository:
         def _tuples(rows):
             return [(r["id"], r["matched_tag"], r["distance"]) for r in rows]
 
-        page_a = repo.search_songs_by_numeric_tag("rating", 5, limit=250, offset=250)
-        page_b = repo.search_songs_by_numeric_tag("rating", 5, limit=250, offset=250)
+        page_a = repo.search_songs_by_numeric_tag("rating", 5, namespace="genre", limit=250, offset=250)
+        page_b = repo.search_songs_by_numeric_tag("rating", 5, namespace="genre", limit=250, offset=250)
         assert _tuples(page_a) == _tuples(page_b)
 
         # Page totals equal the separate uncapped count.
-        assert sum(len(page) for page in pages) == repo.count_songs_by_numeric_tag("rating", 5)
+        assert sum(len(page) for page in pages) == repo.count_songs_by_numeric_tag("rating", 5, namespace="genre")
 
     def test_count_songs_by_numeric_tag_no_match_returns_zero(self, pg_session) -> None:
         """Count is 0 when no tag has the requested key (target value irrelevant)."""
@@ -829,7 +829,7 @@ class TestTagRepository:
         repo = SongTagRepository(pg_session)
         repo.assign_tag_to_song(s1, _create_tag(pg_session, name="rating", value="5", namespace="genre"))
 
-        assert repo.count_songs_by_numeric_tag("nom:mood", 5) == 0
+        assert repo.count_songs_by_numeric_tag("nom:mood", 5, namespace="genre") == 0
 
     def test_count_songs_by_numeric_tag_only_counts_numeric_values(self, pg_session) -> None:
         """Only songs whose tag value is valid numeric text are counted."""
@@ -841,7 +841,75 @@ class TestTagRepository:
         repo.assign_tag_to_song(s_text, _create_tag(pg_session, name="rating", value="not-a-number", namespace="genre"))
         repo.assign_tag_to_song(s_decimal, _create_tag(pg_session, name="rating", value="7.5", namespace="genre"))
 
-        assert repo.count_songs_by_numeric_tag("rating", 5) == 2
+        assert repo.count_songs_by_numeric_tag("rating", 5, namespace="genre") == 2
+
+    # ── P1-S3: namespace-aware listing / search / genre reads ───────────
+
+    def test_list_tags_with_song_count_is_namespace_aware(self, pg_session) -> None:
+        """(default, genre, Rock) and (nom, genre, Rock) are separate rows with distinct counts."""
+        _, song_id = _create_library_and_song(pg_session)
+        tag_repo = TagRepository(pg_session)
+        default_id = tag_repo.get_or_create_tag("genre", "Rock", "default")
+        nom_id = tag_repo.get_or_create_tag("genre", "Rock", "nom")
+        assert default_id != nom_id
+
+        song_tag_repo = SongTagRepository(pg_session)
+        song_tag_repo.assign_tag_to_song(song_id, default_id)
+
+        result = tag_repo.list_tags_with_song_count()
+        by_key = {(t["namespace"], t["name"], t["value"]): t["song_count"] for t in result}
+        # The two namespaces are never collapsed; each row carries its own count.
+        assert by_key[("default", "genre", "Rock")] == 1
+        assert by_key[("nom", "genre", "Rock")] == 0
+
+    def test_list_tags_with_song_count_search_is_namespace_aware(self, pg_session) -> None:
+        """Search filters value across namespaces; default and nom rows stay separate."""
+        _, song_id = _create_library_and_song(pg_session)
+        tag_repo = TagRepository(pg_session)
+        default_id = tag_repo.get_or_create_tag("genre", "Rock", "default")
+        nom_id = tag_repo.get_or_create_tag("genre", "Rock", "nom")
+        song_tag_repo = SongTagRepository(pg_session)
+        song_tag_repo.assign_tag_to_song(song_id, default_id)
+        song_tag_repo.assign_tag_to_song(song_id, nom_id)
+
+        result = tag_repo.list_tags_with_song_count(name="genre", search="Rock")
+        by_key = {(t["namespace"], t["name"], t["value"]): t["song_count"] for t in result}
+        assert by_key[("default", "genre", "Rock")] == 1
+        assert by_key[("nom", "genre", "Rock")] == 1
+
+    def test_exact_tag_search_does_not_cross_namespaces(self, pg_session) -> None:
+        """An exact search scoped to one namespace never matches the same (name, value) in another.
+
+        P1-S3: ``(nom, genre, Rock)`` must not satisfy a ``default``-namespace
+        search, and vice versa — namespace is part of identity in search.
+        """
+        _, nom_only_song = _create_library_and_song(pg_session)
+        _, default_only_song = _create_library_and_song(pg_session)
+        song_tag_repo = SongTagRepository(pg_session)
+        nom_id = _create_tag(pg_session, name="genre", value="Rock", namespace="nom")
+        default_id = _create_tag(pg_session, name="genre", value="Rock", namespace="default")
+        song_tag_repo.assign_tag_to_song(nom_only_song, nom_id)
+        song_tag_repo.assign_tag_to_song(default_only_song, default_id)
+
+        assert [r["id"] for r in song_tag_repo.search_songs_by_tag("genre", "Rock", namespace="default")] == [
+            default_only_song
+        ]
+        assert [r["id"] for r in song_tag_repo.search_songs_by_tag("genre", "Rock", namespace="nom")] == [nom_only_song]
+
+    def test_genre_tags_for_songs_scoped_to_default_namespace(self, pg_session) -> None:
+        """get_genre_tags_for_songs returns only the ordinary (default) genre tag."""
+        _, song_id = _create_library_and_song(pg_session)
+        song_tag_repo = SongTagRepository(pg_session)
+        default_genre = _create_tag(pg_session, name="genre", value="Rock", namespace="default")
+        nom_genre = _create_tag(pg_session, name="genre", value="Rock", namespace="nom")
+        song_tag_repo.assign_tag_to_song(song_id, default_genre)
+        song_tag_repo.assign_tag_to_song(song_id, nom_genre)
+
+        result = song_tag_repo.get_genre_tags_for_songs([song_id])
+        assert len(result) == 1
+        assert result[0]["name"] == "genre"
+        assert result[0]["namespace"] == "default"
+        assert result[0]["value"] == "Rock"
 
 
 @pytest.mark.unit
@@ -853,9 +921,9 @@ class TestTagIdentitySpec:
     ``(default, genre, Rock)`` and ``(nom, genre, Rock)`` are distinct
     identities; duplicate complete-key insertion is prevented; ordinary
     namespace normalizes to the literal ``default`` (never NULL/empty); and
-    repository result rows expose no removed tag metadata. The normalization
-    and identity-only-row assertions are expected to FAIL against the current
-    repository until Phase 3 (P3-S2/P3-S3) lands.
+    repository result rows expose no removed tag metadata. The repository
+    implements the identity-only contract (P3-S2/P3-S3); normalization and
+    row-shape assertions pass.
     """
 
     def test_default_and_nom_namespaces_are_distinct_identities(self, pg_session) -> None:
@@ -960,3 +1028,83 @@ class TestTagIdentitySpec:
         assert len(edges) == 1
         assert edges[0]["confidence"] == 0.7
         assert edges[0]["source"] == "nomarr"
+
+    def test_removed_metadata_keys_are_rejected_on_create_tag(self, pg_session) -> None:
+        """P3-S3: ``create_tag`` rejects payload keys for removed ``tags`` metadata.
+
+        ``tags`` is identity-only; a stale ``source`` / ``confidence`` / ``tier`` /
+        ``created_at`` / ``parent_tag_id`` key must raise ``ValueError`` rather than
+        silently drop data the caller believed persisted.
+        """
+        repo = TagRepository(pg_session)
+        for key in ("source", "confidence", "tier", "created_at", "parent_tag_id"):
+            with pytest.raises(ValueError):
+                repo.create_tag({"name": "genre", "value": "Rock", "namespace": "default", key: "x"})
+
+    def test_removed_metadata_keys_are_rejected_in_tags_batch(self, pg_session) -> None:
+        """P3-S3: ``get_or_create_tags_batch`` rejects removed-metadata payload keys."""
+        repo = TagRepository(pg_session)
+        with pytest.raises(ValueError):
+            repo.get_or_create_tags_batch(
+                [
+                    {
+                        "name": "genre",
+                        "value": "Rock",
+                        "namespace": "default",
+                        "source": "foo",
+                    }
+                ]
+            )
+        # Happy path still works when no removed metadata key is present.
+        ids = repo.get_or_create_tags_batch([{"name": "genre", "value": "Rock", "namespace": "default"}])
+        assert ("default", "genre", "Rock") in ids
+        row = repo.get_tag(ids[("default", "genre", "Rock")])
+        assert row is not None
+        assert set(row.keys()) == {"id", "namespace", "name", "value"}
+
+    def test_two_songs_share_tag_row_with_independent_edges(self, pg_session) -> None:
+        """P1-S2: two songs share ONE tag primary key while their edges carry different metadata.
+
+        Each song's ``song_tags`` row keeps its own confidence/source; replacing
+        one song's assignment leaves the shared ``tags`` identity row AND the
+        other song's edge completely unchanged (row count, identity columns,
+        and the untouched song's edge metadata).
+        """
+        _, song1_id = _create_library_and_song(pg_session)
+        _, song2_id = _create_library_and_song(pg_session)
+        repo = TagRepository(pg_session)
+        tag_id = repo.get_or_create_tag("genre", "Rock", "default")
+        song_tag_repo = SongTagRepository(pg_session)
+        song_tag_repo.assign_tag_to_song(song1_id, tag_id, confidence=0.9, source="ml")
+        song_tag_repo.assign_tag_to_song(song2_id, tag_id, confidence=0.4, source="user")
+
+        # Exactly ONE shared tag identity row exists for the two songs.
+        assert pg_session.execute(select(func.count()).select_from(Tag)).scalar_one() == 1
+
+        def _edges() -> dict[int, dict[str, object]]:
+            return {e["song_id"]: e for e in song_tag_repo.get_song_tag_edges_for_tags([tag_id])}
+
+        edges = _edges()
+        assert set(edges) == {song1_id, song2_id}
+        assert edges[song1_id]["confidence"] == 0.9
+        assert edges[song1_id]["source"] == "ml"
+        assert edges[song2_id]["confidence"] == 0.4
+        assert edges[song2_id]["source"] == "user"
+
+        # Replacing song1's assignment touches only song1's edge.
+        song_tag_repo.replace_song_tags(song1_id, [{"tag_id": tag_id, "confidence": 0.1, "source": "nomarr"}])
+
+        # Shared tags identity row unchanged (columns + row count).
+        row = repo.get_tag(tag_id)
+        assert row is not None
+        assert (row["namespace"], row["name"], row["value"]) == ("default", "genre", "Rock")
+        assert set(row.keys()) == {"id", "namespace", "name", "value"}
+        assert pg_session.execute(select(func.count()).select_from(Tag)).scalar_one() == 1
+
+        # song1 edge updated; song2 edge completely unchanged.
+        edges_after = _edges()
+        assert set(edges_after) == {song1_id, song2_id}
+        assert edges_after[song1_id]["confidence"] == 0.1
+        assert edges_after[song1_id]["source"] == "nomarr"
+        assert edges_after[song2_id]["confidence"] == 0.4
+        assert edges_after[song2_id]["source"] == "user"
