@@ -263,3 +263,57 @@ class TestSongCommandContracts:
     def test_song_sync_result_is_domain_counts(self) -> None:
         result = SongSyncResult(added=1, updated=2, removed=0)
         assert (result.added, result.updated, result.removed) == (1, 2, 0)
+
+
+# ── root-path guard (P2-S3): LibraryIdentity.root_path may be None ──────────
+# ``LibraryIdentity.root_path`` is ``str | None``; the tag facade must guard the
+# None case (scalar + set-based batch) rather than loosening the repository's
+# required non-null ``root_path`` contract. Songs whose library has no
+# root_path resolve to nothing — never to a fabricated nullable lookup.
+
+
+@pytest.mark.unit
+class TestRootPathNoneGuard:
+    """LibraryIdentity with ``root_path=None`` is guarded in scalar + batch paths."""
+
+    def test_scalar_resolution_omits_none_root_path(self) -> None:
+        tags, tag_repo, song_tag_repo = _make_tags_db()
+        song = SongIdentity(library=LibraryIdentity(name="TestLib", root_path=None), normalized_path="a.mp3")
+
+        result = tags.list_tags_for_song(song)
+
+        assert result == ()
+        # No library/song lookup is attempted — the repository is never reached.
+        tag_repo.list_tags.assert_not_called()
+        song_tag_repo.get_tags_for_song.assert_not_called()
+
+    def test_batch_resolution_skips_none_root_path_songs(self) -> None:
+        tags, _, song_tag_repo = _make_tags_db()
+        with_path = _song("a.mp3")
+        without_path = SongIdentity(
+            library=LibraryIdentity(name="TestLib", root_path=None),
+            normalized_path="b.mp3",
+        )
+        song_tag_repo.get_genre_tags_for_songs.return_value = [{"name": "genre", "value": "Jazz", "namespace": ""}]
+
+        result = tags.list_genre_tags_for_songs([with_path, without_path])
+
+        # Only the resolvable (root_path present) song contributes results; the
+        # None-root song is silently skipped and never reaches the repo.
+        assert result
+        assert all(isinstance(a, SongTagAssignment) for a in result)
+        song_tag_repo.get_genre_tags_for_songs.assert_called_once()
+
+    def test_set_based_map_omits_none_root_path_keys(self) -> None:
+        tags, _, _ = _make_tags_db()
+        with_path = _song("a.mp3")
+        without_path = SongIdentity(
+            library=LibraryIdentity(name="TestLib", root_path=None),
+            normalized_path="b.mp3",
+        )
+
+        resolved = tags._resolve_song_ids_map([with_path, without_path])
+
+        # Set-based resolver drops None-root identities; the resolvable one maps.
+        assert set(resolved) == {with_path}
+        assert without_path not in resolved

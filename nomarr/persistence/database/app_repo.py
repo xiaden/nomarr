@@ -1,9 +1,10 @@
 """AppRepository — KV-table operations for locks, health, meta, sessions, etc.
 
 Groups multiple KV-table operations under one repository.
-Note: This file is ~413 lines covering 8 KV-style table operations. If it
-grows further, consider splitting into sub-repos (e.g. app_lock_repo.py,
-app_health_repo.py, app_session_repo.py, app_claim_repo.py).
+Note: This file is ~936 lines and covers the app-domain KV-table and
+bookkeeping operations. If it grows further, consider splitting into sub-repos
+(e.g. app_lock_repo.py, app_health_repo.py, app_session_repo.py,
+app_claim_repo.py).
 """
 
 from __future__ import annotations
@@ -11,9 +12,10 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import TYPE_CHECKING, Any, cast
 
-from sqlalchemy import Table, delete, func, insert, or_, select, update
+from sqlalchemy import ColumnElement, Table, delete, func, insert, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from nomarr.helpers.constants.file_states import STATE_ERRORED, STATE_PROCESSED
 from nomarr.helpers.dataclasses.app_dataclasses import (
     CapacityEstimate,
     ConfigOption,
@@ -23,12 +25,17 @@ from nomarr.helpers.dataclasses.app_dataclasses import (
 from nomarr.helpers.dataclasses.app_dataclasses import (
     VramPromise as DomainVramPromise,
 )
+from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
+from nomarr.helpers.dataclasses.worker_claim_dataclass import (
+    ClaimRemovalRequest,
+    WorkerClaim,
+    WorkerClaimIdentity,
+)
 from nomarr.helpers.dto.repo_dto import (
     HealthRow,
     LockRow,
     MetaRow,
     SessionRow,
-    WorkerClaimRow,
 )
 from nomarr.helpers.exceptions import DuplicateEntityError
 from nomarr.persistence.models.applied_migration import AppliedMigration
@@ -39,7 +46,7 @@ from nomarr.persistence.models.session import (
     Session as SessionModel,
 )
 from nomarr.persistence.models.vram_promise import VramPromise
-from nomarr.persistence.models.worker_claim import WorkerClaim
+from nomarr.persistence.models.worker_claim import WorkerClaim as WorkerClaimModel
 from nomarr.persistence.models.worker_restart_policy import WorkerRestartPolicy
 from nomarr.persistence.sql.exceptions import map_persistence_exceptions
 from nomarr.persistence.sql.primitives import (
@@ -51,16 +58,20 @@ from nomarr.persistence.sql.primitives import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from sqlalchemy.engine import Row
     from sqlalchemy.orm import Session, scoped_session
 
+    from nomarr.persistence.database.library_repo import LibraryRepository
     from nomarr.persistence.database.song_repo import SongRepository
+    from nomarr.persistence.database.song_state_repo import SongStateRepository
 
 _L = cast("Table", Lock.__table__)
 _H = cast("Table", Health.__table__)
 _M = cast("Table", Meta.__table__)
 _S = cast("Table", SessionModel.__table__)
-_WC = cast("Table", WorkerClaim.__table__)
+_WC = cast("Table", WorkerClaimModel.__table__)
 _AM = cast("Table", AppliedMigration.__table__)
 _VP = cast("Table", VramPromise.__table__)
 _WRP = cast("Table", WorkerRestartPolicy.__table__)
@@ -98,29 +109,54 @@ def _session_row_to_dto(row: Row) -> SessionRow:
     )
 
 
-def _claim_row_to_dto(row: Row) -> WorkerClaimRow:
-    m = row._mapping
-    value = cast("dict[str, Any]", m["value"])
-    result: WorkerClaimRow = {
-        "id": cast("int", m["id"]),
-        "worker_id": cast("str", m["worker_id"]),
-        "key": cast("str", m["key"]),
-        "value": value,
-        "claimed_at": cast("int", m["claimed_at"]),
-    }
-    if "file_id" in value:
-        result["file_id"] = cast("str | int", value["file_id"])
-    if "claim_type" in value:
-        result["claim_type"] = cast("str", value["claim_type"])
-    return result
+def _claim_key(claim_type: str | None, song_id: int) -> str:
+    """Encode a claim's deterministic storage key.
+
+    Untyped claims use ``claim_<song_id>``; typed claims use
+    ``claim_<claim_type>_<song_id>``.  The key is the repository's private
+    storage encoding — callers never see or construct it.
+    """
+    if claim_type is None:
+        return f"claim_{song_id}"
+    return f"claim_{claim_type}_{song_id}"
+
+
+def _parse_claim_key(key: str) -> tuple[int, str | None] | None:
+    """Parse a storage claim key back to ``(song_id, claim_type)``.
+
+    Returns ``None`` for a non-conforming or orphaned key so the repository can
+    quarantine/ignore it rather than exposing it to the domain boundary.
+    """
+    if not key.startswith("claim_"):
+        return None
+    rest = key[len("claim_") :]
+    if not rest:
+        return None
+    if rest.isdigit():
+        return int(rest), None
+    sep = rest.rfind("_")
+    if sep <= 0:
+        return None
+    suffix = rest[sep + 1 :]
+    if not suffix.isdigit():
+        return None
+    return int(suffix), rest[:sep]
 
 
 class AppRepository:
     """Repository grouping KV-table operations (locks, health, meta, …)."""
 
-    def __init__(self, session: scoped_session[Session], song_repo: SongRepository | None = None) -> None:
+    def __init__(
+        self,
+        session: scoped_session[Session],
+        song_repo: SongRepository | None = None,
+        library_repo: LibraryRepository | None = None,
+        song_state_repo: SongStateRepository | None = None,
+    ) -> None:
         self._session = session
         self._song_repo = song_repo
+        self._library_repo = library_repo
+        self._song_state_repo = song_state_repo
 
     # ── Lock ────────────────────────────────────────────────────
 
@@ -228,13 +264,13 @@ class AppRepository:
 
     # ── Meta ────────────────────────────────────────────────────
 
-    def get_meta(self, key: str) -> MetaRow | None:
+    def _get_meta(self, key: str) -> MetaRow | None:
         """Fetch a meta row by key."""
         with map_persistence_exceptions():
             row = select_by_key(_M, key, session=self._session, key_col="key")
             return _meta_row_to_dto(row) if row else None
 
-    def upsert_meta(self, key: str, payload: dict[str, Any]) -> None:
+    def _upsert_meta(self, key: str, payload: dict[str, Any]) -> None:
         """Insert-or-update a meta row keyed on *key*."""
         with map_persistence_exceptions():
             with self._session.begin_nested():
@@ -242,14 +278,14 @@ class AppRepository:
                 upsert_by_field(_M, "key", key, data, session=self._session)
             self._session.commit()
 
-    def delete_meta(self, key: str) -> None:
+    def _delete_meta(self, key: str) -> None:
         """Delete a meta row by key."""
         with map_persistence_exceptions():
             with self._session.begin_nested():
                 delete_by_key(_M, key, session=self._session, key_col="key")
             self._session.commit()
 
-    def list_meta_keys_by_prefix(self, prefix: str) -> list[str]:
+    def _list_meta_keys_by_prefix(self, prefix: str) -> list[str]:
         """Return meta keys matching ``prefix%``."""
         with map_persistence_exceptions():
             stmt = select(_M.c.key).where(_M.c.key.like(prefix + "%"))
@@ -273,29 +309,29 @@ class AppRepository:
 
     def get_config_option(self, key: str) -> ConfigOption | None:
         """Return a user configuration value by its full storage identity."""
-        row = self.get_meta(key)
+        row = self._get_meta(key)
         return ConfigOption(key=row["key"], value=row["value"]) if row is not None else None
 
     def list_config_options(self) -> list[ConfigOption]:
         """Return every ``config_*`` configuration value."""
         results: list[ConfigOption] = []
-        for key in self.list_meta_keys_by_prefix("config_"):
-            row = self.get_meta(key)
+        for key in self._list_meta_keys_by_prefix("config_"):
+            row = self._get_meta(key)
             if row is not None:
                 results.append(ConfigOption(key=row["key"], value=row["value"]))
         return results
 
     def set_config_option(self, key: str, value: Any) -> None:
         """Persist a user configuration value under its full storage identity."""
-        self.upsert_meta(key, {"value": value})
+        self._upsert_meta(key, {"value": value})
 
     def remove_config_option(self, key: str) -> None:
         """Remove a user configuration value by its full storage identity."""
-        self.delete_meta(key)
+        self._delete_meta(key)
 
     def get_schema_version(self) -> str | None:
         """Return the schema version, coercing non-string stored values to ``str``."""
-        row = self.get_meta("version")
+        row = self._get_meta("version")
         if row is None:
             return None
         value = row["value"]
@@ -303,38 +339,38 @@ class AppRepository:
 
     def set_schema_version(self, version: str) -> None:
         """Persist the schema version."""
-        self.upsert_meta("version", {"value": version})
+        self._upsert_meta("version", {"value": version})
 
     def get_api_key(self) -> str | None:
         """Return the stored API key, or ``None`` when not set."""
-        row = self.get_meta("api_key")
+        row = self._get_meta("api_key")
         return cast("str", row["value"]) if row is not None else None
 
     def set_api_key(self, value: str) -> None:
         """Persist the API key."""
-        self.upsert_meta("api_key", {"value": value})
+        self._upsert_meta("api_key", {"value": value})
 
     def get_admin_password_hash(self) -> str | None:
         """Return the stored admin password hash, or ``None`` when not set."""
-        row = self.get_meta("admin_password_hash")
+        row = self._get_meta("admin_password_hash")
         return cast("str", row["value"]) if row is not None else None
 
     def set_admin_password_hash(self, value: str) -> None:
         """Persist the admin password hash."""
-        self.upsert_meta("admin_password_hash", {"value": value})
+        self._upsert_meta("admin_password_hash", {"value": value})
 
     def get_calibration_version(self) -> str | None:
         """Return the calibration version hash, or ``None`` when not set."""
-        row = self.get_meta("calibration_version")
+        row = self._get_meta("calibration_version")
         return cast("str", row["value"]) if row is not None else None
 
     def set_calibration_version(self, version_hash: str) -> None:
         """Persist the calibration version hash."""
-        self.upsert_meta("calibration_version", {"value": version_hash})
+        self._upsert_meta("calibration_version", {"value": version_hash})
 
     def get_calibration_last_run(self) -> int | None:
         """Return the calibration last-run timestamp (ms), or ``None`` when not set."""
-        row = self.get_meta("calibration_last_run")
+        row = self._get_meta("calibration_last_run")
         if row is None:
             return None
         value = row["value"]
@@ -342,31 +378,31 @@ class AppRepository:
 
     def set_calibration_last_run(self, timestamp_ms: str) -> None:
         """Persist the calibration last-run timestamp as a string (read back as int)."""
-        self.upsert_meta("calibration_last_run", {"value": timestamp_ms})
+        self._upsert_meta("calibration_last_run", {"value": timestamp_ms})
 
     def clear_calibration_metadata(self) -> int:
         """Atomically clear calibration bookkeeping values; return how many were removed."""
-        keys = [k for k in ("calibration_version", "calibration_last_run") if self.get_meta(k) is not None]
+        keys = [k for k in ("calibration_version", "calibration_last_run") if self._get_meta(k) is not None]
         self._delete_meta_keys_atomic(keys)
         return len(keys)
 
     def get_model_vram_limit(self, model_path: str) -> int | None:
         """Return a model's VRAM limit in bytes, or ``None`` when not measured."""
-        row = self.get_meta(f"ml_model_vram:{model_path}")
+        row = self._get_meta(f"ml_model_vram:{model_path}")
         if row is None:
             return None
         return int(cast("str", row["value"]))
 
     def set_model_vram_limit(self, model_path: str, limit_bytes: int) -> None:
         """Persist a model's VRAM limit in bytes (stored as a string)."""
-        self.upsert_meta(f"ml_model_vram:{model_path}", {"value": str(limit_bytes)})
+        self._upsert_meta(f"ml_model_vram:{model_path}", {"value": str(limit_bytes)})
 
     def list_model_vram_limits(self) -> list[ModelVramLimit]:
         """Return every stored per-model VRAM limit as a domain value."""
         prefix = "ml_model_vram:"
         results: list[ModelVramLimit] = []
-        for key in self.list_meta_keys_by_prefix(prefix):
-            row = self.get_meta(key)
+        for key in self._list_meta_keys_by_prefix(prefix):
+            row = self._get_meta(key)
             if row is not None:
                 results.append(
                     ModelVramLimit(model_path=key[len(prefix) :], limit_bytes=int(cast("str", row["value"])))
@@ -375,13 +411,13 @@ class AppRepository:
 
     def clear_model_vram_limits(self) -> int:
         """Atomically clear all stored VRAM limits; return how many were removed."""
-        keys = self.list_meta_keys_by_prefix("ml_model_vram:")
+        keys = self._list_meta_keys_by_prefix("ml_model_vram:")
         self._delete_meta_keys_atomic(keys)
         return len(keys)
 
     def get_capacity_estimate(self, model_set_hash: str) -> CapacityEstimate | None:
         """Return the stored capacity estimate for a model set, or ``None``."""
-        row = self.get_meta(f"capacity_estimate:{model_set_hash}")
+        row = self._get_meta(f"capacity_estimate:{model_set_hash}")
         if row is None:
             return None
         value = row["value"]
@@ -395,18 +431,18 @@ class AppRepository:
 
     def set_capacity_estimate(self, estimate: CapacityEstimate) -> None:
         """Persist a capacity estimate for its model set."""
-        self.upsert_meta(
+        self._upsert_meta(
             f"capacity_estimate:{estimate.model_set_hash}",
             {"value": asdict(estimate)},
         )
 
     def remove_capacity_estimate(self, model_set_hash: str) -> None:
         """Remove the stored capacity estimate for a model set."""
-        self.delete_meta(f"capacity_estimate:{model_set_hash}")
+        self._delete_meta(f"capacity_estimate:{model_set_hash}")
 
     def get_gpu_resource_snapshot(self) -> GpuResourceSnapshot | None:
         """Return the stored GPU resource snapshot, or ``None`` when absent."""
-        row = self.get_meta("gpu_resources")
+        row = self._get_meta("gpu_resources")
         if row is None:
             return None
         value = row["value"]
@@ -417,21 +453,21 @@ class AppRepository:
 
     def set_gpu_resource_snapshot(self, snapshot: GpuResourceSnapshot) -> None:
         """Persist a GPU resource snapshot."""
-        self.upsert_meta(
+        self._upsert_meta(
             "gpu_resources",
             {"value": {"gpu_available": snapshot.gpu_available, "error_summary": snapshot.error_summary}},
         )
 
     def get_worker_system_enabled(self) -> bool | None:
         """Return whether the worker system is enabled, or ``None`` when not set."""
-        row = self.get_meta("worker_enabled")
+        row = self._get_meta("worker_enabled")
         if row is None:
             return None
         return row["value"] == "true"
 
     def set_worker_system_enabled(self, enabled: bool) -> None:
         """Persist the worker-system enabled state as a boolean."""
-        self.upsert_meta("worker_enabled", {"value": "true" if enabled else "false"})
+        self._upsert_meta("worker_enabled", {"value": "true" if enabled else "false"})
 
     # ── Session ─────────────────────────────────────────────────
 
@@ -477,166 +513,269 @@ class AppRepository:
             return result.scalar() or 0
 
     # ── Worker claims ───────────────────────────────────────────
+    #
+    # The claims intent surface lives on the facade (``AppDb``); this repository
+    # implements the storage-backed primitives as private operations that never
+    # leak ``WorkerClaimRow``, raw keys, JSON payloads, or generated ids to
+    # higher layers.
 
-    def insert_worker_claim(self, payload: dict[str, Any]) -> int:
-        """Insert a worker-claim row and return its ``id``."""
-        file_id = payload.get("file_id")
-        if file_id is not None and self._song_repo is not None and self._song_repo.get_song(file_id) is None:
-            raise ValueError(f"Song {file_id} does not exist")
-        with map_persistence_exceptions():
-            with self._session.begin_nested():
-                data = {
-                    "worker_id": payload["worker_id"],
-                    "key": payload["key"],
-                    "value": {
-                        **dict(payload.get("value", {})),
-                        **{key: payload[key] for key in ("file_id", "claim_type") if key in payload},
-                    },
-                    "claimed_at": payload.get("claimed_at", 0),
-                }
-                row = insert_one(_WC, data, session=self._session)
-            self._session.commit()
-            return int(row._mapping["id"])
+    def _resolve_song_id(self, song: SongIdentity) -> int | None:
+        """Resolve a natural ``SongIdentity`` to its storage song id."""
+        if self._library_repo is None or self._song_repo is None:
+            return None
+        root_path = song.library.root_path
+        if root_path is None:
+            return None
+        library_row = self._library_repo.get_library_by_natural_key(
+            song.library.name,
+            root_path,
+        )
+        if library_row is None:
+            return None
+        row = self._song_repo.get_song_by_normalized_path(library_row["id"], song.normalized_path)
+        return row["id"] if row is not None else None
 
-    def claim_file(self, song_id: int, worker_id: str, payload: dict[str, Any]) -> None:
-        """Record a worker's claim on a song."""
-        with map_persistence_exceptions():
-            with self._session.begin_nested():
-                data = {
-                    "worker_id": worker_id,
-                    "key": f"claim_{song_id}",
-                    "value": payload,
-                    "claimed_at": payload.get("claimed_at", 0),
-                }
-                insert_one(_WC, data, session=self._session)
-            self._session.commit()
+    def _resolve_song_ids(self, songs: Sequence[SongIdentity]) -> list[int]:
+        """Resolve a batch of natural song identities to storage song ids."""
+        return [sid for sid in (self._resolve_song_id(song) for song in songs) if sid is not None]
 
-    def release_claim(
-        self,
-        worker_id: str | int,
-        song_id: int | None = None,
-        claim_type: str | None = None,
-    ) -> None:
-        """Release one worker's claim for a song."""
-        with map_persistence_exceptions():
-            with self._session.begin_nested():
-                worker_filter: str | None = worker_id if isinstance(worker_id, str) else None
-                if song_id is None:
-                    song_id = int(worker_id)
-                prefix = f"claim_{claim_type}_" if claim_type else "claim_"
-                stmt = delete(_WC).where(
-                    _WC.c.key == f"{prefix}{song_id}",
-                )
-                if worker_filter is not None:
-                    stmt = stmt.where(_WC.c.worker_id == worker_filter)
-                self._session.execute(stmt)
-            self._session.commit()
+    def _song_identity_for_id(self, song_id: int) -> SongIdentity | None:
+        """Resolve a storage song id to its natural identity, or ``None``."""
+        if self._song_repo is None or self._library_repo is None:
+            return None
+        row = self._song_repo.get_song(song_id)
+        if row is None:
+            return None
+        library_id = row.get("library_id")
+        if library_id is None:
+            return None
+        library_row = self._library_repo.get_library(int(library_id))
+        if library_row is None:
+            return None
+        return SongIdentity(
+            library=LibraryIdentity(name=library_row["name"], root_path=library_row["path"]),
+            normalized_path=row["normalized_path"],
+        )
 
-    def release_claim_by_song(self, song_id: int, claim_type: str | None = None) -> None:
-        """Release a song claim regardless of which worker owns it."""
-        with map_persistence_exceptions():
-            with self._session.begin_nested():
-                prefix = f"claim_{claim_type}_" if claim_type else "claim_"
-                stmt = delete(_WC).where(_WC.c.key == f"{prefix}{song_id}")
-                self._session.execute(stmt)
-            self._session.commit()
+    def _song_exists(self, song_id: int) -> bool:
+        """Return whether a storage song id currently exists."""
+        return self._song_repo is not None and self._song_repo.get_song(song_id) is not None
 
-    def delete_claims_for_workers(self, worker_ids: list[str]) -> int:
-        """Delete all claims for the given worker ids; return row count."""
-        with map_persistence_exceptions():
-            if not worker_ids:
-                return 0
-            with self._session.begin_nested():
-                stmt = delete(_WC).where(_WC.c.worker_id.in_(worker_ids))
-                result = self._session.execute(stmt)
-            self._session.commit()
-            return int(result.rowcount)  # type: ignore[attr-defined]  # CursorResult vs Result — mypy sees Result but .rowcount exists at runtime
+    def _claim_value(self, song_id: int, claim_type: str | None) -> dict[str, Any]:
+        """Assemble the private JSONB payload for a claim row."""
+        value: dict[str, Any] = {"file_id": song_id}
+        if claim_type is not None:
+            value["claim_type"] = claim_type
+        return value
 
-    def delete_claims(
-        self,
-        *,
-        worker_ids: list[str] | None = None,
-        song_ids: list[int] | None = None,
-    ) -> int:
-        """Delete claims matching either worker or song filters atomically."""
-        with map_persistence_exceptions():
-            if not worker_ids and not song_ids:
-                return 0
+    def _claim_row_to_domain(self, row: Row) -> WorkerClaim | None:
+        """Map a private claim storage row to its domain ``WorkerClaim``.
 
-            filters = []
-            if worker_ids:
-                filters.append(_WC.c.worker_id.in_(worker_ids))
-            if song_ids:
-                claim_keys = [
-                    condition
-                    for sid in song_ids
-                    for condition in (
-                        _WC.c.key == f"claim_{sid}",
-                        _WC.c.key.like(f"claim_%_{sid}"),
-                    )
-                ]
-                filters.append(or_(*claim_keys))
-
-            with self._session.begin_nested():
-                stmt = delete(_WC).where(or_(*filters))
-                result = self._session.execute(stmt)
-            self._session.commit()
-            return int(result.rowcount)  # type: ignore[attr-defined]  # CursorResult vs Result — mypy sees Result but .rowcount exists at runtime
-
-    def delete_claims_for_songs(self, song_ids: list[int]) -> int:
-        """Delete claims for the given song ids (stored as ``key`` strings)."""
-        with map_persistence_exceptions():
-            if not song_ids:
-                return 0
-            claim_keys = [
-                condition
-                for sid in song_ids
-                for condition in (
-                    _WC.c.key == f"claim_{sid}",
-                    _WC.c.key.like(f"claim_%_{sid}"),
-                )
-            ]
-            with self._session.begin_nested():
-                stmt = delete(_WC).where(or_(*claim_keys))
-                result = self._session.execute(stmt)
-            self._session.commit()
-            return int(result.rowcount)  # type: ignore[attr-defined]  # CursorResult vs Result — mypy sees Result but .rowcount exists at runtime
-
-    def steal_claim(self, payload: dict[str, Any], now: int, lease_ms: int) -> bool:
-        """Atomically replace one expired claim.
-
-        The claim key is part of the update predicate, and the expiry check is
-        evaluated by the database in the same ``UPDATE`` statement.  A caller
-        therefore cannot delete a claim that another worker acquired after it
-        read the old claim.
-
-        Returns ``True`` if the targeted expired row was updated.
+        Returns ``None`` for rows whose key does not conform to the canonical
+        encoding or whose song identity cannot be resolved (orphaned rows);
+        these are quarantined rather than surfaced to the domain boundary.
         """
-        key = payload["key"]
-        data = {
-            "worker_id": payload["worker_id"],
-            "value": payload["value"],
-            "claimed_at": payload["claimed_at"],
-        }
+        m = row._mapping
+        parsed = _parse_claim_key(cast("str", m["key"]))
+        if parsed is None:
+            return None
+        song_id, claim_type = parsed
+        song = self._song_identity_for_id(song_id)
+        if song is None:
+            return None
+        return WorkerClaim(
+            identity=WorkerClaimIdentity(
+                song=song,
+                worker_id=cast("str", m["worker_id"]),
+                claim_type=claim_type,
+            ),
+            claimed_at_ms=cast("int", m["claimed_at"]),
+        )
+
+    def _acquire_claim(
+        self,
+        claim: WorkerClaim,
+        *,
+        now_ms: int,
+        lease_ms: int | None,
+    ) -> bool:
+        """Atomically insert or replace one lease-gated claim.
+
+        Enforces a single active claim per logical song across typed and untyped
+        claims.  The transaction serializes on the song's existing claim rows
+        (``SELECT ... FOR UPDATE``); a fresh claim is inserted when none exists,
+        an expired claim is replaced via an exact-key, expiry-filtered
+        ``UPDATE`` (preserving the legacy atomicity pattern and never deleting a
+        different song's claim), and an active claim blocks acquisition.  With no
+        ``lease_ms`` the call is insert-only (never replaces an existing claim).
+
+        Returns ``True`` on acquisition, ``False`` on contention, on a missing
+        song, or when insert-only semantics prevent replacement.
+        """
+        song_id = self._resolve_song_id(claim.identity.song)
+        if song_id is None:
+            return False
+        target_key = _claim_key(claim.identity.claim_type, song_id)
+        value = self._claim_value(song_id, claim.identity.claim_type)
+        acquired = False
         with map_persistence_exceptions():
             with self._session.begin_nested():
-                stmt = (
-                    update(_WC)
+                existing = self._session.execute(
+                    select(_WC.c.key, _WC.c.claimed_at)
                     .where(
-                        _WC.c.key == key,
-                        _WC.c.claimed_at < now - lease_ms,
+                        or_(
+                            _WC.c.key == f"claim_{song_id}",
+                            _WC.c.key.like(f"claim\\_%\\_{song_id}", escape="\\"),
+                        )
                     )
-                    .values(**data)
-                )
-                result = self._session.execute(stmt)
+                    .with_for_update()
+                ).all()
+                if not existing:
+                    self._session.execute(
+                        insert(_WC).values(
+                            worker_id=claim.identity.worker_id,
+                            key=target_key,
+                            value=value,
+                            claimed_at=now_ms,
+                        )
+                    )
+                    acquired = True
+                elif lease_ms is not None and int(existing[0].claimed_at) < now_ms - lease_ms:
+                    old_key = cast("str", existing[0].key)
+                    self._session.execute(
+                        update(_WC)
+                        .where(_WC.c.key == old_key, _WC.c.claimed_at < now_ms - lease_ms)
+                        .values(
+                            key=target_key,
+                            worker_id=claim.identity.worker_id,
+                            value=value,
+                            claimed_at=now_ms,
+                        )
+                    )
+                    acquired = True
             self._session.commit()
-            return int(result.rowcount) > 0  # type: ignore[attr-defined]  # CursorResult vs Result — mypy sees Result but .rowcount exists at runtime
+        return acquired
 
-    def list_claims(self) -> list[WorkerClaimRow]:
-        """Return all worker-claim rows."""
+    def _remove_claim(self, identity: WorkerClaimIdentity) -> bool:
+        """Remove exactly one logical claim (exact key + owning worker).
+
+        Ownership-aware and exact-key: returns ``False`` when the claim does not
+        exist or is held by a different worker, and never removes another claim.
+        """
+        song_id = self._resolve_song_id(identity.song)
+        if song_id is None:
+            return False
+        key = _claim_key(identity.claim_type, song_id)
+        removed = False
+        with map_persistence_exceptions():
+            with self._session.begin_nested():
+                result = self._session.execute(
+                    delete(_WC).where(_WC.c.key == key, _WC.c.worker_id == identity.worker_id)
+                )
+                removed = int(result.rowcount) > 0  # type: ignore[attr-defined]
+            self._session.commit()
+        return removed
+
+    def _resolve_stale_workers(self, cutoff_ms: int) -> set[str]:
+        """Return claimed workers whose health is stale or absent at *cutoff_ms*."""
+        claimed_rows = self._session.execute(select(_WC.c.worker_id).distinct()).all()
+        claimed = {cast("str", r[0]) for r in claimed_rows}
+        if not claimed:
+            return set()
+        health_rows = self._session.execute(select(_H.c.worker_id, _H.c.last_seen)).all()
+        active = {cast("str", r[0]) for r in health_rows if int(r[1]) >= cutoff_ms}
+        return claimed - active
+
+    def _remove_claims(
+        self,
+        request: ClaimRemovalRequest,
+        *,
+        resolved_song_ids: Sequence[int] = (),
+    ) -> int:
+        """Execute a complete claim-removal request; return rows removed.
+
+        Combines explicit worker/song filters with the cleanup policies
+        (stale-worker health plus missing/completed/errored song selection) into
+        one atomic delete.  Active pending ``reconcile`` claims are preserved
+        from song-state cleanup; inactive workers' claims (including reconcile)
+        are freed via the stale-worker path.
+        """
+        target_worker_ids = set(request.worker_ids)
+        target_song_ids = set(resolved_song_ids)
+        for song_id in self._resolve_song_ids(request.songs):
+            target_song_ids.add(song_id)
+
+        with map_persistence_exceptions():
+            with self._session.begin_nested():
+                if request.stale_workers_before_ms is not None:
+                    target_worker_ids |= self._resolve_stale_workers(request.stale_workers_before_ms)
+
+                clean_song_ids: set[int] = set()
+                if request.remove_missing_songs or request.remove_completed_songs or request.remove_errored_songs:
+                    completed: set[int] = set()
+                    errored: set[int] = set()
+                    if self._song_state_repo is not None:
+                        if request.remove_completed_songs:
+                            completed = set(self._song_state_repo.list_songs_in_state(STATE_PROCESSED))
+                        if request.remove_errored_songs:
+                            errored = set(self._song_state_repo.list_songs_in_state(STATE_ERRORED))
+                    for row in self._session.execute(select(_WC.c.key, _WC.c.worker_id)).all():
+                        parsed = _parse_claim_key(cast("str", row[0]))
+                        if parsed is None:
+                            continue
+                        song_id, claim_type = parsed
+                        if claim_type == "reconcile":
+                            continue  # active pending reconcile claims remain
+                        if (
+                            (request.remove_missing_songs and not self._song_exists(song_id))
+                            or (request.remove_completed_songs and song_id in completed)
+                            or (request.remove_errored_songs and song_id in errored)
+                        ):
+                            clean_song_ids.add(song_id)
+
+                conditions: list[ColumnElement[bool]] = []
+                if target_worker_ids:
+                    conditions.append(_WC.c.worker_id.in_(target_worker_ids))
+                all_song_ids = target_song_ids | clean_song_ids
+                if all_song_ids:
+                    key_conditions = [
+                        condition
+                        for sid in all_song_ids
+                        for condition in (
+                            _WC.c.key == f"claim_{sid}",
+                            _WC.c.key.like(f"claim\\_%\\_{sid}", escape="\\"),
+                        )
+                    ]
+                    conditions.append(or_(*key_conditions))
+                if not conditions:
+                    return 0
+                result = self._session.execute(delete(_WC).where(or_(*conditions)))
+                deleted = int(result.rowcount)  # type: ignore[attr-defined]
+            self._session.commit()
+            return deleted
+
+    def _list_claim_rows(self) -> list[Row]:
+        """Return all private worker-claim storage rows."""
         with map_persistence_exceptions():
             result = self._session.execute(select(_WC))
-            return [_claim_row_to_dto(r) for r in result.all()]
+            return list(result.all())
+
+    def _list_claims(self) -> list[WorkerClaim]:
+        """Return all resolvable claims as domain values (orphans quarantined)."""
+        with map_persistence_exceptions():
+            result = self._session.execute(select(_WC))
+            claims: list[WorkerClaim] = []
+            for row in result.all():
+                claim = self._claim_row_to_domain(row)
+                if claim is not None:
+                    claims.append(claim)
+            return claims
+
+    def _count_claims(self) -> int:
+        """Return the number of currently persisted claim rows."""
+        with map_persistence_exceptions():
+            result = self._session.execute(select(func.count()).select_from(_WC))
+            return int(result.scalar_one())
 
     # ── Migrations ──────────────────────────────────────────────
 
@@ -769,8 +908,12 @@ class AppRepository:
 
     # ── maintenance ─────────────────────────────────────────────
 
-    def truncate_worker_claims(self) -> None:
-        """Delete all rows from ``worker_claims``."""
+    def _delete_all_worker_claims(self) -> None:
+        """Delete all rows from ``worker_claims``.
+
+        Exposed only through the maintenance facade (``db.app.maintenance``); it
+        is deliberately not part of the routine claims intent surface.
+        """
         with map_persistence_exceptions():
             with self._session.begin_nested():
                 self._session.execute(delete(_WC))

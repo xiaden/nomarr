@@ -240,9 +240,10 @@ def _detect_root_package(workspace_root: Path, backend_path: str | None) -> str 
 
 
 def get_venv_binary(project_root: Path, name: str) -> Path:
-    """Find a binary in the project venv, falling back to system PATH.
+    """Find a required binary in the project virtual environment.
 
-    Tries multiple common venv locations before giving up.
+    Tries multiple common venv locations before raising a setup error. Falling
+    back to a system executable would make local checks non-reproducible.
     """
     if sys.platform == "win32":
         candidates = [
@@ -256,8 +257,10 @@ def get_venv_binary(project_root: Path, name: str) -> Path:
     for candidate in candidates:
         if candidate.exists():
             return candidate
-    # Fallback: return bare name and hope it's on PATH
-    return Path(name)
+    raise FileNotFoundError(
+        f"Required virtual-environment executable not found: {name}. "
+        f"Run scripts/human-scripts/tools/ensure_venv.py in {project_root}."
+    )
 
 
 def _auto_detect_paths(workspace_root: Path, config: dict) -> dict:

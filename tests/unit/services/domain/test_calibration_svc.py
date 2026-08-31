@@ -295,7 +295,7 @@ class TestClearCalibration:
     def test_clear_calibration_delegates_to_clear_all_calibration_data_when_not_running(self) -> None:
         """Clearing calibration should delegate when no generation is active."""
         service = _make_service()
-        expected = {"files_updated": 4, "meta_keys_cleared": 2}
+        expected = {"files_updated": 4, "bookkeeping_values_cleared": 2}
 
         with (
             patch.object(service, "is_generation_running", return_value=False),
@@ -355,7 +355,7 @@ class TestGetHistogramForHead:
             "n": 12,
             "histogram_spec": {"lo": 0.0, "hi": 1.0, "bins": 10, "bin_width": 0.1},
         }
-        mock_load_state.assert_called_once_with(service._db, "mood_happy", "happy")
+        mock_load_state.assert_called_once_with(service._db, "model-1", "mood_happy", "happy")
 
 
 class TestGetAllCalibrationStates:

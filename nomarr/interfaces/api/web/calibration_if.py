@@ -14,6 +14,7 @@ from nomarr.interfaces.api.types.calibration_types import (
     ApplyCalibrationResultResponse,
     ApplyCalibrationStatusResponse,
     BackgroundStartResponse,
+    CalibrationHistogramItem,
     CalibrationStatusResponse,
     ClearCalibrationResponse,
     GetAllCalibrationHistogramsResponse,
@@ -145,7 +146,23 @@ async def get_all_calibration_histograms(
     """Get all calibration states with histogram bins (22 items, one per label)."""
     try:
         states = await asyncio.to_thread(calibration_service.get_all_calibration_states)
-        return GetAllCalibrationHistogramsResponse(calibrations=states)
+        items = [
+            CalibrationHistogramItem(
+                model_key=state.model_id,
+                head_name=state.head_name,
+                label=state.label,
+                histogram_bins=state.histogram_bins or [],
+                p5=state.p5,
+                p95=state.p95,
+                n=state.sample_count,
+                histogram_spec=state.histogram,
+                calibration_def_hash=state.calibration_def_hash or None,
+                underflow_count=state.underflow_count,
+                overflow_count=state.overflow_count,
+            )
+            for state in states
+        ]
+        return GetAllCalibrationHistogramsResponse(calibrations=items)
     except Exception as e:
         logger.error(f"[Web] Failed to get all calibration histograms: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get histograms")) from e

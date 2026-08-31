@@ -2,20 +2,21 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from nomarr.components.library.library_song_state_comp import get_stale_song_ids, transition_song_state
-from nomarr.components.workers.worker_discovery_comp import try_insert_or_steal_claim
 from nomarr.helpers.constants.file_states import (
     STATE_NOT_WRITTEN,
     STATE_TAGS_CURRENT,
     STATE_TAGS_NOT_FRESH,
     STATE_WRITTEN,
 )
+from nomarr.helpers.dataclasses.worker_claim_dataclass import WorkerClaim, WorkerClaimIdentity
 from nomarr.helpers.time_helper import now_ms
 
 if TYPE_CHECKING:
     from nomarr.helpers.dataclasses.library_dataclass import Library
+    from nomarr.helpers.dataclasses.song_dataclass import Song
     from nomarr.persistence.db import Database
 
 
@@ -25,7 +26,7 @@ def claim_files_for_reconciliation(
     worker_id: str,
     batch_size: int = 100,
     lease_ms: int = 60000,
-) -> list[dict[str, Any]]:
+) -> list[Song]:
     """Claim stale files for projection reconciliation.
 
     Args:
@@ -36,12 +37,12 @@ def claim_files_for_reconciliation(
         batch_size: Maximum number of stale file candidates to claim in this call.
             Defaults to 100.
         lease_ms: Claim lease duration in milliseconds. Existing claims older than
-            this threshold are treated as expired and can be stolen. Defaults to
+            this threshold are treated as expired and can be replaced. Defaults to
             60000.
 
     Returns:
-        The raw song documents that were successfully claimed for the
-        worker.
+        The domain ``Song`` values that were successfully claimed for the
+        worker (typed as ``claim_type="reconcile"``).
 
     """
     # overlap: mechanism-A natural-name threading (P4-S8) - this file is under
@@ -53,24 +54,24 @@ def claim_files_for_reconciliation(
     if not reconcile_ids:
         return []
 
-    candidates = [song.to_dict() for file_id in reconcile_ids if (song := db.library.get_song(file_id)) is not None]
-
-    claimed: list[dict[str, Any]] = []
+    claimed: list[Song] = []
     now = now_ms().value
-    for candidate in candidates:
+    for song_id in reconcile_ids:
         if len(claimed) >= batch_size:
             break
 
-        file_id = str(candidate["id"])
-        payload = {
-            "file_id": file_id,
-            "worker_id": worker_id,
-            "claimed_at": now,
-            "claim_type": "reconcile",
-        }
-
-        if try_insert_or_steal_claim(db, payload, now, lease_ms):
-            claimed.append(candidate)
+        song = db.library.get_song(song_id)
+        if song is None:
+            continue
+        identity = db.library.resolve_song_identity(song_id)
+        if identity is None:
+            continue
+        claim = WorkerClaim(
+            identity=WorkerClaimIdentity(song=identity, worker_id=worker_id, claim_type="reconcile"),
+            claimed_at_ms=now,
+        )
+        if db.app.add_claim(claim, lease_ms=lease_ms):
+            claimed.append(song)
 
     return claimed
 
@@ -84,7 +85,9 @@ def set_file_written(db: Database, file_key: str, worker_id: str) -> None:
     transition_song_state(db, [file_id], STATE_NOT_WRITTEN, STATE_WRITTEN)
     if STATE_TAGS_NOT_FRESH in db.app.song_state_membership(file_id):
         transition_song_state(db, [file_id], STATE_TAGS_NOT_FRESH, STATE_TAGS_CURRENT)
-    db.app.release_claim(worker_id, file_id, "reconcile")
+    identity = db.library.resolve_song_identity(file_id)
+    if identity is not None:
+        db.app.remove_claim(WorkerClaimIdentity(song=identity, worker_id=worker_id, claim_type="reconcile"))
 
 
 def release_claim(db: Database, file_key: str, worker_id: str) -> None:
@@ -93,7 +96,10 @@ def release_claim(db: Database, file_key: str, worker_id: str) -> None:
     PostgreSQL uses integer IDs; file_key is the string representation of the ID.
     """
     file_id = int(file_key)
-    db.app.release_claim(worker_id, file_id, "reconcile")
+    identity = db.library.resolve_song_identity(file_id)
+    if identity is None:
+        return
+    db.app.remove_claim(WorkerClaimIdentity(song=identity, worker_id=worker_id, claim_type="reconcile"))
 
 
 def count_files_needing_reconciliation(db: Database, library: Library) -> int:

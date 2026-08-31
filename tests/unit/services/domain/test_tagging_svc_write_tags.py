@@ -10,8 +10,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from nomarr.helpers import ManagedTask
-from nomarr.helpers.dataclasses.app_dataclasses import ConfigOption
 from nomarr.helpers.dataclasses.library_dataclass import Library
+from nomarr.helpers.dataclasses.song_dataclass import Song
 from nomarr.helpers.dto.library_dto import WriteTagsResult
 from nomarr.helpers.exceptions import TaskCancelledError
 from nomarr.services.domain.tagging_svc import TaggingService, TaggingServiceConfig
@@ -20,6 +20,31 @@ from nomarr.services.domain.tagging_svc import TaggingService, TaggingServiceCon
 def _make_library(name: str = "lib1", file_write_mode: Literal["none", "minimal", "full"] = "full") -> Library:
     """Build a domain ``Library`` (natural identity) for write-tags tests."""
     return Library(name=name, root_path="/music", file_write_mode=file_write_mode)
+
+
+def _song(**overrides: object) -> Song:
+    """Build a domain ``Song`` (natural identity) for write-tags tests."""
+    base: dict = {
+        "song_id": 1,
+        "library_id": 1,
+        "folder_id": None,
+        "path": "/music/song.mp3",
+        "normalized_path": "song.mp3",
+        "file_size": 100,
+        "modified_time": 1000,
+        "duration_seconds": None,
+        "chromaprint": None,
+        "needs_tagging": False,
+        "is_valid": True,
+        "tagged": False,
+        "calibration_hash": None,
+        "write_claimed_by": None,
+        "last_tagged_at": None,
+        "scanned_at": None,
+        "created_at": 1000,
+    }
+    base.update(overrides)
+    return Song(**base)  # type: ignore[arg-type]
 
 
 def _make_service(*, db: MagicMock | None = None, bts: MagicMock | None = None) -> TaggingService:
@@ -213,16 +238,14 @@ class TestWriteTagsToFiles:
     def test_write_tags_to_files_happy_path(self) -> None:
         """Successful writes should increment processed and leave failed at zero."""
         mock_db = MagicMock()
-        mock_db.app.get_config_option = MagicMock(
-            return_value=ConfigOption(key="calibration_version", value="calibration-v1")
-        )
+        mock_db.app.get_calibration_version = MagicMock(return_value="calibration-v1")
         service = _make_service(db=mock_db)
         library = _make_library(file_write_mode="full")
 
         with (
             patch(
                 "nomarr.services.domain.tagging_svc.write.claim_files_for_reconciliation",
-                return_value=[{"id": "file1"}, {"id": "file2"}],
+                return_value=[_song(song_id=1), _song(song_id=2)],
             ),
             patch(
                 "nomarr.services.domain.tagging_svc.write.count_files_needing_reconciliation",
@@ -250,16 +273,14 @@ class TestWriteTagsToFiles:
     def test_write_tags_to_files_partial_failure(self) -> None:
         """Non-external workflow failures should increment failed and release claims."""
         mock_db = MagicMock()
-        mock_db.app.get_config_option = MagicMock(
-            return_value=ConfigOption(key="calibration_version", value="calibration-v1")
-        )
+        mock_db.app.get_calibration_version = MagicMock(return_value="calibration-v1")
         service = _make_service(db=mock_db)
         library = _make_library(file_write_mode="minimal")
 
         with (
             patch(
                 "nomarr.services.domain.tagging_svc.write.claim_files_for_reconciliation",
-                return_value=[{"id": "file1"}, {"id": "file2"}],
+                return_value=[_song(song_id=1), _song(song_id=2)],
             ),
             patch(
                 "nomarr.services.domain.tagging_svc.write.count_files_needing_reconciliation",
@@ -279,21 +300,21 @@ class TestWriteTagsToFiles:
             result = service.write_tags_to_files(library)
 
         assert result == WriteTagsResult(processed=1, remaining=0, failed=1)
-        mock_release_claim.assert_called_once_with(mock_db, "file2", "reconcile:lib1")
+        mock_release_claim.assert_called_once_with(mock_db, "2", "reconcile:lib1")
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_write_tags_to_files_externally_modified_file(self) -> None:
         """Externally modified files should release their claim and not count as failed."""
         mock_db = MagicMock()
-        mock_db.app.get_config_option = MagicMock(return_value=None)
+        mock_db.app.get_calibration_version = MagicMock(return_value=None)
         service = _make_service(db=mock_db)
         library = _make_library(file_write_mode="full")
 
         with (
             patch(
                 "nomarr.services.domain.tagging_svc.write.claim_files_for_reconciliation",
-                return_value=[{"id": "file1"}],
+                return_value=[_song(song_id=1)],
             ),
             patch(
                 "nomarr.services.domain.tagging_svc.write.count_files_needing_reconciliation",
@@ -310,23 +331,21 @@ class TestWriteTagsToFiles:
             result = service.write_tags_to_files(library)
 
         assert result == WriteTagsResult(processed=0, remaining=0, failed=0)
-        mock_release_claim.assert_called_once_with(mock_db, "file1", "reconcile:lib1")
+        mock_release_claim.assert_called_once_with(mock_db, "1", "reconcile:lib1")
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_write_tags_to_files_exception_releases_claim(self) -> None:
         """Workflow exceptions should count as failures and release the file claim."""
         mock_db = MagicMock()
-        mock_db.app.get_config_option = MagicMock(
-            return_value=ConfigOption(key="calibration_version", value="calibration-v1")
-        )
+        mock_db.app.get_calibration_version = MagicMock(return_value="calibration-v1")
         service = _make_service(db=mock_db)
         library = _make_library(file_write_mode="full")
 
         with (
             patch(
                 "nomarr.services.domain.tagging_svc.write.claim_files_for_reconciliation",
-                return_value=[{"id": "file1"}],
+                return_value=[_song(song_id=1)],
             ),
             patch(
                 "nomarr.services.domain.tagging_svc.write.count_files_needing_reconciliation",
@@ -343,4 +362,4 @@ class TestWriteTagsToFiles:
             result = service.write_tags_to_files(library)
 
         assert result == WriteTagsResult(processed=0, remaining=0, failed=1)
-        mock_release_claim.assert_called_once_with(mock_db, "file1", "reconcile:lib1")
+        mock_release_claim.assert_called_once_with(mock_db, "1", "reconcile:lib1")

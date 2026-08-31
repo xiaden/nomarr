@@ -340,8 +340,8 @@ class DiscoveryWorker(multiprocessing.Process):
             promises = fleet["promises"]
             device_lookup = {m._path: (m._device or "cpu").upper() for m in onnx_cache._all_models()}
             promise_rows = [
-                f"  {p.get('worker_id', '?'):<20}  {os.path.basename(p.get('model_path', '?')):<40}  "
-                f"{p.get('promised_mb', 0):.0f} MB  [{device_lookup.get(p.get('model_path', ''), 'UNKNOWN')}]"
+                f"  {p.worker_id:<20}  {os.path.basename(p.model_path):<40}  "
+                f"{p.promised_mb:.0f} MB  [{device_lookup.get(p.model_path, 'UNKNOWN')}]"
                 for p in promises
             ]
             logger.info(

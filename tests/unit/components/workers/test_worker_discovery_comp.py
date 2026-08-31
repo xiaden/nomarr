@@ -3,44 +3,32 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from nomarr.components.workers.worker_discovery_comp import (
     claim_file,
     cleanup_stale_claims,
+    discover_and_claim_file,
     discover_next_file,
+    get_active_claim_count,
+    release_claim,
     release_claims_for_worker,
-    try_insert_or_steal_claim,
 )
-from nomarr.helpers.constants.file_states import STATE_PROCESSED
-from nomarr.helpers.dataclasses.song_dataclass import Song
-from nomarr.helpers.exceptions import DuplicateEntityError
+from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
+from nomarr.helpers.dataclasses.worker_claim_dataclass import ClaimRemovalRequest, WorkerClaim, WorkerClaimIdentity
 
 
-def _song(**overrides: object) -> Song:
-    base: dict = {
-        "song_id": 1,
-        "library_id": 1,
-        "folder_id": None,
-        "path": "/music/song.mp3",
-        "normalized_path": "song.mp3",
-        "file_size": 100,
-        "modified_time": 1000,
-        "duration_seconds": None,
-        "chromaprint": None,
-        "needs_tagging": False,
-        "is_valid": True,
-        "tagged": False,
-        "calibration_hash": None,
-        "write_claimed_by": None,
-        "last_tagged_at": None,
-        "scanned_at": None,
-        "created_at": 1000,
-    }
-    base.update(overrides)
-    return Song(**base)
+def _identity(song_id: int) -> SongIdentity:
+    return SongIdentity(library=LibraryIdentity(name="Test Library"), normalized_path=f"song-{song_id}.mp3")
+
+
+def _untyped_claim(song_id: int, worker_id: str, claimed_at_ms: int) -> WorkerClaim:
+    return WorkerClaim(
+        identity=WorkerClaimIdentity(song=_identity(song_id), worker_id=worker_id, claim_type=None),
+        claimed_at_ms=claimed_at_ms,
+    )
 
 
 class TestDiscoverNextFile:
@@ -75,169 +63,67 @@ class TestDiscoverNextFile:
 class TestClaimFile:
     """Tests for claim_file."""
 
-    @staticmethod
-    def _duplicate_claim_error() -> DuplicateEntityError:
-        """Build a duplicate entity error for the claim path."""
-        return DuplicateEntityError()
-
     @pytest.mark.unit
     def test_returns_true_on_success(self) -> None:
         mock_db = MagicMock()
-        result = claim_file(mock_db, "123", "worker:tag:0")
+        mock_db.library.resolve_song_identity.return_value = _identity(123)
+        mock_db.app.add_claim.return_value = True
+        with patch(
+            "nomarr.components.workers.worker_discovery_comp.now_ms",
+            return_value=SimpleNamespace(value=999),
+        ):
+            result = claim_file(mock_db, "123", "worker:tag:0")
         assert result is True
-        mock_db.app.claim_song.assert_called_once_with(
-            123,
-            "worker:tag:0",
-            claimed_at=mock_db.app.claim_song.call_args.kwargs["claimed_at"],
-        )
-
-
-class TestTryInsertOrStealClaim:
-    """Tests for expired claim replacement."""
-
-    @staticmethod
-    def _duplicate_claim_error() -> DuplicateEntityError:
-        """Build a duplicate entity error for the claim path."""
-        return DuplicateEntityError()
+        mock_db.app.add_claim.assert_called_once_with(_untyped_claim(123, "worker:tag:0", 999))
 
     @pytest.mark.unit
-    def test_forwards_steal_to_facade_on_duplicate_claim(self) -> None:
+    def test_returns_false_when_song_unresolvable(self) -> None:
         mock_db = MagicMock()
-        mock_db.app.claim_song.side_effect = DuplicateEntityError()
-        mock_db.app.steal_claim.return_value = True
+        mock_db.library.resolve_song_identity.return_value = None
+        result = claim_file(mock_db, "123", "worker:tag:0")
+        assert result is False
+        mock_db.app.add_claim.assert_not_called()
 
-        result = try_insert_or_steal_claim(
-            mock_db,
-            {"file_id": 123, "worker_id": "worker-b", "claimed_at": 5000},
-            now=5000,
-            lease_ms=1000,
+    @pytest.mark.unit
+    def test_returns_false_when_claim_conflicts(self) -> None:
+        mock_db = MagicMock()
+        mock_db.library.resolve_song_identity.return_value = _identity(123)
+        mock_db.app.add_claim.return_value = False
+        with patch(
+            "nomarr.components.workers.worker_discovery_comp.now_ms",
+            return_value=SimpleNamespace(value=999),
+        ):
+            result = claim_file(mock_db, "123", "worker:tag:0")
+        assert result is False
+
+
+class TestReleaseClaim:
+    """Tests for release_claim (untyped domain identity)."""
+
+    @pytest.mark.unit
+    def test_releases_untyped_claim_via_domain_identity(self) -> None:
+        mock_db = MagicMock()
+        mock_db.library.resolve_song_identity.return_value = _identity(123)
+        release_claim(mock_db, 123, "worker:tag:0")
+        mock_db.app.remove_claim.assert_called_once_with(
+            WorkerClaimIdentity(song=_identity(123), worker_id="worker:tag:0", claim_type=None)
         )
 
-        assert result is True
-        mock_db.app.steal_claim.assert_called_once_with(
-            123,
-            "worker-b",
-            claim_type=None,
-            claimed_at=5000,
-            now=5000,
-            lease_ms=1000,
-        )
-        mock_db.app.list_claims.assert_not_called()
-        mock_db.app.remove_claim_by_song.assert_not_called()
+    @pytest.mark.unit
+    def test_noop_when_song_unresolvable(self) -> None:
+        mock_db = MagicMock()
+        mock_db.library.resolve_song_identity.return_value = None
+        release_claim(mock_db, 123, "worker:tag:0")
         mock_db.app.remove_claim.assert_not_called()
-        assert mock_db.app.claim_song.call_count == 1
-
-    @pytest.mark.unit
-    def test_forwards_typed_steal_to_facade_on_duplicate_claim(self) -> None:
-        mock_db = MagicMock()
-        mock_db.app.claim_song.side_effect = DuplicateEntityError()
-        mock_db.app.steal_claim.return_value = True
-
-        result = try_insert_or_steal_claim(
-            mock_db,
-            {
-                "file_id": 123,
-                "worker_id": "worker-c",
-                "claim_type": "reconcile",
-                "claimed_at": 5000,
-            },
-            now=5000,
-            lease_ms=1000,
-        )
-
-        assert result is True
-        mock_db.app.steal_claim.assert_called_once_with(
-            123,
-            "worker-c",
-            claim_type="reconcile",
-            claimed_at=5000,
-            now=5000,
-            lease_ms=1000,
-        )
-
-    @pytest.mark.unit
-    def test_returns_false_when_facade_steal_fails(self) -> None:
-        mock_db = MagicMock()
-        mock_db.app.claim_song.side_effect = DuplicateEntityError()
-        mock_db.app.steal_claim.return_value = False
-
-        result = try_insert_or_steal_claim(
-            mock_db,
-            {
-                "file_id": 123,
-                "worker_id": "worker-c",
-                "claim_type": "reconcile",
-                "claimed_at": 5000,
-            },
-            now=5000,
-            lease_ms=1000,
-        )
-
-        assert result is False
-        mock_db.app.steal_claim.assert_called_once()
-        mock_db.app.list_claims.assert_not_called()
-        mock_db.app.remove_claim_by_song.assert_not_called()
-
-    @pytest.mark.unit
-    def test_returns_false_when_duplicate_insert_raises(self) -> None:
-        mock_db = MagicMock()
-        mock_db.app.claim_song.side_effect = self._duplicate_claim_error()
-
-        result = claim_file(mock_db, "123", "worker:tag:0")
-
-        assert result is False
-        mock_db.app.claim_song.assert_called_once()
-
-    @pytest.mark.unit
-    def test_returns_false_when_already_claimed(self) -> None:
-        mock_db = MagicMock()
-        mock_db.app.claim_song.side_effect = self._duplicate_claim_error()
-        result = claim_file(mock_db, "456", "worker:tag:1")
-        assert result is False
-        mock_db.app.claim_song.assert_called_once()
 
 
 class TestCleanupStaleClaims:
     """Tests for cleanup_stale_claims."""
 
     @pytest.mark.unit
-    def test_bulk_fetches_claims_and_groups_deletes(self) -> None:
+    def test_uses_complete_removal_intent(self) -> None:
         mock_db = MagicMock()
-        mock_db.app.list_claims.return_value = [
-            {
-                "_id": "worker_claims/claim1",
-                "worker_id": "worker:stale",
-                "file_id": 1,
-            },
-            {
-                "_id": "worker_claims/claim2",
-                "worker_id": "worker:active",
-                "file_id": 2,
-            },
-            {
-                "_id": "worker_claims/claim3",
-                "worker_id": "worker:active",
-                "file_id": 3,
-            },
-            {
-                "_id": "worker_claims/claim4",
-                "worker_id": "worker:active",
-                "file_id": 4,
-                "claim_type": "reconcile",
-            },
-        ]
-        mock_db.app.list_worker_health.return_value = [
-            {"worker_id": "worker:active", "last_seen": 9001},
-        ]
-        mock_db.library.list_songs_by_ids.return_value = [
-            _song(song_id=3),
-        ]
-        mock_db.app.songs_with_state.return_value = [
-            _song(song_id=3),
-            _song(song_id=999),
-        ]
-        mock_db.app.remove_claims.side_effect = [1, 2]
-
+        mock_db.app.remove_claims.return_value = 3
         with patch(
             "nomarr.components.workers.worker_discovery_comp.now_ms",
             return_value=SimpleNamespace(value=10000),
@@ -245,70 +131,137 @@ class TestCleanupStaleClaims:
             result = cleanup_stale_claims(mock_db, heartbeat_timeout_ms=1000)
 
         assert result == 3
-        mock_db.app.list_claims.assert_called_once_with()
-        mock_db.app.list_worker_health.assert_called_once_with()
-        mock_db.library.list_songs_by_ids.assert_called_once_with([2, 3])
-        mock_db.app.songs_with_state.assert_called_once_with(STATE_PROCESSED)
-        assert mock_db.app.remove_claims.call_args_list == [
-            call(worker_ids=["worker:stale"]),
-            call(
-                song_ids=[
-                    2,
-                    3,
-                ]
-            ),
-        ]
-
-    @pytest.mark.unit
-    def test_returns_zero_without_claims(self) -> None:
-        mock_db = MagicMock()
-        mock_db.app.list_claims.return_value = []
-
-        result = cleanup_stale_claims(mock_db, heartbeat_timeout_ms=1000)
-
-        assert result == 0
-        mock_db.app.list_claims.assert_called_once_with()
+        mock_db.app.remove_claims.assert_called_once_with(
+            ClaimRemovalRequest(
+                stale_workers_before_ms=9000,
+                remove_missing_songs=True,
+                remove_completed_songs=True,
+                remove_errored_songs=True,
+            )
+        )
+        mock_db.app.list_claims.assert_not_called()
         mock_db.app.list_worker_health.assert_not_called()
         mock_db.library.list_songs_by_ids.assert_not_called()
-        mock_db.app.songs_with_state.assert_not_called()
-        mock_db.app.remove_claims.assert_not_called()
+
+    @pytest.mark.unit
+    def test_returns_zero_without_removals(self) -> None:
+        mock_db = MagicMock()
+        mock_db.app.remove_claims.return_value = 0
+        with patch(
+            "nomarr.components.workers.worker_discovery_comp.now_ms",
+            return_value=SimpleNamespace(value=10000),
+        ):
+            result = cleanup_stale_claims(mock_db, heartbeat_timeout_ms=1000)
+
+        assert result == 0
+        mock_db.app.remove_claims.assert_called_once()
 
 
 class TestReleaseClaimsForWorker:
     """Tests for release_claims_for_worker."""
 
     @pytest.mark.unit
-    def test_returns_file_ids_with_single_bulk_read_and_delete(self) -> None:
+    def test_returns_integer_release_count(self) -> None:
         mock_db = MagicMock()
-        mock_db.app.list_claims.return_value = [
-            {
-                "_id": "worker_claims/claim1",
-                "worker_id": "worker:tag:0",
-                "file_id": f"{'songs'}/file1",
-            },
-            {
-                "_id": "worker_claims/claim2",
-                "worker_id": "worker:tag:0",
-                "file_id": f"{'songs'}/file2",
-            },
-        ]
+        mock_db.app.remove_claims.return_value = 4
 
         result = release_claims_for_worker(mock_db, "worker:tag:0")
 
-        assert result == [
-            f"{'songs'}/file1",
-            f"{'songs'}/file2",
-        ]
-        mock_db.app.list_claims.assert_called_once_with()
-        mock_db.app.remove_claims.assert_called_once_with(worker_ids=["worker:tag:0"])
+        assert result == 4
+        mock_db.app.remove_claims.assert_called_once_with(ClaimRemovalRequest(worker_ids=("worker:tag:0",)))
+        mock_db.app.list_claims.assert_not_called()
 
     @pytest.mark.unit
-    def test_returns_empty_list_without_claims(self) -> None:
+    def test_returns_zero_without_claims(self) -> None:
         mock_db = MagicMock()
-        mock_db.app.list_claims.return_value = []
+        mock_db.app.remove_claims.return_value = 0
 
         result = release_claims_for_worker(mock_db, "worker:tag:0")
 
-        assert result == []
-        mock_db.app.list_claims.assert_called_once_with()
-        mock_db.app.remove_claims.assert_not_called()
+        assert result == 0
+        mock_db.app.remove_claims.assert_called_once_with(ClaimRemovalRequest(worker_ids=("worker:tag:0",)))
+
+
+class TestDiscoverAndClaimFile:
+    """Tests for the combined discover+claim helper."""
+
+    @pytest.mark.unit
+    def test_returns_file_id_when_discovered_and_claimed(self) -> None:
+        mock_db = MagicMock()
+        with (
+            patch(
+                "nomarr.components.workers.worker_discovery_comp.discover_next_file",
+                return_value="123",
+            ) as mock_discover,
+            patch(
+                "nomarr.components.workers.worker_discovery_comp.claim_file",
+                return_value=True,
+            ) as mock_claim,
+        ):
+            result = discover_and_claim_file(mock_db, "worker:tag:0")
+
+        assert result == "123"
+        mock_discover.assert_called_once_with(mock_db)
+        mock_claim.assert_called_once_with(mock_db, "123", "worker:tag:0")
+
+    @pytest.mark.unit
+    def test_returns_none_when_claim_conflicts(self) -> None:
+        mock_db = MagicMock()
+        with (
+            patch(
+                "nomarr.components.workers.worker_discovery_comp.discover_next_file",
+                return_value="123",
+            ) as mock_discover,
+            patch(
+                "nomarr.components.workers.worker_discovery_comp.claim_file",
+                return_value=False,
+            ) as mock_claim,
+        ):
+            result = discover_and_claim_file(mock_db, "worker:tag:0")
+
+        assert result is None
+        mock_discover.assert_called_once_with(mock_db)
+        mock_claim.assert_called_once_with(mock_db, "123", "worker:tag:0")
+
+    @pytest.mark.unit
+    def test_returns_none_without_claiming_when_no_file_discovered(self) -> None:
+        mock_db = MagicMock()
+        with (
+            patch(
+                "nomarr.components.workers.worker_discovery_comp.discover_next_file",
+                return_value=None,
+            ) as mock_discover,
+            patch(
+                "nomarr.components.workers.worker_discovery_comp.claim_file",
+            ) as mock_claim,
+        ):
+            result = discover_and_claim_file(mock_db, "worker:tag:0")
+
+        assert result is None
+        mock_discover.assert_called_once_with(mock_db)
+        mock_claim.assert_not_called()
+
+
+class TestGetActiveClaimCount:
+    """Tests for get_active_claim_count (thin delegation to count_claims)."""
+
+    @pytest.mark.unit
+    def test_returns_count_claims_value(self) -> None:
+        mock_db = MagicMock()
+        mock_db.app.count_claims.return_value = 7
+
+        result = get_active_claim_count(mock_db)
+
+        assert result == 7
+        mock_db.app.count_claims.assert_called_once_with()
+        mock_db.app.list_claims.assert_not_called()
+
+    @pytest.mark.unit
+    def test_returns_zero_without_claims(self) -> None:
+        mock_db = MagicMock()
+        mock_db.app.count_claims.return_value = 0
+
+        result = get_active_claim_count(mock_db)
+
+        assert result == 0
+        mock_db.app.count_claims.assert_called_once_with()

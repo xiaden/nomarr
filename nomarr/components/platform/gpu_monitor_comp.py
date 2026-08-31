@@ -19,6 +19,8 @@ import multiprocessing
 import os
 from typing import TYPE_CHECKING
 
+from nomarr.helpers.dataclasses.app_dataclasses import GpuResourceSnapshot
+
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from multiprocessing.connection import Connection
@@ -90,12 +92,12 @@ class GPUHealthMonitor(multiprocessing.Process):
         while not self._shutdown.is_set():
             try:
                 result = probe_gpu_availability(timeout=GPU_PROBE_TIMEOUT_SECONDS)
-                resource_snapshot = {
-                    "gpu_available": result["gpu_available"],
-                    "error_summary": result.get("error_summary"),
-                }
+                resource_snapshot = GpuResourceSnapshot(
+                    gpu_available=result["gpu_available"],
+                    error_summary=result.get("error_summary"),
+                )
                 try:
-                    db.app.update_config_option("gpu_resources", resource_snapshot)
+                    db.app.set_gpu_resource_snapshot(resource_snapshot)
                     consecutive_errors = 0
                     self._send_heartbeat("healthy")
                 except OSError as db_error:

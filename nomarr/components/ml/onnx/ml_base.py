@@ -31,9 +31,6 @@ logger = logging.getLogger(__name__)
 DevicePlacement = Literal["cpu", "gpu"]
 """Device on which an ONNX session is loaded.  Matches Essentia C++ values."""
 
-# Meta key prefix for per-model VRAM measurements (written by ml_vram_probe_comp).
-_VRAM_META_PREFIX = "ml_model_vram:"
-
 
 class VramFitError(RuntimeError):
     """Raised by :meth:`BaseONNXModel.load` when the VRAM coordinator rejects
@@ -79,10 +76,10 @@ class BaseONNXModel(ABC):
         When *device* is ``"gpu"``, retrieves the worker context from
         the process-local registry and:
 
-        1. Reads the VRAM limit for this model from the database
-           (``ml_model_vram:<path>`` meta key, written by the VRAM probe with
-           10% headroom already included).  Falls back to ``0`` (no cap) if no
-           measurement exists yet.
+        1. Reads the VRAM limit for this model via the semantic
+           ``db.app.get_model_vram_limit(model_path)`` intent (written by the
+           VRAM probe with 10% headroom already included).  Falls back to
+           ``0`` (no cap) if no measurement exists yet.
         2. Calls the VRAM coordinator to atomically register a fleet-wide
            promise.  Raises :exc:`VramFitError` if headroom is exhausted.
 
@@ -102,18 +99,12 @@ class BaseONNXModel(ABC):
             ctx = _worker_ctx.get_worker_context()
             if ctx is not None:
                 db, worker_id = ctx
-                raw_doc = db.app.get_config_option(key=f"{_VRAM_META_PREFIX}{self._path}")
-                raw = None if raw_doc is None else raw_doc.value
-                if raw is not None:
-                    vram_limit_bytes = int(raw)
-                    if vram_limit_bytes == sys.maxsize:
-                        raise VramFitError(f"VRAM probe marked {self._path} as GPU-incompatible")
+                vram_limit_bytes = db.app.get_model_vram_limit(self._path)
+                if vram_limit_bytes is not None and vram_limit_bytes == sys.maxsize:
+                    raise VramFitError(f"VRAM probe marked {self._path} as GPU-incompatible")
                 logger.debug(
-                    "[model] load(%s) gpu: DB key=%s%s raw=%r vram_limit_bytes=%s",
+                    "[model] load(%s) gpu: vram_limit_bytes=%s",
                     self._path,
-                    _VRAM_META_PREFIX,
-                    self._path,
-                    raw,
                     vram_limit_bytes,
                 )
                 registered = _coordinator.register_vram_promise(

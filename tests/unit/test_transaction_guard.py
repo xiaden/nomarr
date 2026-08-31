@@ -179,8 +179,8 @@ def test_sub_facade_write_succeeds_without_transaction(session: Session) -> None
 
 def test_app_db_write_succeeds_without_transaction(session: Session) -> None:
     app_db = _make_app(session)
-    app_db.update_config_option("config_scan_interval", {"value": 60})
-    app_db._app_repo.upsert_meta.assert_called_once_with("config_scan_interval", {"value": 60})
+    app_db.set_config_option("scan_interval", 60)
+    app_db._app_repo.set_config_option.assert_called_once_with("config_scan_interval", 60)
 
 
 def test_ml_db_write_succeeds_without_transaction(session: Session) -> None:
@@ -235,10 +235,10 @@ def test_boot_path_write_sequence_succeeds(session: Session) -> None:
     any transaction() wrapper (AR-SDR-4).
 
     Mirrors nomarr/app.py start(): truncate_health() -> update_health()
-    and migration_runner_comp's db.set_version() (update_config_option).
+    and migration_runner_comp's db.set_version() (set_schema_version).
     """
     app_db = _make_app(session)
     app_db.truncate_health()
     app_db.update_health("app", {"status": "starting"})
-    app_db.update_config_option("version", {"value": "001"})
+    app_db.set_schema_version("001")
     app_db._app_repo.truncate_health.assert_called_once()

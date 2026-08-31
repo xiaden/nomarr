@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from itertools import count
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
@@ -495,3 +496,58 @@ class TestVectorRepo:
         # song_id2 should still have its embedding
         results2 = repo.get_embeddings_for_song(song_id2, _BACKBONE, tier="hot")
         assert len(results2) == 1
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+class TestVectorRepoSqlAlchemyTyping:
+    """Pin the SQLAlchemy typing/rowcount conventions added by P2-S2.
+
+    - ``rebuild_cold_hnsw_index`` narrows ``get_bind()`` to an ``Engine`` so
+      ``.connect()`` type-checks, then runs outside a transaction.
+    - ``drain_hot_to_cold``/``backfill_genres`` read the affected-row count via
+      ``int(result.rowcount)`` — the existing rowcount convention — rather than
+      a non-existent ``result.rowcount`` attribute access.
+    """
+
+    def test_rebuild_cold_hnsw_index_uses_narrowed_engine_and_connect(self) -> None:
+        session = MagicMock()
+        engine = MagicMock()
+        connection = MagicMock()
+        session.get_bind.return_value = engine
+        # ``cast("Engine", get_bind())`` -> ``.connect().execution_options(...)``
+        engine.connect.return_value.execution_options.return_value = connection
+        connection.__enter__ = MagicMock(return_value=connection)
+        connection.__exit__ = MagicMock(return_value=False)
+        repo = VectorRepo(session)
+
+        repo.rebuild_cold_hnsw_index()
+
+        session.get_bind.assert_called_once_with()
+        engine.connect.assert_called_once_with()
+        engine.connect.return_value.execution_options.assert_called_once_with(isolation_level="AUTOCOMMIT")
+        connection.execute.assert_called_once()
+
+    def test_drain_hot_to_cold_returns_int_rowcount(self) -> None:
+        session = MagicMock()
+        result = MagicMock()
+        result.rowcount = 5
+        session.execute.return_value = result
+        repo = VectorRepo(session)
+
+        count = repo.drain_hot_to_cold(_BACKBONE)
+
+        assert count == 5
+        session.commit.assert_called_once_with()
+
+    def test_backfill_genres_returns_int_rowcount(self) -> None:
+        session = MagicMock()
+        result = MagicMock()
+        result.rowcount = 3
+        session.execute.return_value = result
+        repo = VectorRepo(session)
+
+        count = repo.backfill_genres(_BACKBONE)
+
+        assert count == 3
+        session.commit.assert_called_once_with()

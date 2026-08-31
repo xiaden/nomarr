@@ -11,7 +11,7 @@ class ClearCalibrationResponse(BaseModel):
     """Response after clearing all calibration data."""
 
     files_updated: int
-    meta_keys_cleared: int
+    bookkeeping_values_cleared: int
 
 
 class BackgroundStartResponse(BaseModel):
@@ -77,7 +77,33 @@ class HistogramGenerationStatusResponse(BaseModel):
     is_running: bool
 
 
+class CalibrationHistogramItem(BaseModel):
+    """One flat calibration histogram record for the frontend histogram view.
+
+    Mirrors the frontend ``HeadHistogramResponse`` flat contract (the stable
+    per-model ``model_key``, head/label identity, histogram bins, percentiles,
+    sample count, and histogram spec) plus the optional fields already carried
+    by the domain state.  ``model_key`` is the stable ``CalibrationState.model_id``
+    (the 16-hex ``RegisteredModel.id`` surfaced to the frontend as the model id
+    elsewhere); ``histogram_spec`` is the calibration ``histogram`` and ``n`` is
+    the ``sample_count``.  No storage envelope, row id, or nested
+    ``CalibrationState`` is exposed.
+    """
+
+    model_key: str
+    head_name: str
+    label: str
+    histogram_bins: list[dict[str, Any]]
+    p5: float | None
+    p95: float | None
+    n: int
+    histogram_spec: dict[str, Any]
+    calibration_def_hash: str | None = None
+    underflow_count: int | None = None
+    overflow_count: int | None = None
+
+
 class GetAllCalibrationHistogramsResponse(BaseModel):
     """Wrapper for all calibration histograms (one per label)."""
 
-    calibrations: list[dict[str, Any]]
+    calibrations: list[CalibrationHistogramItem]

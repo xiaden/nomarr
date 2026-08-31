@@ -121,7 +121,7 @@ class TestMyComponent:
 **Mocking `Database`:**
 ```python
 mock_db = MagicMock()
-mock_db.calibration_state.get_all_calibration_states.return_value = [...]
+mock_db.ml.list_calibration_states.return_value = [...]
 mock_db.libraries.list_libraries.return_value = [...]
 ```
 

@@ -598,10 +598,6 @@ def verify_hot_empty():
 
 
 # Calibration components
-def compare_calibrations():
-    pass  # Calibration comparison
-
-
 def count_calibration_history():
     pass  # History counting
 
@@ -650,8 +646,8 @@ def import_calibration_state_from_json():
     pass  # State import
 
 
-def remove_calibration_history_for_model():
-    pass  # History removal
+def list_calibration_history():
+    pass  # History listing
 
 
 def start_apply_calibration():

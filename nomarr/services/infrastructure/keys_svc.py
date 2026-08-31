@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 import secrets
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import bcrypt
 
@@ -60,8 +60,7 @@ class KeyManagementService:
             Use this for validation. Use get_or_create_api_key() during initialization.
 
         """
-        api_key_doc = self._db.app.get_config_option("api_key")
-        return None if api_key_doc is None else api_key_doc.value
+        return self._db.app.get_api_key()
 
     def get_or_create_api_key(self) -> str:
         """Get or create the public API key for external endpoints.
@@ -71,12 +70,11 @@ class KeyManagementService:
             API key string (existing or newly generated)
 
         """
-        key_doc = self._db.app.get_config_option("api_key")
-        key = cast("str | None", None if key_doc is None else key_doc.value)
+        key = self._db.app.get_api_key()
         if key:
             return key
         new_key = secrets.token_urlsafe(32)
-        self._db.app.update_config_option("api_key", {"value": new_key})
+        self._db.app.set_api_key(new_key)
         logger.info("[KeyManagement] Generated new API key on first run.")
         return new_key
 
@@ -88,7 +86,7 @@ class KeyManagementService:
 
         """
         new_key = secrets.token_urlsafe(32)
-        self._db.app.update_config_option("api_key", {"value": new_key})
+        self._db.app.set_api_key(new_key)
         logger.info("[KeyManagement] API key regenerated.")
         return new_key
 
@@ -137,8 +135,7 @@ class KeyManagementService:
             RuntimeError: If password not found in database
 
         """
-        password_hash_doc = self._db.app.get_config_option("admin_password_hash")
-        password_hash = cast("str | None", None if password_hash_doc is None else password_hash_doc.value)
+        password_hash = self._db.app.get_admin_password_hash()
         if not password_hash:
             msg = "Admin password not found in DB. Password should be generated during initialization."
             raise RuntimeError(msg)
@@ -161,18 +158,17 @@ class KeyManagementService:
             Plaintext password if auto-generated (for logging), empty string otherwise
 
         """
-        existing_hash_doc = self._db.app.get_config_option("admin_password_hash")
-        existing_hash = None if existing_hash_doc is None else existing_hash_doc.value
+        existing_hash = self._db.app.get_admin_password_hash()
         if existing_hash:
             return ""
         if config_password:
             password_hash = self.hash_password(config_password)
-            self._db.app.update_config_option("admin_password_hash", {"value": password_hash})
+            self._db.app.set_admin_password_hash(password_hash)
             logger.info("[KeyManagement] Admin password set from config file.")
             return ""
         random_password = secrets.token_urlsafe(16)
         password_hash = self.hash_password(random_password)
-        self._db.app.update_config_option("admin_password_hash", {"value": password_hash})
+        self._db.app.set_admin_password_hash(password_hash)
         logger.warning("[KeyManagement] ========================================")
         logger.warning("[KeyManagement] AUTO-GENERATED ADMIN PASSWORD:")
         logger.warning(f"[KeyManagement]   {random_password}")
@@ -191,7 +187,7 @@ class KeyManagementService:
 
         """
         password_hash = self.hash_password(new_password)
-        self._db.app.update_config_option("admin_password_hash", {"value": password_hash})
+        self._db.app.set_admin_password_hash(password_hash)
         logger.warning("[KeyManagement] Admin password reset - all sessions invalidated")
 
     def create_session(self) -> str:

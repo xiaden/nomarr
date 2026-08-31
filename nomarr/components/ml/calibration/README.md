@@ -15,7 +15,7 @@ Score calibration normalizes raw model outputs so scores from different models a
  | Module | Purpose |
  | -------- | ---------- |
  | `ml_calibration_comp` | Histogram-based percentile derivation, min-max calibration application, sidecar export/import, global hash computation |
- | `ml_calibration_state_comp` | Persistence of calibration state documents, version tracking, batch file hash updates, convergence status, reconciliation info |
+ | `ml_calibration_state_comp` | Persistence of calibration state/history domain values via `db.ml` (natural `(model_id, head_name, label)` identity), version tracking, batch file hash updates, convergence status, reconciliation info |
 
 ## Patterns
 
@@ -27,4 +27,4 @@ Score calibration normalizes raw model outputs so scores from different models a
 ## Dependencies
 
 - **Upstream:** Called by `workflows/` (calibration workflow, tag reconciliation)
-- **Downstream:** Calls `persistence/` for DB reads/writes (calibration_state, meta, file_tags collections)
+- **Downstream:** Calls `persistence/` for DB reads/writes via `db.ml` domain intents (calibration state/history, meta, file_tags); destructive resets live on `db.ml.maintenance` — no storage envelopes, table names, or PKs on the caller surface.

@@ -12,12 +12,11 @@ from nomarr.components.ml.resources.ml_vram_probe_comp import (
     has_model_vram_measurements,
     probe_all_models,
 )
-from nomarr.helpers.dataclasses.app_dataclasses import ConfigOption
 
 
 @pytest.mark.unit
 class TestProbeAllModels:
-    def test_persists_measurements_via_app_config_options(self) -> None:
+    def test_persists_measurements_via_set_model_vram_limit(self) -> None:
         db = MagicMock()
         backbone = MagicMock()
         backbone._path = "backbone.onnx"
@@ -49,9 +48,9 @@ class TestProbeAllModels:
         ):
             probe_all_models(db, "models")
 
-        assert db.app.update_config_option.call_args_list == [
-            call("ml_model_vram:backbone.onnx", {"value": "110"}),
-            call("ml_model_vram:head.onnx", {"value": str(sys.maxsize)}),
+        assert db.app.set_model_vram_limit.call_args_list == [
+            call("backbone.onnx", 110),
+            call("head.onnx", sys.maxsize),
         ]
 
 
@@ -59,31 +58,24 @@ class TestProbeAllModels:
 class TestHasModelVramMeasurements:
     def test_returns_true_when_matching_docs_exist(self) -> None:
         db = MagicMock()
-        db.app.list_config_options.return_value = [ConfigOption(key="ml_model_vram:model.onnx", value="123")]
+        db.app.list_model_vram_limits.return_value = [MagicMock()]
 
         assert has_model_vram_measurements(db) is True
-        db.app.list_config_options.assert_called_once_with(prefix="ml_model_vram:")
+        db.app.list_model_vram_limits.assert_called_once_with()
 
     def test_returns_false_when_no_matching_docs_exist(self) -> None:
         db = MagicMock()
-        db.app.list_config_options.return_value = []
+        db.app.list_model_vram_limits.return_value = []
 
         assert has_model_vram_measurements(db) is False
 
 
 @pytest.mark.unit
 class TestClearModelVramMeasurements:
-    def test_deletes_each_matching_config_option(self) -> None:
+    def test_deletes_via_atomic_clear(self) -> None:
         db = MagicMock()
-        db.app.list_config_options.return_value = [
-            ConfigOption(key="ml_model_vram:first.onnx", value="101"),
-            ConfigOption(key="ml_model_vram:second.onnx", value="202"),
-        ]
+        db.app.clear_model_vram_limits.return_value = 2
 
         clear_model_vram_measurements(db)
 
-        db.app.list_config_options.assert_called_once_with(prefix="ml_model_vram:")
-        assert db.app.remove_config_option.call_args_list == [
-            call("ml_model_vram:first.onnx"),
-            call("ml_model_vram:second.onnx"),
-        ]
+        db.app.clear_model_vram_limits.assert_called_once_with()

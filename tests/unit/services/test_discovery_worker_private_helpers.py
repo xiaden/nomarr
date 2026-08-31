@@ -681,3 +681,60 @@ class TestExecuteDeferredWrites:
 
         db.ml.replace_song_inference_results.assert_not_called()
         mock_release.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# _warm_onnx_cache — typed VramPromise attribute access (P2-S5)
+# ---------------------------------------------------------------------------
+
+
+class TestWarmOnnxCacheVramPromise:
+    """``_warm_onnx_cache`` reads VramPromise attributes (not dict ``.get``)
+    and formats ``promised_mb`` with ``:.0f``."""
+
+    def _call(self, mock_self, db):
+        from nomarr.services.infrastructure.workers.discovery_worker import DiscoveryWorker
+
+        config = MagicMock()
+        config.models_dir = "models"
+        return DiscoveryWorker._warm_onnx_cache(mock_self, db, config)
+
+    def test_formats_promise_rows_from_typed_vram_promise_attrs(self) -> None:
+        from nomarr.helpers.dataclasses.app_dataclasses import VramPromise
+
+        mock_self = _make_worker_self()
+        mock_self.prefer_gpu = False  # skip the VRAM-probe intent branch
+        db = MagicMock()
+        promise = VramPromise(
+            worker_id="worker:tag:0",
+            pid=42,
+            model_path="/models/backbone.onnx",
+            promised_mb=512.0,
+            total_mb=1000,
+            used_mb=100,
+        )
+        fleet = {"vram": {"used_mb": 100, "total_mb": 1000}, "promises": [promise]}
+        mock_onnx = MagicMock()
+        mock_onnx._all_models.return_value = []
+        with (
+            patch(
+                "nomarr.components.ml.resources.ml_vram_coordinator_comp.get_fleet_vram_state",
+                return_value=fleet,
+            ),
+            patch(
+                "nomarr.components.ml.onnx.ml_cache.ONNXModelCache.create",
+                return_value=mock_onnx,
+            ),
+            patch(f"{_MODULE}.logger") as mock_logger,
+        ):
+            cache = self._call(mock_self, db)
+
+        assert cache is mock_onnx
+        mock_logger.info.assert_called_once()
+        # The promise rows are the final positional arg (joined) of logger.info.
+        promise_rows = mock_logger.info.call_args.args[-1]
+        # Row must be built from typed attrs + ``:.0f`` formatting of promised_mb.
+        assert "worker:tag:0" in promise_rows
+        assert "backbone.onnx" in promise_rows
+        assert "512 MB" in promise_rows
+        assert "UNKNOWN" in promise_rows

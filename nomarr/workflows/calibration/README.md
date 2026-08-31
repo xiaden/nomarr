@@ -17,9 +17,9 @@ Multi-step workflows for generating, applying, importing, and exporting histogra
  | `generate_calibration_wf.py` | Single-pass histogram generation across all model labels; drift metrics (APD, SRD, JSD, median/IQR) |
 | `apply_calibration_wf.py` | Batch apply calibration to file paths with chunked processing, live per-file reads, and concurrent file writes |
  | `write_calibrated_tags_wf.py` | Per-file calibration apply — reconstructs `HeadOutput` from DB tags + calibration, re-aggregates mood tags |
- | `calibration_loader_wf.py` | Load calibrations from `calibration_state` collection; version-hash-based caching |
+ | `calibration_loader_wf.py` | Load calibrations from `db.ml` calibration state (natural `(model_id, head_name, label)` identity); version-hash-based caching |
  | `export_calibration_bundle_wf.py` | Export to bundle JSON (single file or per-model directory structure) |
- | `import_calibration_bundle_wf.py` | Import from bundle JSON; upserts to `calibration_state`, updates global version |
+ | `import_calibration_bundle_wf.py` | Import from bundle JSON; upserts calibration state via `db.ml`, updates global version |
 
 ## Patterns
 
@@ -30,7 +30,7 @@ Multi-step workflows for generating, applying, importing, and exporting histogra
 
 ## Architecture Rules
 
-> **Workflows MUST NOT call persistence directly.** Workflows receive `Database` and pass it to components. Direct collection access in these modules uses the `Database` abstraction layer, not raw SQL queries.
+> **Workflows MUST NOT call persistence directly.** Workflows receive `Database` and pass it to components. Direct persistence access in these modules uses the `Database` abstraction layer (domain intents), not raw SQL queries.
 
 ## Dependencies
 

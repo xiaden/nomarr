@@ -7,7 +7,7 @@ intent facade wired as ``db.ml``.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.helpers.dataclasses.ml_embedding_stream_dataclass import EmbeddingStream
 from nomarr.helpers.dataclasses.ml_output_stream_dataclass import OutputStream, OutputStreamWrite
@@ -16,6 +16,8 @@ from nomarr.helpers.time_helper import now_ms
 # This mapper edit accompanies the concurrent ML facade migration: keeping the
 # conversion here makes the table repository's storage DTOs unable to escape.
 from nomarr.persistence.mappers.calibration_mapper import (
+    calibration_history_from_record,
+    calibration_history_payload,
     calibration_state_from_joined_record,
     calibration_state_from_record,
     calibration_state_payload,
@@ -29,10 +31,11 @@ from nomarr.persistence.mappers.output_mapper import model_output_from_record
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session, scoped_session
 
+    from nomarr.helpers.dataclasses.calibration_history_dataclass import CalibrationHistorySnapshot
     from nomarr.helpers.dataclasses.calibration_state_dataclass import CalibrationState
     from nomarr.helpers.dataclasses.ml_model_dataclass import RegisteredModel
     from nomarr.helpers.dataclasses.ml_model_output_dataclass import ModelOutput
-    from nomarr.helpers.dto.calibration_repo_dto import CalibrationHistoryRecord
+    from nomarr.helpers.dto.model_repo_dto import ModelRecord
     from nomarr.helpers.dto.vector_repo_dto import EmbeddingRecord, SimilarResult
     from nomarr.persistence.database.calibration_repo import CalibrationRepo
     from nomarr.persistence.database.embedding_stream_repo import EmbeddingStreamRepository
@@ -44,13 +47,36 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+class MlMaintenanceDb:
+    """Destructive whole-table resets for ``db.ml.maintenance``.
+
+    Calibration state/history truncation is an explicit maintenance act and is
+    therefore kept out of the routine calibration intent surface on ``MlDb``.
+    Sibling destructive resets that predate the maintenance split
+    (``truncate_vectors_in_collection``) remain directly on ``MlDb``.
+    """
+
+    def __init__(self, calibration_repo: CalibrationRepo) -> None:
+        self._calibration_repo = calibration_repo
+
+    def truncate_calibration_states(self) -> None:
+        """Truncate all calibration states (whole-table reset)."""
+        self._calibration_repo.truncate_states()
+
+    def truncate_calibration_history(self) -> None:
+        """Truncate all calibration history snapshots (whole-table reset)."""
+        self._calibration_repo.truncate_history()
+
+
 class MlDb:
-    """Persistence sub-facade for ML model, stream, and vector operations.
+    """Persistence sub-facade for ML model, stream, vector, and calibration operations.
 
     Routine callers use the normalized ML intent methods on this facade.
-    Destructive maintenance operations (``truncate_vectors_in_collection``,
-    ``truncate_calibration_states``, ``truncate_calibration_history``) are
-    exposed directly on this facade.
+    Destructive whole-table resets for calibration state/history live under
+    ``maintenance`` (``db.ml.maintenance.truncate_calibration_states``,
+    ``db.ml.maintenance.truncate_calibration_history``).  Sibling destructive
+    resets that predate the maintenance split
+    (``truncate_vectors_in_collection``) remain directly on this facade.
     """
 
     def __init__(
@@ -72,9 +98,9 @@ class MlDb:
         are required by the routine top-level API and are validated during
         construction.
 
-        Destructive maintenance operations (``truncate_vectors_in_collection``,
-        ``truncate_calibration_states``, ``truncate_calibration_history``) are
-        exposed directly on this facade.
+        Destructive calibration resets live under ``maintenance``
+        (``db.ml.maintenance.truncate_calibration_states`` and
+        ``db.ml.maintenance.truncate_calibration_history``).
         """
         self._vector_repo = vector_repo
         self._model_repo = model_repo
@@ -89,6 +115,8 @@ class MlDb:
             raise ValueError("ModelRepo is required")
         if calibration_repo is None:
             raise ValueError("CalibrationRepo is required")
+        assert calibration_repo is not None, "CalibrationRepo not wired"
+        self.maintenance = MlMaintenanceDb(calibration_repo)
 
     # ------------------------------------------------------------------
     # Maintenance methods (destructive reset/repair)
@@ -102,16 +130,6 @@ class MlDb:
         """
         assert self._vector_repo is not None, "VectorRepo not wired"
         self._vector_repo.truncate_embeddings()
-
-    def truncate_calibration_states(self) -> None:
-        """Truncate all calibration state rows."""
-        assert self._calibration_repo is not None, "CalibrationRepo not wired"
-        self._calibration_repo.truncate_states()
-
-    def truncate_calibration_history(self) -> None:
-        """Truncate all calibration history rows."""
-        assert self._calibration_repo is not None, "CalibrationRepo not wired"
-        self._calibration_repo.truncate_history()
 
     # ------------------------------------------------------------------
     # Canonical routine top-level methods aligned with the DD contract
@@ -307,10 +325,14 @@ class MlDb:
         record = self._calibration_repo.get_state(model_id)
         return calibration_state_from_record(record) if record else None
 
-    def get_calibration_state_view(self, head_name: str, label: str) -> CalibrationState | None:
-        """Return a calibration state by logical head and label identity."""
+    def get_calibration_state_view(self, model_id: str, head_name: str, label: str) -> CalibrationState | None:
+        """Return a calibration state by its model, head, and label identity.
+
+        The state is located by the stable model identity and its logical
+        head/label calibration identity — never by a storage primary key.
+        """
         assert self._calibration_repo is not None, "CalibrationRepo not wired"
-        record = self._calibration_repo.get_state_by_head_label(head_name, label)
+        record = self._calibration_repo.get_state_by_identity(model_id, head_name, label)
         return calibration_state_from_record(record) if record else None
 
     def list_calibration_states(self) -> list[CalibrationState]:
@@ -318,34 +340,57 @@ class MlDb:
         assert self._calibration_repo is not None, "CalibrationRepo not wired"
         return [calibration_state_from_record(r) for r in self._calibration_repo.list_states()]
 
-    def list_calibration_history_snapshots(self, calibration_key: str) -> list[CalibrationHistoryRecord]:
-        """Return all calibration history records for one model.
+    def list_calibration_history(self, model_id: str, head_name: str, label: str) -> list[CalibrationHistorySnapshot]:
+        """Return calibration history snapshots for one model/head/label, newest first.
 
-        ``calibration_key`` maps to ``model_id`` in the relational schema.
+        Records are mapped through the persistence mapper into domain
+        :class:`CalibrationHistorySnapshot` values so no row id, ``event``, or
+        JSONB ``data`` envelope is ever surfaced to callers.
         """
         assert self._calibration_repo is not None, "CalibrationRepo not wired"
-        return self._calibration_repo.get_history(calibration_key)
+        return [
+            calibration_history_from_record(record)
+            for record in self._calibration_repo.list_calibration_history(model_id, head_name, label)
+        ]
 
-    def add_calibration_history(self, payload: dict[str, Any]) -> CalibrationHistoryRecord:
-        """Insert a calibration history event and return the persisted record."""
+    def add_calibration_history(self, snapshot: CalibrationHistorySnapshot) -> None:
+        """Persist one calibration history snapshot under its natural identity.
+
+        Accepts the domain snapshot and returns ``None`` — no generated row id
+        or event/data envelope is ever returned to callers.  The metrics payload
+        is built here and the repository owns event/envelope construction and
+        persistence; callers never manage transactions or storage internals.  A
+        stable ``output_id`` in the snapshot is preserved verbatim (string-only).
+        """
         assert self._calibration_repo is not None, "CalibrationRepo not wired"
-        return self._calibration_repo.record_history(
-            model_id=payload["model_id"],
-            event=payload["event"],
-            data=payload.get("data", {}),
+        metrics = calibration_history_payload(snapshot)
+        self._calibration_repo.add_calibration_history_snapshot(
+            model_id=snapshot.model_id,
+            head_name=snapshot.head_name,
+            label=snapshot.label,
+            snapshot_at=snapshot.snapshot_at,
+            metrics=metrics,
         )
 
-    def count_calibration_history(self, model_id: str) -> int:
-        """Return the number of calibration history entries for one model.
+    def get_latest_calibration_history_snapshot(
+        self,
+        model_id: str,
+        head_name: str,
+        label: str,
+    ) -> CalibrationHistorySnapshot | None:
+        """Return the single newest calibration history snapshot for one identity, or None."""
+        assert self._calibration_repo is not None, "CalibrationRepo not wired"
+        record = self._calibration_repo.get_latest_calibration_history_snapshot(model_id, head_name, label)
+        return calibration_history_from_record(record) if record else None
 
-        .. note::
-           TODO: CalibrationRepo has no ``count_history`` method — this
-           fetches all rows and counts in Python.  Add a ``COUNT(*)`` query
-           to CalibrationRepo for production scaling.
+    def count_calibration_history(self, model_id: str, head_name: str, label: str) -> int:
+        """Return the count of calibration history snapshots for one identity.
+
+        Delegates to the repository's database-side count — no Python-side
+        fetch-and-len.
         """
         assert self._calibration_repo is not None, "CalibrationRepo not wired"
-        history = self._calibration_repo.get_history(model_id)
-        return len(history)
+        return self._calibration_repo.count_calibration_history(model_id, head_name, label)
 
     def replace_embedding_stream_for_song(
         self,
@@ -503,10 +548,20 @@ class MlDb:
         assert self._output_repo is not None, "OutputRepo not wired"
         return self._output_repo.delete_outputs_for_model(model_id)
 
-    def list_all_calibration_states_with_models(self) -> list[CalibrationState]:
-        """Return calibration states with available owning-model metadata."""
+    def list_calibration_states_with_models(self) -> list[tuple[CalibrationState, RegisteredModel]]:
+        """Return each calibration state paired with its owning registered model.
+
+        Both the calibration state and its owning model are returned as domain
+        values, keyed by the stable model identity.
+        """
         assert self._calibration_repo is not None, "CalibrationRepo not wired"
-        return [calibration_state_from_joined_record(r) for r in self._calibration_repo.list_states_with_models()]
+        return [
+            (
+                calibration_state_from_joined_record(joined),
+                registered_model_from_record(cast("ModelRecord", joined)),
+            )
+            for joined in self._calibration_repo.list_states_with_models()
+        ]
 
     def replace_calibration_state(self, state: CalibrationState) -> CalibrationState:
         """Create or replace a calibration state using domain semantics."""
@@ -519,20 +574,22 @@ class MlDb:
         assert self._calibration_repo is not None, "CalibrationRepo not wired"
         self._calibration_repo.delete_state(state.model_id, state.head_name, state.label)
 
-    def remove_calibration_history_for_model(self, model_id: str) -> None:
-        """Delete all calibration history entries for one model."""
-        assert self._calibration_repo is not None, "CalibrationRepo not wired"
-        self._calibration_repo.delete_history_for_model(model_id)
+    def remove_calibration_history(
+        self,
+        model_id: str,
+        head_name: str,
+        label: str,
+        keep_count: int,
+    ) -> int:
+        """Retain the newest ``keep_count`` snapshots for one identity and delete the rest.
 
-    def remove_calibration_history_entries(self, entry_ids: list[str]) -> None:
-        """Delete calibration history entries by ID list.
-
-        Entry IDs are converted from ``str`` to ``int`` for the PostgreSQL
-        ``calibration_history.id`` integer primary key.
+        ``keep_count`` is the number of newest snapshots retained; ``keep_count=0``
+        deletes all snapshots for the identity.  A negative ``keep_count`` raises
+        ``ValueError`` (mirrors the repository's retention intent).  Returns the
+        number of entries removed.
         """
         assert self._calibration_repo is not None, "CalibrationRepo not wired"
-        int_ids: list[int] = [int(e) for e in entry_ids]
-        self._calibration_repo.delete_history_entries(int_ids)
+        return self._calibration_repo.remove_calibration_history(model_id, head_name, label, keep_count)
 
     def get_embedding_stats(self, backbone_id: str, library_id: int | None = None) -> dict[str, int]:
         """Return hot_count and cold_count for a backbone, optionally by library."""

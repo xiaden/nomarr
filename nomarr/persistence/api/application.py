@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
+from nomarr.helpers import time_helper
 from nomarr.helpers.dataclasses.app_dataclasses import (
     CapacityEstimate,
     ConfigOption,
@@ -25,7 +26,12 @@ from nomarr.helpers.time_helper import now_ms
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session, scoped_session
 
-    from nomarr.helpers.dto.repo_dto import SessionRow, WorkerClaimRow
+    from nomarr.helpers.dataclasses.worker_claim_dataclass import (
+        ClaimRemovalRequest,
+        WorkerClaim,
+        WorkerClaimIdentity,
+    )
+    from nomarr.helpers.dto.repo_dto import SessionRow
     from nomarr.persistence.database.app_repo import AppRepository
     from nomarr.persistence.database.pipeline_repo import PipelineRepository
     from nomarr.persistence.database.song_state_repo import SongStateRepository
@@ -40,12 +46,32 @@ def _session_row_to_domain(row: SessionRow) -> AuthSession:
     )
 
 
+class AppMaintenanceDb:
+    """Destructive whole-table resets for ``db.app.maintenance``.
+
+    All-claims deletion is an explicit maintenance act and is therefore kept out
+    of the routine claims intent surface on ``AppDb``.  Sibling destructive
+    resets that predate the maintenance split (``truncate_health``,
+    ``truncate_song_state_edges``) remain directly on ``AppDb``.
+    """
+
+    def __init__(self, app_repo: AppRepository) -> None:
+        self._app_repo = app_repo
+
+    def delete_all_worker_claims(self) -> None:
+        """Delete every worker-claim row (all-claims maintenance reset)."""
+        self._app_repo._delete_all_worker_claims()
+
+
 class AppDb:
     """Persistence sub-facade for app-state, locks, claims, config, and admin helpers.
 
-    Routine methods expose the normalized app-domain intent surface. Destructive
-    maintenance operations (``truncate_health``, ``truncate_worker_claims``,
-    ``truncate_song_state_edges``) are exposed directly on this facade.
+    Routine methods expose the normalized app-domain intent surface. The claims
+    intent surface is the five canonical methods (``add_claim``, ``remove_claim``,
+    ``remove_claims``, ``list_claims``, ``count_claims``) plus the destructive
+    all-claims reset under ``maintenance.delete_all_worker_claims``.  Sibling
+    destructive resets (``truncate_health``, ``truncate_song_state_edges``)
+    remain directly on this facade.
     """
 
     def __init__(
@@ -68,6 +94,7 @@ class AppDb:
         self._pipeline_repo = pipeline_repo
         self._app_repo = app_repo
         self._session = session
+        self.maintenance = AppMaintenanceDb(app_repo)
 
     # ------------------------------------------------------------------
     # Maintenance methods (destructive reset/repair)
@@ -76,10 +103,6 @@ class AppDb:
     def truncate_song_state_edges(self) -> None:
         """Truncate all song-state assignments."""
         self._song_state_repo.truncate_assignments()
-
-    def truncate_worker_claims(self) -> None:
-        """Truncate all worker claims."""
-        self._app_repo.truncate_worker_claims()
 
     def truncate_health(self) -> None:
         """Truncate all health rows."""
@@ -223,75 +246,52 @@ class AppDb:
         payload = self._lock_payload(lock)
         return self._app_repo.acquire_lock(payload["key"], {"value": payload["value"]})
 
-    def claim_song(
+    def add_claim(
         self,
-        song_id: int,
-        worker_id: str,
+        claim: WorkerClaim,
         *,
-        claim_type: str | None = None,
-        claimed_at: int | None = None,
-    ) -> int:
-        """Claim a song for a worker without exposing storage payloads."""
-        if claimed_at is None:
-            claimed_at = now_ms().value
-        key = f"claim_{claim_type}_{song_id}" if claim_type else f"claim_{song_id}"
-        payload = {
-            "key": key,
-            "worker_id": worker_id,
-            "file_id": song_id,
-            "claimed_at": claimed_at,
-        }
-        if claim_type is not None:
-            payload["claim_type"] = claim_type
-        return self._app_repo.insert_worker_claim(payload)
-
-    def remove_claim(self, worker_id: str, song_id: int, claim_type: str | None = None) -> None:
-        self._app_repo.release_claim(worker_id, song_id, claim_type)
-
-    def remove_claim_by_song(self, song_id: int, claim_type: str | None = None) -> None:
-        """Remove a song claim regardless of its current worker owner."""
-        self._app_repo.release_claim_by_song(song_id, claim_type)
-
-    def steal_claim(
-        self,
-        song_id: int,
-        worker_id: str,
-        *,
-        claim_type: str | None = None,
-        claimed_at: int,
-        now: int,
-        lease_ms: int,
+        now_ms: int | None = None,
+        lease_ms: int | None = None,
     ) -> bool:
-        """Atomically claim a song when its current claim has expired."""
-        key = f"claim_{claim_type}_{song_id}" if claim_type else f"claim_{song_id}"
-        payload: dict[str, object] = {
-            "key": key,
-            "worker_id": worker_id,
-            "value": {"file_id": song_id, **({"claim_type": claim_type} if claim_type is not None else {})},
-            "claimed_at": claimed_at,
-        }
-        return self._app_repo.steal_claim(payload, now, lease_ms)
+        """Acquire a claim on a song, atomically.
 
-    def remove_claims(
-        self,
-        *,
-        worker_ids: list[str] | None = None,
-        song_ids: list[int] | None = None,
-    ) -> int:
-        """Delete claims matching the supplied worker ids and/or song ids.
-
-        Args:
-            worker_ids: Optional worker ids whose claims should be removed.
-            song_ids: Optional song ids whose claims should be removed.
-
-        Returns:
-            Total number of unique claims removed across both filters.
-
+        Enforces a single active claim per song across typed and untyped claims.
+        With ``lease_ms`` set, an expired claim is replaced (steal); without it
+        the call is insert-only.  Returns ``True`` when the claim was acquired
+        and ``False`` on contention (an active claim already exists) or when the
+        song cannot be resolved.
         """
-        return self._app_repo.delete_claims(worker_ids=worker_ids, song_ids=song_ids)
+        return self._app_repo._acquire_claim(
+            claim,
+            now_ms=now_ms if now_ms is not None else time_helper.now_ms().value,
+            lease_ms=lease_ms,
+        )
 
-    def list_claims(self) -> list[WorkerClaimRow]:
-        return self._app_repo.list_claims()
+    def remove_claim(self, identity: WorkerClaimIdentity) -> bool:
+        """Remove exactly one logical claim held by ``identity.worker_id``.
+
+        Ownership-aware and exact-key: returns ``False`` when the claim does not
+        exist or is held by a different worker.
+        """
+        return self._app_repo._remove_claim(identity)
+
+    def remove_claims(self, request: ClaimRemovalRequest) -> int:
+        """Remove claims matching an explicit worker/song or cleanup request.
+
+        Combines explicit filters with the cleanup policies (stale workers,
+        missing/completed/errored songs) in one atomic delete; returns the number
+        of claim rows removed.  Active pending reconcile claims are preserved
+        from song-state cleanup.
+        """
+        return self._app_repo._remove_claims(request)
+
+    def list_claims(self) -> list[WorkerClaim]:
+        """Return every resolvable claim as a domain value (orphans quarantined)."""
+        return self._app_repo._list_claims()
+
+    def count_claims(self) -> int:
+        """Return the number of currently persisted claim rows."""
+        return self._app_repo._count_claims()
 
     def get_health(self, worker_id: str) -> WorkerHealth | None:
         """Return the current health status for a worker or component."""
@@ -318,10 +318,6 @@ class AppDb:
     def upsert_health(self, worker_id: str, *, status: str, last_seen: int) -> None:
         """Create or replace a worker's health status."""
         self._app_repo.upsert_health(worker_id, {"status": status, "last_seen": last_seen})
-
-    def release_claim(self, worker_id: str, song_id: int, claim_type: str | None = None) -> None:
-        """Release one worker's claim for a song."""
-        self.remove_claim(worker_id, song_id, claim_type)
 
     def upsert_migration(self, name: str, fields: dict) -> None:
         self._app_repo.upsert_migration(name, fields)
@@ -500,7 +496,7 @@ class AppDb:
         return [_session_row_to_domain(row) for row in rows]
 
     # ------------------------------------------------------------------
-    # User configuration (config_* meta keys)
+    # User configuration intents
     # ------------------------------------------------------------------
 
     @staticmethod
@@ -539,14 +535,6 @@ class AppDb:
     def remove_config_option(self, key: str) -> None:
         """Remove a user configuration value by its configuration identity."""
         self._app_repo.remove_config_option(self._config_storage_key(key))
-
-    def update_config_option(self, key: str, payload: dict) -> None:
-        """Legacy compatibility bridge for storage-payload writes.
-
-        Kept only while callers migrate to the semantic surface; removed in
-        Phase 4 once ``set_config_option``/semantic methods cover all callers.
-        """
-        self._app_repo.upsert_meta(key, payload)
 
     # ------------------------------------------------------------------
     # Schema version

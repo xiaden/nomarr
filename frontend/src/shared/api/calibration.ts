@@ -156,7 +156,7 @@ export async function getAllHistograms(): Promise<AllCalibrationStatesResponse> 
 
 export interface ClearCalibrationResponse {
   files_updated: number;
-  meta_keys_cleared: number;
+  bookkeeping_values_cleared: number;
 }
 
 /**

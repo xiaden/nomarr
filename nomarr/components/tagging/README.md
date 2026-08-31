@@ -40,5 +40,5 @@ Tag reading, writing, normalization, aggregation, and mood tier computation for 
 ## Dependencies
 
 - **Upstream:** Called by `workflows/` (tag write workflow, reconciliation) and `ml/inference/` (mood aggregation)
-- **Downstream:** Calls `persistence/` directly, `helpers/` for LibraryPath and Tags DTOs
+- **Downstream:** Access via `db.library` / `db.app` intent namespaces; uses `helpers/` for LibraryPath and Tags DTOs
 - **External:** `mutagen` (tag read/write)

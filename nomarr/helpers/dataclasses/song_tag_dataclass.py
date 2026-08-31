@@ -70,7 +70,7 @@ class RelinkResult(dict[str, int | bool]):
         _validate_count(moved, "moved")
         _validate_count(skipped, "skipped")
         if isinstance(source_orphaned, bool):
-            orphaned = source_orphaned
+            orphaned: bool | int = source_orphaned
         else:
             _validate_count(source_orphaned, "source_orphaned")
             orphaned = source_orphaned

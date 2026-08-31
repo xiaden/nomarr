@@ -212,6 +212,26 @@ class TestRelinkResult:
         with pytest.raises(AttributeError):
             RelinkResult(1, 0, 0).moved = 9  # type: ignore[misc]
 
+    def test_source_orphaned_accepts_bool_or_int_and_preserves_truthiness(self) -> None:
+        """Callers pass ``0``/``1`` as ints and read truthiness; the field must
+        accept both int and bool without coercing, preserving truthiness."""
+        assert RelinkResult(source_orphaned=0).source_orphaned == 0
+        assert not RelinkResult(source_orphaned=0).source_orphaned
+        assert RelinkResult(source_orphaned=1).source_orphaned == 1
+        assert RelinkResult(source_orphaned=1).source_orphaned
+
+        bool_result = RelinkResult(source_orphaned=True)
+        assert bool_result.source_orphaned is True
+        assert bool_result.source_orphaned
+        assert RelinkResult(source_orphaned=False).source_orphaned is False
+        assert not RelinkResult(source_orphaned=False).source_orphaned
+
+    def test_source_orphaned_rejects_non_int_bool(self) -> None:
+        with pytest.raises(TypeError):
+            RelinkResult(source_orphaned=1.5)  # type: ignore[arg-type]
+        with pytest.raises(TypeError):
+            RelinkResult(source_orphaned=-1)
+
 
 @pytest.mark.unit
 class TestTagCleanupResult:

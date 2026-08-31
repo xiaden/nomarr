@@ -1,33 +1,42 @@
 ---
 name: worker-claims-contract
-description: Worker claim key contract, lifecycle (claim→steal→release→cleanup), and known mismatches for Nomarr worker claims (tag extraction, ML discovery, reconciliation). Also covers scan progress/reconcile and ML replace_song_inference_results persistence contract quirks discovered during correctness review.
+description: Worker claim intent-facade contract for Nomarr — the canonical add_claim/remove_claim/remove_claims/list_claims/count_claims surface, exact-key atomic acquisition, single-active-claim-per-song invariant (incl. cross-type replacement), errored/retry-eligible liveness, and persistence-internal key encoding (claim_{song_id} / claim_{claim_type}_{song_id}). Also covers scan progress/reconcile and ML replace_song_inference_results persistence contract quirks discovered during correctness review.
 ---
 
 # Worker Claims Contract & Related Persistence Quirks
 
 ## Mental Model
-Nomarr workers reserve files by inserting a row into `worker_claims` (key unique, JSONB value, claimed_at). The claim **key encodes the claim type**: `claim_{song_id}` (untyped), `claim_{claim_type}_{song_id}` (typed, e.g. `claim_reconcile_{song_id}`). All claim mutation goes through `AppDb` (`nomarr/persistence/api/application.py`) → `AppRepository` (`nomarr/persistence/database/app_repo.py`). Cleanup of stale claims is a periodic pass that removes claims for (a) workers with stale heartbeats, (b) songs that are already tagged, (c) songs that no longer exist.
+All worker-claim mutation goes through the **canonical claims intent facade** (`AppDb` in `nomarr/persistence/api/application.py`): `add_claim(WorkerClaim, *, now_ms=None, lease_ms=None) -> bool`, `remove_claim(WorkerClaimIdentity) -> bool`, `remove_claims(ClaimRemovalRequest) -> int`, `list_claims() -> list[WorkerClaim]`, `count_claims() -> int`, plus the all-claims reset under `db.app.maintenance.delete_all_worker_claims()`. The facade delegates to `AppRepository` (`nomarr/persistence/database/app_repo.py`).
+
+Callers know nothing of the underlying storage: the claim **key encoding** (`claim_{song_id}` untyped, `claim_{claim_type}_{song_id}` typed, e.g. `claim_reconcile_{song_id}`), the JSONB payload, and row→domain mapping are **persistence-internal** to `app_repo.py`. Domain values are frozen/slotted in `nomarr/helpers/dataclasses/worker_claim_dataclass.py`. Legacy insert/release/steal method names are gone (CONTRACTS.md); component-level thin helpers such as `release_claim(db, ...)` may wrap the facade but never touch storage shapes.
+
+Cleanup of stale claims is `remove_claims(ClaimRemovalRequest)`: it removes claims for (a) given worker ids, (b) given songs, (c) stale workers (missing/expired health heartbeat), (d) missing/completed/errored songs — while **preserving active reconcile claims** and skipping `claim_type == 'reconcile'` in song-cleanup.
 
 ## Coverage
-**Documented:** claim key construction, worker release mismatch (bug) + fix status, steal path, cleanup semantics, scan reconcile pagination quirk, scan-progress ValueError risk (+ residual live chains), ML replace contract, embedding-stream unique constraint status.
+**Documented:** exact-key atomicity (authoritative), cross-type expiry replacement (single active claim), errored/retry-eligible liveness, reconcile-preservation during cleanup, scan reconcile pagination quirk, scan-progress ValueError risk (+ residual live chains), ML replace contract, embedding-stream unique constraint status.
 **Not yet documented:** calibration repo set_state select-then-insert race (no unique constraint on model_id, documented in code).
-**Last extended:** 2026-08-18 (re-validated post-fix, see L102)
+**Last extended:** 2026-08-31 (rewritten for the intent-facade surface, Phase 3 of TASK-worker-claims-intent-facade-A-correction)
 
 ## Key Findings
 
-### Claim key mismatch — worker releases are no-ops (HIGH severity, live bug) — **FIXED by dba00542**
-- **Location:** `nomarr/components/workers/worker_discovery_comp.py:70` (claim) vs `:84` (release); `nomarr/persistence/api/application.py:176-177`; `nomarr/persistence/database/app_repo.py:317-345`
-- **What (original bug):** `claim_file` calls `db.app.claim_song(int(file_id), worker_id, claimed_at=...)` with **no claim_type** → key `claim_{id}`. `release_claim` called `db.app.remove_claim(worker_id, file_id)` with facade default `claim_type="process"` → prefix `claim_process_` → targeted `claim_process_{id}`, a key never created.
-- **Fix status (verified L102):** facade defaults changed to `str | None = None` (`application.py:161,176-181`); `app_repo.release_claim`/`release_claim_by_song` build prefix `claim_` when claim_type is falsy (`app_repo.py:329,342`); steal path coerces `str | None` (`worker_discovery_comp.py:110-113,132`). All untyped release sites (tag_extraction_worker:179, discovery_worker:170/383/413/434/440/455/468/539, worker_tag_comp:40) now match `claim_{id}`. Reconciliation claims remain 'reconcile'-typed end-to-end. `cleanup_stale_claims` keys (`claim_{sid}`, `claim_reconcile_{sid}`) match. Test `test_release_claim_removes_untyped_claim` added.
-- **Residual (LOW, pre-existing):** `try_insert_or_steal_claim` cross-type steal — an expired UNTYPED claim is not removed by a 'reconcile' stealer (`remove_claim_by_song(file_id, "reconcile")` deletes only `claim_reconcile_{id}`), so both claims coexist until cleanup. Only caller is `reconciliation_comp`.
-- **Affected release call sites (untyped claim mismatch):** `tag_extraction_worker.py:179`, `discovery_worker.py:170/383/413/434/440/455/468/539` (all via `worker_discovery_comp.release_claim`). NOT affected: `tagging_svc/write.py:132/140` and `file_write_comp.py` — they import `reconciliation_comp.release_claim` ("reconcile" type, consistent).
-- **Why it matters:** Processed-song claims are never released by workers; they persist until `cleanup_stale_claims` runs. **Errored songs that are retried via `retry_errored_songs` (`services/domain/library_svc/songs.py:179-206`) are permanently re-blocked**: the retry transitions ERRORED→NOT_ERRORED and PROCESSED→NOT_PROCESSED, but `discover_next_untagged_file` / `discover_next_file_needing_tags` (`components/library/library_song_state_comp.py:183-241`) subtract `claimed_ids` — and the errored song's stale claim (worker is alive, song not tagged, song exists) is never removed by `cleanup_stale_claims`. Liveness bug: errored songs can get stuck forever.
-- **Consistent path:** reconciliation claims use `claim_type="reconcile"` end-to-end (`reconciliation_comp.py:68,85,94`; `try_insert_or_steal_claim` `worker_discovery_comp.py:113,132`) — these release correctly.
+### Claim acquisition is exactly-key atomic — authoritative contract
+- **Location:** `nomarr/persistence/database/app_repo.py` `_acquire_claim` (`:594`), wired as `db.app.add_claim` in `application.py`.
+- **Contract:** acquisition begins a nested transaction that serializes on the song's existing claim rows (`SELECT ... FOR UPDATE` over `claim_{song_id}` and the `claim\_%\_\{song_id\}` LIKE set). If no row exists → INSERT, returns `True`. If `lease_ms is None` → insert-only, never replaces (returns `False` on any existing claim). If a lease is given and an existing row is expired (`claimed_at < now_ms - lease_ms`) → replaced via an **exact-key, expiry-filtered UPDATE** (targets only the specific old key and only if still expired), returns `True`. Any active (non-expired) conflict → `False`.
+- **Why exact-key matters:** replacement never deletes or overwrites another row. A cross-type stealer can only claim a slot by re-using the exact old key; the single-active-claim invariant holds across typed and untyped claims because the UPDATE re-points the one conflicting row.
+- **Missing song** → `False` (no row created).
 
-### Steal path mismatch for untyped claims — **FIXED by dba00542**
-- **Location:** `worker_discovery_comp.py:110-113,132`
-- **What (original):** `db.app.remove_claim_by_song(int(file_id), str(claim_type or "process"))` removed `claim_process_{id}` instead of the stale `claim_{id}`.
-- **Fix:** `claim_type` coerced to `str | None`; `None` → `claim_` prefix. See cross-type residual above.
+### Cross-type expiry replacement leaves exactly one claim
+- **Location:** `_acquire_claim` same-key UPDATE path; regression `test_acquire_claim_cross_type_replaces_expired_claim`.
+- **Contract:** when an expired untyped `claim_{song_id}` exists and a typed claim (e.g. `claim_reconcile_{song_id}`) acquires with a lease, the exact-key UPDATE rewrites that one row to the new key/worker/type. After acquisition exactly one claim row remains for the song. The old cross-type *steal* path (`try_insert_or_steal_claim` + `remove_claim_by_song`) was removed; both claims could previously coexist until cleanup.
+
+### Errored/retry-eligible claims are released (liveness contract)
+- **Location:** `_remove_claims` with `remove_errored_songs=True` (songs in `STATE_ERRORED`); `_resolve_stale_workers` (missing or expired health heartbeat). Caller: `cleanup_stale_claims` / worker-death cleanup.
+- **Contract:** errored songs that are retried (`retry_errored_songs` transitions ERRORED→NOT_ERRORED, PROCESSED→NOT_PROCESSED) must not remain blocked by a stale claim. `remove_claims(remove_errored_songs=True)` releases errored-song claims so the retried song can be rediscovered. Previously (pre-intent-facade) errored songs could get stuck forever because a live worker's stale claim was never removed.
+- **Note:** `_remove_claims` returns the number of rows removed; it preserves active `reconcile` claims and skips `claim_type == 'reconcile'` during song-cleanup.
+
+### Active pending reconcile claims survive cleanup
+- **Location:** `_remove_claims`; regression `test_remove_claims_preserves_active_reconcile_claims`.
+- **Contract:** reconciliation claims (`claim_type == 'reconcile'`) are excluded from song-state cleanup; a pending reconcile claim is not released by `remove_completed_songs`/`remove_errored_songs`. Worker/song-filtered removals still apply.
 
 ### `reconcile_library_paths` offset pagination skips rows when delete policy deletes mid-iteration (MEDIUM) — **FIXED by aa1096cb**
 - **Location:** `nomarr/components/library/reconcile_paths_comp.py:63-95` (loop; `deleted_before_batch`/`deleted_in_batch` delta at :68,:91-95), `:117-143` (`_handle_invalid_path` → `db.library.remove_song_by_path`)
@@ -53,18 +62,18 @@ Nomarr workers reserve files by inserting a row into `worker_claims` (key unique
 - **What:** Alembic-managed prod DBs enforce the unique constraint, but test DBs built via `Base.metadata.create_all` do not (schema divergence). A concurrent race in prod now surfaces as `IntegrityError` (23505 → `DuplicateEntityError`) instead of duplicate rows. `replace_embedding_stream_for_song` has zero production callers (only `test_ml_db.py:488`).
 - `add_songs_to_library` state bootstrap semantics (existing_paths from DB before upsert; bootstrap only for paths not in existing_paths) are correct.
 
-### `steal_claim` (app_repo.py:370-380) — no row filter (UNCHANGED, latent)
-- **What:** `UPDATE worker_claims SET ... WHERE claimed_at + lease_ms < now` updates ALL expired claims with the same payload — latent data-corruption bug, but only exercised by tests (test_app_repo.py:402-414) and allowlisted as dead code. The production steal path (`try_insert_or_steal_claim`) does NOT use it — it does remove+re-insert.
-
 ### `fetch_output_streams` silently drops rows with NULL output_index (LOW/MEDIUM latent)
 - **Location:** `nomarr/components/ml/inference/ml_output_stream_store_comp.py:86-99`
 - **What:** `if not isinstance(output_index, int): continue` — rows written with `output_index=None` are silently dropped, which could flip `load_output_streams_for_song` to "no streams → reprocess" (`:164-169`).
 
 ## Critical Invariants
-- Claim key must be built and consumed with the SAME `claim_type`; never mix default `"process"` release with untyped `claim_{id}` creation.
+- All claim mutation flows through the canonical intent facade (`db.app.add_claim / remove_claim / remove_claims / list_claims / count_claims`); never call repository methods, raw rows, or encoded keys from above persistence.
+- Single active claim per logical song, across typed and untyped. Acquisition is insert-only when `lease_ms is None`; with a lease, expired replacement is exact-key atomic (never deletes/overwrites another row). Cross-type replacement leaves exactly one claim.
+- `remove_claims` preserves active `reconcile` claims and skips `claim_type == 'reconcile'` during song-cleanup; errored/retry-eligible claims are released so retried songs are not re-blocked.
+- Claim key encoding (`claim_{song_id}` / `claim_{claim_type}_{song_id}`) is persistence-internal — built/parsed only in `app_repo.py`.
 - `record_scan_progress` / `complete_scan` assume a scan row exists — recovery paths guard the crash-divergence case, while normal scan setup creates the row first.
 - `replace_song_inference_results` owns a full atomic replacement for (streams × (song_id, backbone)); do not pair it with separate direct stream/vector writes.
 
 ## Sources
-- Files: worker_discovery_comp.py, worker_tag_comp.py, reconciliation_comp.py, app_repo.py, application.py, library_scans.py, library_songs.py, song_state_repo.py, pipeline_repo.py, scan_repo.py, reconcile_paths_comp.py, ml_inference_repo.py, output_repo.py, ml_output_stream_store_comp.py, discovery_worker.py, tag_extraction_worker.py, pipeline_svc.py, library_song_state_comp.py, library_song_query_comp.py, file_batch_scanner_comp.py, library_scan_file_ops_comp.py, scan_lifecycle_comp.py
+- Files: application.py, app_repo.py, worker_claim_dataclass.py, library_scans.py, library_songs.py, song_state_repo.py, pipeline_repo.py, scan_repo.py, reconcile_paths_comp.py, ml_inference_repo.py, output_repo.py, ml_output_stream_store_comp.py, discovery_worker.py, tag_extraction_worker.py, pipeline_svc.py, library_song_state_comp.py, library_song_query_comp.py, file_batch_scanner_comp.py, library_scan_file_ops_comp.py, scan_lifecycle_comp.py, worker_discovery_comp.py, worker_tag_comp.py, reconciliation_comp.py
 - Log entries: L93, L95, L97, L99, L101

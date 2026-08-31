@@ -85,9 +85,12 @@ class LibraryTagsDb:
         it is first resolved to a library primary key, then the song's
         normalized path is resolved within that library.
         """
+        root_path = song.library.root_path
+        if root_path is None:
+            return None
         library_row = self._library_repo.get_library_by_natural_key(
             song.library.name,
-            song.library.root_path,
+            root_path,
         )
         if library_row is None:
             return None
@@ -102,17 +105,21 @@ class LibraryTagsDb:
         """
         if not songs:
             return {}
-        library_id_map = self._library_repo.get_library_ids_by_natural_keys(
-            list({(s.library.name, s.library.root_path) for s in songs})
-        )
-        resolved = [s for s in songs if (s.library.name, s.library.root_path) in library_id_map]
+        identity_keys: dict[SongIdentity, tuple[str, str]] = {}
+        for s in songs:
+            root_path = s.library.root_path
+            if root_path is None:
+                continue
+            identity_keys[s] = (s.library.name, root_path)
+        library_id_map = self._library_repo.get_library_ids_by_natural_keys(list(set(identity_keys.values())))
+        resolved = [s for s in identity_keys if identity_keys[s] in library_id_map]
         song_id_map = self._song_repo.get_song_ids_by_normalized_paths(
-            [(library_id_map[(s.library.name, s.library.root_path)], s.normalized_path) for s in resolved]
+            [(library_id_map[identity_keys[s]], s.normalized_path) for s in resolved]
         )
         return {
-            s: song_id_map[(library_id_map[(s.library.name, s.library.root_path)], s.normalized_path)]
+            s: song_id_map[(library_id_map[identity_keys[s]], s.normalized_path)]
             for s in resolved
-            if (library_id_map[(s.library.name, s.library.root_path)], s.normalized_path) in song_id_map
+            if (library_id_map[identity_keys[s]], s.normalized_path) in song_id_map
         }
 
     def _resolve_song_ids(self, songs: Sequence[SongIdentity]) -> list[int]:

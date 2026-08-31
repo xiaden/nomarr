@@ -3,16 +3,82 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from unittest.mock import patch
+from typing import cast
+from unittest.mock import MagicMock, patch
 
 import pytest
 from sqlalchemy import insert, select
 
+from nomarr.helpers.dataclasses.app_dataclasses import (
+    CapacityEstimate,
+    ConfigOption,
+    GpuResourceSnapshot,
+    ModelVramLimit,
+)
+from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
+from nomarr.helpers.dataclasses.worker_claim_dataclass import (
+    ClaimRemovalRequest,
+    WorkerClaim,
+    WorkerClaimIdentity,
+)
 from nomarr.helpers.exceptions import DuplicateEntityError
 from nomarr.persistence.database.app_repo import AppRepository
 from nomarr.persistence.models.health import Health
-from nomarr.persistence.models.worker_claim import WorkerClaim
 from nomarr.persistence.models.worker_restart_policy import WorkerRestartPolicy
+
+
+def _make_identity(song_id: int) -> SongIdentity:
+    return SongIdentity(
+        library=LibraryIdentity(name="lib", root_path="/music"),
+        normalized_path=f"artist/song{song_id}.flac",
+    )
+
+
+def _claim_env(pg_session):
+    """Wire an AppRepository with in-memory song/library mocks for claims tests.
+
+    Returns ``(repo, register, unregister)`` where ``register(song_id)`` registers
+    a resolvable ``SongIdentity`` for that storage song id and ``unregister`` makes
+    it missing again.  The mocks resolve both directions (natural identity ->
+    storage id for acquisition, storage id -> natural identity for listing).
+    """
+    repo = AppRepository(
+        pg_session,
+        song_repo=MagicMock(),
+        library_repo=MagicMock(),
+        song_state_repo=MagicMock(),
+    )
+    song_repo = cast("MagicMock", repo._song_repo)
+    library_repo = cast("MagicMock", repo._library_repo)
+    lib_id = 100
+    library_row = {"id": lib_id, "name": "lib", "path": "/music"}
+    songs: dict[int, str] = {}
+
+    def get_song_by_normalized_path(library_id: int, normalized_path: str) -> dict | None:
+        for sid, path in songs.items():
+            if path == normalized_path:
+                return {"id": sid, "library_id": library_id, "normalized_path": normalized_path}
+        return None
+
+    def get_song(song_id: int) -> dict | None:
+        if song_id not in songs:
+            return None
+        return {"id": song_id, "library_id": lib_id, "normalized_path": songs[song_id]}
+
+    library_repo.get_library_by_natural_key.return_value = library_row
+    library_repo.get_library.return_value = library_row
+    song_repo.get_song_by_normalized_path.side_effect = get_song_by_normalized_path
+    song_repo.get_song.side_effect = get_song
+
+    def register(song_id: int) -> SongIdentity:
+        identity = _make_identity(song_id)
+        songs[song_id] = identity.normalized_path
+        return identity
+
+    def unregister(song_id: int) -> None:
+        songs.pop(song_id, None)
+
+    return repo, register, unregister
 
 
 @pytest.mark.unit
@@ -179,55 +245,354 @@ class TestAppRepository:
     # ── Meta ────────────────────────────────────────────────────
 
     def test_get_meta(self, pg_session) -> None:
-        """get_meta should return meta by key."""
+        """_get_meta should return meta by key."""
         repo = AppRepository(pg_session)
-        repo.upsert_meta("version", {"value": {"major": 1}})
-        result = repo.get_meta("version")
+        repo._upsert_meta("version", {"value": {"major": 1}})
+        result = repo._get_meta("version")
         assert result is not None
         assert result["key"] == "version"
         assert result["value"]["major"] == 1
 
     def test_get_meta_nonexistent(self, pg_session) -> None:
-        """get_meta should return None for missing key."""
+        """_get_meta should return None for missing key."""
         repo = AppRepository(pg_session)
-        result = repo.get_meta("nonexistent")
+        result = repo._get_meta("nonexistent")
         assert result is None
 
     def test_upsert_meta_insert(self, pg_session) -> None:
-        """upsert_meta should insert if not exists."""
+        """_upsert_meta should insert if not exists."""
         repo = AppRepository(pg_session)
-        repo.upsert_meta("key1", {"value": {"data": "test"}})
-        result = repo.get_meta("key1")
+        repo._upsert_meta("key1", {"value": {"data": "test"}})
+        result = repo._get_meta("key1")
         assert result is not None
 
     def test_upsert_meta_update(self, pg_session) -> None:
-        """upsert_meta should update if exists."""
+        """_upsert_meta should update if exists."""
         repo = AppRepository(pg_session)
-        repo.upsert_meta("key2", {"value": {"data": "old"}})
-        repo.upsert_meta("key2", {"value": {"data": "new"}})
-        result = repo.get_meta("key2")
+        repo._upsert_meta("key2", {"value": {"data": "old"}})
+        repo._upsert_meta("key2", {"value": {"data": "new"}})
+        result = repo._get_meta("key2")
         assert result is not None
         assert result["value"]["data"] == "new"
 
     def test_delete_meta(self, pg_session) -> None:
-        """delete_meta should remove the row."""
+        """_delete_meta should remove the row."""
         repo = AppRepository(pg_session)
-        repo.upsert_meta("key3", {"value": {}})
-        repo.delete_meta("key3")
-        result = repo.get_meta("key3")
+        repo._upsert_meta("key3", {"value": {}})
+        repo._delete_meta("key3")
+        result = repo._get_meta("key3")
         assert result is None
 
     def test_list_meta_keys_by_prefix(self, pg_session) -> None:
-        """list_meta_keys_by_prefix should return matching keys."""
+        """_list_meta_keys_by_prefix should return matching keys."""
         repo = AppRepository(pg_session)
-        repo.upsert_meta("prefix_key1", {"value": {}})
-        repo.upsert_meta("prefix_key2", {"value": {}})
-        repo.upsert_meta("other_key", {"value": {}})
-        result = repo.list_meta_keys_by_prefix("prefix_")
+        repo._upsert_meta("prefix_key1", {"value": {}})
+        repo._upsert_meta("prefix_key2", {"value": {}})
+        repo._upsert_meta("other_key", {"value": {}})
+        result = repo._list_meta_keys_by_prefix("prefix_")
         assert len(result) == 2
         assert "prefix_key1" in result
         assert "prefix_key2" in result
         assert "other_key" not in result
+
+    # ── Semantic meta helpers (config / schema / credentials) ──
+
+    def test_get_config_option_nonexistent(self, pg_session) -> None:
+        """get_config_option should return None for a missing key."""
+        repo = AppRepository(pg_session)
+        assert repo.get_config_option("config_missing") is None
+
+    def test_set_and_get_config_option(self, pg_session) -> None:
+        """set/get config option round-trips under the full storage key."""
+        repo = AppRepository(pg_session)
+        repo.set_config_option("config_library_path", "/music")
+        result = repo.get_config_option("config_library_path")
+        assert isinstance(result, ConfigOption)
+        assert result.key == "config_library_path"
+        assert result.value == "/music"
+
+    def test_set_config_option_overwrites(self, pg_session) -> None:
+        """set_config_option should overwrite an existing value."""
+        repo = AppRepository(pg_session)
+        repo.set_config_option("config_overwrite", "old")
+        repo.set_config_option("config_overwrite", "new")
+        result = repo.get_config_option("config_overwrite")
+        assert result is not None
+        assert result.value == "new"
+
+    def test_list_config_options_returns_only_config_prefix(self, pg_session) -> None:
+        """list_config_options should return only ``config_`` keys."""
+        repo = AppRepository(pg_session)
+        repo.set_config_option("config_a", "1")
+        repo.set_config_option("config_b", {"nested": True})
+        # A non-config key must not leak into the config listing.
+        repo._upsert_meta("api_key", {"value": "secret"})
+        results = repo.list_config_options()
+        assert all(isinstance(c, ConfigOption) for c in results)
+        by_key = {c.key: c.value for c in results}
+        assert by_key == {"config_a": "1", "config_b": {"nested": True}}
+
+    def test_remove_config_option(self, pg_session) -> None:
+        """remove_config_option should delete the row."""
+        repo = AppRepository(pg_session)
+        repo.set_config_option("config_tmp", "x")
+        repo.remove_config_option("config_tmp")
+        assert repo.get_config_option("config_tmp") is None
+
+    def test_get_schema_version_nonexistent(self, pg_session) -> None:
+        """get_schema_version should return None when absent."""
+        repo = AppRepository(pg_session)
+        assert repo.get_schema_version() is None
+
+    def test_set_and_get_schema_version(self, pg_session) -> None:
+        """set/get schema version round-trips under the fixed ``version`` key."""
+        repo = AppRepository(pg_session)
+        repo.set_schema_version("1.0.0")
+        assert repo.get_schema_version() == "1.0.0"
+
+    def test_get_schema_version_coerces_stored_value_to_str(self, pg_session) -> None:
+        """get_schema_version should coerce a non-string stored value to ``str``."""
+        repo = AppRepository(pg_session)
+        repo._upsert_meta("version", {"value": 7})
+        assert repo.get_schema_version() == "7"
+
+    def test_get_api_key_nonexistent(self, pg_session) -> None:
+        """get_api_key should return None when not set."""
+        repo = AppRepository(pg_session)
+        assert repo.get_api_key() is None
+
+    def test_set_and_get_api_key(self, pg_session) -> None:
+        """set/get API key round-trips under the fixed ``api_key`` key."""
+        repo = AppRepository(pg_session)
+        repo.set_api_key("sk-test")
+        assert repo.get_api_key() == "sk-test"
+
+    def test_get_admin_password_hash_nonexistent(self, pg_session) -> None:
+        """get_admin_password_hash should return None when not set."""
+        repo = AppRepository(pg_session)
+        assert repo.get_admin_password_hash() is None
+
+    def test_set_and_get_admin_password_hash(self, pg_session) -> None:
+        """set/get admin password hash round-trips under its fixed key."""
+        repo = AppRepository(pg_session)
+        repo.set_admin_password_hash("hashed-value")
+        assert repo.get_admin_password_hash() == "hashed-value"
+
+    # ── Calibration ────────────────────────────────────────────
+
+    def test_get_calibration_version_nonexistent(self, pg_session) -> None:
+        """get_calibration_version should return None when absent."""
+        repo = AppRepository(pg_session)
+        assert repo.get_calibration_version() is None
+
+    def test_set_and_get_calibration_version(self, pg_session) -> None:
+        """set/get calibration version round-trips under its fixed key."""
+        repo = AppRepository(pg_session)
+        repo.set_calibration_version("abc123")
+        assert repo.get_calibration_version() == "abc123"
+
+    def test_get_calibration_last_run_nonexistent(self, pg_session) -> None:
+        """get_calibration_last_run should return None when absent."""
+        repo = AppRepository(pg_session)
+        assert repo.get_calibration_last_run() is None
+
+    def test_set_and_get_calibration_last_run_stored_as_string(self, pg_session) -> None:
+        """calibration last-run is stored as a string and read back as int (ms)."""
+        repo = AppRepository(pg_session)
+        repo.set_calibration_last_run("1700000000000")
+        assert repo.get_calibration_last_run() == 1700000000000
+        row = repo._get_meta("calibration_last_run")
+        assert row is not None
+        assert isinstance(row["value"], str)  # pinned: physical storage is a string
+
+    def test_clear_calibration_metadata_removes_both_keys(self, pg_session) -> None:
+        """clear_calibration_metadata should atomically delete both calibration keys."""
+        repo = AppRepository(pg_session)
+        repo.set_calibration_version("v1")
+        repo.set_calibration_last_run("1700000000000")
+        # Unrelated meta key must be left intact.
+        repo.set_api_key("secret")
+
+        removed = repo.clear_calibration_metadata()
+
+        assert removed == 2
+        assert repo.get_calibration_version() is None
+        assert repo.get_calibration_last_run() is None
+        assert repo.get_api_key() == "secret"
+
+    def test_clear_calibration_metadata_noop_when_nothing_set(self, pg_session) -> None:
+        """clear_calibration_metadata should return 0 when no keys exist."""
+        repo = AppRepository(pg_session)
+        assert repo.clear_calibration_metadata() == 0
+
+    # ── VRAM limits ─────────────────────────────────────────────
+
+    def test_get_model_vram_limit_nonexistent(self, pg_session) -> None:
+        """get_model_vram_limit should return None when not measured."""
+        repo = AppRepository(pg_session)
+        assert repo.get_model_vram_limit("/models/a.pt") is None
+
+    def test_set_and_get_model_vram_limit_stores_string_under_prefix(self, pg_session) -> None:
+        """VRAM limits store a string byte count under the ``ml_model_vram:`` prefix."""
+        repo = AppRepository(pg_session)
+        repo.set_model_vram_limit("/models/a.pt", 8192)
+        assert repo.get_model_vram_limit("/models/a.pt") == 8192
+        row = repo._get_meta("ml_model_vram:/models/a.pt")
+        assert row is not None
+        assert row["key"] == "ml_model_vram:/models/a.pt"
+        assert row["value"] == "8192"  # pinned: value stored as a string
+
+    def test_list_model_vram_limits(self, pg_session) -> None:
+        """list_model_vram_limits should strip the prefix and coerce byte counts."""
+        repo = AppRepository(pg_session)
+        repo.set_model_vram_limit("/models/a.pt", 4096)
+        repo.set_model_vram_limit("/models/b.pt", 8192)
+        # A non-VRAM meta key must not appear in the listing.
+        repo._upsert_meta("ml_model_vram_other", {"value": "1"})
+
+        result = repo.list_model_vram_limits()
+        assert all(isinstance(m, ModelVramLimit) for m in result)
+        by_path = {m.model_path: m.limit_bytes for m in result}
+        assert by_path == {"/models/a.pt": 4096, "/models/b.pt": 8192}
+
+    def test_clear_model_vram_limits_removes_all_vram_rows(self, pg_session) -> None:
+        """clear_model_vram_limits should delete every ``ml_model_vram:`` row."""
+        repo = AppRepository(pg_session)
+        repo.set_model_vram_limit("/models/a.pt", 4096)
+        repo.set_model_vram_limit("/models/b.pt", 8192)
+        repo.set_api_key("secret")
+
+        removed = repo.clear_model_vram_limits()
+
+        assert removed == 2
+        assert repo.list_model_vram_limits() == []
+        assert repo.get_api_key() == "secret"
+
+    def test_clear_model_vram_limits_noop_when_nothing_stored(self, pg_session) -> None:
+        """clear_model_vram_limits should return 0 when no limits exist."""
+        repo = AppRepository(pg_session)
+        assert repo.clear_model_vram_limits() == 0
+
+    # ── Capacity estimates ──────────────────────────────────────
+
+    def test_get_capacity_estimate_nonexistent(self, pg_session) -> None:
+        """get_capacity_estimate should return None when absent."""
+        repo = AppRepository(pg_session)
+        assert repo.get_capacity_estimate("hash1") is None
+
+    def test_set_and_get_capacity_estimate(self, pg_session) -> None:
+        """capacity estimate round-trips under the ``capacity_estimate:`` prefix."""
+        repo = AppRepository(pg_session)
+        estimate = CapacityEstimate(
+            model_set_hash="hash1",
+            measured_backbone_vram_mb=1024,
+            estimated_worker_ram_mb=2048,
+            gpu_capable=True,
+            is_conservative=False,
+        )
+        repo.set_capacity_estimate(estimate)
+
+        result = repo.get_capacity_estimate("hash1")
+        assert result == estimate
+
+    def test_capacity_estimate_stored_under_prefixed_key(self, pg_session) -> None:
+        """capacity estimates are physically stored under ``capacity_estimate:<hash>``."""
+        repo = AppRepository(pg_session)
+        estimate = CapacityEstimate(
+            model_set_hash="hash1",
+            measured_backbone_vram_mb=512,
+            estimated_worker_ram_mb=1024,
+            gpu_capable=False,
+        )
+        repo.set_capacity_estimate(estimate)
+        row = repo._get_meta("capacity_estimate:hash1")
+        assert row is not None
+        assert row["value"]["model_set_hash"] == "hash1"
+        assert row["value"]["estimated_worker_ram_mb"] == 1024
+
+    def test_remove_capacity_estimate(self, pg_session) -> None:
+        """remove_capacity_estimate should delete the row."""
+        repo = AppRepository(pg_session)
+        repo.set_capacity_estimate(
+            CapacityEstimate(
+                model_set_hash="hash1",
+                measured_backbone_vram_mb=512,
+                estimated_worker_ram_mb=1024,
+                gpu_capable=False,
+            )
+        )
+        repo.remove_capacity_estimate("hash1")
+        assert repo.get_capacity_estimate("hash1") is None
+
+    # ── GPU resource snapshot ───────────────────────────────────
+
+    def test_get_gpu_resource_snapshot_nonexistent(self, pg_session) -> None:
+        """get_gpu_resource_snapshot should return None when absent."""
+        repo = AppRepository(pg_session)
+        assert repo.get_gpu_resource_snapshot() is None
+
+    def test_set_and_get_gpu_resource_snapshot(self, pg_session) -> None:
+        """GPU snapshot round-trips under the fixed ``gpu_resources`` key."""
+        repo = AppRepository(pg_session)
+        repo.set_gpu_resource_snapshot(GpuResourceSnapshot(gpu_available=True, error_summary=None))
+        result = repo.get_gpu_resource_snapshot()
+        assert result == GpuResourceSnapshot(gpu_available=True, error_summary=None)
+
+    def test_set_and_get_gpu_resource_snapshot_with_error(self, pg_session) -> None:
+        """GPU snapshot retains an error summary when the probe failed."""
+        repo = AppRepository(pg_session)
+        repo.set_gpu_resource_snapshot(GpuResourceSnapshot(gpu_available=False, error_summary="no vram"))
+        result = repo.get_gpu_resource_snapshot()
+        assert result == GpuResourceSnapshot(gpu_available=False, error_summary="no vram")
+
+    # ── Worker system enabled ───────────────────────────────────
+
+    def test_get_worker_system_enabled_nonexistent(self, pg_session) -> None:
+        """get_worker_system_enabled should return None when not set."""
+        repo = AppRepository(pg_session)
+        assert repo.get_worker_system_enabled() is None
+
+    def test_set_worker_system_enabled_true_stored_as_string(self, pg_session) -> None:
+        """enabled=True is physically stored as the string ``true``."""
+        repo = AppRepository(pg_session)
+        repo.set_worker_system_enabled(True)
+        assert repo.get_worker_system_enabled() is True
+        row = repo._get_meta("worker_enabled")
+        assert row is not None
+        assert row["value"] == "true"  # pinned: physical string storage
+
+    def test_set_worker_system_enabled_false_stored_as_string(self, pg_session) -> None:
+        """enabled=False is physically stored as the string ``false``."""
+        repo = AppRepository(pg_session)
+        repo.set_worker_system_enabled(False)
+        assert repo.get_worker_system_enabled() is False
+        row = repo._get_meta("worker_enabled")
+        assert row is not None
+        assert row["value"] == "false"
+
+    # ── _delete_meta_keys_atomic ────────────────────────────────
+
+    def test_delete_meta_keys_atomic_removes_exact_keys_only(self, pg_session) -> None:
+        """_delete_meta_keys_atomic deletes exactly the given keys and leaves others."""
+        repo = AppRepository(pg_session)
+        repo._upsert_meta("keep_1", {"value": "a"})
+        repo._upsert_meta("drop_1", {"value": "b"})
+        repo._upsert_meta("drop_2", {"value": "c"})
+        repo._upsert_meta("keep_2", {"value": "d"})
+
+        repo._delete_meta_keys_atomic(["drop_1", "drop_2"])
+
+        assert repo._get_meta("drop_1") is None
+        assert repo._get_meta("drop_2") is None
+        assert repo._get_meta("keep_1") is not None
+        assert repo._get_meta("keep_2") is not None
+
+    def test_delete_meta_keys_atomic_empty_list_is_noop(self, pg_session) -> None:
+        """_delete_meta_keys_atomic with no keys should not touch existing rows."""
+        repo = AppRepository(pg_session)
+        repo._upsert_meta("keep_1", {"value": "a"})
+        repo._delete_meta_keys_atomic([])
+        assert repo._get_meta("keep_1") is not None
 
     # ── Session ─────────────────────────────────────────────────
 
@@ -304,217 +669,285 @@ class TestAppRepository:
 
     # ── Worker claims ───────────────────────────────────────────
 
-    def test_insert_worker_claim(self, pg_session) -> None:
-        """insert_worker_claim should insert and return id."""
-        repo = AppRepository(pg_session)
-        claim_id = repo.insert_worker_claim(
-            {
-                "worker_id": "worker1",
-                "key": "1",
-                "value": {"status": "processing"},
-                "claimed_at": 1000,
-            }
+    def test_acquire_claim_inserts_new_claim(self, pg_session) -> None:
+        repo, register, _ = _claim_env(pg_session)
+        song = register(1)
+        claim = WorkerClaim(identity=WorkerClaimIdentity(song=song, worker_id="worker1"), claimed_at_ms=5000)
+
+        assert repo._acquire_claim(claim, now_ms=5000, lease_ms=1000) is True
+        claims = repo._list_claims()
+        assert len(claims) == 1
+        assert claims[0].identity.worker_id == "worker1"
+        assert claims[0].identity.claim_type is None
+        assert claims[0].claimed_at_ms == 5000
+        assert repo._count_claims() == 1
+
+    def test_acquire_claim_missing_song_returns_false(self, pg_session) -> None:
+        repo, _, _ = _claim_env(pg_session)
+        claim = WorkerClaim(
+            identity=WorkerClaimIdentity(song=_make_identity(999), worker_id="worker1"),
+            claimed_at_ms=5000,
         )
-        assert isinstance(claim_id, int)
-        assert claim_id > 0
+        assert repo._acquire_claim(claim, now_ms=5000, lease_ms=1000) is False
 
-    def test_insert_worker_claim_rejects_missing_song(self, pg_session) -> None:
-        repo = AppRepository(pg_session)
-        from unittest.mock import MagicMock
+    def test_acquire_claim_active_contention_returns_false(self, pg_session) -> None:
+        repo, register, _ = _claim_env(pg_session)
+        song = register(1)
+        first = WorkerClaim(identity=WorkerClaimIdentity(song=song, worker_id="worker1"), claimed_at_ms=4500)
+        assert repo._acquire_claim(first, now_ms=5000, lease_ms=1000) is True
+        # worker1's claim is still active (4500 >= 5000-1000) -> blocked.
+        other = WorkerClaim(identity=WorkerClaimIdentity(song=song, worker_id="worker2"), claimed_at_ms=0)
+        assert repo._acquire_claim(other, now_ms=5000, lease_ms=1000) is False
+        assert repo._count_claims() == 1
 
-        repo._song_repo = MagicMock()
-        repo._song_repo.get_song.return_value = None
+    def test_acquire_claim_insert_only_never_replaces(self, pg_session) -> None:
+        repo, register, _ = _claim_env(pg_session)
+        song = register(1)
+        first = WorkerClaim(identity=WorkerClaimIdentity(song=song, worker_id="worker1"), claimed_at_ms=1000)
+        assert repo._acquire_claim(first, now_ms=1000, lease_ms=None) is True
+        other = WorkerClaim(identity=WorkerClaimIdentity(song=song, worker_id="worker2"), claimed_at_ms=0)
+        # lease_ms=None -> insert-only, so even an expired claim is not replaced.
+        assert repo._acquire_claim(other, now_ms=5000, lease_ms=None) is False
+        claims = repo._list_claims()
+        assert len(claims) == 1
+        assert claims[0].identity.worker_id == "worker1"
 
-        with pytest.raises(ValueError, match="Song 999 does not exist"):
-            repo.insert_worker_claim({"worker_id": "w1", "key": "k", "file_id": 999})
+    def test_acquire_claim_replaces_expired_claim(self, pg_session) -> None:
+        repo, register, _ = _claim_env(pg_session)
+        song = register(1)
+        first = WorkerClaim(identity=WorkerClaimIdentity(song=song, worker_id="worker1"), claimed_at_ms=1000)
+        assert repo._acquire_claim(first, now_ms=1000, lease_ms=1000) is True
+        thief = WorkerClaim(identity=WorkerClaimIdentity(song=song, worker_id="worker2"), claimed_at_ms=0)
+        assert repo._acquire_claim(thief, now_ms=5000, lease_ms=1000) is True
+        claims = repo._list_claims()
+        assert len(claims) == 1
+        assert claims[0].identity.worker_id == "worker2"
+        assert claims[0].claimed_at_ms == 5000
 
-    def test_claim_file(self, pg_session) -> None:
-        """claim_file should record a worker's claim."""
-        repo = AppRepository(pg_session)
-        repo.claim_file(1, "worker1", {"status": "processing", "claimed_at": 1000})
-        claims = repo.list_claims()
-        assert len(claims) >= 1
-        assert any(c["key"] == "claim_1" and c["worker_id"] == "worker1" for c in claims)
-
-    def test_release_claim(self, pg_session) -> None:
-        """release_claim should delete the claim."""
-        repo = AppRepository(pg_session)
-        repo.claim_file(2, "worker1", {"status": "processing", "claimed_at": 1000})
-        repo.release_claim(2)
-        claims = repo.list_claims()
-        assert not any(c["key"] == "claim_2" for c in claims)
-
-    def test_release_claim_by_song_ignores_owner(self, pg_session) -> None:
-        """Expired claim stealing should remove a claim owned by another worker."""
-        repo = AppRepository(pg_session)
-        repo.claim_file(3, "worker1", {"status": "processing", "claimed_at": 1000})
-        repo.release_claim_by_song(3)
-        claims = repo.list_claims()
-        assert not any(c["key"] == "claim_3" for c in claims)
-
-    def test_release_claim_removes_untyped_claim(self, pg_session) -> None:
-        """The default release path removes claims created without a type."""
-        repo = AppRepository(pg_session)
-        repo.claim_file(4, "worker1", {"status": "processing", "claimed_at": 1000})
-        repo.release_claim("worker1", 4)
-        claims = repo.list_claims()
-        assert not any(c["key"] == "claim_4" for c in claims)
-
-    def test_delete_claims_for_workers(self, pg_session) -> None:
-        """delete_claims_for_workers should delete claims for workers."""
-        repo = AppRepository(pg_session)
-        repo.insert_worker_claim(
-            {
-                "worker_id": "worker1",
-                "key": "10",
-                "value": {},
-                "claimed_at": 1000,
-            }
+    def test_acquire_claim_enforces_single_active_across_typed_and_untyped(self, pg_session) -> None:
+        repo, register, _ = _claim_env(pg_session)
+        song = register(1)
+        untyped = WorkerClaim(identity=WorkerClaimIdentity(song=song, worker_id="worker1"), claimed_at_ms=4500)
+        assert repo._acquire_claim(untyped, now_ms=5000, lease_ms=1000) is True
+        # A typed claim on the same song conflicts with the active untyped claim.
+        typed = WorkerClaim(
+            identity=WorkerClaimIdentity(song=song, worker_id="worker2", claim_type="reconcile"),
+            claimed_at_ms=0,
         )
-        repo.insert_worker_claim(
-            {
-                "worker_id": "worker2",
-                "key": "11",
-                "value": {},
-                "claimed_at": 1000,
-            }
+        assert repo._acquire_claim(typed, now_ms=5000, lease_ms=1000) is False
+        assert repo._count_claims() == 1
+
+    def test_acquire_claim_cross_type_replaces_expired_claim(self, pg_session) -> None:
+        repo, register, _ = _claim_env(pg_session)
+        song = register(1)
+        untyped = WorkerClaim(identity=WorkerClaimIdentity(song=song, worker_id="worker1"), claimed_at_ms=1000)
+        assert repo._acquire_claim(untyped, now_ms=1000, lease_ms=1000) is True
+        reconcile = WorkerClaim(
+            identity=WorkerClaimIdentity(song=song, worker_id="worker2", claim_type="reconcile"),
+            claimed_at_ms=0,
         )
-        deleted = repo.delete_claims_for_workers(["worker1"])
+        assert repo._acquire_claim(reconcile, now_ms=5000, lease_ms=1000) is True
+        claims = repo._list_claims()
+        assert len(claims) == 1
+        assert claims[0].identity.claim_type == "reconcile"
+        assert claims[0].identity.worker_id == "worker2"
+
+    def test_remove_claim_exact_ownership(self, pg_session) -> None:
+        repo, register, _ = _claim_env(pg_session)
+        song = register(1)
+        identity = WorkerClaimIdentity(song=song, worker_id="worker1")
+        claim = WorkerClaim(identity=identity, claimed_at_ms=5000)
+        assert repo._acquire_claim(claim, now_ms=5000, lease_ms=None) is True
+        assert repo._remove_claim(identity) is True
+        assert repo._remove_claim(identity) is False
+        assert repo._count_claims() == 0
+
+    def test_remove_claim_wrong_worker_leaves_claim(self, pg_session) -> None:
+        repo, register, _ = _claim_env(pg_session)
+        song = register(1)
+        claim = WorkerClaim(identity=WorkerClaimIdentity(song=song, worker_id="worker1"), claimed_at_ms=5000)
+        assert repo._acquire_claim(claim, now_ms=5000, lease_ms=None) is True
+        wrong = WorkerClaimIdentity(song=song, worker_id="other")
+        assert repo._remove_claim(wrong) is False
+        assert repo._count_claims() == 1
+
+    def test_remove_claims_by_worker(self, pg_session) -> None:
+        repo, register, _ = _claim_env(pg_session)
+        s1 = register(1)
+        s2 = register(2)
+        repo._acquire_claim(
+            WorkerClaim(identity=WorkerClaimIdentity(song=s1, worker_id="w1"), claimed_at_ms=1000),
+            now_ms=1000,
+            lease_ms=None,
+        )
+        repo._acquire_claim(
+            WorkerClaim(identity=WorkerClaimIdentity(song=s2, worker_id="w2"), claimed_at_ms=1000),
+            now_ms=1000,
+            lease_ms=None,
+        )
+        deleted = repo._remove_claims(ClaimRemovalRequest(worker_ids=("w1",)))
         assert deleted == 1
-        claims = repo.list_claims()
-        assert not any(c["worker_id"] == "worker1" for c in claims)
-        assert any(c["worker_id"] == "worker2" for c in claims)
+        assert repo._count_claims() == 1
 
-    def test_delete_claims_for_songs(self, pg_session) -> None:
-        """delete_claims_for_songs should delete claims for songs."""
-        repo = AppRepository(pg_session)
-        repo.insert_worker_claim(
-            {
-                "worker_id": "worker1",
-                "key": "claim_20",
-                "value": {},
-                "claimed_at": 1000,
-            }
+    def test_remove_claims_by_song(self, pg_session) -> None:
+        repo, register, _ = _claim_env(pg_session)
+        s1 = register(1)
+        s2 = register(2)
+        repo._acquire_claim(
+            WorkerClaim(identity=WorkerClaimIdentity(song=s1, worker_id="w1"), claimed_at_ms=1000),
+            now_ms=1000,
+            lease_ms=None,
         )
-        repo.insert_worker_claim(
-            {
-                "worker_id": "worker1",
-                "key": "claim_custom_type_20",
-                "value": {},
-                "claimed_at": 1000,
-            }
+        repo._acquire_claim(
+            WorkerClaim(identity=WorkerClaimIdentity(song=s2, worker_id="w2"), claimed_at_ms=1000),
+            now_ms=1000,
+            lease_ms=None,
         )
-        repo.insert_worker_claim(
-            {
-                "worker_id": "worker1",
-                "key": "claim_21",
-                "value": {},
-                "claimed_at": 1000,
-            }
-        )
-        deleted = repo.delete_claims_for_songs([20])
-        assert deleted == 2
-        claims = repo.list_claims()
-        assert not any(c["key"] == "claim_20" for c in claims)
-        assert not any(c["key"] == "claim_custom_type_20" for c in claims)
-        assert any(c["key"] == "claim_21" for c in claims)
+        deleted = repo._remove_claims(ClaimRemovalRequest(songs=(s1,)))
+        assert deleted == 1
+        assert repo._count_claims() == 1
 
-    def test_delete_claims_deduplicates_overlapping_worker_and_song_filters(self, pg_session) -> None:
-        """Overlapping filters delete each matching claim once in one transaction."""
-        repo = AppRepository(pg_session)
-        repo.insert_worker_claim(
-            {
-                "worker_id": "worker1",
-                "key": "claim_20",
-                "value": {},
-                "claimed_at": 1000,
-            }
+    def test_remove_claims_stale_workers(self, pg_session) -> None:
+        repo, register, _ = _claim_env(pg_session)
+        s1 = register(1)
+        s2 = register(2)
+        repo._acquire_claim(
+            WorkerClaim(identity=WorkerClaimIdentity(song=s1, worker_id="active"), claimed_at_ms=1000),
+            now_ms=1000,
+            lease_ms=None,
         )
-        repo.insert_worker_claim(
-            {
-                "worker_id": "worker1",
-                "key": "claim_21",
-                "value": {},
-                "claimed_at": 1000,
-            }
+        repo._acquire_claim(
+            WorkerClaim(identity=WorkerClaimIdentity(song=s2, worker_id="dead"), claimed_at_ms=1000),
+            now_ms=1000,
+            lease_ms=None,
         )
+        repo.upsert_health("active", {"status": "healthy", "last_seen": 5000})
+        deleted = repo._remove_claims(ClaimRemovalRequest(stale_workers_before_ms=4000))
+        assert deleted == 1
+        assert {c.identity.worker_id for c in repo._list_claims()} == {"active"}
 
-        deleted = repo.delete_claims(worker_ids=["worker1"], song_ids=[20])
-
-        assert deleted == 2
-        assert repo.list_claims() == []
-
-    def test_steal_claim(self, pg_session) -> None:
-        """steal_claim should update expired claims."""
-        repo = AppRepository(pg_session)
-        repo.insert_worker_claim(
-            {
-                "worker_id": "worker1",
-                "key": "30",
-                "value": {"status": "processing"},
-                "claimed_at": 1000,
-            }
+    def test_remove_claims_remove_missing_songs(self, pg_session) -> None:
+        repo, register, unregister = _claim_env(pg_session)
+        s1 = register(1)
+        repo._acquire_claim(
+            WorkerClaim(identity=WorkerClaimIdentity(song=s1, worker_id="w1"), claimed_at_ms=1000),
+            now_ms=1000,
+            lease_ms=None,
         )
-        # Steal claim that expired (claimed_at + lease_ms < now)
-        result = repo.steal_claim(
-            {
-                "key": "30",
-                "worker_id": "worker2",
-                "value": {"status": "stolen"},
-                "claimed_at": 5000,
-            },
-            now=5000,
-            lease_ms=1000,
-        )
-        assert result is True
-        claims = repo.list_claims()
-        stolen = next((c for c in claims if c["key"] == "30"), None)
-        assert stolen is not None
-        assert stolen["worker_id"] == "worker2"
+        unregister(1)  # song no longer exists
+        deleted = repo._remove_claims(ClaimRemovalRequest(remove_missing_songs=True))
+        assert deleted == 1
+        assert repo._count_claims() == 0
 
-    def test_steal_claim_only_updates_targeted_expired_claim(self, pg_session) -> None:
-        """A steal cannot update a different claim or an active claim."""
-        repo = AppRepository(pg_session)
-        repo.insert_worker_claim({"worker_id": "worker1", "key": "claim_31", "value": {}, "claimed_at": 1000})
-        repo.insert_worker_claim({"worker_id": "worker1", "key": "claim_32", "value": {}, "claimed_at": 4900})
-
-        result = repo.steal_claim(
-            {
-                "key": "claim_32",
-                "worker_id": "worker2",
-                "value": {},
-                "claimed_at": 5000,
-            },
-            now=5000,
-            lease_ms=1000,
+    def test_remove_claims_remove_completed_songs(self, pg_session) -> None:
+        repo, register, _ = _claim_env(pg_session)
+        s1 = register(1)
+        repo._acquire_claim(
+            WorkerClaim(identity=WorkerClaimIdentity(song=s1, worker_id="w1"), claimed_at_ms=1000),
+            now_ms=1000,
+            lease_ms=None,
         )
+        repo._song_state_repo.list_songs_in_state.return_value = [1]
+        deleted = repo._remove_claims(ClaimRemovalRequest(remove_completed_songs=True))
+        assert deleted == 1
+        assert repo._count_claims() == 0
 
-        assert result is False
-        claims = {claim["key"]: claim for claim in repo.list_claims()}
-        assert claims["claim_31"]["worker_id"] == "worker1"
-        assert claims["claim_32"]["worker_id"] == "worker1"
+    def test_remove_claims_remove_errored_songs(self, pg_session) -> None:
+        repo, register, _ = _claim_env(pg_session)
+        s1 = register(1)
+        repo._acquire_claim(
+            WorkerClaim(identity=WorkerClaimIdentity(song=s1, worker_id="w1"), claimed_at_ms=1000),
+            now_ms=1000,
+            lease_ms=None,
+        )
+        repo._song_state_repo.list_songs_in_state.return_value = [1]
+        deleted = repo._remove_claims(ClaimRemovalRequest(remove_errored_songs=True))
+        assert deleted == 1
+        assert repo._count_claims() == 0
 
-    def test_list_claims(self, pg_session) -> None:
-        """list_claims should return all claims."""
-        repo = AppRepository(pg_session)
-        repo.insert_worker_claim(
-            {
-                "worker_id": "worker1",
-                "key": "40",
-                "value": {},
-                "claimed_at": 1000,
-            }
+    def test_remove_claims_preserves_active_reconcile_claims(self, pg_session) -> None:
+        repo, register, _ = _claim_env(pg_session)
+        s1 = register(1)
+        reconcile = WorkerClaim(
+            identity=WorkerClaimIdentity(song=s1, worker_id="w1", claim_type="reconcile"),
+            claimed_at_ms=1000,
         )
-        repo.insert_worker_claim(
-            {
-                "worker_id": "worker2",
-                "key": "41",
-                "value": {},
-                "claimed_at": 1000,
-            }
+        assert repo._acquire_claim(reconcile, now_ms=1000, lease_ms=None) is True
+        repo._song_state_repo.list_songs_in_state.return_value = [1]
+        deleted = repo._remove_claims(ClaimRemovalRequest(remove_completed_songs=True))
+        assert deleted == 0
+        assert repo._count_claims() == 1
+
+    def test_count_claims_direct_count(self, pg_session) -> None:
+        repo, register, _ = _claim_env(pg_session)
+        assert repo._count_claims() == 0
+        s1 = register(1)
+        repo._acquire_claim(
+            WorkerClaim(identity=WorkerClaimIdentity(song=s1, worker_id="w1"), claimed_at_ms=1000),
+            now_ms=1000,
+            lease_ms=None,
         )
-        result = repo.list_claims()
-        assert len(result) >= 2
+        assert repo._count_claims() == 1
+
+    def test_list_claims_exposes_only_domain_values(self, pg_session) -> None:
+        """list_claims returns resolvable rows as domain WorkerClaim values only.
+
+        No storage keys, ids, or JSON payloads may leak across the boundary — the
+        returned objects are frozen WorkerClaim domain values with a resolved
+        SongIdentity (CONTRACTS.md).
+        """
+        repo, register, _ = _claim_env(pg_session)
+        assert repo._list_claims() == []
+        s1 = register(1)
+        s2 = register(2)
+        untyped = WorkerClaim(
+            identity=WorkerClaimIdentity(song=s1, worker_id="w1"),
+            claimed_at_ms=1000,
+        )
+        typed = WorkerClaim(
+            identity=WorkerClaimIdentity(song=s2, worker_id="w2", claim_type="reconcile"),
+            claimed_at_ms=2000,
+        )
+        assert repo._acquire_claim(untyped, now_ms=1000, lease_ms=None) is True
+        assert repo._acquire_claim(typed, now_ms=2000, lease_ms=None) is True
+
+        claims = repo._list_claims()
+        assert len(claims) == 2
+        by_song = {c.identity.song.normalized_path: c for c in claims}
+        assert set(by_song) == {s1.normalized_path, s2.normalized_path}
+        for c in claims:
+            assert isinstance(c, WorkerClaim)
+            assert isinstance(c.identity, WorkerClaimIdentity)
+        assert by_song[s1.normalized_path].identity.worker_id == "w1"
+        assert by_song[s1.normalized_path].identity.claim_type is None
+        assert by_song[s1.normalized_path].claimed_at_ms == 1000
+        assert by_song[s2.normalized_path].identity.worker_id == "w2"
+        assert by_song[s2.normalized_path].identity.claim_type == "reconcile"
+        assert by_song[s2.normalized_path].claimed_at_ms == 2000
+
+    def test_list_claims_quarantines_orphan_rows(self, pg_session) -> None:
+        """Unresolvable claim rows are quarantined, never surfaced to callers.
+
+        A claim whose song identity can no longer be resolved (e.g. song removed)
+        must not leak as a raw row; list_claims drops it while count_claims still
+        reflects the persisted row (CONTRACTS.md orphan-quarantine rule).
+        """
+        repo, register, unregister = _claim_env(pg_session)
+        s1 = register(1)
+        assert (
+            repo._acquire_claim(
+                WorkerClaim(identity=WorkerClaimIdentity(song=s1, worker_id="w1"), claimed_at_ms=1000),
+                now_ms=1000,
+                lease_ms=None,
+            )
+            is True
+        )
+        assert len(repo._list_claims()) == 1
+
+        # Song becomes unresolvable (deleted) → row becomes an orphan.
+        unregister(1)
+        assert repo._list_claims() == []
+        assert repo._count_claims() == 1
 
     # ── Migrations ──────────────────────────────────────────────
 
@@ -680,20 +1113,14 @@ class TestAppRepository:
 
     # ── maintenance ─────────────────────────────────────────────
 
-    def test_truncate_worker_claims(self, pg_session) -> None:
-        """truncate_worker_claims should remove all claims."""
-        repo = AppRepository(pg_session)
-        repo.insert_worker_claim(
-            {
-                "worker_id": "worker1",
-                "key": "50",
-                "value": {},
-                "claimed_at": 1000,
-            }
-        )
-        repo.truncate_worker_claims()
-        result = pg_session.execute(select(WorkerClaim))
-        assert len(result.all()) == 0
+    def test_delete_all_worker_claims(self, pg_session) -> None:
+        """_delete_all_worker_claims should remove all claims."""
+        repo, register, _ = _claim_env(pg_session)
+        song = register(1)
+        claim = WorkerClaim(identity=WorkerClaimIdentity(song=song, worker_id="worker1"), claimed_at_ms=1000)
+        assert repo._acquire_claim(claim, now_ms=1000, lease_ms=None) is True
+        repo._delete_all_worker_claims()
+        assert repo._count_claims() == 0
 
     def test_truncate_health(self, pg_session) -> None:
         """truncate_health should remove all health rows."""

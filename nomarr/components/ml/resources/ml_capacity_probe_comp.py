@@ -14,7 +14,6 @@ import hashlib
 import logging
 import os
 import time
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from nomarr.components.platform.locks_comp import (
@@ -26,6 +25,7 @@ from nomarr.components.platform.resource_monitor_comp import (
     get_ram_usage_mb,
     get_vram_usage_for_pid_mb,
 )
+from nomarr.helpers.dataclasses.app_dataclasses import CapacityEstimate
 from nomarr.helpers.time_helper import internal_ms, now_ms
 
 if TYPE_CHECKING:
@@ -38,26 +38,6 @@ PROBE_POLL_INTERVAL_MS = 5000  # Interval to poll for completed probe (milliseco
 PROBE_TIMEOUT_MS = 120000  # Timeout waiting for another worker's probe (milliseconds)
 CONSERVATIVE_BACKBONE_VRAM_MB = 8192  # Default if probe fails (EffNet worst case)
 CONSERVATIVE_WORKER_RAM_MB = 4096  # Default if probe fails
-
-
-@dataclass
-class CapacityEstimate:
-    """Result from ML capacity probe.
-
-    Attributes:
-        model_set_hash: Hash identifying the model configuration
-        measured_backbone_vram_mb: VRAM used by backbone model (0 if CPU-only)
-        estimated_worker_ram_mb: RAM used by worker (heads + overhead)
-        gpu_capable: True if GPU is available
-        is_conservative: True if using fallback values (probe failed/timed out)
-
-    """
-
-    model_set_hash: str
-    measured_backbone_vram_mb: int
-    estimated_worker_ram_mb: int
-    gpu_capable: bool
-    is_conservative: bool = False
 
 
 def compute_model_set_hash(models_dir: str) -> str:
@@ -117,20 +97,19 @@ def get_or_run_capacity_probe(
     model_set_hash = compute_model_set_hash(models_dir)
     gpu_capable = check_nvidia_gpu_capability()
 
-    # Check for existing estimate (stored in meta/config)
-    raw = db.app.get_config_option(key=f"capacity_estimate:{model_set_hash}")
-    if raw is not None and raw.value is not None:
-        existing = raw.value
+    # Check for existing estimate (stored as a semantic capacity estimate)
+    existing = db.app.get_capacity_estimate(model_set_hash)
+    if existing is not None:
         logger.debug(
             "[ml_capacity_probe] Using cached estimate for hash=%s (vram=%dMB, ram=%dMB)",
             model_set_hash,
-            existing["measured_backbone_vram_mb"],
-            existing["estimated_worker_ram_mb"],
+            existing.measured_backbone_vram_mb,
+            existing.estimated_worker_ram_mb,
         )
         return CapacityEstimate(
             model_set_hash=model_set_hash,
-            measured_backbone_vram_mb=existing["measured_backbone_vram_mb"],
-            estimated_worker_ram_mb=existing["estimated_worker_ram_mb"],
+            measured_backbone_vram_mb=existing.measured_backbone_vram_mb,
+            estimated_worker_ram_mb=existing.estimated_worker_ram_mb,
             gpu_capable=gpu_capable,
             is_conservative=False,
         )
@@ -264,17 +243,15 @@ def _run_capacity_probe(
             probe_duration,
         )
 
-        # Persist results
-        db.app.update_config_option(
-            key=f"capacity_estimate:{model_set_hash}",
-            payload={
-                "value": {
-                    "measured_backbone_vram_mb": backbone_vram_mb,
-                    "estimated_worker_ram_mb": worker_ram_mb,
-                    "probe_duration_s": probe_duration,
-                    "probed_by_worker": worker_id,
-                }
-            },
+        # Persist results (as a semantic capacity estimate)
+        db.app.set_capacity_estimate(
+            CapacityEstimate(
+                model_set_hash=model_set_hash,
+                measured_backbone_vram_mb=backbone_vram_mb,
+                estimated_worker_ram_mb=worker_ram_mb,
+                gpu_capable=gpu_capable,
+                is_conservative=False,
+            )
         )
 
         # The estimate is published before releasing the coordination lock.
@@ -325,19 +302,18 @@ def _wait_for_probe_completion(
     deadline = start_time + PROBE_TIMEOUT_MS
 
     while internal_ms().value < deadline:
-        # Check for completed estimate (stored in meta/config)
-        raw = db.app.get_config_option(key=f"capacity_estimate:{model_set_hash}")
-        if raw is not None and raw.value is not None:
-            estimate = raw.value
+        # Check for completed estimate (stored as a semantic capacity estimate)
+        estimate = db.app.get_capacity_estimate(model_set_hash)
+        if estimate is not None:
             logger.info(
                 "[ml_capacity_probe] Got probe result from another worker (vram=%dMB, ram=%dMB)",
-                estimate["measured_backbone_vram_mb"],
-                estimate["estimated_worker_ram_mb"],
+                estimate.measured_backbone_vram_mb,
+                estimate.estimated_worker_ram_mb,
             )
             return CapacityEstimate(
                 model_set_hash=model_set_hash,
-                measured_backbone_vram_mb=estimate["measured_backbone_vram_mb"],
-                estimated_worker_ram_mb=estimate["estimated_worker_ram_mb"],
+                measured_backbone_vram_mb=estimate.measured_backbone_vram_mb,
+                estimated_worker_ram_mb=estimate.estimated_worker_ram_mb,
                 gpu_capable=gpu_capable,
                 is_conservative=False,
             )
@@ -346,13 +322,12 @@ def _wait_for_probe_completion(
         lock = db.app.get_lock("capacity_probe", model_set_hash)
         if lock is None:
             # Lock was released (probe failed), check for estimate one more time
-            raw = db.app.get_config_option(key=f"capacity_estimate:{model_set_hash}")
-            if raw is not None and raw.value is not None:
-                estimate = raw.value
+            estimate = db.app.get_capacity_estimate(model_set_hash)
+            if estimate is not None:
                 return CapacityEstimate(
                     model_set_hash=model_set_hash,
-                    measured_backbone_vram_mb=estimate["measured_backbone_vram_mb"],
-                    estimated_worker_ram_mb=estimate["estimated_worker_ram_mb"],
+                    measured_backbone_vram_mb=estimate.measured_backbone_vram_mb,
+                    estimated_worker_ram_mb=estimate.estimated_worker_ram_mb,
                     gpu_capable=gpu_capable,
                     is_conservative=False,
                 )
@@ -385,5 +360,5 @@ def invalidate_capacity_estimate(db: Database, models_dir: str) -> None:
 
     """
     model_set_hash = compute_model_set_hash(models_dir)
-    db.app.remove_config_option(key=f"capacity_estimate:{model_set_hash}")
+    db.app.remove_capacity_estimate(model_set_hash)
     logger.info("[ml_capacity_probe] Invalidated capacity estimate for hash=%s", model_set_hash)

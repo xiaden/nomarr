@@ -15,12 +15,18 @@ from nomarr.helpers.dataclasses.ml_output_stream_dataclass import OutputStream, 
 from nomarr.helpers.dataclasses.session_dataclass import AuthSession
 from nomarr.helpers.dataclasses.song_dataclass import Song
 from nomarr.helpers.dataclasses.tags_dataclass import Tag, Tags, TagValue
+from nomarr.helpers.dataclasses.worker_claim_dataclass import (
+    ClaimRemovalRequest,
+    WorkerClaim,
+    WorkerClaimIdentity,
+)
 
 __all__ = [
     "AuthSession",
     "CalibrationHistorySnapshot",
     "CalibrationState",
     "CapacityEstimate",
+    "ClaimRemovalRequest",
     "ConfigOption",
     "EmbeddingStream",
     "GpuResourceSnapshot",
@@ -35,4 +41,6 @@ __all__ = [
     "TagValue",
     "Tags",
     "VramPromise",
+    "WorkerClaim",
+    "WorkerClaimIdentity",
 ]

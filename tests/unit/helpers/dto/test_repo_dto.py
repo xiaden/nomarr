@@ -18,7 +18,6 @@ from nomarr.helpers.dto.repo_dto import (
     SongStateRow,
     SongTagRow,
     TagRow,
-    WorkerClaimRow,
 )
 
 
@@ -294,22 +293,3 @@ class TestSessionRow:
         assert row["id"] == "session123"
         assert row["data"]["user"] == "admin"
         assert row["expires_at"] == 2000
-
-
-@pytest.mark.unit
-class TestWorkerClaimRow:
-    """Tests for WorkerClaimRow TypedDict."""
-
-    @pytest.mark.unit
-    def test_can_create_with_all_fields(self) -> None:
-        """WorkerClaimRow should be creatable with all required fields."""
-        row = WorkerClaimRow(
-            id=1,
-            worker_id="worker1",
-            key="task1",
-            value={"status": "processing"},
-            claimed_at=1000,
-        )
-        assert row["id"] == 1
-        assert row["worker_id"] == "worker1"
-        assert row["key"] == "task1"

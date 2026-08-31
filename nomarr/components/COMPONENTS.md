@@ -6,9 +6,9 @@ They are:
 
 - **Domain logic modules** for a specific area (analytics, ML, tagging, library management)
 - **Reusable building blocks** composed by workflows
-- **The only layer that may call persistence**
+- **The primary layer for heavy, persistence-backed domain logic**
 
-> **⚠️ Persistence Rule:** Components are the **only** layer that may call persistence (`db.*`) directly. Services, workflows, and interfaces must go through components for any database access.
+> **⚠️ Persistence Rule:** Components are the **primary** layer that calls persistence, through the injected public `Database` intent facade (`db.library`, `db.app`, `db.ml`). They may combine multiple facade calls into heavier domain logic. Services and workflows may also make **thin**, single-atomic-intent facade calls directly, but any business rules, state-machine transitions, or multi-call persistence choreography belong in a component. Interfaces must go through services for any database access.
 
 > **Rule:** Heavy business logic lives here. Wiring lives in services. Control flow composition lives in workflows.
 
@@ -195,7 +195,7 @@ The ML backend is **ONNX Runtime** (`components/ml/onnx/`). Essentia is **not** 
 
 **Allowed:**
 
-- ✅ Persistence (`nomarr.persistence.*`) — components are the only layer that may
+- ✅ Persistence (`nomarr.persistence.*`) — the public `Database` intent facade (`db.library`/`db.app`/`db.ml`); components are the primary caller and may combine facade calls into heavier domain logic
 - ✅ Helpers (`nomarr.helpers.*`)
 - ✅ Other components (`nomarr.components.*`) — lateral imports
 - ✅ Standard library, numpy, etc.

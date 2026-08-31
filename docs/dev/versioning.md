@@ -71,7 +71,7 @@ Starting with SCHEMA_VERSION 6, Nomarr uses a **forward-only migration system**:
 
 - Migrations run automatically during startup via `prepare_database_workflow()`
 - Applied migrations are tracked in the `applied_migrations` collection
-- Schema version is stored in the `meta` collection
+- Schema version is stored in the `meta` table
 - If the database schema is ahead of the code, startup aborts
 - See [migrations.md](migrations.md) for architecture details and how to write migrations
 
@@ -359,7 +359,7 @@ No manual version specification in CI config needed.
 - Remove collection or field
 - Change collection field type (incompatible)
 - Change schema without migration
-- Change worker claim format
+- Change worker claim format (persistence-internal encoding; not consumer-facing)
 
 **Behavior:**
 

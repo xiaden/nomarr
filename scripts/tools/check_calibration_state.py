@@ -21,24 +21,32 @@ def main() -> None:
 
     try:
         # ── Count files with calibration_hash ──────────────────────
-        db.library.count_files()
-
         session = db._scoped
+        # DIAGNOSTIC-ONLY DIRECT SQL (Plan C classification): the raw queries
+        # below (songs calibration_hash counts, mood tags via file_tags/tags
+        # JOIN, ml_model_outputs JOIN ml_models, uncalibrated-sample pick)
+        # read NON-calibration domains (songs/tags/models/outputs) and are an
+        # ad-hoc audit the intent facade does not expose.  They are
+        # diagnostic-only direct SQL — NOT facade leaks — and must not be
+        # used to justify any facade change.  They are deliberately isolated
+        # from the calibration facade migration; calibration data itself is
+        # read only through the public ``db.ml`` domain surface above.
         result = session.execute(
             text("SELECT COUNT(*) FROM songs WHERE calibration_hash IS NOT NULL"),
         )
         result.scalar() or 0
 
         # ── Check calibration version ──────────────────────────────
-        ver_doc = db.app.get_config_option("calibration_version")
-        last_run_doc = db.app.get_config_option("calibration_last_run")
-        ver_doc.value if ver_doc else None
-        last_run_doc.value if last_run_doc else None
+        db.app.get_calibration_version()
+        db.app.get_calibration_last_run()
 
         # ── Print calibration_state summary ─────────────────────────
+        # Plan C: ``list_calibration_states()`` returns ``list[CalibrationState]``
+        # domain values (frozen/slotted dataclasses).  They must be read via
+        # attributes — never dict-indexed (``s["state_data"]`` would crash).
         states = db.ml.list_calibration_states()
-        for s in sorted(states, key=lambda x: x["state_data"].get("label", "")):
-            s["state_data"]
+        for s in sorted(states, key=lambda x: x.label):
+            _ = (s.p5, s.p95, s.sample_count)
 
         # ── Sample a calibrated file ────────────────────────────────
         result = session.execute(

@@ -166,6 +166,61 @@ class TestFacadeMethodsReturnDomainObjects:
 
 
 # ---------------------------------------------------------------------------
+# Test 7: AppDb exposes no legacy claim method / transaction surface (Phase 3)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.sabotage_check
+class TestAppDbHasNoLegacyClaimSurface:
+    """AppDb (and AppMaintenanceDb) expose no legacy claim method or txn surface.
+
+    The canonical claims intent surface is add_claim / remove_claim /
+    remove_claims / list_claims / count_claims plus the all-claims reset under
+    maintenance.delete_all_worker_claims. No legacy insert/release/steal/truncate
+    name, no compatibility alias, and no transaction() guard may resurface
+    (CONTRACTS.md / TASK-worker-claims-intent-facade-A-correction Phase 3).
+    """
+
+    def test_app_db_exposes_no_legacy_claim_method(self) -> None:
+        from nomarr.persistence.api.application import AppDb
+
+        for name in (
+            "insert_worker_claim",
+            "claim_file",
+            "release_claim",
+            "release_claim_by_song",
+            "delete_claims_for_workers",
+            "delete_claims_for_songs",
+            "delete_claims",
+            "steal_claim",
+            "aggregate_worker_claims",
+            "count_worker_claims",
+            "truncate_worker_claims",
+            "claim_song",
+            "try_insert_or_steal_claim",
+            "remove_claim_by_song",
+        ):
+            assert not hasattr(AppDb, name), f"AppDb must not expose a '{name}' claim method (CONTRACTS.md)."
+        assert not hasattr(AppDb, "transaction"), "AppDb must not expose a transaction() method."
+        assert not hasattr(AppDb, "_require_transaction"), "AppDb must not expose _require_transaction."
+
+    def test_app_db_has_no_top_level_all_claims_delete(self) -> None:
+        from nomarr.persistence.api.application import AppDb
+
+        assert not hasattr(AppDb, "delete_all_worker_claims"), (
+            "delete_all_worker_claims must live only under db.app.maintenance."
+        )
+
+    def test_maintenance_db_exposes_only_delete_all_worker_claims(self) -> None:
+        from nomarr.persistence.api.application import AppMaintenanceDb
+
+        claim_names = {name for name in dir(AppMaintenanceDb) if "claim" in name.lower()}
+        assert claim_names == {"delete_all_worker_claims"}, (
+            f"AppMaintenanceDb must expose only delete_all_worker_claims, got: {sorted(claim_names)}"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Test 6: Facade methods accept domain identifiers
 # ---------------------------------------------------------------------------
 

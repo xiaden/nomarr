@@ -127,6 +127,81 @@ class TestNoDirectStorageImports:
         )
 
 
+# ── Worker-claims sealed facade boundary (Phase 3) ────────────────────────────
+# The canonical claims intent surface is add_claim / remove_claim / remove_claims /
+# list_claims / count_claims (plus the all-claims reset under maintenance). The
+# legacy claim persistence names below must never resurface as object-attribute
+# calls in caller code. Component-level thin helpers that WRAP the facade (e.g.
+# ``release_claim(db, ...)`` calling ``db.app.remove_claim``) are permitted under
+# ADR-046; scoping the pattern to attribute access (``\.name``) therefore targets
+# the facade/repository surface without false-flagging bare component helper calls.
+CLAIM_FACADE_METHOD_PATTERN = re.compile(
+    r"\.(?:"
+    r"insert_worker_claim|claim_file|release_claim|release_claim_by_song"
+    r"|delete_claims_for_workers|delete_claims_for_songs|delete_claims"
+    r"|steal_claim|aggregate_worker_claims|count_worker_claims"
+    r"|truncate_worker_claims|claim_song|try_insert_or_steal_claim|remove_claim_by_song"
+    r")\b"
+)
+
+# WorkerClaimRow is a persistence-internal storage shape that must never cross the
+# boundary into caller code.
+CLAIM_ROW_PATTERN = re.compile(r"\bWorkerClaimRow\b")
+
+# Encoded claim-key construction/parsing (``claim_{song_id}`` /
+# ``claim_{claim_type}_{song_id}``) is owned solely by the persistence repo
+# (``app_repo.py``); no higher layer constructs, parses, or compares these strings.
+CLAIM_KEY_ENCODING_PATTERN = re.compile(r"_claim_key\s*\(|_parse_claim_key\s*\(|f[\"']claim_")
+
+
+@pytest.mark.sabotage_check
+class TestNoLegacyClaimFacadeCalls:
+    """Legacy claim names never resurface as facade/repo attribute calls."""
+
+    def test_no_legacy_claim_facade_calls_in_caller_code(self) -> None:
+        violations: list[tuple[str, int, str]] = []
+        for directory in LEGACY_CALLER_DIRS:
+            violations.extend(_scan_dir(directory, CLAIM_FACADE_METHOD_PATTERN))
+        assert len(violations) == 0, (
+            "Callers must use the canonical claims intent facade (db.app.add_claim / "
+            "remove_claim / remove_claims / list_claims / count_claims). Legacy claim "
+            "persistence names (insert_worker_claim, claim_file, release_claim, "
+            "release_claim_by_song, delete_claims*, steal_claim, aggregate_worker_claims, "
+            "count_worker_claims, truncate_worker_claims, claim_song, "
+            "try_insert_or_steal_claim, remove_claim_by_song) must not reappear as "
+            "object-attribute calls above persistence (CONTRACTS.md).\n"
+            f"{_format(violations)}"
+        )
+
+
+@pytest.mark.sabotage_check
+class TestNoClaimStorageMechanicsInCallers:
+    """WorkerClaimRow and encoded claim keys never appear in caller code."""
+
+    def test_no_worker_claim_row_in_callers(self) -> None:
+        violations: list[tuple[str, int, str]] = []
+        for directory in CALLER_DIRS:
+            violations.extend(_scan_dir(directory, CLAIM_ROW_PATTERN))
+        assert len(violations) == 0, (
+            "WorkerClaimRow is a persistence-internal storage shape and must not be "
+            "imported, referenced, or returned in components/services/workflows/"
+            "interfaces (CONTRACTS.md).\n"
+            f"{_format(violations)}"
+        )
+
+    def test_no_encoded_claim_key_in_callers(self) -> None:
+        violations: list[tuple[str, int, str]] = []
+        for directory in CALLER_DIRS:
+            violations.extend(_scan_dir(directory, CLAIM_KEY_ENCODING_PATTERN))
+        assert len(violations) == 0, (
+            "Encoded claim-key construction/parsing (claim_{song_id} / "
+            "claim_{claim_type}_{song_id}) is owned solely by the persistence repo "
+            "(app_repo.py); no higher layer may construct, parse, or compare these "
+            "strings (CONTRACTS.md).\n"
+            f"{_format(violations)}"
+        )
+
+
 @pytest.mark.sabotage_check
 class TestSongTagAssignmentHasNoSongId:
     """SongTagAssignment exposes a domain SongIdentity handle, never storage song_id."""

@@ -94,8 +94,7 @@ class TaggingWriteMixin:
 
         """
         target_mode = library.file_write_mode
-        calibration_doc = self.db.app.get_config_option("calibration_version")
-        calibration_hash = None if calibration_doc is None else calibration_doc.value
+        calibration_hash = self.db.app.get_calibration_version()
         has_calibration = bool(calibration_hash)
 
         worker_id = f"reconcile:{library.name}"
@@ -109,8 +108,8 @@ class TaggingWriteMixin:
         processed = 0
         failed = 0
 
-        for file_doc in claimed_files:
-            file_key = str(file_doc["id"])
+        for song in claimed_files:
+            file_key = str(song.song_id)
             try:
                 result = write_file_tags_workflow(
                     db=self.db,

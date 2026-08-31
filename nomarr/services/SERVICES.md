@@ -8,7 +8,7 @@ Services are:
 - **Thin orchestrators** (call workflows, aggregate results)
 - **DTO providers** (shape data for interfaces)
 
-> **⚠️ Persistence Rule:** Services may hold a `Database` reference for DI wiring, but **MUST NOT** call persistence methods (`db.*`) directly. Database access flows through: service → workflow → component → persistence.
+> **⚠️ Persistence Rule:** Services may call the injected public `Database` intent facade (`db.library`, `db.app`, `db.ml`) for **thin, single-atomic-intent operations** — one facade method per call. They must not sequence lower-level calls, implement business rules or state-machine transitions, manage collection-level writes, or perform multi-call persistence choreography; that belongs in a component or an intent-complete facade method. Services import `Database` from `nomarr.persistence.db` and never touch persistence implementation internals. Only the composition root constructs `Database`.
 
 > **Rule:** No complex business logic lives here. That belongs in workflows and components.
 
@@ -133,8 +133,8 @@ A service method should:
  | Wire config, DB, ML backends | Parse HTTP/CLI input |
  | Call workflows and components | Raise `HTTPException` |
  | Own long-lived resources | Contain domain rules or heavy branching |
- | Return DTOs | Embed Pydantic models |
- | Skip workflows for simple ops | Call persistence directly |
+| Return DTOs | Embed Pydantic models |
+| Skip workflows for simple ops | Reconstruct persistence intents (sequence facade calls, business rules, state transitions) |
 
 ---
 
@@ -208,7 +208,7 @@ Config is loaded once by `ConfigService` and passed via parameters. No global si
 - ✅ Workflows (`nomarr.workflows.*`)
 - ✅ Components (`nomarr.components.*`) — for simple direct operations
 - ✅ Helpers (`nomarr.helpers.*`)
-- ✅ Persistence **type only** (`from nomarr.persistence import Database`) — for DI wiring
+- ✅ Public persistence facade (`from nomarr.persistence.db import Database`) — for thin single-intent calls (`db.library`/`db.app`/`db.ml`) and DI wiring
 - ✅ Standard library, third-party
 
 **Forbidden:**
@@ -216,7 +216,8 @@ Config is loaded once by `ConfigService` and passed via parameters. No global si
 - ❌ Interfaces (`nomarr.interfaces.*`)
 - ❌ FastAPI, Pydantic
 - ❌ HTTP or CLI frameworks
-- ❌ Calling `db.*` methods directly
+- ❌ Importing persistence implementation internals (`nomarr.persistence.database`/`api`/`sql`/`mappers`/`models`)
+- ❌ Sequencing multiple facade calls to reconstruct a multi-step persistence intent
 
 ---
 
@@ -227,6 +228,6 @@ Config is loaded once by `ConfigService` and passed via parameters. No global si
  | Business logic in services | Domain rules belong in workflows/components | Extract to workflow |
  | Returning raw dicts | Untyped contracts | Return a DTO |
  | Transport logic (`status_code`, `HTTPException`) | Interface concern | Keep HTTP in interfaces |
- | Calling `db.library.*`, `db.app.*`, or `db.ml.*` directly | Services should route persistence through workflows/components | Route through workflow → component |
+ | Sequencing multiple `db.library.*`/`db.app.*`/`db.ml.*` calls to rebuild an intent | Thin single-intent facade calls are allowed, but choreography belongs in a component | Extract the multi-call intent to a component |
  | Global state or singletons | Hidden dependency, test-unfriendly | Use constructor injection |
  | Embedding Pydantic models | Interface concern | Use DTOs from `helpers/dto/` |

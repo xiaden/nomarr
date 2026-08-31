@@ -49,8 +49,6 @@ ARANGO_FIELD_ALLOWLIST: dict[tuple[str, int], str] = {
     ("nomarr/components/library/reconcile_paths_comp.py", 38): "2026-10-15",
     ("nomarr/components/library/tag_hydration_comp.py", 87): "2026-10-15",
     ("nomarr/components/library/tag_hydration_comp.py", 136): "2026-10-15",
-    ("nomarr/components/ml/calibration/ml_calibration_state_comp.py", 94): "2026-10-15",
-    ("nomarr/components/ml/calibration/ml_calibration_state_comp.py", 96): "2026-10-15",
     ("nomarr/components/ml/vectors/ml_vector_retrieve_comp.py", 29): "2026-10-15",
     ("nomarr/components/workers/worker_tag_comp.py", 33): "2026-10-15",
     ("nomarr/helpers/dto/navidrome_dto.py", 222): "2026-10-15",
@@ -113,7 +111,7 @@ def find_python_files(directory: Path, exclude_dirs: set[str] | None = None) -> 
         yield path
 
 
-def find_import_violations(file_path: Path, forbidden_imports: list[str]) -> list[tuple[int, str]]:
+def find_import_violations(file_path: Path, forbidden_imports: tuple[str, ...] | list[str]) -> list[tuple[int, str]]:
     """Find lines that import forbidden modules.
 
     Args:
@@ -478,20 +476,79 @@ def test_higher_layers_do_not_import_persistence_collection_or_accessor_internal
         pytest.fail(msg)
 
 
+#: ADR-046: the complete set of persistence implementation internal namespaces
+#: that higher layers (components, services, workflows) must not import. The
+#: public `nomarr.persistence.db` facade is intentionally NOT listed here - it
+#: remains the sanctioned boundary through which higher layers reach the intent
+#: facades (`db.library`, `db.app`, `db.ml`). `collections_base` and `accessors`
+#: are covered by a separate dedicated scan (the collection/accessor internal
+#: ban is preserved independently).
+_PERSISTENCE_INTERNAL_NAMESPACES = (
+    "nomarr.persistence.database",
+    "nomarr.persistence.sql",
+    "nomarr.persistence.mappers",
+    "nomarr.persistence.models",
+    "nomarr.persistence.pg_engine",
+    "nomarr.persistence.api",
+    "nomarr.persistence.exceptions",
+)
+
+
 @pytest.mark.code_smell
 @pytest.mark.slow
-def test_higher_layers_do_not_import_persistence_tier1_or_tier2_internals():
-    """Ensure higher layers cross persistence through `Database`, not lower tiers.
+def test_higher_layers_do_not_import_persistence_internal_namespaces():
+    """Ensure higher layers cross persistence through the public `Database` facade.
 
-    ADR-031 makes `db.library`, `db.app`, and `db.ml` the supported caller
-    boundary. Tier 2 (`nomarr.persistence.database`) and Tier 1
-    (`nomarr.persistence.database`) remain private implementation layers.
+    ADR-046 makes `db.library`, `db.app`, and `db.ml` the supported caller
+    boundary via the public `nomarr.persistence.db` facade. Every persistence
+    implementation internal namespace remains private and forbidden to
+    components, services, and workflows: Tier-2 repositories
+    (`nomarr.persistence.database`), Tier-1 SQL (`nomarr.persistence.sql`),
+    mappers, models, pg_engine, the `nomarr.persistence.api` implementation
+    modules, and persistence exceptions.
 
     A narrow bootstrap seam is allowlisted because schema setup intentionally
     works below the normal caller boundary.
     """
+    forbidden_imports = list(_PERSISTENCE_INTERNAL_NAMESPACES)
+    violations = []
+
+    for layer_name in ("components", "services", "workflows"):
+        layer_dir = NOMARR_DIR / layer_name
+        for py_file in find_python_files(layer_dir, exclude_dirs={"__pycache__", ".pytest_cache"}):
+            if py_file in PERSISTENCE_TIER_BOOTSTRAP_ALLOWLIST:
+                continue
+            file_violations = find_import_violations(py_file, forbidden_imports)
+            if file_violations:
+                rel_path = py_file.relative_to(PROJECT_ROOT)
+                for line_num, line in file_violations:
+                    violations.append(f"  {rel_path}:{line_num}: {line}")
+
+    if violations:
+        msg = (
+            "Found higher-layer imports of persistence internal namespaces.\n"
+            "Components, services, and workflows must cross the persistence boundary\n"
+            "through `Database` and its Tier 3 intent facades (`db.library`, `db.app`, `db.ml`).\n"
+            "Do not import " + ", ".join(_PERSISTENCE_INTERNAL_NAMESPACES) + "\n"
+            "outside persistence-local code.\n\n"
+            "Violations:\n" + "\n".join(violations)
+        )
+        pytest.fail(msg)
+
+
+@pytest.mark.code_smell
+@pytest.mark.slow
+def test_higher_layers_do_not_import_persistence_tier1_sql():
+    """Explicit Tier-1 SQL prohibition for higher layers (ADR-046).
+
+    Tier-1 SQL primitives (`nomarr.persistence.sql`) are implementation
+    internals and remain forbidden to components, services, and workflows,
+    which must use the intent facades instead. Kept as a dedicated scan so the
+    Tier-1 ban stays explicit rather than only implied by the broad internal
+    inventory.
+    """
     forbidden_imports = [
-        "nomarr.persistence.database",
+        "nomarr.persistence.sql",
     ]
     violations = []
 
@@ -508,11 +565,48 @@ def test_higher_layers_do_not_import_persistence_tier1_or_tier2_internals():
 
     if violations:
         msg = (
-            "Found higher-layer imports of Tier 1/Tier 2 persistence internals.\n"
+            "Found higher-layer imports of Tier-1 SQL primitives.\n"
             "Components, services, and workflows must cross the persistence boundary\n"
             "through `Database` and its Tier 3 intent facades (`db.library`, `db.app`, `db.ml`).\n"
-            "Do not import `nomarr.persistence.database` directly\n"
+            "Do not import `nomarr.persistence.sql` directly\n"
             "outside persistence-local code.\n\n"
+            "Violations:\n" + "\n".join(violations)
+        )
+        pytest.fail(msg)
+
+
+@pytest.mark.code_smell
+@pytest.mark.slow
+def test_interfaces_and_helpers_do_not_import_persistence():
+    """Interfaces and helpers must have NO `nomarr.persistence` imports at all.
+
+    ADR-046 bars interfaces and helpers from persistence entirely (they are the
+    only layers with a complete persistence ban): no public facade import, no
+    internal import. This complements the import-linter contract and gives
+    line-level failures in pytest.
+    """
+    forbidden_imports = [
+        "nomarr.persistence",
+    ]
+    violations = []
+
+    for layer_name in ("interfaces", "helpers"):
+        layer_dir = NOMARR_DIR / layer_name
+        if not layer_dir.exists():
+            continue
+        for py_file in find_python_files(layer_dir, exclude_dirs={"__pycache__", ".pytest_cache"}):
+            file_violations = find_import_violations(py_file, forbidden_imports)
+            if file_violations:
+                rel_path = py_file.relative_to(PROJECT_ROOT)
+                for line_num, line in file_violations:
+                    violations.append(f"  {rel_path}:{line_num}: {line}")
+
+    if violations:
+        msg = (
+            "Found interfaces/helpers importing persistence.\n"
+            "Interfaces and helpers must have no nomarr.persistence imports at all\n"
+            "(ADR-046); only components, services, and workflows may call the public\n"
+            "Database facade.\n\n"
             "Violations:\n" + "\n".join(violations)
         )
         pytest.fail(msg)
@@ -872,3 +966,496 @@ def test_no_file_domain_naming_in_persistence_surface() -> None:
             "AR-SDR-1 violation: file-domain persistence/domain vocabulary found "
             "(songs are the sole canonical entity).\n" + report
         )
+
+
+# ── Worker-claims storage-mechanics ban (Phase 3) ─────────────────────────────
+# The worker_claims intent facade (TASK-worker-claims-intent-facade-A-correction)
+# requires that no storage mechanics cross the persistence boundary: the raw row
+# TypedDict (WorkerClaimRow), dead legacy claim method names, the worker_claims
+# table name, encoded claim keys, and claim JSON-payload access
+# (``claim.get("file_id")``) are all persistence-internal. These patterns must not
+# appear in any non-persistence nomarr/ code. ``release_claim`` / ``claim_file`` are
+# intentionally excluded as bare identifiers here because they remain legitimate
+# component-level thin helpers (ADR-046) that wrap the facade; they are banned only
+# as attribute calls (see tests/sabotage/test_sealed_tag_facade_boundary.py).
+_CLAIM_SCAN_DIRS = [
+    Path("nomarr/components"),
+    Path("nomarr/services"),
+    Path("nomarr/workflows"),
+    Path("nomarr/interfaces"),
+    Path("nomarr/helpers"),
+]
+
+# Names with no legitimate use anywhere: dead legacy claim methods + the raw row
+# type + the table name.
+_CLAIM_DEAD_IDENTIFIERS = re.compile(
+    r"\b(?:"
+    r"insert_worker_claim|release_claim_by_song|delete_claims_for_workers"
+    r"|delete_claims_for_songs|delete_claims|steal_claim|aggregate_worker_claims"
+    r"|count_worker_claims|truncate_worker_claims|claim_song|try_insert_or_steal_claim"
+    r"|remove_claim_by_song|WorkerClaimRow|worker_claims"
+    r")\b"
+)
+_CLAIM_KEY_ENCODING = re.compile(r"_claim_key\s*\(|_parse_claim_key\s*\(|f[\"']claim_")
+_CLAIM_PAYLOAD_ACCESS = re.compile(r"claim\.get\(|claim\[[\"']file_id[\"']\]")
+
+
+@pytest.mark.code_smell
+@pytest.mark.slow
+def test_no_worker_claim_storage_mechanics_outside_persistence() -> None:
+    """Worker-claims storage shapes/names must not appear outside persistence.
+
+    CONTRACTS.md forbids any non-persistence code from depending on
+    WorkerClaimRow, raw claim dictionaries/payloads, encoded claim keys, the
+    worker_claims table name, or a public insert/release/steal compatibility
+    alias. Prose inside docstrings is excluded (it documents the boundary).
+    """
+    violations: list[tuple[str, int, str]] = []
+    patterns = (
+        ("dead-identifier", _CLAIM_DEAD_IDENTIFIERS),
+        ("claim-key-encoding", _CLAIM_KEY_ENCODING),
+        ("claim-payload-access", _CLAIM_PAYLOAD_ACCESS),
+    )
+    for rel_dir in _CLAIM_SCAN_DIRS:
+        dir_path = PROJECT_ROOT / rel_dir
+        if not dir_path.exists():
+            continue
+        for py_file in dir_path.rglob("*.py"):
+            try:
+                content = py_file.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+            doc_lines = _docstring_lines(content)
+            rel_path = py_file.relative_to(PROJECT_ROOT).as_posix()
+            for line_num, line in enumerate(content.splitlines(), start=1):
+                if line.lstrip().startswith("#"):
+                    continue
+                if line_num in doc_lines:
+                    continue
+                for _label, pattern in patterns:
+                    if pattern.search(line):
+                        violations.append((rel_path, line_num, line.strip()))
+
+    if violations:
+        unique = sorted(set(violations))
+        report = "\n".join(f"  {p}:{ln}: {txt}" for p, ln, txt in unique[:20])
+        if len(unique) > 20:
+            report += f"\n  ... and {len(unique) - 20} more"
+        pytest.fail(
+            "Worker-claims storage mechanics leaked outside persistence "
+            "(WorkerClaimRow, raw claim payload access, encoded claim keys, "
+            "worker_claims table name, or dead legacy claim names):\n" + report
+        )
+
+
+# ── Calibration intent-facade boundary (Plan E P3-S1 / P3-S2) ────────────────
+# The calibration correction contracts ("final domain signatures", CONTRACTS.md)
+# seal the calibration state/history surface to domain values only. The
+# persistence-internal calibration modules below must not cross into caller
+# code; facade results must not expose the raw JSONB state/history envelopes;
+# and callers must address calibration by natural ``(model_id, head_name, label)``
+# identity, never by storage PK / ``_id`` / ``_key``.
+
+# Modules that are persistence-internal (ADR-032/040/046, ASR-0013/0014): the
+# calibration repository, its mapper, and its row DTOs. The calibration
+# state/history DATACLASSES (helpers/dataclasses/calibration_{state,history}_dataclass.py)
+# are domain values and are deliberately NOT in this set - they are fine to
+# import anywhere.
+_CALIBRATION_INTERNAL_MODULES = (
+    "nomarr.persistence.database.calibration_repo",
+    "nomarr.persistence.mappers.calibration_mapper",
+    "nomarr.helpers.dto.calibration_repo_dto",
+)
+
+# Non-persistence production layers that must reach calibration only through
+# ``db.ml`` / ``db.ml.maintenance`` domain intents.
+_CALIBRATION_SCAN_DIRS = [
+    Path("nomarr/components"),
+    Path("nomarr/services"),
+    Path("nomarr/workflows"),
+    Path("nomarr/interfaces"),
+    Path("nomarr/helpers"),
+]
+
+# The code that actually owns calibration call sites today (calibration
+# components, the calibration service, the pipeline service, and the calibration
+# workflows). Used for the narrower storage-identity / db-internal-access and
+# history-`data`-envelope scans to avoid generic false positives on unrelated
+# API/wire ``data`` fields elsewhere.
+_CALIBRATION_CALLER_FILES = [
+    Path("nomarr/components/ml/calibration"),
+    Path("nomarr/services/domain/calibration_svc.py"),
+    Path("nomarr/services/infrastructure/pipeline_svc.py"),
+    Path("nomarr/workflows/calibration"),
+]
+
+# DTO home files that legitimately define the raw storage shapes; excluded from
+# the ``state_data`` token scan (they are the definitions, not callers).
+_CALIBRATION_DTO_HOME_FILES = {
+    PROJECT_ROOT / "nomarr" / "helpers" / "dto" / "calibration_repo_dto.py",
+    PROJECT_ROOT / "nomarr" / "helpers" / "dto" / "repo_dto.py",
+}
+
+# Raw JSONB calibration envelope vocabulary. ``state_data`` is the
+# calibration_states JSONB envelope; the history ``data`` envelope is accessed
+# as a dict (``["data"]`` / ``.get("data")``). Bare ``.data`` attribute access is
+# intentionally NOT scanned (generic, high false-positive rate).
+_CALIBRATION_RAW_ENVELOPE_PATTERNS = (
+    re.compile(r"\bstate_data\b"),
+    re.compile(r"\[[\"']data[\"']\]"),
+    re.compile(r"\.get\([\"']data[\"']\)"),
+)
+
+# ArangoDB storage identity tokens and direct DB-internal (Tier-1/Tier-2/
+# session/connection) access that must never appear in calibration callers.
+_CALIBRATION_LEGACY_ID_PATTERN = re.compile(r"\b_id\b|\b_key\b")
+_CALIBRATION_DB_INTERNAL_ACCESS = re.compile(
+    r"\._tier1\b|\._tier2\b|\._scoped\b|\.session\b|\.conn\b|db\.execute\b|db\.raw\b"
+)
+
+# The final production calibration facade surface (CONTRACTS.md "final domain
+# signatures"): 11 routine methods on ``MlDb`` plus the 2 maintenance-only
+# truncate methods on ``db.ml.maintenance``. Each caller-bearing method maps to
+# the call-site pattern that proves a production caller exists.
+_CALIBRATION_FACADE_METHODS_WITH_CALLERS = {
+    "get_calibration_state_view": re.compile(r"get_calibration_state_view\("),
+    "list_calibration_states": re.compile(r"list_calibration_states\("),
+    "list_calibration_states_with_models": re.compile(r"list_calibration_states_with_models\("),
+    "replace_calibration_state": re.compile(r"replace_calibration_state\("),
+    "remove_calibration_state": re.compile(r"remove_calibration_state\("),
+    "add_calibration_history": re.compile(r"add_calibration_history\("),
+    "get_latest_calibration_history_snapshot": re.compile(r"get_latest_calibration_history_snapshot\("),
+    "remove_calibration_history": re.compile(r"remove_calibration_history\("),
+    # Maintenance resets are the only sanctioned truncation routing; requiring
+    # the ``maintenance.`` prefix proves callers do not reach the removed
+    # routine ``MlDb`` truncate shims.
+    "truncate_calibration_states": re.compile(r"maintenance\.truncate_calibration_states\("),
+    "truncate_calibration_history": re.compile(r"maintenance\.truncate_calibration_history\("),
+}
+
+# Retained public-surface methods with no production caller today (documented
+# and allowlisted in deadcode_allowlist.py). They are part of the facade
+# contract and asserted present in test_calibration_facade_surface_present, but
+# are not required to have a production call site.
+_CALIBRATION_RETAINED_PUBLIC_SURFACE = {
+    "get_calibration_state",
+    "list_calibration_history",
+    "count_calibration_history",
+}
+
+_CALIBRATION_FACADE_SURFACE = set(_CALIBRATION_FACADE_METHODS_WITH_CALLERS) | _CALIBRATION_RETAINED_PUBLIC_SURFACE
+
+# Superseded raw calibration methods/shims: removed from the facade in Plan C/D
+# and must stay absent from both the surface and any production call site.
+_CALIBRATION_SUPERSEDED_METHODS = (
+    "remove_calibration_history_entries",
+    "remove_calibration_history_for_model",
+    "list_calibration_history_snapshots",
+    "list_all_calibration_states_with_models",
+)
+
+
+def _iter_py_targets(entries: list[Path]) -> Generator[Path, None, None]:
+    """Yield .py files for directory entries and single-file entries."""
+    for rel in entries:
+        path = PROJECT_ROOT / rel
+        if path.is_file():
+            if path.suffix == ".py":
+                yield path
+        elif path.exists():
+            for py_file in path.rglob("*.py"):
+                if py_file.name == "__init__.py":
+                    continue
+                yield py_file
+
+
+def _count_args_on_line(line: str, method: str) -> int | None:
+    """Return the arg count of ``method(...)`` on one line, or None.
+
+    Returns ``None`` when the method is absent or the call spans multiple lines
+    (so no close paren is on this line). Commas at the top paren depth are
+    counted as argument separators.
+    """
+    m = re.search(r"\b" + re.escape(method) + r"\s*\(", line)
+    if m is None:
+        return None
+    after = line[m.end() :]
+    depth = 0
+    commas = 0
+    for idx, ch in enumerate(after):
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            if depth == 0:
+                body = after[:idx].strip()
+                return 0 if not body else commas + 1
+            depth -= 1
+        elif ch == "," and depth == 0:
+            commas += 1
+    return None
+
+
+@pytest.mark.code_smell
+@pytest.mark.slow
+def test_no_calibration_persistence_internal_imports_above_persistence() -> None:
+    """Calibration repo/mapper/row-DTO modules never imported outside persistence.
+
+    ADR-032/040/046 + ASR-0013/0014 make the calibration repository
+    (``nomarr.persistence.database.calibration_repo``), its mapper
+    (``nomarr.persistence.mappers.calibration_mapper``), and its row DTOs
+    (``nomarr.helpers.dto.calibration_repo_dto``) persistence-internal. Caller
+    code above persistence must reach calibration through ``db.ml`` /
+    ``db.ml.maintenance`` with domain values (``CalibrationState`` /
+    ``CalibrationHistorySnapshot``), which are domain helpers and may be imported
+    freely.
+    """
+    violations: list[tuple[str, int, str]] = []
+    for py_file in _iter_py_targets(list(_CALIBRATION_SCAN_DIRS)):
+        for line_num, line in find_import_violations(py_file, list(_CALIBRATION_INTERNAL_MODULES)):
+            violations.append((py_file.relative_to(PROJECT_ROOT).as_posix(), line_num, line))
+
+    if violations:
+        report = "\n".join(f"  {p}:{ln}: {txt}" for p, ln, txt in sorted(set(violations))[:20])
+        if len(violations) > 20:
+            report += f"\n  ... and {len(violations) - 20} more"
+        pytest.fail(
+            "Calibration persistence internals (repository, mapper, row DTOs) "
+            "are ADR-032/040/046-internal and must not be imported outside "
+            "nomarr/persistence/. Callers go through db.ml / db.ml.maintenance "
+            "with domain values.\n" + report
+        )
+
+
+@pytest.mark.code_smell
+@pytest.mark.slow
+def test_no_calibration_raw_envelope_outside_persistence() -> None:
+    """Raw JSONB calibration envelope vocabulary never appears in caller code.
+
+    ``state_data`` (the calibration_states JSONB envelope) is scanned across all
+    non-persistence production code (docstrings/comments and the DTO home files
+    are excluded). The history ``data`` dict envelope (``["data"]`` /
+    ``.get("data")``) is scanned across calibration caller code. Facade results
+    are domain values with named fields; caller code must never index them as
+    raw storage envelopes. Plan D verified zero such usage - this codifies it.
+    """
+    violations: list[tuple[str, int, str]] = []
+
+    # state_data token: full non-persistence production surface.
+    for py_file in _iter_py_targets(list(_CALIBRATION_SCAN_DIRS)):
+        if py_file in _CALIBRATION_DTO_HOME_FILES:
+            continue
+        try:
+            content = py_file.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        doc_lines = _docstring_lines(content)
+        rel_path = py_file.relative_to(PROJECT_ROOT).as_posix()
+        for line_num, line in enumerate(content.splitlines(), start=1):
+            if line.lstrip().startswith("#") or line_num in doc_lines:
+                continue
+            if _CALIBRATION_RAW_ENVELOPE_PATTERNS[0].search(line):
+                violations.append((rel_path, line_num, line.strip()))
+
+    # history `data` dict envelope: calibration caller code only.
+    for py_file in _iter_py_targets(_CALIBRATION_CALLER_FILES):
+        try:
+            content = py_file.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        doc_lines = _docstring_lines(content)
+        rel_path = py_file.relative_to(PROJECT_ROOT).as_posix()
+        for line_num, line in enumerate(content.splitlines(), start=1):
+            if line.lstrip().startswith("#") or line_num in doc_lines:
+                continue
+            for pat in _CALIBRATION_RAW_ENVELOPE_PATTERNS[1:]:
+                if pat.search(line):
+                    violations.append((rel_path, line_num, line.strip()))
+                    break
+
+    if violations:
+        report = "\n".join(f"  {p}:{ln}: {txt}" for p, ln, txt in sorted(set(violations))[:20])
+        if len(violations) > 20:
+            report += f"\n  ... and {len(violations) - 20} more"
+        pytest.fail(
+            "Raw calibration JSONB envelope vocabulary leaked outside "
+            "persistence: `state_data` and the history `data` dict envelope are "
+            "persistence-internal. Facade results are CalibrationState / "
+            "CalibrationHistorySnapshot domain values with named fields; do not "
+            "index them as raw storage envelopes.\n" + report
+        )
+
+
+@pytest.mark.code_smell
+@pytest.mark.slow
+def test_no_calibration_storage_identity_or_internal_db_access() -> None:
+    """Calibration callers use natural identity; no storage ids or db internals.
+
+    (a) No Arango ``_id``/``_key`` tokens in calibration caller code (storage
+    identity must never leak; calibration identity is ``(model_id, head_name,
+    label)`` with ``model_id`` the stable string ``RegisteredModel.id``).
+    (b) No direct Tier-1/Tier-2/session/connection access into ``db`` internals
+    from calibration components/services/workflows - they reach calibration only
+    through ``db.ml`` / ``db.ml.maintenance`` domain intents.
+    """
+    violations: list[tuple[str, int, str]] = []
+    for py_file in _iter_py_targets(_CALIBRATION_CALLER_FILES):
+        try:
+            content = py_file.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        doc_lines = _docstring_lines(content)
+        rel_path = py_file.relative_to(PROJECT_ROOT).as_posix()
+        for line_num, line in enumerate(content.splitlines(), start=1):
+            if line.lstrip().startswith("#") or line_num in doc_lines:
+                continue
+            if _CALIBRATION_LEGACY_ID_PATTERN.search(line) or _CALIBRATION_DB_INTERNAL_ACCESS.search(line):
+                violations.append((rel_path, line_num, line.strip()))
+
+    if violations:
+        report = "\n".join(f"  {p}:{ln}: {txt}" for p, ln, txt in sorted(set(violations))[:20])
+        if len(violations) > 20:
+            report += f"\n  ... and {len(violations) - 20} more"
+        pytest.fail(
+            "Calibration caller code must use natural (model_id, head_name, "
+            "label) identity and reach calibration only through db.ml / "
+            "db.ml.maintenance. Found storage `_id`/`_key` tokens or direct "
+            "Tier-1/Tier-2/session/connection access into db internals.\n" + report
+        )
+
+
+@pytest.mark.code_smell
+def test_calibration_facade_surface_present() -> None:
+    """The full production calibration facade surface is present on db.ml/maintenance.
+
+    All 11 routine methods (on ``MlDb``) and the 2 maintenance-only truncate
+    methods (on ``db.ml.maintenance``) must be defined on the final sealed
+    surface in ``nomarr/persistence/api/ml.py``.
+    """
+    ml_file = PROJECT_ROOT / "nomarr" / "persistence" / "api" / "ml.py"
+    content = ml_file.read_text(encoding="utf-8")
+    missing = [
+        name
+        for name in sorted(_CALIBRATION_FACADE_SURFACE)
+        if re.search(rf"\bdef\s+{re.escape(name)}\s*\(", content) is None
+    ]
+    assert not missing, "Production calibration facade methods missing from nomarr/persistence/api/ml.py: " + ", ".join(
+        missing
+    )
+
+
+@pytest.mark.code_smell
+@pytest.mark.slow
+def test_calibration_facade_methods_have_production_callers() -> None:
+    """Every caller-bearing calibration facade method has a production caller.
+
+    Callers are scanned over all non-persistence production code (docstring/
+    comment prose excluded), so the facade definition itself is never counted.
+    The three retained public-surface methods with no caller today
+    (get_calibration_state, list_calibration_history, count_calibration_history)
+    are documented in _CALIBRATION_RETAINED_PUBLIC_SURFACE and asserted present
+    (not required to have a call) by test_calibration_facade_surface_present.
+    Additionally, every single-line ``get_calibration_state_view`` call must be
+    the canonical 3-arg natural-identity form - the head/label-only 2-arg form is
+    not a valid contract.
+    """
+    caller_hits: dict[str, list[str]] = {name: [] for name in _CALIBRATION_FACADE_METHODS_WITH_CALLERS}
+    view_lines: list[tuple[str, int, str]] = []
+
+    for py_file in _iter_py_targets(list(_CALIBRATION_SCAN_DIRS)):
+        try:
+            content = py_file.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        doc_lines = _docstring_lines(content)
+        rel_path = py_file.relative_to(PROJECT_ROOT).as_posix()
+        for line_num, line in enumerate(content.splitlines(), start=1):
+            if line.lstrip().startswith("#") or line_num in doc_lines:
+                continue
+            if _CALIBRATION_FACADE_METHODS_WITH_CALLERS["get_calibration_state_view"].search(line):
+                view_lines.append((rel_path, line_num, line.strip()))
+            for name, pattern in _CALIBRATION_FACADE_METHODS_WITH_CALLERS.items():
+                if pattern.search(line):
+                    caller_hits[name].append(f"{rel_path}:{line_num}")
+
+    missing = sorted(name for name, hits in caller_hits.items() if not hits)
+    assert not missing, "Production calibration facade methods have no production caller: " + ", ".join(missing)
+
+    # Canonical 3-arg natural-identity form for get_calibration_state_view.
+    bad_view = [
+        f"{p}:{ln}: {txt}"
+        for p, ln, txt in view_lines
+        if _count_args_on_line(txt, "get_calibration_state_view") not in (None, 3)
+    ]
+    assert not bad_view, (
+        "get_calibration_state_view calls must use the canonical 3-arg "
+        "(model_id, head_name, label) natural identity; the head/label-only "
+        "2-arg form is not a valid contract.\n" + "\n".join(bad_view)
+    )
+
+
+@pytest.mark.code_smell
+@pytest.mark.slow
+def test_calibration_superseded_methods_have_no_surface_or_callers() -> None:
+    """Superseded raw calibration methods/shims have no surface or callers.
+
+    remove_calibration_history_entries, remove_calibration_history_for_model,
+    list_calibration_history_snapshots, and list_all_calibration_states_with_models
+    were removed in Plan C/D and must stay absent from the facade surface and from
+    every production call site. Calibration table resets route exclusively through
+    ``db.ml.maintenance`` (the deprecated routine ``MlDb`` truncate shims were
+    removed in Phase 1), so every production truncate call must carry the
+    ``maintenance.`` prefix.
+    """
+    ml_file = PROJECT_ROOT / "nomarr" / "persistence" / "api" / "ml.py"
+    content = ml_file.read_text(encoding="utf-8")
+
+    surface_present = [
+        name for name in _CALIBRATION_SUPERSEDED_METHODS if re.search(rf"\bdef\s+{re.escape(name)}\s*\(", content)
+    ]
+    assert not surface_present, (
+        "Superseded raw calibration methods reappeared on the facade surface "
+        "in nomarr/persistence/api/ml.py: " + ", ".join(surface_present)
+    )
+
+    # The routine MlDb truncate shims are gone: truncation is maintenance-only,
+    # so there is exactly one `def` for each (on MlMaintenanceDb).
+    for name in ("truncate_calibration_states", "truncate_calibration_history"):
+        defs = re.findall(rf"\bdef\s+{re.escape(name)}\s*\(", content)
+        assert len(defs) == 1, (
+            f"Expected exactly one maintenance-only `def {name}` (on "
+            f"MlMaintenanceDb); found {len(defs)}. The routine MlDb truncate "
+            "shim must remain removed."
+        )
+
+    superseded_hits: list[str] = []
+    truncate_non_maintenance: list[str] = []
+    superseded_pat = re.compile(
+        r"(?:remove_calibration_history_entries|remove_calibration_history_for_model|list_calibration_history_snapshots|list_all_calibration_states_with_models)\s*\("
+    )
+    truncate_pat = re.compile(r"\.(truncate_calibration_states|truncate_calibration_history)\s*\(")
+
+    for py_file in _iter_py_targets(list(_CALIBRATION_SCAN_DIRS)):
+        try:
+            content = py_file.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        doc_lines = _docstring_lines(content)
+        rel_path = py_file.relative_to(PROJECT_ROOT).as_posix()
+        for line_num, line in enumerate(content.splitlines(), start=1):
+            if line.lstrip().startswith("#") or line_num in doc_lines:
+                continue
+            if superseded_pat.search(line):
+                superseded_hits.append(f"{rel_path}:{line_num}: {line.strip()}")
+            if truncate_pat.search(line) and "maintenance." not in line:
+                truncate_non_maintenance.append(f"{rel_path}:{line_num}: {line.strip()}")
+
+    assert not superseded_hits, (
+        "Superseded raw calibration methods have production call sites. "
+        "Natural-identity retention (remove_calibration_history keep_count) and "
+        "the maintenance truncate pair are the sanctioned mechanisms.\n" + "\n".join(superseded_hits)
+    )
+    assert not truncate_non_maintenance, (
+        "Calibration table truncation must route exclusively through "
+        "db.ml.maintenance; the deprecated routine MlDb truncate shims are "
+        "removed. Found a non-maintenance truncate call.\n" + "\n".join(truncate_non_maintenance)
+    )

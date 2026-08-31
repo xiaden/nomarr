@@ -351,6 +351,27 @@ class TestGetNomarrTagsBulk:
         mock_db.library.resolve_song_identities.assert_called_once_with([1, 2])
         mock_db.library.list_song_tags_for_songs.assert_called_once_with([id1, id2], name_starts_with="nom:")
 
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_preserves_scalar_types_and_required_fields(self) -> None:
+        """Bulk conversion keeps scalar value types; persistence-only fields stay out."""
+        mock_db = MagicMock()
+        id1 = _song_identity(1)
+        mock_db.library.resolve_song_identities.return_value = {1: id1}
+        mock_db.library.list_song_tags_for_songs.return_value = {
+            id1: (
+                SongTagAssignment(name="nom:energy", value=0.91, namespace="nom", confidence=0.8, source="ml"),
+                SongTagAssignment(name="nom:energy", value=0.91),
+                SongTagAssignment(name="nom:year", value=1990),
+            ),
+        }
+
+        result = get_nomarr_tags_bulk(mock_db, [1])
+
+        assert result[1].to_dict() == {"nom:energy": (0.91,), "nom:year": (1990,)}
+        mock_db.library.resolve_song_identities.assert_called_once_with([1])
+        mock_db.library.list_song_tags_for_songs.assert_called_once_with([id1], name_starts_with="nom:")
+
 
 class TestGetDistinctTagValuesForFiles:
     """Tests for get_distinct_tag_values_for_files."""
@@ -526,6 +547,62 @@ class TestGetSongTags:
 
         assert result is None
         mock_db.library.list_tags_for_song.assert_not_called()
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_preserves_mixed_scalar_value_types(self) -> None:
+        """Mixed value types (str/int/float/bool) survive conversion untouched."""
+        mock_db = MagicMock()
+        song_identity = _song_identity(1)
+        mock_db.library.resolve_song_identity.return_value = song_identity
+        mock_db.library.list_tags_for_song.return_value = (
+            SongTagAssignment(name="year", value=1990),
+            SongTagAssignment(name="rating", value=3.5),
+            SongTagAssignment(name="genre", value="Rock"),
+            SongTagAssignment(name="is_compilation", value=True),
+        )
+
+        result = get_song_tags(mock_db, 1)
+
+        assert result.to_dict() == {
+            "genre": ("Rock",),
+            "is_compilation": (True,),
+            "rating": (3.5,),
+            "year": (1990,),
+        }
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_merges_duplicate_names_and_dedupes_values(self) -> None:
+        """Repeated names collapse into one Tag with duplicate values removed."""
+        mock_db = MagicMock()
+        song_identity = _song_identity(1)
+        mock_db.library.resolve_song_identity.return_value = song_identity
+        mock_db.library.list_tags_for_song.return_value = (
+            SongTagAssignment(name="genre", value="Rock"),
+            SongTagAssignment(name="genre", value="Pop"),
+            SongTagAssignment(name="genre", value="Rock"),
+        )
+
+        result = get_song_tags(mock_db, 1)
+
+        assert result.to_dict() == {"genre": ("Rock", "Pop")}
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_preserves_name_value_and_not_persistence_only_fields(self) -> None:
+        """Public name/value carry through; source/confidence/namespace do not leak."""
+        mock_db = MagicMock()
+        song_identity = _song_identity(1)
+        mock_db.library.resolve_song_identity.return_value = song_identity
+        mock_db.library.list_tags_for_song.return_value = (
+            SongTagAssignment(name="nom:mood", value="calm", namespace="nom", confidence=0.9, source="ml"),
+            SongTagAssignment(name="genre", value="Rock"),
+        )
+
+        result = get_song_tags(mock_db, 1)
+
+        assert result.to_dict() == {"genre": ("Rock",), "nom:mood": ("calm",)}
 
 
 class TestGetFileIdsMatchingTag:

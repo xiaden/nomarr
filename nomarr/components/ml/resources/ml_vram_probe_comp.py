@@ -1,9 +1,9 @@
 """Per-model VRAM probe component.
 
-Measures the actual VRAM consumed by each ONNX model on the current GPU and stores
-results in the ``meta`` table as:
-
-    ``ml_model_vram:{model_path}`` -> bytes (str), or ``str(sys.maxsize)`` if not measured
+Measures the actual VRAM consumed by each ONNX model on the current GPU and
+persists the result via the semantic VRAM-limit intent
+(``db.app.set_model_vram_limit(model_path, limit_bytes)``); an unmeasured
+model is stored as ``sys.maxsize`` bytes (GPU-incompatible sentinel).
 
 Design constraints:
 - Models are probed sequentially — only one session live at a time.
@@ -37,9 +37,6 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
-
-# Meta key prefix for per-model VRAM measurements
-_META_PREFIX = "ml_model_vram:"
 
 
 def _fmt_bytes(n: int) -> str:
@@ -198,14 +195,15 @@ def _probe_single_model(
 
 
 def probe_all_models(db: Database, models_dir: str) -> None:
-    """Probe every backbone and head model and store VRAM measurements in meta.
+    """Probe every backbone and head model and persist each VRAM limit.
 
     Runs sequentially: only one model is live on the GPU at a time.  Warms the
     CUDA context before the first real measurement.  Any model that fails to
     load or produces a negative delta is recorded as ``sys.maxsize``.
 
     Args:
-        db: Database instance (used to write ``meta`` keys).
+        db: Database facade used to persist each per-model VRAM limit via
+        ``db.app.set_model_vram_limit``.
         models_dir: Root directory containing backbone sub-directories.
 
     """
@@ -233,8 +231,8 @@ def probe_all_models(db: Database, models_dir: str) -> None:
     for model, waveform in all_models:
         delta = _probe_single_model(model, waveform)
         delta_with_headroom = int(delta * 1.1) if delta is not None else None
-        value = str(delta_with_headroom) if delta_with_headroom is not None else str(sys.maxsize)
-        db.app.update_config_option(f"{_META_PREFIX}{model._path}", {"value": value})
+        limit_bytes = delta_with_headroom if delta_with_headroom is not None else sys.maxsize
+        db.app.set_model_vram_limit(model._path, limit_bytes)
         readable = _fmt_bytes(delta_with_headroom) if delta_with_headroom is not None else "unmeasured"
         results.append(f"  {model._path} -> {readable}")
 
@@ -250,34 +248,27 @@ def probe_all_models(db: Database, models_dir: str) -> None:
 
 
 def has_model_vram_measurements(db: Database) -> bool:
-    """Return True if any per-model VRAM measurements exist in meta.
+    """Return True if any per-model VRAM limits have been persisted.
 
     Args:
         db: Database instance.
 
     Returns:
-        True if at least one ``ml_model_vram:*`` key is present.
+        True if at least one model VRAM limit is present.
 
     """
-    docs = db.app.list_config_options(prefix=_META_PREFIX)
+    docs = db.app.list_model_vram_limits()
     return bool(docs)
 
 
 def clear_model_vram_measurements(db: Database) -> None:
-    """Delete all per-model VRAM measurements from meta.
+    """Delete all per-model VRAM limits (via ``db.app.clear_model_vram_limits``).
 
     Args:
         db: Database instance.
 
     """
-    existing_docs = db.app.list_config_options(prefix=_META_PREFIX)
-    removed = 0
-    for doc in existing_docs:
-        key = doc.key
-        if not isinstance(key, str) or not key:
-            continue
-        db.app.remove_config_option(key)
-        removed += 1
+    removed = db.app.clear_model_vram_limits()
     logger.info("[vram_probe] Cleared %d VRAM measurement(s)", removed)
 
 

@@ -9,7 +9,7 @@ that the return value is propagated.
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock
 
 import pytest
 from sqlalchemy import create_engine
@@ -22,6 +22,12 @@ from nomarr.helpers.dataclasses.app_dataclasses import (
     WorkerRestartPolicy,
 )
 from nomarr.helpers.dataclasses.session_dataclass import AuthSession
+from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
+from nomarr.helpers.dataclasses.worker_claim_dataclass import (
+    ClaimRemovalRequest,
+    WorkerClaim,
+    WorkerClaimIdentity,
+)
 from nomarr.helpers.dto.health_dto import WorkerHealth
 from nomarr.persistence.api.application import AppDb
 from nomarr.persistence.database.app_repo import AppRepository
@@ -33,7 +39,6 @@ from nomarr.persistence.models.vram_promise import VramPromise as VramPromiseMod
 if TYPE_CHECKING:
     from nomarr.helpers.dto.repo_dto import (
         HealthRow,
-        WorkerClaimRow,
     )
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -352,119 +357,88 @@ class TestAppDbLockMethods:
 # ══════════════════════════════════════════════════════════════════════════════
 
 
+def _claim_identity() -> WorkerClaimIdentity:
+    return WorkerClaimIdentity(
+        song=SongIdentity(
+            library=LibraryIdentity(name="lib", root_path="/music"),
+            normalized_path="artist/track.flac",
+        ),
+        worker_id="w1",
+    )
+
+
+def _claim() -> WorkerClaim:
+    return WorkerClaim(identity=_claim_identity(), claimed_at_ms=5000)
+
+
+def _removal_request() -> ClaimRemovalRequest:
+    return ClaimRemovalRequest(worker_ids=("w1",))
+
+
 class TestAppDbClaimMethods:
     @pytest.mark.unit
-    def test_claim_song_builds_payload_and_delegates(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        mock_app_repo.insert_worker_claim.return_value = 42
-        result = app_db.claim_song(1, "w1")
+    def test_add_claim_delegates_with_default_now_and_no_lease(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
+        mock_app_repo._acquire_claim.return_value = True
+        claim = _claim()
 
-        assert result == 42
-        payload = mock_app_repo.insert_worker_claim.call_args.args[0]
-        assert payload["key"] == "claim_1"
-        assert payload["worker_id"] == "w1"
-        assert payload["file_id"] == 1
-        assert payload["claimed_at"] > 0
+        result = app_db.add_claim(claim)
 
-    @pytest.mark.unit
-    def test_remove_claim_delegates_to_release_claim(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        app_db.remove_claim("w1", 42)
-
-        mock_app_repo.release_claim.assert_called_once_with("w1", 42, None)
+        assert result is True
+        mock_app_repo._acquire_claim.assert_called_once()
+        call_kwargs = mock_app_repo._acquire_claim.call_args.kwargs
+        assert call_kwargs["lease_ms"] is None
+        assert call_kwargs["now_ms"] is not None and call_kwargs["now_ms"] > 0
+        assert mock_app_repo._acquire_claim.call_args.args[0] == claim
 
     @pytest.mark.unit
-    def test_release_claim_is_alias_for_remove_claim(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        app_db.release_claim("w1", 42)
+    def test_add_claim_passes_now_and_lease(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
+        mock_app_repo._acquire_claim.return_value = True
+        claim = _claim()
 
-        mock_app_repo.release_claim.assert_called_once_with("w1", 42, None)
+        result = app_db.add_claim(claim, now_ms=1000, lease_ms=500)
+
+        assert result is True
+        mock_app_repo._acquire_claim.assert_called_once_with(claim, now_ms=1000, lease_ms=500)
 
     @pytest.mark.unit
-    def test_remove_claims_combines_worker_and_file_removals(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        mock_app_repo.delete_claims.return_value = 3
+    def test_remove_claim_delegates(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
+        mock_app_repo._remove_claim.return_value = True
+        identity = _claim_identity()
 
-        result = app_db.remove_claims(worker_ids=["w1"], song_ids=[1, 2])
+        result = app_db.remove_claim(identity)
+
+        assert result is True
+        mock_app_repo._remove_claim.assert_called_once_with(identity)
+
+    @pytest.mark.unit
+    def test_remove_claims_delegates(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
+        mock_app_repo._remove_claims.return_value = 3
+        request = _removal_request()
+
+        result = app_db.remove_claims(request)
 
         assert result == 3
-        mock_app_repo.delete_claims.assert_called_once_with(worker_ids=["w1"], song_ids=[1, 2])
-
-    @pytest.mark.unit
-    def test_remove_claims_worker_ids_only(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        mock_app_repo.delete_claims.return_value = 4
-
-        result = app_db.remove_claims(worker_ids=["w1", "w2"])
-
-        assert result == 4
-        mock_app_repo.delete_claims.assert_called_once_with(worker_ids=["w1", "w2"], song_ids=None)
-
-    @pytest.mark.unit
-    def test_remove_claims_file_ids_only(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        mock_app_repo.delete_claims.return_value = 1
-
-        result = app_db.remove_claims(song_ids=[10])
-
-        assert result == 1
-        mock_app_repo.delete_claims.assert_called_once_with(worker_ids=None, song_ids=[10])
-
-    @pytest.mark.unit
-    def test_remove_claims_no_filters_returns_zero(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        mock_app_repo.delete_claims.return_value = 0
-
-        result = app_db.remove_claims()
-
-        assert result == 0
-        mock_app_repo.delete_claims.assert_called_once_with(worker_ids=None, song_ids=None)
+        mock_app_repo._remove_claims.assert_called_once_with(request)
 
     @pytest.mark.unit
     def test_list_claims_delegates(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        expected: list[WorkerClaimRow] = []
-        mock_app_repo.list_claims.return_value = expected
+        expected = [_claim()]
+        mock_app_repo._list_claims.return_value = expected
 
         result = app_db.list_claims()
 
         assert result == expected
-        mock_app_repo.list_claims.assert_called_once_with()
+        mock_app_repo._list_claims.assert_called_once_with()
 
     @pytest.mark.unit
-    def test_steal_claim_delegates_atomic_claim_update(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        mock_app_repo.steal_claim.return_value = True
+    def test_count_claims_delegates_without_calling_list(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
+        mock_app_repo._count_claims.return_value = 7
 
-        result = app_db.steal_claim(
-            42,
-            "w2",
-            claim_type="reconcile",
-            claimed_at=5000,
-            now=5000,
-            lease_ms=1000,
-        )
+        result = app_db.count_claims()
 
-        assert result is True
-        mock_app_repo.steal_claim.assert_called_once_with(
-            {
-                "key": "claim_reconcile_42",
-                "worker_id": "w2",
-                "value": {"file_id": 42, "claim_type": "reconcile"},
-                "claimed_at": 5000,
-            },
-            5000,
-            1000,
-        )
-
-    @pytest.mark.unit
-    def test_steal_claim_builds_untyped_key(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        mock_app_repo.steal_claim.return_value = True
-
-        result = app_db.steal_claim(42, "w2", claimed_at=5000, now=5000, lease_ms=1000)
-
-        assert result is True
-        mock_app_repo.steal_claim.assert_called_once_with(
-            {
-                "key": "claim_42",
-                "worker_id": "w2",
-                "value": {"file_id": 42},
-                "claimed_at": 5000,
-            },
-            5000,
-            1000,
-        )
+        assert result == 7
+        mock_app_repo._count_claims.assert_called_once_with()
+        mock_app_repo._list_claims.assert_not_called()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -797,106 +771,73 @@ class TestAppDbSessionMethods:
 
 class TestAppDbConfigMetaMethods:
     @pytest.mark.unit
-    def test_get_config_option_delegates(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
+    def test_get_config_option_prepends_config_prefix(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
         expected: ConfigOption = ConfigOption(key="config_scan_interval", value={"interval": 300})
-        mock_app_repo.get_meta.return_value = {"key": "config_scan_interval", "value": {"interval": 300}}
+        mock_app_repo.get_config_option.return_value = expected
 
-        result = app_db.get_config_option("config_scan_interval")
+        result = app_db.get_config_option("scan_interval")
 
         assert result == expected
-        mock_app_repo.get_meta.assert_called_once_with("config_scan_interval")
+        mock_app_repo.get_config_option.assert_called_once_with("config_scan_interval")
 
     @pytest.mark.unit
     def test_get_config_option_returns_none(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        mock_app_repo.get_meta.return_value = None
+        mock_app_repo.get_config_option.return_value = None
 
         result = app_db.get_config_option("missing_key")
 
         assert result is None
+        mock_app_repo.get_config_option.assert_called_once_with("config_missing_key")
 
     @pytest.mark.unit
-    def test_get_schema_version_returns_string_value(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        mock_app_repo.get_meta.return_value = {"key": "version", "value": "2.5.0"}
+    def test_set_config_option_delegates_with_scalar(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
+        app_db.set_config_option("scan_interval", "60")
+
+        mock_app_repo.set_config_option.assert_called_once_with("config_scan_interval", "60")
+
+    @pytest.mark.unit
+    def test_set_config_option_rejects_storage_payload(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
+        with pytest.raises(ValueError):
+            app_db.set_config_option("scan_interval", {"value": 60})
+        mock_app_repo.set_config_option.assert_not_called()
+
+    @pytest.mark.unit
+    def test_list_config_options_delegates_no_prefix(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
+        app_db.list_config_options()
+
+        mock_app_repo.list_config_options.assert_called_once_with()
+
+    @pytest.mark.unit
+    def test_remove_config_option_prepends_config_prefix(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
+        app_db.remove_config_option("scan_interval")
+
+        mock_app_repo.remove_config_option.assert_called_once_with("config_scan_interval")
+
+    @pytest.mark.unit
+    def test_get_schema_version_delegates(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
+        mock_app_repo.get_schema_version.return_value = "2.5.0"
 
         result = app_db.get_schema_version()
 
         assert result == "2.5.0"
-        mock_app_repo.get_meta.assert_called_once_with("version")
+        mock_app_repo.get_schema_version.assert_called_once_with()
 
     @pytest.mark.unit
-    def test_get_schema_version_returns_none_when_no_row(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        mock_app_repo.get_meta.return_value = None
+    def test_set_schema_version_delegates(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
+        app_db.set_schema_version("2.5.1")
 
-        result = app_db.get_schema_version()
-
-        assert result is None
+        mock_app_repo.set_schema_version.assert_called_once_with("2.5.1")
 
     @pytest.mark.unit
-    def test_get_schema_version_returns_none_when_value_is_none(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        mock_app_repo.get_meta.return_value = {"key": "version", "value": None}
-
-        result = app_db.get_schema_version()
-
-        assert result is None
-
-    @pytest.mark.unit
-    def test_get_schema_version_coerces_int_to_str(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        mock_app_repo.get_meta.return_value = {"key": "version", "value": 42}
-
-        result = app_db.get_schema_version()
-
-        assert result == "42"
-
-    @pytest.mark.unit
-    def test_list_config_options_loads_documents_for_keys(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        mock_app_repo.list_meta_keys_by_prefix.return_value = ["config_a", "config_b"]
-        mock_app_repo.get_meta.side_effect = [
-            {"key": "config_a", "value": 1},
-            {"key": "config_b", "value": 2},
-        ]
-
-        result = app_db.list_config_options("config_")
-
-        assert result == [
-            ConfigOption(key="config_a", value=1),
-            ConfigOption(key="config_b", value=2),
-        ]
-        mock_app_repo.list_meta_keys_by_prefix.assert_called_once_with("config_")
-        assert mock_app_repo.get_meta.call_args_list == [call("config_a"), call("config_b")]
-
-    @pytest.mark.unit
-    def test_list_config_options_skips_none_rows(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        mock_app_repo.list_meta_keys_by_prefix.return_value = ["config_a", "config_b"]
-        mock_app_repo.get_meta.side_effect = [
-            {"key": "config_a", "value": 1},
-            None,
-        ]
-
-        result = app_db.list_config_options("config_")
-
-        assert result == [ConfigOption(key="config_a", value=1)]
-
-    @pytest.mark.unit
-    def test_list_config_options_no_prefix_passes_empty_string(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        mock_app_repo.list_meta_keys_by_prefix.return_value = []
-
-        app_db.list_config_options()
-
-        mock_app_repo.list_meta_keys_by_prefix.assert_called_once_with("")
-
-    @pytest.mark.unit
-    def test_update_config_option_delegates_to_upsert_meta(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        payload = {"value": 600}
-
-        app_db.update_config_option("config_scan_interval", payload)
-
-        mock_app_repo.upsert_meta.assert_called_once_with("config_scan_interval", payload)
-
-    @pytest.mark.unit
-    def test_remove_config_option_delegates_to_delete_meta(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        app_db.remove_config_option("config_a")
-
-        mock_app_repo.delete_meta.assert_called_once_with("config_a")
+    def test_no_generic_meta_surface(self, app_db: AppDb) -> None:
+        for forbidden in (
+            "get_meta",
+            "upsert_meta",
+            "delete_meta",
+            "list_meta_keys_by_prefix",
+            "update_config_option",
+        ):
+            assert not hasattr(app_db, forbidden), f"AppDb must not expose '{forbidden}'"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -907,7 +848,7 @@ class TestAppDbConfigMetaMethods:
 class TestAppDbSurface:
     @pytest.mark.unit
     def test_exposes_maintenance_surface(self, app_db: AppDb) -> None:
-        assert hasattr(app_db, "truncate_worker_claims")
+        assert hasattr(app_db.maintenance, "delete_all_worker_claims")
         assert hasattr(app_db, "truncate_health")
         assert hasattr(app_db, "truncate_song_state_edges")
 
@@ -918,6 +859,13 @@ class TestAppDbSurface:
         assert not hasattr(app_db, "claim_file")
         assert not hasattr(app_db, "list_libraries_in_pipeline_state")
         assert not hasattr(app_db, "count_calibration_states")
+        # Legacy claims surface removed: all-claims deletion lives only under
+        # maintenance, and the old intent methods are gone.
+        assert not hasattr(app_db, "truncate_worker_claims")
+        assert not hasattr(app_db, "claim_song")
+        assert not hasattr(app_db, "steal_claim")
+        assert not hasattr(app_db, "release_claim")
+        assert not hasattr(app_db, "remove_claim_by_song")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -934,9 +882,9 @@ class TestAppDbMaintenanceMethods:
 
     @pytest.mark.unit
     def test_truncate_worker_claims_delegates(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        app_db.truncate_worker_claims()
+        app_db.maintenance.delete_all_worker_claims()
 
-        mock_app_repo.truncate_worker_claims.assert_called_once_with()
+        mock_app_repo._delete_all_worker_claims.assert_called_once_with()
 
     @pytest.mark.unit
     def test_truncate_health_delegates(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:

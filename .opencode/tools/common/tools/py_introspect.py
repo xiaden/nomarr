@@ -340,8 +340,10 @@ def _find_venv_python(project_root: Path) -> Path:
         candidate = project_root / ".venv" / "bin" / "python"
     if candidate.exists():
         return candidate
-    # Fallback to sys.executable
-    return Path(sys.executable)
+    raise FileNotFoundError(
+        f"Required virtual-environment Python not found in {project_root / '.venv'}. "
+        "Run scripts/human-scripts/tools/ensure_venv.py before using py_introspect."
+    )
 
 
 def _build_safe_env() -> dict[str, str]:

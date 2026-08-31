@@ -67,11 +67,11 @@ class WorkerDeathOpsMixin:
             logger.warning("[WorkerSystemService] Failed to reset restart count for %s", component_id, exc_info=True)
 
     def _handle_worker_death(self, component_id: str) -> None:
-        released_song_ids = release_claims_for_worker(self.db, component_id)
-        if released_song_ids:
+        released_count = release_claims_for_worker(self.db, component_id)
+        if released_count:
             logger.info(
                 "[WorkerSystemService] Released %d claim(s) for dead worker %s - files will be reprocessed",
-                len(released_song_ids),
+                released_count,
                 component_id,
             )
         try:

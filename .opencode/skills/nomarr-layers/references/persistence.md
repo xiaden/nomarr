@@ -66,7 +66,7 @@ def some_workflow(db: Database) -> None:
     song = db.library.get_song(song_id)             # sync
     tags = db.library.list_tags_for_song(song_id)
     db.library.replace_song_tags(song_id, tags)     # sync write, repo commits internally
-    claim_id = db.app.add_claim(payload)            # sync worker claim
+    acquired = db.app.add_claim(WorkerClaim(...))   # sync worker claim; returns bool
     models = db.ml.list_models()
 
 # ❌ Wrong - importing persistence Tier 1/Tier 2 internals into higher layers

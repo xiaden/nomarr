@@ -50,8 +50,8 @@ description: Song hydration in Nomarr — the write path that turns audio metada
 - `ensure_song_state` bug: `db.library.add_songs_to_library` facade default `initial_state="tagged"` (library.py:198) vs sub-facade default STATE_NOT_PROCESSED (library_songs.py:135); "tagged" is NOT a song_states vertex → ValueError for every new song through the facade default. Scan path hits this (library_scan_file_ops_comp.py:90).
 
 ### Claims
-- Hydration is worker-exclusive: `discover_and_claim_file_for_tags` (worker_tag_comp.py:25-42) → `claim_file` (worker_discovery_comp.py:54-73) → `db.app.claim_song` → app_repo.insert_worker_claim with unique `claim_{song_id}` key. Released in `finally` (tag_extraction_worker.py:161-165).
-- Facade must NOT claim/release — claims stay in worker components.
+- Hydration is worker-exclusive: `discover_and_claim_file_for_tags` (worker_tag_comp.py:25-42) → `claim_file` (worker_discovery_comp.py:47-73) → canonical `db.app.add_claim(WorkerClaim, *, now_ms=None, lease_ms=None)` (backed by `app_repo._acquire_claim`, which owns the `claim_{song_id}` / `claim_{claim_type}_{song_id}` key encoding as a persistence-internal detail). Released in `finally` (tag_extraction_worker.py) via `release_claim` (which wraps `db.app.remove_claim`).
+- Facade must NOT be called with storage rows/keys — the claim key encoding is persistence-internal; claims stay in worker components and go through the canonical intent facade.
 
 ## Critical Invariants
 - State transition to `hydrated` must be the LAST write in the hydration sequence (commit point).

@@ -17,9 +17,10 @@ ADR-032/041):
   (``list_tags_by_name`` / ``search_songs_by_tag`` MAY exist as component /
   service / API wrapper *names* — those are the sanctioned higher-layer
   functions wrapping the facade — but never as facade methods.)
-- No specific repository/table module is imported above persistence. The only
-  permitted persistence touch in components/services/workflows is the type-only
-  ``from nomarr.persistence import Database`` (DI wiring).
+- No specific repository/table module is imported above persistence. Components,
+  services, and workflows may touch persistence only through the injected public
+  ``Database`` intent facades from ``nomarr.persistence.db``; interfaces and
+  helpers must not import persistence.
 - Allowed int→domain exceptions, which must be preserved:
   - the identity bridge ``resolve_song_identity(song_id)`` (documented conversion
     point at the library boundary),
@@ -179,7 +180,7 @@ class TestNoRepoImportAbovePersistence:
     """Components/services/workflows/interfaces never import repository modules."""
 
     def test_no_specific_repo_import_in_higher_layers(self) -> None:
-        """Only the type-only ``from nomarr.persistence import Database`` is allowed."""
+        """Higher layers use the injected public facade, not repository internals."""
         violations: list[tuple[str, int, str]] = []
         for directory in ABOVE_PERSISTENCE_DIRS:
             violations.extend(_scan_dir(directory, REPO_IMPORT_PATTERN))

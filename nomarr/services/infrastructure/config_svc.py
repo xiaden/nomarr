@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # ======================================================================
 #  Config Service - Configuration loading and caching
-#  - Loads config from YAML, env vars, DB meta
+#  - Loads config from YAML, env vars, DB configuration
 #  - Caches composed config for performance
 #  - Provides reload() for runtime changes
 # ======================================================================
@@ -218,7 +218,7 @@ class ConfigService:
         self._logger.debug("Subscribed callback for observable key '%s'", key)
 
     def _write_to_db(self, key: str, value: str) -> None:
-        """Persist a config value to DB meta table via throwaway connection (sync)."""
+        """Persist a configuration value via the semantic config intent using a throwaway connection (sync)."""
         try:
             db = Database(
                 url=os.environ.get("PG_DATABASE_URL", "postgresql+psycopg2://nomarr:nomarr@localhost:5432/nomarr")

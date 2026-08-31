@@ -11,8 +11,8 @@ For every (head, label) pair this script reports:
   - Distribution shape (bimodal / compressed / skewed / bell) inferred from means
   - Calibration method recommendation per shape
 
-Queries the PostgreSQL persistence layer (calibration_states, tags,
-ml_model_outputs) via the ``Database`` facade.
+Queries the PostgreSQL persistence layer (calibration_states, tags)
+via the ``Database`` facade.
 
 Usage:
     .venv/Scripts/python.exe scripts/diagnostics/head_calibration_audit.py
@@ -225,6 +225,15 @@ def _fetch_tier_counts(db: Database) -> dict[str, int]:
 
     Returns a dict like ``{"strict": N, "regular": N, "loose": N, "other": N}``.
     """
+    # DIAGNOSTIC-ONLY DIRECT SQL (Plan C classification):
+    # This is a read-only audit over the `tags` table (a NON-calibration
+    # domain).  It uses the private ``db._scoped`` session and a raw
+    # SQLAlchemy ``select`` on ``Tag.__table__`` because the audit needs an
+    # ad-hoc per-tier COUNT aggregate the intent facade does not expose.
+    # This is diagnostic-only direct SQL, NOT a facade leak: it queries tags,
+    # not calibration data, and it must NOT be used to justify any facade
+    # change or add pass-through components.  It is deliberately isolated
+    # here so the calibration facade migration stays clean.
     from sqlalchemy import func, select
 
     from nomarr.persistence.models.tag import Tag
@@ -269,7 +278,12 @@ def main() -> None:
                 pass
 
         # ── 1. Calibration states ───────────────────────────────────────
-        states = db.ml.list_all_calibration_states_with_models()
+        # Plan C: the old ``list_all_calibration_states_with_models`` was
+        # REMOVED from the facade; ``list_calibration_states()`` returns
+        # ``list[CalibrationState]`` domain values (no row DTO, no state_data
+        # envelope).  Each entry is a frozen/slotted dataclass and must be
+        # read via attributes, never dict-indexed.
+        states = db.ml.list_calibration_states()
         if not states:
             return
 
@@ -278,25 +292,28 @@ def main() -> None:
         head_groups: dict[str, list[dict]] = defaultdict(list)
 
         for idx, state in enumerate(states, 1):
-            sd = state.get("state_data", {})
-            if not isinstance(sd, dict):
-                continue
-
-            head_name = sd.get("head_name", "unknown")
-            label = sd.get("label", "unknown")
-            p5 = float(sd.get("p5", 0.0))
-            p95 = float(sd.get("p95", 1.0))
-            cal_n = int(sd.get("n", 0))
+            head_name = state.head_name
+            label = state.label
+            p5 = float(state.p5 or 0.0)
+            p95 = float(state.p95 or 1.0)
+            cal_n = state.sample_count
 
             # Compute scale factor
             span = p95 - p5
             scale = 1.0 / span if span > 1e-9 else 1.0
 
             # ── Fetch segment scores ─────────────────────────────────
-            # Segment statistics were previously read from the raw ``output_data``
-            # JSONB blob on each model output.  That blob is no longer exposed by
-            # the MlDb intent facade (it is a persistence concern), so per-model
-            # segment means/stds are unavailable here and remain empty.
+            # DIAGNOSTIC-ONLY (Plan C classification): Segment statistics
+            # were previously read from the raw ``output_data`` JSONB blob on
+            # each ``ml_model_outputs`` row.  That JSONB blob is
+            # persistence-internal (Plan C) and is no longer exposed by the
+            # MlDb intent facade, so this diagnostic can no longer source
+            # per-model segment means/stds from it.  The arrays therefore
+            # remain empty, ``classify_distribution`` reports
+            # "insufficient", and the gate simulation cannot compute segment
+            # gates.  This is a known, intentional capability reduction of
+            # the diagnostic — behavior is otherwise preserved; this does NOT
+            # justify re-exposing ``output_data`` on the facade.
             seg_means: list[float] = []
             seg_stds: list[float] = []
 

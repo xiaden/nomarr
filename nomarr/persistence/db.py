@@ -83,7 +83,12 @@ class Database:
         self._song_state_repo = SongStateRepository(self._scoped)
         self._pipeline_repo = PipelineRepository(self._scoped)
         self._song_repo = SongRepository(self._scoped)
-        self._app_repo = AppRepository(self._scoped, song_repo=self._song_repo)
+        self._app_repo = AppRepository(
+            self._scoped,
+            song_repo=self._song_repo,
+            library_repo=self._library_repo,
+            song_state_repo=self._song_state_repo,
+        )
         self._folder_repo = FolderRepository(self._scoped)
         self._tag_repo = TagRepository(self._scoped)
         self._song_tag_repo = SongTagRepository(self._scoped)

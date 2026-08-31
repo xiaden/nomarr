@@ -60,6 +60,8 @@ Some folders in `services/infrastructure/` are support packages, not services. T
 - Not workflows (they contain the execution loop, not just orchestration)
 - They are **internal entrypoints**, similar to CLI or API routes
 
+Workers classified as services follow the same thin persistence-facade caller rule as other services (ADR-046): they may call the injected public `Database` intent facade for thin single-atomic-intent operations, but must not reconstruct intents by sequencing lower-level calls.
+
 **Architectural exemptions for workers:**
 
 | Normal Service Rule | Worker Exemption |
@@ -76,7 +78,7 @@ Some folders in `services/infrastructure/` are support packages, not services. T
 ```python
 # ✅ Allowed
 from nomarr.workflows import scan_library_workflow, process_file_workflow
-from nomarr.persistence import Database
+from nomarr.persistence.db import Database  # public intent facade, thin single-intent calls
 from nomarr.components.ml import MLBackend
 from nomarr.helpers.dto import LibraryDict, ProcessResult
 ```
@@ -94,9 +96,23 @@ from pydantic import BaseModel        # No Pydantic models
 
 ## Persistence Rule
 
-**Services must NEVER call persistence methods directly.** All data access flows through components.
+Services may call the public `Database` intent facade for **thin, single-atomic-intent operations** — one facade method on `db.library`, `db.app`, or `db.ml` (or a public nested sub-facade the facade exposes).
 
-Services may hold a `Database` instance for DI wiring (passing it to workflows and components), but they must not call `db.<collection>.<method>()` themselves.
+```python
+# ✅ Allowed — one thin single-intent facade call
+assignments = db.library.list_tags_for_song(song_identity)
+
+# ❌ Not allowed — reconstructing an intent by sequencing multiple facade calls
+#    (business logic / multi-call choreography belongs in a component)
+song_id = ...
+identity = db.library.resolve_song_identity(song_id)
+first = db.library.list_tags_for_song(identity)
+second = ...  # more facade calls chained to rebuild a multi-step intent
+```
+
+A service facade call must be thin: it must not sequence lower-level calls, implement business rules or state-machine transitions, manage collection-level writes, or perform multi-call persistence choreography. Side-effectful reads (e.g. hydration) are treated as commands for review. Such behavior belongs in a component or an intent-complete facade method.
+
+Import `Database` from `nomarr.persistence.db` and reach the sub-facades through the injected instance. Services must not import persistence implementation internals — repositories (`nomarr.persistence.database`), SQL primitives, mappers, models, or `nomarr.persistence.api` implementation modules — nor open raw sessions/transactions. Only the composition root constructs `Database`.
 
 ---
 
@@ -149,6 +165,7 @@ Services own: DB connections (`Database`), Config snapshots (`ConfigService`), M
 - Does this file import from interfaces? **→ Violation**
 - Does this file import FastAPI, HTTPException, or Pydantic? **→ Violation**
 - Does this method contain loops, branching, or computation? **→ Extract to workflow**
+- Does this method sequence multiple `db.*` facade calls to reconstruct an intent? **→ Extract to component**
 - Does this method call components directly? **→ Should call workflow instead**
 - Are public methods returning DTOs for structured data? **→ Required**
 - Is the method name `<verb>_<noun>`? **→ Required**

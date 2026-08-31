@@ -15,12 +15,10 @@ from .worker_crash_comp import (
     should_restart_worker,
 )
 from .worker_discovery_comp import (
-    claim_file,
     cleanup_stale_claims,
     discover_and_claim_file,
     discover_next_file,
     get_active_claim_count,
-    release_claim,
 )
 
 __all__ = [
@@ -30,11 +28,9 @@ __all__ = [
     "RESTART_WINDOW_MS",
     "RestartDecision",
     "calculate_backoff",
-    "claim_file",
     "cleanup_stale_claims",
     "discover_and_claim_file",
     "discover_next_file",
     "get_active_claim_count",
-    "release_claim",
     "should_restart_worker",
 ]

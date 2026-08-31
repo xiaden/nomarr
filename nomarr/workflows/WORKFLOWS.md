@@ -8,7 +8,7 @@ They are:
 - **Recipes** composed of component calls
 - **Dependency-injected** (receive DB, config, backends as parameters)
 
-> **⚠️ Persistence Rule:** Workflows may receive `Database` as a parameter for **DI pass-through** to components, but **MUST NOT** call persistence methods (`db.*`) directly. Only components may access the database.
+> **⚠️ Persistence Rule:** Workflows may call the injected public `Database` intent facade (`db.library`, `db.app`, `db.ml`) for **thin, single-atomic-intent operations** — one facade method per call. They must not sequence lower-level calls, implement business rules or state-machine transitions, manage collection-level writes, or perform multi-call persistence choreography; that belongs in a component or an intent-complete facade method. Workflows import `Database` from `nomarr.persistence.db` and never touch persistence implementation internals.
 
 > **Rule:** Control flow composition lives here. Heavy logic lives in components. Wiring lives in services.
 
@@ -116,7 +116,7 @@ def process_file_workflow(
     return ProcessFileResult(file=file_path, tags_written=len(tags))
 ```
 
-**Key pattern:** The workflow passes `db` to components — it does **not** call `db.*` itself.
+**Key pattern:** The workflow passes `db` to components for heavy or multi-step work, and may make thin single-atomic-intent facade calls directly when a step is one atomic intent.
 
 ---
 
@@ -151,7 +151,7 @@ def process_file_workflow(
 - ✅ Components (`nomarr.components.*`)
 - ✅ Other workflows (`nomarr.workflows.*`) — lateral imports
 - ✅ Helpers (`nomarr.helpers.*`)
-- ✅ Persistence **type only** (`from nomarr.persistence import Database`) — for DI pass-through
+- ✅ Public persistence facade (`from nomarr.persistence.db import Database`) — for thin single-intent calls (`db.library`/`db.app`/`db.ml`) and DI pass-through
 - ✅ Standard library, numpy, etc.
 
 **Forbidden:**
@@ -160,7 +160,8 @@ def process_file_workflow(
 - ❌ Interfaces (`nomarr.interfaces.*`)
 - ❌ `nomarr.app`
 - ❌ Pydantic models
-- ❌ Calling `db.*` methods directly (pass `db` to components instead)
+- ❌ Importing persistence implementation internals (`nomarr.persistence.database`/`api`/`sql`/`mappers`/`models`)
+- ❌ Sequencing multiple facade calls to reconstruct a multi-step persistence intent
 
 ---
 
@@ -200,19 +201,25 @@ def process_file_workflow(...) -> dict[str, Any]:
 
 ### Database Pass-Through
 
-Workflows receive `Database` and pass it to components — never calling persistence directly:
+Workflows receive `Database` and pass it to components for heavy or multi-step work; they may also make thin, single-atomic-intent facade calls directly:
 
 ```python
-# ✅ Good — pass db to component
+# ✅ Good — pass db to component for multi-step work
+#    (a single thin facade call is also fine, e.g. db.library.list_tags(limit=100))
 def cleanup_workflow(db: Database, library: Library) -> CleanupResult:
     orphans = find_orphaned_tags(db, library)  # component calls db
     removed = remove_tags(db, orphans)  # component calls db
     return CleanupResult(removed=removed)
 
 
-# ❌ Bad — workflow calling persistence
+# ❌ Bad — workflow reconstructing a multi-step intent (choreography)
 def cleanup_workflow(db: Database, library: Library) -> CleanupResult:
-    tags = db.library.list_tags(limit=100)  # ← Only components may call db.*
+    song_ids = db.library.list_library_song_ids(library, limit=None)
+    removed = 0
+    for song_id in song_ids:
+        identity = db.library.resolve_song_identity(song_id)
+        removed += len(db.library.list_tags_for_song(identity))  # sequencing facade calls in a loop
+    return CleanupResult(removed=removed)  # belongs in a component
 ```
 
 ---
@@ -222,7 +229,7 @@ def cleanup_workflow(db: Database, library: Library) -> CleanupResult:
  | Anti-Pattern | Why It's Wrong | Fix |
  | --- | --- | --- |
  | Complex computation in workflow | Logic belongs in components | Extract to component |
- | Calling `db.library.*`, `db.app.*`, or `db.ml.*` directly | Only components access persistence | Pass `db` to component function |
+ | Sequencing multiple `db.library.*`/`db.app.*`/`db.ml.*` calls to rebuild an intent | Thin single-intent facade calls are allowed, but choreography belongs in a component | Extract the multi-call intent to a component |
  | Importing services | Violates layer direction | Services call workflows, not reverse |
  | Importing Pydantic models | Interface concern only | Use DTOs from `helpers/dto/` |
  | Returning raw dicts | Untyped, fragile contract | Return a DTO |

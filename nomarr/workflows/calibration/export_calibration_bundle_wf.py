@@ -88,10 +88,10 @@ def export_calibration_bundle_wf(
     labels: dict[str, dict[str, Any]] = {}
 
     for state in calibration_states:
-        head_name = state.get("head_name")
-        p5 = state.get("p5")
-        p95 = state.get("p95")
-        method = state.get("method", "histogram")
+        head_name = state.head_name
+        p5 = state.p5
+        p95 = state.p95
+        method = "histogram"
 
         if not head_name or p5 is None or p95 is None:
             logger.warning(f"[export_calibration] Skipping invalid state: {state}")

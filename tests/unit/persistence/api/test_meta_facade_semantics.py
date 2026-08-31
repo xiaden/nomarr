@@ -7,13 +7,12 @@ surface of ``AppDb`` for the meta-backed domains — user config, schema version
 credentials (API key / admin password hash), calibration bookkeeping, model VRAM
 limits, capacity estimates, GPU resource snapshots, and worker-control state.
 
-These are spec-first tests: the semantic methods they call are added in **Phase 2**,
-so every test in this file is currently **EXPECTED TO FAIL** (``AttributeError`` on
-the not-yet-implemented method). They collect cleanly and pin the public contract
-(existence + signature + semantic output). Mock wiring (the repository method a
-facade getter delegates to) is reconciled when Phase 2 lands; the mock method name
-mirrors the facade method, following the established pattern in ``test_app_db.py``
-(e.g. ``get_worker_restart_policy`` facade → ``mock_app_repo.get_worker_restart_policy``).
+These are spec-first semantic-contract tests: they pin the public ``AppDb``
+surface (existence + signature + semantic output) for every meta-backed domain.
+All 37 tests pass against the implemented surface. Mock wiring (the repository
+method a facade getter delegates to) mirrors the facade method name, following
+``test_app_db.py`` (e.g. ``get_worker_restart_policy`` facade →
+``mock_app_repo.get_worker_restart_policy``).
 
 By contract these tests must NOT assert ``get_meta`` / ``upsert_meta`` /
 ``delete_meta`` / prefix listing / ``MetaRow`` / ``{"value": ...}`` payloads from the

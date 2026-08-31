@@ -1,8 +1,10 @@
 """Persistence layer — PostgreSQL database access and schema definitions.
 
 Provides type-safe access to the PostgreSQL database using SQLAlchemy.
-All database operations flow through this layer; layers above (interfaces,
-services, workflows) must never access the database directly.
+All database operations flow through this layer. Components, services, and
+workflows may access persistence only through the injected public ``Database``
+intent facades. Interfaces and helpers may not access persistence, and Tier-1
+and Tier-2 implementation internals remain private to this package.
 
 Key exports (lazy-imported via ``__getattr__`` for boot-time performance):
 

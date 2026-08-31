@@ -15,7 +15,6 @@ def mock_db():
     """Provide mock Database."""
     db = MagicMock()
     db.app = MagicMock()
-    db.app.get_meta.return_value = None
     db.app.get_worker_restart_policy.return_value = None
     return db
 
@@ -211,7 +210,7 @@ class TestRestartWorkerHelper:
 
     def test_restart_worker_skips_when_disabled(self, worker_service, mock_db):
         """When worker system disabled during backoff, skips restart."""
-        mock_db.app.get_meta.return_value = {"key": "worker_enabled", "value": "false"}  # disabled
+        worker_service._worker_enabled = False  # disabled
 
         worker_service._restart_worker("worker_0")
 
@@ -221,7 +220,7 @@ class TestRestartWorkerHelper:
     @patch("nomarr.services.infrastructure.workers.discovery_worker.create_discovery_worker")
     def test_restart_worker_spawns_replacement(self, mock_create_worker, worker_service, mock_db):
         """When enabled, spawns replacement worker and registers with health monitor."""
-        mock_db.app.get_config_option.return_value = {"key": "worker_enabled", "value": "true"}  # enabled
+        worker_service._worker_enabled = True  # enabled
         mock_worker = MagicMock()
         mock_worker.worker_id = "worker_1"
         mock_worker.health_pipe = MagicMock()

@@ -7,7 +7,7 @@ only from ``typing`` and ``datetime``.
 
 from __future__ import annotations
 
-from typing import NotRequired, TypedDict
+from typing import TypedDict
 
 
 class LibraryRow(TypedDict):
@@ -161,18 +161,6 @@ class SessionRow(TypedDict):
     expires_at: int
 
 
-class WorkerClaimRow(TypedDict):
-    """Single row from the ``worker_claims`` table."""
-
-    id: int
-    worker_id: str
-    key: str
-    value: dict
-    claimed_at: int
-    file_id: NotRequired[str | int]
-    claim_type: NotRequired[str]
-
-
 class SongStateRow(TypedDict):
     """Single row from the ``song_states`` lookup table."""
 
@@ -205,5 +193,4 @@ __all__ = [
     "SongStateRow",
     "SongTagRow",
     "TagRow",
-    "WorkerClaimRow",
 ]

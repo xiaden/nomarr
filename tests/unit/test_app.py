@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 import os
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 # Ensure the module-level Application() construction in nomarr.app doesn't
 # fail during import. The guard checks PYTEST_CURRENT_TEST, but that env var
@@ -172,6 +172,110 @@ class TestApplicationServices:
         message = str(exc_info.value)
         assert "config" in message
         assert "library" in message
+
+
+# ===========================================================================
+# Application lifecycle: keyword-only health contract (P4-S1)
+# ===========================================================================
+# The three stale health paths in app.py (startup ``starting``, post-start
+# ``healthy``, and shutdown ``stopping``) must call the keyword-only
+# ``AppDb.update_health(worker_id, *, status, last_seen)`` contract using ONLY
+# status and last_seen — never the old positional-dict form or extra fields.
+# The ``update_health`` facade itself is pinned keyword-only in
+# tests/unit/persistence/api/test_app_db.py::test_update_health_delegates.
+
+
+class TestApplicationHealthLifecycle:
+    """Lifecycle assertions that start()/shutdown() use the keyword-only health contract."""
+
+    def test_shutdown_records_keyword_only_stopping_health(self) -> None:
+        app = _make_bare_application()
+        app._running = True
+        app.db = MagicMock()
+        app.db.app.update_health = MagicMock()
+        app.db.app.truncate_health = MagicMock()
+        app.health_monitor = None
+
+        with patch("nomarr.app.now_ms", return_value=MagicMock(value=123_456)):
+            app.stop()
+
+        app.db.app.update_health.assert_called_once_with(
+            "app",
+            status="stopping",
+            last_seen=123_456,
+        )
+        # The call must be keyword-only for status/last_seen and carry no extra
+        # fields (old positional-dict form passed component_type, error, etc.).
+        args, kwargs = app.db.app.update_health.call_args
+        assert args == ("app",)
+        assert set(kwargs) == {"status", "last_seen"}
+        app.db.app.truncate_health.assert_called_once_with()
+
+    def test_start_records_keyword_only_starting_and_healthy_health(self) -> None:
+        app = _make_bare_application()
+        app.db = MagicMock()
+        app.db.app.update_health = MagicMock()
+        app.db.app.truncate_health = MagicMock()
+        app._config_service = MagicMock()
+        app._config_service.get_worker_count.return_value = 2
+        app._config_service.make_processor_config.return_value = MagicMock()
+        app.models_dir = "/models"
+        app.namespace = "nom"
+        app.version_tag_key = "nom_version"
+        app.tagger_version = "v-test"
+        app.library_root = None
+        app.worker_enabled_default = False
+        app.worker_poll_interval = 5
+        app.db_path = "/data/nomarr.db"
+        app.api_host = "0.0.0.0"
+        app.api_port = 8080
+        app.admin_password_config = None
+
+        # Stub the heavy service graph so start() reaches both health calls
+        # without constructing real services or starting threads.
+        heavy_patches = [
+            patch("nomarr.app.KeyManagementService"),
+            patch("nomarr.app.HealthMonitorService"),
+            patch("nomarr.app.AnalyticsService"),
+            patch("nomarr.app.CalibrationService"),
+            patch("nomarr.app.NavidromeService"),
+            patch("nomarr.app.PlaylistImportService"),
+            patch("nomarr.app.LibraryService"),
+            patch("nomarr.app.LibraryServiceConfig"),
+            patch("nomarr.app.TaggingService"),
+            patch("nomarr.app.TaggingServiceConfig"),
+            patch("nomarr.app.LibraryPipelineService"),
+            patch("nomarr.app.WorkerSystemService"),
+            patch("nomarr.app.threading.Thread"),
+            patch("nomarr.services.infrastructure.ml_svc.MLConfig"),
+            patch("nomarr.services.infrastructure.ml_svc.MLService"),
+            patch("nomarr.services.infrastructure.health_monitor_svc.HealthMonitorConfig"),
+            patch("nomarr.services.infrastructure.background_tasks_svc.BackgroundTaskService"),
+            patch("nomarr.services.domain.analytics_svc.AnalyticsConfig"),
+            patch("nomarr.services.domain.calibration_svc.CalibrationConfig"),
+            patch("nomarr.services.domain.navidrome_svc.NavidromeConfig"),
+            patch("nomarr.services.domain.metadata_svc.MetadataService"),
+            patch("nomarr.services.domain.vector_maintenance_svc.VectorMaintenanceService"),
+            patch("nomarr.services.domain.vector_search_svc.VectorSearchService"),
+            patch("nomarr.services.infrastructure.info_svc.InfoConfig"),
+            patch("nomarr.services.infrastructure.info_svc.InfoService"),
+            patch("nomarr.app.now_ms", return_value=MagicMock(value=777_888)),
+        ]
+        for p in heavy_patches:
+            p.start()
+        try:
+            app.start()
+        finally:
+            for p in heavy_patches:
+                p.stop()
+
+        statuses = [c.kwargs.get("status") for c in app.db.app.update_health.call_args_list]
+        assert statuses == ["starting", "healthy"]
+        for c in app.db.app.update_health.call_args_list:
+            args, kwargs = c
+            assert args == ("app",)
+            assert set(kwargs) == {"status", "last_seen"}
+        app.db.app.truncate_health.assert_called_once_with()
 
 
 # ===========================================================================

@@ -19,7 +19,9 @@ from nomarr.helpers.constants.file_states import (
     STATE_WRITTEN,
 )
 from nomarr.helpers.dataclasses.library_dataclass import Library
+from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
 from nomarr.helpers.dataclasses.song_dataclass import Song
+from nomarr.helpers.dataclasses.worker_claim_dataclass import WorkerClaim, WorkerClaimIdentity
 from nomarr.helpers.time_helper import Milliseconds
 
 
@@ -52,6 +54,21 @@ def _library() -> Library:
     return Library(name="Test Library", root_path="/music")
 
 
+def _identity(song_id: int) -> SongIdentity:
+    """Construct a natural song identity for a numeric song handle."""
+    return SongIdentity(
+        library=LibraryIdentity(name="Test Library"),
+        normalized_path=f"song-{song_id}.mp3",
+    )
+
+
+def _reconcile_claim(song_id: int, worker_id: str, claimed_at_ms: int) -> WorkerClaim:
+    return WorkerClaim(
+        identity=WorkerClaimIdentity(song=_identity(song_id), worker_id=worker_id, claim_type="reconcile"),
+        claimed_at_ms=claimed_at_ms,
+    )
+
+
 class TestClaimFilesForReconciliation:
     """Tests for claim_files_for_reconciliation."""
 
@@ -75,6 +92,8 @@ class TestClaimFilesForReconciliation:
         mock_db = MagicMock()
         candidate = _song(song_id=123)
         mock_db.library.get_song.return_value = candidate
+        mock_db.library.resolve_song_identity.return_value = _identity(123)
+        mock_db.app.add_claim.return_value = True
 
         with (
             patch(
@@ -86,24 +105,15 @@ class TestClaimFilesForReconciliation:
                 "nomarr.components.library.reconciliation_comp.now_ms",
                 return_value=Milliseconds(10_000),
             ),
-            patch(
-                "nomarr.components.library.reconciliation_comp.try_insert_or_steal_claim",
-                new_callable=MagicMock,
-                return_value=True,
-            ) as mock_try_claim,
         ):
             result = claim_files_for_reconciliation(mock_db, _library(), "workers/test")
 
-            assert result == [candidate.to_dict()]
+            assert result == [candidate]
         mock_db.library.get_song.assert_called_once_with(123)
-        claim_payload, claim_now, claim_lease_ms = mock_try_claim.call_args.args[1:]
-        assert "key" not in claim_payload
-        assert claim_payload["file_id"] == "123"
-        assert claim_payload["worker_id"] == "workers/test"
-        assert claim_payload["claimed_at"] == 10_000
-        assert claim_payload["claim_type"] == "reconcile"
-        assert claim_now == 10_000
-        assert claim_lease_ms == 60_000
+        mock_db.app.add_claim.assert_called_once_with(
+            _reconcile_claim(123, "workers/test", 10_000),
+            lease_ms=60_000,
+        )
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -112,16 +122,21 @@ class TestClaimFilesForReconciliation:
         candidate = _song(song_id=123)
         mock_db.library.list_songs.return_value = [candidate]
         mock_db.library.get_song.return_value = candidate
+        mock_db.library.resolve_song_identity.return_value = _identity(123)
+        mock_db.app.add_claim.return_value = True
 
         with (
             patch("nomarr.components.library.reconciliation_comp.get_stale_song_ids", return_value=[]),
             patch.object(mock_db.app, "song_ids_with_state", return_value=[123]),
             patch("nomarr.components.library.reconciliation_comp.now_ms", return_value=Milliseconds(10_000)),
-            patch("nomarr.components.library.reconciliation_comp.try_insert_or_steal_claim", return_value=True),
         ):
             result = claim_files_for_reconciliation(mock_db, _library(), "workers/test")
 
-            assert result == [candidate.to_dict()]
+            assert result == [candidate]
+        mock_db.app.add_claim.assert_called_once_with(
+            _reconcile_claim(123, "workers/test", 10_000),
+            lease_ms=60_000,
+        )
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -130,6 +145,8 @@ class TestClaimFilesForReconciliation:
         stale_ids = [100, 101, 102, 103, 104]
         candidates = [_song(song_id=file_id) for file_id in stale_ids]
         mock_db.library.get_song.side_effect = candidates
+        mock_db.library.resolve_song_identity.side_effect = [_identity(sid) for sid in stale_ids]
+        mock_db.app.add_claim.return_value = True
 
         with (
             patch(
@@ -141,11 +158,6 @@ class TestClaimFilesForReconciliation:
                 "nomarr.components.library.reconciliation_comp.now_ms",
                 return_value=Milliseconds(20_000),
             ),
-            patch(
-                "nomarr.components.library.reconciliation_comp.try_insert_or_steal_claim",
-                new_callable=MagicMock,
-                return_value=True,
-            ) as mock_try_claim,
         ):
             result = claim_files_for_reconciliation(
                 mock_db,
@@ -154,15 +166,13 @@ class TestClaimFilesForReconciliation:
                 batch_size=2,
             )
 
-        assert result == [c.to_dict() for c in candidates[:2]]
-        assert mock_db.library.get_song.call_count == len(stale_ids)
-        assert mock_try_claim.call_count == 2
-        first_payload, first_now, first_lease_ms = mock_try_claim.call_args_list[0].args[1:]
-        second_payload, second_now, second_lease_ms = mock_try_claim.call_args_list[1].args[1:]
-        assert "key" not in first_payload
-        assert "key" not in second_payload
-        assert first_now == second_now == 20_000
-        assert first_lease_ms == second_lease_ms == 60_000
+        assert result == candidates[:2]
+        assert mock_db.library.get_song.call_count == 2
+        assert mock_db.app.add_claim.call_count == 2
+        expected = {_reconcile_claim(sid, "workers/test", 20_000) for sid in (100, 101)}
+        for call in mock_db.app.add_claim.call_args_list:
+            assert call.kwargs == {"lease_ms": 60_000}
+            assert call.args[0] in expected
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -170,6 +180,8 @@ class TestClaimFilesForReconciliation:
         mock_db = MagicMock()
         candidate = _song(song_id=123)
         mock_db.library.get_song.return_value = candidate
+        mock_db.library.resolve_song_identity.return_value = _identity(123)
+        mock_db.app.add_claim.return_value = False
 
         with (
             patch(
@@ -180,11 +192,6 @@ class TestClaimFilesForReconciliation:
                 "nomarr.components.library.reconciliation_comp.now_ms",
                 return_value=Milliseconds(60_000),
             ),
-            patch(
-                "nomarr.components.library.reconciliation_comp.try_insert_or_steal_claim",
-                new_callable=MagicMock,
-                return_value=False,
-            ) as mock_try_claim,
         ):
             result = claim_files_for_reconciliation(
                 mock_db,
@@ -195,16 +202,9 @@ class TestClaimFilesForReconciliation:
 
         assert result == []
         mock_db.library.get_song.assert_called_once_with(123)
-        mock_try_claim.assert_called_once_with(
-            mock_db,
-            {
-                "file_id": "123",
-                "worker_id": "workers/test",
-                "claimed_at": 60_000,
-                "claim_type": "reconcile",
-            },
-            60_000,
-            60_000,
+        mock_db.app.add_claim.assert_called_once_with(
+            _reconcile_claim(123, "workers/test", 60_000),
+            lease_ms=60_000,
         )
 
     @pytest.mark.unit
@@ -213,6 +213,8 @@ class TestClaimFilesForReconciliation:
         mock_db = MagicMock()
         candidate = _song(song_id=123)
         mock_db.library.get_song.return_value = candidate
+        mock_db.library.resolve_song_identity.return_value = _identity(123)
+        mock_db.app.add_claim.return_value = True
 
         with (
             patch(
@@ -223,11 +225,6 @@ class TestClaimFilesForReconciliation:
                 "nomarr.components.library.reconciliation_comp.now_ms",
                 return_value=Milliseconds(120_000),
             ),
-            patch(
-                "nomarr.components.library.reconciliation_comp.try_insert_or_steal_claim",
-                new_callable=MagicMock,
-                return_value=True,
-            ) as mock_try_claim,
         ):
             result = claim_files_for_reconciliation(
                 mock_db,
@@ -236,18 +233,10 @@ class TestClaimFilesForReconciliation:
                 lease_ms=60_000,
             )
 
-            assert result == [candidate.to_dict()]
-        mock_db.library.get_song.assert_called_once_with(123)
-        mock_try_claim.assert_called_once_with(
-            mock_db,
-            {
-                "file_id": "123",
-                "worker_id": "workers/test",
-                "claimed_at": 120_000,
-                "claim_type": "reconcile",
-            },
-            120_000,
-            60_000,
+            assert result == [candidate]
+        mock_db.app.add_claim.assert_called_once_with(
+            _reconcile_claim(123, "workers/test", 120_000),
+            lease_ms=60_000,
         )
 
 
@@ -258,7 +247,7 @@ class TestSetFileWritten:
     @pytest.mark.mocked
     def test_normalizes_bare_key_to_full_id(self) -> None:
         mock_db = MagicMock()
-
+        mock_db.library.resolve_song_identity.return_value = _identity(123)
         mock_db.app.song_state_membership.return_value = {STATE_TAGS_NOT_FRESH}
         with patch("nomarr.components.library.reconciliation_comp.transition_song_state") as mock_transition:
             set_file_written(mock_db, 123, "worker:reconcile:0")
@@ -270,24 +259,30 @@ class TestSetFileWritten:
             STATE_NOT_WRITTEN,
             STATE_WRITTEN,
         )
-        mock_db.app.release_claim.assert_called_once_with("worker:reconcile:0", 123, "reconcile")
+        mock_db.app.remove_claim.assert_called_once_with(
+            WorkerClaimIdentity(song=_identity(123), worker_id="worker:reconcile:0", claim_type="reconcile")
+        )
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_normalizes_full_id_unchanged(self) -> None:
         mock_db = MagicMock()
+        mock_db.library.resolve_song_identity.return_value = _identity(123)
 
         with patch("nomarr.components.library.reconciliation_comp.transition_song_state") as mock_transition:
             set_file_written(mock_db, 123, "worker:reconcile:0")
 
         for transition_call in mock_transition.call_args_list:
             assert transition_call.args[1] == [123]
-        mock_db.app.release_claim.assert_called_once_with("worker:reconcile:0", 123, "reconcile")
+        mock_db.app.remove_claim.assert_called_once_with(
+            WorkerClaimIdentity(song=_identity(123), worker_id="worker:reconcile:0", claim_type="reconcile")
+        )
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_transitions_tag_state_edges(self) -> None:
         mock_db = MagicMock()
+        mock_db.library.resolve_song_identity.return_value = _identity(123)
         mock_db.app.song_state_membership.return_value = {STATE_TAGS_NOT_FRESH}
 
         with patch("nomarr.components.library.reconciliation_comp.transition_song_state") as mock_transition:
@@ -313,11 +308,14 @@ class TestSetFileWritten:
     @pytest.mark.mocked
     def test_releases_claim_via_app_api(self) -> None:
         mock_db = MagicMock()
+        mock_db.library.resolve_song_identity.return_value = _identity(123)
 
         with patch("nomarr.components.library.reconciliation_comp.transition_song_state"):
             set_file_written(mock_db, 123, "worker:reconcile:0")
 
-        mock_db.app.release_claim.assert_called_once_with("worker:reconcile:0", 123, "reconcile")
+        mock_db.app.remove_claim.assert_called_once_with(
+            WorkerClaimIdentity(song=_identity(123), worker_id="worker:reconcile:0", claim_type="reconcile")
+        )
 
 
 class TestReleaseClaim:
@@ -327,15 +325,19 @@ class TestReleaseClaim:
     @pytest.mark.mocked
     def test_normalizes_bare_key_and_releases_claim_via_app_api(self) -> None:
         mock_db = MagicMock()
+        mock_db.library.resolve_song_identity.return_value = _identity(123)
 
         release_claim(mock_db, 123, "worker:reconcile:0")
 
-        mock_db.app.release_claim.assert_called_once_with("worker:reconcile:0", 123, "reconcile")
+        mock_db.app.remove_claim.assert_called_once_with(
+            WorkerClaimIdentity(song=_identity(123), worker_id="worker:reconcile:0", claim_type="reconcile")
+        )
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_does_not_change_state_edges(self) -> None:
         mock_db = MagicMock()
+        mock_db.library.resolve_song_identity.return_value = _identity(123)
 
         release_claim(mock_db, 123, "worker:reconcile:0")
 

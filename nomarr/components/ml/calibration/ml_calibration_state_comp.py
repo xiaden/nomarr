@@ -7,8 +7,7 @@ so they never touch persistence directly.
 from __future__ import annotations
 
 import logging
-import re
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from nomarr.components.library.library_records_comp import list_library_records
 from nomarr.components.library.library_song_state_comp import (
@@ -18,6 +17,7 @@ from nomarr.components.library.library_song_state_comp import (
     transition_song_state,
 )
 from nomarr.helpers.constants.file_states import STATE_CALIBRATED, STATE_NOT_CALIBRATED
+from nomarr.helpers.dataclasses.calibration_history_dataclass import CalibrationHistorySnapshot
 from nomarr.helpers.dataclasses.calibration_state_dataclass import CalibrationState
 from nomarr.helpers.time_helper import now_ms
 
@@ -25,12 +25,6 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
-
-
-def _make_calibration_state_key(head_name: str, label: str) -> str:
-    """Build the deterministic calibration state key."""
-    raw = f"{head_name}:{label}"
-    return re.sub(r"[^a-zA-Z0-9_:.@()+,=;$!*'%-]", "_", raw)
 
 
 def count_recent_calibration_states(db: Database, threshold: int) -> int:
@@ -48,11 +42,12 @@ def get_latest_calibration_state_updated_at(db: Database) -> int | None:
 
 def load_calibration_state(
     db: Database,
+    model_id: str,
     head_name: str,
     label: str,
 ) -> CalibrationState | None:
-    """Load one calibration state by its logical identity."""
-    return db.ml.get_calibration_state_view(head_name, label)
+    """Load one calibration state by its logical (model, head, label) identity."""
+    return db.ml.get_calibration_state_view(model_id, head_name, label)
 
 
 # ---------------------------------------------------------------------------
@@ -112,8 +107,8 @@ def save_calibration_state(
 def load_all_calibration_states(
     db: Database,
 ) -> list[CalibrationState]:
-    """Return every calibration state enriched with model metadata."""
-    return db.ml.list_all_calibration_states_with_models()
+    """Return every calibration state as a domain value."""
+    return [state for state, _model in db.ml.list_calibration_states_with_models()]
 
 
 def load_calibration_lookup(db: Database) -> dict[str, dict[str, Any]]:
@@ -142,11 +137,12 @@ def load_calibration_lookup(db: Database) -> dict[str, dict[str, Any]]:
 
 def delete_calibration_state(
     db: Database,
+    model_id: str,
     head_name: str,
     label: str,
 ) -> None:
-    """Delete one calibration state record and its edge."""
-    calibration_doc = load_calibration_state(db, head_name, label)
+    """Delete one calibration state record."""
+    calibration_doc = load_calibration_state(db, model_id, head_name, label)
     if calibration_doc is None:
         return
 
@@ -155,7 +151,9 @@ def delete_calibration_state(
 
 def create_calibration_history_snapshot(
     db: Database,
-    calibration_key: str,
+    model_id: str,
+    head_name: str,
+    label: str,
     p5: float,
     p95: float,
     sample_count: int,
@@ -164,94 +162,74 @@ def create_calibration_history_snapshot(
     p5_delta: float | None = None,
     p95_delta: float | None = None,
     n_delta: int | None = None,
-) -> str:
-    """Insert a calibration history snapshot."""
-    doc = {
-        "calibration_key": calibration_key,
-        "snapshot_at": now_ms().value,
-        "p5": p5,
-        "p95": p95,
-        "n": sample_count,
-        "underflow_count": underflow_count,
-        "overflow_count": overflow_count,
-        "p5_delta": p5_delta,
-        "p95_delta": p95_delta,
-        "n_delta": n_delta,
-    }
-    result = db.ml.add_calibration_history(payload=doc)
-    return cast("str", result)
+) -> None:
+    """Record one calibration history snapshot for a model/head/label identity."""
+    snapshot = CalibrationHistorySnapshot(
+        model_id=model_id,
+        head_name=head_name,
+        label=label,
+        snapshot_at=now_ms().value,
+        p5=p5,
+        p95=p95,
+        sample_count=sample_count,
+        underflow_count=underflow_count,
+        overflow_count=overflow_count,
+        p5_delta=p5_delta,
+        p95_delta=p95_delta,
+        n_delta=n_delta,
+    )
+    db.ml.add_calibration_history(snapshot)
 
 
 def get_latest_calibration_history_snapshot(
     db: Database,
-    calibration_key: str,
-) -> dict[str, Any] | None:
-    """Return the newest history snapshot for one calibration key."""
-    snapshots = cast(
-        "list[dict[str, Any]]",
-        db.ml.list_calibration_history_snapshots(calibration_key=calibration_key),
-    )
-    if not snapshots:
-        return None
-
-    return max(
-        snapshots,
-        key=lambda snapshot: cast("int", snapshot.get("snapshot_at", 0)),
-    )
+    model_id: str,
+    head_name: str,
+    label: str,
+) -> CalibrationHistorySnapshot | None:
+    """Return the newest history snapshot for one model/head/label identity."""
+    return db.ml.get_latest_calibration_history_snapshot(model_id, head_name, label)
 
 
 def delete_old_calibration_history_snapshots(
     db: Database,
-    calibration_key: str,
+    model_id: str,
+    head_name: str,
+    label: str,
     keep_count: int = 100,
 ) -> int:
-    """Delete old history snapshots, keeping the newest ``keep_count`` rows."""
-    snapshots = cast(
-        "list[dict[str, Any]]",
-        db.ml.list_calibration_history_snapshots(calibration_key=calibration_key),
-    )
-    if len(snapshots) <= keep_count:
-        return 0
+    """Delete old history snapshots, retaining the newest ``keep_count`` rows.
 
-    ordered_snapshots = sorted(
-        snapshots,
-        key=lambda snapshot: cast("int", snapshot.get("snapshot_at", 0)),
-        reverse=True,
-    )
-    stale_ids = [cast("str", snapshot["id"]) for snapshot in ordered_snapshots[keep_count:] if "id" in snapshot]
-    if not stale_ids:
-        return 0
-
-    db.ml.remove_calibration_history_entries(entry_ids=stale_ids)
-    return len(stale_ids)
+    Delegates to the repository's natural-identity retention intent, which
+    removes everything beyond the newest ``keep_count`` snapshots for the
+    identity and returns the number of rows removed.
+    """
+    return db.ml.remove_calibration_history(model_id, head_name, label, keep_count)
 
 
 # ---------------------------------------------------------------------------
-# Meta: calibration version / last-run
+# Calibration bookkeeping
 # ---------------------------------------------------------------------------
 
 
 def get_calibration_version(db: Database) -> str | None:
     """Return the current global calibration version hash, or ``None``."""
-    calibration_doc = db.app.get_config_option(key="calibration_version")
-    return None if calibration_doc is None else calibration_doc.value
+    return db.app.get_calibration_version()
 
 
 def set_calibration_version(db: Database, version_hash: str) -> None:
     """Set the global calibration version hash."""
-    db.app.update_config_option(key="calibration_version", payload={"value": version_hash})
+    db.app.set_calibration_version(version_hash)
 
 
 def get_calibration_last_run(db: Database) -> int | None:
     """Return the timestamp (ms) of the last calibration run, or ``None``."""
-    last_run_doc = db.app.get_config_option(key="calibration_last_run")
-    last_run_str = None if last_run_doc is None else last_run_doc.value
-    return int(last_run_str) if last_run_str else None
+    return db.app.get_calibration_last_run()
 
 
 def set_calibration_last_run(db: Database, timestamp: str) -> None:
     """Record the timestamp of the last calibration run."""
-    db.app.update_config_option(key="calibration_last_run", payload={"value": timestamp})
+    db.app.set_calibration_last_run(timestamp)
 
 
 # ---------------------------------------------------------------------------
@@ -332,30 +310,29 @@ def compute_reconciliation_info(
 def clear_all_calibration_data(db: Database) -> dict[str, int]:
     """Remove all calibration data from the database.
 
-    Truncates calibration_state and calibration_history collections,
-    removes calibration meta keys, and transitions all library files to the
-    not calibrated and not vectors extracted states.
+    Truncates the calibration_state and calibration_history tables,
+    clears the calibration bookkeeping values, and transitions all library
+    files to the not calibrated and not vectors extracted states.
 
     Args:
         db: Database instance
 
     Returns:
-        Summary containing ``files_updated`` and ``meta_keys_cleared``.
+        Summary containing ``files_updated`` and ``bookkeeping_values_cleared``.
 
     """
-    # Truncate calibration data
-    db.ml.truncate_calibration_states()
-    db.ml.truncate_calibration_history()
+    # Multi-domain thin sanctioned sequence (ADR-046): the destructive ML table
+    # resets live under maintenance, app bookkeeping on the app facade, and the
+    # library state transitions via components. Each call is one atomic intent;
+    # no single ML operation replaces this because it spans three sub-facades.
+    db.ml.maintenance.truncate_calibration_states()
+    db.ml.maintenance.truncate_calibration_history()
 
-    # Clear calibration meta keys
-    meta_keys_cleared = 0
-    for key in ("calibration_version", "calibration_last_run"):
-        if db.app.get_config_option(key=key) is not None:
-            db.app.remove_config_option(key=key)
-            meta_keys_cleared += 1
+    # Clear calibration bookkeeping atomically (returns the number removed)
+    bookkeeping_values_cleared = db.app.clear_calibration_metadata()
 
     # Mark all files as not calibrated and not vectors extracted
     files_updated = bulk_set_not_calibrated(db)
     bulk_set_not_vectors_extracted(db)
 
-    return {"files_updated": files_updated, "meta_keys_cleared": meta_keys_cleared}
+    return {"files_updated": files_updated, "bookkeeping_values_cleared": bookkeeping_values_cleared}

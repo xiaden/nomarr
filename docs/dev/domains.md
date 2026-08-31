@@ -263,12 +263,12 @@ Each domain maps to a subfolder under `components/` and owns specific PostgreSQL
 
 **Owns:**
 
-- `worker_claims` — Ephemeral claim documents (work leases)
+- `worker_claims` — Ephemeral worker claims (work leases)
 - `worker_restart_policy` — Per-worker restart policy tracking
 
 **Invariants:**
 
-- Claims use deterministic key based on file ID (one claim per file)
+- Single active claim per song across typed and untyped (persistence-internal unique claim key)
 - Claims are ephemeral (represent active work, not scheduled work)
 
 **Key components:**
@@ -286,7 +286,7 @@ Each domain maps to a subfolder under `components/` and owns specific PostgreSQL
 
 **Owns:**
 
-- `meta` — Key-value store for system metadata (schema version, worker_enabled flag, etc.)
+- `meta` — Application bookkeeping and operational state (schema version, worker_enabled flag, VRAM limits, capacity estimates, GPU snapshots) exposed through the semantic `db.app` intents
 - `health` — Health status snapshots (history-only, written by `HealthMonitorService`)
 - `sessions` — API session data
 - `applied_migrations` — Migration tracking

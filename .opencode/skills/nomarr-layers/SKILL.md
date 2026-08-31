@@ -44,6 +44,8 @@ Lateral (same-layer) imports are allowed: workflows may call other workflows, co
 
 Services may skip workflows for simple single-step operations. Workflows exist for multi-step orchestration, not as mandatory pass-through.
 
+Components, services, and workflows (including service-classified workers) may call the injected public `Database` intent facade (`db.library`, `db.app`, `db.ml`) for thin, single-atomic-intent operations. Interfaces and helpers may not import persistence at all.
+
 ---
 
 ## Import Rule Summary
@@ -51,12 +53,14 @@ Services may skip workflows for simple single-step operations. Workflows exist f
 | Layer | May Import | Must NEVER Import |
 |-------|-----------|-------------------|
 | **Interfaces** | Services, DTOs, Pydantic (own layer only) | Workflows, Components, Persistence |
-| **Services** | Workflows, Components, Persistence, DTOs | Interfaces, FastAPI, HTTPException, Pydantic |
-| **Workflows** | Components, other workflows, Persistence, DTOs | Services, Interfaces, Pydantic |
-| **Components** | Persistence, other components, DTOs, Helpers | Services, Workflows, Interfaces, Pydantic |
+| **Services** | Workflows, Components, Persistence (public `Database` facade only), DTOs | Interfaces, FastAPI, HTTPException, Pydantic |
+| **Workflows** | Components, other workflows, Persistence (public `Database` facade only), DTOs | Services, Interfaces, Pydantic |
+| **Components** | Persistence (public `Database` facade only), other components, DTOs, Helpers | Services, Workflows, Interfaces, Pydantic |
 | **Persistence** | DTOs (helpers only), third-party libs | Services, Workflows, Components, Interfaces |
-| **Helpers** | Stdlib, third-party libs, sibling DTOs | Any `nomarr.*` module from higher layers |
+| **Helpers** | Stdlib, third-party libs, sibling DTOs | Any `nomarr.*` module from higher layers; Persistence |
 | **Frontend** | Shared modules, API client | Backend internals, direct DB access |
+
+For components, services, and workflows, "Persistence" above means only the public `Database` intent facade — `from nomarr.persistence.db import Database`, called as `db.library` / `db.app` / `db.ml` (and public nested sub-facades the facade exposes). A caller-layer facade call must be **thin** (one atomic persistence intent or one thin recipe step); services and workflows must not reconstruct persistence intents by sequencing lower-level calls. Interfaces and helpers are barred from persistence entirely.
 
 ---
 
@@ -95,7 +99,7 @@ Before committing code in any layer:
 - [ ] No `pydantic.BaseModel` outside interfaces layer
 - [ ] No business logic in persistence or helpers
 - [ ] Workflow functions are single, flat recipes (no private helpers)
-- [ ] Services don't call persistence directly (delegate to components)
+- [ ] Services/workflows only make thin single-intent facade calls (`db.library`/`db.app`/`db.ml`); multi-call persistence choreography is delegated to components
 - [ ] Interfaces don't call more than one service per route
 - [ ] `lint_project_backend(path="nomarr/<layer>")` passes with zero errors
 - [ ] File size within layer-specific limits (<300-600 LOC per file, layer-dependent)

@@ -11,18 +11,17 @@ root ``db.resolve_tag_identity`` (opaque external tag ids only).
 from __future__ import annotations
 
 import contextlib
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.helpers.dataclasses.song_tag_dataclass import TagRef
+from nomarr.helpers.dataclasses.tags_dataclass import Tag, Tags, TagValue
 from nomarr.helpers.dto.tag_curation_dto import TagSongItem
-from nomarr.persistence.mappers.tag_mapper import tags_from_tag_rows
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from nomarr.helpers.dataclasses.library_dataclass import Library
     from nomarr.helpers.dataclasses.song_tag_dataclass import SongTagAssignment
-    from nomarr.helpers.dataclasses.tags_dataclass import Tags, TagValue
     from nomarr.persistence.db import Database
 
 
@@ -102,6 +101,28 @@ def _first_assignment_value(assignments: Sequence[SongTagAssignment], name: str)
         if isinstance(assignment.value, str):
             return assignment.value
     return ""
+
+
+def _assignments_to_tags(assignments: Sequence[SongTagAssignment]) -> Tags:
+    """Convert public ``SongTagAssignment`` domain values into a canonical ``Tags``.
+
+    Component-local conversion over the public facade result (replaces the old
+    persistence ``tags_from_tag_rows`` mapper dependency): only the assignment's
+    ``name`` (tag_name) and ``value`` (tag_value) are carried into the domain
+    ``Tags``, which is exactly the two-field subset the canonical ``Tags``
+    contract represents. Persistence-only metadata (``source``, ``confidence``,
+    ``namespace``) is deliberately absent from the domain value object and is
+    never projected into storage-shaped rows here. Duplicate names are merged and
+    per-name values preserve order with the same dedupe/sort behavior as before;
+    empty input yields an empty ``Tags`` (which raises the canonical ``ValueError``).
+    """
+    aggregated: dict[str, list[TagValue]] = {}
+    for assignment in assignments:
+        # SongTagAssignment.value is typed ``object`` but is always a scalar
+        # TagValue at runtime; ``Tag.__post_init__`` validates the type anyway.
+        aggregated.setdefault(assignment.name, []).append(cast("TagValue", assignment.value))
+    items = tuple(Tag(name=name, values=tuple(values)) for name, values in aggregated.items())
+    return Tags(items=items)
 
 
 def _library_song_ids(db: Database, library_id: int) -> set[int] | None:
@@ -186,16 +207,14 @@ def get_song_tags(db: Database, song_id: int, name: str | None = None, nomarr_on
     if song_identity is None:
         return None
     assignments = db.library.list_tags_for_song(song_identity)
-    rows: list[dict[str, Any]] = []
-    for assignment in assignments:
-        if name is not None and assignment.name != name:
-            continue
-        if nomarr_only and assignment.namespace != "nom":
-            continue
-        rows.append({"name": assignment.name, "value": assignment.value})
-    if not rows:
+    matching = [
+        assignment
+        for assignment in assignments
+        if (name is None or assignment.name == name) and (not nomarr_only or assignment.namespace == "nom")
+    ]
+    if not matching:
         return None
-    return tags_from_tag_rows(rows)
+    return _assignments_to_tags(matching)
 
 
 def get_nomarr_tags_bulk(db: Database, file_ids: list[int]) -> dict[int, Tags]:
@@ -214,9 +233,9 @@ def get_nomarr_tags_bulk(db: Database, file_ids: list[int]) -> dict[int, Tags]:
         song_id = id_to_identity.get(identity)
         if song_id is None:
             continue
-        rows = [{"name": assignment.name, "value": assignment.value} for assignment in assignments]
-        if rows:
-            result[song_id] = tags_from_tag_rows(rows)
+        if not assignments:
+            continue
+        result[song_id] = _assignments_to_tags(assignments)
     return result
 
 

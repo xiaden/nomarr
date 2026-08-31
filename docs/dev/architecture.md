@@ -94,7 +94,7 @@ Rules:
 - `database/` — repository classes grouped by domain concern: library-domain (`LibraryRepository`, `SongRepository`, `FolderRepository`, `TagRepository`, `ScanRepository`, `SongStateRepository`, `SongTagRepository`) and ML-domain (`VectorRepo`, `ModelRepo`, `OutputRepo`, `CalibrationRepo`, `EmbeddingStreamRepository`)
 - `api/` — intent-level sub-facades for higher layers: `db.library` (`LibraryDb`, a namespaced forwarder over four sub-facades: `db.library.songs`/`LibrarySongsDb`, `db.library.tags`/`LibraryTagsDb`, `db.library.scans`/`LibraryScansDb`, `db.library.regions`/`LibraryRegionsDb`), `db.app` (`AppDb`), and `db.ml` (`MlDb`)
 
-**Access pattern:** Go through the injected `Database` facade and use the intent-level namespaces (`db.library`, `db.app`, `db.ml`). Lower persistence tiers are persistence-internal implementation layers, not higher-layer APIs.
+**Access pattern:** Go through the injected `Database` facade and use the intent-level namespaces (`db.library`, `db.app`, `db.ml`). Components, services, and workflows may skip intermediate layers for a semantically thin, single-intent direct call; interfaces remain transport-only and call services. Lower persistence tiers are persistence-internal implementation layers, not higher-layer APIs. The public intent facades are the sole persistence boundary available to higher layers, and permission to call them does not grant access to persistence internals.
 
 ```python
 # ✅ Preferred: intent-level persistence access
@@ -126,7 +126,7 @@ similar = db.ml.search_vectors("discogs_effnet", query_vector, limit=10)
 | Namespace | Role | Notes |
 | --- | --- | --- |
 | `db.library` | Library, song, tag, and scan persistence; thin forwarder over `db.library.songs`, `db.library.tags`, `db.library.scans`, `db.library.regions` | Preferred facade for library-domain callers |
-| `db.app` | Application state, song states, locks/claims, sessions, health, meta/migrations | Preferred facade for operational/app-state callers |
+| `db.app` | Application state, song states, locks/claims, sessions, health, user-configuration intents | Preferred facade for operational/app-state callers |
 | `db.ml` | ML models, streams, vectors, and calibration persistence | Preferred facade for ML-domain callers |
 
 **`LibraryDb` sub-facades (via `db.library.*`):**

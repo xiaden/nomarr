@@ -233,11 +233,8 @@ class Application:
         self.db.app.truncate_health()
         self.db.app.update_health(
             "app",
-            {
-                "component_type": "app",
-                "status": "starting",
-                "last_heartbeat": now_ms().value,
-            },
+            status="starting",
+            last_seen=now_ms().value,
         )
         logger.debug("[Application] Initializing authentication...")
         key_service = KeyManagementService(self.db)
@@ -410,7 +407,8 @@ class Application:
         self._start_app_heartbeat()
         self.db.app.update_health(
             "app",
-            {"status": "healthy", "error": None, "last_heartbeat": now_ms().value},
+            status="healthy",
+            last_seen=now_ms().value,
         )
 
         # Summary log with key startup info
@@ -493,7 +491,8 @@ class Application:
         try:
             self.db.app.update_health(
                 "app",
-                {"status": "stopping", "exit_code": 0},
+                status="stopping",
+                last_seen=now_ms().value,
             )
             logger.info("[Application] Cleaning ephemeral runtime state...")
             self.db.app.truncate_health()

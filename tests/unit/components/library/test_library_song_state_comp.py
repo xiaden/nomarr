@@ -43,6 +43,23 @@ from nomarr.helpers.dataclasses.library_dataclass import Library
 from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
 from nomarr.helpers.dataclasses.song_dataclass import Song
 from nomarr.helpers.dataclasses.song_tag_dataclass import SongTagAssignment
+from nomarr.helpers.dataclasses.worker_claim_dataclass import WorkerClaim, WorkerClaimIdentity
+
+
+def _claim_identity(song_id: int) -> SongIdentity:
+    """Build a natural song identity matching ``_song(song_id)``."""
+    return SongIdentity(
+        library=LibraryIdentity(name="Music", root_path="/music"),
+        normalized_path=f"song{song_id}.mp3",
+    )
+
+
+def _claim(song_id: int) -> WorkerClaim:
+    """Build an untyped domain claim on ``song_id``."""
+    return WorkerClaim(
+        identity=WorkerClaimIdentity(song=_claim_identity(song_id), worker_id="worker", claim_type=None),
+        claimed_at_ms=0,
+    )
 
 
 def _song(**overrides: object) -> Song:
@@ -187,7 +204,12 @@ class TestDiscoverNextUntaggedFile:
             [],  # no further state reads
         ]
         mock_db.library.list_songs.return_value = [_song(song_id=1), _song(song_id=2), _song(song_id=3)]
-        mock_db.app.list_claims.return_value = [{"file_id": "3"}]
+        mock_db.app.list_claims.return_value = [_claim(3)]
+        mock_db.library.resolve_song_identities.return_value = {
+            1: _claim_identity(1),
+            2: _claim_identity(2),
+            3: _claim_identity(3),
+        }
 
         result = discover_next_untagged_file(mock_db, library=_library())
 

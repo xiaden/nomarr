@@ -14,7 +14,7 @@ Workflows contain the **story** of how Nomarr performs operations. They are reci
 ```python
 # ✅ Allowed
 from nomarr.workflows.library.sync_file_to_library_wf import sync_file_to_library  # Workflows can call other workflows
-from nomarr.persistence import Database
+from nomarr.persistence.db import Database  # public intent facade, thin single-intent calls
 from nomarr.components.ml import compute_embeddings, run_inference
 from nomarr.components.tagging import predictions_to_tags
 from nomarr.helpers.dto import ProcessFileResult
@@ -35,9 +35,22 @@ from pydantic import BaseModel                 # No Pydantic
 
 ## Persistence Rule
 
-**Workflows must NEVER call persistence methods directly.** All data access is delegated to components.
+Workflows may call the public `Database` intent facade for **thin, single-atomic-intent operations** — one facade method on `db.library`, `db.app`, or `db.ml` (or a public nested sub-facade the facade exposes), through the injected `Database` instance.
 
-Workflows receive `Database` as a parameter for passing to components, but they must not call `db.<collection>.<method>()` themselves.
+```python
+# ✅ Allowed — one thin single-intent facade call
+assignments = db.library.list_tags_for_song(song_identity)
+
+# ❌ Not allowed — reconstructing an intent by sequencing multiple facade calls
+#    (business logic / multi-call choreography belongs in a component)
+identity = db.library.resolve_song_identity(song_id)
+first = db.library.list_songs(...)
+second = ...  # more facade calls chained to rebuild a multi-step intent
+```
+
+A workflow facade call must be thin: it must not sequence lower-level calls, implement business rules or state-machine transitions, manage collection-level writes, or perform multi-call persistence choreography. Side-effectful reads (e.g. hydration) are treated as commands for review. Such behavior belongs in a component or an intent-complete facade method.
+
+Workflows receive `Database` as a parameter for DI pass-through to components and for these thin direct facade calls. Import `Database` from `nomarr.persistence.db`; never import persistence implementation internals (repositories, SQL primitives, mappers, models, `nomarr.persistence.api` implementation modules) or open raw sessions/transactions.
 
 ---
 

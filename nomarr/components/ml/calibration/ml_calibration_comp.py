@@ -180,7 +180,7 @@ def compute_calibration_def_hash(model_id: str, head_name: str, label: str) -> s
     Stable identifier for a calibration configuration. Changes when model or label changes.
 
     Args:
-        model_id: String primary key of the model row.
+        model_id: Stable registered-model identity (RegisteredModel.id).
         head_name: Head name (e.g., "mood_happy")
         label: Label name (e.g., "happy", "male")
 
@@ -226,7 +226,7 @@ def get_sparse_histogram(
 
     Args:
         db: Database instance.
-        model_id: Model row ID (e.g. ``"model-1"``).
+        model_id: Stable registered-model identity (e.g., a 16-hex model key).
         label: Calibration label (e.g. ``"happy"``).
         lo: Lower bound of data range. Defaults to 0.0.
         hi: Upper bound of data range. Defaults to 1.0.
@@ -271,6 +271,8 @@ def get_sparse_histogram(
         tag_docs = db.library.list_tags(name=tag_name, limit=50000)
         for tag_doc in tag_docs:
             raw_value = tag_doc.value
+            if not isinstance(raw_value, (int, float, str)):
+                continue
             try:
                 value = float(raw_value)
             except (ValueError, TypeError):
@@ -369,7 +371,7 @@ def generate_calibration_from_histogram(
 
     Args:
         db: Database instance
-        model_id: String primary key of the model row.
+        model_id: Stable registered-model identity (RegisteredModel.id).
         head_name: Head name for logging (e.g., "mood_happy")
         label: Label to match (e.g., "happy", "male", "arousal")
         lo: Lower bound of calibrated range (default 0.0)
@@ -401,9 +403,9 @@ def generate_calibration_from_histogram(
 
 
 def export_calibration_state_to_json(db: Database, output_path: str) -> dict[str, Any]:
-    """Export all calibration_state rows to a single JSON file.
+    """Export all calibration states to a single JSON file.
 
-    Exports the full calibration state table for backup or distribution.
+    Exports the full calibration state set for backup or distribution.
     The JSON file can be imported into another Nomarr instance.
 
     Format v2 uses backbone + embedder_release_date instead of model_key.
@@ -511,8 +513,8 @@ def import_calibration_state_from_json(db: Database, input_path: str, overwrite:
                 no_model_count += 1
                 continue
 
-            # Check if calibration already exists
-            existing = db.ml.get_calibration_state_view(head_name, label)
+            # Check if calibration already exists (model-scoped identity)
+            existing = db.ml.get_calibration_state_view(model_id, head_name, label)
             calibration_def_hash = calib.get("calibration_def_hash", "")
             if existing and (not overwrite) and existing.calibration_def_hash == calibration_def_hash:
                 logger.debug(f"[calibration] Skipping {head_name}:{label} (already exists)")
@@ -552,29 +554,37 @@ def import_calibration_state_from_json(db: Database, input_path: str, overwrite:
     return {"calibrations_imported": imported_count, "skipped": skipped_count, "no_model": no_model_count}
 
 
-def compute_global_calibration_hash(calibration_states: list[dict[str, Any]]) -> str:
+def compute_global_calibration_hash(calibration_states: list[CalibrationState]) -> str:
     """Compute global calibration version hash from all calibration states.
 
     This hash changes whenever any head's calibration changes (version bump,
     p5/p95 update, etc). Used to detect if files need recalibration.
 
+    Note:
+        Intentional algorithm change (2026-08-31): this previously sorted by a
+        storage row ``id`` and hashed the JSONB ``state_data`` envelope. It now
+        sorts by the stable semantic identity ``(model_id, head_name, label)``
+        and hashes semantic calibration fields only, so a storage row-id
+        change or a storage-envelope reshuffle can no longer alter the
+        version hash.  Calibration validity/contents are fully determined by
+        the identity plus ``calibration_def_hash`` and the p5/p95 percentiles.
+
     Args:
-        calibration_states: List of calibration_state rows
+        calibration_states: Calibration states as domain values.
 
     Returns:
-        MD5 hash representing the combined calibration version
+        MD5 hash representing the combined calibration version.
 
     """
     import hashlib
 
-    sorted_states = sorted(calibration_states, key=lambda x: x.get("id", 0))
-    hash_parts = []
-    for state in sorted_states:
-        state_id = state.get("id", 0)
-        sd = state.get("state_data", {})
-        calib_hash = sd.get("calibration_def_hash", "")
-        p5 = sd.get("p5", "")
-        p95 = sd.get("p95", "")
-        hash_parts.append(f"{state_id}:{calib_hash}:{p5}:{p95}")
+    sorted_states = sorted(
+        calibration_states,
+        key=lambda state: (state.model_id, state.head_name, state.label),
+    )
+    hash_parts = [
+        f"{state.model_id}:{state.head_name}:{state.label}:{state.calibration_def_hash}:{state.p5}:{state.p95}"
+        for state in sorted_states
+    ]
     combined = "|".join(hash_parts)
     return hashlib.md5(combined.encode()).hexdigest()

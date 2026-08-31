@@ -7,11 +7,13 @@ from unittest.mock import MagicMock, call, sentinel
 
 import pytest
 
+from nomarr.helpers.dataclasses.calibration_history_dataclass import CalibrationHistorySnapshot
 from nomarr.helpers.dataclasses.calibration_state_dataclass import CalibrationState
 from nomarr.helpers.dataclasses.ml_embedding_stream_dataclass import EmbeddingStream
 from nomarr.helpers.dataclasses.ml_model_dataclass import RegisteredModel
 from nomarr.helpers.dataclasses.ml_model_output_dataclass import ModelOutput
 from nomarr.helpers.dataclasses.ml_output_stream_dataclass import OutputStream, OutputStreamWrite
+from nomarr.helpers.dto.calibration_repo_dto import CalibrationStateJoined
 from nomarr.persistence.api.ml import MlDb
 
 
@@ -60,18 +62,27 @@ def test_exposes_ml_maintenance_surface() -> None:
     db, vector_repo, _, _, calibration_repo, _ = _make_ml_db()
 
     assert hasattr(db, "truncate_vectors_in_collection")
-    assert hasattr(db, "truncate_calibration_states")
-    assert hasattr(db, "truncate_calibration_history")
     assert not hasattr(db, "truncate_vector_collection")
     assert not hasattr(db, "truncate_vector_edges")
 
     db.truncate_vectors_in_collection("vectors_track_hot__model__lib")
     vector_repo.truncate_embeddings.assert_called_once_with()
 
-    db.truncate_calibration_states()
+    # Calibration whole-table resets live on db.ml.maintenance (canonical).
+    assert hasattr(db, "maintenance")
+    assert hasattr(db.maintenance, "truncate_calibration_states")
+    assert hasattr(db.maintenance, "truncate_calibration_history")
+
+    # Destructive resets are NOT on the routine db.ml surface: the deprecated
+    # forwarding shims were removed (Plan E). Truncation is reachable only via
+    # db.ml.maintenance, which routes to the calibration repository directly.
+    assert not hasattr(db, "truncate_calibration_states")
+    assert not hasattr(db, "truncate_calibration_history")
+
+    db.maintenance.truncate_calibration_states()
     calibration_repo.truncate_states.assert_called_once_with()
 
-    db.truncate_calibration_history()
+    db.maintenance.truncate_calibration_history()
     calibration_repo.truncate_history.assert_called_once_with()
 
 
@@ -87,6 +98,20 @@ def test_removed_unsanctioned_raw_helpers_are_not_exposed() -> None:
     assert not hasattr(db, "upsert_calibration_state")
     assert not hasattr(db, "delete_calibration_history_for_model")
     assert not hasattr(db, "get_model_has_calibration_edges_by_ids")
+
+    # Phase 1-2 removed raw/row-shaped calibration helpers are NOT exposed.
+    assert not hasattr(db, "list_all_calibration_states_with_models")
+    assert not hasattr(db, "list_calibration_history_snapshots")
+    assert not hasattr(db, "remove_calibration_history_for_model")
+    assert not hasattr(db, "remove_calibration_history_entries")
+
+    # Destructive calibration reset is maintenance-only: the deprecated
+    # forwarding shims were removed from the routine surface in Plan E.
+    assert not hasattr(db, "truncate_calibration_states")
+    assert not hasattr(db, "truncate_calibration_history")
+
+    # The canonical 3-arg model-scoped identity lookup remains exposed.
+    assert hasattr(db, "get_calibration_state_view")
 
 
 @pytest.mark.unit
@@ -574,7 +599,7 @@ def test_truncate_calibration_states_delegates_to_calibration_repo() -> None:
     db, _, _, _, calibration_repo, _ = _make_ml_db()
     calibration_repo.truncate_states = MagicMock()
 
-    db.truncate_calibration_states()
+    db.maintenance.truncate_calibration_states()
 
     calibration_repo.truncate_states.assert_called_once_with()
 
@@ -584,7 +609,7 @@ def test_truncate_calibration_history_delegates_to_calibration_repo() -> None:
     db, _, _, _, calibration_repo, _ = _make_ml_db()
     calibration_repo.truncate_history = MagicMock()
 
-    db.truncate_calibration_history()
+    db.maintenance.truncate_calibration_history()
 
     calibration_repo.truncate_history.assert_called_once_with()
 
@@ -650,64 +675,100 @@ def test_get_calibration_state_view_returns_matching_state() -> None:
         "model_id": "model2",
         "updated_at": 1,
     }
-    calibration_repo.get_state_by_head_label = MagicMock(return_value=state_b)
+    calibration_repo.get_state_by_identity = MagicMock(return_value=state_b)
 
-    result = db.get_calibration_state_view("mood", "happy")
+    result = db.get_calibration_state_view("model2", "mood", "happy")
 
     assert result == CalibrationState(model_id="model2", head_name="mood", label="happy", updated_at=1, p5=0.0, p95=1.0)
+    calibration_repo.get_state_by_identity.assert_called_once_with("model2", "mood", "happy")
 
 
 @pytest.mark.unit
 def test_get_calibration_state_view_returns_none_when_no_match() -> None:
     db, _, _, _, calibration_repo, _ = _make_ml_db()
-    calibration_repo.get_state_by_head_label = MagicMock(return_value=None)
+    calibration_repo.get_state_by_identity = MagicMock(return_value=None)
 
-    result = db.get_calibration_state_view("mood", "happy")
+    result = db.get_calibration_state_view("model2", "mood", "happy")
 
     assert result is None
+    calibration_repo.get_state_by_identity.assert_called_once_with("model2", "mood", "happy")
 
 
 @pytest.mark.unit
-def test_get_calibration_state_view_returns_none_for_empty_list() -> None:
+def test_add_calibration_history_delegates_snapshot_to_calibration_repo() -> None:
     db, _, _, _, calibration_repo, _ = _make_ml_db()
-    calibration_repo.get_state_by_head_label = MagicMock(return_value=None)
+    calibration_repo.add_calibration_history_snapshot = MagicMock()
 
-    result = db.get_calibration_state_view("genre", "rock")
+    result = db.add_calibration_history(
+        CalibrationHistorySnapshot(
+            model_id="model1",
+            head_name="mood",
+            label="happy",
+            snapshot_at=1000,
+            p5=0.1,
+            p95=0.9,
+            sample_count=100,
+            underflow_count=0,
+            overflow_count=0,
+        )
+    )
 
     assert result is None
-
-
-@pytest.mark.unit
-def test_add_calibration_history_unpacks_payload() -> None:
-    db, _, _, _, calibration_repo, _ = _make_ml_db()
-    calibration_repo.record_history = MagicMock(return_value=sentinel.history_record)
-    payload = {"model_id": "model1", "event": "calibrated", "data": {"accuracy": 0.95}}
-
-    result = db.add_calibration_history(payload)
-
-    assert result is sentinel.history_record
-    # record_history(model_id, event, data) has no output_id parameter —
-    # calibration history rows carry model_id only, not a fake output key.
-    calibration_repo.record_history.assert_called_once_with(
+    calibration_repo.add_calibration_history_snapshot.assert_called_once_with(
         model_id="model1",
-        event="calibrated",
-        data={"accuracy": 0.95},
+        head_name="mood",
+        label="happy",
+        snapshot_at=1000,
+        metrics={
+            "p5": 0.1,
+            "p95": 0.9,
+            "sample_count": 100,
+            "underflow_count": 0,
+            "overflow_count": 0,
+        },
     )
 
 
 @pytest.mark.unit
-def test_add_calibration_history_defaults_data_to_empty_dict() -> None:
+def test_add_calibration_history_includes_optional_fields() -> None:
     db, _, _, _, calibration_repo, _ = _make_ml_db()
-    calibration_repo.record_history = MagicMock(return_value=sentinel.history_record)
-    payload = {"model_id": "model1", "event": "reset"}
+    calibration_repo.add_calibration_history_snapshot = MagicMock()
 
-    result = db.add_calibration_history(payload)
+    result = db.add_calibration_history(
+        CalibrationHistorySnapshot(
+            model_id="model1",
+            head_name="mood",
+            label="happy",
+            snapshot_at=1000,
+            p5=0.1,
+            p95=0.9,
+            sample_count=100,
+            underflow_count=0,
+            overflow_count=0,
+            p5_delta=-0.05,
+            p95_delta=0.1,
+            n_delta=10,
+            output_id="a1b2c3d4e5f60718",
+        )
+    )
 
-    assert result is sentinel.history_record
-    calibration_repo.record_history.assert_called_once_with(
+    assert result is None
+    calibration_repo.add_calibration_history_snapshot.assert_called_once_with(
         model_id="model1",
-        event="reset",
-        data={},
+        head_name="mood",
+        label="happy",
+        snapshot_at=1000,
+        metrics={
+            "p5": 0.1,
+            "p95": 0.9,
+            "sample_count": 100,
+            "underflow_count": 0,
+            "overflow_count": 0,
+            "p5_delta": -0.05,
+            "p95_delta": 0.1,
+            "n_delta": 10,
+            "output_id": "a1b2c3d4e5f60718",
+        },
     )
 
 
@@ -767,25 +828,25 @@ def test_index_backbone_embeddings_ignores_extra_args() -> None:
 
 
 @pytest.mark.unit
-def test_count_calibration_history_returns_length() -> None:
+def test_count_calibration_history_delegates_to_calibration_repo() -> None:
     db, _, _, _, calibration_repo, _ = _make_ml_db()
-    calibration_repo.get_history = MagicMock(return_value=[sentinel.h1, sentinel.h2, sentinel.h3])
+    calibration_repo.count_calibration_history = MagicMock(return_value=3)
 
-    result = db.count_calibration_history("model1")
+    result = db.count_calibration_history("model1", "mood", "happy")
 
     assert result == 3
-    calibration_repo.get_history.assert_called_once_with("model1")
+    calibration_repo.count_calibration_history.assert_called_once_with("model1", "mood", "happy")
 
 
 @pytest.mark.unit
 def test_count_calibration_history_returns_zero_for_empty() -> None:
     db, _, _, _, calibration_repo, _ = _make_ml_db()
-    calibration_repo.get_history = MagicMock(return_value=[])
+    calibration_repo.count_calibration_history = MagicMock(return_value=0)
 
-    result = db.count_calibration_history("model1")
+    result = db.count_calibration_history("model1", "mood", "happy")
 
     assert result == 0
-    calibration_repo.get_history.assert_called_once_with("model1")
+    calibration_repo.count_calibration_history.assert_called_once_with("model1", "mood", "happy")
 
 
 # ---------------------------------------------------------------------------
@@ -973,13 +1034,52 @@ def test_remove_output_streams_for_song_delegates_to_output_repo() -> None:
 
 
 @pytest.mark.unit
-def test_list_all_calibration_states_with_models_delegates_to_calibration_repo() -> None:
+def test_list_calibration_states_with_models_maps_to_domain_pairs() -> None:
     db, _, _, _, calibration_repo, _ = _make_ml_db()
-    calibration_repo.list_states_with_models = MagicMock(return_value=[])
+    joined = CalibrationStateJoined(
+        model_id="model2",
+        state_data={"head_name": "mood", "label": "happy", "p5": 0.1, "p95": 0.9, "n": 5},
+        updated_at=7,
+        id="model2",
+        path="/models/mood.onnx",
+        model_type="classification",
+        backbone_id="clip",
+        backbone="CLIP",
+        head_type="linear",
+        model_stem="mood",
+        output_count=3,
+        fully_configured=1,
+        is_known=1,
+        source="discovered",
+        head_release_date="",
+        embedder_release_date="",
+    )
+    calibration_repo.list_states_with_models = MagicMock(return_value=[joined])
 
-    result = db.list_all_calibration_states_with_models()
+    result = db.list_calibration_states_with_models()
 
-    assert result == []
+    assert result == [
+        (
+            CalibrationState(
+                model_id="model2", head_name="mood", label="happy", updated_at=7, p5=0.1, p95=0.9, sample_count=5
+            ),
+            RegisteredModel(
+                id="model2",
+                path="/models/mood.onnx",
+                model_type="classification",
+                backbone_id="clip",
+                backbone="CLIP",
+                head_type="linear",
+                model_stem="mood",
+                output_count=3,
+                fully_configured=True,
+                is_known=True,
+                source="discovered",
+                head_release_date="",
+                embedder_release_date="",
+            ),
+        )
+    ]
     calibration_repo.list_states_with_models.assert_called_once_with()
 
 
@@ -1047,40 +1147,123 @@ def test_remove_song_vectors_delegates_backbone_scope_to_vector_repo() -> None:
 
 
 @pytest.mark.unit
-def test_list_calibration_history_snapshots_delegates_to_calibration_repo() -> None:
+def test_list_calibration_history_delegates_to_calibration_repo() -> None:
     db, _, _, _, calibration_repo, _ = _make_ml_db()
-    calibration_repo.get_history = MagicMock(return_value=sentinel.result)
+    calibration_repo.list_calibration_history = MagicMock(
+        return_value=[
+            {
+                "id": 7,
+                "model_id": "model1",
+                "event": "calibration_snapshot",
+                "data": {
+                    "head_name": "mood",
+                    "label": "happy",
+                    "p5": 0.1,
+                    "p95": 0.9,
+                    "sample_count": 100,
+                    "underflow_count": 0,
+                    "overflow_count": 0,
+                    "output_id": "a1b2c3d4e5f60718",
+                },
+                "created_at": 1500,
+            }
+        ]
+    )
 
-    result = db.list_calibration_history_snapshots("model1")
+    result = db.list_calibration_history("model1", "mood", "happy")
 
-    assert result is sentinel.result
-    calibration_repo.get_history.assert_called_once_with("model1")
+    assert result == [
+        CalibrationHistorySnapshot(
+            model_id="model1",
+            head_name="mood",
+            label="happy",
+            snapshot_at=1500,
+            p5=0.1,
+            p95=0.9,
+            sample_count=100,
+            underflow_count=0,
+            overflow_count=0,
+            output_id="a1b2c3d4e5f60718",
+        )
+    ]
+    calibration_repo.list_calibration_history.assert_called_once_with("model1", "mood", "happy")
+
+
+@pytest.mark.unit
+def test_get_latest_calibration_history_snapshot_delegates_and_maps() -> None:
+    db, _, _, _, calibration_repo, _ = _make_ml_db()
+    calibration_repo.get_latest_calibration_history_snapshot = MagicMock(
+        return_value={
+            "id": 8,
+            "model_id": "model1",
+            "event": "calibration_snapshot",
+            "data": {
+                "head_name": "mood",
+                "label": "happy",
+                "p5": 0.2,
+                "p95": 0.8,
+                "sample_count": 50,
+                "underflow_count": 1,
+                "overflow_count": 2,
+            },
+            "created_at": 2000,
+        }
+    )
+
+    result = db.get_latest_calibration_history_snapshot("model1", "mood", "happy")
+
+    assert result == CalibrationHistorySnapshot(
+        model_id="model1",
+        head_name="mood",
+        label="happy",
+        snapshot_at=2000,
+        p5=0.2,
+        p95=0.8,
+        sample_count=50,
+        underflow_count=1,
+        overflow_count=2,
+    )
+    calibration_repo.get_latest_calibration_history_snapshot.assert_called_once_with("model1", "mood", "happy")
+
+
+@pytest.mark.unit
+def test_get_latest_calibration_history_snapshot_returns_none_when_absent() -> None:
+    db, _, _, _, calibration_repo, _ = _make_ml_db()
+    calibration_repo.get_latest_calibration_history_snapshot = MagicMock(return_value=None)
+
+    result = db.get_latest_calibration_history_snapshot("model1", "mood", "happy")
+
+    assert result is None
+    calibration_repo.get_latest_calibration_history_snapshot.assert_called_once_with("model1", "mood", "happy")
+
+
+@pytest.mark.unit
+def test_remove_calibration_history_delegates_and_returns_removed_count() -> None:
+    db, _, _, _, calibration_repo, _ = _make_ml_db()
+    calibration_repo.remove_calibration_history = MagicMock(return_value=2)
+
+    result = db.remove_calibration_history("model1", "mood", "happy", keep_count=3)
+
+    assert result == 2
+    calibration_repo.remove_calibration_history.assert_called_once_with("model1", "mood", "happy", 3)
+
+
+@pytest.mark.unit
+def test_remove_calibration_history_propagates_negative_keep_count() -> None:
+    db, _, _, _, calibration_repo, _ = _make_ml_db()
+    calibration_repo.remove_calibration_history = MagicMock(
+        side_effect=ValueError("keep_count must be non-negative, got -1")
+    )
+
+    with pytest.raises(ValueError, match="keep_count must be non-negative"):
+        db.remove_calibration_history("model1", "mood", "happy", keep_count=-1)
+
+    calibration_repo.remove_calibration_history.assert_called_once_with("model1", "mood", "happy", -1)
 
 
 # ---------------------------------------------------------------------------
 # Group 6: Formerly-NotImplemented methods (now delegated in PostgreSQL)
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-def test_remove_calibration_history_for_model_delegates_to_calibration_repo() -> None:
-    db, _, _, _, calibration_repo, _ = _make_ml_db()
-    calibration_repo.delete_history_for_model = MagicMock()
-
-    db.remove_calibration_history_for_model("model1")
-
-    calibration_repo.delete_history_for_model.assert_called_once_with("model1")
-
-
-@pytest.mark.unit
-def test_remove_calibration_history_entries_delegates_to_calibration_repo() -> None:
-    db, _, _, _, calibration_repo, _ = _make_ml_db()
-    calibration_repo.delete_history_entries = MagicMock()
-
-    db.remove_calibration_history_entries([1, 2])
-
-    # Entry IDs are converted from str to int before delegation
-    calibration_repo.delete_history_entries.assert_called_once_with([1, 2])
 
 
 @pytest.mark.unit

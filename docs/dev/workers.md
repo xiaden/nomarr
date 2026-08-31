@@ -2,7 +2,7 @@
 
 **Audience:** Developers working on worker processes, health monitoring, or debugging worker behavior.
 
-Nomarr uses a unified discovery-based worker system for background ML processing. Workers query `songs` for work and claim files via the `worker_claims` table. This document describes the worker lifecycle, claim-based processing, and crash recovery.
+Nomarr uses a unified discovery-based worker system for background ML processing. Workers query `songs` for work and claim files via the canonical `db.app` claim facade. This document describes the worker lifecycle, claim-based processing, and crash recovery.
 
 ---
 
@@ -17,7 +17,7 @@ All workers are identical `DiscoveryWorker` processes. There are no separate sca
 **Worker loop:**
 
 1. Query `songs` for next unprocessed file (`needs_tagging=1`)
-2. Claim file by inserting a deterministic claim row into `worker_claims`
+2. Claim file via the canonical `db.app.add_claim` intent (single active claim per song)
 3. Process file using `process_file_workflow` (ONNX backbone + heads → tags)
 4. Execute deferred DB writes (tags, model outputs, segment stats) on background thread
 5. Release claim
@@ -186,31 +186,26 @@ file_id = discover_and_claim_file(
 )
 ```
 
-**Claim mechanism** goes through the `db.app` intent facade (post-ADR-040 sync persistence). Worker claims live in the `worker_claims` table; worker processes never touch it directly — they use `AppDb` methods:
+**Claim mechanism** goes through the `db.app` intent facade (post-ADR-040 sync persistence). Worker claims live in the `worker_claims` table, but worker processes never touch it directly and never see storage rows, claim keys, or JSON payloads — they use the canonical `AppDb` claim methods with frozen domain values:
 
  | Operation | AppDb method | Description |
  | ----------- | ------------ | ------------- |
- | Claim file | `db.app.add_claim(payload) -> int` | Insert claim; deterministic `key` (`claim_<song_id>`) enforces atomic uniqueness — raises `DuplicateEntityError` if already claimed |
- | Release claim | `db.app.remove_claim(song_id)` | Delete one song's claim after processing |
- | Bulk release | `db.app.remove_claims(worker_ids=..., song_ids=...)` | Delete claims matching worker ids and/or song ids; returns count removed |
- | List claims | `db.app.list_claims() -> list[WorkerClaimRow]` | All claims (each row carries `id`, `worker_id`, `key`, `value`, `claimed_at`) |
+ | Claim file | `db.app.add_claim(WorkerClaim, *, now_ms=None, lease_ms=None) -> bool` | Insert a claim; single active claim per song across typed/untyped. `lease_ms=None` is insert-only (no replacement); with a lease, an expired claim is replaced exactly-key-atomically. `True` on insert/replace, `False` on active conflict or missing song |
+ | Release claim | `db.app.remove_claim(WorkerClaimIdentity) -> bool` | Release one claim by exact ownership (worker + song identity); `False` if no such claim |
+ | Bulk release | `db.app.remove_claims(ClaimRemovalRequest) -> int` | Remove claims matching worker ids, song identities, stale workers, and/or missing/completed/errored songs; preserves active reconcile claims; returns count removed |
+ | List claims | `db.app.list_claims() -> list[WorkerClaim]` | All resolvable claims as domain `WorkerClaim` values (orphan rows quarantined) |
+ | Count claims | `db.app.count_claims() -> int` | Direct count of persisted claim rows |
 
- **Claim payload structure** (the dict passed to `add_claim`; stored as the row's `value` JSONB):
+ All-claims reset (maintenance-only): `db.app.maintenance.delete_all_worker_claims()`.
 
- ```json
- {
-   "key": "claim_12345",
-   "file_id": "12345",
-   "worker_id": "worker:discovery:0",
-   "claimed_at": 1705779600000
- }
- ```
+ Callers pass frozen `WorkerClaim` / `WorkerClaimIdentity` / `ClaimRemovalRequest` values (from `nomarr/helpers/dataclasses/worker_claim_dataclass.py`). The `claim_<song_id>` / `claim_<claim_type>_<song_id>` key encoding and the JSONB payload are persistence-internal to `app_repo.py` and never cross the boundary.
 
  **Key properties:**
 
- - **Deterministic claim key:** `key` is `claim_<song_id>`; the database uniqueness constraint prevents duplicate claims (insertion raises `DuplicateEntityError`)
- - **One claim per file:** Only one worker can process a song at a time
+ - **One claim per file:** Only one worker can process a song at a time (single active claim across typed and untyped)
+ - **Exact-key atomicity:** an expired claim is replaced via exact-key UPDATE — never deletes/overwrites another row — leaving exactly one claim per song
  - **Ephemeral:** Represents active work, not scheduled work; deleted after processing
+ - **Liveness:** `remove_claims(remove_errored_songs=True)` releases errored/retry-eligible claims so retried songs are not re-blocked; stale-worker claims are released via `stale_workers_before_ms`
 
 ### 3. File Processing
 
@@ -252,7 +247,7 @@ PIPELINE|calibration_trigger
 
 ### 5. Pause/Resume
 
-`WorkerSystemService` controls workers globally via the `worker_enabled` flag in the `meta` table:
+`WorkerSystemService` controls workers globally via the `worker_enabled` intent (`db.app.set_worker_system_enabled()`):
 
 ```python
 worker_svc.disable_worker_system()  # Disables processing, stops workers
@@ -341,7 +336,7 @@ Manages the worker pool lifecycle and implements `ComponentLifecycleHandler` for
  | `is_running()` | Check if any workers are running |
  | `get_workers_status()` | Worker pool status dict |
  | `get_resource_status()` | GPU/CPU tier and capacity info |
- | `cleanup_stale_claims()` | Remove orphaned claims |
+ | `cleanup_stale_claims()` | Remove stale/ineligible claims (cleanup intent) |
  | `on_status_change(...)` | Health callback → restart/fail decisions |
 
 ### Admission Control
@@ -359,7 +354,7 @@ Before spawning workers, `WorkerSystemService` runs admission control:
 
 ## VRAM Probe & OOM Self-Healing
 
-On first startup (and after model files change), Nomarr measures how much VRAM each ONNX model actually consumes before allowing GPU placement. Results are stored in `meta` under `ml_model_vram:<model_path>` keys and reused across restarts.
+On first startup (and after model files change), Nomarr measures how much VRAM each ONNX model actually consumes before allowing GPU placement. Results are persisted as per-model VRAM limits (via `db.app.set_model_vram_limit`) and reused across restarts.
 
 ### Initial Probe
 
@@ -368,7 +363,7 @@ On first startup (and after model files change), Nomarr measures how much VRAM e
 1. Warms the CUDA context with a minimal identity model (~400–600 MB overhead, not attributed to any backbone)
 2. Loads each backbone and head model on GPU sequentially (only one live at a time)
 3. Records peak VRAM delta with 10% headroom (`measured_bytes * 1.1`)
-4. Writes the result to `meta.ml_model_vram:<path>` (bytes as string)
+4. Persists the result as the model's VRAM limit (via `db.app.set_model_vram_limit`, bytes as string)
 
 If a model fails to load or falls back to CPU (silent CUDA EP rejection), it is recorded as `sys.maxsize` — the coordinator will then immediately reject GPU placement for that model without wasting a real attempt.
 

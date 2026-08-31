@@ -85,8 +85,9 @@ _cached_version: str | None = None
 def load_calibrations_cached_wf(db: Database) -> dict[str, dict[str, float]]:
     """Load calibrations with caching based on version hash.
 
-    Checks calibration_version in the meta table. If version matches cached
-    version, returns cached calibrations without database query.
+    Checks the calibration version via ``db.app.get_calibration_version()``. If
+    the version matches the cached version, returns cached calibrations without
+    a database query.
 
     Cache is module-level (per-process), so workers maintain separate caches.
     Version check is ~2-5ms single document lookup vs ~50ms full calibration load.
@@ -99,8 +100,8 @@ def load_calibrations_cached_wf(db: Database) -> dict[str, dict[str, float]]:
         Empty dict if no calibrations exist
 
     Note:
-        When calibration generation completes, it updates calibration_version in meta,
-        causing cache invalidation on next check.
+        When calibration generation completes, it updates the calibration version,
+        invalidating the cache on next check.
 
     """
     global _cached_calibrations, _cached_version

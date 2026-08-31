@@ -132,12 +132,12 @@ All development targets the `develop` branch. Clone the repository and switch to
 2. **Backend setup:**
 
    ```bash
-   # Create and activate virtual environment
-   python -m venv .venv
-   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+   # Create/update the workspace virtual environment and install dependencies.
+   # Run this once from an external terminal before starting OpenCode.
+   python scripts/human-scripts/tools/ensure_venv.py
 
-   # Install dependencies
-   pip install -e ".[dev]"
+   # Activate it for manual terminal work (OpenCode activates it automatically).
+   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
    ```
 
 3. **Frontend setup:**
@@ -153,7 +153,7 @@ All development targets the `develop` branch. Clone the repository and switch to
    # From repo root
    docker compose -f docker/compose.yaml up -d nomarr-postgres  # Start database only
 
-   # In one terminal - backend
+    # In one terminal - backend (activate first in a manual terminal)
    source .venv/bin/activate
    uvicorn nomarr.interfaces.api.api_app:api_app --reload --port 8356
 
@@ -184,21 +184,21 @@ All development targets the `develop` branch. Clone the repository and switch to
 
 ### Running Tests
 
-These commands mirror the independent CI gates. Run them locally before pushing — CI enforces the same commands, but does not run on your machine, and there is no pre-commit hook to do it for you.
+These commands mirror the independent CI gates. Run them locally before pushing — CI enforces the same commands, but does not run on your machine, and there is no pre-commit hook to do it for you. In a manual terminal, activate `.venv` first; OpenCode prepends the workspace venv automatically and refuses to run its shell when the venv is missing.
 
 ```bash
 # Backend quality (matches backend-quality.yml)
-ruff check .
-ruff format --check .
-mypy nomarr/ --config-file pyproject.toml
-lint-imports  # Check layer boundaries
-deptry . --known-first-party nomarr  # dependency audit
+.venv/bin/ruff check .
+.venv/bin/ruff format --check .
+.venv/bin/mypy nomarr/ --config-file pyproject.toml
+.venv/bin/lint-imports  # Check layer boundaries
+.venv/bin/deptry . --known-first-party nomarr  # dependency audit
 
 # Backend tests (matches backend-tests.yml)
-pytest tests/ -v -m "not container_only and not requires_database and not code_smell"
+.venv/bin/pytest tests/ -v -m "not container_only and not requires_database and not code_smell"
 # ADR-042 architecture/quality enforcement is excluded by the `not code_smell`
 # expression above, so run it explicitly as CI does:
-pytest tests/test_architecture_qc.py -v
+.venv/bin/pytest tests/test_architecture_qc.py -v
 
 # Frontend checks (matches frontend-checks.yml; run from frontend/)
 cd frontend
@@ -221,7 +221,7 @@ Before pushing a branch, verify that every required CI gate completed **and**
 passed for the **exact** commit you are about to push, using the local validator:
 
 ```bash
-python scripts/validate_commit.py "$(git rev-parse HEAD)"
+.venv/bin/python scripts/validate_commit.py "$(git rev-parse HEAD)"
 ```
 
 This is a **read-only, local** check against the GitHub API. It **never re-runs,

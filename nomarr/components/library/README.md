@@ -52,5 +52,5 @@ File and library management — scanning, syncing, metadata extraction, move det
 ## Dependencies
 
 - **Upstream:** Called by `workflows/` (scan workflow, file write workflow) and `services/`
-- **Downstream:** Calls `persistence/` directly for all DB operations
+- **Downstream:** Access via `db.library` / `db.app` intent namespaces for all DB operations
 - **External:** `mutagen` (metadata extraction), `pathlib`

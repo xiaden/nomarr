@@ -16,10 +16,10 @@ interfaces → services → workflows → components → (persistence / helpers)
 
 Persistence sits at the bottom of the dependency graph:
 
-- **Components** may call persistence directly
+- **Components, services, and workflows** may call the injected public intent facade (`db.library`, `db.app`, `db.ml`) for thin single-atomic-intent operations; components are the primary caller and may combine facade calls into heavier domain logic
 - **Persistence** may use helpers and low-level SQL utilities
 - **Persistence never imports** components, workflows, services, or interfaces
-- **Persistence returns raw rows and query results**; higher layers decide how to map or interpret them
+- **Persistence returns domain objects through the intent facades**; storage rows and row → domain mapping are persistence-owned and never cross the boundary (ADR-032/041)
 
 Persistence is responsible for data access, not orchestration or business policy.
 
@@ -165,7 +165,35 @@ It wraps operations such as:
 - song state reads and state-oriented intents
 - scan and pipeline-state persistence hidden behind app-domain methods
 - locks, claims, health, migration/config, and VRAM promise persistence
-- maintenance-only routines on `db.app` (truncation, resets): `db.app.truncate_song_state_edges()`, `db.app.truncate_worker_claims()`, `db.app.truncate_health()`
+- worker claims as domain intents (ADR-046): `db.app.add_claim(WorkerClaim, *, now_ms=None, lease_ms=None) -> bool`
+  (insert or atomic expired replacement; insert-only when `lease_ms is None`),
+  `db.app.remove_claim(WorkerClaimIdentity) -> bool` (exact ownership),
+  `db.app.remove_claims(ClaimRemovalRequest) -> int` (returns rows removed; preserves
+  active reconcile claims; releases errored/retry-eligible and stale-worker claims),
+  `db.app.list_claims() -> list[WorkerClaim]`, `db.app.count_claims() -> int` — callers
+  take/return frozen domain `WorkerClaim`/`WorkerClaimIdentity`/`ClaimRemovalRequest`
+  and never see storage rows, `claim_...` keys, or JSON payloads
+- the meta-backed semantic surface — all exposed as domain-intent methods that
+  take/return **domain values**, never storage rows, keys, or `{"value": ...}`
+  payloads (ADR-032/041/046):
+  - user configuration: `get/set/list/remove_config_option` — `set_config_option(key, value)`
+    takes a scalar/domain value and rejects storage-payload dicts
+  - schema version: `get_schema_version()` / `set_schema_version(version)`
+  - credentials: `get/set_api_key`, `get/set_admin_password_hash`
+  - calibration bookkeeping: `get/set_calibration_version`,
+    `get/set_calibration_last_run`, `clear_calibration_metadata()` (atomic)
+  - model VRAM limits: `get/set_model_vram_limit(model_path, limit_bytes)`,
+    `list_model_vram_limits()`, `clear_model_vram_limits()`
+  - capacity estimates: `get/set/remove_capacity_estimate(model_set_hash, estimate)`
+  - GPU resource snapshots: `get/set_gpu_resource_snapshot(snapshot)`
+  - worker-control state: `get/set_worker_system_enabled(enabled)`
+
+  The generic meta key/value representation is a **repository-internal** detail
+  (`app_repo.py`): the raw meta primitives (`_get_meta`, `_upsert_meta`,
+  `_delete_meta`, `_list_meta_keys_by_prefix`) and the storage prefixes
+  (`config_`, `ml_model_vram:`, `capacity_estimate:`) never cross the facade
+  boundary.
+- maintenance-only routines on `db.app` (truncation, resets): `db.app.truncate_song_state_edges()`, `db.app.maintenance.delete_all_worker_claims()`, `db.app.truncate_health()`
 - **Navidrome data is never persisted locally.** Nomarr does not store Navidrome tracks, song↔Navidrome-ID mappings, or playcounts in its database. Navidrome play data arrives only through the plugin/request boundary (e.g. the personal-playlists request's `top_plays`) and is used transiently for taste-profile computation; song↔Navidrome-ID resolution and playcounts are owned by the Navidrome plugin, not by Nomarr's persistence layer.
 
 Use `db.app` for coordination data and operational state rather than music-library content.
@@ -178,7 +206,7 @@ It wraps operations such as:
 
 - ML output stream, vector, model, model-output, and calibration intents
 - runtime vector-collection registration/query surfaces routed through ML-domain methods
-- maintenance-only routines on `db.ml` (truncation, resets): `db.ml.truncate_vectors_in_collection(...)`, `db.ml.truncate_calibration_states()`, `db.ml.truncate_calibration_history()`
+- maintenance-only routines on `db.ml` (truncation, resets): `db.ml.truncate_vectors_in_collection(...)`, `db.ml.maintenance.truncate_calibration_states()`, `db.ml.maintenance.truncate_calibration_history()`
 
 Use `db.ml` when the caller works with embeddings, models, output streams, or calibration artifacts.
 
@@ -254,9 +282,9 @@ This means:
 - Callers should work through repository classes and `sql/primitives.py` rather than issuing raw SQL
 - `Database.__init__` wraps the session factory in `scoped_session`, giving each thread its own `Session`; `Database.close()` calls `scoped.remove()` to clean up the thread-local session, then `engine.dispose()` to release all pooled connections
 
-### Escape hatch: raw SQL
+### Escape hatch: raw SQL (persistence-internal only)
 
-For advanced queries or DDL work that repositories do not yet wrap, callers can use `Session.execute(text("..."))` directly:
+For advanced queries or DDL work that repositories do not yet wrap, **persistence-internal** code can use `Session.execute(text("..."))` directly:
 
 ```python
 from sqlalchemy import text
@@ -264,7 +292,7 @@ from sqlalchemy import text
 result = session.execute(text("SELECT version()"))
 ```
 
-This is the escape hatch — prefer intent facades and repository methods for routine work.
+This escape hatch is **persistence-internal only**. Higher layers (components, services, workflows) must not drop to raw SQL or open their own sessions/transactions; they call the public intent facades (`db.library`, `db.app`, `db.ml`) and route an un-wrapped capability through a new or extended intent-facade method.
 
 ---
 
@@ -305,7 +333,7 @@ songs = db.library.list_songs(library, limit=100)
 streams = db.ml.list_output_streams_for_song(song_id)
 ```
 
-Within higher layers, do **not** drop to raw SQL just because the session is available, and do **not** open your own transactions for ordinary writes. Facade write methods execute directly; the underlying repositories own their own short internal transactions (AR-SDR-4). Just call the write method:
+Within higher layers, do **not** drop to raw SQL just because a session is available, and do **not** open your own transactions for ordinary writes. Facade write methods execute directly; the underlying repositories own their own short internal transactions (AR-SDR-4). Just call the write method:
 
 ```python
 song = db.library.get_song(song_id)
@@ -317,17 +345,13 @@ db.library.complete_scan(library, finished_at)
 db.app.set_song_state(song_ids, "processing")
 ```
 
-Use raw SQL access only for capabilities that are not already wrapped:
-
-```python
-result = session.execute(text("SELECT version()"))
-```
+Higher layers must not use raw SQL or open sessions/transactions; route an un-wrapped capability through a new or extended intent-facade method. Raw SQL (`session.execute(text(...))`) is a persistence-internal escape hatch only.
 
 The rule of thumb is simple:
 
-- **Domain intent first** → `db.library`, `db.app`, `db.ml`
-- **Persistence internals second** → repository classes inside `nomarr.persistence`
-- **Raw SQL last** → `session.execute(text(...))`
+- **Domain intent first** → `db.library`, `db.app`, `db.ml` — the only persistence surface components, services, and workflows may call
+- **Persistence internals second** → repository classes and SQL primitives inside `nomarr.persistence` — persistence-internal code only
+- **Raw SQL last** → `session.execute(text(...))` — persistence-internal escape hatch only
 
 ---
 

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import contextlib
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -90,6 +89,21 @@ def _library_song_ids(db: Database, library: Library) -> set[int]:
     return {doc["id"] for doc in docs if isinstance(doc, dict) and "id" in doc}
 
 
+def _exclude_claimed(db: Database, song_ids: set[int]) -> set[int]:
+    """Remove candidate songs that have an active worker claim.
+
+    Uses the domain claim identities from ``db.app.list_claims()`` together
+    with the sanctioned ``db.library`` identity bridge (resolving candidate
+    numeric handles to ``SongIdentity`` values).  No raw claim payloads, no
+    ``claim.get("file_id")``, no key parsing.
+    """
+    claimed_identities = {claim.song for claim in db.app.list_claims()}
+    if not claimed_identities or not song_ids:
+        return song_ids
+    identity_map = db.library.resolve_song_identities(sorted(song_ids))
+    return {sid for sid in song_ids if identity_map.get(sid) not in claimed_identities}
+
+
 def _state_membership_for_songs(db: Database, song_ids: list[int]) -> dict[int, set[str]]:
     """Return the current state memberships for the given song IDs.
 
@@ -168,14 +182,7 @@ def discover_next_untagged_file(
         library_song_ids = _library_song_ids(db, library)
         candidate_ids &= library_song_ids
     if exclude_claimed:
-        claims = db.app.list_claims()
-        claimed_ids: set[int] = set()
-        for claim in claims:
-            file_id = claim.get("file_id")
-            if isinstance(file_id, (int, str)):
-                with contextlib.suppress(ValueError):
-                    claimed_ids.add(int(file_id))
-        candidate_ids -= claimed_ids
+        candidate_ids = _exclude_claimed(db, candidate_ids)
     candidate_docs = [doc for doc in untagged_files if doc.get("id") in candidate_ids]
     if not candidate_docs:
         return None
@@ -205,14 +212,7 @@ def discover_next_file_needing_tags(
         library_song_ids = _library_song_ids(db, library)
         candidate_ids &= library_song_ids
     if exclude_claimed:
-        claims = db.app.list_claims()
-        claimed_ids: set[int] = set()
-        for claim in claims:
-            file_id = claim.get("file_id")
-            if isinstance(file_id, (int, str)):
-                with contextlib.suppress(ValueError):
-                    claimed_ids.add(int(file_id))
-        candidate_ids -= claimed_ids
+        candidate_ids = _exclude_claimed(db, candidate_ids)
     candidate_docs = [doc for doc in pending_files if doc.get("id") in candidate_ids]
     if not candidate_docs:
         return None

@@ -7,28 +7,20 @@ Workers query the songs table directly instead of polling a queue.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING
 
 from nomarr.components.library.library_song_state_comp import discover_next_untagged_file
-from nomarr.helpers.constants.file_states import STATE_PROCESSED
-from nomarr.helpers.exceptions import DuplicateEntityError
+from nomarr.helpers.dataclasses.worker_claim_dataclass import (
+    ClaimRemovalRequest,
+    WorkerClaim,
+    WorkerClaimIdentity,
+)
 from nomarr.helpers.time_helper import now_ms
 
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
-_TAGGED_STATE_ID = STATE_PROCESSED
-
-
-def _claim_key(file_id: str | int) -> str:
-    """Build the deterministic worker-claim key for a file."""
-    return f"claim_{file_id}"
-
-
-def _get_all_claims(db: Database) -> list[dict[str, Any]]:
-    """Return all worker claims via the application facade."""
-    return cast("list[dict[str, Any]]", db.app.list_claims())
 
 
 def discover_next_file(
@@ -53,10 +45,12 @@ def discover_next_file(
 
 
 def claim_file(db: Database, file_id: str, worker_id: str) -> bool:
-    """Attempt to claim file for processing.
+    """Attempt to claim a song for processing.
 
-    Uses deterministic key based on file id to enforce uniqueness.
-    PostgreSQL unique constraint prevents duplicate claims.
+    Resolves the numeric song handle to its natural domain identity through the
+    sanctioned ``db.library`` identity bridge and acquires an untyped worker
+    claim via the ``db.app.add_claim`` intent.  The caller never constructs or
+    parses a claim key, reads a raw payload, or queries state tables.
 
     Args:
         db: Database instance
@@ -64,75 +58,45 @@ def claim_file(db: Database, file_id: str, worker_id: str) -> bool:
         worker_id: Worker identifier (e.g., "worker:tag:0")
 
     Returns:
-        True if claim successful, False if already claimed
+        True if the claim was acquired; False if the song cannot be resolved
+        or an active claim already exists.
 
     """
-    try:
-        db.app.claim_song(int(file_id), worker_id, claimed_at=now_ms().value)
-    except DuplicateEntityError:
+    identity = db.library.resolve_song_identity(int(file_id))
+    if identity is None:
         return False
-    return True
+    claim = WorkerClaim(
+        identity=WorkerClaimIdentity(song=identity, worker_id=worker_id, claim_type=None),
+        claimed_at_ms=now_ms().value,
+    )
+    return db.app.add_claim(claim)
 
 
 def release_claim(db: Database, file_id: int, worker_id: str) -> None:
-    """Release claim on file (after processing or error).
+    """Release an untyped claim on a song (after processing or error).
+
+    The claim identity is resolved through the sanctioned library bridge; a
+    song that can no longer be resolved has no claim to release.
 
     Args:
         db: Database instance
         file_id: Song id
 
     """
-    db.app.remove_claim(worker_id, file_id)
-
-
-def try_insert_or_steal_claim(
-    db: Database,
-    payload: dict[str, Any],
-    now: int,
-    lease_ms: int,
-) -> bool:
-    """Try to insert a claim, stealing it if the existing one is expired.
-
-    Args:
-        db: Database handle.
-        payload: Claim metadata including ``file_id``, ``worker_id``, and
-            ``claimed_at``.
-        now: Current timestamp in milliseconds.
-        lease_ms: Claim lease duration in ms; existing claims older than this
-            threshold are considered expired and may be stolen.
-
-    Returns:
-        True if the claim was successfully inserted (new or stolen);
-        False if an active un-expired claim already exists.
-
-    """
-    file_id = int(payload["file_id"])
-    worker_id = str(payload["worker_id"])
-    claim_type = payload.get("claim_type")
-    if claim_type is not None:
-        claim_type = str(claim_type)
-    claimed_at = int(payload.get("claimed_at", 0))
-    try:
-        db.app.claim_song(file_id, worker_id, claim_type=claim_type, claimed_at=claimed_at)
-    except DuplicateEntityError:
-        return db.app.steal_claim(
-            file_id,
-            worker_id,
-            claim_type=claim_type,
-            claimed_at=claimed_at,
-            now=now,
-            lease_ms=lease_ms,
-        )
-    return True
+    identity = db.library.resolve_song_identity(int(file_id))
+    if identity is None:
+        return
+    db.app.remove_claim(WorkerClaimIdentity(song=identity, worker_id=worker_id, claim_type=None))
 
 
 def cleanup_stale_claims(db: Database, heartbeat_timeout_ms: int) -> int:
-    """Remove claims from inactive workers and completed/ineligible files.
+    """Remove claims from inactive workers and ineligible/errored songs.
 
-    Cleanup runs all three cleanup operations:
-    1. Claims from workers with stale heartbeats
-    2. Claims for files that are already tagged
-    3. Claims for files that no longer need processing
+    A thin call to the complete ``db.app.remove_claims`` cleanup intent: stale
+    workers (whose heartbeat predates the cutoff), missing songs, completed
+    (already tagged) songs, and errored/retry-eligible songs are all selected by
+    the persistence cleanup, so ``retry_errored_songs`` is never re-blocked.
+    Active pending reconcile claims are preserved by the cleanup policy.
 
     Args:
         db: Database instance
@@ -142,46 +106,15 @@ def cleanup_stale_claims(db: Database, heartbeat_timeout_ms: int) -> int:
         Number of claims removed
 
     """
-    all_claims = _get_all_claims(db)
-    if not all_claims:
-        return 0
-
-    heartbeat_cutoff = now_ms().value - heartbeat_timeout_ms
-    health_docs = cast("list[dict[str, Any]]", db.app.list_worker_health())
-    active_workers = {
-        str(doc.get("worker_id")) for doc in health_docs if int(doc.get("last_seen", 0)) > heartbeat_cutoff
-    }
-
-    inactive_worker_ids = {
-        str(claim["worker_id"]) for claim in all_claims if str(claim["worker_id"]) not in active_workers
-    }
-    active_ml_claims = [
-        claim
-        for claim in all_claims
-        if str(claim["worker_id"]) in active_workers and claim.get("claim_type") != "reconcile"
-    ]
-
-    stale_song_ids: set[int] = set()
-    candidate_song_ids = sorted({int(claim["file_id"]) for claim in active_ml_claims})
-    if candidate_song_ids:
-        song_docs = [song.to_dict() for song in db.library.list_songs_by_ids(candidate_song_ids)]
-        existing_song_ids = {doc["id"] for doc in song_docs if "id" in doc}
-
-        tagged_song_ids = {
-            song_doc["id"]
-            for song_doc in (song.to_dict() for song in db.app.songs_with_state(STATE_PROCESSED))
-            if "id" in song_doc and song_doc["id"] in candidate_song_ids
-        }
-        stale_song_ids = {
-            song_id for song_id in candidate_song_ids if song_id not in existing_song_ids or song_id in tagged_song_ids
-        }
-
-    removed = 0
-    if inactive_worker_ids:
-        removed += db.app.remove_claims(worker_ids=sorted(inactive_worker_ids))
-    if stale_song_ids:
-        removed += db.app.remove_claims(song_ids=sorted(stale_song_ids))
-    return removed
+    stale_cutoff_ms = now_ms().value - heartbeat_timeout_ms
+    return db.app.remove_claims(
+        ClaimRemovalRequest(
+            stale_workers_before_ms=stale_cutoff_ms,
+            remove_missing_songs=True,
+            remove_completed_songs=True,
+            remove_errored_songs=True,
+        )
+    )
 
 
 def discover_and_claim_file(
@@ -225,13 +158,13 @@ def get_active_claim_count(db: Database) -> int:
         db: Database instance
 
     Returns:
-        Number of active claim documents
+        Number of active claim rows
 
     """
-    return len(db.app.list_claims())
+    return db.app.count_claims()
 
 
-def release_claims_for_worker(db: Database, worker_id: str) -> list[str]:
+def release_claims_for_worker(db: Database, worker_id: str) -> int:
     """Release all claims held by a specific worker.
 
     Used when a worker dies/crashes to free its claimed files for rediscovery.
@@ -241,17 +174,7 @@ def release_claims_for_worker(db: Database, worker_id: str) -> list[str]:
         worker_id: Worker identifier (e.g., "worker:tag:0")
 
     Returns:
-        List of file_ids that were released
+        Number of claims released
 
     """
-    claims = [
-        claim
-        for claim in cast("list[dict[str, Any]]", db.app.list_claims())
-        if str(claim.get("worker_id")) == worker_id
-    ]
-    if not claims:
-        return []
-
-    file_ids = [str(claim["file_id"]) for claim in claims]
-    db.app.remove_claims(worker_ids=[worker_id])
-    return file_ids
+    return db.app.remove_claims(ClaimRemovalRequest(worker_ids=(worker_id,)))

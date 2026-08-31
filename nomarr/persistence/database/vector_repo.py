@@ -21,7 +21,7 @@ from nomarr.persistence.models.tag import Tag
 from nomarr.persistence.sql.exceptions import map_persistence_exceptions
 
 if TYPE_CHECKING:
-    from sqlalchemy.engine import Row
+    from sqlalchemy.engine import Engine, Row
     from sqlalchemy.orm import Session, scoped_session
 
 _T = cast("Table", Embedding.__table__)
@@ -246,7 +246,7 @@ class VectorRepo:
     def rebuild_cold_hnsw_index(self) -> None:
         """Rebuild the shared cold-tier HNSW index outside a transaction."""
         with map_persistence_exceptions():
-            engine = self._session.get_bind()
+            engine = cast("Engine", self._session.get_bind())
             with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
                 connection.execute(text("REINDEX INDEX CONCURRENTLY ix_embeddings_cold_hnsw"))
 
@@ -278,7 +278,7 @@ class VectorRepo:
             )
             result = self._session.execute(stmt)
             self._session.commit()
-            return int(result.rowcount or 0)
+            return int(result.rowcount)  # type: ignore[attr-defined]
 
     # ── delete / truncate ───────────────────────────────────────
 

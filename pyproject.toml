@@ -324,28 +324,30 @@ source_modules = ["nomarr.helpers"]
 forbidden_modules = ["nomarr.services", "nomarr.workflows", "nomarr.interfaces", "nomarr.components", "nomarr.persistence"]
 
 [[tool.importlinter.contracts]]
-name = "Only components and services may import persistence"
+name = "Interfaces and helpers must not import persistence"
 type = "forbidden"
-source_modules = ["nomarr.interfaces", "nomarr.workflows", "nomarr.helpers"]
+source_modules = ["nomarr.interfaces", "nomarr.helpers"]
 forbidden_modules = ["nomarr.persistence"]
 allow_indirect_imports = true
-# Workflows may import Database under TYPE_CHECKING for type annotations only.
-# import-linter cannot distinguish TYPE_CHECKING from runtime imports.
-ignore_imports = [
-    "nomarr.workflows.*.* -> nomarr.persistence.db",
-]
+# ADR-046: interfaces and helpers are the only layers barred from persistence
+# entirely. Components, services, and workflows (including service-classified
+# workers) may import the public Database facade from nomarr.persistence.db for
+# thin runtime intent-facade calls (db.library / db.app / db.ml); they must still
+# avoid persistence implementation internals (covered separately).
 
 [[tool.importlinter.contracts]]
-name = "Services may only import Database for type hints"
+name = "Services must not import Tier-2 database internals directly"
 type = "forbidden"
 source_modules = ["nomarr.services"]
 forbidden_modules = [
     "nomarr.persistence.database",
 ]
 allow_indirect_imports = true
-# Note: import-linter cannot enforce TYPE_CHECKING-only imports.
-# Services should only import Database from nomarr.persistence.db for type annotations.
-# App.py (composition root) is the only place that should construct Database instances.
+# ADR-046: services may make thin runtime calls through injected public Database
+# intent facades, importing Database from nomarr.persistence.db and invoking
+# db.library / db.app / db.ml. Direct Tier-2 repository/database imports
+# (nomarr.persistence.database) remain forbidden. Only the composition root
+# (app.py) constructs Database instances.
 
 [[tool.importlinter.contracts]]
 name = "Higher layers must not import persistence collection/accessor internals"

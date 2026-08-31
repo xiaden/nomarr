@@ -333,10 +333,9 @@ class InfoService:
             status = self.cfg.health_monitor.get_status(GPU_MONITOR_COMPONENT_ID)
             monitor_healthy = status in ("healthy", "recovering")
 
-        # Read GPU resources from DB
-        gpu_resources_doc = self.cfg.db.app.get_config_option("gpu_resources")
-        gpu_resources_json = None if gpu_resources_doc is None else gpu_resources_doc.value
-        if not gpu_resources_json:
+        # Read GPU resources from DB (semantic snapshot)
+        snapshot = self.cfg.db.app.get_gpu_resource_snapshot()
+        if snapshot is None:
             # No GPU resource data in DB yet
             return GPUHealthResult(
                 available=False,
@@ -344,11 +343,9 @@ class InfoService:
                 monitor_healthy=monitor_healthy,
             )
 
-        resource_data = gpu_resources_json
-
         # Return resource snapshot with monitor liveness
         return GPUHealthResult(
-            available=resource_data.get("gpu_available", False),
-            error_summary=resource_data.get("error_summary"),
+            available=snapshot.gpu_available,
+            error_summary=snapshot.error_summary,
             monitor_healthy=monitor_healthy,
         )

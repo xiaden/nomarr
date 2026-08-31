@@ -498,7 +498,8 @@ class CalibrationService:
         """Get stored histogram bins for a specific label.
 
         Args:
-            model_key: Model identifier (e.g., "effnet-20220825")
+            model_key: Model identifier (e.g., "0123456789abcdef", a 16-hex
+                RegisteredModel.id)
             head_name: Head name (e.g., "mood_happy")
             label: Label name (e.g., "happy", "male")
 
@@ -518,7 +519,7 @@ class CalibrationService:
             ValueError: If no calibration state found for label
 
         """
-        state = load_calibration_state(self._db, head_name, label)
+        state = load_calibration_state(self._db, model_key, head_name, label)
         if not state:
             raise ValueError(f"No calibration state found for {model_key}:{head_name}:{label}")
 
@@ -547,11 +548,13 @@ class CalibrationService:
     def clear_calibration(self) -> dict[str, int]:
         """Clear all calibration data from the database.
 
-        Removes calibration_state, calibration_history, meta keys,
-        and nulls calibration_hash on all library files.
+        Removes ``db.ml`` calibration state/history, the calibration
+        bookkeeping values (via ``db.app.clear_calibration_metadata()``),
+        and transitions all library files to the not-calibrated and
+        not-vectors-extracted states.
 
         Returns:
-            Summary: {files_updated, meta_keys_cleared}
+            Summary: {files_updated, bookkeeping_values_cleared}
 
         Raises:
             RuntimeError: If calibration generation is currently running.

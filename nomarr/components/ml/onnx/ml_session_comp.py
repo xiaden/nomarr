@@ -7,9 +7,10 @@ used by the ML component layer.
 VRAM budgeting
 --------------
 Each GPU session accepts an explicit ``vram_limit_bytes`` at creation time.
-The value comes from per-model VRAM probe measurements stored in meta
-(see ml_vram_probe_comp.py / Plan A).  When not provided, no explicit
-``gpu_mem_limit`` is set and ONNX Runtime allocates as needed.
+The value comes from per-model VRAM limits read via
+``db.app.get_model_vram_limit`` (see ml_vram_probe_comp.py / Plan A).  When
+not provided, no explicit ``gpu_mem_limit`` is set and ONNX Runtime allocates
+as needed.
 """
 
 from __future__ import annotations
