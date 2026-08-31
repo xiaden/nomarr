@@ -29,7 +29,13 @@ ADR-032/041):
     physical-file projections).
 
 The tests scan source code at test time and report violations. The scan scope is
-clean — all violations were resolved by Phase 6, and the suite is GREEN.
+clean — all violations here were resolved by Phase 6 and Plan C P1-S5b, which
+adds ``TestFacadeNeverImportsNamespaceFreeProjection``: the facade modules never
+import/use the namespace-dropping ``tags_from_tag_rows`` projection for
+assignment resolution or persistence (only namespace-bearing ``song_tag_mapper``
+paths may do so).
+
+Green claim is scoped to this file's scans.
 """
 
 from __future__ import annotations

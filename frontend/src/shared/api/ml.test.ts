@@ -1,7 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { get, post } from "./client";
-import { getModelOutputs, listModels, triggerVramProbe } from "./ml";
+import { get, patch, post } from "./client";
+import {
+  getModelOutputs,
+  listModels,
+  markModelConfigured,
+  triggerVramProbe,
+  updateOutputLabel,
+} from "./ml";
 
 vi.mock("./client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./client")>();
@@ -9,6 +15,7 @@ vi.mock("./client", async (importOriginal) => {
     ...actual,
     get: vi.fn(),
     post: vi.fn(),
+    patch: vi.fn(),
   };
 });
 
@@ -39,6 +46,46 @@ describe("getModelOutputs", () => {
     await expect(getModelOutputs("model-123")).resolves.toEqual(response);
 
     expect(get).toHaveBeenCalledWith("/api/web/machine-learning/model/model-123/output");
+  });
+});
+
+describe("updateOutputLabel", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("patches the model output endpoint with the label body", async () => {
+    const response = { status: "updated" };
+    vi.mocked(patch).mockResolvedValue(response);
+
+    await expect(
+      updateOutputLabel("model-123", "output-456", { label: "happy" })
+    ).resolves.toEqual(response);
+
+    expect(patch).toHaveBeenCalledWith(
+      "/api/web/machine-learning/model/model-123/output/output-456",
+      { label: "happy" }
+    );
+  });
+});
+
+describe("markModelConfigured", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("posts the boolean value body and returns the string fully_configured flag", async () => {
+    const response = { status: "updated", fully_configured: "true" };
+    vi.mocked(post).mockResolvedValue(response);
+
+    await expect(markModelConfigured("model-123", { value: true })).resolves.toEqual(
+      response
+    );
+
+    expect(post).toHaveBeenCalledWith(
+      "/api/web/machine-learning/model/model-123/mark-configured",
+      { value: true }
+    );
   });
 });
 

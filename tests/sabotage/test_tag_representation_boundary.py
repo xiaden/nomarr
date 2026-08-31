@@ -13,8 +13,20 @@ Ownership rules (per artifacts/designs/parts/tag-boundary/CONTRACTS.md):
   split.
 
 The tests scan source code at test time and report violations. The scan scope
-is clean — all violations were resolved in TASK-tag-boundary-A, and the suite
-is GREEN.
+is clean — all violations here were resolved in TASK-tag-boundary-A, plus the
+Plan C P1-S5 extension ``TestTagPersistenceOwnership`` (identity-only ORM /
+DTO / repository static gates):
+- ``tags`` is identity-only: the ORM model, repo_dto ``TagRow``, and tag_mapper
+  projections expose no removed metadata columns/keys (source/confidence/tier/
+  created_at/parent_tag_id); edge metadata lives only on ``song_tags``.
+- No persistence code persists an empty/NULL ordinary namespace (blank->
+  ``default`` normalization only) and the namespace-free ``tags_from_tag_rows``
+  projection stays a documented physical/API boundary, never imported on
+  assignment resolution/persistence paths.
+
+Green claim is scoped to this file's scans. (Sibling
+``test_no_facades_begin_transactions.py`` has 6 pre-existing Docker-gated env
+errors unrelated to this suite.)
 """
 
 from __future__ import annotations

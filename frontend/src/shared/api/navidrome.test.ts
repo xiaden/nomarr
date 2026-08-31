@@ -39,7 +39,7 @@ describe("getTagValues", () => {
 
     await expect(getTagValues("genre")).resolves.toEqual(["Rock"]);
 
-    expect(get).toHaveBeenCalledWith(expect.stringContaining("/tag-value?name=genre"));
+    expect(get).toHaveBeenCalledWith("/api/web/navidrome/tag-value?name=genre");
   });
 });
 

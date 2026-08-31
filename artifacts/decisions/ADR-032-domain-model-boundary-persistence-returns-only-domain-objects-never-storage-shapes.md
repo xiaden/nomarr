@@ -1,9 +1,10 @@
 # ADR-032: Domain-Model Boundary: Persistence Returns Only Domain Objects, Never Storage Shapes
 
-**Status:** Accepted  
+**Status:** Superseded  
 **Date:** 2026-06-16  
 **Tags:** persistence, layering, architecture, domain-model  
 **Supersedes:** drafts/DRAFT-persistence-storage-shapes-must-not-leak-beyond-the-persistence-layer.md  
+**Superseded by:** ADR-047  
 
 ## Context
 

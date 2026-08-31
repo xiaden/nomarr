@@ -5,6 +5,8 @@ import {
   getTrackVector,
   getVectorStats,
   listBackbones,
+  promoteVectors,
+  rebuildVectorIndex,
   searchVectors,
 } from "./vectors";
 
@@ -100,5 +102,83 @@ describe("getTrackVector", () => {
     expect(get).toHaveBeenCalledWith(
       "/api/web/vector/track?backbone_id=effnet&file_id=42"
     );
+  });
+});
+
+describe("promoteVectors", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("posts the {backbone_id, nlists} body and consumes VectorPromoteResponse", async () => {
+    // VectorPromoteResponse{status, backbone_id, message} — vectors_if.py:151-168.
+    const response = {
+      status: "success",
+      backbone_id: "effnet",
+      message: "Vectors promoted and index rebuilt for backbone 'effnet'",
+    };
+    vi.mocked(post).mockResolvedValue(response);
+
+    await expect(promoteVectors("effnet", 100)).resolves.toEqual(response);
+
+    expect(post).toHaveBeenCalledWith("/api/web/vector/promote", {
+      backbone_id: "effnet",
+      nlists: 100,
+    });
+  });
+
+  it("sends nlists: null when omitted (auto-calculated server-side)", async () => {
+    const response = {
+      status: "success",
+      backbone_id: "yamnet",
+      message: "Vectors promoted and index rebuilt for backbone 'yamnet'",
+    };
+    vi.mocked(post).mockResolvedValue(response);
+
+    await expect(promoteVectors("yamnet")).resolves.toEqual(response);
+
+    expect(post).toHaveBeenCalledWith("/api/web/vector/promote", {
+      backbone_id: "yamnet",
+      nlists: null,
+    });
+  });
+});
+
+describe("rebuildVectorIndex", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("posts the {backbone_id, nlists} body and consumes VectorRebuildIndexResponse", async () => {
+    // VectorRebuildIndexResponse{status, backbone_id, message} — vectors_if.py:183-200.
+    const response = {
+      status: "success",
+      backbone_id: "effnet",
+      message: "Vector index rebuilt for backbone 'effnet'",
+    };
+    vi.mocked(post).mockResolvedValue(response);
+
+    await expect(rebuildVectorIndex("effnet", 250)).resolves.toEqual(response);
+
+    expect(post).toHaveBeenCalledWith("/api/web/vector/rebuild-index", {
+      backbone_id: "effnet",
+      nlists: 250,
+    });
+  });
+
+  it("sends nlists: null when omitted (auto-calculated server-side)", async () => {
+    const response = {
+      status: "success",
+      backbone_id: "yamnet",
+      message: "Vector index rebuilt for backbone 'yamnet'",
+    };
+    vi.mocked(post).mockResolvedValue(response);
+
+    await expect(rebuildVectorIndex("yamnet")).resolves.toEqual(response);
+
+    expect(post).toHaveBeenCalledWith("/api/web/vector/rebuild-index", {
+      backbone_id: "yamnet",
+      nlists: null,
+    });
   });
 });

@@ -77,6 +77,7 @@ export function statusToTier(status: MatchStatus): MatchTier {
 
 export interface SpotifyStatusResponse {
   configured: boolean;
+  message: string;
 }
 
 export interface ConvertPlaylistRequest {

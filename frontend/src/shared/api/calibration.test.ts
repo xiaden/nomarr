@@ -191,11 +191,12 @@ describe("getAllHistograms", () => {
     vi.clearAllMocks();
   });
 
-  it("gets the flat histogram projection with nullable p5/p95 and optional metadata", async () => {
+  it("gets the flat histogram projection with nullable p5/p95 and nullable metadata fields", async () => {
     // GetAllCalibrationHistogramsResponse{calibrations:[CalibrationHistogramItem]}
     // CalibrationHistogramItem: model_key, head_name, label, histogram_bins, p5|None,
     // p95|None, n, histogram_spec, calibration_def_hash|None, underflow_count|None,
-    // overflow_count|None — all flat, no storage envelope/nested CalibrationState.
+    // overflow_count|None — all fields required-but-nullable, all flat, no storage
+    // envelope/nested CalibrationState.
     const response = {
       calibrations: [
         {
@@ -220,6 +221,9 @@ describe("getAllHistograms", () => {
           p95: 0.8,
           n: 50,
           histogram_spec: { lo: 0, hi: 1, bins: 5, bin_width: 0.2 },
+          calibration_def_hash: null,
+          underflow_count: null,
+          overflow_count: null,
         },
       ],
     };

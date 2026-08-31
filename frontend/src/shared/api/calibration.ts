@@ -136,9 +136,9 @@ export interface HeadHistogramResponse {
   p95: number | null;
   n: number;
   histogram_spec: HistogramSpec;
-  calibration_def_hash?: string;
-  underflow_count?: number;
-  overflow_count?: number;
+  calibration_def_hash: string | null;
+  underflow_count: number | null;
+  overflow_count: number | null;
 }
 
 export interface AllCalibrationStatesResponse {

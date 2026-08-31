@@ -15,6 +15,17 @@ Enforces the sealed ``LibraryTagsDb`` surface from
   ``delete_tags_by_ids``, ``list_orphaned_tag_ids``, ``replace_tag_references*``,
   ``find_or_create_tag``) do not resurface as object-attribute calls in
   non-persistence code.
+- ``TestNoLegacyClaimFacadeCalls`` — legacy claim persistence names (e.g.
+  ``insert_worker_claim``, ``claim_song``, ``steal_claim``) never resurface as
+  facade/repo attribute calls above persistence; callers use only the canonical
+  claims intent facade (``add_claim`` / ``remove_claim`` / ``list_claims`` / ...).
+- ``TestNoClaimStorageMechanicsInCallers`` — ``WorkerClaimRow`` and encoded
+  claim-key strings (``claim_{song_id}``) are persistence-internal and never
+  appear in higher-layer caller code.
+- ``TestSongTagAssignmentHasNoSongId`` (Plan C P1-S5 extension) also rejects
+  storage ``tag_id`` and the removed ``tags`` metadata fields
+  (``tier``/``created_at``/``parent_tag_id``) on ``SongTagAssignment`` — only the
+  domain identity tuple and edge provenance (confidence/source) may cross.
 """
 
 from __future__ import annotations
