@@ -5,7 +5,7 @@ from __future__ import annotations
 from itertools import count
 
 import pytest
-from sqlalchemy import insert
+from sqlalchemy import func, insert, select
 
 from nomarr.persistence.database.song_tag_repo import SongTagRepository
 from nomarr.persistence.database.tag_repo import TagRepository
@@ -56,10 +56,6 @@ def _create_tag(session, name: str = "rock", value: str = "rock", namespace: str
             name=name,
             value=value,
             namespace=namespace,
-            source="ml",
-            confidence=0.95,
-            tier=1,
-            created_at=1000,
         )
     )
     return r.inserted_primary_key[0]
@@ -88,21 +84,6 @@ class TestTagRepository:
         result = repo.get_tag(999999)
         assert result is None
 
-    def test_get_tag_by_name(self, pg_session) -> None:
-        """get_tag_by_name should find tag by name and namespace."""
-        tag_id = _create_tag(pg_session, name="pop", value="pop", namespace="genre")
-        repo = TagRepository(pg_session)
-        result = repo.get_tag_by_name("pop", "genre")
-        assert result is not None
-        assert result["id"] == tag_id
-        assert result["name"] == "pop"
-
-    def test_get_tag_by_name_nonexistent(self, pg_session) -> None:
-        """get_tag_by_name should return None for missing tag."""
-        repo = TagRepository(pg_session)
-        result = repo.get_tag_by_name("nonexistent", "genre")
-        assert result is None
-
     def test_get_or_create_tag_existing(self, pg_session) -> None:
         """get_or_create_tag should return existing tag id."""
         tag_id = _create_tag(pg_session, name="jazz", value="jazz", namespace="genre")
@@ -129,10 +110,6 @@ class TestTagRepository:
                 "name": "electronic",
                 "value": "electronic",
                 "namespace": "genre",
-                "source": "ml",
-                "confidence": 0.9,
-                "tier": 1,
-                "created_at": 2000,
             }
         )
         assert isinstance(tag_id, int)
@@ -440,19 +417,19 @@ class TestTagRepository:
         assert repo.count_tags_filtered(name="genre", search="100_") == 1
 
     def test_get_tag_value_frequencies(self, pg_session) -> None:
-        """get_tag_value_frequencies should return value counts."""
+        """get_tag_value_frequencies groups by namespace, never collapsing values."""
         # Create tags with same name and value but different namespaces
         _create_tag(pg_session, name="genre", value="rock", namespace="genre")
         _create_tag(pg_session, name="genre", value="rock", namespace="mood")
         _create_tag(pg_session, name="genre", value="pop", namespace="genre")
         repo = TagRepository(pg_session)
         result = repo.get_tag_value_frequencies("genre", limit=10)
-        assert len(result) == 2
-        # rock should appear twice (different namespaces)
-        rock_count = next((c for v, c in result if v == "rock"), 0)
-        assert rock_count == 2
-        pop_count = next((c for v, c in result if v == "pop"), 0)
-        assert pop_count == 1
+        assert len(result) == 3
+        counts = {(ns, v): c for ns, v, c in result}
+        # The two namespaces are NOT collapsed onto one (rock, 2) row.
+        assert counts[("genre", "rock")] == 1
+        assert counts[("mood", "rock")] == 1
+        assert counts[("genre", "pop")] == 1
 
     def test_replace_tag_references(self, pg_session) -> None:
         """replace_tag_references should re-point assignments."""
@@ -865,3 +842,121 @@ class TestTagRepository:
         repo.assign_tag_to_song(s_decimal, _create_tag(pg_session, name="rating", value="7.5", namespace="genre"))
 
         assert repo.count_songs_by_numeric_tag("rating", 5) == 2
+
+
+@pytest.mark.unit
+@pytest.mark.integration
+class TestTagIdentitySpec:
+    """Spec-first repository cases against the immutable user ledger.
+
+    These pin the identity-only contract at the repository boundary:
+    ``(default, genre, Rock)`` and ``(nom, genre, Rock)`` are distinct
+    identities; duplicate complete-key insertion is prevented; ordinary
+    namespace normalizes to the literal ``default`` (never NULL/empty); and
+    repository result rows expose no removed tag metadata. The normalization
+    and identity-only-row assertions are expected to FAIL against the current
+    repository until Phase 3 (P3-S2/P3-S3) lands.
+    """
+
+    def test_default_and_nom_namespaces_are_distinct_identities(self, pg_session) -> None:
+        """(default, genre, Rock) and (nom, genre, Rock) resolve to separate tag rows."""
+        repo = TagRepository(pg_session)
+        default_id = repo.get_or_create_tag("genre", "Rock", "default")
+        nom_id = repo.get_or_create_tag("genre", "Rock", "nom")
+        assert default_id != nom_id
+        default_row = repo.get_tag(default_id)
+        nom_row = repo.get_tag(nom_id)
+        assert default_row is not None and nom_row is not None
+        assert (default_row["namespace"], default_row["name"], default_row["value"]) == ("default", "genre", "Rock")
+        assert (nom_row["namespace"], nom_row["name"], nom_row["value"]) == ("nom", "genre", "Rock")
+
+    def test_complete_key_duplicate_insert_is_prevented(self, pg_session) -> None:
+        """Inserting the same complete (namespace, name, value) twice yields one row."""
+        from sqlalchemy import func, select
+
+        from nomarr.persistence.models.tag import Tag
+
+        repo = TagRepository(pg_session)
+        first = repo.get_or_create_tag("genre", "Rock", "default")
+        second = repo.get_or_create_tag("genre", "Rock", "default")
+        assert first == second
+        count = pg_session.execute(
+            select(func.count())
+            .select_from(Tag)
+            .where(Tag.name == "genre", Tag.value == "Rock", Tag.namespace == "default")
+        ).scalar()
+        assert count == 1
+
+    def test_same_name_value_different_namespace_not_deduped(self, pg_session) -> None:
+        """Same (name, value) in different namespaces must NOT be collapsed by dedup.
+
+        Batch results are keyed by the complete ``(namespace, name, value)`` tuple
+        so the two namespaces never collapse onto one tag id.
+        """
+        repo = TagRepository(pg_session)
+        ids = repo.get_or_create_tags_batch(
+            [
+                {"name": "genre", "value": "Rock", "namespace": "default"},
+                {"name": "genre", "value": "Rock", "namespace": "nom"},
+            ]
+        )
+        assert len(ids) == 2
+        assert ids[("default", "genre", "Rock")] != ids[("nom", "genre", "Rock")]
+
+    def test_omitted_namespace_normalizes_to_default(self, pg_session) -> None:
+        """Omitted ordinary namespace is stored as the literal 'default', never '' or NULL."""
+        repo = TagRepository(pg_session)
+        result = repo.get_or_create_tags_batch([{"name": "genre", "value": "Rock"}])
+        # The complete identity must use the canonical "default" namespace.
+        assert ("default", "genre", "Rock") in result
+        row = repo.get_tag(result[("default", "genre", "Rock")])
+        assert row is not None
+        assert row["namespace"] == "default"
+
+    def test_no_null_namespace_rows(self, pg_session) -> None:
+        """An empty namespace is normalized to 'default'; no row may carry a NULL/empty namespace."""
+        repo = TagRepository(pg_session)
+        tag_id = repo.get_or_create_tag("genre", "Rock", "")
+        row = repo.get_tag(tag_id)
+        assert row is not None
+        assert row["namespace"] == "default"
+
+    def test_result_rows_have_no_removed_tag_metadata_keys(self, pg_session) -> None:
+        """Repository tag rows expose only id, namespace, name, value."""
+        repo = TagRepository(pg_session)
+        tag_id = repo.get_or_create_tag("genre", "Rock", "default")
+        row = repo.get_tag(tag_id)
+        assert row is not None
+        assert set(row.keys()) == {"id", "namespace", "name", "value"}
+
+    def test_edge_writes_never_modify_shared_tag_row(self, pg_session) -> None:
+        """P3-S7: edge writes touch only ``song_tags``, never a shared ``tags`` row.
+
+        Reassigning the same tag to a song with different per-song edge metadata
+        (confidence/source) must not issue an UPDATE against the shared ``tags``
+        identity row — the identity stays intact and the row count unchanged.
+        """
+        _, song_id = _create_library_and_song(pg_session)
+        repo = TagRepository(pg_session)
+        tag_id = repo.get_or_create_tag("genre", "Rock", "default")
+
+        song_tag_repo = SongTagRepository(pg_session)
+        song_tag_repo.assign_tag_to_song(song_id, tag_id, confidence=0.9, source="ml")
+        # Edge rewrite with different per-song metadata.
+        song_tag_repo.replace_song_tags(song_id, [{"tag_id": tag_id, "confidence": 0.7, "source": "nomarr"}])
+
+        # The shared tags identity row is untouched (no UPDATE against tags).
+        row = repo.get_tag(tag_id)
+        assert row is not None
+        assert row["namespace"] == "default"
+        assert row["name"] == "genre"
+        assert row["value"] == "Rock"
+        assert set(row.keys()) == {"id", "namespace", "name", "value"}
+        # Exactly one tag row still exists for this identity.
+        total = pg_session.execute(select(func.count()).select_from(Tag)).scalar_one()
+        assert total == 1
+        # The edge metadata was replaced per song (independent of the tag row).
+        edges = song_tag_repo.get_song_tag_edges_for_tags([tag_id])
+        assert len(edges) == 1
+        assert edges[0]["confidence"] == 0.7
+        assert edges[0]["source"] == "nomarr"

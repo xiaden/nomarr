@@ -65,7 +65,7 @@ class TestCompleteTagRefResolved:
     def test_get_tag_matches_complete_identity_value(self) -> None:
         # get_tag resolves the full (name, value, namespace) natural key exactly.
         tags, tag_repo, _, _, _ = _make_tags_db()
-        tag_repo.get_tag_ids_by_identities.return_value = {("artist", "X", ""): 11}
+        tag_repo.get_tag_ids_by_identities.return_value = {("default", "artist", "X"): 11}
         tag_repo.get_tags_by_ids.return_value = [{"name": "artist", "value": "X", "namespace": ""}]
         assert tags.get_tag(TagRef(name="artist", value="X")) == TagRef("artist", "X")
         assert tags.get_tag(TagRef(name="artist", value="Z")) is None
@@ -77,7 +77,10 @@ class TestCompleteTagRefResolved:
             11: {"name": "artist", "value": "X", "namespace": ""},
             12: {"name": "artist", "value": "Y", "namespace": ""},
         }
-        tag_repo.get_tag_ids_by_identities.return_value = {("artist", "X", ""): 11, ("artist", "Y", ""): 12}
+        tag_repo.get_tag_ids_by_identities.return_value = {
+            ("default", "artist", "X"): 11,
+            ("default", "artist", "Y"): 12,
+        }
         tag_repo.get_tags_by_ids.side_effect = lambda ids: [rows[i] for i in ids]
         assert tags.get_tag(TagRef(name="artist", value="X")) == TagRef("artist", "X")
         assert tags.get_tag(TagRef(name="artist", value="Y")) == TagRef("artist", "Y")
@@ -160,16 +163,16 @@ class TestSetBasedResolution:
             SongTagAssignment(name="year", value=1999),
         ]
         tag_repo.get_or_create_tags_batch.return_value = {
-            ("artist", "X", ""): 1,
-            ("genre", "Jazz", "nom"): 2,
-            ("year", "1999", ""): 3,
+            ("default", "artist", "X"): 1,
+            ("nom", "genre", "Jazz"): 2,
+            ("default", "year", "1999"): 3,
         }
         tags.replace_song_tags(_song(), assignments)
         # One set-based call for the whole batch — never a per-tag loop.
         tag_repo.get_or_create_tags_batch.assert_called_once()
         call_rows = tag_repo.get_or_create_tags_batch.call_args[0][0]
         assert len(call_rows) == 3
-        assert {"name": "artist", "value": "X", "namespace": ""} in call_rows
+        assert {"namespace": "default", "name": "artist", "value": "X"} in call_rows
         # Edges reference the resolved tag ids + provenance.
         edges = song_tag_repo.replace_song_tags.call_args[0][1]
         assert len(edges) == 3
@@ -177,7 +180,7 @@ class TestSetBasedResolution:
 
     def test_remove_song_tags_resolves_identities_in_one_batch(self) -> None:
         tags, tag_repo, song_tag_repo, _, _ = _make_tags_db()
-        tag_repo.get_tag_ids_by_identities.return_value = {("artist", "X", ""): 1}
+        tag_repo.get_tag_ids_by_identities.return_value = {("default", "artist", "X"): 1}
         tags.remove_song_tags(_song(), [TagRef("artist", "X"), TagRef("missing", "Y")])
         # One set-based lookup; unresolved identities are skipped.
         tag_repo.get_tag_ids_by_identities.assert_called_once()
@@ -185,8 +188,8 @@ class TestSetBasedResolution:
 
     def test_relink_resolves_songs_set_based(self) -> None:
         tags, tag_repo, song_tag_repo, song_repo, library_repo = _make_tags_db()
-        tag_repo.get_tag_ids_by_identities.return_value = {("old", "A", ""): 1}
-        tag_repo.get_or_create_tags_batch.return_value = {("new", "B", ""): 2}
+        tag_repo.get_tag_ids_by_identities.return_value = {("default", "old", "A"): 1}
+        tag_repo.get_or_create_tags_batch.return_value = {("default", "new", "B"): 2}
         library_repo.get_library_ids_by_natural_keys.return_value = {("TestLib", "/music"): 1}
         song_repo.get_song_ids_by_normalized_paths.return_value = {(1, "a.mp3"): 7}
         song_tag_repo.relink_song_tags.return_value = {"moved": 2, "skipped": 1, "source_orphaned": 1}
@@ -272,7 +275,7 @@ class TestIdempotenceAndEmptySemantics:
 
     def test_repeated_replace_produces_identical_edges(self) -> None:
         tags, tag_repo, song_tag_repo, _, _ = _make_tags_db()
-        tag_repo.get_or_create_tags_batch.return_value = {("artist", "X", ""): 1}
+        tag_repo.get_or_create_tags_batch.return_value = {("default", "artist", "X"): 1}
         assignments = [SongTagAssignment(name="artist", value="X", confidence=0.9)]
 
         tags.replace_song_tags(_song(), assignments)

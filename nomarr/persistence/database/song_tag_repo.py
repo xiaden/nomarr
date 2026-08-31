@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import Float, and_, case, cast, delete, exists, func, literal, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from nomarr.helpers.dto.repo_dto import NumericSongTagMatchRow, SongRow, TagRow
+from nomarr.helpers.dto.repo_dto import NumericSongTagMatchRow, SongRow
 from nomarr.persistence.models.song import Song
 from nomarr.persistence.models.song_tag import SongTag
 from nomarr.persistence.models.tag import Tag
@@ -36,20 +36,23 @@ _ST: Table = SongTag.__table__  # type: ignore[assignment]  # Model.__table__ is
 _S: Table = Song.__table__  # type: ignore[assignment]  # Model.__table__ is typed as FromClause; we know it's Table
 
 
-def _tag_row_to_dto(row: Row) -> TagRow:
-    """Convert a SQLAlchemy ``Row`` to a ``TagRow`` TypedDict."""
+def _tag_row_to_dto(row: Row) -> dict[str, Any]:
+    """Map a joined tag+song_tags row to identity fields plus edge metadata.
+
+    Reads only identity columns from ``tags`` (id, namespace, name, value) and
+    confidence/source/timestamps from the ``song_tags`` edge — never from the
+    removed ``tags`` metadata columns.
+    """
     m = row._mapping
-    return TagRow(
-        id=m["id"],
-        name=m["name"],
-        value=m["value"],
-        namespace=m["namespace"],
-        parent_tag_id=m["parent_tag_id"],
-        source=m["source"],
-        confidence=m["confidence"],
-        tier=m["tier"],
-        created_at=m["created_at"],
-    )
+    return {
+        "id": m["id"],
+        "namespace": m["namespace"],
+        "name": m["name"],
+        "value": m["value"],
+        "confidence": m["confidence"],
+        "source": m["source"],
+        "created_at": m["created_at"],
+    }
 
 
 def _row_to_dto(row: Row) -> SongRow:
@@ -116,10 +119,26 @@ class SongTagRepository:
 
     # ── song-tag associations ───────────────────────────────────
 
-    def get_tags_for_song(self, song_id: int) -> list[TagRow]:
-        """Return all tags assigned to a song via the ``song_tags`` junction."""
+    def get_tags_for_song(self, song_id: int) -> list[dict[str, Any]]:
+        """Return all tags assigned to a song via the ``song_tags`` junction.
+
+        Each row carries identity fields from ``tags`` plus edge metadata
+        (confidence, source, created_at) from ``song_tags``.
+        """
         with map_persistence_exceptions():
-            stmt = select(_T).join(_ST, _T.c.id == _ST.c.tag_id).where(_ST.c.song_id == song_id)
+            stmt = (
+                select(
+                    _T.c.id,
+                    _T.c.namespace,
+                    _T.c.name,
+                    _T.c.value,
+                    _ST.c.confidence,
+                    _ST.c.source,
+                    _ST.c.created_at,
+                )
+                .join(_ST, _T.c.id == _ST.c.tag_id)
+                .where(_ST.c.song_id == song_id)
+            )
             result = self._session.execute(stmt)
             return [_tag_row_to_dto(r) for r in result.all()]
 
@@ -272,8 +291,8 @@ class SongTagRepository:
         """Return tag assignments for a batch of song ids.
 
         Each dict contains ``song_id``, ``tag_id``, ``tag_name``,
-        ``tag_value``, ``namespace``, ``parent_tag_id``, ``tier``,
-        ``created_at``, ``confidence``, and ``source``.
+        ``tag_value``, ``namespace``, and the edge metadata ``confidence`` and
+        ``source`` (from ``song_tags`` only).
         """
         with map_persistence_exceptions():
             if not song_ids:
@@ -285,9 +304,6 @@ class SongTagRepository:
                     _T.c.name,
                     _T.c.value,
                     _T.c.namespace,
-                    _T.c.parent_tag_id,
-                    _T.c.tier,
-                    _T.c.created_at,
                     _ST.c.confidence,
                     _ST.c.source,
                 )
@@ -304,19 +320,32 @@ class SongTagRepository:
                     "tag_name": r[2],
                     "tag_value": r[3],
                     "namespace": r[4],
-                    "parent_tag_id": r[5],
-                    "tier": r[6],
-                    "created_at": r[7],
-                    "confidence": r[8],
-                    "source": r[9],
+                    "confidence": r[5],
+                    "source": r[6],
                 }
                 for r in result.all()
             ]
 
-    def get_song_tags(self, song_id: int, nomarr_only: bool = False) -> list[TagRow]:
-        """Return tags for a song, optionally filtered to ``nom:`` namespace."""
+    def get_song_tags(self, song_id: int, nomarr_only: bool = False) -> list[dict[str, Any]]:
+        """Return tags for a song, optionally filtered to ``nom:`` namespace.
+
+        Each row carries identity fields from ``tags`` plus edge metadata
+        (confidence, source, created_at) from ``song_tags``.
+        """
         with map_persistence_exceptions():
-            stmt = select(_T).join(_ST, _T.c.id == _ST.c.tag_id).where(_ST.c.song_id == song_id)
+            stmt = (
+                select(
+                    _T.c.id,
+                    _T.c.namespace,
+                    _T.c.name,
+                    _T.c.value,
+                    _ST.c.confidence,
+                    _ST.c.source,
+                    _ST.c.created_at,
+                )
+                .join(_ST, _T.c.id == _ST.c.tag_id)
+                .where(_ST.c.song_id == song_id)
+            )
             if nomarr_only:
                 stmt = stmt.where(_T.c.namespace == "nom")
             result = self._session.execute(stmt)
@@ -575,13 +604,25 @@ class SongTagRepository:
 
     # ── Plan E facade support ───────────────────────────────────
 
-    def get_genre_tags_for_songs(self, song_ids: list[int]) -> list[TagRow]:
-        """Return genre tags assigned to the given song ids."""
+    def get_genre_tags_for_songs(self, song_ids: list[int]) -> list[dict[str, Any]]:
+        """Return genre tags assigned to the given song ids.
+
+        Each row carries identity fields from ``tags`` plus edge metadata
+        (confidence, source, created_at) from ``song_tags``.
+        """
         with map_persistence_exceptions():
             if not song_ids:
                 return []
             stmt = (
-                select(_T)
+                select(
+                    _T.c.id,
+                    _T.c.namespace,
+                    _T.c.name,
+                    _T.c.value,
+                    _ST.c.confidence,
+                    _ST.c.source,
+                    _ST.c.created_at,
+                )
                 .join(_ST, _T.c.id == _ST.c.tag_id)
                 .where(
                     _ST.c.song_id.in_(song_ids),

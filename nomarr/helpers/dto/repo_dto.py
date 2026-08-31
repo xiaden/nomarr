@@ -93,20 +93,16 @@ class LibraryScanRow(TypedDict):
 class TagRow(TypedDict):
     """Single row from the ``tags`` table.
 
-    ``confidence`` and ``tier`` are legacy columns: kept for schema
-    stability, never populated by any code path. ML scores live on
-    ``tag_model_output`` (see DD-song-domain-repair Q5).
+    ``tags`` carries exactly the reusable identity ``(id, namespace, name,
+    value)`` with uniqueness over the complete ``(namespace, name, value)``.
+    Relationship metadata (confidence, source, assignment timestamps) is owned
+    by the ``song_tags`` edge, not the ``tags`` row.
     """
 
     id: int
+    namespace: str
     name: str
     value: str
-    namespace: str
-    parent_tag_id: int | None
-    source: str
-    confidence: float | None
-    tier: int | None
-    created_at: int
 
 
 class SongTagRow(TypedDict):

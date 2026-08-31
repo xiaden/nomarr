@@ -69,7 +69,7 @@ class TaggingApplyMixin:
         """Apply calibration to all tagged library files that need it.
 
         Only processes files whose DB mood tags are stale relative to the
-        current calibration version (``meta.calibration_version``). Files
+        current calibration version (read via ``db.app.get_calibration_version()``). Files
         whose ``calibration_hash`` already matches are skipped, making this
         operation idempotent.
 

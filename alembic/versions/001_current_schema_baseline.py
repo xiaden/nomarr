@@ -102,23 +102,15 @@ def upgrade() -> None:
     op.create_table(
         "tags",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
+        sa.Column("namespace", sa.String(length=50), nullable=False),
         sa.Column("name", sa.String(length=255), nullable=False),
         sa.Column("value", sa.String(length=255), nullable=False),
-        sa.Column("namespace", sa.String(length=50), nullable=False),
-        sa.Column("parent_tag_id", sa.Integer(), nullable=True),
-        sa.Column("source", sa.String(length=100), nullable=False),
-        sa.Column("confidence", sa.Float(), nullable=True),
-        sa.Column("tier", sa.Integer(), nullable=True),
-        sa.Column("created_at", sa.BigInteger(), nullable=False),
-        sa.ForeignKeyConstraint(["parent_tag_id"], ["tags.id"], ondelete="SET NULL"),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("name", "value", "namespace", name="uq_tags_name_value_ns"),
+        sa.UniqueConstraint("namespace", "name", "value", name="uq_tags_name_value_ns"),
     )
-    op.create_index("ix_tags_parent_tag_id", "tags", ["parent_tag_id"])
 
     # GIN trigram indexes for fuzzy search
     op.execute("CREATE INDEX ix_songs_normalized_path_trgm ON songs USING gin (normalized_path gin_trgm_ops)")
-    op.execute("CREATE INDEX ix_tags_name_trgm ON tags USING gin (name gin_trgm_ops)")
 
     # song_tags
     op.create_table(
@@ -491,8 +483,6 @@ def downgrade() -> None:
     op.drop_index("ix_song_tags_tag_id", table_name="song_tags")
     op.drop_index("ix_song_tags_song_id", table_name="song_tags")
     op.drop_table("song_tags")
-    op.drop_index("ix_tags_parent_tag_id", table_name="tags")
-    op.execute("DROP INDEX IF EXISTS ix_tags_name_trgm")
     op.drop_table("tags")
 
     # embeddings must be dropped BEFORE songs (FK: embeddings.song_id → songs.id)

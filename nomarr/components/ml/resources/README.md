@@ -31,4 +31,4 @@ GPU/VRAM coordination, capacity probing, and execution tier selection for the ML
 ## Dependencies
 
 - **Upstream:** Called by `onnx/` (VRAM checks during load), `services/` (tier selection, capacity probe)
-- **Downstream:** Calls `persistence/` for meta keys, vram_promises collection, and GPU telemetry
+- **Downstream:** Calls `db.app` semantic intents for per-model VRAM limits, VRAM promise coordination via the persistence facade, and GPU resource snapshots

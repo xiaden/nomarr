@@ -161,7 +161,9 @@ export interface ClearCalibrationResponse {
 
 /**
  * Clear all calibration data from the database.
- * Truncates calibration collections, clears meta keys, and nulls file calibration hashes.
+ * Truncates db.ml calibration state/history, clears the calibration bookkeeping values
+ * (via db.app.clear_calibration_metadata()), and transitions all library files to the
+ * not-calibrated and not-vectors-extracted states.
  */
 export async function clearCalibration(): Promise<ClearCalibrationResponse> {
   return del("/api/web/calibration");

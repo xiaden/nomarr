@@ -37,6 +37,18 @@ from nomarr.persistence.mappers.song_tag_mapper import (
     tag_usage_from_row,
 )
 
+
+def _ordinary_namespace(namespace: str) -> str:
+    """Normalize an empty ordinary namespace to the literal ``default``.
+
+    ``tags`` rows are stored with ``namespace NOT NULL``; the ordinary
+    namespace is the literal ``"default"``. ``TagRef`` uses ``""`` for the
+    ordinary namespace, so every natural key built here must normalize before
+    matching the stored ``(namespace, name, value)`` identity.
+    """
+    return namespace or "default"
+
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
@@ -140,10 +152,11 @@ class LibraryTagsDb:
         pair with multiple values resolves to the exact tag for each value and
         ``None`` for a non-matching value.
         """
+        namespace = _ordinary_namespace(identity.namespace)
         tag_ids = self._tag_repo.get_tag_ids_by_identities(
-            [{"name": identity.name, "value": str(identity.value), "namespace": identity.namespace}]
+            [{"namespace": namespace, "name": identity.name, "value": str(identity.value)}]
         )
-        key = (identity.name, str(identity.value), identity.namespace)
+        key = (namespace, identity.name, str(identity.value))
         tag_id = tag_ids.get(key)
         if tag_id is None:
             return None
@@ -344,12 +357,14 @@ class LibraryTagsDb:
         song_id = self._resolve_song_id(song)
         if song_id is None:
             return
-        tag_rows = [{"name": a.name, "value": str(a.value), "namespace": a.namespace} for a in assignments]
+        tag_rows = [
+            {"namespace": _ordinary_namespace(a.namespace), "name": a.name, "value": str(a.value)} for a in assignments
+        ]
         tag_ids = self._tag_repo.get_or_create_tags_batch(tag_rows)
         edges = [
             {
                 "song_id": song_id,
-                "tag_id": tag_ids[(a.name, str(a.value), a.namespace)],
+                "tag_id": tag_ids[(_ordinary_namespace(a.namespace), a.name, str(a.value))],
                 "confidence": a.confidence,
                 "source": a.source,
             }
@@ -373,17 +388,19 @@ class LibraryTagsDb:
         typed ``RelinkResult``; a source tag that does not exist yields
         ``RelinkResult(0, 0, 0)``.
         """
+        source_ns = _ordinary_namespace(source.namespace)
         source_ids = self._tag_repo.get_tag_ids_by_identities(
-            [{"name": source.name, "value": str(source.value), "namespace": source.namespace}]
+            [{"namespace": source_ns, "name": source.name, "value": str(source.value)}]
         )
-        source_key = (source.name, str(source.value), source.namespace)
+        source_key = (source_ns, source.name, str(source.value))
         source_id = source_ids.get(source_key)
         if source_id is None:
             return RelinkResult(moved=0, skipped=0, source_orphaned=0)
+        target_ns = _ordinary_namespace(target.namespace)
         target_ids = self._tag_repo.get_or_create_tags_batch(
-            [{"name": target.name, "value": str(target.value), "namespace": target.namespace}]
+            [{"namespace": target_ns, "name": target.name, "value": str(target.value)}]
         )
-        target_id = target_ids[(target.name, str(target.value), target.namespace)]
+        target_id = target_ids[(target_ns, target.name, str(target.value))]
         song_ids = self._resolve_song_ids(songs) if songs is not None else None
         counts = self._song_tag_repo.relink_song_tags(source_id, target_id, song_ids=song_ids)
         return RelinkResult(
@@ -414,20 +431,28 @@ class LibraryTagsDb:
             self._song_tag_repo.replace_song_tags(song_id, [])
         else:
             tag_ids = self._tag_repo.get_tag_ids_by_identities(
-                [{"name": i.name, "value": str(i.value), "namespace": i.namespace} for i in identities]
+                [
+                    {"namespace": _ordinary_namespace(i.namespace), "name": i.name, "value": str(i.value)}
+                    for i in identities
+                ]
             )
             resolved = [
-                tag_ids[(i.name, str(i.value), i.namespace)]
+                tag_ids[(_ordinary_namespace(i.namespace), i.name, str(i.value))]
                 for i in identities
-                if (i.name, str(i.value), i.namespace) in tag_ids
+                if (_ordinary_namespace(i.namespace), i.name, str(i.value)) in tag_ids
             ]
             if resolved:
                 self._song_tag_repo.remove_tags_from_song(song_id, resolved)
         self._tag_repo.cleanup_orphaned_tags()
 
     def list_tag_value_frequencies(self, tag_names: list[str], limit: int) -> dict[str, list[tuple[str, int]]]:
-        """Return value frequency distributions for the given tag names."""
-        return self._tag_repo.get_tag_value_frequencies_batch(tag_names, limit=limit)
+        """Return value frequency distributions for the given tag names.
+
+        The repository result is namespace-bearing; this facade reduces it to
+        ``(value, count)`` pairs at its documented display boundary.
+        """
+        batch = self._tag_repo.get_tag_value_frequencies_batch(tag_names, limit=limit)
+        return {name: [(value, count) for (_namespace, value, count) in pairs] for name, pairs in batch.items()}
 
     # ------------------------------------------------------------------
     # Maintenance

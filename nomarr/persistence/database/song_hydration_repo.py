@@ -35,8 +35,8 @@ if TYPE_CHECKING:
 # ``name`` stores the full namespaced key, ``namespace`` is ``'nom'`` for ML).
 _NOM_NAMESPACE = "nom"
 # Entity / canonical-metadata tags (artist, album, genre, year, …) live in the
-# default (empty) namespace.
-_DEFAULT_NAMESPACE = ""
+# ordinary default namespace, stored as the literal ``"default"``.
+_DEFAULT_NAMESPACE = "default"
 logger = logging.getLogger(__name__)
 
 
@@ -119,7 +119,7 @@ class SongHydrationRepository:
                 edges = [
                     {
                         "song_id": input.song_id,
-                        "tag_id": tag_ids[(r["name"], r["value"], r["namespace"])],
+                        "tag_id": tag_ids[(r["namespace"], r["name"], r["value"])],
                     }
                     for r in tag_rows
                 ]
@@ -209,7 +209,7 @@ class SongHydrationRepository:
                     edges.extend(
                         {
                             "song_id": song_id,
-                            "tag_id": tag_ids[(r["name"], r["value"], r["namespace"])],
+                            "tag_id": tag_ids[(r["namespace"], r["name"], r["value"])],
                         }
                         for r in rows
                     )

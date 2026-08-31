@@ -70,7 +70,7 @@ def _make_tags_db() -> tuple[LibraryTagsDb, MagicMock, MagicMock, MagicMock, Mag
 class TestReplaceIdempotence:
     def test_replace_song_tags_is_deterministic(self) -> None:
         db, tag_repo, song_tag_repo, _, _ = _make_tags_db()
-        tag_repo.get_or_create_tags_batch.return_value = {("artist", "X", ""): 5}
+        tag_repo.get_or_create_tags_batch.return_value = {("default", "artist", "X"): 5}
         assignments = [_assignment()]
         expected = [{"song_id": 7, "tag_id": 5, "confidence": 1.0, "source": "nomarr"}]
 
@@ -85,8 +85,8 @@ class TestReplaceIdempotence:
     def test_replace_song_tags_resolves_set_based_no_per_tag_loop(self) -> None:
         db, tag_repo, song_tag_repo, _, _ = _make_tags_db()
         tag_repo.get_or_create_tags_batch.return_value = {
-            ("artist", "X", ""): 5,
-            ("genre", "Rock", ""): 6,
+            ("default", "artist", "X"): 5,
+            ("default", "genre", "Rock"): 6,
         }
 
         db.replace_song_tags(
@@ -95,7 +95,10 @@ class TestReplaceIdempotence:
         )
 
         tag_repo.get_or_create_tags_batch.assert_called_once_with(
-            [{"name": "artist", "value": "X", "namespace": ""}, {"name": "genre", "value": "Rock", "namespace": ""}]
+            [
+                {"namespace": "default", "name": "artist", "value": "X"},
+                {"namespace": "default", "name": "genre", "value": "Rock"},
+            ]
         )
         song_tag_repo.replace_song_tags.assert_called_once()
 
@@ -112,8 +115,8 @@ class TestReplaceIdempotence:
 class TestRelinkDuplicateSafe:
     def test_maps_moved_skipped_orphaned_counts(self) -> None:
         db, tag_repo, song_tag_repo, _, _ = _make_tags_db()
-        tag_repo.get_tag_ids_by_identities.return_value = {("old", "A", ""): 1}
-        tag_repo.get_or_create_tags_batch.return_value = {("new", "B", ""): 2}
+        tag_repo.get_tag_ids_by_identities.return_value = {("default", "old", "A"): 1}
+        tag_repo.get_or_create_tags_batch.return_value = {("default", "new", "B"): 2}
         song_tag_repo.relink_song_tags.return_value = {"moved": 3, "skipped": 2, "source_orphaned": 1}
 
         result = db.relink_tags(_tag("old", "A"), _tag("new", "B"))
@@ -124,8 +127,8 @@ class TestRelinkDuplicateSafe:
 
     def test_scoped_relink_resolves_song_ids(self) -> None:
         db, tag_repo, song_tag_repo, _, _ = _make_tags_db()
-        tag_repo.get_tag_ids_by_identities.return_value = {("old", "A", ""): 1}
-        tag_repo.get_or_create_tags_batch.return_value = {("new", "B", ""): 2}
+        tag_repo.get_tag_ids_by_identities.return_value = {("default", "old", "A"): 1}
+        tag_repo.get_or_create_tags_batch.return_value = {("default", "new", "B"): 2}
         song_tag_repo.relink_song_tags.return_value = {"moved": 1, "skipped": 0, "source_orphaned": 0}
 
         db.relink_tags(_tag("old", "A"), _tag("new", "B"), songs=[_song()])
@@ -155,7 +158,7 @@ class TestRemoveAndOrphanCleanup:
 
     def test_remove_specific_identities_resolves_and_cleans(self) -> None:
         db, tag_repo, song_tag_repo, _, _ = _make_tags_db()
-        tag_repo.get_tag_ids_by_identities.return_value = {("artist", "X", ""): 5}
+        tag_repo.get_tag_ids_by_identities.return_value = {("default", "artist", "X"): 5}
 
         db.remove_song_tags(_song(), [_tag()])
 
@@ -304,9 +307,12 @@ class TestSearchesAndStatistics:
 
     def test_list_tag_value_frequencies_batched(self) -> None:
         db, tag_repo, _, _, _ = _make_tags_db()
-        tag_repo.get_tag_value_frequencies_batch.return_value = {"genre": [("Rock", 10), ("Pop", 5)]}
+        tag_repo.get_tag_value_frequencies_batch.return_value = {
+            "genre": [("default", "Rock", 10), ("default", "Pop", 5)]
+        }
 
         result = db.list_tag_value_frequencies(["genre"], limit=100)
 
+        # The facade reduces the namespace-bearing repo result to (value, count).
         assert result == {"genre": [("Rock", 10), ("Pop", 5)]}
         tag_repo.get_tag_value_frequencies_batch.assert_called_once_with(["genre"], limit=100)

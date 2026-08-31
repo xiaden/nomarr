@@ -37,7 +37,7 @@ router = APIRouter(prefix="/calibration", tags=["Calibration"])
 async def clear_calibration(
     calibration_service: Annotated[CalibrationService, Depends(get_calibration_service)],
 ) -> ClearCalibrationResponse:
-    """Clear all calibration data and return files-updated / meta-keys-cleared counts."""
+    """Clear all calibration data and return files-updated / bookkeeping-values-cleared counts."""
     try:
         result = await asyncio.to_thread(calibration_service.clear_calibration)
         return ClearCalibrationResponse(**result)

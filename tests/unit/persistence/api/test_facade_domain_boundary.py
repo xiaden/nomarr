@@ -141,7 +141,7 @@ class TestTagDomainBaseline:
 
     def test_get_tag_returns_tag_identity(self) -> None:
         tags, tag_repo, _ = _make_tags_db()
-        tag_repo.get_tag_ids_by_identities.return_value = {("artist", "X", ""): 11}
+        tag_repo.get_tag_ids_by_identities.return_value = {("default", "artist", "X"): 11}
         tag_repo.get_tags_by_ids.return_value = [{"name": "artist", "value": "X", "namespace": ""}]
         result = tags.get_tag(TagRef(name="artist", value="X"))
         assert result == TagRef(name="artist", value="X", namespace="")
@@ -219,7 +219,7 @@ class TestForwarderDomainIdentity:
 
     def test_forwarder_get_tag_accepts_tag_identity(self) -> None:
         db, _, tag_repo, _ = _make_library_db()
-        tag_repo.get_tag_ids_by_identities.return_value = {("artist", "X", ""): 11}
+        tag_repo.get_tag_ids_by_identities.return_value = {("default", "artist", "X"): 11}
         tag_repo.get_tags_by_ids.return_value = [{"name": "artist", "value": "X", "namespace": ""}]
         # LibraryDb is the intent facade itself; methods are exposed directly.
         result = db.get_tag(TagRef(name="artist", value="X"))

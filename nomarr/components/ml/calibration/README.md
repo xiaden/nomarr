@@ -27,4 +27,4 @@ Score calibration normalizes raw model outputs so scores from different models a
 ## Dependencies
 
 - **Upstream:** Called by `workflows/` (calibration workflow, tag reconciliation)
-- **Downstream:** Calls `persistence/` for DB reads/writes via `db.ml` domain intents (calibration state/history, meta, file_tags); destructive resets live on `db.ml.maintenance` — no storage envelopes, table names, or PKs on the caller surface.
+- **Downstream:** Calls `persistence/` for DB reads/writes via `db.ml` domain intents (calibration state/history, file_tags); destructive resets live on `db.ml.maintenance` — no storage envelopes, table names, or PKs on the caller surface.

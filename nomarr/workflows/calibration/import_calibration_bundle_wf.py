@@ -3,7 +3,7 @@
 ARCHITECTURE:
 - Bundles are TRANSPORT ARTIFACTS for distribution (e.g., from nom-cal repo)
 - Database (calibration_state) is the SINGLE SOURCE OF TRUTH
-- This workflow parses bundle JSON → upserts to calibration_state → updates meta
+- This workflow parses bundle JSON → upserts to calibration_state → updates the global calibration bookkeeping version value
 
 USAGE:
 - Pre-alpha: Download bundles from nom-cal repo for users without local generation
@@ -46,7 +46,7 @@ def import_calibration_bundle_wf(
     """Import calibration bundle from disk into database.
 
     Parses bundle JSON file, upserts calibrations to calibration_state,
-    and updates global calibration version in meta collection.
+    and updates the global calibration bookkeeping version value.
 
     BUNDLE FORMAT (expected JSON structure):
     {

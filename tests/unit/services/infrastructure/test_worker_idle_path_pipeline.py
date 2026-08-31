@@ -34,7 +34,6 @@ def worker_db() -> MagicMock:
     db = MagicMock()
     db.hosts = "http://localhost:8529"
     db.password = "test"
-    db.meta = MagicMock()
     db.worker_restart_policy = MagicMock()
     db.worker_restart_policy.component_id.get.return_value = None
     return db

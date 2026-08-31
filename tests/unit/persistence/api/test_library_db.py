@@ -588,7 +588,7 @@ def test_remove_song_by_path_returns_silently_when_not_found() -> None:
 @pytest.mark.unit
 def test_get_tag_accepts_tag_identity() -> None:
     db, _, _, _, _, tag_repo, *_ = _make_library_db()
-    tag_repo.get_tag_ids_by_identities = MagicMock(return_value={("artist", "X", ""): 5})
+    tag_repo.get_tag_ids_by_identities = MagicMock(return_value={("default", "artist", "X"): 5})
     tag_repo.get_tags_by_ids = MagicMock(return_value=[{"name": "artist", "value": "X", "namespace": ""}])
 
     result = db.get_tag(_tag())
@@ -791,12 +791,14 @@ def test_count_songs_by_numeric_tag_delegates() -> None:
 def test_replace_song_tags_resolves_set_based() -> None:
     db, _, song_repo, _, _, tag_repo, song_tag_repo, *_ = _make_library_db()
     song_repo.get_song_by_normalized_path = MagicMock(return_value={"id": 7})
-    tag_repo.get_or_create_tags_batch = MagicMock(return_value={("artist", "X", ""): 5})
+    tag_repo.get_or_create_tags_batch = MagicMock(return_value={("default", "artist", "X"): 5})
     song_tag_repo.replace_song_tags = MagicMock()
 
     db.replace_song_tags(_song(), [_assignment()])
 
-    tag_repo.get_or_create_tags_batch.assert_called_once_with([{"name": "artist", "value": "X", "namespace": ""}])
+    tag_repo.get_or_create_tags_batch.assert_called_once_with(
+        [{"namespace": "default", "name": "artist", "value": "X"}]
+    )
     song_tag_repo.replace_song_tags.assert_called_once_with(
         7,
         [{"song_id": 7, "tag_id": 5, "confidence": 1.0, "source": "nomarr"}],
@@ -816,8 +818,8 @@ def test_replace_song_tags_noop_when_song_missing() -> None:
 @pytest.mark.unit
 def test_relink_tags_returns_relink_result() -> None:
     db, _, _, _, _, tag_repo, song_tag_repo, *_ = _make_library_db()
-    tag_repo.get_tag_ids_by_identities = MagicMock(return_value={("artist", "X", ""): 5})
-    tag_repo.get_or_create_tags_batch = MagicMock(return_value={("artist", "Y", ""): 6})
+    tag_repo.get_tag_ids_by_identities = MagicMock(return_value={("default", "artist", "X"): 5})
+    tag_repo.get_or_create_tags_batch = MagicMock(return_value={("default", "artist", "Y"): 6})
     song_repo_handle = db._songs._song_repo
     song_repo_handle.get_song_ids_by_normalized_paths = MagicMock(return_value={(1, "a.mp3"): 7})
     song_tag_repo.relink_song_tags = MagicMock(return_value={"moved": 3, "skipped": 1, "source_orphaned": 1})
@@ -856,7 +858,7 @@ def test_remove_song_tags_all_tags() -> None:
 def test_remove_song_tags_specific_identities() -> None:
     db, _, song_repo, _, _, tag_repo, song_tag_repo, *_ = _make_library_db()
     song_repo.get_song_by_normalized_path = MagicMock(return_value={"id": 7})
-    tag_repo.get_tag_ids_by_identities = MagicMock(return_value={("artist", "X", ""): 5})
+    tag_repo.get_tag_ids_by_identities = MagicMock(return_value={("default", "artist", "X"): 5})
     song_tag_repo.remove_tags_from_song = MagicMock()
     tag_repo.cleanup_orphaned_tags = MagicMock()
 
@@ -884,12 +886,13 @@ def test_list_tag_value_frequencies_calls_batch() -> None:
     db, _, _, _, _, tag_repo, *_ = _make_library_db()
     tag_repo.get_tag_value_frequencies_batch = MagicMock(
         return_value={
-            "genre": [("Rock", 10), ("Pop", 5)],
+            "genre": [("default", "Rock", 10), ("default", "Pop", 5)],
         }
     )
 
     result = db.list_tag_value_frequencies(["genre"], limit=100)
 
+    # The facade reduces the namespace-bearing repo result to (value, count).
     assert result == {"genre": [("Rock", 10), ("Pop", 5)]}
     tag_repo.get_tag_value_frequencies_batch.assert_called_once_with(["genre"], limit=100)
 

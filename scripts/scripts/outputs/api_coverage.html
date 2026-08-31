@@ -1,0 +1,3363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Endpoint Coverage Report</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f5f5; padding: 20px; }
+        .container { max-width: 1400px; margin: 0 auto; background: white; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); padding: 30px; }
+        h1 { color: #1a1a1a; margin-bottom: 10px; }
+        .timestamp { color: #666; font-size: 14px; margin-bottom: 20px; }
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin: 20px 0; }
+        .stat-card { background: #f9f9f9; padding: 20px; border-radius: 6px; border-left: 4px solid #ddd; }
+        .stat-card.used { border-left-color: #4caf50; }
+        .stat-card.unused { border-left-color: #ff9800; }
+        .stat-label { font-size: 12px; color: #666; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+        .stat-value { font-size: 32px; font-weight: 600; color: #1a1a1a; }
+        .progress-bar { width: 100%; height: 8px; background: #e0e0e0; border-radius: 4px; overflow: hidden; margin: 20px 0; }
+        .progress-fill { height: 100%; background: linear-gradient(90deg, #4caf50, #8bc34a); transition: width 0.3s; }
+        .controls { margin: 20px 0; padding: 15px; background: #f9f9f9; border-radius: 6px; display: flex; align-items: center; gap: 15px; }
+        .controls label { font-size: 14px; font-weight: 500; color: #666; }
+        .controls select { padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; cursor: pointer; background: white; }
+        .group { margin: 20px 0; }
+        .group-header { background: #f0f0f0; padding: 12px 15px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 10px; user-select: none; transition: background 0.2s; }
+        .group-header:hover { background: #e8e8e8; }
+        .group-header .toggle { font-size: 18px; font-weight: bold; color: #666; min-width: 20px; }
+        .group-title { font-size: 18px; font-weight: 600; color: #1a1a1a; flex: 1; }
+        .group-count { font-size: 14px; color: #666; background: white; padding: 4px 10px; border-radius: 12px; }
+        .group-content { padding: 15px 0; display: none; }
+        .group-content.expanded { display: block; }
+        .endpoint { margin: 10px 0; padding: 15px; background: #fafafa; border-radius: 6px; border-left: 4px solid #ddd; }
+        .endpoint.used { border-left-color: #4caf50; }
+        .endpoint.unused { border-left-color: #ff9800; }
+        .endpoint-header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+        .method { padding: 4px 10px; border-radius: 4px; font-size: 12px; font-weight: 600; text-transform: uppercase; }
+        .method.GET { background: #e3f2fd; color: #1976d2; }
+        .method.POST { background: #f3e5f5; color: #7b1fa2; }
+        .method.PUT { background: #fff3e0; color: #f57c00; }
+        .method.PATCH { background: #fce4ec; color: #c2185b; }
+        .method.DELETE { background: #ffebee; color: #d32f2f; }
+        .path { font-family: "Consolas", "Monaco", monospace; font-size: 14px; color: #1a1a1a; font-weight: 500; flex: 1; }
+        .status { padding: 4px 10px; border-radius: 4px; font-size: 12px; font-weight: 500; }
+        .status.used { background: #e8f5e9; color: #2e7d32; }
+        .status.unused { background: #fff3e0; color: #e65100; }
+        .endpoint-docs { margin-top: 10px; padding: 10px; background: white; border-radius: 4px; font-size: 13px; color: #555; }
+        .endpoint-summary { font-weight: 600; color: #1a1a1a; margin-bottom: 5px; }
+        .endpoint-description { color: #666; line-height: 1.5; }
+        .backend-location { margin-top: 10px; padding: 8px; background: #f0f7ff; border-radius: 4px; font-size: 13px; }
+        .location-label { font-weight: 600; color: #1976d2; margin-right: 8px; }
+        .usage-list { margin-top: 12px; padding-top: 12px; border-top: 1px solid #e0e0e0; }
+        .usage-item { margin: 4px 0; }
+        .file-link { color: #1976d2; text-decoration: none; font-size: 13px; font-family: "Consolas", "Monaco", monospace; }
+        .file-link:hover { text-decoration: underline; }
+        .filter-info { background: #e3f2fd; padding: 10px 15px; border-radius: 6px; color: #1976d2; margin-bottom: 20px; font-size: 14px; }
+        .view-mode { display: none; }
+        .view-mode.active { display: block; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>API Endpoint Coverage Report</h1>
+        <div class="timestamp">Generated: 2026-08-31 16:46:01</div>
+
+        
+
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-label">Total Endpoints</div>
+                <div class="stat-value">100</div>
+            </div>
+            <div class="stat-card used">
+                <div class="stat-label">Used</div>
+                <div class="stat-value">0</div>
+            </div>
+            <div class="stat-card unused">
+                <div class="stat-label">Unused</div>
+                <div class="stat-value">100</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Coverage</div>
+                <div class="stat-value">0.0%</div>
+            </div>
+        </div>
+
+        <div class="progress-bar">
+            <div class="progress-fill" style="width: 0.0%"></div>
+        </div>
+
+        <div class="controls">
+            <label for="groupBy">Group by:</label>
+            <select id="groupBy" onchange="switchView(this.value)">
+                <option value="route">Route Prefix</option>
+                <option value="usage">Usage Status</option>
+                <option value="method">Request Method</option>
+            </select>
+        </div>
+<div id="view-route" class="view-mode active">
+
+        <div class="group">
+            <div class="group-header" onclick="toggleGroup(this)">
+                <span class="toggle">▶</span>
+                <span class="group-title">Web UI API (/api/web)</span>
+                <span class="group-count">95 endpoints</span>
+            </div>
+            <div class="group-content">
+
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/admin/restart</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Restart the API server (useful after config changes).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/analytics/collection-overview</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get collection overview statistics.</div><div class="endpoint-description">Returns library stats, year/genre distributions.
+    Optionally filtered by library name.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/analytics/mood-analysis</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get mood analysis statistics.</div><div class="endpoint-description">Returns mood coverage, balance, top pairs by tier, and dominant vibes.
+    Optionally filtered by library name.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/analytics/mood-distribution</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get mood tag distribution.</div><div class="endpoint-description">Optionally filtered by library name.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/analytics/tag-co-occurrences</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get tag co-occurrence matrix for arbitrary tag sets.</div><div class="endpoint-description">Computes a matrix where matrix[j][i] = count of files having both x[i] and y[j].
+    Maximum 16x16 matrix size. Inputs exceeding limits are trimmed with warning.
+    Optionally filtered by library name.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/analytics/tag-correlations</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get VALUE-based correlation matrix for mood values, genres, and attributes.</div><div class="endpoint-description">Returns mood-to-mood, mood-to-genre, and mood-to-tier correlations.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/analytics/tag-frequencies</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get tag frequency statistics.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/api-key</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Return the current API key.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/api-key/regenerate</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Regenerate the API key and return the new value.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/authentication/login</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Authenticate with admin password and receive a session token.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/authentication/logout</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Invalidate the current session token (logout).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method DELETE">DELETE</span>
+                    <span class="path">/api/web/calibration</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Clear all calibration data and return files-updated / meta-keys-cleared counts.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/calibration/apply/start</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Start calibration apply in a background thread (non-blocking).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/calibration/apply/status</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get combined status and progress of background calibration apply.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/calibration/histogram</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get all calibration states with histogram bins (22 items, one per label).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/calibration/histogram/start</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Start histogram-based calibration generation in a background thread (non-blocking).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/calibration/histogram/status</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get combined status and progress of histogram-based calibration generation.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/calibration/status</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get current calibration status with per-library breakdown.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/config</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get current configuration values (Web UI editable subset only).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/config</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Update a web-editable configuration value (non-infrastructure keys only).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/file-system/list</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">List contents of a directory within the music library.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/health</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Health check endpoint (web UI proxy).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/health/gpu</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">GPU resource snapshot endpoint.</div><div class="endpoint-description">Returns cached GPU probe results from GPUHealthMonitor.
+    Does NOT run nvidia-smi inline (non-blocking).
+
+    Returns 200 with GPU status even if unavailable (not a failure state).
+    Clients should check the 'available' field to determine GPU readiness.
+
+    Note: Monitor liveness should be checked via HealthMonitorService,
+    not by inspecting this response.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/info</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get system info (web UI proxy).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/library</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">List all configured libraries.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/library</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Create a new library.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/library/cleanup-tag</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Clean up orphaned tags (tags not referenced by any file).</div><div class="endpoint-description">This endpoint identifies and removes tags from the tags table that are
+    no longer referenced by any file via the song_tags junction table. Useful for database maintenance
+    after deleting files or changing tag structures.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/library/clear-data</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Clear all library data (files, tags, vectors, pipeline states).</div><div class="endpoint-description">Wipes the entire library database — all files, tags, edges, vectors, scan
+    records, and pipeline states — and resets the system to a clean slate.
+    Requires no scans to be running. Intended for use from the admin UI when a
+    full re-import is needed.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/library/file/by-ids</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get files by their IDs with full metadata and tags.</div><div class="endpoint-description">Used for batch lookup (e.g., when browsing songs for an entity).
+    Returns files in same order as input IDs where possible.
+
+    Note: file_ids should be encoded (colon-separated), they will be decoded
+    before querying the database.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/library/file/by-tag</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Search files by tag value with distance sorting (float) or exact match (string).</div><div class="endpoint-description">For float values: Returns files sorted by absolute distance from target value.
+    For string values: Returns files with exact match on the tag value.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/library/file/search</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Search library files with optional filtering.</div><div class="endpoint-description">Returns paginated list of files with metadata.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/library/file/tag/mood-values</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get unique individual mood values from tuple string tags.</div><div class="endpoint-description">Parses mood tags stored as tuple strings like "('aggressive', 'party-like')"
+    and extracts individual mood terms.
+
+    Returns:
+        List of unique mood values (e.g., ["aggressive", "happy", "party-like"])</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/library/file/tag/unique-keys</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get list of unique tag keys for filtering.</div><div class="endpoint-description">Returns all distinct tag keys found in the database.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/library/file/tag/values</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get list of unique values for a specific tag key.</div><div class="endpoint-description">Returns all distinct values for the given tag key.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/library/file/{file_id}/tag</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get all tags for a specific file.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/library/stats</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get library statistics (total files, artists, albums, duration).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method DELETE">DELETE</span>
+                    <span class="path">/api/web/library/{library_name}</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Delete a library.</div><div class="endpoint-description">Removes the library entry but does NOT delete files on disk.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/library/{library_name}</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get a library by natural name (mechanism A).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method PATCH">PATCH</span>
+                    <span class="path">/api/web/library/{library_name}</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Update a library's properties.</div><div class="endpoint-description">Reactive pipeline side-effect: if ``library_auto_write`` changes, this
+    endpoint inspects the current pipeline state and either starts or cancels
+    the write stage automatically:
+    - Enabling auto-write while the pipeline is in ``write_ready`` → dispatches
+      write immediately.
+    - Disabling auto-write while the pipeline is ``writing`` → requests
+      graceful write cancellation.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/library/{library_name}/errored-file</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get errored files for a library.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/library/{library_name}/pipeline</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get the current pipeline status for a single library.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/library/{library_name}/reconcile</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Reconcile library paths after configuration changes.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/library/{library_name}/repair-tags</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Mark all files for tag re-hydration and start a full scan.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/library/{library_name}/retry-errored</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Retry errored songs by clearing their errored state and re-queuing for tagging.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/library/{library_name}/scan/cancel</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Request cooperative cancellation of a running library scan.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/library/{library_name}/scan/full</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Start a full scan for a specific library.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/library/{library_name}/scan/quick</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Start a quick scan for a specific library.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/library/{library_name}/validate-tag</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Validate tag completeness for a library's files.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/library/{library_name}/vector-stats</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get vector statistics across all backbones for the requested library.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method PATCH">PATCH</span>
+                    <span class="path">/api/web/library/{library_name}/write-mode</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Update the file write mode for a library.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/library/{library_name}/write-tag</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Write pending file tags for a library.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/machine-learning/model</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Return all registered ML model vertices with their configuration status.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/machine-learning/model/{model_id}/mark-configured</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Set the fully_configured flag on a model, enabling or disabling it for inference.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/machine-learning/model/{model_id}/output</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Return all output activation vertices for a model.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method PATCH">PATCH</span>
+                    <span class="path">/api/web/machine-learning/model/{model_id}/output/{output_id}</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Assign a human-readable label to a model output activation.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/machine-learning/recent-activity</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get recently processed files.</div><div class="endpoint-description">Returns files sorted by scanned_at descending.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/machine-learning/vram-probe</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Clear per-model VRAM measurements so the next worker startup re-probes.</div><div class="endpoint-description">The probe runs automatically on the next discovery worker GPU warmup cycle.
+    This endpoint only schedules the re-probe by clearing the existing measurements.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/machine-learning/work-status</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get unified work status for the system.</div><div class="endpoint-description">Returns status of:
+    - Scanning: Any library currently being scanned
+    - Processing: ML inference on audio files (pending/processed counts)
+
+    This endpoint is designed for frontend polling to show activity indicators.
+    Poll at 1s intervals when busy, 30s when idle.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/metadata/album/{album_id}/artist</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">List artists for an album via traversal (album→songs→artists).</div><div class="endpoint-description">Returns deduplicated artists sorted by display_name.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/metadata/artist/{artist_id}/album</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">List albums for an artist via traversal (artist→songs→albums).</div><div class="endpoint-description">Returns deduplicated albums sorted by display_name.
+    Traversal album results currently omit song counts.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/metadata/count</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get total counts for all entity collections (artists, albums, etc.).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/metadata/{collection}</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">List entities from a collection (artist, album, label, genre, year).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/metadata/{collection}/{entity_id}</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get entity details by natural tag value.</div><div class="endpoint-description">``entity_id`` is URL-encoded by the client; ``collection`` selects the tag name.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/metadata/{collection}/{entity_id}/song</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">List songs connected to an entity.</div><div class="endpoint-description">Example: GET /metadata/artist/Metallica/song?name=artist
+    Returns all songs where this artist is the primary credited artist.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/navidrome/config</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Generate Navidrome TOML configuration (web UI proxy).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/navidrome/generate-personal-playlists</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Generate personal playlists and return portable track descriptors.</div><div class="endpoint-description">Accepts play history from the Navidrome plugin and returns playlists
+    with track descriptors the plugin resolves to Navidrome mediafile IDs.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/navidrome/ping</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Test connectivity to the Navidrome server.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/navidrome/playlist/generate</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Generate Navidrome Smart Playlist (.nsp) from query.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/navidrome/playlist/preview</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Preview Smart Playlist query results.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/navidrome/playlist/push</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Resolve file IDs to portable track descriptors for plugin-side playlist push.</div><div class="endpoint-description">Returns track descriptors that the Navidrome plugin can use to resolve
+    to Navidrome mediafile IDs and push as a playlist on its side.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/navidrome/playlist/static</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Generate a static M3U playlist from a list of file IDs.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/navidrome/preview</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get preview of tags for Navidrome config generation (web UI proxy).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/navidrome/status</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Check whether Navidrome integration is configured (no connection attempt).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/navidrome/sync-song</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Removed: backend Navidrome song-map sync no longer exists. Returns 410 Gone. Use plugin-backed descriptor flows.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/navidrome/tag-value</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get distinct values for a specific tag name.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/navidrome/template</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get list of all available playlist templates.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/navidrome/template</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Generate all playlist templates as a batch.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/playlist-import/convert</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Convert a streaming playlist URL to local M3U playlist.</div><div class="endpoint-description">Accepts Spotify or Deezer playlist URLs and returns:
+    - M3U file content ready to save
+    - Match statistics
+    - Unmatched and ambiguous tracks for review
+
+    Note: Spotify requires credentials configured (`spotify_client_id`/`secret`).
+    Deezer works immediately (public API).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/playlist-import/spotify-status</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Check if Spotify credentials are configured.</div><div class="endpoint-description">Returns configuration status. If not configured, only Deezer playlists
+    can be converted.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/tag-curation/commit</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Commit pending tag writes to files.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method PATCH">PATCH</span>
+                    <span class="path">/api/web/tag-curation/file/{file_id}/tag</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Replace all tags for a file+name with new values.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/tag-curation/merge</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Merge multiple tags into a canonical tag.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/tag-curation/pending-count</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get count of files with pending tag writes.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/tag-curation/rename</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Rename a tag to a new value.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/tag-curation/split</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Split selected songs from a tag into a new tag value.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/tag-curation/value</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">List tag values with optional filtering and pagination.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/tag-curation/{tag_id}/song</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get songs linked to a tag with metadata.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method DELETE">DELETE</span>
+                    <span class="path">/api/web/tag/remove</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Remove all namespaced tags from an audio file (web UI proxy).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/tag/show</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Read tags from an audio file (web UI proxy).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/vector/backbone</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">List available vector backbones.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/vector/promote</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Promote vectors from hot to cold and rebuild index.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/vector/rebuild-index</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Rebuild vector index without promoting hot vectors.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/vector/search</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Search for similar vectors using ANN similarity.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/vector/stats</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get hot/cold statistics for all backbones.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/vector/track</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get embedding vector for a specific track.</div></div>
+                
+                
+            </div></div></div>
+
+        <div class="group">
+            <div class="group-header" onclick="toggleGroup(this)">
+                <span class="toggle">▶</span>
+                <span class="group-title">Integration API (/api/v1)</span>
+                <span class="group-count">3 endpoints</span>
+            </div>
+            <div class="group-content">
+
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/v1/info</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get comprehensive system info: config, models, queue status, workers.</div><div class="endpoint-description">Unified schema matching CLI info command.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/v1/navidrome/playlist/generate</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Generate personal playlists for a Navidrome user.</div><div class="endpoint-description">Accepts play history from the plugin as ``top_plays`` and returns
+    portable track descriptors the plugin resolves to Navidrome mediafile IDs.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/v1/navidrome/similar-track</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Find tracks similar to a Navidrome song via vector ANN search.</div></div>
+                
+                
+            </div></div></div>
+
+        <div class="group">
+            <div class="group-header" onclick="toggleGroup(this)">
+                <span class="toggle">▶</span>
+                <span class="group-title">Other Routes</span>
+                <span class="group-count">2 endpoints</span>
+            </div>
+            <div class="group-content">
+
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/info</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Simple health check endpoint.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/{full_path:path}</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Catch-all route for SPA routing.</div><div class="endpoint-description">Serves index.html for all paths that aren't API endpoints or static assets.
+    This allows client-side React Router to handle routing.</div></div>
+                
+                
+            </div></div></div>
+</div>
+<div id="view-usage" class="view-mode">
+
+        <div class="group">
+            <div class="group-header" onclick="toggleGroup(this)">
+                <span class="toggle">▶</span>
+                <span class="group-title">Unused Endpoints</span>
+                <span class="group-count">100 endpoints</span>
+            </div>
+            <div class="group-content">
+
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/v1/info</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get comprehensive system info: config, models, queue status, workers.</div><div class="endpoint-description">Unified schema matching CLI info command.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/v1/navidrome/playlist/generate</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Generate personal playlists for a Navidrome user.</div><div class="endpoint-description">Accepts play history from the plugin as ``top_plays`` and returns
+    portable track descriptors the plugin resolves to Navidrome mediafile IDs.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/v1/navidrome/similar-track</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Find tracks similar to a Navidrome song via vector ANN search.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/admin/restart</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Restart the API server (useful after config changes).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/analytics/collection-overview</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get collection overview statistics.</div><div class="endpoint-description">Returns library stats, year/genre distributions.
+    Optionally filtered by library name.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/analytics/mood-analysis</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get mood analysis statistics.</div><div class="endpoint-description">Returns mood coverage, balance, top pairs by tier, and dominant vibes.
+    Optionally filtered by library name.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/analytics/mood-distribution</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get mood tag distribution.</div><div class="endpoint-description">Optionally filtered by library name.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/analytics/tag-co-occurrences</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get tag co-occurrence matrix for arbitrary tag sets.</div><div class="endpoint-description">Computes a matrix where matrix[j][i] = count of files having both x[i] and y[j].
+    Maximum 16x16 matrix size. Inputs exceeding limits are trimmed with warning.
+    Optionally filtered by library name.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/analytics/tag-correlations</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get VALUE-based correlation matrix for mood values, genres, and attributes.</div><div class="endpoint-description">Returns mood-to-mood, mood-to-genre, and mood-to-tier correlations.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/analytics/tag-frequencies</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get tag frequency statistics.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/api-key</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Return the current API key.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/api-key/regenerate</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Regenerate the API key and return the new value.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/authentication/login</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Authenticate with admin password and receive a session token.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/authentication/logout</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Invalidate the current session token (logout).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method DELETE">DELETE</span>
+                    <span class="path">/api/web/calibration</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Clear all calibration data and return files-updated / meta-keys-cleared counts.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/calibration/apply/start</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Start calibration apply in a background thread (non-blocking).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/calibration/apply/status</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get combined status and progress of background calibration apply.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/calibration/histogram</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get all calibration states with histogram bins (22 items, one per label).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/calibration/histogram/start</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Start histogram-based calibration generation in a background thread (non-blocking).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/calibration/histogram/status</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get combined status and progress of histogram-based calibration generation.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/calibration/status</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get current calibration status with per-library breakdown.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/config</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get current configuration values (Web UI editable subset only).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/config</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Update a web-editable configuration value (non-infrastructure keys only).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/file-system/list</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">List contents of a directory within the music library.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/health</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Health check endpoint (web UI proxy).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/health/gpu</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">GPU resource snapshot endpoint.</div><div class="endpoint-description">Returns cached GPU probe results from GPUHealthMonitor.
+    Does NOT run nvidia-smi inline (non-blocking).
+
+    Returns 200 with GPU status even if unavailable (not a failure state).
+    Clients should check the 'available' field to determine GPU readiness.
+
+    Note: Monitor liveness should be checked via HealthMonitorService,
+    not by inspecting this response.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/info</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get system info (web UI proxy).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/library</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">List all configured libraries.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/library</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Create a new library.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/library/cleanup-tag</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Clean up orphaned tags (tags not referenced by any file).</div><div class="endpoint-description">This endpoint identifies and removes tags from the tags table that are
+    no longer referenced by any file via the song_tags junction table. Useful for database maintenance
+    after deleting files or changing tag structures.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/library/clear-data</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Clear all library data (files, tags, vectors, pipeline states).</div><div class="endpoint-description">Wipes the entire library database — all files, tags, edges, vectors, scan
+    records, and pipeline states — and resets the system to a clean slate.
+    Requires no scans to be running. Intended for use from the admin UI when a
+    full re-import is needed.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/library/file/by-ids</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get files by their IDs with full metadata and tags.</div><div class="endpoint-description">Used for batch lookup (e.g., when browsing songs for an entity).
+    Returns files in same order as input IDs where possible.
+
+    Note: file_ids should be encoded (colon-separated), they will be decoded
+    before querying the database.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/library/file/by-tag</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Search files by tag value with distance sorting (float) or exact match (string).</div><div class="endpoint-description">For float values: Returns files sorted by absolute distance from target value.
+    For string values: Returns files with exact match on the tag value.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/library/file/search</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Search library files with optional filtering.</div><div class="endpoint-description">Returns paginated list of files with metadata.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/library/file/tag/mood-values</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get unique individual mood values from tuple string tags.</div><div class="endpoint-description">Parses mood tags stored as tuple strings like "('aggressive', 'party-like')"
+    and extracts individual mood terms.
+
+    Returns:
+        List of unique mood values (e.g., ["aggressive", "happy", "party-like"])</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/library/file/tag/unique-keys</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get list of unique tag keys for filtering.</div><div class="endpoint-description">Returns all distinct tag keys found in the database.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/library/file/tag/values</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get list of unique values for a specific tag key.</div><div class="endpoint-description">Returns all distinct values for the given tag key.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/library/file/{file_id}/tag</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get all tags for a specific file.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/library/stats</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get library statistics (total files, artists, albums, duration).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method DELETE">DELETE</span>
+                    <span class="path">/api/web/library/{library_name}</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Delete a library.</div><div class="endpoint-description">Removes the library entry but does NOT delete files on disk.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/library/{library_name}</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get a library by natural name (mechanism A).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method PATCH">PATCH</span>
+                    <span class="path">/api/web/library/{library_name}</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Update a library's properties.</div><div class="endpoint-description">Reactive pipeline side-effect: if ``library_auto_write`` changes, this
+    endpoint inspects the current pipeline state and either starts or cancels
+    the write stage automatically:
+    - Enabling auto-write while the pipeline is in ``write_ready`` → dispatches
+      write immediately.
+    - Disabling auto-write while the pipeline is ``writing`` → requests
+      graceful write cancellation.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/library/{library_name}/errored-file</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get errored files for a library.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/library/{library_name}/pipeline</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get the current pipeline status for a single library.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/library/{library_name}/reconcile</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Reconcile library paths after configuration changes.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/library/{library_name}/repair-tags</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Mark all files for tag re-hydration and start a full scan.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/library/{library_name}/retry-errored</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Retry errored songs by clearing their errored state and re-queuing for tagging.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/library/{library_name}/scan/cancel</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Request cooperative cancellation of a running library scan.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/library/{library_name}/scan/full</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Start a full scan for a specific library.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/library/{library_name}/scan/quick</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Start a quick scan for a specific library.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/library/{library_name}/validate-tag</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Validate tag completeness for a library's files.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/library/{library_name}/vector-stats</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get vector statistics across all backbones for the requested library.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method PATCH">PATCH</span>
+                    <span class="path">/api/web/library/{library_name}/write-mode</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Update the file write mode for a library.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/library/{library_name}/write-tag</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Write pending file tags for a library.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/machine-learning/model</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Return all registered ML model vertices with their configuration status.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/machine-learning/model/{model_id}/mark-configured</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Set the fully_configured flag on a model, enabling or disabling it for inference.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/machine-learning/model/{model_id}/output</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Return all output activation vertices for a model.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method PATCH">PATCH</span>
+                    <span class="path">/api/web/machine-learning/model/{model_id}/output/{output_id}</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Assign a human-readable label to a model output activation.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/machine-learning/recent-activity</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get recently processed files.</div><div class="endpoint-description">Returns files sorted by scanned_at descending.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/machine-learning/vram-probe</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Clear per-model VRAM measurements so the next worker startup re-probes.</div><div class="endpoint-description">The probe runs automatically on the next discovery worker GPU warmup cycle.
+    This endpoint only schedules the re-probe by clearing the existing measurements.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/machine-learning/work-status</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get unified work status for the system.</div><div class="endpoint-description">Returns status of:
+    - Scanning: Any library currently being scanned
+    - Processing: ML inference on audio files (pending/processed counts)
+
+    This endpoint is designed for frontend polling to show activity indicators.
+    Poll at 1s intervals when busy, 30s when idle.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/metadata/album/{album_id}/artist</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">List artists for an album via traversal (album→songs→artists).</div><div class="endpoint-description">Returns deduplicated artists sorted by display_name.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/metadata/artist/{artist_id}/album</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">List albums for an artist via traversal (artist→songs→albums).</div><div class="endpoint-description">Returns deduplicated albums sorted by display_name.
+    Traversal album results currently omit song counts.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/metadata/count</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get total counts for all entity collections (artists, albums, etc.).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/metadata/{collection}</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">List entities from a collection (artist, album, label, genre, year).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/metadata/{collection}/{entity_id}</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get entity details by natural tag value.</div><div class="endpoint-description">``entity_id`` is URL-encoded by the client; ``collection`` selects the tag name.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/metadata/{collection}/{entity_id}/song</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">List songs connected to an entity.</div><div class="endpoint-description">Example: GET /metadata/artist/Metallica/song?name=artist
+    Returns all songs where this artist is the primary credited artist.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/navidrome/config</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Generate Navidrome TOML configuration (web UI proxy).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/navidrome/generate-personal-playlists</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Generate personal playlists and return portable track descriptors.</div><div class="endpoint-description">Accepts play history from the Navidrome plugin and returns playlists
+    with track descriptors the plugin resolves to Navidrome mediafile IDs.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/navidrome/ping</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Test connectivity to the Navidrome server.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/navidrome/playlist/generate</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Generate Navidrome Smart Playlist (.nsp) from query.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/navidrome/playlist/preview</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Preview Smart Playlist query results.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/navidrome/playlist/push</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Resolve file IDs to portable track descriptors for plugin-side playlist push.</div><div class="endpoint-description">Returns track descriptors that the Navidrome plugin can use to resolve
+    to Navidrome mediafile IDs and push as a playlist on its side.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/navidrome/playlist/static</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Generate a static M3U playlist from a list of file IDs.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/navidrome/preview</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get preview of tags for Navidrome config generation (web UI proxy).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/navidrome/status</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Check whether Navidrome integration is configured (no connection attempt).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/navidrome/sync-song</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Removed: backend Navidrome song-map sync no longer exists. Returns 410 Gone. Use plugin-backed descriptor flows.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/navidrome/tag-value</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get distinct values for a specific tag name.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/navidrome/template</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get list of all available playlist templates.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/navidrome/template</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Generate all playlist templates as a batch.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/playlist-import/convert</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Convert a streaming playlist URL to local M3U playlist.</div><div class="endpoint-description">Accepts Spotify or Deezer playlist URLs and returns:
+    - M3U file content ready to save
+    - Match statistics
+    - Unmatched and ambiguous tracks for review
+
+    Note: Spotify requires credentials configured (`spotify_client_id`/`secret`).
+    Deezer works immediately (public API).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/playlist-import/spotify-status</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Check if Spotify credentials are configured.</div><div class="endpoint-description">Returns configuration status. If not configured, only Deezer playlists
+    can be converted.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/tag-curation/commit</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Commit pending tag writes to files.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method PATCH">PATCH</span>
+                    <span class="path">/api/web/tag-curation/file/{file_id}/tag</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Replace all tags for a file+name with new values.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/tag-curation/merge</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Merge multiple tags into a canonical tag.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/tag-curation/pending-count</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get count of files with pending tag writes.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/tag-curation/rename</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Rename a tag to a new value.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/tag-curation/split</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Split selected songs from a tag into a new tag value.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/tag-curation/value</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">List tag values with optional filtering and pagination.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/tag-curation/{tag_id}/song</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get songs linked to a tag with metadata.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method DELETE">DELETE</span>
+                    <span class="path">/api/web/tag/remove</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Remove all namespaced tags from an audio file (web UI proxy).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/tag/show</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Read tags from an audio file (web UI proxy).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/vector/backbone</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">List available vector backbones.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/vector/promote</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Promote vectors from hot to cold and rebuild index.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/vector/rebuild-index</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Rebuild vector index without promoting hot vectors.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/vector/search</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Search for similar vectors using ANN similarity.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/vector/stats</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get hot/cold statistics for all backbones.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/vector/track</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get embedding vector for a specific track.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/info</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Simple health check endpoint.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/{full_path:path}</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Catch-all route for SPA routing.</div><div class="endpoint-description">Serves index.html for all paths that aren't API endpoints or static assets.
+    This allows client-side React Router to handle routing.</div></div>
+                
+                
+            </div></div></div>
+</div>
+<div id="view-method" class="view-mode">
+
+        <div class="group">
+            <div class="group-header" onclick="toggleGroup(this)">
+                <span class="toggle">▶</span>
+                <span class="group-title">GET Requests</span>
+                <span class="group-count">52 endpoints</span>
+            </div>
+            <div class="group-content">
+
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/v1/info</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get comprehensive system info: config, models, queue status, workers.</div><div class="endpoint-description">Unified schema matching CLI info command.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/analytics/collection-overview</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get collection overview statistics.</div><div class="endpoint-description">Returns library stats, year/genre distributions.
+    Optionally filtered by library name.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/analytics/mood-analysis</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get mood analysis statistics.</div><div class="endpoint-description">Returns mood coverage, balance, top pairs by tier, and dominant vibes.
+    Optionally filtered by library name.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/analytics/mood-distribution</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get mood tag distribution.</div><div class="endpoint-description">Optionally filtered by library name.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/analytics/tag-correlations</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get VALUE-based correlation matrix for mood values, genres, and attributes.</div><div class="endpoint-description">Returns mood-to-mood, mood-to-genre, and mood-to-tier correlations.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/analytics/tag-frequencies</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get tag frequency statistics.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/api-key</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Return the current API key.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/calibration/apply/status</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get combined status and progress of background calibration apply.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/calibration/histogram</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get all calibration states with histogram bins (22 items, one per label).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/calibration/histogram/status</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get combined status and progress of histogram-based calibration generation.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/calibration/status</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get current calibration status with per-library breakdown.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/config</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get current configuration values (Web UI editable subset only).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/file-system/list</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">List contents of a directory within the music library.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/health</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Health check endpoint (web UI proxy).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/health/gpu</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">GPU resource snapshot endpoint.</div><div class="endpoint-description">Returns cached GPU probe results from GPUHealthMonitor.
+    Does NOT run nvidia-smi inline (non-blocking).
+
+    Returns 200 with GPU status even if unavailable (not a failure state).
+    Clients should check the 'available' field to determine GPU readiness.
+
+    Note: Monitor liveness should be checked via HealthMonitorService,
+    not by inspecting this response.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/info</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get system info (web UI proxy).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/library</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">List all configured libraries.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/library/file/search</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Search library files with optional filtering.</div><div class="endpoint-description">Returns paginated list of files with metadata.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/library/file/tag/mood-values</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get unique individual mood values from tuple string tags.</div><div class="endpoint-description">Parses mood tags stored as tuple strings like "('aggressive', 'party-like')"
+    and extracts individual mood terms.
+
+    Returns:
+        List of unique mood values (e.g., ["aggressive", "happy", "party-like"])</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/library/file/tag/unique-keys</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get list of unique tag keys for filtering.</div><div class="endpoint-description">Returns all distinct tag keys found in the database.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/library/file/tag/values</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get list of unique values for a specific tag key.</div><div class="endpoint-description">Returns all distinct values for the given tag key.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/library/file/{file_id}/tag</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get all tags for a specific file.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/library/stats</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get library statistics (total files, artists, albums, duration).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/library/{library_name}</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get a library by natural name (mechanism A).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/library/{library_name}/errored-file</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get errored files for a library.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/library/{library_name}/pipeline</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get the current pipeline status for a single library.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/library/{library_name}/vector-stats</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get vector statistics across all backbones for the requested library.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/machine-learning/model</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Return all registered ML model vertices with their configuration status.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/machine-learning/model/{model_id}/output</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Return all output activation vertices for a model.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/machine-learning/recent-activity</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get recently processed files.</div><div class="endpoint-description">Returns files sorted by scanned_at descending.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/machine-learning/work-status</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get unified work status for the system.</div><div class="endpoint-description">Returns status of:
+    - Scanning: Any library currently being scanned
+    - Processing: ML inference on audio files (pending/processed counts)
+
+    This endpoint is designed for frontend polling to show activity indicators.
+    Poll at 1s intervals when busy, 30s when idle.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/metadata/album/{album_id}/artist</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">List artists for an album via traversal (album→songs→artists).</div><div class="endpoint-description">Returns deduplicated artists sorted by display_name.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/metadata/artist/{artist_id}/album</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">List albums for an artist via traversal (artist→songs→albums).</div><div class="endpoint-description">Returns deduplicated albums sorted by display_name.
+    Traversal album results currently omit song counts.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/metadata/count</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get total counts for all entity collections (artists, albums, etc.).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/metadata/{collection}</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">List entities from a collection (artist, album, label, genre, year).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/metadata/{collection}/{entity_id}</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get entity details by natural tag value.</div><div class="endpoint-description">``entity_id`` is URL-encoded by the client; ``collection`` selects the tag name.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/metadata/{collection}/{entity_id}/song</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">List songs connected to an entity.</div><div class="endpoint-description">Example: GET /metadata/artist/Metallica/song?name=artist
+    Returns all songs where this artist is the primary credited artist.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/navidrome/config</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Generate Navidrome TOML configuration (web UI proxy).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/navidrome/preview</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get preview of tags for Navidrome config generation (web UI proxy).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/navidrome/status</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Check whether Navidrome integration is configured (no connection attempt).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/navidrome/tag-value</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get distinct values for a specific tag name.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/navidrome/template</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get list of all available playlist templates.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/playlist-import/spotify-status</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Check if Spotify credentials are configured.</div><div class="endpoint-description">Returns configuration status. If not configured, only Deezer playlists
+    can be converted.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/tag-curation/pending-count</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get count of files with pending tag writes.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/tag-curation/value</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">List tag values with optional filtering and pagination.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/tag-curation/{tag_id}/song</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get songs linked to a tag with metadata.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/tag/show</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Read tags from an audio file (web UI proxy).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/vector/backbone</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">List available vector backbones.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/vector/stats</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get hot/cold statistics for all backbones.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/api/web/vector/track</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get embedding vector for a specific track.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/info</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Simple health check endpoint.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method GET">GET</span>
+                    <span class="path">/{full_path:path}</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Catch-all route for SPA routing.</div><div class="endpoint-description">Serves index.html for all paths that aren't API endpoints or static assets.
+    This allows client-side React Router to handle routing.</div></div>
+                
+                
+            </div></div></div>
+
+        <div class="group">
+            <div class="group-header" onclick="toggleGroup(this)">
+                <span class="toggle">▶</span>
+                <span class="group-title">POST Requests</span>
+                <span class="group-count">41 endpoints</span>
+            </div>
+            <div class="group-content">
+
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/v1/navidrome/playlist/generate</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Generate personal playlists for a Navidrome user.</div><div class="endpoint-description">Accepts play history from the plugin as ``top_plays`` and returns
+    portable track descriptors the plugin resolves to Navidrome mediafile IDs.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/v1/navidrome/similar-track</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Find tracks similar to a Navidrome song via vector ANN search.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/admin/restart</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Restart the API server (useful after config changes).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/analytics/tag-co-occurrences</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get tag co-occurrence matrix for arbitrary tag sets.</div><div class="endpoint-description">Computes a matrix where matrix[j][i] = count of files having both x[i] and y[j].
+    Maximum 16x16 matrix size. Inputs exceeding limits are trimmed with warning.
+    Optionally filtered by library name.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/api-key/regenerate</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Regenerate the API key and return the new value.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/authentication/login</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Authenticate with admin password and receive a session token.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/authentication/logout</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Invalidate the current session token (logout).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/calibration/apply/start</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Start calibration apply in a background thread (non-blocking).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/calibration/histogram/start</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Start histogram-based calibration generation in a background thread (non-blocking).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/config</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Update a web-editable configuration value (non-infrastructure keys only).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/library</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Create a new library.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/library/cleanup-tag</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Clean up orphaned tags (tags not referenced by any file).</div><div class="endpoint-description">This endpoint identifies and removes tags from the tags table that are
+    no longer referenced by any file via the song_tags junction table. Useful for database maintenance
+    after deleting files or changing tag structures.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/library/clear-data</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Clear all library data (files, tags, vectors, pipeline states).</div><div class="endpoint-description">Wipes the entire library database — all files, tags, edges, vectors, scan
+    records, and pipeline states — and resets the system to a clean slate.
+    Requires no scans to be running. Intended for use from the admin UI when a
+    full re-import is needed.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/library/file/by-ids</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Get files by their IDs with full metadata and tags.</div><div class="endpoint-description">Used for batch lookup (e.g., when browsing songs for an entity).
+    Returns files in same order as input IDs where possible.
+
+    Note: file_ids should be encoded (colon-separated), they will be decoded
+    before querying the database.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/library/file/by-tag</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Search files by tag value with distance sorting (float) or exact match (string).</div><div class="endpoint-description">For float values: Returns files sorted by absolute distance from target value.
+    For string values: Returns files with exact match on the tag value.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/library/{library_name}/reconcile</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Reconcile library paths after configuration changes.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/library/{library_name}/repair-tags</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Mark all files for tag re-hydration and start a full scan.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/library/{library_name}/retry-errored</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Retry errored songs by clearing their errored state and re-queuing for tagging.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/library/{library_name}/scan/cancel</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Request cooperative cancellation of a running library scan.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/library/{library_name}/scan/full</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Start a full scan for a specific library.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/library/{library_name}/scan/quick</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Start a quick scan for a specific library.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/library/{library_name}/validate-tag</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Validate tag completeness for a library's files.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/library/{library_name}/write-tag</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Write pending file tags for a library.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/machine-learning/model/{model_id}/mark-configured</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Set the fully_configured flag on a model, enabling or disabling it for inference.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/machine-learning/vram-probe</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Clear per-model VRAM measurements so the next worker startup re-probes.</div><div class="endpoint-description">The probe runs automatically on the next discovery worker GPU warmup cycle.
+    This endpoint only schedules the re-probe by clearing the existing measurements.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/navidrome/generate-personal-playlists</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Generate personal playlists and return portable track descriptors.</div><div class="endpoint-description">Accepts play history from the Navidrome plugin and returns playlists
+    with track descriptors the plugin resolves to Navidrome mediafile IDs.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/navidrome/ping</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Test connectivity to the Navidrome server.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/navidrome/playlist/generate</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Generate Navidrome Smart Playlist (.nsp) from query.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/navidrome/playlist/preview</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Preview Smart Playlist query results.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/navidrome/playlist/push</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Resolve file IDs to portable track descriptors for plugin-side playlist push.</div><div class="endpoint-description">Returns track descriptors that the Navidrome plugin can use to resolve
+    to Navidrome mediafile IDs and push as a playlist on its side.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/navidrome/playlist/static</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Generate a static M3U playlist from a list of file IDs.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/navidrome/sync-song</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Removed: backend Navidrome song-map sync no longer exists. Returns 410 Gone. Use plugin-backed descriptor flows.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/navidrome/template</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Generate all playlist templates as a batch.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/playlist-import/convert</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Convert a streaming playlist URL to local M3U playlist.</div><div class="endpoint-description">Accepts Spotify or Deezer playlist URLs and returns:
+    - M3U file content ready to save
+    - Match statistics
+    - Unmatched and ambiguous tracks for review
+
+    Note: Spotify requires credentials configured (`spotify_client_id`/`secret`).
+    Deezer works immediately (public API).</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/tag-curation/commit</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Commit pending tag writes to files.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/tag-curation/merge</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Merge multiple tags into a canonical tag.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/tag-curation/rename</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Rename a tag to a new value.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/tag-curation/split</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Split selected songs from a tag into a new tag value.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/vector/promote</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Promote vectors from hot to cold and rebuild index.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/vector/rebuild-index</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Rebuild vector index without promoting hot vectors.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method POST">POST</span>
+                    <span class="path">/api/web/vector/search</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Search for similar vectors using ANN similarity.</div></div>
+                
+                
+            </div></div></div>
+
+        <div class="group">
+            <div class="group-header" onclick="toggleGroup(this)">
+                <span class="toggle">▶</span>
+                <span class="group-title">PATCH Requests</span>
+                <span class="group-count">4 endpoints</span>
+            </div>
+            <div class="group-content">
+
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method PATCH">PATCH</span>
+                    <span class="path">/api/web/library/{library_name}</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Update a library's properties.</div><div class="endpoint-description">Reactive pipeline side-effect: if ``library_auto_write`` changes, this
+    endpoint inspects the current pipeline state and either starts or cancels
+    the write stage automatically:
+    - Enabling auto-write while the pipeline is in ``write_ready`` → dispatches
+      write immediately.
+    - Disabling auto-write while the pipeline is ``writing`` → requests
+      graceful write cancellation.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method PATCH">PATCH</span>
+                    <span class="path">/api/web/library/{library_name}/write-mode</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Update the file write mode for a library.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method PATCH">PATCH</span>
+                    <span class="path">/api/web/machine-learning/model/{model_id}/output/{output_id}</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Assign a human-readable label to a model output activation.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method PATCH">PATCH</span>
+                    <span class="path">/api/web/tag-curation/file/{file_id}/tag</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Replace all tags for a file+name with new values.</div></div>
+                
+                
+            </div></div></div>
+
+        <div class="group">
+            <div class="group-header" onclick="toggleGroup(this)">
+                <span class="toggle">▶</span>
+                <span class="group-title">DELETE Requests</span>
+                <span class="group-count">3 endpoints</span>
+            </div>
+            <div class="group-content">
+
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method DELETE">DELETE</span>
+                    <span class="path">/api/web/calibration</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Clear all calibration data and return files-updated / meta-keys-cleared counts.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method DELETE">DELETE</span>
+                    <span class="path">/api/web/library/{library_name}</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Delete a library.</div><div class="endpoint-description">Removes the library entry but does NOT delete files on disk.</div></div>
+                
+                
+            </div>
+            <div class="endpoint unused">
+                <div class="endpoint-header">
+                    <span class="method DELETE">DELETE</span>
+                    <span class="path">/api/web/tag/remove</span>
+                    <span class="status unused">✗ Unused</span>
+                </div>
+                <div class="endpoint-docs"><div class="endpoint-summary">Remove all namespaced tags from an audio file (web UI proxy).</div></div>
+                
+                
+            </div></div></div>
+</div>
+
+    <script>
+        function switchView(viewType) {
+            document.querySelectorAll('.view-mode').forEach(view => {
+                view.classList.remove('active');
+            });
+            document.getElementById('view-' + viewType).classList.add('active');
+            document.querySelectorAll('.group-content').forEach(content => {
+                content.classList.remove('expanded');
+            });
+            document.querySelectorAll('.toggle').forEach(toggle => {
+                toggle.textContent = '▶';
+            });
+        }
+
+        function toggleGroup(header) {
+            const content = header.nextElementSibling;
+            const toggle = header.querySelector('.toggle');
+
+            if (content.classList.contains('expanded')) {
+                content.classList.remove('expanded');
+                toggle.textContent = '▶';
+            } else {
+                content.classList.add('expanded');
+                toggle.textContent = '▼';
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const firstGroup = document.querySelector('.view-mode.active .group-header');
+            if (firstGroup) {
+                toggleGroup(firstGroup);
+            }
+        });
+    </script>
+    </div>
+</body>
+</html>

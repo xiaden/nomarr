@@ -333,8 +333,8 @@ class TestClearAllCalibrationData:
         assert result["bookkeeping_values_cleared"] == 2
 
     @pytest.mark.unit
-    def test_clears_meta_keys_atomically(self) -> None:
-        """The meta clear is delegated to one atomic clear and its count is returned."""
+    def test_clears_bookkeeping_values_atomically(self) -> None:
+        """The calibration bookkeeping clear is delegated to one atomic clear and its count is returned."""
         mock_db = MagicMock()
         mock_db.app.clear_calibration_metadata.return_value = 1
         with (

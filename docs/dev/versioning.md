@@ -71,7 +71,7 @@ Starting with SCHEMA_VERSION 6, Nomarr uses a **forward-only migration system**:
 
 - Migrations run automatically during startup via `prepare_database_workflow()`
 - Applied migrations are tracked in the `applied_migrations` collection
-- Schema version is stored in the `meta` table
+- Schema version is a persistence-owned app-state value exposed via `db.app.get_schema_version()` / `set_schema_version()`
 - If the database schema is ahead of the code, startup aborts
 - See [migrations.md](migrations.md) for architecture details and how to write migrations
 

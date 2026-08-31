@@ -136,22 +136,19 @@ class TestTagRow:
 
     @pytest.mark.unit
     def test_can_create_with_all_fields(self) -> None:
-        """TagRow should be creatable with all required fields."""
+        """TagRow should be creatable with all (identity-only) fields."""
         row = TagRow(
             id=1,
+            namespace="genre",
             name="rock",
             value="rock",
-            namespace="genre",
-            parent_tag_id=None,
-            source="ml",
-            confidence=0.95,
-            tier="hot",
-            created_at=1000,
         )
         assert row["id"] == 1
-        assert row["name"] == "rock"
         assert row["namespace"] == "genre"
-        assert row["confidence"] == 0.95
+        assert row["name"] == "rock"
+        assert row["value"] == "rock"
+        # Identity-only: no removed metadata keys are carried on the row.
+        assert set(row.keys()) == {"id", "namespace", "name", "value"}
 
 
 @pytest.mark.unit
@@ -293,3 +290,24 @@ class TestSessionRow:
         assert row["id"] == "session123"
         assert row["data"]["user"] == "admin"
         assert row["expires_at"] == 2000
+
+
+@pytest.mark.unit
+class TestTagIdentityDtoContract:
+    """Spec-first: TagRow carries only reusable identity; SongTagRow only edge metadata.
+
+    Pins the immutable user ledger: ``TagRow`` exposes exactly ``id``,
+    ``namespace``, ``name``, ``value``; ``SongTagRow`` exposes exactly the
+    relationship metadata owned by the ``song_tags`` edge. The ``TagRow``
+    assertion is expected to FAIL against the current DTO (which still declares
+    ``parent_tag_id``/``source``/``confidence``/``tier``/``created_at``) until
+    Phase 3 (P3-S1) trims it.
+    """
+
+    def test_tag_row_exposes_only_identity_fields(self) -> None:
+        fields = set(TagRow.__required_keys__) | set(TagRow.__optional_keys__)
+        assert fields == {"id", "namespace", "name", "value"}
+
+    def test_song_tag_row_exposes_only_edge_fields(self) -> None:
+        fields = set(SongTagRow.__required_keys__) | set(SongTagRow.__optional_keys__)
+        assert fields == {"id", "song_id", "tag_id", "confidence", "source", "created_at"}

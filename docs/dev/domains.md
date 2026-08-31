@@ -286,7 +286,7 @@ Each domain maps to a subfolder under `components/` and owns specific PostgreSQL
 
 **Owns:**
 
-- `meta` — Application bookkeeping and operational state (schema version, worker_enabled flag, VRAM limits, capacity estimates, GPU snapshots) exposed through the semantic `db.app` intents
+- App bookkeeping & operational state (schema version, worker_enabled flag, VRAM limits, capacity estimates, GPU snapshots) — exposed through the semantic `db.app` intents
 - `health` — Health status snapshots (history-only, written by `HealthMonitorService`)
 - `sessions` — API session data
 - `applied_migrations` — Migration tracking

@@ -107,7 +107,7 @@ class MLService:
             raise RuntimeError(msg) from e
 
     def clear_vram_measurements(self) -> None:
-        """Delete all per-model VRAM measurements from meta.
+        """Delete all stored per-model VRAM limits (via db.app.clear_model_vram_limits()).
 
         The next discovery worker startup will re-run the probe and record
         fresh measurements.

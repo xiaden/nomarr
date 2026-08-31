@@ -383,7 +383,7 @@ docker exec nomarr-postgres-dev psql -U nomarr -d nomarr -c "
 - `library_folders` — folder-level cache for quick scan skipping
 - `calibration_state`, `calibration_history` — calibration data
 - `sessions` — auth sessions
-- `meta` — schema version and app config
+- `meta` — key/value backing store for app bookkeeping (schema version, app config), exposed via semantic `db.app` intents
 
 **No separate `songs`, `artists`, or `albums` tables.** Browse/entity data comes from `tags` filtered by `name`.
 

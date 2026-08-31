@@ -142,7 +142,7 @@ When scanning a file (`library_file_mutation_comp.py`), only these fields are wr
 
 `update_file_calibration_hash()` in `ml_calibration_state_comp.py` **only transitions state edges** from `not_calibrated` → `calibrated`. It does NOT write a `calibration_hash` field to the `songs` document despite its name.
 
-The `calibration_hash` parameter used in `write_file_tags_wf.py` comes from a **global config option** (`calibration_version` meta key), not from the file doc.
+The `calibration_hash` parameter used in `write_file_tags_wf.py` comes from the calibration bookkeeping value `calibration_version` (read via `db.app.get_calibration_version()`), not from the file doc.
 
 ### 8. File State Machine
 

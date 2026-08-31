@@ -30,12 +30,11 @@ from nomarr.helpers.dataclasses.app_dataclasses import CapacityEstimate, ConfigO
 from nomarr.persistence.api.application import AppDb
 from nomarr.persistence.database.pipeline_repo import PipelineRepository
 
-# NOTE (Phase 2): CapacityEstimate now lives at its single authoritative home in
-# ``nomarr/helpers/dataclasses/app_dataclasses.py`` (frozen/slotted). The component
-# ``ml_capacity_probe_comp`` is migrated to import it from helpers in Phase 3.
-# ``ModelVramLimit`` / ``GpuResourceSnapshot`` exist in app_dataclasses now, but
-# the tests that need them (list_model_vram_limits round trip, GPU setter) are
-# deferred to Phase 2 rather than fabricating stand-in types.
+# The domain value objects exercised here live at their single authoritative home
+# in ``nomarr/helpers/dataclasses/app_dataclasses.py`` (frozen/slotted):
+# ``CapacityEstimate``, ``ModelVramLimit``, and ``GpuResourceSnapshot``. All 37
+# tests in this file pin the live semantic surface and pass against the implemented
+# Phase-2 facade; none fabricate stand-in types.
 
 
 # ── Fixtures (mirror tests/unit/persistence/api/test_app_db.py) ─────────────
@@ -281,8 +280,8 @@ class TestGpuSnapshotSemantics:
         mock_app_repo.get_gpu_resource_snapshot.return_value = None
         assert app_db.get_gpu_resource_snapshot() is None
 
-    # set_gpu_resource_snapshot(GpuResourceSnapshot) is deferred to Phase 2, once
-    # the GpuResourceSnapshot dataclass lands in app_dataclasses.py.
+    # GpuResourceSnapshot lives in app_dataclasses.py; the setter is exercised
+    # through the passing semantic contract in test_app_db.py.
 
 
 # ── Worker-control state ────────────────────────────────────────────────────

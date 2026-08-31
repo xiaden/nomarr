@@ -493,11 +493,6 @@ class TestSongRepository:
                 name="test_tag",
                 value="test_value",
                 namespace="test_ns",
-                parent_tag_id=None,
-                source="ml",
-                confidence=0.9,
-                tier=1,
-                created_at=1000,
             )
         )
         tag_id = tag_result.inserted_primary_key[0]
