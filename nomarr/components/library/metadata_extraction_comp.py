@@ -257,7 +257,8 @@ def _apply_common_tag_fields(metadata: dict[str, Any], namespace: str) -> None:
     """Populate artist, title, album, genre, year, track_number, and nom_tags from all_tags.
 
     Mutates *metadata* in place. Called after each format-specific normalizer
-    has populated ``metadata["all_tags"]``.
+    has populated ``metadata["all_tags"]``. ISRC is promoted from the canonical
+    ``isrc`` key to ``{namespace}:isrc`` so it persists as a namespaced tag.
 
     Args:
         metadata: In-progress metadata dict (must already have ``all_tags`` populated).
@@ -284,6 +285,11 @@ def _apply_common_tag_fields(metadata: dict[str, Any], namespace: str) -> None:
         metadata["all_tags"]["artist"] = json.dumps([artist_value], ensure_ascii=False)
     if artists_value:
         metadata["all_tags"]["artists"] = json.dumps(artists_value, ensure_ascii=False)
+    # ISRC is a source metadata field, but it is persisted as a Nomarr tag so
+    # playlist matching can read the same authoritative tag namespace.
+    isrc_value = metadata["all_tags"].pop("isrc", None)
+    if isrc_value:
+        metadata["all_tags"][f"{namespace}:isrc"] = isrc_value
     nom_tags: dict[str, str] = {}
     keys_to_remove = []
     for key, value in metadata["all_tags"].items():

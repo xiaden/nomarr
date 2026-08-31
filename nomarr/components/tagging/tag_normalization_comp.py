@@ -25,6 +25,7 @@ CANONICAL_TAGS = {
     "label",
     "publisher",
     "bpm",
+    "isrc",
 }
 
 # MP4 atoms to canonical tag names (ONLY canonical mappings)
@@ -44,6 +45,7 @@ MP4_TAG_MAP: dict[str, str] = {
 # Freeform iTunes tags mapping (used when tag format includes ----:com.apple.iTunes:)
 MP4_FREEFORM_MAP: dict[str, str] = {
     "ARTISTS": "artists",
+    "ISRC": "isrc",
     "LABEL": "label",
     "originaldate": "date",
     "originalyear": "year",
@@ -81,6 +83,7 @@ ID3_TAG_MAP: dict[str, str] = {
     "TEXT": "lyricist",
     "TPUB": "publisher",
     "TBPM": "bpm",
+    "TSRC": "isrc",
 }
 
 # TXXX-frame to canonical mappings (case-insensitive keys)
@@ -111,6 +114,7 @@ VORBIS_TAG_MAP: dict[str, str] = {
     "PUBLISHER": "publisher",
     "BPM": "bpm",
     "TEMPO": "bpm",
+    "ISRC": "isrc",
 }
 
 

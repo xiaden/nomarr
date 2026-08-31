@@ -13,6 +13,9 @@ from nomarr.components.tagging.tag_normalization_comp import (
     MP4_FREEFORM_MAP,
     MP4_TAG_MAP,
     VORBIS_TAG_MAP,
+    normalize_id3_tags,
+    normalize_mp4_tags,
+    normalize_vorbis_tags,
 )
 
 
@@ -42,6 +45,23 @@ class TestCanonicalTags:
         assert "cover" not in CANONICAL_TAGS
         assert "covr" not in CANONICAL_TAGS
         assert "picture" not in CANONICAL_TAGS
+
+
+class TestNormalizationIsrc:
+    """ISRC metadata is normalized for every supported tag representation."""
+
+    @pytest.mark.unit
+    def test_normalizes_id3_tsrc(self) -> None:
+        assert normalize_id3_tags({"TSRC": "USRC17607839"})["isrc"] == '["USRC17607839"]'
+
+    @pytest.mark.unit
+    def test_normalizes_mp4_freeform_isrc(self) -> None:
+        tags = {"----:com.apple.iTunes:ISRC": [b"USRC17607839"]}
+        assert normalize_mp4_tags(tags)["isrc"] == '["USRC17607839"]'
+
+    @pytest.mark.unit
+    def test_normalizes_vorbis_isrc(self) -> None:
+        assert normalize_vorbis_tags({"ISRC": ["USRC17607839"]})["isrc"] == '["USRC17607839"]'
 
 
 class TestMp4TagMap:
