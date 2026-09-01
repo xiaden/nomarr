@@ -211,6 +211,12 @@ def agg_label(agg: str | None) -> str:
         return "median"
     if agg_s == "medoid":
         return "medoid"
+    if agg_s == "target_weighted":
+        return "target-wtd"
+    if agg_s == "bidirectional_weighted":
+        return "bidir-wtd"
+    if agg_s == "normalized_mean_pair_weighted":
+        return "norm-pair-wtd"
     return agg_s
 
 
@@ -225,6 +231,72 @@ def binned_config_label(
     """Stable human-readable binned config label used throughout the report."""
     t = f"{float(std_thresh):g}" if pd.notna(std_thresh) else "—"
     return f"{bin_mode}/{t}/{rep_label(rep_a)}x{rep_label(rep_b)}/{agg_label(agg_method)}"
+
+
+def canonical_flat_baseline(
+    rows: pd.DataFrame,
+    backbone: str,
+    *,
+    k: int | None = None,
+) -> pd.DataFrame:
+    """Resolve exactly the ``global_pool:{backbone}:medoid`` rows.
+
+    This is the single explicit medoid baseline per backbone. It never falls back to
+    max/median/mean across flat strategies and never mixes backbones. A missing medoid
+    row yields an empty DataFrame — callers must not substitute another aggregation.
+    ``k`` optionally narrows to one evaluation K.
+    """
+    out = rows.iloc[0:0].copy()
+    if rows.empty or "strategy_key" not in rows.columns or "strategy_type" not in rows.columns:
+        return out
+    expected = f"global_pool:{backbone}:medoid"
+    mask = (rows["strategy_type"] == "global_pool") & (rows["strategy_key"] == expected)
+    if "backbone" in rows.columns:
+        mask &= rows["backbone"] == backbone
+    if "strategy" in rows.columns:
+        mask &= rows["strategy"] == "medoid"
+    if k is not None and "k" in rows.columns:
+        mask &= rows["k"] == k
+    return rows.loc[mask].copy()
+
+
+def flat_medoid_value(
+    rows: pd.DataFrame,
+    backbone: str,
+    col: str,
+    *,
+    k: int | None = None,
+) -> float | None:
+    """Return the medoid-baseline value for *col* on *backbone*, or None if absent.
+
+    Picks one deterministic value from the medoid rows (they differ only by evaluation
+    K when multiple K are present); never aggregates across flat strategies.
+    """
+    medoid = canonical_flat_baseline(rows, backbone, k=k)
+    if medoid.empty or col not in medoid.columns:
+        return None
+    vals = medoid[col].dropna()
+    if vals.empty:
+        return None
+    return float(vals.max())
+
+
+def binned_identity_label(row) -> str:
+    """Full-identity binned label: pathway + head + bin/rep/agg configuration."""
+    st = row.get("strategy_type")
+    pathway = {"ptc": "PTC", "ctp": "CTP"}.get(str(st), str(st) if st is not None else "?")
+    head = row.get("head")
+    head_part = ""
+    if head is not None and not (isinstance(head, float) and pd.isna(head)):
+        head_part = f"/head={head}"
+    base = binned_config_label(
+        bin_mode=row.get("bin_mode"),
+        std_thresh=row.get("std_thresh"),
+        rep_a=row.get("rep_a"),
+        rep_b=row.get("rep_b"),
+        agg_method=row.get("agg_method"),
+    )
+    return f"{pathway}{head_part}/{base}"
 
 
 def table_exists(con, name: str) -> bool:

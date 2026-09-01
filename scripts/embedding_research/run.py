@@ -46,9 +46,12 @@ if str(_pkg_root) not in sys.path:
 
 from scripts.embedding_research import common, db, pooling
 from scripts.embedding_research.cache import binned_ctp, binned_ptc, flat_vecs
-from scripts.embedding_research.config import DB_PATH, HEAD_LABELS, HEADS, OUTPUT_ROOT, PATCHES_DIR
+from scripts.embedding_research.common.analyze import validate_binned_weights
+from scripts.embedding_research.config import BACKBONES, DB_PATH, HEAD_LABELS, HEADS, OUTPUT_ROOT, PATCHES_DIR
+from scripts.embedding_research.corpus import MatchingCorpusManifest, build_matching_corpus
 from scripts.embedding_research.helpers.binning import BIN_MODES, CTP_SCORE_THRESHOLDS
 from scripts.embedding_research.helpers.binning import DIST_THRESHOLDS as STD_THRESHOLDS
+from scripts.embedding_research.helpers.cache_utils import build_done_set as _build_done_set
 from scripts.embedding_research.helpers.toml import load_research_config as _load_research_config
 from scripts.embedding_research.helpers.toml import load_research_config_bytes as _load_raw_cfg
 from scripts.embedding_research.strategy_binned import _constants as _strategy_binned_constants
@@ -58,7 +61,7 @@ from scripts.embedding_research.strategy_ptc import segment_fn as _ptc_seg_fn
 from scripts.embedding_research.vector_types import UnitTensor
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Collection, Mapping, Sequence
 
     from scripts.embedding_research.common.analyze import AnalyzeCfg
 
@@ -209,9 +212,22 @@ def _load_global_pool_analyze_vecs(
     backbone: str,
     strategy_name: str,
     con: Any,
-    _extra_cfg: dict[str, Any],
+    extra_cfg: dict[str, Any],
 ) -> tuple[Any, list[str], list[str], list[str], list[str]]:
-    return flat_vecs.load_matrix(backbone, strategy_name, con)
+    vecs, sids, artists, albums, genres = flat_vecs.load_matrix(backbone, strategy_name, con)
+    manifest = _manifest_for(extra_cfg, backbone)
+    if manifest is not None:
+        # Restrict to the matching corpus in manifest (sorted) order so the flat
+        # baseline and candidates share the exact same deterministic corpus.
+        idx = {sid: i for i, sid in enumerate(sids)}
+        present = [sid for sid in manifest.song_ids if sid in idx]
+        keep = [idx[sid] for sid in present]
+        sids = present
+        artists = [artists[i] for i in keep]
+        albums = [albums[i] for i in keep]
+        genres = [genres[i] for i in keep]
+        vecs = vecs[keep]
+    return vecs, sids, artists, albums, genres
 
 
 def _load_ptc_analyze_vecs(
@@ -223,14 +239,32 @@ def _load_ptc_analyze_vecs(
     bin_mode, std_thresh = _decode_ptc_strategy_name(strategy_name)
     rep_types = [str(rep) for rep in extra_cfg.get("rep_types", _strategy_binned_constants.REP_TYPES)]
 
+    # Discover in manifest order (or by cache listing when no manifest is wired)
+    # so the loader only ever yields songs belonging to the matching corpus.
+    manifest = _manifest_for(extra_cfg, backbone)
+    if manifest is not None:
+        discovery_order: list[str] = list(manifest.song_ids)
+    else:
+        discovery_order = binned_ptc.list_sids(backbone, bin_mode, std_thresh)
+
     sids: list[str] = []
     bin_counts: list[int] = []
-    for sid in binned_ptc.list_sids(backbone, bin_mode, std_thresh):
+    weights: list[np.ndarray] = []
+    for sid in discovery_order:
         stats_bins = binned_ptc.load_bin_stats(backbone, bin_mode, std_thresh, sid)
         if not stats_bins:
             continue
         sids.append(sid)
         bin_counts.append(len(stats_bins))
+        # Temporal patch-count weights: the number of raw patches pooled into each bin.
+        weights.append(np.array([b["weight"] for b in stats_bins], dtype=np.int32))
+
+    # Ordering contract: for every song the per-bin patch-count weight array, the
+    # ``rep_a`` bin vectors, and the ``rep_b`` bin vectors are built from the same
+    # ``stats_bins`` loop, so they are all ordered by the same ascending bin index
+    # and are co-indexed.  Validate before returning so any misalignment or zeroed
+    # weight array fails loudly instead of producing wrong weighted scores.
+    validate_binned_weights(weights, weights, bin_counts)
 
     artists, albums, genres = _load_song_metadata(con, sids)
     pairs: list[dict[str, Any]] = []
@@ -249,6 +283,9 @@ def _load_ptc_analyze_vecs(
                     "norm_a_all": norm_a_all,
                     "norm_b_all": norm_b_all,
                     "bin_counts": bin_counts,
+                    "weights_a": weights,
+                    "weights_b": weights,
+                    "weights": weights,
                 }
             )
 
@@ -263,7 +300,9 @@ def _load_ctp_analyze_vecs(
 ) -> tuple[Any, list[str], list[str], list[str], list[str]]:
     head_name, std_thresh = _decode_ctp_strategy_name(strategy_name)
     rep_types = [str(rep) for rep in extra_cfg.get("rep_types", _strategy_binned_constants.REP_TYPES)]
-    ctp_sids, _ctp_artists, song_data = binned_ctp.load_all_reps(con, backbone, head_name, std_thresh)
+    manifest = _manifest_for(extra_cfg, backbone)
+    song_ids_arg: frozenset[str] | None = frozenset(manifest.song_ids) if manifest is not None else None
+    ctp_sids, _ctp_artists, song_data = binned_ctp.load_all_reps(con, backbone, head_name, std_thresh, song_ids_arg)
 
     filtered_sids: list[str] = []
     filtered_song_data: list[list[dict[str, Any]]] = []
@@ -288,6 +327,13 @@ def _load_ctp_analyze_vecs(
 
     artists, albums, genres = _load_song_metadata(con, filtered_sids)
     bin_counts = [len(song_bins) for song_bins in filtered_song_data]
+    # Temporal patch-count weights per song: the number of raw patches per bin.
+    weights = [np.array([b["weight"] for b in bins], dtype=np.int32) for bins in filtered_song_data]
+    # Ordering contract: ``weights`` are derived from the same per-song bin lists as
+    # ``norm_a_all``/``norm_b_all`` (each built by stacking rows in ``bins`` order),
+    # so weights, rep_a, and rep_b all share the same song/bin ordering and are
+    # co-indexed.  Validate before returning.
+    validate_binned_weights(weights, weights, bin_counts)
     pairs: list[dict[str, Any]] = []
     for rep_a in rep_types:
         pairs.extend(
@@ -307,6 +353,9 @@ def _load_ctp_analyze_vecs(
                     for bins in filtered_song_data
                 ],
                 "bin_counts": bin_counts,
+                "weights_a": weights,
+                "weights_b": weights,
+                "weights": weights,
             }
             for rep_b in rep_types
         )
@@ -379,14 +428,18 @@ def _reset_db() -> None:
     )
 
 
-def _reset_cache_dirs(*, reset_optimizer: bool, reset_binned: bool, reset_sim: bool) -> None:
+def _reset_cache_dirs(*, reset_optimizer: bool, reset_binned: bool) -> None:
+    """Delete reset-eligible cache directories.
+
+    The similarity-matrix cache (``cache/sim.py`` / ``cache/sim_pairs.py``) was
+    removed in Plan C (write-only, zero-caller), so there is no ``sim_cache`` to
+    reset.  Only the optimizer and binned PTC/CTP caches remain reset-eligible.
+    """
     dirs: list[Path] = []
     if reset_optimizer:
         dirs.append(OUTPUT_ROOT / "optimizer")
     if reset_binned:
         dirs.extend([OUTPUT_ROOT / "cache" / "binned_ptc", OUTPUT_ROOT / "cache" / "binned_ctp"])
-    if reset_sim:
-        dirs.append(OUTPUT_ROOT / "sim_cache")
 
     for d in dirs:
         if d.exists():
@@ -525,21 +578,89 @@ def _classify_phase(con, cfg: dict) -> None:
     _log.info("  <- sub-phase: binned classify done (%.0fs)", time.perf_counter() - _t0)
 
 
+def _manifest_for(extra_cfg: Mapping[str, Any] | None, backbone: str) -> MatchingCorpusManifest | None:
+    """Resolve the per-backbone matching corpus from an analyze extra_cfg."""
+    manifests = (extra_cfg or {}).get("matching_corpus") or {}
+    return manifests.get(backbone)  # type: ignore[return-value]
+
+
+def _corpus_requirements(backbone: str, flat_strategies: Sequence[str]) -> dict[str, list[str]]:
+    """Availability of every sidecar/bin/rep requirement for one backbone.
+
+    Each requirement maps a namespace-separated label to the sorted list of
+    song IDs for which that sidecar/bin/rep is available on disk.  A song is
+    eligible for the matching corpus only if it appears in every requirement.
+    """
+    reqs: dict[str, list[str]] = {}
+    for strat in flat_strategies:
+        reqs[f"flat:{strat}"] = flat_vecs.list_done_sids(backbone, strat)
+    for bin_mode in BIN_MODES:
+        for std_thresh in STD_THRESHOLDS:
+            reqs[f"ptc:{bin_mode}:{std_thresh:.2f}"] = binned_ptc.list_sids(backbone, bin_mode, std_thresh)
+    for head_name in _KNOWN_CTP_HEAD_NAMES:
+        for std_thresh in CTP_SCORE_THRESHOLDS:
+            cfg_dir = binned_ctp.config_dir(backbone, head_name, std_thresh)
+            reqs[f"ctp:{head_name}:{std_thresh:.2f}"] = sorted(_build_done_set(cfg_dir, suffix=".npz"))
+    return reqs
+
+
+def _build_backbone_manifests(cfg: Mapping[str, Any]) -> dict[str, MatchingCorpusManifest]:
+    """Deterministic per-backbone matching corpus over the candidate universe.
+
+    The corpus for a backbone is the sorted intersection of the stratified
+    candidate universe with the availability of every flat and binned
+    requirement, so every compared configuration runs on the exact same
+    ``n_songs``.  The eligibility/config inputs feed the stable corpus hash.
+    """
+    backbones = list(cfg.get("backbones") or BACKBONES)
+    flat_strategies = list(cfg.get("flat_strategies") or [])
+    candidate_ids = cfg.get("song_ids")
+    eligibility: dict[str, object] = {
+        "rep_types": sorted(_strategy_binned_constants.REP_TYPES),
+        "agg_methods": list(_strategy_binned_constants.AGG_METHODS),
+        "k": cfg.get("k", 10),
+    }
+    manifests: dict[str, MatchingCorpusManifest] = {}
+    for backbone in backbones:
+        reqs = _corpus_requirements(backbone, flat_strategies)
+        if candidate_ids is not None:
+            universe: Collection[str] = candidate_ids
+        else:
+            universe = sorted({sid for avail in reqs.values() for sid in avail})
+        manifest = build_matching_corpus(backbone, universe, reqs, eligibility_inputs=eligibility)
+        manifests[backbone] = manifest
+        _log.info(
+            "[%s] matching corpus: %d songs hash=%s",
+            backbone,
+            len(manifest),
+            manifest.corpus_hash[:12],
+        )
+    return manifests
+
+
 def _analyze_phase(con, cfg: dict) -> None:
     con.execute("DELETE FROM analyze_metrics")
     _kw = {"song_ids": cfg["song_ids"], "force": cfg["force"], "backbones": cfg["backbones"], "k": cfg["k"]}
+    manifests = _build_backbone_manifests(cfg)
+    cfg["matching_corpus"] = manifests
+    _corpus_kw = {"matching_corpus": manifests}
     _gp_cfg = dict(GLOBAL_POOL_ANALYZE_CFG)
     _gp_cfg["strategy_names"] = cfg["flat_strategies"]
+    _gp_cfg["extra_cfg"] = dict(_gp_cfg["extra_cfg"], **_corpus_kw)
     common.analyze.analyze(con, _gp_cfg, **_kw)
-    common.analyze.analyze(con, PTC_ANALYZE_CFG, **_kw)
-    common.analyze.analyze(con, CTP_ANALYZE_CFG, **_kw)
+    _ptc_cfg = dict(PTC_ANALYZE_CFG)
+    _ptc_cfg["extra_cfg"] = dict(_ptc_cfg["extra_cfg"], **_corpus_kw)
+    common.analyze.analyze(con, _ptc_cfg, **_kw)
+    _ctp_cfg = dict(CTP_ANALYZE_CFG)
+    _ctp_cfg["extra_cfg"] = dict(_ctp_cfg["extra_cfg"], **_corpus_kw)
+    common.analyze.analyze(con, _ctp_cfg, **_kw)
 
 
 def _report_phase(con, cfg: dict) -> None:
     from scripts.embedding_research.config import REPORT_DIR
     from scripts.embedding_research.report import run
 
-    run(con, REPORT_DIR)
+    run(con, REPORT_DIR, matching_corpora=cfg.get("matching_corpus"))
 
 
 _PHASES: dict[str, Callable[..., None]] = {
@@ -625,8 +746,7 @@ def main() -> None:
     ap.add_argument("--install", action="store_true", help="Install pip requirements then exit")
     ap.add_argument("--reset", action="store_true", help="Drop the DB and exit (preserves .npy sidecars)")
     ap.add_argument("--reset-binned-cache", action="store_true", help="Delete binned ptc/ctp caches")
-    ap.add_argument("--reset-sim-cache", action="store_true", help="Delete similarity matrix cache")
-    ap.add_argument("--fresh", action="store_true", help="Reset DB plus binned and sim caches")
+    ap.add_argument("--fresh", action="store_true", help="Reset DB plus the binned ptc/ctp caches")
     args = ap.parse_args()
 
     if args.install:
@@ -635,19 +755,15 @@ def main() -> None:
 
     if args.fresh:
         _reset_db()
-        _reset_cache_dirs(reset_optimizer=False, reset_binned=True, reset_sim=True)
+        _reset_cache_dirs(reset_optimizer=False, reset_binned=True)
         return
 
     if args.reset:
         _reset_db()
         return
 
-    if args.reset_binned_cache or args.reset_sim_cache:
-        _reset_cache_dirs(
-            reset_optimizer=False,
-            reset_binned=args.reset_binned_cache,
-            reset_sim=args.reset_sim_cache,
-        )
+    if args.reset_binned_cache:
+        _reset_cache_dirs(reset_optimizer=False, reset_binned=True)
         return
 
     # Build config from TOML

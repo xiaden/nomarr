@@ -19,10 +19,12 @@ Entry point
         subsample_size=200,
         tolerance=0.05,
         max_evals=15,
+        agg_method="target_weighted",
     )
 
-The function returns the optimal ``dist_thresh`` value found.  The caller is
-responsible for using that value (e.g. by patching
+The function returns an ``OptimizationResult`` (``threshold``, ``score``) holding
+the optimal ``dist_thresh`` value found and its objective score.  The caller is
+responsible for using ``result.threshold`` (e.g. by patching
 ``scripts.embedding_research.helpers.binning.DIST_THRESHOLDS`` before running
 embed).
 """
@@ -182,7 +184,17 @@ def _eval_threshold(
     -------
     float
         Mean objective score across rows, or 0.0 if evaluation fails.
+
+    Raises
+    ------
+    ValueError
+        If ``agg_method`` is not one of the enabled weighted reductions.  The
+        row-filter below would otherwise silently match no row and return 0.0,
+        so validation must run before that filter rather than after.
     """
+    if agg_method not in _AGG_METHODS:
+        raise ValueError(f"optimizer agg_method={agg_method!r} is not enabled in AGG_METHODS={_AGG_METHODS}")
+
     threshold = dist_thresh  # direct cosine/Chebyshev distance value
 
     dist_fn = _DIST_FNS[bin_mode]
@@ -193,6 +205,7 @@ def _eval_threshold(
     genres: list[str] = []
     eval_sids: list[str] = []
     bin_counts: list[int] = []
+    bin_weights: list[np.ndarray] = []
     bin_lengths: list[int] = []
     one_bin_song_count = 0
     single_segment_bins = 0
@@ -247,6 +260,7 @@ def _eval_threshold(
         albums.append(album or "unknown")
         genres.append(genre or "unknown")
         bin_counts.append(len(pooled_norms))
+        bin_weights.append(np.array([len(seg["indices"]) for seg in segments], dtype=np.int32))
 
     n = len(norm_vecs)
     if n < 4:
@@ -310,7 +324,7 @@ def _eval_threshold(
             axis=0,
         ).astype(np.float32)
 
-    agg_mats = compute_agg_mats(norm_vecs, norm_vecs, bc_arr, metric)
+    agg_mats = compute_agg_mats(norm_vecs, norm_vecs, bin_weights, bin_weights, metric)
     rows, _ = compute_retrieval_rows(
         agg_mats,
         artists,
@@ -419,7 +433,7 @@ def optimize_std_threshold(
     grid_step: float = 0.05,
     flat_epsilon: float = 1e-8,
     rep_type: str = "median",
-    agg_method: str = "median",
+    agg_method: str = "target_weighted",
     metric: str = "cosine",
     csv_stem_suffix: str = "",
 ) -> OptimizationResult:
@@ -463,7 +477,11 @@ def optimize_std_threshold(
     if rep_type not in ("mean", "median", "medoid", "max", "min"):
         raise ValueError(f"Unsupported optimizer rep_type: {rep_type}")
     if agg_method == "medoid":
-        raise ValueError("agg_method=medoid is not implemented; use agg_method=median with rep_type=medoid.")
+        raise ValueError(
+            "agg_method=medoid is not implemented; supported weighted reductions are "
+            "target_weighted, bidirectional_weighted, normalized_mean_pair_weighted. "
+            "rep_type=medoid remains a valid representation, not an aggregation method."
+        )
     if agg_method not in _AGG_METHODS:
         raise ValueError(f"optimizer agg_method={agg_method!r} is not enabled in pooling.agg_methods={_AGG_METHODS}")
     if metric not in _SIM_METRICS:

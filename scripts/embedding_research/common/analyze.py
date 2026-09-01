@@ -25,8 +25,8 @@ except ImportError:
 
 from scripts.embedding_research import db, similarity
 from scripts.embedding_research.cache import flat_heads as _flat_heads_cache
-from scripts.embedding_research.cache.sim_pairs import sim_pair_exists, store_sim_pair
 from scripts.embedding_research.config import BACKBONES, HEADS
+from scripts.embedding_research.corpus import MatchingCorpusManifest, validate_matching_corpus
 from scripts.embedding_research.strategy_binned._constants import AGG_METHODS
 from scripts.embedding_research.strategy_binned._process import compute_agg_mats
 
@@ -53,6 +53,8 @@ class _BinnedPairPayload(TypedDict, total=False):
     norm_a_all: list[Any]
     norm_b_all: list[Any]
     bin_counts: np.ndarray
+    weights_a: list[Any]
+    weights_b: list[Any]
 
 
 _log = logging.getLogger(__name__)
@@ -69,6 +71,20 @@ def _copy_extra_cfg(extra_cfg: Mapping[str, Any], **updates: Any) -> dict[str, A
     merged = dict(extra_cfg)
     merged.update({key: value for key, value in updates.items() if value is not None})
     return merged
+
+
+def _record_skip(cfg: AnalyzeCfg, label: str, reason: object) -> None:
+    """Record a skipped-configuration reason into ``extra_cfg`` diagnostics.
+
+    Consumers of a phase (reports, tests, operators) can read
+    ``extra_cfg["skip_reasons"]`` to see which configurations were skipped and
+    why (incomplete sidecars/bins/reps, corpus mismatch, ...).
+    """
+    extra = cfg.get("extra_cfg")
+    if extra is None:
+        extra = {}
+        cfg["extra_cfg"] = extra
+    extra.setdefault("skip_reasons", []).append(f"{label}: {reason}")
 
 
 def _build_expected_strategy_keys(backbone: str, strategy_name: str, cfg: AnalyzeCfg) -> set[str]:
@@ -117,15 +133,83 @@ def _filter_global_pool_vecs(vecs: Any, keep: list[int]) -> Any:
         return np.asarray(vecs)[keep]
 
 
+def _resolve_binned_weights(payload: Mapping[str, Any]) -> tuple[list[Any], list[Any]]:
+    """Resolve per-song bin-weight arrays (source and target side) from a payload.
+
+    Prefers explicit ``weights_a``/``weights_b``; falls back to a shared
+    ``weights`` key; otherwise derives uniform per-bin weights from
+    ``bin_counts`` (compatibility for legacy/tuple payloads that predate
+    weighted scoring).  The main PTC/CTP loaders always supply real per-bin
+    patch-count weights, so the fallback only affects dead/legacy callers.
+    """
+    wa = payload.get("weights_a")
+    wb = payload.get("weights_b")
+    if wa is not None and wb is not None:
+        return list(cast("Sequence[Any]", wa)), list(cast("Sequence[Any]", wb))
+    shared = payload.get("weights")
+    if shared is not None:
+        return list(cast("Sequence[Any]", shared)), list(cast("Sequence[Any]", shared))
+    counts = np.asarray(payload["bin_counts"], dtype=np.int64)
+    uniform = [np.ones(int(c), dtype=np.float32) for c in counts]
+    return uniform, uniform
+
+
+def validate_binned_weights(
+    weights_a: Sequence[Any],
+    weights_b: Sequence[Any],
+    bin_counts: Sequence[Any],
+) -> None:
+    """Validate per-song per-bin weight arrays against the ordering contract.
+
+    The weighted binned scoring contract requires that for **every** song the
+    per-bin patch-count weight array, the ``rep_a`` bin vectors, and the ``rep_b``
+    bin vectors are all ordered by the *same* ascending bin index (the PTC/CTP
+    loaders build them from the same per-song, per-bin loop, so they are
+    co-indexed).  This validates the two structural guarantees:
+
+    * the number of weight arrays equals the number of songs, and each array's
+      length equals that song's bin count (``weights_*[i].size == bin_counts[i]``);
+    * every weight is strictly positive (patch counts are never zero, so a zeroed
+      or dropped weight array is a corruption signal).
+
+    Any violation raises ``ValueError`` so a misaligned/zeroed weight set fails
+    loudly instead of silently producing wrong scores.
+    """
+    counts = [int(c) for c in bin_counts]
+    n_songs = len(counts)
+    for side, weights in (("a", weights_a), ("b", weights_b)):
+        w_list = list(weights)
+        if len(w_list) != n_songs:
+            raise ValueError(
+                f"weights_{side} has {len(w_list)} per-song arrays but {n_songs} songs; "
+                "weight arrays must be co-indexed with the per-song bin vectors"
+            )
+        for i, w in enumerate(w_list):
+            w_arr = np.asarray(w)
+            if w_arr.ndim != 1:
+                raise ValueError(f"weights_{side}[{i}] must be a 1-D per-bin array, got ndim={w_arr.ndim}")
+            if w_arr.shape[0] != counts[i]:
+                raise ValueError(
+                    f"weights_{side}[{i}] length {w_arr.shape[0]} != bin count {counts[i]}; "
+                    "weights, rep_a, and rep_b must share the same song/bin ordering"
+                )
+            if not bool(np.all(w_arr > 0)):
+                raise ValueError(f"weights_{side}[{i}] must be strictly positive (patch counts)")
+
+
 def _coerce_binned_pair_payload(payload: Any, extra_cfg: Mapping[str, Any]) -> _BinnedPairPayload:
     if isinstance(payload, Mapping):
         if {"norm_a_all", "norm_b_all", "bin_counts"}.issubset(payload):
+            weights_a, weights_b = _resolve_binned_weights(payload)
+            validate_binned_weights(weights_a, weights_b, payload["bin_counts"])
             return {
                 "rep_a": cast("str | None", payload.get("rep_a") or extra_cfg.get("rep_a")),
                 "rep_b": cast("str | None", payload.get("rep_b") or extra_cfg.get("rep_b")),
                 "norm_a_all": list(cast("Sequence[Any]", payload["norm_a_all"])),
                 "norm_b_all": list(cast("Sequence[Any]", payload["norm_b_all"])),
                 "bin_counts": np.asarray(payload["bin_counts"], dtype=np.float32),
+                "weights_a": weights_a,
+                "weights_b": weights_b,
             }
         if {"rep_a", "rep_b", "payload"}.issubset(payload):
             nested = _coerce_binned_pair_payload(payload["payload"], extra_cfg)
@@ -135,12 +219,17 @@ def _coerce_binned_pair_payload(payload: Any, extra_cfg: Mapping[str, Any]) -> _
 
     if isinstance(payload, tuple) and len(payload) == 3:
         norm_a_all, norm_b_all, bin_counts = payload
+        synthetic: dict[str, Any] = {"norm_a_all": norm_a_all, "norm_b_all": norm_b_all, "bin_counts": bin_counts}
+        weights_a, weights_b = _resolve_binned_weights(synthetic)
+        validate_binned_weights(weights_a, weights_b, bin_counts)
         return {
             "rep_a": cast("str | None", extra_cfg.get("rep_a")),
             "rep_b": cast("str | None", extra_cfg.get("rep_b")),
             "norm_a_all": list(cast("Sequence[Any]", norm_a_all)),
             "norm_b_all": list(cast("Sequence[Any]", norm_b_all)),
             "bin_counts": np.asarray(bin_counts, dtype=np.float32),
+            "weights_a": weights_a,
+            "weights_b": weights_b,
         }
 
     raise TypeError(
@@ -157,9 +246,10 @@ def _normalise_binned_pairs(vecs: Any, extra_cfg: Mapping[str, Any]) -> list[_Bi
             return [_coerce_binned_pair_payload(pair, extra_cfg) for pair in cast("Sequence[Any]", vecs["pairs"])]
 
         shared_bin_counts = vecs.get("bin_counts")
+        shared_weights = vecs.get("weights")
         pair_payloads: list[_BinnedPairPayload] = []
         for key, payload in vecs.items():
-            if key in {"bin_counts", "pairs"}:
+            if key in {"bin_counts", "weights", "pairs"}:
                 continue
             if isinstance(key, tuple) and len(key) == 2 and shared_bin_counts is not None:
                 rep_a, rep_b = str(key[0]), str(key[1])
@@ -168,6 +258,8 @@ def _normalise_binned_pairs(vecs: Any, extra_cfg: Mapping[str, Any]) -> list[_Bi
                     merged_payload.setdefault("rep_a", rep_a)
                     merged_payload.setdefault("rep_b", rep_b)
                     merged_payload.setdefault("bin_counts", shared_bin_counts)
+                    if shared_weights is not None:
+                        merged_payload.setdefault("weights", shared_weights)
                     pair_payloads.append(_coerce_binned_pair_payload(merged_payload, extra_cfg))
                 elif isinstance(payload, tuple) and len(payload) == 2:
                     pair_payloads.append(
@@ -203,6 +295,8 @@ def _filter_binned_pairs(vecs: Any, keep: list[int], extra_cfg: Mapping[str, Any
             "norm_a_all": _filter_indexed(payload["norm_a_all"], keep),
             "norm_b_all": _filter_indexed(payload["norm_b_all"], keep),
             "bin_counts": np.asarray(payload["bin_counts"], dtype=np.float32)[keep],
+            "weights_a": _filter_indexed(payload["weights_a"], keep),
+            "weights_b": _filter_indexed(payload["weights_b"], keep),
         }
         for payload in pair_payloads
     ]
@@ -275,6 +369,7 @@ def analyze(
                 )
             except Exception as exc:
                 _log.warning("[%s/%s] vector load failed: %s", backbone, strategy_name, exc)
+                _record_skip(cfg, f"{cfg['strategy_type']}:{strategy_name}", f"vector load failed: {exc}")
                 continue
 
             if song_ids is not None:
@@ -292,7 +387,28 @@ def analyze(
             if len(sids) < 2:
                 _log.info("[%s/%s] < 2 songs after filtering; skipping", backbone, strategy_name)
                 skipped_for_backbone += 1
+                _record_skip(
+                    cfg,
+                    f"{cfg['strategy_type']}:{strategy_name}",
+                    "< 2 matching-corpus songs (incomplete sidecars/bins/reps)",
+                )
                 continue
+
+            matching_corpus = cfg["extra_cfg"].get("matching_corpus", {}).get(backbone)
+            if matching_corpus is not None:
+                try:
+                    validate_matching_corpus(
+                        cast("MatchingCorpusManifest", matching_corpus),
+                        sids,
+                        f"{cfg['strategy_type']}:{strategy_name}",
+                    )
+                except ValueError as exc:
+                    # Fail loud: never silently intersect or compare a different
+                    # n_songs.  Report the reason into diagnostics and skip.
+                    _log.warning("[%s/%s] corpus mismatch — skipping config: %s", backbone, strategy_name, exc)
+                    skipped_for_backbone += 1
+                    _record_skip(cfg, f"{cfg['strategy_type']}:{strategy_name}", exc)
+                    continue
 
             head_scores, head_names = _load_head_scores_and_names(backbone, sids)
 
@@ -362,22 +478,13 @@ def analyze(
                 rep_b = pair_payload.get("rep_b")
                 norm_a_all = pair_payload["norm_a_all"]
                 norm_b_all = pair_payload["norm_b_all"]
-                bin_counts = np.asarray(pair_payload["bin_counts"], dtype=np.float32)
-
-                data_a = [v.data for v in norm_a_all]
-                data_b = [v.data for v in norm_b_all]
-                for i in range(len(sids)):
-                    for j in range(i + 1, len(sids)):
-                        if sim_pair_exists(backbone, strategy_name, sids[i], sids[j]):
-                            continue
-                        raw_sim = (data_a[i] @ data_b[j].T).astype(np.float32)
-                        store_sim_pair(backbone, strategy_name, sids[i], sids[j], raw_sim)
 
                 for sim_metric in sim_metric_names:
                     agg_mats = compute_agg_mats(
                         norm_a_all,
                         norm_b_all,
-                        bin_counts,
+                        pair_payload["weights_a"],
+                        pair_payload["weights_b"],
                         sim_metric,
                     )
 

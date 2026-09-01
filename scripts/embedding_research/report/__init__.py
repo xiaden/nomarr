@@ -23,6 +23,7 @@ from ._optimizer import section_optimizer
 from ._retrieval import query_analyze_metrics, section_per_backbone, section_unified_table
 from ._summary import section_summary
 from ._truncation import section_truncation
+from ._winners_report import section_winners
 
 _REPORT_SCHEMA_VERSION = 2
 _REPORT_TITLE = "Embedding Research Report"
@@ -177,7 +178,7 @@ function renderPanel(panel){{
   details.appendChild(summary);
   var body=document.createElement("div");
   body.className="details-body";
-  if(panel.text){{var p=document.createElement("p");p.className="muted";p.innerHTML=panel.text;body.appendChild(p);}}
+  if(panel.text){{var p=document.createElement("p");p.className="muted";p.textContent=panel.text;body.appendChild(p);}}
   (panel.charts||[]).forEach(function(c){{body.appendChild(renderChart(c))}});
   (panel.tables||[]).forEach(function(t){{body.appendChild(renderTable(t))}});
   (panel.subsections||[]).forEach(function(s){{body.appendChild(renderSubsection(s))}});
@@ -187,7 +188,7 @@ function renderPanel(panel){{
 function fillContent(el,sub){{
   if(sub.description){{
     var card=document.createElement("div");card.className="card";
-    var p=document.createElement("p");p.className="muted";p.innerHTML=sub.description;
+    var p=document.createElement("p");p.className="muted";p.textContent=sub.description;
     card.appendChild(p);el.appendChild(card);
   }}
   (sub.warnings||[]).forEach(function(w){{el.appendChild(renderWarning(w))}});
@@ -221,8 +222,8 @@ function renderSection(section){{
     var hl=section.headline;
     var card=document.createElement("div");card.className="headline-card";
     card.style.cssText="background:"+hl.color+"12;border:1px solid "+hl.color+"55;";
-    card.innerHTML='<p style="font-size:15px"><span style="color:'+hl.color+';font-size:18px">'+hl.icon+'<\\/span> &nbsp;<span style="color:'+hl.color+'">'+hl.text+'<\\/span><\\/p>'+
-      (section.description?'<p class="muted" style="margin-top:6px">'+section.description+'<\\/p>':"");
+    card.innerHTML='<p style="font-size:15px"><span style="color:'+esc(hl.color)+';font-size:18px">'+esc(hl.icon)+'<\\/span> &nbsp;<span style="color:'+esc(hl.color)+'">'+esc(hl.text)+'<\\/span><\\/p>'+
+      (section.description?'<p class="muted" style="margin-top:6px">'+esc(section.description)+'<\\/p>':"");
     el.appendChild(card);
     var noDesc=section;noDesc=Object.assign({{}},section,{{description:""}});
     fillContent(el,noDesc);
@@ -290,7 +291,7 @@ def _payload(
 # ---------------------------------------------------------------------------
 
 
-def run(con, out_path=None) -> None:
+def run(con, out_path=None, *, matching_corpora: dict[str, Any] | None = None) -> None:
     """Generate the embedding research report and write HTML + JSON files.
 
     Parameters
@@ -300,6 +301,10 @@ def run(con, out_path=None) -> None:
     out_path:
         Required directory where ``report.html`` and ``report.json`` will be written.
         Raises ``ValueError`` if not provided.
+    matching_corpora:
+        Optional ``backbone -> MatchingCorpusManifest`` mapping.  When supplied it is
+        threaded into the winners section so every winner-delta row carries the real
+        corpus hash/size for its backbone.
     """
     import pathlib
 
@@ -324,13 +329,14 @@ def run(con, out_path=None) -> None:
         ("optimizer", section_optimizer),
         ("unified-ranking", lambda: section_unified_table(df)),
         ("per-backbone", lambda: section_per_backbone(df)),
+        ("winners", lambda: section_winners(df, corpus_by_backbone=matching_corpora)),
         ("threshold-sweep", lambda: section_threshold_sweep(df)),
         ("bin-diversity", lambda: section_bin_diversity(con)),
         ("segment-counts", lambda: section_segment_counts(con)),
         ("bin-mode-comparison", lambda: section_bin_mode_comparison(df)),
         ("flat-binned-corr", lambda: section_flat_binned_correlation(df)),
         ("head-sim-corr", lambda: section_head_sim_corr(con)),
-        ("head-value", lambda: section_head_value(con)),
+        ("head-value", lambda: section_head_value(con, flat_df=df[df["strategy_type"] == "global_pool"])),
         ("efficiency", lambda: section_efficiency(con)),
         ("truncation", lambda: section_truncation(con)),
     ]

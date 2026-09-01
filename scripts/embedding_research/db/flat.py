@@ -162,7 +162,11 @@ def write_analyze_metrics(
             continue  # per-song lists are never written as aggregate metrics
         else:
             rows.append((strategy_key, strategy_type, sim_metric, k, name, float(value)))
-    con.executemany("INSERT OR REPLACE INTO analyze_metrics VALUES (?,?,?,?,?,?)", rows)
+    con.executemany(
+        "INSERT OR REPLACE INTO analyze_metrics "
+        "(strategy_key, strategy_type, sim_metric, k, metric, value) VALUES (?,?,?,?,?,?)",
+        rows,
+    )
 
 
 def load_analyze_metrics(con) -> pd.DataFrame:

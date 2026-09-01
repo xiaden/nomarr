@@ -56,18 +56,36 @@ hard_overbudget_multiplier = 3.0
 [pooling]
 # Explicit flat (global-pool) strategy list. This is the benchmark-baseline
 # configuration and MUST include "medoid" (the observed-patch baseline). Each
-# configured backbone (EffNet, MusicNN) gets its own independently keyed set.
+# configured backbone (EffNet, MusicNN) is an independent population: its own
+# matching-corpus manifest, its own independently keyed medoid, its own report
+# rows — the two backbones are never cross-averaged.
 # Omit this key to run every known flat strategy (including "medoid").
 # Available: mean, trimmed_10, trimmed_20, median (coordinate-wise synthetic),
 #            max_norm, l2norm_mean, medoid (observed patch)
+# NOTE: the benchmark baseline is the OBSERVED global medoid
+# (global_pool:{backbone}:medoid) — an observed raw patch, never the
+# coordinate-wise synthetic "median" strategy.
 flat_strategies = ["mean", "trimmed_10", "trimmed_20", "median", "max_norm", "l2norm_mean", "medoid"]
 # Representations computed per bin segment and used to build the sim matrix
 # Available: mean, median (coordinate-wise synthetic), medoid (observed segment), max, min
 rep_types   = ["median", "medoid"]
-# How the NxM per-bin sim matrix is collapsed to one score per song pair
-# Available: mean, median, max, min
-# NOTE: agg_method="medoid" is intentionally rejected; use agg_method="median" with rep_type="medoid".
-agg_methods = ["median"]
+# How the NxM per-bin sim matrix is collapsed to one score per song pair.
+# Weights are POSITIVE TEMPORAL PATCH-COUNT weights: one per source bin (row) or
+# target bin (column), equal to that bin's patch count. Segmentation runs on
+# unit-normed patch vectors; the count of bins (and so the weight vector length)
+# varies per song.
+# Available (Part B weighted directional reductions):
+#   target_weighted(S, w_target)   = (1/n_A)*sum_a( sum_b(w_target[b]*S[a,b]) / sum_b(w_target[b]) )
+#   normalized_mean_pair_weighted  = sum_ab(w_A[a]*w_B[b]*S[a,b]) / (sum_a(w_A[a])*sum_b(w_B[b]))
+#   bidirectional_weighted         = (target_weighted(fwd,w_fwd_tgt)+target_weighted(rev,w_rev_tgt))/2
+# target_weighted is DIRECTIONAL (forward A->B differs from reverse B->A, e.g.
+# 0.6333333333 vs 0.6000000000 on the fixture). The reverse matrix is supplied
+# separately, never derived by transpose. bidirectional_weighted is symmetric
+# only when the reverse direction is supplied consistently.
+# Legacy generic reductions (mean/median/max/min) and agg_method="medoid" are
+# intentionally rejected; rep_type="medoid" (an observed per-bin representation)
+# remains valid alongside these reductions.
+agg_methods = ["target_weighted", "bidirectional_weighted", "normalized_mean_pair_weighted"]
 
 [similarity]
 metrics = ["cosine"]
@@ -103,7 +121,10 @@ max_evals = 500
 
 [optimization.strategy]
 # Optimizer evaluation pathway (single strategy at a time).
-# rep_type options include medoid; agg_method currently supports mean/median/max/min.
+# rep_type options include medoid (a representation); agg_method supports the
+# three weighted directional reductions: target_weighted, bidirectional_weighted,
+# normalized_mean_pair_weighted. Legacy generic reductions (mean/median/max/min)
+# and agg_method=medoid are rejected.
 rep_type = "median"
-agg_method = "median"
+agg_method = "target_weighted"
 metric = "cosine"

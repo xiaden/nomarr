@@ -15,8 +15,9 @@ from ._base import (
     _decode_strategy_key,
     _pareto_front_indices,
     apply_dark_theme,
-    binned_config_label,
+    binned_identity_label,
     empty_df,
+    flat_medoid_value,
     fmt,
     make_chart,
     make_panel,
@@ -209,23 +210,19 @@ def section_unified_table(df: pd.DataFrame) -> dict:
     if not flat_df.empty:
         flat_ranked = flat_df.reindex(columns=flat_columns, fill_value=None).copy()
         flat_ranked["type"] = "flat"
-        flat_ranked["config"] = "flat"
+        flat_ranked["pathway"] = "flat"
+        flat_ranked["config"] = flat_ranked["strategy"]
         combined_parts.append(flat_ranked)
 
     binned_ranked = pd.DataFrame()
     if not binned_df.empty:
         binned_ranked = binned_df.reindex(columns=binned_columns, fill_value=None).copy()
         binned_ranked["type"] = "binned"
-        binned_ranked["config"] = binned_ranked.apply(
-            lambda r: binned_config_label(
-                bin_mode=r.get("bin_mode"),
-                std_thresh=r.get("std_thresh"),
-                rep_a=r.get("rep_a"),
-                rep_b=r.get("rep_b"),
-                agg_method=r.get("agg_method"),
-            ),
-            axis=1,
-        )
+        # reindex to binned_columns drops strategy_type; restore it from the source df
+        # so pathway (ptc/ctp) and the full-identity label survive rendering.
+        binned_ranked["strategy_type"] = binned_df["strategy_type"].to_numpy()
+        binned_ranked["pathway"] = binned_ranked["strategy_type"]
+        binned_ranked["config"] = binned_ranked.apply(binned_identity_label, axis=1)
         combined_parts.append(binned_ranked)
 
     if not combined_parts:
@@ -246,18 +243,13 @@ def section_unified_table(df: pd.DataFrame) -> dict:
     chart_df_rows: list[dict] = []
     backbone_values = sorted({str(backbone) for backbone in combined["backbone"].dropna().tolist()})
     for backbone in backbone_values:
-        if not flat_ranked.empty:
-            best_flat = flat_ranked[flat_ranked["backbone"] == backbone].sort_values(
-                "disc_genre",
-                ascending=False,
-                na_position="last",
-            )
-            if not best_flat.empty:
-                best_flat_row = best_flat.iloc[0]
+        if not flat_df.empty:
+            medoid_val = flat_medoid_value(flat_df, backbone, "disc_genre")
+            if medoid_val is not None:
                 chart_df_rows.append(
                     {
-                        "label": f"{backbone}\nflat",
-                        "disc_genre": metric_or_zero(best_flat_row.get("disc_genre")),
+                        "label": f"{backbone}\nmedoid",
+                        "disc_genre": medoid_val,
                         "type": "flat",
                     }
                 )
@@ -285,7 +277,10 @@ def section_unified_table(df: pd.DataFrame) -> dict:
         fig = go.Figure([go.Bar(x=labels, y=disc_vals, marker_color=colors)])
         apply_dark_theme(fig, grid=False)
         fig.update_layout(
-            title={"text": "Best disc_genre — flat vs binned per backbone", "font": {"color": _FONT_COLOR}},
+            title={
+                "text": "disc_genre — flat medoid baseline vs best binned per backbone",
+                "font": {"color": _FONT_COLOR},
+            },
             height=_H_MED,
             yaxis={"title": "disc_genre", "showgrid": True, "gridcolor": _GRID_COLOR, "gridwidth": 0.5},
         )
@@ -293,23 +288,34 @@ def section_unified_table(df: pd.DataFrame) -> dict:
             make_chart(
                 fig,
                 id="unified_disc_bar",
-                title="Best disc_genre — flat vs binned",
+                title="disc_genre — flat medoid baseline vs best binned",
             )
         )
 
+    # Pooling-variant panel: for each (rep_a, rep_b, agg_method) triple, show the
+    # exact best binned configuration (full identity) and its disc_genre — never a
+    # max that hides which configuration won.
     pooling_rows: list[dict] = []
-    if not binned_ranked.empty:
+    if not binned_ranked.empty and "disc_genre" in binned_ranked.columns:
         for (rep_a, rep_b, agg_method), grp in binned_ranked.groupby(
             ["rep_a", "rep_b", "agg_method"],
             dropna=False,
         ):
+            valid = grp[grp["disc_genre"].notna()]
+            best_cfg = "—"
+            best_val = None
+            if not valid.empty:
+                best_row = valid.loc[valid["disc_genre"].idxmax()]
+                best_cfg = binned_identity_label(best_row)
+                best_val = float(best_row["disc_genre"])
             pooling_rows.append(
                 {
                     "rep_a": fmt(rep_a),
                     "rep_b": fmt(rep_b),
                     "agg_method": fmt(agg_method),
                     "n configs": str(len(grp)),
-                    "best disc_genre": fmt(grp["disc_genre"].max()),
+                    "best config": best_cfg,
+                    "best disc_genre": fmt(best_val),
                 }
             )
 
@@ -326,7 +332,9 @@ def section_unified_table(df: pd.DataFrame) -> dict:
     table_columns = [
         "type",
         "backbone",
+        "pathway",
         "config",
+        "k",
         "map_k_general",
         "map_k_artist",
         "map_k_genre",
@@ -351,9 +359,12 @@ def section_unified_table(df: pd.DataFrame) -> dict:
         "Unified Ranking",
         description=(
             "Flat and binned configurations ranked by `map_k_general`, `map_k_artist` across all backbones. "
-            "Table columns include `map_k_general`, `map_k_artist`, `map_k_genre`, `map_k_head`, disc scores, "
-            "`flat_binned_spearman`, and `flat_binned_beneficial_reorder_rate`. "
-            "Blue bars = flat, amber bars = binned (bar chart shows best `disc_genre` per backbone)."
+            "Full configuration identity survives: flat rows show their flat strategy in `config`; binned rows "
+            "show pathway, head, bin mode, threshold, rep_a, rep_b, and aggregate in `config`, and `pathway`/`k` "
+            "columns distinguish ptc/ctp/flat and evaluation K. Table columns include `map_k_general`, "
+            "`map_k_artist`, `map_k_genre`, `map_k_head`, disc scores, `flat_binned_spearman`, and "
+            "`flat_binned_beneficial_reorder_rate`. Blue bars = flat medoid baseline, amber bars = best binned "
+            "(bar chart shows `disc_genre` per backbone)."
         ),
         charts=charts,
         tables=[
@@ -373,7 +384,7 @@ def section_per_backbone(df: pd.DataFrame) -> dict:
 
     The top-N table includes columns: disc_col, ``map_k_general``, ``map_k_artist``,
     ``map_k``, ``mrr``, ``ndcg_k``, and ``recall_k``.
-    The delta bar shows each binned config's best disc minus the flat median baseline.
+    The delta bar shows each binned config's best disc minus the flat medoid baseline.
     """
     flat_df = df[df["strategy_type"] == "global_pool"]
     binned_df = df[df["strategy_type"].isin(["ptc", "ctp"])]
@@ -409,20 +420,15 @@ def section_per_backbone(df: pd.DataFrame) -> dict:
         scatter_rows_f: list[dict] = []
         if not flat_bb.empty and "map_k" in flat_bb.columns:
             for _, row in flat_bb.iterrows():
+                strat = str(row.get("strategy", "flat")) if row.get("strategy") is not None else "flat"
                 scatter_rows_f.append(
-                    {"x": row.get(disc_col_f, 0), "y": row.get("map_k", 0), "label": "flat", "type": "flat"}
+                    {"x": row.get(disc_col_f, 0), "y": row.get("map_k", 0), "label": strat, "type": "flat"}
                 )
 
         scatter_rows_b: list[dict] = []
         if not binned_bb.empty and "map_k" in binned_bb.columns:
             for _, row in binned_bb.head(_TOP_N).iterrows():
-                cfg = binned_config_label(
-                    bin_mode=row.get("bin_mode"),
-                    std_thresh=row.get("std_thresh"),
-                    rep_a=row.get("rep_a"),
-                    rep_b=row.get("rep_b"),
-                    agg_method=row.get("agg_method"),
-                )
+                cfg = binned_identity_label(row)
                 scatter_rows_b.append(
                     {"x": row.get(disc_col_b, 0), "y": row.get("map_k", 0), "label": cfg, "type": "binned"}
                 )
@@ -477,25 +483,12 @@ def section_per_backbone(df: pd.DataFrame) -> dict:
             )
             charts.append(make_chart(fig_sc, id=f"scatter_{backbone}", title=f"{backbone} — {disc_col_f} vs MAP@k"))
 
-        # ── delta bar: binned - flat baseline ──────────────────────────────────
-        if not flat_bb.empty and not binned_bb.empty:
-            flat_ref = float(flat_bb[disc_col_f].median())
+        # ── delta bar: binned - flat medoid baseline ────────────────────────────
+        flat_ref = flat_medoid_value(flat_bb, backbone, disc_col_f) if not flat_bb.empty else None
+        if flat_ref is not None and not binned_bb.empty:
             bar_rows: list[dict] = []
             for (cfg_key,), grp in binned_bb.groupby(
-                [
-                    pd.Series(
-                        binned_bb.apply(
-                            lambda r: binned_config_label(
-                                bin_mode=r.get("bin_mode"),
-                                std_thresh=r.get("std_thresh"),
-                                rep_a=r.get("rep_a"),
-                                rep_b=r.get("rep_b"),
-                                agg_method=r.get("agg_method"),
-                            ),
-                            axis=1,
-                        ).rename("cfg")
-                    )
-                ]
+                [pd.Series(binned_bb.apply(binned_identity_label, axis=1).rename("cfg"))]
             ):
                 best_disc = float(grp[disc_col_b].max())
                 bar_rows.append({"config": cfg_key, "delta": best_disc - flat_ref})
@@ -510,7 +503,7 @@ def section_per_backbone(df: pd.DataFrame) -> dict:
                 apply_dark_theme(fig_bar, grid=False)
                 fig_bar.add_vline(x=0, line_color="#555", line_width=0.8)
                 fig_bar.update_layout(
-                    title={"text": f"{backbone} — Δ{disc_col_f} vs flat baseline", "font": {"color": _FONT_COLOR}},
+                    title={"text": f"{backbone} — Δ{disc_col_f} vs medoid baseline", "font": {"color": _FONT_COLOR}},
                     height=max(_H_SMALL, len(configs) * 22 + 80),
                     xaxis={"title": f"Δ{disc_col_f}", "showgrid": True, "gridcolor": _GRID_COLOR, "gridwidth": 0.5},
                 )
@@ -523,7 +516,8 @@ def section_per_backbone(df: pd.DataFrame) -> dict:
 
         if not flat_bb.empty:
             for _, row in flat_bb.head(5).iterrows():
-                r: dict = {"type": "flat", "backbone": backbone, "config": "flat"}
+                strat = str(row.get("strategy", "flat")) if row.get("strategy") is not None else "flat"
+                r: dict = {"type": "flat", "backbone": backbone, "config": strat}
                 for mc in metric_cols:
                     r[mc] = fmt(row.get(mc))
                 top_rows.append(r)
@@ -532,13 +526,7 @@ def section_per_backbone(df: pd.DataFrame) -> dict:
             binned_bb2 = binned_bb.copy()
             binned_bb2["_disc_sort"] = binned_bb2[disc_col_b]
             for _, row in binned_bb2.nlargest(_TOP_N, "_disc_sort").iterrows():
-                cfg = binned_config_label(
-                    bin_mode=row.get("bin_mode"),
-                    std_thresh=row.get("std_thresh"),
-                    rep_a=row.get("rep_a"),
-                    rep_b=row.get("rep_b"),
-                    agg_method=row.get("agg_method"),
-                )
+                cfg = binned_identity_label(row)
                 r = {"type": "binned", "backbone": backbone, "config": cfg}
                 for mc in metric_cols:
                     r[mc] = fmt(row.get(mc))
@@ -575,7 +563,8 @@ def section_per_backbone(df: pd.DataFrame) -> dict:
         "Per-Backbone Analysis",
         description=(
             "Scatter: each point is one configuration — stars mark Pareto-optimal points. "
-            "Δ bar: binned score minus flat median baseline (green = gain, red = loss)."
+            "Δ bar: binned score minus the explicit flat medoid baseline "
+            "(global_pool:{backbone}:medoid) (green = gain, red = loss)."
         ),
         subsections=subsections,
     )

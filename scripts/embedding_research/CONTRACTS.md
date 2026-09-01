@@ -873,26 +873,6 @@ Formula: $S = \hat{V} \hat{V}^\top$ where $\hat{V}$ is the L2-normalised version
 
 ---
 
-## `l2_similarity_matrix(vecs: RawTensor) -> np.ndarray`
-
-**Parameters:**
-
-- `vecs`: `RawTensor` — input vectors, shape `(n, d)`
-
-**Returns:** `np.ndarray` dtype `float32`, shape `(n, n)` — similarity derived from Euclidean distance.
-
-Formula: $S_{ij} = \dfrac{1}{1 + \lVert v_i - v_j \rVert_2}$
-
-**Key invariants:**
-
-- Diagonal is exactly `1.0`.
-- All values in `(0, 1]`.
-- Uses the identity $\|a - b\|^2 = \|a\|^2 + \|b\|^2 - 2 a^\top b$ then clips negative
-  squared-distances to `0` before sqrt to suppress floating-point underflow.
-- Output is `float32`.
-
----
-
 ## `_rankings_from_sim(sim_matrix: np.ndarray) -> np.ndarray`  _(internal, widely used)_
 
 **Parameters:**
@@ -937,7 +917,7 @@ def compute_retrieval_metrics(
 
 | Parameter | Type | Required | Description |
 | ----------- | ------ | ---------- | ------------- |
-| `sim_matrix` | `np.ndarray` shape `(n, n)` | yes | Pairwise similarity matrix. Must be square. Any metric output (cosine, L2-sim, dot) is accepted — values are used as-is. |
+| `sim_matrix` | `np.ndarray` shape `(n, n)` | yes | Pairwise similarity matrix. Must be square. Cosine similarity output — values are used as-is. |
 | `labels` | `list[str]` length `n` | yes | Artist label per song. Two songs are "relevant" to each other if and only if their label strings are equal. Used for MAP@k, MRR, NDCG@k, Recall@k, and `disc_artist`. |
 | `k` | `int` | no (default `10`) | Cut-off depth for all `@k` metrics. |
 | `albums` | `list[str] \| None` length `n` | no | Album label per song. Currently used only to compute `album_recalls` internally (see **Known Discrepancy** below). Must be exactly length `n` to be activated; ignored otherwise. |
@@ -1104,7 +1084,7 @@ def ann_recall_sweep(
 
 ## `ANNIndex`
 
-Wraps faiss HNSW (cosine) and IVF-Flat/Flat (L2) indices with a numpy brute-force fallback.
+Wraps faiss HNSW (cosine) index with a numpy brute-force fallback. Only the cosine metric is supported.
 
 ### Constructor
 
@@ -1122,19 +1102,17 @@ ANNIndex(
 | Parameter | Type | Default | Description |
 | ----------- | ------ | --------- | ------------- |
 | `vecs` | `RawTensor` shape `(n, d)` | — | Embedding matrix. A copy is stored internally (`self._vecs`). |
-| `metric` | `str` | `"cosine"` | Distance metric. Must be one of `ANNIndex.SUPPORTED_METRICS = ("cosine", "l2")`. Asserted at construction; `AssertionError` on invalid value. |
+| `metric` | `str` | `"cosine"` | Similarity metric. Must be `ANNIndex.SUPPORTED_METRICS = ("cosine",)`. Asserted at construction; `AssertionError` on invalid value. |
 | `hnsw_m` | `int` | `32` | HNSW graph connectivity parameter. Higher values improve recall at the cost of index build time and memory. Used only for `metric="cosine"` with faiss. |
 | `hnsw_ef_construction` | `int` | `200` | HNSW construction beam width. Affects index quality, not query speed. Used only for cosine+faiss. |
 | `hnsw_ef_search` | `int` | `64` | HNSW search beam width. Controls the recall/speed trade-off at query time. Can be updated via `set_ef_search()`. |
-| `nlist` | `int` | `100` | Number of IVF clusters. Used only for `metric="l2"` with faiss, and only when `n > 4 * nlist`. Ignored when falling back to `IndexFlatL2`. |
+| `nlist` | `int` | `100` | Parity of the removed IVF/L2 path; unused now that only the cosine metric is supported. |
 
 **Backend selection at construction:**
 
 | Condition | Index built |
 | ----------- | ------------- |
 | faiss available + `metric="cosine"` | `faiss.IndexHNSWFlat` with `METRIC_INNER_PRODUCT` on L2-normalised vectors |
-| faiss available + `metric="l2"` + `n > 4 * nlist` | `faiss.IndexIVFFlat` with `nprobe = max(1, nlist // 10)` |
-| faiss available + `metric="l2"` + `n <= 4 * nlist` | `faiss.IndexFlatL2` (exact) |
 | faiss not available | No faiss index built; `self._index = None`; numpy fallback used at query time |
 
 **State after construction:**
@@ -1163,7 +1141,7 @@ ANNIndex(
 - Updates `self._hnsw_ef_search`.
 - If faiss is available, the index is cosine-metric, and `self._index` is not `None`, also sets
   `self._index.hnsw.efSearch = ef` immediately.
-- No-op for `metric="l2"` (IVF indices do not use `efSearch`).
+- No-op fallback: faiss index is always HNSW-cosine, so `efSearch` applies to all faiss-backed queries.
 
 ---
 
@@ -1183,9 +1161,7 @@ distance in the numpy fallback (they are `argsort` order, i.e. descending sim / 
 | Condition | Behaviour |
 | ----------- | ---------- |
 | faiss + cosine | L2-normalises `qvec`, calls `self._index.search(qn[None,:], k)`, returns `nn_idx[0]` |
-| faiss + l2 | Calls `self._index.search(qvec_np[None,:], k)`, returns `nn_idx[0]` |
 | numpy + cosine | Normalises all stored vectors and query; returns `argsort(-sims)[:k]` |
-| numpy + l2 | Computes L2 norms; returns `argsort(dists)[:k]` |
 
 **Key invariants:**
 
@@ -1247,7 +1223,7 @@ $$\text{recall@k} = \frac{|\text{approx}_k \cap \text{exact}_k|}{k}$$
 | `PATCHES_DIR` | `OUTPUT_ROOT / 'patches'` | `config.py` |
 | `_CACHE_ROOT` | `OUTPUT_ROOT / 'cache'` | `cache/flat_vecs.py` |
 | `STRATEGIES` | `{"mean", "trimmed_10", "trimmed_20", "median", "max_norm", "l2norm_mean", "medoid"}` — name → pool function; includes the observed-patch `medoid` | `pooling.py` |
-| `METRICS` | `{"cosine": cosine_matrix, "l2": l2_similarity_matrix}` | `similarity.py` |
+| `METRICS` | `{"cosine": cosine_matrix}` | `similarity.py` |
 | `HEADS` | `{backbone: {head_name: onnx_path}}` — populated by `_discover_heads()` at import time | `config.py` |
 | `HEAD_LABELS` | `{head_name: [label_0, label_1]}` for known binary classifiers | `config.py` |
 | `BACKBONES` | `{"effnet": {...}, "musicnn": {...}}` | `config.py` |
@@ -1269,15 +1245,15 @@ OUTPUT_ROOT/
             {pathway}/
               {song_id}.npy      # float32 — head activation
     binned_ptc/
-      {cache_semantics_tag()}/{backbone}/{bin_mode}/{std_thresh:.3f}/{song_id}.npz
+      {cache_semantics_tag()}/{backbone}/{bin_mode}/{_threshold_key(std_thresh)}/{song_id}.npz
     binned_ctp/
-      {cache_semantics_tag()}/{backbone}/{head}/{bin_mode}/{std_thresh:.3f}/{song_id}.npz
-    sim/
-      {cache_semantics_tag()}/{backbone}/{bin_mode}/{std_thresh:.3f}/{rep_a}_{rep_b}_{metric}.npz
+      {cache_semantics_tag()}/{backbone}/{head}/{_threshold_key(std_thresh)}/{song_id}.npz
   patches/
     {backbone}/
       {song_id}.npy            # float32 [n_patches, embed_dim] — raw patch embeddings
 ```
+
+**Cache path threshold segment:** every cache module (`cache/binned_ptc.py`, `cache/binned_ctp.py`) renders the threshold segment via `_threshold_key` — an alias for `helpers.binning.threshold_key`, whose body is `return f"{float(x):.3f}"`. So the `{_threshold_key(std_thresh)}` segment in the paths above always formats the threshold with three decimals (e.g. `0.500`).
 
 ---
 
@@ -1625,7 +1601,7 @@ printed via `tqdm.write`. Errors do not abort the backbone loop.
   `cache/flat_vecs.load_matrix` (which also joins artist/album/genre metadata from the `songs` DB
   table when a connection is provided).
 - For each `(backbone, strategy_name)` pair it computes retrieval rows for all `METRICS`
-  (`"cosine"`, `"l2"`) and writes them via `GLOBAL_POOL_ANALYZE_CFG["db_write_fn"]`.
+  (`"cosine"`) and writes them via `GLOBAL_POOL_ANALYZE_CFG["db_write_fn"]`.
 - A pair is considered **done** when all `METRICS` keys are recorded with a non-zero `n_songs`
   that is not stale relative to `cache/flat_vecs.list_done_sids(backbone, strategy)` (a grown
   corpus forces a recompute).
@@ -1682,19 +1658,19 @@ printed via `tqdm.write`. Errors do not abort the backbone loop.
 
 ### `AGG_METHODS: list[str]`
 
-- **Source:** `research_config.toml` → `pooling.agg_methods`; default `["mean", "median", "max", "min"]`.
-- **Validation:** each value must be in `("mean", "median", "medoid", "max", "min")`; `medoid` is explicitly forbidden at module load (`ValueError` raised).
-- **Invariant:** `"medoid"` is never present; agg_mats are keyed by this list.
+- **Source:** `research_config.toml` → `pooling.agg_methods`; default `["target_weighted", "bidirectional_weighted", "normalized_mean_pair_weighted"]`.
+- **Validation:** each value must be in `_ALLOWED_AGG_METHODS = ("target_weighted", "bidirectional_weighted", "normalized_mean_pair_weighted")`; legacy generic reductions (`mean`/`median`/`max`/`min`) and `agg_method="medoid"` are rejected at module load (`ValueError` raised).
+- **Invariant:** exactly the three weighted reductions; agg_mats are keyed by this list.
 
 ### `REP_TYPES: list[str]`
 
 - **Source:** `research_config.toml` → `pooling.rep_types`; default `["mean", "median", "max", "min"]`.
-- **Validation:** same allowed set as `AGG_METHODS`.
-- **Invariant:** `"medoid"` is *allowed* here (it is a pool strategy, not an aggregation strategy).
+- **Validation:** `_ALLOWED_REP_TYPES = ("mean", "median", "medoid", "max", "min")` — a separate set that includes `"medoid"` (allowed as a representation). Used for **representation** only, never for aggregation.
+- **Invariant:** `"medoid"` is allowed *as a representation* (observed per-bin patch row), distinct from the aggregation set `AGG_METHODS`.
 
 ### `SIM_METRICS: list[str]`
 
-- **Source:** `research_config.toml` → `similarity.metrics`; default `["cosine", "l2"]`.
+- **Source:** `research_config.toml` → `similarity.metrics`; default `["cosine"]`.
 
 ### `_EXPECTED_ROWS_PER_CONFIG: int`
 
@@ -1702,7 +1678,7 @@ printed via `tqdm.write`. Errors do not abort the backbone loop.
 
 ### `_BIN_POOL_STRATEGIES: dict[str, Callable[[np.ndarray], np.ndarray]]`
 
-- Maps `"mean"`, `"median"`, `"max"`, `"min"` to their numpy axis-0 reductions over a `[n_seg, D]` float32 array. **Medoid is absent** — it is handled separately via `_build_medoid_payload`.
+- Maps `"mean"`, `"median"`, `"max"`, `"min"` to their numpy axis-0 reductions over a `[n_seg, D]` float32 array. `"medoid"` **is present** as well (`_constants.py:67`) — it selects the observed segment row closest to the centroid — and the observed-patch payload is built separately via `_build_medoid_payload`.
 
 ---
 
@@ -1743,8 +1719,8 @@ printed via `tqdm.write`. Errors do not abort the backbone loop.
 
 - **Reads:** nothing external.
 - **Writes:** nothing.
-- **Returns:** `{strategy_name: payload_dict}` for every key in `_BIN_POOL_STRATEGIES` plus `"medoid"`. All payloads are for the same `indices`.
-- **Invariant:** key set is fixed: `{"mean", "median", "max", "min", "medoid"}` (or fewer if `AGG_METHODS` subset is configured, but pool strategies are from `_BIN_POOL_STRATEGIES` + medoid).
+- **Returns:** `{strategy_name: payload_dict}` for every key in `_BIN_POOL_STRATEGIES` that is also in `REP_TYPES` (i.e. the returned key set is `_BIN_POOL_STRATEGIES ∩ REP_TYPES`, config-driven via `[pooling].rep_types`). With the checked-in `rep_types=['median', 'medoid']` this is `{"median", "medoid"}`. `medoid` is present in both `_BIN_POOL_STRATEGIES` (the observed-patch argmin path) and `REP_TYPES`. All payloads are for the same `indices`.
+- **Invariant:** key set is `_BIN_POOL_STRATEGIES ∩ REP_TYPES` (config-driven), independent of `AGG_METHODS` (which holds only the three weighted reductions).
 
 ---
 
@@ -1794,7 +1770,7 @@ printed via `tqdm.write`. Errors do not abort the backbone loop.
 ### Path layout
 
 ```
-{OUTPUT_ROOT}/cache/binned_ptc/{cache_semantics_tag()}/{backbone}/{bin_mode}/{std_thresh:.3f}/{song_id}.npz
+{OUTPUT_ROOT}/cache/binned_ptc/{cache_semantics_tag()}/{backbone}/{bin_mode}/{_threshold_key(std_thresh)}/{song_id}.npz
 ```
 
 The `cache_semantics_tag()` value is embedded in `CACHE_BASE` at module import; changing algorithm semantics requires a tag bump to invalidate old caches.
@@ -1906,41 +1882,41 @@ def save(
 ### Path layout
 
 ```
-{OUTPUT_ROOT}/cache/binned_ctp/{cache_semantics_tag()}/{backbone}/{head}/{bin_mode}/{std_thresh:.3f}/{song_id}.npz
+{OUTPUT_ROOT}/cache/binned_ctp/{cache_semantics_tag()}/{backbone}/{head}/{_threshold_key(std_thresh)}/{song_id}.npz
 ```
 
 Adds one extra `{head}` path segment relative to the PTC layout.
 
-### `cache_path(backbone, head, bin_mode, std_thresh, song_id) -> Path`
+### `cache_path(backbone, head, std_thresh, song_id) -> Path`
 
 - Pure path construction; no I/O.
 
-### `config_dir(backbone, head, bin_mode, std_thresh) -> Path`
+### `config_dir(backbone, head, std_thresh) -> Path`
 
 - Pure path construction; no I/O.
 
-### `is_done(backbone, head, bin_mode, std_thresh, song_id) -> bool`
+### `is_done(backbone, head, std_thresh, song_id) -> bool`
 
 - **Reads:** filesystem — opens `.npz` to verify readability.
 - **Writes:** may delete corrupt `.npz`.
 - **Returns:** `True` iff the file exists and `np.load` succeeds without exception.
 
-### `query_ctp_configs() -> set[tuple[str, str, str, float]]`
+### `query_ctp_configs() -> set[tuple[str, str, float]]`
 
-- **Reads:** filesystem — walks `CACHE_BASE` four levels deep.
-- **Returns:** `(backbone, head, bin_mode, std_thresh)` for every non-empty config directory.
+- **Reads:** filesystem — walks `CACHE_BASE` three levels deep.
+- **Returns:** `(backbone, head, std_thresh)` for every non-empty config directory.
 
-### `list_done_keys() -> set[tuple[str, str, str, str, float]]`
+### `list_done_keys() -> set[tuple[str, str, str, float]]`
 
 - **Reads:** filesystem.
-- **Returns:** `(song_id, backbone, head, bin_mode, std_thresh)` for every `.npz` file.
+- **Returns:** `(song_id, backbone, head, std_thresh)` for every `.npz` file.
 
-### `save(backbone, head, bin_mode, std_thresh, song_id, bulk_vecs) -> None`
+### `save(backbone, head, std_thresh, song_id, bulk_vecs) -> None`
 
-**`bulk_vecs` row schema** (16-element tuple — same as PTC but with `head` inserted at position 2):
+**`bulk_vecs` row schema** (15-element tuple — same as PTC but with `head` substituted for `bin_mode`, per the strategy segment fn):
 
 ```
-(sid, backbone, head, bin_mode, std_thresh, bin_id, pool_strategy,
+(sid, backbone, head, std_thresh, bin_id, pool_strategy,
  vec_raw_bytes, vec_norm_bytes, weight, outlier_count,
  selected_global_idx, selected_local_idx, medoid_centrality,
  bin_start_idx, bin_end_idx)
@@ -1950,7 +1926,7 @@ Adds one extra `{head}` path segment relative to the PTC layout.
 - **Writes:** one `.npz` file at `cache_path(...)`.
 - **npz arrays:** same pool strategy arrays as PTC cache; **no** `head_*` activation arrays (CTP cache does not store head activations).
 
-### `load_all_reps(con, backbone, head, bin_mode, std_thresh, song_ids=None) -> tuple[list[str], list[str], list[list[dict]]]`
+### `load_all_reps(con, backbone, head, std_thresh, song_ids=None) -> tuple[list[str], list[str], list[list[dict]]]`
 
 **Signature:**
 
@@ -1959,14 +1935,13 @@ def load_all_reps(
     con,
     backbone: str,
     head: str,
-    bin_mode: str,
     std_thresh: float,
     song_ids: frozenset[str] | None = None,
 ) -> tuple[list[str], list[str], list[list[dict]]]
 ```
 
 - **Reads:**
-  - Filesystem: all `.npz` files in `config_dir(backbone, head, bin_mode, std_thresh)`.
+  - Filesystem: all `.npz` files in `config_dir(backbone, head, std_thresh)`.
   - DB: `songs` table — `SELECT song_id, artist FROM songs WHERE song_id = ANY(?)` for artist labels.
 - **Writes:** may delete corrupt `.npz` files.
 - **Returns:** `(sids, artists, song_data)` — three co-indexed lists where index `i` refers to the same song.
@@ -1984,30 +1959,109 @@ def load_all_reps(
 
 ---
 
-## `cache/sim.py`
+## `cache/sim.py` — REMOVED in Plan C
 
-### Path layout
+The write-only `sim_pairs` cache path and the zero-caller `cache/sim.py` module
+(`sim_cache_path` / `load_sim` / `save_sim`) were **removed** in Plan C.  The
+caller audit proved no active consumer — `analyze` composes
+`compute_agg_mats` + `compute_retrieval_rows` directly and never read or wrote a
+similarity-matrix cache.  There is no `sim/` cache directory and no `sim_cache`
+reset path in `run.py`.  The in-memory per-bin pairwise similarity matrices built
+inside `similarity.py` remain fully live (they are inputs to the agg reductions);
+only the disk cache for them is gone.
 
+---
+
+## `corpus.py` — matching corpus manifests (added in Plan C)
+
+Every analyzed backbone (EffNet, MusicNN) gets its **own independent** matching
+corpus: the deterministic, canonically-sorted set of song IDs that all flat and
+binned configurations for that backbone compare.  A song participates only if it
+is present in every required dataset (flat vectors, PTC bins, CTP bins), so all
+compared configurations run on exactly the same song set.
+
+### `class MatchingCorpusManifest`
+
+```python
+@dataclass(frozen=True)
+class MatchingCorpusManifest:
+    song_ids: tuple[str, ...]  # canonically sorted; immutable
+    corpus_hash: str           # sha256 hex of the backbone + eligible corpus
+    backbone: str              # "effnet" | "musicnn"
 ```
-{OUTPUT_ROOT}/cache/sim/{cache_semantics_tag()}/{backbone}/{bin_mode}/{std_thresh:.3f}/{rep_a}_{rep_b}_{metric}.npz
+
+- **Canonically sorted and immutable:** constructed sorted; the corpus hash is
+  order-insensitive but data-sensitive.
+- **Equality and the hash are order-insensitive** across the constructor input
+  (the stored tuple is canonicalized to a sorted tuple in `__post_init__`, and
+  `corpus_identity_hash` sorts the song IDs before hashing).
+
+### `corpus_identity_hash(backbone: str, eligible_song_ids: Collection[str], eligibility_inputs: Mapping[str, object] | None = None) -> str`
+
+Deterministic sha256 over the backbone, the eligible song IDs, and (when given)
+eligibility inputs.  Order-insensitive: the song IDs are canonically sorted
+before hashing, so any change in corpus membership or eligibility gives a new
+hash, but reordering the same song set does not.
+
+### `build_matching_corpus(backbone: str, candidate_song_ids: Collection[str], available_by_requirement: Mapping[str, Collection[str]], *, eligibility_inputs: Mapping[str, object] | None = None) -> MatchingCorpusManifest`
+
+Intersects the song sets of every requirement (each dataset's available song
+list) over the candidate universe, sorts the surviving IDs, and returns the
+manifest.  A song missing from any single required dataset is excluded.
+
+### `validate_matching_corpus(manifest: MatchingCorpusManifest, song_ids: Sequence[str], context: str) -> None`
+
+Raises `ValueError` if `song_ids` differ from `manifest.song_ids` in **set or
+order**.  This is the fail-loud boundary in `common/analyze.py`: a loader that
+returns a different corpus (or the same corpus reordered) is rejected and the
+config is skipped — the code never silently intersects or reorders.
+
+---
+
+## `cache_identity.py` — versioned matrix-cache identity (added in Plan C)
+
+```python
+SCORING_SEMANTICS_VERSION = 1
 ```
 
-### `sim_cache_path(backbone, bin_mode, std_thresh, rep_a, rep_b, metric) -> Path`
+The representation-pair (per-bin similarity matrix) caches are keyed on a hash
+that includes the scoring-semantics version **and** the matching-corpus hash, so
+changes to either invalidate the cache by pointing at a different root.
 
-- Pure path construction; no I/O.
+### `matrix_cache_identity(*, backbone, pathway, threshold, rep_a, rep_b, aggregate, metric, song_ids, corpus_hash) -> str`
 
-### `load_sim(backbone, bin_mode, std_thresh, rep_a, rep_b, metric) -> tuple[list[str], dict[str, np.ndarray]] | None`
+sha256 hex digest of every dimension above (backbone, pathway, threshold, the
+representation pair, aggregate, metric, the song-ID set **and order**, and the
+corpus hash).  Two corpora with identical rep names but different underlying
+arrays have different `corpus_hash` values and therefore never collide.
 
-- **Reads:** one `.npz` file.
-- **Writes:** nothing.
-- **Returns:** `(sids, mats)` where `mats` maps each `AGG_METHODS` name to an `[n, n] float32` matrix, or `None` on missing/corrupt file or empty mats.
-- **Staleness check:** the caller in `common/analyze.py` compares the returned `sids` against the current `sids` list; a mismatch means the cache is stale and must be recomputed.
+### `validate_matrix_cache_identity(expected_identity: str, stored_identity: str | None, context: str) -> None`
 
-### `save_sim(backbone, bin_mode, std_thresh, rep_a, rep_b, metric, sids, mats) -> None`
+Raises `ValueError` if `stored_identity` is not `None` and differs from
+`expected_identity`.  A `None` stored identity (fresh path) is allowed.  This is
+the load-boundary check that rejects a stale corpus's cache entry.
 
-- **Reads:** nothing.
-- **Writes:** one `.npz` (compressed) at `sim_cache_path(...)`.
-- **npz arrays:** `song_ids [n] str`, `sim_{agg} [n, n] float32` per agg method.
+### `versioned_cache_root(base: Path, *, scoring_version: int = SCORING_SEMANTICS_VERSION, corpus_hash: str | None = None) -> Path`
+
+Returns `base / v{scoring_version} / {corpus_hash}`.  A scoring-semantics version
+bump or corpus change selects a different root: the old root is **preserved on
+disk but never read** (a version bump therefore cannot serve stale data).
+
+---
+
+## `common/analyze.py` — `skip_reasons` diagnostics (added in Plan C)
+
+`analyze` appends human-readable reasons to `cfg["extra_cfg"]["skip_reasons"]`
+(a `list[str]`) whenever a configuration is skipped.  Every skip is **recorded**
+and the config emits **no row**.  Recorded reasons include:
+
+- `"< 2 matching-corpus songs (incomplete sidecars/bins/reps)"` — fewer than two
+  songs survive the matching corpus, so no pair can be compared.
+- `"matching-corpus song-ID set mismatch"` — the loader returned a different
+  song set than the manifest.
+- `"matching-corpus song-ID order mismatch"` — the loader returned the same set
+  in a different order (never silently reordered).
+- any loader exception is caught and recorded as a load-failure skip.
 
 ---
 
@@ -2019,27 +2073,29 @@ def load_all_reps(
 - **Writes:** DB — upserts `binned_song_stats` row via `_db.upsert_binned_song_stats`.
 - **Stats written:** `n_bins`, `n_patches`, `n_outliers`, `min_bin_size`, `max_bin_size`, `mean_bin_size`.
 
-### `compute_agg_mats(norm_a, norm_b, bin_counts, metric, *, progress=None) -> dict[str, np.ndarray]`
+### `compute_agg_mats(norm_a, norm_b, weights_a, weights_b, metric, *, progress=None) -> dict[str, np.ndarray]`
 
 **Signature:**
 
 ```python
 def compute_agg_mats(
-    norm_a: list[UnitTensor],   # [n_songs], each [n_bins_i, D]
-    norm_b: list[UnitTensor],   # [n_songs], each [n_bins_i, D]
-    bin_counts: np.ndarray,     # [n_songs] float32
-    metric: str,                # "cosine" | "l2"
+    norm_a: list[UnitTensor],     # [n_songs], each [n_bins_i, D]
+    norm_b: list[UnitTensor],     # [n_songs], each [n_bins_i, D]
+    weights_a: list[np.ndarray],  # [n_songs], each [n_bins_i] float
+    weights_b: list[np.ndarray],  # [n_songs], each [n_bins_i] float
+    metric: str,                  # "cosine" (l2 removed)
     *,
-    progress=None,              # optional tqdm progress object
-) -> dict[str, np.ndarray]     # AGG_METHODS -> [n, n] float32
+    progress=None,                # optional tqdm progress object
+) -> dict[str, np.ndarray]       # AGG_METHODS -> [n, n] float32
 ```
 
 - **Reads:** nothing external.
 - **Writes:** nothing.
-- **Returns:** one `[n_songs, n_songs] float32` matrix per agg method.
-- **Cosine/mean fast path:** for `metric="cosine"` and `agg="mean"`, uses the batched outer-product formula `(sum_a @ sum_b.T) / outer(bin_counts, bin_counts)` — O(n²·D) but no per-pair loop.
-- **All other combinations:** upper-triangular per-pair loop with batched matrix multiplication; symmetric copy applied after.
-- **Diagonal** is set to `1.0` for all matrices.
+- **Returns:** one `[n_songs, n_songs] float32` matrix per configured aggregate name (`AGG_METHODS`).
+- **Ordered pairs:** every ordered `(i, j)` pair is evaluated independently, including `i > j` and the diagonal. The diagonal follows the same reduction formula — it is **not** unconditionally set to `1.0` (the single-bin identical-rep self-comparison still yields exactly `1.0` from cosine).
+- **No mirroring:** forward `S_ij = norm_a[i] @ norm_b[j].T` and reverse `S_ji = norm_a[j] @ norm_b[i].T` are computed separately; no `rep_a == rep_b` or symmetric-similarity assumption.
+- **Weights:** `weights_a[i]` weights the source bins of `norm_a[i]`; `weights_b[j]` weights the target bins of `norm_b[j]`. These are the per-song temporal patch-count weights.
+- **Aggregation:** each `AGG_METHODS` entry dispatches to the corresponding pure reduction in `_weighted.py`; an unknown/legacy agg raises `ValueError` (legacy generic reductions and `agg_method=medoid` are rejected).
 - **Invariant:** `norm_a[i].data` rows are guaranteed unit-normalised by the `UnitTensor` setter before this function is called.
 
 ### `compute_retrieval_rows(agg_mats, artists, backbone, bin_mode, std_thresh, rep_a, rep_b, metric, k, n_songs, *, albums, genres, flat_upper_tri, flat_sids, current_sids, head_scores, head_names) -> tuple[list[_BinnedRetrievalRow], list[tuple]]`
@@ -2069,7 +2125,7 @@ def compute_retrieval_rows(
 ) -> tuple[list[_BinnedRetrievalRow], list[tuple]]
 ```
 
-- **Reads:** nothing from disk itself; `flat_upper_tri` / `flat_sids` are passed in as pre-loaded arguments. The **only current caller** is `_optimize.py:314`, which passes no `flat_upper_tri` / `flat_sids` / `current_sids`, so Spearman is never activated in the pipeline.
+- **Reads:** nothing from disk itself; `flat_upper_tri` / `flat_sids` are passed in as pre-loaded arguments. The **only current caller** is `_optimize.py:328`, which passes no `flat_upper_tri` / `flat_sids` / `current_sids`, so Spearman is never activated in the pipeline. (Note: `_optimize.py:327` is the preceding `compute_agg_mats` call; `compute_retrieval_rows` is called at `:328`. The only other reference is the **dead** legacy wrapper `_process_group` at `_process.py:330`, which is not invoked by any live pipeline path.) The live analysis path does **not** compose `compute_retrieval_rows` — `common/analyze.py` computes metrics via `similarity.compute_retrieval_metrics` directly.
 - **Writes:** nothing.
 - **Returns:** `(rows, per_head_rows)` where `rows` has one `_BinnedRetrievalRow` per `AGG_METHODS` entry, and `per_head_rows` has one tuple `(backbone, bin_mode, std_thresh, rep_a, rep_b, metric, agg, k, h_name, corr)` per head per agg.
 - **Spearman computation:** implemented but dormant — runs only when `flat_upper_tri is not None and flat_sids is not None and current_sids is not None`. Because no pipeline caller supplies those arguments (see note above), `flat_binned_spearman` and `flat_binned_beneficial_reorder_rate` are always `None` in practice. The "no overlap" branch is described for correctness: when `len(common) < 2` (fewer than 2 shared songs), the two Spearman fields are set to `None` rather than skipping the function.
@@ -2077,7 +2133,54 @@ def compute_retrieval_rows(
 
 ### `_process_group(norm_a, norm_b, bin_counts, artists, rep_a, rep_b, metric, backbone, bin_mode, std_thresh, k, progress, albums, genres, head_scores, head_names, n_songs) -> tuple[list[_BinnedRetrievalRow], list[tuple]]`
 
-- **Compatibility wrapper** retained for legacy callers; the live shared analysis path (`common.analyze.analyze`) composes `compute_agg_mats` + `compute_retrieval_rows` directly. This function simply forwards its arguments to those two, so its `head_scores` / `head_names` / `progress` parameters have no independent semantics.
+- **Compatibility wrapper** retained for legacy callers; **not invoked by any live pipeline path** (dead). It forwards its arguments to `compute_agg_mats` + `compute_retrieval_rows`, but the live shared analysis path (`common.analyze.analyze`) does **not** compose `compute_retrieval_rows` — it calls `similarity.compute_retrieval_metrics` directly (see the caller note under `compute_retrieval_rows` above). This wrapper's `head_scores` / `head_names` / `progress` parameters therefore have no independent semantics.
+
+---
+
+## `_weighted.py`
+
+Pure weighted directional scoring reductions (Part B). They read only their `np.ndarray`
+arguments, perform no I/O, accumulate in float64, and return a Python `float`; the caller
+casts matrix outputs to float32.
+
+**Ordered-pair convention:** `S[a, b]` is the similarity from **source bin** `a` of song A to
+**target bin** `b` of song B (rows = source bins, columns = target bins). For a directional
+pair `(A, B)` the matrix has shape `(n_A, n_B)`. `w_A`/`w_B` are **positive temporal
+patch-count weights**. Ordered song pairs are evaluated independently; the reverse matrix is
+*separately supplied* and never derived by transposing/copying the forward matrix.
+
+**Aggregate keys** (`_constants.AGG_METHODS`): `["target_weighted",
+"bidirectional_weighted", "normalized_mean_pair_weighted"]` — exactly the three supported
+Part B reductions. Legacy generic reductions and `agg_method=medoid` are rejected at the
+validation boundary in `_constants.py`; `rep_type=medoid` remains a valid per-bin
+representation (REP_TYPES unchanged).
+
+### `target_weighted(pair_similarity: np.ndarray, target_weights: np.ndarray) -> float`
+
+Mean over source rows of the target-weighted row means:
+`(1/n_A) * sum_a( sum_b(w_target[b] * S[a,b]) / sum_b(w_target[b]) )`.
+`target_weights` must be 1-D with length == column dimension; zero total weight raises
+`ValueError`.
+
+### `normalized_mean_pair_weighted(pair_similarity: np.ndarray, source_weights: np.ndarray, target_weights: np.ndarray) -> float`
+
+Weighted global bilinear mean:
+`sum_ab(w_A[a] * w_B[b] * S[a,b]) / (sum_a(w_A[a]) * sum_b(w_B[b]))`.
+`source_weights` length must equal the row dimension; `target_weights` length the column
+dimension; a zero-total weight on either side raises `ValueError`.
+
+### `bidirectional_weighted(forward_similarity, reverse_similarity, forward_target_weights, reverse_target_weights) -> float`
+
+Arithmetic mean of the two separately-supplied directional scores:
+`(target_weighted(fwd, w_fwd_tgt) + target_weighted(rev, w_rev_tgt)) / 2`. The reverse
+matrix is a separate input — never a transpose/copy of the forward matrix. Symmetric only
+when the reverse direction is supplied consistently.
+
+### Validation contract
+
+- Similarity inputs must be 2-D (source x target); wrong ndim raises `ValueError`.
+- Every weight vector must be 1-D and length-match its dimension; mismatch raises `ValueError`.
+- Zero-total-weight inputs (denominator undefined) raise `ValueError`.
 
 ---
 
@@ -2131,68 +2234,46 @@ def _select_stratified_sample(
 
 ---
 
-## `_embed.py`
+## Binned embed (segment phase — `strategy_ptc/segment_fn.py`, `strategy_ctp/segment_fn.py`)
 
-### `embed(con, *, song_ids, force, backbones, device, thresholds_by_backbone_mode) -> None`
+There is **no** `strategy_binned/_embed.py` module. Binned pooling runs in the **segment phase**
+(`run.py::_segment_phase`), dispatched through the shared `common.segment.segment(...)` loop.
 
-**Signature:**
+**Live entry points (wired from `run.py::_segment_phase`):**
 
-```python
-def embed(
-    con,
-    *,
-    song_ids: frozenset[str] | None = None,
-    force: bool = False,
-    backbones: list[str] | None = None,
-    device: str = "cpu",
-    thresholds_by_backbone_mode: dict[tuple[str, str], list[float]] | None = None,
-) -> None
-```
+- **PTC** — `strategy_ptc/segment_fn.py::make_segment_fn(con)` builds the segmenting closure that
+  decodes a `ptc_{bin_mode}_{std_thresh}` strategy name, derives the segmentation threshold from
+  cached per-backbone calibration, calls `temporal_segment`, pools each segment via
+  `strategy_binned._pool._pool_segment`, then `CACHE_WRITE_FN` (`_cache_write`) persists the pooled
+  bins via `binned_ptc.save(backbone, bin_mode, std_thresh, song_id, bulk_vecs, bulk_heads=[])`.
+- **CTP** — `strategy_ctp/segment_fn.py::make_segment_fn(head_sessions, run_in_batches_fn)` decodes
+  a `ctp_{head}_{std_thresh}` strategy name, runs the ONNX head on the patches to get the score
+  stream, segments by STD threshold, pools each segment, then `CACHE_WRITE_FN` persists via
+  `binned_ctp.save(backbone, head, std_thresh, song_id, bulk_vecs)`.
 
-- **Reads:**
-  - DB:
-    - `_db.load_all_songs(con)` — all songs with `song_id`, `path`, `artist`.
-    - `_db.patch_features_done(con, sid)` — per song, scalar check.
-  - Filesystem:
-    - Sidecar `.npy` files at `_patches_path(sid, backbone)` — backbone patch embeddings.
-    - Cached calibration (DB) or computes fresh via `_calibrate`.
-  - Filesystem (PTC cache): `_list_cache_done()` — scan of existing `.npz` files (skipped when `force=True`).
-- **Writes:**
-  - DB:
-    - `patch_features` table — bulk upsert of `(song_id, patch_idx, rms, spectral_centroid, onset_strength, chroma_key)` when `librosa` is available and features not yet stored.
-    - Calibration rows via `_calibrate` (upserted into DB).
-  - Filesystem (PTC cache): `_cache_save(backbone, bin_mode, std_thresh, sid, vecs, heads)` — one `.npz` per `(backbone, bin_mode, std_thresh, song_id)` combination.
-- **Returns:** `None`.
+Both adapters expose `SKIP_CHECK_FN` (filesystem-cache skip via `binned_ptc.list_done_keys()` /
+`binned_ctp.list_done_keys()`) and `CACHE_WRITE_FN`. The shared loop
+`common.segment.segment(con, segment_fn, strategy_names, ...)` applies them per in-scope song ×
+backbone × strategy: it reads the raw sidecar `.npy` at `_patches_path(sid, backbone)`, skips songs
+with a missing sidecar, and calls `skip_check_fn(sid, backbone, strategy_name)` to drop
+already-cached strategies unless `force=True`.
 
-#### Vectors: DB vs filesystem
+**Segment flow (PTC), per `(bin_mode, std_thresh)` combo:**
 
-- **Vectors are stored to filesystem only.** The PTC cache `.npz` files are the canonical store for all bin-level vector data.
-- The DB receives only **scalar data** from `embed()`: `patch_features` (acoustic scalars) and calibration stats.
-- This is the documented performance fix: the old `binned_vecs` DB table was removed; `cache/binned_ptc.py` module docstring states explicitly: *"The DB is no longer used for binned vec / head data; it only stores scalar analysis results and song metadata."*
+1. Load sidecar: `np.load(patches_path(sid, backbone))` → `raw [n_patches, D]`.
+2. Normalise: `unit_all = raw_all.normalize()`.
+3. `temporal_segment(unit_all.data, threshold, dist_fn)` → segments.
+4. For each segment: `_pool_segment(raw_all, unit_all, seg["indices"])` → all pool strategies.
+5. `binned_ptc.save(backbone, bin_mode, std_thresh, sid, bulk_vecs)` writes one `.npz` per combo.
 
-#### Per-song processing flow
+**Vectors: DB vs filesystem**
 
-1. Load sidecar: `np.load(patches_path(sid, backbone))` → `raw_all [n_patches, D]`.
-2. Skip if `len(raw_all) < 2`.
-3. Normalise: `unit_all = raw_all.normalize()`.
-4. Extract patch features (librosa) → write to DB `patch_features`.
-5. For each `(bin_mode, std_thresh)` in `missing_combos`:
-   a. `temporal_segment(unit_all.data, std_thresh, dist_fn)` → segments.
-   b. For each segment: `_pool_segment(raw_all, unit_all, seg["indices"])` → all pool strategies.
-   c. Head inference: `_run_head_batch(session, mean_vec)` across all combos × segments in one ONNX call per head.
-6. Batch by `(bin_mode, std_thresh)` combo → `_cache_save` writes one `.npz` per combo.
-
-#### Head source for inference
-
-- `head_source = pooled.get("mean") or pooled.get("medoid") or next(iter(pooled.values()))` — the `mean` pool strategy is preferred; `medoid` is the fallback; any strategy is the last resort.
-- ONNX inference uses the raw vector (`head_source["vec_raw"].data`), **not** the normalised one.
-
-#### Song-level filtering
-
-1. Only songs present in `_db.load_all_songs(con)` are candidates.
-2. Further filtered by `song_ids` if provided.
-3. Songs without a sidecar file are skipped (counted as `skipped`).
-4. Songs with `< 2` patches are skipped.
+- **Vectors are stored to filesystem only.** The PTC / CTP cache `.npz` files are the canonical
+  store for all bin-level vector data.
+- The DB receives only **scalar data** (acoustic `patch_features` and calibration stats).
+- This is the documented performance fix: the old `binned_vecs` DB table was removed;
+  `cache/binned_ptc.py` module docstring states explicitly: *"The DB is no longer used for binned
+  vec / head data; it only stores scalar analysis results and song metadata."*
 
 ---
 
@@ -2234,8 +2315,8 @@ def _eval_threshold(
     objective: str,           # "disc_artist" | "disc_genre" | "disc_general"
     k: int,
     rep_type: str,            # pool strategy for the optimizer
-    agg_method: str,          # agg method for reading rows
-    metric: str,              # "cosine" | "l2"
+    agg_method: str,          # weighted reduction for reading rows
+    metric: str,              # "cosine" (only supported metric; l2 was removed)
     head_scores_by_sid: dict[str, np.ndarray] | None,
     head_names: list[str] | None,
 ) -> tuple[float, dict, dict[str, tuple[tuple[int, ...], ...]]]
@@ -2248,7 +2329,7 @@ def _eval_threshold(
   - `float` — mean objective score across rows matching `agg_method`, or `0.0` on failure.
   - `dict` — diagnostics dict (bins stats, discriminability metrics, sim_checksum).
   - `dict[str, tuple[tuple[int,...], ...]]` — `sid -> layout` mapping where layout is `tuple` of `tuple[int, ...]` of patch indices per segment.
-- **Early return** with all-zero metrics when `n < 2` valid songs remain after segmentation.
+- **Early return** with all-zero metrics when `n < 4` valid songs remain after segmentation.
 - **head_scores alignment:** `head_scores_aligned [n_valid_songs, n_heads]` is built by looking up each `eval_sid` in `head_scores_by_sid`; missing sids use a neutral `0.5` fill.
 - **No cache reads or writes.** All segmentation and pooling is done purely in memory from `song_data`.
 
@@ -2275,7 +2356,7 @@ def optimize_std_threshold(
     grid_step: float = 0.05,
     flat_epsilon: float = 1e-8,
     rep_type: str = "median",
-    agg_method: str = "median",
+    agg_method: str = "target_weighted",
     metric: str = "cosine",
     csv_stem_suffix: str = "",
 ) -> OptimizationResult
@@ -2323,7 +2404,7 @@ def optimize_std_threshold(
 | Bin-level vectors (`pool_*_raw`, `pool_*_norm`) | **Filesystem only** — `cache/binned_ptc/**/*.npz` |
 | Bin-level head activations (`head_*`) | **Filesystem only** — same `.npz` |
 | CTP bin-level vectors | **Filesystem only** — `cache/binned_ctp/**/*.npz` |
-| Pairwise sim matrices (`sim_*`) | **Filesystem only** — `cache/sim/**/*.npz` |
+| Pairwise sim matrices (`sim_*`) | **In-memory only** — never cached to disk (disk sim cache removed in Plan C) |
 | Scalar analysis results (`analyze_metrics`, `song_retrieval_metrics`) | **DB only** |
 | Song stats (`binned_song_stats`) | **DB only** |
 | Head agreement (`head_agreement_rows`) | **DB only** |
@@ -2334,13 +2415,14 @@ def optimize_std_threshold(
 ### Song ID alignment rules
 
 - Within the shared binned analyze path: `sids`, `artists`, `albums`, `genres`, and per-head score arrays loaded by `cfg["load_vecs_fn"]` are co-indexed on the same `sids` order.
-- PTC and CTP song lists for the same `(backbone, bin_mode, std_thresh)` are **not guaranteed to match** — they come from independent cache scans and callers must join on `song_id` themselves.
+- PTC and CTP song lists for the same `(backbone, bin_mode, std_thresh)` are **aligned via the matching corpus manifest** (`corpus.py`): each loader restricts its discovery to `manifest.song_ids`, so all binned and flat configurations for a backbone compare the exact same deterministic song set. A loader that returns a different set or order than the manifest is rejected (`validate_matching_corpus`) and the config is skipped with a recorded reason — never silently intersected or reordered.
 - No `flat_ref/` directory participates in binned analysis; there is no separate Spearman reference song set.
 
 ### `cache_semantics_tag()` and cache invalidation
 
-- `CACHE_BASE` in `cache/binned_ptc.py` and `cache/binned_ctp.py`, and `SIM_CACHE_BASE` in `cache/sim.py`, all embed `cache_semantics_tag()` at module import time.
+- `CACHE_BASE` in `cache/binned_ptc.py` and `cache/binned_ctp.py` embeds `cache_semantics_tag()` at module import time.  The similarity-matrix cache (`cache/sim.py`, `SIM_CACHE_BASE`) was removed in Plan C.
 - Changing the tag invalidates all caches by using a different root directory; old directories are orphaned, not deleted.
+- Independent from the semantics tag, `versioned_cache_root` (see `cache_identity.py`) keys the representation-pair matrix caches on a scoring-semantics version and the matching-corpus hash, so a stale corpus or a changed scoring version is served from a different (orphaned) root rather than reused.
 
 ### `agg_method=medoid` prohibition
 
@@ -2348,9 +2430,7 @@ def optimize_std_threshold(
 
 ---
 
-## 6. Report Sections (
-
-eport/)
+## 6. Report Sections (report/)
 
 ## Table of Contents
 
@@ -2362,8 +2442,10 @@ eport/)
 6. [_binned.py](#_binnedpy)
 7. [_heads.py](#_headspy)
 8. [_summary.py](#_summarypy)
-9. [_truncation.py](#_truncationpy)
-10. [V2 Section Dict Shape Reference](#v2-section-dict-shape-reference)
+9. [_winners.py](#_winnerspy)
+10. [_winners_report.py](#_winners_reportpy)
+11. [_truncation.py](#_truncationpy)
+12. [V2 Section Dict Shape Reference](#v2-section-dict-shape-reference)
 
 ---
 
@@ -2371,61 +2453,17 @@ eport/)
 
 ### Constants
 
-#### `FLAT_COLUMNS` (18 items, in order)
+The `_base.py` module does **not** define `FLAT_COLUMNS` / `BINNED_COLUMNS` module-level
+constants.  The flat and binned column sets are **local lists** (`flat_columns` /
+`binned_columns`) inside `section_unified_table` in `report/_retrieval.py` (see lines
+~96–203).  They are the row sets the unified-ranking table is reindexed to:
 
-```python
-FLAT_COLUMNS = [
-    "backbone",
-    "strategy",
-    "sim_metric",
-    "k",
-    "disc_general",
-    "disc_artist",
-    "disc_genre",
-    "disc_head",
-    "disc_score",
-    "mean_within",
-    "mean_cross",
-    "map_k",
-    "mrr",
-    "ndcg_k",
-    "recall_k",
-    "recall_k_genre",
-    "precision_k_genre",
-    "precision_k_head_mean",
-]
-```
-
-#### `BINNED_COLUMNS` (24 items, in order)
-
-```python
-BINNED_COLUMNS = [
-    "backbone",
-    "bin_mode",
-    "std_thresh",
-    "rep_a",
-    "rep_b",
-    "sim_metric",
-    "agg_method",
-    "k",
-    "disc_general",
-    "disc_artist",
-    "disc_genre",
-    "disc_head",
-    "disc_score",
-    "mean_within",
-    "mean_cross",
-    "map_k",
-    "mrr",
-    "ndcg_k",
-    "recall_k",
-    "recall_k_genre",
-    "precision_k_genre",
-    "precision_k_head_mean",
-    "flat_binned_spearman",
-    "flat_binned_beneficial_reorder_rate",
-]
-```
+- `flat_columns` — 49 items: flat identity (`backbone`, `strategy`, `sim_metric`, `k`),
+  the core retrieval metrics + means/variances/kurtoses per label axis, and
+  `map_k_general`.
+- `binned_columns` — 55 items: binned identity (`backbone`, `bin_mode`, `std_thresh`,
+  `rep_a`, `rep_b`, `sim_metric`, `agg_method`, `k`), the same metric columns, plus
+  `flat_binned_spearman` and `flat_binned_beneficial_reorder_rate`.
 
 #### Plot theme constants
 
@@ -2492,6 +2530,9 @@ Returns a human-readable aggregation label:
 - `None` → `"—"`
 - `"median"` → `"median"`
 - `"medoid"` → `"medoid"`
+- `"target_weighted"` → `"target-wtd"`
+- `"bidirectional_weighted"` → `"bidir-wtd"`
+- `"normalized_mean_pair_weighted"` → `"norm-pair-wtd"`
 - anything else → unchanged string
 
 #### `binned_config_label(*, bin_mode, std_thresh, rep_a, rep_b, agg_method) -> str`
@@ -2743,7 +2784,7 @@ missing, or all CSVs are empty or lack an objective column.
 
 ## _retrieval.py
 
-### `query_flat(con) -> pd.DataFrame`
+### `query_analyze_metrics(con) -> pd.DataFrame`
 
 **Signature:** `(con) -> pd.DataFrame`
 
@@ -2751,85 +2792,60 @@ missing, or all CSVs are empty or lack an objective column.
 
 | Table | Columns selected | Order |
 | --- | --- | --- |
-| `flat_results` | All `FLAT_COLUMNS` (18 columns) | `disc_score DESC` |
+| `analyze_metrics` | `strategy_key`, `strategy_type`, `sim_metric`, `k`, plus one pivoted column per metric value | `disc_general DESC NULLS LAST` |
 
-**Return value:** `pd.DataFrame` with columns matching `FLAT_COLUMNS`.
+Pivots `analyze_metrics` via `PIVOT ... ON metric USING FIRST(value) GROUP BY strategy_key, strategy_type, sim_metric, k`, filters rows to `STRATEGY_TYPES = ["global_pool", "ptc", "ctp"]`, then decodes each `strategy_key` into derived `backbone` / `strategy` / `head` / `bin_mode` / `std_thresh` / `rep_a` / `rep_b` / `agg_method` columns via `_decode_strategy_key`. This decoded frame is the single input consumed by all retrieval report sections.
 
-**Empty/stub behaviour:** Returns `empty_df(FLAT_COLUMNS)` (0-row DataFrame
-with all 18 column headers) if:
+**Return value:** `pd.DataFrame` with `ANALYZE_METRICS_COLUMNS` plus the derived configuration columns.
 
-- `flat_results` table does not exist, or
-- the SELECT query raises any exception.
+**Empty/stub behaviour:** Returns `empty_df(ANALYZE_METRICS_COLUMNS)` if:
 
----
-
-### `query_binned(con) -> pd.DataFrame`
-
-**Signature:** `(con) -> pd.DataFrame`
-
-**DB reads:**
-
-| Table | Columns selected | Order |
-| --- | --- | --- |
-| `binned_results` | All `BINNED_COLUMNS` (24 columns) | `disc_score DESC` |
-
-**Return value:** `pd.DataFrame` with columns matching `BINNED_COLUMNS`.
-
-**Empty/stub behaviour:** Returns `empty_df(BINNED_COLUMNS)` (0-row DataFrame
-with all 24 column headers) if:
-
-- `binned_results` table does not exist, or
-- the SELECT query raises any exception.
+- the `analyze_metrics` table does not exist, or
+- the SELECT/PIVOT query raises any exception.
 
 ---
 
-### `section_unified_table(flat_df, binned_df) -> dict`
+### `section_unified_table(df) -> dict`
 
-**Signature:** `(flat_df: pd.DataFrame, binned_df: pd.DataFrame) -> dict`
+**Signature:** `(df: pd.DataFrame) -> dict`
 
-**DataFrame inputs:**
-
-| Argument | Expected columns (all from FLAT/BINNED_COLUMNS) |
-| --- | --- |
-| `flat_df` | `backbone`, `strategy`, `sim_metric`, `k`, `disc_general`, `disc_artist`, `disc_genre`, `disc_head`, `disc_score`, `mean_within`, `mean_cross`, `map_k`, `mrr`, `ndcg_k`, `recall_k`, `recall_k_genre`, `precision_k_genre`, `precision_k_head_mean` |
-| `binned_df` | All flat columns above, plus `bin_mode`, `std_thresh`, `rep_a`, `rep_b`, `agg_method`, `flat_binned_spearman`, `flat_binned_beneficial_reorder_rate` |
-
-Missing columns are filled with `None` via `reindex(fill_value=None)`.
+**DataFrame input:** the decoded `analyze_metrics` frame from `query_analyze_metrics`. The function derives `flat_df = df[strategy_type == "global_pool"]` and `binned_df = df[strategy_type in (ptc, ctp)]` internally.
 
 **Processing:**
 
-1. Flat rows get synthetic columns: `type="flat"`, `config="flat"`
-2. Binned rows get `type="binned"`, `config=binned_config_label(...)`
-3. Combined, sorted by `disc_genre DESC, disc_artist DESC` (`na_position="last"`)
-4. Top 20 rows emitted as table
-5. Per-backbone best flat vs best binned bar chart built
+1. Flat rows get synthetic columns: `type="flat"`, `pathway="flat"`, `config=<flat strategy>`.
+2. Binned rows get `type="binned"`, `pathway=ptc|ctp`, and `config=binned_identity_label(...)` (full pathway/head/bin/rep/agg identity, never collapsed).
+3. Combined, sorted by `map_k_general DESC, map_k_artist DESC` (`na_position="last"`); top 20 rows emitted as table.
+4. A per-backbone bar chart (`id="unified_disc_bar"`) compares the **flat medoid baseline** (`flat_medoid_value`) against the best binned `disc_genre` per backbone — never a max across flat strategies.
+5. A `pooling_variants` panel lists, per `(rep_a, rep_b, agg_method)` triple, the exact best binned config (full identity) and its `disc_genre`.
 
 **Return value:** v2 section dict with `id="unified-ranking"`, `title="Unified Ranking"`.
 
 **Populated fields when data is present:**
 
-- `charts`: one grouped bar chart comparing best flat vs best binned disc_genre per backbone
+- `charts`: one bar chart of flat medoid baseline vs best binned `disc_genre` per backbone
 - `tables`: one collapsible top-20 table (`id="top20"`) with columns:
-  `backbone`, `config`, `type`, `disc_general`, `disc_artist`, `disc_genre`,
+  `type`, `backbone`, `pathway`, `config`, `k`, `map_k_general`, `map_k_artist`,
+  `map_k_genre`, `map_k_head`, `disc_general`, `disc_artist`, `disc_genre`,
   `disc_head`, `disc_score`, `map_k`, `mrr`, `ndcg_k`, `recall_k`,
-  `recall_k_genre`, `precision_k_genre`, `precision_k_head_mean`,
-  `flat_binned_spearman`, `flat_binned_beneficial_reorder_rate`
-- `panels`, `subsections`, `stats`, `warnings`, `headline`: all `[]` / `None`
+  `recall_k_genre`, `flat_binned_spearman`, `flat_binned_beneficial_reorder_rate`
+- `panels`: one `pooling_variants` panel (may be `[]`)
+- `subsections`, `stats`, `warnings`, `headline`: all `[]` / `None`
 
 **Empty/stub behaviour:**
 
 | Condition | `empty_message` |
 | --- | --- |
-| Both inputs empty | `"No retrieval results yet. Run the eval phase first."` |
-| `combined_parts` empty after concat | `"No results could be ranked."` |
+| Both `flat_df` and `binned_df` empty | `"No retrieval results yet. Run the eval phase first."` |
+| No parts after concat | `"No results could be ranked."` |
 
 ---
 
-### `section_per_backbone(flat_df, binned_df) -> dict`
+### `section_per_backbone(df) -> dict`
 
-**Signature:** `(flat_df: pd.DataFrame, binned_df: pd.DataFrame) -> dict`
+**Signature:** `(df: pd.DataFrame) -> dict`
 
-**DataFrame inputs:** Same column sets as `section_unified_table`.
+**DataFrame input:** the decoded `analyze_metrics` frame. Flat/binned subsets derived internally as in `section_unified_table`.
 
 **Disc column selection (applied independently to flat and binned):**
 Uses `disc_general` if that column exists and has at least one non-null value;
@@ -2839,11 +2855,13 @@ otherwise falls back to `disc_score`.
 
 - **Scatter chart** (`disc` vs `map_k`): flat points + top-`_TOP_N` (15) binned
   points, Pareto-optimal points marked as stars.
-- **Delta bar chart** (binned Δ vs flat baseline): top-15 binned configs ranked
-  by `(best_binned_disc - flat_median_disc)`, green/red coloured.
+- **Delta bar chart** (binned Δ vs flat baseline): each binned config's best
+  `disc_col` minus the **explicit flat medoid baseline** (`flat_medoid_value`, i.e.
+  `global_pool:{backbone}:medoid`), top-15 configs, green/red coloured. A config
+  is never compared against a max/median/mean across flat strategies.
 - **Top-N table** (`id=f"top_configs_{backbone}"`): top-5 flat rows + top-15
   binned rows, columns `type`, `backbone`, `config`, plus metric columns
-  (`disc_col`, `map_k`, `mrr`, `ndcg_k`, `recall_k`).
+  (`disc_col`, `map_k_general`, `map_k_artist`, `map_k`, `mrr`, `ndcg_k`, `recall_k`).
 
 **Return value:** v2 section dict with `id="per-backbone"`,
 `title="Per-Backbone Analysis"`, `subsections` list where each entry is an
@@ -2853,30 +2871,36 @@ inline v2 dict (all 11 keys present) with `id=f"backbone-{backbone}"`.
 
 | Condition | `empty_message` |
 | --- | --- |
-| Both inputs produce no backbone names | `"No backbone data yet."` |
+| No backbone names produced | `"No backbone data yet."` |
 
 ---
 
 ## _binned.py
 
-### `section_threshold_sweep(binned_df, flat_df=None) -> dict`
+### `section_threshold_sweep(df) -> dict`
 
-**Signature:** `(binned_df: pd.DataFrame, flat_df: pd.DataFrame | None = None) -> dict`
+**Signature:** `(df: pd.DataFrame) -> dict`
 
-**DataFrame inputs:**
-
-| Argument | Required columns |
-| --- | --- |
-| `binned_df` | `backbone`, `bin_mode`, `std_thresh`, and disc column (`disc_general` if present+non-null, else `disc_score`) |
-| `flat_df` | `backbone`, same disc column |
+**DataFrame input:** the decoded `analyze_metrics` frame. Binned rows
+(`strategy_type in (ptc, ctp)`) and flat rows (`strategy_type == "global_pool"`)
+are split internally; flat rows supply the medoid baseline only.
 
 **Processing:**
 
-- Optionally filters `binned_df` to `DIST_THRESHOLDS` from
+- Optionally filters binned rows to `DIST_THRESHOLDS` from
   `scripts.embedding_research.helpers.binning` (silently skipped on `ImportError`).
-- Groups by `(bin_mode, std_thresh)`, takes `max(disc_col)` per group.
-- One line per `bin_mode`, x-axis = `std_thresh`, y-axis = best disc.
-- If `flat_df` provided: adds amber dashed horizontal line at `max(flat_disc)` per backbone.
+- Groups binned rows by the full 6-dim combinatorial
+  `(bin_mode, std_thresh, rep_a, rep_b, agg_method, head)` and computes, per group,
+  the mean / variance / stddev / kurtosis (`min 4 points`) of `disc` plus a row count
+  (`n`); when `map_k_general` is present also the mean/variance of that column.  Thresholds
+  are never collapsed into a max.
+- One trace per `(bin_mode, rep_a, rep_b, agg_method, head)` with y-axis =
+  **mean disc** (mean MAP@k when available), x-axis = `std_thresh`, ±1 std error bars.
+- Adds an amber dashed horizontal line at the **flat medoid baseline**
+  (`flat_medoid_value`) per backbone — never `max(flat_disc)` across strategies.
+- MAP@k general primary chart id is `f"sweep_map_{backbone}"` (one per backbone);
+  disc mean/variance/kurtosis charts use ids `sweep_mean_{backbone}` /
+  `sweep_var_{backbone}` / `sweep_kurt_{backbone}`.
 
 **Return value:** v2 section dict with `id="threshold-sweep"`,
 `title="Threshold Sweep"`. Each backbone becomes an inline v2 subsection dict
@@ -2886,7 +2910,7 @@ inline v2 dict (all 11 keys present) with `id=f"backbone-{backbone}"`.
 
 | Condition | `empty_message` |
 | --- | --- |
-| `binned_df.empty` | `"No binned results yet."` |
+| No binned rows | `"No binned results yet."` |
 
 ---
 
@@ -2944,25 +2968,27 @@ plotted together, rather than grouped bar charts.
 
 ---
 
-### `section_bin_mode_comparison(binned_df, flat_df=None) -> dict`
+### `section_bin_mode_comparison(df) -> dict`
 
-**Signature:** `(binned_df: pd.DataFrame, flat_df: pd.DataFrame | None = None) -> dict`
+**Signature:** `(df: pd.DataFrame) -> dict`
 
-**DataFrame inputs:**
-
-| Argument | Required columns |
-| --- | --- |
-| `binned_df` | `backbone`, `bin_mode`, `std_thresh`, disc column (`disc_general` if present+non-null, else `disc_score`) |
-| `flat_df` | `backbone`, same disc column |
+**DataFrame input:** the decoded `analyze_metrics` frame; binned/flat subsets
+split internally as in `section_threshold_sweep`.
 
 **Processing:**
 
-- Optionally filters to `DIST_THRESHOLDS` (same as `section_threshold_sweep`).
-- Requires `len(binned_df["bin_mode"].unique()) >= 2`; returns early if only one mode found.
-- Groups by `(backbone, bin_mode, std_thresh)`, takes max disc.
-- Per backbone: counts threshold-level wins for `temporal_global` vs `temporal_perdim`.
-- If `flat_df` provided: counts how many thresholds beat flat for each mode.
-- Verdict: `"temporal_global wins"` / `"temporal_perdim wins"` / `"Both equivalent"`.
+- Optionally filters binned rows to `DIST_THRESHOLDS` (same as `section_threshold_sweep`).
+- Requires `len(bin_mode.unique()) >= 2`; returns early if only one mode found.
+- Per backbone: re-aggregates by `(bin_mode, std_thresh)` taking the **mean** of
+  `map_k_general` (or the disc column when `map_k_general` is absent) across all
+  `(rep_a, rep_b, agg_method, sim_metric, k)` variants at each threshold — no
+  max-collapsing.
+- Compares `temporal_global` vs `temporal_perdim` counts over the common thresholds
+  shared by both modes.
+- Adds an amber dashed horizontal line at the **flat medoid baseline**
+  (`flat_medoid_value`) — never `max(flat_disc)` across strategies.
+- Verdict: `"temporal_global wins for this backbone."` / `"temporal_perdim wins for this backbone."`
+  / `"Both modes perform equivalently for this backbone."`.
 
 **Return value:** v2 section dict with `id="bin-mode-comparison"`,
 `title="Bin Mode Comparison: global vs perdim"`, per-backbone subsections.
@@ -2972,8 +2998,34 @@ Each subsection is an inline v2 dict (all 11 keys) with `id=f"bmc-{backbone}"`.
 
 | Condition | `empty_message` |
 | --- | --- |
-| `binned_df.empty` | `"No binned results yet."` |
+| No binned rows | `"No binned results yet."` |
 | `< 2` distinct bin modes | `"Only one bin mode found — need both temporal_global and temporal_perdim."` |
+
+---
+
+### `section_flat_binned_correlation(df) -> dict`
+
+**Signature:** `(df: pd.DataFrame) -> dict`
+
+**DataFrame input:** the decoded `analyze_metrics` frame.
+
+**Processing:**
+
+- Reads the decoded `flat_binned_spearman` and `flat_binned_beneficial_reorder_rate`
+  columns (present on binned rows from the shared analyze phase).
+- Groups by `(strategy_type, bin_mode, head, std_thresh, rep_a, rep_b, agg_method)`.
+- Per backbone renders a Spearman rho chart plus a raw-stats panel
+  (`flat_binned_spearman`, `flat_binned_beneficial_reorder_rate`).
+
+**Return value:** v2 section dict with `id="flat-binned-corr"`,
+`title="Flat-Binned Rank Correlation"`, per-backbone subsections with `id=f"fbcorr-{backbone}"`.
+
+**Empty/stub behaviour:**
+
+| Condition | `empty_message` |
+| --- | --- |
+| No binned rows at all | `"No binned results yet."` (early return at `report/_binned.py` `section_flat_binned_correlation`) |
+| Neither `flat_binned_spearman` nor `flat_binned_beneficial_reorder_rate` has a non-null value | `"No flat-binned correlation data available."` |
 
 ---
 
@@ -2987,7 +3039,10 @@ Each subsection is an inline v2 dict (all 11 keys) with `id=f"bmc-{backbone}"`.
 
 | Table | Columns read | Order |
 | --- | --- | --- |
-| `head_sim_corr_rows` | `backbone`, `head`, `strategy`, `spearman_r` (rounded 4dp), `p_value` (rounded 4dp) | `backbone, head, strategy` |
+| `head_sim_corr_rows` | `backbone`, `head`, `bin_mode`, `std_thresh`, `rep_a`, `rep_b`, `agg_method`, `spearman_r` (rounded 4dp) | `backbone, head, bin_mode, std_thresh` |
+
+`strategy` is derived from the row columns via `binned_config_label` after the query — it is
+not a table column.
 
 **Processing:**
 
@@ -3021,7 +3076,6 @@ Each subsection is an inline v2 dict (all 11 keys) with `id=f"corr-{backbone}"` 
 | Table | Columns read | Required |
 | --- | --- | --- |
 | `ptc_ctp_rows` | `backbone`, `head`, `strategy`, `ptc_disc` (4dp), `ctp_disc` (4dp), `delta_disc` (4dp) | Yes |
-| `binned_ptc_ctp_metrics` | `backbone`, `head`, `std_thresh`, `bin_mode`, `sim_align_corr` | Optional (structural alignment panel) |
 
 **`flat_df` columns used (if provided):**
 
@@ -3030,11 +3084,11 @@ Used to draw a flat baseline reference line on per-backbone bar charts.
 
 **Processing:**
 
-- Aggregates `ptc_ctp_rows` by `(backbone, head)`: `median_delta`, `dominance_rate`.
-- Two global heatmaps (head × backbone): median Δdisc and dominance rate.
-- Per-backbone panel: grouped bar chart of median PTC/CTP disc per head + Δdisc bar.
-- If `binned_ptc_ctp_metrics` exists: structural alignment heatmap
-  (mean `sim_align_corr`, filtered to `_THRESH_SQL` and `_BIN_MODE_SQL`).
+- Aggregates `ptc_ctp_rows` by `(backbone, head)`: `median_delta` and `best_delta`
+  (delta of the winning strategy — PTC or CTP — for that head).
+- Two global heatmaps (head × backbone): median Δdisc and best Δdisc.
+- Per-backbone panel: grouped bar chart of median PTC/CTP disc per head + Δdisc bar,
+  with a medoid baseline vline from `flat_medoid_value`.
 
 `_THRESH_SQL` and `_BIN_MODE_SQL` are derived at module load time from
 `scripts.embedding_research.helpers.binning.DIST_THRESHOLDS` and `BIN_MODES`
@@ -3044,8 +3098,8 @@ Used to draw a flat baseline reference line on per-backbone bar charts.
 
 **Populated fields:**
 
-- `charts`: `[median_delta_heatmap, dominance_rate_heatmap]`
-- `panels`: `[per_backbone_breakdown_panel]` + optional `[structural_alignment_panel]`
+- `charts`: `[head_value_delta, head_value_best]` (per-backbone bar charts carry id `hv_bb_chart_{backbone}`)
+- `panels`: `[per_backbone_breakdown_panel]`
 - `description`, `stats`, `tables`, `subsections`, `warnings`, `headline`: all `[]` / `None`
 
 **Empty/stub behaviour:**
@@ -3060,82 +3114,141 @@ Used to draw a flat baseline reference line on per-backbone bar charts.
 
 ## _summary.py
 
-### `_dominance_rate(binned_df, flat_df, backbone, col='disc_genre') -> tuple[float, float, float]`
+### `section_summary(df) -> dict`
 
-**Signature:** `(binned_df, flat_df, backbone, col='disc_genre') -> tuple[float, float, float]`
+**Signature:** `(df: pd.DataFrame) -> dict`
 
-Private helper. Returns `(dominance_rate, flat_best, binned_best)` where:
+**DataFrame input:** the decoded `analyze_metrics` frame; flat/binned subsets
+split internally (`strategy_type == "global_pool"` vs `ptc`/`ctp`).
 
-- `dominance_rate` = fraction of unique binned configs (deduplicated by
-  `_BINNED_CONFIG_COLS`) whose `col` score exceeds `flat_best`.
-- `flat_best` = max of `col` in flat rows for this backbone.
-- `binned_best` = max of `col` in deduplicated binned rows.
+**Processing (per backbone):**
 
-**DataFrame columns required:**
-
-| Argument | Columns |
-| --- | --- |
-| `binned_df` | `backbone`, `bin_mode`, `std_thresh`, `rep_a`, `rep_b`, `agg_method`, `{col}` |
-| `flat_df` | `backbone`, `{col}` |
-
-`_BINNED_CONFIG_COLS = ["bin_mode", "std_thresh", "rep_a", "rep_b", "agg_method"]`
-
-**Returns `(0.0, 0.0, 0.0)` if:**
-
-- `binned_df` is empty or missing any `_BINNED_CONFIG_COLS`
-- `flat_df` or `binned_df` subsets are empty after filtering for `backbone`
-- Either `col` is absent from either input
-- Either score series is all-NaN after `dropna()`
-
----
-
-### `section_summary(flat_df, binned_df) -> dict`
-
-**Signature:** `(flat_df: pd.DataFrame, binned_df: pd.DataFrame) -> dict`
-
-**DataFrame inputs:**
-
-| Argument | Required columns | Optional columns |
-| --- | --- | --- |
-| `flat_df` | `backbone`, `disc_genre` | `n_songs` |
-| `binned_df` | `backbone`, `bin_mode`, `std_thresh`, `rep_a`, `rep_b`, `agg_method`, `disc_genre` | `n_songs` |
-
-**Processing:**
-
-1. Collects all backbone names from both inputs.
-2. For each backbone, checks for `n_songs` mismatch between flat and binned
-   (emits a `"warning"` dict if mismatch found).
-3. Calls `_dominance_rate` to get `(dominance_rate, flat_best, binned_best)`.
-4. Computes `flat_composite_tuning_sens = median(disc_genre) - 0.5 * IQR(disc_genre)` for flat.
-5. Computes same composite for binned (using deduplicated config rows).
-6. Selects `best_binned_config` as `binned_config_label(...)` of the row with max `disc_genre`.
-7. Assigns per-backbone `verdict`:
-   - `dominance_rate > 0.66` → `"consistently better"`
-   - `dominance_rate > 0.33` → `"sometimes better"`
-   - otherwise → `"not better"`
-8. Sets top-level `headline` dict based on best verdict across all backbones.
+1. `flat_medoid_disc_genre` — the explicit flat **medoid** baseline on `disc_genre`
+   (`flat_medoid_value`, i.e. `global_pool:{backbone}:medoid`). Never a max/median/mean
+   across flat strategies.
+2. `best_binned_config` — `binned_identity_label(...)` of the binned row with the
+   highest `disc_genre`.
+3. `best_binned_disc_genre` — that winning row's `disc_genre`.
+4. `delta_vs_medoid` — `best_binned_disc_genre - flat_medoid_disc_genre`.
 
 **Return value:** v2 section dict with `id="summary"`, `title="Summary"`.
 
 **Populated fields:**
 
 - `tables`: one table (`id="backbone_summary"`) with per-row columns:
-  `backbone`, `dominance_rate`, `verdict`, `flat_best_disc_genre`,
-  `binned_best_disc_genre`, `flat_composite_tuning_sens`,
-  `binned_composite_tuning_sens`, `best_binned_config`
-- `warnings`: list of `n_songs`-mismatch warning dicts (may be `[]`)
-- `headline`: `{color: str, icon: str, text: str}`
-  - `#22c55e` / `"✓"` if any backbone is `"consistently better"`
-  - `#f59e0b` / `"⚠"` if any backbone is `"sometimes better"`
-  - `#f87171` / `"✕"` otherwise
-- `stats`, `charts`, `panels`, `subsections`: all `[]`
+  `backbone`, `flat_medoid_disc_genre`, `best_binned_config`,
+  `best_binned_disc_genre`, `delta_vs_medoid`
+- `headline`: `{color, icon, text}` summarising whether binned beats the medoid
+  baseline on `disc_genre`:
+  - green `✓` when every backbone's best binned beats its medoid baseline
+  - amber `⚠` when some backbones beat their baseline and some do not
+  - red `✕` when none beat their baseline
+- `description`, `stats`, `charts`, `panels`, `subsections`, `warnings`: `[]` / `None`
 - `empty_message`: `""`
+
+> **No `_dominance_rate` helper and no composite-tuning-sensitivity metric.** Those
+> were removed in Plan D. The summary compares binned configurations only against the
+> explicit flat medoid baseline.
 
 **Empty/stub behaviour:**
 
 | Condition | `empty_message` |
 | --- | --- |
-| Both inputs produce no backbone names | `"No retrieval data yet. Run the eval phase first."` |
+| No backbone names produced | `"No retrieval data yet. Run the eval phase first."` |
+
+---
+
+## _winners.py
+
+> **Report-data DTOs.** `_winners.py` defines the winner/delta/factor schemas and the
+> pure builders that turn the decoded `analyze_metrics` frame into winner rows,
+> per-config deltas vs the explicit medoid baseline, and factor summaries. It defines
+> no section dicts itself — `_winners_report.py` wraps the builders in report sections.
+
+### Schema constants
+
+`WINNER_DELTA_COLUMNS` — **22 columns**, one row per
+`(backbone, group, metric, k, winner, baseline)`:
+
+`backbone`, `group`, `metric`, `k`, `winner_strategy_key`, `winner_strategy_type`,
+`winner_value`, `winner_flat_strategy`, `winner_pathway`, `winner_head`,
+`winner_bin_mode`, `winner_threshold`, `winner_rep_a`, `winner_rep_b`,
+`winner_aggregate`, `winner_sim_metric`, `baseline_strategy_key`, `baseline_value`,
+`delta`, `tie_break_key`, `corpus_hash`, `corpus_size`.
+
+`FACTOR_SUMMARY_COLUMNS` — **10 columns**, one row per
+`(backbone, factor, factor_value, group, metric, k)`:
+
+`backbone`, `factor`, `factor_value`, `group`, `metric`, `k`, `n_wins`,
+`mean_delta`, `best_delta`, `config_ids`.
+
+### Configuration constants
+
+- `GROUPS = ("artist", "genre", "head", "general")` — `general` included only when
+  legitimately populated (`_general_cell_valid`).
+- `METRIC_FAMILIES = ("MAP", "MRR", "NDCG", "Recall", "discrimination")`
+- `GROUP_METRIC_COLUMNS` — maps each group → `{family: analyze_metrics column}`,
+  e.g. artist MAP→`map_k_artist`, artist MRR→`mrr`, genre MRR→`mrr_genre`,
+  head discrimination→`disc_head`, general MAP→`map_k_general` and general
+  discrimination→`disc_general`. `general` has only the MAP and discrimination families.
+- `TIE_BREAK_ORDER = ("strategy_type", "pathway/head", "bin_mode", "threshold", "rep_a", "rep_b", "aggregate", "strategy_key")` — the winner among value-tied rows is the one sorting earliest by this key (smallest tuple).
+- `STRATEGY_TYPE_RANK = {"global_pool": 0, "ptc": 1, "ctp": 2}`
+- `FACTOR_COLUMNS` — maps each factor name to its winner-row column (strategy_type, flat_strategy, pathway, head, bin_mode, threshold, rep_a, rep_b, aggregate, sim_metric).
+
+### Builders
+
+`build_comparison_grid(rows, k_values=None) -> pd.DataFrame` — enumerates one row per
+`backbone × group × metric-family × K` cell that has at least one eligible (non-null
+metric) flat/binned row. No dimension is averaged. `general` cells obey
+`_general_cell_valid` (general metric non-null, and for MAP at least two of
+`map_k_artist`/`map_k_genre`/`map_k_head` populated, mirroring how `map_k_general`
+is derived). Columns: `backbone`, `group`, `metric`, `metric_col`, `k`, `n_eligible`.
+
+`select_winner(rows, *, backbone, metric_col, k) -> dict | None` — deterministic
+winner for one cell over all eligible flat+binned rows; null metric rows excluded;
+ties broken by the smallest `TIE_BREAK_ORDER` key. Returns decoded fields plus
+`value` (float) and `tie_break_key` (display), or `None` with no eligible row.
+
+`build_winner_delta_rows(rows, baseline_rows, k_values=None, *, corpus_hash, corpus_size) -> pd.DataFrame` —
+baseline per cell is exactly `global_pool:{backbone}:medoid` resolved from
+`baseline_rows` for the same backbone and K (`canonical_flat_baseline`) — never a
+cross-strategy or cross-backbone aggregate. The baseline reference is excluded from
+winner candidacy, so `delta = winner_value - baseline_value` can be negative, zero on
+a tie, positive only when a config beats it. Emits `WINNER_DELTA_COLUMNS`;
+`corpus_hash`/`corpus_size` carried verbatim.
+
+`build_factor_summary(winner_delta_rows) -> pd.DataFrame` — for every factor in
+`FACTOR_COLUMNS`, groups winner rows by `(backbone, factor value, group, metric, K)`
+and emits `n_wins`, `mean_delta`, `best_delta`, and the contributing `config_ids`
+(winner strategy keys). No averaging across hidden configurations.
+
+---
+
+## _winners_report.py
+
+### `section_winners(df, corpus_by_backbone=None) -> dict`
+
+**Signature:** `(df: pd.DataFrame, corpus_by_backbone: Mapping[str, Any] | None = None) -> dict`
+
+**DataFrame input:** the decoded `analyze_metrics` frame. `corpus_by_backbone`
+optionally maps each backbone to its `MatchingCorpusManifest`; `_corpus_identity`
+extracts `(corpus_hash, len(manifest))` to populate `corpus_hash`/`corpus_size`.
+
+**Processing:**
+
+- For each backbone: builds the `winner_delta` table (`id=f"winner_delta_{backbone}"`,
+  title `"Winners & deltas vs global_pool:{backbone}:medoid"`) and, when present, the
+  `factor_summary` table (`id=f"factor_summary_{backbone}"`, title `"Factor summary"`).
+- Each backbone becomes an inline v2 subsection dict (all 11 keys) with `id=f"winners-{backbone}"`.
+
+**Return value:** v2 section dict with `id="winners"`, `title="Exact Winners & Deltas"`.
+
+**Empty/stub behaviour:**
+
+| Condition | `empty_message` |
+| --- | --- |
+| Empty / no `backbone` or `strategy_type` column | `"No retrieval data yet. Run the eval phase first."` |
+| No winner-delta rows computable for any backbone | `"No winner-delta rows could be computed. An explicit global_pool:{backbone}:medoid baseline row is required for each backbone."` |
 
 ---
 
@@ -3225,7 +3338,10 @@ non-empty `empty_message`. Charts and tables will also be `[]`.
 
 **Inline subsection dicts** (built by-hand in `section_per_backbone`,
 `section_threshold_sweep`, `section_bin_mode_comparison`,
-`section_head_sim_corr`) carry all 11 keys. The exception is
+`section_head_sim_corr`, `section_bin_diversity` (ids `div-{backbone}`),
+`section_segment_counts` (ids `seg-{backbone}`),
+`section_flat_binned_correlation` (ids `fbcorr-{backbone}`), and
+`section_winners` (ids `winners-{backbone}`)) carry all 11 keys. The exception is
 `section_truncation` subsections, which carry only 9 keys (`headline` and
 `empty_message` are absent from those inner dicts).
 
@@ -3266,9 +3382,7 @@ non-empty `empty_message`. Charts and tables will also be `[]`.
 
 ---
 
-## 7. Pipeline Orchestration (
-
-un.py, classify.py, mbed.py, config.py)
+## 7. Pipeline Orchestration (run.py, classify.py, embed.py, config.py)
 
 ## 1. Pipeline Phases
 
@@ -3276,8 +3390,10 @@ All phases are registered in `run.py`'s `_PHASES` ordered dict and executed by `
 order shown. Each phase receives the shared `cfg` dict built from `research_config.toml`.
 
 ```
-ingest → optimize → embed → classify → analyze → truncate → report
+ingest → embed → stratify → segment → classify → analyze → report
 ```
+
+`optimize` is **not** a phase — it is a manual-only utility invoked via `strategy_binned._optimize.optimize_std_threshold` (see the `### Threshold optimization` section below); `truncate` is an **inactive** phase (no `run._PHASES` key; truncation robustness is not active, see `DIST_THRESHOLDS`).
 
 ### Phase 1 — `ingest`
 
@@ -3294,38 +3410,30 @@ from this table (binned sub-phases) or derives them from `discover_audio()` (fla
 
 ---
 
-### Phase 2 — `optimize` (optional)
+### Threshold optimization `optimize` — manual-only utility (no run.py phase)
 
-**Entry point:** `run.py::_optimize_phase(con, cfg)`
+The threshold optimizer is **not** a `run._PHASES` phase: there is no `_optimize_phase` function and
+`run.py::_PHASES` has no `optimize` key. It is invoked directly as a manual utility by calling
+`strategy_binned._optimize.optimize_std_threshold` (see its module docstring and the
+`[optimization]` / `[optimization.strategy]` config sections below).
 
-**Enabled by:** `cfg["optimize_threshold"]` (from `[optimization] enabled`). When `false`, this
-phase logs a skip message and returns immediately.
+**What `optimize_std_threshold` does:** For one `(backbone, bin_mode)` pair, given an in-memory
+subsample of songs it grid-searches (or runs GSS) over `search_range` to find the distance
+threshold that maximises the chosen disc metric using the configured weighted aggregation.
+It writes the full per-threshold diagnostics table to
+`{OUTPUT_ROOT}/optimizer/threshold_curve_{backbone}_{bin_mode}.csv`. It reads nothing back from
+that CSV (the prior skip-guard cache logic lives in this section's historical notes and does not
+apply to the current manual utility).
 
-**What it does:** For every `(backbone, bin_mode)` pair:
+**DB state required:** `songs` table populated so `optimize_std_threshold` can subsample song ids;
+the optimizer loads raw patch sidecars directly (it does not require the binned embed cache).
 
-1. Checks whether `{OUTPUT_ROOT}/optimizer/threshold_curve_{backbone}_{bin_mode}.csv` already
-   exists on disk. If it does **and** `cfg["force"]` is `false`, reads the best threshold from
-   the CSV (highest `objective_total` row) via `_load_optimizer_result_from_csv` and skips the
-   grid search entirely.
-2. If no cached CSV is found (or `cfg["force"]` is `true`), calls
-   `strategy_binned._optimize.optimize_std_threshold`, which grid-searches (or runs GSS) over the
-   `search_range` to find the distance threshold that maximises the chosen disc metric on a
-   `subsample_size` sample of songs. Writes the full per-threshold diagnostics table to the CSV.
-
-**DB state required:** `songs` table populated and the binned embed cache must contain enough
-data for the optimizer to evaluate; in practice the optimizer is designed to run after ingest but
-before a full embed so it can steer the threshold grid.
-
-**DB state produced:** Nothing written to the DB. The optimal threshold for each
-`(backbone, bin_mode)` is stored **in memory only** in `cfg["thresholds_by_backbone_mode"]`,
-a `dict[tuple[str,str], list[float]]`. Every subsequent phase reads this key from `cfg`.
-
-The final threshold plan merges the optimizer's optimum with any explicit `opt_grid` values so
-the grid always contains at least the grid thresholds plus the discovered optimum.
+**DB state produced:** Nothing written to the DB. The optimal threshold is returned in-memory as
+an `OptimizationResult`; the caller is responsible for using that value.
 
 **Filesystem reads/writes:**
-- Reads: `{OUTPUT_ROOT}/optimizer/threshold_curve_{backbone}_{bin_mode}.csv` (skip-guard check)
-- Writes: same path (only when re-running or no cached result exists)
+- Reads: raw patch sidecar files for the sampled songs
+- Writes: `{OUTPUT_ROOT}/optimizer/threshold_curve_{backbone}_{bin_mode}.csv`
 
 ---
 
@@ -3355,29 +3463,29 @@ embed does *not* read songs from DB for its work list — it uses `discover_audi
 
 **DB state produced:** Nothing written to DuckDB. All outputs are `.npy` files on disk.
 
-#### Sub-phase 3b — binned embed
+#### Sub-phase 3b — binned embed (segment phase)
 
-**Entry point:** `strategy_binned._embed.embed(con, song_ids, force, backbones, device, thresholds_by_backbone_mode)`
+**Entry point:** `run.py::_segment_phase` → `common.segment.segment(...)` with
+`strategy_ptc/segment_fn.py::make_segment_fn(con)` (PTC) and
+`strategy_ctp/segment_fn.py::make_segment_fn(head_sessions, run_in_batches_fn)` (CTP).
+There is **no** `strategy_binned._embed` module — binned pooling runs in the segment phase.
 
 **What it does:**
 
 1. Reads song list from `db.load_all_songs(con)` filtered to `song_ids`.
 2. For each song × backbone: loads the raw sidecar `{sid}.{backbone}.npy`, runs
-   `temporal_segment` for each `(bin_mode, std_thresh)` combo, pools each segment four ways
-   (mean, median, medoid, min/max), runs all head ONNX models on the segment mean vectors.
-3. Writes per-song NPZ files to the **binned ptc cache**:  
-   `{OUTPUT_ROOT}/cache/binned_ptc/{cache_semantics_tag()}/{backbone}/{bin_mode}/{threshold_key}/{song_id}.npz`  
-   Each NPZ stores: pooled vec arrays per strategy, head activation arrays, weights,
-   outlier counts, indices.
-4. Inserts per-patch acoustic features (`rms`, `spectral_centroid`, `onset_strength`,
-   `chroma_key`) into the `patch_features` DB table (once per song, guarded by
-   `db.patch_features_done`).
+   `temporal_segment` for each strategy combo, pools each segment via `_pool_segment`
+   (mean, median, medoid, max, min); for CTP only, runs the head ONNX model on the patches to
+   obtain the score-stream that drives segmentation.
+3. Writes per-song NPZ files to the **filesystem caches**:
+   - PTC: `{OUTPUT_ROOT}/cache/binned_ptc/{cache_semantics_tag()}/{backbone}/{bin_mode}/{threshold_key}/{song_id}.npz`
+   - CTP: `{OUTPUT_ROOT}/cache/binned_ctp/{cache_semantics_tag()}/{backbone}/{head}/{threshold_key}/{song_id}.npz`
+   Each NPZ stores: pooled vec arrays per strategy, weights, outlier counts, indices.
 
-**DB state required:** `songs` table populated.
+**Filesystem state required:** `songs` table populated and sidecar `.npy` files on disk.
 
-**DB state produced:**
+**Filesystem state produced:**
 
-- `patch_features` table rows for each song × patch index.
 - NPZ files on disk (not in DB).
 
 ---
@@ -3404,22 +3512,29 @@ Both activation vectors are written to the `flat_classify` DB table via `upsert_
 
 #### Sub-phase 4b — binned classify
 
-**Entry point:** `classify.run_binned(con, song_ids, force, backbones, heads, device, thresholds_by_backbone_mode)`
+**Entry point:** `classify.run_binned(con, song_ids, force, backbones, heads, device, thresholds_by_backbone)`
 
-**What it does:** For each `(song, backbone, head, bin_mode, std_thresh)` combo:
+**What it does:** For each `(song, backbone, head, std_thresh)` combo (there is **no** `bin_mode` axis):
 
 - Loads the raw sidecar patches.
-- Runs `temporal_segment` to get segment boundaries.
-- Runs the ONNX head on patches, computes per-segment mean activation → `binned_classify_ctp`.
-- Pools the embedding patches at the same segment indices → `binned_ctp_vecs` (written as NPZ
-  files via `_ctp_cache.save`).
+- Runs the ONNX head on patches, computes the per-segment mean head activation per bin, and
+  writes the head-activation arrays to the `binned_ctp_heads` filesystem cache via
+  `binned_ctp_heads.save(...)` (`{OUTPUT_ROOT}/cache/binned_ctp_heads/**`).
 
-**DB state required:** Sidecar `.npy` files must exist on disk.
+The CTP bin-pooled embedding vectors are **not** produced here — they are written in the **segment
+phase** by `strategy_ctp/segment_fn.py` (via `binned_ctp.save`, `{OUTPUT_ROOT}/cache/binned_ctp/`),
+using the same segment boundaries from the head score-stream. Sub-phase 4b only extends the
+head-activation slice of the CTP write path.
 
-**DB state produced:**
+Note: the historical `upsert_binned_classify_ctp_bulk` DB writer is **dead** (0 callers); no
+`binned_classify_ctp` table rows are written in sub-phase 4b.
 
-- `binned_classify_ctp` table rows.
-- `binned_ctp_vecs` NPZ files in `{OUTPUT_ROOT}/cache/binned_ctp/`.
+**Filesystem state required:** Sidecar `.npy` files must exist on disk; the CTP segment phase must
+have run.
+
+**Filesystem state produced:**
+
+- `binned_ctp_heads` NPZ files in `{OUTPUT_ROOT}/cache/binned_ctp_heads/`.
 
 ---
 
@@ -3467,8 +3582,9 @@ sections when a table is absent or empty).
 
 > **Note:** There is no `embed.py` at the package root. Backbone inference lives in
 > `common/embed.py` (invoked by `run.py::_embed()`); flat (global-pool) vector production lives
-> in `strategy_global_pool/` (`segment_fn.py`, `_embed.py`) and `pooling.py`; binned pooling lives
-> in `strategy_binned/_embed.py`.
+> in `strategy_global_pool/` (`segment_fn.py`, `_embed.py`) and `pooling.py`; binned pooling runs
+> in the **segment phase** via `strategy_ptc/segment_fn.py` and `strategy_ctp/segment_fn.py` (no
+> `strategy_binned/_embed.py` exists).
 
 ### Flat (global-pool) embed
 
@@ -3501,7 +3617,7 @@ embed and classify phases.
 
 ---
 
-### Binned embed (`strategy_binned._embed`)
+### Binned embed (segment phase)
 
 **Pre-scan (bulk, before per-song loop):**
 
@@ -3582,34 +3698,36 @@ present in the DB are never re-run.
 
 ### Binned classify (`classify.run_binned`)
 
-**Bulk pre-scan:**
+**Bulk pre-scan (filesystem `binned_ctp_heads` cache):**
 
 ```python
 if not force:
-    binned_done_raw = query_binned_classify_done(con)
-    done_combos_by_key = {}  # (sid, backbone, head) → set[(bin_mode, std_thresh)]
-    for sid_d, bb_d, head_d, bm_d, st_d, _bin_id in binned_done_raw:
-        done_combos_by_key.setdefault((sid_d, bb_d, head_d), set()).add((bm_d, float(st_d)))
+    ctp_heads_done = _binned_ctp_heads_cache.list_done_keys()  # (sid, backbone, head, std_thresh)
+    done_thresholds_by_key = {}  # (sid, backbone, head) → set[std_thresh]
+    for sid_d, bb_d, head_d, st_d in ctp_heads_done:
+        done_thresholds_by_key.setdefault((sid_d, bb_d, head_d), set()).add(st_d)
 else:
-    done_combos_by_key = {}
+    done_thresholds_by_key = {}
 ```
 
-`query_binned_classify_done(con)` reads distinct `(sid, backbone, head_name, bin_mode, std_thresh, bin_id)`
-from the `binned_classify_ctp` table.
+`binned_ctp_heads.list_done_keys()` scans `{OUTPUT_ROOT}/cache/binned_ctp_heads/**/*.npz` and
+returns one `(song_id, backbone, head, std_thresh)` tuple per file found on disk. The historical
+`query_binned_classify_done` DB reader is **dead** (0 callers) — no pre-scan reads
+`binned_classify_ctp`.
 
 **Per-song work dict:**
 
 ```python
 for head_name in head_sessions:
-    done_c = done_combos_by_key.get((sid, backbone_name, head_name), set())
-    missing = all_combos_binned - done_c if not force else all_combos_binned
+    done_c = done_thresholds_by_key.get((sid, backbone_name, head_name), set())
+    missing = all_thresholds - done_c if not force else all_thresholds
     if missing:
         heads_missing[head_name] = missing
 if heads_missing:
     work[p] = heads_missing
 ```
 
-Only `(bin_mode, std_thresh)` combos not yet in `binned_classify_ctp` are reprocessed. If the
+Only `std_thresh` values not yet present in the `binned_ctp_heads` cache are reprocessed. If the
 sidecar `.npy` does not exist the song is skipped (no error).
 
 ---
@@ -3654,7 +3772,7 @@ Config is loaded by `helpers.toml.load_research_config()` which reads
 | --- | --- | --- | --- |
 | `flat_strategies` | `list[str]` \| absent | all known strategies (incl. `medoid`) | Explicit flat (global-pool) strategy list. The benchmark baseline MUST include `medoid` (the observed-patch baseline). Read by `pooling.load_flat_strategy_names` into `cfg["flat_strategies"]`; drives the segment phase and `GLOBAL_POOL_ANALYZE_CFG.strategy_names`. Options: `mean`, `trimmed_10`, `trimmed_20`, `median`, `max_norm`, `l2norm_mean`, `medoid`. Each configured backbone gets its own independently keyed set. |
 | `rep_types` | `list[str]` | — | Per-bin segment representation used to build the NxM bin-vs-bin sim matrix in the binned (PTC/CTP) phases. Options: `mean`, `median` (coordinate-wise synthetic), `medoid` (observed segment), `max`, `min`. This does NOT drive the flat strategy list. |
-| `agg_methods` | `list[str]` | — | How the NxM per-bin similarity matrix is collapsed to a song-pair score. Used in the binned analysis phase. Options: `mean`, `median`, `max`, `min`. (`medoid` is intentionally rejected as an aggregation; use `rep_type="medoid"` with `agg_method="median"`.) |
+| `agg_methods` | `list[str]` | — | How the NxM per-bin similarity matrix is collapsed to a song-pair score. Used in the binned analysis phase. Options: `target_weighted`, `bidirectional_weighted`, `normalized_mean_pair_weighted` (the Part B weighted directional reductions). Legacy generic reductions (`mean`/`median`/`max`/`min`) are rejected, and `agg_method=medoid` is rejected; `rep_type="medoid"` remains a valid **representation** (observed-patch baseline), not an aggregation method. |
 
 ---
 
@@ -3680,7 +3798,7 @@ Config is loaded by `helpers.toml.load_research_config()` which reads
 
 | Key | Type | Default (code) | Controls |
 | --- | --- | --- | --- |
-| `enabled` | `bool` | `false` | Activate the optimize phase. When `false`, `_optimize_phase` is a no-op. |
+| `enabled` | `bool` | `false` | Historically gated an in-pipeline optimize phase; the optimizer is now a manual-only utility (no `_PHASES` entry) that reads this section if threaded. Kept for config compatibility; not read by `run.py`. |
 | `search_range` | `[float, float]` | `[0.5, 1.25]` | Lower/upper bounds for the threshold search. Stored as `cfg["opt_range"]` (tuple). |
 | `method` | `str` | `"grid"` | Optimizer method: `"grid"` (exhaustive grid) or `"gss"` (Golden-Section Search). |
 | `grid` | `list[float]` \| absent | `null` | Explicit threshold grid. When present, used instead of `search_range + grid_step`. |
@@ -3698,7 +3816,7 @@ Config is loaded by `helpers.toml.load_research_config()` which reads
 | Key | Type | Default | Controls |
 | --- | --- | --- | --- |
 | `rep_type` | `str` | `"median"` | Pooling strategy used during optimizer evaluation calls. Stored as `cfg["opt_rep_type"]`. |
-| `agg_method` | `str` | `"median"` | Aggregation method used during optimizer evaluation. Stored as `cfg["opt_agg_method"]`. |
+| `agg_method` | `str` | `"target_weighted"` | Weighted reduction used during optimizer evaluation. Must be one of `target_weighted`, `bidirectional_weighted`, `normalized_mean_pair_weighted`; legacy generic reductions (`mean`/`median`/`max`/`min`) and `agg_method=medoid` are rejected. Stored as `cfg["opt_agg_method"]`. |
 | `metric` | `str` | `"cosine"` | Similarity metric used during optimizer evaluation. Stored as `cfg["opt_metric"]`. |
 
 ---
@@ -3791,13 +3909,8 @@ cfg["song_ids"] = frozenset(
 (see `stratify_songs` — guarantees ≥2 songs per artist, album, genre). When `limit=0` all
 files are returned in sorted order with no stratification cap.
 
-After building `song_ids`, `main()` also calls:
-
-```python
-db.purge_stale_retrieval_rows(con, len(cfg["song_ids"]))
-```
-
-which removes retrieval rows that belong to a prior run with a different working-set size.
+After building `cfg["song_ids"]`, `main()` proceeds directly to model bootstrap and the
+`_PHASES` loop; there is no per-run retrieval-row purge step.
 
 ### Propagation to phases
 
@@ -3806,7 +3919,7 @@ Every phase function receives `cfg["song_ids"]` as `frozenset[str] | None`.
 | Phase / sub-phase | How `song_ids` is used |
 | --- | --- |
 | `ingest` | Passed as `limit` to `discover_audio` (not as a filter; `limit` controls list size; `discover_audio` returns the same stratified list) |
-| `optimize` | Passed directly to `optimize_std_threshold` as a subsample scope |
+| `optimize` (manual utility, not a phase) | Passed to `optimize_std_threshold` via its `song_ids` parameter as a subsample scope |
 | `flat embed` | `[p for p in discover_audio() if song_id(p) in song_ids]` — filters the discover list |
 | `binned embed` | `[s for s in db.load_all_songs(con) if str(s["song_id"]) in song_ids]` — filters the DB song list |
 | `flat classify` | `[p for p in discover_audio() if song_id(p) in song_ids]` |

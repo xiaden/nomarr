@@ -102,6 +102,15 @@ except ImportError:
 
 
 from ._constants import AGG_METHODS
+from ._weighted import (
+    bidirectional_weighted as _bidirectional_weighted,
+)
+from ._weighted import (
+    normalized_mean_pair_weighted as _normalized_mean_pair_weighted,
+)
+from ._weighted import (
+    target_weighted as _target_weighted,
+)
 
 if TYPE_CHECKING:
     from scripts.embedding_research.vector_types import UnitTensor as _UnitTensor
@@ -140,12 +149,22 @@ def _compute_song_stats(
 def compute_agg_mats(
     norm_a: list[_UnitTensor],
     norm_b: list[_UnitTensor],
-    bin_counts: _np.ndarray,
+    weights_a: list[_np.ndarray],
+    weights_b: list[_np.ndarray],
     metric: str,
     *,
     progress=None,
 ) -> dict[str, _np.ndarray]:
-    """Compute pairwise aggregated similarity matrices for one (rep_a, rep_b, metric) pair.
+    """Compute pairwise weighted directional similarity matrices for one (rep_a, rep_b) pair.
+
+    Every **ordered** ``(i, j)`` song pair is evaluated independently, including
+    ``i == j`` (diagonal, from the same formula — never unconditionally set to
+    1.0) and ``i > j``.  No similarity matrix is mirrored: the forward matrix is
+    ``S_ij`` (source bins of song ``i`` under ``rep_a`` -> target bins of song
+    ``j`` under ``rep_b``) and the reverse matrix for the bidirectional reduction
+    is the separately computed ``S_ji`` (source bins of ``j`` under ``rep_a`` ->
+    target bins of ``i`` under ``rep_b``), which is *not* assumed symmetric with
+    ``S_ij`` because ``rep_a`` and ``rep_b`` are distinct representations.
 
     Parameters
     ----------
@@ -154,8 +173,11 @@ def compute_agg_mats(
         are guaranteed unit-normalised by the UnitTensor setter (old cache files
         are re-normalised by the UnitTensor setter on load via
         ``cache.binned_ptc.load_norm_pair`` / ``cache.binned_ctp.load_all_reps``).
-    bin_counts:
-        Number of bins per song ``[n_songs] float32``.
+    weights_a, weights_b:
+        Per-song temporal patch-count weights, one entry per song; each entry is
+        the ``[n_bins]`` weight array of that song (``weights_a[i]`` weights
+        ``norm_a[i]`` source bins, ``weights_b[j]`` weights ``norm_b[j]`` target
+        bins).  Lengths must match the corresponding bin dimensions.
     metric:
         Only ``"cosine"`` is supported (l2 was removed).
     progress:
@@ -163,61 +185,48 @@ def compute_agg_mats(
 
     Returns
     -------
-    dict mapping each agg method name to an ``[n, n] float32`` matrix.
+    dict mapping each configured aggregate name to an ``[n, n] float32`` matrix.
+    ``target_weighted`` and ``normalized_mean_pair_weighted`` are directional;
+    ``bidirectional_weighted`` is symmetric by construction (it averages both
+    supplied directions).  Legacy generic reductions and ``agg_method=medoid``
+    are rejected here and at the validation boundary in ``_constants.py``.
     """
+    if metric != "cosine":
+        raise ValueError(f"Only metric='cosine' is supported, got {metric!r}")
     n = len(norm_a)
     agg_mats: dict[str, _np.ndarray] = {agg: _np.zeros((n, n), dtype=_np.float32) for agg in AGG_METHODS}
 
     # Unpack to ndarray once — UnitTensor setter already guarantees unit rows.
     data_a = [v.data for v in norm_a]
     data_b = [v.data for v in norm_b]
+    w_a = [_np.asarray(w, dtype=_np.float64) for w in weights_a]
+    w_b = [_np.asarray(w, dtype=_np.float64) for w in weights_b]
 
-    # Fast path: mean aggregation for cosine metric.
-    sums_a = _np.stack([da.sum(axis=0) for da in data_a])
-    sums_b = _np.stack([db.sum(axis=0) for db in data_b])
-    mean_mat = (sums_a @ sums_b.T) / _np.outer(bin_counts, bin_counts)
-    _np.fill_diagonal(mean_mat, 1.0)
-    if "mean" in agg_mats:
-        agg_mats["mean"] = mean_mat.astype(_np.float32)
-
-    loop_aggs = [agg for agg in AGG_METHODS if agg != "mean"]
-    if loop_aggs:
-        for i in range(n):
-            va = data_a[i]
-            js = list(range(i + 1, n))
-            if js:
-                vb_blocks = [data_b[j] for j in js]
-                sizes = [block.shape[0] for block in vb_blocks]
-                vb_cat = _np.concatenate(vb_blocks, axis=0)
-                sim_cat = (va @ vb_cat.T).astype(_np.float32)
-
-                start = 0
-                for j, width in zip(js, sizes, strict=False):
-                    end = start + width
-                    sim = sim_cat[:, start:end]
-                    start = end
-                    for agg in loop_aggs:
-                        if agg == "mean":
-                            val = float(sim.mean())
-                        elif agg == "median":
-                            val = float(_np.median(sim))
-                        elif agg == "medoid":
-                            raise ValueError(
-                                "agg_method=medoid is not implemented; use agg_method=median with rep_type=medoid."
-                            )
-                        elif agg == "max":
-                            val = float(sim.max())
-                        elif agg == "min":
-                            val = float(sim.min())
-                        else:
-                            raise ValueError(f"Unsupported agg_method: {agg}")
-                        agg_mats[agg][i, j] = val
-                        agg_mats[agg][j, i] = val
-            if progress is not None:
-                progress.update(1)
-
-        for agg in loop_aggs:
-            _np.fill_diagonal(agg_mats[agg], 1.0)
+    for i in range(n):
+        va = data_a[i]
+        wa = w_a[i]
+        for j in range(n):
+            vb = data_b[j]
+            # Forward similarity: source bins of i (rep_a) -> target bins of j (rep_b).
+            sim = (va @ vb.T).astype(_np.float32)
+            wb = w_b[j]
+            for agg in AGG_METHODS:
+                if agg == "target_weighted":
+                    val = _target_weighted(sim, wb)
+                elif agg == "normalized_mean_pair_weighted":
+                    val = _normalized_mean_pair_weighted(sim, wa, wb)
+                elif agg == "bidirectional_weighted":
+                    # Reverse S_ji: source bins of j (rep_a) -> target bins of i (rep_b).
+                    # Never derived by transposing the forward matrix.
+                    rev = (data_a[j] @ data_b[i].T).astype(_np.float32)
+                    val = _bidirectional_weighted(sim, rev, wb, wa)
+                else:
+                    raise ValueError(
+                        f"Unsupported agg_method: {agg}. Legacy generic reductions and agg_method=medoid are rejected."
+                    )
+                agg_mats[agg][i, j] = val
+        if progress is not None:
+            progress.update(1)
 
     return agg_mats
 
@@ -340,8 +349,10 @@ def _process_group(
     """Compatibility wrapper retained for legacy callers; the live shared
     analysis path (``common.analyze.analyze``) composes ``compute_agg_mats`` +
     ``compute_retrieval_rows`` directly."""
-    # reps_a / reps_b are unused (computation operates on norms only)
-    agg_mats = compute_agg_mats(norm_a, norm_b, bin_counts, metric, progress=progress)
+    # reps_a / reps_b are unused (computation operates on norms only).
+    # Legacy wrapper has no per-bin weights; fall back to uniform per-bin weights.
+    weights = [_np.ones(int(c), dtype=_np.float32) for c in bin_counts]
+    agg_mats = compute_agg_mats(norm_a, norm_b, weights, weights, metric, progress=progress)
     return compute_retrieval_rows(
         agg_mats,
         artists,

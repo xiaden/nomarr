@@ -15,6 +15,7 @@ from ._base import (
     _H_SMALL,
     apply_dark_theme,
     binned_config_label,
+    flat_medoid_value,
     make_chart,
     make_panel,
     make_section,
@@ -177,7 +178,15 @@ def section_head_sim_corr(con) -> dict:
 
 
 def section_head_value(con, flat_df: pd.DataFrame | None = None) -> dict:
-    """CTP vs PTC: does classifying before pooling add value over geometry alone?"""
+    """CTP vs PTC: does classifying before pooling add value over geometry alone?
+
+    Renders exact ``ptc_ctp_rows`` strategy rows.  The heatmaps show per-head
+    median and best (winning-strategy) ``Δdisc = CTP - PTC``; an exact
+    "best strategy per head" table names the winning strategy row so config
+    identity is never collapsed away.  Per-backbone charts draw the explicit
+    ``global_pool:{backbone}:medoid`` baseline when a decoded flat frame is
+    supplied.
+    """
     has_ptc_ctp = table_exists(con, "ptc_ctp_rows")
 
     if not has_ptc_ctp:
@@ -200,13 +209,21 @@ def section_head_value(con, flat_df: pd.DataFrame | None = None) -> dict:
     if df.empty:
         return make_section("head-value", "Head Value", empty_message="No head comparison data yet.")
 
+    # Per-head aggregates over the EXACT per-strategy rows in ptc_ctp_rows.
     agg = (
         df.groupby(["backbone", "head"])
         .agg(
             median_delta=("delta_disc", "median"),
-            dominance_rate=("delta_disc", lambda x: (x > 0).mean()),
+            best_delta=("delta_disc", "max"),
         )
         .reset_index()
+    )
+    # Exact winning strategy per (backbone, head) — config identity preserved.
+    best_strategy = (
+        df.sort_values("delta_disc", ascending=False)
+        .groupby(["backbone", "head"], as_index=False)
+        .first()[["backbone", "head", "strategy", "delta_disc"]]
+        .rename(columns={"strategy": "best strategy", "delta_disc": "best Δdisc"})
     )
 
     all_backbones = sorted(agg["backbone"].unique())
@@ -215,17 +232,17 @@ def section_head_value(con, flat_df: pd.DataFrame | None = None) -> dict:
     pivot_delta = agg.pivot(index="head", columns="backbone", values="median_delta").reindex(
         index=all_heads, columns=all_backbones
     )
-    pivot_dom = agg.pivot(index="head", columns="backbone", values="dominance_rate").reindex(
+    pivot_best = agg.pivot(index="head", columns="backbone", values="best_delta").reindex(
         index=all_heads, columns=all_backbones
     )
 
     data_delta = pivot_delta.values.astype(float)
-    data_dom = pivot_dom.values.astype(float)
+    data_best = pivot_best.values.astype(float)
     text_delta = [[f"{v:+.3f}" if not _np.isnan(v) else "" for v in row] for row in data_delta]
-    text_dom = [[f"{v * 100:.0f}%" if not _np.isnan(v) else "" for v in row] for row in data_dom]
+    text_best = [[f"{v:+.3f}" if not _np.isnan(v) else "" for v in row] for row in data_best]
 
     height = max(280, len(all_heads) * 44 + 100)
-    max_abs = float(_np.nanmax(_np.abs(data_delta))) if not _np.all(_np.isnan(data_delta)) else 0.05
+    max_abs = float(_np.nanmax(_np.abs(data_best))) if not _np.all(_np.isnan(data_best)) else 0.05
     max_abs = max(max_abs, 0.01)
 
     fig_delta = go.Figure(
@@ -251,23 +268,27 @@ def section_head_value(con, flat_df: pd.DataFrame | None = None) -> dict:
         yaxis={"tickfont": {"color": _FONT_COLOR, "size": 10}},
     )
 
-    fig_dom = go.Figure(
+    fig_best = go.Figure(
         go.Heatmap(
-            z=data_dom.tolist(),
+            z=data_best.tolist(),
             x=all_backbones,
             y=all_heads,
-            text=text_dom,
+            text=text_best,
             texttemplate="%{text}",
             textfont={"size": 10},
             colorscale="RdYlGn",
-            zmin=0,
-            zmax=1,
-            colorbar={"title": "dom%", "tickfont": {"color": "#aaa", "size": 9}},
+            zmid=0,
+            zmin=-max_abs,
+            zmax=max_abs,
+            colorbar={"title": "best \u0394disc", "tickfont": {"color": "#aaa", "size": 9}},
         )
     )
-    apply_dark_theme(fig_dom, grid=False)
-    fig_dom.update_layout(
-        title={"text": "Dominance Rate: % strategies where CTP > PTC", "font": {"color": _FONT_COLOR}},
+    apply_dark_theme(fig_best, grid=False)
+    fig_best.update_layout(
+        title={
+            "text": "Best \u0394disc (winning strategy) per head",
+            "font": {"color": _FONT_COLOR},
+        },
         height=height,
         xaxis={"tickfont": {"color": _FONT_COLOR, "size": 10}},
         yaxis={"tickfont": {"color": _FONT_COLOR, "size": 10}},
@@ -281,9 +302,8 @@ def section_head_value(con, flat_df: pd.DataFrame | None = None) -> dict:
             if ("disc_general" in flat_df.columns and flat_df["disc_general"].notna().any())
             else "disc_score"
         )
-        for bb, bb_sub in flat_df.groupby("backbone"):
-            v = bb_sub[disc_col_f].dropna()
-            flat_base[str(bb)] = float(v.median()) if not v.empty else None
+        for bb in flat_df["backbone"].dropna().unique():
+            flat_base[str(bb)] = flat_medoid_value(flat_df, str(bb), disc_col_f)
 
     bb_panels: list[dict] = []
     for backbone, bb_df in df.groupby("backbone", sort=True):
@@ -321,7 +341,7 @@ def section_head_value(con, flat_df: pd.DataFrame | None = None) -> dict:
                 line_dash="dot",
                 line_color="#f59e0b",
                 line_width=1.2,
-                annotation_text=f"flat {flat_ref:.4f}",
+                annotation_text=f"medoid {flat_ref:.4f}",
                 annotation_font_color=_FONT_COLOR,
                 row=1,
                 col=1,
@@ -346,11 +366,15 @@ def section_head_value(con, flat_df: pd.DataFrame | None = None) -> dict:
             height=bheight,
             barmode="group",
         )
+        bb_exact = best_strategy[best_strategy["backbone"] == backbone][
+            ["head", "best strategy", "best \u0394disc"]
+        ].to_dict("records")
         bb_panels.append(
             make_panel(
                 id=f"hv_bb_{backbone}",
                 title=str(backbone),
                 charts=[make_chart(fig_bb, id=f"hv_bb_chart_{backbone}", title=str(backbone))],
+                tables=[make_table(bb_exact, id=f"hv_best_{backbone}", title="Best strategy per head")],
             )
         )
 
@@ -367,7 +391,7 @@ def section_head_value(con, flat_df: pd.DataFrame | None = None) -> dict:
                         "description": "",
                         "stats": [],
                         "charts": p["charts"],
-                        "tables": [],
+                        "tables": p["tables"],
                         "panels": [],
                         "subsections": [],
                         "warnings": [],
@@ -384,12 +408,15 @@ def section_head_value(con, flat_df: pd.DataFrame | None = None) -> dict:
         description=(
             "\u0394disc = CTP disc \u2212 PTC disc. Positive = head's own signal structure carves "
             "better-separated pools than embedding geometry alone. "
-            "Dominance rate: fraction of strategies where CTP > PTC. "
-            "Green = head adds value. Red = geometry alone is sufficient."
+            "The heatmaps show, per head, the median and the best (winning-strategy) \u0394disc "
+            "over the exact ptc_ctp_rows strategy rows; the per-backbone tables name the exact "
+            "winning strategy per head. Exact group x metric x K winners and deltas vs the "
+            "explicit global_pool:{backbone}:medoid baseline are in the 'Exact Winners & Deltas' "
+            "section. Green = head adds value. Red = geometry alone is sufficient."
         ),
         charts=[
             make_chart(fig_delta, id="head_value_delta", title="Median \u0394disc: CTP \u2212 PTC"),
-            make_chart(fig_dom, id="head_value_dom", title="Dominance Rate"),
+            make_chart(fig_best, id="head_value_best", title="Best \u0394disc (winning strategy)"),
         ],
         panels=panels,
     )

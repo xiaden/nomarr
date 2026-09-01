@@ -111,6 +111,38 @@ def test_write_analyze_metrics_inserts_rows(con):
     assert metric_map["map_10"] == pytest.approx(0.55)
 
 
+def test_write_analyze_metrics_uses_named_columns(con):
+    """The DTO/DDL column order can differ; writes must use named columns (P1-S4 contract)."""
+    captured = {}
+
+    class _Recorder:
+        def executemany(self, sql, params):
+            captured["sql"] = sql
+            return con.executemany(sql, params)
+
+    write_analyze_metrics(_Recorder(), "bb/mean", "flat", "cosine", 10, {"disc_general": 0.42})
+    assert "INSERT OR REPLACE INTO analyze_metrics" in captured["sql"]
+    assert "(strategy_key, strategy_type, sim_metric, k, metric, value)" in captured["sql"]
+    assert captured["sql"].count("?") == 6
+
+
+def test_strategy_identity_retains_k_and_metric(con):
+    """K and cosine-metric are part of the persistence identity (P1-S2), not folded into the key string.
+
+    The strategy-key string carries backbone/pathway/threshold/rep_a/rep_b/aggregate; ``sim_metric``
+    and ``k`` are retained as PK columns so distinct K / metric values never collide.
+    """
+    key = "ptc:bb:temporal_global:0.50:mean:max:target_weighted"
+    write_analyze_metrics(con, key, "ptc", "cosine", 5, {"mrr": 0.4})
+    write_analyze_metrics(con, key, "ptc", "cosine", 10, {"mrr": 0.6})
+    rows = con.execute("SELECT sim_metric, k FROM analyze_metrics ORDER BY k").fetchall()
+    assert rows == [("cosine", 5), ("cosine", 10)]
+    df = load_analyze_metrics(con)
+    assert len(df) == 2
+    assert sorted(df["k"].tolist()) == [5, 10]
+    assert (df["sim_metric"] == "cosine").all()
+
+
 def test_write_analyze_metrics_skips_none_values(con):
     write_analyze_metrics(con, "bb/mean", "flat", "cosine", 10, {"disc_general": 0.42, "map_10": None})
     rows = con.execute("SELECT metric FROM analyze_metrics").fetchall()

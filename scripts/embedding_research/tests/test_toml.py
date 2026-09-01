@@ -100,3 +100,25 @@ def test_load_flat_strategy_names_is_backbone_independent_default() -> None:
     assert set(effnet).isdisjoint(set(musicnn))
     assert "global_pool:effnet:medoid" in effnet
     assert "global_pool:musicnn:medoid" in musicnn
+
+
+# ---------------------------------------------------------------------------
+# QA R2: configuration enforces the Part B weighted reductions
+# ---------------------------------------------------------------------------
+
+
+def test_pooling_agg_methods_are_weighted_reductions_only() -> None:
+    """[pooling] agg_methods is exactly the three Part B weighted aggregation names."""
+    cfg = research_toml.load_research_config()
+    assert cfg["pooling"]["agg_methods"] == [
+        "target_weighted",
+        "bidirectional_weighted",
+        "normalized_mean_pair_weighted",
+    ]
+
+
+def test_optimization_strategy_agg_method_is_target_weighted() -> None:
+    """[optimization.strategy] agg_method is the valid weighted default."""
+    cfg = research_toml.load_research_config()
+    # [optimization.strategy] is a sub-table of [optimization] in the TOML.
+    assert cfg["optimization"]["strategy"]["agg_method"] == "target_weighted"

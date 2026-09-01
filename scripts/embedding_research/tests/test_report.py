@@ -96,14 +96,14 @@ def _minimal_ptc_df(**overrides) -> pd.DataFrame:
     """Minimal unified result row with strategy_type='ptc'."""
     row = dict.fromkeys(ANALYZE_METRICS_COLUMNS)
     row.update(
-        strategy_key="ptc:test_backbone:temporal_global:1.0:mean:max:mean",
+        strategy_key="ptc:test_backbone:temporal_global:1.0:mean:max:target_weighted",
         strategy_type="ptc",
         backbone="test_backbone",
         bin_mode="temporal_global",
         std_thresh=1.0,
         rep_a="mean",
         rep_b="max",
-        agg_method="mean",
+        agg_method="target_weighted",
         sim_metric="cosine",
         k=10,
         disc_general=0.5,
@@ -131,13 +131,13 @@ def _minimal_ctp_df(**overrides) -> pd.DataFrame:
     """Minimal unified result row with strategy_type='ctp'."""
     row = dict.fromkeys(ANALYZE_METRICS_COLUMNS)
     row.update(
-        strategy_key="ctp:test_backbone:genre:1.0:median:max:median",
+        strategy_key="ctp:test_backbone:genre:1.0:median:max:bidirectional_weighted",
         strategy_type="ctp",
         backbone="test_backbone",
         std_thresh=1.0,
         rep_a="median",
         rep_b="max",
-        agg_method="median",
+        agg_method="bidirectional_weighted",
         sim_metric="cosine",
         k=10,
         disc_general=0.55,
@@ -245,7 +245,7 @@ def test_decode_strategy_key_ptc():
     assert row["std_thresh"] == 1.0
     assert row["rep_a"] == "mean"
     assert row["rep_b"] == "max"
-    assert row["agg_method"] == "mean"
+    assert row["agg_method"] == "target_weighted"
 
 
 def test_decode_strategy_key_ctp():
@@ -257,7 +257,7 @@ def test_decode_strategy_key_ctp():
     assert row["std_thresh"] == 1.0
     assert row["rep_a"] == "median"
     assert row["rep_b"] == "max"
-    assert row["agg_method"] == "median"
+    assert row["agg_method"] == "bidirectional_weighted"
 
 
 def test_decode_strategy_key_empty_df():
@@ -266,6 +266,32 @@ def test_decode_strategy_key_empty_df():
     assert decoded.empty
     for column in ["backbone", "strategy", "bin_mode", "std_thresh", "rep_a", "rep_b", "agg_method"]:
         assert column in decoded.columns
+
+
+def test_strategy_key_agg_method_roundtrips_weighted_name():
+    """parts[6] (agg_method) round-trips a weighted aggregate name for ptc/ctp keys.
+
+    Encodes a weighted aggregate at position 6 of both a ptc and a ctp strategy
+    key, decodes via `_decode_strategy_key`, and asserts the name survives the
+    round-trip (rep_a/rep_b positions remain representation TYPES).
+    """
+    df = pd.DataFrame(
+        {
+            "strategy_key": [
+                "ptc:test_backbone:temporal_global:1.0:mean:max:target_weighted",
+                "ctp:test_backbone:genre:1.0:median:max:bidirectional_weighted",
+            ],
+            "strategy_type": ["ptc", "ctp"],
+        }
+    )
+
+    decoded = _decode_strategy_key(df)
+
+    assert decoded.iloc[0]["agg_method"] == "target_weighted"
+    assert decoded.iloc[1]["agg_method"] == "bidirectional_weighted"
+    # Representation slots stay rep TYPES, not aggregation names.
+    assert decoded.iloc[0]["rep_a"] == "mean"
+    assert decoded.iloc[1]["rep_a"] == "median"
 
 
 # ---------------------------------------------------------------------------
@@ -323,7 +349,7 @@ def test_query_analyze_metrics_sort_order_multiple_rows():
         disc_general=0.3,
     )
     higher_df = _minimal_ptc_df(
-        strategy_key="ptc:test_backbone:temporal_global:1.0:mean:max:mean",
+        strategy_key="ptc:test_backbone:temporal_global:1.0:mean:max:normalized_mean_pair_weighted",
         disc_general=0.8,
     )
     _insert_analyze_metrics_df(con, pd.concat([lower_df, higher_df], ignore_index=True))
@@ -344,7 +370,7 @@ def test_query_analyze_metrics_nulls_last_row_without_disc_general():
         disc_general=0.7,
     )
     null_disc_general_df = _minimal_ptc_df(
-        strategy_key="ptc:test_backbone:temporal_global:1.0:mean:max:mean",
+        strategy_key="ptc:test_backbone:temporal_global:1.0:mean:max:bidirectional_weighted",
         disc_general=None,
         map_k=0.9,
     )
@@ -516,7 +542,7 @@ def test_section_bin_mode_comparison_with_data():
             _minimal_unified_df(),
             _minimal_ptc_df(bin_mode="temporal_global", disc_general=0.61),
             _minimal_ptc_df(
-                strategy_key="ptc:test_backbone:temporal_perdim:1.0:mean:max:mean",
+                strategy_key="ptc:test_backbone:temporal_perdim:1.0:mean:max:normalized_mean_pair_weighted",
                 bin_mode="temporal_perdim",
                 disc_general=0.59,
             ),
@@ -677,7 +703,7 @@ def test_section_bin_mode_comparison_uses_disc_col_as_fallback_when_no_map():
         [
             _minimal_ptc_df(map_k_general=None),
             _minimal_ptc_df(
-                strategy_key="ptc:test_backbone:temporal_perdim:1.0:mean:max:mean",
+                strategy_key="ptc:test_backbone:temporal_perdim:1.0:mean:max:target_weighted",
                 bin_mode="temporal_perdim",
                 map_k_general=None,
             ),
@@ -696,7 +722,7 @@ def test_section_bin_mode_comparison_uses_map_k_general_when_available():
         [
             _minimal_ptc_df(map_k_general=0.65),
             _minimal_ptc_df(
-                strategy_key="ptc:test_backbone:temporal_perdim:1.0:mean:max:mean",
+                strategy_key="ptc:test_backbone:temporal_perdim:1.0:mean:max:bidirectional_weighted",
                 bin_mode="temporal_perdim",
                 map_k_general=0.58,
             ),
@@ -708,335 +734,3 @@ def test_section_bin_mode_comparison_uses_map_k_general_when_available():
 
     assert not result["empty_message"]
     assert "map_k_general" in result["description"]
-
-
-'''
-"""Unit tests for scripts/embedding_research/report/ section functions."""
-
-from __future__ import annotations
-
-import duckdb
-import pandas as pd
-
-from scripts.embedding_research.report._base import BINNED_COLUMNS, FLAT_COLUMNS, empty_df
-from scripts.embedding_research.report._corpus import disc_score_warning, section_corpus
-from scripts.embedding_research.report._efficiency import section_efficiency
-from scripts.embedding_research.report._optimizer import section_optimizer
-from scripts.embedding_research.report._retrieval import (
-    query_binned,
-    query_flat,
-    section_unified_table,
-)
-from scripts.embedding_research.report._summary import section_summary
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-_V2_KEYS = {
-    "id",
-    "title",
-    "description",
-    "stats",
-    "charts",
-    "tables",
-    "panels",
-    "subsections",
-    "warnings",
-    "headline",
-    "empty_message",
-}
-
-
-def _empty_con():
-    return duckdb.connect(":memory:")
-
-
-def _minimal_flat_df(**overrides) -> pd.DataFrame:
-    """One flat result row with sensible defaults."""
-    row = dict.fromkeys(FLAT_COLUMNS)
-    row.update(
-        backbone="test_backbone",
-        strategy="mean",
-        sim_metric="cosine",
-        k=10,
-        disc_general=0.5,
-        disc_artist=0.4,
-        disc_genre=0.6,
-        disc_head=0.3,
-        disc_score=0.45,
-        mean_within=0.7,
-        mean_cross=0.4,
-        map_k=0.5,
-        mrr=0.55,
-        ndcg_k=0.52,
-        recall_k=0.6,
-        recall_k_genre=0.65,
-        precision_k_genre=0.58,
-        precision_k_head_mean=0.5,
-    )
-    row.update(overrides)
-    return pd.DataFrame([row], columns=FLAT_COLUMNS)
-
-
-def _minimal_binned_df(**overrides) -> pd.DataFrame:
-    """One binned result row with sensible defaults."""
-    row = dict.fromkeys(BINNED_COLUMNS)
-    row.update(
-        backbone="test_backbone",
-        bin_mode="std",
-        std_thresh=1.0,
-        rep_a="mean",
-        rep_b="max",
-        sim_metric="cosine",
-        agg_method="mean",
-        k=10,
-        disc_general=0.5,
-        disc_artist=0.4,
-        disc_genre=0.6,
-        disc_head=0.3,
-        disc_score=0.45,
-        mean_within=0.7,
-        mean_cross=0.4,
-        map_k=0.5,
-        mrr=0.55,
-        ndcg_k=0.52,
-        recall_k=0.6,
-        recall_k_genre=0.65,
-        precision_k_genre=0.58,
-        precision_k_head_mean=0.5,
-        flat_binned_spearman=0.8,
-        flat_binned_beneficial_reorder_rate=0.7,
-    )
-    row.update(overrides)
-    return pd.DataFrame([row], columns=BINNED_COLUMNS)
-
-
-# ---------------------------------------------------------------------------
-# 1. All sections return dicts with v2 keys
-# ---------------------------------------------------------------------------
-
-
-def test_all_sections_have_v2_keys():
-    con = _empty_con()
-    empty_flat = empty_df(FLAT_COLUMNS)
-    empty_binned = empty_df(BINNED_COLUMNS)
-
-    sections = [
-        ("corpus", section_corpus(con)),
-        ("efficiency", section_efficiency(con)),
-        ("optimizer", section_optimizer()),
-        ("unified_table", section_unified_table(empty_flat, empty_binned)),
-        ("summary", section_summary(empty_flat, empty_binned)),
-    ]
-
-    for name, result in sections:
-        assert isinstance(result, dict), f"{name} did not return a dict"
-        missing = _V2_KEYS - result.keys()
-        assert not missing, f"{name} missing keys: {missing}"
-
-
-# ---------------------------------------------------------------------------
-# 2. query_flat on empty DB returns a DataFrame (not None, not raises)
-# ---------------------------------------------------------------------------
-
-
-def test_query_flat_empty_db_returns_empty_df():
-    con = _empty_con()
-    result = query_flat(con)
-    assert isinstance(result, pd.DataFrame)
-    assert list(result.columns) == FLAT_COLUMNS
-    assert len(result) == 0
-
-
-# ---------------------------------------------------------------------------
-# 3. query_binned on empty DB returns a DataFrame (not None, not raises)
-# ---------------------------------------------------------------------------
-
-
-def test_query_binned_empty_db_returns_empty_df():
-    con = _empty_con()
-    result = query_binned(con)
-    assert isinstance(result, pd.DataFrame)
-    assert list(result.columns) == BINNED_COLUMNS
-    assert len(result) == 0
-
-
-# ---------------------------------------------------------------------------
-# 4. section_unified_table with synthetic flat_df
-# ---------------------------------------------------------------------------
-
-
-def test_section_unified_table_with_synthetic_flat():
-    flat_df = _minimal_flat_df()
-    binned_df = empty_df(BINNED_COLUMNS)
-
-    result = section_unified_table(flat_df, binned_df)
-
-    assert isinstance(result, dict)
-    assert "tables" in result
-    assert isinstance(result["tables"], list)
-    assert len(result["tables"]) >= 1
-
-
-# ---------------------------------------------------------------------------
-# 5. section_unified_table sorts by disc_genre (not disc_score)
-# ---------------------------------------------------------------------------
-
-
-def test_section_unified_table_prefers_disc_genre_sort():
-    """Row with highest disc_genre should rank first in the top-20 table."""
-    # Row A: low disc_score but HIGH disc_genre — should be first
-    row_high_genre = {
-        "backbone": "bb_a",
-        "strategy": "mean",
-        "sim_metric": "cosine",
-        "k": 10,
-        "disc_general": 0.3,
-        "disc_artist": 0.3,
-        "disc_genre": 0.9,
-        "disc_head": 0.3,
-        "disc_score": 0.1,
-        "mean_within": 0.7,
-        "mean_cross": 0.4,
-        "map_k": 0.5,
-        "mrr": 0.5,
-        "ndcg_k": 0.5,
-        "recall_k": 0.5,
-        "recall_k_genre": 0.5,
-        "precision_k_genre": 0.5,
-        "precision_k_head_mean": 0.5,
-    }
-    # Row B: high disc_score but LOW disc_genre — should be second
-    row_high_score = {
-        "backbone": "bb_a",
-        "strategy": "cls",
-        "sim_metric": "cosine",
-        "k": 10,
-        "disc_general": 0.3,
-        "disc_artist": 0.3,
-        "disc_genre": 0.1,
-        "disc_head": 0.3,
-        "disc_score": 0.95,
-        "mean_within": 0.7,
-        "mean_cross": 0.4,
-        "map_k": 0.5,
-        "mrr": 0.5,
-        "ndcg_k": 0.5,
-        "recall_k": 0.5,
-        "recall_k_genre": 0.5,
-        "precision_k_genre": 0.5,
-        "precision_k_head_mean": 0.5,
-    }
-    # Deliberately insert high_score row first to show order is not insertion order
-    flat_df = pd.DataFrame([row_high_score, row_high_genre], columns=FLAT_COLUMNS)
-    binned_df = empty_df(BINNED_COLUMNS)
-
-    result = section_unified_table(flat_df, binned_df)
-    tbl = result["tables"][0]
-    columns = tbl["columns"]
-    rows = tbl["rows"]
-    assert len(rows) == 2
-    disc_genre_idx = columns.index("disc_genre")
-    disc_score_idx = columns.index("disc_score")
-    # First row should have the highest disc_genre (0.9 formatted as "0.9000")
-    first_genre = rows[0][disc_genre_idx]
-    second_genre = rows[1][disc_genre_idx]
-    assert first_genre != second_genre, "Expected different disc_genre values after sorting"
-    # Verify sort is by disc_genre, not disc_score:
-    # The high-genre row has disc_score=0.1 and should come first.
-    first_score = rows[0][disc_score_idx]
-    second_score = rows[1][disc_score_idx]
-    # "0.1000" < "0.9500" — first row has the LOWER disc_score
-    assert first_score != second_score
-
-
-# ---------------------------------------------------------------------------
-# 6. section_corpus with data returns non-empty result
-# ---------------------------------------------------------------------------
-
-
-def test_section_corpus_with_data():
-    con = _empty_con()
-    con.execute("CREATE TABLE songs (id VARCHAR, artist VARCHAR, album VARCHAR, title VARCHAR)")
-    con.execute(
-        """
-        INSERT INTO songs VALUES
-            ('1', 'Artist A', 'Album 1', 'Song 1'),
-            ('2', 'Artist A', 'Album 1', 'Song 2'),
-            ('3', 'Artist B', 'Album 2', 'Song 3'),
-            ('4', 'Artist C', 'Album 3', 'Song 4'),
-            ('5', 'Artist C', 'Album 3', 'Song 5')
-        """
-    )
-
-    result = section_corpus(con)
-
-    assert isinstance(result, dict)
-    assert not result.get("empty_message"), (
-        f"Expected populated corpus result, got empty_message={result['empty_message']!r}"
-    )
-    assert len(result["stats"]) > 0
-
-
-# ---------------------------------------------------------------------------
-# 7. section_summary with empty DataFrames returns stub with empty_message
-# ---------------------------------------------------------------------------
-
-
-def test_section_summary_empty_returns_stub():
-    empty_flat = empty_df(FLAT_COLUMNS)
-    empty_binned = empty_df(BINNED_COLUMNS)
-
-    result = section_summary(empty_flat, empty_binned)
-
-    assert isinstance(result, dict)
-    assert result.keys() >= _V2_KEYS
-    assert result["empty_message"], "Expected a non-empty empty_message for stub result"
-
-
-# ---------------------------------------------------------------------------
-# 8. disc_score_warning triggers for degenerate corpora
-# ---------------------------------------------------------------------------
-
-
-def test_disc_score_warning_triggers_single_artist():
-    """All songs from one artist → 'single_artist' error warning."""
-    con = _empty_con()
-    con.execute("CREATE TABLE songs (id VARCHAR, artist VARCHAR, album VARCHAR, title VARCHAR)")
-    con.execute(
-        """
-        INSERT INTO songs VALUES
-            ('1', 'Only Artist', 'Album 1', 'Song 1'),
-            ('2', 'Only Artist', 'Album 1', 'Song 2'),
-            ('3', 'Only Artist', 'Album 2', 'Song 3')
-        """
-    )
-
-    warnings = disc_score_warning(con)
-
-    assert isinstance(warnings, list)
-    assert len(warnings) > 0
-    assert any(w["id"] == "single_artist" for w in warnings)
-
-
-def test_disc_score_warning_triggers_no_within_artist_pairs():
-    """Every artist has exactly 1 song → 'no_within_artist_pairs' warning."""
-    con = _empty_con()
-    con.execute("CREATE TABLE songs (id VARCHAR, artist VARCHAR, album VARCHAR, title VARCHAR)")
-    con.execute(
-        """
-        INSERT INTO songs VALUES
-            ('1', 'Artist A', 'Album 1', 'Song 1'),
-            ('2', 'Artist B', 'Album 2', 'Song 2'),
-            ('3', 'Artist C', 'Album 3', 'Song 3')
-        """
-    )
-
-    warnings = disc_score_warning(con)
-
-    assert isinstance(warnings, list)
-    assert len(warnings) > 0
-    assert any(w["id"] == "no_within_artist_pairs" for w in warnings)
-
-'''

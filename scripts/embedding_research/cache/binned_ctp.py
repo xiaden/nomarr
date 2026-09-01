@@ -14,7 +14,8 @@ pool_{strategy}_norm  [n_bins, D] float32   — L2-normalised bin pooled vector
 weights               [n_bins]    int32      — patch count per bin
 outliers              [n_bins]    int32      — outlier count per bin
 
-The DB table ``binned_ctp_vecs`` has been removed; this module replaces it.
+This module replaces the legacy ``binned_ctp_vecs`` table; that table still exists in the schema
+DDL (``db/_schema.py``) but is unused — the filesystem cache is now the canonical store.
 """
 
 from __future__ import annotations

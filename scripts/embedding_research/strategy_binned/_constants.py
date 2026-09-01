@@ -15,7 +15,14 @@ if TYPE_CHECKING:
 _cfg = _load_research_config()
 
 _ALLOWED_REP_TYPES: tuple[str, ...] = ("mean", "median", "medoid", "max", "min")
-_ALLOWED_AGG_METHODS: tuple[str, ...] = ("mean", "median", "medoid", "max", "min")
+# Part B: only the weighted directional reductions are supported.  Legacy
+# generic reductions (mean/median/max/min) and agg_method=medoid are rejected
+# at this validation boundary (they are absent from the allowed set).
+_ALLOWED_AGG_METHODS: tuple[str, ...] = (
+    "target_weighted",
+    "bidirectional_weighted",
+    "normalized_mean_pair_weighted",
+)
 
 
 def _validated_choices(name: str, values: _Iterable[str], allowed: tuple[str, ...]) -> list[str]:
@@ -28,7 +35,10 @@ def _validated_choices(name: str, values: _Iterable[str], allowed: tuple[str, ..
 
 AGG_METHODS: list[str] = _validated_choices(
     "pooling.agg_methods",
-    _cfg.get("pooling", {}).get("agg_methods", ["mean", "median", "max", "min"]),
+    _cfg.get(
+        "pooling",
+        {},
+    ).get("agg_methods", ["target_weighted", "bidirectional_weighted", "normalized_mean_pair_weighted"]),
     _ALLOWED_AGG_METHODS,
 )
 REP_TYPES: list[str] = _validated_choices(
@@ -38,7 +48,11 @@ REP_TYPES: list[str] = _validated_choices(
 )
 
 if "medoid" in AGG_METHODS:
-    raise ValueError("agg_method=medoid is not implemented; use agg_method=median with rep_type=medoid.")
+    raise ValueError(
+        "agg_method=medoid is not implemented; supported weighted reductions are "
+        "target_weighted, bidirectional_weighted, normalized_mean_pair_weighted. "
+        "rep_type=medoid remains a valid representation, not an aggregation method."
+    )
 
 SIM_METRICS: list[str] = _cfg.get("similarity", {}).get("metrics", ["cosine"])
 

@@ -11,6 +11,7 @@ from ._base import (
     _H_SMALL,
     agg_label,
     apply_dark_theme,
+    flat_medoid_value,
     fmt,
     make_chart,
     make_panel,
@@ -84,19 +85,15 @@ def section_threshold_sweep(df: pd.DataFrame) -> dict:
 
     subsections: list[dict] = []
     for backbone, bb in binned_df.groupby("backbone", sort=True):
-        # Flat baseline: mean ± std across all flat eval variants for this backbone.
+        # Flat baseline: the explicit medoid row for this backbone (never mean across flat strategies).
         flat_ref_mean: float | None = None
-        flat_ref_std: float | None = None
         if flat_df is not None and not flat_df.empty:
             flat_dc = (
                 "disc_general"
                 if ("disc_general" in flat_df.columns and flat_df["disc_general"].notna().any())
                 else "disc_score"
             )
-            fb = flat_df[flat_df["backbone"] == backbone][flat_dc].dropna()
-            if not fb.empty:
-                flat_ref_mean = float(fb.mean())
-                flat_ref_std = float(fb.std()) if len(fb) > 1 else 0.0
+            flat_ref_mean = flat_medoid_value(flat_df, backbone, flat_dc)
 
         # Aggregate: each full combinatorial is its own bin.
         has_map_general = "map_k_general" in bb.columns and bb["map_k_general"].notna().any()
@@ -223,25 +220,9 @@ def section_threshold_sweep(df: pd.DataFrame) -> dict:
                 line_dash="dash",
                 line_color="#f59e0b",
                 line_width=1.0,
-                annotation_text=f"flat mean {flat_ref_mean:.4f}",
+                annotation_text=f"medoid baseline {flat_ref_mean:.4f}",
                 annotation_font_color=_FONT_COLOR,
             )
-            if flat_ref_std and flat_ref_std > 0:
-                # Shade the flat ±1-std band.
-                x_range = sorted(agg["std_thresh"].dropna().unique().tolist())
-                if x_range:
-                    x_lo, x_hi = x_range[0], x_range[-1]
-                    fig_mean.add_shape(
-                        type="rect",
-                        x0=x_lo,
-                        x1=x_hi,
-                        y0=flat_ref_mean - flat_ref_std,
-                        y1=flat_ref_mean + flat_ref_std,
-                        fillcolor="#f59e0b",
-                        opacity=0.07,
-                        layer="below",
-                        line_width=0,
-                    )
 
         for fig, metric_label in [
             (fig_mean, f"mean {disc_col}"),
@@ -321,7 +302,7 @@ def section_threshold_sweep(df: pd.DataFrame) -> dict:
             "When MAP@k general data is available, a mean MAP@k sweep chart is shown as the primary chart; "
             "disc charts (mean ±std, variance, kurtosis) are grouped in a 'Discrimination Diagnostics' panel. "
             "Error bars on the mean chart show ±1 std. "
-            "Amber dashed line = flat baseline mean; shaded band = flat ±1 std."
+            "Amber dashed line = the explicit flat medoid baseline (global_pool:{backbone}:medoid)."
         ),
         subsections=subsections,
     )
@@ -702,9 +683,7 @@ def section_bin_mode_comparison(df: pd.DataFrame) -> dict:
                 if ("disc_general" in flat_df.columns and flat_df["disc_general"].notna().any())
                 else "disc_score"
             )
-            fb = flat_df[flat_df["backbone"] == backbone][flat_dc].dropna()
-            if not fb.empty:
-                flat_ref_mean = float(fb.mean())
+            flat_ref_mean = flat_medoid_value(flat_df, backbone, flat_dc)
 
         # Re-aggregate per (bin_mode, std_thresh) — mean over all rep combos at each threshold.
         thresh_mean = bb_full.groupby(["bin_mode", "std_thresh"], as_index=False, dropna=False)[map_col].mean()
@@ -764,7 +743,7 @@ def section_bin_mode_comparison(df: pd.DataFrame) -> dict:
                 line_dash="dash",
                 line_color="#f59e0b",
                 line_width=1.0,
-                annotation_text=f"flat mean {flat_ref_mean:.4f}",
+                annotation_text=f"medoid baseline {flat_ref_mean:.4f}",
                 annotation_font_color=_FONT_COLOR,
             )
         apply_dark_theme(fig)
@@ -799,7 +778,7 @@ def section_bin_mode_comparison(df: pd.DataFrame) -> dict:
             "temporal_perdim: per-dimension std, boundary where any dimension exceeds its own threshold. "
             f"Y-axis shows mean {map_col} across all (rep_a x rep_b x agg_method x sim_metric x k) variants "
             "at each threshold — no max-collapsing. "
-            "Amber dashed line = flat baseline mean."
+            "Amber dashed line = the explicit flat medoid baseline (global_pool:{backbone}:medoid)."
         ),
         subsections=subsections,
     )
@@ -808,7 +787,7 @@ def section_bin_mode_comparison(df: pd.DataFrame) -> dict:
 def section_flat_binned_correlation(df: pd.DataFrame) -> dict:
     """Flat-binned rank correlation: does segmentation change the retrieval ranking?
 
-    Shows ``flat_binned_spearman`` (Spearman ρ between flat and binned retrieval rankings)
+    Shows ``flat_binned_spearman`` (Spearman rho between flat and binned retrieval rankings)
     and ``flat_binned_beneficial_reorder_rate`` (fraction of rank changes that are improvements)
     per backbone, grouped by strategy configuration.
 
@@ -907,12 +886,12 @@ def section_flat_binned_correlation(df: pd.DataFrame) -> dict:
             apply_dark_theme(fig)
             fig.update_layout(
                 title={
-                    "text": f"{backbone} \u2014 flat-binned Spearman ρ vs threshold",
+                    "text": f"{backbone} \u2014 flat-binned Spearman rho vs threshold",
                     "font": {"color": _FONT_COLOR},
                 },
                 height=_H_MED,
                 xaxis_title="std_thresh",
-                yaxis_title="Spearman ρ",
+                yaxis_title="Spearman rho",
             )
             charts.append(make_chart(fig, id=f"fb_corr_{backbone}", title=f"{backbone} flat-binned correlation"))
 
@@ -951,7 +930,7 @@ def section_flat_binned_correlation(df: pd.DataFrame) -> dict:
         "Flat-Binned Rank Correlation",
         description=(
             "Does segmentation change the retrieval ranking compared to flat pooling? "
-            "Spearman ρ close to 1.0 means the binned strategy preserves the flat ranking. "
+            "Spearman rho close to 1.0 means the binned strategy preserves the flat ranking. "
             "Beneficial reorder rate > 0.5 means most rank changes are improvements. "
             "Statistics are computed over all (sim_metric x k) evaluation variants within each config."
         ),
