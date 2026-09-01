@@ -18,7 +18,11 @@ from ._binned import (
 )
 from ._corpus import disc_score_warning, section_corpus
 from ._efficiency import section_efficiency
-from ._heads import section_head_sim_corr, section_head_value
+from ._heads import (
+    section_head_output_shared_ptc_boundary,
+    section_head_sim_corr,
+    section_head_value,
+)
 from ._optimizer import section_optimizer
 from ._retrieval import query_analyze_metrics, section_per_backbone, section_unified_table
 from ._summary import section_summary
@@ -291,7 +295,7 @@ def _payload(
 # ---------------------------------------------------------------------------
 
 
-def run(con, out_path=None, *, matching_corpora: dict[str, Any] | None = None) -> None:
+def run(con, out_path=None, *, matching_corpora: dict[str, Any] | None = None, head_phase_manifest=None) -> None:
     """Generate the embedding research report and write HTML + JSON files.
 
     Parameters
@@ -305,6 +309,11 @@ def run(con, out_path=None, *, matching_corpora: dict[str, Any] | None = None) -
         Optional ``backbone -> MatchingCorpusManifest`` mapping.  When supplied it is
         threaded into the winners section so every winner-delta row carries the real
         corpus hash/size for its backbone.
+    head_phase_manifest:
+        Optional :class:`~scripts.embedding_research.head_pooling.HeadPhaseManifest`
+        from the shared EffNet PTC boundary head phase.  When supplied it is threaded
+        into the ``head-output-shared-ptc-boundary`` section for preparation-status
+        and coverage warnings.
     """
     import pathlib
 
@@ -337,6 +346,10 @@ def run(con, out_path=None, *, matching_corpora: dict[str, Any] | None = None) -
         ("flat-binned-corr", lambda: section_flat_binned_correlation(df)),
         ("head-sim-corr", lambda: section_head_sim_corr(con)),
         ("head-value", lambda: section_head_value(con, flat_df=df[df["strategy_type"] == "global_pool"])),
+        (
+            "head-output-shared-ptc-boundary",
+            lambda: section_head_output_shared_ptc_boundary(con, manifest=head_phase_manifest),
+        ),
         ("efficiency", lambda: section_efficiency(con)),
         ("truncation", lambda: section_truncation(con)),
     ]

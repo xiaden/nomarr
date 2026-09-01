@@ -1,9 +1,21 @@
-"""Numerical contract tests for the Part B weighted directional scoring reductions.
+"""Numerical contract tests for the legacy weighted directional scoring hypotheses.
 
 This module pins the exact numerical and directional contract that
 ``scripts/embedding_research/strategy_binned/_weighted.py`` satisfies.  The
 implementation exists and these tests are green (spec-first Phase 1 contract
 fully realized in Phase 2); keep this contract in sync with any formula change.
+
+Legacy-weight-hypothesis status
+-------------------------------
+``target_weighted``, ``bidirectional_weighted``, and
+``normalized_mean_pair_weighted`` are **legacy_weighted_hypothesis** comparison
+formulas.  The authoritative primary scoring semantics live in
+``scripts/embedding_research/scoring_harness.py`` (``max_per_candidate_segment``).
+These functions remain implemented and numerically tested so their historical
+fixture values stay reproducible, but passing the old fixture values in this
+module does NOT make any of them authoritative primary semantics.  They are
+comparison/recording hypotheses only and must never be declared the final
+primary scoring formula.
 
 Ordered-pair convention
 -----------------------

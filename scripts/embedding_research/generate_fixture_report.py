@@ -1,24 +1,43 @@
-"""Generate a deterministic in-memory fixture report through the REAL report builders.
+"""Generate a deterministic in-memory NARROW primary fixture report via the REAL builders.
 
 This environment has no ONNX models (``/app/models`` is absent) and no audio corpus
 (``/workspace/.devcontainer/test-media`` is empty), so the real ingest->embed->stratify->
 segment->classify->analyze pipeline cannot run end-to-end.  The pre-existing
-``research.duckdb`` is stale for the current report contract: its ``analyze_metrics``
-lacks the explicit ``global_pool:{backbone}:medoid`` baseline rows and every weighted
-directional aggregate (``target_weighted`` / ``bidirectional_weighted`` /
-``normalized_mean_pair_weighted``), and its per-backbone row counts (100 vs 116) show
-non-matching corpora — so it cannot produce a valid report.
+``research.duckdb`` is stale for the current report contract, so this script builds a
+**fully deterministic in-memory DuckDB** feeding the REAL report entry point
+(``report.run``) and every section builder.
 
-This script therefore builds a **fully deterministic in-memory DuckDB** feeding the
-REAL report entry point (``report.run``) and every section builder with:
+The default primary fixture is NARROW (follow-on contract):
 
-* EffNet **and** MusicNN rows (independent populations),
-* explicit ``global_pool:{backbone}:medoid`` baseline rows per backbone,
-* the three weighted directional aggregate strategies,
-* per-backbone matching-corpus manifests (corpus_hash + corpus_size),
-* winner/delta and factor-summary tables (computed by the real builders),
-* a complete supporting set of corpus / timing / segmentation / head / truncation rows
-  so every con-based section renders.
+* backbone: ``effnet`` only;
+* flat baseline: ``medoid`` only (``flat_strategies=["medoid"]``) — the explicit
+  ``global_pool:effnet:medoid`` baseline;
+* PTC representation: ``rep=medoid`` only (no median / no alternative reps);
+* PTC boundary configurations: every configured (bin_mode, threshold), each reported
+  separately — never collapsed or averaged across thresholds;
+* primary score variant: ``max_per_candidate_segment`` (carried in the strategy-key
+  ``agg_method`` position, i.e. ``ptc:effnet:{bin_mode}:{thresh:.2f}:medoid:medoid:max_per_candidate_segment``);
+* similarity: cosine on unit vectors;
+* comparison: every PTC configuration versus the observed ``global_pool:effnet:medoid``
+  baseline for the same backbone.
+
+MusicNN and CTP are **excluded from the default primary fixture**.  They are added only
+under the explicit opt-in flag ``--include-musicnn-ctp`` (or
+``build_fixture_con(include_musicnn_ctp=True)``).  CTP ``analyze_metrics`` rows, when
+present, are never primary winner candidates — ``report._winners.section_winners``
+filters ``strategy_type == "ctp"`` out of winner selection.  Archival CTP reference
+tables (``ptc_ctp_rows``, ``head_sim_corr``, ``binned_classify_ctp``, ``truncation``)
+remain loaded as archival data for the archival note / head-sim sections, but CTP never
+appears as a primary ``analyze_metrics`` row in the DEFAULT fixture and never as a winner
+row anywhere.
+
+Every primary PTC row carries the primary score-variant identity in the strategy key and
+the full bounded trace-summary scalars (``trace_n_pairs`` … ``trace_finite``) as
+``analyze_metrics`` metric rows — mirroring ``score_variant_trace_summary``'s flattened
+shape — so decoded winner rows carry finite trace fields.  A shared-boundary head-phase
+provenance record (``boundary_source="effnet_ptc"``,
+``head_pool_variant="shared_effnet_ptc_boundary"``) is written so the
+``head-output-shared-ptc-boundary`` section renders a real per-threshold coverage table.
 
 It then writes ``report.json`` + ``report.html`` to the configured report output
 directory (``{OUTPUT_ROOT}/report``).
@@ -31,6 +50,7 @@ directory (``{OUTPUT_ROOT}/report``).
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import sys
 from pathlib import Path
@@ -45,19 +65,36 @@ if str(_REPO_ROOT) not in sys.path:
 from scripts.embedding_research.config import REPORT_DIR
 from scripts.embedding_research.corpus import MatchingCorpusManifest
 from scripts.embedding_research.db._schema import ensure_schema
+from scripts.embedding_research.db.head_phase import HeadPhaseProvenanceRow, write_head_phase_provenance
 from scripts.embedding_research.report import run as report_run
 
-BACKBONES = ["effnet", "musicnn"]
+# Primary backbone in the DEFAULT fixture (follow-on contract: effnet only).
+DEFAULT_BACKBONES = ["effnet"]
 
-FLAT_STRATEGIES = ["medoid", "mean", "max_norm", "l2norm_mean", "trimmed_10"]
+# Flat strategies in the DEFAULT fixture: medoid only.
+FLAT_STRATEGIES = ["medoid"]
+
+# PTC boundary configurations: every configured (bin_mode, threshold), reported separately.
 PTC_BIN_MODES = ["temporal_global", "temporal_perdim"]
 PTC_THRESHOLDS = [1.0, 1.1]
+
+# Primary score-variant identity carried in the strategy-key agg position.
+PRIMARY_SCORE_VARIANT = "max_per_candidate_segment"
+
+# Reps in the DEFAULT primary fixture: medoid only.
+REP_MEDOID = "medoid"
+
+# Explicit opt-in dimensions (never in the DEFAULT primary fixture).
+MUSICNN_BACKBONES = ["musicnn"]
 CTP_HEADS = ["genre", "mood_happy"]
 CTP_THRESHOLDS = [0.10]
-AGG_METHODS = ["target_weighted", "bidirectional_weighted", "normalized_mean_pair_weighted"]
-REP_COMBOS = [("medoid", "medoid"), ("median", "median")]
+
+# Evaluation K values.
 K_VALUES = [5, 10]
 SIM_METRIC = "cosine"
+
+# Heads for the shared-boundary head-phase provenance record (effnet only).
+HEAD_PHASE_HEADS = ["genre", "mood_happy"]
 
 # Metric columns inserted into analyze_metrics (drives the decoded pivot).
 METRICS = [
@@ -89,9 +126,24 @@ METRICS = [
     "flat_binned_beneficial_reorder_rate",
 ]
 
+# Bounded trace-summary scalars persisted alongside the primary PTC rows (mirrors the
+# shape of ``score_variant_trace_summary``).  All finite, deterministic synthetic values.
+TRACE_METRICS = {
+    "trace_n_pairs": 10.0,
+    "trace_numerator_sum": 8.5,
+    "trace_denominator_sum": 9.0,
+    "trace_numerator_mean": 0.9444,
+    "trace_denominator_mean": 1.0,
+    "trace_collision_count": 1.0,
+    "trace_winner_count": 3.0,
+    "trace_retained_contributions": 3.0,
+    "trace_dropped_contributions": 0.0,
+    "trace_finite": 1.0,
+}
 
-# The metric family a column belongs to (used to pick a deterministic winner so
-# every aggregate wins at least one family -> a non-trivial factor summary).
+
+# The metric family a column belongs to (used to pick a deterministic winner so every
+# configured PTC (bin_mode, threshold) wins at least one family -> non-trivial factor summary).
 def _metric_family(metric: str) -> str:
     if metric.startswith("disc_"):
         return "discrimination"
@@ -108,13 +160,14 @@ def _metric_family(metric: str) -> str:
     return "other"
 
 
-# The aggregate engineered to win each metric family.
-_FAMILY_WINNER: dict[str, str] = {
-    "MAP": "target_weighted",
-    "MRR": "bidirectional_weighted",
-    "NDCG": "normalized_mean_pair_weighted",
-    "Recall": "target_weighted",
-    "discrimination": "normalized_mean_pair_weighted",
+# Which configured PTC (bin_mode, threshold) is engineered to win each metric family.
+# Each of the four (bin_mode, threshold) configs wins at least one family, so every
+# configured threshold appears across the winner rows (per-threshold non-collapse).
+_CONFIG_WINNER_FAMILY: dict[tuple[str, float], frozenset[str]] = {
+    ("temporal_global", 1.0): frozenset({"MAP"}),
+    ("temporal_global", 1.1): frozenset({"MRR"}),
+    ("temporal_perdim", 1.0): frozenset({"NDCG"}),
+    ("temporal_perdim", 1.1): frozenset({"Recall", "discrimination"}),
 }
 
 
@@ -129,55 +182,73 @@ def _metric_value(backbone: str, metric: str, k: int) -> float:
     return round(_base_value(backbone, _metric_family(metric), k), 4)
 
 
-def _load_flat_global_pool(con) -> None:
-    """Insert flat global_pool rows (medoid baseline + other flat strategies)."""
-    for backbone in BACKBONES:
+def _insert_metrics(con, strategy_key: str, strategy_type: str, k: int, metric_values: dict) -> None:
+    """Insert analyze_metrics rows for every non-None (metric, value) pair."""
+    rows = []
+    for name, value in metric_values.items():
+        if value is None:
+            continue
+        rows.append((strategy_key, strategy_type, SIM_METRIC, k, name, float(value)))
+    con.executemany(
+        "INSERT INTO analyze_metrics (strategy_key, strategy_type, sim_metric, k, metric, value) VALUES (?,?,?,?,?,?)",
+        rows,
+    )
+
+
+def _load_flat_global_pool(con, backbones: list[str]) -> None:
+    """Insert flat global_pool medoid baseline rows (the explicit per-backbone baseline)."""
+    for backbone in backbones:
         for strategy in FLAT_STRATEGIES:
             for k in K_VALUES:
                 key = f"global_pool:{backbone}:{strategy}"
-                for metric in METRICS:
-                    if metric in ("flat_binned_spearman", "flat_binned_beneficial_reorder_rate"):
-                        continue
-                    # Non-medoid flat strategies sit slightly below the medoid baseline.
-                    offset = 0.0 if strategy == "medoid" else -0.012
-                    value = round(_metric_value(backbone, metric, k) + offset, 4)
-                    con.execute(
-                        "INSERT INTO analyze_metrics (strategy_key, strategy_type, sim_metric, k, metric, value) VALUES (?,?,?,?,?,?)",
-                        [key, "global_pool", SIM_METRIC, k, metric, value],
-                    )
+                metrics = {
+                    m: _metric_value(backbone, m, k)
+                    for m in METRICS
+                    if m not in ("flat_binned_spearman", "flat_binned_beneficial_reorder_rate")
+                }
+                _insert_metrics(con, key, "global_pool", k, metrics)
 
 
-def _load_binned(con) -> None:
-    """Insert PTC + CTP weighted-aggregate rows (the weighted directional reductions)."""
-    for backbone in BACKBONES:
-        # PTC
+def _load_binned(con, backbones: list[str]) -> None:
+    """Insert PTC primary rows: every (bin_mode, threshold) at rep=medoid with the
+    primary ``max_per_candidate_segment`` score-variant identity in the strategy key,
+    plus the bounded finite trace-summary scalars."""
+    for backbone in backbones:
         for bin_mode in PTC_BIN_MODES:
             for thresh in PTC_THRESHOLDS:
-                for rep_a, rep_b in REP_COMBOS:
-                    for agg in AGG_METHODS:
-                        key = f"ptc:{backbone}:{bin_mode}:{thresh:.2f}:{rep_a}:{rep_b}:{agg}"
-                        for k in K_VALUES:
-                            for metric in METRICS:
-                                offset = 0.055 if _FAMILY_WINNER.get(_metric_family(metric)) == agg else 0.02
-                                value = round(_metric_value(backbone, metric, k) + offset, 4)
-                                con.execute(
-                                    "INSERT INTO analyze_metrics (strategy_key, strategy_type, sim_metric, k, metric, value) VALUES (?,?,?,?,?,?)",
-                                    [key, "ptc", SIM_METRIC, k, metric, value],
-                                )
-        # CTP (one head + one threshold keeps the grid compact but complete)
+                key = f"ptc:{backbone}:{bin_mode}:{thresh:.2f}:{REP_MEDOID}:{REP_MEDOID}:{PRIMARY_SCORE_VARIANT}"
+                winning = _CONFIG_WINNER_FAMILY[(bin_mode, thresh)]
+                for k in K_VALUES:
+                    metrics: dict = {
+                        m: round(
+                            _metric_value(backbone, m, k) + (0.055 if _metric_family(m) in winning else 0.02),
+                            4,
+                        )
+                        for m in METRICS
+                        if m not in ("flat_binned_spearman", "flat_binned_beneficial_reorder_rate")
+                    }
+                    metrics.update(TRACE_METRICS)
+                    _insert_metrics(con, key, "ptc", k, metrics)
+
+
+def _load_ctp_analyze(con, backbones: list[str]) -> None:
+    """OPT-IN archival CTP analyze rows (never primary winner candidates).
+
+    section_winners filters ``strategy_type == 'ctp'`` out of winner selection, so these
+    rows are never primary winner/delta candidates even when present.
+    """
+    for backbone in backbones:
         for head in CTP_HEADS:
             for thresh in CTP_THRESHOLDS:
-                for rep_a, rep_b in REP_COMBOS:
-                    for agg in AGG_METHODS:
-                        key = f"ctp:{backbone}:{head}:{thresh:.2f}:{rep_a}:{rep_b}:{agg}"
-                        for k in K_VALUES:
-                            for metric in METRICS:
-                                offset = 0.05 if _FAMILY_WINNER.get(_metric_family(metric)) == agg else 0.018
-                                value = round(_metric_value(backbone, metric, k) + offset, 4)
-                                con.execute(
-                                    "INSERT INTO analyze_metrics (strategy_key, strategy_type, sim_metric, k, metric, value) VALUES (?,?,?,?,?,?)",
-                                    [key, "ctp", SIM_METRIC, k, metric, value],
-                                )
+                key = f"ctp:{backbone}:{head}:{thresh:.2f}:{REP_MEDOID}:{REP_MEDOID}:{PRIMARY_SCORE_VARIANT}"
+                for k in K_VALUES:
+                    metrics: dict = {
+                        m: round(_metric_value(backbone, m, k) + 0.03, 4)
+                        for m in METRICS
+                        if m not in ("flat_binned_spearman", "flat_binned_beneficial_reorder_rate")
+                    }
+                    metrics.update(TRACE_METRICS)
+                    _insert_metrics(con, key, "ctp", k, metrics)
 
 
 def _load_songs(con) -> None:
@@ -211,7 +282,7 @@ def _load_phase_timings(con) -> None:
 def _load_bin_stats(con) -> None:
     rows = [
         (f"s{i}", backbone, bin_mode, thresh, 4 + int(thresh * 2), 40, 2, 2, 8, 6.0)
-        for backbone in BACKBONES
+        for backbone in ["effnet"]
         for bin_mode in PTC_BIN_MODES
         for thresh in PTC_THRESHOLDS
         for i in range(5)
@@ -225,8 +296,7 @@ def _load_bin_stats(con) -> None:
 
 def _load_binned_classify_ctp(con) -> None:
     rows = [
-        (f"s{i}", backbone, head, bin_mode, thresh, bid, b"\x00", 10)
-        for backbone in BACKBONES
+        (f"s{i}", "effnet", head, bin_mode, thresh, bid, b"\x00", 10)
         for head in CTP_HEADS
         for bin_mode in PTC_BIN_MODES
         for thresh in CTP_THRESHOLDS
@@ -242,11 +312,10 @@ def _load_binned_classify_ctp(con) -> None:
 
 def _load_head_sim_corr(con) -> None:
     rows = [
-        (backbone, bin_mode, 0.10, "medoid", "medoid", SIM_METRIC, agg, 10, head, 0.42)
-        for backbone in BACKBONES
+        ("effnet", bin_mode, 0.10, "medoid", "medoid", SIM_METRIC, agg, 10, head, 0.42)
         for head in CTP_HEADS
         for bin_mode in PTC_BIN_MODES
-        for agg in AGG_METHODS
+        for agg in ["max_per_candidate_segment"]
     ]
     con.executemany(
         "INSERT INTO head_sim_corr_rows (backbone, bin_mode, std_thresh, rep_a, rep_b, sim_metric, "
@@ -257,13 +326,12 @@ def _load_head_sim_corr(con) -> None:
 
 def _load_ptc_ctp_rows(con) -> None:
     rows = []
-    for backbone in BACKBONES:
-        for head in CTP_HEADS:
-            for agg in AGG_METHODS:
-                label = f"ctp:{head}:temporal_global:0.10:medoid:medoid:{agg}"
-                ptc_d = 0.55
-                ctp_d = 0.60
-                rows.append((backbone, head, label, ptc_d, ctp_d, ctp_d - ptc_d, 0.5, 0.58, 0.08))
+    for head in CTP_HEADS:
+        for agg in ["max_per_candidate_segment"]:
+            label = f"ctp:{head}:temporal_global:0.10:medoid:medoid:{agg}"
+            ptc_d = 0.55
+            ctp_d = 0.60
+            rows.append(("effnet", head, label, ptc_d, ctp_d, ctp_d - ptc_d, 0.5, 0.58, 0.08))
     con.executemany(
         "INSERT INTO ptc_ctp_rows (backbone, head, strategy, ptc_disc, ctp_disc, delta_disc, "
         "ptc_map, ctp_map, delta_map) VALUES (?,?,?,?,?,?,?,?,?)",
@@ -272,12 +340,7 @@ def _load_ptc_ctp_rows(con) -> None:
 
 
 def _load_truncation(con) -> None:
-    rows = [
-        (backbone, bin_mode, thresh, 0.5, 0.62, 0.12)
-        for backbone in BACKBONES
-        for bin_mode in PTC_BIN_MODES
-        for thresh in PTC_THRESHOLDS
-    ]
+    rows = [("effnet", bin_mode, thresh, 0.5, 0.62, 0.12) for bin_mode in PTC_BIN_MODES for thresh in PTC_THRESHOLDS]
     con.executemany(
         "INSERT INTO truncation_robustness_rows (backbone, bin_mode, std_thresh, flat_mean_sim, "
         "binned_mean_sim, truncation_robustness_delta) VALUES (?,?,?,?,?,?)",
@@ -285,21 +348,61 @@ def _load_truncation(con) -> None:
     )
 
 
-def _manifests() -> dict[str, MatchingCorpusManifest]:
+def _manifests(include_musicnn_ctp: bool) -> dict[str, MatchingCorpusManifest]:
     """Deterministic per-backbone matching-corpus manifests (5-song fixture corpus)."""
     song_ids = ("aa11", "aa12", "bb21", "bb22", "cc31")
     out: dict[str, MatchingCorpusManifest] = {}
-    for backbone in BACKBONES:
+    for backbone in DEFAULT_BACKBONES:
         corpus_hash = hashlib.sha256(f"fixture-matching-corpus:{backbone}".encode()).hexdigest()[:16]
         out[backbone] = MatchingCorpusManifest(
             song_ids=song_ids,
             corpus_hash=corpus_hash,
             backbone=backbone,
         )
+    if include_musicnn_ctp:
+        for backbone in MUSICNN_BACKBONES:
+            corpus_hash = hashlib.sha256(f"fixture-matching-corpus:{backbone}".encode()).hexdigest()[:16]
+            out[backbone] = MatchingCorpusManifest(
+                song_ids=song_ids,
+                corpus_hash=corpus_hash,
+                backbone=backbone,
+            )
     return out
 
 
-def main() -> None:
+def _load_head_phase_provenance(con, effnet_hash: str) -> None:
+    """Write the shared-boundary head-phase provenance (effnet only).
+
+    boundary_source="effnet_ptc", head_pool_variant="shared_effnet_ptc_boundary",
+    status=done, finite, reference_corpus_hash == the effnet fixture corpus hash, and
+    n_pooled <= n_songs.
+    """
+    rows = [
+        HeadPhaseProvenanceRow(
+            backbone="effnet",
+            head=head,
+            bin_mode=bin_mode,
+            threshold=thresh,
+            status="done",
+            n_songs=5,
+            n_pooled=5,
+            finite=True,
+            reference_corpus_hash=effnet_hash,
+        )
+        for head in HEAD_PHASE_HEADS
+        for bin_mode in PTC_BIN_MODES
+        for thresh in PTC_THRESHOLDS
+    ]
+    write_head_phase_provenance(con, rows)
+
+
+def build_fixture_con(include_musicnn_ctp: bool = False) -> duckdb.DuckDBPyConnection:
+    """Build the fully deterministic in-memory DuckDB for the (narrow) fixture.
+
+    Default: effnet-only primary (medoid flat + medoid PTC with the primary
+    max_per_candidate_segment score).  With ``include_musicnn_ctp=True`` it also adds the
+    MusicNN independent primary rows and archival CTP analyze rows (never winners).
+    """
     con = duckdb.connect(":memory:")
     ensure_schema(con)
     # ensure_schema does not create ptc_ctp_rows; create it for section_head_value.
@@ -309,8 +412,14 @@ def main() -> None:
         "delta_disc DOUBLE, ptc_map DOUBLE, ctp_map DOUBLE, delta_map DOUBLE)"
     )
 
-    _load_flat_global_pool(con)
-    _load_binned(con)
+    backbones = list(DEFAULT_BACKBONES)
+    if include_musicnn_ctp:
+        backbones += MUSICNN_BACKBONES
+
+    _load_flat_global_pool(con, backbones)
+    _load_binned(con, backbones)
+    if include_musicnn_ctp:
+        _load_ctp_analyze(con, DEFAULT_BACKBONES)
     _load_songs(con)
     _load_phase_timings(con)
     _load_bin_stats(con)
@@ -319,7 +428,27 @@ def main() -> None:
     _load_ptc_ctp_rows(con)
     _load_truncation(con)
 
-    matching_corpora = _manifests()
+    manifests = _manifests(include_musicnn_ctp)
+    effnet_hash = manifests["effnet"].corpus_hash
+    _load_head_phase_provenance(con, effnet_hash)
+
+    return con, manifests
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument(
+        "--include-musicnn-ctp",
+        action="store_true",
+        help=(
+            "OPT-IN: also add MusicNN independent primary rows and archival CTP "
+            "analyze_metrics rows to the fixture.  CTP rows are never primary winners. "
+            "Default (no flag) writes the narrow effnet-only primary fixture."
+        ),
+    )
+    args = parser.parse_args()
+
+    con, matching_corpora = build_fixture_con(include_musicnn_ctp=args.include_musicnn_ctp)
 
     report_dir = REPORT_DIR
     report_dir.mkdir(parents=True, exist_ok=True)

@@ -11,10 +11,32 @@ limit = 0
 force = false
 # ONNX execution device.  "cpu" or "cuda".
 device = "cuda"
-# Restrict to specific backbones.  Comment out to run all.
-# backbones = ["effnet", "musicnn"]
+# Restrict to specific backbones.  The follow-on primary experiment runs
+# EffNet ONLY by default.  MusicNN remains supported by the existing independent
+# backbone machinery and is enabled ONLY by explicit selection here (e.g.
+# backbones = ["effnet", "musicnn"]); it is never part of default runs.
+backbones = ["effnet"]
 # Restrict to specific heads.  Comment out to run all.
 # heads = ["mood_happy", "mood_sad"]
+
+[archival_ctp]
+# Deferred/archival CTP (centroid-to-patch) switch.  Default DISABLED: CTP
+# segment functions, caches, and archival loaders remain available and callable,
+# but CTP requirements, rows, and winner candidates are excluded from the
+# default primary corpus and primary report grid.  Set enabled = true to include
+# CTP explicitly (archival diagnostics only, visibly separated from primary
+# output).
+enabled = false
+
+# [head] — OPTIONAL shared-boundary head phase (Plan B). Pools classifier head
+# outputs over the shared EffNet PTC cache boundaries ONLY (boundary_source =
+# "effnet_ptc", head_pool_variant = "shared_effnet_ptc_boundary"): never head-
+# specific segmentation, never the CTP score-stream segmenter, never CTP cache
+# paths. It is non-blocking and additive — provenance rows land only in
+# head_phase_provenance and never mutate primary rows, the corpus, or the winner
+# grid. It runs after primary analysis using the [pipeline] backbones / heads /
+# force keys (EffNet by default); the boundary source and pool variant are fixed
+# constants, not configurable here.
 
 [binning]
 # Normalized L2 distance thresholds (unit vectors; L2 dist ~1.0 ≈ 60° separation).
@@ -54,38 +76,50 @@ overbudget_quad_weight = 0.05
 hard_overbudget_multiplier = 3.0
 
 [pooling]
-# Explicit flat (global-pool) strategy list. This is the benchmark-baseline
-# configuration and MUST include "medoid" (the observed-patch baseline). Each
+# Explicit flat (global-pool) strategy list. The benchmark baseline is the
+# OBSERVED global medoid (global_pool:{backbone}:medoid) — an observed raw
+# patch, never the coordinate-wise synthetic "median" strategy. The follow-on
+# primary experiment narrows this to flat_strategies=["medoid"]. Each
 # configured backbone (EffNet, MusicNN) is an independent population: its own
 # matching-corpus manifest, its own independently keyed medoid, its own report
 # rows — the two backbones are never cross-averaged.
-# Omit this key to run every known flat strategy (including "medoid").
 # Available: mean, trimmed_10, trimmed_20, median (coordinate-wise synthetic),
 #            max_norm, l2norm_mean, medoid (observed patch)
-# NOTE: the benchmark baseline is the OBSERVED global medoid
-# (global_pool:{backbone}:medoid) — an observed raw patch, never the
-# coordinate-wise synthetic "median" strategy.
-flat_strategies = ["mean", "trimmed_10", "trimmed_20", "median", "max_norm", "l2norm_mean", "medoid"]
-# Representations computed per bin segment and used to build the sim matrix
+flat_strategies = ["medoid"]
+# Representations computed per bin segment and used to build the sim matrix.
+# The follow-on primary experiment uses rep_types=["medoid"] (observed segment).
 # Available: mean, median (coordinate-wise synthetic), medoid (observed segment), max, min
-rep_types   = ["median", "medoid"]
-# How the NxM per-bin sim matrix is collapsed to one score per song pair.
-# Weights are POSITIVE TEMPORAL PATCH-COUNT weights: one per source bin (row) or
-# target bin (column), equal to that bin's patch count. Segmentation runs on
-# unit-normed patch vectors; the count of bins (and so the weight vector length)
-# varies per song.
-# Available (Part B weighted directional reductions):
+rep_types   = ["medoid"]
+# PRIMARY score variant: max_per_candidate_segment (deduplicated — one
+# contribution per candidate segment, patch-count weighted, with collision /
+# winner / cosine / contribution traces). The primary ambiguity variant is
+# "first_index + retain_all_candidate_segments"; a documented alternative is
+# "equal_tie_split + unique_source_max". Trace fields (bounded, finite-only,
+# persisted as scalars in analyze_metrics and exposed as trace_* columns in the
+# report): trace_n_pairs, trace_numerator_sum/mean, trace_denominator_sum/mean,
+# trace_collision_count, trace_winner_count, trace_retained_contributions,
+# trace_dropped_contributions, trace_finite. This is the authoritative scoring
+# method of the follow-on primary experiment. A generic mean/median/max/min/
+# medoid aggregate must never re-enter here (validate_score_variant rejects it).
+score_variants = ["max_per_candidate_segment"]
+
+[pooling.hypotheses]
+# Legacy weighted directional reductions (Part B). These are labelled comparison
+# HYPOTHESES, NOT the primary scoring formula. They remain implemented and
+# numerically tested and may be evaluated EXPLICITLY by adding their names to
+# `pooling.score_variants` above (opt-in only). They are never evaluated by
+# default and are not declared as primary semantics.
 #   target_weighted(S, w_target)   = (1/n_A)*sum_a( sum_b(w_target[b]*S[a,b]) / sum_b(w_target[b]) )
 #   normalized_mean_pair_weighted  = sum_ab(w_A[a]*w_B[b]*S[a,b]) / (sum_a(w_A[a])*sum_b(w_B[b]))
 #   bidirectional_weighted         = (target_weighted(fwd,w_fwd_tgt)+target_weighted(rev,w_rev_tgt))/2
 # target_weighted is DIRECTIONAL (forward A->B differs from reverse B->A, e.g.
-# 0.6333333333 vs 0.6000000000 on the fixture). The reverse matrix is supplied
+# 0.6333333333 vs 0.6000000000 on the fixture); the reverse matrix is supplied
 # separately, never derived by transpose. bidirectional_weighted is symmetric
 # only when the reverse direction is supplied consistently.
 # Legacy generic reductions (mean/median/max/min) and agg_method="medoid" are
 # intentionally rejected; rep_type="medoid" (an observed per-bin representation)
 # remains valid alongside these reductions.
-agg_methods = ["target_weighted", "bidirectional_weighted", "normalized_mean_pair_weighted"]
+weighted_reductions = ["target_weighted", "bidirectional_weighted", "normalized_mean_pair_weighted"]
 
 [similarity]
 metrics = ["cosine"]

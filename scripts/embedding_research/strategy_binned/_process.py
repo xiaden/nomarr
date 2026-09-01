@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass as _dataclass
 from typing import TYPE_CHECKING
 from typing import NamedTuple as _NamedTuple
 
@@ -9,6 +10,24 @@ import numpy as _np
 import scipy.stats as _scipy_stats
 
 from scripts.embedding_research import db as _db
+from scripts.embedding_research.scoring_harness import (
+    PRIMARY_COLLISION_POLICY as _PRIMARY_COLLISION_POLICY,
+)
+from scripts.embedding_research.scoring_harness import (
+    PRIMARY_TIE_POLICY as _PRIMARY_TIE_POLICY,
+)
+from scripts.embedding_research.scoring_harness import (
+    SegmentScoreInput as _SegmentScoreInput,
+)
+from scripts.embedding_research.scoring_harness import (
+    SegmentScoreTrace as _SegmentScoreTrace,
+)
+from scripts.embedding_research.scoring_harness import (
+    score_max_per_candidate_segment as _score_max_per_candidate_segment,
+)
+from scripts.embedding_research.scoring_harness import (
+    variant_name as _variant_name,
+)
 from scripts.embedding_research.similarity import compute_retrieval_metrics as _compute_retrieval_metrics
 
 try:
@@ -101,7 +120,15 @@ except ImportError:
             )
 
 
-from ._constants import AGG_METHODS
+from ._constants import (
+    AGG_METHODS,
+)
+from ._constants import (
+    PRIMARY_SCORE_VARIANT as _PRIMARY_SCORE_VARIANT,
+)
+from ._constants import (
+    validate_score_variant as _validate_score_variant,
+)
 from ._weighted import (
     bidirectional_weighted as _bidirectional_weighted,
 )
@@ -231,6 +258,129 @@ def compute_agg_mats(
     return agg_mats
 
 
+@_dataclass(frozen=True)
+class ScoreVariantResult:
+    """Scalar retrieval matrix plus bounded per-pair provenance traces.
+
+    ``matrix[i, j]`` is the ``score_variant`` score for the **ordered** pair with
+    song ``i`` as source and song ``j`` as candidate (rows = source).  ``traces[i][j]``
+    is the matching ``SegmentScoreTrace``.  Reverse pairs (``[j, i]``) are computed
+    separately from the actual reverse arrays — never copied from a transpose.
+    The trace records are bounded (one per pair), so the pair-level provenance can
+    be summarised without ever persisting the raw ``n*n`` matrix into scalar rows.
+    """
+
+    score_variant: str
+    variant: str
+    tie_policy: str
+    collision_policy: str
+    matrix: _np.ndarray
+    traces: tuple[tuple[_SegmentScoreTrace, ...], ...]
+
+    @property
+    def n(self) -> int:
+        return int(self.matrix.shape[0])
+
+
+def compute_score_variant_mats(
+    norm_a: list[_UnitTensor],
+    norm_b: list[_UnitTensor],
+    weights_a: list[_np.ndarray],
+    weights_b: list[_np.ndarray],
+    metric: str,
+    *,
+    score_variant: str = _PRIMARY_SCORE_VARIANT,
+    tie_policy: str = _PRIMARY_TIE_POLICY,
+    collision_policy: str = _PRIMARY_COLLISION_POLICY,
+    progress=None,
+) -> ScoreVariantResult:
+    """Compute the primary ``max_per_candidate_segment`` score variant for one
+    ``(rep_a, rep_b)`` pair, returning both the scalar ``[n, n]`` matrix and the
+    bounded per-pair ``SegmentScoreTrace`` records.
+
+    Every ordered ``(i, j)`` pair (including ``i == j`` and ``i > j``) is scored
+    independently from the actual ``rep_a`` source bins of song ``i`` against the
+    ``rep_b`` candidate bins of song ``j``.  Reverse pairs are computed separately
+    from their own arrays — never by transposing or copying the forward matrix.
+
+    ``score_variant`` is validated against ``validate_score_variant`` so an
+    unlabelled generic mean/median/max/min/medoid aggregate cannot re-enter as a
+    primary scoring method.  The legacy weighted reductions are *not* implemented
+    here (they are opt-in hypotheses computed by ``compute_agg_mats``); requesting
+    one raises ``ValueError``.
+    """
+    if metric != "cosine":
+        raise ValueError(f"Only metric='cosine' is supported, got {metric!r}")
+    _validate_score_variant(score_variant)
+    if score_variant != _PRIMARY_SCORE_VARIANT:
+        raise ValueError(
+            f"compute_score_variant_mats implements only the primary "
+            f"{_PRIMARY_SCORE_VARIANT!r} variant, got {score_variant!r}; the legacy "
+            "weighted hypotheses are computed by compute_agg_mats."
+        )
+    n = len(norm_a)
+    data_a = [v.data for v in norm_a]
+    data_b = [v.data for v in norm_b]
+    w_a = [_np.asarray(w, dtype=_np.float64) for w in weights_a]
+    w_b = [_np.asarray(w, dtype=_np.float64) for w in weights_b]
+
+    matrix = _np.zeros((n, n), dtype=_np.float32)
+    traces: list[list[_SegmentScoreTrace]] = [[None for _ in range(n)] for _ in range(n)]  # type: ignore[misc]
+    for i in range(n):
+        for j in range(n):
+            trace = _score_max_per_candidate_segment(
+                _SegmentScoreInput(data_a[i], data_b[j], w_a[i], w_b[j]),
+                tie_policy=tie_policy,
+                collision_policy=collision_policy,
+            )
+            matrix[i, j] = float(trace.score)
+            traces[i][j] = trace
+        if progress is not None:
+            progress.update(1)
+
+    return ScoreVariantResult(
+        score_variant=score_variant,
+        variant=_variant_name(tie_policy, collision_policy),
+        tie_policy=tie_policy,
+        collision_policy=collision_policy,
+        matrix=matrix,
+        traces=tuple(tuple(row) for row in traces),
+    )
+
+
+def score_variant_trace_summary(result: ScoreVariantResult) -> dict[str, float]:
+    """Bounded, finite-only scalar summary of the per-pair traces.
+
+    Returns only finite scalar aggregates (pair counts, summed/mean numerators and
+    denominators, collision/winner/retained/dropped counts) — never the raw
+    ``n*n`` matrix or the per-pair contribution arrays.  This is the persisted
+    trace-provenance surface at the scalar-metrics DB/report boundary; the full
+    strategy key (whose ``agg_method`` carries the score-variant identity) is the
+    trace reference.
+    """
+    flat = [tr for row in result.traces for tr in row]
+    n_pairs = len(flat)
+    numerator = sum(float(tr.numerator) for tr in flat)
+    denominator = sum(float(tr.denominator) for tr in flat)
+    collisions = sum(len(tr.collisions) for tr in flat)
+    winners = sum(sum(count for _, count in tr.winner_counts) for tr in flat)
+    retained = sum(1 for tr in flat for c in tr.contributions if c.retained)
+    dropped = sum(1 for tr in flat for c in tr.contributions if not c.retained)
+    finite = all(tr.finite for tr in flat)
+    return {
+        "trace_n_pairs": float(n_pairs),
+        "trace_numerator_sum": float(numerator),
+        "trace_denominator_sum": float(denominator),
+        "trace_numerator_mean": float(numerator / n_pairs) if n_pairs else 0.0,
+        "trace_denominator_mean": float(denominator / n_pairs) if n_pairs else 0.0,
+        "trace_collision_count": float(collisions),
+        "trace_winner_count": float(winners),
+        "trace_retained_contributions": float(retained),
+        "trace_dropped_contributions": float(dropped),
+        "trace_finite": 1.0 if finite else 0.0,
+    }
+
+
 def compute_retrieval_rows(
     agg_mats: dict[str, _np.ndarray],
     artists: list[str],
@@ -325,6 +475,62 @@ def compute_retrieval_rows(
         for h_name, corr in metrics.get("per_head_corr", {}).items():
             per_head_rows.append((backbone, bin_mode, std_thresh, rep_a, rep_b, metric, agg, k, h_name, corr))
     return rows, per_head_rows
+
+
+def compute_score_variant_retrieval_rows(
+    result: ScoreVariantResult,
+    artists: list[str],
+    backbone: str,
+    bin_mode: str,
+    std_thresh: float,
+    rep_a: str,
+    rep_b: str,
+    metric: str,
+    k: int,
+    n_songs: int,
+    *,
+    albums: list[str] | None = None,
+    genres: list[str] | None = None,
+    head_scores: list[list[float]] | None = None,
+    head_names: list[str] | None = None,
+) -> tuple[list[_BinnedRetrievalRow], list[tuple], dict[str, float]]:
+    """Derive retrieval rows from a primary score-variant result.
+
+    Returns ``(rows, per_head_rows, trace_summary)`` where ``rows`` carry
+    ``agg_method=result.score_variant`` (the explicit score-variant identity in
+    the retrieval-row DTO) and ``trace_summary`` is the bounded, finite-only
+    per-pair provenance summary (``score_variant_trace_summary``).  Reverse
+    directions were already computed separately by ``compute_score_variant_mats``
+    — never from a transpose.
+    """
+    metrics = _compute_retrieval_metrics(
+        result.matrix,
+        artists,
+        k=k,
+        albums=albums,
+        genres=genres,
+        head_scores=head_scores,
+        head_names=head_names,
+    )
+    metrics["n_songs"] = n_songs
+    rows: list[_BinnedRetrievalRow] = [
+        _BinnedRetrievalRow.from_metrics(
+            backbone,
+            bin_mode,
+            std_thresh,
+            rep_a,
+            rep_b,
+            metric,
+            result.score_variant,
+            k,
+            metrics,
+        )
+    ]
+    per_head_rows: list[tuple] = [
+        (backbone, bin_mode, std_thresh, rep_a, rep_b, metric, result.score_variant, k, h_name, corr)
+        for h_name, corr in metrics.get("per_head_corr", {}).items()
+    ]
+    return rows, per_head_rows, score_variant_trace_summary(result)
 
 
 def _process_group(

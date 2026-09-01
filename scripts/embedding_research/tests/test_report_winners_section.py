@@ -2,7 +2,7 @@
 
 Proves that the new ``section_winners`` schema-v2 section:
 - carries every schema-v2 key and separates backbones into their own subsections;
-- renders the full 22-column winner-delta table and the 10-column factor-summary
+- renders the full 33-column winner-delta table and the 10-column factor-summary
   table (every new column present);
 - computes winner/delta arithmetic exactly and orders rows deterministically;
 - degrades to a clear empty_message when there is no data or no explicit

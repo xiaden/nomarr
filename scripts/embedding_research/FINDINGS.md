@@ -56,10 +56,13 @@ Ongoing notes from research runs. Add findings as they emerge — don't wait for
 
 ### Matching-corpus manifest and versioned matrix-cache identity
 
-- **Status**: Established (Plan C, 2026-09)
+- **Status**: Established (Plan C, 2026-09); intersection narrowed by the follow-on (Plans A–C)
 - **What**: Every analyzed backbone now resolves a single deterministic
   **matching-corpus manifest** (`corpus.py`) — the canonically-sorted intersection of
-  song IDs present in *every* required dataset (flat vectors, PTC bins, CTP bins). All
+  song IDs present in *every* required dataset. In the follow-on primary experiment this
+  intersection is `flat:medoid` plus every selected PTC `(bin_mode, threshold, rep_type=medoid,
+  score_variant)` sidecar; CTP is included only when the `[archival_ctp]` deferred/archival
+  switch is explicitly enabled. All
   flat and binned configurations for a backbone compare that exact song set, so no
   reportable flat/binned row is emitted from unequal corpora. A loader returning a
   different set *or order* than the manifest is rejected by
@@ -86,9 +89,9 @@ Ongoing notes from research runs. Add findings as they emerge — don't wait for
   broken by `TIE_BREAK_ORDER`), and emits one row per cell (`build_winner_delta_rows`) carrying the
   winner's decoded configuration, the explicit medoid baseline value, and `delta = winner - baseline`.
   `build_factor_summary` then groups wins/deltas per configuration factor (strategy type, flat
-  strategy, pathway, head, bin mode, threshold, rep_a, rep_b, aggregate, similarity metric) while
-  retaining group x metric x K and the contributing strategy keys.
-- **Schemas**: `WINNER_DELTA_COLUMNS` (22 cols) and `FACTOR_SUMMARY_COLUMNS` (10 cols) — see
+  strategy, pathway, head, bin mode, threshold, rep_a, rep_b, score_variant, ambiguity_variant,
+  similarity metric) while retaining group x metric x K and the contributing strategy keys.
+- **Schemas**: `WINNER_DELTA_COLUMNS` (33 cols) and `FACTOR_SUMMARY_COLUMNS` (10 cols) — see
   CONTRACTS.md §6. `section_winners` renders a `winner_delta_{backbone}` table and a
   `factor_summary_{backbone}` table per backbone.
 - **Baseline policy**: each cell's baseline is exactly `global_pool:{backbone}:medoid` for the same
@@ -161,10 +164,67 @@ with older notes, this section wins.
   config, rep, metric, ordered song_ids, corpus hash). `versioned_cache_root` resolves
   `base/v{version}/{corpus_hash}`; stale corpora or a scoring-version change select a different
   orphaned root — old directories are never deleted, never read.
+- **Shared-boundary head pooling.** The optional `head` phase pools classifier head outputs over the
+  shared EffNet PTC cache boundaries only (`boundary_source="effnet_ptc"`,
+  `head_pool_variant="shared_effnet_ptc_boundary"`) — never head-specific segmentation, never the CTP
+  score-stream segmenter, never CTP cache paths. It is non-blocking and additive: provenance rows land
+  only in `head_phase_provenance` and never mutate primary rows, the corpus, or the winner grid.
+
+### Follow-on narrowed primary experiment (Plans A–C) — supersedes broad A–E claims
+
+- **Supersedes** the broad A–E default grid (multiple default backbones, all flat strategies,
+  cross-product representations, weighted reductions as final formulas, and CTP as a primary
+  pathway) and its fixture numbers. Where this subsection conflicts with older notes or fixture
+  values, this subsection wins.
+- **Removed dimensions** (from default primary analysis): default backbones other than EffNet
+  (MusicNN is now explicit opt-in only, via `backbones=["effnet","musicnn"]`); flat strategies
+  other than `medoid`; PTC representations other than `medoid`; weighted reductions as
+  authoritative formulas (they are now labeled `legacy_weighted_hypothesis` comparisons); CTP as
+  a primary pathway (deferred/archival).
+- **Exact per-threshold configurations** (each reported separately, never collapsed): bin modes
+  `["temporal_global", "temporal_perdim"]`; distance thresholds `[0.95, 1.0, 1.05, 1.1, 1.15, 1.2,
+  1.25, 1.3, 1.35, 1.4, 1.45, 1.5]`; `rep_type="medoid"`; primary score variant
+  `max_per_candidate_segment`; comparison vs the observed `global_pool:effnet:medoid` baseline;
+  similarity cosine on unit vectors.
+- **Exact score hypotheses and ambiguity policies**: primary =
+  `first_index + retain_all_candidate_segments` (one contribution per candidate segment,
+  collisions visible, denominator = all candidate weights); documented alternative =
+  `equal_tie_split + unique_source_max` (tied source maxima split credit, colliders dropped but
+  kept in the trace, denominator shrinks to retained weights). The three legacy weighted
+  reductions (`target_weighted`, `bidirectional_weighted`, `normalized_mean_pair_weighted`) remain
+  implemented and numerically tested but are labeled `legacy_weighted_hypothesis` — never
+  authoritative primary semantics.
+- **CTP isolation**: CTP source, caches, and archival loaders remain available but are disabled
+  from default primary analysis (`[archival_ctp] enabled=false`): CTP requirements never
+  constrain the primary corpus and CTP rows/winners never enter the primary report grid.
+- **Corpus construction and hashes**: the primary corpus is the stratified candidate universe
+  intersected with `flat:medoid` and every selected PTC `(bin_mode, threshold, rep_type=medoid,
+  score_variant)` sidecar, canonically sorted and hashed with backbone, membership, eligibility
+  dimensions, scoring-semantics version, and boundary configuration. The completed A–E repair
+  recorded fixture hashes (effnet `3012791ebac8655c`, musicnn `f93bd6f21eee1e99`, size 5); the
+  follow-on regenerated fixture report (Phase 2/3) re-derives corpus identity — those numbers are
+  superseded here, not re-pinned in this docs phase.
+- **Phase 2 regeneration (this step)**: the narrow fixture report was regenerated and its
+  matching-corpus manifests re-derived. The EffNet corpus hash came out **`3012791ebac8655c`**
+  (size 5) — identical to the previously recorded value, confirming the matching-corpus hash is
+  deterministic across the narrow regeneration. The MusicNN corpus hash (`f93bd6f21eee1e99`, size
+  5) is only computed under the explicit opt-in (`--include-musicnn-ctp`) and is unchanged. The
+  validator passes against the regenerated report (exit 0).
+- **Synthetic vs real**: fixture report values are deterministic synthetic in-memory data (no
+  ONNX models / audio available) and must not be read as measured corpus conclusions; measured
+  conclusions require a real embed/segment/classify/analyze run.
 
 ---
 
 ## Final Verification Note (Plan E — report inspection & quality gate)
+
+> **SUPERSEDED by the follow-on (Plans A–C).** This note describes the OLD broad A–E fixture
+> report (16 sections, dual EffNet+MusicNN defaults, old corpus hashes, old disc values, and the
+> unified_disc_bar quirk). The follow-on narrows the primary experiment and regenerates the
+> fixture report/validator in Phase 2/3. Treat every fixture number/hash here as superseded; the
+> contract-level follow-on statements (narrow primary, per-threshold configs, hypotheses, CTP
+> isolation, corpus algorithm, head phase) are recorded in the "Follow-on narrowed primary
+> experiment" subsection above. Do not re-pin the old fixture values here.
 
 This section records the evidence from the final verification gate (Plan E), including the
 inspection of the generated fixture report and the unresolved limitations that remain. It is a
@@ -183,18 +243,18 @@ research-verification note, not a claim that production behavior changed.
   cross-averaged. Summary: effnet medoid disc_genre 0.5155 → best binned 0.5705 (+0.0550); musicnn
   0.5596 → 0.6146 (+0.0550).
 - **Exact K values evaluated.** {5, 10} — every winner-delta cell is per `group × metric × K`; the
-  22-column winner_delta and 10-column factor_summary tables enumerate 34 winner cells and 340 factor
-  rows per backbone.
+  winner_delta table (33 columns) enumerates 34 winner cells per backbone and the factor_summary
+  table (10 columns) 374 factor rows per backbone.
 - **Explicit medoid baseline.** `baseline_strategy_key == global_pool:{backbone}:medoid` on all 34
   winner rows per backbone; summary exposes `flat_medoid_disc_genre`; winners description names the
   medoid explicitly.
-- **Mechanical + manual inspection.** `validate_fixture_report.py` confirmed schema_version 2, all 15
+- **Mechanical + manual inspection.** `validate_fixture_report.py` confirmed schema_version 2, all 16
   sections carrying the full v2 key set, all expected group×metric×K winner cells, per-backbone medoid
   baselines, consistent corpus hashes, and no `disc_album` / no hidden `config="flat"`. Manual reading
   of report.json (section-by-section) confirmed readable config identity, correct directional-aggregate
   and temporal-weight wording, ties/nulls/warnings rendered understandably (null identity → "—",
   tie-break key readable), and no chart/table silently mixing corpora.
-- **JSON/HTML hygiene.** report.json round-trips via `json.load` (schema_version 2, 15 sections) and
+- **JSON/HTML hygiene.** report.json round-trips via `json.load` (schema_version 2, 16 sections) and
   contains **zero** NaN/Infinity/-Infinity literals. The report.html viewer escapes all DB-derived text
   via `esc()` (`& < > "`) and uses `textContent` for titles/status.
 
@@ -209,7 +269,7 @@ research-verification note, not a claim that production behavior changed.
 - **Fixture vs real pipeline.** The inspected report is a **deterministic in-memory fixture** — no
   ONNX models (`/app/models` absent), no audio (`test-media` has 0 files), and the pre-existing research
   DB is stale for the current contract (lacks medoid-baseline and weighted rows, non-matching
-  per-backbone corpora). The fixture drives the *real* `report.run()` + all 15 section builders, so the
+  per-backbone corpora). The fixture drives the *real* `report.run()` + all 16 section builders, so the
   report structure/semantics are verified, but **no measured corpus conclusions are claimed**. A real
   end-to-end run requires the models/audio environment and remains a future step.
 - **unified_disc_bar medoid-bar quirk (RESOLVED in QA fix cycle 1).** The unified flat-vs-binned
@@ -224,3 +284,43 @@ research-verification note, not a claim that production behavior changed.
   RUF002) in the research tree; all are pre-existing in git HEAD of the changed files (verified against
   HEAD blobs) and none are introduced by this repair. `mypy` excludes `^scripts/` by config, so research
   scripts are not type-checked by design.
+
+---
+
+## Final-report checklist (follow-on — durable gate)
+
+Before a follow-on report/findings entry is considered final, it MUST state each of the following
+explicitly. Any item left unstated is a gap, not an acceptable omission. (This checklist is durable:
+it stays in effect for every follow-on report, not just the current plan.)
+
+- [ ] **Removed dimensions** — name every dimension removed from the default primary experiment
+      (e.g. default backbones other than EffNet, flat strategies other than `medoid`, PTC
+      representations other than `medoid`, weighted reductions as authoritative formulas, CTP as a
+      primary pathway).
+- [ ] **Threshold configurations** — list every configured bin mode and distance threshold as its
+      own configuration (never collapsed by averaging), with `rep_type="medoid"` and the primary
+      score variant named.
+- [ ] **Score hypotheses and ambiguity policies** — name the primary `max_per_candidate_segment`
+      variant and its tie/collision policy (`first_index + retain_all_candidate_segments`), the
+      documented alternative (`equal_tie_split + unique_source_max`), and label the three legacy
+      weighted reductions as `legacy_weighted_hypothesis` (never primary semantics).
+- [ ] **CTP isolation** — state that CTP is deferred/archival (`[archival_ctp] enabled=false`), that
+      CTP requirements never constrain the primary corpus, and that CTP rows/winners never enter the
+      primary report grid.
+- [ ] **Corpus algorithm and hashes** — state the primary corpus construction (stratified universe
+      ∩ `flat:medoid` ∩ each PTC sidecar), the corpus hash/size used, and that all compared
+      configurations ran on the exact same song set (or a clearly declared derived subset).
+- [ ] **Head phase** — state the shared EffNet PTC boundary (`boundary_source="effnet_ptc"`,
+      `head_pool_variant="shared_effnet_ptc_boundary"`), that it is optional/non-blocking, and that
+      it never alters primary rows, the corpus, or the winner grid.
+- [ ] **Evaluation lenses** — state that MAP, MRR, NDCG, Recall, and discrimination are evaluation
+      lenses, not optimization objectives, and are never collapsed into one composite.
+- [ ] **Tests and gates** — list the tests/gates run (pytest suite incl. `-x` early exit, compileall,
+      ruff format/check, fixture generation + validation, strict-JSON finite check, no `disc_album`
+      check) and separate pre-existing findings from follow-on regressions.
+- [ ] **Synthetic vs measured** — explicitly label fixture numbers as deterministic synthetic data
+      when no real model/audio run is available, and separate them from any measured corpus
+      conclusions.
+- [ ] **No production diff** — assert that only `scripts/embedding_research` (code/tests/docs) and
+      the approved planning artifacts changed, and that no file under `nomarr/` or `frontend/` was
+      modified.

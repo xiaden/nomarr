@@ -6,18 +6,20 @@ from typing import TYPE_CHECKING
 
 import numpy as _np
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
+
+from scripts.embedding_research.db.head_phase import load_head_phase_provenance
+from scripts.embedding_research.head_pooling import (
+    BOUNDARY_SOURCE_EFFNET_PTC,
+    HEAD_POOL_VARIANT,
+)
 
 from ._base import (
     _FONT_COLOR,
-    _GRID_COLOR,
-    _H_MED,
     _H_SMALL,
     apply_dark_theme,
     binned_config_label,
-    flat_medoid_value,
+    fmt,
     make_chart,
-    make_panel,
     make_section,
     make_table,
     table_exists,
@@ -177,25 +179,32 @@ def section_head_sim_corr(con) -> dict:
     )
 
 
-def section_head_value(con, flat_df: pd.DataFrame | None = None) -> dict:
-    """CTP vs PTC: does classifying before pooling add value over geometry alone?
+def section_head_value(con, flat_df: pd.DataFrame | None = None) -> dict:  # noqa: ARG001 - flat_df kept for backward-compatible call signature (archival CTP note no longer uses it)
+    """ARCHIVAL CTP reference (deferred). Never a primary winner/delta surface.
 
-    Renders exact ``ptc_ctp_rows`` strategy rows.  The heatmaps show per-head
-    median and best (winning-strategy) ``Δdisc = CTP - PTC``; an exact
-    "best strategy per head" table names the winning strategy row so config
-    identity is never collapsed away.  Per-backbone charts draw the explicit
-    ``global_pool:{backbone}:medoid`` baseline when a decoded flat frame is
-    supplied.
+    CTP (classify-then-pool) is a deferred, archival pathway that is excluded from
+    the primary EffNet PTC-versus-global-medoid experiment.  This section is
+    retained purely as a labelled archival note and raw reference table; exact
+    primary winners/deltas live in the 'Exact Winners & Deltas' section and shared
+    head-output preparation lives in the 'head-output-shared-ptc-boundary' section.
     """
+    archival_warning = {
+        "message": (
+            "ARCHIVAL / DEFERRED: CTP is not part of the primary experiment. This "
+            "section is reference-only and never contributes primary winner/delta rows."
+        )
+    }
     has_ptc_ctp = table_exists(con, "ptc_ctp_rows")
-
     if not has_ptc_ctp:
         return make_section(
             "head-value",
-            "Head Value",
-            empty_message="Run the classify and analyze phases to populate this section.",
+            "Head Value (Archival CTP Reference)",
+            warnings=[archival_warning],
+            empty_message=(
+                "No archival CTP comparison rows (ptc_ctp_rows) present. CTP is "
+                "deferred/archival and excluded from primary analysis."
+            ),
         )
-
     try:
         df = con.execute(
             "SELECT backbone, head, strategy, "
@@ -204,219 +213,142 @@ def section_head_value(con, flat_df: pd.DataFrame | None = None) -> dict:
             "FROM ptc_ctp_rows ORDER BY backbone, head, strategy"
         ).df()
     except Exception as exc:
-        return make_section("head-value", "Head Value", empty_message=f"Query error: {exc}")
-
+        return make_section(
+            "head-value",
+            "Head Value (Archival CTP Reference)",
+            warnings=[archival_warning],
+            empty_message=f"Query error: {exc}",
+        )
     if df.empty:
-        return make_section("head-value", "Head Value", empty_message="No head comparison data yet.")
-
-    # Per-head aggregates over the EXACT per-strategy rows in ptc_ctp_rows.
-    agg = (
-        df.groupby(["backbone", "head"])
-        .agg(
-            median_delta=("delta_disc", "median"),
-            best_delta=("delta_disc", "max"),
-        )
-        .reset_index()
-    )
-    # Exact winning strategy per (backbone, head) — config identity preserved.
-    best_strategy = (
-        df.sort_values("delta_disc", ascending=False)
-        .groupby(["backbone", "head"], as_index=False)
-        .first()[["backbone", "head", "strategy", "delta_disc"]]
-        .rename(columns={"strategy": "best strategy", "delta_disc": "best Δdisc"})
-    )
-
-    all_backbones = sorted(agg["backbone"].unique())
-    all_heads = sorted(agg["head"].unique())
-
-    pivot_delta = agg.pivot(index="head", columns="backbone", values="median_delta").reindex(
-        index=all_heads, columns=all_backbones
-    )
-    pivot_best = agg.pivot(index="head", columns="backbone", values="best_delta").reindex(
-        index=all_heads, columns=all_backbones
-    )
-
-    data_delta = pivot_delta.values.astype(float)
-    data_best = pivot_best.values.astype(float)
-    text_delta = [[f"{v:+.3f}" if not _np.isnan(v) else "" for v in row] for row in data_delta]
-    text_best = [[f"{v:+.3f}" if not _np.isnan(v) else "" for v in row] for row in data_best]
-
-    height = max(280, len(all_heads) * 44 + 100)
-    max_abs = float(_np.nanmax(_np.abs(data_best))) if not _np.all(_np.isnan(data_best)) else 0.05
-    max_abs = max(max_abs, 0.01)
-
-    fig_delta = go.Figure(
-        go.Heatmap(
-            z=data_delta.tolist(),
-            x=all_backbones,
-            y=all_heads,
-            text=text_delta,
-            texttemplate="%{text}",
-            textfont={"size": 10},
-            colorscale="RdYlGn",
-            zmid=0,
-            zmin=-max_abs,
-            zmax=max_abs,
-            colorbar={"title": "\u0394disc", "tickfont": {"color": "#aaa", "size": 9}},
-        )
-    )
-    apply_dark_theme(fig_delta, grid=False)
-    fig_delta.update_layout(
-        title={"text": "Median \u0394disc: CTP \u2212 PTC", "font": {"color": _FONT_COLOR}},
-        height=height,
-        xaxis={"tickfont": {"color": _FONT_COLOR, "size": 10}},
-        yaxis={"tickfont": {"color": _FONT_COLOR, "size": 10}},
-    )
-
-    fig_best = go.Figure(
-        go.Heatmap(
-            z=data_best.tolist(),
-            x=all_backbones,
-            y=all_heads,
-            text=text_best,
-            texttemplate="%{text}",
-            textfont={"size": 10},
-            colorscale="RdYlGn",
-            zmid=0,
-            zmin=-max_abs,
-            zmax=max_abs,
-            colorbar={"title": "best \u0394disc", "tickfont": {"color": "#aaa", "size": 9}},
-        )
-    )
-    apply_dark_theme(fig_best, grid=False)
-    fig_best.update_layout(
-        title={
-            "text": "Best \u0394disc (winning strategy) per head",
-            "font": {"color": _FONT_COLOR},
-        },
-        height=height,
-        xaxis={"tickfont": {"color": _FONT_COLOR, "size": 10}},
-        yaxis={"tickfont": {"color": _FONT_COLOR, "size": 10}},
-    )
-
-    # Per-backbone breakdown panels
-    flat_base: dict[str, float | None] = {}
-    if flat_df is not None and not flat_df.empty:
-        disc_col_f = (
-            "disc_general"
-            if ("disc_general" in flat_df.columns and flat_df["disc_general"].notna().any())
-            else "disc_score"
-        )
-        for bb in flat_df["backbone"].dropna().unique():
-            flat_base[str(bb)] = flat_medoid_value(flat_df, str(bb), disc_col_f)
-
-    bb_panels: list[dict] = []
-    for backbone, bb_df in df.groupby("backbone", sort=True):
-        flat_ref = flat_base.get(str(backbone))
-        by_head = (
-            bb_df.groupby("head")
-            .agg(
-                median_ptc=("ptc_disc", "median"),
-                median_ctp=("ctp_disc", "median"),
-                median_delta=("delta_disc", "median"),
-            )
-            .reset_index()
-        )
-        h_labels = by_head["head"].tolist()[::-1]
-        ptc_vals = by_head["median_ptc"].tolist()[::-1]
-        ctp_vals = by_head["median_ctp"].tolist()[::-1]
-        delta_vals = by_head["median_delta"].tolist()[::-1]
-        delta_colors = ["#4ade80" if v > 0 else "#f87171" for v in delta_vals]
-        bheight = max(_H_MED, len(h_labels) * 32 + 100)
-
-        fig_bb = make_subplots(rows=1, cols=2, subplot_titles=["Median disc by head", "\u0394disc (CTP \u2212 PTC)"])
-        fig_bb.add_trace(
-            go.Bar(x=ptc_vals, y=h_labels, orientation="h", name="PTC", marker_color="#7ec8e3"),
-            row=1,
-            col=1,
-        )
-        fig_bb.add_trace(
-            go.Bar(x=ctp_vals, y=h_labels, orientation="h", name="CTP", marker_color="#a78bfa"),
-            row=1,
-            col=1,
-        )
-        if flat_ref is not None:
-            fig_bb.add_vline(
-                x=flat_ref,
-                line_dash="dot",
-                line_color="#f59e0b",
-                line_width=1.2,
-                annotation_text=f"medoid {flat_ref:.4f}",
-                annotation_font_color=_FONT_COLOR,
-                row=1,
-                col=1,
-            )
-        fig_bb.add_trace(
-            go.Bar(
-                x=delta_vals,
-                y=h_labels,
-                orientation="h",
-                name="\u0394 disc",
-                marker_color=delta_colors,
-                showlegend=False,
-            ),
-            row=1,
-            col=2,
-        )
-        fig_bb.add_vline(x=0, line_color="#555", line_width=0.8, row=1, col=2)
-        apply_dark_theme(fig_bb, grid=False)
-        fig_bb.update_xaxes(showgrid=True, gridcolor=_GRID_COLOR, gridwidth=0.5)
-        fig_bb.update_layout(
-            title={"text": str(backbone), "font": {"color": _FONT_COLOR}},
-            height=bheight,
-            barmode="group",
-        )
-        bb_exact = best_strategy[best_strategy["backbone"] == backbone][
-            ["head", "best strategy", "best \u0394disc"]
-        ].to_dict("records")
-        bb_panels.append(
-            make_panel(
-                id=f"hv_bb_{backbone}",
-                title=str(backbone),
-                charts=[make_chart(fig_bb, id=f"hv_bb_chart_{backbone}", title=str(backbone))],
-                tables=[make_table(bb_exact, id=f"hv_best_{backbone}", title="Best strategy per head")],
-            )
-        )
-
-    panels: list[dict] = []
-    if bb_panels:
-        panels.append(
-            make_panel(
-                id="head_value_per_backbone",
-                title="Per-backbone breakdown",
-                subsections=[
-                    {
-                        "id": p["id"],
-                        "title": p["title"],
-                        "description": "",
-                        "stats": [],
-                        "charts": p["charts"],
-                        "tables": p["tables"],
-                        "panels": [],
-                        "subsections": [],
-                        "warnings": [],
-                        "headline": None,
-                        "empty_message": "",
-                    }
-                    for p in bb_panels
-                ],
-            )
+        return make_section(
+            "head-value",
+            "Head Value (Archival CTP Reference)",
+            warnings=[archival_warning],
+            empty_message="No archival CTP comparison data.",
         )
     return make_section(
         "head-value",
-        "Head Value",
+        "Head Value (Archival CTP Reference)",
         description=(
-            "\u0394disc = CTP disc \u2212 PTC disc. Positive = head's own signal structure carves "
-            "better-separated pools than embedding geometry alone. "
-            "The heatmaps show, per head, the median and the best (winning-strategy) \u0394disc "
-            "over the exact ptc_ctp_rows strategy rows; the per-backbone tables name the exact "
-            "winning strategy per head. Exact group x metric x K winners and deltas vs the "
-            "explicit global_pool:{backbone}:medoid baseline are in the 'Exact Winners & Deltas' "
-            "section. Green = head adds value. Red = geometry alone is sufficient."
+            "ARCHIVAL / DEFERRED. CTP (classify-then-pool) is a deferred, archival "
+            "pathway that is excluded from the primary EffNet PTC-versus-global-medoid "
+            "experiment. This section is retained for reference only and is never a "
+            "primary winner or delta source; exact primary winners/deltas live in the "
+            "'Exact Winners & Deltas' section, and shared-boundary head-output "
+            "preparation lives in the 'head-output-shared-ptc-boundary' section. The "
+            "table below shows the raw archival ptc_ctp_rows comparison rows (Δdisc = "
+            "ctp_disc - ptc_disc) as reference data only."
         ),
-        charts=[
-            make_chart(fig_delta, id="head_value_delta", title="Median \u0394disc: CTP \u2212 PTC"),
-            make_chart(fig_best, id="head_value_best", title="Best \u0394disc (winning strategy)"),
+        warnings=[archival_warning],
+        tables=[
+            make_table(
+                df.to_dict("records"),
+                id="head_value_archival_ctp",
+                title="Archival CTP reference rows",
+            )
         ],
-        panels=panels,
+    )
+
+
+def section_head_output_shared_ptc_boundary(con, manifest=None) -> dict:
+    """Shared EffNet PTC boundary head-output preparation status and coverage.
+
+    Describes whether the shared ``effnet_ptc`` boundary head phase has been prepared
+    for each (head, bin_mode, threshold) configuration, the persisted shared-boundary
+    provenance (``boundary_source="effnet_ptc"``, ``head_pool_variant=...``),
+    per-threshold song coverage (``n_songs`` / ``n_pooled``), and any missing-data
+    warnings.  This is a preparation-status section only and never emits primary
+    winner/delta rows.
+    """
+    warnings: list[dict] = []
+    if manifest is not None:
+        if manifest.errors:
+            warnings.append(
+                {
+                    "message": (
+                        f"Head phase finished with {manifest.errors} error configuration(s); shared-boundary "
+                        "head outputs are incomplete."
+                    )
+                }
+            )
+        if manifest.done == 0 and sum(r.n_pooled for r in manifest.results) == 0:
+            warnings.append(
+                {
+                    "message": (
+                        f"Head phase produced no pooled output (skipped={manifest.skipped} errors={manifest.errors}); "
+                        "shared-boundary head outputs are unavailable in this report."
+                    )
+                }
+            )
+
+    has_tbl = table_exists(con, "head_phase_provenance")
+    rows = load_head_phase_provenance(con) if has_tbl else []
+
+    if not rows and manifest is None:
+        warnings.append(
+            {
+                "message": (
+                    "No shared-boundary head-phase provenance found. Run the head phase "
+                    "(classify.run_shared_ptc_head_pooling) to populate head-output provenance."
+                )
+            }
+        )
+
+    if not rows:
+        return make_section(
+            "head-output-shared-ptc-boundary",
+            "Head Output: Shared PTC Boundary",
+            description=(
+                "Preparation status and per-threshold coverage for the shared EffNet PTC "
+                'boundary head phase (boundary_source="effnet_ptc"). This is a '
+                "preparation-status section only and never emits primary winner/delta rows."
+            ),
+            warnings=warnings,
+            empty_message=("No shared-boundary head-phase data yet. Run the head phase to populate provenance."),
+        )
+
+    status_counts: dict[str, int] = {}
+    for r in rows:
+        status_counts[r.status] = status_counts.get(r.status, 0) + 1
+    status_desc = ", ".join(f"{k}={v}" for k, v in sorted(status_counts.items())) or "none"
+
+    table_rows: list[dict] = []
+    for r in rows:
+        cov = ""
+        if r.n_songs > 0:
+            cov = f"{100.0 * r.n_pooled / r.n_songs:.1f}%"
+        table_rows.append(
+            {
+                "head": r.head,
+                "bin_mode": r.bin_mode,
+                "threshold": fmt(r.threshold),
+                "status": r.status,
+                "n_songs": str(r.n_songs),
+                "n_pooled": str(r.n_pooled),
+                "coverage": cov,
+                "boundary_source": r.boundary_source,
+                "head_pool_variant": r.head_pool_variant,
+                "reference_corpus_hash": (r.reference_corpus_hash or "—"),
+            }
+        )
+
+    return make_section(
+        "head-output-shared-ptc-boundary",
+        "Head Output: Shared PTC Boundary",
+        description=(
+            "Shared-boundary head-phase preparation status and per-threshold coverage. "
+            f'boundary_source = "{BOUNDARY_SOURCE_EFFNET_PTC}" and head_pool_variant = '
+            f'"{HEAD_POOL_VARIANT}" prove the shared EffNet PTC boundary provenance; '
+            "n_pooled/n_songs is the fraction of songs with pooled head output at each "
+            "(head, bin_mode, threshold). This section is preparation metadata only and "
+            "never emits primary winner/delta rows."
+        ),
+        warnings=warnings,
+        tables=[
+            make_table(
+                table_rows,
+                id="head_phase_provenance",
+                title=f"Head-phase provenance (status: {status_desc})",
+            )
+        ],
     )

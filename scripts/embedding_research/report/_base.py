@@ -203,14 +203,18 @@ def rep_label(rep: str | None) -> str:
 
 
 def agg_label(agg: str | None) -> str:
-    """Human-readable aggregation label for report tables."""
+    """Human-readable aggregation / score-variant label for report tables.
+
+    Position 6 of a ptc/ctp strategy key carries the explicit score-variant
+    identity: the primary ``max_per_candidate_segment`` method or one of the
+    opt-in legacy weighted hypotheses.  A generic mean/median/max/min/medoid
+    aggregate is not a labelled scoring method and is never produced here.
+    """
     if agg is None:
         return "—"
     agg_s = str(agg)
-    if agg_s == "median":
-        return "median"
-    if agg_s == "medoid":
-        return "medoid"
+    if agg_s == "max_per_candidate_segment":
+        return "max-per-candidate"
     if agg_s == "target_weighted":
         return "target-wtd"
     if agg_s == "bidirectional_weighted":
@@ -218,6 +222,39 @@ def agg_label(agg: str | None) -> str:
     if agg_s == "normalized_mean_pair_weighted":
         return "norm-pair-wtd"
     return agg_s
+
+
+# Documented ambiguity (tie / collision) variants for the explicit score variants
+# (Plan A scoring-primary contract).  The primary max-per-candidate-segment method
+# uses the ``first_index + retain_all_candidate_segments`` variant (one contribution
+# per candidate segment, denominator = sum of all candidate weights); the documented
+# alternative is ``equal_tie_split + unique_source_max``.  Legacy weighted hypotheses
+# are single formulas with no per-candidate tie/collision ambiguity and are labelled
+# as such.
+_PRIMARY_SCORE_VARIANT = "max_per_candidate_segment"
+_PRIMARY_AMBIGUITY_VARIANT = "first_index + retain_all_candidate_segments"
+_ALTERNATIVE_AMBIGUITY_VARIANT = "equal_tie_split + unique_source_max"
+_LEGACY_WEIGHTED_HYPOTHESIS_VARIANT = "legacy_weighted_hypothesis"
+_LEGACY_WEIGHTED_AGGS = ("target_weighted", "bidirectional_weighted", "normalized_mean_pair_weighted")
+
+
+def ambiguity_variant_label(agg: str | None) -> str:
+    """Human-readable ambiguity (tie/collision) variant for a score-variant label.
+
+    Every ptc/ctp strategy key carries an explicit score-variant identity in
+    position 6.  The primary ``max_per_candidate_segment`` variant always uses the
+    documented ``first_index + retain_all_candidate_segments`` tie/collision policy;
+    the legacy weighted hypotheses are single formulas with no per-candidate
+    ambiguity.  Returns ``—`` for the flat baseline or an unknown label.
+    """
+    if agg is None:
+        return "—"
+    agg_s = str(agg)
+    if agg_s == _PRIMARY_SCORE_VARIANT:
+        return _PRIMARY_AMBIGUITY_VARIANT
+    if agg_s in _LEGACY_WEIGHTED_AGGS:
+        return _LEGACY_WEIGHTED_HYPOTHESIS_VARIANT
+    return "—"
 
 
 def binned_config_label(

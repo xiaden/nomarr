@@ -69,7 +69,11 @@ def section_winners(
     baseline_rows = df[df["strategy_type"] == "global_pool"]
     winners_by_backbone: list[pd.DataFrame] = []
     for backbone in sorted({str(b) for b in df["backbone"].dropna().tolist()}):
-        bb_df = df[df["backbone"] == backbone]
+        # Default primary winners are scoped to the explicit medoid baseline plus PTC
+        # configurations only: CTP is a deferred/archival pathway and must never appear
+        # as a primary winner/delta candidate.  Explicit backbones (e.g. MusicNN) remain
+        # independent, each vs its own medoid baseline — never a cross-backbone aggregate.
+        bb_df = df[(df["backbone"] == backbone) & (df["strategy_type"] != "ctp")]
         bb_baseline = (
             baseline_rows[baseline_rows["backbone"] == backbone]
             if "backbone" in baseline_rows.columns
@@ -144,15 +148,21 @@ def section_winners(
             "For every backbone x retrieval group x metric family x K, the deterministic "
             "winner (strategy key, type, value) and its delta against the explicit "
             "global_pool:{backbone}:medoid baseline for the *same* backbone x group x "
-            "metric x K. No averaging across groups, metrics, K, backbones, or hidden "
-            "configurations. delta = winner_value - medoid_baseline_value, so a negative "
-            "delta means the best configuration is worse than the medoid reference. "
-            "Factor summaries group wins by each configuration factor (strategy type, "
-            "flat strategy, pathway, head, bin mode, threshold, rep_a, rep_b, aggregate, "
-            "similarity metric) while retaining group x metric x K and the contributing "
-            "strategy keys. Temporal weighting (the weighted directional reductions "
-            "target-wtd / bidir-wtd / norm-pair-wtd) is distinct from representation "
-            "choice (rep_a / rep_b, e.g. medoid vs median)."
+            "metric x K. MAP, MRR, NDCG, Recall, and discrimination are evaluation lenses "
+            "(not optimization objectives); each is compared independently and never "
+            "collapsed into a single composite. No averaging across groups, metrics, K, "
+            "backbones, or hidden configurations. delta = winner_value - medoid_baseline_value, "
+            "so a negative delta means the best configuration is worse than the medoid "
+            "reference. Factor summaries group wins by each configuration factor (strategy "
+            "type, flat strategy, pathway, head, bin mode, threshold, rep_a, rep_b, score "
+            "variant, ambiguity variant, similarity metric) while retaining group x metric "
+            "x K and the contributing strategy keys. The score-variant factor is the "
+            "explicit aggregation identity (e.g. max-per-candidate); the ambiguity-variant "
+            "factor is its documented tie/collision policy (e.g. first_index + "
+            "retain_all_candidate_segments). Temporal weighting (the weighted directional "
+            "reductions target-wtd / bidir-wtd / norm-pair-wtd) is distinct from "
+            "representation choice (rep_a / rep_b, e.g. medoid vs median). CTP is a "
+            "deferred/archival pathway and is excluded from these primary winner/delta rows."
         ),
         subsections=subsections,
     )

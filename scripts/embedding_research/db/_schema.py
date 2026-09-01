@@ -1,13 +1,15 @@
 """
 DuckDB schema, connection management, and DDL for the embedding research DB.
 
-Tables (16 total)
+Tables (18 total)
 -----------------
 Flat-embedding pipeline:
   songs                     (song_id PK, path, artist, album, title, genre)
   pooled_vecs               (song_id, backbone, strategy, vec FLOAT[])
   head_results              (song_id, backbone, head, strategy, pathway, act FLOAT[])
   analyze_metrics           (strategy_key, strategy_type, sim_metric, k, metric, value)
+  song_retrieval_metrics    (strategy_key, sim_metric, k, song_id, ap_k, mrr, recall_k,
+                             disc_artist_contrib, disc_genre_contrib, disc_head_contrib)
 
 Binned-embedding pipeline (one vector per STD-threshold bin per song):
   binned_calibration        (backbone, dist_mode, p10, p25, p50, p75, mean_d, sigma_d,
@@ -37,6 +39,11 @@ CTP-derived (segment boundaries from classifier score stream, head-specific):
 
 Corpus stratification:
   stratified_corpus         (config_hash TEXT, song_id TEXT)
+
+Shared-boundary head phase (additive provenance):
+  head_phase_provenance     (backbone, head, bin_mode, threshold, boundary_source,
+                             head_pool_variant PK, status, reason, n_songs, n_pooled,
+                             finite, scoring_semantics_version, reference_corpus_hash)
 
 Infrastructure:
   phase_timings             (run_ts, phase, elapsed_s)
@@ -285,6 +292,30 @@ CREATE TABLE IF NOT EXISTS song_retrieval_metrics (
     disc_genre_contrib    DOUBLE,
     disc_head_contrib     DOUBLE,
     PRIMARY KEY (strategy_key, sim_metric, k, song_id)
+);
+
+-- Shared-boundary head phase preparation provenance (Plan B, Phase 2).
+-- One row per (effnet, head, bin_mode, threshold) config tuple recording the
+-- head-boundary preparation status and per-configuration provenance.  ADDITIVE
+-- to the primary experiment: never part of analyze_metrics, never a primary
+-- winner candidate, never carries a CTP boundary source.  reference_corpus_hash
+-- declares the primary EffNet corpus this head phase derived its song set from
+-- (NULL = head-availability-only derived subset).
+CREATE TABLE IF NOT EXISTS head_phase_provenance (
+    backbone                  TEXT NOT NULL,
+    head                      TEXT NOT NULL,
+    bin_mode                  TEXT NOT NULL,
+    threshold                 DOUBLE NOT NULL,
+    boundary_source           TEXT NOT NULL,
+    head_pool_variant         TEXT NOT NULL,
+    status                    TEXT NOT NULL,
+    reason                    TEXT,
+    n_songs                   INTEGER NOT NULL,
+    n_pooled                  INTEGER NOT NULL,
+    finite                    INTEGER NOT NULL,
+    scoring_semantics_version INTEGER NOT NULL,
+    reference_corpus_hash     TEXT,
+    PRIMARY KEY (backbone, head, bin_mode, threshold, boundary_source, head_pool_variant)
 );
 """
 

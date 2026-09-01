@@ -7,6 +7,17 @@ read only their ``np.ndarray`` arguments, perform no I/O, and return a Python
 catastrophic cancellation; the caller is responsible for casting matrix
 outputs to float32.
 
+Legacy-weight-hypothesis status
+-------------------------------
+These three reductions are **legacy_weighted_hypothesis** comparison formulas.
+The authoritative primary scoring semantics for the follow-on experiment are
+defined by ``scripts/embedding_research/scoring_harness.py`` (the
+``max_per_candidate_segment`` deduplicated score).  These functions remain
+implemented and numerically tested so their historical fixture values stay
+reproducible, but passing their old fixture does NOT make any of them
+authoritative primary semantics.  They are comparison/recording hypotheses only
+and must never be declared the final primary scoring formula.
+
 Ordered-pair convention
 -----------------------
 ``S[a, b]`` is the similarity from **source bin** ``a`` of song A to
@@ -56,7 +67,10 @@ def _as_weights(weights: np.ndarray, length: int, name: str) -> np.ndarray:
 
 
 def target_weighted(pair_similarity: np.ndarray, target_weights: np.ndarray) -> float:
-    """Weighted directional score of one ordered pair.
+    """Legacy-weighted-hypothesis: weighted directional score of one ordered pair.
+
+    This is a ``legacy_weighted_hypothesis`` comparison formula; it is NOT the
+    authoritative primary scoring semantics (see the module docstring).
 
     ``target_weighted(S, w_target) = (1/n_A) * sum_a( sum_b(w_target[b] * S[a,b]) / sum_b(w_target[b]) )``
 
@@ -81,7 +95,10 @@ def normalized_mean_pair_weighted(
     source_weights: np.ndarray,
     target_weights: np.ndarray,
 ) -> float:
-    """Weighted global bilinear mean of one ordered pair.
+    """Legacy-weighted-hypothesis: weighted global bilinear mean of one ordered pair.
+
+    This is a ``legacy_weighted_hypothesis`` comparison formula; it is NOT the
+    authoritative primary scoring semantics (see the module docstring).
 
     ``normalized_mean_pair_weighted(S, w_A, w_B)
         = sum_ab(w_A[a] * w_B[b] * S[a,b]) / (sum_a(w_A[a]) * sum_b(w_B[b]))``
@@ -104,7 +121,10 @@ def bidirectional_weighted(
     forward_target_weights: np.ndarray,
     reverse_target_weights: np.ndarray,
 ) -> float:
-    """Arithmetic mean of the two separately-supplied directional scores.
+    """Legacy-weighted-hypothesis: mean of the two separately-supplied directional scores.
+
+    This is a ``legacy_weighted_hypothesis`` comparison formula; it is NOT the
+    authoritative primary scoring semantics (see the module docstring).
 
     ``bidirectional_weighted(fwd, rev, w_fwd_tgt, w_rev_tgt)
         = (target_weighted(fwd, w_fwd_tgt) + target_weighted(rev, w_rev_tgt)) / 2``

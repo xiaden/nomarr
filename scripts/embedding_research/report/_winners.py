@@ -30,7 +30,7 @@ from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
-from ._base import canonical_flat_baseline
+from ._base import ambiguity_variant_label, canonical_flat_baseline
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -95,7 +95,9 @@ TIE_BREAK_ORDER: tuple[str, ...] = (
 STRATEGY_TYPE_RANK: dict[str, int] = {"global_pool": 0, "ptc": 1, "ctp": 2}
 
 # Factors reported by :func:`build_factor_summary`, each mapped to the emitted
-# winner row column that carries its value.
+# winner row column that carries its value.  ``score_variant`` is the explicit
+# aggregation/score-variant identity carried in winner_aggregate (position 6 of the
+# ptc/ctp strategy key); ``ambiguity_variant`` is its documented tie/collision policy.
 FACTOR_COLUMNS: dict[str, str] = {
     "strategy_type": "winner_strategy_type",
     "flat_strategy": "winner_flat_strategy",
@@ -105,9 +107,28 @@ FACTOR_COLUMNS: dict[str, str] = {
     "threshold": "winner_threshold",
     "rep_a": "winner_rep_a",
     "rep_b": "winner_rep_b",
-    "aggregate": "winner_aggregate",
+    "score_variant": "winner_aggregate",
+    "ambiguity_variant": "winner_ambiguity_variant",
     "sim_metric": "winner_sim_metric",
 }
+
+# Bounded per-pair trace-summary columns emitted by
+# ``score_variant_trace_summary`` (the primary max-per-candidate-segment scoring)
+# and persisted through ``analyze_metrics`` as scalar metrics.  They are carried
+# verbatim on winner rows so collisions, winners, weights, cosine values, and
+# contribution retention stay visible without unbounded per-pair matrices.
+TRACE_SUMMARY_COLUMNS: list[str] = [
+    "trace_n_pairs",
+    "trace_numerator_sum",
+    "trace_denominator_sum",
+    "trace_numerator_mean",
+    "trace_denominator_mean",
+    "trace_collision_count",
+    "trace_winner_count",
+    "trace_retained_contributions",
+    "trace_dropped_contributions",
+    "trace_finite",
+]
 
 # Columns emitted by :func:`build_winner_delta_rows`.
 WINNER_DELTA_COLUMNS: list[str] = [
@@ -126,7 +147,9 @@ WINNER_DELTA_COLUMNS: list[str] = [
     "winner_rep_a",
     "winner_rep_b",
     "winner_aggregate",
+    "winner_ambiguity_variant",
     "winner_sim_metric",
+    *TRACE_SUMMARY_COLUMNS,
     "baseline_strategy_key",
     "baseline_value",
     "delta",
@@ -336,7 +359,9 @@ def _winner_factors(winner: dict) -> dict:
             "rep_a": None,
             "rep_b": None,
             "aggregate": None,
+            "ambiguity_variant": None,
         }
+    agg = _clean(winner.get("agg_method"))
     return {
         "flat_strategy": None,
         "pathway": _pathway(winner),
@@ -345,7 +370,8 @@ def _winner_factors(winner: dict) -> dict:
         "threshold": _clean(winner.get("std_thresh")),
         "rep_a": _clean(winner.get("rep_a")),
         "rep_b": _clean(winner.get("rep_b")),
-        "aggregate": _clean(winner.get("agg_method")),
+        "aggregate": agg,
+        "ambiguity_variant": ambiguity_variant_label(agg),
     }
 
 
@@ -403,6 +429,7 @@ def build_winner_delta_rows(
             continue
         baseline_value = float(baseline_vals.max())
         factors = _winner_factors(winner)
+        trace_values = {t: _clean(winner.get(t)) for t in TRACE_SUMMARY_COLUMNS}
         out.append(
             {
                 "backbone": cell["backbone"],
@@ -420,7 +447,9 @@ def build_winner_delta_rows(
                 "winner_rep_a": factors["rep_a"],
                 "winner_rep_b": factors["rep_b"],
                 "winner_aggregate": factors["aggregate"],
+                "winner_ambiguity_variant": factors["ambiguity_variant"],
                 "winner_sim_metric": _clean(winner.get("sim_metric")),
+                **trace_values,
                 "baseline_strategy_key": f"global_pool:{cell['backbone']}:medoid",
                 "baseline_value": baseline_value,
                 "delta": float(winner["value"] - baseline_value),
@@ -501,6 +530,7 @@ __all__ = [
     "GROUP_METRIC_COLUMNS",
     "METRIC_FAMILIES",
     "TIE_BREAK_ORDER",
+    "TRACE_SUMMARY_COLUMNS",
     "WINNER_DELTA_COLUMNS",
     "build_comparison_grid",
     "build_factor_summary",

@@ -9,14 +9,28 @@ pipeline (or the deterministic fixture report):
   headline, empty_message)
 * the winners section covers every expected group x metric x K per backbone
   (and **rejects** unexpected extra cells — an extra group must FAIL)
-* every winner row parses to the full 22-column `WINNER_DELTA_COLUMNS` set; a column
-  shrink is reported as a clean FAIL, never an unhandled ``KeyError``
+* the primary backbone/dimension contract holds: the DEFAULT fixture's winner_delta
+  backbones are exactly ``["effnet"]``; MusicNN is allowed only under the explicit
+  ``--explicit-musicnn-ctp`` mode (imported here from ``report/_winners.py``)
+* every winner row parses to the FULL ``WINNER_DELTA_COLUMNS`` set (the absolute,
+  canonical set imported from ``report/_winners.py``); any table missing ANY canonical
+  column — or carrying an extra non-canonical column — is a clean FAIL, never an
+  unhandled ``KeyError``
 * every winner row's baseline key is the explicit ``global_pool:{backbone}:medoid``
   for the same backbone
-* every `factor_summary_{bb}` table matches the 10-column `FACTOR_SUMMARY_COLUMNS`
-  shape, has a non-zero row count, and non-empty factor values
+* every configured PTC (bin_mode, threshold) appears across the winner rows (per-threshold
+  non-collapse; no hidden averaging across threshold/configuration dimensions)
+* trace-summary fields are present and finite on winner rows (``trace_finite`` truthy,
+  every numeric trace field finite)
+* the winners section uses evaluation-lens wording (MAP/MRR/NDCG/Recall/discrimination
+  are lenses, not optimization objectives)
+* every `factor_summary_{bb}` table matches the `FACTOR_SUMMARY_COLUMNS` shape
+  (also imported from `report/_winners.py`), has a non-zero row count, and non-empty factor values
 * corpus hashes are present and consistent across compared rows per backbone
-* no ``disc_album`` appears anywhere
+* the shared-boundary head-phase section is present with ``boundary_source="effnet_ptc"``
+  provenance and a ``reference_corpus_hash`` consistent with the effnet corpus hash
+* no CTP primary row (no winner row with ``winner_strategy_type == "ctp"`` and no
+  ``ctp:`` winner strategy key) and no ``disc_album`` anywhere
 * no hidden ``config="flat"`` replacement remains
 
 Prints one line per check with PASS/FAIL and exits non-zero on any failure.
@@ -25,11 +39,26 @@ Prints one line per check with PASS/FAIL and exits non-zero on any failure.
 from __future__ import annotations
 
 import json
+import math
 import sys
 from pathlib import Path
 from typing import Any
 
-_REPORT_JSON = Path("/workspace/scripts/outputs/embedding_research/report/report.json")
+# Make the repository-root ``scripts`` package importable when run as a standalone script
+# (mirrors generate_fixture_report.py / run.py).  Harmless under pytest, where the rootdir
+# already provides the ``scripts`` package.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from scripts.embedding_research.config import REPORT_DIR
+from scripts.embedding_research.report._winners import (
+    FACTOR_SUMMARY_COLUMNS,
+    TRACE_SUMMARY_COLUMNS,
+    WINNER_DELTA_COLUMNS,
+)
+
+_REPORT_JSON = REPORT_DIR / "report.json"
 
 V2_KEYS = {
     "id",
@@ -49,44 +78,23 @@ V2_KEYS = {
 GROUPS = {"artist", "genre", "head", "general"}
 METRIC_FAMILIES = {"MAP", "MRR", "NDCG", "Recall", "discrimination"}
 
-# Expected winner-delta (22) and factor-summary (10) column sets — live in
-# report/_winners.py (WINNER_DELTA_COLUMNS / FACTOR_SUMMARY_COLUMNS).
-WINNER_DELTA_COLUMNS = [
-    "backbone",
-    "group",
-    "metric",
-    "k",
-    "winner_strategy_key",
-    "winner_strategy_type",
-    "winner_value",
-    "winner_flat_strategy",
-    "winner_pathway",
-    "winner_head",
-    "winner_bin_mode",
-    "winner_threshold",
-    "winner_rep_a",
-    "winner_rep_b",
-    "winner_aggregate",
-    "winner_sim_metric",
-    "baseline_strategy_key",
-    "baseline_value",
-    "delta",
-    "tie_break_key",
-    "corpus_hash",
-    "corpus_size",
-]
-FACTOR_SUMMARY_COLUMNS = [
-    "backbone",
-    "factor",
-    "factor_value",
-    "group",
-    "metric",
-    "k",
-    "n_wins",
-    "mean_delta",
-    "best_delta",
-    "config_ids",
-]
+# The DEFAULT primary backbone set (follow-on contract).  MusicNN is allowed only under
+# the explicit ``--explicit-musicnn-ctp`` mode.
+DEFAULT_BACKBONES = ["effnet"]
+EXPLICIT_BACKBONES = ["effnet", "musicnn"]
+
+# Configured PTC (bin_mode, threshold) boundary configurations.  Every one of these must
+# appear across the winner rows (each threshold its own config; no hidden averaging).
+CONFIGURED_PTC: set[tuple[str, float]] = {
+    ("temporal_global", 1.0),
+    ("temporal_global", 1.1),
+    ("temporal_perdim", 1.0),
+    ("temporal_perdim", 1.1),
+}
+
+# Shared-boundary head-phase provenance constants (see db/head_phase.py).
+EXPECTED_BOUNDARY_SOURCE = "effnet_ptc"
+EXPECTED_HEAD_POOL_VARIANT = "shared_effnet_ptc_boundary"
 
 _failures: list[str] = []
 
@@ -173,7 +181,189 @@ def _collect_tables(payload: dict) -> list[dict]:
     return tables
 
 
-def main(path: str | Path | None = None) -> int:
+def _parse_rows(table: dict) -> list[dict]:
+    """Zip a make_table table's rows (lists) back to dicts keyed by its columns."""
+    cols = list(table.get("columns", []))
+    return [dict(zip(cols, r, strict=False)) for r in table.get("rows", [])]
+
+
+def _check_trace_finiteness(wd_tables: dict[str, dict]) -> None:
+    """Every winner_delta row must carry finite trace-summary fields.
+
+    ``trace_finite`` must be truthy (not '—' and not '0.0000'); every other trace field
+    must parse to a finite float.  A missing/None/finite trace field is a clean FAIL.
+    """
+    for t_id, table in wd_tables.items():
+        cols = list(table.get("columns", []))
+        present_trace = [c for c in TRACE_SUMMARY_COLUMNS if c in cols]
+        bad_finite: list[str] = []
+        bad_missing: list[str] = []
+        for row in _parse_rows(table):
+            for col in present_trace:
+                val = row.get(col)
+                if val in (None, "—"):
+                    if col == "trace_finite":
+                        bad_missing.append(f"{col}=None")
+                    else:
+                        bad_missing.append(f"{col}=—")
+                    continue
+                try:
+                    fv = float(val)
+                except (TypeError, ValueError):
+                    bad_finite.append(f"{col}={val!r}")
+                    continue
+                if not math.isfinite(fv):
+                    bad_finite.append(f"{col}={val!r}")
+                if col == "trace_finite" and fv == 0.0:
+                    bad_finite.append("trace_finite=0 (falsy)")
+        _check(
+            f"winner_delta trace fields present + finite ({t_id})",
+            not bad_finite and not bad_missing,
+            "; ".join((bad_missing + bad_finite)[:6])
+            if (bad_finite or bad_missing)
+            else f"all {len(present_trace)} trace field(s) finite + trace_finite truthy",
+        )
+
+
+def _check_per_threshold_configs(wd_tables: dict[str, dict]) -> None:
+    """Every configured (bin_mode, threshold) must appear across the winner rows.
+
+    Collects the (bin_mode, threshold) identity from PTC winner rows per backbone and
+    requires the full CONFIGURED_PTC set to be present.  Also rejects any PTC winner row
+    whose bin_mode/threshold is None (a hidden collapse would hide a config).
+    """
+    for t_id, table in wd_tables.items():
+        cols = list(table.get("columns", []))
+        if "winner_bin_mode" not in cols or "winner_threshold" not in cols:
+            _check(
+                f"winner_delta carries threshold identity columns ({t_id})",
+                False,
+                "missing winner_bin_mode/winner_threshold columns",
+            )
+            continue
+        seen: set[tuple[str, float]] = set()
+        collapsed: list[str] = []
+        for row in _parse_rows(table):
+            if row.get("winner_strategy_type") != "ptc":
+                continue
+            bm = row.get("winner_bin_mode")
+            th = row.get("winner_threshold")
+            if bm in (None, "—") or th in (None, "—"):
+                collapsed.append(str(row.get("winner_strategy_key")))
+                continue
+            try:
+                seen.add((str(bm), float(th)))
+            except (TypeError, ValueError):
+                collapsed.append(f"{bm}:{th}")
+        missing = sorted(f"{bm}:{th:g}" for bm, th in (CONFIGURED_PTC - seen))
+        _check(
+            f"winner_delta per-threshold configs non-collapsed ({t_id})",
+            not missing and not collapsed,
+            f"missing config(s) {missing}; collapsed {collapsed[:4]}"
+            if (missing or collapsed)
+            else f"{len(seen)}/{len(CONFIGURED_PTC)} configured (bin_mode, threshold) present",
+        )
+
+
+def _check_no_ctp_primary(wd_tables: dict[str, dict]) -> None:
+    """No CTP primary winner row anywhere: no strategy_type ctp, no ctp: strategy key."""
+    offenders: list[str] = []
+    for t_id, table in wd_tables.items():
+        for row in _parse_rows(table):
+            st = row.get("winner_strategy_type")
+            key = row.get("winner_strategy_key")
+            if st == "ctp" or (isinstance(key, str) and key.startswith("ctp:")):
+                offenders.append(f"{t_id}:{st}:{key}")
+    _check(
+        "no CTP primary winner rows",
+        not offenders,
+        "; ".join(offenders[:5]) if offenders else "no ctp strategy_type/key in any winner_delta table",
+    )
+
+
+def _check_head_phase(sections: list[dict], effnet_hash: str | None) -> None:
+    """Shared-boundary head-phase section: present, effnet_ptc provenance, hash-consistent."""
+    section = next((s for s in sections if s.get("id") == "head-output-shared-ptc-boundary"), None)
+    _check(
+        "head-output-shared-ptc-boundary section present",
+        section is not None,
+        "no section with id=head-output-shared-ptc-boundary" if section is None else "found",
+    )
+    if section is None:
+        return
+    _check(
+        "head-output-shared-ptc-boundary section populated",
+        not section.get("empty_message"),
+        "empty_message set (no provenance rows)" if section.get("empty_message") else "rendered with provenance",
+    )
+    tables = {t["id"]: t for t in _collect_tables(section)}
+    prov = tables.get("head_phase_provenance")
+    _check(
+        "head_phase_provenance table present",
+        prov is not None,
+        "no head_phase_provenance table in section" if prov is None else "found",
+    )
+    if prov is None:
+        return
+    cols = list(prov.get("columns", []))
+    for needed in ("boundary_source", "head_pool_variant", "reference_corpus_hash", "n_songs", "n_pooled"):
+        if needed not in cols:
+            _check(f"head_phase_provenance carries {needed} column", False, f"missing {needed}")
+    rows = _parse_rows(prov)
+    _check(
+        "head_phase_provenance has rows",
+        len(rows) > 0,
+        f"{len(rows)} row(s)",
+    )
+    if not rows:
+        return
+    bad_boundary = [r for r in rows if r.get("boundary_source") != EXPECTED_BOUNDARY_SOURCE]
+    bad_variant = [r for r in rows if r.get("head_pool_variant") != EXPECTED_HEAD_POOL_VARIANT]
+    # Coverage sanity: n_pooled <= n_songs when both numeric.
+    bad_cov: list[str] = []
+    for r in rows:
+        ns, np_ = r.get("n_songs"), r.get("n_pooled")
+        if isinstance(ns, str) and ns.isdigit() and isinstance(np_, str) and np_.isdigit() and int(np_) > int(ns):
+            bad_cov.append(f"{r.get('head')}:{r.get('bin_mode')}:{r.get('threshold')} n_pooled={np_}>n_songs={ns}")
+    _check(
+        "head_phase_provenance boundary_source=effnet_ptc",
+        not bad_boundary,
+        f"bad boundary_source: {[r['boundary_source'] for r in bad_boundary][:5]}"
+        if bad_boundary
+        else "all rows effnet_ptc",
+    )
+    _check(
+        "head_phase_provenance head_pool_variant=shared_effnet_ptc_boundary",
+        not bad_variant,
+        f"bad head_pool_variant: {[r['head_pool_variant'] for r in bad_variant][:5]}"
+        if bad_variant
+        else "all rows shared_effnet_ptc_boundary",
+    )
+    _check(
+        "head_phase_provenance n_pooled <= n_songs",
+        not bad_cov,
+        "; ".join(bad_cov[:5]) if bad_cov else "coverage consistent",
+    )
+    hashes = {r.get("reference_corpus_hash") for r in rows if r.get("reference_corpus_hash") not in (None, "—")}
+    _check(
+        "head_phase_provenance reference_corpus_hash consistent with effnet corpus",
+        effnet_hash is not None and hashes == {effnet_hash},
+        f"hashes={sorted(hashes)} effnet={effnet_hash}"
+        if (effnet_hash is None or hashes != {effnet_hash})
+        else f"all rows reference the effnet corpus hash {effnet_hash}",
+    )
+
+
+def main(path: str | Path | None = None, *, explicit: bool | None = None) -> int:
+    global _failures
+    _failures = []  # reset per run so repeated main() calls in one process stay isolated
+    # Optional explicit mode: allows MusicNN in addition to effnet.  Used to validate the
+    # explicit opt-in fixture (generator --include-musicnn-ctp).  CTP is still rejected as
+    # a primary winner in both modes.  When not passed, the CLI flag --explicit-musicnn-ctp
+    # enables it (so callers may also pass a positional report path).
+    if explicit is None:
+        explicit = "--explicit-musicnn-ctp" in sys.argv[1:]
+
     report_json = Path(path) if path is not None else _REPORT_JSON
     if not report_json.exists():
         print(f"FAIL — report.json not found at {report_json}")
@@ -204,12 +394,35 @@ def main(path: str | Path | None = None) -> int:
         wd_tables = {t["id"]: t for t in winner_tables if t["id"].startswith("winner_delta_")}
         fs_tables = {t["id"]: t for t in winner_tables if t["id"].startswith("factor_summary_")}
         backbones = sorted(k.replace("winner_delta_", "") for k in wd_tables)
-        _check("winner_delta tables per backbone", backbones == sorted(["effnet", "musicnn"]), str(backbones))
+        expected_backbones = sorted(EXPLICIT_BACKBONES) if explicit else sorted(DEFAULT_BACKBONES)
+        _check(
+            "winner_delta tables per backbone",
+            backbones == expected_backbones,
+            str(backbones),
+        )
         _check(
             "factor_summary tables per backbone",
             sorted(fs_tables) == sorted(f"factor_summary_{b}" for b in backbones),
             str(sorted(fs_tables)),
         )
+
+        # Winner-delta columns: enforce the ABSOLUTE canonical WINNER_DELTA_COLUMNS set on
+        # EVERY winner_delta table.  The schema-v2 serializer does NOT drop all-None
+        # columns — make_table keeps rows[0].keys() and DataFrame construction forces all
+        # 33 canonical columns — so any table missing ANY canonical column (or carrying an
+        # extra non-canonical column) is a clean FAIL, never an unhandled KeyError.
+        canonical_wd = set(WINNER_DELTA_COLUMNS)
+        for t_id, table in wd_tables.items():
+            colset = set(table.get("columns", []))
+            non_canonical = sorted(colset - canonical_wd)
+            missing = sorted(canonical_wd - colset)
+            _check(
+                f"winner_delta rows carry the full canonical column set ({t_id})",
+                not non_canonical and not missing,
+                f"non-canonical={non_canonical} missing={missing}"
+                if (non_canonical or missing)
+                else f"all {len(canonical_wd)} canonical winner column(s) present, none extra",
+            )
 
         # Group x metric x K coverage per backbone
         per_bb: dict[str, set] = {}
@@ -272,6 +485,25 @@ def main(path: str | Path | None = None) -> int:
 
         # factor_summary shape + content checks (not just presence-by-id)
         _check_factor_summaries(fs_tables, backbones)
+
+        # Per-threshold non-collapse + trace finiteness + no CTP primary rows
+        _check_per_threshold_configs(wd_tables)
+        _check_trace_finiteness(wd_tables)
+        _check_no_ctp_primary(wd_tables)
+
+        # Evaluation-lens wording in the winners section description
+        desc = winners.get("description", "")
+        _check(
+            "winners section uses evaluation-lens wording",
+            "evaluation lens" in desc,
+            "description does not label MAP/MRR/NDCG/Recall/discrimination as evaluation lenses"
+            if "evaluation lens" not in desc
+            else "MAP/MRR/NDCG/Recall/discrimination labelled as evaluation lenses, not objectives",
+        )
+
+        # Shared-boundary head-phase provenance, consistent with the effnet corpus hash
+        effnet_hash = next(iter(corpus_hashes.get("effnet", set())), None)
+        _check_head_phase(sections, effnet_hash)
 
     # 7. no forbidden disc aggregation key anywhere (token built dynamically so
     #    this validator itself does not violate the frozen invariant scan).

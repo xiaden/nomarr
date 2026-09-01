@@ -685,17 +685,31 @@ def section_bin_mode_comparison(df: pd.DataFrame) -> dict:
             )
             flat_ref_mean = flat_medoid_value(flat_df, backbone, flat_dc)
 
-        # Re-aggregate per (bin_mode, std_thresh) — mean over all rep combos at each threshold.
-        thresh_mean = bb_full.groupby(["bin_mode", "std_thresh"], as_index=False, dropna=False)[map_col].mean()
+        # Per explicit configuration: each (bin_mode x std_thresh x rep_a x rep_b x
+        # agg_method) is its own configuration.  The mean below is only over the
+        # (sim_metric x k) evaluation variants WITHIN that config — it never averages
+        # across representation or aggregation dimensions.
+        cfg_cols = ["bin_mode", "std_thresh", "rep_a", "rep_b", "agg_method"]
+        present_cfg = [c for c in cfg_cols if c in bb_full.columns]
+        config_mean = bb_full.groupby(present_cfg, as_index=False, dropna=False)[map_col].mean()
 
-        g_scores = thresh_mean[thresh_mean["bin_mode"] == "temporal_global"].set_index("std_thresh")[map_col]
-        p_scores = thresh_mean[thresh_mean["bin_mode"] == "temporal_perdim"].set_index("std_thresh")[map_col]
+        # Pair temporal_global vs temporal_perdim per explicit configuration
+        # (threshold + rep_a + rep_b + agg_method), so each threshold stays its own
+        # configuration and every reduction/ambiguity variant stays visible.
+        pair_cols = [c for c in ("std_thresh", "rep_a", "rep_b", "agg_method") if c in present_cfg]
+        g_scores = config_mean[config_mean["bin_mode"] == "temporal_global"].set_index(pair_cols)[map_col]
+        p_scores = config_mean[config_mean["bin_mode"] == "temporal_perdim"].set_index(pair_cols)[map_col]
         common = sorted(set(g_scores.index) & set(p_scores.index))
-        g_wins = sum(1 for t in common if g_scores.get(t, 0) > p_scores.get(t, 0))
-        p_wins = sum(1 for t in common if p_scores.get(t, 0) > g_scores.get(t, 0))
+        g_wins = sum(1 for cfg in common if g_scores.get(cfg, 0) > p_scores.get(cfg, 0))
+        p_wins = sum(1 for cfg in common if p_scores.get(cfg, 0) > g_scores.get(cfg, 0))
         ties = len(common) - g_wins - p_wins
 
-        if g_wins > p_wins:
+        if not common:
+            verdict = (
+                "No matching (rep_a, rep_b, agg_method) configuration pairs found across bin "
+                "modes; comparison requires identical config identities at each threshold."
+            )
+        elif g_wins > p_wins:
             verdict = "temporal_global wins for this backbone."
         elif p_wins > g_wins:
             verdict = "temporal_perdim wins for this backbone."
@@ -703,40 +717,66 @@ def section_bin_mode_comparison(df: pd.DataFrame) -> dict:
             verdict = "Both modes perform equivalently for this backbone."
 
         g_above = (
-            sum(1 for t in g_scores.index if flat_ref_mean is not None and g_scores.get(t, 0) > flat_ref_mean)
+            sum(1 for val in g_scores.values if flat_ref_mean is not None and val > flat_ref_mean)
             if flat_ref_mean is not None
             else None
         )
         p_above = (
-            sum(1 for t in p_scores.index if flat_ref_mean is not None and p_scores.get(t, 0) > flat_ref_mean)
+            sum(1 for val in p_scores.values if flat_ref_mean is not None and val > flat_ref_mean)
             if flat_ref_mean is not None
             else None
         )
 
         detail_parts = [
             f"global wins {g_wins}, perdim wins {p_wins}, ties {ties} "
-            f"(out of {len(common)} thresholds, compared by mean {map_col})"
+            f"(out of {len(common)} matching per-config threshold pairs, compared by mean {map_col} "
+            "per explicit configuration)"
         ]
         if flat_ref_mean is not None:
             detail_parts.append(
-                f"global mean beats flat at {g_above}/{len(g_scores.index)} thresholds; "
-                f"perdim mean beats flat at {p_above}/{len(p_scores.index)} thresholds"
+                f"global mean beats flat at {g_above}/{len(g_scores.index)} configurations; "
+                f"perdim mean beats flat at {p_above}/{len(p_scores.index)} configurations"
             )
         detail_parts.append(verdict)
 
         fig = go.Figure()
-        for bm, grp in thresh_mean.groupby("bin_mode", sort=True):
-            g = grp.sort_values("std_thresh")
-            fig.add_trace(
-                go.Scatter(
-                    x=g["std_thresh"].tolist(),
-                    y=g[map_col].tolist(),
-                    mode="lines+markers",
-                    name=str(bm),
-                    line={"color": _LINE_COLORS_BM.get(str(bm), "#999"), "width": 1.5},
-                    marker={"size": 6},
+        # One solid global + one dashed perdim trace per explicit (rep_a, rep_b,
+        # agg_method) configuration, so every reduction/ambiguity variant stays visible
+        # and no two configurations are averaged together.
+        cfg_keys = (
+            config_mean[["rep_a", "rep_b", "agg_method"]]
+            .drop_duplicates()
+            .sort_values(["rep_a", "rep_b", "agg_method"])
+        )
+        for i, (_, cfg) in enumerate(cfg_keys.iterrows()):
+            ra, rb, am = cfg["rep_a"], cfg["rep_b"], cfg["agg_method"]
+            color = _REP_PALETTE[i % len(_REP_PALETTE)]
+            label = f"{rep_label(ra)}x{rep_label(rb)}/{agg_label(am)}"
+            mask = (config_mean["rep_a"] == ra) & (config_mean["rep_b"] == rb) & (config_mean["agg_method"] == am)
+            g_cfg = config_mean[mask & (config_mean["bin_mode"] == "temporal_global")].sort_values("std_thresh")
+            p_cfg = config_mean[mask & (config_mean["bin_mode"] == "temporal_perdim")].sort_values("std_thresh")
+            if not g_cfg.empty:
+                fig.add_trace(
+                    go.Scatter(
+                        x=g_cfg["std_thresh"].tolist(),
+                        y=g_cfg[map_col].tolist(),
+                        mode="lines+markers",
+                        name=f"global \u00b7 {label}",
+                        line={"color": color, "width": 1.5, "dash": "solid"},
+                        marker={"size": 6},
+                    )
                 )
-            )
+            if not p_cfg.empty:
+                fig.add_trace(
+                    go.Scatter(
+                        x=p_cfg["std_thresh"].tolist(),
+                        y=p_cfg[map_col].tolist(),
+                        mode="lines+markers",
+                        name=f"perdim \u00b7 {label}",
+                        line={"color": color, "width": 1.5, "dash": "dash"},
+                        marker={"size": 6},
+                    )
+                )
         if flat_ref_mean is not None:
             fig.add_hline(
                 y=flat_ref_mean,
@@ -776,8 +816,11 @@ def section_bin_mode_comparison(df: pd.DataFrame) -> dict:
         description=(
             "temporal_global: one std across all dimensions. "
             "temporal_perdim: per-dimension std, boundary where any dimension exceeds its own threshold. "
-            f"Y-axis shows mean {map_col} across all (rep_a x rep_b x agg_method x sim_metric x k) variants "
-            "at each threshold — no max-collapsing. "
+            f"Each (bin_mode x std_thresh x rep_a x rep_b x agg_method) is its own configuration; "
+            f"the Y-axis shows mean {map_col} over the (sim_metric x k) evaluation variants within "
+            "each configuration \u2014 never an average across representation or aggregation dimensions. "
+            "Global vs perdim are compared only for matching explicit configurations at each threshold, "
+            "so every reduction/ambiguity variant stays visible (solid = global, dashed = perdim per config). "
             "Amber dashed line = the explicit flat medoid baseline (global_pool:{backbone}:medoid)."
         ),
         subsections=subsections,

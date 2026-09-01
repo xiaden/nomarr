@@ -6,11 +6,16 @@ import duckdb
 import pandas as pd
 import pytest
 
+from scripts.embedding_research.db.head_phase import HeadPhaseProvenanceRow, write_head_phase_provenance
 from scripts.embedding_research.report import _retrieval as retrieval_mod
 from scripts.embedding_research.report._base import ANALYZE_METRICS_COLUMNS, _decode_strategy_key, empty_df
 from scripts.embedding_research.report._binned import section_bin_mode_comparison, section_threshold_sweep
 from scripts.embedding_research.report._corpus import disc_score_warning, section_corpus
 from scripts.embedding_research.report._efficiency import section_efficiency
+from scripts.embedding_research.report._heads import (
+    section_head_output_shared_ptc_boundary,
+    section_head_value,
+)
 from scripts.embedding_research.report._optimizer import section_optimizer
 from scripts.embedding_research.report._retrieval import (
     query_analyze_metrics,
@@ -18,6 +23,8 @@ from scripts.embedding_research.report._retrieval import (
     section_unified_table,
 )
 from scripts.embedding_research.report._summary import section_summary
+from scripts.embedding_research.report._winners import TRACE_SUMMARY_COLUMNS
+from scripts.embedding_research.report._winners_report import section_winners
 
 pytestmark = pytest.mark.unit
 
@@ -542,7 +549,7 @@ def test_section_bin_mode_comparison_with_data():
             _minimal_unified_df(),
             _minimal_ptc_df(bin_mode="temporal_global", disc_general=0.61),
             _minimal_ptc_df(
-                strategy_key="ptc:test_backbone:temporal_perdim:1.0:mean:max:normalized_mean_pair_weighted",
+                strategy_key="ptc:test_backbone:temporal_perdim:1.0:mean:max:target_weighted",
                 bin_mode="temporal_perdim",
                 disc_general=0.59,
             ),
@@ -722,7 +729,7 @@ def test_section_bin_mode_comparison_uses_map_k_general_when_available():
         [
             _minimal_ptc_df(map_k_general=0.65),
             _minimal_ptc_df(
-                strategy_key="ptc:test_backbone:temporal_perdim:1.0:mean:max:bidirectional_weighted",
+                strategy_key="ptc:test_backbone:temporal_perdim:1.0:mean:max:target_weighted",
                 bin_mode="temporal_perdim",
                 map_k_general=0.58,
             ),
@@ -734,3 +741,436 @@ def test_section_bin_mode_comparison_uses_map_k_general_when_available():
 
     assert not result["empty_message"]
     assert "map_k_general" in result["description"]
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 (Plan B) report adaptations
+# ---------------------------------------------------------------------------
+
+
+def _winner_delta_table(section: dict, backbone: str) -> dict:
+    """The winner_delta table for a backbone subsection, for table-row extraction."""
+    sub = next(s for s in section["subsections"] if s["id"] == f"winners-{backbone}")
+    return next(t for t in sub["tables"] if t["id"] == f"winner_delta_{backbone}")
+
+
+def _table_dicts(table: dict) -> list[dict]:
+    """Convert a make_table descriptor back into a list of row dicts."""
+    return [dict(zip(table["columns"], row, strict=False)) for row in table["rows"]]
+
+
+def test_winners_excludes_ctp_primary_rows():
+    # CTP row has the HIGHEST disc_general so, were it eligible, it would win the
+    # general/discrimination cell. The narrowed primary grid must exclude it.
+    df = pd.concat(
+        [
+            _minimal_unified_df(
+                strategy_key="global_pool:EffNet:medoid",
+                backbone="EffNet",
+                strategy="medoid",
+                disc_general=0.4,
+            ),
+            _minimal_ptc_df(
+                strategy_key="ptc:EffNet:temporal_global:1.0:medoid:medoid:max_per_candidate_segment",
+                backbone="EffNet",
+                std_thresh=1.0,
+                rep_a="medoid",
+                rep_b="medoid",
+                agg_method="max_per_candidate_segment",
+                disc_general=0.6,
+            ),
+            _minimal_ctp_df(
+                strategy_key="ctp:EffNet:genre:1.0:median:max:target_weighted",
+                backbone="EffNet",
+                head="genre",
+                disc_general=0.99,
+            ),
+        ],
+        ignore_index=True,
+    )
+
+    section = section_winners(df)
+
+    rows = _table_dicts(_winner_delta_table(section, "EffNet"))
+    assert rows, "expected at least one winner-delta row"
+    assert all(r["winner_strategy_type"] != "ctp" for r in rows)
+    assert all("ctp:" not in str(r["winner_strategy_key"]) for r in rows)
+    # The general discrimination cell is won by the best PTC row, not the CTP row.
+    general_disc = [r for r in rows if r["group"] == "general" and r["metric"] == "discrimination"]
+    assert general_disc, "expected a general discrimination cell"
+    assert (
+        general_disc[0]["winner_strategy_key"]
+        == "ptc:EffNet:temporal_global:1.0:medoid:medoid:max_per_candidate_segment"
+    )
+
+
+def test_winners_each_threshold_identity_present():
+    # Two PTC thresholds each win a different cell: threshold identity is never
+    # collapsed into an averaged configuration.
+    df = pd.concat(
+        [
+            _minimal_unified_df(
+                strategy_key="global_pool:EffNet:medoid",
+                backbone="EffNet",
+                strategy="medoid",
+                disc_artist=0.2,
+                disc_genre=0.2,
+            ),
+            _minimal_ptc_df(
+                strategy_key="ptc:EffNet:temporal_global:1.0:medoid:medoid:max_per_candidate_segment",
+                backbone="EffNet",
+                std_thresh=1.0,
+                rep_a="medoid",
+                rep_b="medoid",
+                agg_method="max_per_candidate_segment",
+                disc_artist=0.7,
+                disc_genre=0.4,
+            ),
+            _minimal_ptc_df(
+                strategy_key="ptc:EffNet:temporal_global:2.0:medoid:medoid:max_per_candidate_segment",
+                backbone="EffNet",
+                std_thresh=2.0,
+                rep_a="medoid",
+                rep_b="medoid",
+                agg_method="max_per_candidate_segment",
+                disc_artist=0.4,
+                disc_genre=0.7,
+            ),
+        ],
+        ignore_index=True,
+    )
+
+    section = section_winners(df)
+
+    rows = _table_dicts(_winner_delta_table(section, "EffNet"))
+    keys = {str(r["winner_strategy_key"]) for r in rows}
+    assert "ptc:EffNet:temporal_global:1.0:medoid:medoid:max_per_candidate_segment" in keys
+    assert "ptc:EffNet:temporal_global:2.0:medoid:medoid:max_per_candidate_segment" in keys
+
+
+def test_winners_exact_trace_columns():
+    ptc = _minimal_ptc_df(
+        strategy_key="ptc:EffNet:temporal_global:1.0:medoid:medoid:max_per_candidate_segment",
+        backbone="EffNet",
+        std_thresh=1.0,
+        rep_a="medoid",
+        rep_b="medoid",
+        agg_method="max_per_candidate_segment",
+        disc_general=0.6,
+    )
+    for col in TRACE_SUMMARY_COLUMNS:
+        ptc[col] = 0
+    ptc["trace_collision_count"] = 3
+    ptc["trace_winner_count"] = 5
+    ptc["trace_retained_contributions"] = 8
+    ptc["trace_dropped_contributions"] = 1
+    medoid = _minimal_unified_df(
+        strategy_key="global_pool:EffNet:medoid",
+        backbone="EffNet",
+        strategy="medoid",
+        disc_general=0.3,
+    )
+    df = pd.concat([medoid, ptc], ignore_index=True)
+
+    section = section_winners(df)
+
+    table = _winner_delta_table(section, "EffNet")
+    for col in TRACE_SUMMARY_COLUMNS:
+        assert col in table["columns"], f"missing trace column {col}"
+    rows = _table_dicts(table)
+    ptc_rows = [
+        r
+        for r in rows
+        if r["winner_strategy_key"] == "ptc:EffNet:temporal_global:1.0:medoid:medoid:max_per_candidate_segment"
+    ]
+    assert ptc_rows, "expected the PTC row to win a cell"
+    assert ptc_rows[0]["trace_collision_count"] == "3.0000"
+    assert ptc_rows[0]["trace_retained_contributions"] == "8.0000"
+    assert ptc_rows[0]["winner_ambiguity_variant"] == "first_index + retain_all_candidate_segments"
+
+
+def test_winner_rows_carry_score_and_ambiguity_variant_factors():
+    df = pd.concat(
+        [
+            _minimal_unified_df(
+                strategy_key="global_pool:EffNet:medoid",
+                backbone="EffNet",
+                strategy="medoid",
+                disc_general=0.3,
+            ),
+            _minimal_ptc_df(
+                strategy_key="ptc:EffNet:temporal_global:1.0:medoid:medoid:max_per_candidate_segment",
+                backbone="EffNet",
+                std_thresh=1.0,
+                rep_a="medoid",
+                rep_b="medoid",
+                agg_method="max_per_candidate_segment",
+                disc_general=0.6,
+            ),
+        ],
+        ignore_index=True,
+    )
+
+    section = section_winners(df)
+
+    rows = _table_dicts(_winner_delta_table(section, "EffNet"))
+    for r in rows:
+        assert r["winner_aggregate"] == "max_per_candidate_segment"
+        assert r["winner_ambiguity_variant"] == "first_index + retain_all_candidate_segments"
+    # The factor summary table groups by score-variant and ambiguity-variant factors.
+    sub = next(s for s in section["subsections"] if s["id"] == "winners-EffNet")
+    factor_table = next(t for t in sub["tables"] if t["id"] == "factor_summary_EffNet")
+    factor_rows = _table_dicts(factor_table)
+    assert any(r["factor"] == "score_variant" and r["factor_value"] == "max_per_candidate_segment" for r in factor_rows)
+    assert any(
+        r["factor"] == "ambiguity_variant" and r["factor_value"] == "first_index + retain_all_candidate_segments"
+        for r in factor_rows
+    )
+
+
+def test_explicit_lens_wording_in_sections():
+    df = pd.concat(
+        [
+            _minimal_unified_df(
+                strategy_key="global_pool:test_backbone:medoid",
+                strategy="medoid",
+                disc_general=0.3,
+            ),
+            _minimal_ptc_df(disc_general=0.6),
+        ],
+        ignore_index=True,
+    )
+
+    summary = section_summary(df)
+    assert "evaluation lens" in summary["description"]
+    assert "not an optimization objective" in summary["description"]
+
+    winners = section_winners(df)
+    assert "evaluation lens" in winners["description"]
+    assert "not optimization objectives" in winners["description"]
+
+    unified = section_unified_table(df)
+    assert "evaluation lens" in unified["description"]
+
+
+def test_head_value_archival_ctp_note():
+    con = _empty_con()
+    con.execute(
+        "CREATE TABLE ptc_ctp_rows (backbone VARCHAR, head VARCHAR, strategy VARCHAR, "
+        "ptc_disc DOUBLE, ctp_disc DOUBLE, delta_disc DOUBLE)"
+    )
+    con.execute("INSERT INTO ptc_ctp_rows VALUES ('effnet', 'genre', 's1', 0.5, 0.6, 0.1)")
+
+    section = section_head_value(con)
+
+    assert section["id"] == "head-value"
+    assert "Archival" in section["title"]
+    assert section["warnings"], "archival CTP note must carry a warning"
+    assert "archival" in section["description"].lower()
+    # It must not present CTP as a primary winner/delta surface.
+    assert "winner" not in section["description"].lower() or "never a primary winner" in section["description"].lower()
+
+
+def test_head_output_shared_ptc_boundary_subsections():
+    con = _empty_con()
+    con.execute(
+        "CREATE TABLE head_phase_provenance (backbone VARCHAR, head VARCHAR, bin_mode VARCHAR, "
+        "threshold DOUBLE, boundary_source VARCHAR, head_pool_variant VARCHAR, status VARCHAR, "
+        "reason VARCHAR, n_songs INTEGER, n_pooled INTEGER, finite INTEGER, "
+        "scoring_semantics_version INTEGER, reference_corpus_hash VARCHAR, "
+        "UNIQUE (backbone, head, bin_mode, threshold, boundary_source, head_pool_variant))"
+    )
+    write_head_phase_provenance(
+        con,
+        [
+            HeadPhaseProvenanceRow(
+                backbone="effnet",
+                head="genre",
+                bin_mode="temporal_global",
+                threshold=1.0,
+                status="done",
+                n_songs=100,
+                n_pooled=95,
+            )
+        ],
+    )
+
+    section = section_head_output_shared_ptc_boundary(con)
+
+    assert section["id"] == "head-output-shared-ptc-boundary"
+    assert section["tables"], "expected a provenance table"
+    table = next(t for t in section["tables"] if t["id"] == "head_phase_provenance")
+    rows = _table_dicts(table)
+    assert rows
+    assert rows[0]["boundary_source"] == "effnet_ptc"
+    assert rows[0]["coverage"] == "95.0%"
+    assert rows[0]["n_pooled"] == "95"
+
+    # No head-phase data -> empty section with a missing-data warning.
+    empty_con = _empty_con()
+    empty_section = section_head_output_shared_ptc_boundary(empty_con)
+    assert empty_section["empty_message"]
+    assert empty_section["warnings"]
+
+
+def test_head_output_shared_ptc_boundary_manifest_done_zero_warning():
+    class _Manifest:
+        errors = 0
+        done = 0
+        skipped = 2
+        results = ()  # no records at all => sum(n_pooled) == 0
+
+    empty_con = _empty_con()
+    section = section_head_output_shared_ptc_boundary(empty_con, manifest=_Manifest())
+
+    assert section["id"] == "head-output-shared-ptc-boundary"
+    assert any("no pooled output" in w["message"] for w in section["warnings"])
+
+
+def test_head_output_shared_ptc_boundary_no_warning_when_cached_rerun_has_coverage():
+    """A fully-cached rerun (done==0) with n_pooled==n_songs>0 must NOT warn.
+
+    ``manifest.done == 0`` alone used to trigger the "outputs are unavailable"
+    warning even when every row's cached output was still available (100% coverage).
+    Now the warning only fires when there is genuinely no pooled output
+    (sum(n_pooled) == 0).
+    """
+    import types
+
+    rec = types.SimpleNamespace(head="genre", n_songs=50, n_pooled=50)
+
+    class _Manifest:
+        errors = 0
+        done = 0
+        skipped = 0
+        results = (rec,)
+
+    empty_con = _empty_con()
+    section = section_head_output_shared_ptc_boundary(empty_con, manifest=_Manifest())
+
+    assert section["id"] == "head-output-shared-ptc-boundary"
+    assert not any("no pooled output" in w["message"] for w in section["warnings"])
+
+
+# ---------------------------------------------------------------------------
+# section_bin_mode_comparison — explicit per-configuration grouping
+# ---------------------------------------------------------------------------
+
+
+def test_bin_mode_comparison_keeps_configs_separate():
+    """Configs sharing bin_mode/std_thresh but differing in rep_a/agg_method stay separate.
+
+    A regression to naive per-bin-mode averaging would collapse the two rep_a/agg_method
+    configs into a single global + single perdim trace. This test requires one labeled
+    trace per explicit (rep_a, rep_b, agg_method) configuration.
+    """
+    df = pd.concat(
+        [
+            _minimal_ptc_df(
+                strategy_key="ptc:test_backbone:temporal_global:1.0:mean:max:target_weighted",
+                bin_mode="temporal_global",
+                rep_a="mean",
+                agg_method="target_weighted",
+                disc_general=0.8,
+            ),
+            _minimal_ptc_df(
+                strategy_key="ptc:test_backbone:temporal_perdim:1.0:mean:max:target_weighted",
+                bin_mode="temporal_perdim",
+                rep_a="mean",
+                agg_method="target_weighted",
+                disc_general=0.3,
+            ),
+            _minimal_ptc_df(
+                strategy_key="ptc:test_backbone:temporal_global:1.0:median:max:target_weighted",
+                bin_mode="temporal_global",
+                rep_a="median",
+                agg_method="target_weighted",
+                disc_general=0.2,
+            ),
+            _minimal_ptc_df(
+                strategy_key="ptc:test_backbone:temporal_perdim:1.0:median:max:target_weighted",
+                bin_mode="temporal_perdim",
+                rep_a="median",
+                agg_method="target_weighted",
+                disc_general=0.7,
+            ),
+        ],
+        ignore_index=True,
+    )
+
+    result = section_bin_mode_comparison(df)
+    sub = result["subsections"][0]
+    figure = sub["charts"][0]["figure"]
+    trace_names = [t["name"] for t in figure["data"]]
+
+    global_traces = [n for n in trace_names if n.startswith("global")]
+    assert len(global_traces) == 2, f"expected 2 distinct global config traces, got {global_traces}"
+    assert any("meanxmax/target-wtd" in n for n in global_traces)
+    assert any("coord-medianxmax/target-wtd" in n for n in global_traces)
+
+
+def test_bin_mode_comparison_no_matching_config_pairs_verdict():
+    """When global/perdim config identities never align, the verdict says so explicitly."""
+    df = pd.concat(
+        [
+            _minimal_ptc_df(
+                strategy_key="ptc:test_backbone:temporal_global:1.0:mean:max:target_weighted",
+                bin_mode="temporal_global",
+                rep_a="mean",
+                disc_general=0.8,
+            ),
+            _minimal_ptc_df(
+                strategy_key="ptc:test_backbone:temporal_perdim:1.0:median:max:target_weighted",
+                bin_mode="temporal_perdim",
+                rep_a="median",
+                disc_general=0.7,
+            ),
+        ],
+        ignore_index=True,
+    )
+
+    result = section_bin_mode_comparison(df)
+    sub = result["subsections"][0]
+    assert "No matching (rep_a, rep_b, agg_method) configuration pairs found" in sub["description"]
+    assert "comparison requires identical config identities" in sub["description"]
+
+
+def test_bin_mode_comparison_opposing_winners_per_config():
+    """Global wins one config, perdim wins another -> both counted (1v1), never collapsed."""
+    df = pd.concat(
+        [
+            # Config A (mean): global wins (0.8 > 0.3)
+            _minimal_ptc_df(
+                strategy_key="ptc:test_backbone:temporal_global:1.0:mean:max:target_weighted",
+                bin_mode="temporal_global",
+                rep_a="mean",
+                disc_general=0.8,
+            ),
+            _minimal_ptc_df(
+                strategy_key="ptc:test_backbone:temporal_perdim:1.0:mean:max:target_weighted",
+                bin_mode="temporal_perdim",
+                rep_a="mean",
+                disc_general=0.3,
+            ),
+            # Config B (median): perdim wins (0.2 < 0.7)
+            _minimal_ptc_df(
+                strategy_key="ptc:test_backbone:temporal_global:1.0:median:max:target_weighted",
+                bin_mode="temporal_global",
+                rep_a="median",
+                disc_general=0.2,
+            ),
+            _minimal_ptc_df(
+                strategy_key="ptc:test_backbone:temporal_perdim:1.0:median:max:target_weighted",
+                bin_mode="temporal_perdim",
+                rep_a="median",
+                disc_general=0.7,
+            ),
+        ],
+        ignore_index=True,
+    )
+
+    result = section_bin_mode_comparison(df)
+    sub = result["subsections"][0]
+    # Both explicit configs are counted as comparison pairs; each wins one.
+    assert "global wins 1, perdim wins 1, ties 0" in sub["description"]
+    assert "Both modes perform equivalently for this backbone." in sub["description"]

@@ -61,6 +61,32 @@ def _gp_row(backbone: str, strategy: str, *, disc_genre: float, **overrides) -> 
     return pd.DataFrame([row], columns=ANALYZE_METRICS_COLUMNS)
 
 
+def _ctp_row(backbone: str, *, disc_genre: float, **overrides) -> pd.DataFrame:
+    """One archival-only ctp analyze-metrics row."""
+    row = dict.fromkeys(ANALYZE_METRICS_COLUMNS)
+    row.update(
+        strategy_key=f"ctp:{backbone}:genre:1.0:median:max:bidirectional_weighted",
+        strategy_type="ctp",
+        backbone=backbone,
+        std_thresh=1.0,
+        rep_a="median",
+        rep_b="max",
+        agg_method="bidirectional_weighted",
+        sim_metric="cosine",
+        k=10,
+        disc_genre=disc_genre,
+        disc_general=disc_genre,
+        disc_score=disc_genre,
+        map_k_general=disc_genre,
+        map_k=disc_genre,
+        mrr=disc_genre,
+        ndcg_k=disc_genre,
+        recall_k=disc_genre,
+    )
+    row.update(overrides)
+    return pd.DataFrame([row], columns=ANALYZE_METRICS_COLUMNS)
+
+
 def _ptc_row(backbone: str, *, rep_a: str, disc_genre: float, **overrides) -> pd.DataFrame:
     """One ptc analyze-metrics row."""
     row = dict.fromkeys(ANALYZE_METRICS_COLUMNS)
@@ -144,6 +170,32 @@ def test_summary_uses_medoid_not_max_flat():
     table = result["tables"][0]
     col_idx = table["columns"].index("flat_medoid_disc_genre")
     assert table["rows"][0][col_idx] == "0.6000"
+
+
+def test_ctp_never_drives_summary_headline_or_best_binned():
+    """A CTP row can never drive the summary best_binned_config/headline.
+
+    CTP is archival-only (requirement 2): even a CTP row scoring higher than the
+    medoid baseline must not appear as the best binned config nor flip the summary
+    headline — only EffNet PTC binned rows are candidates.
+    """
+    # Only a medoid flat baseline + a high-scoring CTP row (no PTC row at all).
+    df = pd.concat(
+        [
+            _gp_row("EffNet", "medoid", disc_genre=0.6),
+            _ctp_row("EffNet", disc_genre=0.99),
+        ],
+        ignore_index=True,
+    )
+
+    result = section_summary(df)
+
+    table = result["tables"][0]
+    col_idx = table["columns"].index("best_binned_config")
+    assert table["rows"][0][col_idx] == "—"  # no PTC row -> no best binned config
+    assert result["headline"]["text"] == (
+        "No backbone's best binned configuration beats the explicit medoid flat baseline on disc_genre."
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -61,6 +61,7 @@ EXPECTED_TABLES = {
     "phase_timings",
     "song_retrieval_metrics",
     "stratified_corpus",
+    "head_phase_provenance",
 }
 
 

@@ -47,13 +47,24 @@ def matrix_cache_identity(
     metric: str,
     song_ids: Sequence[str],
     corpus_hash: str,
+    score_variant: str | None = None,
 ) -> str:
     """Canonical identity string for a matrix cache.
 
     Every dimension participates in the hash; two caches are identical only if
     all dimensions (including the *ordered* song-ID list and corpus hash)
-    match exactly.
+    match exactly.  When *score_variant* is supplied it is validated against the
+    allowed scoring surface and folded into the identity, so a cache built for
+    the primary ``max_per_candidate_segment`` scoring method can never be
+    confused with one built for a different scoring method (or an unlabelled
+    generic aggregate, which is rejected by :func:`validate_score_variant`).
     """
+    from scripts.embedding_research.strategy_binned._constants import (
+        validate_score_variant as _validate_score_variant,
+    )
+
+    if score_variant is not None:
+        _validate_score_variant(score_variant)
     payload = json.dumps(
         {
             "scoring_semantics_version": SCORING_SEMANTICS_VERSION,
@@ -64,6 +75,7 @@ def matrix_cache_identity(
             "rep_a": rep_a,
             "rep_b": rep_b,
             "aggregate": aggregate,
+            "score_variant": score_variant,
             "metric": metric,
             "song_ids": list(song_ids),
         },

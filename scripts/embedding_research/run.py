@@ -1,8 +1,8 @@
 """
 CLI entrypoint for the embedding research pipeline.
 
-Running with no arguments executes all seven phases in order:
-  ingest -> embed -> stratify -> segment -> classify -> analyze -> report
+Running with no arguments executes all eight phases in order:
+  ingest -> embed -> stratify -> segment -> classify -> analyze -> head -> report
 
 Each phase checks what is already in the DB and skips completed work.
 All configuration lives in research_config.toml next to this file.
@@ -46,6 +46,7 @@ if str(_pkg_root) not in sys.path:
 
 from scripts.embedding_research import common, db, pooling
 from scripts.embedding_research.cache import binned_ctp, binned_ptc, flat_vecs
+from scripts.embedding_research.cache_identity import SCORING_SEMANTICS_VERSION
 from scripts.embedding_research.common.analyze import validate_binned_weights
 from scripts.embedding_research.config import BACKBONES, DB_PATH, HEAD_LABELS, HEADS, OUTPUT_ROOT, PATCHES_DIR
 from scripts.embedding_research.corpus import MatchingCorpusManifest, build_matching_corpus
@@ -374,13 +375,17 @@ GLOBAL_POOL_ANALYZE_CFG: AnalyzeCfg = {
 }
 
 # Wires the patch-to-centroid (PTC) binned strategy into the shared analyze phase.
+# The primary score variant is evaluated per selected temporal mode/threshold.
 PTC_ANALYZE_CFG: AnalyzeCfg = {
     "strategy_names": [f"ptc_{bin_mode}_{std_thresh:.2f}" for bin_mode in BIN_MODES for std_thresh in STD_THRESHOLDS],
     "load_vecs_fn": _load_ptc_analyze_vecs,
     "db_write_fn": db.write_analyze_metrics,
     "strategy_key_fn": _ptc_strategy_key,
     "strategy_type": "ptc",
-    "extra_cfg": {"rep_types": list(_strategy_binned_constants.REP_TYPES)},
+    "extra_cfg": {
+        "rep_types": list(_strategy_binned_constants.REP_TYPES),
+        "score_variants": list(_strategy_binned_constants.SCORE_VARIANTS),
+    },
 }
 
 # Wires the centroid-to-patch (CTP) binned strategy (head-guided bins) into the shared analyze phase.
@@ -584,12 +589,30 @@ def _manifest_for(extra_cfg: Mapping[str, Any] | None, backbone: str) -> Matchin
     return manifests.get(backbone)  # type: ignore[return-value]
 
 
+def _ctp_enabled() -> bool:
+    """Return whether the deferred/archival CTP switch is enabled.
+
+    Reads ``[archival_ctp] enabled`` from research_config.toml.  Default is
+    disabled: CTP requirements, rows, and winner candidates are excluded from
+    the default primary corpus and primary report grid, while CTP segment
+    functions, caches, and archival loaders remain available for explicit
+    opt-in (set ``enabled = true``).
+    """
+    return bool(_load_research_config().get("archival_ctp", {}).get("enabled", False))
+
+
 def _corpus_requirements(backbone: str, flat_strategies: Sequence[str]) -> dict[str, list[str]]:
     """Availability of every sidecar/bin/rep requirement for one backbone.
 
-    Each requirement maps a namespace-separated label to the sorted list of
-    song IDs for which that sidecar/bin/rep is available on disk.  A song is
-    eligible for the matching corpus only if it appears in every requirement.
+    Follow-on primary algorithm: the matching corpus for a backbone is the
+    stratified candidate universe intersected with ``flat:medoid`` and every
+    selected PTC ``(bin_mode, threshold, rep_type=medoid, score_variant)``
+    sidecar, canonically sorted and hashed with the backbone plus eligibility
+    and scoring-semantics dimensions.  Each requirement maps a
+    namespace-separated label to the sorted list of song IDs for which that
+    sidecar/bin/rep is available on disk; a song is eligible only if it appears
+    in every requirement.  CTP is omitted from this intersection unless the
+    ``[archival_ctp]`` deferred/archival switch is explicitly enabled.
     """
     reqs: dict[str, list[str]] = {}
     for strat in flat_strategies:
@@ -597,10 +620,11 @@ def _corpus_requirements(backbone: str, flat_strategies: Sequence[str]) -> dict[
     for bin_mode in BIN_MODES:
         for std_thresh in STD_THRESHOLDS:
             reqs[f"ptc:{bin_mode}:{std_thresh:.2f}"] = binned_ptc.list_sids(backbone, bin_mode, std_thresh)
-    for head_name in _KNOWN_CTP_HEAD_NAMES:
-        for std_thresh in CTP_SCORE_THRESHOLDS:
-            cfg_dir = binned_ctp.config_dir(backbone, head_name, std_thresh)
-            reqs[f"ctp:{head_name}:{std_thresh:.2f}"] = sorted(_build_done_set(cfg_dir, suffix=".npz"))
+    if _ctp_enabled():
+        for head_name in _KNOWN_CTP_HEAD_NAMES:
+            for std_thresh in CTP_SCORE_THRESHOLDS:
+                cfg_dir = binned_ctp.config_dir(backbone, head_name, std_thresh)
+                reqs[f"ctp:{head_name}:{std_thresh:.2f}"] = sorted(_build_done_set(cfg_dir, suffix=".npz"))
     return reqs
 
 
@@ -608,16 +632,25 @@ def _build_backbone_manifests(cfg: Mapping[str, Any]) -> dict[str, MatchingCorpu
     """Deterministic per-backbone matching corpus over the candidate universe.
 
     The corpus for a backbone is the sorted intersection of the stratified
-    candidate universe with the availability of every flat and binned
-    requirement, so every compared configuration runs on the exact same
-    ``n_songs``.  The eligibility/config inputs feed the stable corpus hash.
+    candidate universe with ``flat:medoid`` and every selected PTC
+    ``(bin_mode, threshold, rep_type=medoid, score_variant)`` requirement
+    (CTP excluded unless the archival switch is enabled), so every compared
+    primary configuration runs on the exact same ``n_songs``.  The backbone,
+    membership, eligibility dimensions, scoring-semantics version, and boundary
+    configuration feed the stable corpus hash.
     """
     backbones = list(cfg.get("backbones") or BACKBONES)
     flat_strategies = list(cfg.get("flat_strategies") or [])
     candidate_ids = cfg.get("song_ids")
+    # Eligibility dimensions hashed with the backbone, membership, and scoring-
+    # semantics version: the scoring surface actually evaluated (score_variants),
+    # the per-bin representations, and the scoring-semantics version.  The
+    # per-config boundary configuration (PTC bin modes/thresholds) is already
+    # folded into the corpus hash via the sorted requirement labels.
     eligibility: dict[str, object] = {
         "rep_types": sorted(_strategy_binned_constants.REP_TYPES),
-        "agg_methods": list(_strategy_binned_constants.AGG_METHODS),
+        "score_variants": list(_strategy_binned_constants.SCORE_VARIANTS),
+        "scoring_semantics_version": SCORING_SEMANTICS_VERSION,
         "k": cfg.get("k", 10),
     }
     manifests: dict[str, MatchingCorpusManifest] = {}
@@ -651,16 +684,106 @@ def _analyze_phase(con, cfg: dict) -> None:
     _ptc_cfg = dict(PTC_ANALYZE_CFG)
     _ptc_cfg["extra_cfg"] = dict(_ptc_cfg["extra_cfg"], **_corpus_kw)
     common.analyze.analyze(con, _ptc_cfg, **_kw)
-    _ctp_cfg = dict(CTP_ANALYZE_CFG)
-    _ctp_cfg["extra_cfg"] = dict(_ctp_cfg["extra_cfg"], **_corpus_kw)
-    common.analyze.analyze(con, _ctp_cfg, **_kw)
+    # Deferred/archival CTP path: opt-in only, visibly separated from primary
+    # output.  Disabled by default so CTP rows never enter the primary grid.
+    if _ctp_enabled():
+        _ctp_cfg = dict(CTP_ANALYZE_CFG)
+        _ctp_cfg["extra_cfg"] = dict(_ctp_cfg["extra_cfg"], **_corpus_kw)
+        common.analyze.analyze(con, _ctp_cfg, **_kw)
+
+
+def _head_phase(con, cfg: dict) -> None:
+    """Optional shared-boundary head phase: pool EffNet PTC boundary head outputs.
+
+    Runs AFTER primary analysis (``analyze``) so the PTC boundaries/classification
+    prerequisites and the primary EffNet corpus manifest already exist.  It is
+    non-blocking: ``classify.run_shared_ptc_head_pooling`` returns a
+    :class:`HeadPhaseManifest` and never raises, so primary EffNet PTC-vs-medoid
+    analysis completes regardless of head-model/head-cache availability.  It never
+    deletes primary rows and never mutates the corpus.
+
+    The head phase operates on exactly the primary EffNet corpus songs that also
+    have head-cache availability (a clearly declared derived head-availability
+    subset); provenance rows are persisted additively to ``head_phase_provenance``
+    and the manifest is stored on *cfg* for the report phase's status hook.
+    """
+    from scripts.embedding_research.classify import run_shared_ptc_head_pooling
+    from scripts.embedding_research.db.head_phase import (
+        build_head_phase_provenance_rows,
+        write_head_phase_provenance,
+    )
+
+    # Reference corpus: the primary EffNet matching-corpus manifest built during
+    # analyze.  The head phase is scoped to these songs (derived subset), so it
+    # never silently discovers a different set.
+    reference_song_ids: frozenset[str] | None = None
+    reference_corpus_hash: str | None = None
+    primary_manifests = cfg.get("matching_corpus") or {}
+    effnet_manifest = primary_manifests.get("effnet")
+    if effnet_manifest is None and primary_manifests:
+        effnet_manifest = next(iter(primary_manifests.values()))
+    if effnet_manifest is not None:
+        reference_song_ids = frozenset(effnet_manifest.song_ids)
+        reference_corpus_hash = effnet_manifest.corpus_hash
+
+    manifest = run_shared_ptc_head_pooling(
+        con,
+        song_ids=reference_song_ids,
+        backbones=cfg.get("backbones"),
+        heads=cfg.get("heads"),
+        force=cfg.get("force", False),
+    )
+    write_head_phase_provenance(
+        con,
+        build_head_phase_provenance_rows(manifest, reference_corpus_hash=reference_corpus_hash),
+    )
+    cfg["head_phase_manifest"] = manifest
+    if manifest.errors or (manifest.done == 0 and sum(r.n_pooled for r in manifest.results) == 0):
+        _log.warning(
+            "head phase produced no pooled output (done=%d skipped=%d errors=%d); "
+            "surfacing as a report warning; primary analysis is unaffected",
+            manifest.done,
+            manifest.skipped,
+            manifest.errors,
+        )
 
 
 def _report_phase(con, cfg: dict) -> None:
     from scripts.embedding_research.config import REPORT_DIR
     from scripts.embedding_research.report import run
 
-    run(con, REPORT_DIR, matching_corpora=cfg.get("matching_corpus"))
+    # Minimal head-phase status hook (Plan B, Phase 2).  A head-phase failure or
+    # total-skip is surfaced as a report warning — it is NEVER a primary-row
+    # deletion or corpus mutation, and Phase 3 owns the full head-output report
+    # section.  Here we only warn so the operator sees the preparation status.
+    _manifest = cfg.get("head_phase_manifest")
+    if _manifest is not None:
+        if _manifest.errors:
+            _log.warning(
+                "head phase finished with %d error config(s); primary analysis is unaffected",
+                _manifest.errors,
+            )
+        if _manifest.done == 0 and sum(r.n_pooled for r in _manifest.results) == 0:
+            _log.warning(
+                "head phase produced no pooled output (skipped=%d errors=%d); "
+                "shared-boundary head outputs are unavailable in this report",
+                _manifest.skipped,
+                _manifest.errors,
+            )
+        else:
+            _log.info(
+                "head phase: done=%d skipped=%d errors=%d (reference EffNet corpus declared)",
+                _manifest.done,
+                _manifest.skipped,
+                _manifest.errors,
+            )
+
+    run(
+        con,
+        REPORT_DIR,
+        matching_corpora=cfg.get("matching_corpus"),
+        head_phase_manifest=cfg.get("head_phase_manifest"),
+    )
 
 
 _PHASES: dict[str, Callable[..., None]] = {
@@ -670,6 +793,7 @@ _PHASES: dict[str, Callable[..., None]] = {
     "segment": _segment_phase,
     "classify": _classify_phase,
     "analyze": _analyze_phase,
+    "head": _head_phase,
     "report": _report_phase,
 }
 

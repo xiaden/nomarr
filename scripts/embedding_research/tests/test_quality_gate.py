@@ -321,3 +321,66 @@ def test_binned_unequal_corpora_no_reportable_row(con) -> None:
 
     assert any("song-ID set mismatch" in r for r in cfg["extra_cfg"]["skip_reasons"])
     assert con.execute("SELECT COUNT(*) FROM analyze_metrics").fetchone()[0] == 0
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: default primary corpus excludes CTP; MusicNN / CTP are opt-in only
+# ---------------------------------------------------------------------------
+
+
+def test_default_corpus_requirements_exclude_ctp(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The default primary matching corpus is built from ``flat:medoid`` + PTC only.
+
+    CTP requirements are absent from the intersection unless the deferred/
+    archival CTP switch is explicitly enabled, so CTP can never constrain or
+    enter the default primary corpus.
+    """
+    monkeypatch.setattr(run_mod.flat_vecs, "list_done_sids", lambda _bb, _s: ["a", "b", "c"])
+    monkeypatch.setattr(run_mod.binned_ptc, "list_sids", lambda _bb, _bm, _t: ["a", "b", "c"])
+    monkeypatch.setattr(run_mod, "_ctp_enabled", lambda: False)
+
+    reqs = run_mod._corpus_requirements("effnet", ["medoid"])
+
+    assert any(k.startswith("flat:") for k in reqs)
+    assert any(k.startswith("ptc:") for k in reqs)
+    assert not any(k.startswith("ctp:") for k in reqs)
+
+
+def test_ctp_requirements_included_only_when_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Enabling the deferred/archival CTP switch brings CTP requirements back in.
+
+    The CTP segment/archival machinery remains callable; only default routing
+    changes.
+    """
+    monkeypatch.setattr(run_mod.flat_vecs, "list_done_sids", lambda _bb, _s: ["a", "b", "c"])
+    monkeypatch.setattr(run_mod.binned_ptc, "list_sids", lambda _bb, _bm, _t: ["a", "b", "c"])
+    monkeypatch.setattr(run_mod.binned_ctp, "config_dir", lambda _bb, _h, _t: "/tmp/ctp")
+    monkeypatch.setattr(
+        run_mod, "_build_done_set", lambda _d, suffix=".npz": ["a", "b", "c"] if suffix == ".npz" else []
+    )
+    monkeypatch.setattr(run_mod, "_ctp_enabled", lambda: True)
+
+    reqs = run_mod._corpus_requirements("effnet", ["medoid"])
+
+    assert any(k.startswith("ctp:") for k in reqs)
+
+
+def test_default_config_narrows_primary_experiment() -> None:
+    """Config-inspection proof: default primary is EffNet-only, medoid-only, the
+    primary ``max_per_candidate_segment`` score variant, cosine metric, CTP
+    disabled, and the weighted reductions present only as labelled hypotheses.
+    """
+    from scripts.embedding_research.helpers import toml as toml_mod
+
+    cfg = toml_mod.load_research_config()
+    assert cfg["pipeline"]["backbones"] == ["effnet"]
+    assert cfg["pooling"]["flat_strategies"] == ["medoid"]
+    assert cfg["pooling"]["rep_types"] == ["medoid"]
+    assert cfg["pooling"]["score_variants"] == ["max_per_candidate_segment"]
+    assert cfg["archival_ctp"]["enabled"] is False
+    assert cfg["similarity"]["metrics"] == ["cosine"]
+    assert cfg["pooling"]["hypotheses"]["weighted_reductions"] == [
+        "target_weighted",
+        "bidirectional_weighted",
+        "normalized_mean_pair_weighted",
+    ]

@@ -24,6 +24,41 @@ _ALLOWED_AGG_METHODS: tuple[str, ...] = (
     "normalized_mean_pair_weighted",
 )
 
+# Follow-on primary scoring semantics (Phase 2).  ``max_per_candidate_segment``
+# is the authoritative PRIMARY score variant; the three Part B reductions remain
+# implemented and numerically tested but are labelled legacy weighted hypothesis
+# comparison formulas — opt-in only, never authoritative primary semantics.
+# A generic mean/median/max/min/medoid aggregate must never re-enter as a score
+# variant (``validate_score_variant`` enforces this at the request boundary).
+_ALLOWED_SCORE_VARIANTS: tuple[str, ...] = (
+    "max_per_candidate_segment",
+    *_ALLOWED_AGG_METHODS,
+)
+PRIMARY_SCORE_VARIANT: str = "max_per_candidate_segment"
+
+# Generic aggregate names forbidden as a scoring method anywhere in the research
+# package.  Rep types may still use mean/median/max/min as *representations*.
+_FORBIDDEN_SCORE_VARIANTS: frozenset[str] = frozenset({"mean", "median", "max", "min", "medoid"})
+
+
+def validate_score_variant(name: str) -> str:
+    """Validate a score-variant name against the allowed scoring surface.
+
+    Rejects unknown names and, critically, any unlabelled generic aggregate
+    (``mean`` / ``median`` / ``max`` / ``min`` / ``medoid``) so it can never
+    re-enter as a primary scoring method.
+    """
+    if name not in _ALLOWED_SCORE_VARIANTS:
+        if name in _FORBIDDEN_SCORE_VARIANTS:
+            raise ValueError(
+                f"score_variant={name!r} is a generic aggregate and is not a labelled scoring "
+                "method; an unlabelled generic mean/median/max/min/medoid aggregate must not "
+                "re-enter. Use one of "
+                f"{list(_ALLOWED_SCORE_VARIANTS)} (or rep_type=medoid for a representation)."
+            )
+        raise ValueError(f"Unknown score_variant {name!r}. Allowed: {list(_ALLOWED_SCORE_VARIANTS)}")
+    return name
+
 
 def _validated_choices(name: str, values: _Iterable[str], allowed: tuple[str, ...]) -> list[str]:
     out = [str(v) for v in values]
@@ -33,14 +68,36 @@ def _validated_choices(name: str, values: _Iterable[str], allowed: tuple[str, ..
     return out
 
 
+# AGG_METHODS sources from the labelled ``[pooling.hypotheses]`` weighted-reductions
+# block (the legacy weighted hypothesis declarations) when present; when that key is
+# absent it falls back to the hardcoded canonical list (identical values).  This keeps
+# the code's source in step with CONTRACTS.md.  ``pooling.agg_methods`` is not a
+# recognized key.
 AGG_METHODS: list[str] = _validated_choices(
-    "pooling.agg_methods",
-    _cfg.get(
-        "pooling",
-        {},
-    ).get("agg_methods", ["target_weighted", "bidirectional_weighted", "normalized_mean_pair_weighted"]),
+    "pooling.hypotheses.weighted_reductions",
+    _cfg.get("pooling", {})
+    .get("hypotheses", {})
+    .get(
+        "weighted_reductions",
+        ["target_weighted", "bidirectional_weighted", "normalized_mean_pair_weighted"],
+    ),
     _ALLOWED_AGG_METHODS,
 )
+
+# Full scoring surface actually evaluated for binned analysis: the primary
+# ``max_per_candidate_segment`` variant plus any weighted hypotheses.  When the
+# config does not restrict ``pooling.score_variants`` (Phase 3 owns the default
+# config), the primary variant is evaluated together with the three weighted
+# reductions so the hypothesis path remains exercised.
+_configured_score_variants = _cfg.get("pooling", {}).get("score_variants")
+if _configured_score_variants:
+    SCORE_VARIANTS: list[str] = _validated_choices(
+        "pooling.score_variants",
+        _configured_score_variants,
+        _ALLOWED_SCORE_VARIANTS,
+    )
+else:
+    SCORE_VARIANTS = [PRIMARY_SCORE_VARIANT, *AGG_METHODS]
 REP_TYPES: list[str] = _validated_choices(
     "pooling.rep_types",
     _cfg.get("pooling", {}).get("rep_types", ["mean", "median", "max", "min"]),

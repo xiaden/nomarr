@@ -37,7 +37,10 @@ def _best_binned_row(binned_df: pd.DataFrame, backbone: str):
 def section_summary(df: pd.DataFrame) -> dict:
     """Per-backbone exact best-binned winner and delta vs the explicit medoid baseline."""
     flat_df = df[df["strategy_type"] == "global_pool"]
-    binned_df = df[df["strategy_type"].isin(["ptc", "ctp"])]
+    # CTP is archival-only and can never drive the primary best-binned headline. Only
+    # EffNet PTC binned rows are candidates here; CTP stays visible in the archival
+    # head-value section and the unified data table.
+    binned_df = df[df["strategy_type"] == "ptc"]
     flat_backbones = flat_df["backbone"].dropna().unique().tolist() if "backbone" in flat_df.columns else []
     binned_backbones = binned_df["backbone"].dropna().unique().tolist() if "backbone" in binned_df.columns else []
     all_backbones = sorted(set(flat_backbones) | set(binned_backbones))
@@ -108,8 +111,10 @@ def section_summary(df: pd.DataFrame) -> dict:
         "Summary",
         description=(
             "Per-backbone, the single best binned configuration (full identity: pathway, "
-            "head, bin mode, threshold, rep_a, rep_b, aggregate) and its disc_genre delta "
+            "head, bin mode, threshold, rep_a, rep_b, score variant) and its disc_genre delta "
             "against the explicit medoid flat baseline (global_pool:{backbone}:medoid). "
+            "disc_genre is an evaluation lens (retrieval discrimination), not an optimization "
+            "objective. "
             "delta_vs_medoid = best_binned_disc_genre - flat_medoid_disc_genre. Temporal "
             "weighting (the weighted directional reductions target-wtd / bidir-wtd / "
             "norm-pair-wtd) is distinct from representation choice (rep_a / rep_b)."

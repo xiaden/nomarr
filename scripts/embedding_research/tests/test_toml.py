@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from scripts.embedding_research.helpers import toml as research_toml
-from scripts.embedding_research.pooling import STRATEGIES, load_flat_strategy_names
+from scripts.embedding_research.pooling import load_flat_strategy_names
 
 
 @pytest.fixture(autouse=True)
@@ -51,10 +51,15 @@ def clear_config_cache() -> None:
     research_toml.load_research_config.cache_clear()
 
 
-def test_load_flat_strategy_names_defaults_to_all_when_unconfigured() -> None:
-    """No explicit flat_strategies returns every known strategy (incl. medoid)."""
-    assert load_flat_strategy_names({}) == list(STRATEGIES)
-    assert "medoid" in load_flat_strategy_names({})
+def test_shipped_config_narrows_primary_flat_strategies_to_medoid() -> None:
+    """The shipped research config sets the primary flat baseline to medoid only.
+
+    The follow-on primary experiment narrows the default to
+    ``flat_strategies=["medoid"]``; the all-strategies unconfigured fallback is a
+    legacy archival behaviour and is never the shipped default.
+    """
+    cfg = research_toml.load_research_config()
+    assert load_flat_strategy_names(cfg) == ["medoid"]
 
 
 def test_load_flat_strategy_names_returns_explicit_list() -> None:
@@ -107,10 +112,17 @@ def test_load_flat_strategy_names_is_backbone_independent_default() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_pooling_agg_methods_are_weighted_reductions_only() -> None:
-    """[pooling] agg_methods is exactly the three Part B weighted aggregation names."""
+def test_pooling_primary_score_variant_and_labeled_hypotheses() -> None:
+    """The primary score surface is ``max_per_candidate_segment`` only.
+
+    The three Part B weighted reductions live under a labelled
+    ``[pooling.hypotheses]`` block as comparison hypotheses, not the primary
+    formula declaration, and are evaluated only when explicitly added to
+    ``pooling.score_variants``.
+    """
     cfg = research_toml.load_research_config()
-    assert cfg["pooling"]["agg_methods"] == [
+    assert cfg["pooling"]["score_variants"] == ["max_per_candidate_segment"]
+    assert cfg["pooling"]["hypotheses"]["weighted_reductions"] == [
         "target_weighted",
         "bidirectional_weighted",
         "normalized_mean_pair_weighted",

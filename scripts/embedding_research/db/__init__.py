@@ -7,12 +7,13 @@ to work without modification.
 
 Submodules
 ----------
-_schema  — DDL, connect(), ensure_schema()
-songs    — songs table + song-level read helpers
-flat     — head_results, analyze_metrics, song_retrieval_metrics  (scalars + filesystem caches)
-binned   — all binned_* tables
-patch    — patch_features table
-queries  — query_* progress-check helpers
+_schema    — DDL, connect(), ensure_schema()
+songs      — songs table + song-level read helpers
+flat       — head_results, analyze_metrics, song_retrieval_metrics  (scalars + filesystem caches)
+binned     — all binned_* tables
+patch      — patch_features table
+head_phase — head_phase_provenance table + provenance helpers
+queries    — query_* progress-check helpers
 """
 
 from ._schema import connect, ensure_schema, upsert_phase_timing
@@ -34,6 +35,14 @@ from .flat import (
     upsert_head,
     write_analyze_metrics,
     write_song_retrieval_metrics,
+)
+from .head_phase import (
+    HeadPhaseProvenanceRow,
+    build_head_phase_provenance_rows,
+    head_phase_config_key,
+    load_head_phase_provenance,
+    query_head_phase_done,
+    write_head_phase_provenance,
 )
 from .patch import patch_features_done
 from .queries import (
@@ -57,11 +66,14 @@ from .stratify import clear_stale_stratification, load_stratified_sids, write_st
 from .truncation import upsert_truncation_robustness
 
 __all__ = [
+    "HeadPhaseProvenanceRow",
+    "build_head_phase_provenance_rows",
     "clear_song_retrieval_metrics",
     # connection / schema
     "clear_stale_stratification",
     "connect",
     "ensure_schema",
+    "head_phase_config_key",
     "head_strategy_done",
     "load_all_songs",
     "load_analyze_metrics",
@@ -69,6 +81,7 @@ __all__ = [
     "load_calibration",
     "load_classify_ctp_rows",
     "load_head_labels",
+    "load_head_phase_provenance",
     "load_sids_and_artists",
     "load_song_albums",
     "load_song_genres",
@@ -82,6 +95,7 @@ __all__ = [
     "query_binned_embed_done",
     "query_classify_ctp_sids",
     "query_classify_done",
+    "query_head_phase_done",
     # progress queries
     "query_head_sim_corr_done",
     "song_exists",
@@ -97,6 +111,7 @@ __all__ = [
     "upsert_song",
     "upsert_truncation_robustness",
     "write_analyze_metrics",
+    "write_head_phase_provenance",
     "write_song_retrieval_metrics",
     "write_stratified_sids",
 ]

@@ -15,6 +15,51 @@
 
 ---
 
+## Follow-on primary experiment contract
+
+The default primary experiment (Plans A–C of the embedding-research follow-on) is deliberately
+narrow and replaces the completed A–E broad cross-product grid. It has exactly these dimensions:
+
+- **backbone:** `effnet` only by default. MusicNN remains supported by the existing independent
+  backbone machinery (its own observed medoid baseline, matching-corpus manifest, and report
+  population) but is enabled **only** by an explicit configuration selection (e.g.
+  `backbones = ["effnet", "musicnn"]`); it is never part of default runs.
+- **flat baseline:** `flat_strategies=["medoid"]` — the observed global medoid
+  (`global_pool:{backbone}:medoid`).
+- **PTC representation:** `rep_types=["medoid"]` (observed per-bin segment representation).
+- **PTC boundary configurations:** the configured temporal bin modes and distance thresholds,
+  each reported separately, never collapsed by averaging across thresholds or representations.
+- **primary score variant:** `max_per_candidate_segment` — one patch-count-weighted contribution
+  per candidate segment, with collision/winner/cosine/contribution traces and explicit
+  tie/collision ambiguity variants.
+- **similarity:** cosine on unit vectors.
+- **comparison:** every PTC threshold/configuration versus the same-corpus observed global medoid.
+
+**CTP is deferred/archival.** CTP segment functions, caches, and archival loaders remain available
+and callable, but are disabled from default primary analysis by the `[archival_ctp] enabled=false`
+switch: CTP requirements never constrain the primary corpus and CTP rows/winners never enter the
+primary report grid. CTP appears only in an archival/deferred section or warning.
+
+**Primary corpus algorithm.** Start with the stratified candidate universe; for each selected
+backbone intersect availability of `flat:medoid` and every selected PTC
+`(bin_mode, threshold, rep_type=medoid, score_variant)` sidecar; sort the surviving song IDs
+canonically; hash backbone, membership, the eligibility dimensions (rep types, score variants,
+scoring-semantics version, k) and the boundary configuration; pass that exact manifest to every
+flat/PTC loader and reject any returned set or order mismatch without emitting a row. A separately
+enabled head phase may derive a narrower manifest from this primary manifest plus head-cache
+availability, but may not alter or block primary retrieval rows.
+
+**Evaluation lenses.** MAP, MRR, NDCG, Recall, and discrimination are evaluation lenses — never
+optimization objectives and never collapsed into one composite. Each is reported and compared
+independently.
+
+Preserved medoid/cache/corpus/report invariants (observed medoid with deterministic ties;
+`rep_type=medoid` valid, `agg_method=medoid` rejected; immutable/versioned caches; matching-corpus
+rejection; finite-only numeric output; schema-v2 report keys; no `disc_album` anywhere) remain
+binding from the completed A–E repair and are documented in the sections below.
+
+---
+
 ## 1. Database Schema (db/_schema.py, db/_types.py, db/__init__.py)
 
 ## Module: `db/_schema.py`
@@ -39,7 +84,7 @@ Context manager. Opens `DB_PATH` (from `scripts.embedding_research.config`). Whe
 
 ---
 
-## DuckDB Tables (17 total)
+## DuckDB Tables (18 total)
 
 ### Flat-embedding pipeline
 
@@ -368,6 +413,30 @@ Elapsed wall-clock time for each pipeline phase. `run_ts` = ISO-8601 timestamp o
 
 ---
 
+## Table: `head_phase_provenance`
+
+**Primary key:** `(backbone, head, bin_mode, threshold, boundary_source, head_pool_variant)`
+
+Shared-boundary head-phase preparation provenance (Plan B, Phase 2). One row per `(backbone, head, bin_mode, threshold)` config tuple recording the head-boundary preparation status and per-configuration provenance. ADDITIVE to the primary experiment: never part of `analyze_metrics`, never a primary winner candidate, never carries a CTP boundary source. `boundary_source` is fixed to `"effnet_ptc"` and `head_pool_variant` to `"shared_effnet_ptc_boundary"`; `reference_corpus_hash` declares the primary EffNet corpus this head phase derived its song set from (`NULL` = head-availability-only derived subset).
+
+| Column | Type | Constraints |
+| -------- | ------ | ------------- |
+| backbone | TEXT | NOT NULL |
+| head | TEXT | NOT NULL |
+| bin_mode | TEXT | NOT NULL |
+| threshold | DOUBLE | NOT NULL |
+| boundary_source | TEXT | NOT NULL |
+| head_pool_variant | TEXT | NOT NULL |
+| status | TEXT | NOT NULL — `'done'` \| `'skipped'` \| `'error'` |
+| reason | TEXT | — |
+| n_songs | INTEGER | NOT NULL |
+| n_pooled | INTEGER | NOT NULL |
+| finite | INTEGER | NOT NULL |
+| scoring_semantics_version | INTEGER | NOT NULL |
+| reference_corpus_hash | TEXT | — |
+
+---
+
 ## Module: `db/_types.py`
 
 No dataclasses are defined here.
@@ -378,7 +447,7 @@ No dataclasses are defined here.
 
 ### `__all__` Export List
 
-The 36 public names exported from `scripts.embedding_research.db`, grouped by source submodule:
+The 42 public names exported from `scripts.embedding_research.db`, grouped by source submodule:
 
 **From `_schema`:**
 
@@ -406,6 +475,15 @@ The 36 public names exported from `scripts.embedding_research.db`, grouped by so
 - `upsert_head`
 - `write_analyze_metrics`
 - `write_song_retrieval_metrics`
+
+**From `head_phase`:**
+
+- `HeadPhaseProvenanceRow`
+- `build_head_phase_provenance_rows`
+- `head_phase_config_key`
+- `load_head_phase_provenance`
+- `query_head_phase_done`
+- `write_head_phase_provenance`
 
 **From `patch`:**
 
@@ -1614,7 +1692,7 @@ printed via `tqdm.write`. Errors do not abort the backbone loop.
 > **Removed module.** The historical `_truncate.py` module (`_flat_rep`, `_binned_rep`, `_cosine`,
 > `analyze_truncation`) was removed from the tree — no `_truncate.py` exists anywhere in the
 > repository. `run.py` `_PHASES` has no `truncate` phase (phases are `ingest`, `embed`, `stratify`,
-> `segment`, `classify`, `analyze`, `report`) and no `--skip-truncation` CLI flag exists.
+> `segment`, `classify`, `analyze`, `head`, `report`) and no `--skip-truncation` CLI flag exists.
 > Truncation robustness analysis is **not an active pipeline phase**; the functions documented here
 > are dead references and have been removed.
 ---
@@ -1658,13 +1736,23 @@ printed via `tqdm.write`. Errors do not abort the backbone loop.
 
 ### `AGG_METHODS: list[str]`
 
-- **Source:** `research_config.toml` → `pooling.agg_methods`; default `["target_weighted", "bidirectional_weighted", "normalized_mean_pair_weighted"]`.
+- **Source:** `research_config.toml` → `pooling.hypotheses.weighted_reductions` (the legacy weighted hypothesis block); default when absent `["target_weighted", "bidirectional_weighted", "normalized_mean_pair_weighted"]`.
 - **Validation:** each value must be in `_ALLOWED_AGG_METHODS = ("target_weighted", "bidirectional_weighted", "normalized_mean_pair_weighted")`; legacy generic reductions (`mean`/`median`/`max`/`min`) and `agg_method="medoid"` are rejected at module load (`ValueError` raised).
-- **Invariant:** exactly the three weighted reductions; agg_mats are keyed by this list.
+- **Invariant:** exactly the three weighted reductions; agg_mats are keyed by this list. They are labelled **legacy weighted hypotheses** — opt-in comparison formulas, never default primary semantics.
+
+### `PRIMARY_SCORE_VARIANT: str`
+
+- **Value:** `"max_per_candidate_segment"` — the authoritative follow-on primary score (one patch-count-weighted contribution per candidate segment, with collision/winner/cosine/contribution traces).
+
+### `SCORE_VARIANTS: list[str]`
+
+- **Source:** `research_config.toml` → `pooling.score_variants`.
+- **Validation:** each value must be in `_ALLOWED_SCORE_VARIANTS` (the primary variant plus the three weighted hypotheses); a generic `mean`/`median`/`max`/`min`/`medoid` aggregate is rejected by `validate_score_variant`.
+- **Invariant:** the shipped config sets `pooling.score_variants=["max_per_candidate_segment"]`, so the evaluated surface is **primary-only** and the weighted hypotheses run only when explicitly added to that key. When `pooling.score_variants` is **absent** from the config, the fallback is the full surface `[PRIMARY_SCORE_VARIANT, *AGG_METHODS]` (primary plus all three weighted hypotheses).
 
 ### `REP_TYPES: list[str]`
 
-- **Source:** `research_config.toml` → `pooling.rep_types`; default `["mean", "median", "max", "min"]`.
+- **Source:** `research_config.toml` → `pooling.rep_types`; default primary `["medoid"]` (observed per-bin segment representation).
 - **Validation:** `_ALLOWED_REP_TYPES = ("mean", "median", "medoid", "max", "min")` — a separate set that includes `"medoid"` (allowed as a representation). Used for **representation** only, never for aggregation.
 - **Invariant:** `"medoid"` is allowed *as a representation* (observed per-bin patch row), distinct from the aggregation set `AGG_METHODS`.
 
@@ -1674,7 +1762,7 @@ printed via `tqdm.write`. Errors do not abort the backbone loop.
 
 ### `_EXPECTED_ROWS_PER_CONFIG: int`
 
-- `len(REP_TYPES) × len(REP_TYPES) × len(SIM_METRICS) × len(AGG_METHODS)` — used as a completeness sentinel when logging DB write counts.
+- `len(REP_TYPES) × len(REP_TYPES) × len(SIM_METRICS) × len(AGG_METHODS)` — **retained for reference only; not referenced by code** (0 call sites). This is a legacy formula from the pre-score-variants cross-product era; it is superseded by the `score_variants` iteration in `common/analyze.py` and is kept only to preserve history.
 
 ### `_BIN_POOL_STRATEGIES: dict[str, Callable[[np.ndarray], np.ndarray]]`
 
@@ -1719,7 +1807,7 @@ printed via `tqdm.write`. Errors do not abort the backbone loop.
 
 - **Reads:** nothing external.
 - **Writes:** nothing.
-- **Returns:** `{strategy_name: payload_dict}` for every key in `_BIN_POOL_STRATEGIES` that is also in `REP_TYPES` (i.e. the returned key set is `_BIN_POOL_STRATEGIES ∩ REP_TYPES`, config-driven via `[pooling].rep_types`). With the checked-in `rep_types=['median', 'medoid']` this is `{"median", "medoid"}`. `medoid` is present in both `_BIN_POOL_STRATEGIES` (the observed-patch argmin path) and `REP_TYPES`. All payloads are for the same `indices`.
+- **Returns:** `{strategy_name: payload_dict}` for every key in `_BIN_POOL_STRATEGIES` that is also in `REP_TYPES` (i.e. the returned key set is `_BIN_POOL_STRATEGIES ∩ REP_TYPES`, config-driven via `[pooling].rep_types`). With the checked-in `rep_types=['medoid']` this is `{"medoid"}`. `medoid` is present in both `_BIN_POOL_STRATEGIES` (the observed-patch argmin path) and `REP_TYPES`. All payloads are for the same `indices`.
 - **Invariant:** key set is `_BIN_POOL_STRATEGIES ∩ REP_TYPES` (config-driven), independent of `AGG_METHODS` (which holds only the three weighted reductions).
 
 ---
@@ -1977,8 +2065,9 @@ only the disk cache for them is gone.
 Every analyzed backbone (EffNet, MusicNN) gets its **own independent** matching
 corpus: the deterministic, canonically-sorted set of song IDs that all flat and
 binned configurations for that backbone compare.  A song participates only if it
-is present in every required dataset (flat vectors, PTC bins, CTP bins), so all
-compared configurations run on exactly the same song set.
+is present in every required dataset (flat vectors, PTC bins, and CTP bins only when
+[archival_ctp] enabled=true), so all compared configurations run on exactly the same
+song set.
 
 ### `class MatchingCorpusManifest`
 
@@ -2221,7 +2310,8 @@ def _select_stratified_sample(
 **Live entry points:**
 
 - `common.analyze.analyze(con, PTC_ANALYZE_CFG, **kw)` — patch-to-centroid binned retrieval.
-- `common.analyze.analyze(con, CTP_ANALYZE_CFG, **kw)` — centroid-to-patch binned retrieval.
+- `common.analyze.analyze(con, CTP_ANALYZE_CFG, **kw)` — centroid-to-patch binned retrieval
+  (**ARCHIVAL / opt-in**: only invoked when `[archival_ctp] enabled=true`; absent from default runs).
 
 - The shared `analyze` iterates `(backbone, strategy_name)` pairs, loads each strategy's vectors
   via `cfg["load_vecs_fn"]`, computes retrieval metrics, and writes rows via `cfg["db_write_fn"]`
@@ -3069,7 +3159,14 @@ Each subsection is an inline v2 dict (all 11 keys) with `id=f"corr-{backbone}"` 
 
 ### `section_head_value(con, flat_df=None) -> dict`
 
-**Signature:** `(con, flat_df: pd.DataFrame | None = None) -> dict`
+**Signature:** `(con, flat_df: pd.DataFrame | None = None) -> dict` — `flat_df` is accepted for a
+backward-compatible call signature only and is **not used** (the archival CTP note no longer reads it).
+
+**Status: ARCHIVAL / DEFERRED.** CTP (classify-then-pool) is a deferred, archival pathway that is
+excluded from the primary EffNet PTC-versus-global-medoid experiment. This section is retained purely
+as a labelled archival note and raw reference table; it is **never** a primary winner/delta source.
+Exact primary winners/deltas live in the *Exact Winners & Deltas* section; shared-boundary head-output
+preparation lives in the `head-output-shared-ptc-boundary` section.
 
 **DB reads:**
 
@@ -3077,38 +3174,72 @@ Each subsection is an inline v2 dict (all 11 keys) with `id=f"corr-{backbone}"` 
 | --- | --- | --- |
 | `ptc_ctp_rows` | `backbone`, `head`, `strategy`, `ptc_disc` (4dp), `ctp_disc` (4dp), `delta_disc` (4dp) | Yes |
 
-**`flat_df` columns used (if provided):**
-
-`backbone`, disc column (`disc_general` if present+non-null, else `disc_score`).
-Used to draw a flat baseline reference line on per-backbone bar charts.
-
 **Processing:**
 
-- Aggregates `ptc_ctp_rows` by `(backbone, head)`: `median_delta` and `best_delta`
-  (delta of the winning strategy — PTC or CTP — for that head).
-- Two global heatmaps (head × backbone): median Δdisc and best Δdisc.
-- Per-backbone panel: grouped bar chart of median PTC/CTP disc per head + Δdisc bar,
-  with a medoid baseline vline from `flat_medoid_value`.
+- Emits an `archival_warning` in every populated and empty case.
+- Renders the **raw** `ptc_ctp_rows` comparison rows (`Δdisc = ctp_disc - ptc_disc`) as a single
+  reference table only — no winner/delta aggregation, no heatmaps, no medoid baseline, no `flat_df` use.
 
-`_THRESH_SQL` and `_BIN_MODE_SQL` are derived at module load time from
-`scripts.embedding_research.helpers.binning.DIST_THRESHOLDS` and `BIN_MODES`
-(fallback to `"1.0"` / `"'temporal_global'"` on `ImportError`).
-
-**Return value:** v2 section dict with `id="head-value"`, `title="Head Value"`.
+**Return value:** v2 section dict with `id="head-value"`, `title="Head Value (Archival CTP Reference)"`.
 
 **Populated fields:**
 
-- `charts`: `[head_value_delta, head_value_best]` (per-backbone bar charts carry id `hv_bb_chart_{backbone}`)
-- `panels`: `[per_backbone_breakdown_panel]`
-- `description`, `stats`, `tables`, `subsections`, `warnings`, `headline`: all `[]` / `None`
+- `tables`: `[head_value_archival_ctp]` (raw archival CTP reference rows)
+- `warnings`: `[archival_warning]`
+- `description`, `stats`, `charts`, `panels`, `subsections`, `headline`: `[]` / `None`
 
 **Empty/stub behaviour:**
 
 | Condition | `empty_message` |
 | --- | --- |
-| `ptc_ctp_rows` table missing | `"Run the classify and analyze phases to populate this section."` |
+| `ptc_ctp_rows` table missing | `"No archival CTP comparison rows (ptc_ctp_rows) present. CTP is deferred/archival and excluded from primary analysis."` |
 | Query exception | `f"Query error: {exc}"` |
-| Table exists but empty | `"No head comparison data yet."` |
+| Table exists but empty | `"No archival CTP comparison data."` |
+
+---
+
+### `section_head_output_shared_ptc_boundary(con, manifest=None) -> dict`
+
+**Signature:** `(con, manifest: HeadPhaseManifest | None = None) -> dict`
+
+Shared-boundary head-output preparation status and coverage. Reports whether the shared `effnet_ptc`
+boundary head phase has been prepared for each `(head, bin_mode, threshold)` configuration, the
+persisted shared-boundary provenance (`boundary_source="effnet_ptc"`, `head_pool_variant=...`),
+per-threshold song coverage (`n_songs` / `n_pooled`), and any missing-data warnings. Preparation-status
+section only — never emits primary winner/delta rows.
+
+**DB reads:**
+
+| Table | Columns read | Required |
+| --- | --- | --- |
+| `head_phase_provenance` | all columns, ordered `backbone, head, bin_mode, threshold, boundary_source, head_pool_variant` | Yes |
+
+Read via `db.head_phase.load_head_phase_provenance(con)`.
+
+**Warnings (from `manifest`, when supplied):**
+
+| Condition | Warning |
+| --- | --- |
+| `manifest.errors` | `"Head phase finished with {n} error configuration(s); shared-boundary head outputs are incomplete."` |
+| `manifest.done == 0` | `"Head phase produced no pooled output (skipped=… errors=…); shared-boundary head outputs are unavailable in this report."` |
+| no provenance rows and `manifest is None` | `"No shared-boundary head-phase provenance found. Run the head phase (classify.run_shared_ptc_head_pooling) to populate head-output provenance."` |
+
+**Return value:** v2 section dict with `id="head-output-shared-ptc-boundary"`,
+`title="Head Output: Shared PTC Boundary"`.
+
+**Populated fields:**
+
+- `tables`: `[head_phase_provenance]` — per-`(head, bin_mode, threshold)` row with `status`,
+  `n_songs`, `n_pooled`, `coverage` (`100.0 * n_pooled / n_songs`%, blank when `n_songs == 0`),
+  `boundary_source`, `head_pool_variant`, `reference_corpus_hash` (`"—"` when `NULL`)
+- `warnings`: provenance + manifest warnings
+- `description`, `stats`, `charts`, `panels`, `subsections`, `headline`: `[]` / `None`
+
+**Empty/stub behaviour:**
+
+| Condition | `empty_message` |
+| --- | --- |
+| no provenance rows (table missing or empty) | `"No shared-boundary head-phase data yet. Run the head phase to populate provenance."` |
 
 ---
 
@@ -3167,14 +3298,20 @@ split internally (`strategy_type == "global_pool"` vs `ptc`/`ctp`).
 
 ### Schema constants
 
-`WINNER_DELTA_COLUMNS` — **22 columns**, one row per
-`(backbone, group, metric, k, winner, baseline)`:
+`WINNER_DELTA_COLUMNS` — **33 columns**, one row per
+`(backbone, group, metric, k, winner, baseline)`. The 33 columns are the decoded
+winner identity, the ten bounded per-pair `TRACE_SUMMARY_COLUMNS`
+("trace_*"), and the baseline/delta/corpus fields:
 
 `backbone`, `group`, `metric`, `k`, `winner_strategy_key`, `winner_strategy_type`,
 `winner_value`, `winner_flat_strategy`, `winner_pathway`, `winner_head`,
 `winner_bin_mode`, `winner_threshold`, `winner_rep_a`, `winner_rep_b`,
-`winner_aggregate`, `winner_sim_metric`, `baseline_strategy_key`, `baseline_value`,
-`delta`, `tie_break_key`, `corpus_hash`, `corpus_size`.
+`winner_aggregate`, `winner_ambiguity_variant`, `winner_sim_metric`,
+(`trace_n_pairs`, `trace_numerator_sum`, `trace_denominator_sum`,
+`trace_numerator_mean`, `trace_denominator_mean`, `trace_collision_count`,
+`trace_winner_count`, `trace_retained_contributions`, `trace_dropped_contributions`,
+`trace_finite`), `baseline_strategy_key`, `baseline_value`, `delta`, `tie_break_key`,
+`corpus_hash`, `corpus_size`.
 
 `FACTOR_SUMMARY_COLUMNS` — **10 columns**, one row per
 `(backbone, factor, factor_value, group, metric, k)`:
@@ -3193,7 +3330,7 @@ split internally (`strategy_type == "global_pool"` vs `ptc`/`ctp`).
   discrimination→`disc_general`. `general` has only the MAP and discrimination families.
 - `TIE_BREAK_ORDER = ("strategy_type", "pathway/head", "bin_mode", "threshold", "rep_a", "rep_b", "aggregate", "strategy_key")` — the winner among value-tied rows is the one sorting earliest by this key (smallest tuple).
 - `STRATEGY_TYPE_RANK = {"global_pool": 0, "ptc": 1, "ctp": 2}`
-- `FACTOR_COLUMNS` — maps each factor name to its winner-row column (strategy_type, flat_strategy, pathway, head, bin_mode, threshold, rep_a, rep_b, aggregate, sim_metric).
+- `FACTOR_COLUMNS` — maps each factor name to its winner-row column (strategy_type, flat_strategy, pathway, head, bin_mode, threshold, rep_a, rep_b, score_variant→`winner_aggregate`, ambiguity_variant→`winner_ambiguity_variant`, sim_metric).
 
 ### Builders
 
@@ -3390,7 +3527,7 @@ All phases are registered in `run.py`'s `_PHASES` ordered dict and executed by `
 order shown. Each phase receives the shared `cfg` dict built from `research_config.toml`.
 
 ```
-ingest → embed → stratify → segment → classify → analyze → report
+ingest → embed → stratify → segment → classify → analyze → head → report
 ```
 
 `optimize` is **not** a phase — it is a manual-only utility invoked via `strategy_binned._optimize.optimize_std_threshold` (see the `### Threshold optimization` section below); `truncate` is an **inactive** phase (no `run._PHASES` key; truncation robustness is not active, see `DIST_THRESHOLDS`).
@@ -3542,11 +3679,11 @@ have run.
 
 **Entry point:** `run.py::_analyze_phase(con, cfg)` — a single shared analysis phase driven by `common.analyze.analyze`.
 
-`run.py::_analyze_phase` first clears `analyze_metrics`, then invokes `common.analyze.analyze` three times, once per analysis configuration:
+`run.py::_analyze_phase` first clears `analyze_metrics`, then invokes `common.analyze.analyze` for the primary configurations and, only when the `[archival_ctp]` deferred/archival switch is enabled, the archival CTP configuration:
 
-1. **global-pool (flat)** — `GLOBAL_POOL_ANALYZE_CFG`: analyzes the flat pooled vectors (filesystem `cache/{backbone}/{strategy}/flat/{song_id}.npy`) across the configured flat strategies (incl. the observed-patch `medoid` baseline).
-2. **PTC** — `PTC_ANALYZE_CFG`: analyzes the patch-to-centroid binned pooled vectors loaded from the NPZ cache.
-3. **CTP** — `CTP_ANALYZE_CFG`: analyzes the centroid-to-patch (head-guided) embedding pools loaded from the NPZ cache.
+1. **global-pool (flat)** — `GLOBAL_POOL_ANALYZE_CFG`: analyzes the flat pooled vectors (filesystem `cache/{backbone}/{strategy}/flat/{song_id}.npy`) across the configured flat strategies (shipped default `["medoid"]` — the observed-patch `medoid` baseline). MusicNN is analyzed here only when explicitly configured.
+2. **PTC** — `PTC_ANALYZE_CFG`: analyzes the patch-to-centroid binned pooled vectors loaded from the NPZ cache, evaluating the configured `score_variants` (shipped default primary-only `max_per_candidate_segment`).
+3. **CTP (archival, opt-in)** — `CTP_ANALYZE_CFG`: analyzes the centroid-to-patch (head-guided) embedding pools loaded from the NPZ cache. This block is gated behind `run.py::_ctp_enabled()` (`[archival_ctp] enabled=true`); by default it does not run, so CTP rows never enter the primary report grid.
 
 Each `common.analyze.analyze` invocation writes aggregate retrieval/discriminability metrics to `analyze_metrics` and per-song retrieval metrics to `song_retrieval_metrics` (via `db.flat.write_analyze_metrics` / `db.flat.write_song_retrieval_metrics`). There are **no** `flat_*`, `binned_*`, `ctp_*`, or `ptc_ctp_metrics` analysis tables — the flat/binned/CTP analyses all share the same `analyze_metrics` + `song_retrieval_metrics` tables, distinguished by `strategy_type` (`global_pool` | `ptc` | `ctp`).
 
@@ -3556,18 +3693,42 @@ Each `common.analyze.analyze` invocation writes aggregate retrieval/discriminabi
 
 ---
 
-### Phase 6 — `truncate` (NOT an active phase)
+### Phase 6 — `head` (shared-boundary head pooling)
+
+**Entry point:** `run.py::_head_phase(con, cfg)` — optional, non-blocking.
+
+**What it does:** Pools classifier head outputs over the **shared EffNet PTC boundary**
+(`boundary_source="effnet_ptc"`, `head_pool_variant="shared_effnet_ptc_boundary"`) by calling
+`classify.run_shared_ptc_head_pooling(...)`. For each `(backbone, head, bin_mode, threshold)` config
+tuple it reads the PTC bin cache boundaries (`bin_start_idx` / `bin_end_idx` / `weights`) — never
+head-specific segmentation, never the CTP score-stream segmenter — pools the head activations per bin,
+and records one additive provenance row in `head_phase_provenance` via
+`build_head_phase_provenance_rows` / `write_head_phase_provenance`. The phase result
+(`HeadPhaseManifest`) is stored in `cfg["head_phase_manifest"]` for the report phase.
+
+**DB state required:** `songs`, sidecar patches, and the EffNet PTC binned segment caches populated
+(phases 3–4).
+
+**DB state produced:** `head_phase_provenance` rows (ADDITIVE — never touches `analyze_metrics`, the
+corpus, or the winner grid).
+
+**Non-blocking:** missing PTC caches or heads yield `skipped` / `error` provenance rows and a
+`HeadPhaseManifest` with those counts; the pipeline continues to the report phase regardless.
+
+---
+
+### Phase 7 — `truncate` (NOT an active phase)
 
 > **Removed. `run.py::_truncate` and the `--skip-truncation` flag do not exist** — `run.py` `_PHASES`
 > has no `truncate` phase (phases are `ingest`, `embed`, `stratify`, `segment`, `classify`,
-> `analyze`, `report`). Truncation robustness analysis is not part of the pipeline; the historical
+> `analyze`, `head`, `report`). Truncation robustness analysis is not part of the pipeline; the historical
 > `_truncate.py` module and its `truncation` table writes were removed. This block is retained only
 > as a stub so the phase numbering reads sequentially; there is no corresponding orchestration.
 ---
 
-### Phase 7 — `report`
+### Phase 8 — `report`
 
-**Entry point:** `run.py::_report(con, cfg)` → `report.run(con)`
+**Entry point:** `run.py::_report(con, cfg)` → `report.run(con, out_path=REPORT_DIR, matching_corpora=cfg.get("matching_corpus"), head_phase_manifest=cfg.get("head_phase_manifest"))`
 
 **What it does:** Reads all result tables and generates an HTML report under `{REPORT_DIR}/`.
 
@@ -3732,6 +3893,39 @@ sidecar `.npy` does not exist the song is skipped (no error).
 
 ---
 
+### Shared-boundary head phase (`classify.run_ptc_heads`, `classify.run_shared_ptc_head_pooling`)
+
+The optional `head` phase (see §7 Phase 6) is driven by two entry points in `classify.py`.
+
+#### `run_ptc_heads(con, *, song_ids=None, force=False, backbones=None, heads=None, device="cpu", head_sessions=None) -> None`
+
+Thin backward-compatible wrapper delegating to `run_shared_ptc_head_pooling` and **discarding** the
+returned manifest. The legacy default `backbones=None` runs **every configured backbone**
+(`backbones or list(BACKBONES)`).
+
+#### `run_shared_ptc_head_pooling(con, *, song_ids=None, backbones=None, heads=None, bin_modes=None, thresholds=None, force=False, device="cpu", head_sessions=None) -> HeadPhaseManifest`
+
+The canonical **shared PTC boundary** head phase. It consumes ONLY the EffNet PTC bin cache
+boundaries (`bin_start_idx` / `bin_end_idx` / `weights`) — never the CTP score-stream segmenter
+(`strategy_ctp.segment_fn`), never head-specific bins; CTP cache paths are not repurposed. **Non-blocking:**
+missing PTC cache entries or heads produce `skipped` / `error` records with reasons in the manifest
+rather than raising; primary EffNet PTC-versus-medoid analysis always completes
+(`primary_analysis_succeeded=True`). It never mutates the primary corpus or winner grid.
+
+Defaults:
+
+- `backbones=None` → `["effnet"]`
+- `heads=None` → all discovered heads for the backbone
+- `bin_modes=None` / `thresholds=None` → all PTC cache bin modes / thresholds
+- `song_ids=None` → all songs with EffNet PTC cache entries
+
+Deterministic ordering: backbones, heads, bin modes, thresholds, and song IDs are processed in sorted
+order. Each prepared config tuple is persisted as one additive row in `head_phase_provenance`
+(`boundary_source="effnet_ptc"`, `head_pool_variant="shared_effnet_ptc_boundary"`) via
+`db.head_phase.build_head_phase_provenance_rows` / `write_head_phase_provenance`.
+
+---
+
 ## 4. Config Keys
 
 ### Source of truth
@@ -3748,8 +3942,16 @@ Config is loaded by `helpers.toml.load_research_config()` which reads
 | `limit` | `int` | `0` (= all) | Number of songs in the working set; 0 means no cap. Applied in `discover_audio(limit=...)`. |
 | `force` | `bool` | `false` | When `true`, skip-checks are bypassed in all phases; all work is recomputed and DB rows overwritten. |
 | `device` | `str` | `"cpu"` | ONNX execution provider. `"cuda"` or `"gpu"` maps to GPU; anything else maps to `"cpu"`. |
-| `backbones` | `list[str]` \| absent | `null` (= all) | Restrict phases to named backbones. When absent/empty all keys in `BACKBONES` are used. |
+| `backbones` | `list[str]` \| absent | `["effnet"]` (shipped); absent → all `BACKBONES` | Restrict phases to named backbones. The shipped config sets `backbones=["effnet"]`, so the follow-on primary experiment runs EffNet only. MusicNN remains supported by the existing independent backbone machinery but is enabled **only** by explicit selection (e.g. `backbones=["effnet","musicnn"]`); it is never part of default runs. When absent/empty all keys in `BACKBONES` are used. |
 | `heads` | `list[str]` \| absent | `null` (= all) | Restrict classify/analyze phases to named heads. When absent/empty all discovered heads are used. |
+
+---
+
+### `[archival_ctp]` section
+
+| Key | Type | Default | Controls |
+| --- | --- | --- | --- |
+| `enabled` | `bool` | `false` | Deferred/archival CTP (classify-then-pool) switch. When `false` (default), CTP segment functions, caches, and archival loaders remain available and callable but CTP requirements are excluded from the primary corpus and the archival CTP analyze block (and its rows/winners) never runs in the default primary report grid. Set `enabled = true` to include CTP explicitly as archival diagnostics, visibly separated from primary output. Read by `run.py::_ctp_enabled()`, which gates both the CTP requirement labels in `_corpus_requirements` and the archival CTP analyze block in `_analyze_phase`. |
 
 ---
 
@@ -3772,7 +3974,13 @@ Config is loaded by `helpers.toml.load_research_config()` which reads
 | --- | --- | --- | --- |
 | `flat_strategies` | `list[str]` \| absent | all known strategies (incl. `medoid`) | Explicit flat (global-pool) strategy list. The benchmark baseline MUST include `medoid` (the observed-patch baseline). Read by `pooling.load_flat_strategy_names` into `cfg["flat_strategies"]`; drives the segment phase and `GLOBAL_POOL_ANALYZE_CFG.strategy_names`. Options: `mean`, `trimmed_10`, `trimmed_20`, `median`, `max_norm`, `l2norm_mean`, `medoid`. Each configured backbone gets its own independently keyed set. |
 | `rep_types` | `list[str]` | — | Per-bin segment representation used to build the NxM bin-vs-bin sim matrix in the binned (PTC/CTP) phases. Options: `mean`, `median` (coordinate-wise synthetic), `medoid` (observed segment), `max`, `min`. This does NOT drive the flat strategy list. |
-| `agg_methods` | `list[str]` | — | How the NxM per-bin similarity matrix is collapsed to a song-pair score. Used in the binned analysis phase. Options: `target_weighted`, `bidirectional_weighted`, `normalized_mean_pair_weighted` (the Part B weighted directional reductions). Legacy generic reductions (`mean`/`median`/`max`/`min`) are rejected, and `agg_method=medoid` is rejected; `rep_type="medoid"` remains a valid **representation** (observed-patch baseline), not an aggregation method. |
+| `score_variants` | `list[str]` \| absent | `["max_per_candidate_segment"]` (shipped primary-only) | Full scoring surface evaluated for the binned analysis phase. Read into `SCORE_VARIANTS` at `strategy_binned/_constants.py:92`; the shipped config sets `score_variants=["max_per_candidate_segment"]`, so the evaluated surface is **primary-only** and the weighted hypotheses run only when explicitly added to this key. Each value must be in `_ALLOWED_SCORE_VARIANTS` (the primary variant plus the three weighted hypotheses); a generic `mean`/`median`/`max`/`min`/`medoid` aggregate is rejected by `validate_score_variant`. When the key is **absent**, the fallback is the full surface `[PRIMARY_SCORE_VARIANT, *AGG_METHODS]` (primary plus all three weighted hypotheses). |
+
+### `[pooling.hypotheses]` sub-section
+
+| Key | Type | Default | Controls |
+| --- | --- | --- | --- |
+| `weighted_reductions` | `list[str]` | `["target_weighted", "bidirectional_weighted", "normalized_mean_pair_weighted"]` (code) | The legacy weighted hypothesis block, read into `AGG_METHODS` at `strategy_binned/_constants.py:76`. Options: `target_weighted`, `bidirectional_weighted`, `normalized_mean_pair_weighted` (the Part B weighted directional reductions). These are labelled **legacy weighted hypotheses** — opt-in comparison formulas, never default primary semantics; they are evaluated only when their names are explicitly added to `pooling.score_variants`. Legacy generic reductions (`mean`/`median`/`max`/`min`) are rejected, and `agg_method="medoid"` is rejected; `rep_type="medoid"` remains a valid **representation** (observed-patch baseline), not an aggregation method. |
 
 ---
 
@@ -3944,3 +4152,89 @@ Flat phases call `discover_audio()` directly (filesystem-first). Binned phases c
 `db.load_all_songs(con)` (DB-first). Both produce the same logical set of songs when ingest
 has run, but the binned path relies on the DB having `path` populated per song. This is why
 `ingest` is always the first phase.
+
+---
+
+## Score-variant identity (follow-on primary experiment — Phase 2)
+
+### Primary vs hypothesis scoring semantics
+
+* The authoritative **primary** scoring semantics is `max_per_candidate_segment`
+  (see `scoring_harness.SegmentScoreTrace`). It is routable through PTC analysis
+  via `strategy_binned._process.compute_score_variant_mats`.
+* The three legacy weighted reductions (`target_weighted`,
+  `bidirectional_weighted`, `normalized_mean_pair_weighted`) remain implemented
+  and numerically tested, but are **labelled legacy weighted hypothesis**
+  comparison formulas — opt-in only, never authoritative primary semantics.
+* A generic `mean` / `median` / `max` / `min` / `medoid` aggregate must never
+  re-enter as a scoring method. `validate_score_variant` rejects these at the
+  request boundary. (`rep_type=medoid` remains a valid *representation*.)
+
+### Allowed score variants
+
+`strategy_binned._constants`:
+* `_ALLOWED_SCORE_VARIANTS = ("max_per_candidate_segment", *_ALLOWED_AGG_METHODS)`
+* `PRIMARY_SCORE_VARIANT = "max_per_candidate_segment"`
+* `SCORE_VARIANTS` — the scoring surface actually evaluated for binned analysis.
+  Defaults to `[PRIMARY_SCORE_VARIANT, *AGG_METHODS]`; config
+  `pooling.score_variants` (Phase 3) may narrow it. Every entry is validated
+  against `_ALLOWED_SCORE_VARIANTS`.
+* `validate_score_variant(name) -> str` — raises `ValueError` for unknown names
+  and for any generic aggregate.
+
+### Score-variant compute surface (`strategy_binned._process`)
+
+* `ScoreVariantResult` (frozen dataclass) — `score_variant`, `variant`
+  (ambiguity variant name), `tie_policy`, `collision_policy`, `matrix` (the
+  `[n, n]` float32 scalar retrieval matrix, rows = source), `traces`
+  (bounded per-pair `SegmentScoreTrace` records).
+* `compute_score_variant_mats(norm_a, norm_b, weights_a, weights_b, metric, *,
+  score_variant=PRIMARY_SCORE_VARIANT, tie_policy, collision_policy)` — returns
+  `ScoreVariantResult`. Requires `metric == "cosine"`; only the primary variant
+  is implemented here (a weighted hypothesis raises `ValueError`). Every ordered
+  `(i, j)` pair is scored independently; reverse pairs are computed separately
+  from their own arrays — never by transposing/copying the forward matrix.
+* `score_variant_trace_summary(result) -> dict[str, float]` — bounded, finite-only
+  scalar summary (`trace_n_pairs`, `trace_numerator_sum/mean`,
+  `trace_denominator_sum/mean`, `trace_collision_count`, `trace_winner_count`,
+  `trace_retained_contributions`, `trace_dropped_contributions`, `trace_finite`).
+  Never the raw matrix or per-pair contribution arrays.
+* `compute_score_variant_retrieval_rows(result, ...) -> (rows, per_head_rows,
+  trace_summary)` — retrieval rows whose DTO `agg_method` carries
+  `result.score_variant` (the explicit score-variant identity) plus the bounded
+  trace summary.
+
+### Orchestration (`common.analyze`)
+
+* The binned branch iterates the configured `score_variants` (from
+  `extra_cfg["score_variants"]`, default `SCORE_VARIANTS`). The primary variant
+  uses `compute_score_variant_mats` (matrix + traces); weighted hypotheses use
+  `compute_agg_mats`.
+* For the primary variant, only `score_variant_trace_summary(...)` (finite
+  scalars) is persisted into `analyze_metrics`; the strategy key — whose
+  position-6 `agg_method` is `max_per_candidate_segment` — is the trace
+  reference. Raw unbounded matrices/contribution arrays are never written to
+  scalar metric rows.
+* `_build_expected_strategy_keys` iterates `SCORE_VARIANTS` (a superset of
+  `AGG_METHODS`), so primary keys participate in done-set checks.
+
+### Score-variant identity end-to-end
+
+* **Strategy key** — position 6 (`agg_method`) of a `ptc:`/`ctp:` key carries the
+  score-variant identity (`max_per_candidate_segment` or a weighted name).
+* **Retrieval-row DTO** — `_BinnedRetrievalRow.agg_method` carries it.
+* **Report decode** — `report._base._decode_strategy_key` round-trips position 6
+  into `agg_method`; `agg_label` renders `max_per_candidate_segment` as
+  `max-per-candidate` and the weighted names as `target-wtd` / `bidir-wtd` /
+  `norm-pair-wtd`.
+* **Cache/matrix identity** — `matrix_cache_identity` accepts an optional
+  `score_variant` keyword and folds it (validated) into the identity hash, so a
+  primary-variant cache can never collide with a different scoring method.
+
+### Invariants preserved (unchanged from the completed repair)
+
+* PTC segmentation is unit-vector; `act[1]` is the class-1 head score everywhere
+  (`act[0]` never used); `disc_general` averages only non-zero valid components;
+  there is no `disc_album` key anywhere; reverse-direction pair calculations are
+  computed separately (never copied from transposes); matching-corpus rejection
+  and versioned cache identity are unchanged.

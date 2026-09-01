@@ -359,8 +359,10 @@ def section_unified_table(df: pd.DataFrame) -> dict:
         "Unified Ranking",
         description=(
             "Flat and binned configurations ranked by `map_k_general`, `map_k_artist` across all backbones. "
+            "MAP@k and discrimination are evaluation lenses (not optimization objectives); each is shown "
+            "independently. "
             "Full configuration identity survives: flat rows show their flat strategy in `config`; binned rows "
-            "show pathway, head, bin mode, threshold, rep_a, rep_b, and aggregate in `config`, and `pathway`/`k` "
+            "show pathway, head, bin mode, threshold, rep_a, rep_b, and score variant in `config`, and `pathway`/`k` "
             "columns distinguish ptc/ctp/flat and evaluation K. Table columns include `map_k_general`, "
             "`map_k_artist`, `map_k_genre`, `map_k_head`, disc scores, `flat_binned_spearman`, and "
             "`flat_binned_beneficial_reorder_rate`. Blue bars = flat medoid baseline, amber bars = best binned "
@@ -563,6 +565,7 @@ def section_per_backbone(df: pd.DataFrame) -> dict:
         "Per-Backbone Analysis",
         description=(
             "Scatter: each point is one configuration — stars mark Pareto-optimal points. "
+            "disc and MAP@k are evaluation lenses, not optimization objectives. "
             "Δ bar: binned score minus the explicit flat medoid baseline "
             "(global_pool:{backbone}:medoid) (green = gain, red = loss)."
         ),

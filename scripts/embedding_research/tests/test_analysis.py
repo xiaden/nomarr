@@ -126,6 +126,67 @@ def test_run_binned_no_cache_files_writes_no_rows(con, monkeypatch):
     assert _count_rows(con, "binned_ctp_vecs") == 0
 
 
+def test_head_pool_legacy_ptc_mixed_heads_no_double_count(con, monkeypatch, tmp_path):
+    """Legacy PTC cache + mixed cached-valid / missing heads must not double-count n_songs.
+
+    Regression for a bug where the legacy-format ``_bump_combo`` cited below used
+    the all-heads default while the cached-valid heads were already counted as
+    pooled for the same combo in the same song, so a cached-valid head could report
+    ``n_songs == 2`` for one song.  The legacy bump is now scoped to the missing
+    heads only.
+    """
+
+    _stub_psutil(monkeypatch)
+    _stub_ml_session_comp(monkeypatch)
+    monkeypatch.setattr(classify_mod, "bootstrap_nomarr", lambda: None)
+    monkeypatch.setattr(classify_mod, "HEADS", {"effnet": {"mood": "model.onnx", "genre": "model.onnx"}})
+    patch_file = tmp_path / "patches.npy"
+    np.save(patch_file, np.zeros((1, 4), dtype=np.float32))
+    monkeypatch.setattr(classify_mod, "patches_path", lambda _sid, _bb: patch_file)
+
+    head_sessions = {"effnet": {"mood": object(), "genre": object()}}
+
+    # The shared PTC boundary cache declares the song/backbone combo, but the npz
+    # is a legacy format lacking bin_start_idx/bin_end_idx.
+    monkeypatch.setattr(
+        classify_mod._binned_ptc_cache,
+        "list_done_keys",
+        lambda: {("s1", "effnet", "temporal_global", 1.0)},
+    )
+    legacy_npz = tmp_path / "legacy_ptc.npz"
+    np.savez(legacy_npz, weights=np.array([1, 1], dtype=np.int32))
+    monkeypatch.setattr(classify_mod._binned_ptc_cache, "cache_path", lambda *_a, **_k: legacy_npz)
+
+    # "mood" is cached-valid; "genre" is missing (not cached).
+    monkeypatch.setattr(
+        classify_mod._binned_ptc_heads_cache,
+        "is_done",
+        lambda _bb, head, _bm, _st, _sid, **_kw: head == "mood",
+    )
+    monkeypatch.setattr(
+        classify_mod._binned_ptc_heads_cache,
+        "check_cache_valid",
+        lambda *a, **_k: a[1] == "mood",
+    )
+    monkeypatch.setattr(classify_mod._binned_ptc_heads_cache, "config_dir", lambda *_a, **_k: tmp_path / "empty_heads")
+
+    manifest = classify_mod.run_shared_ptc_head_pooling(
+        con,
+        song_ids=frozenset({"s1"}),
+        backbones=["effnet"],
+        heads=["mood", "genre"],
+        head_sessions=head_sessions,
+    )
+
+    by_head = {r.head: r for r in manifest.results}
+    # cached-valid "mood" counted exactly once as pooled for the song (not twice)
+    assert by_head["mood"].n_songs == 1, by_head["mood"]
+    assert by_head["mood"].n_pooled == 1, by_head["mood"]
+    # missing "genre" counted once via the legacy-format path, never pooled
+    assert by_head["genre"].n_songs == 1, by_head["genre"]
+    assert by_head["genre"].n_pooled == 0, by_head["genre"]
+
+
 # ---------------------------------------------------------------------------
 # 2. common/analyze.py + similarity metrics pipeline
 # ---------------------------------------------------------------------------

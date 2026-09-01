@@ -27,8 +27,16 @@ from scripts.embedding_research import db, similarity
 from scripts.embedding_research.cache import flat_heads as _flat_heads_cache
 from scripts.embedding_research.config import BACKBONES, HEADS
 from scripts.embedding_research.corpus import MatchingCorpusManifest, validate_matching_corpus
-from scripts.embedding_research.strategy_binned._constants import AGG_METHODS
-from scripts.embedding_research.strategy_binned._process import compute_agg_mats
+from scripts.embedding_research.strategy_binned._constants import (
+    _ALLOWED_AGG_METHODS,
+    PRIMARY_SCORE_VARIANT,
+    SCORE_VARIANTS,
+)
+from scripts.embedding_research.strategy_binned._process import (
+    compute_agg_mats,
+    compute_score_variant_mats,
+    score_variant_trace_summary,
+)
 
 StrategyType = Literal["global_pool", "ptc", "ctp"]
 LoadVecsFn = Callable[[str, str, Any, dict[str, Any]], tuple[Any, list[str], list[str], list[str], list[str]]]
@@ -101,11 +109,11 @@ def _build_expected_strategy_keys(backbone: str, strategy_name: str, cfg: Analyz
         strategy_key_fn(
             backbone,
             strategy_name,
-            _copy_extra_cfg(extra_cfg, rep_a=rep_a, rep_b=rep_b, agg_method=agg_method),
+            _copy_extra_cfg(extra_cfg, rep_a=rep_a, rep_b=rep_b, agg_method=scoring_method),
         )
         for rep_a in rep_types
         for rep_b in rep_types
-        for agg_method in AGG_METHODS
+        for scoring_method in SCORE_VARIANTS
     }
 
 
@@ -473,22 +481,53 @@ def analyze(
 
             rows_all: list[tuple[str, str, dict[str, Any], dict[str, Any]]] = []
             pair_payloads = _normalise_binned_pairs(vecs, cfg["extra_cfg"])
+            # Score variants actually evaluated for this run: the configured scoring
+            # surface — the primary ``max_per_candidate_segment`` variant plus any
+            # opt-in weighted hypotheses.  The shipped config sets
+            # ``pooling.score_variants=["max_per_candidate_segment"]`` (primary-only);
+            # the full surface ``[primary, *AGG_METHODS]`` is evaluated only when the
+            # key is absent from the config.
+            score_variants = [
+                str(v) for v in cast("Iterable[str]", cfg["extra_cfg"].get("score_variants", SCORE_VARIANTS))
+            ]
             for pair_payload in pair_payloads:
                 rep_a = pair_payload.get("rep_a")
                 rep_b = pair_payload.get("rep_b")
                 norm_a_all = pair_payload["norm_a_all"]
                 norm_b_all = pair_payload["norm_b_all"]
+                weights_a = pair_payload["weights_a"]
+                weights_b = pair_payload["weights_b"]
 
                 for sim_metric in sim_metric_names:
-                    agg_mats = compute_agg_mats(
-                        norm_a_all,
-                        norm_b_all,
-                        pair_payload["weights_a"],
-                        pair_payload["weights_b"],
-                        sim_metric,
-                    )
+                    # Legacy weighted hypotheses (opt-in, labelled comparison formulas).
+                    # Only build the weighted matrices when at least one weighted
+                    # hypothesis is actually on the requested scoring surface — the
+                    # default primary-only path never needs them.
+                    weighted_mats = None
+                    if any(m in score_variants for m in _ALLOWED_AGG_METHODS):
+                        weighted_mats = compute_agg_mats(norm_a_all, norm_b_all, weights_a, weights_b, sim_metric)
+                    # Primary score variant: scalar matrix + bounded per-pair traces.
+                    sv_result = None
+                    if PRIMARY_SCORE_VARIANT in score_variants:
+                        sv_result = compute_score_variant_mats(
+                            norm_a_all,
+                            norm_b_all,
+                            weights_a,
+                            weights_b,
+                            sim_metric,
+                        )
 
-                    for agg_method, sim_mat in agg_mats.items():
+                    for scoring_method in score_variants:
+                        if scoring_method == PRIMARY_SCORE_VARIANT:
+                            # sv_result is guaranteed non-None when the primary
+                            # variant is part of the requested scoring surface.
+                            assert sv_result is not None
+                            sim_mat = sv_result.matrix
+                        else:
+                            # A weighted hypothesis is present in score_variants
+                            # (non-primary), so weighted_mats was built above.
+                            assert weighted_mats is not None
+                            sim_mat = weighted_mats[scoring_method]
                         strategy_key = cfg["strategy_key_fn"](
                             backbone,
                             strategy_name,
@@ -496,7 +535,7 @@ def analyze(
                                 cfg["extra_cfg"],
                                 rep_a=rep_a,
                                 rep_b=rep_b,
-                                agg_method=agg_method,
+                                agg_method=scoring_method,
                             ),
                         )
                         if not force and (strategy_key, sim_metric, k) in done_set:
@@ -514,6 +553,11 @@ def analyze(
                         per_song = metrics.pop("per_song", {})
                         metrics.pop("ap_k_genre", None)
                         metrics.pop("ap_k_head", None)
+                        if scoring_method == PRIMARY_SCORE_VARIANT:
+                            # Persist only the bounded, finite-only trace summary —
+                            # never the raw matrix or per-pair contribution arrays.
+                            assert sv_result is not None
+                            metrics.update(score_variant_trace_summary(sv_result))
                         rows_all.append((strategy_key, sim_metric, metrics, per_song))
 
             for strategy_key, sim_metric, metrics, per_song in rows_all:
