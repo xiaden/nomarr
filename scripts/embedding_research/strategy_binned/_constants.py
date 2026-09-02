@@ -125,3 +125,43 @@ _BIN_POOL_STRATEGIES: dict[str, _Callable[[_np.ndarray], _np.ndarray]] = {
     "max": lambda x: x.max(axis=0).astype(_np.float32),
     "min": lambda x: x.min(axis=0).astype(_np.float32),
 }
+
+
+# ---------------------------------------------------------------------------
+# Optimizer evaluation representation (R14 repair: no synthetic median written)
+# ---------------------------------------------------------------------------
+# The optimizer evaluates one per-bin representation per (backbone, bin_mode).
+# Its configured representation must be the OBSERVED per-bin medoid (an actual
+# source patch, selected_global_idx set).  The coordinate-wise synthetic
+# "median" rep (a never-observed bin vector) is a STALE default and is rejected
+# at this vocabulary boundary so it can never enter the optimizer's sim matrix.
+# mean/max/min remain valid *representations* (not optimizer defaults); only the
+# documented stale synthetic "median" is forbidden here.
+
+_OPTIMIZER_FORBIDDEN_REP = "median"
+
+
+def validate_optimizer_representation(rep_type: str) -> str:
+    """Validate an optimizer ``[optimization.strategy].rep_type`` value.
+
+    Rejects the stale coordinate-wise synthetic ``"median"`` representation
+    (which would write a never-observed bin vector) and any unknown name; the
+    supported observed-source default is ``"medoid"``.
+    """
+    if rep_type == _OPTIMIZER_FORBIDDEN_REP:
+        raise ValueError(
+            "optimization.strategy.rep_type='median' is the stale coordinate-wise synthetic "
+            "representation and is rejected; the optimizer representation must be an observed "
+            "source patch. Use rep_type='medoid'."
+        )
+    if rep_type not in _ALLOWED_REP_TYPES:
+        raise ValueError(f"Unknown optimizer rep_type={rep_type!r}. Allowed: {list(_ALLOWED_REP_TYPES)}")
+    return rep_type
+
+
+# Fail loudly at import if the shipped research_config.toml still carries the
+# stale synthetic "median" optimizer rep (so a stale config is rejected, never
+# silently evaluated as a synthetic centroid).
+_optim_strategy_cfg = _cfg.get("optimization", {}).get("strategy", {})
+if "rep_type" in _optim_strategy_cfg:
+    validate_optimizer_representation(_optim_strategy_cfg["rep_type"])

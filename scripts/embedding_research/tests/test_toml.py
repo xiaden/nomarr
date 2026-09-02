@@ -134,3 +134,65 @@ def test_optimization_strategy_agg_method_is_target_weighted() -> None:
     cfg = research_toml.load_research_config()
     # [optimization.strategy] is a sub-table of [optimization] in the TOML.
     assert cfg["optimization"]["strategy"]["agg_method"] == "target_weighted"
+
+
+def test_optimization_strategy_rep_type_is_observed_medoid() -> None:
+    """[optimization.strategy] rep_type is the OBSERVED medoid, not stale synthetic median.
+
+    The stale coordinate-wise synthetic "median" rep (a never-observed bin vector)
+    must never be the optimizer default: the shipped config declares the observed
+    source-patch "medoid" instead.
+    """
+    cfg = research_toml.load_research_config()
+    assert cfg["optimization"]["strategy"]["rep_type"] == "medoid"
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 (P3-S1): shipped config pins the primary vocabulary — EffNet /
+# observed-medoid / direct-L2 / cosine primary; archival CTP and optimization
+# disabled by default; no "median" as a primary rep anywhere.
+# ---------------------------------------------------------------------------
+
+
+def test_shipped_config_pins_effnet_cosine_and_direct_l2_thresholds() -> None:
+    """The shipped default is EffNet-only, cosine metric, direct unit-vector L2 thresholds.
+
+    ``dist_thresholds`` are direct normalized-L2 distance values (the ``direct_l2``
+    semantic), NOT std multipliers. ``[optimization]`` is disabled by default and
+    its ``search_range``/threshold grid is expressed in the same direct-L2 units.
+    """
+    cfg = research_toml.load_research_config()
+    assert cfg["pipeline"]["backbones"] == ["effnet"]
+    assert cfg["similarity"]["metrics"] == ["cosine"]
+    assert cfg["optimization"]["enabled"] is False
+    # Threshold grid is a direct-L2 sweep (monotone, no scalar multiplier applied).
+    thresholds = cfg["binning"]["dist_thresholds"]
+    assert all(t > 0.0 for t in thresholds)
+    assert thresholds == sorted(thresholds)
+
+
+def test_shipped_config_archival_ctp_disabled_by_default() -> None:
+    """CTP is archival and DISABLED by default: ``[archival_ctp] enabled=false``.
+
+    A default run performs no CTP work; CTP segment functions/rows/winners enter
+    only under an explicit opt-in (Plan E gates the phase at runtime — config only
+    here).
+    """
+    cfg = research_toml.load_research_config()
+    assert cfg["archival_ctp"]["enabled"] is False
+
+
+def test_shipped_config_never_declares_median_as_a_primary_rep() -> None:
+    """No shipped default declares the synthetic coordinate-wise ``median`` as a primary rep.
+
+    The flat baseline, per-bin rep, and optimizer rep are all observed medoid.
+    ``median`` may remain an *available* non-default pooling strategy but must
+    never be a shipped primary rep selection.
+    """
+    cfg = research_toml.load_research_config()
+    assert cfg["pooling"]["flat_strategies"] == ["medoid"]
+    assert cfg["pooling"]["rep_types"] == ["medoid"]
+    assert cfg["optimization"]["strategy"]["rep_type"] == "medoid"
+    # None of the shipped primary rep surfaces names the synthetic median.
+    primary_reps = cfg["pooling"]["flat_strategies"] + cfg["pooling"]["rep_types"]
+    assert "median" not in primary_reps

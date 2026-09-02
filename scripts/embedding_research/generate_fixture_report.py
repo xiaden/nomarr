@@ -64,7 +64,7 @@ if str(_REPO_ROOT) not in sys.path:
 
 from scripts.embedding_research.config import REPORT_DIR
 from scripts.embedding_research.corpus import MatchingCorpusManifest
-from scripts.embedding_research.db._schema import ensure_schema
+from scripts.embedding_research.db._schema import ensure_schema, require_supported_duckdb
 from scripts.embedding_research.db.head_phase import HeadPhaseProvenanceRow, write_head_phase_provenance
 from scripts.embedding_research.report import run as report_run
 
@@ -436,6 +436,7 @@ def build_fixture_con(include_musicnn_ctp: bool = False) -> duckdb.DuckDBPyConne
 
 
 def main() -> None:
+    require_supported_duckdb()
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
         "--include-musicnn-ctp",

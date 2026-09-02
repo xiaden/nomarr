@@ -15,11 +15,16 @@ import inspect
 import numpy as np
 import pytest
 
-from scripts.embedding_research.strategy_binned._constants import _ALLOWED_AGG_METHODS, _ALLOWED_REP_TYPES
+from scripts.embedding_research.strategy_binned._constants import (
+    _ALLOWED_AGG_METHODS,
+    _ALLOWED_REP_TYPES,
+    validate_optimizer_representation,
+)
 from scripts.embedding_research.strategy_binned._optimize import _eval_threshold, optimize_std_threshold
+from scripts.embedding_research.strategy_binned._pool import _pool_segment
 from scripts.embedding_research.strategy_binned._process import compute_agg_mats, compute_retrieval_rows
 from scripts.embedding_research.strategy_binned._weighted import target_weighted
-from scripts.embedding_research.vector_types import UnitTensor
+from scripts.embedding_research.vector_types import RawTensor, UnitTensor
 
 
 def _unit_tensor(rows: list[list[float]]) -> UnitTensor:
@@ -301,3 +306,49 @@ def test_allowed_rep_types_include_medoid() -> None:
     agg_method=medoid is rejected.
     """
     assert "medoid" in _ALLOWED_REP_TYPES
+
+
+def test_optimizer_rep_validator_accepts_observed_medoid() -> None:
+    """The optimizer representation default is the observed source medoid."""
+    assert validate_optimizer_representation("medoid") == "medoid"
+
+
+def test_optimizer_rep_validator_rejects_stale_synthetic_median() -> None:
+    """Config/behavior gate: the stale coordinate-wise synthetic 'median' optimizer rep is rejected.
+
+    Selecting the synthetic median as the optimizer representation would write a
+    never-observed bin vector into the sim matrix. The vocabulary boundary rejects
+    it loudly so a stale config cannot silently evaluate a synthetic centroid.
+    """
+    with pytest.raises(ValueError, match="medoid"):
+        validate_optimizer_representation("median")
+
+
+def test_optimizer_rep_validator_rejects_unknown_name() -> None:
+    with pytest.raises(ValueError, match="rep_type"):
+        validate_optimizer_representation("bogus")
+
+
+def test_shipped_default_pool_emits_observed_medoid_not_synthetic_median() -> None:
+    """Under the shipped default rep_types, _pool_segment emits an OBSERVED medoid.
+
+    Regression guard for R14: no synthetic coordinate-wise median vector is
+    written. With the default ``pooling.rep_types = ["medoid"]`` the per-bin pool
+    surface contains only the observed medoid (an actual source patch, identified
+    by selected_global_idx) — the synthetic "median" rep is absent.
+    """
+    raw_rows = [[2.0, 0.0], [0.0, 2.0], [1.0, 1.0]]  # deliberately non-symmetric
+    raw = np.asarray(raw_rows, dtype=np.float32)
+    rt = RawTensor(raw)
+    ut = rt.normalize()
+    payloads = _pool_segment(rt, ut, indices=[0, 1, 2])
+
+    # Synthetic coordinate-wise median must not appear in the default pool surface.
+    assert "median" not in payloads
+    assert "medoid" in payloads
+
+    med = payloads["medoid"]
+    # The medoid representation is an OBSERVED source patch, never synthetic.
+    sel = med["selected_global_idx"]
+    assert sel in (0, 1, 2)
+    np.testing.assert_array_equal(np.asarray(med["vec_raw"].data), raw[sel])

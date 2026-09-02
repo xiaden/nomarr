@@ -9,11 +9,23 @@ import numpy as np
 from scripts.embedding_research.cache import binned_ptc
 from scripts.embedding_research.helpers.binning import BIN_MODES, DIST_FNS, temporal_segment
 from scripts.embedding_research.helpers.binning import DIST_THRESHOLDS as STD_THRESHOLDS
-from scripts.embedding_research.strategy_binned._calibrate import _load_cached_calibration
+from scripts.embedding_research.helpers.thresholds import DIRECT_L2 as _DIRECT_L2
+from scripts.embedding_research.helpers.thresholds import STD_SCALED as _STD_SCALED
+from scripts.embedding_research.helpers.thresholds import (
+    ThresholdSemantics as _ThresholdSemantics,
+)
+from scripts.embedding_research.helpers.thresholds import (
+    resolve_threshold as _resolve_threshold,
+)
+from scripts.embedding_research.helpers.thresholds import (
+    validate_semantics as _validate_semantics,
+)
 from scripts.embedding_research.strategy_binned._pool import _pool_segment
 from scripts.embedding_research.vector_types import RawTensor, UnitTensor
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from scripts.embedding_research.common.segment import SegmentFn
 
 STRATEGY_NAMES: list[str] = [
@@ -109,45 +121,57 @@ def _cache_write(song_id: str, backbone: str, strategy_name: str, result: dict[s
 CACHE_WRITE_FN = _cache_write
 
 
-def make_segment_fn(con) -> SegmentFn:
-    """Build the PTC segmenting closure for a DuckDB-backed calibration source.
+def make_segment_fn(
+    con,
+    *,
+    semantics: _ThresholdSemantics = _DIRECT_L2,
+    calibration_records: Mapping[str, Mapping[str, object]] | None = None,
+) -> SegmentFn:
+    """Build the PTC segmenting closure.
 
-    Parameters
-    ----------
-    con
-        DuckDB connection used to load and cache per-backbone calibration data
-        that supplies the base threshold for each binning mode.
+    The DEFAULT threshold semantics is ``direct_l2``: the configured threshold
+    decoded from the strategy name is applied as a DIRECT unit-vector L2 distance
+    (``effective == configured``) and no calibration source is consulted.  The
+    explicit ``std_scaled`` legacy-fidelity track is available ONLY by requesting
+    ``semantics="std_scaled"`` together with an explicit per-bin-mode calibration
+    basis in ``calibration_records`` (a mapping keyed by bin mode whose values are
+    explicit calibration records carrying the multiplier basis).  Without a usable
+    explicit basis, ``std_scaled`` raises — the old silent ``x0.1`` fallback is
+    gone.  ``con`` is retained for signature compatibility (``run.py`` and existing
+    tests pass it); the resolved threshold never requires a DB connection under
+    either track.  The running-centroid segmentation algorithm itself is
+    preserved exactly.
 
     Returns
     -------
     SegmentFn
-        Callable that decodes a PTC strategy name, derives a segmentation
-        threshold from cached calibration, temporally segments the patch matrix,
-        pools each segment, and returns the segment metadata plus pooled vector
-        arrays.
+        Callable that decodes a PTC strategy name, resolves its effective
+        segmentation threshold, temporally segments the patch matrix, pools each
+        segment, and returns the segment metadata plus pooled vector arrays.
     """
-    calibration_by_backbone: dict[str, dict[str, dict[str, Any]] | None] = {}
+    _validate_semantics(semantics)
+    del con  # signature-compat seam only: threshold resolution needs no DB connection.
+    calibration_records = dict(calibration_records) if calibration_records else {}
+
+    def _resolve(bin_mode: str, configured: float) -> Any:
+        if semantics == _STD_SCALED:
+            basis = calibration_records.get(bin_mode)
+            if basis is None:
+                raise ValueError(
+                    f"std_scaled PTC segmentation requires an explicit calibration basis for "
+                    f"bin_mode={bin_mode!r}; no implicit p50/0.1 fallback is permitted"
+                )
+            return _resolve_threshold(configured, semantics=_STD_SCALED, calibration_record=basis)
+        return _resolve_threshold(configured, semantics=_DIRECT_L2)
 
     def segment_fn(patches: np.ndarray, backbone: str, strategy_name: str) -> dict[str, np.ndarray]:
+        del backbone  # SegmentFn contract: backbone arg required; resolution is backbone-independent.
         bin_mode, std_thresh = _decode_strategy_name(strategy_name)
-
-        calibration = calibration_by_backbone.get(backbone)
-        if backbone not in calibration_by_backbone:
-            calibration = _load_cached_calibration(con, backbone)
-            calibration_by_backbone[backbone] = calibration
-
-        mode_cal = calibration.get(bin_mode) if calibration is not None else None
-        base_threshold = 0.1
-        if mode_cal is not None:
-            p50 = mode_cal.get("p50")
-            if p50 is not None:
-                p50_float = float(p50)
-                if np.isfinite(p50_float) and p50_float != 0.0:
-                    base_threshold = p50_float
 
         raw_patches = RawTensor(patches)
         norm_patches = UnitTensor(patches)
-        threshold = std_thresh * base_threshold
+        resolution = _resolve(bin_mode, std_thresh)
+        threshold = resolution.effective
         segments = temporal_segment(norm_patches.data, threshold, DIST_FNS[bin_mode])
         if not segments:
             return {

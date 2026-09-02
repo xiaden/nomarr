@@ -8,6 +8,21 @@ description: Use when working on any file in scripts/embedding_research/. Covers
 ## When to use this skill
 Use when working on any file in `scripts/embedding_research/`. Load before reading any source file or making any edit.
 
+## Current storage state (2026-09-02 audit — supersedes stale details below)
+
+Vectors/segments/head outputs are **filesystem-only**; DuckDB holds scalars, metadata, and provenance. The follow-on repair (commits 72f4bc1c, 927ef544) did NOT move vectors into DuckDB — it deleted the sim-matrix caches, added `db/head_phase.py` (head_phase_provenance), and made FS caches canonical.
+
+**DuckDB — written by the pipeline:** `songs`, `analyze_metrics` (incl. `trace_*` scalars), `song_retrieval_metrics`, `binned_calibration`, `binned_song_stats`, `stratified_corpus`, `phase_timings`, `head_phase_provenance`.
+**DuckDB — DDL'd but unwritten (vestigial):** `pooled_vecs`, `head_results` (DEAD), `head_agreement_rows`, `binned_pair_sims`, `patch_features`, `truncation_robustness_rows`, `binned_ctp_vecs`, `binned_ptc_ctp_metrics`, `binned_classify_ctp`, `head_sim_corr_rows` (upsert fns for the last two exist but zero production callers).
+
+**Filesystem (OUTPUT_ROOT=scripts/outputs/embedding_research):** `patches/{sid}.{bb}.npy` raw patch embeddings (config.py deliberately keeps out of DB); `cache/{bb}/{strategy}/flat/{sid}.npy` flat pooled incl. **medoid** (pooling.STRATEGIES now includes medoid — old note claiming it didn't is stale); `cache/{bb}/heads/{head}/{strategy}/{ptc|ctp}/{sid}.npy`; `cache/binned_ptc/{tag}/{bb}/{bin_mode}/{thresh}/{sid}.npz` (pool_*_raw/norm, weights, outliers, bin_start/end_idx, medoid idx/centrality, head_*); `cache/binned_ctp/...` (archival); `cache/binned_ptc_heads/...` and `cache/binned_ctp_heads/...` (head-phase pools with provenance fields). `cache/sim.py` + `cache/sim_pairs.py` were **deleted** (Plan C) — pairwise sim/scoring matrices are in-memory only.
+
+**In-memory, discarded:** per-pair cosine/scoring matrices, full SegmentScoreTrace records (only 10 `trace_*` scalars persist via `score_variant_trace_summary`, strategy_binned/_process.py:351-381), matching-corpus manifests (recomputed per run; hash surfaces only in report/head_phase_provenance). `matrix_cache_identity`/`versioned_cache_root` (cache_identity.py) are defined+tests only — zero production callers.
+
+**Current config:** effnet-only primary (flat medoid + PTC medoid segments, score_variant=`max_per_candidate_segment`); MusicNN opt-in; CTP archival (`[archival_ctp] enabled=false`).
+
+**Stale artifacts:** on-disk `research.duckdb` (7.2GB, Aug 31) predates the follow-on contract (per FINDINGS.md Plan E note); the on-disk report is the synthetic fixture report (generate_fixture_report.py), and no `cache/`/`patches/` dirs exist yet — the real pipeline has NOT been run to completion post-repair.
+
 ## Before Any Edit
 1. Run baseline tests: `python -m pytest scripts/embedding_research/tests/ -x -q` (must pass before starting)
 2. Read the contracts section for every file you'll touch — contracts live in `scripts/embedding_research/_contracts_part_1.md` through `_contracts_part_7.md`

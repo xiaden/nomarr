@@ -62,6 +62,20 @@ EXPECTED_TABLES = {
     "song_retrieval_metrics",
     "stratified_corpus",
     "head_phase_provenance",
+    # Frozen observation stream registries (Plan B, Phase 1) — scalar metadata over float32
+    # sidecars, no PK/UNIQUE (application-level identity).
+    "stream_registry",
+    "head_stream_registry",
+    # Post-run phase/state surfaces (Plan B, Phase 2; Plan C Phase 4 adds catalog_metadata)
+    # — no PK/UNIQUE.
+    "run_provenance",
+    "corpus_state",
+    "catalog_metadata",
+    # Segmentation catalog (Plan C, Phase 1) — PRIMARY segmentation schema, scalar columns
+    # only, no PK/UNIQUE (application-level integrity).
+    "seg_config",
+    "seg_meta",
+    "seg_membership",
 }
 
 
@@ -76,7 +90,7 @@ def test_schema_creates_all_tables(con):
 # ---------------------------------------------------------------------------
 
 
-def test_upsert_head_roundtrip(con, tmp_flat_head_cache):
+def test_upsert_head_roundtrip(con, tmp_flat_head_cache):  # noqa: ARG001 - fixtures used for side effects
     from scripts.embedding_research.cache import flat_heads
 
     act = [0.3, 0.7]
@@ -86,12 +100,12 @@ def test_upsert_head_roundtrip(con, tmp_flat_head_cache):
     assert list(result) == pytest.approx(act)
 
 
-def test_head_strategy_done_false_when_missing(con, tmp_flat_head_cache):
+def test_head_strategy_done_false_when_missing(con, tmp_flat_head_cache):  # noqa: ARG001
     result = head_strategy_done("s_none", "bb", "hd", "mean")
     assert result is False
 
 
-def test_head_strategy_done_true_when_both_pathways(con, tmp_flat_head_cache):
+def test_head_strategy_done_true_when_both_pathways(con, tmp_flat_head_cache):  # noqa: ARG001
     upsert_head("s2", "bb", "hd", "mean", "ptc", [0.4, 0.6])
     assert head_strategy_done("s2", "bb", "hd", "mean") is False
     upsert_head("s2", "bb", "hd", "mean", "ctp", [0.55, 0.45])

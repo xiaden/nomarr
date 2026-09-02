@@ -1,4 +1,12 @@
-"""Unit tests for CTP pure helpers and segment closure behavior."""
+"""Unit tests for CTP pure helpers and segment closure behavior.
+
+LEGACY SCALED track (whole module, ``pytestmark = legacy_scaled``): CTP is
+ARCHIVAL and its segmentation threshold is a per-song score_std multiplier
+(``strategy_ctp/segment_fn.py``), NOT the new-default ``direct_l2`` semantics.
+Every assertion here pins legacy CTP machinery/behavior and claims nothing about
+the new-default threshold track.  No CTP behavior is changed; this module is only
+labeled so it is never mistaken for a direct-L2 default test.
+"""
 
 from __future__ import annotations
 
@@ -14,6 +22,9 @@ from scripts.embedding_research.strategy_ctp.segment_fn import (
     _run_head_session,
     make_segment_fn,
 )
+
+# Whole-file marker: this module pins the ARCHIVAL LEGACY SCALED CTP track.
+pytestmark = pytest.mark.legacy_scaled
 
 
 def test_ctp_decode_strategy_name_valid() -> None:

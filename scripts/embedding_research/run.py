@@ -890,6 +890,12 @@ def main() -> None:
         _reset_cache_dirs(reset_optimizer=False, reset_binned=True)
         return
 
+    # Startup duckdb version gate: asserts the installed duckdb satisfies
+    # 1.5 <= v < 2.0 before ANY pipeline phase runs (fails loudly otherwise).
+    from scripts.embedding_research.db._schema import require_supported_duckdb as _require_supported_duckdb
+
+    _require_supported_duckdb()
+
     # Build config from TOML
     _toml = _load_research_config()
     _pipe = _toml.get("pipeline", {})

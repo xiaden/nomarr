@@ -1,52 +1,68 @@
 """
 DuckDB schema, connection management, and DDL for the embedding research DB.
 
-Tables (18 total)
+Tables (26 total)
 -----------------
-Flat-embedding pipeline:
+Plan C (Phase 1) makes ``seg_config`` / ``seg_meta`` / ``seg_membership`` the PRIMARY
+segmentation schema, replacing the stale copied-threshold PTC vector model (R6). Group
+classifications below follow the DD active/archival/dead vocabulary (R14). The DDL of the
+obsolete BLOB/vector threshold tables is RETAINED but labeled DEAD: per the Plan A caller
+audit they have zero live writers, and physical removal is deliberately deferred to the
+explicit Plan E ``cleanup --scope dead`` pass (nothing is silently dropped in this plan).
+
+ACTIVE — frozen-stream / catalog / provenance + core live-writer tables (primary):
+  stream_registry           (song_id, backbone, artifact_ref, patch_count, dim, dtype,
+                             format_version, fingerprint_sha256, preprocess_fn,
+                             preprocess_version, backbone_model_hash, audio_params,
+                             embed_semantics_version, provenance_source,
+                             provenance_assumption, status, run_id, created_at, updated_at)
+                             -- no PK/UNIQUE
+  head_stream_registry      (song_id, backbone, artifact_ref, patch_count, head_ids,
+                             dim_by_head, format_version, fingerprint_sha256, preprocess_fn,
+                             preprocess_version, backbone_model_hash, alignment_version,
+                             status, run_id, created_at, updated_at)  -- no PK/UNIQUE
+  run_provenance            (run_id, phase, status, started_at, finished_at,
+                             input_artifact_hashes, output_artifact_hashes, config_hash,
+                             song_count, warning_count, software_versions, command_line,
+                             structural_change_summary, retained, view_refs)  -- no PK/UNIQUE
+  corpus_state              (state_version, registered_song_count, eligible_song_count,
+                             complete_flag, latest_catalog_run_id, latest_search_view_hash,
+                             reconciled_at, reconciliation_status)  -- singleton, no PK/UNIQUE
+  catalog_metadata          (catalog_semantics_version, serialization_version, manifest_version,
+                             backbone_set, latest_catalog_run_id, latest_config_ids,
+                             reconciled_at)  -- metadata-only singleton, no PK/UNIQUE
+
+Segmentation catalog (Plan C, Phase 1) — PRIMARY segmentation schema:
+  seg_config                (config_id INTEGER, backbone, bin_mode, threshold_configured,
+                             threshold_effective, semantics, calibration_record,
+                             outlier_window, strategy_version, alias_of_config_id,
+                             canonical_config_hash, created_at, run_id)
+  seg_meta                  (config_id, song_id, seg_id, start_idx, end_idx, member_count,
+                             absorbed_outlier_count, weight, medoid_source_patch_idx,
+                             segment_signature, created_at)
+  seg_membership            (config_id, song_id, seg_id, member_patch_idx,
+                             is_absorbed_outlier, membership_version)
+  Scalar columns ONLY (no vector/BLOB); NO PRIMARY KEY / UNIQUE (deliberate DuckDB
+  ART/WAL policy — application-level uniqueness is asserted before commit and rechecked
+  after build). Timestamps are INTEGER milliseconds. ``seg_membership`` is the one
+  authoritative membership relation; ``start_idx/end_idx`` are structural report ranges.
+
+ACTIVE — core experiment tables with live writers (unchanged):
   songs                     (song_id PK, path, artist, album, title, genre)
-  pooled_vecs               (song_id, backbone, strategy, vec FLOAT[])
-  head_results              (song_id, backbone, head, strategy, pathway, act FLOAT[])
   analyze_metrics           (strategy_key, strategy_type, sim_metric, k, metric, value)
   song_retrieval_metrics    (strategy_key, sim_metric, k, song_id, ap_k, mrr, recall_k,
                              disc_artist_contrib, disc_genre_contrib, disc_head_contrib)
-
-Binned-embedding pipeline (one vector per STD-threshold bin per song):
-  binned_calibration        (backbone, dist_mode, p10, p25, p50, p75, mean_d, sigma_d,
-                             n_patches)
-  head_agreement_rows       (backbone, head, bin_mode, std_thresh, agreement_rate,
-                             n_songs)
-  binned_song_stats         (song_id, backbone, bin_mode, std_thresh, n_bins,
-                             n_patches, n_outliers, min_bin_size, max_bin_size,
-                             mean_bin_size)
-  binned_pair_sims          (song_a, song_b, backbone, bin_mode, std_thresh, rep_a,
-                             rep_b, sim_metric, agg_method, score)
-  patch_features            (song_id, patch_idx, rms, spectral_centroid,
-                             onset_strength, chroma_key)
-  binned_classify_ctp       (song_id, backbone, head, bin_mode, std_thresh, bin_id,
-                             act BLOB, weight)
-  truncation_robustness_rows (backbone, bin_mode, std_thresh, flat_mean_sim,
-                              binned_mean_sim, truncation_robustness_delta)
-
-CTP-derived (segment boundaries from classifier score stream, head-specific):
-  binned_ctp_vecs           (song_id, backbone, head, bin_mode, std_thresh, bin_id,
-                             pool_strategy, vec_raw BLOB, vec_norm BLOB, weight,
-                             outlier_count)
-  binned_ptc_ctp_metrics    (backbone, bin_mode, std_thresh, head, divergence_mean,
-                             bin_count_var, sim_align_corr)
-  head_sim_corr_rows        (backbone, bin_mode, std_thresh, rep_a, rep_b, sim_metric,
-                             agg_method, k, head, corr)
-
-Corpus stratification:
   stratified_corpus         (config_hash TEXT, song_id TEXT)
-
-Shared-boundary head phase (additive provenance):
   head_phase_provenance     (backbone, head, bin_mode, threshold, boundary_source,
                              head_pool_variant PK, status, reason, n_songs, n_pooled,
                              finite, scoring_semantics_version, reference_corpus_hash)
-
-Infrastructure:
   phase_timings             (run_ts, phase, elapsed_s)
+
+DEAD — obsolete copied-vector / threshold tables (DDL'd, zero live writers per the Plan A
+caller audit; DDL retained pending the explicit Plan E cleanup pass, never a primary input):
+  pooled_vecs, head_results, binned_calibration, binned_song_stats, head_agreement_rows,
+  patch_features, binned_pair_sims, binned_classify_ctp, truncation_robustness_rows,
+  binned_ctp_vecs, binned_ptc_ctp_metrics, head_sim_corr_rows
 """
 
 from __future__ import annotations
@@ -294,6 +310,56 @@ CREATE TABLE IF NOT EXISTS song_retrieval_metrics (
     PRIMARY KEY (strategy_key, sim_metric, k, song_id)
 );
 
+-- Frozen observation stream registries (Plan B, Phase 1). A' float32 sidecar
+-- payloads + scalar metadata; NO PRIMARY KEY / UNIQUE constraint (deliberate
+-- DuckDB ART/WAL policy — application uniqueness is asserted before commit).
+-- Logical identity (song_id, backbone) is application-level; artifact_ref is
+-- opaque + root-relative (resolved only inside the StreamStore, never a path
+-- identity / SQL key). Timestamps are INTEGER milliseconds (project convention).
+CREATE TABLE IF NOT EXISTS stream_registry (
+    song_id                 TEXT NOT NULL,
+    backbone                TEXT NOT NULL,
+    artifact_ref            TEXT NOT NULL,
+    patch_count             INTEGER NOT NULL,
+    dim                     INTEGER NOT NULL,
+    dtype                   TEXT NOT NULL,
+    format_version          TEXT NOT NULL,
+    fingerprint_sha256      TEXT NOT NULL,
+    preprocess_fn           TEXT,
+    preprocess_version      TEXT,
+    backbone_model_hash     TEXT,
+    audio_params            TEXT,
+    embed_semantics_version INTEGER NOT NULL,
+    provenance_source       TEXT NOT NULL,
+    provenance_assumption   TEXT,
+    status                  TEXT NOT NULL,
+    run_id                  TEXT NOT NULL,
+    created_at              BIGINT NOT NULL,
+    updated_at              BIGINT NOT NULL
+);
+
+-- Complete, patch-aligned per-song classifier-head stream registry.
+-- Same no-PK/no-UNIQUE policy; identity (song_id, backbone). head_ids and
+-- dim_by_head are canonical serialized scalar texts, not an opaque blob.
+CREATE TABLE IF NOT EXISTS head_stream_registry (
+    song_id                 TEXT NOT NULL,
+    backbone                TEXT NOT NULL,
+    artifact_ref            TEXT NOT NULL,
+    patch_count             INTEGER NOT NULL,
+    head_ids                TEXT NOT NULL,
+    dim_by_head             TEXT NOT NULL,
+    format_version          TEXT NOT NULL,
+    fingerprint_sha256      TEXT NOT NULL,
+    preprocess_fn           TEXT,
+    preprocess_version      TEXT,
+    backbone_model_hash     TEXT,
+    alignment_version       TEXT NOT NULL,
+    status                  TEXT NOT NULL,
+    run_id                  TEXT NOT NULL,
+    created_at              BIGINT NOT NULL,
+    updated_at              BIGINT NOT NULL
+);
+
 -- Shared-boundary head phase preparation provenance (Plan B, Phase 2).
 -- One row per (effnet, head, bin_mode, threshold) config tuple recording the
 -- head-boundary preparation status and per-configuration provenance.  ADDITIVE
@@ -317,6 +383,125 @@ CREATE TABLE IF NOT EXISTS head_phase_provenance (
     reference_corpus_hash     TEXT,
     PRIMARY KEY (backbone, head, bin_mode, threshold, boundary_source, head_pool_variant)
 );
+
+-- Post-run phase provenance (Plan B Phase 2; Plan C extends usage on this same table).
+-- One row per completed phase run.  NO PRIMARY KEY / UNIQUE constraint (application
+-- string ``run_id`` + ``phase``; DuckDB ART/WAL policy).  ``retained`` protects a row
+-- from manifest/view garbage collection; ``view_refs`` is a root-relative view-ref seed
+-- (empty now; Plan D populates it).  Timestamps are INTEGER milliseconds.
+CREATE TABLE IF NOT EXISTS run_provenance (
+    run_id                      TEXT NOT NULL,
+    phase                       TEXT NOT NULL,
+    status                      TEXT NOT NULL,
+    started_at                  BIGINT NOT NULL,
+    finished_at                 BIGINT,
+    input_artifact_hashes       TEXT,
+    output_artifact_hashes      TEXT,
+    config_hash                 TEXT,
+    song_count                  INTEGER NOT NULL,
+    warning_count               INTEGER NOT NULL,
+    software_versions           TEXT,
+    command_line                TEXT,
+    structural_change_summary   TEXT,
+    retained                    BOOLEAN NOT NULL DEFAULT FALSE,
+    view_refs                   TEXT
+);
+
+-- Corpus-level post-run state (Plan B Phase 2 base; Plan C extends usage on this same
+-- table).  SINGLETON: must hold zero-or-one rows; every update verifies that first and
+-- raises if the invariant is violated (more than one row = corruption).  NO PK/UNIQUE.
+-- Fields Plan C owns later (latest_catalog_run_id / latest_search_view_hash) are written
+-- empty/NULL now.  ``reconciled_at`` is INTEGER milliseconds.
+CREATE TABLE IF NOT EXISTS corpus_state (
+    state_version            INTEGER NOT NULL,
+    registered_song_count    INTEGER NOT NULL,
+    eligible_song_count      INTEGER NOT NULL,
+    complete_flag            BOOLEAN NOT NULL DEFAULT FALSE,
+    latest_catalog_run_id    TEXT,
+    latest_search_view_hash  TEXT,
+    reconciled_at            BIGINT NOT NULL,
+    reconciliation_status    TEXT
+);
+
+-- ── Segmentation catalog (Plan C, Phase 1) ────────────────────────────────────
+-- PRIMARY segmentation schema (R6): replaces the stale copied-threshold PTC vector
+-- model.  Scalar columns ONLY (no vector/BLOB); NO PRIMARY KEY / UNIQUE constraint
+-- (deliberate DuckDB ART/WAL policy — application-level uniqueness is asserted before
+-- commit and rechecked after build, per the DD).  Timestamps are INTEGER milliseconds.
+-- ``config_id`` is an integer identity allocated by the application.  ``semantics`` is
+-- ``direct_l2`` by default; ``std_scaled`` is explicit legacy-fidelity only.  Every row
+-- records BOTH thresholds (they are equal for ``direct_l2``).  ``calibration_record`` is
+-- the canonical calibration-basis text (literal ``'none'`` when there is no basis).
+-- ``alias_of_config_id`` points at an existing canonical config (NULL when unaliased);
+-- aliasing never changes identity.  ``canonical_config_hash`` = sha256 over the fixed
+-- canonical input ordering (helpers.thresholds.canonical_config_hash).
+CREATE TABLE IF NOT EXISTS seg_config (
+    config_id              INTEGER NOT NULL,
+    backbone               TEXT NOT NULL,
+    bin_mode               TEXT NOT NULL,
+    threshold_configured   DOUBLE NOT NULL,
+    threshold_effective    DOUBLE NOT NULL,
+    semantics              TEXT NOT NULL,
+    calibration_record     TEXT NOT NULL,
+    outlier_window         INTEGER NOT NULL,
+    strategy_version       INTEGER NOT NULL,
+    alias_of_config_id     INTEGER,
+    canonical_config_hash  TEXT NOT NULL,
+    created_at             BIGINT NOT NULL,
+    run_id                 TEXT NOT NULL
+);
+
+-- Per-segment structural metadata within one config/song.  ``start_idx/end_idx`` are
+-- STRUCTURAL REPORT RANGES ONLY — exact membership (incl. absorbed outliers) is the
+-- ``seg_membership`` relation below and is never reconstructed from a range.  ``weight``
+-- is an integer patch weight.  ``medoid_source_patch_idx`` is an OBSERVED source patch
+-- index (deterministic smallest-index tie break), never a copied vector (R7).
+-- ``segment_signature`` is the per-segment canonical signature text.  No PK/UNIQUE.
+CREATE TABLE IF NOT EXISTS seg_meta (
+    config_id                 INTEGER NOT NULL,
+    song_id                   TEXT NOT NULL,
+    seg_id                    INTEGER NOT NULL,
+    start_idx                 INTEGER NOT NULL,
+    end_idx                   INTEGER NOT NULL,
+    member_count              INTEGER NOT NULL,
+    absorbed_outlier_count    INTEGER NOT NULL,
+    weight                    INTEGER NOT NULL,
+    medoid_source_patch_idx   INTEGER NOT NULL,
+    segment_signature         TEXT,
+    created_at                BIGINT NOT NULL
+);
+
+-- The one AUTHORITATIVE membership relation: each source patch index is stored once,
+-- including absorbed outliers exactly as used by scoring and head pooling.  Application
+-- checks reject duplicate ``(config_id, song_id, seg_id, member_patch_idx)`` rows and
+-- reject indices outside the verified frozen source stream.  No PK/UNIQUE.
+CREATE TABLE IF NOT EXISTS seg_membership (
+    config_id              INTEGER NOT NULL,
+    song_id                TEXT NOT NULL,
+    seg_id                 INTEGER NOT NULL,
+    member_patch_idx       INTEGER NOT NULL,
+    is_absorbed_outlier    BOOLEAN NOT NULL,
+    membership_version     INTEGER NOT NULL
+);
+
+-- Catalog-level metadata (Plan C, Phase 4).  A small metadata-only SINGLETON (zero or
+-- one row, like corpus_state; more than one is corruption) carrying the identity-relevant
+-- catalog semantics / canonical-serialization / manifest versions, the backbone set, and
+-- the latest run/config identifiers.  Scalar columns only, NO PRIMARY KEY / UNIQUE
+-- (DuckDB ART/WAL policy).  It is included in the manifest and in the logical-state /
+-- schema-dump catalog_fingerprint check but is NOT duplicated into row identity.  This
+-- table NEVER stores catalog_fingerprint (that value is manifest-only and non-
+-- self-referential).  catalog_semantics_version / serialization_version / manifest_version
+-- are INTEGER; backbone_set is the sorted, comma-joined canonical backbone text.
+CREATE TABLE IF NOT EXISTS catalog_metadata (
+    catalog_semantics_version INTEGER NOT NULL,
+    serialization_version     INTEGER NOT NULL,
+    manifest_version          INTEGER NOT NULL,
+    backbone_set              TEXT,
+    latest_catalog_run_id     TEXT,
+    latest_config_ids         TEXT,
+    reconciled_at             BIGINT NOT NULL
+);
 """
 
 
@@ -325,6 +510,69 @@ def _require_duckdb() -> None:
         raise ImportError(
             "duckdb is not installed. Run:\n  pip install -r /workspace/scripts/embedding_research/requirements.txt"
         )
+
+
+# Supported duckdb LIBRARY version range (requirements.txt: ``duckdb>=1.5,<2.0``).
+# Only the *library* version is gated. DuckDB's on-disk *storage-format* version
+# is distinct provenance metadata and is treated as an opaque LABEL here (see
+# ``storage_version_label``) — it is never parsed or numerically compared against
+# a supported range. A future 2.x storage file is a separately approved follow-up,
+# never silently assumed compatible/incompatible off a numeric comparison.
+_SUPPORTED_DUCKDB_MIN: tuple[int, int] = (1, 5)
+_SUPPORTED_DUCKDB_MAX_EXCLUSIVE: tuple[int, int] = (2, 0)
+
+
+def _duckdb_version_tuple() -> tuple[int, int]:
+    """Return ``(major, minor)`` of the installed duckdb library version.
+
+    Raises RuntimeError if duckdb is absent or the version string is not
+    ``<major>.<minor>...`` numeric (an unknown/unparseable release is not
+    assumed safe).
+    """
+    _require_duckdb()
+    raw = getattr(duckdb, "__version__", "")
+    try:
+        parts = [int(part) for part in str(raw).split(".")[:2]]
+    except ValueError as exc:  # pragma: no cover - non-numeric duckdb version
+        raise RuntimeError(f"Cannot parse duckdb version {raw!r}") from exc
+    if len(parts) != 2:
+        raise RuntimeError(f"Unexpected duckdb version format {raw!r}")
+    return parts[0], parts[1]  # type: ignore[return-value]
+
+
+def require_supported_duckdb() -> None:
+    """Assert the installed duckdb LIBRARY version satisfies ``1.5 <= v < 2.0``.
+
+    Called at the research CLI entry points (``run.py`` ``main()`` and
+    ``generate_fixture_report.py`` ``main()``) before any DB work, not inside
+    ``connect()``. Fails loudly (RuntimeError) for duckdb outside the supported
+    range — e.g. the
+    stale ``>=0.10.0`` era or a hypothetical future 2.x — so unsupported-version
+    runs never silently proceed on an untested storage format.
+
+    Note: this gates the *library* version only. DuckDB *storage-format* version
+    metadata is recorded as a label (``storage_version_label``), never compared
+    numerically here.
+    """
+    _require_duckdb()
+    version = _duckdb_version_tuple()
+    if not (_SUPPORTED_DUCKDB_MIN <= version < _SUPPORTED_DUCKDB_MAX_EXCLUSIVE):
+        raise RuntimeError(
+            f"Unsupported duckdb version {duckdb.__version__!r}: this research package requires "
+            f"duckdb >=1.5,<2.0 (got {version[0]}.{version[1]}). Install a supported release:"
+            "\n  pip install -r /workspace/scripts/embedding_research/requirements.txt"
+        )
+
+
+def storage_version_label(value: object) -> str:
+    """Return a DuckDB storage-format version metadata value as an opaque LABEL.
+
+    Storage-format version is provenance/audit metadata for the research DB file.
+    It is intentionally never parsed or numerically compared against a supported
+    range (a hypothetical future 2.x storage value passes through unchanged as a
+    label; deciding whether it is compatible is a separately approved follow-up).
+    """
+    return str(value)
 
 
 def ensure_schema(con) -> None:

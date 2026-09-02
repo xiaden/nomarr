@@ -155,10 +155,14 @@ max_evals = 500
 
 [optimization.strategy]
 # Optimizer evaluation pathway (single strategy at a time).
-# rep_type options include medoid (a representation); agg_method supports the
-# three weighted directional reductions: target_weighted, bidirectional_weighted,
+# rep_type is the OBSERVED-source per-bin representation the optimizer evaluates:
+# "medoid" selects the actual observed segment patch (never a synthetic vector).
+# The stale coordinate-wise synthetic "median" rep is REJECTED by the config
+# vocabulary (validate_optimizer_representation) — selecting it would write a
+# never-observed bin vector into the sim matrix. agg_method supports the three
+# weighted directional reductions: target_weighted, bidirectional_weighted,
 # normalized_mean_pair_weighted. Legacy generic reductions (mean/median/max/min)
 # and agg_method=medoid are rejected.
-rep_type = "median"
+rep_type = "medoid"
 agg_method = "target_weighted"
 metric = "cosine"

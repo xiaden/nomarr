@@ -15,6 +15,19 @@ Ongoing notes from research runs. Add findings as they emerge — don't wait for
 
 ---
 
+## Frozen observation-stream and segmentation-catalog decision (2026-09)
+
+- **Status**: Approved design / implementation planning complete; no empirical corpus claim.
+- **Scope**: Research tooling only: `scripts/embedding_research`, its tests/docs, and formal planning artifacts. The deferred production quantized-stream design and all `nomarr/`/`frontend/` paths are excluded.
+- **Architecture**: A′ immutable float32 NumPy patch/head sidecars behind `StreamStore`, with DuckDB scalar registries and segmentation catalog. Sidecar paths are opaque artifact references, never identities. No Parquet, DuckDB BLOB, tar/Zarr, ANN v1, DuckDB 2.x transition, or new registry/catalog PK/UNIQUE constraints.
+- **Threshold semantics**: The documented unit-vector direct L2 helper is authoritative for the new default: `threshold_effective == threshold_configured` under `direct_l2`. The old `std_thresh * p50` behavior is retained only as explicit `std_scaled` legacy compatibility, with both configured/effective values and calibration record persisted. Golden tests have separate legacy-fidelity and new-default tracks; hashes are exact while float matrices use documented tolerances.
+- **Frozen lifecycle**: `embed` publishes immutable streams with staged write, file fsync, close, atomic rename, directory fsync, pending registry row, and reconcile to ready/missing/corrupt. `infer-heads` publishes complete patch-aligned head streams once. Legacy pre-registry sidecars are marked `legacy` with assumptions or re-embedded; they are never silently provenance-complete.
+- **Catalog**: `seg_config`, `seg_meta`, and authoritative `seg_membership` replace threshold-specific copied vectors. Membership includes absorbed outliers; ranges are metadata only; segment/global medoids are observed source patch indices with deterministic smallest-index ties. All thresholds are evaluated in one stream load/pass. `search_view_hash` is strict logical corpus identity; `catalog_fingerprint` is manifest-only and non-self-referential; threshold aliases and structural changes are reported. Planning arithmetic is approximately `10k × 100 × 10 ~= 10M` catalog rows, not an empirical result.
+- **Analysis**: Each run regenerates disposable keyset-addressed medoid views. Catalog-first analysis uses bounded exact CPU scoring and streamed metrics; normal runs retain no N×N trace. Old flat/PTC/head/CTP caches are archival read-only compatibility paths, not primary inputs.
+- **Heads and CTP**: Head analysis pools frozen head streams over exact shared EffNet PTC membership and uses class-1 `act[1]`. Inclusive ranges cannot reintroduce absorbed outliers. CTP is phase-gated and disabled by default; a default run produces zero CTP work/rows and empty CTP tables are correct.
+- **Cleanup and boundaries**: Active/archival/dead classification is explicit; resets are scoped (`staging`, `views`, `dead`, `archival`, `analysis-run RUN_ID`); Tier 1/2 results are protected. Only ingest/embed/infer-heads may access audio/models/ONNX/CUDA. Derived phases are CPU-only and portable. Post-crash `--verify` uses rollback-only canaries and requires EXPORT/IMPORT repair on failure.
+- **Evidence limitation**: No current model/audio corpus run was available for this planning baseline. Fixture reports must be labeled synthetic. Any measured benchmark must state songs, patch distribution, dimension, backbone/model hash, hardware, software, peak RSS, elapsed time, and chunk budget.
+
 ## Completed Experiments
 
 ### Amplitude-norm gating is harmful to disc scores — removed
@@ -324,3 +337,229 @@ it stays in effect for every follow-on report, not just the current plan.)
 - [ ] **No production diff** — assert that only `scripts/embedding_research` (code/tests/docs) and
       the approved planning artifacts changed, and that no file under `nomarr/` or `frontend/` was
       modified.
+
+---
+
+## Part A audit — active / archival / dead inventory (2026-09-02)
+
+Cross-check of the DD static lists and the SKILL 2026-09-02 addendum against the live
+`scripts/embedding_research` code (DuckDB written vs DDL'd-unwritten, FS cache layout). Dispositions:
+**[ACTIVE]** = primary/current; **[ARCHIVAL]** = legacy read-only compatibility, never a primary input;
+**[DEAD]** = zero live producer and zero/only-test consumer, a deletion candidate (Plan E owns removal —
+nothing deleted in this audit).
+
+### Threshold surfaces (PTC path)
+- **helpers/binning.py `global_dist` (L70–76)** — **[ACTIVE primary default]**. Docstring is
+  authoritative: *"IMPORTANT: For temporal_global, threshold is a direct unit-vector L2 distance (not a
+  std multiplier)."* `perdim_dist` (L79) = per-dimension Chebyshev. These are the segmentation distance
+  functions used today (dd. `direct_l2` default semantics: `threshold_effective == threshold_configured`).
+- **strategy_ptc/segment_fn.py `make_segment_fn` (L112) / `segment_fn` (L131)** — **[ACTIVE PTC writer,
+  ARCHIVAL-compat threshold semantics]** in one surface. Live behavior at L139–150: per `(bin_mode)`,
+  `base_threshold` defaults `0.1`; if a cached calibration row's `mode_cal["p50"]` is finite and nonzero,
+  `base_threshold = p50`; then `threshold = std_thresh * base_threshold` (L150) — the **std_scaled
+  std_thresh × p50 multiplier path**. Because `_calibrate` (below) has zero live callers, no
+  `binned_calibration` rows exist in a normal run, so `_load_cached_calibration` (L136) returns `None` and
+  the *effective* threshold is currently `std_thresh × 0.1` — not a real p50 and not the direct-L2
+  configured value. This is the exact R2 configured-vs-effective contradiction Phase 2 owns; **behavior
+  unchanged here (capture only)**.
+- **strategy_binned/_calibrate.py `_calibrate` (L38) → `upsert_calibration` (L85)** — **[DEAD writer]**
+  zero production callers (computation of the p50 distribution is never invoked by the live pipeline);
+  only the read side `_load_cached_calibration` is live (strategy_ptc/segment_fn.py:136).
+- **strategy_binned/_optimize.py `_eval_threshold` (L157) / `optimize_std_threshold` (L418)** — **[ARCHIVAL /
+  manual-only]**. Pure in-memory golden-section/grid search; treats `threshold = dist_thresh` as a direct
+  cosine/Chebyshev distance value (not std_multiplier); writes no caches. Zero production callers (tests
+  `tests/test_binned_process.py` only). `[optimization]` config block is not read by any production code —
+  declarative/reserved, enforced by tests. Its stale synthetic `rep_type="median"` was repaired in this
+  part (see P1-S3).
+
+### Cache / persistence surfaces
+- **common/embed.py `_embed_song`/sidecar write (L80)** — **[ACTIVE primary writer]** bare float32
+  `_np.save(sidecar, embeddings.astype(np.float32))` at `config.patches_path` = `patches/{sid}.{bb}.npy`;
+  deliberately kept out of DuckDB. This is the frozen immutable patch-stream producer seam (Plan B wraps it).
+- **common/segment.py `segment` (L92 read)** — **[ACTIVE primary reader]** `np.load(str(sidecar),
+  allow_pickle=False).astype(np.float32)`; drives `segment_fn` + `cache_write_fn` per strategy. This is
+  where each FS cache writer is invoked per song.
+- **cache/flat_vecs.py `save_pooled` (L49) / `load_matrix` (L138)** — **[ARCHIVAL].** flat pooled sidecars
+  `cache/{bb}/{strategy}/flat/{sid}.npy` are superseded by frozen flat medoid head streams in Plan B; the
+  legacy reader `load_matrix` is retained for read-only golden comparison. Writers: strategy_global_pool
+  segment_fn/_embed. Readers today: run.py analyze, classify.run_flat.
+- **cache/binned_ptc.py** (`save`, `load_bin_stats`, `load_norm_pair`, ...) — **[ARCHIVAL]** legacy
+  threshold-specific copied PTC vectors (`cache/binned_ptc/{tag}/{bb}/{bin_mode}/{thresh}/{sid}.npz`
+  incl. `pool_*_raw/norm`, medoid idx/centrality). Writer strategy_ptc/segment_fn; readers run.py analyze,
+  classify, strategy_ptc. Read-only golden once segmentation catalog (Plan C) lands.
+- **cache/binned_ptc_heads.py / cache/binned_ctp_heads.py** — **[ARCHIVAL]** head-phase pools; the
+  `effnet_ptc` head phase (Plan A′ head phase) is ACTIVE/additive but reads via classify's
+  `run_shared_ptc_head_pooling` over these boundaries. `cache/binned_ctp*.py` — **[ARCHIVAL/DEAD-leaning]**:
+  CTP is disabled by default (`[archival_ctp] enabled=false`), so CTP caches only accrue under the explicit
+  archival opt-in.
+- **cache/flat_heads.py** — **[ACTIVE]** the current classifier head-output sidecar cache
+  (`cache/{bb}/heads/...`); written by classify.run_flat/run_binned, read by analyze/stratify/head phase.
+- **cache_identity.py `matrix_cache_identity` (L39) / `versioned_cache_root` (L105)** — **[DEAD functions]**
+  zero production callers (tests only). `SCORING_SEMANTICS_VERSION = 1` (L36) is **[ACTIVE]** (imported by
+  run.py, classify.py). `cache/sim.py` + `sim_pairs` were already removed (Plan C) — confirmed absent.
+- **pooling.py `STRATEGIES` / `select_global_medoid_index` (L83)** — **[ACTIVE primary]** flat pooling now
+  includes **medoid** (observed source patch, max-mean-cosine centrality, ties→smallest index). The old
+  claim in the SKILL body that medoid is absent is stale; superseded by the 2026-09-02 addendum.
+- **classify.py** (run_flat L629, run_binned L754) — **[ACTIVE]** head inference; touches audio
+  (discover_audio) — the hard inference boundary Plan A′/R5 formalizes (only ingest/embed/infer-heads may
+  touch audio/ONNX/CUDA).
+- **head_pooling.py + db/head_phase.py + report/_heads.py** — **[ACTIVE additive]** shared-boundary head
+  phase; writes only `head_phase_provenance` (additive provenance), never mutates primary rows.
+
+### DuckDB — written vs DDL'd-unwritten (db/_schema.py + per-repo writers)
+- **[ACTIVE written]** `songs`, `analyze_metrics` (+`trace_*` scalars), `song_retrieval_metrics`,
+  `stratified_corpus`, `phase_timings`, `head_phase_provenance`.
+- **[DEAD — DDL'd, no live writer]** `pooled_vecs`, `head_results` (upsert_head 0 callers), `head_agreement_rows`,
+  `patch_features`, `binned_pair_sims`, `binned_classify_ctp`, `truncation_robustness_rows`, `binned_ctp_vecs`,
+  `binned_ptc_ctp_metrics`, `head_sim_corr_rows` (upsert fns exist, zero production callers).
+- **[ACTIVE writer, semantics to migrate]** `binned_calibration` + `binned_song_stats` (writers
+  `_calibrate`/`_process._compute_song_stats` live in the calibrate/optimize code path but the calibrate
+  producer is unreachable today — see above). `analyze_metrics` global `DELETE` at run.py:675 is the R11
+  run-scoping hazard Phase 2/Plan D replaces (run-scoped, backup-first). Matches DD/SKILL addendum lists
+  exactly; no DDL'd-but-unwritten discrepancy beyond the classification above.
+- **Report read surfaces** (`report/_*.py`) read DuckDB scalars (`analyze_metrics`,
+  `song_retrieval_metrics`, `head_phase_provenance`), matching-corpus manifests, and optimizer CSV curves —
+  no direct FS cache imports. **[ACTIVE]**.
+
+### Direct-L2 helper vs std_scaled path (cross-check)
+The live PTC writer computes `std_thresh × base_threshold` (segment_fn.py:150) where `base_threshold`
+defaults `0.1` and equals `p50` only when a (never-produced) calibration row exists. Meanwhile the
+segmentation distance contract (helpers/binning.py:70–76) and the config's `[binning]` comment both
+describe thresholds as **direct unit-vector L2 distances**. These two coexist today because the live
+`std_scaled` path's calibration table is empty in practice. This is the primary evidence for Phase 2's
+`direct_l2` default (`threshold_effective == threshold_configured`) with `std_scaled` retained as explicit
+legacy compatibility. No behavior changed in this audit.
+
+### Live PTC "median" vs observed medoid (P1-S3 context)
+- Flat `pooling.py` medoid = observed row (max-mean-cosine). Per-bin binned medoid
+  `strategy_binned/_constants.py _BIN_POOL_STRATEGIES["medoid"]` = observed patch closest to the segment
+  centroid; per-bin `"median"` = **synthetic coordinate-wise** `np.median` (`selected_global_idx=None`).
+- `_pool_segment` (`strategy_binned/_pool.py`) emits payloads only for `_BIN_POOL_STRATEGIES ∩ REP_TYPES`;
+  under the shipped default `pooling.rep_types = ["medoid"]` only the observed medoid is emitted — the
+  synthetic `median` rep is absent from the default pool surface.
+- `_constants.validate_optimizer_representation` (new, this part) rejects the stale
+  `[optimization.strategy].rep_type = "median"` synthetic optimizer rep; shipped config is now `"medoid"`.
+
+---
+
+## Part A legacy-fidelity reference capture (2026-09-02)
+
+Reference behavior recorded BEFORE any threshold-default change (Phase 2), so golden legacy tests can pin
+it. **No behavior changed; values marked "synthetic" are fixture data, not measured corpus results.**
+
+### (1) Legacy PTC threshold = std_thresh × per-bin_mode p50 calibration
+- Site: `strategy_ptc/segment_fn.py` `segment_fn` L139–150.
+- Exact formula: for a `(bin_mode, std_thresh)` strategy,
+  `effective_threshold = std_thresh × base_threshold`, where
+  `base_threshold` = `mode_cal["p50"]` if a cached `binned_calibration` row for that backbone+bin_mode
+  exists and that p50 is finite and nonzero, else `0.1` (L140, L145–146). The calibration row is read from
+  DuckDB `binned_calibration` (table: `backbone, dist_mode, p10, p25, p50, p75, mean_d, sigma_d,
+  n_patches`).
+- Calibration value population: `strategy_binned/_calibrate.py _calibrate` measures the patch→centroid
+  L2-distance distribution per (backbone, bin_mode) and upserts percentiles (p50 used here). This producer
+  has **zero live callers** today, so in a normal pipeline no rows exist → `_load_cached_calibration`
+  returns `None` → `base_threshold = 0.1` → effective threshold = `std_thresh × 0.1`. (This is precisely
+  the R2 configured-vs-effective gap; Phase 2 resolves it.)
+- Configured `dist_thresholds` (research_config.toml `[binning]`): `[0.95, 1.0, 1.05, 1.1, 1.15, 1.2,
+  1.25, 1.3, 1.35, 1.4, 1.45, 1.5]` (with a live calibration p50, legacy effective thresholds would be
+  these values × p50; with no calibration, ×0.1).
+- Segmentation then calls `temporal_segment(norm_patches, threshold, DIST_FNS[bin_mode])`
+  (segment_fn.py:151) over **unit-normed** patches (`UnitTensor(patches)`, L149). Observed dtype/shape:
+  patch sidecars are bare float32 arrays (`common/embed.py:80`), shape `(n_patches, dim)`; unit-normed
+  copy same shape float32. `temporal_segment` yields per-song segments; pooling/medoid payloads are
+  float32 observed rows (see inventory). Synthetic fixture values only — no measured corpus calibration
+  claimed.
+
+### (2) Direct-L2 helper contract
+- `helpers/binning.py global_dist` L70–76: `L2 = ||patch − centroid||` over **unit vectors**; docstring is
+  the authoritative statement that `temporal_global` thresholds are **direct unit-vector L2 distance, not
+  a std multiplier**. `perdim_dist` (L79) = per-dimension Chebyshev. This is the reference the new
+  `direct_l2` default aligns to (`threshold_effective == threshold_configured`).
+
+### (3) dtype / shape and documented rtol/atol policy
+- FS sidecars and segment/pool vectors are float32. DuckDB `analyze_metrics` scalars and weighted
+  reductions accumulate in float64 and return Python `float`. Golden comparison policy: **hashes exact**;
+  **float matrices tolerance-bounded** (documented per-fixture rtol/atol, not bit-identity). No
+  bit-identity claim is made for float arrays; identical-input cosine self-similarity yields exactly `1.0`
+  only where the formula provably does (see Part B weighted tests). Max recorded float diffs are fixture
+  tolerance claims, not measured corpus values.
+
+### (4) Fixtures/tests that encode legacy behavior
+- `tests/test_ptc_segment_fn.py`, `tests/test_temporal_segment.py`, `tests/test_binned_process.py`
+  (calibration/optimizer thresholds), `tests/test_ctp_segment_fn.py`, `tests/test_segment.py`,
+  `tests/test_binned_process.py` cache-identity tests. These pin the current std_scaled/segment semantics
+  and must be separated into legacy-fidelity (golden) vs new-default (`direct_l2`) tracks in Phase 2/3;
+  none change in this part. The fixture corpus is deterministic synthetic (5 songs / 3 artists / 3 albums);
+  corpus hashes effnet `3012791ebac8655c`, musicnn `f93bd6f21eee1e99` (size 5) are recorded only for the
+  synthetic fixture, not measured runs.
+
+### Part A code/tests added in this part
+- `research_config.toml`: `[optimization.strategy] rep_type = "median"` → `"medoid"` (observed source
+  medoid, never synthetic median). `[archival_ctp] enabled=false`, `[optimization] enabled=false`, and the
+  EffNet/observed-medoid/direct-L2/cosine primary defaults were already in place and are now test-pinned.
+- `strategy_binned/_constants.py`: new `validate_optimizer_representation` (rejects stale synthetic
+  `"median"`, unknown names) + module-level import guard reading the shipped `[optimization.strategy]`.
+- `requirements.txt`: `duckdb>=0.10.0` → `duckdb>=1.5,<2.0`.
+- `db/_schema.py`: new `require_supported_duckdb()` (library-version gate 1.5 ≤ v < 2.0, fails loudly),
+  `_duckdb_version_tuple()`, and `storage_version_label()` (storage-format version is an opaque label, never
+  numerically compared). Wired into `run.py main()` (covers every pipeline phase) and
+  `generate_fixture_report.py main()`.
+- New tests: `tests/test_duckdb_version_boundary.py` (10); `tests/test_binned_process.py` additions
+  (optimizer-rep validator + observed-medoid/no-synthetic-median pool); `tests/test_toml.py` shipped-config
+  `rep_type == "medoid"` assertion.
+
+## Plan A implemented outcomes (Phases 1–2, 2026-09-02)
+
+This section records what Plan A (threshold/contract baseline) actually shipped before any
+stream/catalog implementation, so later plans and QA can reconstruct the decisions from
+evidence. The per-file test/code additions are itemized in "Part A code/tests added" above; this
+is the outcome summary.
+
+### (1) Active / archival / dead inventory (P1-S1)
+The full per-surface disposition with file:line evidence is in the "Part A audit" section above
+(active primary vs archival read-only vs dead candidate). Contract-level summary is in
+CONTRACTS.md §Plan A baseline. Nothing was deleted — removal is Plan E's decision. Key dead
+candidates: the `binned_calibration` producer `_calibrate` (zero live callers, so calibration
+rows never exist in a normal run), the tests-only `_optimize` search functions, and the
+tests-only `matrix_cache_identity`/`versioned_cache_root` (with `SCORING_SEMANTICS_VERSION=1`
+active). The DuckDB DDL'd-but-unwritten tables and the archival FS caches are enumerated there.
+
+### (2) Captured legacy references (P1-S2)
+Captured BEFORE any threshold-default change so golden legacy tests can pin it; full detail in
+the "Part A legacy-fidelity reference capture" section above. Legacy effective threshold was
+`std_thresh × base_threshold` (p50 when a calibration row existed, else the silent `0.1`
+default) — precisely the R2 configured-vs-effective contradiction Phase 2 resolved. Tolerance
+policy recorded: hashes exact; float matrices tolerance-bounded (documented rtol/atol), no bit
+identity.
+
+### (3) P2 threshold decision — direct_l2 default; std_scaled explicit-only
+- New default for the PTC primary path is `direct_l2`: `threshold_effective ==
+  threshold_configured` exactly, no multiplier, no DB calibration lookup, no `0.1` fallback.
+  `std_scaled` remains only as an EXPLICIT legacy-fidelity track requiring a recorded
+  calibration basis (`statistic` + finite positive `value`); effective = configured × basis is
+  recorded, and requesting it without a basis raises loudly (`ValueError`) rather than silently
+  scaling.
+- Module home: `helpers/thresholds.py` (pure: no DuckDB/IO/audio). `strategy_ptc/segment_fn.py`
+  `make_segment_fn(con, *, semantics="direct_l2", calibration_records=None)` routes thresholds
+  through it; the running-centroid segmentation algorithm was preserved exactly (only
+  threshold-application semantics changed). The strategy_ctp per-song score_std scaled path is
+  ARCHIVAL and left untouched.
+- Canonical identity/encoding: `canonical_float` = shortest round-trip repr, exponent expanded
+  to fixed-point, `-0.0 → 0.0`; config hash is semantics-sensitive over a fixed field order
+  (sha256). Canonical functions take NO path parameter — identity is pure content, never
+  path-derived (R3/R9). Legacy on-disk cache-path encoders (`threshold_key`,
+  `canonical_threshold`) are unchanged so archival/legacy cache readers keep resolving (no
+  orphaned reads).
+
+### (4) P1-S4 dependency / version boundary
+- `duckdb>=0.10.0` → `duckdb>=1.5,<2.0`. `require_supported_duckdb()` gates the duckdb LIBRARY
+  version to `1.5 ≤ v < 2.0` at every research CLI phase startup (fails loudly otherwise);
+  `storage_version_label()` treats the storage-format version as an opaque LABEL, never parsed
+  or numerically compared. The library gate and the storage label are distinct: a hypothetical
+  2.x storage version passes as a label while a 2.x library is rejected. DuckDB 2.x is a
+  separately approved follow-up.
+
+### Tests / gates run at phase end
+`python -m pytest scripts/embedding_research/tests/ -q` green (see report for final count);
+ruff check + ruff format --check clean on changed files; compileall on changed Python files;
+`git diff --stat` shows no `nomarr/` or `frontend/` path.
