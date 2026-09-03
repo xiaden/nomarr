@@ -29,12 +29,16 @@ from nomarr.persistence.mappers.model_mapper import (
 from nomarr.persistence.mappers.output_mapper import model_output_from_record
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from sqlalchemy.orm import Session, scoped_session
 
     from nomarr.helpers.dataclasses.calibration_history_dataclass import CalibrationHistorySnapshot
     from nomarr.helpers.dataclasses.calibration_state_dataclass import CalibrationState
     from nomarr.helpers.dataclasses.ml_model_dataclass import RegisteredModel
     from nomarr.helpers.dataclasses.ml_model_output_dataclass import ModelOutput
+    from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
+    from nomarr.helpers.dataclasses.vector_dataclass import EmbeddingCounts, SongVector, VectorMatch
     from nomarr.helpers.dto.model_repo_dto import ModelRecord
     from nomarr.helpers.dto.vector_repo_dto import EmbeddingRecord, SimilarResult
     from nomarr.persistence.database.calibration_repo import CalibrationRepo
@@ -168,6 +172,12 @@ class MlDb:
             for record in self._output_repo.list_output_streams_for_song(song_id)
         ]
 
+    # Legacy dependency gate (RETAINED — NOT the corrected read surface):
+    # ``list_song_vectors`` is kept only as a dependency gate for the
+    # out-of-scope caller ``ml_vector_registry_comp`` (see manager retirement
+    # inventory). Corrected callers use the typed ``get_song_vector`` /
+    # ``search_similar_vectors`` / ``embedding_counts`` intents below. It
+    # becomes a removal candidate once that out-of-scope caller migrates.
     def list_song_vectors(self, collection_name: str, song_id: int, *, tier: str = "cold") -> list[EmbeddingRecord]:
         """Return embedding records for one song, backbone, and tier.
 
@@ -177,6 +187,13 @@ class MlDb:
         assert self._vector_repo is not None, "VectorRepo not wired"
         return self._vector_repo.get_embeddings_for_song(song_id, collection_name, tier)
 
+    # Legacy dependency gate (RETAINED — NOT the corrected read surface):
+    # ``search_vectors`` is retained solely because its removal is outside this
+    # plan's ten-file scope; no production callers remain (the previously
+    # in-scope Phase 4-5 callers migrated to the typed intents during this
+    # plan). It is NOT a corrected caller contract — corrected callers use the
+    # typed ``search_similar_vectors`` intent below. It is a follow-up cleanup
+    # candidate once removal is in scope.
     def search_vectors(
         self,
         collection_name: str,
@@ -189,8 +206,8 @@ class MlDb:
         The repository converts pgvector cosine distance using the canonical
         ``score = clamp(1 - distance, -1, 1)`` formula. Results are ordered by
         descending similarity (the same metric used by service thresholds).
-        Higher layers should use this method instead of the removed legacy
-        ``vector_search`` facade name.
+        Higher layers that need the corrected typed read contract should use
+        ``search_similar_vectors`` instead of this legacy method.
 
         ``collection_name`` is repurposed as ``backbone_id`` — PostgreSQL uses a
         single ``embeddings`` table partitioned by backbone rather than dynamic
@@ -198,6 +215,68 @@ class MlDb:
         """
         assert self._vector_repo is not None, "VectorRepo not wired"
         return self._vector_repo.find_nearest(query_vector, backbone_id=collection_name, limit=limit)
+
+    # ------------------------------------------------------------------
+    # Typed vector-read intents — the corrected caller-facing surface
+    # ------------------------------------------------------------------
+    # These are the ONLY approved caller-facing vector-read methods. They take
+    # natural SongIdentity/LibraryIdentity values, return domain
+    # SongVector/VectorMatch/EmbeddingCounts objects, and are thin delegations
+    # to the matching typed VectorRepo methods. No raw persistence DTO, row
+    # mapping, integer storage id, table name, or session crosses MlDb here.
+
+    def get_song_vector(self, backbone: str, song: SongIdentity) -> SongVector | None:
+        """Return the single cold-tier stored vector for a ``(backbone, song)``.
+
+        Thin delegation to :meth:`VectorRepo.get_song_vector`. *song* is a
+        natural :class:`SongIdentity` (never an integer storage id); an
+        unresolved song returns ``None``. Cold-only selection, identity
+        resolution, and row mapping stay in the repository. Returns a domain
+        :class:`SongVector` carrying the actual stored embedding.
+        """
+        assert self._vector_repo is not None, "VectorRepo not wired"
+        return self._vector_repo.get_song_vector(backbone, song)
+
+    def search_similar_vectors(
+        self,
+        backbone: str,
+        query_vector: Sequence[float],
+        *,
+        limit: int,
+        min_score: float = 0.0,
+        include_vector: bool = False,
+    ) -> tuple[VectorMatch, ...]:
+        """Return nearest-neighbour matches as domain :class:`VectorMatch` values.
+
+        Thin delegation to :meth:`VectorRepo.search_similar_vectors`. Keeps the
+        exact keyword-only signature/defaults (``limit`` required, ``min_score``
+        default ``0.0``, ``include_vector`` default ``False``). Each match
+        carries a natural :class:`SongIdentity` and the cosine score; vectors
+        are included only when requested.
+        """
+        assert self._vector_repo is not None, "VectorRepo not wired"
+        return self._vector_repo.search_similar_vectors(
+            backbone,
+            query_vector,
+            limit=limit,
+            min_score=min_score,
+            include_vector=include_vector,
+        )
+
+    def embedding_counts(
+        self,
+        backbone: str,
+        library: LibraryIdentity | None = None,
+    ) -> EmbeddingCounts:
+        """Return hot/cold embedding tallies for a backbone, optionally by library.
+
+        Thin delegation to :meth:`VectorRepo.get_embedding_counts`. *library* is
+        a natural :class:`LibraryIdentity` (never an integer storage id); an
+        unresolved/name-only library in a scoped query yields zero counts (the
+        repository never raises). Returns a domain :class:`EmbeddingCounts`.
+        """
+        assert self._vector_repo is not None, "VectorRepo not wired"
+        return self._vector_repo.get_embedding_counts(backbone, library=library)
 
     def get_model(self, model_id: str) -> RegisteredModel | None:
         """Return the registered model for ``model_id``, or None if absent."""
@@ -593,6 +672,12 @@ class MlDb:
         assert self._calibration_repo is not None, "CalibrationRepo not wired"
         return self._calibration_repo.remove_calibration_history(model_id, head_name, label, keep_count)
 
+    # Legacy dependency gate (RETAINED — NOT the corrected read surface):
+    # ``get_embedding_stats`` is kept as a dependency gate for the out-of-scope
+    # maintenance/promotion callers (``vector_maintenance_svc``,
+    # ``ml_vector_maintenance_comp``, ``ml_vector_idle_promotion_comp``).
+    # Corrected callers use the typed ``embedding_counts`` intent above, which
+    # returns a domain :class:`EmbeddingCounts` instead of this raw dict.
     def get_embedding_stats(self, backbone_id: str, library_id: int | None = None) -> dict[str, int]:
         """Return hot_count and cold_count for a backbone, optionally by library."""
         assert self._vector_repo is not None, "VectorRepo not wired"

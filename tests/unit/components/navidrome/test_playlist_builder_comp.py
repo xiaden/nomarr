@@ -1,8 +1,18 @@
-"""Tests for nomarr.components.navidrome.playlist_builder_comp module."""
+"""Tests for nomarr.components.navidrome.playlist_builder_comp module.
+
+The builders now consume the typed vector domain contract: cold embeddings are
+read via ``db.ml.embedding_counts``/``search_similar_vectors`` returning domain
+values, ANN results are typed :class:`VectorMatch` values carrying a natural
+:class:`SongIdentity`, and each match is adapted back to its transport file
+handle through ``db.library.get_song_by_normalized_path``.  Tests mock those
+authoritative methods with domain fixtures — no raw ``song_id`` rows or
+``stats`` dict access.
+"""
 
 from __future__ import annotations
 
 from copy import deepcopy
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -17,10 +27,14 @@ from nomarr.components.navidrome.playlist_builder_comp import (
     build_hidden_gems_playlist,
     build_universal_playlist,
 )
+from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
+from nomarr.helpers.dataclasses.vector_dataclass import EmbeddingCounts, SongVector, VectorMatch
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+_LIB_ID = LibraryIdentity(name="test-lib", root_path="/test-lib")
 
 
 def _make_ctx(**overrides: object) -> dict:
@@ -51,9 +65,31 @@ def _make_ctx(**overrides: object) -> dict:
     return base
 
 
-def _make_result(song_id: int) -> dict:
-    """Build a minimal ANN SimilarResult dict (song_id-keyed)."""
-    return {"song_id": song_id}
+def _song_identity(song_id: int) -> SongIdentity:
+    """Build a deterministic natural identity encoding ``song_id`` in its path."""
+    return SongIdentity(library=_LIB_ID, normalized_path=f"rel/{song_id}.mp3")
+
+
+def _fid_from_path(normalized_path: str) -> int:
+    """Reverse the encoding in :func:`_song_identity`."""
+    return int(normalized_path.removeprefix("rel/").removesuffix(".mp3"))
+
+
+def _make_result(song_id: int) -> VectorMatch:
+    """Build a typed ANN :class:`VectorMatch` for a song handle."""
+    return VectorMatch(song=_song_identity(song_id), backbone="backbones/1", score=0.5)
+
+
+def _make_song_vector(song_id: int, seed: int) -> SongVector:
+    return SongVector(
+        song=_song_identity(song_id),
+        backbone="backbones/1",
+        vector=(float(seed), float(seed) + 1.0),
+        model_suite_hash=None,
+        num_segments=None,
+        segmentation_hash=None,
+        genres=None,
+    )
 
 
 def _make_wire_item(key: str) -> dict:
@@ -61,22 +97,38 @@ def _make_wire_item(key: str) -> dict:
     return {"file_id": key}
 
 
-def _make_db(cold_count: int = 1000, search_results: list[list[dict]] | None = None) -> MagicMock:
-    """Build a mock Database with pre-configured ml namespace.
+def _make_db(
+    cold_count: int = 1000,
+    search_results: list[list[VectorMatch]] | None = None,
+    vectors: dict[int, SongVector] | None = None,
+) -> MagicMock:
+    """Build a mock Database with pre-configured ml/library namespaces.
 
-    Args:
-        cold_count: Value returned by ``db.ml.get_embedding_stats()["cold_count"]``.
-        search_results: If provided, each call to ``db.ml.search_vectors`` returns the
-            next list from this sequence. If exhausted, returns [].
-
+    ``db.ml.embedding_counts`` returns typed :class:`EmbeddingCounts`; each call
+    to ``db.ml.search_similar_vectors`` returns the next list (converted to a
+    tuple) from ``search_results``, else an empty tuple.  Every result's natural
+    ``SongIdentity`` reverses to its file handle through ``db.library``.
+    Optional ``vectors`` seed ``db.ml.get_song_vector`` for the genre builder.
     """
     db = MagicMock()
-    db.ml.get_embedding_stats = MagicMock(return_value={"cold_count": cold_count})
-    db.ml.search_vectors = MagicMock()
+    db.ml.embedding_counts = MagicMock(return_value=EmbeddingCounts(hot_count=0, cold_count=cold_count))
+    db.ml.search_similar_vectors = MagicMock()
     if search_results is not None:
-        db.ml.search_vectors.side_effect = search_results
+        db.ml.search_similar_vectors.side_effect = [tuple(lst) for lst in search_results]
     else:
-        db.ml.search_vectors.return_value = []
+        db.ml.search_similar_vectors.return_value = ()
+
+    def _reverse(normalized_path: str, _library: object) -> SimpleNamespace | None:
+        return SimpleNamespace(song_id=_fid_from_path(normalized_path))
+
+    db.library.get_song_by_normalized_path = MagicMock(side_effect=_reverse)
+    db.library.resolve_song_identity = MagicMock(side_effect=lambda song_id: _song_identity(song_id))
+    vectors = vectors or {}
+
+    def _get_song_vector(_backbone: str, song: SongIdentity) -> SongVector | None:
+        return vectors.get(_fid_from_path(song.normalized_path))
+
+    db.ml.get_song_vector = MagicMock(side_effect=_get_song_vector)
     return db
 
 
@@ -493,8 +545,8 @@ def test_universal_normal_case_stride_sampling() -> None:
     """Stride sampling selects every Nth result from each cluster."""
     ctx = _make_ctx(max_songs=5)
 
-    ann_c1 = [_make_result(f"a{i}") for i in range(20)]
-    ann_c2 = [_make_result(f"b{i}") for i in range(20)]
+    ann_c1 = [_make_result(i) for i in range(1, 21)]
+    ann_c2 = [_make_result(i) for i in range(21, 41)]
     db = _make_db(cold_count=1000, search_results=[ann_c1, ann_c2])
 
     result = build_universal_playlist(db, ctx)
@@ -512,8 +564,8 @@ def test_universal_shuffle_is_applied() -> None:
     """Results should be shuffled — verify by running multiple times and checking order differs."""
     ctx = _make_ctx(max_songs=20)
 
-    ann_c1 = [_make_result(f"a{i}") for i in range(40)]
-    ann_c2 = [_make_result(f"b{i}") for i in range(40)]
+    ann_c1 = [_make_result(i) for i in range(1, 41)]
+    ann_c2 = [_make_result(i) for i in range(41, 81)]
 
     results_sets = []
     for _ in range(5):
@@ -594,4 +646,64 @@ def test_genre_empty_no_tracks_returns_empty() -> None:
     ctx["played_file_ids"] = []
     db = _make_db()
     result = build_genre_playlists(db, ctx)
+    assert result == []
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+def test_genre_builds_playlist_from_played_tracks() -> None:
+    """Genre builder resolves played vectors, builds centroid, searches, adapts results.
+
+    Three played tracks tagged ``Rock`` seed the genre centroid; the cold
+    search returns ≥ ``_GENRE_MIN_SONGS`` matches; results are adapted to file
+    handles and capped at ``max_songs``.
+    """
+    played = [1, 2, 3]
+    ctx = _make_ctx(
+        played_file_ids=played,
+        max_songs=50,
+        played_tracks=[{"file_id": fid, "playcount": 5, "last_played": 100_000_000} for fid in played],
+    )
+    vectors = {fid: _make_song_vector(fid, seed=fid) for fid in played}
+    genre_map = {fid: {"Rock"} for fid in played}
+    # > _GENRE_MIN_SONGS matches from the cold search.
+    search = [_make_result(i) for i in range(1000, 1000 + _GENRE_MIN_SONGS + 20)]
+    db = _make_db(cold_count=1000, search_results=[search], vectors=vectors)
+
+    with patch(
+        f"{TAGS_ARTIST_PATH}.get_tag_values_grouped_by_file",
+        new=MagicMock(return_value=genre_map),
+    ):
+        result = build_genre_playlists(db, ctx)
+
+    assert len(result) == 1
+    entry = result[0]
+    assert entry["playlist_type"] == "genre_rock"
+    assert entry["playlist_name"] == "Your Rock Mix"
+    assert len(entry["file_ids"]) == ctx["max_songs"]
+    assert all(pid in entry["file_ids"] for pid in map(str, range(1000, 1050)))
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+def test_genre_below_min_songs_is_skipped() -> None:
+    """A genre whose search returns fewer than _GENRE_MIN_SONGS is skipped."""
+    played = [1, 2, 3]
+    ctx = _make_ctx(
+        played_file_ids=played,
+        max_songs=50,
+        played_tracks=[{"file_id": fid, "playcount": 5, "last_played": 100_000_000} for fid in played],
+    )
+    vectors = {fid: _make_song_vector(fid, seed=fid) for fid in played}
+    genre_map = {fid: {"Rock"} for fid in played}
+    # Far fewer than _GENRE_MIN_SONGS matches.
+    search = [_make_result(i) for i in range(1000, 1005)]
+    db = _make_db(cold_count=1000, search_results=[search], vectors=vectors)
+
+    with patch(
+        f"{TAGS_ARTIST_PATH}.get_tag_values_grouped_by_file",
+        new=MagicMock(return_value=genre_map),
+    ):
+        result = build_genre_playlists(db, ctx)
+
     assert result == []

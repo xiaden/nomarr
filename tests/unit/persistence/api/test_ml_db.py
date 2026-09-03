@@ -1,5 +1,17 @@
 # mypy: disable-error-code=func-returns-value
-"""Unit tests for ``MlDb`` delegation and contract shape."""
+"""Unit tests for ``MlDb`` delegation and contract shape.
+
+Legacy-method retirement inventory (Phase 3, authoritative manager decision):
+``list_song_vectors``, ``search_vectors``, and ``get_embedding_stats`` are
+RETAINED as legacy dependency gates on ``MlDb`` — they are NOT part of the
+corrected caller-facing read surface. ``list_song_vectors`` gates the
+out-of-scope ``ml_vector_registry_comp``; ``search_vectors`` had its in-scope
+callers migrated in Phases 4-5 and now has no production callers, so its removal is
+deferred outside this plan scope rather than pursued here; ``get_embedding_stats``
+gates the out-of-scope maintenance/promotion callers. Corrected callers use the typed intents
+``get_song_vector`` / ``search_similar_vectors`` / ``embedding_counts``, which
+expose only domain ``SongVector`` / ``VectorMatch`` / ``EmbeddingCounts`` values.
+"""
 
 from __future__ import annotations
 
@@ -13,6 +25,8 @@ from nomarr.helpers.dataclasses.ml_embedding_stream_dataclass import EmbeddingSt
 from nomarr.helpers.dataclasses.ml_model_dataclass import RegisteredModel
 from nomarr.helpers.dataclasses.ml_model_output_dataclass import ModelOutput
 from nomarr.helpers.dataclasses.ml_output_stream_dataclass import OutputStream, OutputStreamWrite
+from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
+from nomarr.helpers.dataclasses.vector_dataclass import EmbeddingCounts, SongVector, VectorMatch
 from nomarr.helpers.dto.calibration_repo_dto import CalibrationStateJoined
 from nomarr.persistence.api.ml import MlDb
 
@@ -1301,3 +1315,140 @@ def test_get_embedding_stats_delegates_library_scope_to_vector_repo() -> None:
 
     assert result is sentinel.result
     vector_repo.get_embedding_stats.assert_called_once_with("openl3", library_id=7)
+
+
+# ---------------------------------------------------------------------------
+# Group 8: Spec-first typed vector-read facade (P1-S3)
+# ---------------------------------------------------------------------------
+# These tests target the corrected sealed typed MlDb read surface:
+#   get_song_vector(backbone, song: SongIdentity) -> SongVector | None
+#   search_similar_vectors(backbone, query_vector, *, limit, min_score=0.0,
+#       include_vector=False) -> tuple[VectorMatch, ...]
+#   embedding_counts(backbone, library: LibraryIdentity | None = None)
+#       -> EmbeddingCounts
+# They pin the typed methods that Phase 3 sealed onto MlDb and pass. The legacy
+# list_song_vectors/search_vectors/get_embedding_stats methods are NOT the
+# corrected caller contract and remain only as out-of-scope dependency gates.
+
+
+@pytest.mark.unit
+class TestTypedVectorReadFacadeSpecFirst:
+    _SONG = SongIdentity(library=LibraryIdentity(name="lib"), normalized_path="/lib/a.mp3")
+    _LIBRARY = LibraryIdentity(name="lib")
+
+    def test_exposes_typed_get_song_vector(self) -> None:
+        db, vector_repo, _, _, _, _ = _make_ml_db()
+        vector_repo.get_song_vector = MagicMock(return_value=None)
+        # Corrected callers resolve a file handle to SongIdentity and call this.
+        result = db.get_song_vector("effnet", self._SONG)
+        assert result is None or isinstance(result, SongVector)
+        vector_repo.get_song_vector.assert_called_once_with("effnet", self._SONG)
+
+    def test_exposes_typed_search_similar_vectors(self) -> None:
+        db, vector_repo, _, _, _, _ = _make_ml_db()
+        vector_repo.search_similar_vectors = MagicMock(return_value=())
+        result = db.search_similar_vectors(
+            "effnet",
+            (0.1, 0.2, 0.3),
+            limit=5,
+            min_score=0.5,
+            include_vector=True,
+        )
+        assert isinstance(result, tuple)
+        for match in result:
+            assert isinstance(match, VectorMatch)
+        vector_repo.search_similar_vectors.assert_called_once_with(
+            "effnet",
+            (0.1, 0.2, 0.3),
+            limit=5,
+            min_score=0.5,
+            include_vector=True,
+        )
+
+    def test_exposes_typed_embedding_counts(self) -> None:
+        db, vector_repo, _, _, _, _ = _make_ml_db()
+        vector_repo.get_embedding_counts = MagicMock(return_value=EmbeddingCounts(hot_count=1, cold_count=2))
+        result = db.embedding_counts("effnet", library=self._LIBRARY)
+        assert isinstance(result, EmbeddingCounts)
+        vector_repo.get_embedding_counts.assert_called_once_with("effnet", library=self._LIBRARY)
+
+    def test_corrected_surface_uses_song_identity_not_storage_ids(self) -> None:
+        # The typed read contract takes a natural SongIdentity; it must never
+        # accept or return an integer storage song_id across MlDb.
+        db, vector_repo, _, _, _, _ = _make_ml_db()
+        vector_repo.get_song_vector = MagicMock(
+            return_value=SongVector(
+                song=self._SONG,
+                backbone="effnet",
+                vector=(0.1, 0.2),
+                model_suite_hash="suite",
+                num_segments=None,
+                segmentation_hash=None,
+                genres=None,
+            )
+        )
+        result = db.get_song_vector("effnet", self._SONG)
+        assert result.song == self._SONG
+        assert result.vector == (0.1, 0.2)
+
+
+# ---------------------------------------------------------------------------
+# Group 9: Typed vector-read delegation defaults (P3-S2)
+# ---------------------------------------------------------------------------
+# The typed intents are thin delegations and must preserve the EXACT target
+# signatures/defaults: ``limit`` is required keyword-only, ``min_score``
+# defaults to ``0.0``, ``include_vector`` defaults to ``False``, ``song`` is a
+# natural SongIdentity (never an int storage id), and ``library`` is a
+# LibraryIdentity | None (``None`` = unscoped). These complement the Phase-1
+# spec-first tests above, which already exercise explicit non-default args.
+
+
+@pytest.mark.unit
+def test_search_similar_vectors_passes_through_defaults() -> None:
+    db, vector_repo, _, _, _, _ = _make_ml_db()
+    vector_repo.search_similar_vectors = MagicMock(return_value=())
+
+    result = db.search_similar_vectors("effnet", (0.1, 0.2), limit=5)
+
+    assert isinstance(result, tuple)
+    vector_repo.search_similar_vectors.assert_called_once_with(
+        "effnet", (0.1, 0.2), limit=5, min_score=0.0, include_vector=False
+    )
+
+
+@pytest.mark.unit
+def test_search_similar_vectors_limit_is_required_keyword_only() -> None:
+    db, vector_repo, _, _, _, _ = _make_ml_db()
+    vector_repo.search_similar_vectors = MagicMock(return_value=())
+
+    # limit cannot be passed positionally through the typed intent (keyword-only).
+    with pytest.raises(TypeError):
+        db.search_similar_vectors("effnet", (0.1, 0.2), 5)  # type: ignore[misc]
+    vector_repo.search_similar_vectors.assert_not_called()
+
+
+@pytest.mark.unit
+def test_embedding_counts_defaults_to_unscoped_library() -> None:
+    db, vector_repo, _, _, _, _ = _make_ml_db()
+    vector_repo.get_embedding_counts = MagicMock(return_value=EmbeddingCounts(hot_count=0, cold_count=0))
+
+    result = db.embedding_counts("effnet")
+
+    assert isinstance(result, EmbeddingCounts)
+    vector_repo.get_embedding_counts.assert_called_once_with("effnet", library=None)
+
+
+@pytest.mark.unit
+def test_typed_read_takes_song_identity_never_integer_song_id() -> None:
+    # The corrected facade contract is a natural SongIdentity; MlDb must forward
+    # it untouched (no int coercion / no int storage song_id on this surface).
+    db, vector_repo, _, _, _, _ = _make_ml_db()
+    vector_repo.get_song_vector = MagicMock(return_value=None)
+    song = SongIdentity(library=LibraryIdentity(name="lib", root_path="/lib"), normalized_path="a.mp3")
+
+    db.get_song_vector("effnet", song)
+
+    vector_repo.get_song_vector.assert_called_once_with("effnet", song)
+    assert vector_repo.get_song_vector.call_args.args[1] is song
+    assert isinstance(song, SongIdentity)
+    assert not isinstance(song, int)

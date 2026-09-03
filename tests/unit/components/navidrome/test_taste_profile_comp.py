@@ -4,6 +4,14 @@ Tests cover:
 - ``_compute_recency_weights`` (pure function)
 - ``_compute_weighted_centroid`` (pure function)
 - ``compute_taste_profile`` (requires mocking DB/component calls)
+
+The component now consumes the typed vector domain contract: each play's
+``file_id`` is bridged through ``db.library.resolve_song_identity`` and its
+embedding read via ``db.ml.get_song_vector`` returning a
+:class:`~nomarr.helpers.dataclasses.vector_dataclass.SongVector`.  Tests mock
+those authoritative methods with domain fixtures (``SongIdentity`` /
+``SongVector``) — no raw persistence rows or ``song_id``/``embedding`` dict
+keys.
 """
 
 from __future__ import annotations
@@ -19,12 +27,16 @@ from nomarr.components.navidrome.taste_profile_comp import (
     _compute_weighted_centroid,
     compute_taste_profile,
 )
+from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
+from nomarr.helpers.dataclasses.vector_dataclass import SongVector
 
 # ---------------------------------------------------------------------------
 # Builder helpers
 # ---------------------------------------------------------------------------
 
 TAGS_PATH = "nomarr.components.navidrome.taste_profile_comp"
+
+_LIB_ID = LibraryIdentity(name="test-lib", root_path="/test-lib")
 
 
 def _make_play(
@@ -50,35 +62,52 @@ def _make_vector(seed: int, dim: int = 64) -> list[float]:
     return v.tolist()
 
 
+def _song_identity(fid: int) -> SongIdentity:
+    """Build a deterministic natural identity encoding ``fid`` in its path."""
+    return SongIdentity(library=_LIB_ID, normalized_path=f"rel/{fid}.mp3")
+
+
+def _fid_from_song(song: SongIdentity) -> int:
+    """Reverse the encoding in :func:`_song_identity`."""
+    return int(song.normalized_path.removeprefix("rel/").removesuffix(".mp3"))
+
+
 def _make_db() -> MagicMock:
-    """Create a mock Database with sync ml.list_song_vectors configured."""
+    """Create a mock Database (identity/vector reads configured per-test)."""
     db = MagicMock()
-    db.ml.list_song_vectors = MagicMock()
+    db.ml.get_song_vector = MagicMock(return_value=None)
+    db.library.resolve_song_identity = MagicMock(return_value=None)
     return db
 
 
-def _make_vector_doc(song_id: int, seed: int) -> dict:
-    """Build a mock EmbeddingRecord with a deterministic vector."""
-    return {"song_id": song_id, "embedding": _make_vector(seed)}
+def _configure_typed_vectors(db: MagicMock, vectors: dict[int, list[float]]) -> None:
+    """Bridge each configured ``fid`` to a typed :class:`SongVector`.
 
-
-def _configure_list_song_vectors(db: MagicMock, vector_docs: list[dict]) -> None:
-    """Set up ``db.ml.list_song_vectors`` to return the right doc per song_id.
-
-    Args:
-        db: The mock Database instance.
-        vector_docs: List of vector docs, each with ``"song_id"`` key.
-
+    ``db.library.resolve_song_identity`` returns the natural identity for any
+    file handle; ``db.ml.get_song_vector`` returns a ``SongVector`` carrying the
+    stored embedding only for handles present in ``vectors`` (absent => no
+    embedding, mirroring the legacy empty-result behaviour).
     """
-    by_file: dict[int, list[dict]] = {}
-    for doc in vector_docs:
-        fid = doc["song_id"]
-        by_file.setdefault(fid, []).append(doc)
 
-    def _side_effect(_backbone: str, fid: int) -> list[dict]:
-        return by_file.get(fid, [])
+    def _resolve(fid: int) -> SongIdentity | None:
+        return _song_identity(fid)
 
-    db.ml.list_song_vectors.side_effect = _side_effect
+    def _get_song_vector(backbone: str, song: SongIdentity) -> SongVector | None:
+        vec = vectors.get(_fid_from_song(song))
+        if vec is None:
+            return None
+        return SongVector(
+            song=song,
+            backbone=backbone,
+            vector=tuple(vec),
+            model_suite_hash=None,
+            num_segments=None,
+            segmentation_hash=None,
+            genres=None,
+        )
+
+    db.library.resolve_song_identity = MagicMock(side_effect=_resolve)
+    db.ml.get_song_vector = MagicMock(side_effect=_get_song_vector)
 
 
 # ---------------------------------------------------------------------------
@@ -218,10 +247,10 @@ class TestComputeTasteProfile:
         assert result is None
 
     def test_no_vectors_found_returns_none(self) -> None:
-        """Resolved plays but list_song_vectors returns empty → ``None``."""
+        """Resolved plays but no file resolves to an embedding → ``None``."""
         db = _make_db()
         plays = [_make_play(i, 1, 1000) for i in range(1, 4)]
-        db.ml.list_song_vectors.return_value = []
+        _configure_typed_vectors(db, {})
 
         with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=MagicMock(return_value={})):
             result = compute_taste_profile(
@@ -238,14 +267,10 @@ class TestComputeTasteProfile:
         """Single genre with ≥3 tracks → 1 cluster with matching label."""
         db = _make_db()
         plays = [_make_play(i, 5, 100_000_000) for i in range(1, 4)]
-        vector_docs = [_make_vector_doc(i, i) for i in range(1, 4)]
-        _configure_list_song_vectors(db, vector_docs)
+        _configure_typed_vectors(db, {i: _make_vector(i) for i in range(1, 4)})
         genre_map = {i: {"Rock"} for i in range(1, 4)}
 
-        def _genre_map(*_args, **_kwargs):
-            return genre_map
-
-        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=_genre_map):
+        with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=MagicMock(return_value=genre_map)):
             result = compute_taste_profile(
                 db,
                 "user1",
@@ -266,11 +291,10 @@ class TestComputeTasteProfile:
         plays = [_make_play(i, 5, 100_000_000) for i in range(1, 4)] + [
             _make_play(i + 100, 20, 100_000_000) for i in range(1, 4)
         ]
-        vector_docs = [_make_vector_doc(i, i) for i in range(1, 4)] + [
-            _make_vector_doc(i + 100, i + 100) for i in range(1, 4)
-        ]
-        _configure_list_song_vectors(db, vector_docs)
-        genre_map = {}
+        vectors: dict[int, list[float]] = {i: _make_vector(i) for i in range(1, 4)}
+        vectors.update({i + 100: _make_vector(i + 100) for i in range(1, 4)})
+        _configure_typed_vectors(db, vectors)
+        genre_map: dict[int, set[str]] = {}
         for i in range(1, 4):
             genre_map[i] = {"Rock"}
         for i in range(1, 4):
@@ -298,12 +322,11 @@ class TestComputeTasteProfile:
         plays = [_make_play(i, 5, 100_000_000) for i in range(1, 3)] + [
             _make_play(i + 100, 5, 100_000_000) for i in range(1, 4)
         ]
-        vector_docs = [_make_vector_doc(i, i) for i in range(1, 3)] + [
-            _make_vector_doc(i + 100, i + 100) for i in range(1, 4)
-        ]
+        vectors: dict[int, list[float]] = {i: _make_vector(i) for i in range(1, 3)}
+        vectors.update({i + 100: _make_vector(i + 100) for i in range(1, 4)})
         db = _make_db()
-        _configure_list_song_vectors(db, vector_docs)
-        genre_map = {}
+        _configure_typed_vectors(db, vectors)
+        genre_map: dict[int, set[str]] = {}
         for i in range(1, 3):
             genre_map[i] = {"Rock"}
         for i in range(1, 4):
@@ -322,11 +345,10 @@ class TestComputeTasteProfile:
         assert result["clusters"][0]["label"] == "Electronic"
 
     def test_partial_vector_resolution(self) -> None:
-        """Only 7 of 10 plays have vectors → only those 7 contribute."""
+        """Only 7 of 10 plays resolve to embeddings → only those 7 contribute."""
         plays = [_make_play(i, 5, 1000 + i * 100) for i in range(1, 11)]
-        vector_docs = [_make_vector_doc(i, i) for i in range(1, 8)]
         db = _make_db()
-        _configure_list_song_vectors(db, vector_docs)
+        _configure_typed_vectors(db, {i: _make_vector(i) for i in range(1, 8)})
 
         with patch(
             f"{TAGS_PATH}.get_tag_values_grouped_by_file",
@@ -345,17 +367,13 @@ class TestComputeTasteProfile:
         assert len(result["clusters"]) == 1
         assert result["clusters"][0]["track_count"] == 7
 
-    def test_vector_doc_missing_vector_key(self) -> None:
-        """Vector doc without 'vector' field → silently skipped."""
+    def test_track_without_embedding_is_skipped(self) -> None:
+        """A play whose file resolves but has no SongVector is silently skipped."""
         plays = [_make_play(i, 5, 1000 + i * 100) for i in range(1, 6)]
 
         db = _make_db()
-
-        # Configure with docs that have song_id but embedding is None
-        def _side_effect(_backbone: str, fid: int) -> list[dict]:
-            return [{"song_id": fid, "embedding": None}]  # None embedding
-
-        db.ml.list_song_vectors.side_effect = _side_effect
+        # Only files 1-2 carry an embedding; files 3-5 resolve but have none.
+        _configure_typed_vectors(db, {i: _make_vector(i) for i in range(1, 3)})
 
         with patch(
             f"{TAGS_PATH}.get_tag_values_grouped_by_file",
@@ -370,20 +388,58 @@ class TestComputeTasteProfile:
                 "backbone/1",
             )
 
-        # All docs with None embedding → no clusters
+        # Only 2 plays carry vectors (<3) → no cluster
+        assert result is None
+
+    def test_unresolved_file_handle_is_skipped(self) -> None:
+        """A play whose file_id does not resolve to an identity is skipped."""
+        plays = [_make_play(i, 5, 1000 + i * 100) for i in range(1, 6)]
+
+        db = _make_db()
+
+        # resolve returns an identity for file 1 only (never for the rest).
+        def _resolve(fid: int) -> SongIdentity | None:
+            return _song_identity(fid) if fid == 1 else None
+
+        db.library.resolve_song_identity = MagicMock(side_effect=_resolve)
+        db.ml.get_song_vector = MagicMock(
+            side_effect=lambda _backbone, song: SongVector(
+                song=song,
+                backbone=_backbone,
+                vector=tuple(_make_vector(_fid_from_song(song))),
+                model_suite_hash=None,
+                num_segments=None,
+                segmentation_hash=None,
+                genres=None,
+            )
+        )
+
+        with patch(
+            f"{TAGS_PATH}.get_tag_values_grouped_by_file",
+            new=MagicMock(
+                return_value={i: {"rock"} for i in range(1, 6)},
+            ),
+        ):
+            result = compute_taste_profile(
+                db,
+                "user1",
+                plays,
+                "backbone/1",
+            )
+
+        # Only file 1 resolves → <3 paired → no cluster
         assert result is None
 
     # -- untagged cluster tests --
 
     def test_untagged_above_threshold_includes_cluster(self) -> None:
-        """≥3 untagged tracks with >50% avg above-threshold → untagged cluster."""
+        """≥3 untagged tracks with embeddings → untagged cluster."""
         db = _make_db()
         plays = [_make_play(i, 5, 100_000_000) for i in range(1, 10)]
-        vector_docs = [_make_vector_doc(i, i) for i in range(1, 10)]
-        _configure_list_song_vectors(db, vector_docs)
+        _configure_typed_vectors(db, {i: _make_vector(i) for i in range(1, 10)})
 
         # Only 5 tracks have genre tags
-        genre_map = {}
+        genre_map: dict[int, set[str]] = {}
         for i in range(1, 6):
             genre_map[i] = {"Rock"}
 
@@ -404,10 +460,9 @@ class TestComputeTasteProfile:
         """Only 2 untagged tracks (<3) → no untagged cluster."""
         db = _make_db()
         plays = [_make_play(i, 5, 100_000_000) for i in range(1, 6)]
-        vector_docs = [_make_vector_doc(i, i) for i in range(1, 6)]
-        _configure_list_song_vectors(db, vector_docs)
+        _configure_typed_vectors(db, {i: _make_vector(i) for i in range(1, 6)})
 
-        genre_map = {}
+        genre_map: dict[int, set[str]] = {}
         for i in range(1, 4):
             genre_map[i] = {"Rock"}
 
@@ -427,10 +482,9 @@ class TestComputeTasteProfile:
         """<3 untagged tracks → no untagged cluster regardless of threshold."""
         db = _make_db()
         plays = [_make_play(i, 5, 100_000_000) for i in range(1, 5)]
-        vector_docs = [_make_vector_doc(i, i) for i in range(1, 5)]
-        _configure_list_song_vectors(db, vector_docs)
+        _configure_typed_vectors(db, {i: _make_vector(i) for i in range(1, 5)})
 
-        genre_map = {}
+        genre_map: dict[int, set[str]] = {}
         for i in range(1, 3):
             genre_map[i] = {"Rock"}
 
@@ -450,19 +504,19 @@ class TestComputeTasteProfile:
         db = _make_db()
         genres = [f"Genre{g}" for g in range(1, 16)]
         plays = []
-        vector_docs = []
+        vectors: dict[int, list[float]] = {}
         genre_map: dict[int, set[str]] = {}
         seed = 0
         fid = 1
         for genre in genres:
             for _t in range(1, 4):
                 plays.append(_make_play(fid, playcount=fid, last_played=100_000_000))
-                vector_docs.append(_make_vector_doc(fid, seed))
+                vectors[fid] = _make_vector(seed)
                 genre_map[fid] = {genre}
                 seed += 1
                 fid += 1
 
-        _configure_list_song_vectors(db, vector_docs)
+        _configure_typed_vectors(db, vectors)
 
         with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=MagicMock(return_value=genre_map)):
             result = compute_taste_profile(
@@ -486,9 +540,8 @@ class TestComputeTasteProfile:
             _make_play(5, 5, 100_000_000),
             _make_play(6, 5, 100_000_000),
         ]
-        vector_docs = [_make_vector_doc(i, i) for i in range(1, 7)]
         db = _make_db()
-        _configure_list_song_vectors(db, vector_docs)
+        _configure_typed_vectors(db, {i: _make_vector(i) for i in range(1, 7)})
         genre_map = {1: {"A"}, 2: {"B"}, 3: {"C"}, 4: {"D"}, 5: {"E"}, 6: {"F"}}
 
         with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=MagicMock(return_value=genre_map)):
@@ -506,11 +559,10 @@ class TestComputeTasteProfile:
         plays = [_make_play(i, 5, 100_000_000) for i in range(1, 4)] + [
             _make_play(i + 100, 5, 100_000_000) for i in range(1, 4)
         ]
-        vector_docs = [_make_vector_doc(i, i) for i in range(1, 4)] + [
-            _make_vector_doc(i + 100, i + 100) for i in range(1, 4)
-        ]
+        vectors: dict[int, list[float]] = {i: _make_vector(i) for i in range(1, 4)}
+        vectors.update({i + 100: _make_vector(i + 100) for i in range(1, 4)})
         db = _make_db()
-        _configure_list_song_vectors(db, vector_docs)
+        _configure_typed_vectors(db, vectors)
         genre_map = {1: {"Jazz"}, 2: {"Jazz"}, 3: {"Jazz"}, 101: {"Funk"}, 102: {"Funk"}, 103: {"Funk"}}
 
         with patch(f"{TAGS_PATH}.get_tag_values_grouped_by_file", new=MagicMock(return_value=genre_map)):

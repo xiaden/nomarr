@@ -11,16 +11,21 @@ from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import Table, delete, func, insert, select, text, update
 
+from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
+from nomarr.helpers.dataclasses.vector_dataclass import EmbeddingCounts, SongVector, VectorMatch
 from nomarr.helpers.dto.vector_repo_dto import EmbeddingRecord, SimilarResult
 from nomarr.helpers.time_helper import now_ms
 from nomarr.helpers.vector_params_helper import get_ef_search
 from nomarr.persistence.models.embedding import Embedding
+from nomarr.persistence.models.library import Library
 from nomarr.persistence.models.song import Song
 from nomarr.persistence.models.song_tag import SongTag
 from nomarr.persistence.models.tag import Tag
 from nomarr.persistence.sql.exceptions import map_persistence_exceptions
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from sqlalchemy.engine import Engine, Row
     from sqlalchemy.orm import Session, scoped_session
 
@@ -49,12 +54,70 @@ def _row_to_similar_result(row: Row[Any]) -> SimilarResult:
     """Convert pgvector cosine distance to the public similarity score."""
     m = row._mapping
     # pgvector returns cosine distance; expose the API's [-1, 1] similarity.
-    score = max(-1.0, min(1.0, 1.0 - float(m["distance"])))
+    distance = float(m["distance"])
+    score = _cosine_distance_to_score(distance)
     return SimilarResult(
         song_id=m["song_id"],
         backbone_id=m["backbone_id"],
-        distance=float(m["distance"]),
+        distance=distance,
         score=score,
+    )
+
+
+def _cosine_distance_to_score(distance: float) -> float:
+    """Convert a pgvector cosine distance to the ``[-1, 1]`` similarity score.
+
+    The single canonical formula is ``clamp(1 - distance, -1, 1)``, shared by
+    the legacy :data:`SimilarResult` mapper and the typed :class:`VectorMatch`
+    read path.  No score is ever stored; it is always derived on read.
+    """
+    return max(-1.0, min(1.0, 1.0 - distance))
+
+
+def _row_to_song_vector(row: Row[Any], song: SongIdentity, backbone: str) -> SongVector:
+    """Convert a cold embedding ``Row`` to a domain :class:`SongVector`.
+
+    ``vector`` is the actual stored embedding as an ordered tuple of floats.
+    The semantic ``model_suite_hash`` is read from the persisted ``model_id``
+    (the persisted ``model_suite_hash`` column stays ``""`` inside persistence);
+    a null ``model_id`` maps to ``None``.  ``genres`` preserves the ``None``
+    versus non-empty distinction.
+    """
+    m = row._mapping
+    return SongVector(
+        song=song,
+        backbone=backbone,
+        vector=tuple(float(v) for v in m["embedding"]),
+        model_suite_hash=m["model_id"],
+        num_segments=m["num_segments"],
+        segmentation_hash=m["segmentation_hash"],
+        genres=tuple(m["genres"]) if m["genres"] is not None else None,
+    )
+
+
+def _row_to_vector_match(
+    row: Row[Any],
+    backbone: str,
+    score: float,
+    *,
+    include_vector: bool,
+) -> VectorMatch:
+    """Convert a joined ANN-search row to a domain :class:`VectorMatch`.
+
+    The row carries the song-identity columns (library name, library path,
+    song normalized path) resolved through the persistence-owned song/library
+    join.  The embedding column is present only when *include_vector* is true;
+    otherwise the payload ``vector`` is ``None``.
+    """
+    m = row._mapping
+    return VectorMatch(
+        song=SongIdentity(
+            library=LibraryIdentity(name=m["library_name"], root_path=m["library_path"]),
+            normalized_path=m["normalized_path"],
+        ),
+        backbone=backbone,
+        score=score,
+        vector=tuple(float(v) for v in m["embedding"]) if include_vector else None,
     )
 
 
@@ -203,6 +266,187 @@ class VectorRepo:
             )
             result = self._session.execute(stmt)
             return [_row_to_embedding_record(r) for r in result.all()]
+
+    # ── typed domain reads ──────────────────────────────────────
+    #
+    # These read paths are the corrected caller-facing vector contract: they
+    # take natural ``SongIdentity`` values, return domain ``SongVector`` /
+    # ``VectorMatch`` objects, and never expose a storage id, row, table name,
+    # timestamp, or storage DTO to callers.  Mapping and identity resolution
+    # stay entirely inside this repository.
+
+    def _resolve_song_storage_id(self, song: SongIdentity) -> int | None:
+        """Resolve a natural ``SongIdentity`` to its storage ``songs.id``.
+
+        Mirrors the established library_tags/app_repo resolution pattern by
+        joining the ``libraries``/``songs`` tables directly (never importing
+        those modules' privates).  ``LibraryIdentity.root_path`` maps to
+        ``libraries.path``; a ``None`` root path (a name-only identity) cannot
+        be resolved and returns ``None``, matching the canonical resolver.
+        A missing library or missing normalized path also resolves to ``None``.
+        """
+        root_path = song.library.root_path
+        if root_path is None:
+            return None
+        stmt = (
+            select(Song.__table__.c.id)
+            .select_from(Song.__table__.join(Library.__table__, Song.__table__.c.library_id == Library.__table__.c.id))
+            .where(
+                Library.__table__.c.name == song.library.name,
+                Library.__table__.c.path == root_path,
+                Song.__table__.c.normalized_path == song.normalized_path,
+            )
+        )
+        row = self._session.execute(stmt).fetchone()
+        return row[0] if row is not None else None
+
+    def _resolve_library_storage_id(self, library: LibraryIdentity) -> int | None:
+        """Resolve a natural :class:`LibraryIdentity` to its storage ``libraries.id``.
+
+        Mirrors :meth:`_resolve_song_storage_id` semantics: a ``None``
+        ``root_path`` (name-only identity), a missing library, or a missing path
+        resolves to ``None``.  The id is used only to reach the row inside this
+        repository and never crosses the boundary.
+        """
+        root_path = library.root_path
+        if root_path is None:
+            return None
+        stmt = select(Library.__table__.c.id).where(
+            Library.__table__.c.name == library.name,
+            Library.__table__.c.path == root_path,
+        )
+        row = self._session.execute(stmt).fetchone()
+        return row[0] if row is not None else None
+
+    def get_song_vector(self, backbone: str, song: SongIdentity) -> SongVector | None:
+        """Return the single cold-tier stored vector for a ``(backbone, song)``.
+
+        Cold-only: only ``tier = 'cold'`` rows are read.  *song* is a natural
+        :class:`SongIdentity` (never a storage id); an unresolved song (missing
+        library/path, or a ``root_path``-less name-only identity) returns
+        ``None``.  The returned :class:`SongVector` carries the actual stored
+        embedding as an ordered tuple plus the semantic ``model_suite_hash``
+        (read from the persisted ``model_id``) and nullable segmentation/genre
+        metadata.  No row, table name, timestamp, or storage id escapes the
+        repository.
+        """
+        with map_persistence_exceptions():
+            song_id = self._resolve_song_storage_id(song)
+            if song_id is None:
+                return None
+            stmt = select(
+                _T.c.embedding,
+                _T.c.model_id,
+                _T.c.num_segments,
+                _T.c.segmentation_hash,
+                _T.c.genres,
+            ).where(
+                _T.c.song_id == song_id,
+                _T.c.backbone_id == backbone,
+                _T.c.tier == "cold",
+            )
+            row = self._session.execute(stmt).fetchone()
+            if row is None:
+                return None
+            return _row_to_song_vector(row, song, backbone)
+
+    def search_similar_vectors(
+        self,
+        backbone: str,
+        query_vector: Sequence[float],
+        *,
+        limit: int,
+        min_score: float = 0.0,
+        include_vector: bool = False,
+    ) -> tuple[VectorMatch, ...]:
+        """Approximate nearest-neighbour search returning domain ``VectorMatch``.
+
+        Cold/backbone ANN query on the ``embeddings`` table using pgvector
+        ``<=>`` with the same ``SET LOCAL`` HNSW settings as :meth:`find_nearest`.
+        Rows are ordered by cosine distance ascending and the SQL ``LIMIT`` is
+        applied *before* the persistence-side score filter:
+        ``score = clamp(1 - distance, -1, 1)`` is computed per row and matches
+        below *min_score* are dropped only after the SQL limit.  ``include_vector``
+        controls whether each match carries its stored vector as an ordered
+        tuple (``False`` selects no embedding column).  Song identities are
+        resolved through the persistence-owned song/library join; any row whose
+        song cannot be mapped back to a :class:`SongIdentity` is omitted.
+        Single pass — no second search/refill.
+        """
+        with map_persistence_exceptions():
+            ef_search = get_ef_search(0)  # sensible default for unknown size
+            self._session.execute(text("SET LOCAL hnsw.iterative_scan = 'strict_order'"))
+            self._session.execute(text(f"SET LOCAL hnsw.ef_search = {int(ef_search)}"))
+
+            distance_expr = _T.c.embedding.op("<=>")(query_vector)
+            columns: list[Any] = [
+                Library.__table__.c.name.label("library_name"),
+                Library.__table__.c.path.label("library_path"),
+                Song.__table__.c.normalized_path,
+                _T.c.backbone_id,
+                distance_expr.label("distance"),
+            ]
+            if include_vector:
+                columns.append(_T.c.embedding)
+            stmt = (
+                select(*columns)
+                .select_from(
+                    _T.join(Song.__table__, _T.c.song_id == Song.__table__.c.id).join(
+                        Library.__table__, Song.__table__.c.library_id == Library.__table__.c.id
+                    )
+                )
+                .where(
+                    _T.c.tier == "cold",
+                    _T.c.backbone_id == backbone,
+                )
+                .order_by(distance_expr)
+                .limit(limit)
+            )
+            result = self._session.execute(stmt)
+            matches: list[VectorMatch] = []
+            for row in result.all():
+                score = _cosine_distance_to_score(float(row._mapping["distance"]))
+                if score < min_score:
+                    continue
+                matches.append(_row_to_vector_match(row, backbone, score, include_vector=include_vector))
+            return tuple(matches)
+
+    def get_embedding_counts(self, backbone: str, library: LibraryIdentity | None = None) -> EmbeddingCounts:
+        """Return hot/cold embedding tallies for a backbone, optionally by library.
+
+        Typed companion to the legacy dict-returning :meth:`get_embedding_stats`.
+        Mirrors its ``GROUP BY tier`` SQL and join-``songs``-for-library scope, but
+        takes a natural :class:`LibraryIdentity` (never a storage id) and returns
+        a domain :class:`EmbeddingCounts`.  *library* resolution mirrors
+        :meth:`_resolve_library_storage_id`: a name-only (``root_path=None``) or
+        otherwise unresolved library yields zero counts in that library (counts
+        of ``0``), never a raise.  Unscoped (``library is None``) counts span all
+        libraries for the backbone.
+        """
+        with map_persistence_exceptions():
+            library_id: int | None = None
+            if library is not None:
+                library_id = self._resolve_library_storage_id(library)
+            if library is not None and library_id is None:
+                return EmbeddingCounts(hot_count=0, cold_count=0)
+            stmt = select(_T.c.tier, func.count().label("cnt")).where(_T.c.backbone_id == backbone)
+            if library_id is not None:
+                stmt = stmt.join(Song.__table__, _T.c.song_id == Song.__table__.c.id).where(
+                    Song.__table__.c.library_id == library_id
+                )
+            stmt = stmt.group_by(_T.c.tier)
+            result = self._session.execute(stmt)
+            hot_count = 0
+            cold_count = 0
+            for row in result.all():
+                m = row._mapping
+                tier = m["tier"]
+                cnt = m["cnt"]
+                if tier == "hot":
+                    hot_count = cnt
+                elif tier == "cold":
+                    cold_count = cnt
+            return EmbeddingCounts(hot_count=hot_count, cold_count=cold_count)
 
     def count_cold_embeddings(self, backbone_id: str) -> int:
         """Count cold-tier embeddings for a given backbone."""

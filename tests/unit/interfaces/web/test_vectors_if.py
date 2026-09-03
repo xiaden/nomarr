@@ -15,6 +15,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
+from nomarr.helpers.dataclasses.vector_dataclass import SongVector
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.web.dependencies import get_vector_search_service
 from nomarr.interfaces.api.web.vectors_if import router as vectors_router
@@ -118,3 +120,55 @@ class TestVectorSearchContract:
                 {"file_id": 1, "score": 0.9, "vector": [0.9, 0.1]},
             ]
         }
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+class TestGetTrackVectorContract:
+    """Tests for the GET /vector/track endpoint over a typed SongVector result."""
+
+    def _song_vector(self, vector: tuple[float, ...]) -> SongVector:
+        song = SongIdentity(
+            library=LibraryIdentity(name="Music", root_path="/music"),
+            normalized_path="songs/1.mp3",
+        )
+        return SongVector(
+            song=song,
+            backbone="effnet",
+            vector=vector,
+            model_suite_hash="suite",
+            num_segments=1,
+            segmentation_hash=None,
+            genres=None,
+        )
+
+    def test_success_adapts_song_vector_to_wire_shape(
+        self,
+        client: TestClient,
+        mock_vector_search_service: MagicMock,
+    ) -> None:
+        """A domain SongVector is adapted to exactly {file_id, backbone_id, vector}."""
+        mock_vector_search_service.get_track_vector.return_value = self._song_vector((0.9, 0.1, 0.5))
+
+        response = client.get("/vector/track", params={"backbone_id": "effnet", "file_id": "1"})
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "file_id": 1,
+            "backbone_id": "effnet",
+            "vector": [0.9, 0.1, 0.5],
+        }
+        assert response.json().keys() == {"file_id", "backbone_id", "vector"}
+
+    def test_missing_vector_maps_to_404(
+        self,
+        client: TestClient,
+        mock_vector_search_service: MagicMock,
+    ) -> None:
+        """A None SongVector result maps to 404 with the file/backbone detail."""
+        mock_vector_search_service.get_track_vector.return_value = None
+
+        response = client.get("/vector/track", params={"backbone_id": "effnet", "file_id": "1"})
+
+        assert response.status_code == 404
+        assert "No vector found for file '1'" in response.json()["detail"]

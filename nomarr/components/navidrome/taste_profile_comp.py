@@ -35,6 +35,13 @@ def compute_taste_profile(
     returns the top ``pp_max_clusters`` clusters sorted by total recency
     weight.
 
+    Each play's ``file_id`` handle is resolved to a natural
+    :class:`~nomarr.helpers.dataclasses.song_command_dataclass.SongIdentity`
+    through authoritative ``db.library`` and its embedding read as a domain
+    :class:`~nomarr.helpers.dataclasses.vector_dataclass.SongVector` via the
+    typed ``db.ml.get_song_vector`` intent — never a raw persistence row or
+    storage key.
+
     Returns a :class:`TasteProfile` dict with ``clusters``, or ``None`` if no
     play data was provided or insufficient plays with embeddings are available.
     """
@@ -62,6 +69,26 @@ def compute_taste_profile(
 
     file_ids = [fid for p in resolved_plays if (fid := p["file_id"]) is not None]
     now_val = now_ms().value
+    resolved_backbone = backbone_id or "default"
+
+    # Memoised per-file resolution: a play's file handle is bridged to its
+    # natural SongIdentity via db.library, then the cold-tier stored vector is
+    # read as a SongVector via db.ml. Only the authoritative domain values are
+    # consumed here; no raw song_id/embedding row access remains.
+    _vector_cache: dict[int, list[float] | None] = {}
+
+    def _vector_for_file(fid: int) -> list[float] | None:
+        """Return the stored embedding for ``fid`` (memoised per file handle)."""
+        if fid in _vector_cache:
+            return _vector_cache[fid]
+        vector: list[float] | None = None
+        song = db.library.resolve_song_identity(fid)
+        if song is not None:
+            song_vector = db.ml.get_song_vector(resolved_backbone, song)
+            if song_vector is not None:
+                vector = list(song_vector.vector)
+        _vector_cache[fid] = vector
+        return vector
 
     # Group file_ids by genre
     # get_tag_values_grouped_by_file returns {file_id: {genre_set}}
@@ -82,26 +109,12 @@ def compute_taste_profile(
         if len(genre_plays) < 3:
             continue
 
-        # Get vectors for this genre's files by querying per song_id.
-        # Note: db.ml.list_song_vectors() returns EmbeddingRecord which does
-        # not currently include the "vector" field — this is a known
-        # persistence-layer gap tracked in S2 scope.
-        resolved_backbone = backbone_id or "default"
-        genre_file_id_list = [p["file_id"] for p in genre_plays if p["file_id"] is not None]
-
-        vector_map: dict[int, list[float]] = {}
-        for fid in genre_file_id_list:
-            results = db.ml.list_song_vectors(resolved_backbone, int(fid))
-            for doc in results:
-                if doc.get("song_id"):
-                    vector_map[doc["song_id"]] = doc["embedding"]  # type: ignore[typeddict-item]
-
         paired: list[tuple[TrackPlayData, list[float]]] = []
         for play in genre_plays:
             fid = play.get("file_id")
             if fid is None:
                 continue
-            vec = vector_map.get(fid)
+            vec = _vector_for_file(fid)
             if vec is not None:
                 paired.append((play, vec))
 
@@ -134,22 +147,12 @@ def compute_taste_profile(
     if untagged_file_ids:
         untagged_plays = [p for p in resolved_plays if p.get("file_id") in untagged_file_ids]
         if len(untagged_plays) >= 3:
-            resolved_backbone = backbone_id or "default"
-            ut_file_ids = [p["file_id"] for p in untagged_plays if p["file_id"] is not None]
-
-            ut_vector_map: dict[int, list[float]] = {}
-            for fid in ut_file_ids:
-                ut_results = db.ml.list_song_vectors(resolved_backbone, int(fid))
-                for doc in ut_results:
-                    if doc.get("song_id"):
-                        ut_vector_map[doc["song_id"]] = doc["embedding"]  # type: ignore[typeddict-item]
-
             ut_paired: list[tuple[TrackPlayData, list[float]]] = []
             for play in untagged_plays:
                 fid = play.get("file_id")
                 if fid is None:
                     continue
-                vec = ut_vector_map.get(fid)
+                vec = _vector_for_file(fid)
                 if vec is not None:
                     ut_paired.append((play, vec))
             if len(ut_paired) >= 3:

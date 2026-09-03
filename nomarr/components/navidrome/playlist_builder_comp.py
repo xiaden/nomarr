@@ -1,7 +1,12 @@
 """Personal playlist builders from taste profiles and play history.
 
 Each public function builds one playlist type via ANN search against the
-cold vector collection.  Builders return ``song_id`` values;
+cold vector collection.  Search results arrive as typed
+:class:`~nomarr.helpers.dataclasses.vector_dataclass.VectorMatch` values
+carrying a natural
+:class:`~nomarr.helpers.dataclasses.song_command_dataclass.SongIdentity`;
+each match is adapted back to its transport file handle through authoritative
+``db.library`` at this component boundary.  Builders return ``file_id`` strings;
 nd_id resolution is the interface layer's responsibility.
 """
 
@@ -10,7 +15,7 @@ from __future__ import annotations
 import logging
 import math
 import random
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -18,6 +23,7 @@ from nomarr.components.tagging.tag_query_comp import (
     get_distinct_tag_values_for_files,
     get_tag_values_grouped_by_file,
 )
+from nomarr.helpers.dataclasses.library_dataclass import Library
 from nomarr.helpers.dto.navidrome_dto import (
     NavidromePersonalPlaylistContext,
     NavidromePersonalPlaylistEntry,
@@ -25,6 +31,8 @@ from nomarr.helpers.dto.navidrome_dto import (
 from nomarr.helpers.time_helper import now_ms
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
+    from nomarr.helpers.dataclasses.vector_dataclass import VectorMatch
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
@@ -39,20 +47,35 @@ _MS_PER_DAY: float = 86_400_000.0
 # ------------------------------------------------------------------
 
 
+def _match_to_file_id(db: Database, match: VectorMatch) -> int | None:
+    """Adapt a result's natural ``SongIdentity`` back to its transport file id.
+
+    Authoritative reverse lookup through ``db.library`` (same pattern as the
+    vector search service and similar-track workflow): locate the song by its
+    owning library's natural ``(name, root_path)`` key plus ``normalized_path``.
+    No integer storage id enters ``MlDb``.
+    """
+    song_obj = db.library.get_song_by_normalized_path(
+        match.song.normalized_path,
+        Library(name=match.song.library.name, root_path=match.song.library.root_path or ""),
+    )
+    return song_obj.song_id if song_obj is not None else None
+
+
 def _ann_search_cold(
     db: Database,
     backbone_id: str,
     centroid: list[float],
     max_songs: int,
     fetch_multiplier: int,
-) -> list[dict[str, Any]] | None:
-    """Run ANN search on cold vectors; returns results or ``None`` if empty."""
-    stats = db.ml.get_embedding_stats(backbone_id)
-    if stats["cold_count"] == 0:
+) -> tuple[VectorMatch, ...] | None:
+    """Run ANN search on cold vectors; returns matches or ``None`` if empty."""
+    counts = db.ml.embedding_counts(backbone_id)
+    if counts.cold_count == 0:
         return None
 
     fetch_limit = max_songs * fetch_multiplier
-    return db.ml.search_vectors(  # type: ignore[return-value]
+    return db.ml.search_similar_vectors(
         backbone_id,
         centroid,
         limit=fetch_limit,
@@ -63,13 +86,13 @@ def _search_all_clusters(
     db: Database,
     ctx: NavidromePersonalPlaylistContext,
     fetch_multiplier: int,
-) -> list[dict[str, Any]] | None:
+) -> list[VectorMatch] | None:
     """Run ANN search across every taste cluster and combine results deduplicated.
     Returns ``None`` only when every cluster search returned ``None`` (empty collection).
     Returns ``[]`` when searches ran but produced zero results.
     """
-    seen: set[int] = set()
-    all_results: list[dict[str, Any]] = []
+    seen: set[SongIdentity] = set()
+    all_results: list[VectorMatch] = []
     any_searched = False
     for cluster in ctx["clusters"]:
         raw = _ann_search_cold(
@@ -82,11 +105,10 @@ def _search_all_clusters(
         if raw is None:
             continue
         any_searched = True
-        for item in raw:
-            fid = item.get("song_id")
-            if fid is not None and fid not in seen:
-                seen.add(fid)
-                all_results.append(item)
+        for match in raw:
+            if match.song not in seen:
+                seen.add(match.song)
+                all_results.append(match)
     if not any_searched:
         return None
     return all_results
@@ -109,7 +131,13 @@ def build_familiar_playlist(
     if raw_results is None:
         return []
 
-    file_ids = [str(r["song_id"]) for r in raw_results if r["song_id"] in played][: ctx["max_songs"]]
+    file_ids: list[str] = []
+    for match in raw_results:
+        if len(file_ids) >= ctx["max_songs"]:
+            break
+        fid = _match_to_file_id(db, match)
+        if fid is not None and fid in played:
+            file_ids.append(str(fid))
 
     return [
         NavidromePersonalPlaylistEntry(
@@ -131,7 +159,13 @@ def build_discovery_playlist(
     if raw_results is None:
         return []
 
-    file_ids = [str(r["song_id"]) for r in raw_results if r["song_id"] not in played][: ctx["max_songs"]]
+    file_ids: list[str] = []
+    for match in raw_results:
+        if len(file_ids) >= ctx["max_songs"]:
+            break
+        fid = _match_to_file_id(db, match)
+        if fid is not None and fid not in played:
+            file_ids.append(str(fid))
 
     return [
         NavidromePersonalPlaylistEntry(
@@ -163,14 +197,21 @@ def build_hidden_gems_playlist(
     if raw_results is None:
         return []
 
-    candidates: list[dict[str, Any]] = [r for r in raw_results if r["song_id"] not in played]
+    # Adapt results to file handles and exclude played tracks.
+    candidates: list[tuple[VectorMatch, int]] = []
+    for match in raw_results:
+        fid = _match_to_file_id(db, match)
+        if fid is not None and fid not in played:
+            candidates.append((match, fid))
 
     if known_artists:
-        candidate_song_ids = [r["song_id"] for r in candidates]
-        candidate_artists = get_tag_values_grouped_by_file(db, candidate_song_ids, "artist")
-        candidates = [r for r in candidates if not (candidate_artists.get(r["song_id"], set()) & known_artists)]
+        candidate_file_ids = [fid for _, fid in candidates]
+        candidate_artists = get_tag_values_grouped_by_file(db, candidate_file_ids, "artist")
+        candidates = [
+            (match, fid) for match, fid in candidates if not (candidate_artists.get(fid, set()) & known_artists)
+        ]
 
-    file_ids = [str(r["song_id"]) for r in candidates][: ctx["max_songs"]]
+    file_ids = [str(fid) for _, fid in candidates][: ctx["max_songs"]]
 
     return [
         NavidromePersonalPlaylistEntry(
@@ -194,12 +235,19 @@ def build_universal_playlist(
     if raw_results is None:
         return []
 
+    # Adapt matches to transport file ids (un-mappable matches are dropped).
+    adapted_file_ids: list[str] = []
+    for match in raw_results:
+        fid = _match_to_file_id(db, match)
+        if fid is not None:
+            adapted_file_ids.append(str(fid))
+
     file_ids: list[str] = []
-    if raw_results:
-        step = max(1, len(raw_results) // ctx["max_songs"])
-        sampled = raw_results[::step][: ctx["max_songs"]]
+    if adapted_file_ids:
+        step = max(1, len(adapted_file_ids) // ctx["max_songs"])
+        sampled = adapted_file_ids[::step][: ctx["max_songs"]]
         random.shuffle(sampled)
-        file_ids = [str(r["song_id"]) for r in sampled]
+        file_ids = sampled
 
     return [
         NavidromePersonalPlaylistEntry(
@@ -228,20 +276,24 @@ def build_genre_playlists(
 
     played_file_ids = ctx["played_file_ids"]
 
-    stats = db.ml.get_embedding_stats(ctx["backbone_id"])
-    if stats["cold_count"] == 0:
+    counts = db.ml.embedding_counts(ctx["backbone_id"])
+    if counts.cold_count == 0:
         return []
 
-    # Get vectors for played files by querying per file_id.
-    # Note: db.ml.list_song_vectors() returns EmbeddingRecord which does
-    # not currently include the "embedding" field — this is a known
-    # persistence-layer gap tracked in S2 scope.
+    # Resolve each played file handle to its natural SongIdentity via
+    # db.library and read the cold-tier stored vector as a SongVector via
+    # db.ml. Only authoritative domain values are consumed; no raw song_id /
+    # embedding row access remains.
     vector_map: dict[int, list[float]] = {}
     for fid_str in played_file_ids:
-        results = db.ml.list_song_vectors(ctx["backbone_id"], int(fid_str))
-        for doc in results:
-            if doc.get("song_id"):
-                vector_map[doc["song_id"]] = doc["embedding"]  # type: ignore[typeddict-item]
+        fid = int(fid_str)
+        if fid in vector_map:
+            continue
+        song = db.library.resolve_song_identity(fid)
+        if song is not None:
+            song_vector = db.ml.get_song_vector(ctx["backbone_id"], song)
+            if song_vector is not None:
+                vector_map[fid] = list(song_vector.vector)
 
     if not vector_map:
         return []
@@ -256,16 +308,16 @@ def build_genre_playlists(
 
     genre_data: dict[str, list[tuple[float, list[float]]]] = {}
     for play in played_tracks:
-        fid = play["file_id"]
-        if fid is None or fid not in vector_map:
+        pid = play["file_id"]
+        if pid is None or pid not in vector_map:
             continue
-        vec = vector_map[fid]
+        vec = vector_map[pid]
 
         last_ms = play["last_played"]
         days_since = (now_ms_val - last_ms) / _MS_PER_DAY if last_ms is not None else fallback_days
         weight = math.log(1 + play["playcount"]) * math.exp(-decay_lambda * days_since)
 
-        for genre in file_genres.get(fid, set()):
+        for genre in file_genres.get(pid, set()):
             genre_data.setdefault(genre, []).append((weight, vec))
 
     if not genre_data:
@@ -296,7 +348,7 @@ def build_genre_playlists(
         genre_centroid = genre_centroids[genre]
 
         # Genre filtering is not supported in PostgreSQL yet; search without it.
-        raw_results = db.ml.search_vectors(  # type: ignore[assignment]
+        raw_results = db.ml.search_similar_vectors(
             ctx["backbone_id"],
             genre_centroid,
             limit=fetch_limit,
@@ -311,7 +363,15 @@ def build_genre_playlists(
             )
             continue
 
-        file_ids = [str(r["song_id"]) for r in raw_results][: ctx["max_songs"]]
+        # Adapt typed matches back to transport file handles (un-mappable dropped).
+        file_ids: list[str] = []
+        for match in raw_results:
+            if len(file_ids) >= ctx["max_songs"]:
+                break
+            match_fid = _match_to_file_id(db, match)
+            if match_fid is not None:
+                file_ids.append(str(match_fid))
+
         playlists.append(
             NavidromePersonalPlaylistEntry(
                 playlist_type=f"genre_{genre.lower()}",
@@ -324,7 +384,7 @@ def build_genre_playlists(
 
 
 def _interleave_per_cluster(
-    results: dict[str, list[dict[str, Any]]],
+    results: dict[str, list[dict]],
     weights: dict[str, float],
     target_size: int,
 ) -> list[str]:

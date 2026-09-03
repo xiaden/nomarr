@@ -117,10 +117,12 @@ async def get_track_vector(
             detail=f"No vector found for file '{decoded_file_id}' with backbone '{backbone_id}'",
         )
 
+    # ``result`` is a domain ``SongVector``; transport-adapt its stored vector
+    # (echoing the requested file/backbone ids). No persistence key is exposed.
     return VectorGetResponse(
         file_id=encode_id(file_id),
         backbone_id=backbone_id,
-        vector=result["vector_n"],
+        vector=list(result.vector),
     )
 
 

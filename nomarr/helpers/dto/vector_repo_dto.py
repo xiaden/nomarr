@@ -3,6 +3,15 @@
 These mirror the SQLAlchemy ``Embedding`` model columns from Part A and
 provide type-safe return types for vector repository methods.  Import
 only from ``typing``.
+
+These DTOs are PERSISTENCE-INTERNAL ONLY.  The corrected caller-facing vector
+read surface returns the domain types ``SongVector``/``VectorMatch``/\
+``EmbeddingCounts`` from ``nomarr.helpers.dataclasses.vector_dataclass``; no
+``EmbeddingRecord``/``SimilarResult`` may cross ``MlDb`` or reach callers on the
+typed read paths.  This module is retained for the write path
+(``insert_embedding`` RETURNING mapping) and the retained legacy
+``list_song_vectors``/``search_vectors`` dependency-gate methods that still
+delegate to the storage-shaped repo reads.
 """
 
 from __future__ import annotations

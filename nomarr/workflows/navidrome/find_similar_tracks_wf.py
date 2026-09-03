@@ -19,8 +19,10 @@ from nomarr.components.navidrome.descriptor_match_comp import (
     build_track_descriptor,
     resolve_seed_descriptor_to_file,
 )
+from nomarr.helpers.dataclasses.library_dataclass import Library
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dataclasses.vector_dataclass import VectorMatch
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
@@ -41,6 +43,21 @@ class SimilarTrackResult(TypedDict):
     score: float
 
 
+def _reverse_file_id(db: Database, match: VectorMatch) -> int | None:
+    """Adapt a result's natural ``SongIdentity`` back to its transport file id.
+
+    Authoritative reverse lookup through ``db.library`` (same pattern as the
+    vector search service): locate the song by its owning library's natural
+    ``(name, root_path)`` key plus ``normalized_path``. No integer storage id
+    enters ``MlDb``.
+    """
+    song_obj = db.library.get_song_by_normalized_path(
+        match.song.normalized_path,
+        Library(name=match.song.library.name, root_path=match.song.library.root_path or ""),
+    )
+    return song_obj.song_id if song_obj is not None else None
+
+
 def find_similar_tracks(
     seed_descriptor: TrackDescriptor,
     count: int,
@@ -51,9 +68,10 @@ def find_similar_tracks(
 
     Pipeline:
         1. Resolve seed descriptor to a library song id
-        2. Fetch seed vector from the promoted cold collection via components
-        3. Run ANN search on cold collection
-        4. Enrich result song_ids with descriptor metadata
+        2. Fetch the seed's :class:`SongVector` from the promoted cold tier
+        3. Run ANN search on the cold tier (typed :class:`VectorMatch` results)
+        4. Exclude the seed track and enrich matched song identities with
+           descriptor metadata
         5. Return up to ``count`` results sorted by similarity score
 
     Args:
@@ -82,45 +100,54 @@ def find_similar_tracks(
 
     logger.debug("Seed descriptor resolved to file_id %s", seed_file_id)
 
-    # 2. Get seed vector from per-backbone cold collection (no library_key needed)
-    seed_doc = get_cold_track_vector(db, seed_file_id, backbone_id)
-    if seed_doc is None:
+    # 2. Get seed vector from the per-backbone cold tier.
+    seed_song_vector = get_cold_track_vector(db, seed_file_id, backbone_id)
+    if seed_song_vector is None:
         msg = (
             f"No vector embedding found for file '{seed_file_id}' "
             f"with backbone '{backbone_id}'. Ensure ML processing has completed."
         )
         raise ValueError(msg)
 
-    seed_vector: list[float] = seed_doc["vector_n"]
+    seed_identity = seed_song_vector.song
+    seed_vector = seed_song_vector.vector
     logger.debug("Seed vector retrieved, dim=%d", len(seed_vector))
 
-    # 3. ANN search on per-backbone cold collection
+    # 3. ANN search on per-backbone cold tier.
     fetch_limit = count + 1  # +1 for potential self-match
-    raw_results = search_similar_cold_track_vectors(
+    raw_matches = search_similar_cold_track_vectors(
         db=db,
         backbone_id=backbone_id,
         seed_vector=seed_vector,
         result_limit=fetch_limit,
     )
 
-    # Exclude the seed track itself from results
-    results = [r for r in raw_results if r["song_id"] != seed_file_id]
-    logger.debug("ANN search returned %d results (excluding seed)", len(results))
+    # Exclude the seed track itself by comparing natural identities.
+    retained = [m for m in raw_matches if m.song != seed_identity]
+    logger.debug("ANN search returned %d results (excluding seed)", len(retained))
 
-    if not results:
+    if not retained:
         return []
 
-    # 4. Enrich with metadata
-    results = results[:count]
-    enrichment_song_ids = [r["song_id"] for r in results]
-    file_docs = get_songs_by_ids_with_tags(db, enrichment_song_ids)
-    file_docs_by_id: dict[str, dict] = {doc["id"]: doc for doc in file_docs}
+    # 4. Enrich with metadata (adapt identity -> file id at this boundary).
+    retained = retained[:count]
+    enriched: list[tuple[VectorMatch, int]] = []
+    for match in retained:
+        file_id = _reverse_file_id(db, match)
+        if file_id is not None:
+            enriched.append((match, file_id))
 
-    # 5. Build result list
+    if not enriched:
+        return []
+
+    enrichment_song_ids = [file_id for _, file_id in enriched]
+    file_docs = get_songs_by_ids_with_tags(db, enrichment_song_ids)
+    file_docs_by_id: dict[int, dict] = {doc["id"]: doc for doc in file_docs}
+
+    # 5. Build result list (direct clamped score from the typed match).
     output: list[SimilarTrackResult] = []
-    for result in results:
-        song_id = result["song_id"]
-        doc = file_docs_by_id.get(song_id, {})
+    for match, file_id in enriched:
+        doc = file_docs_by_id.get(file_id, {})
         descriptor = build_track_descriptor(doc)
 
         output.append(
@@ -134,9 +161,9 @@ def find_similar_tracks(
                 disc_number=descriptor["disc_number"],
                 year=descriptor["year"],
                 nomarr_file_key=descriptor["nomarr_file_key"],
-                # SimilarResult.score is the canonical cosine similarity
+                # VectorMatch.score is the canonical clamped cosine similarity
                 # produced by the vector repository.
-                score=result["score"],
+                score=match.score,
             )
         )
 
