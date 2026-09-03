@@ -27,11 +27,18 @@ class EmbeddingRecord(TypedDict):
 
 
 class SimilarResult(TypedDict):
-    """Result from an ANN similarity search."""
+    """Result from an ANN search with cosine similarity in ``[-1, 1]``.
+
+    The persistence layer converts pgvector's cosine distance with the single
+    canonical formula ``similarity = clamp(1 - distance, -1, 1)``. ``distance``
+    remains available for repository diagnostics; consumers filter and rank by
+    ``score``.
+    """
 
     song_id: int
     backbone_id: str
     distance: float
+    score: float
 
 
 __all__ = ["EmbeddingRecord", "SimilarResult"]

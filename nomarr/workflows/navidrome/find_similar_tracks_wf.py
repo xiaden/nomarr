@@ -134,9 +134,9 @@ def find_similar_tracks(
                 disc_number=descriptor["disc_number"],
                 year=descriptor["year"],
                 nomarr_file_key=descriptor["nomarr_file_key"],
-                # SimilarResult has no ``score``; derive a similarity score
-                # from its ``distance`` so ``SimilarTrackResult.score`` stays populated.
-                score=1.0 / (1.0 + float(result["distance"])),
+                # SimilarResult.score is the canonical cosine similarity
+                # produced by the vector repository.
+                score=result["score"],
             )
         )
 

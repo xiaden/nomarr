@@ -51,7 +51,9 @@ class TestSimilarResult:
             song_id=42,
             backbone_id="bb_test",
             distance=0.15,
+            score=0.85,
         )
         assert row["song_id"] == 42
         assert row["backbone_id"] == "bb_test"
         assert row["distance"] == 0.15
+        assert row["score"] == 0.85

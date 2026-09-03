@@ -18,14 +18,19 @@ class VectorSearchRequest(BaseModel):
     file_id: str = Field(..., description="Library file document ID to find similar tracks for")
     backbone_id: str = Field(..., description="Backbone identifier (e.g., 'effnet', 'yamnet')")
     limit: int = Field(10, description="Maximum number of results", ge=1, le=100)
-    min_score: float = Field(0.0, description="Minimum similarity score threshold", ge=0.0)
+    min_score: float = Field(
+        0.0,
+        description="Minimum cosine similarity score threshold in [-1, 1]",
+        ge=-1.0,
+        le=1.0,
+    )
 
 
 class VectorSearchResultItem(BaseModel):
     """Single vector search result."""
 
     file_id: int = Field(..., description="Library file document ID")
-    score: float = Field(..., description="Similarity score")
+    score: float = Field(..., description="Cosine similarity score in [-1, 1]", ge=-1.0, le=1.0)
     vector: list[float] = Field(..., description="Stored embedding vector")
 
 

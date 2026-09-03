@@ -46,12 +46,15 @@ def _row_to_embedding_record(row: Row[Any]) -> EmbeddingRecord:
 
 
 def _row_to_similar_result(row: Row[Any]) -> SimilarResult:
-    """Convert a SQLAlchemy ``Row`` to a ``SimilarResult`` TypedDict."""
+    """Convert pgvector cosine distance to the public similarity score."""
     m = row._mapping
+    # pgvector returns cosine distance; expose the API's [-1, 1] similarity.
+    score = max(-1.0, min(1.0, 1.0 - float(m["distance"])))
     return SimilarResult(
         song_id=m["song_id"],
         backbone_id=m["backbone_id"],
-        distance=m["distance"],
+        distance=float(m["distance"]),
+        score=score,
     )
 
 
@@ -121,10 +124,11 @@ class VectorRepo:
     ) -> list[SimilarResult]:
         """Approximate nearest-neighbour search using pgvector ``<=>``.
 
-        Sets session-level ``hnsw.iterative_scan = strict_order`` and
-        ``hnsw.ef_search`` for accurate distance ordering.  Only searches
-        cold-tier embeddings (the partial HNSW index covers ``tier='cold'``
-        rows only).
+        The SQL query orders by cosine distance (ascending), then the mapper
+        exposes the equivalent ``score = clamp(1 - distance, -1, 1)``. Thus
+        returned ``score`` values are cosine similarities in the documented
+        ``[-1, 1]`` range and are ordered highest first. Only cold-tier
+        embeddings are searched.
 
         Args:
             embedding: Query embedding vector.

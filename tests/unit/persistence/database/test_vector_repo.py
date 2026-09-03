@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from itertools import count
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -11,7 +12,7 @@ from sqlalchemy import insert, update
 
 from nomarr.persistence.database.song_tag_repo import SongTagRepository
 from nomarr.persistence.database.tag_repo import TagRepository
-from nomarr.persistence.database.vector_repo import VectorRepo
+from nomarr.persistence.database.vector_repo import VectorRepo, _row_to_similar_result
 from nomarr.persistence.models.embedding import Embedding
 from nomarr.persistence.models.library import Library
 from nomarr.persistence.models.song import Song
@@ -130,7 +131,7 @@ class TestVectorRepo:
     # ── find_nearest ────────────────────────────────────────────
 
     def test_find_nearest_returns_ordered_results(self, pg_session) -> None:
-        """find_nearest should return SimilarResult list ordered by cosine distance."""
+        """find_nearest returns descending cosine similarity scores."""
         lib_id, song_id = _create_library_and_song(pg_session)
         repo = VectorRepo(pg_session)
 
@@ -170,11 +171,12 @@ class TestVectorRepo:
         results = repo.find_nearest(query_vec, _BACKBONE, limit=5)
         assert len(results) > 0
         assert len(results) <= 5
-        # Results should be ordered by distance (ascending)
-        distances = [r["distance"] for r in results]
-        assert distances == sorted(distances)
-        # First result should have very small distance (near-zero for same vector)
-        assert results[0]["distance"] < 0.01
+        # Results should be ordered by similarity (descending), with the
+        # nearest self-match close to one.
+        scores = [r["score"] for r in results]
+        assert scores == sorted(scores, reverse=True)
+        assert results[0]["score"] > 0.99
+        assert all(-1.0 <= score <= 1.0 for score in scores)
 
     def test_find_nearest_empty_table(self, pg_session) -> None:
         """find_nearest should return empty list when no cold embeddings exist."""
@@ -551,3 +553,56 @@ class TestVectorRepoSqlAlchemyTyping:
 
         assert count == 3
         session.commit.assert_called_once_with()
+
+
+@pytest.mark.unit
+class TestRowToSimilarResult:
+    """Pin the canonical distance-to-score conversion, ``clamp(1 - distance, -1, 1)``.
+
+    ``_row_to_similar_result`` lives in the repo but is otherwise only exercised
+    by the DB-backed ``TestVectorRepo`` suite, which is skipped in CI. These pure
+    unit cases (no database) keep the conversion mutation-guarded so an
+    unclamped ``1 - distance`` or ``1 / (1 + distance)`` rewrite is caught.
+
+    - ``distance == 1.0`` (boundary) must yield ``0.0``, matching the repo docstring.
+    - ``distance > 1`` must clamp to the ``-1.0`` lower bound.
+    - negative distance must clamp to the ``1.0`` upper bound.
+    """
+
+    @staticmethod
+    def _row(**mapping) -> SimpleNamespace:
+        """Stub that mimics a SQLAlchemy ``Row`` enough for ``_row_to_similar_result``."""
+        return SimpleNamespace(_mapping=mapping)
+
+    def test_maps_distance_to_score_and_passes_ids_through(self) -> None:
+        result = _row_to_similar_result(self._row(song_id=5, backbone_id="effnet", distance=0.15))
+
+        assert result["song_id"] == 5
+        assert result["backbone_id"] == "effnet"
+        assert result["distance"] == 0.15
+        assert result["score"] == pytest.approx(0.85)
+
+    def test_distance_one_yields_zero_score(self) -> None:
+        result = _row_to_similar_result(self._row(song_id=1, backbone_id="effnet", distance=1.0))
+
+        assert result["distance"] == 1.0
+        assert result["score"] == 0.0
+
+    def test_clamps_above_one_distance_to_lower_bound(self) -> None:
+        result = _row_to_similar_result(self._row(song_id=1, backbone_id="effnet", distance=2.0))
+
+        assert result["distance"] == 2.0
+        assert result["score"] == -1.0
+
+    def test_clamps_negative_distance_to_upper_bound(self) -> None:
+        result = _row_to_similar_result(self._row(song_id=1, backbone_id="effnet", distance=-0.5))
+
+        assert result["distance"] == -0.5
+        assert result["score"] == 1.0
+
+    def test_one_over_one_plus_distance_is_not_used(self) -> None:
+        """Guard against the ``1 / (1 + distance)`` alternative formula."""
+        result = _row_to_similar_result(self._row(song_id=1, backbone_id="effnet", distance=1.0))
+
+        # 1 / (1 + 1.0) == 0.5, not the canonical 0.0 for this boundary distance.
+        assert result["score"] == 0.0

@@ -57,7 +57,7 @@ class VectorSearchService:
             file_id: Library file document ID to find similar tracks for.
             backbone_id: Backbone identifier (e.g., "effnet", "yamnet")
             limit: Maximum number of results
-            min_score: Minimum cosine similarity threshold (0-1). Results below
+            min_score: Minimum cosine similarity threshold (-1 to 1). Results below
                 this value are filtered out.
             nprobe: Centroids to probe per query. When ``None`` (default),
                 auto-calculated from ``vector_group_size`` and
@@ -67,7 +67,7 @@ class VectorSearchService:
         Returns:
             List of matching results with keys:
                 - file_id: Library file document ID
-                - score: Cosine similarity (0-1, higher = more similar)
+                - score: Cosine similarity in [-1, 1] (higher = more similar)
                 - vector: The stored embedding vector
                 - Other document fields
 
@@ -101,8 +101,9 @@ class VectorSearchService:
             result_limit=limit,
         )
 
-        # Apply min_score filtering
-        filtered_results = [result for result in raw_results if result.get("score", 0.0) >= min_score]
+        # SimilarResult exposes the repository's canonical cosine similarity.
+        filtered_results = [result for result in raw_results if result["score"] >= min_score]
+        filtered_results.sort(key=lambda result: result["score"], reverse=True)
 
         logger.debug(
             f"Vector search: backbone={backbone_id}, limit={limit}, nprobe={nprobe}, "

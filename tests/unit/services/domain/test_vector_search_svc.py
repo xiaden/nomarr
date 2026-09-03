@@ -115,10 +115,12 @@ class TestSearchSimilarTracksSuccess:
         service = _make_service(mock_db)
 
         seed_vector = [0.1, 0.2, 0.3]
+        # Deliberately NOT pre-sorted by score so the final exact-list assertion
+        # pins the service's descending sort (0.9 before 0.7).
         raw_results = [
+            {"file_id": 3, "score": 0.7, "vector": [0.7, 0.3]},
             {"file_id": 1, "score": 0.9, "vector": [0.9, 0.1]},
             {"file_id": 2, "score": 0.4, "vector": [0.4, 0.6]},
-            {"file_id": 3, "score": 0.7, "vector": [0.7, 0.3]},
         ]
 
         with (
@@ -148,6 +150,25 @@ class TestSearchSimilarTracksSuccess:
             seed_vector=seed_vector,
             result_limit=10,
         )
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_default_min_score_retains_zero_similarity(self) -> None:
+        mock_db = MagicMock()
+        mock_db.ml.has_vector_index.return_value = True
+        service = _make_service(mock_db)
+        raw_results = [
+            {"file_id": 1, "score": 0.0, "vector": [0.0]},
+            {"file_id": 2, "score": -0.1, "vector": [0.1]},
+        ]
+
+        with (
+            patch(f"{_MODULE}.get_cold_track_vector", return_value={"vector_n": [0.0]}),
+            patch(f"{_MODULE}.search_similar_cold_track_vectors", return_value=raw_results),
+        ):
+            result = service.search_similar_tracks(file_id=7, backbone_id="effnet", limit=10)
+
+        assert result == [{"file_id": 1, "score": 0.0, "vector": [0.0]}]
 
     @pytest.mark.unit
     @pytest.mark.mocked

@@ -84,8 +84,8 @@ class TestFindSimilarTracksHappyPath:
         db = _make_db(
             ann_results=[
                 # seed self-match (song_id == seed_file_id) is excluded
-                {"song_id": 1, "backbone_id": "effnet", "distance": 0.0},
-                {"song_id": 2, "backbone_id": "effnet", "distance": 1.0},
+                {"song_id": 1, "backbone_id": "effnet", "distance": 0.0, "score": 1.0},
+                {"song_id": 2, "backbone_id": "effnet", "distance": 1.0, "score": 0.0},
             ],
             file_docs=[
                 {
@@ -117,11 +117,11 @@ class TestFindSimilarTracksHappyPath:
         assert result["disc_number"] == 1
         assert result["year"] == 2024
         assert result["nomarr_file_key"] == "2"
-        assert result["score"] == 0.5
+        assert result["score"] == 0.0
 
     @pytest.mark.unit
     def test_respects_count_limit(self) -> None:
-        ann = [{"song_id": f"{'songs'}/f{i}", "distance": 0.1 + i * 0.01} for i in range(10)]
+        ann = [{"song_id": f"{'songs'}/f{i}", "distance": 0.1 + i * 0.01, "score": 0.9 - i * 0.01} for i in range(10)]
         docs = [
             {
                 "id": f"{'songs'}/f{i}",
@@ -150,7 +150,7 @@ class TestFindSimilarTracksHappyPath:
     @pytest.mark.unit
     def test_does_not_use_navidrome_song_map_table(self) -> None:
         db = _make_db(
-            ann_results=[{"song_id": f"{'songs'}/match-1", "distance": 0.5}],
+            ann_results=[{"song_id": f"{'songs'}/match-1", "distance": 0.5, "score": 0.5}],
             file_docs=[
                 {
                     "id": f"{'songs'}/match-1",
@@ -206,7 +206,7 @@ class TestFindSimilarTracksEdgeCases:
     @pytest.mark.unit
     def test_missing_metadata_defaults(self) -> None:
         db = _make_db(
-            ann_results=[{"song_id": f"{'songs'}/sparse", "distance": 0.5}],
+            ann_results=[{"song_id": f"{'songs'}/sparse", "distance": 0.5, "score": 0.5}],
             file_docs=[{"id": f"{'songs'}/sparse", "tags": []}],
         )
 

@@ -184,11 +184,13 @@ class MlDb:
         *,
         limit: int,
     ) -> list[SimilarResult]:
-        """Return nearest-neighbour vectors for ``query_vector`` in ``collection_name``.
+        """Return nearest-neighbour vectors with cosine similarity scores.
 
-        Canonical caller entrypoint for vector similarity search; higher layers
-        should use this method instead of the removed legacy ``vector_search``
-        facade name.
+        The repository converts pgvector cosine distance using the canonical
+        ``score = clamp(1 - distance, -1, 1)`` formula. Results are ordered by
+        descending similarity (the same metric used by service thresholds).
+        Higher layers should use this method instead of the removed legacy
+        ``vector_search`` facade name.
 
         ``collection_name`` is repurposed as ``backbone_id`` — PostgreSQL uses a
         single ``embeddings`` table partitioned by backbone rather than dynamic
