@@ -324,21 +324,25 @@ class LibrarySongsDb:
         incoming_paths = [str(p["path"]) for p in payloads if "path" in p]
         existing_paths = set(self._song_repo.list_existing_song_paths(library_id, incoming_paths))
 
-        # Upsert songs
-        song_ids = self._song_repo.upsert_songs_for_library(library_id, payloads)
+        # Do not use the INSERT ... RETURNING row order to associate ids with
+        # payloads. PostgreSQL does not guarantee that order matches VALUES.
+        self._song_repo.upsert_songs_for_library(library_id, payloads)
+        song_ids_by_path = self._song_repo.get_song_ids_by_paths(library_id, incoming_paths)
+        ordered_song_ids = [song_ids_by_path[str(payload["path"])] for payload in payloads]
+
         new_count = 0
-        for song_id, payload in zip(song_ids, payloads, strict=True):
+        for song_id, payload in zip(ordered_song_ids, payloads, strict=True):
             if payload.get("path") not in existing_paths:
                 new_count += 1
                 # This method is concurrently being migrated to domain Song
                 # values; route only its state hook through the intent operation.
                 self._song_state_repo.initialize_song_states([song_id])
         result["added"] = new_count
-        result["updated"] = len(song_ids) - new_count
+        result["updated"] = len(ordered_song_ids) - new_count
 
         if remove_missing:
             current_ids = set(self._song_repo.list_library_song_ids(library_id))
-            upserted_ids = set(song_ids)
+            upserted_ids = set(ordered_song_ids)
             to_remove = sorted(current_ids - upserted_ids)
             if to_remove:
                 self._song_repo.remove_songs(to_remove)

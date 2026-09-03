@@ -550,7 +550,8 @@ def test_add_song_to_library_delegates() -> None:
 def test_update_songs_delegates() -> None:
     db, _, song_repo, *_ = _make_library_db()
     song_repo.list_existing_song_paths = MagicMock(return_value=[])
-    song_repo.upsert_songs_for_library = MagicMock(return_value=[1, 2])
+    song_repo.upsert_songs_for_library = MagicMock()
+    song_repo.get_song_ids_by_paths = MagicMock(return_value={"/music/a.mp3": 1, "/music/b.mp3": 2})
     song_repo.list_library_song_ids = MagicMock(return_value=[1, 2])
 
     result = db.update_songs(
@@ -559,6 +560,32 @@ def test_update_songs_delegates() -> None:
     )
 
     assert result == {"added": 2, "updated": 0, "removed": 0}
+    song_repo.upsert_songs_for_library.assert_called_once_with(
+        1, [{"path": "/music/a.mp3", "file_size": 1}, {"path": "/music/b.mp3", "file_size": 2}]
+    )
+    song_repo.get_song_ids_by_paths.assert_called_once_with(1, ["/music/a.mp3", "/music/b.mp3"])
+
+
+@pytest.mark.unit
+def test_update_songs_resolves_ids_by_path_not_returning_order() -> None:
+    db, _, song_repo, _, _, _, _, song_state_repo, _ = _make_library_db()
+    song_repo.list_existing_song_paths = MagicMock(return_value=["/music/existing.mp3"])
+    # The repository's RETURNING rows are intentionally in the wrong order.
+    song_repo.upsert_songs_for_library = MagicMock(return_value=[99, 10])
+    song_repo.get_song_ids_by_paths = MagicMock(return_value={"/music/new.mp3": 10, "/music/existing.mp3": 99})
+    song_repo.list_library_song_ids = MagicMock(return_value=[10, 99])
+
+    result = db.update_songs(
+        _LIB,
+        [
+            {"path": "/music/new.mp3", "file_size": 1},
+            {"path": "/music/existing.mp3", "file_size": 2},
+        ],
+    )
+
+    assert result == {"added": 1, "updated": 1, "removed": 0}
+    song_repo.get_song_ids_by_paths.assert_called_once_with(1, ["/music/new.mp3", "/music/existing.mp3"])
+    song_state_repo.initialize_song_states.assert_called_once_with([10])
 
 
 @pytest.mark.unit
