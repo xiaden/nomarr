@@ -692,15 +692,20 @@ class TestAppDbWorkerRestartPolicyMethods:
 
     @pytest.mark.unit
     def test_record_worker_restart_persists_domain_fields(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:
-        mock_app_repo.get_worker_restart_policy.return_value = None
+        mock_app_repo.increment_worker_restart_policy.return_value = {
+            "restart_count": 1,
+            "last_restart_wall_ms": 123,
+            "updated_at_wall_ms": 123,
+        }
 
-        app_db.record_worker_restart("ml-worker")
+        result = app_db.record_worker_restart("ml-worker")
 
-        mock_app_repo.upsert_worker_restart_policy.assert_called_once()
-        component_id, fields = mock_app_repo.upsert_worker_restart_policy.call_args.args
+        mock_app_repo.increment_worker_restart_policy.assert_called_once()
+        (component_id,) = mock_app_repo.increment_worker_restart_policy.call_args.args
         assert component_id == "ml-worker"
-        assert fields["restart_count"] == 1
-        assert fields["last_restart_wall_ms"] is not None
+        assert mock_app_repo.increment_worker_restart_policy.call_args.kwargs["timestamp_wall_ms"] > 0
+        assert result.restart_count == 1
+        assert result.last_restart_wall_ms == 123
 
     @pytest.mark.unit
     def test_mark_worker_restart_failed_persists_reason(self, app_db: AppDb, mock_app_repo: MagicMock) -> None:

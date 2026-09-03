@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import ColumnElement, Table, delete, func, insert, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from nomarr.helpers.constants.file_states import STATE_ERRORED, STATE_PROCESSED
 from nomarr.helpers.dataclasses.app_dataclasses import (
@@ -896,6 +897,59 @@ class AppRepository:
             row = result.fetchone()
             if row is None:
                 return None
+            return dict(row._mapping["policy_data"])
+
+    def increment_worker_restart_policy(self, component_id: str, *, timestamp_wall_ms: int) -> dict[str, Any]:
+        """Atomically record one restart and return the resulting policy.
+
+        The restart counter is stored inside the ``policy_data`` JSON column, so
+        the increment and timestamp updates are performed by one ``INSERT ... ON
+        CONFLICT DO UPDATE`` statement.  This keeps concurrent callers from
+        overwriting one another's counter value.
+        """
+        with map_persistence_exceptions():
+            initial_data = {
+                "restart_count": 1,
+                "last_restart_wall_ms": timestamp_wall_ms,
+                "updated_at_wall_ms": timestamp_wall_ms,
+            }
+            policy_data = _WRP.c.policy_data
+            restart_count = func.coalesce(policy_data["restart_count"].as_integer(), 0) + 1
+            restart_value: Any
+            timestamp_value: Any
+            dialect_name = self._session.get_bind().dialect.name
+            if dialect_name == "postgresql":
+                set_json = func.jsonb_set
+                path_restart = "{restart_count}"
+                path_last = "{last_restart_wall_ms}"
+                path_updated = "{updated_at_wall_ms}"
+                restart_value = func.to_jsonb(restart_count)
+                timestamp_value = func.to_jsonb(timestamp_wall_ms)
+            else:
+                set_json = func.json_set
+                path_restart = "$.restart_count"
+                path_last = "$.last_restart_wall_ms"
+                path_updated = "$.updated_at_wall_ms"
+                restart_value = restart_count
+                timestamp_value = timestamp_wall_ms
+
+            updated_data = set_json(policy_data, path_restart, restart_value)
+            updated_data = set_json(updated_data, path_last, timestamp_value)
+            updated_data = set_json(updated_data, path_updated, timestamp_value)
+            insert_factory = pg_insert if dialect_name == "postgresql" else sqlite_insert
+            stmt = (
+                insert_factory(_WRP)
+                .values(component_id=component_id, policy_data=initial_data)
+                .on_conflict_do_update(
+                    index_elements=[_WRP.c.component_id],
+                    set_={"policy_data": updated_data},
+                )
+                .returning(_WRP.c.policy_data)
+            )
+            with self._session.begin_nested():
+                row = self._session.execute(stmt).fetchone()
+            self._session.commit()
+            assert row is not None
             return dict(row._mapping["policy_data"])
 
     def upsert_worker_restart_policy(self, component_id: str, fields: dict[str, Any]) -> None:

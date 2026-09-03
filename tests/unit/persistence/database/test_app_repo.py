@@ -1111,6 +1111,19 @@ class TestAppRepository:
         ).all()
         assert len(rows) == 1
 
+    def test_increment_worker_restart_policy_is_atomic_and_preserves_failure_fields(self, pg_session) -> None:
+        """Each repository increment is applied to the persisted JSON counter."""
+        repo = AppRepository(pg_session)
+        repo.upsert_worker_restart_policy("worker-1", {"restart_count": 4, "failure_reason": "crash"})
+
+        first = repo.increment_worker_restart_policy("worker-1", timestamp_wall_ms=100)
+        second = repo.increment_worker_restart_policy("worker-1", timestamp_wall_ms=200)
+
+        assert first["restart_count"] == 5
+        assert second["restart_count"] == 6
+        assert second["failure_reason"] == "crash"
+        assert second["last_restart_wall_ms"] == 200
+
     # ── maintenance ─────────────────────────────────────────────
 
     def test_delete_all_worker_claims(self, pg_session) -> None:

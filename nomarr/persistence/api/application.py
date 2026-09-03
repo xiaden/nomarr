@@ -414,18 +414,15 @@ class AppDb:
         )
 
     def record_worker_restart(self, component_id: str) -> WorkerRestartPolicy:
-        """Record one restart attempt and return the resulting policy."""
-        existing = self.get_worker_restart_policy(component_id)
-        timestamp = now_ms().value
-        policy = WorkerRestartPolicy(
-            restart_count=(existing.restart_count if existing else 0) + 1,
-            last_restart_wall_ms=timestamp,
-            failed_at_wall_ms=existing.failed_at_wall_ms if existing else None,
-            failure_reason=existing.failure_reason if existing else None,
-            updated_at_wall_ms=timestamp,
+        """Record one restart attempt atomically and return the resulting policy."""
+        fields = self._app_repo.increment_worker_restart_policy(component_id, timestamp_wall_ms=now_ms().value)
+        return WorkerRestartPolicy(
+            restart_count=int(fields.get("restart_count", 0)),
+            last_restart_wall_ms=fields.get("last_restart_wall_ms"),
+            failed_at_wall_ms=fields.get("failed_at_wall_ms"),
+            failure_reason=fields.get("failure_reason"),
+            updated_at_wall_ms=fields.get("updated_at_wall_ms"),
         )
-        self._store_worker_restart_policy(component_id, policy)
-        return policy
 
     def reset_worker_restart_count(self, component_id: str) -> None:
         """Clear restart history after a worker has recovered successfully."""
