@@ -10,8 +10,8 @@ There is no placeholder row at library creation. The scan setup workflow creates
 
 ## Coverage
 **Documented:** row creation point, writer contracts (ValueError on missing row), None-tolerant readers, legacy-key mismatches, SQL shape, and setup ordering.
-**Not yet documented:** whether the scan axis ever reaches "scanned" post-completion (see Key Findings — appears to stay "scanning" until startup recovery); scan-history API endpoint existence (service method has no interface caller found).
-**Last extended:** 2026-08-18
+**Not yet documented:** scan-history API endpoint existence (service method has no interface caller found).
+**Last extended:** 2026-09-04 (crash-recovery review: interrupted-scan brick, ML-axis non-recovery, boot-only watcher wiring, claim-cleanup coupling)
 
 ## Key Findings
 
@@ -40,6 +40,24 @@ There is no placeholder row at library creation. The scan setup workflow creates
 ### SQL shape
 - **Location:** `scan_repo.py:71-77` — `SELECT ... WHERE library_id = ? ORDER BY id DESC LIMIT 1`; no status filter, no joins; `library_scans` referenced only by ORM model + repo (no other SQL in persistence). `get_libraries_in_axis_state` reads pipeline_states, not library_scans. `remove_scan`/`truncate_scan_records` have no production callers.
 
+### Interrupted-scan brick: axis reset but in_progress row never closed (CRITICAL for crash recovery)
+- **Location:** recovery `pipeline_svc.py:113-125` (recover_stale_states scan branch) and `:168-179` (recover_stale_heartbeats) call `update_scan_progress(scan_error=...)` with `status=None`; workflow generic-exception handlers `scan_library_quick_wf.py:269-281` and `scan_library_full_wf.py:300-311` do the same. `record_scan_progress` only sets status when explicitly passed (library_scans.py:124-125), so the row stays `in_progress`. The partial unique index `uq_library_scans_one_in_progress` (`alembic/versions/001_current_schema_baseline.py:188-194`, `WHERE status='in_progress'`) then makes every later `mark_scan_started` insert raise DuplicateEntityError → `LibraryAlreadyScanningError` → HTTP 409 forever (library_scan_if.py:61-62,83-84). Cancellation cannot help: `cancel_scan` only signals a live BTS task (scan.py:181-204).
+- **Triggers:** (a) process death mid-scan (the explicit restart-recovery journey); (b) ANY generic workflow exception after row creation — notably `validate_library_root` OSError on an EMPTY library root (library_root_comp.py:168-171; called scan_library_full_wf.py:119-121, quick_wf.py:112) so first-run scan of an empty music folder bricks the library permanently; (c) runtime scan task crash. Only escape: manual SQL (`UPDATE library_scans SET status='error' ...`) or delete+recreate the library (FK CASCADE removes rows).
+- **Expected behavior:** recovery should close the interrupted row (e.g., set status='error' alongside the axis reset) so the next scan passes admission.
+
+### ML axis never recovered at boot
+- **Location:** `pipeline_svc.py:89-151` recovers only scan/calibration/tag_write axes; nothing resets `ML_processing`. Recovery relies on discovery workers resuming and the idle check (`find_ml_complete_libraries`, worker_discovery) flipping ML_processing→ML_processed when untagged==0.
+- **Why it matters:** when the worker system is disabled at the new boot (`main.py:179-181` disabled path or `:183-188` REFUSE tier — both skip starting workers AND skip claim cleanup), or models are unavailable, ML_processing persists forever → `compute_work_status` counts the ML pole as active work (work_status_comp.py:75-85) → `is_busy=true` forever → frontend fast-polls every 500ms indefinitely. Full scans do not reset it: `on_scan_complete_pipeline_hook` only sets ML_IN_PROGRESS when the axis differs (scan_lifecycle_comp.py:272-287).
+
+### Watcher wiring is boot-only (runtime library changes never activate watching)
+- **Location:** `sync_watchers` sole production caller is the app.py:313-320 startup thread; `FileWatcherService.start_watching_library` has no production callers outside sync_watchers:223; `switch_watch_mode` has ZERO production callers (tests only). Creating a library with watch_mode event/poll (library_if.py:140-155), PATCHing watch_mode or toggling is_enabled (library_if.py:165+), or changing root_path never reaches FileWatcherService — watchers are only stopped (delete path, admin.py) or started at next boot.
+
+### Claim cleanup coupled to worker-system startup
+- **Location:** `cleanup_stale_claims` runs only inside `WorkerSystemService.start_all_workers` (main.py:195), which returns early when the worker system is disabled (main.py:179-181) or admission REFUSE (main.py:183-188). The tag-extraction worker (started unconditionally when library_root is set, app.py:307) never writes health rows, so `_resolve_stale_workers` (app_repo.py:680-688) treats its claims as stale whenever cleanup does run (live-claim drop race), and when the worker system never starts, orphaned tag-extractor/reconcile claims are never freed — those files stay excluded (claim) from hydration and ML discovery forever.
+
+### Supersedes earlier observation (axis never reaches "scanned")
+- The 2026-08-18 note "Scan axis never transitions to scanned in production" is stale for success paths: `mark_scan_completed` (scan_lifecycle_comp.py:191-203) now transitions the axis to SCAN_COMPLETE after `complete_scan`, and both workflows call it before returning. The failure-path resets to SCAN_NOT_SCANNED (without closing the row) are exactly the brick documented above.
+
 ## Critical Invariants
 - Do NOT make `record_scan_progress` / `complete_scan` tolerate a missing row by silently skipping — setup ordering guarantees the row; silent skip would mask the real state/row divergence the pipeline recovery paths log.
 - `library_scans` NOT NULL: library_id, scan_type, status, started_at. Scan setup supplies these fields before progress writes begin.
@@ -47,4 +65,4 @@ There is no placeholder row at library creation. The scan setup workflow creates
 ## Sources
 - Files: scan_repo.py, library_scans.py, library_scan_state_comp.py, scan_setup_wf.py, scan_lifecycle_comp.py, library_records_comp.py, library_admin_comp.py, pipeline_svc.py, scan.py (library_svc), scan_library_full_wf.py, scan_library_quick_wf.py, query.py, work_status_comp.py, pipeline_states.py, alembic/versions/001_initial_v1_baseline_schema.py
 - Commits: f3220c3a (helper removal)
-- Logs: support-researcher L101, L95, L94
+- Logs: support-researcher L101, L95, L94; 2026-09-04 crash-recovery review (support-researcher)

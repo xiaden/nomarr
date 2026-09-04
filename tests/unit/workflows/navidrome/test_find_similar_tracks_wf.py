@@ -65,7 +65,7 @@ def _make_db(
     *,
     seed_file_id: str | None = "1",
     seed_resolution_status: str = "",
-    seed_song_vector: SongVector | None | object = _DEFAULT_SEED_VECTOR,
+    seed_song_vector: SongVector | object | None = _DEFAULT_SEED_VECTOR,
     ann_matches: tuple[VectorMatch, ...] = (),
     file_docs: list[dict] | None = None,
 ) -> Database:
