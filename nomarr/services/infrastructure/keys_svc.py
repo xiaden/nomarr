@@ -8,8 +8,9 @@ Centralized service for managing authentication credentials:
 Architecture Notes:
 - This service uses dependency injection: Database must be provided at construction time.
 - Interfaces must NOT construct this service directly with `KeyManagementService(db)`.
-- Services are instantiated once during app wiring (see Application.start() in app.py).
-- Session cache is module-level for performance but accessed only through instance methods.
+- The application server creates one service during app wiring; the CLI bootstrap creates
+  a separate service for standalone commands.
+- Session cache is process-local, while persisted sessions are authoritative for revocation.
 """
 
 from __future__ import annotations
@@ -35,7 +36,8 @@ class KeyManagementService:
 
     This service requires Database injection at construction time.
     Do NOT construct this service directly in interface layer code.
-    Use the singleton instance from Application.services["keys"].
+    Use the application singleton from Application.services["keys"] for server requests,
+    or the CLI bootstrap service for standalone commands.
     """
 
     def __init__(self, db: Database) -> None:
@@ -45,7 +47,8 @@ class KeyManagementService:
             db: Database instance for persistence (injected by Application during startup)
 
         Note:
-            This service should be instantiated once during app wiring, not per-request.
+            The service is instantiated once per context (server singleton or CLI
+            bootstrap), not per request.
 
         """
         self._db = db
@@ -177,22 +180,30 @@ class KeyManagementService:
         return random_password
 
     def reset_admin_password(self, new_password: str) -> None:
-        """Reset the admin password to a new value.
+        """Reset the admin password and revoke every existing web session.
 
         Args:
             new_password: New plaintext password
 
         Warning:
-            This invalidates all web UI sessions.
+            This invalidates all web UI sessions, including sessions persisted
+            for restoration after an application restart.
 
         """
         password_hash = self.hash_password(new_password)
+        active_sessions = self._db.app.find_active_sessions(now_s().value)
+        if active_sessions:
+            self._db.app.delete_sessions(active_sessions)
+        _session_cache.clear()
         self._db.app.set_admin_password_hash(password_hash)
-        logger.warning("[KeyManagement] Admin password reset - all sessions invalidated")
+        logger.warning(
+            "[KeyManagement] Admin password reset - revoked %d active session(s)",
+            len(active_sessions),
+        )
 
     def create_session(self) -> str:
         """Create a new session token with expiry.
-        Write-through cache: stores in both memory (fast reads) and DB (persistence).
+        Write-through cache: stores in both memory (fast-path lookup) and DB (persistence).
 
         Returns:
             Session token string
@@ -206,8 +217,11 @@ class KeyManagementService:
         return session_token
 
     def validate_session(self, session_token: str) -> bool:
-        """Validate a session token and check if it's expired.
-        Uses in-memory cache for performance (no DB hit per request).
+        """Validate a session token against cache expiry and persisted session state.
+
+        Cache hits are confirmed against persisted active sessions so revocation by
+        another process, such as a standalone CLI password reset, takes effect on
+        the next request. Cache misses and expired entries return without a DB query.
 
         Args:
             session_token: Session token to validate
@@ -223,7 +237,12 @@ class KeyManagementService:
         expiry = _session_cache.get(session_token)
         if expiry is None:
             return False
-        if now_s().value > expiry:
+        now = now_s().value
+        if now > expiry:
+            _session_cache.pop(session_token, None)
+            return False
+        active_sessions = self._db.app.find_active_sessions(now)
+        if not any(session.token == session_token for session in active_sessions):
             _session_cache.pop(session_token, None)
             return False
         return True
