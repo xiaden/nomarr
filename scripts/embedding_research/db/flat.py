@@ -144,11 +144,27 @@ def write_analyze_metrics(
     sim_metric: str,
     k: int,
     metrics: dict,
+    *,
+    run_id: str = "legacy",
 ) -> None:
-    """Insert non-`None` analysis metrics into `analyze_metrics`.
+    """Write non-`None` aggregate analysis metrics for one ``(run_id, strategy_key, sim_metric, k)`` scope.
+
+    Since migration the table carries no PRIMARY KEY (DuckDB ART/WAL policy) so uniqueness is
+    asserted here at the application layer: within *run_id*, writing a strategy scope REPLACES
+    that run's prior rows for the same ``(strategy_key, sim_metric, k)`` (delete-then-insert in
+    the caller's transaction).  It never deletes or modifies rows of any other ``run_id``, so
+    Tier 1/2 baseline/corpus results (``run_id='legacy'``) and unrelated/retained runs are
+    preserved.  A call with no runnable rows is a no-op (nothing is deleted).
 
     Args:
-        metrics: Metric values keyed by metric name; entries with `None` values are skipped.
+        con: DuckDB connection.
+        strategy_key: Strategy identifier.
+        strategy_type: Strategy type label (e.g. ``"global_pool"``/``"ptc"``/``"catalog"``).
+        sim_metric: Similarity metric name (e.g. ``"cosine"``).
+        k: Retrieval cut-off.
+        metrics: Metric values keyed by metric name; entries with `None` (or list/array)
+            values are skipped.  The default ``run_id='legacy'`` keeps the legacy full-matrix
+            path (``common.analyze``/``run.py``) byte-identical in effect post-migration.
     """
     rows: list[tuple] = []
     for name, value in metrics.items():
@@ -157,20 +173,36 @@ def write_analyze_metrics(
         if isinstance(value, dict):
             for sub_name, sub_value in value.items():
                 if sub_value is not None:
-                    rows.append((strategy_key, strategy_type, sim_metric, k, f"{name}_{sub_name}", float(sub_value)))
+                    rows.append(
+                        (run_id, strategy_key, strategy_type, sim_metric, k, f"{name}_{sub_name}", float(sub_value))
+                    )
         elif isinstance(value, (list, np.ndarray)):
             continue  # per-song lists are never written as aggregate metrics
         else:
-            rows.append((strategy_key, strategy_type, sim_metric, k, name, float(value)))
+            rows.append((run_id, strategy_key, strategy_type, sim_metric, k, name, float(value)))
+    if not rows:
+        return
+    # Replace only this run's own scope — never another run's (or the legacy baseline's) rows.
+    con.execute(
+        "DELETE FROM analyze_metrics WHERE run_id = ? AND strategy_key = ? AND sim_metric = ? AND k = ?",
+        [run_id, strategy_key, sim_metric, k],
+    )
     con.executemany(
-        "INSERT OR REPLACE INTO analyze_metrics "
-        "(strategy_key, strategy_type, sim_metric, k, metric, value) VALUES (?,?,?,?,?,?)",
+        "INSERT INTO analyze_metrics (run_id, strategy_key, strategy_type, sim_metric, k, metric, value) "
+        "VALUES (?,?,?,?,?,?,?)",
         rows,
     )
 
 
-def load_analyze_metrics(con) -> pd.DataFrame:
+def load_analyze_metrics(con, *, run_id: str | None = None) -> pd.DataFrame:
     """Load `analyze_metrics` as a wide DataFrame keyed by strategy and query settings.
+
+    Args:
+        con: DuckDB connection.
+        run_id: Optional run-scoped filter (post-migration reader contract).  When given, only rows
+            whose physical ``run_id`` column equals *run_id* are loaded (the row-level realization
+            of the Plan C/D scope bookkeeping).  When ``None``, the full table is loaded (default
+            read semantics — on a single-generation DB this is exactly the pre-migration view).
 
     Returns:
         A DataFrame pivoted on `metric` so each metric name becomes a column, sorted by
@@ -179,6 +211,11 @@ def load_analyze_metrics(con) -> pd.DataFrame:
     df = con.execute("SELECT * FROM analyze_metrics").df()
     if df.empty:
         return df
+    if run_id is not None:
+        df = df[df["run_id"] == run_id]
+        if df.empty:
+            return df.iloc[0:0].copy()
+    df = df.drop(columns=["run_id"])
     df = df.pivot_table(
         index=["strategy_key", "strategy_type", "sim_metric", "k"],
         columns="metric",

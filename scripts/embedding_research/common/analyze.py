@@ -1,4 +1,11 @@
-"""Shared analyze phase skeleton for embedding-research strategies."""
+"""Shared analyze phase skeleton for embedding-research strategies.
+
+LEGACY interim full-matrix analysis path — retained until Plan E rewires ``run.py`` to the
+catalog-first primary path (``common.catalog_analysis``).  It computes retrieval metrics over the
+legacy N-path similarity matrices (flat/PTC/CTP) on the FULL N x N corpus; the catalog-first path is
+per-query/per-candidate-song bounded instead.  ``force=False`` (the default) skips strategies already
+in the run's ``done_set`` and preserves their rows unchanged.
+"""
 
 from __future__ import annotations
 

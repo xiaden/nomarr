@@ -1,23 +1,30 @@
-"""Pure, spec-first shared-boundary head pooling over EffNet PTC boundaries.
+"""LEGACY INTERIM inclusive-range shared-boundary head pooling (retirement pending).
 
-This module is the authoritative implementation of the follow-on **shared PTC
-boundary** head phase (Plan B, Phase 1). It pools classifier head outputs over
-the *already-produced* EffNet PTC bin boundaries (``bin_start_idx`` /
-``bin_end_idx`` plus per-bin patch-count ``weights``) without ever running
-head-specific segmentation and without consuming CTP boundaries.
+.. warning::
+   LEGACY INTERIM (Plan E, Phase 1 D1).  The ACTIVE head-analysis surface now
+   lives in ``common/head_analysis.py`` with exact ``seg_membership`` semantics;
+   this module is retained ONLY as an inclusive-range compatibility surface so the
+   legacy live-ONNX runner (``classify.run_shared_ptc_head_pooling``) and legacy
+   ``run.py`` glue stay callable through Phase 4.  It is read-only w.r.t. canonical
+   persistence: it never calls the canonical CPU runner/persistence and never
+   writes a canonical current row.  Plan E Phase 4 retires this surface.
 
-It is **PURE**: it reads only its arguments and performs no I/O, no ONNX
-inference, and no segmentation. Every emitted numeric value is finite (no
-NaN / Infinity) and JSON-safe.
+Legacy contract (superseded)
+-----------------------------
+The legacy runner pools classifier head outputs over the *already-produced* EffNet
+PTC inclusive bin boundaries (``bin_start_idx`` / ``bin_end_idx`` plus per-bin
+patch-count ``weights``) without ever running head-specific segmentation and
+without consuming CTP boundaries.  These inclusive ranges do NOT define canonical
+head membership (exact membership comes from ``seg_membership``).
 
-Data models
------------
+Legacy data models
+------------------
 * :class:`HeadBoundaryPoolResult` — per-bin pooled head-output vectors,
   class-1 values (always from ``act[1]``, never ``act[0]``), preserved
   per-bin patch-count weights, validated inclusive boundary arrays, and
   finite boundary provenance (``boundary_source="effnet_ptc"``).
 * :class:`HeadPhaseConfigRecord` / :class:`HeadPhaseManifest` — the
-  non-blocking orchestration manifest produced by
+  non-blocking legacy orchestration manifest produced by
   ``classify.run_shared_ptc_head_pooling`` (which imports them from here).
 
 The pooling helper never runs segmentation and never creates head-specific

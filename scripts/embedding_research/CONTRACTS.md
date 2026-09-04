@@ -84,13 +84,66 @@ Views gather observed medoids through `batch_gather`, are keyset-addressed and r
 
 The primary score is `max_per_candidate_segment` with `first_index + retain_all_candidate_segments`; the explicit alternative is `equal_tie_split + unique_source_max`. Temporary query/candidate matmul chunks are released after streamed reductions. Normal analysis retains no N×N trace; full traces are explicitly expensive/debug. `scoring_harness.py` remains the small full-matrix oracle. MAP, MRR, NDCG, Recall, and discrimination are separate evaluation lenses.
 
+### Phase 1 (Plan D) implemented surface — `search_views.py`
+
+Implements the ledger `SearchViewRecord` (Plan A P2-S4; Plan D). Public API: `SearchViewKey`, `SearchViewRecord`, `AnalysisCorpus(backbone, song_ids, config_ids=())`, `QueryKeyset(query_song_ids=(), query_segments=())`, `materialize_search_view(stream_store, catalog, corpus, run_id, *, query_keyset=None, working_memory, record_provenance=True, software_versions=None) -> SearchViewRecord`, `record_search_view(catalog, record, *, run_id=None)`, and `validate_search_view_keyset(catalog, record)` (raises `StaleSearchViewError`). Keyset hash inputs are exactly the corpus `search_view_hash`, run id, sorted config ids, sorted song ids, query keys, `(application_version, numpy_version, sklearn_version_or_null)`, matrix shape/dtype, and `scoring_semantics_version`. Backbone is an ADDITIONAL hashed key dimension beyond that DD minimal list (the documented, QA-conformed P1-S1 extension): it is an explicit member of the canonical payload that is hashed, so a reader reconstructing the keyset must include it. Views are single-backbone; config ids default to every canonical (non-aliased) `seg_config` of the backbone.
+
+**On-disk payload (disposable views).** Each view is written under the stream store's output root at `views/<keyset_hash>/` (`view_ref` is the root-relative `views/<keyset_hash>`), physically `vectors.npy` (float32 `[N, D]`, `allow_pickle=False`; row `i` = `row_addresses[i]`) plus `keys.json` (canonical keyset + ordered `rows` `[config_id, song_id, seg_id, medoid_source_patch_idx]`). Medoids are gathered ONLY by catalog `seg_meta.medoid_source_patch_idx` via `batch_gather`, never from ranges/copies/paths. `content_hash` = sha256 over the canonical payload (keyset bytes + row lines + little-endian float32 `tobytes()`), recomputable independently of the file bytes.
+
+**Provenance.** `record_search_view` writes a canonical `keyset_hash|content_hash|view_ref` line into the existing `run_provenance.view_refs` (phase `analyze`, `retained=False`), deduped by keyset hash and preserving other runs incl. `retained` rows; no new table. Materialization ALWAYS regenerates (gathers + rewrites) — a view file's existence never authorizes reuse; `validate_search_view_keyset` is the logical-identity gate. No `view_manifest`/second registry, no indexes, no PK/UNIQUE, no ANN/VSS (exact CPU v1).
+
 ## Shared heads, CTP, cleanup, and CLI
 
 Head analysis uses frozen aligned head streams and exact catalog membership (including absorbed outliers), `boundary_source="effnet_ptc"`, `head_pool_variant="shared_effnet_ptc_boundary"`, class-1 `act[1]`, finite outputs, and non-blocking provenance. Inclusive ranges cannot define head membership. CTP is phase-gated: with `[archival_ctp] enabled=false`, no CTP work/config/vector/row occurs; explicitly enabled CTP is archival only.
 
 Active artifacts are streams/head streams/registries/catalog/manifest/provenance/current analysis/docs. Archival artifacts are legacy flat/PTC/head/CTP caches/readers and compatibility tables. Dead copied medoid vectors, obsolete tables/writers, and zero-caller APIs are removed only after caller audit. Cleanup scopes are `staging`, `views`, `dead`, `archival`, and `analysis-run RUN_ID`; normal analysis never globally deletes Tier 1/2 results.
 
-CLI boundaries are exactly `ingest`, `embed`, `infer-heads`, `catalog`, `catalog-report`, `analyze`, `head-analysis`, and `report`. Only the first three may discover audio/load models/create sessions/run ONNX. Derived phases work without audio/models/ONNX/CUDA and support `--verify`; post-crash verify runs a rollback-only canary over every surviving legacy PK/UNIQUE table, blocks on failure, and instructs EXPORT/IMPORT repair. SIGKILL is bookkeeping/order evidence, not power-loss durability proof.
+CLI boundaries are exactly `ingest`, `embed`, `infer-heads`, `catalog`, `catalog-report`, `analyze`, `head-analysis`, and `report`. Only the first three may discover audio/load models/create sessions/run ONNX. Derived phases work without audio/models/ONNX/CUDA and support `--verify`; a rollback-only canary over every surviving legacy PK/UNIQUE table runs when `--verify` is set or when a post-crash signature is detected (a surviving `<db>.wal` or any non-`completed` `run_provenance` row) before derived-phase reads, blocks on failure, and instructs EXPORT/IMPORT repair. SIGKILL is bookkeeping/order evidence, not power-loss durability proof.
+
+### Canonical CPU shared-head analysis (Plan E Phase 1)
+
+The active derived head-analysis module is `common/head_analysis.py`; `classify.py`'s live-ONNX `run_shared_ptc_head_pooling` remains `LEGACY interim` until the Plan E CLI rewrite. The exact pure helper contract is:
+
+```python
+pool_head_outputs_over_ptc_boundaries(
+    acts: np.ndarray,
+    member_patch_indices: Sequence[int],
+    *,
+    segment_id: int,
+    weight: int,
+    is_absorbed_outlier: Sequence[bool],
+) -> HeadBoundaryPoolResult
+```
+
+`acts` is already gathered in the exact `seg_membership.member_patch_idx` order; the helper validates finite `[N,C]` rows, observed unique source indices, co-indexed outlier flags, and `weight == N` including absorbed outliers. It pools only those rows and returns one transient segment/head value object with float32 pooled `acts[C]`, scalar `class1`, integer `weight`, exact source-index and outlier-flag tuples, segment ID, finite flag, and fixed boundary provenance. It never accepts structural `seg_meta.start_idx/end_idx` as membership. Any head-medoid value is an on-demand lookup of the catalog's observed `seg_meta.medoid_source_patch_idx` row from the same gather; no coordinate-wise median is computed. It has no IO/audio/model/ONNX/CUDA/segmentation/CTP behavior.
+
+The canonical runner contract is:
+
+```python
+run_shared_ptc_head_pooling(
+    con,
+    head_store: HeadStreamStore,
+    *,
+    config_ids: Sequence[int] | None = None,
+    song_ids: Collection[str] | None = None,
+    heads: Collection[str] | None = None,
+    run_id: str,
+    reference_corpus_hash: str | None = None,
+    force: bool = False,
+) -> HeadPhaseManifest
+```
+
+The returned manifest records `run_id`, selected canonical `config_ids`, sorted dimensions, and deterministic per-config/head coverage and skip/error outcomes; it is JSON-safe and always marks the optional primary analysis as non-blocking.
+
+Without `config_ids`, it selects canonical EffNet PTC `seg_config` rows from `configs_by_backbone(con, "effnet")` (`alias_of_config_id is None`, `semantics` in `direct_l2|std_scaled`, `bin_mode` in `temporal_global|temporal_perdim`, and `strategy_version == PTC_STRATEGY_VERSION`). It uses `segments_by_config_song` and `membership_by_config_song_seg` as the only membership source, validates source indices against the ready head record, gathers the union of exact rows once per song through `HeadStreamStore.batch_gather` (all heads in canonical sorted-column order), and slices heads using the registry `dim_by_head`. Pooled values are transient search-view values; observed head medoids are likewise read from the gathered `medoid_source_patch_idx`; no new pooled vector/cache/medoid artifact is written. The only durable head-analysis sink is non-blocking coverage/skip provenance in `head_phase_provenance`, including config ID, configured/effective threshold identity, semantics, fixed boundary/variant labels, finite status, counts, reason, and reference corpus hash; it never mutates primary catalog/membership/analysis/winner rows. No new PK/UNIQUE/index is introduced.
+
+### Head-phase provenance migration (Plan E Phase 1 AMEND ROUND 2)
+
+`head_phase_provenance` is migrated backup-first: take an `EXPORT DATABASE`/equivalent backup, create the replacement, copy rows, drop/rename in one transaction, and verify schema and readable rows before commit. The replacement has exactly these named columns and nullability: `run_id TEXT NOT NULL`, `config_id INTEGER NULL`, `backbone TEXT NOT NULL`, `head TEXT NOT NULL`, `bin_mode TEXT NOT NULL`, `threshold_configured DOUBLE NULL`, `threshold_effective DOUBLE NULL`, `semantics TEXT NULL`, `boundary_source TEXT NOT NULL`, `head_pool_variant TEXT NOT NULL`, `status TEXT NOT NULL`, `reason TEXT NULL`, `n_songs INTEGER NOT NULL`, `n_pooled INTEGER NOT NULL`, `finite INTEGER NOT NULL`, `scoring_semantics_version INTEGER NOT NULL`, `reference_corpus_hash TEXT NULL`, and legacy `threshold DOUBLE NULL`. It has no `PRIMARY KEY`, `UNIQUE`, or index. Existing rows are retained read-only with `run_id='legacy'`, old `threshold` populated, and `config_id`, `threshold_configured`, `threshold_effective`, and `semantics` NULL; canonical rows have non-NULL current fields and NULL legacy `threshold`. Any persisted timestamps elsewhere remain integer milliseconds.
+
+The exact canonical-row predicate for readers, reports, fixtures, and coverage is `run_id <> 'legacy' AND config_id IS NOT NULL AND backbone = 'effnet' AND bin_mode IN ('temporal_global','temporal_perdim') AND threshold_configured IS NOT NULL AND threshold_effective IS NOT NULL AND semantics IN ('direct_l2','std_scaled') AND boundary_source = 'effnet_ptc' AND head_pool_variant = 'shared_effnet_ptc_boundary' AND threshold IS NULL`. Rows outside it are archival/unclassified, preserved and excluded. Application identity is `(config_id, backbone, head, bin_mode, threshold_configured, threshold_effective, semantics, boundary_source, head_pool_variant)`, excluding `run_id`; incoming duplicate identities are rejected, and a rerun transactionally replaces the existing current row for that identity without touching archival rows.
+
+`classify.run_shared_ptc_head_pooling` remains callable as `LEGACY interim` live-ONNX/inclusive-range compatibility through Phase 4 and retains its legacy cache/manifest behavior; it never calls the canonical CPU runner or canonical persistence. Legacy `run.py` head-phase glue remains callable through Phase 4 and may append only archival rows marked `run_id='legacy'` with canonical-only fields NULL; it never dual-writes or creates a canonical current row. Phase 4 alone retires/rewires both surfaces. Pooled values remain transient, and head analysis does not mutate catalog/membership, primary corpus/winner, or `analyze_metrics` rows.
 
 ## Verification
 

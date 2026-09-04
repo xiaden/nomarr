@@ -1,5 +1,10 @@
 """Filesystem cache for CTP-derived binned embeddings.
 
+**ARCHIVAL (read-only compatibility).** This module and its readers are a legacy copied-vector cache for
+GOLDEN COMPARISONS only. CTP is explicitly archival; the primary analysis path (catalog memberships +
+disposable search views, see ``common/catalog_analysis.py``) never reads these files and never falls
+back to them. Do not write new producers/consumers against this path.
+
 CTP (Classifier-Then-Pool) segments are driven by a head's score-stream
 STD-binning rather than embedding-space distance. The extra ``head`` dimension
 is encoded in the path so each head gets its own slice.

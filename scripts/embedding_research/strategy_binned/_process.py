@@ -9,7 +9,6 @@ from typing import NamedTuple as _NamedTuple
 import numpy as _np
 import scipy.stats as _scipy_stats
 
-from scripts.embedding_research import db as _db
 from scripts.embedding_research.scoring_harness import (
     PRIMARY_COLLISION_POLICY as _PRIMARY_COLLISION_POLICY,
 )
@@ -141,36 +140,6 @@ from ._weighted import (
 
 if TYPE_CHECKING:
     from scripts.embedding_research.vector_types import UnitTensor as _UnitTensor
-
-
-def _compute_song_stats(
-    sid: str,
-    bins_list: list[dict],
-    backbone: str,
-    bin_mode: str,
-    std_thresh: float,
-    con,
-) -> None:
-    n_bins = len(bins_list)
-    weights = [b["weight"] for b in bins_list]
-    n_patches = sum(weights)
-    n_outliers = sum(b.get("outlier_count", 0) for b in bins_list)
-
-    _db.upsert_binned_song_stats(
-        con,
-        sid,
-        backbone,
-        bin_mode,
-        std_thresh,
-        {
-            "n_bins": n_bins,
-            "n_patches": n_patches,
-            "n_outliers": n_outliers,
-            "min_bin_size": min(weights),
-            "max_bin_size": max(weights),
-            "mean_bin_size": float(_np.mean(weights)),
-        },
-    )
 
 
 def compute_agg_mats(
@@ -531,47 +500,3 @@ def compute_score_variant_retrieval_rows(
         for h_name, corr in metrics.get("per_head_corr", {}).items()
     ]
     return rows, per_head_rows, score_variant_trace_summary(result)
-
-
-def _process_group(
-    norm_a: list[_UnitTensor],
-    norm_b: list[_UnitTensor],
-    bin_counts: _np.ndarray,
-    artists: list[str],
-    rep_a: str,
-    rep_b: str,
-    metric: str,
-    backbone: str,
-    bin_mode: str,
-    std_thresh: float,
-    k: int,
-    progress,
-    albums: list[str] | None = None,
-    genres: list[str] | None = None,
-    head_scores: _np.ndarray | None = None,
-    head_names: list[str] | None = None,
-    n_songs: int = 0,
-) -> tuple[list[_BinnedRetrievalRow], list[tuple]]:
-    """Compatibility wrapper retained for legacy callers; the live shared
-    analysis path (``common.analyze.analyze``) composes ``compute_agg_mats`` +
-    ``compute_retrieval_rows`` directly."""
-    # reps_a / reps_b are unused (computation operates on norms only).
-    # Legacy wrapper has no per-bin weights; fall back to uniform per-bin weights.
-    weights = [_np.ones(int(c), dtype=_np.float32) for c in bin_counts]
-    agg_mats = compute_agg_mats(norm_a, norm_b, weights, weights, metric, progress=progress)
-    return compute_retrieval_rows(
-        agg_mats,
-        artists,
-        backbone,
-        bin_mode,
-        std_thresh,
-        rep_a,
-        rep_b,
-        metric,
-        k,
-        n_songs,
-        albums=albums,
-        genres=genres,
-        head_scores=head_scores,
-        head_names=head_names,
-    )

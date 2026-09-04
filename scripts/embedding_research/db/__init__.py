@@ -11,7 +11,6 @@ _schema         — DDL, connect(), ensure_schema()
 songs           — songs table + song-level read helpers
 flat            — head_results, analyze_metrics, song_retrieval_metrics (scalars + filesystem caches)
 binned          — all binned_* tables
-patch           — patch_features table
 head_phase      — head_phase_provenance table + provenance helpers
 queries         — query_* progress-check helpers
 provenance      — run_provenance + corpus_state tables + read/write helpers
@@ -23,8 +22,10 @@ truncation      — truncation-robustness table + helpers
 """
 
 from ._schema import (
+    LEGACY_RUN_ID,
     connect,
     ensure_schema,
+    migrate_analyze_metrics_provenance,
     require_supported_duckdb,
     storage_version_label,
     upsert_phase_timing,
@@ -38,6 +39,15 @@ from .binned import (
     upsert_binned_song_stats,
     upsert_calibration,
     upsert_head_sim_corr_batch,
+)
+from .canary import (
+    REPAIR_GUIDANCE,
+    CanaryCorruptionError,
+    CanaryProbeReport,
+    detect_post_crash,
+    enumerate_pk_unique_tables,
+    probe_table,
+    run_rollback_canary,
 )
 from .catalog_metadata import (
     CatalogMetadataCorruptionError,
@@ -56,13 +66,16 @@ from .flat import (
 )
 from .head_phase import (
     HeadPhaseProvenanceRow,
+    append_head_phase_archival_rows,
+    build_archival_provenance_rows,
     build_head_phase_provenance_rows,
     head_phase_config_key,
     load_head_phase_provenance,
+    load_head_phase_provenance_all,
+    migrate_head_phase_provenance,
     query_head_phase_done,
     write_head_phase_provenance,
 )
-from .patch import patch_features_done
 from .provenance import (
     CorpusStateCorruptionError,
     corpus_state_columns,
@@ -122,6 +135,10 @@ from .stream_registry import (
 from .truncation import upsert_truncation_robustness
 
 __all__ = [
+    "LEGACY_RUN_ID",
+    "REPAIR_GUIDANCE",
+    "CanaryCorruptionError",
+    "CanaryProbeReport",
     "CatalogMetadataCorruptionError",
     "CorpusStateCorruptionError",
     "HeadPhaseProvenanceRow",
@@ -134,6 +151,8 @@ __all__ = [
     "SegStreamNotReadyError",
     "SegValidationError",
     "SegmentationError",
+    "append_head_phase_archival_rows",
+    "build_archival_provenance_rows",
     "build_head_phase_provenance_rows",
     "catalog_metadata_columns",
     "clear_song_retrieval_metrics",
@@ -143,7 +162,9 @@ __all__ = [
     "config_row",
     "connect",
     "corpus_state_columns",
+    "detect_post_crash",
     "ensure_schema",
+    "enumerate_pk_unique_tables",
     "head_phase_config_key",
     "head_strategy_done",
     "load_all_songs",
@@ -153,13 +174,15 @@ __all__ = [
     "load_classify_ctp_rows",
     "load_head_labels",
     "load_head_phase_provenance",
+    "load_head_phase_provenance_all",
     "load_sids_and_artists",
     "load_song_albums",
     "load_song_genres",
     "load_song_head_scores",
     "load_stratified_sids",
-    # patch features
-    "patch_features_done",
+    "migrate_analyze_metrics_provenance",
+    "migrate_head_phase_provenance",
+    "probe_table",
     "query_analysis_done",
     "query_binned_classify_done",
     "query_binned_configs",
@@ -183,6 +206,7 @@ __all__ = [
     "read_run_provenance",
     "require_supported_duckdb",
     "run_provenance_columns",
+    "run_rollback_canary",
     "seg_config_columns",
     "seg_config_logical_key_columns",
     "seg_membership_columns",

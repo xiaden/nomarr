@@ -1,5 +1,10 @@
 """Filesystem cache for per-bin mean PTC head activations.
 
+**ARCHIVAL (read-only compatibility).** This module and its readers are a legacy copied-head cache for
+GOLDEN COMPARISONS only. The primary analysis path (catalog memberships + disposable search views, see
+``common/catalog_analysis.py``) never reads these files and never falls back to them. Do not write new
+producers/consumers against this path.
+
 PTC (Pool-Then-Classify) segmentation drives bin boundaries from the pooled
 embedding stream.  This module stores the mean head-activation vector for each
 PTC bin so that downstream analysis can compare against CTP head activations

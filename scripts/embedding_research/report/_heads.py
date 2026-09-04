@@ -7,11 +7,11 @@ from typing import TYPE_CHECKING
 import numpy as _np
 import plotly.graph_objects as go
 
-from scripts.embedding_research.db.head_phase import load_head_phase_provenance
-from scripts.embedding_research.head_pooling import (
+from scripts.embedding_research.common.head_analysis import (
     BOUNDARY_SOURCE_EFFNET_PTC,
     HEAD_POOL_VARIANT,
 )
+from scripts.embedding_research.db.head_phase import load_head_phase_provenance
 
 from ._base import (
     _FONT_COLOR,
@@ -251,14 +251,15 @@ def section_head_value(con, flat_df: pd.DataFrame | None = None) -> dict:  # noq
 
 
 def section_head_output_shared_ptc_boundary(con, manifest=None) -> dict:
-    """Shared EffNet PTC boundary head-output preparation status and coverage.
+    """Shared-boundary head-phase preparation status and coverage for each canonical
+    (effnet config, head).
 
     Describes whether the shared ``effnet_ptc`` boundary head phase has been prepared
-    for each (head, bin_mode, threshold) configuration, the persisted shared-boundary
-    provenance (``boundary_source="effnet_ptc"``, ``head_pool_variant=...``),
-    per-threshold song coverage (``n_songs`` / ``n_pooled``), and any missing-data
-    warnings.  This is a preparation-status section only and never emits primary
-    winner/delta rows.
+    for each (config, head) tuple, the persisted canonical provenance
+    (``boundary_source="effnet_ptc"``, ``head_pool_variant=...``), per-config song
+    coverage (``n_songs`` / ``n_pooled``), and any missing-data warnings.  This is a
+    preparation-status section only and never emits primary winner/delta rows.  Only
+    canonical current rows are shown; legacy archival rows are preserved but excluded.
     """
     warnings: list[dict] = []
     if manifest is not None:
@@ -289,7 +290,7 @@ def section_head_output_shared_ptc_boundary(con, manifest=None) -> dict:
             {
                 "message": (
                     "No shared-boundary head-phase provenance found. Run the head phase "
-                    "(classify.run_shared_ptc_head_pooling) to populate head-output provenance."
+                    "(common.head_analysis.run_shared_ptc_head_pooling) to populate head-output provenance."
                 )
             }
         )
@@ -299,7 +300,7 @@ def section_head_output_shared_ptc_boundary(con, manifest=None) -> dict:
             "head-output-shared-ptc-boundary",
             "Head Output: Shared PTC Boundary",
             description=(
-                "Preparation status and per-threshold coverage for the shared EffNet PTC "
+                "Preparation status and per-config coverage for the canonical shared EffNet PTC "
                 'boundary head phase (boundary_source="effnet_ptc"). This is a '
                 "preparation-status section only and never emits primary winner/delta rows."
             ),
@@ -319,9 +320,13 @@ def section_head_output_shared_ptc_boundary(con, manifest=None) -> dict:
             cov = f"{100.0 * r.n_pooled / r.n_songs:.1f}%"
         table_rows.append(
             {
+                "config_id": str(r.config_id),
                 "head": r.head,
                 "bin_mode": r.bin_mode,
-                "threshold": fmt(r.threshold),
+                "threshold_configured": fmt(r.threshold_configured),
+                "threshold_effective": fmt(r.threshold_effective),
+                "semantics": r.semantics,
+                "finite": "yes" if r.finite else "no",
                 "status": r.status,
                 "n_songs": str(r.n_songs),
                 "n_pooled": str(r.n_pooled),
@@ -336,11 +341,11 @@ def section_head_output_shared_ptc_boundary(con, manifest=None) -> dict:
         "head-output-shared-ptc-boundary",
         "Head Output: Shared PTC Boundary",
         description=(
-            "Shared-boundary head-phase preparation status and per-threshold coverage. "
+            "Shared-boundary head-phase preparation status and per-config coverage. "
             f'boundary_source = "{BOUNDARY_SOURCE_EFFNET_PTC}" and head_pool_variant = '
-            f'"{HEAD_POOL_VARIANT}" prove the shared EffNet PTC boundary provenance; '
+            f'"{HEAD_POOL_VARIANT}" prove the canonical shared EffNet PTC boundary provenance; '
             "n_pooled/n_songs is the fraction of songs with pooled head output at each "
-            "(head, bin_mode, threshold). This section is preparation metadata only and "
+            "canonical (config, head). This section is preparation metadata only and "
             "never emits primary winner/delta rows."
         ),
         warnings=warnings,

@@ -1,5 +1,10 @@
 """Filesystem cache for PTC-derived binned embeddings (vecs + head activations).
 
+**ARCHIVAL (read-only compatibility).** This module and its readers are a legacy copied-bin cache for
+GOLDEN COMPARISONS only. The primary analysis path (catalog memberships + disposable search views,
+see ``common/catalog_analysis.py``) never reads these files and never falls back to them. Do not write
+new producers/consumers against this path.
+
 Each ``(backbone, bin_mode, std_thresh, song_id)`` combination is stored as a
 single ``.npz`` file:
 

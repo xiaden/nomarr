@@ -227,7 +227,12 @@ def test_winner_is_highest_value():
 
 
 def test_winner_tie_break_strategy_type_order():
-    """Equal values -> global_pool < ptc < ctp wins."""
+    """Equal values -> global_pool wins; CTP rows are never primary candidates.
+
+    CTP is archival-only (DD line 233), so even though a fed CTP row would sit
+    highest in the old tie-break order, ``select_winner`` drops it from
+    candidacy entirely and the medoid reference still wins the tie.
+    """
     df = pd.concat(
         [
             ptc_row("EffNet", rep_a="median", map_k_artist=0.6),
@@ -244,8 +249,14 @@ def test_winner_tie_break_strategy_type_order():
     assert str(winner["tie_break_key"]).endswith(winner["strategy_key"])
 
 
-def test_winner_tie_break_ptc_vs_ctp_same_strategy_type_rank():
-    """Two CTP rows with equal value -> head (pathway/head slot) breaks the tie."""
+def test_ctp_rows_never_selected_as_primary_winner():
+    """Two CTP rows fed to the pure winner builder yield no winner.
+
+    P2-S2: CTP must never occupy a primary winner slot, so ``select_winner``
+    returns ``None`` when the only eligible rows are CTP (archival-only).  This
+    supersedes the pre-gate tie-break behavior where two CTP rows resolved by
+    head, which is now impossible because CTP never reaches candidacy.
+    """
     df = pd.concat(
         [
             ctp_row("EffNet", head="genre", map_k_artist=0.6),
@@ -254,7 +265,7 @@ def test_winner_tie_break_ptc_vs_ctp_same_strategy_type_rank():
         ignore_index=True,
     )
     winner = select_winner(df, backbone="EffNet", metric_col="map_k_artist", k=10)
-    assert winner["head"] == "genre"  # 'genre' < 'timbre' in the pathway/head slot
+    assert winner is None
 
 
 def test_winner_tie_break_threshold_then_rep_then_strategy_key():

@@ -1,5 +1,10 @@
 """Filesystem cache for flat pooled vectors.
 
+**ARCHIVAL (read-only compatibility).** This module and its readers are a legacy copied-vector
+cache for GOLDEN COMPARISONS only. The primary analysis path (catalog memberships + disposable
+search views, see ``common/catalog_analysis.py``) never reads these files and never falls back to
+them. Do not write new producers/consumers against this path.
+
 Layout:
     {OUTPUT_ROOT}/cache/{backbone}/{strategy}/flat/{song_id}.npy
 

@@ -36,6 +36,19 @@ __all__ = ["run_binned", "run_flat", "run_ptc_heads", "run_shared_ptc_head_pooli
 _log = logging.getLogger(__name__)
 
 
+def _ctp_enabled() -> bool:
+    """True only when ``[archival_ctp] enabled=true`` (the default is disabled).
+
+    Mirrors ``run._ctp_enabled``; read directly from the config here to avoid a
+    circular import.  Used to phase-gate CTP-specific head/cache work in this
+    legacy classify surface so a disabled default run performs no CTP inference
+    and writes no CTP head caches (flat ``"ctp"`` pathway + ``binned_ctp_heads``).
+    """
+    from .helpers import toml as _toml_mod
+
+    return bool(_toml_mod.load_research_config().get("archival_ctp", {}).get("enabled", False))
+
+
 def _run_head_session(session, embed_batch: np.ndarray) -> np.ndarray:
     """Run a head ONNX session on one vector or a batch of vectors."""
     inp = embed_batch if embed_batch.ndim == 2 else embed_batch[None, :]
@@ -71,14 +84,17 @@ def _classify_song(
     if patches.size == 0:
         return False
 
-    try:
-        patch_acts = run_in_batches_fn(
-            lambda batch: _run_head_session(head_session, batch),
-            patches,
-            batch_size,
-        ).astype(np.float32)
-    except Exception as exc:
-        raise RuntimeError(f"CTP head inference failed for {path.name}/{head_name}") from exc
+    ctp_on = _ctp_enabled()
+    patch_acts: np.ndarray | None = None
+    if ctp_on:
+        try:
+            patch_acts = run_in_batches_fn(
+                lambda batch: _run_head_session(head_session, batch),
+                patches,
+                batch_size,
+            ).astype(np.float32)
+        except Exception as exc:
+            raise RuntimeError(f"CTP head inference failed for {path.name}/{head_name}") from exc
 
     wrote_any = False
     for strategy_name, pool_fn in STRATEGIES.items():
@@ -92,10 +108,10 @@ def _classify_song(
         else:
             pooled_vec = np.asarray(pooled_vec, dtype=np.float32)
         ptc_act = _run_head_session(head_session, pooled_vec)[0]
-        ctp_act = np.asarray(pool(patch_acts), dtype=np.float32)
-
         _flat_heads_cache.save(backbone_name, head_name, strategy_name, "ptc", sid, ptc_act)
-        _flat_heads_cache.save(backbone_name, head_name, strategy_name, "ctp", sid, ctp_act)
+        if ctp_on:
+            ctp_act = np.asarray(pool(patch_acts), dtype=np.float32)
+            _flat_heads_cache.save(backbone_name, head_name, strategy_name, "ctp", sid, ctp_act)
         wrote_any = True
 
     return wrote_any
@@ -123,14 +139,17 @@ def _classify_song_missing(
     if patches.size == 0:
         return False
 
-    try:
-        patch_acts = run_in_batches_fn(
-            lambda batch: _run_head_session(head_session, batch),
-            patches,
-            batch_size,
-        ).astype(np.float32)
-    except Exception as exc:
-        raise RuntimeError(f"CTP head inference failed for {path.name}/{head_name}") from exc
+    ctp_on = _ctp_enabled()
+    patch_acts: np.ndarray | None = None
+    if ctp_on:
+        try:
+            patch_acts = run_in_batches_fn(
+                lambda batch: _run_head_session(head_session, batch),
+                patches,
+                batch_size,
+            ).astype(np.float32)
+        except Exception as exc:
+            raise RuntimeError(f"CTP head inference failed for {path.name}/{head_name}") from exc
 
     sid = song_id(path)
     wrote_any = False
@@ -144,9 +163,10 @@ def _classify_song_missing(
         else:
             pooled_vec = np.asarray(pooled_vec, dtype=np.float32)
         ptc_act = _run_head_session(head_session, pooled_vec)[0]
-        ctp_act = np.asarray(pool(patch_acts), dtype=np.float32)
         _flat_heads_cache.save(backbone_name, head_name, strategy_name, "ptc", sid, ptc_act)
-        _flat_heads_cache.save(backbone_name, head_name, strategy_name, "ctp", sid, ctp_act)
+        if ctp_on:
+            ctp_act = np.asarray(pool(patch_acts), dtype=np.float32)
+            _flat_heads_cache.save(backbone_name, head_name, strategy_name, "ctp", sid, ctp_act)
         wrote_any = True
 
     return wrote_any
@@ -171,6 +191,11 @@ def _process_song_head_missing(
     Returns the number of std_thresh values saved.
     """
     if not missing_thresholds:
+        return 0
+
+    # CTP head bins (``binned_ctp_heads``) are phase-gated: with ``[archival_ctp]
+    # enabled=false`` (the default) no binned_ctp_heads cache rows are produced.
+    if not _ctp_enabled():
         return 0
 
     acts = run_in_batches_fn(
@@ -306,7 +331,14 @@ def run_shared_ptc_head_pooling(
     device: str = "cpu",
     head_sessions: dict[str, dict[str, Any]] | None = None,
 ) -> HeadPhaseManifest:
-    """Pool classifier head outputs over shared EffNet PTC boundaries (non-blocking).
+    """LEGACY INTERIM (Plan E, Phase 1 D1): live-ONNX/inclusive-range head pooling.
+
+    Retained callable through Phase 4 for live-ONNX/inclusive-range compatibility.
+    It is CACHE/MANIFEST-ONLY w.r.t. persistence (it no longer writes any
+    ``head_phase_provenance`` rows) and never calls the canonical CPU runner or
+    canonical persistence in ``common/head_analysis.py``.  The ACTIVE canonical
+    CPU surface is ``common/head_analysis.run_shared_ptc_head_pooling``; Phase 4
+    retires this legacy runner.
 
     The explicitly named **shared PTC boundary** head phase.  It consumes ONLY
     the EffNet PTC cache boundaries (``bin_start_idx`` / ``bin_end_idx`` /

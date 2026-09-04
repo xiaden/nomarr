@@ -14,18 +14,33 @@ except ImportError:
     _HAS_DUCKDB = False
 
 
-def query_analysis_done(con) -> set[tuple[str, str, int]]:
+def query_analysis_done(con, *, run_id: str | None = None) -> set[tuple[str, str, int]]:
     """Return completed analysis runs as `(strategy_key, sim_metric, k)` tuples.
 
+    Args:
+        con: DuckDB connection.
+        run_id: Optional run-scoped filter (post-migration reader contract).  When given, only the
+            distinct strategy scopes whose physical ``run_id`` column equals *run_id* are returned, so a
+            caller can query "is this run's analysis done?" without seeing unrelated runs.  When ``None``,
+            returns every distinct tuple already present in ``analyze_metrics`` (default read semantics).
+
     Returns:
-        The distinct tuples already present in `analyze_metrics`, or an empty set when
-        the table does not exist yet.
+        The distinct tuples already present in `analyze_metrics` (optionally restricted to *run_id*),
+        or an empty set when the table does not exist yet.
     """
-    try:
-        rows = con.execute("SELECT DISTINCT strategy_key, sim_metric, k FROM analyze_metrics").fetchall()
+    if run_id is None:
+        try:
+            rows = con.execute("SELECT DISTINCT strategy_key, sim_metric, k FROM analyze_metrics").fetchall()
+        except Exception:
+            return set()
         return {(r[0], r[1], r[2]) for r in rows}
+    try:
+        rows = con.execute(
+            "SELECT DISTINCT strategy_key, sim_metric, k FROM analyze_metrics WHERE run_id = ?", [run_id]
+        ).fetchall()
     except Exception:
         return set()
+    return {(r[0], r[1], r[2]) for r in rows}
 
 
 def query_classify_done() -> set[tuple[str, str, str, str, str]]:

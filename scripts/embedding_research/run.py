@@ -1,21 +1,36 @@
 """
 CLI entrypoint for the embedding research pipeline.
 
-Running with no arguments executes all eight phases in order:
-  ingest -> embed -> stratify -> segment -> classify -> analyze -> head -> report
+Phase 4 explicit CLI.  The pipeline is decomposed into exactly eight phases:
 
-Each phase checks what is already in the DB and skips completed work.
-All configuration lives in research_config.toml next to this file.
+  ingest  embed  infer-heads  catalog  catalog-report
+  analyze  head-analysis  report
 
-Usage:
-  # First-time setup
+Only the first three phases (ingest, embed, infer-heads) may discover audio,
+load ONNX models, create ML sessions, or run inference.  The five derived
+phases (catalog, catalog-report, analyze, head-analysis, report) are CPU-only:
+they consume only DuckDB catalog/registry rows, manifests, search views and
+frozen stream + head artifacts and never touch audio/models/ONNX/CUDA.
+
+Run one phase:
+
+  python run.py <phase>
+
+where <phase> is one of the eight above.  Stratification is catalog input
+(config/corpus selection), NOT a separate phase.  Cleanup and reset are explicit
+SEPARATE maintenance operations (not pipeline phases):
+
+  python run.py cleanup --scope {staging|views|dead|archival|analysis-run}
+                         [--run-id ID] [--confirm] [--dry-run]
+  python run.py reset [--binned-cache]
+
+First-time setup:
+
   python run.py --install
 
-  # Normal run (reads everything from research_config.toml)
-  python run.py
-
-  # Wipe the DB and start fresh (preserves .npy sidecars)
-  python run.py --reset
+All configuration lives in research_config.toml next to this file.  Each phase
+is individually idempotent against the frozen DB/streams, and every invocation
+records an auditable run_provenance row (run_id is fresh per invocation).
 """
 
 from __future__ import annotations
@@ -527,26 +542,36 @@ def _segment_phase(con, cfg: dict) -> None:
         **_kw,
         extra_cfg={"skip_check_fn": _ptc_seg_fn.SKIP_CHECK_FN, "cache_write_fn": _ptc_seg_fn.CACHE_WRITE_FN},
     )
-    cache: ModelCache | None = cfg.get("cache")
-    for backbone_name in list(cfg["backbones"]) if cfg["backbones"] is not None else list(HEADS):
-        if cache is not None:
-            head_sessions = cache.head_sessions.get(backbone_name, {})
-            run_in_batches_fn = cache.run_in_batches_fn
-        else:
-            head_sessions, run_in_batches_fn = _build_ctp_segment_infra(
-                backbone_name, heads=cfg.get("heads"), device=cfg["device"]
+    # Deferred/archival CTP segmentation is phase-gated: with ``[archival_ctp]
+    # enabled=false`` (the default) NO CTP segment work runs here — no head
+    # sessions are built, no ``binned_ctp`` segment caches are written, and no
+    # CTP strategy rows are produced.  Empty CTP tables/caches are the expected
+    # correct state (DD U6: the phase-level zero-row gate accepts empty CTP
+    # tables as correct, not corruption).  Explicit opt-in re-enables it.
+    if _ctp_enabled():
+        cache: ModelCache | None = cfg.get("cache")
+        for backbone_name in list(cfg["backbones"]) if cfg["backbones"] is not None else list(HEADS):
+            if cache is not None:
+                head_sessions = cache.head_sessions.get(backbone_name, {})
+                run_in_batches_fn = cache.run_in_batches_fn
+            else:
+                head_sessions, run_in_batches_fn = _build_ctp_segment_infra(
+                    backbone_name, heads=cfg.get("heads"), device=cfg["device"]
+                )
+            if not head_sessions:
+                continue
+            common.segment.segment(
+                con,
+                _ctp_seg_fn.make_segment_fn(head_sessions, run_in_batches_fn),
+                _ctp_seg_fn.make_strategy_names(head_sessions.keys()),
+                song_ids=cfg["song_ids"],
+                force=cfg["force"],
+                backbones=[backbone_name],
+                extra_cfg={
+                    "skip_check_fn": _ctp_seg_fn.SKIP_CHECK_FN,
+                    "cache_write_fn": _ctp_seg_fn.CACHE_WRITE_FN,
+                },
             )
-        if not head_sessions:
-            continue
-        common.segment.segment(
-            con,
-            _ctp_seg_fn.make_segment_fn(head_sessions, run_in_batches_fn),
-            _ctp_seg_fn.make_strategy_names(head_sessions.keys()),
-            song_ids=cfg["song_ids"],
-            force=cfg["force"],
-            backbones=[backbone_name],
-            extra_cfg={"skip_check_fn": _ctp_seg_fn.SKIP_CHECK_FN, "cache_write_fn": _ctp_seg_fn.CACHE_WRITE_FN},
-        )
 
 
 def _classify_phase(con, cfg: dict) -> None:
@@ -672,7 +697,17 @@ def _build_backbone_manifests(cfg: Mapping[str, Any]) -> dict[str, MatchingCorpu
 
 
 def _analyze_phase(con, cfg: dict) -> None:
-    con.execute("DELETE FROM analyze_metrics")
+    # LEGACY interim full-matrix analysis path (common.analyze) — retained until Plan E rewires run.py
+    # to the catalog-first primary path (common/catalog_analysis.py).  P3-S4: the old global
+    # `DELETE FROM analyze_metrics` is removed.  An analysis run only touches rows it owns.  With
+    # force=False (the default) common.analyze SKIPS every strategy already in its done_set — a second
+    # normal run writes nothing new and preserves those strategies' existing rows unchanged; only
+    # force=True or a cold (empty) analyze_metrics table triggers the per-strategy INSERT OR REPLACE
+    # (replacing that strategy's own (strategy_key, sim_metric, k) rows and clearing only that
+    # strategy's per-song rows).  baseline/corpus rows and unrelated retained runs
+    # (run_provenance.retained=True) are preserved.  The physical run_id migration and per-run row
+    # identification are owned by the reset/cleanup plan (Plan E); the run-scoped write/reader
+    # contract that prepares for it lives in db.analyze_scope.
     _kw = {"song_ids": cfg["song_ids"], "force": cfg["force"], "backbones": cfg["backbones"], "k": cfg["k"]}
     manifests = _build_backbone_manifests(cfg)
     cfg["matching_corpus"] = manifests
@@ -704,13 +739,17 @@ def _head_phase(con, cfg: dict) -> None:
 
     The head phase operates on exactly the primary EffNet corpus songs that also
     have head-cache availability (a clearly declared derived head-availability
-    subset); provenance rows are persisted additively to ``head_phase_provenance``
-    and the manifest is stored on *cfg* for the report phase's status hook.
+    subset).  LEGACY interim (Phase 1 D1): this glue remains callable through
+    Phase 4 and appends ONLY read-only archival provenance rows
+    (``run_id='legacy'`` with the legacy ``threshold`` populated and canonical-only
+    fields NULL).  It never dual-writes, never creates a canonical current row, and
+    never calls the canonical CPU runner/persistence.  The manifest is stored on
+    *cfg* for the report phase's status hook.
     """
     from scripts.embedding_research.classify import run_shared_ptc_head_pooling
     from scripts.embedding_research.db.head_phase import (
-        build_head_phase_provenance_rows,
-        write_head_phase_provenance,
+        append_head_phase_archival_rows,
+        build_archival_provenance_rows,
     )
 
     # Reference corpus: the primary EffNet matching-corpus manifest built during
@@ -733,9 +772,9 @@ def _head_phase(con, cfg: dict) -> None:
         heads=cfg.get("heads"),
         force=cfg.get("force", False),
     )
-    write_head_phase_provenance(
+    append_head_phase_archival_rows(
         con,
-        build_head_phase_provenance_rows(manifest, reference_corpus_hash=reference_corpus_hash),
+        build_archival_provenance_rows(manifest, reference_corpus_hash=reference_corpus_hash),
     )
     cfg["head_phase_manifest"] = manifest
     if manifest.errors or (manifest.done == 0 and sum(r.n_pooled for r in manifest.results) == 0):
@@ -786,7 +825,24 @@ def _report_phase(con, cfg: dict) -> None:
     )
 
 
-_PHASES: dict[str, Callable[..., None]] = {
+# ---------------------------------------------------------------------------
+# LEGACY all-in-one orchestration (retired from the CLI in Phase 4).
+# ---------------------------------------------------------------------------
+# The run.py-owned orchestration functions above (`_ingest_phase` …
+# `_report_phase`) and the `_LEGACY_PHASES` map drove the old whole-pipeline
+# loop (ingest->embed->stratify->segment->classify->analyze->head->report) in a
+# single sequential pass.  The Phase 4 CLI below replaces that loop with the
+# eight explicit phases + cleanup/reset maintenance.  These legacy functions are
+# RETAINED — not deleted — because tests import their helpers (`_head_phase`,
+# `_load_global_pool_analyze_vecs`, `_ptc_strategy_key`, `_ctp_strategy_key`,
+# …) and because the D1 interim contract keeps classify.py's LEGACY
+# `run_shared_ptc_head_pooling` + head_pooling.py + the run.py `_head_phase`
+# archival glue callable through Phase 4 (archival-only; residual cleanup is
+# Plan F).  They are intentionally NOT wired into the new dispatch, so derived
+# phases cannot reach them.
+# ---------------------------------------------------------------------------
+
+_LEGACY_PHASES: dict[str, Callable[..., None]] = {
     "ingest": _ingest_phase,
     "embed": _embed_phase,
     "stratify": _stratify_phase,
@@ -796,6 +852,550 @@ _PHASES: dict[str, Callable[..., None]] = {
     "head": _head_phase,
     "report": _report_phase,
 }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Phase 4 — explicit phase CLI + run provenance (DD "CLI and provenance").
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# The CLI exposes EXACTLY eight phases: ingest, embed, infer-heads, catalog,
+# catalog-report, analyze, head-analysis, report — plus cleanup and reset as
+# EXPLICIT SEPARATE maintenance operations (wired to cleanup.py scopes / the
+# legacy reset helpers, not to the phase sequence).
+#
+# CPU/inference boundaries (DD): only the first three phases may discover audio,
+# load models, create ML sessions or run ONNX.  The five derived phases are
+# routed exclusively through the canonical CPU modules below; they never reach
+# the audio/model/ONNX/CUDA surfaces in this file (legacy orchestration,
+# model-cache builders) or classify.py/head_pooling.py.  Each derived-phase
+# runner below imports ONLY from CPU-only modules — see tests
+# test_phase4_dispatch_boundaries.py for the structural (phase-call-graph) proof.
+#
+# Stratification is catalog input/config generation, NOT a phase: the `catalog`
+# phase selects its corpus subset from the song registry using the [stratify]
+# budget/config (common.stratify.run_stratify) and then builds the segmentation
+# catalog over that subset.  There is no `stratify` CLI phase.
+#
+# run_id scheme: every phase records one auditable run_provenance row per
+# invocation.  run_id = "{phase}-{started_at_ms}" (INTEGER millisecond
+# timestamp) — FRESH per invocation.  Idempotency is provided by each canonical
+# phase's own skip/replace semantics (embed/infer-heads skip already-ready
+# streams; catalog reuses config_id by canonical hash and replaces only that
+# config's rows; analyze writes run-scoped replace), so run_id is deliberately
+# NOT reused across invocations.  `--retained` opts a run into retained=true so
+# view/reset GC protects it.  embed / infer-heads / analyze record their own
+# run_provenance row(s) inside their canonical modules (single-source); ingest,
+# catalog, catalog-report, head-analysis and report have their row recorded
+# here by the CLI.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+CLI_PHASES: tuple[str, ...] = (
+    "ingest",
+    "embed",
+    "infer-heads",
+    "catalog",
+    "catalog-report",
+    "analyze",
+    "head-analysis",
+    "report",
+)
+
+# Legacy phase names that previously mapped to opaque orchestration.  They are
+# NOT valid new-CLI phase names: selecting one is a clear error (never a silent
+# alias), per CONTRACTS.md CLI boundaries.
+LEGACY_PHASE_ALIASES: frozenset[str] = frozenset({"stratify", "segment", "classify", "head"})
+
+AUDIO_PHASES: frozenset[str] = frozenset({"ingest", "embed", "infer-heads"})
+DERIVED_PHASES: frozenset[str] = frozenset(CLI_PHASES) - AUDIO_PHASES
+
+# A derived-phase runner may import/reference ONLY from these CPU-only modules
+# (research-relative dotted paths under ``scripts.embedding_research``).
+# (Used by tests/test_phase4_dispatch_boundaries.py as the phase-call-graph
+# proof that derived paths cannot reach audio/model/ONNX/CUDA surfaces.)
+DERIVED_ALLOWED_IMPORT_ROOTS: frozenset[str] = frozenset(
+    {
+        # top-level CPU modules
+        "catalog",
+        "catalog_identity",
+        "catalog_report",
+        "config",
+        "report",
+        "streams",
+        # db/* CPU persistence modules
+        "db.analyze_scope",
+        "db.songs",
+        "db.head_phase",
+        # common/* canonical CPU analysis modules
+        "common.catalog_analysis",
+        "common.head_analysis",
+    }
+)
+
+# Forbidden on derived-phase paths.  (mirrors the P2-S3 sentinel surfaces)
+DERIVED_FORBIDDEN_TOKENS: frozenset[str] = frozenset(
+    {
+        "discover_audio",
+        "create_session",
+        "inference_session",
+        "_run_in_batches",
+        "run_in_batches_fn",
+        "onnxruntime",
+        "torch",
+        "cuda",
+        "bootstrap_nomarr",
+        "model_cache",
+        "classify",
+        "head_pooling",
+        "segment_fn",
+    }
+)
+
+
+# ── provenance / run helpers ───────────────────────────────────────────────────
+
+
+def _software_versions() -> str:
+    """Compact software-version line recorded in run_provenance."""
+    return f"python={sys.version.split()[0]} duckdb={duckdb.__version__} numpy={np.__version__}"
+
+
+def _command_line() -> str:
+    """The argv line that invoked this CLI (recorded in run_provenance)."""
+    return " ".join(sys.argv)
+
+
+def _record_phase_run(
+    con,
+    *,
+    run_id: str,
+    phase: str,
+    status: str,
+    started_at: int,
+    finished_at: int,
+    config_hash: str = "",
+    song_count: int = 0,
+    warning_count: int = 0,
+    retained: bool = False,
+    output_artifact_hashes: str = "",
+    input_artifact_hashes: str = "",
+    structural_change_summary: str = "",
+) -> None:
+    """Append one run_provenance row for a phase invocation (INTEGER-ms stamps)."""
+    from scripts.embedding_research.db.provenance import write_run_provenance
+
+    write_run_provenance(
+        con,
+        run_id=run_id,
+        phase=phase,
+        status=status,
+        started_at=started_at,
+        finished_at=finished_at,
+        output_artifact_hashes=output_artifact_hashes,
+        input_artifact_hashes=input_artifact_hashes,
+        config_hash=config_hash,
+        song_count=song_count,
+        warning_count=warning_count,
+        software_versions=_software_versions(),
+        command_line=_command_line(),
+        structural_change_summary=structural_change_summary,
+        retained=retained,
+    )
+
+
+def _mark_run_retained(con, run_id: str, phase: str) -> None:
+    """Flip a phase's own provenance row(s) to retained=true (post --retained)."""
+    con.execute(
+        "UPDATE run_provenance SET retained = 1 WHERE run_id = ? AND phase = ?",
+        (run_id, phase),
+    )
+
+
+# ── catalog input generation (stratification-as-input, never a phase) ──────────
+
+
+def _catalog_seg_configs(cfg: dict) -> list:
+    """Build the segmentation-config list for one pass over the [binning] grid.
+
+    One :class:`~scripts.embedding_research.catalog.SegConfigInput` per
+    (backbone, bin_mode, threshold) combination.  Backbones/bin-modes/thresholds
+    come from ``cfg`` (populated from research_config.toml ``[pipeline]`` /
+    ``[binning]`` by main; overridable in tests).
+    """
+    from scripts.embedding_research.catalog import SegConfigInput
+
+    backbones = cfg.get("backbones") or ["effnet"]
+    bin_modes = cfg.get("catalog_bin_modes") or ["temporal_global"]
+    thresholds = [float(t) for t in (cfg.get("catalog_thresholds") or [0.7])]
+    return [
+        SegConfigInput(
+            backbone=backbone,
+            bin_mode=bin_mode,
+            threshold_configured=threshold,
+            threshold_effective=threshold,
+            semantics="direct_l2",
+        )
+        for backbone in backbones
+        for bin_mode in bin_modes
+        for threshold in thresholds
+    ]
+
+
+def _catalog_corpus_song_ids(con, cfg: dict) -> list[str]:
+    """Select the corpus subset the `catalog` phase catalogs.
+
+    Stratification is represented as catalog input/config generation (never a
+    standalone phase): with a positive ``[pipeline].limit`` the corpus is the
+    budgeted subset from ``common.stratify.run_stratify``; with the default
+    limit (0 = no cap) the corpus is the full song registry.  Falls back to the
+    full registry if stratification cannot select (defensive; never blocks).
+    """
+    from scripts.embedding_research.db.songs import load_all_songs
+
+    registry = sorted(r["song_id"] for r in load_all_songs(con))
+    limit = cfg.get("limit")
+    if not limit:
+        return registry
+    try:
+        config_hash = cfg.get("config_hash") or ""
+        from scripts.embedding_research.common.stratify import run_stratify
+
+        selected = run_stratify(con, cfg, config_hash)
+        if selected:
+            return sorted(selected)
+    except Exception as exc:  # pragma: no cover - defensive
+        _log.warning("stratification could not select a corpus; using full registry: %s", exc)
+    return registry
+
+
+def _analysis_corpus_song_ids(con, backbone: str) -> list[str]:
+    """The songs actually cataloged (seg_meta rows) for *backbone*'s canonical configs.
+
+    Derived `analyze` reads its corpus from the frozen catalog rows (the real
+    cataloged corpus) rather than re-selecting.
+    """
+    rows = con.execute(
+        """
+        SELECT DISTINCT sm.song_id
+        FROM seg_meta sm
+        JOIN seg_config c ON c.config_id = sm.config_id
+        WHERE c.backbone = ? AND c.alias_of_config_id IS NULL
+        ORDER BY 1
+        """,
+        (backbone,),
+    ).fetchall()
+    return [r[0] for r in rows]
+
+
+# ── phase runners ──────────────────────────────────────────────────────────────
+# ingest / embed / infer-heads are AUDIO phases (may load models / run ONNX).
+
+
+def _run_ingest(con, cfg: dict, _run_id: str) -> dict:
+    """ingest: discover audio + register normalized corpus songs (AUDIO phase)."""
+    from scripts.embedding_research.db.songs import load_all_songs
+    from scripts.embedding_research.strategy_meta import ingest as _strategy_meta_ingest
+
+    _strategy_meta_ingest(con, force=bool(cfg.get("force", False)))
+    return {"song_count": len(load_all_songs(con))}
+
+
+def _run_embed(con, cfg: dict, run_id: str) -> dict:
+    """embed: bounded backbone inference -> immutable streams/registry (AUDIO phase)."""
+    from scripts.embedding_research.common.embed import embed as _embed
+
+    _embed(
+        con,
+        force=bool(cfg.get("force", False)),
+        backbones=cfg.get("backbones"),
+        device=cfg.get("device", "cpu"),
+        run_id=run_id,
+    )
+    # embed records its own run_provenance row (single source).
+    return {"self_recorded": True}
+
+
+def _run_infer_heads(con, cfg: dict, run_id: str) -> dict:
+    """infer-heads: aligned classifier head streams -> registry (AUDIO phase)."""
+    from scripts.embedding_research.common.infer_heads import infer_heads as _infer_heads
+
+    _infer_heads(
+        con,
+        force=bool(cfg.get("force", False)),
+        backbones=cfg.get("backbones"),
+        heads=cfg.get("heads"),
+        device=cfg.get("device", "cpu"),
+        run_id=run_id,
+    )
+    # infer-heads records its own run_provenance row (single source).
+    return {"self_recorded": True}
+
+
+# ── phase runners: DERIVED (CPU-only) ──────────────────────────────────────────
+# Each derived runner imports only from DERIVED_ALLOWED_IMPORT_ROOTS and never
+# references DERIVED_FORBIDDEN_TOKENS (proved by test_phase4_dispatch_boundaries.py).
+
+
+def _run_catalog(con, cfg: dict, run_id: str) -> dict:
+    """catalog: verify streams, select corpus + configs, build seg catalog (CPU)."""
+    from scripts.embedding_research.catalog import build_segmentation_catalog
+    from scripts.embedding_research.streams import StreamStore
+
+    out_root = cfg.get("output_root") or OUTPUT_ROOT
+    configs = _catalog_seg_configs(cfg)
+    song_ids = _catalog_corpus_song_ids(con, cfg)
+    store = StreamStore(con, output_root=str(out_root))
+    build_segmentation_catalog(
+        con,
+        store,
+        configs,
+        song_ids,
+        run_id=run_id,
+        verify=bool(cfg.get("verify", False)),
+    )
+    return {"song_count": len(song_ids)}
+
+
+def _run_catalog_report(con, cfg: dict, _run_id: str) -> dict:
+    """catalog-report: render catalog configs/aliases/segments + provenance (CPU)."""
+    from scripts.embedding_research.catalog_identity import CATALOG_SEMANTICS_VERSION
+    from scripts.embedding_research.catalog_report import build_catalog_report, report_to_text
+
+    report = build_catalog_report(con, schema_version=CATALOG_SEMANTICS_VERSION)
+    out_dir = Path(cfg.get("report_dir") or OUTPUT_ROOT)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "catalog_report.txt").write_text(report_to_text(report), encoding="utf-8")
+    _log.info("catalog-report: canonical configs=%d aliases=%d", len(report.canonical_config_ids), report.alias_count)
+    return {"song_count": 0, "output_artifact_hashes": "catalog_report.txt"}
+
+
+def _run_analyze(con, cfg: dict, run_id: str) -> dict:
+    """analyze: gather disposable views + bounded exact scoring -> run-scoped metrics (CPU)."""
+    from scripts.embedding_research.common.catalog_analysis import (
+        CatalogAnalysisConfig,
+        analyze_catalog_corpus,
+    )
+    from scripts.embedding_research.db.analyze_scope import write_catalog_analyze_rows
+    from scripts.embedding_research.db.songs import load_all_songs
+    from scripts.embedding_research.streams import StreamStore
+
+    out_root = cfg.get("output_root") or OUTPUT_ROOT
+    store = StreamStore(con, output_root=str(out_root))
+    artists = {r["song_id"]: (r["artist"] or "unknown") for r in load_all_songs(con)}
+    total = 0
+    for backbone in cfg.get("backbones") or ["effnet"]:
+        song_ids = _analysis_corpus_song_ids(con, backbone)
+        if not song_ids:
+            _log.warning("analyze: no cataloged corpus for backbone %r — run `catalog` first", backbone)
+            continue
+        analysis_cfg = CatalogAnalysisConfig(
+            run_id=run_id,
+            backbone=backbone,
+            song_ids=tuple(song_ids),
+            artists=artists,
+            k=int(cfg.get("k", 10)),
+        )
+        result = analyze_catalog_corpus(store, con, analysis_cfg)
+        write_catalog_analyze_rows(con, run_id=run_id, result=result)
+        total += len(song_ids)
+    # analyze records its own run_provenance row via materialize/record_*_scope.
+    return {"song_count": total, "self_recorded": True}
+
+
+def _run_head_analysis(con, cfg: dict, run_id: str) -> dict:
+    """head-analysis: CPU head pooling/medoid over memberships + shared PTC (CPU)."""
+    from scripts.embedding_research.common.head_analysis import run_shared_ptc_head_pooling
+    from scripts.embedding_research.db.head_phase import (
+        build_head_phase_provenance_rows,
+        write_head_phase_provenance,
+    )
+    from scripts.embedding_research.streams import HeadStreamStore
+
+    out_root = cfg.get("output_root") or OUTPUT_ROOT
+    head_store = HeadStreamStore(con, output_root=str(out_root))
+    manifest = run_shared_ptc_head_pooling(
+        con,
+        head_store,
+        run_id=run_id,
+        force=bool(cfg.get("force", False)),
+    )
+    rows = build_head_phase_provenance_rows(manifest)
+    write_head_phase_provenance(con, rows)
+    _log.info(
+        "head-analysis: run_id=%s done=%d skipped=%d errors=%d finite=%s",
+        run_id,
+        manifest.done,
+        manifest.skipped,
+        manifest.errors,
+        manifest.finite,
+    )
+    return {"song_count": len(manifest.song_ids)}
+
+
+def _run_report(con, cfg: dict, _run_id: str) -> dict:
+    """report: render results + provenance, never infers (CPU)."""
+    from scripts.embedding_research.config import REPORT_DIR as _REPORT_DIR
+    from scripts.embedding_research.report import run as _report_run
+
+    out_dir = Path(cfg.get("report_dir") or _REPORT_DIR)
+    _report_run(con, out_dir)
+    return {"song_count": 0, "output_artifact_hashes": "report.json,report.html"}
+
+
+CLI_PHASE_RUNNERS: dict[str, Callable[..., dict]] = {
+    "ingest": _run_ingest,
+    "embed": _run_embed,
+    "infer-heads": _run_infer_heads,
+    "catalog": _run_catalog,
+    "catalog-report": _run_catalog_report,
+    "analyze": _run_analyze,
+    "head-analysis": _run_head_analysis,
+    "report": _run_report,
+}
+
+
+# ── single-phase executor (provenance wrapper) ─────────────────────────────────
+
+
+_DERIVED_CONSUMER_PHASES = frozenset({"catalog-report", "analyze", "head-analysis", "report"})
+
+
+def _has_canonical_catalog(con) -> bool:
+    """True when at least one canonical (non-alias) seg_config row exists."""
+    n = con.execute("SELECT count(*) FROM seg_config WHERE alias_of_config_id IS NULL").fetchone()[0]
+    return bool(n)
+
+
+def _has_analyze_metrics(con) -> bool:
+    """True when at least one non-legacy (run-scoped) analyze_metrics row exists."""
+    n = con.execute("SELECT count(*) FROM analyze_metrics WHERE run_id <> 'legacy'").fetchone()[0]
+    return bool(n)
+
+
+def _canonical_config_duplicates(con) -> int:
+    """Count of canonical seg_config identities (by canonical_config_hash) that collide."""
+    return int(
+        con.execute(
+            "SELECT count(*) FROM ("
+            "  SELECT canonical_config_hash FROM seg_config"
+            "  WHERE alias_of_config_id IS NULL"
+            "  GROUP BY canonical_config_hash HAVING count(*) > 1)"
+        ).fetchone()[0]
+    )
+
+
+def _preflight_derived_phase(con, phase: str, cfg: dict, *, db_path=None) -> list[str]:
+    """Post-crash canary + artifact-presence gate for the five derived phases.
+
+    Thin by default: a clean run with no ``--verify`` and no detected post-crash
+    state performs only the cheap post-crash detection and returns immediately.
+    ``--verify`` (and therefore ``--strict``) additionally run the rollback-only
+    canary over every surviving PK/UNIQUE table (DD ``Post-crash verification
+    canary``) and check required derived inputs are present.  Under ``--strict``
+    any recorded corruption, unresolved duplicate, or missing required artifact
+    becomes a hard refusal (raised here, recorded as a ``failed`` provenance row,
+    and propagated to the caller).  Plain ``--verify`` records the same conditions
+    as warnings and continues — never blocks on a warning.
+
+    Returns the list of verification/reuse notes to fold into the phase's
+    run_provenance ``structural_change_summary`` / ``warning_count``.
+    """
+    if phase not in DERIVED_PHASES:
+        return []
+    verify = bool(cfg.get("verify"))
+    strict = bool(cfg.get("strict"))
+    from scripts.embedding_research.db.canary import detect_post_crash, run_rollback_canary
+
+    post_crash = detect_post_crash(con, db_path=db_path)
+    if not verify and not post_crash:
+        return []  # thin gate: clean run without --verify pays no probe cost.
+
+    notes: list[str] = []
+    # 1) rollback-only canary over every surviving PK/UNIQUE table.
+    canary_report = run_rollback_canary(con)
+    notes.append(f"canary ok: {len(canary_report.ok)} probed, {len(canary_report.empty)} empty")
+    # 2) required derived inputs (only consumers read catalog/analyze artifacts).
+    if phase in _DERIVED_CONSUMER_PHASES:
+        if not _has_canonical_catalog(con):
+            msg = f"phase {phase!r}: no canonical catalog (seg_config canonical rows) present"
+            if strict:
+                raise _MissingArtifactError(msg)
+            notes.append(f"warning: {msg}")
+        elif phase == "report" and not _has_analyze_metrics(con):
+            msg = "phase 'report': no run-scoped analyze_metrics rows present to render"
+            if strict:
+                raise _MissingArtifactError(msg)
+            notes.append(f"warning: {msg}")
+        elif _canonical_config_duplicates(con):
+            msg = f"phase {phase!r}: unresolved duplicate canonical config identity"
+            if strict:
+                raise _DuplicateIdentityError(msg)
+            notes.append(f"warning: {msg}")
+        else:
+            notes.append(f"{phase}: reuse existing verified catalog/analyze inputs")
+    return notes
+
+
+class _MissingArtifactError(RuntimeError):
+    """Raised under ``--verify --strict`` when a required derived input is absent."""
+
+
+class _DuplicateIdentityError(RuntimeError):
+    """Raised under ``--verify --strict`` on an unresolved duplicate application identity."""
+
+
+def _run_single_phase(con, phase: str, cfg: dict, *, db_path=None) -> None:
+    """Execute exactly one CLI phase with run-scoped provenance."""
+    started_at = int(time.time() * 1000)
+    run_id = cfg.get("run_id") or f"{phase}-{started_at}"
+    runner = CLI_PHASE_RUNNERS[phase]
+    meta: dict = {}
+    pre_notes: list[str] = []
+    try:
+        pre_notes = _preflight_derived_phase(con, phase, cfg, db_path=db_path)
+        meta = runner(con, cfg, run_id) or {}
+    except Exception:
+        _record_phase_run(
+            con,
+            run_id=run_id,
+            phase=phase,
+            status="failed",
+            started_at=started_at,
+            finished_at=int(time.time() * 1000),
+            config_hash=cfg.get("config_hash", ""),
+            song_count=int(meta.get("song_count", 0)),
+            warning_count=int(meta.get("warning_count", 0)),
+            retained=bool(cfg.get("retained", False)),
+        )
+        _log.error("phase %r failed (run_id=%s)", phase, run_id)
+        raise
+    finished_at = int(time.time() * 1000)
+    notes = list(pre_notes)
+    if meta.get("notes"):
+        notes.extend(str(n) for n in meta["notes"])
+    summary = "; ".join(notes) if notes else ""
+    warning_count = int(meta.get("warning_count", len(notes)))
+    if meta.get("self_recorded"):
+        # The canonical module owns its run_provenance row(s); only honor --retained.
+        if cfg.get("retained"):
+            _mark_run_retained(con, run_id, phase)
+        _log.info("phase %s complete  run_id=%s  (module-recorded provenance)", phase, run_id)
+        return
+    _record_phase_run(
+        con,
+        run_id=run_id,
+        phase=phase,
+        status="completed",
+        started_at=started_at,
+        finished_at=finished_at,
+        config_hash=cfg.get("config_hash", ""),
+        song_count=int(meta.get("song_count", 0)),
+        warning_count=warning_count,
+        retained=bool(cfg.get("retained", False)),
+        output_artifact_hashes=meta.get("output_artifact_hashes", ""),
+        input_artifact_hashes=meta.get("input_artifact_hashes", ""),
+        structural_change_summary=summary,
+    )
+    _log.info("phase %s complete  run_id=%s", phase, run_id)
 
 
 class _MemoryWatcher:
@@ -839,8 +1439,51 @@ class _MemoryWatcher:
                 _wlog.info("[mem]  RSS %.0f MB", _mb)
 
 
+def _validate_verify_flags(verify: bool, strict: bool) -> None:
+    """Reject ``--strict`` without ``--verify`` (strict refusal is meaningless otherwise).
+
+    Chosen semantics (documented in --strict help text): ``--strict`` REQUIRES
+    ``--verify``; it is rejected (not silently implied) so a user who believes they
+    requested verification cannot be surprised.  ``--verify --strict`` escalates
+    every recorded corruption / unresolved duplicate / missing-required-artifact /
+    canary failure into a hard phase refusal.
+    """
+    if strict and not verify:
+        _log.error(
+            "--strict is only meaningful with --verify (strict refusal refuses on "
+            "corruption/duplicates/missing artifacts found during verification); "
+            "pass --verify --strict, or drop --strict."
+        )
+        raise SystemExit(2)
+
+
+def _resolve_command(cmd: str) -> str:
+    """Validate a CLI command string against the explicit phase/maintenance set.
+
+    Returns the command unchanged when it is one of the eight phase names or a
+    maintenance keyword (``cleanup`` / ``reset``).  Retired legacy aliases and
+    unknown commands raise ``SystemExit(2)`` with an error naming the valid
+    phases — they are never silently aliased to a phase.
+    """
+    if cmd in LEGACY_PHASE_ALIASES:
+        _log.error(
+            "%r is a retired/legacy phase name and is not a valid new-CLI phase. Valid phases: %s",
+            cmd,
+            ", ".join(CLI_PHASES),
+        )
+        raise SystemExit(2)
+    if cmd not in CLI_PHASES and cmd not in ("cleanup", "reset"):
+        _log.error(
+            "unknown command %r. Valid phases: %s. Maintenance: cleanup, reset.",
+            cmd,
+            ", ".join(CLI_PHASES),
+        )
+        raise SystemExit(2)
+    return cmd
+
+
 def main() -> None:
-    """Configure logging, parse CLI args, and execute the embedding research pipeline."""
+    """Configure logging, parse CLI args, and execute one explicit phase or maintenance op."""
     _fmt = logging.Formatter("%(asctime)s  %(levelname)-8s  %(message)s", datefmt="%H:%M:%S")
     _sh = logging.StreamHandler()
     _sh.setFormatter(_fmt)
@@ -862,120 +1505,171 @@ def main() -> None:
     # Suppress verbose DEBUG spam from third-party libraries
     for _noisy in ("PIL", "onnxruntime", "numba", "h5py", "numexpr", "nomarr.components.ml.onnx.ml_session_comp"):
         logging.getLogger(_noisy).setLevel(logging.WARNING)
+
     ap = argparse.ArgumentParser(
-        description="Embedding research pipeline — configure via research_config.toml",
+        description="Embedding research CLI — exactly 8 phases + cleanup/reset maintenance.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
+    ap.add_argument("command", nargs="?", default=None, help="phase or maintenance command (see below)")
     ap.add_argument("--install", action="store_true", help="Install pip requirements then exit")
-    ap.add_argument("--reset", action="store_true", help="Drop the DB and exit (preserves .npy sidecars)")
-    ap.add_argument("--reset-binned-cache", action="store_true", help="Delete binned ptc/ctp caches")
-    ap.add_argument("--fresh", action="store_true", help="Reset DB plus the binned ptc/ctp caches")
+    ap.add_argument("--force", action="store_true", help="Recompute/override existing rows for this phase")
+    ap.add_argument("--device", default=None, help="ONNX device (cpu|cuda) for audio phases")
+    ap.add_argument("--retained", action="store_true", help="Mark this run retained (protected from view/reset GC)")
+    ap.add_argument("--verify", action="store_true", help="Verify artifacts/catalog while running (relevant phases)")
+    ap.add_argument(
+        "--strict",
+        action="store_true",
+        help="With --verify: refuse the phase (nonzero exit) on corruption, unresolved "
+        "duplicates, missing required artifacts, or a failed post-crash canary. "
+        "--strict requires --verify.",
+    )
+    ap.add_argument("--scope", choices=("staging", "views", "dead", "archival", "analysis-run"), help="cleanup scope")
+    ap.add_argument("--run-id", default=None, help="run_id (cleanup --scope analysis-run)")
+    ap.add_argument("--confirm", action="store_true", help="Confirm destructive cleanup")
+    ap.add_argument("--dry-run", action="store_true", dest="dry_run", help="cleanup: report without deleting")
+    ap.add_argument("--binned-cache", action="store_true", help="reset also clears binned ptc/ctp caches")
     args = ap.parse_args()
+    _validate_verify_flags(verify=bool(args.verify), strict=bool(args.strict))
 
-    if args.install:
-        _install()
-        return
+    try:
+        cmd = args.command
+        if args.install:
+            _install()
+            return
+        if cmd is None:
+            ap.print_help()
+            raise SystemExit(2)
+        cmd = _resolve_command(cmd)
 
-    if args.fresh:
-        _reset_db()
-        _reset_cache_dirs(reset_optimizer=False, reset_binned=True)
-        return
+        # Startup duckdb version gate (1.5 <= v < 2.0) before ANY DB work.
+        from scripts.embedding_research.db._schema import require_supported_duckdb as _require_supported_duckdb
 
-    if args.reset:
-        _reset_db()
-        return
+        _require_supported_duckdb()
 
-    if args.reset_binned_cache:
-        _reset_cache_dirs(reset_optimizer=False, reset_binned=True)
-        return
+        if cmd == "cleanup":
+            _cmd_cleanup(args)
+            return
+        if cmd == "reset":
+            if args.binned_cache:
+                _reset_db()
+                _reset_cache_dirs(reset_optimizer=False, reset_binned=True)
+            else:
+                _reset_db()
+            _log.info("reset complete")
+            return
 
-    # Startup duckdb version gate: asserts the installed duckdb satisfies
-    # 1.5 <= v < 2.0 before ANY pipeline phase runs (fails loudly otherwise).
-    from scripts.embedding_research.db._schema import require_supported_duckdb as _require_supported_duckdb
+        cfg = _build_run_config(args)
+        _log.info(
+            "Config: phase=%s limit=%s force=%s device=%s backbones=%s heads=%s retained=%s",
+            cmd,
+            cfg.get("limit"),
+            cfg.get("force"),
+            cfg.get("device"),
+            cfg.get("backbones"),
+            cfg.get("heads"),
+            cfg.get("retained"),
+        )
 
-    _require_supported_duckdb()
+        _watcher = _MemoryWatcher(interval=120.0)
+        _watcher.start()
+        try:
+            with duckdb.connect(str(DB_PATH)) as con:
+                from scripts.embedding_research import db as _db_mod
 
-    # Build config from TOML
+                _db_mod.ensure_schema(con)
+                _run_single_phase(con, cmd, cfg, db_path=str(DB_PATH))
+        finally:
+            _watcher.stop()
+            _log.info("Memory watcher stopped")
+            _log_file_handle.close()
+    except SystemExit:
+        _log_file_handle.close()
+        raise
+    except Exception as exc:
+        _log.exception("command %r failed: %s", args.command, exc)
+        _log_file_handle.close()
+        raise SystemExit(1) from exc
+
+
+def _build_run_config(args) -> dict:
+    """Build the per-phase config dict from research_config.toml + CLI overrides."""
     _toml = _load_research_config()
     _pipe = _toml.get("pipeline", {})
     _analysis = _toml.get("analysis", {})
+    _binning = _toml.get("binning", {})
     _raw_limit = _pipe.get("limit", 0)
-    _pooling = _toml.get("pooling", {})
+    device = args.device or ("cpu" if not _pipe.get("device") else _pipe["device"])
     cfg: dict = {
-        # Budget target used by stratify selector (applied after full-corpus scoring).
         "limit": int(_raw_limit) if _raw_limit else None,
-        "force": bool(_pipe.get("force", False)),
-        "device": "gpu" if str(_pipe.get("device", "cpu")).lower() in ("cuda", "gpu") else "cpu",
+        "force": bool(args.force or _pipe.get("force", False)),
+        "device": "gpu" if str(device).lower() in ("cuda", "gpu") else "cpu",
         "backbones": _pipe.get("backbones") or None,  # None = all
         "heads": _pipe.get("heads") or None,  # None = all
         "k": int(_analysis.get("k", 10)),
         "workers": int(_analysis.get("workers", 4)),
         "blas_threads": int(_analysis.get("blas_threads", 1)) or None,
-        "song_ids": None,  # populated below after discover_audio
+        # catalog input generation: [binning] grid + [pipeline] corpus budget.
+        "catalog_bin_modes": list(_binning.get("bin_modes") or ["temporal_global"]),
+        "catalog_thresholds": [float(t) for t in (_binning.get("dist_thresholds") or [0.7])],
+        # derived phases read/write frozen artifacts under the configured output root.
+        "output_root": OUTPUT_ROOT,
+        "report_dir": OUTPUT_ROOT / "report",
+        "retained": bool(args.retained),
+        "verify": bool(args.verify),
+        "strict": bool(args.strict),
+        "run_id": None,
+        "config_hash": hashlib.sha256(_load_raw_cfg()).hexdigest()[:16],
     }
-    # Live flat-strategy list: validated explicit config or all known strategies.
-    # This replaces the previously dead `cfg["flat_strategies"] = rep_types`
-    # assignment (which was never consumed). Each backbone keeps its own
-    # independently keyed strategy set via `global_pool:{backbone}:{strategy}`.
-    cfg["flat_strategies"] = pooling.load_flat_strategy_names(_toml)
-    _log.info(
-        "Config: limit=%s (stratify budget target)  force=%s  device=%s  backbones=%s  heads=%s",
-        cfg["limit"],
-        cfg["force"],
-        cfg["device"],
-        cfg["backbones"],
-        cfg["heads"],
-    )
-    _log.info("Config: flat_strategies=%s", cfg["flat_strategies"])
+    return cfg
 
-    _watcher = _MemoryWatcher(interval=120.0)
-    _watcher.start()
-    try:
+
+def _cmd_cleanup(args) -> None:
+    """Explicit maintenance: cleanup --scope <staging|views|dead|archival|analysis-run>.
+
+    Wired to cleanup.py (P3-S2) scopes.  Analysis-run requires --run-id and --confirm;
+    archival requires --confirm.  No default/global delete of Tier 1/2 rows.
+    """
+    from scripts.embedding_research import cleanup as _cleanup
+
+    scope = args.scope
+    if scope is None:
+        _log.error("cleanup requires --scope {staging|views|dead|archival|analysis-run}")
+        raise SystemExit(2)
+    if scope == "staging":
+        report = _cleanup.cleanup_staging(OUTPUT_ROOT, dry_run=args.dry_run)
+    elif scope == "archival":
+        if not args.confirm:
+            _log.error("cleanup --scope archival is destructive; pass --confirm to proceed")
+            raise SystemExit(2)
+        report = _cleanup.cleanup_archival_caches(OUTPUT_ROOT, confirm=True, dry_run=args.dry_run)
+    else:
         with duckdb.connect(str(DB_PATH)) as con:
             from scripts.embedding_research import db as _db_mod
 
             _db_mod.ensure_schema(con)
-            from scripts.embedding_research.config import discover_audio as _discover_audio_fn
-            from scripts.embedding_research.config import song_id as _song_id_fn
-
-            # Always discover the full corpus here. Any budgeting is applied in stratify,
-            # not as an early candidate clip.
-            cfg["song_ids"] = frozenset(_song_id_fn(p) for p in _discover_audio_fn(limit=None))
-            _log.info(
-                "Working set: %d songs selected from full corpus (stratify limit=%s)",
-                len(cfg["song_ids"]),
-                cfg["limit"],
-            )
-
-            # Build the global model cache once before any phase runs.
-            from scripts.embedding_research.config import bootstrap_nomarr as _boot
-
-            _boot()
-            cfg["cache"] = _build_model_cache(cfg["device"])
-
-            run_ts = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime())
-            for phase, phase_fn in _PHASES.items():
-                _log.info("─── Phase: %s ───────────────────────────────────────────────", phase)
-                t0 = time.perf_counter()
-                phase_fn(con, cfg)
-                elapsed = time.perf_counter() - t0
-                _log.info("─── Phase %s complete  (%.0fs / %.1fmin) ─────────────────", phase, elapsed, elapsed / 60)
-                _db_mod.upsert_phase_timing(con, run_ts, phase, elapsed)
-
-                # Dispose backbone sessions after embed — they are never needed again.
-                if phase == "embed" and cfg.get("cache"):
-                    cfg["cache"].backbone_sessions.clear()
-                    _log.info("[cache] Backbone sessions released")
-                # Dispose the full cache after classify — head sessions are no longer needed.
-                if phase == "classify" and cfg.get("cache"):
-                    cfg["cache"].head_sessions.clear()
-                    cfg.pop("cache")
-                    _log.info("[cache] Head sessions released")
-    finally:
-        _watcher.stop()
-        _log.info("Memory watcher stopped")
-        _log_file_handle.close()
+            if scope == "views":
+                report = _cleanup.cleanup_views(con, OUTPUT_ROOT, dry_run=args.dry_run)
+            elif scope == "dead":
+                report = _cleanup.cleanup_dead_tables(con, dry_run=args.dry_run)
+            elif scope == "analysis-run":
+                if not args.run_id:
+                    _log.error("cleanup --scope analysis-run requires --run-id")
+                    raise SystemExit(2)
+                if not args.confirm:
+                    _log.error("cleanup --scope analysis-run is destructive; pass --confirm to proceed")
+                    raise SystemExit(2)
+                report = _cleanup.reset_analysis_run(con, args.run_id, override=True, dry_run=args.dry_run)
+            else:  # pragma: no cover - guarded by argparse choices
+                raise SystemExit(2)
+    _log.info(
+        "cleanup scope=%s dry_run=%s removed=%d skipped=%d refused=%d",
+        scope,
+        bool(args.dry_run),
+        len(report.removed),
+        len(report.skipped),
+        len(report.refused),
+    )
 
 
 if __name__ == "__main__":

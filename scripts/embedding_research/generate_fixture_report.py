@@ -371,18 +371,28 @@ def _manifests(include_musicnn_ctp: bool) -> dict[str, MatchingCorpusManifest]:
 
 
 def _load_head_phase_provenance(con, effnet_hash: str) -> None:
-    """Write the shared-boundary head-phase provenance (effnet only).
+    """Write the canonical shared-boundary head-phase provenance (effnet only).
 
-    boundary_source="effnet_ptc", head_pool_variant="shared_effnet_ptc_boundary",
-    status=done, finite, reference_corpus_hash == the effnet fixture corpus hash, and
-    n_pooled <= n_songs.
+    Canonical current rows (D3): boundary_source="effnet_ptc",
+    head_pool_variant="shared_effnet_ptc_boundary", status=done, finite, the legacy
+    threshold NULL, reference_corpus_hash == the effnet fixture corpus hash, and
+    n_pooled <= n_songs.  A deterministic synthetic ``seg_config`` id is used per
+    (bin_mode, threshold_configured/threshold_effective) so rows render as canonical.
     """
+    # Deterministic synthetic config ids per (bin_mode, threshold).
+    config_ids: dict[tuple[str, float], int] = {
+        pair: idx for idx, pair in enumerate(((b, t) for b in PTC_BIN_MODES for t in PTC_THRESHOLDS), start=1)
+    }
     rows = [
         HeadPhaseProvenanceRow(
+            run_id="fixture",
+            config_id=config_ids[(bin_mode, thresh)],
             backbone="effnet",
             head=head,
             bin_mode=bin_mode,
-            threshold=thresh,
+            threshold_configured=thresh,
+            threshold_effective=thresh,
+            semantics="direct_l2",
             status="done",
             n_songs=5,
             n_pooled=5,

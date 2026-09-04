@@ -60,7 +60,7 @@ def section_threshold_sweep(df: pd.DataFrame) -> dict:
     rendered as the primary chart.  Disc mean/variance/kurtosis charts are grouped
     inside a collapsible "Discrimination Diagnostics" panel.
     """
-    binned_df = df[df["strategy_type"].isin(["ptc", "ctp"])]
+    binned_df = df[df["strategy_type"] == "ptc"]
     flat_df = df[df["strategy_type"] == "global_pool"]
     if binned_df.empty:
         return make_section(
@@ -637,7 +637,7 @@ def section_segment_counts(con) -> dict:
 
 def section_bin_mode_comparison(df: pd.DataFrame) -> dict:
     """Head-to-head: temporal_global vs temporal_perdim per backbone, using mean MAP@k general (falls back to disc)."""
-    binned_df = df[df["strategy_type"].isin(["ptc", "ctp"])]
+    binned_df = df[df["strategy_type"] == "ptc"]
     flat_df = df[df["strategy_type"] == "global_pool"]
     if binned_df.empty:
         return make_section(
@@ -837,7 +837,7 @@ def section_flat_binned_correlation(df: pd.DataFrame) -> dict:
     A Spearman close to 1.0 means the binned strategy preserves the flat ranking.
     A beneficial reorder rate > 0.5 means most rank changes are improvements.
     """
-    binned_df = df[df["strategy_type"].isin(["ptc", "ctp"])]
+    binned_df = df[df["strategy_type"] == "ptc"]
     if binned_df.empty:
         return make_section(
             "flat-binned-corr",

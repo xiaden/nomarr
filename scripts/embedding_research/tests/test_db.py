@@ -9,7 +9,12 @@ import duckdb
 import pandas as pd
 import pytest
 
-from scripts.embedding_research.db import load_analyze_metrics, write_analyze_metrics
+from scripts.embedding_research.db import (
+    LEGACY_RUN_ID,
+    load_analyze_metrics,
+    migrate_analyze_metrics_provenance,
+    write_analyze_metrics,
+)
 from scripts.embedding_research.db._schema import ensure_schema
 from scripts.embedding_research.db.flat import (
     clear_song_retrieval_metrics,
@@ -131,14 +136,17 @@ def test_write_analyze_metrics_uses_named_columns(con):
     captured = {}
 
     class _Recorder:
+        def execute(self, sql, params=None):
+            return con.execute(sql, params or [])
+
         def executemany(self, sql, params):
             captured["sql"] = sql
             return con.executemany(sql, params)
 
     write_analyze_metrics(_Recorder(), "bb/mean", "flat", "cosine", 10, {"disc_general": 0.42})
-    assert "INSERT OR REPLACE INTO analyze_metrics" in captured["sql"]
-    assert "(strategy_key, strategy_type, sim_metric, k, metric, value)" in captured["sql"]
-    assert captured["sql"].count("?") == 6
+    assert "INSERT INTO analyze_metrics" in captured["sql"]
+    assert "(run_id, strategy_key, strategy_type, sim_metric, k, metric, value)" in captured["sql"]
+    assert captured["sql"].count("?") == 7
 
 
 def test_strategy_identity_retains_k_and_metric(con):
@@ -171,6 +179,36 @@ def test_write_analyze_metrics_insert_or_replace(con):
     rows = con.execute("SELECT value FROM analyze_metrics WHERE metric='disc_general'").fetchall()
     assert len(rows) == 1
     assert rows[0][0] == pytest.approx(0.99)
+
+
+def test_write_analyze_metrics_run_scope_isolation(con):
+    """P3-S3: a writer replaces only its own (run_id, scope); other runs + legacy baseline survive."""
+    key = "ptc:bb:scope-isolation"
+    write_analyze_metrics(con, key, "ptc", "cosine", 10, {"disc_general": 0.10}, run_id=LEGACY_RUN_ID)
+    write_analyze_metrics(con, key, "ptc", "cosine", 10, {"disc_general": 0.50}, run_id="run-a")
+    write_analyze_metrics(con, key, "ptc", "cosine", 10, {"disc_general": 0.90}, run_id="run-b")
+    # Re-running run-a replaces only run-a's row for this scope.
+    write_analyze_metrics(con, key, "ptc", "cosine", 10, {"disc_general": 0.70}, run_id="run-a")
+
+    def _value(run_id: str) -> float:
+        return float(
+            con.execute(
+                "SELECT value FROM analyze_metrics WHERE run_id=? AND strategy_key=? AND metric='disc_general'",
+                [run_id, key],
+            ).fetchone()[0]
+        )
+
+    assert _value(LEGACY_RUN_ID) == pytest.approx(0.10)
+    assert _value("run-a") == pytest.approx(0.70)
+    assert _value("run-b") == pytest.approx(0.90)
+    # Whole-table (default) read still sees every generation.
+    assert query_analysis_done(con) == {(key, "cosine", 10)}
+    assert query_analysis_done(con, run_id="run-a") == {(key, "cosine", 10)}
+    assert query_analysis_done(con, run_id="run-b") == {(key, "cosine", 10)}
+    # The default load_analyze_metrics is a whole-table view (unchanged on a single generation).
+    assert len(load_analyze_metrics(con)) == 1
+    assert len(load_analyze_metrics(con, run_id="run-a")) == 1
+    assert len(load_analyze_metrics(con, run_id="run-a")) == len(load_analyze_metrics(con, run_id="run-b"))
 
 
 def test_write_analyze_metrics_roundtrip(con):
@@ -225,6 +263,96 @@ def test_query_analysis_done_returns_empty_set_on_missing_table(con):
     con.execute("DROP TABLE analyze_metrics")
     result = query_analysis_done(con)
     assert result == set()
+
+
+# ---------------------------------------------------------------------------
+# P3-S3: analyze_metrics run_id migration
+# ---------------------------------------------------------------------------
+
+
+_LEGACY_ANALYZE_METRICS_DDL = """
+CREATE TABLE IF NOT EXISTS analyze_metrics (
+    strategy_key  TEXT NOT NULL,
+    strategy_type TEXT NOT NULL,
+    sim_metric    TEXT NOT NULL,
+    k             INTEGER NOT NULL,
+    metric        TEXT NOT NULL,
+    value         DOUBLE,
+    PRIMARY KEY (strategy_key, sim_metric, k, metric)
+);
+"""
+
+
+def test_migrate_analyze_metrics_provenance_preserves_legacy_rows_and_drops_pk():
+    """P3-S3: backup-first migration copies rows as run_id='legacy' and drops the legacy PK."""
+    legacy = duckdb.connect(":memory:")
+    legacy.execute(_LEGACY_ANALYZE_METRICS_DDL)
+    legacy.execute(
+        "INSERT INTO analyze_metrics (strategy_key, strategy_type, sim_metric, k, metric, value) VALUES "
+        "('global_pool:bb:mean', 'global_pool', 'cosine', 10, 'disc_general', 0.42),"
+        "('global_pool:bb:mean', 'global_pool', 'cosine', 10, 'map_10', 0.55)"
+    )
+    n = migrate_analyze_metrics_provenance(legacy)
+    assert n == 2
+    cols = {"run_id", "strategy_key", "strategy_type", "sim_metric", "k", "metric", "value"}
+    actual = {
+        row[0]
+        for row in legacy.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name='analyze_metrics'"
+        ).fetchall()
+    }
+    assert cols == actual
+    # Every migrated row is the read-only legacy baseline.
+    rows = legacy.execute("SELECT run_id, metric, value FROM analyze_metrics ORDER BY metric").fetchall()
+    assert rows == [("legacy", "disc_general", 0.42), ("legacy", "map_10", 0.55)]
+    # The legacy PRIMARY KEY is gone: a duplicate legacy identity is accepted at the storage layer
+    # (application-level uniqueness is enforced on write, not by a constraint).
+    legacy.execute(
+        "INSERT INTO analyze_metrics (run_id, strategy_key, strategy_type, sim_metric, k, metric, value) VALUES "
+        "('legacy', 'global_pool:bb:mean', 'global_pool', 'cosine', 10, 'disc_general', 0.99)"
+    )
+    assert (
+        int(
+            legacy.execute(
+                "SELECT COUNT(*) FROM analyze_metrics "
+                "WHERE strategy_key='global_pool:bb:mean' AND metric='disc_general'"
+            ).fetchone()[0]
+        )
+        == 2
+    )
+    # A full pre-migration snapshot is retained as the recorded backup.
+    assert "analyze_metrics_backup" in {
+        r[0]
+        for r in legacy.execute(
+            "SELECT table_name FROM information_schema.tables WHERE table_name='analyze_metrics_backup'"
+        ).fetchall()
+    }
+    # Idempotent / guarded: a second migration is a no-op returning 0.
+    assert migrate_analyze_metrics_provenance(legacy) == 0
+    legacy.close()
+
+
+def test_migrate_analyze_metrics_provenance_missing_table_is_noop():
+    fresh = duckdb.connect(":memory:")
+    assert migrate_analyze_metrics_provenance(fresh) == 0
+    fresh.close()
+
+
+def test_fresh_schema_analyze_metrics_has_run_id_and_no_pk(con):
+    cols = {
+        row[0]
+        for row in con.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name='analyze_metrics'"
+        ).fetchall()
+    }
+    assert "run_id" in cols
+    # A duplicate legacy identity is permitted by the storage layer (no PK/UNIQUE/index).
+    write_analyze_metrics(con, "bb/mean", "flat", "cosine", 10, {"disc_general": 0.42})
+    con.execute(
+        "INSERT INTO analyze_metrics (run_id, strategy_key, strategy_type, sim_metric, k, metric, value) "
+        "VALUES ('legacy', 'bb/mean', 'flat', 'cosine', 10, 'disc_general', 0.99)"
+    )
+    assert int(con.execute("SELECT COUNT(*) FROM analyze_metrics").fetchone()[0]) == 2
 
 
 def test_load_stratified_sids_returns_empty_frozenset_when_no_rows(con):

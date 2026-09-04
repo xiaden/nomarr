@@ -1,6 +1,9 @@
-"""Tests for the PTC head inference helpers.
+"""Tests for the PTC head inference helpers (LEGACY INTERIM archival compat).
 
 Covers ``cache.binned_ptc_heads`` — save/load/is_done mirror of binned_ctp_heads.
+Kept READ-ONLY for archival compatibility: the binned_ptc_heads cache is a legacy
+output surface of the LEGACY classify runner; the ACTIVE canonical surface lives in
+``common/head_analysis`` and never touches this cache.
 """
 
 from __future__ import annotations

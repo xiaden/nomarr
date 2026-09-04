@@ -126,6 +126,17 @@ class _RegistryStore:
         else:
             self._scan_root = self._output_root / self._default_subdir
 
+    @property
+    def output_root(self) -> Path:
+        """The storage root this store publishes artifacts under (read-only, public seam).
+
+        Plan D's disposable search-view materialization derives its disposable-views
+        directory from the same root so view bytes stay beside the frozen streams that
+        produced them and under the same test-isolated tmp root.  The root is a storage
+        location only — it is never an identity, SQL key, or external result ID (R3).
+        """
+        return self._output_root
+
     # ── path resolution (never exposed to callers) ───────────────────────────
     def _path(self, artifact_ref: str) -> Path:
         return self._output_root / artifact_ref

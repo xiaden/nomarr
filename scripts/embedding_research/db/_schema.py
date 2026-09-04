@@ -49,13 +49,17 @@ Segmentation catalog (Plan C, Phase 1) — PRIMARY segmentation schema:
 
 ACTIVE — core experiment tables with live writers (unchanged):
   songs                     (song_id PK, path, artist, album, title, genre)
-  analyze_metrics           (strategy_key, strategy_type, sim_metric, k, metric, value)
+  analyze_metrics           (run_id, strategy_key, strategy_type, sim_metric, k, metric,
+                             value)  -- run-scoped; legacy rows run_id='legacy'; no PK/UNIQUE
   song_retrieval_metrics    (strategy_key, sim_metric, k, song_id, ap_k, mrr, recall_k,
                              disc_artist_contrib, disc_genre_contrib, disc_head_contrib)
   stratified_corpus         (config_hash TEXT, song_id TEXT)
-  head_phase_provenance     (backbone, head, bin_mode, threshold, boundary_source,
-                             head_pool_variant PK, status, reason, n_songs, n_pooled,
-                             finite, scoring_semantics_version, reference_corpus_hash)
+  head_phase_provenance     (run_id, config_id, backbone, head, bin_mode,
+                             threshold_configured, threshold_effective, semantics,
+                             boundary_source, head_pool_variant, status, reason,
+                             n_songs, n_pooled, finite, scoring_semantics_version,
+                             reference_corpus_hash, threshold)  -- 18-col, no PK/UNIQUE;
+                             canonical current + read-only legacy archival rows
   phase_timings             (run_ts, phase, elapsed_s)
 
 DEAD — obsolete copied-vector / threshold tables (DDL'd, zero live writers per the Plan A
@@ -67,7 +71,7 @@ caller audit; DDL retained pending the explicit Plan E cleanup pass, never a pri
 
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 
 # Lazy import so the module can be imported without duckdb installed
 # (the caller gets an ImportError only when they call connect()).
@@ -111,16 +115,6 @@ CREATE TABLE IF NOT EXISTS head_results (
     pathway  TEXT NOT NULL,   -- 'ptc' or 'ctp'
     act      FLOAT[] NOT NULL, -- softmax probabilities [p0, p1]
     PRIMARY KEY (song_id, backbone, head, strategy, pathway)
-);
-
-CREATE TABLE IF NOT EXISTS analyze_metrics (
-    strategy_key  TEXT NOT NULL,
-    strategy_type TEXT NOT NULL,
-    sim_metric    TEXT NOT NULL,
-    k             INTEGER NOT NULL,
-    metric        TEXT NOT NULL,
-    value         DOUBLE,
-    PRIMARY KEY (strategy_key, sim_metric, k, metric)
 );
 
 -- ── Binned-embedding tables ───────────────────────────────────────────────────
@@ -360,29 +354,6 @@ CREATE TABLE IF NOT EXISTS head_stream_registry (
     updated_at              BIGINT NOT NULL
 );
 
--- Shared-boundary head phase preparation provenance (Plan B, Phase 2).
--- One row per (effnet, head, bin_mode, threshold) config tuple recording the
--- head-boundary preparation status and per-configuration provenance.  ADDITIVE
--- to the primary experiment: never part of analyze_metrics, never a primary
--- winner candidate, never carries a CTP boundary source.  reference_corpus_hash
--- declares the primary EffNet corpus this head phase derived its song set from
--- (NULL = head-availability-only derived subset).
-CREATE TABLE IF NOT EXISTS head_phase_provenance (
-    backbone                  TEXT NOT NULL,
-    head                      TEXT NOT NULL,
-    bin_mode                  TEXT NOT NULL,
-    threshold                 DOUBLE NOT NULL,
-    boundary_source           TEXT NOT NULL,
-    head_pool_variant         TEXT NOT NULL,
-    status                    TEXT NOT NULL,
-    reason                    TEXT,
-    n_songs                   INTEGER NOT NULL,
-    n_pooled                  INTEGER NOT NULL,
-    finite                    INTEGER NOT NULL,
-    scoring_semantics_version INTEGER NOT NULL,
-    reference_corpus_hash     TEXT,
-    PRIMARY KEY (backbone, head, bin_mode, threshold, boundary_source, head_pool_variant)
-);
 
 -- Post-run phase provenance (Plan B Phase 2; Plan C extends usage on this same table).
 -- One row per completed phase run.  NO PRIMARY KEY / UNIQUE constraint (application
@@ -504,6 +475,213 @@ CREATE TABLE IF NOT EXISTS catalog_metadata (
 );
 """
 
+# -- head_phase_provenance (Plan E, Phase 1 AMEND ROUND 2 — 18-col superset) -----
+# Kept OUT of the monolithic ``_DDL`` so the backup-first migration below owns its
+# lifecycle and there is a single source of truth for the column definitions.  It has
+# NO PRIMARY KEY / UNIQUE / index (DuckDB ART/WAL policy — application identity and
+# uniqueness are asserted before commit and rechecked after write).
+_HPP_COLUMN_DEFS: tuple[str, ...] = (
+    "run_id                    TEXT NOT NULL",
+    "config_id                 INTEGER NULL",
+    "backbone                  TEXT NOT NULL",
+    "head                      TEXT NOT NULL",
+    "bin_mode                  TEXT NOT NULL",
+    "threshold_configured      DOUBLE NULL",
+    "threshold_effective       DOUBLE NULL",
+    "semantics                 TEXT NULL",
+    "boundary_source           TEXT NOT NULL",
+    "head_pool_variant         TEXT NOT NULL",
+    "status                    TEXT NOT NULL",
+    "reason                    TEXT NULL",
+    "n_songs                   INTEGER NOT NULL",
+    "n_pooled                  INTEGER NOT NULL",
+    "finite                    INTEGER NOT NULL",
+    "scoring_semantics_version INTEGER NOT NULL",
+    "reference_corpus_hash     TEXT NULL",
+    "threshold                 DOUBLE NULL",
+)
+
+#: ``CREATE TABLE IF NOT EXISTS`` statement for the canonical 18-column table.
+_HPP_CREATE = "CREATE TABLE IF NOT EXISTS head_phase_provenance (\n    " + ",\n    ".join(_HPP_COLUMN_DEFS) + "\n);"
+
+
+def _table_exists(con, table: str) -> bool:
+    row = con.execute("SELECT COUNT(*) FROM information_schema.tables WHERE table_name = ?", [table]).fetchone()
+    return bool(row and row[0])
+
+
+def _table_has_column(con, table: str, column: str) -> bool:
+    row = con.execute(
+        "SELECT COUNT(*) FROM information_schema.columns WHERE table_name = ? AND column_name = ?",
+        [table, column],
+    ).fetchone()
+    return bool(row and row[0])
+
+
+def migrate_head_phase_provenance(con) -> int:
+    """Backup-first, transactional create-copy-drop-rename to the 18-col superset.
+
+    If ``head_phase_provenance`` is absent, or already carries the ``run_id`` column
+    (i.e. already migrated), this is a no-op returning ``0``.  Otherwise it:
+
+    1. Takes a full pre-migration snapshot into ``head_phase_provenance_backup``
+       (the recorded backup location) — nothing destructive happens first.
+    2. In ONE transaction: creates the 18-col replacement, copies every pre-existing
+       row read-only as ``run_id='legacy'`` (legacy ``threshold`` + old provenance
+       values retained verbatim, canonical-only fields NULL), drops the old table,
+       and renames the replacement into place.
+    3. Verifies schema (column count) and readable rows (count preserved and every
+       migrated row is a valid legacy archival row) before committing.
+
+    The old six-column PRIMARY KEY is dropped; no new PK/UNIQUE/index is added.
+    Returns the number of migrated legacy rows (``0`` when no migration ran).
+    """
+    _require_duckdb()
+    if not _table_exists(con, "head_phase_provenance"):
+        return 0
+    if _table_has_column(con, "head_phase_provenance", "run_id"):
+        return 0
+    n_old = int(con.execute("SELECT COUNT(*) FROM head_phase_provenance").fetchone()[0])
+    # Backup-first (D2): full snapshot recorded at head_phase_provenance_backup.
+    con.execute("CREATE OR REPLACE TABLE head_phase_provenance_backup AS SELECT * FROM head_phase_provenance")
+    try:
+        con.execute("BEGIN TRANSACTION")
+        con.execute("CREATE TABLE head_phase_provenance_new (\n    " + ",\n    ".join(_HPP_COLUMN_DEFS) + "\n)")
+        con.execute(
+            "INSERT INTO head_phase_provenance_new ("
+            "run_id, config_id, backbone, head, bin_mode, threshold_configured, "
+            "threshold_effective, semantics, boundary_source, head_pool_variant, "
+            "status, reason, n_songs, n_pooled, finite, scoring_semantics_version, "
+            "reference_corpus_hash, threshold) "
+            "SELECT 'legacy', NULL, backbone, head, bin_mode, NULL, NULL, NULL, "
+            "boundary_source, head_pool_variant, status, reason, n_songs, n_pooled, "
+            "finite, scoring_semantics_version, reference_corpus_hash, threshold "
+            "FROM head_phase_provenance"
+        )
+        con.execute("DROP TABLE head_phase_provenance")
+        con.execute("ALTER TABLE head_phase_provenance_new RENAME TO head_phase_provenance")
+        # Post-migration verification (D2) before commit.
+        n_cols = int(
+            con.execute(
+                "SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'head_phase_provenance'"
+            ).fetchone()[0]
+        )
+        n_new = int(con.execute("SELECT COUNT(*) FROM head_phase_provenance").fetchone()[0])
+        if n_cols != len(_HPP_COLUMN_DEFS):
+            raise RuntimeError(
+                f"head_phase_provenance migration column verification failed: {n_cols} "
+                f"columns (expected {len(_HPP_COLUMN_DEFS)})"
+            )
+        if n_new != n_old:
+            raise RuntimeError(
+                f"head_phase_provenance migration row-preservation verification failed: {n_new} rows (expected {n_old})"
+            )
+        bad = int(
+            con.execute(
+                "SELECT COUNT(*) FROM head_phase_provenance WHERE run_id <> 'legacy' OR threshold IS NULL"
+            ).fetchone()[0]
+        )
+        if bad:
+            raise RuntimeError(f"head_phase_provenance migration produced {bad} non-legacy/unclassified rows")
+        con.execute("COMMIT")
+    except Exception:
+        with suppress(Exception):
+            con.execute("ROLLBACK")
+        raise
+    return n_old
+
+
+# ── analyze_metrics run_id migration (Plan E P3-S3) ────────────────────────────
+
+#: Post-migration column definitions for ``analyze_metrics``.  The run_id column is the
+#: physical row-level realization of the Plan C/D ``analyze_scope`` bookkeeping: legacy
+#: (pre-migration) rows are copied read-only as ``run_id='legacy'`` and every later
+#: run-scoped write stamps its own ``run_id``.  The old four-column PRIMARY KEY is dropped;
+#: DuckDB ART/WAL policy (like ``head_phase_provenance``) allows no PK/UNIQUE/index on a
+#: maintained table — application-level uniqueness is asserted on write within a run_id
+#: (see ``db.flat.write_analyze_metrics``: it replaces only its own run scope).  The
+#: ``DEFAULT 'legacy'`` keeps un-scoped/legacy writers (and direct fixture inserts) behaving
+#: exactly as before migration, tagging their rows as the shared legacy/baseline scope.
+_ANALYZE_METRICS_COLUMN_DEFS: tuple[str, ...] = (
+    "run_id         TEXT NOT NULL DEFAULT 'legacy'",
+    "strategy_key   TEXT NOT NULL",
+    "strategy_type  TEXT NOT NULL",
+    "sim_metric     TEXT NOT NULL",
+    "k              INTEGER NOT NULL",
+    "metric         TEXT NOT NULL",
+    "value          DOUBLE NULL",
+)
+
+#: ``CREATE TABLE IF NOT EXISTS`` statement for the run_id-annotated table.
+_ANALYZE_METRICS_CREATE = (
+    "CREATE TABLE IF NOT EXISTS analyze_metrics (\n    " + ",\n    ".join(_ANALYZE_METRICS_COLUMN_DEFS) + "\n);"
+)
+
+
+#: Run_id used for pre-migration (legacy) ``analyze_metrics`` rows.
+LEGACY_RUN_ID = "legacy"
+
+
+def migrate_analyze_metrics_provenance(con) -> int:
+    """Backup-first, transactional create-copy-drop-rename adding ``run_id`` to ``analyze_metrics``.
+
+    If ``analyze_metrics`` is absent, or already carries the ``run_id`` column (i.e. already
+    migrated), this is a no-op returning ``0``.  Otherwise it:
+
+    1. Takes a full pre-migration snapshot into ``analyze_metrics_backup`` (the recorded
+       backup location) — nothing destructive happens first.
+    2. In ONE transaction: creates the run_id-annotated replacement, copies every
+       pre-existing row read-only as ``run_id='legacy'``, drops the old table (dropping the
+       legacy four-column PRIMARY KEY), and renames the replacement into place.
+    3. Verifies schema (column count) and readable rows (count preserved and every migrated
+       row is a legacy ``run_id='legacy'`` row) before committing.
+
+    No PK/UNIQUE/index is added.  Returns the number of migrated legacy rows (``0`` when no
+    migration ran).
+    """
+    _require_duckdb()
+    if not _table_exists(con, "analyze_metrics"):
+        return 0
+    if _table_has_column(con, "analyze_metrics", "run_id"):
+        return 0
+    n_old = int(con.execute("SELECT COUNT(*) FROM analyze_metrics").fetchone()[0])
+    # Backup-first: full snapshot recorded at analyze_metrics_backup.
+    con.execute("CREATE OR REPLACE TABLE analyze_metrics_backup AS SELECT * FROM analyze_metrics")
+    try:
+        con.execute("BEGIN TRANSACTION")
+        con.execute("CREATE TABLE analyze_metrics_new (\n    " + ",\n    ".join(_ANALYZE_METRICS_COLUMN_DEFS) + "\n)")
+        con.execute(
+            "INSERT INTO analyze_metrics_new (run_id, strategy_key, strategy_type, sim_metric, k, metric, value) "
+            "SELECT 'legacy', strategy_key, strategy_type, sim_metric, k, metric, value FROM analyze_metrics"
+        )
+        con.execute("DROP TABLE analyze_metrics")
+        con.execute("ALTER TABLE analyze_metrics_new RENAME TO analyze_metrics")
+        # Post-migration verification before commit.
+        n_cols = int(
+            con.execute(
+                "SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'analyze_metrics'"
+            ).fetchone()[0]
+        )
+        n_new = int(con.execute("SELECT COUNT(*) FROM analyze_metrics").fetchone()[0])
+        if n_cols != len(_ANALYZE_METRICS_COLUMN_DEFS):
+            raise RuntimeError(
+                f"analyze_metrics migration column verification failed: {n_cols} columns "
+                f"(expected {len(_ANALYZE_METRICS_COLUMN_DEFS)})"
+            )
+        if n_new != n_old:
+            raise RuntimeError(
+                f"analyze_metrics migration row-preservation verification failed: {n_new} rows (expected {n_old})"
+            )
+        bad = int(con.execute("SELECT COUNT(*) FROM analyze_metrics WHERE run_id <> 'legacy'").fetchone()[0])
+        if bad:
+            raise RuntimeError(f"analyze_metrics migration produced {bad} non-legacy rows")
+        con.execute("COMMIT")
+    except Exception:
+        with suppress(Exception):
+            con.execute("ROLLBACK")
+        raise
+    return n_old
+
 
 def _require_duckdb() -> None:
     if not _HAS_DUCKDB:
@@ -576,9 +754,18 @@ def storage_version_label(value: object) -> str:
 
 
 def ensure_schema(con) -> None:
-    """Execute the DDL against an already-open connection. Safe to call multiple times."""
+    """Execute the DDL against an already-open connection. Safe to call multiple times.
+
+    Migrates a legacy-format ``head_phase_provenance`` (backup-first) and then creates
+    the 18-column table (``head_phase_provenance`` is owned outside the monolithic
+    ``_DDL`` so the migration can replace it atomically).
+    """
     _require_duckdb()
+    migrate_head_phase_provenance(con)
+    migrate_analyze_metrics_provenance(con)
     con.execute(_DDL)
+    con.execute(_ANALYZE_METRICS_CREATE)
+    con.execute(_HPP_CREATE)
 
 
 def upsert_phase_timing(con, run_ts: str, phase: str, elapsed_s: float) -> None:
@@ -603,7 +790,7 @@ def connect(read_only: bool = False) -> Generator[duckdb.DuckDBPyConnection, Non
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect(str(DB_PATH), read_only=read_only)
     if not read_only:
-        con.execute(_DDL)
+        ensure_schema(con)
     try:
         yield con
     finally:

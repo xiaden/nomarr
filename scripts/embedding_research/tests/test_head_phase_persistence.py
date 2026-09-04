@@ -1,20 +1,21 @@
-"""Spec-first tests for Plan B, Phase 2: head-phase provenance persistence.
+"""Spec-first tests for Plan E, Phase 1 (P1-S3/S1-S4): canonical 18-column persistence.
 
-Covers the additive persistence DTO (P2-S1), the explicit per-configuration
-identity and its disjointness from CTP/head-specific-segmentation keys (P2-S3),
-and the corpus/non-comparison/no-CTP/no-winner guarantees (P2-S4):
+The head-phase provenance table was migrated (D2) from the legacy 13-column model
+with a 6-column PK to an EXACT 18-column, no-PK/no-UNIQUE/no-index table whose
+named-column writes distinguish:
 
-* named-column writes and finite-value validation (P2-S1);
-* primary ``analyze_metrics`` rows and corpus hashes stay UNCHANGED (P2-S1);
-* each ``(effnet, head, bin_mode, threshold, boundary_source, head_pool_variant)``
-  tuple has an explicit ``head:`` identity disjoint from ``ptc:``/``ctp:``/``global_pool:``
-  keys (P2-S3);
-* a CTP strategy key and any head-specific-segmentation threshold cannot masquerade
-  as a shared-boundary row (P2-S3);
-* head-phase rows/cache entries carry the same primary EffNet corpus or a clearly
-  declared derived head-availability subset; unequal sets are never compared
-  silently; head-phase rows never appear as CTP or as a primary winner candidate
-  (P2-S4).
+* canonical current rows — written by the canonical CPU runner under the D3
+  predicate, keyed by application identity ``(config_id, backbone, head, bin_mode,
+  threshold_configured, threshold_effective, semantics, boundary_source,
+  head_pool_variant)`` (run_id EXCLUDED), with the duplicate-identity reject and
+  the single-transaction same-identity replace;
+* legacy archival rows — ``run_id='legacy'``, threshold populated, canonical-only
+  fields NULL, appended only (never updated/active/converted).
+
+Covers: 18-col superset + PK removal, backup-first migration preserving every
+legacy row verbatim, the D3 predicate, application identity, duplicate reject,
+same-identity rerun replace, archival preservation, the canonical runner's
+coverage/skip writes, and the LEGACY run.py glue that appends archival-only rows.
 """
 
 from __future__ import annotations
@@ -28,23 +29,31 @@ import scripts.embedding_research.classify as classify_mod
 from scripts.embedding_research import db
 from scripts.embedding_research import run as run_mod
 from scripts.embedding_research.cache_identity import SCORING_SEMANTICS_VERSION
-from scripts.embedding_research.corpus import MatchingCorpusManifest, validate_matching_corpus
-from scripts.embedding_research.db import head_phase as head_phase_db
-from scripts.embedding_research.db._schema import ensure_schema
-from scripts.embedding_research.db.head_phase import (
-    HeadPhaseProvenanceRow,
-    build_head_phase_provenance_rows,
-    head_phase_config_key,
-    load_head_phase_provenance,
-    query_head_phase_done,
-    write_head_phase_provenance,
-)
-from scripts.embedding_research.head_pooling import (
+from scripts.embedding_research.common.head_analysis import (
     BOUNDARY_SOURCE_EFFNET_PTC,
     HEAD_POOL_VARIANT,
     HeadPhaseConfigRecord,
     HeadPhaseManifest,
 )
+from scripts.embedding_research.corpus import MatchingCorpusManifest
+from scripts.embedding_research.db._schema import ensure_schema, migrate_head_phase_provenance
+from scripts.embedding_research.db.head_phase import (
+    CANONICAL_HEAD_PHASE_WHERE,
+    HEAD_PHASE_PROVENANCE_COLUMNS,
+    LEGACY_RUN_ID,
+    HeadPhaseProvenanceRow,
+    append_head_phase_archival_rows,
+    build_archival_provenance_rows,
+    build_head_phase_provenance_rows,
+    head_phase_config_key,
+    is_canonical_row,
+    load_head_phase_provenance,
+    load_head_phase_provenance_all,
+    query_head_phase_done,
+    write_head_phase_provenance,
+)
+from scripts.embedding_research.head_pooling import HeadPhaseConfigRecord as LegacyHeadPhaseConfigRecord
+from scripts.embedding_research.head_pooling import HeadPhaseManifest as LegacyHeadPhaseManifest
 
 
 @pytest.fixture
@@ -60,395 +69,580 @@ def con():
 # ---------------------------------------------------------------------------
 
 
-def _manifest(
+def _canonical_config_record(
     *,
-    song_ids=("s1", "s2"),
-    results=None,
-    backbones=("effnet",),
-    heads=("mood",),
-    bin_modes=("temporal_global",),
-    thresholds=(1.0,),
-    skip_reasons=(),
-    done=None,
-    skipped=None,
-    errors=None,
+    config_id=7,
+    head="mood",
+    bin_mode="temporal_global",
+    threshold_configured=1.0,
+    threshold_effective=1.0,
+    semantics="direct_l2",
+    status="done",
+    reason="",
+    n_songs=2,
+    n_pooled=2,
+    finite=True,
 ):
-    results = results or (
-        HeadPhaseConfigRecord(
-            backbone="effnet",
-            head="mood",
-            bin_mode="temporal_global",
-            threshold=1.0,
-            status="done",
-            reason="",
-            n_songs=len(song_ids),
-            n_pooled=len(song_ids),
-            finite=True,
-            boundary_source=BOUNDARY_SOURCE_EFFNET_PTC,
-        ),
-    )
-    return HeadPhaseManifest(
+    return HeadPhaseConfigRecord(
+        config_id=config_id,
+        backbone="effnet",
+        head=head,
+        bin_mode=bin_mode,
+        threshold_configured=threshold_configured,
+        threshold_effective=threshold_effective,
+        semantics=semantics,
+        status=status,
+        reason=reason,
+        n_songs=n_songs,
+        n_pooled=n_pooled,
+        finite=finite,
         boundary_source=BOUNDARY_SOURCE_EFFNET_PTC,
-        backbones=backbones,
-        heads=heads,
-        bin_modes=bin_modes,
-        thresholds=thresholds,
-        song_ids=tuple(song_ids),
-        scoring_semantics_version=SCORING_SEMANTICS_VERSION,
-        results=tuple(results),
-        skip_reasons=tuple(skip_reasons),
-        done=len(results) if done is None else done,
-        skipped=0 if skipped is None else skipped,
-        errors=0 if errors is None else errors,
-        finite=all(r.finite for r in results),
-        primary_analysis_succeeded=True,
+        head_pool_variant=HEAD_POOL_VARIANT,
+    )
+
+
+def _canonical_manifest(run_id="run-canonical", *, results=None, **overrides):
+    results = results or (_canonical_config_record(),)
+    fields = {
+        "run_id": run_id,
+        "config_ids": tuple(sorted({r.config_id for r in results})),
+        "dimensions": (1280,),
+        "boundary_source": BOUNDARY_SOURCE_EFFNET_PTC,
+        "head_pool_variant": HEAD_POOL_VARIANT,
+        "backbones": ("effnet",),
+        "heads": tuple(sorted({r.head for r in results})),
+        "bin_modes": tuple(sorted({r.bin_mode for r in results})),
+        "song_ids": ("s1", "s2"),
+        "scoring_semantics_version": SCORING_SEMANTICS_VERSION,
+        "results": tuple(results),
+        "skip_reasons": (),
+        "done": sum(1 for r in results if r.status == "done"),
+        "skipped": sum(1 for r in results if r.status == "skipped"),
+        "errors": sum(1 for r in results if r.status == "error"),
+        "finite": all(r.finite for r in results),
+        "reference_corpus_hash": None,
+        "primary_analysis_succeeded": True,
+    }
+    fields.update(overrides)
+    return HeadPhaseManifest(**fields)
+
+
+def _canonical_row(**overrides):
+    base = {
+        "run_id": "run-canonical",
+        "config_id": 7,
+        "backbone": "effnet",
+        "head": "mood",
+        "bin_mode": "temporal_global",
+        "threshold_configured": 1.0,
+        "threshold_effective": 1.0,
+        "semantics": "direct_l2",
+        "boundary_source": BOUNDARY_SOURCE_EFFNET_PTC,
+        "head_pool_variant": HEAD_POOL_VARIANT,
+        "status": "done",
+        "reason": None,
+        "n_songs": 2,
+        "n_pooled": 2,
+        "finite": True,
+        "scoring_semantics_version": SCORING_SEMANTICS_VERSION,
+        "reference_corpus_hash": "hash-primary",
+        "threshold": None,
+    }
+    base.update(overrides)
+    return HeadPhaseProvenanceRow(**base)
+
+
+def _identity_of(row):
+    return head_phase_config_key(
+        config_id=row.config_id,
+        backbone=row.backbone,
+        head=row.head,
+        bin_mode=row.bin_mode,
+        threshold_configured=row.threshold_configured,
+        threshold_effective=row.threshold_effective,
+        semantics=row.semantics,
+        boundary_source=row.boundary_source,
+        head_pool_variant=row.head_pool_variant,
     )
 
 
 # ---------------------------------------------------------------------------
-# P2-S1: named-column writes + finite validation + additive persistence
+# P1-S3: 18-column superset, PK removal, exact D3 predicate
 # ---------------------------------------------------------------------------
 
 
-def test_write_head_phase_provenance_uses_named_columns(con):
-    """DTO/DDL column order can differ; writes must use named columns (P2-S1)."""
-    captured = {}
+def test_head_phase_table_is_18_column_no_pk(con):
+    """Post-migration table is the EXACT 18-column no-constraint DDL (D2)."""
+    cols = [r[1] for r in con.execute("PRAGMA table_info('head_phase_provenance')").fetchall()]
+    assert cols == list(HEAD_PHASE_PROVENANCE_COLUMNS)
+    # No primary key / unique / index survive the migration.
+    pk = con.execute(
+        "SELECT count(*) FROM information_schema.table_constraints "
+        "WHERE table_name='head_phase_provenance' AND constraint_type IN ('PRIMARY KEY','UNIQUE')"
+    ).fetchone()[0]
+    assert pk == 0
+    indexes = con.execute("SELECT count(*) FROM duckdb_indexes() WHERE table_name='head_phase_provenance'").fetchone()[
+        0
+    ]
+    assert indexes == 0
 
-    class _Recorder:
-        def executemany(self, sql, params):
-            captured["sql"] = sql
-            return con.executemany(sql, params)
 
-    row = HeadPhaseProvenanceRow(backbone="effnet", head="mood", bin_mode="temporal_global", threshold=1.0)
-    write_head_phase_provenance(_Recorder(), [row])
+def test_canonical_predicate_is_exact_d3_sql():
+    """The canonical predicate is the exact D3 WHERE clause (no silent widening)."""
+    assert "run_id <> 'legacy'" in CANONICAL_HEAD_PHASE_WHERE
+    assert "config_id IS NOT NULL" in CANONICAL_HEAD_PHASE_WHERE
+    assert "backbone = 'effnet'" in CANONICAL_HEAD_PHASE_WHERE
+    assert "bin_mode IN ('temporal_global', 'temporal_perdim')" in CANONICAL_HEAD_PHASE_WHERE
+    assert "threshold_configured IS NOT NULL" in CANONICAL_HEAD_PHASE_WHERE
+    assert "threshold_effective IS NOT NULL" in CANONICAL_HEAD_PHASE_WHERE
+    assert "semantics IN ('direct_l2', 'std_scaled')" in CANONICAL_HEAD_PHASE_WHERE
+    assert "boundary_source = 'effnet_ptc'" in CANONICAL_HEAD_PHASE_WHERE
+    assert "head_pool_variant = 'shared_effnet_ptc_boundary'" in CANONICAL_HEAD_PHASE_WHERE
+    assert "threshold IS NULL" in CANONICAL_HEAD_PHASE_WHERE
 
-    assert "INSERT INTO head_phase_provenance" in captured["sql"]
+
+def test_is_canonical_row_matches_predicate():
+    assert is_canonical_row(_canonical_row()) is True
     assert (
-        "(backbone, head, bin_mode, threshold, boundary_source, head_pool_variant, "
-        "status, reason, n_songs, n_pooled, finite, scoring_semantics_version, "
-        "reference_corpus_hash)"
-    ) in captured["sql"]
-    assert captured["sql"].count("?") == 13
+        is_canonical_row(
+            _canonical_row(
+                run_id=LEGACY_RUN_ID,
+                threshold=1.0,
+                config_id=None,
+                threshold_configured=None,
+                threshold_effective=None,
+                semantics=None,
+            )
+        )
+        is False
+    )
+    assert is_canonical_row(_canonical_row(semantics="ctp")) is False
+    assert is_canonical_row(_canonical_row(bin_mode="temporal_half")) is False
+    assert is_canonical_row(_canonical_row(boundary_source="ctp")) is False
+    assert is_canonical_row(_canonical_row(config_id=None)) is False
+    assert is_canonical_row(_canonical_row(threshold=1.0)) is False
+
+
+# ---------------------------------------------------------------------------
+# P1-S3: backup-first migration preserves every legacy row verbatim
+# ---------------------------------------------------------------------------
+
+
+def _create_legacy_table(con):
+    con.execute(
+        """CREATE TABLE head_phase_provenance (
+            backbone                  TEXT NOT NULL,
+            head                      TEXT NOT NULL,
+            bin_mode                  TEXT NOT NULL,
+            threshold                 DOUBLE NOT NULL,
+            boundary_source           TEXT NOT NULL,
+            head_pool_variant         TEXT NOT NULL,
+            status                    TEXT NOT NULL,
+            reason                    TEXT,
+            n_songs                   INTEGER NOT NULL,
+            n_pooled                  INTEGER NOT NULL,
+            finite                    INTEGER NOT NULL,
+            scoring_semantics_version INTEGER NOT NULL,
+            reference_corpus_hash     TEXT,
+            PRIMARY KEY (backbone, head, bin_mode, threshold, boundary_source, head_pool_variant)
+        )"""
+    )
+
+
+def test_migration_backup_first_preserves_legacy_rows_verbatim():
+    """D2 migration: backup-first, one transactional create-copy-drop-rename."""
+    c = duckdb.connect(":memory:")
+    try:
+        _create_legacy_table(c)
+        c.execute(
+            "INSERT INTO head_phase_provenance VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                "effnet",
+                "genre",
+                "temporal_global",
+                1.0,
+                "effnet_ptc",
+                "shared_effnet_ptc_boundary",
+                "done",
+                None,
+                5,
+                5,
+                1,
+                4,
+                "abc123",
+            ],
+        )
+        c.execute(
+            "INSERT INTO head_phase_provenance VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                "effnet",
+                "mood_happy",
+                "temporal_perdim",
+                1.1,
+                "effnet_ptc",
+                "shared_effnet_ptc_boundary",
+                "skipped",
+                "legacy reason",
+                3,
+                0,
+                1,
+                4,
+                None,
+            ],
+        )
+        migrated = migrate_head_phase_provenance(c)
+        assert migrated == 2
+
+        all_rows = load_head_phase_provenance_all(c)
+        assert len(all_rows) == 2
+        for row in all_rows:
+            assert row.run_id == LEGACY_RUN_ID
+            assert row.config_id is None
+            assert row.threshold_configured is None
+            assert row.threshold_effective is None
+            assert row.semantics is None
+            assert row.boundary_source == "effnet_ptc"
+            assert row.head_pool_variant == "shared_effnet_ptc_boundary"
+        by_head = {r.head: r for r in all_rows}
+        # Old threshold + provenance retained verbatim.
+        assert by_head["genre"].threshold == pytest.approx(1.0)
+        assert by_head["genre"].n_songs == 5 and by_head["genre"].n_pooled == 5
+        assert by_head["genre"].scoring_semantics_version == 4
+        assert by_head["genre"].reference_corpus_hash == "abc123"
+        assert by_head["mood_happy"].reason == "legacy reason"
+        assert by_head["mood_happy"].threshold == pytest.approx(1.1)
+        # Legacy rows are NOT canonical coverage.
+        assert load_head_phase_provenance(c) == []
+        # Backup-first copy exists.
+        n_backup = c.execute("SELECT count(*) FROM head_phase_provenance_backup").fetchone()[0]
+        assert n_backup == 2
+        cols = [r[1] for r in c.execute("PRAGMA table_info('head_phase_provenance')").fetchall()]
+        assert cols == list(HEAD_PHASE_PROVENANCE_COLUMNS)
+    finally:
+        c.close()
+
+
+def test_migration_is_noop_when_table_absent():
+    c = duckdb.connect(":memory:")
+    try:
+        assert migrate_head_phase_provenance(c) == 0
+    finally:
+        c.close()
+
+
+# ---------------------------------------------------------------------------
+# P1-S3: canonical writes — dup reject, same-identity replace, archival untouched
+# ---------------------------------------------------------------------------
 
 
 def test_write_head_phase_provenance_roundtrip(con):
-    row = HeadPhaseProvenanceRow(
+    write_head_phase_provenance(con, [_canonical_row()])
+    loaded = load_head_phase_provenance(con)
+    assert len(loaded) == 1
+    got = loaded[0]
+    assert got.config_id == 7
+    assert got.head == "mood"
+    assert got.bin_mode == "temporal_global"
+    assert got.threshold_configured == pytest.approx(1.0)
+    assert got.threshold_effective == pytest.approx(1.0)
+    assert got.semantics == "direct_l2"
+    assert got.threshold is None
+    assert got.run_id == "run-canonical"
+    assert is_canonical_row(got)
+
+
+def test_write_uses_named_18_column_insert(con):
+    captured = {}
+
+    class _Recorder:
+        def execute(self, sql, params=None):
+            return con.execute(sql, params)
+
+        def executemany(self, sql, params=None):
+            captured["sql"] = sql
+            return con.executemany(sql, params or [])
+
+    write_head_phase_provenance(_Recorder(), [_canonical_row()])
+    assert captured["sql"].count("?") == 18
+    for col in HEAD_PHASE_PROVENANCE_COLUMNS:
+        assert f"{col}" in captured["sql"]
+
+
+def test_duplicate_canonical_identity_rejected_in_one_batch(con):
+    """Two canonical rows sharing one identity in a single write are rejected (D3)."""
+    rows = [
+        _canonical_row(run_id="r1", n_pooled=2),
+        _canonical_row(run_id="r2", n_pooled=2),  # same identity, different run_id
+    ]
+    with pytest.raises(ValueError, match="duplicate canonical head-phase identity"):
+        write_head_phase_provenance(con, rows)
+    # Nothing persisted (the batch failed closed).
+    assert load_head_phase_provenance(con) == []
+
+
+def test_same_identity_rerun_replaces_in_one_transaction(con):
+    """A rerun with the same identity replaces the prior current row only (D3)."""
+    write_head_phase_provenance(con, [_canonical_row(run_id="r1", n_pooled=2)])
+    write_head_phase_provenance(con, [_canonical_row(run_id="r2", n_pooled=2)])
+    rows = load_head_phase_provenance(con)
+    # Exactly one current canonical row for the identity — never two.
+    assert len(rows) == 1
+    assert rows[0].run_id == "r2"
+    assert rows[0].n_pooled == 2
+    # Only one physical row remains (prior current row replaced).
+    assert con.execute("SELECT count(*) FROM head_phase_provenance").fetchone()[0] == 1
+
+
+def test_write_rejects_legacy_archival_row(con):
+    """Canonical rows are written ONLY by the canonical writer; legacy rows rejected (D1)."""
+    legacy = _canonical_row(
+        run_id=LEGACY_RUN_ID,
+        threshold=1.0,
+        config_id=None,
+        threshold_configured=None,
+        threshold_effective=None,
+        semantics=None,
+    )
+    with pytest.raises(ValueError, match="legacy archival"):
+        write_head_phase_provenance(con, [legacy])
+
+
+def test_archival_rows_appended_and_never_replaced(con):
+    """append_head_phase_archival_rows appends legacy rows; canonical writes leave them alone (D1)."""
+    legacy = HeadPhaseProvenanceRow(
+        run_id=LEGACY_RUN_ID,
         backbone="effnet",
         head="mood",
+        bin_mode="temporal_global",
+        boundary_source=BOUNDARY_SOURCE_EFFNET_PTC,
+        head_pool_variant=HEAD_POOL_VARIANT,
+        status="done",
+        reason=None,
+        n_songs=3,
+        n_pooled=3,
+        finite=True,
+        scoring_semantics_version=SCORING_SEMANTICS_VERSION,
+        reference_corpus_hash=None,
+        threshold=0.9,
+    )
+    append_head_phase_archival_rows(con, [legacy])
+    write_head_phase_provenance(con, [_canonical_row()])  # same head, canonical identity
+    all_rows = load_head_phase_provenance_all(con)
+    assert len(all_rows) == 2
+    legacy_rows = [r for r in all_rows if r.run_id == LEGACY_RUN_ID]
+    assert len(legacy_rows) == 1
+    assert legacy_rows[0].threshold == pytest.approx(0.9)
+    assert legacy_rows[0].config_id is None
+    # Canonical load sees only the canonical current row.
+    canon = load_head_phase_provenance(con)
+    assert len(canon) == 1 and canon[0].run_id != LEGACY_RUN_ID
+
+
+def test_append_archival_rejects_canonical_row(con):
+    with pytest.raises(ValueError):
+        append_head_phase_archival_rows(con, [_canonical_row()])
+
+
+def test_write_rejects_noncanonical_unclassified_row(con):
+    """Unclassified rows fail closed — never silently persisted (D3)."""
+    with pytest.raises(ValueError):
+        write_head_phase_provenance(con, [_canonical_row(semantics="ctp")])
+
+
+def test_write_validates_finite_and_counts(con):
+    bad = [
+        _canonical_row(threshold_configured=float("nan")),
+        _canonical_row(n_songs=-1),
+        _canonical_row(n_pooled=5, n_songs=3),
+    ]
+    for row in bad:
+        with pytest.raises(ValueError):
+            write_head_phase_provenance(con, [row])
+    assert load_head_phase_provenance(con) == []
+
+
+# ---------------------------------------------------------------------------
+# P1-S3: canonical identity excludes run_id
+# ---------------------------------------------------------------------------
+
+
+def test_head_phase_config_key_excludes_run_id():
+    k1 = _identity_of(_canonical_row(run_id="r1"))
+    k2 = _identity_of(_canonical_row(run_id="r2"))
+    assert k1 == k2  # application identity ignores run_id
+    assert k1.startswith("head:")
+    assert "run" not in k1.replace("run-canonical", "")  # no run_id in identity
+    assert k1 == ("head:7:effnet:mood:temporal_global:1.0:1.0:direct_l2:effnet_ptc:shared_effnet_ptc_boundary")
+    assert "7" in k1 and "direct_l2" in k1 and "1.0" in k1
+    # Different heads / configs / semantics are distinct identities.
+    assert _identity_of(_canonical_row(head="timbre")) != k1
+    assert _identity_of(_canonical_row(config_id=9)) != k1
+    assert _identity_of(_canonical_row(semantics="std_scaled")) != k1
+    assert _identity_of(_canonical_row(threshold_configured=1.1)) != k1
+
+
+def test_head_phase_identity_not_an_analyze_strategy_key():
+    assert _identity_of(_canonical_row()).split(":")[0] == "head"
+    assert not _identity_of(_canonical_row()).startswith(("ptc:", "ctp:", "global_pool:"))
+
+
+# ---------------------------------------------------------------------------
+# P1-S3: build rows (canonical + archival) from manifests
+# ---------------------------------------------------------------------------
+
+
+def test_build_rows_from_canonical_manifest():
+    rec = _canonical_config_record(head="mood", n_pooled=2)
+    manifest = _canonical_manifest(run_id="r-canon", results=(rec,), reference_corpus_hash="h")
+    rows = build_head_phase_provenance_rows(manifest, reference_corpus_hash="h")
+    assert len(rows) == 1
+    r = rows[0]
+    assert r.run_id == "r-canon"
+    assert r.config_id == 7
+    assert r.threshold is None
+    assert r.threshold_configured == pytest.approx(1.0)
+    assert r.threshold_effective == pytest.approx(1.0)
+    assert r.semantics == "direct_l2"
+    assert r.boundary_source == BOUNDARY_SOURCE_EFFNET_PTC
+    assert r.head_pool_variant == HEAD_POOL_VARIANT
+    assert r.status == "done" and r.n_songs == 2 and r.n_pooled == 2
+    assert is_canonical_row(r)
+
+
+def test_build_archival_rows_from_legacy_manifest():
+    """A legacy (head_pooling) manifest maps to archival run_id='legacy' rows."""
+    rec = LegacyHeadPhaseConfigRecord(
+        backbone="effnet",
+        head="genre",
         bin_mode="temporal_global",
         threshold=1.0,
         status="done",
         reason="",
-        n_songs=2,
-        n_pooled=2,
+        n_songs=4,
+        n_pooled=4,
         finite=True,
+        boundary_source=BOUNDARY_SOURCE_EFFNET_PTC,
+    )
+    legacy_manifest = LegacyHeadPhaseManifest(
+        boundary_source=BOUNDARY_SOURCE_EFFNET_PTC,
+        backbones=("effnet",),
+        heads=("genre",),
+        bin_modes=("temporal_global",),
+        thresholds=(1.0,),
+        song_ids=("s1", "s2", "s3", "s4"),
         scoring_semantics_version=SCORING_SEMANTICS_VERSION,
-        reference_corpus_hash="hash-primary",
+        results=(rec,),
+        skip_reasons=(),
+        done=1,
+        skipped=0,
+        errors=0,
+        finite=True,
+        primary_analysis_succeeded=True,
     )
-    write_head_phase_provenance(con, [row])
-
-    loaded = load_head_phase_provenance(con)
-    assert len(loaded) == 1
-    got = loaded[0]
-    assert got == row
-    assert got.config_key == head_phase_config_key(
-        backbone="effnet", head="mood", bin_mode="temporal_global", threshold=1.0
-    )
-    assert got.config_key.startswith("head:effnet:mood:temporal_global:1.000:")
-
-
-def test_build_rows_from_manifest():
-    manifest = _manifest()
-    rows = build_head_phase_provenance_rows(manifest, reference_corpus_hash="hash-primary")
+    rows = build_archival_provenance_rows(legacy_manifest, reference_corpus_hash="h")
     assert len(rows) == 1
     r = rows[0]
-    assert r.backbone == "effnet"
-    assert r.head == "mood"
-    assert r.bin_mode == "temporal_global"
+    assert r.run_id == LEGACY_RUN_ID
     assert r.threshold == pytest.approx(1.0)
+    assert r.config_id is None
+    assert r.threshold_configured is None and r.threshold_effective is None and r.semantics is None
     assert r.boundary_source == BOUNDARY_SOURCE_EFFNET_PTC
     assert r.head_pool_variant == HEAD_POOL_VARIANT
-    assert r.status == "done"
-    assert r.n_songs == 2 and r.n_pooled == 2
-    assert r.finite is True
-    assert r.scoring_semantics_version == SCORING_SEMANTICS_VERSION
-    assert r.reference_corpus_hash == "hash-primary"
+    assert is_canonical_row(r) is False
 
 
-def test_build_rows_from_manifest_one_row_per_config():
+# ---------------------------------------------------------------------------
+# P1-S3: query_head_phase_done / additive guarantees
+# ---------------------------------------------------------------------------
+
+
+def test_query_head_phase_done_returns_only_canonical_done_keys(con):
     recs = (
-        HeadPhaseConfigRecord(
-            backbone="effnet",
-            head="mood",
-            bin_mode="temporal_global",
-            threshold=1.0,
-            status="done",
-            reason="",
-            n_songs=2,
-            n_pooled=2,
-            finite=True,
-            boundary_source=BOUNDARY_SOURCE_EFFNET_PTC,
-        ),
-        HeadPhaseConfigRecord(
-            backbone="effnet",
-            head="timbre",
-            bin_mode="temporal_global",
-            threshold=1.0,
-            status="skipped",
-            reason="no cached head session",
-            n_songs=0,
-            n_pooled=0,
-            finite=True,
-            boundary_source=BOUNDARY_SOURCE_EFFNET_PTC,
-        ),
+        _canonical_config_record(head="mood", status="done", n_pooled=2),
+        _canonical_config_record(head="timbre", status="skipped", n_pooled=0, reason="no ready stream"),
     )
-    manifest = _manifest(results=recs, heads=("mood", "timbre"))
-    rows = build_head_phase_provenance_rows(manifest, reference_corpus_hash="h")
-    assert len(rows) == 2
-    assert {r.head for r in rows} == {"mood", "timbre"}
-
-
-@pytest.mark.parametrize(
-    "kwargs",
-    [
-        {"threshold": float("nan")},
-        {"threshold": float("inf")},
-        {"n_songs": -1},
-        {"n_pooled": -1},
-        {"n_pooled": 5, "n_songs": 3},  # pooled cannot exceed attempted
-    ],
-)
-def test_head_phase_row_finite_validation(kwargs):
-    """Non-finite/invalid numeric values are rejected — never persisted (P2-S1)."""
-    base = {"backbone": "effnet", "head": "mood", "bin_mode": "temporal_global", "threshold": 1.0}
-    base.update(kwargs)
-    with pytest.raises(ValueError):
-        HeadPhaseProvenanceRow(**base)
-
-
-def test_head_phase_row_rejects_non_effnet_boundary_source():
-    """A row whose boundary_source is not effnet_ptc (e.g. a CTP path) is rejected (P2-S3)."""
-    with pytest.raises(ValueError, match="boundary_source"):
-        HeadPhaseProvenanceRow(
-            backbone="effnet",
-            head="mood",
-            bin_mode="temporal_global",
-            threshold=1.0,
-            boundary_source="ctp",
-        )
-
-
-def test_head_phase_row_rejects_wrong_pool_variant():
-    """A hypothetical head-specific-segmentation variant cannot be a shared-boundary row (P2-S3)."""
-    with pytest.raises(ValueError, match="head_pool_variant"):
-        HeadPhaseProvenanceRow(
-            backbone="effnet",
-            head="mood",
-            bin_mode="temporal_global",
-            threshold=1.0,
-            head_pool_variant="head_specific_segmentation",
-        )
+    write_head_phase_provenance(con, build_head_phase_provenance_rows(_canonical_manifest(results=recs)))
+    done = query_head_phase_done(con)
+    assert done == {_identity_of(_canonical_row(head="mood"))}
 
 
 def test_head_phase_provenance_additive_does_not_touch_analyze_metrics(con):
-    """Writing head-phase provenance is additive: analyze_metrics stays empty (P2-S1)."""
-    manifest = _manifest()
-    rows = build_head_phase_provenance_rows(manifest, reference_corpus_hash="h")
-    write_head_phase_provenance(con, rows)
-
-    assert len(db.query_analysis_done(con)) == 0  # no primary analyze rows created
-    metrics = con.execute("SELECT * FROM analyze_metrics").fetchall()
-    assert metrics == []
-    # The provenance rows themselves are present and carry the reference corpus.
-    loaded = load_head_phase_provenance(con)
-    assert len(loaded) == 1
-    assert loaded[0].reference_corpus_hash == "h"
-
-
-def test_query_head_phase_done_returns_only_done_keys(con):
-    recs = (
-        HeadPhaseConfigRecord(
-            backbone="effnet",
-            head="mood",
-            bin_mode="temporal_global",
-            threshold=1.0,
-            status="done",
-            reason="",
-            n_songs=2,
-            n_pooled=2,
-            finite=True,
-            boundary_source=BOUNDARY_SOURCE_EFFNET_PTC,
-        ),
-        HeadPhaseConfigRecord(
-            backbone="effnet",
-            head="timbre",
-            bin_mode="temporal_global",
-            threshold=1.0,
-            status="skipped",
-            reason="no cached head session",
-            n_songs=0,
-            n_pooled=0,
-            finite=True,
-            boundary_source=BOUNDARY_SOURCE_EFFNET_PTC,
-        ),
-    )
-    write_head_phase_provenance(con, build_head_phase_provenance_rows(_manifest(results=recs), "h"))
-    done = query_head_phase_done(con)
-    assert done == {head_phase_config_key(backbone="effnet", head="mood", bin_mode="temporal_global", threshold=1.0)}
-
-
-# ---------------------------------------------------------------------------
-# P2-S3: explicit configuration identity, disjoint from CTP / head-specific keys
-# ---------------------------------------------------------------------------
-
-
-def test_head_phase_config_key_disjoint_namespace():
-    """The head-phase identity lives in a ``head:`` namespace, disjoint from primary/CTP keys."""
-    head_key = head_phase_config_key(backbone="effnet", head="mood", bin_mode="temporal_global", threshold=0.5)
-    assert head_key.startswith("head:")
-    assert "effnet_ptc" in head_key
-    assert HEAD_POOL_VARIANT in head_key
-    for prefix in ("global_pool:", "ptc:", "ctp:"):
-        assert not head_key.startswith(prefix), f"head-phase key must not use {prefix!r} namespace"
-
-
-def test_ctp_and_ptc_strategy_keys_cannot_masquerade_as_head_phase_row():
-    """A CTP (or PTC) strategy key is not a shared-boundary row identity (P2-S3)."""
-    shared = {"std_thresh": 0.5, "rep_a": "mean", "rep_b": "max", "agg_method": "target_weighted"}
-    ctp_key = run_mod._ctp_strategy_key("effnet", "ctp_mood_0.5", {"head": "mood", **shared})
-    ptc_key = run_mod._ptc_strategy_key("effnet", "ptc_temporal_global_0.5", {"bin_mode": "temporal_global", **shared})
-
-    head_key = head_phase_config_key(backbone="effnet", head="mood", bin_mode="temporal_global", threshold=0.5)
-
-    assert ctp_key.startswith("ctp:") and ptc_key.startswith("ptc:")
-    assert head_key != ctp_key and head_key != ptc_key
-    assert "boundary_source" not in ctp_key and HEAD_POOL_VARIANT not in ctp_key
-    # Persisting a CTP-style identity as a head-phase row is rejected (boundary_source).
-    with pytest.raises(ValueError, match="boundary_source"):
-        HeadPhaseProvenanceRow(
-            backbone="effnet",
-            head="mood",
-            bin_mode="temporal_global",
-            threshold=0.5,
-            boundary_source="ctp",
-        )
-
-
-def test_head_specific_segmentation_threshold_cannot_masquerade():
-    """A head-specific-segmentation threshold uses a different variant → not a shared-boundary row (P2-S3)."""
-    # Same (backbone, head, bin_mode, threshold) but a head-specific segmentation
-    # variant must carry a distinct head_pool_variant (forbidden by the DTO).
-    shared_key = head_phase_config_key(backbone="effnet", head="mood", bin_mode="temporal_global", threshold=0.7)
-    hypothetical_key = head_phase_config_key(
-        backbone="effnet",
-        head="mood",
-        bin_mode="temporal_global",
-        threshold=0.7,
-        head_pool_variant="head_specific_segmentation",
-    )
-    assert shared_key != hypothetical_key
-    with pytest.raises(ValueError, match="head_pool_variant"):
-        HeadPhaseProvenanceRow(
-            backbone="effnet",
-            head="mood",
-            bin_mode="temporal_global",
-            threshold=0.7,
-            head_pool_variant="head_specific_segmentation",
-        )
-
-
-def test_head_phase_identity_not_an_analyze_strategy_key():
-    """The head-phase identity can never enter the primary analyze_metrics key space (P2-S3)."""
-    head_key = head_phase_config_key(backbone="effnet", head="mood", bin_mode="temporal_global", threshold=0.5)
-    # Primary analyze strategy keys are prefixed global_pool:/ptc:/ctp: and carry no
-    # boundary_source/head_pool_variant — disjoint by construction.
-    assert head_key.split(":")[0] == "head"
-
-
-# ---------------------------------------------------------------------------
-# P2-S4: same-primary-corpus / declared subset / no-CPT / no-winner
-# ---------------------------------------------------------------------------
-
-
-def test_head_phase_song_ids_are_primary_corpus_subset():
-    """Head-phase rows declare the primary EffNet corpus and the derived subset (P2-S4)."""
-    primary = MatchingCorpusManifest(song_ids=("s1", "s2", "s3", "s4"), corpus_hash="hash-primary", backbone="effnet")
-    # Head availability is only present for a subset of the primary corpus.
-    head_manifest = _manifest(song_ids=("s1", "s3"))
-    rows = build_head_phase_provenance_rows(head_manifest, reference_corpus_hash=primary.corpus_hash)
-
-    head_sids = set(head_manifest.song_ids)
-    assert head_sids <= set(primary.song_ids)
-    assert head_sids < set(primary.song_ids)  # genuinely a subset here
-    assert all(r.reference_corpus_hash == primary.corpus_hash for r in rows)
-    # The head phase did not silently claim the full primary corpus.
-    assert all(r.n_songs == len(head_sids) for r in rows)
-
-
-def test_unequal_sets_never_compared_silently():
-    """Any primary/head set mismatch is rejected loudly — never silently intersected (P2-S4)."""
-    primary = MatchingCorpusManifest(song_ids=("s1", "s2", "s3"), corpus_hash="hash-primary", backbone="effnet")
-    # A head phase that observed MORE songs than the primary corpus is a mismatch
-    # against the declared reference; the corpus validator must reject it.
-    with pytest.raises(ValueError, match="song-ID set mismatch"):
-        validate_matching_corpus(primary, ["s1", "s2", "s3", "s4"], "head-phase")
-
-
-def test_head_phase_rows_never_appear_as_ctp(con):
-    """Head-phase rows live only in head_phase_provenance with effnet_ptc source (P2-S4)."""
-    manifest = _manifest()
-    write_head_phase_provenance(con, build_head_phase_provenance_rows(manifest, "h"))
-
-    rows = load_head_phase_provenance(con)
-    assert all(r.boundary_source == BOUNDARY_SOURCE_EFFNET_PTC for r in rows)
-    # They never appear in any CTP storage table.
+    write_head_phase_provenance(con, build_head_phase_provenance_rows(_canonical_manifest()))
+    assert db.query_analysis_done(con) == set()
+    assert con.execute("SELECT * FROM analyze_metrics").fetchall() == []
     assert db.query_binned_classify_done(con) == set()
-    ctp_rows = con.execute("SELECT * FROM binned_classify_ctp").fetchall()
-    assert ctp_rows == []
+    assert con.execute("SELECT * FROM binned_classify_ctp").fetchall() == []
 
 
 def test_head_phase_rows_never_primary_winner_candidate(con):
-    """Head-phase rows never enter analyze_metrics, so never a primary winner candidate (P2-S4)."""
-    manifest = _manifest()
-    write_head_phase_provenance(con, build_head_phase_provenance_rows(manifest, "h"))
-
-    # Primary winner candidates are drawn from analyze_metrics rows (strategy keys).
+    write_head_phase_provenance(con, build_head_phase_provenance_rows(_canonical_manifest()))
     assert db.query_analysis_done(con) == set()
-    metrics = con.execute("SELECT strategy_key, strategy_type FROM analyze_metrics").fetchall()
-    assert metrics == []
-    # And the head-phase identity is structurally outside the winner-key namespaces.
+    assert con.execute("SELECT strategy_key, strategy_type FROM analyze_metrics").fetchall() == []
     for r in load_head_phase_provenance(con):
         assert r.config_key.startswith("head:")
+        assert r.config_key.split(":")[0] == "head"
+
+
+def test_head_phase_song_ids_are_primary_corpus_subset():
+    primary = MatchingCorpusManifest(song_ids=("s1", "s2", "s3", "s4"), corpus_hash="h", backbone="effnet")
+    head_sids = ("s1", "s3")
+    manifest = _canonical_manifest(song_ids=head_sids, results=(_canonical_config_record(n_songs=2, n_pooled=2),))
+    rows = build_head_phase_provenance_rows(manifest, reference_corpus_hash=primary.corpus_hash)
+    assert set(head_sids) <= set(primary.song_ids)
+    assert all(r.reference_corpus_hash == "h" for r in rows)
+    assert all(r.n_songs == 2 for r in rows)
 
 
 # ---------------------------------------------------------------------------
-# P2-S5: _head_phase pipeline glue (run.py wiring)
+# P1-S3/S1-S4: LEGACY run.py glue appends archival-only rows
 # ---------------------------------------------------------------------------
 
 
-def test_head_phase_wiring_extracts_effnet_corpus_and_persists(con, monkeypatch):
-    """_head_phase derives the EffNet corpus, calls pooling, persists provenance, sets cfg."""
+def _legacy_pooling_manifest(song_ids=("s1", "s2"), status="done", n_pooled=2):
+    rec = LegacyHeadPhaseConfigRecord(
+        backbone="effnet",
+        head="mood",
+        bin_mode="temporal_global",
+        threshold=1.0,
+        status=status,
+        reason="",
+        n_songs=len(song_ids),
+        n_pooled=n_pooled,
+        finite=True,
+        boundary_source=BOUNDARY_SOURCE_EFFNET_PTC,
+    )
+    return LegacyHeadPhaseManifest(
+        boundary_source=BOUNDARY_SOURCE_EFFNET_PTC,
+        backbones=("effnet",),
+        heads=("mood",),
+        bin_modes=("temporal_global",),
+        thresholds=(1.0,),
+        song_ids=tuple(song_ids),
+        scoring_semantics_version=SCORING_SEMANTICS_VERSION,
+        results=(rec,),
+        skip_reasons=(),
+        done=1 if status == "done" else 0,
+        skipped=0 if status == "done" else 1,
+        errors=0,
+        finite=True,
+        primary_analysis_succeeded=True,
+    )
+
+
+def test_head_phase_wiring_extracts_effnet_corpus_and_appends_archival(con, monkeypatch):
+    """_head_phase derives the EffNet corpus, pools (legacy), appends ARCHIVAL rows only."""
     captured = {}
-    written: list[tuple] = []
+    manifest = _legacy_pooling_manifest()
 
     def _fake_pooling(_con, **kwargs):
         captured["kwargs"] = kwargs
-        return _manifest()
-
-    def _fake_build(_m, reference_corpus_hash=None):
-        captured["corpus_hash"] = reference_corpus_hash
-        return ["row-with-hash"]
-
-    def _fake_write(conn, rows):
-        written.append((conn, rows))
+        return manifest
 
     monkeypatch.setattr(classify_mod, "run_shared_ptc_head_pooling", _fake_pooling)
-    monkeypatch.setattr(head_phase_db, "build_head_phase_provenance_rows", _fake_build)
-    monkeypatch.setattr(head_phase_db, "write_head_phase_provenance", _fake_write)
 
     cfg = {
         "matching_corpus": {
-            "effnet": MatchingCorpusManifest(song_ids=("s1", "s2"), corpus_hash="hash-primary", backbone="effnet")
+            "effnet": MatchingCorpusManifest(song_ids=("s1", "s2"), corpus_hash="h", backbone="effnet")
         },
         "backbones": ["effnet"],
         "heads": ["mood"],
@@ -461,58 +655,33 @@ def test_head_phase_wiring_extracts_effnet_corpus_and_persists(con, monkeypatch)
     assert kwargs["backbones"] == ["effnet"]
     assert kwargs["heads"] == ["mood"]
     assert kwargs["force"] is True
-    assert captured["corpus_hash"] == "hash-primary"
-    assert cfg["head_phase_manifest"] is not None
-    assert written and written[0][0] is con and written[0][1] == ["row-with-hash"]
+    assert cfg["head_phase_manifest"] is manifest
+    # Archival-only: a legacy row with threshold populated, config fields NULL.
+    rows = load_head_phase_provenance_all(con)
+    assert len(rows) == 1
+    r = rows[0]
+    assert r.run_id == LEGACY_RUN_ID
+    assert r.threshold == pytest.approx(1.0)
+    assert r.config_id is None and r.threshold_configured is None and r.semantics is None
+    assert r.reference_corpus_hash == "h"
+    # No canonical current row is ever produced by the legacy glue (D1).
+    assert load_head_phase_provenance(con) == []
 
 
 def test_head_phase_wiring_falls_back_to_first_manifest_and_warns_on_zero_done(con, monkeypatch, caplog):
-    """No effnet manifest -> fall back to first manifest; no pooled output warns.
+    """No effnet manifest -> fall back to first manifest; no pooled output warns."""
 
-    The "outputs unavailable" warning fires only when there is genuinely no pooled
-    output (sum(n_pooled) == 0), not merely when done==0 (a fully-cached rerun has
-    done==0 but n_pooled==n_songs>0 and must NOT warn).
-    """
-    captured = {}
-
-    def _fake_pooling(_con, **kwargs):
-        captured["kwargs"] = kwargs
-        return _manifest(
-            done=0,
-            skipped=2,
-            results=(
-                HeadPhaseConfigRecord(
-                    backbone="effnet",
-                    head="mood",
-                    bin_mode="temporal_global",
-                    threshold=1.0,
-                    status="skipped",
-                    reason="no cached head session",
-                    n_songs=2,
-                    n_pooled=0,
-                    finite=True,
-                    boundary_source=BOUNDARY_SOURCE_EFFNET_PTC,
-                ),
-            ),
-        )
-
-    def _fake_build(_m, reference_corpus_hash=None):
-        captured["corpus_hash"] = reference_corpus_hash
-        return []
+    def _fake_pooling(_con, **kwargs):  # noqa: ARG001 - interface-parity stub
+        return _legacy_pooling_manifest(song_ids=("s9",), status="skipped", n_pooled=0)
 
     monkeypatch.setattr(classify_mod, "run_shared_ptc_head_pooling", _fake_pooling)
-    monkeypatch.setattr(head_phase_db, "build_head_phase_provenance_rows", _fake_build)
-    monkeypatch.setattr(head_phase_db, "write_head_phase_provenance", lambda _conn, _rows: None)
-
     cfg = {
-        "matching_corpus": {
-            "musicnn": MatchingCorpusManifest(song_ids=("s9",), corpus_hash="hash-musicnn", backbone="musicnn")
-        }
+        "matching_corpus": {"musicnn": MatchingCorpusManifest(song_ids=("s9",), corpus_hash="hm", backbone="musicnn")}
     }
     with caplog.at_level(logging.WARNING, logger="scripts.embedding_research.run"):
         run_mod._head_phase(con, cfg)
-
-    assert captured["kwargs"]["song_ids"] == frozenset({"s9"})
-    assert captured["corpus_hash"] == "hash-musicnn"
     assert cfg["head_phase_manifest"] is not None
     assert "no pooled output" in caplog.text
+    rows = load_head_phase_provenance_all(con)
+    assert len(rows) == 1 and rows[0].run_id == LEGACY_RUN_ID
+    assert load_head_phase_provenance(con) == []

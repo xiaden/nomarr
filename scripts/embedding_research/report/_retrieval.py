@@ -51,20 +51,32 @@ _PALETTE = [
 # ---------------------------------------------------------------------------
 
 
-def query_analyze_metrics(con) -> pd.DataFrame:
-    """Load unified analyze metrics from DuckDB. Returns empty DataFrame on error."""
+def query_analyze_metrics(con, *, run_id: str | None = None) -> pd.DataFrame:
+    """Load unified analyze metrics from DuckDB. Returns empty DataFrame on error.
+
+    Args:
+        con: DuckDB connection.
+        run_id: Optional run-scoped filter (post-migration reader contract).  When given, only rows
+            whose physical ``run_id`` column equals *run_id* are read.  When ``None`` (default), the
+            whole table is read — identical to the pre-migration report on a single-generation DB.
+
+    The pivoted subquery deliberately excludes the ``run_id`` column so the decoded strategy rows
+    (and downstream winners/retrieval sections) are unchanged from the pre-migration shape.
+    """
     if not table_exists(con, "analyze_metrics"):
         return empty_df(ANALYZE_METRICS_COLUMNS)
     try:
-        df = con.execute(
-            """
-            PIVOT analyze_metrics
-            ON metric
-            USING FIRST(value)
-            GROUP BY strategy_key, strategy_type, sim_metric, k
-            ORDER BY disc_general DESC NULLS LAST
-            """
-        ).df()
+        select_from = "SELECT strategy_key, strategy_type, sim_metric, k, metric, value FROM analyze_metrics"
+        params: tuple = ()
+        if run_id is not None:
+            select_from += " WHERE run_id = ?"
+            params = (run_id,)
+        sql = (
+            f"PIVOT ({select_from}) ON metric USING FIRST(value) "
+            "GROUP BY strategy_key, strategy_type, sim_metric, k "
+            "ORDER BY disc_general DESC NULLS LAST"
+        )
+        df = con.execute(sql, params).df()
         if "strategy_type" in df.columns:
             df = df[df["strategy_type"].isin(STRATEGY_TYPES)].copy()
         return _decode_strategy_key(df)
@@ -85,7 +97,7 @@ def section_unified_table(df: pd.DataFrame) -> dict:
     best disc_genre score (flat vs binned).
     """
     flat_df = df[df["strategy_type"] == "global_pool"]
-    binned_df = df[df["strategy_type"].isin(["ptc", "ctp"])]
+    binned_df = df[df["strategy_type"] == "ptc"]
     if flat_df.empty and binned_df.empty:
         return make_section(
             "unified-ranking",
@@ -389,7 +401,7 @@ def section_per_backbone(df: pd.DataFrame) -> dict:
     The delta bar shows each binned config's best disc minus the flat medoid baseline.
     """
     flat_df = df[df["strategy_type"] == "global_pool"]
-    binned_df = df[df["strategy_type"].isin(["ptc", "ctp"])]
+    binned_df = df[df["strategy_type"] == "ptc"]
     all_backbones = sorted(
         set(flat_df["backbone"].unique() if not flat_df.empty else [])
         | set(binned_df["backbone"].unique() if not binned_df.empty else [])

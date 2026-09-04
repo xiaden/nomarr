@@ -1,4 +1,10 @@
-"""Spec-first tests for the shared-boundary head phase (Plan B, Phase 1).
+"""Spec-first tests for the shared-boundary head phase (LEGACY INTERIM surface).
+
+NOTE (Plan E, Phase 1): this file now covers the LEGACY interim inclusive-range
+``head_pooling`` helper and the LEGACY ``classify.run_shared_ptc_head_pooling``
+runner, retained callable through Phase 4 (D1).  The ACTIVE canonical exact-membership
+helper, per-config outcome records, and CPU runner are covered in
+``test_head_analysis_active.py``.  This legacy coverage stays green unchanged.
 
 Covers the pure ``pool_head_outputs_over_ptc_boundaries`` helper, the
 extended ``cache.binned_ptc_heads`` provenance metadata, and the non-blocking

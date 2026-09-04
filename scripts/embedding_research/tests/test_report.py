@@ -973,24 +973,27 @@ def test_head_value_archival_ctp_note():
 
 def test_head_output_shared_ptc_boundary_subsections():
     con = _empty_con()
-    con.execute(
-        "CREATE TABLE head_phase_provenance (backbone VARCHAR, head VARCHAR, bin_mode VARCHAR, "
-        "threshold DOUBLE, boundary_source VARCHAR, head_pool_variant VARCHAR, status VARCHAR, "
-        "reason VARCHAR, n_songs INTEGER, n_pooled INTEGER, finite INTEGER, "
-        "scoring_semantics_version INTEGER, reference_corpus_hash VARCHAR, "
-        "UNIQUE (backbone, head, bin_mode, threshold, boundary_source, head_pool_variant))"
-    )
+    from scripts.embedding_research.db._schema import ensure_schema
+
+    ensure_schema(con)  # fresh 18-column, no-PK head_phase_provenance
     write_head_phase_provenance(
         con,
         [
             HeadPhaseProvenanceRow(
+                run_id="fixture",
+                config_id=1,
                 backbone="effnet",
                 head="genre",
                 bin_mode="temporal_global",
-                threshold=1.0,
+                threshold_configured=1.0,
+                threshold_effective=1.0,
+                semantics="direct_l2",
+                boundary_source="effnet_ptc",
+                head_pool_variant="shared_effnet_ptc_boundary",
                 status="done",
                 n_songs=100,
                 n_pooled=95,
+                finite=True,
             )
         ],
     )
@@ -1003,8 +1006,12 @@ def test_head_output_shared_ptc_boundary_subsections():
     rows = _table_dicts(table)
     assert rows
     assert rows[0]["boundary_source"] == "effnet_ptc"
+    assert rows[0]["head_pool_variant"] == "shared_effnet_ptc_boundary"
     assert rows[0]["coverage"] == "95.0%"
     assert rows[0]["n_pooled"] == "95"
+    # Canonical-only rendering: config identity + semantics visible, no legacy threshold.
+    assert str(rows[0]["config_id"]) == "1"
+    assert rows[0]["semantics"] == "direct_l2"
 
     # No head-phase data -> empty section with a missing-data warning.
     empty_con = _empty_con()

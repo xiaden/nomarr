@@ -329,9 +329,16 @@ def select_winner(rows: pd.DataFrame, *, backbone: str, metric_col: str, k: int)
     :data:`TIE_BREAK_ORDER` key.  Returns a dict of the winning row's decoded
     fields plus ``value`` (as float) and ``tie_break_key`` (display), or ``None``
     when the cell has no eligible row.
+
+    CTP rows are NEVER eligible primary winners: CTP is archival-only and can
+    never occupy a primary best/top-N/winner slot (DD archival_ctp line 233).
+    This pure-builder exclusion (defense in depth below the caller-layer filter)
+    makes ``select_winner`` reject a fed CTP row outright.
     """
     if rows is None or rows.empty or metric_col not in rows.columns:
         return None
+    if "strategy_type" in rows.columns:
+        rows = rows[rows["strategy_type"] != "ctp"]
     cell = rows[(rows["backbone"] == backbone) & (rows["k"] == k) & rows[metric_col].notna()]
     if cell.empty:
         return None
@@ -412,7 +419,12 @@ def build_winner_delta_rows(
         baseline_key = f"global_pool:{cell['backbone']}:medoid"
         # The explicit baseline reference never competes against itself, so the
         # winner is the best *other* configuration and a negative delta is possible.
-        candidates = rows[~((rows["strategy_key"] == baseline_key) & (rows["strategy_type"] == "global_pool"))]
+        # CTP is additionally excluded at the candidate level (archival-only; never
+        # a primary winner) as defense in depth beneath select_winner's own filter.
+        candidates = rows[
+            ~((rows["strategy_key"] == baseline_key) & (rows["strategy_type"] == "global_pool"))
+            & (rows["strategy_type"] != "ctp")
+        ]
         winner = select_winner(
             candidates,
             backbone=cell["backbone"],
