@@ -114,6 +114,7 @@ class VectorSearchService:
             backbone_id,
             seed_vector,
             limit=limit,
+            min_score=min_score,
             include_vector=True,
         )
 

@@ -129,6 +129,7 @@ class TestSearchSimilarTracksSuccess:
             "effnet",
             (0.1, 0.2, 0.3),
             limit=10,
+            min_score=0.0,
             include_vector=True,
         )
         assert results == [
@@ -166,6 +167,8 @@ class TestSearchSimilarTracksSuccess:
             {"file_id": 3, "score": 0.0, "vector": [0.0, 1.0]},
             {"file_id": 2, "score": -0.2, "vector": [1.0, 0.0]},
         ]
+        assert db.ml.search_similar_vectors.call_args_list[0].kwargs["min_score"] == 0.0
+        assert db.ml.search_similar_vectors.call_args_list[1].kwargs["min_score"] == -0.2
 
     def test_default_min_score_keeps_zero_drops_negative(self) -> None:
         db = _make_db()
