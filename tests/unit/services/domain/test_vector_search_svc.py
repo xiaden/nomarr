@@ -150,6 +150,23 @@ class TestSearchSimilarTracksSuccess:
             {"file_id": 3, "score": 0.7, "vector": [0.7, 0.3]},
         ]
 
+    def test_zero_threshold_keeps_zero_similarity_and_negative_threshold_keeps_negative(self) -> None:
+        db = _make_db()
+        db.ml.search_similar_vectors.return_value = (
+            _match("songs/a.mp3", 0.0, (0.0, 1.0)),
+            _match("songs/b.mp3", -0.2, (1.0, 0.0)),
+        )
+        service = _make_service(db)
+
+        zero_results = service.search_similar_tracks(_SEED_ID, "effnet", limit=10, min_score=0.0)
+        negative_results = service.search_similar_tracks(_SEED_ID, "effnet", limit=10, min_score=-0.2)
+
+        assert zero_results == [{"file_id": 3, "score": 0.0, "vector": [0.0, 1.0]}]
+        assert negative_results == [
+            {"file_id": 3, "score": 0.0, "vector": [0.0, 1.0]},
+            {"file_id": 2, "score": -0.2, "vector": [1.0, 0.0]},
+        ]
+
     def test_default_min_score_keeps_zero_drops_negative(self) -> None:
         db = _make_db()
         db.ml.search_similar_vectors.return_value = (

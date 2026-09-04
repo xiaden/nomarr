@@ -27,6 +27,7 @@ export interface UseVectorSearchResult {
  *
  * Provides:
  * - searchByFileId: Single-call search by file ID (backend resolves vector internally)
+ * - minScore uses cosine similarity in [-1, 1], where higher values are better matches
  * - Loading and error state management
  */
 export function useVectorSearch(): UseVectorSearchResult {

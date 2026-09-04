@@ -4,7 +4,7 @@
  * Features:
  * - Backbone selector (effnet, yamnet, etc.)
  * - File selector to use as query (gets vector from selected track)
- * - Search parameters (limit, min_score)
+ * - Search parameters (limit, minimum cosine similarity)
  * - Results display with track links
  */
 
@@ -220,7 +220,7 @@ export function VectorSearchPage() {
 
             <Box>
               <Typography variant="body2" gutterBottom>
-                Minimum Similarity: {minScore.toFixed(2)}
+                Minimum Similarity: {minScore.toFixed(2)} (−1 to 1)
               </Typography>
               <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: "block" }}>
                 Filter out results below this threshold. Higher = stricter matching.
@@ -228,7 +228,7 @@ export function VectorSearchPage() {
               <Slider
                 value={minScore}
                 onChange={(_, v) => setMinScore(v as number)}
-                min={0}
+                min={-1}
                 max={1}
                 step={0.01}
                 valueLabelDisplay="auto"

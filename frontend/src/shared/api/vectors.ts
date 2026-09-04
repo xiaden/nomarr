@@ -17,14 +17,14 @@ export interface VectorSearchRequest {
   backbone_id: string;
   /** Maximum number of results (1-100) */
   limit?: number;
-  /** Minimum similarity score threshold */
+  /** Minimum cosine similarity threshold in [-1, 1]; higher values are better matches */
   min_score?: number;
 }
 
 export interface VectorSearchResultItem {
   /** Library file document ID */
   file_id: number;
-  /** Similarity score */
+  /** Cosine similarity score in [-1, 1]; higher values are better matches */
   score: number;
   /** Stored embedding vector */
   vector: number[];
@@ -106,8 +106,8 @@ export async function listBackbones(): Promise<VectorBackbonesResponse> {
  * @param backbone_id - Backbone identifier (e.g., "effnet", "yamnet")
  * @param file_id - Library file document ID to find similar tracks for
  * @param limit - Maximum number of results (default 10, max 100)
- * @param min_score - Minimum similarity score threshold (default 0)
- * @returns List of matching vectors with scores
+ * @param min_score - Minimum cosine similarity threshold in [-1, 1] (default 0)
+ * @returns List of matching vectors with cosine similarity scores in [-1, 1]
  * @throws ApiError with status 503 if no vector index exists
  */
 export async function searchVectors(
