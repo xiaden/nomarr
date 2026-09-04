@@ -160,7 +160,7 @@ export async function promoteVectors(
 /**
  * Get embedding vector for a specific track.
  *
- * Tries cold collection first, then falls back to hot if not found.
+ * Reads the track's vector from the cold collection only (never falls back to hot).
  * Use this to retrieve a track's vector before performing similarity search.
  *
  * @param backbone_id - Backbone identifier (e.g., "effnet", "yamnet")
