@@ -79,7 +79,8 @@ def generate_playlists(
         pp_max_clusters: Maximum number of genre clusters for taste profile computation.
 
     Returns:
-        List of generated playlists with ``song_id`` track lists.
+        List of generated playlists, each containing ``playlist_type``,
+        ``playlist_name``, and Nomarr file-reference ``file_ids``.
 
     """
     # Step 1: Compute taste profile from caller-provided play data
@@ -109,12 +110,11 @@ def generate_playlists(
     played_file_ids: list[int] = [p["file_id"] for p in played_tracks if p["file_id"] is not None]
 
     # Step 3: Build context DTO
-    # TODO(S6): NavidromePersonalPlaylistContext.played_file_ids should be list[int]
     ctx = NavidromePersonalPlaylistContext(
         backbone_id=backbone_id,
         clusters=profile["clusters"],
         max_songs=max_songs,
-        played_file_ids=played_file_ids,  # type: ignore[typeddict-item]
+        played_file_ids=[str(fid) for fid in played_file_ids],
         played_tracks=played_tracks,
         max_genre_playlists=max_genre_playlists,
         half_life_days=half_life_days,
