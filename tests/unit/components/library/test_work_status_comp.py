@@ -70,6 +70,19 @@ class TestComputeWorkStatus:
         assert result.pipeline_libraries[0].state == "write_ready"
 
     @pytest.mark.unit
+    def test_pipeline_state_awaits_calibration_when_calibration_is_missing(self) -> None:
+        """A completed scan and ML pass expose the calibration attention state."""
+        libraries = [_make_library(name="Rock Library", library_auto_write=False)]
+        result = compute_work_status(
+            libraries=libraries,
+            stats=_make_stats(total=10, needs_tagging=0),
+            recently_tagged_count=0,
+            pipeline_states={"Rock Library": _make_pipeline_state(cal="not_calibrated")},
+        )
+
+        assert result.pipeline_libraries[0].state == "awaiting_calibration"
+
+    @pytest.mark.unit
     def test_pipeline_state_defaults_to_idle(self) -> None:
         """Library absent from pipeline_states gets state='idle' in result."""
         libraries = [
