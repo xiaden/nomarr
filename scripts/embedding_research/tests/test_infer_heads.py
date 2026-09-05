@@ -23,6 +23,7 @@ import pytest
 from scripts.embedding_research.common import infer_heads as infer_heads_mod
 from scripts.embedding_research.db import read_run_provenance
 from scripts.embedding_research.db._schema import ensure_schema
+from scripts.embedding_research.streams.publication import parse_artifact_name
 from scripts.embedding_research.streams.records import StreamValidationError
 from scripts.embedding_research.streams.store import HeadStreamStore, StreamStore
 
@@ -104,14 +105,19 @@ def test_writer_publishes_complete_suite_ready_and_gathers(con, tmp_path):
     assert worked is True
 
     head_store = kwargs["head_store"]
-    artifact = tmp_path / "heads" / "s1.effnet.npz"
-    assert artifact.exists()
+    # Immutable durable publication: reconcile promotes the pending row to ready. The
+    # ready artifact is ONE digest-named .npz under heads/ (never a bare s1.effnet.npz).
     head_store.reconcile()
     rec = head_store.lookup("s1", "effnet")
     assert rec.status == "ready"
     assert rec.patch_count == kwargs["backbone_patch_count"]
     assert rec.head_ids == "gender,timbre"
     assert rec.dim_by_head == "gender=2;timbre=2"
+    artifact = tmp_path / rec.artifact_ref
+    assert artifact.exists()
+    digest_npz = list((tmp_path / "heads").glob("s1.effnet.*.npz"))
+    assert len(digest_npz) == 1
+    assert digest_npz[0] == artifact
 
     # Exact source-patch-index gather returns [N, total_dim] with N == len(indices).
     got = head_store.batch_gather("s1", "effnet", [0, 2])
@@ -198,53 +204,70 @@ def test_writer_refuses_misaligned_head_run_end_to_end(con, tmp_path):
 
 
 @pytest.mark.unit
-def test_force_republish_versions_and_preserves_prior_bytes(con, tmp_path):
-    """A force re-run publishes a new versioned artifact; prior bytes stay byte-identical."""
+def test_force_republish_publishes_new_digest_and_reuses_identical_bytes(con, tmp_path):
+    """A force re-run with DIFFERENT head bytes yields a SECOND digest .npz; identical bytes reuse it."""
     base = _worker_args(out=tmp_path, con=con)
+    head_store = base["head_store"]
 
     first_arrays = {"gender": _acts(3, seed=0), "timbre": _acts(3, seed=1)}
     base["head_sessions"] = {h: _session_for(a) for h, a in first_arrays.items()}
     assert infer_heads_mod.infer_heads_for_song(**base) is True
-    v1_path = tmp_path / "heads" / "s1.effnet.npz"
-    assert v1_path.exists()
-    v1_bytes = v1_path.read_bytes()
+    head_store.reconcile()
+    rec1 = head_store.lookup("s1", "effnet")
+    assert rec1.status == "ready"
+    v1_abs = tmp_path / rec1.artifact_ref
+    assert v1_abs.exists()
+    v1_bytes = v1_abs.read_bytes()
+    assert list((tmp_path / "heads").glob("s1.effnet.*.npz")) == [v1_abs]
 
-    # Force re-run with different head outputs -> must not overwrite v1 bytes.
+    # Force re-run with different head outputs -> a SECOND digest-named .npz is published
+    # and the first digest file survives byte-identical (never overwritten).
     second_arrays = {"gender": _acts(3, seed=5), "timbre": _acts(3, seed=6)}
     base["head_sessions"] = {h: _session_for(a) for h, a in second_arrays.items()}
     base["run_id"] = "run-heads-2"
     assert infer_heads_mod.infer_heads_for_song(**base) is True
-
-    v2_path = tmp_path / "heads" / "s1.effnet.v2.npz"
-    assert v2_path.exists()
-    assert v1_path.read_bytes() == v1_bytes  # prior bytes byte-identical (never overwritten)
-
-    head_store = base["head_store"]
     head_store.reconcile()
-    rec = head_store.lookup("s1", "effnet")
-    assert rec.artifact_ref == "heads/s1.effnet.v2.npz"  # registry points at the newest
+    rec2 = head_store.lookup("s1", "effnet")
+    assert rec2.status == "ready"
+    v2_abs = tmp_path / rec2.artifact_ref
+    assert v2_abs.exists()
+    assert v2_abs != v1_abs  # different bytes -> different digest artifact
+    assert v1_abs.read_bytes() == v1_bytes  # prior bytes byte-identical (never overwritten)
+    assert len(list((tmp_path / "heads").glob("s1.effnet.*.npz"))) == 2
+
+    # Re-publishing IDENTICAL bytes reuses the same digest file (content-addressed, immutable).
+    base["head_sessions"] = {h: _session_for(a) for h, a in second_arrays.items()}
+    base["run_id"] = "run-heads-3"
+    assert infer_heads_mod.infer_heads_for_song(**base) is True
+    head_store.reconcile()
+    rec3 = head_store.lookup("s1", "effnet")
+    assert rec3.artifact_ref == rec2.artifact_ref
+    assert len(list((tmp_path / "heads").glob("s1.effnet.*.npz"))) == 2
+
     got = head_store.batch_gather("s1", "effnet", [0])
     canon = sorted(second_arrays)
     np.testing.assert_allclose(got[0], np.concatenate([second_arrays[h][0] for h in canon]))
 
 
-# ── legacy caches stay read-only ───────────────────────────────────────────────
+# ── head outputs stay digest-named ────────────────────────────────────────────
 
 
 @pytest.mark.unit
-def test_writer_never_touches_legacy_head_caches(con, tmp_path, monkeypatch):
-    """Running the writer must not write to flat/PTC/CTP head caches."""
-    from scripts.embedding_research.cache import binned_ctp_heads, binned_ptc_heads, flat_heads
-
-    for mod in (flat_heads, binned_ptc_heads, binned_ctp_heads):
-        if hasattr(mod, "save"):
-            monkeypatch.setattr(mod, "save", Mock(side_effect=AssertionError("legacy cache must stay read-only")))
-
+def test_writer_never_touches_legacy_head_caches(con, tmp_path):
+    """The infer-heads writer emits exactly one digest-named head-suite artifact per song."""
     kwargs = _worker_args(out=tmp_path, con=con)
     assert infer_heads_mod.infer_heads_for_song(**kwargs) is True
-    # Only the head-suite artifact (plus the backbone stream sidecar we seeded) exist.
+    # heads/ holds exactly the ONE digest-named head-suite .npz (no bare/.vN names), plus
+    # the self-describing .json manifest.
     heads_files = [p.name for p in (tmp_path / "heads").glob("*.npz")]
-    assert heads_files == ["s1.effnet.npz"]
+    assert len(heads_files) == 1
+    ident = parse_artifact_name(heads_files[0], ".npz")
+    assert ident is not None
+    assert ident.song_id == "s1"
+    assert ident.backbone == "effnet"
+    manifests = [p.name for p in (tmp_path / "heads").glob("*.json")]
+    assert len(manifests) == 1
+    assert manifests[0] == heads_files[0][: -len(".npz")] + ".json"
 
 
 # ── orchestrator semantics ─────────────────────────────────────────────────────

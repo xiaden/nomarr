@@ -1,13 +1,14 @@
-"""Similarity metrics and retrieval quality measures.
+"""Similarity metrics and retrieval quality measures (EXACT CPU only).
+
+This module computes exact CPU similarity/metrics only: cosine similarity over
+L2-normalised vectors and the retrieval/discrimination metrics built on it.  The
+former ANN surface (``ANNIndex``, ``ann_recall_sweep``, the optional FAISS backend
+and its lazy import) was deleted under Plan D P1-S6; no ANN index, approximate
+nearest-neighbour backend, or FAISS dependency exists here or elsewhere in the
+retained research tree.
 
 Metrics:
   cosine  - cosine similarity (direction only; L2-normalised dot product)
-  l2      - Euclidean distance converted to similarity: 1 / (1 + d)
-  dot     - raw inner product (meaningful only for L2-normalised vectors)
-
-ANN back-ends (preferred order, auto-selected):
-  1. faiss (HNSW flat index on cosine / L2)
-  2. numpy brute-force (always available)
 
 Retrieval metrics:
   MAP@k, MRR, NDCG@k, Recall@k computed over artist, genre, and head labels.
@@ -16,25 +17,16 @@ Retrieval metrics:
 from __future__ import annotations
 
 import logging
-import warnings
 from typing import TYPE_CHECKING
 
 import numpy as np
 
-from .vector_types import RawTensor, RawVector, UnitTensor
-
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from .vector_types import RawTensor, UnitTensor
+
 _log = logging.getLogger(__name__)
-
-try:
-    import faiss
-
-    _FAISS = True
-except ImportError:
-    _FAISS = False
-    warnings.warn("faiss not installed -- ANN will use numpy brute-force.", stacklevel=1)
 
 try:
     from sklearn.metrics import ndcg_score as _sklearn_ndcg
@@ -570,127 +562,3 @@ def compute_retrieval_metrics(
             "mrr_head": _ps_mrr_head,
         },
     }
-
-
-# -- FAISS ANN index --------------------------------------------------------
-
-
-class ANNIndex:
-    """Wraps faiss HNSW (cosine) and IVF (L2) indices, with a numpy brute-force
-    fallback when faiss is not installed.
-
-    Usage:
-        idx = ANNIndex(vecs, metric="cosine")
-        top_k = idx.query(query_vec, k=10)       # [k] indices
-        recall = idx.recall_at_k(exact_top_k, k=10)
-    """
-
-    SUPPORTED_METRICS = ("cosine",)
-
-    def __init__(
-        self,
-        vecs: RawTensor,
-        metric: str = "cosine",
-        hnsw_m: int = 32,
-        hnsw_ef_construction: int = 200,
-        hnsw_ef_search: int = 64,
-        nlist: int = 100,
-    ) -> None:
-        assert metric in self.SUPPORTED_METRICS
-        self.metric = metric
-        self.n, self.d = vecs.data.shape
-        self._vecs = vecs.data.copy()
-        self._hnsw_ef_search = hnsw_ef_search
-        self._built_with = "faiss" if _FAISS else "numpy"
-        self._index = None
-
-        if _FAISS:
-            self._build_faiss(hnsw_m, hnsw_ef_construction, hnsw_ef_search, nlist)
-
-    def _build_faiss(self, hnsw_m, hnsw_ef_construction, hnsw_ef_search, nlist) -> None:
-        normed = l2_normalise(RawTensor(self._vecs)).data
-        index = faiss.IndexHNSWFlat(self.d, hnsw_m, faiss.METRIC_INNER_PRODUCT)
-        index.hnsw.efConstruction = hnsw_ef_construction
-        index.hnsw.efSearch = hnsw_ef_search
-        index.add(normed)
-        self._normed = normed
-        self._index = index
-
-    def set_ef_search(self, ef: int) -> None:
-        self._hnsw_ef_search = ef
-        if _FAISS and self._index:
-            self._index.hnsw.efSearch = ef
-
-    def query(self, qvec: RawVector, k: int) -> np.ndarray:
-        """Return [k] indices of approximate nearest neighbours."""
-        qvec_np = qvec.data
-        if _FAISS and self._index is not None:
-            qn = l2_normalise(RawTensor(qvec_np[None, :])).data[0]
-            _, nn_idx = self._index.search(qn[None, :], k)
-            return nn_idx[0]
-        # numpy fallback
-        normed = l2_normalise(RawTensor(self._vecs)).data
-        qn = l2_normalise(RawTensor(qvec_np[None, :])).data[0]
-        sims = normed @ qn
-        return np.argsort(-sims)[:k]
-
-    def recall_at_k(
-        self,
-        exact_top_k: dict[int, list[int]],
-        k: int,
-        query_indices: list[int] | None = None,
-    ) -> float:
-        """Mean recall@k of this index vs brute-force exact top-k."""
-        qidxs = query_indices or list(exact_top_k)
-        recalls = []
-        for qi in qidxs:
-            exact = set(exact_top_k[qi][:k])
-            approx = set(self.query(RawVector(self._vecs[qi]), k + 1).tolist())
-            approx.discard(qi)
-            recalls.append(len(approx & exact) / k)
-        return float(np.mean(recalls))
-
-
-# -- ANN recall vs ef_search sweep -----------------------------------------
-
-
-def ann_recall_sweep(
-    vecs: RawTensor,
-    labels: list[str],
-    k: int = 10,
-    n_queries: int = 200,
-    ef_values: list[int] | None = None,
-    recall_target: float = 0.995,
-) -> dict:
-    """Measure ANN recall@k as ef_search increases (cosine HNSW).
-    Returns {"ef_{ef}": {"recall_k": float, "backend": "faiss"|"numpy"}}.
-
-    Stops early once recall >= recall_target — no need to test higher ef values
-    once the index is already accurate enough.
-    """
-    if ef_values is None:
-        ef_values = [16, 32, 64, 128, 256]
-
-    rng = np.random.RandomState(42)
-    n = vecs.data.shape[0]
-    query_idx = list(rng.choice(n, size=min(n_queries, n), replace=False))
-
-    cos_mat = cosine_matrix(vecs)
-    exact_top_k: dict[int, list[int]] = {}
-    for qi in query_idx:
-        row = cos_mat[qi].copy()
-        row[qi] = -np.inf
-        exact_top_k[qi] = list(np.argsort(-row)[:k])
-
-    results = {}
-    for ef in ef_values:
-        idx = ANNIndex(vecs, metric="cosine", hnsw_ef_search=ef)
-        recall = idx.recall_at_k(exact_top_k, k=k, query_indices=query_idx)
-        results[f"ef_{ef}"] = {
-            "recall_k": recall,
-            "ef_search": ef,
-            "backend": idx._built_with,
-        }
-        if recall >= recall_target:
-            break  # no point testing higher ef values
-    return results

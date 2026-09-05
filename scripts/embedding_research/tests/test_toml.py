@@ -1,198 +1,222 @@
+"""Strict current-configuration loader tests (Plan A P1-S3 / P1-S5).
+
+The loader accepts ONLY the executable current schema: ``[pipeline]`` (EffNet
+default backbone + explicit MusicNN opt-in, optional heads, ONNX device, corpus
+limit, force) and ``[analysis]`` (k / workers / blas_threads).  Missing,
+malformed, parser-unavailable and validation failures are DISTINCT named
+errors — never a warn-and-return-``{}``.  Unknown top-level/nested keys, alias
+keys, forbidden legacy families (archival CTP, std_scaled/calibration/p50,
+optimizer/weighted, obsolete pooling/threshold, ``rep_a``/``rep_b``, zero-caller
+keys) and invalid types are rejected.
+"""
+
 from __future__ import annotations
+
+import textwrap
 
 import pytest
 
 from scripts.embedding_research.helpers import toml as research_toml
-from scripts.embedding_research.pooling import load_flat_strategy_names
+
+# A minimal valid current-schema document.
+_VALID = textwrap.dedent(
+    """\
+    [pipeline]
+    backbones = ["effnet"]
+    device = "cpu"
+    limit = 0
+    force = false
+
+    [analysis]
+    k = 10
+    workers = 4
+    blas_threads = 1
+    """
+)
 
 
 @pytest.fixture(autouse=True)
-def clear_load_research_config_bytes_cache() -> None:
-    research_toml.load_research_config_bytes.cache_clear()
+def clear_config_caches() -> None:
+    research_toml.load_research_config.cache_clear()
     yield
-    research_toml.load_research_config_bytes.cache_clear()
+    research_toml.load_research_config.cache_clear()
 
 
-def test_load_research_config_bytes_returns_empty_bytes_when_file_missing(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    missing_path = tmp_path / "missing_research_config.toml"
-
-    monkeypatch.setattr(research_toml, "_CONFIG_PATH", missing_path)
-
-    result = research_toml.load_research_config_bytes()
-
-    assert result == b""
+def _load(text: str, tmp_path, monkeypatch: pytest.MonkeyPatch):
+    """Write ``text`` to a temp research_config.toml and load it (fresh, strict)."""
+    cfg_path = tmp_path / "research_config.toml"
+    cfg_path.write_text(text, encoding="utf-8")
+    monkeypatch.setattr(research_toml, "_CONFIG_PATH", cfg_path)
+    return research_toml.load_research_config()
 
 
-def test_load_research_config_bytes_returns_file_bytes_when_file_exists(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+# ── valid current-schema loading ─────────────────────────────────────────────
+
+
+def test_shipped_config_is_valid_current_schema() -> None:
+    """The in-tree research_config.toml parses + validates against the strict schema."""
+    cfg = research_toml.load_research_config()
+    assert cfg.pipeline.backbones == ("effnet",)
+    assert cfg.pipeline.device == "cpu"
+    assert cfg.pipeline.limit == 0
+    assert cfg.pipeline.force is False
+    assert cfg.pipeline.heads is None
+    assert cfg.analysis.k == 10
+    assert cfg.analysis.workers == 4
+    assert cfg.analysis.blas_threads == 1
+
+
+def test_musicnn_is_explicit_opt_in(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """MusicNN appears only when explicitly listed alongside EffNet."""
+    doc = '[pipeline]\nbackbones = ["effnet", "musicnn"]\n\n[analysis]\nk = 5\n'
+    cfg = _load(doc, tmp_path, monkeypatch)
+    assert cfg.pipeline.backbones == ("effnet", "musicnn")
+    assert cfg.analysis.k == 5
+
+
+def test_backbones_require_effnet_default(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A backbone list that omits EffNet is rejected (EffNet is the default)."""
+    doc = '[pipeline]\nbackbones = ["musicnn"]\n'
+    with pytest.raises(research_toml.ResearchConfigValidationError):
+        _load(doc, tmp_path, monkeypatch)
+
+
+def test_unknown_backbone_rejected(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    doc = '[pipeline]\nbackbones = ["effnet", "bogus"]\n'
+    with pytest.raises(research_toml.ResearchConfigValidationError):
+        _load(doc, tmp_path, monkeypatch)
+
+
+def test_optional_heads_default_to_none(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    doc = '[pipeline]\nbackbones = ["effnet"]\nheads = ["mtg_jamendo_genre"]\n[analysis]\n'
+    cfg = _load(doc, tmp_path, monkeypatch)
+    assert cfg.pipeline.heads == ("mtg_jamendo_genre",)
+
+
+def test_analysis_defaults_apply_after_successful_parse(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Optional analysis fields default only after the document parses+validates."""
+    doc = '[pipeline]\nbackbones = ["effnet"]\n'
+    cfg = _load(doc, tmp_path, monkeypatch)
+    assert cfg.analysis.k == 10
+    assert cfg.analysis.workers == 4
+    assert cfg.analysis.blas_threads == 1
+
+
+# ── missing / malformed / parser-unavailable named errors ────────────────────
+
+
+def test_missing_config_is_named_error_never_empty_dict(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A missing research_config.toml is a ResearchConfigMissingError, never {}."""
+    missing = tmp_path / "does_not_exist.toml"
+    monkeypatch.setattr(research_toml, "_CONFIG_PATH", missing)
+    with pytest.raises(research_toml.ResearchConfigMissingError):
+        research_toml.load_research_config()
+
+
+def test_missing_config_bytes_is_named_error(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    missing = tmp_path / "does_not_exist.toml"
+    monkeypatch.setattr(research_toml, "_CONFIG_PATH", missing)
+    with pytest.raises(research_toml.ResearchConfigMissingError):
+        research_toml.load_research_config_bytes()
+
+
+def test_malformed_toml_is_syntax_error(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    with pytest.raises(research_toml.ResearchConfigSyntaxError):
+        _load("[pipeline\nbackbones = ", tmp_path, monkeypatch)
+
+
+def test_parser_unavailable_is_named_error(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """When no TOML parser is importable the loader raises ParserUnavailableError."""
+    monkeypatch.setattr(research_toml, "_toml_mod", None)
+    with pytest.raises(research_toml.ResearchConfigParserUnavailableError):
+        _load(_VALID, tmp_path, monkeypatch)
+
+
+def test_errors_are_distinct_exceptions() -> None:
+    """Each named error is a distinct class; all subclass the common base."""
+    assert issubclass(research_toml.ResearchConfigMissingError, research_toml.ResearchConfigError)
+    assert issubclass(research_toml.ResearchConfigSyntaxError, research_toml.ResearchConfigError)
+    assert issubclass(research_toml.ResearchConfigParserUnavailableError, research_toml.ResearchConfigError)
+    assert issubclass(research_toml.ResearchConfigValidationError, research_toml.ResearchConfigError)
+    assert research_toml.ResearchConfigMissingError is not research_toml.ResearchConfigSyntaxError
+    assert research_toml.ResearchConfigSyntaxError is not research_toml.ResearchConfigParserUnavailableError
+    assert research_toml.ResearchConfigValidationError is not research_toml.ResearchConfigSyntaxError
+
+
+# ── unknown / forbidden-family / alias keys rejected ─────────────────────────
+
+
+@pytest.mark.parametrize(
+    "section",
+    [
+        "archival_ctp",  # CTP switch family
+        "optimization",  # optimizer family (incl. [optimization.strategy])
+        "pooling",  # obsolete pooling (incl. flat_strategies / rep_types)
+        "pooling.hypotheses",  # weighted-reduction vocabulary
+        "similarity",  # similarity metrics (obsolete config)
+        "stratify",  # stratify family
+        "binning",  # obsolete threshold sweep / bin_modes
+        "calibration",  # calibration family
+        "p50",  # p50 family
+        "rep_a",  # rep_a family
+        "rep_b",  # rep_b family
+        "std_scaled",  # scaled-threshold family
+    ],
+)
+def test_forbidden_family_top_level_section_rejected(section, tmp_path, monkeypatch) -> None:
+    doc = f'[{section}]\nenabled = true\n[pipeline]\nbackbones = ["effnet"]\n'
+    with pytest.raises(research_toml.ResearchConfigValidationError):
+        _load(doc, tmp_path, monkeypatch)
+
+
+@pytest.mark.parametrize(
+    "doc",
+    [
+        # unknown top-level key
+        '[bogus]\nx = 1\n[pipeline]\nbackbones = ["effnet"]\n',
+        # unknown nested key inside a current section
+        '[pipeline]\nbackbones = ["effnet"]\nstd_scaled = true\n',
+        # obsolete optimizer sub-table nested under analysis
+        '[pipeline]\nbackbones = ["effnet"]\n[analysis.optimizer]\nagg_method = "x"\n',
+        # calibration/p50 nested key
+        '[pipeline]\nbackbones = ["effnet"]\n[analysis]\ncalibration = "p50"\n',
+    ],
+)
+def test_unknown_and_forbidden_nested_keys_rejected(doc, tmp_path, monkeypatch) -> None:
+    with pytest.raises(research_toml.ResearchConfigValidationError):
+        _load(doc, tmp_path, monkeypatch)
+
+
+def test_alias_legacy_key_rejected(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A formerly-permissive alias section is rejected, never silently honoured."""
+    doc = '[pipeline]\nbackbones = ["effnet"]\n[pipeline.backbones_alias]\n'
+    with pytest.raises(research_toml.ResearchConfigValidationError):
+        _load(doc, tmp_path, monkeypatch)
+
+
+@pytest.mark.parametrize(
+    "doc",
+    [
+        '[pipeline]\nbackbones = ["effnet"]\nlimit = "many"\n',  # wrong type
+        '[pipeline]\nbackbones = ["effnet"]\nforce = 1\n',  # bool expected
+        '[pipeline]\nbackbones = "effnet"\n',  # list expected
+        '[pipeline]\nbackbones = ["effnet"]\nheads = "mtg_jamendo_genre"\n',  # list expected
+        '[pipeline]\nbackbones = ["effnet"]\nlimit = -1\n',  # non-negative int
+        "[analysis]\nk = 0\n",  # positive int
+        "[analysis]\nworkers = -2\n",  # positive int
+    ],
+)
+def test_invalid_type_rejected(doc, tmp_path, monkeypatch) -> None:
+    with pytest.raises(research_toml.ResearchConfigValidationError):
+        _load(doc, tmp_path, monkeypatch)
+
+
+# ── load_research_config_bytes ───────────────────────────────────────────────
+
+
+def test_load_research_config_bytes_returns_file_bytes(tmp_path, monkeypatch) -> None:
     config_path = tmp_path / "research_config.toml"
-    expected = b"[research]\nlimit = 42\n"
+    expected = b'[pipeline]\nbackbones = ["effnet"]\n'
     config_path.write_bytes(expected)
-
     monkeypatch.setattr(research_toml, "_CONFIG_PATH", config_path)
-
-    result = research_toml.load_research_config_bytes()
-
-    assert result == expected
-
-
-# ---------------------------------------------------------------------------
-# load_flat_strategy_names (Part A live flat-strategy configuration)
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture(autouse=True)
-def clear_config_cache() -> None:
-    research_toml.load_research_config.cache_clear()
-    yield
-    research_toml.load_research_config.cache_clear()
-
-
-def test_shipped_config_narrows_primary_flat_strategies_to_medoid() -> None:
-    """The shipped research config sets the primary flat baseline to medoid only.
-
-    The follow-on primary experiment narrows the default to
-    ``flat_strategies=["medoid"]``; the all-strategies unconfigured fallback is a
-    legacy archival behaviour and is never the shipped default.
-    """
-    cfg = research_toml.load_research_config()
-    assert load_flat_strategy_names(cfg) == ["medoid"]
-
-
-def test_load_flat_strategy_names_returns_explicit_list() -> None:
-    """An explicit list is returned in configuration order."""
-    cfg = {"pooling": {"flat_strategies": ["mean", "max_norm", "medoid"]}}
-    assert load_flat_strategy_names(cfg) == ["mean", "max_norm", "medoid"]
-
-
-def test_load_flat_strategy_names_requires_medoid_for_benchmark_baseline() -> None:
-    """A configured baseline without medoid is rejected."""
-    cfg = {"pooling": {"flat_strategies": ["mean", "median"]}}
-    with pytest.raises(ValueError, match="medoid"):
-        load_flat_strategy_names(cfg)
-
-
-def test_load_flat_strategy_names_rejects_unknown_strategy() -> None:
-    """Unknown strategy names raise a clear ValueError."""
-    cfg = {"pooling": {"flat_strategies": ["mean", "medoid", "bogus"]}}
-    with pytest.raises(ValueError, match="bogus"):
-        load_flat_strategy_names(cfg)
-
-
-def test_load_flat_strategy_names_rejects_empty_list() -> None:
-    """An explicitly empty flat_strategies list is rejected."""
-    cfg = {"pooling": {"flat_strategies": []}}
-    with pytest.raises(ValueError, match="empty"):
-        load_flat_strategy_names(cfg)
-
-
-def test_load_flat_strategy_names_preserves_order_and_dedupes() -> None:
-    """Duplicates are removed while preserving first-occurrence order."""
-    cfg = {"pooling": {"flat_strategies": ["medoid", "mean", "medoid"]}}
-    assert load_flat_strategy_names(cfg) == ["medoid", "mean"]
-
-
-def test_load_flat_strategy_names_is_backbone_independent_default() -> None:
-    """The same explicit list is applied per-backbone; each identity stays scoped."""
-    cfg = {"pooling": {"flat_strategies": ["mean", "medoid"]}}
-    names = load_flat_strategy_names(cfg)
-    effnet = [f"global_pool:effnet:{name}" for name in names]
-    musicnn = [f"global_pool:musicnn:{name}" for name in names]
-    assert effnet != musicnn
-    assert set(effnet).isdisjoint(set(musicnn))
-    assert "global_pool:effnet:medoid" in effnet
-    assert "global_pool:musicnn:medoid" in musicnn
-
-
-# ---------------------------------------------------------------------------
-# QA R2: configuration enforces the Part B weighted reductions
-# ---------------------------------------------------------------------------
-
-
-def test_pooling_primary_score_variant_and_labeled_hypotheses() -> None:
-    """The primary score surface is ``max_per_candidate_segment`` only.
-
-    The three Part B weighted reductions live under a labelled
-    ``[pooling.hypotheses]`` block as comparison hypotheses, not the primary
-    formula declaration, and are evaluated only when explicitly added to
-    ``pooling.score_variants``.
-    """
-    cfg = research_toml.load_research_config()
-    assert cfg["pooling"]["score_variants"] == ["max_per_candidate_segment"]
-    assert cfg["pooling"]["hypotheses"]["weighted_reductions"] == [
-        "target_weighted",
-        "bidirectional_weighted",
-        "normalized_mean_pair_weighted",
-    ]
-
-
-def test_optimization_strategy_agg_method_is_target_weighted() -> None:
-    """[optimization.strategy] agg_method is the valid weighted default."""
-    cfg = research_toml.load_research_config()
-    # [optimization.strategy] is a sub-table of [optimization] in the TOML.
-    assert cfg["optimization"]["strategy"]["agg_method"] == "target_weighted"
-
-
-def test_optimization_strategy_rep_type_is_observed_medoid() -> None:
-    """[optimization.strategy] rep_type is the OBSERVED medoid, not stale synthetic median.
-
-    The stale coordinate-wise synthetic "median" rep (a never-observed bin vector)
-    must never be the optimizer default: the shipped config declares the observed
-    source-patch "medoid" instead.
-    """
-    cfg = research_toml.load_research_config()
-    assert cfg["optimization"]["strategy"]["rep_type"] == "medoid"
-
-
-# ---------------------------------------------------------------------------
-# Phase 3 (P3-S1): shipped config pins the primary vocabulary — EffNet /
-# observed-medoid / direct-L2 / cosine primary; archival CTP and optimization
-# disabled by default; no "median" as a primary rep anywhere.
-# ---------------------------------------------------------------------------
-
-
-def test_shipped_config_pins_effnet_cosine_and_direct_l2_thresholds() -> None:
-    """The shipped default is EffNet-only, cosine metric, direct unit-vector L2 thresholds.
-
-    ``dist_thresholds`` are direct normalized-L2 distance values (the ``direct_l2``
-    semantic), NOT std multipliers. ``[optimization]`` is disabled by default and
-    its ``search_range``/threshold grid is expressed in the same direct-L2 units.
-    """
-    cfg = research_toml.load_research_config()
-    assert cfg["pipeline"]["backbones"] == ["effnet"]
-    assert cfg["similarity"]["metrics"] == ["cosine"]
-    assert cfg["optimization"]["enabled"] is False
-    # Threshold grid is a direct-L2 sweep (monotone, no scalar multiplier applied).
-    thresholds = cfg["binning"]["dist_thresholds"]
-    assert all(t > 0.0 for t in thresholds)
-    assert thresholds == sorted(thresholds)
-
-
-def test_shipped_config_archival_ctp_disabled_by_default() -> None:
-    """CTP is archival and DISABLED by default: ``[archival_ctp] enabled=false``.
-
-    A default run performs no CTP work; CTP segment functions/rows/winners enter
-    only under an explicit opt-in (Plan E gates the phase at runtime — config only
-    here).
-    """
-    cfg = research_toml.load_research_config()
-    assert cfg["archival_ctp"]["enabled"] is False
-
-
-def test_shipped_config_never_declares_median_as_a_primary_rep() -> None:
-    """No shipped default declares the synthetic coordinate-wise ``median`` as a primary rep.
-
-    The flat baseline, per-bin rep, and optimizer rep are all observed medoid.
-    ``median`` may remain an *available* non-default pooling strategy but must
-    never be a shipped primary rep selection.
-    """
-    cfg = research_toml.load_research_config()
-    assert cfg["pooling"]["flat_strategies"] == ["medoid"]
-    assert cfg["pooling"]["rep_types"] == ["medoid"]
-    assert cfg["optimization"]["strategy"]["rep_type"] == "medoid"
-    # None of the shipped primary rep surfaces names the synthetic median.
-    primary_reps = cfg["pooling"]["flat_strategies"] + cfg["pooling"]["rep_types"]
-    assert "median" not in primary_reps
+    assert research_toml.load_research_config_bytes() == expected

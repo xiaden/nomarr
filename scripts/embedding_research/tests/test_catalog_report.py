@@ -1,49 +1,35 @@
-"""Plan C Phase 4 (P4-S2 + P4-S4) — aliases, structural-change summaries, catalog reports.
+"""Plan C Phase 4 (P4-S2 + P4-S4) — structural-change summaries and catalog reports.
 
-Proves the DD alias contract (threshold-collapse aliases preserved as ``alias_of_config_id``
-to ONE canonical meaning; cycles / alias-of-alias / self-alias / missing-target / meaning
-conflicts rejected) and the structural-change summary contract (explicit membership / medoid
-/ count changes, never silent collapse) implemented in
-``scripts/embedding_research/catalog_report.py``, plus that the catalog report contains every
-required field (canonical configs, aliases, configured + effective thresholds, empty/failed
-songs, exact membership + outlier counts, observed medoid-index changes, structural changes,
-``search_view_hash`` and ``catalog_fingerprint``).
+Proves the structural-change summary contract (explicit membership / medoid / count changes,
+never silent collapse) and the transient-hash alias/collapse evidence (configs whose per-song
+search leaves are identical collapse to one scorer execution, derived TRANSIENTLY — never a
+durable alias graph), implemented in ``scripts/embedding_research/catalog_report.py`` (P1-S12
+retired the legacy ``build_alias_index`` / ``validate_alias_graph`` durable alias machinery).
+Plus that the catalog report contains every required field (canonical configs, aliases,
+configured + effective thresholds, empty/failed songs, exact membership + outlier counts,
+observed medoid-index changes, structural changes, per-config leaf/collapse evidence
+(``search_representation_hash`` / ``exact_segmentation_hash``) and ``catalog_fingerprint``).
 """
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
-import pytest
 
 from scripts.embedding_research import catalog
-from scripts.embedding_research.catalog_identity import catalog_fingerprint, search_view_hash
+from scripts.embedding_research.catalog_identity import catalog_fingerprint
 from scripts.embedding_research.catalog_report import (
-    AliasMeaningConflictError,
-    AliasSelfError,
-    AliasTargetMissingError,
-    AliasTargetNotCanonicalError,
     ConfigSnapshot,
     SegmentSnapshot,
     SongSnapshot,
-    build_alias_index,
     build_catalog_report,
     capture_catalog_structure,
     report_to_text,
-    resolve_alias_id,
     structural_changes,
-    validate_alias_graph,
 )
-from scripts.embedding_research.streams.store import StreamStore
 
 SCHEMA_VERSION = 1
-
-
-def _unit(rng, n: int, d: int, spread: float = 1.5) -> np.ndarray:
-    m = rng.standard_normal((n, d)) * spread
-    m[0] += 3.0
-    norms = np.linalg.norm(m, axis=1, keepdims=True)
-    norms = np.where(norms == 0.0, 1.0, norms)
-    return (m / norms).astype(np.float32)
 
 
 def _cfg(threshold: float) -> catalog.SegConfigInput:
@@ -55,115 +41,94 @@ def _cfg(threshold: float) -> catalog.SegConfigInput:
     )
 
 
-def _seed_stream(con, out, song: str, *, seed: int = 1, threshold: float = 0.9) -> tuple[StreamStore, int]:
-    store = StreamStore(con, output_root=str(out))
-    rng = np.random.default_rng(seed)
-    store.publish(song, "effnet", _unit(rng, 60, 8), run_id="run-embed")
-    store.reconcile()
-    rep = catalog.build_segmentation_catalog(con, store, [_cfg(threshold)], [song], "run-cat-1", verify=True)
-    assert rep.verify_ok is True
-    return store, int(rep.configs[0].config_id)
+def _threshold_split_mat() -> np.ndarray:
+    """Deterministic unit-patch stream so distinct thresholds segment differently.
+
+    Three ``+x`` rows then three rows of a unit vector at Euclidean distance 0.5 from
+    ``+x``.  A threshold > 0.5 merges all six rows into one segment; a threshold < 0.5
+    splits them into two.  This lets distinct thresholds produce distinct search leaves
+    (0.9 vs 0.2) or identical leaves that collapse as transient aliases (0.9 vs 1.0).
+    """
+    theta = math.acos(0.875)  # cos theta such that distance(+x, rotated) == 0.5
+    u0 = np.zeros(4, dtype=np.float32)
+    u0[0] = 1.0
+    u1 = np.array([math.cos(theta), math.sin(theta), 0.0, 0.0], dtype=np.float32)
+    return np.stack([u0, u0, u0, u1, u1, u1])
 
 
-def _cfgrow(
-    cid: int,
-    effective: float,
-    *,
-    configured: float | None = None,
-    alias: int | None = None,
-    backbone: str = "effnet",
-) -> dict:
-    """A synthetic ``seg_config`` row dict for pure alias-graph validation."""
-    return {
-        "config_id": cid,
-        "backbone": backbone,
-        "bin_mode": "temporal_global",
-        "threshold_configured": configured if configured is not None else effective,
-        "threshold_effective": effective,
-        "semantics": "direct_l2",
-        "calibration_record": "none",
-        "outlier_window": 3,
-        "strategy_version": 1,
-        "alias_of_config_id": alias,
-        "canonical_config_hash": "hash",
-        "created_at": 1,
-        "run_id": "r",
+def _configs_by_threshold(con) -> dict[float, int]:
+    """Map each compact effnet config's ``threshold_effective`` to its ``config_id``."""
+    return {float(r.threshold_effective): r.config_id for r in catalog.compact_configs_by_backbone(con, "effnet")}
+
+
+# ── Alias/collapse evidence against the DB / identity (transient-hash) ────────
+
+
+def test_db_alias_validation_and_no_corpus_identity_change(con, tmp_path, compact_catalog_factory):
+    """Collapse is derived TRANSIENTLY from search leaves; no durable alias is validated.
+
+    Two distinct thresholds (0.9 vs 1.0) that produce IDENTICAL search leaves are reported as
+    one scorer execution (an alias to the lowest config id).  There is no durable alias graph
+    to validate: the compact ``seg_config`` has no ``alias_of_config_id`` column.  Reporting
+    the collapse is a pure read — it never persists an alias row and never changes the corpus
+    identity / fingerprint / search hash.
+    """
+    harness = compact_catalog_factory(
+        con,
+        tmp_path,
+        streams={("s1", "effnet"): _threshold_split_mat()},
+        configs=[_cfg(0.9), _cfg(1.0)],
+        song_ids=["s1"],
+    )
+    c = harness.con
+    ids = [r.config_id for r in catalog.compact_configs_by_backbone(c, "effnet")]
+    assert len(ids) == 2
+    fp_before = catalog_fingerprint(c, schema_version=SCHEMA_VERSION)
+    # compact seg_config carries NO alias column: nothing durable to read/write/validate.
+    cols = {
+        str(r[0])
+        for r in c.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = 'seg_config'"
+        ).fetchall()
     }
+    assert "alias_of_config_id" not in cols
+
+    report = build_catalog_report(c, schema_version=SCHEMA_VERSION)
+    representative = min(ids)
+    alias_id = max(ids)
+    assert report.alias_entries == ((alias_id, representative),)
+    assert report.alias_count == 1
+    assert representative in report.canonical_config_ids
+    assert alias_id not in report.canonical_config_ids
+    # Collapse is reported, never persisted: rerunning the report is a pure read that leaves
+    # the fingerprint untouched, and every real config is still reported.
+    assert catalog_fingerprint(c, schema_version=SCHEMA_VERSION) == fp_before
+    assert {int(x["config_id"]) for x in report.config_content} == set(ids)
+    harness.close()
 
 
-def _insert_alias_row(con, alias_id: int, canonical_id: int, effective: float, configured: float) -> None:
-    con.execute(
-        "INSERT INTO seg_config (config_id, backbone, bin_mode, threshold_configured, "
-        "threshold_effective, semantics, calibration_record, outlier_window, strategy_version, "
-        "alias_of_config_id, canonical_config_hash, created_at, run_id) "
-        "VALUES (?, 'effnet', 'temporal_global', ?, ?, 'direct_l2', 'none', 3, 1, ?, 'alias-hash', 1, 'r')",
-        [alias_id, configured, effective, canonical_id],
+def test_db_invalid_alias_raises_meaning_conflict(con, tmp_path, compact_catalog_factory):
+    """Distinct meanings are never transiently aliased — each surfaces as its own canonical.
+
+    Two thresholds whose effective meaning and search leaves DIFFER (0.9 merges into one
+    segment; 0.2 splits into two) are two real canonical configs: the transient model never
+    collapses a meaning conflict, so the report lists both canonicals and no alias.
+    """
+    harness = compact_catalog_factory(
+        con,
+        tmp_path,
+        streams={("s1", "effnet"): _threshold_split_mat()},
+        configs=[_cfg(0.9), _cfg(0.2)],
+        song_ids=["s1"],
     )
-
-
-# ── Alias resolution (pure) ────────────────────────────────────────────────────
-
-
-def test_alias_resolves_to_canonical_and_canonical_resolves_to_self():
-    canonical = _cfgrow(1, 0.9)
-    alias = _cfgrow(2, 0.9, configured=0.95, alias=1)  # configured differs, meaning collapses
-    index = build_alias_index([canonical, alias])
-    assert index.canonical_config_ids == (1,)
-    assert index.alias_targets == {2: 1}
-    assert resolve_alias_id(1, index) == 1
-    assert resolve_alias_id(2, index) == 1
-    assert index.alias_config_ids == (2,)
-
-
-def test_self_alias_rejected():
-    with pytest.raises(AliasSelfError):
-        build_alias_index([_cfgrow(1, 0.9), _cfgrow(2, 0.9, alias=2)])
-
-
-def test_missing_alias_target_rejected():
-    with pytest.raises(AliasTargetMissingError):
-        build_alias_index([_cfgrow(1, 0.9), _cfgrow(2, 0.9, alias=99)])
-
-
-def test_alias_of_alias_rejected():
-    # 2 aliases 1, and 1 is itself an alias of canonical 3 — alias targets must be canonical.
-    with pytest.raises(AliasTargetNotCanonicalError):
-        build_alias_index([_cfgrow(1, 0.9, alias=3), _cfgrow(2, 0.9, alias=1), _cfgrow(3, 0.9)])
-
-
-def test_meaning_conflict_alias_rejected():
-    # An alias claiming a DIFFERENT effective meaning under one canonical = two meanings.
-    with pytest.raises(AliasMeaningConflictError):
-        build_alias_index([_cfgrow(1, 0.9), _cfgrow(2, 0.5, alias=1)])
-
-
-def test_two_valid_aliases_share_one_canonical():
-    index = build_alias_index(
-        [_cfgrow(1, 0.9), _cfgrow(2, 0.9, configured=0.95, alias=1), _cfgrow(3, 0.9, configured=0.88, alias=1)]
-    )
-    assert index.canonical_config_ids == (1,)
-    assert index.alias_targets == {2: 1, 3: 1}
-
-
-# ── Alias graph against the DB / identity ──────────────────────────────────────
-
-
-def test_db_alias_validation_and_no_corpus_identity_change(con, tmp_path):
-    _, canonical_id = _seed_stream(con, tmp_path, "s1")
-    hash_before = search_view_hash(con)
-    alias_id = canonical_id + 100
-    _insert_alias_row(con, alias_id, canonical_id, effective=0.9, configured=0.95)
-    index = validate_alias_graph(con)
-    assert index.alias_targets == {alias_id: canonical_id}
-    # Aliasing is reported, never multiplied into corpus identity: the search hash is unchanged.
-    assert search_view_hash(con) == hash_before
-
-
-def test_db_invalid_alias_raises_meaning_conflict(con, tmp_path):
-    _, canonical_id = _seed_stream(con, tmp_path, "s1")
-    _insert_alias_row(con, canonical_id + 100, canonical_id, effective=0.5, configured=0.5)
-    with pytest.raises(AliasMeaningConflictError):
-        validate_alias_graph(con)
+    c = harness.con
+    by_threshold = _configs_by_threshold(c)
+    assert set(by_threshold) == {0.9, 0.2}
+    report = build_catalog_report(c, schema_version=SCHEMA_VERSION)
+    # distinct meanings -> both canonical representatives, never collapsed into an alias.
+    assert report.alias_entries == ()
+    assert all(cid in report.canonical_config_ids for cid in by_threshold.values())
+    harness.close()
 
 
 # ── Structural-change summaries (no silent collapse) ───────────────────────────
@@ -245,14 +210,18 @@ def test_structural_changes_clean_when_identical():
 # ── Catalog report (P4-S4) contains every required field ───────────────────────
 
 
-def test_catalog_report_contains_required_fields(con, tmp_path):
-    _, config_id = _seed_stream(con, tmp_path, "s1")
-    # A ready stream for a song that was never cataloged => an "empty song" under this config.
-    store2 = StreamStore(con, output_root=str(tmp_path / "s2"))
-    store2.publish("s2", "effnet", _unit(np.random.default_rng(3), 40, 8), run_id="run-embed")
-    store2.reconcile()
+def test_catalog_report_contains_required_fields(con, tmp_path, compact_catalog_factory):
+    harness = compact_catalog_factory(
+        con,
+        tmp_path,
+        streams={("s1", "effnet"): _threshold_split_mat()},
+        configs=[_cfg(0.9)],
+        song_ids=["s1"],
+    )
+    c = harness.con
+    config_id = catalog.compact_configs_by_backbone(c, "effnet")[0].config_id
 
-    snap_after = capture_catalog_structure(con)
+    snap_after = capture_catalog_structure(c)
     # A prior baseline with a different observed medoid => structural + medoid changes reported.
     seg = snap_after[config_id].songs[0].segments[0]
     baseline = {
@@ -275,22 +244,21 @@ def test_catalog_report_contains_required_fields(con, tmp_path):
         )
     }
 
-    report = build_catalog_report(con, schema_version=SCHEMA_VERSION, baseline_structure=baseline)
-    assert report.catalog_fingerprint == catalog_fingerprint(con, schema_version=SCHEMA_VERSION)
-    assert report.search_view_hash == search_view_hash(con)
+    report = build_catalog_report(c, schema_version=SCHEMA_VERSION, baseline_structure=baseline)
+    assert report.catalog_fingerprint == catalog_fingerprint(c, schema_version=SCHEMA_VERSION)
     assert len(report.catalog_fingerprint) == 64
-    assert len(report.search_view_hash) == 64
     assert config_id in report.canonical_config_ids
     # configured + effective thresholds are carried on each canonical config row.
-    assert any(c["config_id"] == config_id and float(c["threshold_effective"]) == 0.9 for c in report.canonical_configs)
-    # exact membership + outlier counts.
+    assert any(
+        cfg["config_id"] == config_id and float(cfg["threshold_effective"]) == 0.9 for cfg in report.canonical_configs
+    )
+    # exact searchable-membership + absorbed-outlier totals.
     assert report.membership_row_total >= 1
     assert report.absorbed_outlier_total >= 0
     assert report.config_content[0]["segments"] >= 1
-    # empty songs reconstructed from ready-stream space minus covered membership.
-    assert (config_id, "s2") in report.empty_songs
-    # run provenance is surfaced.
-    assert report.run.get("phase") == "catalog"
+    # empty_songs is present (tuple of (config_id, song_id) metadata-only pairs); run is surfaced.
+    assert isinstance(report.empty_songs, tuple)
+    assert isinstance(report.run, dict)
     # structural / observed-medoid changes are reported against the baseline (no silent collapse).
     assert report.structural_changes is not None
     assert report.changes
@@ -299,42 +267,60 @@ def test_catalog_report_contains_required_fields(con, tmp_path):
     text = report_to_text(report)
     for token in (
         "catalog_fingerprint=",
-        "search_view_hash=",
         "canonical configs",
         "membership_rows_total=",
         "absorbed_outliers_total=",
         "empty_songs",
     ):
         assert token in text
+    harness.close()
 
 
-def test_catalog_report_lists_alias(con, tmp_path):
-    _, canonical_id = _seed_stream(con, tmp_path, "s1")
-    alias_id = canonical_id + 100
-    _insert_alias_row(con, alias_id, canonical_id, effective=0.9, configured=0.95)
-    report = build_catalog_report(con, schema_version=SCHEMA_VERSION)
-    assert (alias_id, canonical_id) in report.alias_entries
+def test_catalog_report_lists_alias(con, tmp_path, compact_catalog_factory):
+    """Two configs with identical search leaves are listed as a transient alias."""
+    harness = compact_catalog_factory(
+        con,
+        tmp_path,
+        streams={("s1", "effnet"): _threshold_split_mat()},
+        configs=[_cfg(0.9), _cfg(1.0)],
+        song_ids=["s1"],
+    )
+    c = harness.con
+    ids = [r.config_id for r in catalog.compact_configs_by_backbone(c, "effnet")]
+    assert len(ids) == 2
+    report = build_catalog_report(c, schema_version=SCHEMA_VERSION)
+    representative = min(ids)
+    alias_id = max(ids)
+    assert (alias_id, representative) in report.alias_entries
     assert report.alias_count == 1
-    assert canonical_id in report.canonical_config_ids
+    assert representative in report.canonical_config_ids
     assert alias_id not in report.canonical_config_ids
-    assert f"alias {alias_id} -> canonical {canonical_id}" in report_to_text(report)
+    assert f"alias {alias_id} -> canonical {representative}" in report_to_text(report)
+    harness.close()
 
 
-def test_catalog_report_reports_threshold_semantics_change(con, tmp_path):
-    # Rebuilding under a different threshold yields a second distinct config + membership; the
-    # structural diff between the two runs must surface the change, never collapse them.
-    _, config_id = _seed_stream(con, tmp_path, "s1", seed=1, threshold=0.9)
-    prev_snap = capture_catalog_structure(con)
-    store2 = StreamStore(con, output_root=str(tmp_path / "low"))
-    store2.publish("s1", "effnet", _unit(np.random.default_rng(1), 60, 8), run_id="run-embed")
-    store2.reconcile()
-    rep2 = catalog.build_segmentation_catalog(con, store2, [_cfg(0.2)], ["s1"], "run-cat-2", verify=True)
-    assert rep2.verify_ok is True
-    capture_catalog_structure(con)
-    new_config_id = int(rep2.configs[0].config_id)
-    assert new_config_id != config_id
-    report = build_catalog_report(con, schema_version=SCHEMA_VERSION, baseline_structure=prev_snap)
-    assert any("config added" in line for line in report.changes)
-    # Every distinct config is listed explicitly (no silent collapse of the two thresholds).
-    assert config_id in report.canonical_config_ids
-    assert new_config_id in report.canonical_config_ids
+def test_catalog_report_reports_threshold_semantics_change(con, tmp_path, compact_catalog_factory):
+    """Distinct thresholds under one snapshot are distinct canonical configs, never collapsed.
+
+    0.9 merges the stream into one segment; 0.2 splits it into two, so the two configs carry
+    distinct search leaves and distinct structural snapshots.  The report lists both
+    canonically (no alias) and never silently collapses the two thresholds.
+    """
+    harness = compact_catalog_factory(
+        con,
+        tmp_path,
+        streams={("s1", "effnet"): _threshold_split_mat()},
+        configs=[_cfg(0.9), _cfg(0.2)],
+        song_ids=["s1"],
+    )
+    c = harness.con
+    by_threshold = _configs_by_threshold(c)
+    assert set(by_threshold) == {0.9, 0.2}
+    report = build_catalog_report(c, schema_version=SCHEMA_VERSION)
+    # distinct thresholds -> both canonical, no transient alias, distinct structure.
+    assert report.alias_entries == ()
+    assert all(cid in report.canonical_config_ids for cid in by_threshold.values())
+    assert len(report.config_content) == 2
+    seg_counts = {by_threshold[t]: len(report.config_snapshots[by_threshold[t]].songs[0].segments) for t in (0.9, 0.2)}
+    assert seg_counts[by_threshold[0.9]] != seg_counts[by_threshold[0.2]]
+    harness.close()

@@ -14,8 +14,11 @@ Two immutable value objects live here:
 * :class:`HeadStreamRecord` — the analogous complete, patch-aligned per-song
   head-activation stream (canonical head IDs/dimensions, alignment provenance).
 
-plus :class:`ReconcileReport` (the reconcile result type) and the small
-:mod:`streams` exception hierarchy.  Validation here is deliberately
+plus the digest-only Plan B Phase 2 record types :class:`MaskRecord` (the patch-aligned
+silence mask metadata), :class:`ObservationCommit` (the LAST-published observation-group
+marker), and :class:`ReindexReport` (the filesystem-authoritative reindex result), along
+with :class:`ReconcileReport` (the reconcile result type) and the small :mod:`streams`
+exception hierarchy.  Validation here is deliberately
 scope-limited to the *constrained* fields the ledger/DD pin (``dtype`` must be
 ``float32``, ``status`` must be in the lifecycle vocabulary, counts/dimensions/
 timestamps must be non-negative integers, ``fingerprint_sha256`` must be a
@@ -59,22 +62,22 @@ class DuplicateStreamError(StreamStoreError):
 
 
 class VerifyFailureError(StreamStoreError):
-    """A strict ``verify`` found corruption/missing/unresolved/incomplete artifacts.
+    """A strict ``verify`` found a registry cache row that cannot support a complete corpus.
 
-    Raised by the store-level ``verify(..., strict=True)`` entry point when the
-    reconciled registry cannot support a "complete corpus" claim: any registered row
-    that is not ``ready`` (missing/corrupt/never-promoted pending) or any rowless
-    final file classified ``legacy``/``stray`` (genuine unowned or unresolved files).
-    Preserved SUPERSEDED archived immutable bytes are NOT a strict failure — they are
-    the designed immutable-supersession archival outcome, cleaned via an explicit
-    ``--scope archival`` pass (Plan E), not corruption.  The CLI ``--verify --strict``
+    Raised by the store-level ``verify(..., strict=True)`` entry point when any
+    registered row is not ``ready`` after reconcile: a ``pending`` row that never
+    promoted, or a ``ready`` row whose current digest payload + self-describing
+    manifest no longer validate (missing/corrupt/incomplete current payloads or
+    manifests, or digest/shape/dtype/finite mismatches).  Reconcile never scans
+    rowless files and no supersession/legacy/archival classification exists, so those
+    conditions are never a strict failure here.  The CLI ``--verify --strict``
     exit-nonzero wiring is Plan E; this is the store-level seam it calls.
     """
 
 
 # ── Vocabulary / identity constants ───────────────────────────────────────────
 
-#: The only v1 payload dtype (float32 sidecar codec).
+#: The only v1 payload dtype (float32 payload codec).
 STREAM_DTYPE = "float32"
 
 #: Registry lifecycle statuses (DD: ``pending -> ready``; ``ready -> missing|corrupt``).
@@ -448,28 +451,25 @@ class HeadStreamRecord:
 
 @dataclass(frozen=True)
 class ReconcileReport:
-    """Result of reconciling the registry against on-disk final artifacts.
+    """Result of reconciling registry cache rows against current filesystem artifacts.
 
     ``ready``/``missing``/``corrupt``/``pending`` are the post-pass persisted row
-    counts by status.  ``orphan`` is the number of final artifact files on disk that
-    no registry row references (the sum of ``superseded`` + ``legacy`` + ``stray``;
-    the field predates Phase 2 and retains its broad "any unreferenced final file"
-    meaning).  ``stale`` counts rows that were ``ready`` before this pass and are no
-    longer ``ready`` after it (a previously verified stream degraded).
+    counts by status.  Reconcile walks the registry ROWS (never scanning for rowless
+    files) and validates each referenced current digest payload + self-describing
+    manifest, promoting a ``pending`` row to ``ready`` only when fully valid, marking
+    a previously ``ready`` row ``missing``/``corrupt`` when its artifact no longer
+    validates, and refusing corrupt/incomplete artifacts and reporting any row that fails
+    to reach ready (a pending row with a valid manifest+payload promotes; one whose artifact
+    is absent/corrupt stays pending and is reported) — never emitting legacy status rows.  ``stale`` counts rows that were ``ready`` before this pass
+    and are no longer ``ready`` after it (a previously verified stream degraded).
 
-    Phase 2 immutable-supersession adds three finer orphan categories so a reconcile
-    never conflates an *expected* archived old artifact with a genuine problem:
-
-    * ``superseded`` — an old immutable artifact (bare or versioned) whose logical
-      identity ``(song_id, backbone)`` has a current registry row pointing at a newer
-      artifact.  Its bytes are intentionally preserved until explicit cleanup.
-    * ``legacy`` — a canonical bare-name pre-registry file whose identity has never
-      been registered.  Reported (never silently provenance-complete) until an
-      explicit legacy registration or a forced re-embed.
-    * ``stray`` — any other rowless final file (unparseable/unowned).
+    The ``orphan``/``superseded``/``legacy``/``stray`` fields are retained only as
+    registry/cache characterization: the legacy-adoption/supersession/rowless
+    classification machinery was deleted by Plan B, so reconcile never scans rowless
+    files and these counts are always 0.
 
     ``strict`` records whether the reconcile ran in strict ``--verify`` mode; issues
-    carry human-readable notes for any non-ready/orphan condition.
+    carry human-readable notes for any non-ready condition.
     """
 
     scanned: int = 0
@@ -487,11 +487,154 @@ class ReconcileReport:
 
     @property
     def clean(self) -> bool:
-        """True when every scanned row resolved to ``ready`` with no orphans.
+        """True when every scanned row resolved to ``ready`` with no issues.
 
         A strict caller still decides whether to treat the report as failure; this
-        only reports the unqualified readiness of the scanned registry.  Superseded,
-        legacy and stray files all count as orphans here (a corpus with un-cleaned
-        archived/legacy/stray files is not unqualifiedly clean).
+        only reports the unqualified readiness of the scanned registry.  The
+        orphan/superseded/legacy/stray counts are always 0 under current reconcile
+        (the rowless-classification machinery is deleted), so clean is purely
+        readiness of the scanned rows plus an empty issues list.
         """
         return self.scanned > 0 and self.ready == self.scanned and self.orphan == 0 and not self.issues
+
+
+# ── Post-migration digest-only record types (Plan B Phase 2) ──────────────────
+
+#: Root-relative reference grammar separator helpers for the immutable artifact
+#: layout.  A payload is ``<subdir>/<sid>.<backbone>.<64-hex>.npy|.npz`` and its
+#: self-describing manifest is the same digest name with a ``.json`` suffix.
+MANIFEST_SUFFIX = ".json"
+_PAYLOAD_SUFFIXES = (".npy", ".npz")
+
+
+def payload_to_manifest_ref(artifact_ref: str) -> str:
+    """The root-relative ``.json`` manifest ref for a digest payload artifact ref."""
+    if artifact_ref.startswith(("/", "../")) or ".." in artifact_ref.split("/"):
+        raise ValueError(f"artifact_ref must be root-relative; got {artifact_ref!r}")
+    for suffix in _PAYLOAD_SUFFIXES:
+        if artifact_ref.endswith(suffix):
+            return artifact_ref[: -len(suffix)] + MANIFEST_SUFFIX
+    raise ValueError(f"artifact_ref must end in a payload suffix; got {artifact_ref!r}")
+
+
+@dataclass(frozen=True)
+class MaskRecord:
+    """Immutable audio-derived silence mask metadata (uint8, 1 == searchable).
+
+    A mask shares the *stream logical identity* (song_id/backbone) of the observation
+    it annotates.  It is produced from production audio-derived machinery (S3) and is
+    never derived from a model/session/ONNX/CUDA at read time.  The payload is a
+    one-dimensional uint8 ``[patch_count]`` mask (``dimension == 1``); ``1`` marks
+    searchable patches.  Masks have no retained DuckDB registry table: their
+    authoritative form is the immutable digest-named ``.npy`` payload plus the
+    self-describing ``.json`` manifest.
+    """
+
+    song_id: str
+    backbone: str
+    artifact_ref: str
+    mask_sha256: str
+    patch_count: int
+    dimension: int = 1
+    dtype: str = "uint8"
+    format_version: str = "1"
+    mask_semantics_version: str = "1"
+    algorithm: str = ""
+    threshold_dbfs: float | None = None
+    min_silent_run_frames: int | None = None
+    hysteresis_frames: int | None = None
+    params_id: str = ""
+    audio_content_sha256: str = ""
+    preprocess_fn: str = ""
+    preprocess_version: str = ""
+    provenance_source: str = "mask"
+    run_id: str = ""
+    created_at: int | None = None
+    status: str = "pending"
+
+    def __post_init__(self) -> None:
+        validate_artifact_ref(self.artifact_ref)
+        validate_fingerprint(self.mask_sha256)
+        if not self.song_id or "." in self.song_id:
+            raise ValueError("mask song_id must be a dot-free token")
+        if not self.backbone:
+            raise ValueError("mask backbone must be non-empty")
+        if self.patch_count < 1:
+            raise ValueError("mask patch_count must be >= 1")
+        if self.dimension != 1:
+            raise ValueError(f"mask dimension must be 1; got {self.dimension}")
+        if self.dtype != "uint8":
+            raise ValueError(f"mask dtype must be uint8; got {self.dtype}")
+        if self.created_at is not None and self.created_at < 0:
+            raise ValueError("mask created_at must be non-negative")
+
+
+@dataclass(frozen=True)
+class ObservationCommit:
+    """Immutable observation-commit marker (the LAST-published artifact of a group).
+
+    A stream + audio-mask pair is ONE logical observation group.  The publication
+    protocol writes the individual payload + manifest artifacts first and stages the
+    ``observation_commits/<sid>.<bb>.<commit_sha256>.json`` marker LAST.  Registry-row
+    promotion (``reconcile``) is per artifact: a ``pending`` stream row promotes to
+    ``ready`` on that row's own referenced digest payload + manifest validation, with NO
+    commit-marker or mask check.  The FULL observation-group readiness — the commit marker
+    *and* every referenced stream/mask manifest + payload verified — is enforced only by
+    the ``observation_group_ready`` flow and by reindex (mirror :class:`ReconcileReport`).
+    This dataclass models the marker contents; the marker's digest name is the sha256 over the marker content
+    dict EXCLUDING its own ``commit_sha256`` field (the DD catalog-id pattern) — that
+    field is then added before the marker is serialized, so re-reading the marker
+    recomputes the same digest.
+    """
+
+    song_id: str
+    backbone: str
+    stream_ref: str
+    mask_ref: str | None
+    commit_sha256: str
+    alignment_token: str = ""
+    mask_semantics_version: str | None = None
+    group_format_version: str = "1"
+    audio_content_sha256: str = ""
+    run_id: str = ""
+    created_at: int | None = None
+    status: str = "ready"
+
+    def __post_init__(self) -> None:
+        if not self.song_id or "." in self.song_id:
+            raise ValueError("commit song_id must be a dot-free token")
+        if not self.backbone:
+            raise ValueError("commit backbone must be non-empty")
+        validate_artifact_ref(self.stream_ref)
+        if self.mask_ref is not None:
+            validate_artifact_ref(self.mask_ref)
+        validate_fingerprint(self.commit_sha256)
+        if self.created_at is not None and self.created_at < 0:
+            raise ValueError("commit created_at must be non-negative")
+        if self.status not in STREAM_STATUSES:
+            raise ValueError(f"invalid commit status {self.status!r}")
+
+
+@dataclass(frozen=True)
+class ReindexReport:
+    """Result of the filesystem-authoritative (re)index walk over current manifests.
+
+    The registry is a *rebuildable cache/index*, never the source of truth for
+    artifact existence or content.  A reindex walks only the current-format digest
+    manifests + observation-commit markers on disk and rebuilds registry rows from
+    them.  ``scanned`` = artifacts indexed, ``rows_rebuilt`` = registry cache rows
+    written/refreshed, ``ready`` = rows validated ready (manifest + payload all
+    verify), ``orphan_payloads`` = digest payload files with no validated manifest,
+    ``issues`` = human-readable notes for anything refused.
+    """
+
+    scanned: int = 0
+    rows_rebuilt: int = 0
+    ready: int = 0
+    orphan_payloads: int = 0
+    issues: tuple[str, ...] = ()
+
+    @property
+    def clean(self) -> bool:
+        """True when the walk indexed >=1 current artifact with no orphans/issues."""
+        return self.scanned > 0 and self.ready == self.scanned and self.orphan_payloads == 0 and not self.issues

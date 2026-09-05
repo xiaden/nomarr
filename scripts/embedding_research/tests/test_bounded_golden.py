@@ -6,12 +6,14 @@ exact ``max_per_candidate_segment`` semantics whose small full-matrix oracle liv
 equivalence** gate that Phase 2 (P2-S1..P2-S4 smoke in ``test_bounded_scoring.py``)
 deferred to Phase 4:
 
-* bounded results equal the oracle **within a documented float tolerance** (the DD's
-  tolerance-bounded policy: float matrices are tolerance-bounded, never bit-identical);
+* bounded results equal the oracle on identical reduced inputs (same float64 dots, same
+  sequential accumulation order — BITWISE equal in practice), compared within the declared
+  tolerance rtol=atol=1e-12, which is a DECLARED BOUND covering any future ordering
+  divergence;
 * the documented tolerance constants and their rationale are stated here;
 * **identity / discrete outcomes are byte-exact, never tolerance-bounded** — collisions,
   tie groups and the set of winning sources compare exactly (and the search-view identity
-  hashes ``keyset_hash`` / ``content_hash`` / ``search_view_hash`` are asserted byte-equal
+  hashes ``keyset_hash`` / ``content_hash`` are asserted byte-equal
   across identical regenerations, and stale corpora differ byte-wise, not within a
   tolerance);
 * tie/collision outcomes are deterministic and byte-exact across repeated invocations
@@ -31,7 +33,6 @@ from __future__ import annotations
 import json
 
 import numpy as np
-import pytest
 
 from scripts.embedding_research.bounded_scoring import (
     ScoringCandidateView,
@@ -301,9 +302,11 @@ def test_tie_winner_is_lowest_tied_source_and_deterministic():
 
 
 def _identity_hash_compare(con, out, run_id):
-    """Build a synthetic corpus, materialize a view, return identity-hash primitives."""
+    """Build a synthetic COMPACT corpus, materialize a view, return identity-hash primitives."""
     from scripts.embedding_research import catalog
     from scripts.embedding_research import search_views as sv
+    from scripts.embedding_research.catalog_storage import open_snapshot_file
+    from scripts.embedding_research.streams import make_current_stream_resolver
     from scripts.embedding_research.streams.store import StreamStore
 
     store = StreamStore(con, output_root=str(out))
@@ -312,8 +315,8 @@ def _identity_hash_compare(con, out, run_id):
         store.publish(song, "effnet", _unit(rng, 10, 6), run_id="run-embed")
     store.reconcile()
     catalog.build_segmentation_catalog(
-        con,
-        store,
+        make_current_stream_resolver(store),
+        None,
         [
             catalog.SegConfigInput(
                 backbone="effnet",
@@ -323,81 +326,43 @@ def _identity_hash_compare(con, out, run_id):
             )
         ],
         ["s1", "s2"],
-        "run-cat-1",
+        output_root=str(out),
+        run_id="run-cat-1",
         verify=True,
     )
-    corpus = sv.AnalysisCorpus(backbone="effnet", song_ids=["s1", "s2"])
-    # Two independent materializations of the SAME identity must hash byte-equal.
-    rec_a = sv.materialize_search_view(store, con, corpus, run_id, working_memory=1024 * 1024)
-    rec_b = sv.materialize_search_view(store, con, corpus, run_id, working_memory=1024 * 1024)
-    return rec_a, rec_b
+    handle = open_snapshot_file(f"{out}/catalogs/.staging-run-cat-1/catalog.duckdb", read_only=True)
+    try:
+        # Two independent materializations of the SAME scope must hash byte-equal.
+        rec_a = sv.materialize_search_view(
+            handle.con,
+            store,
+            song_ids=["s1", "s2"],
+            backbone="effnet",
+            run_id=run_id,
+            working_memory=1024 * 1024,
+        )
+        rec_b = sv.materialize_search_view(
+            handle.con,
+            store,
+            song_ids=["s1", "s2"],
+            backbone="effnet",
+            run_id=run_id,
+            working_memory=1024 * 1024,
+        )
+        return rec_a, rec_b
+    finally:
+        handle.close()
 
 
 def test_search_view_identity_hashes_byte_exact(con, tmp_path):
-    """keyset/content/search_view hashes are byte-exact across identical regeneration."""
+    """keyset/content hashes are byte-exact across identical regeneration."""
     rec_a, rec_b = _identity_hash_compare(con, tmp_path / "out", "run-an-x")
     # Byte equality of the identity hashes (never tolerance-bounded).
     assert rec_a.keyset_hash == rec_b.keyset_hash
     assert rec_a.content_hash == rec_b.content_hash
-    assert rec_a.key.search_view_hash == rec_b.key.search_view_hash
     # The hashes are real hex digests, not floats — equality is string equality.
     assert isinstance(rec_a.keyset_hash, str) and len(rec_a.keyset_hash) == 64
     assert isinstance(rec_a.content_hash, str) and len(rec_a.content_hash) == 64
-    assert isinstance(rec_a.key.search_view_hash, str)
-    # Same identity => same matrix shape and row set (byte-stable discrete surface).
+    # Same scope => same matrix shape and row set (byte-stable discrete surface).
     assert rec_a.row_addresses == rec_b.row_addresses
-    assert rec_a.key.matrix_shape == rec_b.key.matrix_shape
-
-
-def test_search_view_stale_corpus_changes_hash_bytewise_and_rejected(con, tmp_path):
-    """A changed corpus yields byte-different identity hashes and stale validation rejects the old view.
-
-    The whole-catalog ``search_view_hash`` advances when a song is added, so an earlier view's
-    keyset no longer matches a fresh materialization of the same logical surface: exact identity
-    (byte-equality of the sha256 hashes) governs reuse — never a tolerance and never file existence.
-    """
-    from scripts.embedding_research import catalog
-    from scripts.embedding_research.search_views import (
-        StaleSearchViewError,
-        validate_search_view_keyset,
-    )
-    from scripts.embedding_research.streams.store import StreamStore
-
-    rec_a, _ = _identity_hash_compare(con, tmp_path / "out", "run-an-x")
-
-    # Grow the SAME catalog with a third song => whole-catalog search_view_hash changes.
-    store = StreamStore(con, output_root=str(tmp_path / "out2"))
-    rng = np.random.default_rng(99)
-    for song in ("s1", "s2", "s3"):
-        store.publish(song, "effnet", _unit(rng, 10, 6), run_id="run-embed")
-    store.reconcile()
-    catalog.build_segmentation_catalog(
-        con,
-        store,
-        [
-            catalog.SegConfigInput(
-                backbone="effnet",
-                bin_mode="temporal_global",
-                threshold_configured=0.7,
-                threshold_effective=0.7,
-            )
-        ],
-        ["s1", "s2", "s3"],
-        "run-cat-2",
-        verify=True,
-    )
-
-    # The SAME 2-song scope re-materialized against the GROWN catalog has a byte-different
-    # keyset/content hash than rec_a (the whole-catalog search_view_hash advanced when s3 was
-    # added), so the old view is stale by exact identity — never by a tolerance.
-    from scripts.embedding_research.search_views import AnalysisCorpus, materialize_search_view
-
-    corpus = AnalysisCorpus(backbone="effnet", song_ids=["s1", "s2"])
-    rec_fresh = materialize_search_view(store, con, corpus, "run-an-x", working_memory=1024 * 1024)
-    assert rec_fresh.keyset_hash != rec_a.keyset_hash
-    assert rec_fresh.content_hash != rec_a.content_hash
-
-    # A freshly materialized current record validates; the OLD record is stale and rejected.
-    validate_search_view_keyset(con, rec_fresh)
-    with pytest.raises(StaleSearchViewError):
-        validate_search_view_keyset(con, rec_a)
+    assert rec_a.matrix_shape == rec_b.matrix_shape

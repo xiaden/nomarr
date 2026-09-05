@@ -2,10 +2,10 @@
 """Validate Agent Skills for format compliance and reference validity.
 
 Usage:
-    python scripts/validate_skills.py              # Validate all skills
-    python scripts/validate_skills.py layer-helpers # Validate one skill
-    python scripts/validate_skills.py --format=json # JSON output
-    python scripts/validate_skills.py --check-refs  # Also check code references
+    python scripts/human-scripts/validate_skills.py               # Validate all skills
+    python scripts/human-scripts/validate_skills.py code-generation # Validate one skill
+    python scripts/human-scripts/validate_skills.py --format=json # JSON output
+    python scripts/human-scripts/validate_skills.py --check-refs  # Also check code references
 
 Checks performed:
     - YAML frontmatter starts with `---`
@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 # Skills directory relative to repo root
-SKILLS_DIR = Path(".github/skills")
+SKILLS_DIR = Path(".opencode/skills")
 
 # Validation constraints
 MAX_NAME_LENGTH = 64
@@ -294,7 +294,7 @@ def main() -> int:
     parser.add_argument("--check-refs", action="store_true", help="Check that code references exist")
     args = parser.parse_args()
 
-    # Find repo root (script is in scripts/)
+    # Find repo root (script is in scripts/human-scripts/)
     repo_root = Path(__file__).parent.parent.parent
 
     # Find skills to validate

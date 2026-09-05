@@ -1,45 +1,31 @@
-"""Authoritative segmentation membership and observed-medoid computation (Plan C, Phase 2).
+"""Compact-catalog structural segmentation and observed-medoid computation (Plan C, P1-S4).
 
-This is the *pure*, deterministic, CPU-only (numpy) computation that a later
-``build_segmentation_catalog`` (Phase 3) fans out into ``seg_meta`` +
-``seg_membership`` rows.  It intentionally lives in ``helpers/`` (alongside
-``helpers/binning.py``) rather than in ``db/segmentation.py``: ``db/segmentation.py``
-owns the DuckDB schema vocabulary and the *application-integrity guards* (duplicate /
-range / orphan rejection); it must not be conflated with pure number crunching.
+This is the *pure*, deterministic, CPU-only (numpy) canonical home for the compact
+catalog's structural surface.  The durable compact catalog stores only structural
+``seg_meta`` rows plus sparse canonical absorbed exceptions (no per-patch
+``seg_membership`` relation), so exact searchable membership ``M_g`` is never stored
+or read from an inclusive range: it is reconstructed here as
+``[start, end) - absorbed_indices - {mask[i] == 0}`` via
+:func:`reconstruct_searchable_indices`.
 
-Guarantees this module owns (R6 / R7 / the "range-vs-membership" and "medoid"
-decisions):
+Surface (``§C`` / DD "Membership, segmentation, medoids, and weights"):
 
-* Every assigned source patch index of a segment is recorded once, with an exact
-  ``is_absorbed_outlier`` flag.  The inclusive ``start_idx``/``end_idx`` are
-  STRUCTURAL REPORT RANGES ONLY — membership is produced by running the
-  running-centroid algorithm and recording each patch, never by expanding a range.
-* The segmentation reproduces the PTC running-centroid algorithm exactly
-  (strict ``>`` boundary, ``OUTLIER_WINDOW=3`` absorption, renormalized spherical
-  running centroid) so the per-segment in-range membership equals
-  ``helpers.binning.temporal_segment`` output, while additionally exposing WHICH
-  absorbed outlier source indices belong to each segment (which ``temporal_segment``
-  only counts, never identifies).
-* Medoids are OBSERVED source patch indices chosen with deterministic smallest-index
-  tie-breaking.  Only ``medoid_source_patch_idx`` is produced — never a copied vector,
-  never ``pool_medoid_raw``/``pool_medoid_norm``, never a synthetic coordinate-wise
-  median.  The segment medoid is chosen over the segment's *in-range* member source
-  patches (the set historical PTC pooling used), so the catalog medoid preserves the
-  existing medoid-to-medoid primary scoring semantics exactly.
-* Invariant relationships (row count == member_count, absorbed-outlier rows ==
-  absorbed-outlier count, patch-count weight == member_count incl. absorbed outliers,
-  medoid is an observed member, membership partitions the stream once) are testable
-  and enforced by :func:`validate_segment_invariants` /
-  :func:`validate_full_partition`.
-* ``segment_signature`` is defined over the membership + medoid as a deterministic
-  sha256 of a canonical serialization.  Phase 3's catalog build persists it as the
-  authoritative ``seg_meta.segment_signature`` value; this phase defines and tests
-  the contract.
-* The external flat baseline identity ``global_pool:{backbone}:medoid`` is preserved
-  by delegating to the existing observed-medoid selector
-  (``pooling.select_global_medoid_index``) per backbone.  Nothing here reintroduces
-  ``agg_method=medoid`` into primary scoring (that vocabulary is rejected at the
-  ``strategy_binned._constants.validate_score_variant`` boundary and never used here).
+* :func:`run_spherical_segmentation` — finite unit-vector spherical segmentation with
+  strict ``>`` boundary, ``OUTLIER_WINDOW=3`` absorption, hard searchable splits and
+  renormalized spherical running centroid; returns duck-typed
+  :class:`StructuralSegment` views exposing ``seg_id`` / ``start_idx`` / ``end_idx``
+  (exclusive) / ``absorbed_indices``.
+* :func:`reconstruct_searchable_indices` — exact ``M_g`` from a structural view,
+  the song silence mask, and the patch count.  Structural ranges are NEVER treated as
+  authoritative membership.
+* :func:`select_observed_medoid_source_index` — finite nonzero observed medoid with
+  maximal mean-cosine centrality and smallest-source-index ties (``(None, None)`` for
+  empty / zero-norm candidates; NaN/Infinity raises ``ValueError``).
+
+The old per-member segmentation model (``MembershipSegment`` /
+``authoritative_segmentation`` / membership-era ``segment_signature`` / flat medoid
+helpers) and the research ``seg_meta``/``seg_membership`` relations were retired in
+P1-S12; db/segmentation.py's application-integrity guards were deleted with them.
 
 This module never imports DuckDB, audio, ONNX, or CUDA; it consumes frozen stream
 arrays (unit-normalised) exactly as ``StreamStore``/``HeadStreamStore`` deliver them.
@@ -47,194 +33,115 @@ arrays (unit-normalised) exactly as ``StreamStore``/``HeadStreamStore`` deliver 
 
 from __future__ import annotations
 
-import hashlib
-import itertools
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from scripts.embedding_research.helpers.binning import OUTLIER_WINDOW
-from scripts.embedding_research.pooling import select_global_medoid_index
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 __all__ = [
-    "MembershipSegment",
-    "authoritative_segmentation",
-    "global_flat_medoid_source_index",
-    "segment_signature",
-    "select_medoid_source_index",
-    "validate_full_partition",
-    "validate_segment_invariants",
+    "StructuralSegment",
+    "reconstruct_searchable_indices",
+    "run_spherical_segmentation",
+    "select_observed_medoid_source_index",
 ]
 
 
-def select_medoid_source_index(unit_patches: np.ndarray, candidate_indices: list[int] | tuple[int, ...]) -> int:
-    """Return the observed segment-medoid source index among *candidate_indices*.
-
-    *unit_patches* is the ``[n, D]`` unit-normalised source matrix.  The medoid is
-    the observed row in *candidate_indices* with the maximum mean cosine centrality
-    to the other candidates (mean INCLUDING self-similarity — exactly the historical
-    PTC ``strategy_binned._pool.select_medoid_index`` metric).  Ties resolve to the
-    smallest source index via ``np.argmax`` first-max semantics over the ascending
-    candidate list.  *candidate_indices* must be non-empty and every index in range.
-    Returns an OBSERVED source index — never a synthetic/median vector.
-    """
-    idx_arr = np.asarray(candidate_indices, dtype=int)
-    if idx_arr.ndim != 1 or idx_arr.size == 0:
-        raise ValueError("select_medoid_source_index requires a non-empty candidate index list")
-    rows = np.asarray(unit_patches)[idx_arr].astype(np.float32, copy=False)
-    if len(rows) <= 1:
-        return int(idx_arr[0])
-    sims = rows @ rows.T
-    centrality = sims.mean(axis=1)
-    local_idx = int(np.argmax(centrality))  # first-max => smallest source index on ties
-    return int(idx_arr[local_idx])
-
-
-def segment_signature(
-    member_indices: tuple[int, ...],
-    is_absorbed_outlier: tuple[bool, ...],
-    medoid_source_patch_idx: int,
-) -> str:
-    """Deterministic sha256 over the segment's exact membership + observed medoid.
-
-    The canonical pre-image is a fixed ordering of ``member_patch_idx:is_outlier``
-    pairs (ascending by member index) terminated by the observed medoid source index,
-    so two segments are signature-equal exactly when their membership (incl. outlier
-    flags) and medoid source index are equal, and differ when any differ.  Phase 3's
-    catalog build persists this as the authoritative ``seg_meta.segment_signature``
-    value; this module defines and tests the contract.
-    """
-    if len(member_indices) != len(is_absorbed_outlier):
-        raise ValueError("segment_signature requires parallel member/flag tuples")
-    pairs = sorted(zip(member_indices, is_absorbed_outlier, strict=True), key=lambda pair: pair[0])
-    body = ";".join(f"{int(i)}:{int(bool(flag))}" for i, flag in pairs)
-    canonical = f"membership={body}|medoid_source_patch_idx={int(medoid_source_patch_idx)}"
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-
-
+# --------------------------------------------------------------------------- #
+# Compact-catalog structural surface (Plan C P1-S4)                           #
+# --------------------------------------------------------------------------- #
+# The durable compact catalog stores only structural rows + sparse absorbed
+# exceptions; exact searchable membership is reconstructed via
+# reconstruct_searchable_indices.  These functions are the single canonical home
+# (§C / DD "Membership, segmentation, medoids, and weights").
 @dataclass(frozen=True)
-class MembershipSegment:
-    """One segment's authoritative membership and structural/metadata summary.
+class StructuralSegment:
+    """One duck-typed structural segment exposing the compact reconstruction fields.
 
-    This is the pure object Phase 3 fans out into one ``seg_meta`` row and one
-    ``seg_membership`` row per ``member_indices`` entry.
-
-    Attributes
-    ----------
-    seg_id:
-        Zero-based segment index within its song/config (Phase 3 persists it as the
-        application segment identity within ``(config_id, song_id)``).
-    member_indices:
-        EVERY assigned source patch index of this segment, ascending, exactly once.
-    is_absorbed_outlier:
-        Parallel to ``member_indices`` — True for absorbed-outlier patches (present in
-        membership/scoring/head-pooling but never a medoid candidate).
-    start_idx / end_idx:
-        Structural REPORT ranges only (first/last member index).  Membership is never
-        reconstructed from them.
-    medoid_source_patch_idx:
-        Observed in-range member source index (never a copied/synthetic vector).
-    segment_signature:
-        Deterministic hash over membership + medoid (see :func:`segment_signature`).
-    membership_version:
-        Integer membership contract version (Phase 3 persists into seg_membership).
+    Carries ``seg_id`` (zero-based), the structural ``start_idx``/``end_idx``
+    (``end_idx`` EXCLUSIVE) report range, and the canonical sparse
+    ``absorbed_indices`` (ascending, deduped).  It is a STRUCTURAL row: exact
+    searchable membership is NEVER read from the inclusive range — callers run
+    ``reconstruct_searchable_indices`` against the song mask.  Absorbed outliers
+    retain their structural position but contribute no searchable mass.
     """
 
     seg_id: int
-    member_indices: tuple[int, ...]
-    is_absorbed_outlier: tuple[bool, ...]
     start_idx: int
     end_idx: int
-    medoid_source_patch_idx: int
-    segment_signature: str
-    membership_version: int
-
-    @property
-    def member_count(self) -> int:
-        """Number of ``seg_membership`` rows (including absorbed outliers)."""
-        return len(self.member_indices)
-
-    @property
-    def absorbed_outlier_count(self) -> int:
-        """Number of absorbed-outlier member rows."""
-        return sum(1 for flag in self.is_absorbed_outlier if flag)
-
-    @property
-    def weight(self) -> int:
-        """Patch-count weight == member_count (including absorbed outliers)."""
-        return self.member_count
+    absorbed_indices: tuple[int, ...]
 
 
-def _build_segment(
-    seg_id: int,
-    in_range: list[int],
-    absorbed: list[int],
-    norm_patches: np.ndarray,
-    membership_version: int,
-) -> MembershipSegment:
-    """Assemble one :class:`MembershipSegment` from its in-range + absorbed lists."""
-    if not in_range:
-        raise ValueError("internal error: an authoritative segment must have at least one in-range member")
-    flags_by_idx: dict[int, bool] = {}
-    for idx in in_range:
-        flags_by_idx[int(idx)] = False
-    for idx in absorbed:
-        flags_by_idx[int(idx)] = True
-    member_indices = tuple(sorted(flags_by_idx))
-    is_absorbed_outlier = tuple(flags_by_idx[idx] for idx in member_indices)
-    start_idx = int(member_indices[0])
-    end_idx = int(member_indices[-1])
-    in_range_idx = tuple(idx for idx in member_indices if not flags_by_idx[idx])
-    medoid_source_patch_idx = select_medoid_source_index(norm_patches, list(in_range_idx))
-    sig = segment_signature(member_indices, is_absorbed_outlier, medoid_source_patch_idx)
-    return MembershipSegment(
-        seg_id=seg_id,
-        member_indices=member_indices,
-        is_absorbed_outlier=is_absorbed_outlier,
-        start_idx=start_idx,
-        end_idx=end_idx,
-        medoid_source_patch_idx=medoid_source_patch_idx,
-        segment_signature=sig,
-        membership_version=membership_version,
-    )
-
-
-def _run_running_centroid(
-    norm_patches: np.ndarray,
+def run_spherical_segmentation(
+    unit_patches: np.ndarray,
     threshold: float,
-    dist_fn,
-    outlier_window: int,
-) -> list[dict[str, list[int]]]:
-    """Run the PTC running-centroid algorithm, tracking per-segment absorbed outliers.
+    *,
+    outlier_window: int = OUTLIER_WINDOW,
+) -> list[StructuralSegment]:
+    """Segment a patch matrix with the finite unit-vector spherical running centroid.
 
-    This mirrors :func:`helpers.binning.temporal_segment` EXACTLY (strict ``>``
-    boundary, renormalized spherical running centroid, at most *outlier_window*
-    consecutive boundary patches absorbed on a return, otherwise a hard split) but
-    additionally records, per emitted segment, the source indices absorbed as
-    outliers of that segment — information ``temporal_segment`` only counts.
+    Reproduces the PTC running-centroid contract exactly: finite-only input
+    (NaN/Infinity raise :class:`ValueError`), strict ``>`` direct-L2 boundary (a
+    patch exactly at the threshold is NOT a split), ``outlier_window`` absorption
+    with return, and hard splitting (an excursion exceeding the window is an
+    ordinary *searchable* structural segment, never absorbed).  Nonzero rows are
+    normalized to unit vectors; the running centroid is the renormalized spherical
+    sum of in-range members.
+
+    Returns a list of :class:`StructuralSegment` (one per segment, ascending),
+    each with an EXCLUSIVE ``end_idx`` and ascending ``absorbed_indices``.  An
+    empty matrix returns ``[]``.
     """
-    n = len(norm_patches)
+    patches = np.asarray(unit_patches)
+    if patches.ndim != 2:
+        raise ValueError(f"unit_patches must be a 2-D [n, D] matrix; got shape {patches.shape}")
+    if not np.all(np.isfinite(patches)):
+        raise ValueError("run_spherical_segmentation rejects non-finite (NaN/Inf) input patches")
+    n = len(patches)
     if n == 0:
         return []
+    threshold = float(threshold)
+
+    # Row L2-normalize finite nonzero patches; keep zero-norm rows as-is (they are
+    # never medoid candidates downstream, handled by select_observed_medoid_source_index).
+    norms = np.linalg.norm(patches, axis=1)
+    normed = patches.copy()
+    nz = norms > 0
+    normed[nz] = patches[nz] / norms[nz, None]
 
     def is_boundary(idx: int, centroid: np.ndarray) -> bool:
-        return dist_fn(norm_patches[idx], centroid) > threshold
+        return float(np.linalg.norm(normed[idx] - centroid)) > threshold
 
     def renorm(vec: np.ndarray) -> np.ndarray:
         mag = float(np.linalg.norm(vec))
         return vec / mag if mag > 1e-9 else vec
 
-    out: list[dict[str, list[int]]] = []
+    out: list[StructuralSegment] = []
     seg_in_range: list[int] = [0]
     seg_absorbed: list[int] = []
-    centroid_sum: np.ndarray = norm_patches[0].copy()
+    centroid_sum: np.ndarray = normed[0].copy()
     centroid = renorm(centroid_sum)
+
+    def flush(start_member: list[int], absorbed: list[int]) -> None:
+        all_idx = sorted(set(start_member) | set(absorbed))
+        out.append(
+            StructuralSegment(
+                seg_id=len(out),
+                start_idx=int(all_idx[0]),
+                end_idx=int(all_idx[-1]) + 1,
+                absorbed_indices=tuple(sorted({int(i) for i in absorbed})),
+            )
+        )
 
     i = 1
     while i < n:
         if not is_boundary(i, centroid):
             seg_in_range.append(i)
-            centroid_sum = centroid_sum + norm_patches[i]
+            centroid_sum = centroid_sum + normed[i]
             centroid = renorm(centroid_sum)
             i += 1
             continue
@@ -244,9 +151,9 @@ def _run_running_centroid(
         returned = False
         while j < n and len(run) <= outlier_window:
             if not is_boundary(j, centroid):
-                seg_absorbed.extend(run)  # absorbed outliers belong to the OPEN segment
+                seg_absorbed.extend(run)
                 seg_in_range.append(j)
-                centroid_sum = centroid_sum + norm_patches[j]
+                centroid_sum = centroid_sum + normed[j]
                 centroid = renorm(centroid_sum)
                 i = j + 1
                 returned = True
@@ -255,108 +162,83 @@ def _run_running_centroid(
             j += 1
 
         if not returned:
-            out.append({"in_range": seg_in_range, "absorbed": seg_absorbed})
+            flush(seg_in_range, seg_absorbed)
             seg_absorbed = []
-            seg_in_range = run
-            centroid_sum = norm_patches[run].sum(axis=0)
+            seg_in_range = list(run)
+            centroid_sum = normed[np.asarray(run, dtype=int)].sum(axis=0)
             centroid = renorm(centroid_sum)
             i = j
 
     if seg_in_range:
-        out.append({"in_range": seg_in_range, "absorbed": seg_absorbed})
+        flush(seg_in_range, seg_absorbed)
 
     return out
 
 
-def authoritative_segmentation(
-    norm_patches: np.ndarray,
-    threshold: float,
-    dist_fn,
-    *,
-    outlier_window: int = OUTLIER_WINDOW,
-    membership_version: int = 1,
-) -> tuple[MembershipSegment, ...]:
-    """Segment a unit-normalised patch matrix into authoritative membership segments.
+def reconstruct_searchable_indices(
+    meta: object,
+    mask: np.ndarray | None,
+    patch_count: int,
+) -> np.ndarray:
+    """Exactly reconstruct a segment's searchable membership ``M_g`` (sorted source indices).
 
-    Parameters mirror :func:`helpers.binning.temporal_segment` (``norm_patches`` must
-    already be row L2-normalised; ``dist_fn`` is ``global_dist`` for ``temporal_global``
-    or ``perdim_dist`` for ``temporal_perdim``).  Every source patch index is assigned
-    to exactly one returned segment, either as an in-range member or (flagged) as an
-    absorbed outlier, so membership is never reconstructed from the inclusive ranges.
+    ``meta`` is a duck-typed :class:`SegMetaRecord`/structural view exposing
+    ``start_idx`` (inclusive), ``end_idx`` (EXCLUSIVE), and ``absorbed_indices``
+    (sparse canonical absorbed source indices).  Membership is exactly::
 
-    Returns an empty tuple for an empty matrix.  Deterministic and vector-free.
+        {start <= i < end} - absorbed_indices - {mask[i] == 0}
+
+    The structural range is NEVER treated as authoritative membership.  Returns a
+    sorted integer array of the searchable source indices; an absorbed index outside
+    ``[start, end)`` is a no-op.  ``mask`` is the whole-song ``uint8`` silence mask
+    (``1`` = searchable, ``0`` = silent); rows beyond a shorter mask are searchable.
     """
-    patches = np.asarray(norm_patches)
-    if patches.ndim != 2:
-        raise ValueError(f"norm_patches must be a 2-D [n, D] matrix; got shape {patches.shape}")
-    raw_segments = _run_running_centroid(patches, float(threshold), dist_fn, int(outlier_window))
-    return tuple(
-        _build_segment(seg_id, seg["in_range"], seg["absorbed"], patches, int(membership_version))
-        for seg_id, seg in enumerate(raw_segments)
-    )
+    start = int(meta.start_idx)
+    end = int(meta.end_idx)
+    absorbed = tuple(int(i) for i in (meta.absorbed_indices or ()))
+    patch_count = int(patch_count)
+    excluded = np.zeros(patch_count, dtype=bool)
+    if mask is not None:
+        arr = np.asarray(mask)
+        limit = min(arr.shape[0], patch_count)
+        if limit > 0:
+            excluded[:limit] = np.asarray(arr[:limit] == 0, dtype=bool)
+    for idx in absorbed:
+        if start <= idx < end and 0 <= idx < patch_count:
+            excluded[idx] = True
+    indices = np.arange(patch_count, dtype=int)
+    selected = (indices >= start) & (indices < end) & (~excluded)
+    return indices[selected]
 
 
-def validate_segment_invariants(segment: MembershipSegment) -> None:
-    """Assert the exact seg_meta/seg_membership relationships for one segment.
+def select_observed_medoid_source_index(
+    unit_patches: np.ndarray,
+    source_indices: Sequence[int],
+) -> tuple[int | None, float | None]:
+    """Select the observed medoid source index among finite nonzero searchable rows.
 
-    Raises :class:`ValueError` when: membership is empty / unsorted / has duplicates;
-    flag list is not parallel; ``absorbed_outlier_count`` != flagged rows; ``weight``
-    or ``member_count`` disagrees with the number of member rows; the medoid is not an
-    observed member; the medoid is an absorbed outlier; or the structural range does
-    not match the membership extent.
+    Returns ``(index | None, centrality | None)``.  Only finite NONZERO searchable
+    candidate rows are considered (``source_indices`` taken in ascending order);
+    ``centrality`` is the mean cosine INCLUDING self over those candidate rows; the
+    exact tie resolves to the SMALLEST SOURCE index.  Returns ``(None, None)`` when
+    there are no finite nonzero candidates.  NaN/Infinity among the candidate rows
+    raise :class:`ValueError` (never a silent medoid).
     """
-    indices = segment.member_indices
-    flags = segment.is_absorbed_outlier
-    if len(indices) != len(flags):
-        raise ValueError("member_indices and is_absorbed_outlier must be parallel")
-    if not indices:
-        raise ValueError("an authoritative segment cannot have empty membership")
-    if any(int(a) >= int(b) for a, b in itertools.pairwise(indices)):
-        raise ValueError("member_indices must be strictly ascending with no duplicates")
-    absorbed_rows = sum(1 for flag in flags if flag)
-    if absorbed_rows != segment.absorbed_outlier_count:
-        raise ValueError("absorbed_outlier_count must equal the number of flagged absorbed-outlier rows")
-    if len(indices) != segment.member_count:
-        raise ValueError("member_count must equal the number of membership rows")
-    if segment.weight != segment.member_count:
-        raise ValueError("weight (patch-count) must equal member_count including absorbed outliers")
-    if segment.member_count != absorbed_rows + sum(1 for flag in flags if not flag):
-        raise ValueError("member_count must equal in-range members + absorbed outliers")
-    if segment.medoid_source_patch_idx not in indices:
-        raise ValueError("medoid_source_patch_idx must be an observed member source index")
-    medoid_flag = dict(zip(indices, flags, strict=True))[segment.medoid_source_patch_idx]
-    if medoid_flag:
-        raise ValueError("an absorbed-outlier patch must never be the segment medoid")
-    if segment.start_idx != indices[0] or segment.end_idx != indices[-1]:
-        raise ValueError("structural start_idx/end_idx must equal the membership extent (report metadata only)")
-
-
-def validate_full_partition(segments: tuple[MembershipSegment, ...], patch_count: int) -> None:
-    """Assert every source patch index in ``[0, patch_count)`` is a member exactly once.
-
-    Confirms the authoritative membership partitions the frozen stream, so no patch is
-    dropped and none is double-assigned (the property scoring/head pooling rely on).
-    """
-    seen: list[int] = []
-    for segment in segments:
-        validate_segment_invariants(segment)
-        seen.extend(int(i) for i in segment.member_indices)
-    if len(seen) != patch_count or sorted(seen) != list(range(patch_count)):
-        raise ValueError(
-            f"authoritative membership must partition source indices [0, {patch_count}); "
-            f"got {len(seen)} members across {len(segments)} segments"
-        )
-
-
-def global_flat_medoid_source_index(unit_patches: np.ndarray) -> int:
-    """Observed global flat-baseline medoid source index for one backbone's song.
-
-    Delegates to the existing observed-medoid selector (``pooling.select_global_medoid_index``)
-    so the external identity ``global_pool:{backbone}:medoid`` is preserved exactly
-    (observed row, off-diagonal mean-cosine centrality, smallest-index ties).  Returns an
-    index only — no vector artifact.  Computed independently per backbone because each
-    call receives one backbone's patch matrix.  This baseline is never produced through
-    ``agg_method=medoid`` (that vocabulary is rejected at the score-variant boundary).
-    """
-    idx, _ = select_global_medoid_index(np.asarray(unit_patches))
-    return int(idx)
+    ordered = sorted(int(i) for i in source_indices)
+    arr = np.asarray(unit_patches)
+    if not ordered:
+        return None, None
+    rows = np.asarray(arr[np.asarray(ordered, dtype=int)], dtype=np.float32)
+    if not np.all(np.isfinite(rows)):
+        raise ValueError("select_observed_medoid_source_index rejects non-finite candidate rows")
+    norms = np.linalg.norm(rows, axis=1)
+    nonzero = norms > 0
+    if not np.any(nonzero):
+        return None, None
+    sub = rows[nonzero]
+    sims = sub @ sub.T  # unit rows => dot product == cosine
+    means = sims.mean(axis=1)
+    best_local = int(np.argmax(means))  # first max over ascending candidates
+    cand_sources = [s for s, ok in zip(ordered, nonzero, strict=True) if ok]
+    best_source = int(cand_sources[best_local])
+    return best_source, float(means[best_local])

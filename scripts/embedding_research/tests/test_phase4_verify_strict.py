@@ -23,6 +23,8 @@ Design decisions under test (for QA arbitration):
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -46,9 +48,16 @@ def _seed_songs(con):
         )
 
 
-def _seed_catalog(con, out) -> int:
-    """Register songs, publish ready effnet streams, build a verified catalog."""
+def _seed_catalog(con, out) -> str:
+    """Register songs, publish ready effnet streams, build a VERIFIED COMPACT catalog.
+
+    The catalog is written to the compact snapshot layout
+    ``out/catalogs/.staging-run-cat-vs/catalog.duckdb`` (never the research DB).  Returns
+    the snapshot file path so duplicate/missing-artifact setup can open and mutate the
+    SNAPSHOT connection (the connection the derived-phase preflight now reads).
+    """
     from scripts.embedding_research import catalog
+    from scripts.embedding_research.streams import make_current_stream_resolver
     from scripts.embedding_research.streams.store import StreamStore
 
     songs = ("s1", "s2", "s3", "s4")
@@ -59,8 +68,8 @@ def _seed_catalog(con, out) -> int:
         store.publish(song, "effnet", _unit(rng, 10, 6), run_id="run-embed")
     store.reconcile()
     rep = catalog.build_segmentation_catalog(
-        con,
-        store,
+        make_current_stream_resolver(store),
+        None,
         [
             catalog.SegConfigInput(
                 backbone="effnet",
@@ -70,11 +79,49 @@ def _seed_catalog(con, out) -> int:
             )
         ],
         list(songs),
-        "run-cat-vs",
+        output_root=str(out),
+        run_id="run-cat-vs",
         verify=True,
     )
     assert rep.verify_ok is True
-    return int(rep.configs[0].config_id)
+    # Durably publish so current.json is authoritative (derived phases select by current.json).
+    import duckdb as _duckdb
+
+    from scripts.embedding_research import catalog_storage as _cs
+
+    staging_dir = Path(out) / "catalogs" / ".staging-run-cat-vs"
+    dcon = _duckdb.connect(str(staging_dir / _cs.CATALOG_DB_FILE), read_only=True)
+    try:
+        _manifest = _cs.derive_catalog_manifest(dcon)
+    finally:
+        dcon.close()
+    _ph = _cs.publish_catalog_snapshot(staging_dir, manifest=_manifest)
+    published_path = str(Path(out) / "catalogs" / _ph.catalog_id / _cs.CATALOG_DB_FILE)
+    _ph.close()
+    return published_path
+
+
+def _duplicate_snapshot_config(snapshot_path: str) -> None:
+    """Duplicate the single canonical ``seg_config`` row inside the COMPACT snapshot.
+
+    Copies the row under a NEW ``config_id`` keeping the same ``canonical_config_hash``
+    (the compact snapshot has only canonical configs — no ``alias_of_config_id``) so the
+    preflight's duplicate-identity probe, which reads the SNAPSHOT ``seg_config``, sees an
+    unresolved duplicate.  The write connection is closed on exit so the later read-only
+    snapshot open in ``_run_single_phase`` is the sole live handle.
+    """
+    from scripts.embedding_research.catalog_storage import connect as _cat_connect
+
+    with _cat_connect(snapshot_path, read_only=False) as sc:
+        src = sc.execute("SELECT * FROM seg_config ORDER BY config_id LIMIT 1").fetchone()
+        cols = [c[0] for c in sc.execute("DESCRIBE seg_config").fetchall()]
+        dup = dict(zip(cols, src, strict=False))
+        dup["config_id"] = int(sc.execute("SELECT COALESCE(MAX(config_id), 0) + 1 FROM seg_config").fetchone()[0])
+        dup["run_id"] = "run-dup"
+        keys = ", ".join(f'"{c}"' for c in cols)
+        ph = ", ".join("?" for _ in cols)
+        sc.execute(f"INSERT INTO seg_config ({keys}) VALUES ({ph})", [dup[c] for c in cols])
+        assert sc.execute("SELECT count(*) FROM seg_config").fetchone()[0] == 2
 
 
 def _cfg(out, *, verify: bool, strict: bool) -> dict:
@@ -206,19 +253,11 @@ def test_verify_report_warns_not_refuses_without_analyze_metrics(con, tmp_path):
 
 
 def test_strict_refuses_unresolved_duplicate_canonical_config(con, tmp_path):
-    """A duplicated canonical config identity (same canonical_config_hash, alias NULL)."""
-    _seed_catalog(con, tmp_path / "out")
-    # Duplicate the single canonical config row under a NEW config_id, keeping the
-    # same canonical_config_hash and alias_of_config_id NULL -> an unresolved duplicate.
-    src = con.execute("SELECT * FROM seg_config WHERE alias_of_config_id IS NULL LIMIT 1").fetchone()
-    cols = [c[0] for c in con.execute("DESCRIBE seg_config").fetchall()]
-    dup = dict(zip(cols, src, strict=False))
-    dup["config_id"] = int(con.execute("SELECT COALESCE(MAX(config_id), 0) + 1 FROM seg_config").fetchone()[0])
-    dup["run_id"] = "run-dup"
-    keys = ", ".join(f'"{c}"' for c in cols)
-    ph = ", ".join("?" for _ in cols)
-    con.execute(f"INSERT INTO seg_config ({keys}) VALUES ({ph})", [dup[c] for c in cols])
-    assert con.execute("SELECT count(*) FROM seg_config WHERE alias_of_config_id IS NULL").fetchone()[0] == 2
+    """A duplicated canonical config identity (same canonical_config_hash) in the snapshot."""
+    snapshot = _seed_catalog(con, tmp_path / "out")
+    # Duplicate the single canonical config row under a NEW config_id inside the COMPACT
+    # snapshot, keeping the same canonical_config_hash -> an unresolved duplicate.
+    _duplicate_snapshot_config(snapshot)
 
     cfg = _cfg(tmp_path / "out", verify=True, strict=True)
     with pytest.raises(run_mod._DuplicateIdentityError):
@@ -229,15 +268,9 @@ def test_strict_refuses_unresolved_duplicate_canonical_config(con, tmp_path):
 
 
 def test_verify_duplicate_records_warning_not_refusal(con, tmp_path):
-    """Plain --verify on the same duplicate records a warning and does not refuse."""
-    _seed_catalog(con, tmp_path / "out")
-    src = con.execute("SELECT * FROM seg_config WHERE alias_of_config_id IS NULL LIMIT 1").fetchone()
-    cols = [c[0] for c in con.execute("DESCRIBE seg_config").fetchall()]
-    dup = dict(zip(cols, src, strict=False))
-    dup["config_id"] = int(con.execute("SELECT COALESCE(MAX(config_id), 0) + 1 FROM seg_config").fetchone()[0])
-    dup["run_id"] = "run-dup"
-    keys = ", ".join(f'"{c}"' for c in cols)
-    con.execute(f"INSERT INTO seg_config ({keys}) VALUES ({', '.join('?' for _ in cols)})", [dup[c] for c in cols])
+    """Plain --verify on the same snapshot duplicate records a warning and does not refuse."""
+    snapshot = _seed_catalog(con, tmp_path / "out")
+    _duplicate_snapshot_config(snapshot)
 
     run_mod._run_single_phase(con, "catalog-report", _cfg(tmp_path / "out", verify=True, strict=False))
 

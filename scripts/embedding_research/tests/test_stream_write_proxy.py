@@ -4,31 +4,28 @@ The durable-create contract (DD lifecycle L114-122, CONTRACTS.md L34) is exactly
 
     fsync(file) -> close(file) -> atomic rename -> fsync(destination directory)
 
-Two obligations are pinned here for BOTH observation writers (backbone ``.npy`` via
-``StreamStore.publish`` and the head-suite ``.npz`` via ``HeadStreamStore.publish``):
+Post-migration (Plan B P1-S2) publication performs TWO such durable sequences in order for
+each published artifact: first the digest-named payload (``streams/<sid>.<bb>.<64hex>.npy``
+for streams, ``heads/...npz`` for head suites) then its self-describing ``.json`` manifest.
+
+Two obligations are pinned here for BOTH observation writers (backbone stream via
+``StreamStore.publish`` and the head-suite via ``HeadStreamStore.publish``):
 
 1. **Ordering (structural, not a monkeypatch).** Every fsync/close/rename routes through
-   the :class:`RecordingFileOps` write-proxy seam (the production default is the real
-   ``os`` calls); tests assert the exact call order through that seam.  We never monkeypatch
-   ``os`` module-wide for an ordering assertion.
+   the :class:`RecordingFileOps` write-proxy seam; tests assert the exact call order.
 
-2. **SIGKILL / bookkeeping — SEPARATELY LABELED from durability.**  A SIGKILL (modelled
-   here by an injected fault at each stage of the write-proxy seam, which reproduces the
-   observable bookkeeping of a killed durable write) is used ONLY for ordering and
-   registry/bookkeeping assertions:
+2. **SIGKILL / bookkeeping — SEPARATELY LABELED from durability.**  A SIGKILL is modelled
+   by an injected fault at each write-proxy stage (reproduces the observable bookkeeping of
+   a killed durable write) for ordering + registry/bookkeeping assertions:
 
    * a leftover ``.staging/*.tmp`` may remain (a *file-level* condition);
-   * NO ``pending``/``ready`` registry row is committed for the interrupted artifact
-     (the registry row is written only AFTER the durable file write completes);
+   * NO ``pending``/``ready`` registry row is committed for the interrupted artifact;
    * prior ready artifacts for OTHER identities are unaffected (no silent song loss);
-   * ``run_provenance`` records the interrupted/partial run as ``partial`` and the
-     singleton ``corpus_state`` never claims a complete corpus.
+   * an interrupted run is recorded ``partial`` and ``corpus_state`` never claims complete.
 
-   A kill/injected fault is NOT treated as proof that fsync reached stable storage —
-   power-loss durability is the separate OPT-IN ``blocklayer_durability`` placeholder at
-   the bottom (no block-layer replay infrastructure exists), and it is required to be
-   skipped/meaningful-without-SIGKILL.  Each test in this module is labelled
-   ``sigkill_bookkeeping`` to make that boundary unambiguous.
+   A kill/injected fault is NOT proof fsync reached stable storage — power-loss durability
+   is the separate OPT-IN ``blocklayer_durability`` placeholder at the bottom.  Each test
+   here is labelled ``sigkill_bookkeeping``.
 """
 
 from __future__ import annotations
@@ -41,6 +38,7 @@ from scripts.embedding_research.common import embed as embed_mod
 from scripts.embedding_research.db import read_corpus_state, read_run_provenance
 from scripts.embedding_research.db._schema import ensure_schema
 from scripts.embedding_research.streams.publication import RecordingFileOps
+from scripts.embedding_research.streams.records import StreamNotFoundError
 from scripts.embedding_research.streams.store import HeadStreamStore, StreamStore
 
 
@@ -70,21 +68,22 @@ def _head_arrays(patch_count: int = 2):
 
 @pytest.mark.unit
 def test_backbone_npy_publish_exact_durable_order(con, tmp_path):
-    """StreamStore.publish records fsync(file)->close(file)->rename->fsync(dir)."""
+    """StreamStore.publish records payload then manifest, each fsync->close->rename->fsync(dir)."""
     store = StreamStore(con, output_root=tmp_path / "out")
     recorder = RecordingFileOps()
     store.publish("song1", "effnet", _arr(), run_id="r1", file_ops=recorder)
-    assert recorder.order == [
+    one_durable = [
         ("fsync", "file"),
         ("close", "file"),
         ("rename", "file"),
         ("fsync", "dir"),
     ]
+    assert recorder.order == one_durable + one_durable
 
 
 @pytest.mark.unit
 def test_head_npz_publish_exact_durable_order(con, tmp_path):
-    """HeadStreamStore.publish applies the SAME durable order to the head-suite .npz."""
+    """HeadStreamStore.publish applies the SAME two durable sequences to the head-suite .npz."""
     store = HeadStreamStore(con, output_root=tmp_path / "out")
     recorder = RecordingFileOps()
     store.publish(
@@ -97,12 +96,13 @@ def test_head_npz_publish_exact_durable_order(con, tmp_path):
         expected_head_ids=["gender", "timbre"],
         file_ops=recorder,
     )
-    assert recorder.order == [
+    one_durable = [
         ("fsync", "file"),
         ("close", "file"),
         ("rename", "file"),
         ("fsync", "dir"),
     ]
+    assert recorder.order == one_durable + one_durable
 
 
 # ── SIGKILL / bookkeeping — SEPARATELY LABELED (never durability proof) ────────
@@ -111,10 +111,9 @@ def test_head_npz_publish_exact_durable_order(con, tmp_path):
 class _FailingFileOps(RecordingFileOps):
     """A recording proxy that raises ONCE at a chosen durable-write stage.
 
-    Models the observable bookkeeping of a killed durable write (the process stops
-    between fsync/close/rename/fsync-dir and the registry-commit transaction that
-    follows).  It still records each syscall so tests can reason about how far the
-    sequence got before the interruption.
+    Models the observable bookkeeping of a killed durable write (the process stops between
+    fsync/close/rename/fsync-dir and the registry-commit that follows).  It still records
+    each syscall so tests can reason about how far the sequence got before interruption.
     """
 
     def __init__(self, fail_op: str):
@@ -179,10 +178,11 @@ def test_sigkill_before_rename_leaves_tmp_no_row_prior_ready_unaffected(con, tmp
     # Prior ready artifact for the other identity is unaffected.
     assert store.lookup("songA", "effnet").status == "ready"
 
-    # File-level: the staging .tmp may remain; reconcile ignores it (never a registry state).
-    staging = tmp_path / "out" / "patches" / ".staging"
+    # File-level: the staging .tmp may remain (digest-named under streams/.staging);
+    # reconcile ignores it (never a registry state).
+    staging = tmp_path / "out" / "streams" / ".staging"
     tmps = list(staging.glob("*.tmp")) if staging.exists() else []
-    assert len(tmps) == 1 and tmps[0].name == "songB.effnet.npy.tmp"
+    assert len(tmps) == 1 and tmps[0].name.endswith(".npy.tmp")
     report = store.reconcile()
     assert report.ready == 1  # only the prior ready artifact
     assert report.orphan == 0
@@ -204,29 +204,31 @@ def test_sigkill_before_rename_leaves_tmp_no_row_prior_ready_unaffected(con, tmp
 def test_sigkill_after_rename_before_fsync_dir_leaves_unregistered_final_file(con, tmp_path):
     """Interruption after rename but before the directory fsync yields a final file with NO row.
 
-    Because the registry row is committed only after the whole durable file sequence,
-    the registry never sees the artifact: reconcile reports the bare final file as an
-    unregistered legacy orphan (never a ready/pending row) and it is never silently
-    promoted to provenance-complete.
+    Because the registry row + manifest are committed only after the whole durable payload
+    sequence, the registry never sees the artifact: no ready/pending row is ever created and
+    the digest payload is never silently promoted to provenance-complete.
     """
     store = StreamStore(con, output_root=tmp_path / "out")
     ops = _FailingFileOps("fsync_dir")
     with pytest.raises(OSError, match="interruption"):
         store.publish("songB", "effnet", _arr(rows=2, cols=3, fill=3.0), run_id="run-killed", file_ops=ops)
 
-    # The final bytes DID reach the final location (rename completed)...
-    final = tmp_path / "out" / "patches" / "songB.effnet.npy"
-    assert final.is_file()
+    # The payload bytes DID reach the final location (rename completed) as a digest .npy,
+    # but the manifest was never written (publication aborted before the manifest sequence).
+    payloads = list((tmp_path / "out" / "streams").glob("songB.effnet.*.npy"))
+    manifests = list((tmp_path / "out" / "streams").glob("songB.effnet.*.json"))
+    assert len(payloads) == 1
+    assert manifests == []  # manifest is written AFTER the payload durable sequence
     # ...but NO registry row was committed.
     assert con.execute("SELECT count(*) FROM stream_registry").fetchone()[0] == 0
-    # Reconcile never promotes it: it is reported as an unregistered legacy orphan.
+    # Reconcile never promotes it: no ready row exists and the artifact is not readable.
     report = store.reconcile()
     assert report.scanned == 0
     assert report.ready == 0
-    assert report.legacy == 1
-    assert report.orphan == 1
     assert report.clean is False
     assert store.has_ready("songB", "effnet") is False
+    with pytest.raises(StreamNotFoundError):
+        store.lookup("songB", "effnet")
 
 
 # ── OPT-IN block-layer durability placeholder (separate, skipped) ──────────────
@@ -238,8 +240,7 @@ def test_opt_in_block_layer_power_loss_durability_placeholder():
 
     NOT part of the default suite: no block-layer replay infrastructure exists in this
     research tree, so a real power-loss test cannot run.  It is intentionally skipped
-    and separately labeled from the ``sigkill_bookkeeping`` tests above, which are the
-    meaningful suite (ordering + registry bookkeeping only — never a durability proof).
+    and separately labeled from the ``sigkill_bookkeeping`` tests above.
     """
     pytest.skip(
         "OPT-IN block-layer durability test requires a block-layer replay harness that does "

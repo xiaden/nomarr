@@ -77,10 +77,11 @@ Determinism / finite / no cross-backbone mixing
 -----------------------------------------------
 Tie and collision outcomes are deterministic (lowest source index / lowest candidate
 index) so Phase 4 golden tests are reproducible.  All emitted values are finite;
-non-finite vectors/weights are rejected explicitly.  This kernel has no backbone
-dimension of its own — a view is single-backbone by construction (Phase 1 enforces it)
-and provenance is carried by the candidate ``row_addresses`` / view ``key`` the caller
-hands in.
+  non-finite vectors/weights are rejected explicitly.  An empty candidate view (zero
+  searchable rows) is a valid input that yields a finite EMPTY result (``score=0.0``, zero
+  retained/dropped candidates) — never NaN/Inf and never a crash; the analyze scheduler
+  excludes zero-searchable candidates upstream so it never feeds an empty view here.  This
+  kernel has no backbone dimension of its own
 """
 
 from __future__ import annotations
@@ -92,7 +93,6 @@ from typing import Any, Protocol
 
 import numpy as np
 
-from scripts.embedding_research import cache_identity
 from scripts.embedding_research.scoring_harness import (
     COLLISION_POLICIES as _COLLISION_POLICIES,
 )
@@ -134,6 +134,14 @@ _NEG_INF = -np.inf
 #: Default working-memory when callers supply neither chunk sizes nor a budget.
 _DEFAULT_WORKING_MEMORY = 32 * 1024 * 1024  # 32 MiB
 
+#: Scoring-input semantics version stamped on every emitted result.  Single global value,
+#: equal to ``search_views.SCORING_SEMANTICS_VERSION`` and to the old
+#: ``cache_identity.SCORING_SEMANTICS_VERSION``.  It is defined locally so this pure CPU
+#: kernel does not import the E-owned ``cache_identity`` module (scheduled for deletion); a
+#: contract test (``test_bounded_exact_contract``) pins the equality against the search-view
+#: constant so the copies cannot drift unnoticed.
+SCORING_SEMANTICS_VERSION = 1
+
 _TIE_POLICIES = tuple(_TIE_POLICIES)
 _COLLISION_POLICIES = tuple(_COLLISION_POLICIES)
 
@@ -159,8 +167,8 @@ class SearchViewLike(Protocol):
     ``SearchViewRecord`` surface).  Optional attributes enable extra provenance /
     weighting::
 
-    * ``key`` — an object exposing the view keyset (e.g. ``SearchViewKey``) whose
-      ``query_keyset`` records the query role identity;
+    * ``key`` — an object exposing the view keyset (e.g. a record's ``keyset_hash`` /
+      ``content_hash``) so the query role identity is carried as provenance;
     * ``candidate_weights`` — per-row candidate-segment weights aligned to
       ``row_addresses`` (default all-ones when absent).
     """
@@ -388,11 +396,11 @@ def derive_chunk_sizes(working_memory: int) -> tuple[int, int]:
 # ── Pure array validation ─────────────────────────────────────────────────────
 
 
-def _as_f64_vectors(vectors: Any, name: str) -> np.ndarray:
+def _as_f64_vectors(vectors: Any, name: str, *, allow_empty: bool = False) -> np.ndarray:
     arr = np.array(vectors, dtype=np.float64)
     if arr.ndim != 2:
         raise ValueError(f"{name} must be 2-D (rows x dim), got ndim={arr.ndim}")
-    if arr.shape[0] == 0:
+    if arr.shape[0] == 0 and not allow_empty:
         raise ValueError(f"{name} must have at least one row")
     if not np.all(np.isfinite(arr)):
         raise ValueError(f"{name} must be finite (no NaN/Inf)")
@@ -416,7 +424,7 @@ def _as_f64_weights(weights: Any, n_rows: int, name: str) -> np.ndarray:
 
 
 def _extract_view(view: SearchViewLike) -> tuple[np.ndarray, Any, Any, np.ndarray]:
-    vectors = _as_f64_vectors(getattr(view, "vectors", None), "candidate_view.vectors")
+    vectors = _as_f64_vectors(getattr(view, "vectors", None), "candidate_view.vectors", allow_empty=True)
     row_addresses = getattr(view, "row_addresses", None)
     key = getattr(view, "key", None)
     weights = getattr(view, "candidate_weights", None)
@@ -605,8 +613,6 @@ def score_bounded_exact(
     cand, row_addresses, key, cw = _extract_view(candidate_view)
     m_rows = int(cand.shape[0])
     k_rows = int(q.shape[0])
-    if m_rows == 0:
-        raise ValueError("candidate_view.vectors must have at least one row")
 
     qcs = _validate_chunk(query_chunk_size, "query_chunk_size")
     ccs = _validate_chunk(candidate_chunk_size, "candidate_chunk_size")
@@ -615,6 +621,37 @@ def score_bounded_exact(
         derived_q, derived_c = derive_chunk_sizes(budget)
         qcs = qcs if qcs is not None else derived_q
         ccs = ccs if ccs is not None else derived_c
+
+    if m_rows == 0:
+        # An empty candidate view (no searchable rows) is a valid input and yields a finite,
+        # EMPTY result: no comparison is performed, nothing is retained/dropped, score is 0.0
+        # (finite) — never NaN/Inf and never a crash.  The analyze scheduler excludes
+        # zero-searchable candidates upstream (CONTRACTS §D), so it never feeds an empty view
+        # here; this is the scorer's own fail-safe contract for the degenerate empty input.
+        empty_trace = BoundedScoreTrace(contributions=(), collisions=(), winner_counts=()) if expensive_trace else None
+        return BoundedScoreResult(
+            score=0.0,
+            numerator=0.0,
+            denominator=0.0,
+            finite=True,
+            tie_policy=tie_policy,
+            collision_policy=collision_policy,
+            variant=_variant_name(tie_policy, collision_policy),
+            scoring_semantics_version=SCORING_SEMANTICS_VERSION,
+            n_source_rows=k_rows,
+            n_candidate_rows=0,
+            winner_counts={},
+            collisions=(),
+            retained_count=0,
+            dropped_count=0,
+            trace_retained=bool(expensive_trace),
+            trace=empty_trace,
+            query_key_provenance=key,
+            candidate_key_provenance=row_addresses,
+            query_chunk_size=qcs,
+            candidate_chunk_size=ccs,
+            working_memory=budget,
+        )
 
     # ---- Streaming reduction over candidate blocks --------------------------
     # Per-candidate reduced scalars across ALL candidate rows are retained (O(M)),
@@ -731,7 +768,7 @@ def score_bounded_exact(
         tie_policy=tie_policy,
         collision_policy=collision_policy,
         variant=_variant_name(tie_policy, collision_policy),
-        scoring_semantics_version=cache_identity.SCORING_SEMANTICS_VERSION,
+        scoring_semantics_version=SCORING_SEMANTICS_VERSION,
         n_source_rows=k_rows,
         n_candidate_rows=m_rows,
         winner_counts=dict(winner_counts),

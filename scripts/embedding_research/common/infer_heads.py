@@ -2,7 +2,9 @@
 
 Runs each CONFIGURED classifier head EXACTLY ONCE over the patch-aligned backbone
 observation stream (read from the frozen ``StreamStore``) and publishes ONE complete
-per-song/backbone head-suite artifact (``heads/{sid}.{backbone}[.vN].npz``) through the
+digest-named per-song/backbone head-suite artifact
+(``heads/{sid}.{backbone}.{64-hex-sha256}.npz``) plus a sibling self-describing
+``.json`` manifest through the
 :class:`HeadStreamStore` — the ONLY active head-observation writer (Plan E owns CLI wiring).
 
 This mirrors ``common/embed.py``'s writer pattern:
@@ -97,6 +99,7 @@ def infer_heads_for_song(
     force: bool,
     run_in_batches_fn,
     batch_size: int,
+    stream_ref: str = "",
     alignment_version: str = ALIGNMENT_VERSION,
     format_version: str = FORMAT_VERSION,
     preprocess_fn: str = "",
@@ -111,6 +114,11 @@ def infer_heads_for_song(
     the backbone stream and ``backbone_patch_count`` its registered patch count (the
     alignment source of truth).  ``configured_heads`` is the CONFIGURED head set for the
     backbone and ``head_sessions`` maps each head name to its ONNX session.
+
+    *stream_ref* is the root-relative ``artifact_ref`` of the committed backbone stream the
+    suite is aligned to (threaded from ``infer_heads()``'s ``stream_store.lookup``).  It is
+    recorded in the published head manifest as stream-alignment provenance.  Default ``""``
+    keeps direct callers unchanged (manifest records no committed-stream provenance).
 
     Alignment/refusal (P3-S2) is delegated to :meth:`HeadStreamStore.publish`, which runs
     BEFORE any registry row is written: it refuses (raising) a partial suite, a head whose
@@ -156,6 +164,7 @@ def infer_heads_for_song(
         preprocess_fn=preprocess_fn,
         preprocess_version=preprocess_version,
         backbone_model_hash=backbone_model_hash,
+        stream_ref=stream_ref,
     )
     return True
 
@@ -275,6 +284,7 @@ def infer_heads(
                     force=force,
                     run_in_batches_fn=effective_run_batches,
                     batch_size=effective_batch_size,
+                    stream_ref=stream_record.artifact_ref,
                 )
                 if worked:
                     done += 1

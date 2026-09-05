@@ -227,8 +227,13 @@ def test_non_finite_anywhere_raises_before_any_result(field):
 
 
 def _build_catalog(con, out, songs):
-    """Deterministic per-song catalog with one canonical config (test_catalog_analysis pattern)."""
+    """Deterministic per-song COMPACT catalog; return (store, open snapshot handle).
+
+    Caller must ``.close()`` the handle (its ``.con`` is the compact snapshot connection).
+    """
     from scripts.embedding_research import catalog
+    from scripts.embedding_research.catalog_storage import open_snapshot_file
+    from scripts.embedding_research.streams import make_current_stream_resolver
     from scripts.embedding_research.streams.store import StreamStore
 
     store = StreamStore(con, output_root=str(out))
@@ -237,8 +242,8 @@ def _build_catalog(con, out, songs):
         store.publish(song, "effnet", _unit(rng, 10, 6), run_id="run-embed")
     store.reconcile()
     rep = catalog.build_segmentation_catalog(
-        con,
-        store,
+        make_current_stream_resolver(store),
+        None,
         [
             catalog.SegConfigInput(
                 backbone="effnet",
@@ -248,11 +253,13 @@ def _build_catalog(con, out, songs):
             )
         ],
         list(songs),
-        "run-cat-1",
+        output_root=str(out),
+        run_id="run-cat-1",
         verify=True,
     )
     assert rep.verify_ok is True
-    return store
+    handle = open_snapshot_file(f"{out}/catalogs/.staging-run-cat-1/catalog.duckdb", read_only=True)
+    return store, handle
 
 
 def test_non_finite_analysis_rejected_before_persistence_no_partial_write(con, tmp_path, monkeypatch):
@@ -262,7 +269,7 @@ def test_non_finite_analysis_rejected_before_persistence_no_partial_write(con, t
 
     songs = ("s1", "s2", "s3", "s4")
     artists = {"s1": "A", "s2": "A", "s3": "B", "s4": "B"}
-    store = _build_catalog(con, tmp_path / "out", songs)
+    store, handle = _build_catalog(con, tmp_path / "out", songs)
     cfg = ca.CatalogAnalysisConfig(run_id="run-poison", backbone="effnet", song_ids=songs, artists=artists)
 
     real = ca.candidate_weights_from_catalog
@@ -276,30 +283,33 @@ def test_non_finite_analysis_rejected_before_persistence_no_partial_write(con, t
         return w
 
     monkeypatch.setattr(ca, "candidate_weights_from_catalog", _poisoned)
-    # A good run completes and may be persisted without a partial poisoned scope.
-    good = ca.run_catalog_analysis(store, con, cfg)
-    assert good.finite is True
-    # Record a scope for the good run to prove it is NOT disturbed by the poisoned run.
-    analyze_scope.record_analyze_run_scope(
-        con,
-        run_id="run-poison",
-        strategy_key=good.strategy_key,
-        sim_metric="cosine",
-        k=good.k,
-        backbone=good.backbone,
-        config_ids=good.config_ids,
-        search_view_hash=good.search_view_hash,
-        score_variant=good.score_variant,
-        scoring_semantics_version=good.scoring_semantics_version,
-    )
-    good_scopes = analyze_scope.run_row_scopes(con, run_id="run-poison")
-    assert good_scopes, "good run scope must be recorded"
+    try:
+        # A good run completes and may be persisted without a partial poisoned scope.
+        good = ca.run_catalog_analysis(store, handle.con, cfg, research_con=con)
+        assert good.finite is True
+        # Record a scope for the good run to prove it is NOT disturbed by the poisoned run.
+        analyze_scope.record_analyze_run_scope(
+            con,
+            run_id="run-poison",
+            strategy_key=good.strategy_key,
+            sim_metric="cosine",
+            k=good.k,
+            backbone=good.backbone,
+            config_ids=good.config_ids,
+            view_content_hash=good.view_content_hash,
+            score_variant=good.score_variant,
+            scoring_semantics_version=good.scoring_semantics_version,
+        )
+        good_scopes = analyze_scope.run_row_scopes(con, run_id="run-poison")
+        assert good_scopes, "good run scope must be recorded"
 
-    poisoned[0] = True
-    with pytest.raises(ValueError):
-        ca.run_catalog_analysis(store, con, cfg)
-    # The poisoned run never wrote a partial analyze scope/result — run_id scope is unchanged.
-    assert analyze_scope.run_row_scopes(con, run_id="run-poison") == good_scopes
+        poisoned[0] = True
+        with pytest.raises(ValueError):
+            ca.run_catalog_analysis(store, handle.con, cfg, research_con=con)
+        # The poisoned run never wrote a partial analyze scope/result — run_id scope is unchanged.
+        assert analyze_scope.run_row_scopes(con, run_id="run-poison") == good_scopes
+    finally:
+        handle.close()
 
 
 def test_finite_writer_gate_refuses_non_finite_result(con, tmp_path):
@@ -309,9 +319,12 @@ def test_finite_writer_gate_refuses_non_finite_result(con, tmp_path):
 
     songs = ("s1", "s2")
     artists = {"s1": "A", "s2": "A"}
-    store = _build_catalog(con, tmp_path / "out", songs)
+    store, handle = _build_catalog(con, tmp_path / "out", songs)
     cfg = ca.CatalogAnalysisConfig(run_id="run-fin", backbone="effnet", song_ids=songs, artists=artists)
-    good = ca.run_catalog_analysis(store, con, cfg)
+    try:
+        good = ca.run_catalog_analysis(store, handle.con, cfg, research_con=con)
+    finally:
+        handle.close()
     import dataclasses
 
     bad = dataclasses.replace(good, finite=False, run_id="run-bad")

@@ -1,16 +1,16 @@
-"""Regression tests for the frozen head/bin/discrimination invariants.
+"""Regression tests for the retained discrimination invariants.
 
-Locks the non-negotiable contracts from ``_contracts_part_*.md`` and the Part-A
-ledger so they cannot silently regress:
+Locks the non-negotiable contracts that remain live after the corrective-pass
+hard cut so they cannot silently regress:
 
-* ``act[1]`` is the class-1 probability and is the score used everywhere
-  (``act[0]`` is never the score);
-* the bin index is frozen at ``np.minimum((h_scores * 10).astype(np.int32), 9)``
-  (10 bins, score 1.0 -> bin 9);
 * ``disc_general`` averages only the non-zero valid components (zero components
   are excluded);
 * no ``disc_album`` key / SELECT / upsert / schema field exists anywhere in the
   research codebase (docstring/comment mentions are tolerated, code is not).
+
+(The former ``act[1]``/bin-index invariants live under the retained catalog
+head-analysis surface; the deleted ``db/stratify.py`` decile formula is
+historical-only and is no longer pinned here.)
 """
 
 from __future__ import annotations
@@ -20,72 +20,10 @@ import tokenize
 from pathlib import Path
 
 import numpy as np
-import pytest
 
-from scripts.embedding_research.common.stratify import _score_to_decile
-from scripts.embedding_research.db import songs as db_songs
 from scripts.embedding_research.similarity import compute_retrieval_metrics
 
 _RESEARCH_DIR = Path(__file__).resolve().parents[1]
-
-
-# ── act[1] is the class-1 score ────────────────────────────────────────────────
-
-
-def test_load_song_head_scores_uses_act1_not_act0(monkeypatch) -> None:
-    """db.songs.load_song_head_scores takes act[1] (class-1) as the score."""
-    import scripts.embedding_research.cache.flat_heads as fh_mod
-
-    monkeypatch.setattr(fh_mod, "list_all_heads", lambda _backbone: ["mood"])
-
-    def _load_bulk(_backbone, _head, _strategy, _pathway, _sids):
-        # act = [p0, p1]; act[1] is the positive-class score.
-        return {
-            "s1": np.array([0.10, 0.90]),
-            "s2": np.array([0.70, 0.30]),
-        }
-
-    monkeypatch.setattr(fh_mod, "load_bulk", _load_bulk)
-
-    matrix, heads = db_songs.load_song_head_scores("effnet", ["s1", "s2"])
-
-    assert heads == ["mood"]
-    np.testing.assert_allclose(matrix[:, 0], [0.90, 0.30], atol=1e-6)
-    np.testing.assert_allclose(matrix[0, 0], 0.90, atol=1e-6)
-    np.testing.assert_allclose(matrix[1, 0], 0.30, atol=1e-6)
-
-
-# ── Frozen bin-index formula ───────────────────────────────────────────────────
-
-
-@pytest.mark.parametrize(
-    "score,expected_bin",
-    [
-        (0.0, 0),
-        (0.05, 0),
-        (0.09, 0),
-        (0.10, 1),
-        (0.199, 1),
-        (0.5, 5),
-        (0.899, 8),
-        (0.90, 9),
-        (0.999, 9),
-        (1.0, 9),  # score 1.0 must clamp to bin 9, never 10
-    ],
-)
-def test_bin_index_scalar_formula_frozen(score: float, expected_bin: int) -> None:
-    """_score_to_decile is truncate-then-clamp: max(0, min(int(score*10), 9))."""
-    assert _score_to_decile(score) == max(0, min(int(score * 10), 9)) == expected_bin
-
-
-def test_bin_index_frozen_numpy_formula() -> None:
-    """The frozen vectorized formula np.minimum((h*10).astype(int32), 9) clamps to <=9."""
-    h_scores = np.array([0.0, 0.1, 0.5, 0.9, 1.0, 1.5], dtype=np.float32)
-    bins = np.minimum((h_scores * 10).astype(np.int32), 9)
-    assert bins.dtype == np.int32
-    assert bins.max() <= 9
-    assert bins[-2] == 9  # score 1.0 -> bin 9 (clamped from 10)
-    assert bins[-1] == 9  # 1.5 also clamps to 9
 
 
 # ── disc_general zero-component exclusion ──────────────────────────────────────

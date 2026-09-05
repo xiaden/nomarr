@@ -2,7 +2,7 @@
 
 This module owns the *filesystem durability* half of the A' publication contract.
 It is deliberately separated from the registry so the always-on write-proxy seam
-(the thing the Phase 4 lifecycle tests assert against) is structural rather than a
+(the thing the lifecycle tests assert against) is structural rather than a
 monkeypatch on a specific call site.
 
 The durable-create sequence for one artifact, exactly as the DD and the shared
@@ -16,25 +16,29 @@ a small :class:`FileOps` proxy whose default (production) implementation calls t
 real ``os`` functions; a :class:`RecordingFileOps` subclass captures the exact call
 sequence for the lifecycle tests without monkeypatching.
 
-The file is written to a ``.staging`` sibling directory as ``<name>.<suffix>.tmp``,
-flushed/fsync'd, atomically renamed into its final location, then the destination
-directory is fsync'd — all before any registry row is touched.  A leftover ``.tmp``
-in ``.staging`` is a *file-level* condition (reportable/removable), never a registry
-state.
+Post-migration artifact grammar (the ONLY payload grammar after the corrective
+pass, DD § filesystem layout / immutable artifact contracts)::
 
-Artifact filename parsing lives here too because the immutable-supersession design
-(publish a NEW versioned artifact rather than overwrite old bytes) requires a
-deterministic mapping between on-disk filenames and the logical
-``(song_id, backbone)`` identity they encode.  The identity prefix is always kept
-in the filename so a filesystem scan can map a rowless file back to its logical
-identity.
+    <song_id>.<backbone>.<lowercase-64-hex-payload-sha256><suffix>
+
+where ``song_id`` is a single dot-free token, ``backbone`` matches
+``[A-Za-z0-9_-]+`` and the final component is exactly 64 lowercase hexadecimal
+digits.  The suffix is ``.npy`` for streams/masks and ``.npz`` for heads.  Each
+payload is accompanied by a self-describing ``.json`` manifest at the same digest
+name.  There is NO bare, ``.vN``, archival, CTP or pre-corrective name branch.
+
+A payload and its manifest are immutable once published: bytes are never replaced
+at an existing digest (re-publishing identical bytes reuses the existing artifact;
+different bytes produce a different digest name and therefore a different file).
 """
 
 from __future__ import annotations
 
 import io
+import json
 import os
 import re
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -46,13 +50,35 @@ if TYPE_CHECKING:
 #: Staging directory name (a file-level concern, never a registry state).
 STAGING_DIRNAME = ".staging"
 
-#: Regex separating the trailing version of a superseded artifact name
-#: (``{sid}.{backbone}.v2.npy`` -> backbone ``{backbone}``, version ``2``).
-_VERSION_RE = re.compile(r"^(.*)\.v(\d+)$")
+#: Exact post-migration digest grammar: ``{song_id}.{backbone}.{64-hex}{suffix}``.
+_DIGEST_NAME_RE = re.compile(r"^(?P<song_id>[^.]+)\.(?P<backbone>[A-Za-z0-9_-]+)\.(?P<digest>[0-9a-f]{64})$")
+
+#: Backbone grammar (no dot, alphanumeric plus ``-``/``_``).
+_BACKBONE_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+
+#: Lowercase 64-hex sha256 digest grammar.
+_DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 
 #: ``os.open`` flag for the destination-directory fsync handle (read-only is enough
 #: to obtain an fd whose ``fsync`` flushes directory entries on Linux/POSIX).
 _DIR_FSYNC_FLAGS = os.O_RDONLY
+
+
+@dataclass(frozen=True)
+class ArtifactIdentity:
+    """The typed logical identity decoded from a digest-grammar artifact name.
+
+    Post-migration there is exactly one grammar family (``digest``); there is no
+    bare/``.vN``/archival variant.  ``song_id``/``backbone`` are the logical
+    identity, ``digest`` is the lowercase-64-hex payload sha256 and ``suffix`` is
+    the matched filename suffix (``.npy``/``.npz``/``.json``).
+    """
+
+    song_id: str
+    backbone: str
+    digest: str
+    suffix: str
+    family: str = "digest"
 
 
 # ── always-on write-proxy seam ─────────────────────────────────────────────────
@@ -90,8 +116,8 @@ class RecordingFileOps(FileOps):
     ``operation`` is one of ``"fsync"``/``"close"``/``"rename"`` and ``detail`` is a
     label (``"file"``/``"dir"``) or the ``(src, dst)`` pair for ``rename``.  Recording
     is done before delegating to the real implementation, so the recorded order is the
-    order the syscalls actually happen.  This is the seam Phase 4 lifecycle tests
-    assert against.
+    order the syscalls actually happen.  This is the seam the lifecycle tests assert
+    against.
     """
 
     def __init__(self, inner: FileOps | None = None) -> None:
@@ -123,7 +149,7 @@ class RecordingFileOps(FileOps):
         """The expected durable-write ordering as ``[(op, kind), ...]`` for assertions.
 
         Only the fsync/close/rename sequence is surfaced (the DD lifecycle order):
-        ``fsync(file) -> close(file) -> rename -> fsync(directory)``.
+        ``fsync(file) -> close(file) -> rename -> fsync(directory)`` per file write.
         """
         result: list[tuple[str, str]] = []
         for operation, detail in self.events:
@@ -147,6 +173,22 @@ def _write_fd_all(fd: int, payload: bytes) -> None:
         view = view[written:]
 
 
+def _sha256_hex_bytes(payload: bytes) -> str:
+    import hashlib
+
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _file_sha256_hex(path: Path) -> str:
+    import hashlib
+
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def npy_bytes(arr: np.ndarray) -> bytes:
     """Serialize a float32 C-order array to the exact ``.npy`` payload bytes.
 
@@ -166,14 +208,9 @@ def npz_bytes(arrays: Mapping[str, np.ndarray]) -> bytes:
     The head-suite codec (Plan B Phase 3): one float32 ``[T, dim]`` array per head id
     key, zipped with ``np.savez`` (``ZIP_STORED``).  ``np.load(..., allow_pickle=False)``
     on the bytes round-trips an :class:`np.NpzFile` whose ``keys()`` are exactly the head
-    ids — the Phase-1 documented layout contract for the ``infer-heads`` writer and the
-    ``HeadStreamStore`` reader.  The durable-write fsync/rename ordering applies to the
-    ``.npz`` file bytes exactly as it does to a bare ``.npy`` payload.
-
-    Head ids are the config stem-derived classifier names (``_discover_heads`` returns
-    ``stem.split(\"-\")[0]``), which are Python identifiers, so they are passed as
-    ``np.savez`` keyword names (the canonical npz writer this package already uses in
-    tests).  Payload format changes require a new ``format_version``.
+    ids — the documented layout contract for the ``infer-heads`` writer and the
+    ``HeadStreamStore`` reader.  Head ids are passed as ``np.savez`` keyword names.
+    Payload format changes require a new ``format_version``.
     """
     buffer = io.BytesIO()
     np.savez(buffer, **{name: np.ascontiguousarray(arr, dtype=np.float32) for name, arr in arrays.items()})
@@ -183,15 +220,13 @@ def npz_bytes(arrays: Mapping[str, np.ndarray]) -> bytes:
 def durable_write(tmp_path: Path, final_path: Path, payload: bytes, ops: FileOps) -> None:
     """Persist *payload* at *final_path* following the exact durable-create sequence.
 
-    Order (Linux/POSIX assumption, documented — a SIGKILL test is not treated as proof
-    of power-loss durability): write the complete bytes to *tmp_path*, ``fsync`` the
-    open file, close it, atomically ``rename`` into *final_path*, then ``fsync`` the
-    destination directory.  All four syscalls route through *ops* so a recording proxy
-    can assert the order.
-
-    The destination directory must already exist (the caller creates the staging and
-    final parents).  On failure before the rename, *tmp_path* may be left behind; it is
-    a reportable/removable file-level condition, never a registry state.
+    Order (Linux/POSIX assumption, documented): write the complete bytes to *tmp_path*,
+    ``fsync`` the open file, close it, atomically ``rename`` into *final_path*, then
+    ``fsync`` the destination directory.  All four syscalls route through *ops* so a
+    recording proxy can assert the order.  The destination directory must already exist
+    (the caller creates the staging and final parents).  On failure before the rename,
+    *tmp_path* may be left behind; it is a reportable/removable file-level condition,
+    never a registry state.
     """
     fd = os.open(str(tmp_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
     try:
@@ -208,48 +243,106 @@ def durable_write(tmp_path: Path, final_path: Path, payload: bytes, ops: FileOps
         os.close(dir_fd)
 
 
+def durable_write_if_absent(final_path: Path, payload: bytes, ops: FileOps) -> bool:
+    """Content-addressed durable write that NEVER replaces bytes at an existing digest.
+
+    Because the filename encodes the payload sha256, an existing file at *final_path*
+    must already contain exactly *payload*; if so we reuse it (idempotent re-publish of
+    identical bytes) and return ``False`` (nothing written).  If a file exists whose
+    bytes do not match its digest name we raise — that is an irreconcilable corruption
+    and must not be overwritten.  Otherwise the file is written through the staged
+    durable sequence and ``True`` is returned.
+    """
+    if final_path.is_file():
+        if _file_sha256_hex(final_path) != _sha256_hex_bytes(payload):
+            raise OSError(
+                f"refusing to replace bytes at existing digest path {final_path}: "
+                "on-disk content does not match the digest-encoded sha256"
+            )
+        return False
+    final_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = staging_path_for(final_path)
+    durable_write(tmp_path, final_path, payload, ops)
+    return True
+
+
 def staging_path_for(final_path: Path) -> Path:
     """The ``.staging/<final-name>.tmp`` path for a final artifact at *final_path*.
 
     The staging directory is created (and must exist) as a sibling ``.staging`` of the
-    final artifact's parent, mirroring the DD layout ``patches/.staging/{name}.npy.tmp``.
+    final artifact's parent.  A digest-named final produces a digest-named ``.tmp``.
     """
     staging_dir = final_path.parent / STAGING_DIRNAME
     staging_dir.mkdir(parents=True, exist_ok=True)
     return staging_dir / f"{final_path.name}.tmp"
 
 
-# ── artifact filename parsing (immutable supersession identity) ───────────────
+# ── JSON self-describing manifests ─────────────────────────────────────────────
 
 
-def parse_artifact_name(name: str, suffix: str) -> tuple[str, str, int | None] | None:
-    """Map an on-disk artifact filename back to its logical identity.
+def write_json_durable(final_path: Path, data: Mapping[str, object], ops: FileOps) -> bool:
+    """Durably write a JSON document at *final_path* (never replacing existing bytes).
 
-    Returns ``(song_id, backbone, version)`` or ``None`` when the name is not a
-    recognizable frozen-stream artifact.  The identity prefix ``{song_id}.{backbone}``
-    is preserved in every artifact filename (canonical bare name for the first-ever
-    artifact, a versioned ``{song_id}.{backbone}.v{N}`` suffix for every artifact
-    published when prior bytes exist at that identity), so a reconcile filesystem scan
-    can map a rowless file back to its logical identity and distinguish a SUPERSEDED
-    old artifact from a genuine stray ORPHAN or a LEGACY pre-registry file.
+    Serialization is deterministic (sorted keys, compact separators) so identical
+    logical documents produce identical bytes.  Returns ``True`` when written, ``False``
+    when an identical document already exists (immutable no-replace reuse).
+    """
+    payload = json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return durable_write_if_absent(final_path, payload, ops)
 
-    ``song_id`` is the first dot-free segment (project ``song_id`` is a 12-char hex
-    digest and therefore never contains ``.``), so parsing is deterministic.
-    ``version`` is ``None`` for the canonical bare name and the integer version for a
-    superseded/versioned artifact.
+
+def read_json_manifest(path: Path) -> dict[str, object]:
+    """Read and parse a JSON manifest, raising ``ValueError`` on malformed JSON."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:  # pragma: no cover - surfaced by callers as missing/corrupt
+        raise ValueError(f"manifest unreadable: {path}: {exc}") from exc
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"manifest is not valid JSON: {path}: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ValueError(f"manifest must be a JSON object: {path}")
+    return data
+
+
+# ── digest artifact naming ─────────────────────────────────────────────────────
+
+
+def digest_artifact_name(song_id: str, backbone: str, digest: str, suffix: str) -> str:
+    """Return the exact digest-grammar filename ``{sid}.{bb}.{64hex}{suffix}``.
+
+    Validates the logical identity (song_id is a dot-free token, backbone matches the
+    grammar) and that *digest* is exactly 64 lowercase hexadecimal digits.
+    """
+    if not song_id or "." in song_id:
+        raise ValueError(f"song_id must be a dot-free token; got {song_id!r}")
+    if not _BACKBONE_RE.match(backbone):
+        raise ValueError(f"backbone must match {_BACKBONE_RE.pattern}; got {backbone!r}")
+    if not _DIGEST_RE.match(digest):
+        raise ValueError(f"digest must be 64 lowercase hex digits; got {digest!r}")
+    if not suffix.startswith(".") or not suffix[1:] or "." in suffix[1:]:
+        raise ValueError(f"suffix must be a single dotted extension; got {suffix!r}")
+    return f"{song_id}.{backbone}.{digest}{suffix}"
+
+
+def parse_artifact_name(name: str, suffix: str) -> ArtifactIdentity | None:
+    """Map a digest-grammar artifact filename back to its typed logical identity.
+
+    Returns an :class:`ArtifactIdentity` or ``None`` when *name* is not a recognizable
+    post-migration digest artifact for *suffix*.  There is deliberately NO branch for
+    bare, ``.vN``, archival, CTP or pre-corrective names (Git is the source archive and
+    old outputs are never interpreted at runtime).
     """
     if not name.endswith(suffix):
         return None
     stem = name[: -len(suffix)]
-    if "." not in stem:
+    match = _DIGEST_NAME_RE.match(stem)
+    if match is None:
         return None
-    song_id, rest = stem.split(".", 1)
-    if not song_id or not rest:
-        return None
-    match = _VERSION_RE.match(rest)
-    if match is not None:
-        backbone, version = match.group(1), int(match.group(2))
-        if not backbone:
-            return None
-        return song_id, backbone, version
-    return song_id, rest, None
+    return ArtifactIdentity(
+        song_id=match.group("song_id"),
+        backbone=match.group("backbone"),
+        digest=match.group("digest"),
+        suffix=suffix,
+    )

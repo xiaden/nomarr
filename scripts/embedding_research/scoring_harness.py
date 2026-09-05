@@ -30,11 +30,7 @@ patch-count weight::
 
     score = sum(contribution[b] for retained b) / sum(candidate_weight[b] for retained b)
 
-This never uses an unlabelled mean over the Cartesian matrix.  The three legacy
-weighted reductions (``target_weighted``, ``bidirectional_weighted``,
-``normalized_mean_pair_weighted``) remain available only as labeled
-``legacy_weighted_hypothesis`` comparison formulas; passing their old fixture does
-not make them authoritative primary semantics.
+This never uses an unlabelled mean over the Cartesian matrix.
 
 Ambiguity variants
 ------------------
@@ -61,16 +57,6 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from scripts.embedding_research.strategy_binned._weighted import (
-    bidirectional_weighted as _bidirectional_weighted,
-)
-from scripts.embedding_research.strategy_binned._weighted import (
-    normalized_mean_pair_weighted as _normalized_mean_pair_weighted,
-)
-from scripts.embedding_research.strategy_binned._weighted import (
-    target_weighted as _target_weighted,
-)
-
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
@@ -80,12 +66,13 @@ __all__ = [
     "PRIMARY_TIE_POLICY",
     "TIE_POLICIES",
     "HarnessReport",
-    "LegacyWeightedFixture",
+    "OracleScoreResult",
     "ScoringFixture",
     "SegmentContribution",
     "SegmentScoreInput",
     "SegmentScoreTrace",
     "run_scoring_harness",
+    "score_exact_oracle",
     "score_max_per_candidate_segment",
     "variant_name",
 ]
@@ -289,6 +276,45 @@ class SegmentScoreTrace:
 
 
 @dataclass(frozen=True)
+class OracleScoreResult:
+    """Small full-matrix v1 reference score (CONTRACTS §D ``score_exact_oracle``).
+
+    The array-oriented §D oracle surface produced by :func:`score_exact_oracle`.  It is a
+    small-fixture reference ONLY — the bounded exact scorer
+    (:func:`bounded_scoring.score_bounded_exact`) must match it within the declared tolerance
+    (exact on identical float64 inputs).  Field names mirror the bounded result's score/
+    winner/delta surface so an equivalence test can compare them directly.
+    """
+
+    score: float
+    numerator: float
+    denominator: float
+    winner_counts: dict[int, float]
+    collisions: tuple[tuple[int, ...], ...]
+    retained_count: int
+    dropped_count: int
+    variant: str
+    tie_policy: str
+    collision_policy: str
+    finite: bool
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "score": float(self.score),
+            "numerator": float(self.numerator),
+            "denominator": float(self.denominator),
+            "winner_counts": [[int(s), float(n)] for s, n in sorted(self.winner_counts.items())],
+            "collisions": [[int(i) for i in g] for g in self.collisions],
+            "retained_count": int(self.retained_count),
+            "dropped_count": int(self.dropped_count),
+            "variant": self.variant,
+            "tie_policy": self.tie_policy,
+            "collision_policy": self.collision_policy,
+            "finite": bool(self.finite),
+        }
+
+
+@dataclass(frozen=True)
 class ScoringFixture:
     """A named deterministic fixture for the max-per-candidate score.
 
@@ -307,47 +333,19 @@ class ScoringFixture:
 
 
 @dataclass(frozen=True)
-class LegacyWeightedFixture:
-    """A named deterministic fixture for the three legacy weighted reductions.
-
-    ``similarity`` is a 2-D source-x-target similarity matrix; ``source_weights``
-    and ``target_weights`` are positive patch-count weights.  These reductions are
-    ``legacy_weighted_hypothesis`` comparison formulas only — passing their old
-    fixture does not make them authoritative primary semantics.
-    """
-
-    name: str
-    similarity: np.ndarray
-    source_weights: np.ndarray
-    target_weights: np.ndarray
-
-    def values(self) -> dict[str, float]:
-        s = self.similarity
-        wa = self.source_weights
-        wt = self.target_weights
-        return {
-            "target_weighted": float(_target_weighted(s, wt)),
-            "normalized_mean_pair_weighted": float(_normalized_mean_pair_weighted(s, wa, wt)),
-            "bidirectional_weighted": float(_bidirectional_weighted(s, s.T, wt, wa)),
-        }
-
-
-@dataclass(frozen=True)
 class HarnessReport:
     """Deterministic execution report for the scoring harness.
 
     ``traces`` maps ``variant -> fixture_name -> SegmentScoreTrace``.
-    ``legacy_weighted`` maps the three legacy reduction names to their fixture
-    values (labeled comparison hypotheses).  ``expected`` pins the fixture maxima
-    and retain-all scores.  ``comparisons`` gives a compact per-variant/per-fixture
-    summary (score, numerator, denominator, retained/dropped counts).  ``finite``
-    and ``deterministic`` are global gates over every executed variant/fixture.
+    ``expected`` pins the fixture maxima and retain-all scores.  ``comparisons``
+    gives a compact per-variant/per-fixture summary (score, numerator,
+    denominator, retained/dropped counts).  ``finite`` and ``deterministic`` are
+    global gates over every executed variant/fixture.
     """
 
     fixtures: tuple[str, ...]
     variants: tuple[str, ...]
     traces: dict[str, dict[str, SegmentScoreTrace]]
-    legacy_weighted: dict[str, float]
     expected: dict[str, dict[str, Any]]
     invariants: tuple[str, ...]
     comparisons: dict[str, dict[str, dict[str, Any]]]
@@ -362,7 +360,6 @@ class HarnessReport:
                 variant: {name: trace.to_dict() for name, trace in by_fx.items()}
                 for variant, by_fx in self.traces.items()
             },
-            "legacy_weighted": {k: float(v) for k, v in self.legacy_weighted.items()},
             "expected": self.expected,
             "invariants": list(self.invariants),
             "comparisons": self.comparisons,
@@ -514,6 +511,72 @@ def score_max_per_candidate_segment(
 
 
 # ────────────────────────────────────────────────────────────────────────────────
+# §D small-fixture reference oracle (array-oriented score_exact_oracle)
+# ────────────────────────────────────────────────────────────────────────────────
+
+
+def score_exact_oracle(
+    query_vectors: Any,
+    query_weights: Any,
+    candidate_vectors: Any,
+    candidate_weights: Any,
+    *,
+    tie_policy: str = PRIMARY_TIE_POLICY,
+    collision_policy: str = PRIMARY_COLLISION_POLICY,
+) -> OracleScoreResult:
+    """Compute the v1 small full-matrix reference (CONTRACTS §D) for one query vs candidates.
+
+    The **query** is the source side and ``candidate_vectors`` the candidate side.  This is the
+    array-oriented §D reference over the authoritative :func:`score_max_per_candidate_segment`
+    engine (query vectors/weights -> ``source_vectors``/``source_weights``; candidate
+    vectors/weights -> ``candidate_vectors``/``candidate_weights``).  It is a *small-fixture
+    reference only*: it materialises the full query-x-candidate cosine matrix, so it must never
+    be used on the large bounded analysis path.
+
+    ``score_bounded_exact`` reproduces the same semantics chunk-by-chunk and matches this
+    reference within the declared tolerance ``rtol = atol = 1e-12``: every cosine element is the
+    same float64 dot product regardless of chunk boundaries, and the numerator/denominator are
+    accumulated over retained candidates in the SAME sequential ascending order (a plain Python
+    for-loop), so results are BITWISE equal on identical reduced inputs — maxima/ties/retention/
+    winner metadata and the resulting score are identical, not merely within tolerance.  The
+    declared tolerance covers any future ordering divergence (chunking never changes individual
+    cosine elements).
+
+    ``query_weights`` are validated (finite, strictly positive, length-aligned) but — matching
+    the scorer and the primary formula — do not enter ``max_per_candidate_segment``; only
+    ``candidate_weights`` do.
+
+    Returns an :class:`OracleScoreResult` mirroring the bounded result's winner/delta surface.
+    """
+    trace = score_max_per_candidate_segment(
+        SegmentScoreInput(
+            source_vectors=query_vectors,
+            candidate_vectors=candidate_vectors,
+            source_weights=query_weights,
+            candidate_weights=candidate_weights,
+        ),
+        tie_policy=tie_policy,
+        collision_policy=collision_policy,
+    )
+    contributions = trace.contributions
+    retained = [c for c in contributions if c.retained]
+    dropped = [c for c in contributions if not c.retained]
+    return OracleScoreResult(
+        score=trace.score,
+        numerator=trace.numerator,
+        denominator=trace.denominator,
+        winner_counts=dict(trace.winner_counts),
+        collisions=trace.collisions,
+        retained_count=len(retained),
+        dropped_count=len(dropped),
+        variant=trace.variant,
+        tie_policy=tie_policy,
+        collision_policy=collision_policy,
+        finite=trace.finite,
+    )
+
+
+# ────────────────────────────────────────────────────────────────────────────────
 # Harness driver
 # ────────────────────────────────────────────────────────────────────────────────
 
@@ -535,17 +598,13 @@ def _summarize(trace: SegmentScoreTrace) -> dict[str, Any]:
 def run_scoring_harness(
     fixtures: Sequence[ScoringFixture],
     variants: Sequence[tuple[str, str]],
-    *,
-    legacy_fixtures: Sequence[LegacyWeightedFixture] | None = None,
 ) -> HarnessReport:
     """Execute deterministic fixtures and return a full, auditable harness report.
 
     For every ``(tie_policy, collision_policy)`` variant it runs every fixture and
     collects the trace; each variant/fixture is re-run several times to prove
-    determinism.  It also executes the three legacy weighted reductions over the
-    supplied legacy fixtures (labeled comparison hypotheses).  The returned report
-    carries expected values, traces, invariants, variant comparisons, and global
-    ``finite`` / ``deterministic`` gates.
+    determinism.  The returned report carries expected values, traces, invariants,
+    variant comparisons, and global ``finite`` / ``deterministic`` gates.
     """
     fixture_names = tuple(fx.name for fx in fixtures)
     variant_names = tuple(variant_name(tp, cp) for tp, cp in variants)
@@ -569,12 +628,6 @@ def run_scoring_harness(
                 if rerun.to_json() != canonical:
                     deterministic = False
 
-    legacy_values: dict[str, float] = {}
-    if legacy_fixtures:
-        for lf in legacy_fixtures:
-            for name, value in lf.values().items():
-                legacy_values[f"{lf.name}:{name}"] = value
-
     expected: dict[str, dict[str, Any]] = {
         fx.name: {
             "expected_maxima": list(fx.expected_maxima),
@@ -588,7 +641,6 @@ def run_scoring_harness(
     invariants = (
         "max-per-candidate uses the per-candidate maximum source cosine",
         "no unlabelled Cartesian mean/median/max/min/medoid aggregate is used",
-        "legacy weighted reductions are labeled comparison hypotheses, not primary semantics",
         "all outputs are finite (no NaN/Inf)",
         "every variant is deterministic across repeated runs",
         "collision groups, winner indices, weights, cosine maxima, retention, and "
@@ -599,7 +651,6 @@ def run_scoring_harness(
         fixtures=fixture_names,
         variants=variant_names,
         traces=traces,
-        legacy_weighted=legacy_values,
         expected=expected,
         invariants=invariants,
         comparisons=comparisons,

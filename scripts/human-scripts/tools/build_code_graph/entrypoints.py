@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from .models import CodeGraph
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .models import CodeGraph
 
 
 def find_interface_entrypoints(graph: CodeGraph) -> set[str]:

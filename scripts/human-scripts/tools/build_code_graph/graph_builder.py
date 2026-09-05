@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import ast
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from .ast_utils import (
     extract_calls_from_function,
@@ -17,6 +17,9 @@ from .ast_utils import (
     get_return_annotation,
 )
 from .models import CodeGraph, Edge, Node
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def build_graph_for_file(

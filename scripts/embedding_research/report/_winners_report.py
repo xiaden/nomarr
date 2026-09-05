@@ -1,136 +1,116 @@
-"""Render the exact winner/delta and factor-summary rows as schema-v2 sections.
+"""Active catalog winners & factors report section.
 
-Phase 3 (Plan D) of the embedding-research repair: surface the auditable
-benchmark grid computed by ``_winners.py`` in the generated report.  This module
-wraps the pure row builders into schema-v2 ``section`` dicts so every backbone
-gets its own exact winners-vs-medoid table and its own factor-summary table.
-
-It consumes the *decoded* ``analyze_metrics`` pivot DataFrame (the output of
-``_retrieval.query_analyze_metrics``), exactly like the other retrieval sections.
-
-Research-only.  No production code.
+Research-only.  Renders the deterministic catalog winner/delta and factor rosters
+(computed by ``_winners.py``) as per-backbone subsections of the ``winners`` schema-v2
+section.  Populations are per-backbone and never cross-averaged.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
-
 import pandas as pd
 
 from ._base import make_section, make_table
-from ._winners import (
-    FACTOR_SUMMARY_COLUMNS,
-    WINNER_DELTA_COLUMNS,
-    build_factor_summary,
-    build_winner_delta_rows,
-)
-
-if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping
+from ._winners import build_factor_rows, build_winner_delta_rows
 
 
-def _k_values(df: pd.DataFrame) -> Iterable[int] | None:
-    """The K set actually present in the decoded rows, or None when absent."""
-    if "k" not in df.columns or df["k"].dropna().empty:
+def _cell_rows(winner_df: pd.DataFrame, backbone: str) -> list[dict]:
+    sub = winner_df[winner_df["backbone"] == backbone]
+    rows: list[dict] = []
+    for _, r in sub.iterrows():
+        rows.append(
+            {
+                "sim_metric": r["sim_metric"],
+                "k": int(r["k"]),
+                "metric": r["metric"],
+                "n_classes": int(r["n_classes"]),
+                "baseline_strategy_key": r["baseline_strategy_key"],
+                "baseline_canonical_config_id": _maybe_int(r.get("baseline_canonical_config_id")),
+                "baseline_value": float(r["baseline_value"]),
+                "winner_strategy_key": r["winner_strategy_key"],
+                "winner_canonical_config_id": _maybe_int(r.get("winner_canonical_config_id")),
+                "winner_alias_ids": _alias_text(r.get("winner_alias_ids")),
+                "winner_value": float(r["winner_value"]),
+                "delta": float(r["delta"]),
+            }
+        )
+    return rows
+
+
+def _factor_rows(factor_df: pd.DataFrame, backbone: str) -> list[dict]:
+    sub = factor_df[factor_df["backbone"] == backbone]
+    rows: list[dict] = []
+    for _, r in sub.iterrows():
+        rows.append(
+            {
+                "score_variant": r["score_variant"],
+                "scoring_semantics_version": int(r["scoring_semantics_version"]),
+                "strategy_key": r["strategy_key"],
+                "sim_metric": r["sim_metric"],
+                "k": int(r["k"]),
+                "canonical_config_id": _maybe_int(r.get("canonical_config_id")),
+                "alias_ids": _alias_text(r.get("alias_ids")),
+                "representation_hash": r["representation_hash"],
+            }
+        )
+    return rows
+
+
+def _alias_text(v) -> str:
+    if not v:
+        return "—"
+    return ",".join(str(a) for a in v)
+
+
+def _maybe_int(v):
+    if v is None or pd.isna(v):
         return None
-    return sorted({int(v) for v in df["k"].dropna().tolist()})
+    return int(v)
 
 
-def _corpus_identity(
-    manifest: Any | None,
-) -> tuple[str | None, int | None]:
-    """Extract (corpus_hash, corpus_size) from a per-backbone matching-corpus manifest."""
-    if manifest is None:
-        return None, None
-    return getattr(manifest, "corpus_hash", None), len(manifest)
-
-
-def section_winners(
-    df: pd.DataFrame,
-    corpus_by_backbone: Mapping[str, Any] | None = None,
-) -> dict:
-    """Exact group x metric x K winners, deltas, and factor summaries.
-
-    Builds one winner-delta table and one factor-summary table per backbone using
-    the Phase 2 row builders, with the explicit ``global_pool:{backbone}:medoid``
-    baseline policy.  ``corpus_by_backbone`` optionally maps backbone to its
-    :class:`~scripts.embedding_research.corpus.MatchingCorpusManifest` so each
-    winner-delta row carries the real corpus hash and corpus size for that
-    backbone.  Returns a schema-v2 section whose subsections are separated by
-    backbone.
-    """
-    if df is None or df.empty or "backbone" not in df.columns or "strategy_type" not in df.columns:
+def section_winners(analysis_df: pd.DataFrame) -> dict:
+    """Render deterministic catalog winner/delta and factor tables per backbone."""
+    if analysis_df is None or analysis_df.empty:
         return make_section(
             "winners",
-            "Exact Winners & Deltas",
-            empty_message="No retrieval data yet. Run the eval phase first.",
+            "Catalog Winners & Deltas",
+            empty_message="No active catalog analysis results. Run the analyze phase.",
         )
 
-    baseline_rows = df[df["strategy_type"] == "global_pool"]
-    winners_by_backbone: list[pd.DataFrame] = []
-    for backbone in sorted({str(b) for b in df["backbone"].dropna().tolist()}):
-        # Default primary winners are scoped to the explicit medoid baseline plus PTC
-        # configurations only: CTP is a deferred/archival pathway and must never appear
-        # as a primary winner/delta candidate.  Explicit backbones (e.g. MusicNN) remain
-        # independent, each vs its own medoid baseline — never a cross-backbone aggregate.
-        bb_df = df[(df["backbone"] == backbone) & (df["strategy_type"] != "ctp")]
-        bb_baseline = (
-            baseline_rows[baseline_rows["backbone"] == backbone]
-            if "backbone" in baseline_rows.columns
-            else baseline_rows
-        )
-        corpus_hash, corpus_size = _corpus_identity((corpus_by_backbone or {}).get(backbone))
-        rows = build_winner_delta_rows(
-            bb_df,
-            bb_baseline,
-            k_values=_k_values(bb_df),
-            corpus_hash=corpus_hash,
-            corpus_size=corpus_size,
-        )
-        if not rows.empty:
-            winners_by_backbone.append(rows)
-
-    if not winners_by_backbone:
-        return make_section(
-            "winners",
-            "Exact Winners & Deltas",
-            empty_message=(
-                "No winner-delta rows could be computed. An explicit "
-                "global_pool:{backbone}:medoid baseline row is required for each backbone."
-            ),
-        )
-
-    winner_rows = pd.concat(winners_by_backbone, ignore_index=True)
-
-    factor_summary = build_factor_summary(winner_rows)
-
+    winner_df = build_winner_delta_rows(analysis_df)
+    factor_df = build_factor_rows(analysis_df)
+    backbones = sorted({str(b) for b in analysis_df["backbone"].dropna().tolist()})
     subsections: list[dict] = []
-    for backbone in sorted({str(b) for b in winner_rows["backbone"].dropna().tolist()}):
-        w = winner_rows[winner_rows["backbone"] == backbone]
-        f = factor_summary[factor_summary["backbone"] == backbone] if not factor_summary.empty else pd.DataFrame()
-
-        tables = [
-            make_table(
-                w.to_dict("records"),
-                id=f"winner_delta_{backbone}",
-                title="Winners & deltas vs global_pool:{backbone}:medoid",
-            )
-        ]
-        if not f.empty:
+    for backbone in backbones:
+        cells = _cell_rows(winner_df, backbone)
+        factors = _factor_rows(factor_df, backbone)
+        tables = []
+        if cells:
             tables.append(
                 make_table(
-                    f.to_dict("records"),
-                    id=f"factor_summary_{backbone}",
-                    title="Factor summary",
+                    cells,
+                    id=f"winner_delta_{backbone}",
+                    title=f"Exact winners, deltas & baselines ({backbone})",
+                    summary_text=f"{len(cells)} winner cell(s)",
                 )
             )
-
+        if factors:
+            tables.append(
+                make_table(
+                    factors,
+                    id=f"factor_classes_{backbone}",
+                    title=f"Active catalog class factors ({backbone})",
+                    summary_text=f"{len(factors)} factor row(s)",
+                    open=False,
+                )
+            )
+        if not tables:
+            continue
         subsections.append(
             {
                 "id": f"winners-{backbone}",
                 "title": str(backbone),
                 "description": "",
-                "stats": [],
+                "stats": [{"label": "winner cells", "value": len(cells)}],
                 "charts": [],
                 "tables": tables,
                 "panels": [],
@@ -141,31 +121,23 @@ def section_winners(
             }
         )
 
+    if not subsections:
+        return make_section(
+            "winners",
+            "Catalog Winners & Deltas",
+            empty_message="No finite winner cells across the active catalog results.",
+        )
+
     return make_section(
         "winners",
-        "Exact Winners & Deltas",
+        "Catalog Winners & Deltas",
         description=(
-            "For every backbone x retrieval group x metric family x K, the deterministic "
-            "winner (strategy key, type, value) and its delta against the explicit "
-            "global_pool:{backbone}:medoid baseline for the *same* backbone x group x "
-            "metric x K. MAP, MRR, NDCG, Recall, and discrimination are evaluation lenses "
-            "(not optimization objectives); each is compared independently and never "
-            "collapsed into a single composite. No averaging across groups, metrics, K, "
-            "backbones, or hidden configurations. delta = winner_value - medoid_baseline_value, "
-            "so a negative delta means the best configuration is worse than the medoid "
-            "reference. Factor summaries group wins by each configuration factor (strategy "
-            "type, flat strategy, pathway, head, bin mode, threshold, rep_a, rep_b, score "
-            "variant, ambiguity variant, similarity metric) while retaining group x metric "
-            "x K and the contributing strategy keys. The score-variant factor is the "
-            "explicit aggregation identity (e.g. max-per-candidate); the ambiguity-variant "
-            "factor is its documented tie/collision policy (e.g. first_index + "
-            "retain_all_candidate_segments). Temporal weighting (the weighted directional "
-            "reductions target-wtd / bidir-wtd / norm-pair-wtd) is distinct from "
-            "representation choice (rep_a / rep_b, e.g. medoid vs median). CTP is a "
-            "deferred/archival pathway and is excluded from these primary winner/delta rows."
+            "Deterministic per-(sim_metric, k, metric) winner/delta tables and per-class "
+            "factor rosters, rendered separately for each backbone.  baseline = the active "
+            "class with the lowest (canonical_config_id, strategy_key); winner = the highest "
+            "finite value with strategy_key tie-break; delta = winner - baseline.  Equal "
+            "representations were collapsed to one class by the analyze pipeline, so alias "
+            "lists never create duplicate score rows."
         ),
         subsections=subsections,
     )
-
-
-__all__ = ["FACTOR_SUMMARY_COLUMNS", "WINNER_DELTA_COLUMNS", "section_winners"]

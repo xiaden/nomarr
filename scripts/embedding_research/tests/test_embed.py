@@ -42,10 +42,6 @@ def _store(con, tmp_path) -> StreamStore:
     return StreamStore(con, output_root=tmp_path)
 
 
-def _patches_dir(tmp_path) -> Path:
-    return tmp_path / "patches"
-
-
 @pytest.mark.unit
 def test_embed_song_raw_skips_when_ready_registry_row_exists_without_force(con, monkeypatch, tmp_path):
     """A verified ready registry row short-circuits work when force is False."""
@@ -123,7 +119,9 @@ def test_embed_song_raw_none_patches_returns_false(con, monkeypatch, tmp_path):
     load_audio_fn.assert_called_once_with(str(song_path), target_sr=16000)
     preprocess_fn.assert_called_once()
     run_in_batches_fn.assert_not_called()
-    assert not (tmp_path / "patches" / f"{sid}.bb.npy").exists()
+    # Nothing was published: no ready registry row and no digest artifact under streams/.
+    assert not store.has_ready(sid, "bb")
+    assert list((tmp_path / "streams").glob("*.npy")) == []
 
 
 @pytest.mark.unit
@@ -166,7 +164,9 @@ def test_embed_song_raw_empty_patches_returns_false(con, monkeypatch, tmp_path):
     load_audio_fn.assert_called_once_with(str(song_path), target_sr=16000)
     preprocess_fn.assert_called_once()
     run_in_batches_fn.assert_not_called()
-    assert not (tmp_path / "patches" / f"{sid}.bb.npy").exists()
+    # Nothing was published: no ready registry row and no digest artifact under streams/.
+    assert not store.has_ready(sid, "bb")
+    assert list((tmp_path / "streams").glob("*.npy")) == []
 
 
 @pytest.mark.unit
@@ -215,14 +215,19 @@ def test_embed_song_raw_publishes_sidecar_and_returns_true(con, monkeypatch, tmp
     )
 
     assert result is True
-    sidecar = _patches_dir(tmp_path) / f"{sid}.bb.npy"
-    assert sidecar.exists()
     load_audio_fn.assert_called_once_with(str(song_path), target_sr=16000)
     preprocess_fn.assert_called_once_with(waveform, "bb-model")
     session.run.assert_called_once()
-    np.testing.assert_array_equal(np.load(sidecar), expected_embeddings)
+    # Immutable publication: reconcile promotes the pending row to ready; the ready
+    # artifact is ONE digest-named .npy under streams/ that round-trips to the output.
+    store.reconcile()
+    assert store.has_ready(sid, "bb")
+    got = store.batch_gather(sid, "bb", list(range(patches.shape[0])))
+    np.testing.assert_array_equal(got, expected_embeddings)
+    digest_npys = list((tmp_path / "streams").glob(f"{sid}.bb.*.npy"))
+    assert len(digest_npys) == 1
     # A successful publish leaves no .tmp staging leftover.
-    staging = _patches_dir(tmp_path) / ".staging"
+    staging = tmp_path / "streams" / ".staging"
     assert not staging.exists() or not list(staging.glob("*.tmp"))
 
 
@@ -275,11 +280,9 @@ def _make_alive_it_stub() -> Any:
 def test_embed_no_audio_files_is_noop(con, monkeypatch, tmp_path):
     """embed() skips song work when discovery returns no audio files."""
     runtime_stubs = _install_embed_runtime_stubs()
-    patches_dir = tmp_path / "patches"
     embed_song_raw = Mock()
 
     monkeypatch.setattr(embed_mod, "_bootstrap_nomarr", lambda: None)
-    monkeypatch.setattr(embed_mod, "_PATCHES_DIR", patches_dir)
     monkeypatch.setattr(embed_mod, "_discover_audio", Mock(return_value=[]))
     monkeypatch.setattr(embed_mod, "_BACKBONES", {"bb": {"path": "model.onnx", "backbone_name": "bb-model"}})
     monkeypatch.setattr(embed_mod, "_embed_song_raw", embed_song_raw)
@@ -287,9 +290,10 @@ def test_embed_no_audio_files_is_noop(con, monkeypatch, tmp_path):
 
     embed_mod.embed(con, backbones=["bb"])
 
-    assert patches_dir.exists()
     runtime_stubs["create_session"].assert_called_once_with("model.onnx", device="cpu", vram_limit_bytes=None)
     embed_song_raw.assert_not_called()
+    # No audio files means nothing was published: the registry holds no ready stream.
+    assert _store(con, tmp_path).ready_rows() == []
 
 
 @pytest.mark.unit
@@ -301,7 +305,6 @@ def test_embed_filters_by_song_ids(con, monkeypatch, tmp_path):
     embed_song_raw = Mock(return_value=True)
 
     monkeypatch.setattr(embed_mod, "_bootstrap_nomarr", lambda: None)
-    monkeypatch.setattr(embed_mod, "_PATCHES_DIR", tmp_path / "patches")
     monkeypatch.setattr(embed_mod, "_discover_audio", Mock(return_value=[keep_path, skip_path]))
     monkeypatch.setattr(embed_mod, "_song_id", lambda path: Path(path).stem)
     monkeypatch.setattr(embed_mod, "_BACKBONES", {"bb": {"path": "model.onnx", "backbone_name": "bb-model"}})
@@ -323,7 +326,6 @@ def test_embed_counts_done_and_skipped(con, monkeypatch, tmp_path):
     embed_song_raw = Mock(side_effect=[True, False])
 
     monkeypatch.setattr(embed_mod, "_bootstrap_nomarr", lambda: None)
-    monkeypatch.setattr(embed_mod, "_PATCHES_DIR", tmp_path / "patches")
     monkeypatch.setattr(embed_mod, "_discover_audio", Mock(return_value=[first_path, second_path]))
     monkeypatch.setattr(embed_mod, "_BACKBONES", {"bb": {"path": "model.onnx", "backbone_name": "bb-model"}})
     monkeypatch.setattr(embed_mod, "_embed_song_raw", embed_song_raw)
@@ -342,7 +344,6 @@ def test_embed_errors_dont_propagate(con, monkeypatch, tmp_path):
     embed_song_raw = Mock(side_effect=RuntimeError("boom"))
 
     monkeypatch.setattr(embed_mod, "_bootstrap_nomarr", lambda: None)
-    monkeypatch.setattr(embed_mod, "_PATCHES_DIR", tmp_path / "patches")
     monkeypatch.setattr(embed_mod, "_discover_audio", Mock(return_value=[song_path]))
     monkeypatch.setattr(embed_mod, "_BACKBONES", {"bb": {"path": "model.onnx", "backbone_name": "bb-model"}})
     monkeypatch.setattr(embed_mod, "_embed_song_raw", embed_song_raw)

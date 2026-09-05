@@ -47,7 +47,7 @@ def encode_analyze_scope(scope: Mapping[str, Any]) -> str:
         "k": scope["k"],
         "backbone": scope["backbone"],
         "config_ids": sorted(scope.get("config_ids", ())),
-        "search_view_hash": scope.get("search_view_hash", ""),
+        "view_content_hash": scope.get("view_content_hash", ""),
         "score_variant": scope.get("score_variant", ""),
         "scoring_semantics_version": scope.get("scoring_semantics_version", 0),
     }
@@ -98,7 +98,7 @@ def record_analyze_run_scope(
     k: int,
     backbone: str,
     config_ids: tuple[int, ...],
-    search_view_hash: str,
+    view_content_hash: str,
     score_variant: str,
     scoring_semantics_version: int,
 ) -> None:
@@ -116,7 +116,7 @@ def record_analyze_run_scope(
             "k": k,
             "backbone": backbone,
             "config_ids": config_ids,
-            "search_view_hash": search_view_hash,
+            "view_content_hash": view_content_hash,
             "score_variant": score_variant,
             "scoring_semantics_version": scoring_semantics_version,
         }
@@ -203,7 +203,7 @@ def write_catalog_analyze_rows(
         k=result.k,
         backbone=result.backbone,
         config_ids=result.config_ids,
-        search_view_hash=result.search_view_hash,
+        view_content_hash=result.view_content_hash,
         score_variant=result.score_variant,
         scoring_semantics_version=result.scoring_semantics_version,
     )

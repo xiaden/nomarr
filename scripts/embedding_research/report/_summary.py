@@ -1,130 +1,96 @@
-"""Top-line summary section: exact best-binned winner vs medoid baseline per backbone.
+"""Active catalog summary section.
 
-Phase 3 (Plan D) replaced the coarse disc-genre dominance-rate / tuning-sensitivity
-composites (which collapsed configurations via ``first()`` / ``median`` / ``max`` and
-hid winner identity) with an exact per-backbone winner row: the single binned
-configuration with the highest disc_genre and its delta against the explicit
-``global_pool:{backbone}:medoid`` baseline.  Only exact-row diagnostics are
-retained; a previously contemplated corpus-mismatch warning was dropped because
-``n_songs`` is not present in the decoded ``analyze_metrics`` pivot, so it could
-never fire in the real report path.
+Research-only.  Per-backbone status of the active catalog results, derived from the decoded
+catalog analysis frame and its deterministic winner/delta rows.  Renders an explicit
+empty-active-results message when no active catalog rows exist.
 """
 
 from __future__ import annotations
 
+from collections import Counter
+
 import pandas as pd
 
-from ._base import binned_identity_label, flat_medoid_value, fmt, make_section, make_table
-
-_DISC_COL = "disc_genre"
-
-
-def _best_binned_row(binned_df: pd.DataFrame, backbone: str):
-    """The exact binned row (per backbone) with the highest disc_genre, or None.
-
-    References a single real row — the winning configuration — so its identity is
-    never collapsed away.  None when there is no binned disc_genre data.
-    """
-    bb = binned_df[binned_df["backbone"] == backbone] if "backbone" in binned_df.columns else pd.DataFrame()
-    if bb.empty or _DISC_COL not in bb.columns:
-        return None
-    valid = bb[bb[_DISC_COL].notna()]
-    if valid.empty:
-        return None
-    return valid.loc[valid[_DISC_COL].idxmax()]
+from ._base import make_section, make_table
+from ._winners import build_winner_delta_rows
 
 
-def section_summary(df: pd.DataFrame) -> dict:
-    """Per-backbone exact best-binned winner and delta vs the explicit medoid baseline."""
-    flat_df = df[df["strategy_type"] == "global_pool"]
-    # CTP is archival-only and can never drive the primary best-binned headline. Only
-    # EffNet PTC binned rows are candidates here; CTP stays visible in the archival
-    # head-value section and the unified data table.
-    binned_df = df[df["strategy_type"] == "ptc"]
-    flat_backbones = flat_df["backbone"].dropna().unique().tolist() if "backbone" in flat_df.columns else []
-    binned_backbones = binned_df["backbone"].dropna().unique().tolist() if "backbone" in binned_df.columns else []
-    all_backbones = sorted(set(flat_backbones) | set(binned_backbones))
-
-    if not all_backbones:
-        return make_section(
-            "summary",
-            "Summary",
-            empty_message="No retrieval data yet. Run the eval phase first.",
-        )
-
+def _summary_rows(analysis_df: pd.DataFrame) -> list[dict]:
+    winner_df = build_winner_delta_rows(analysis_df)
+    backbones = sorted({str(b) for b in analysis_df["backbone"].dropna().tolist()})
     rows: list[dict] = []
-    section_warnings: list[dict] = []
-    deltas: list[float] = []
-
-    for backbone in all_backbones:
-        medoid_val = flat_medoid_value(flat_df, backbone, _DISC_COL)
-        best = _best_binned_row(binned_df, backbone)
-        if best is not None:
-            best_config = binned_identity_label(best)
-            best_val = float(best[_DISC_COL])
-        else:
-            best_config = "—"
-            best_val = None
-
-        delta = (best_val - medoid_val) if (best_val is not None and medoid_val is not None) else None
-        if delta is not None:
-            deltas.append(delta)
-
+    for bb in backbones:
+        bb_a = analysis_df[analysis_df["backbone"] == bb]
+        classes = sorted({str(s) for s in bb_a["strategy_key"].dropna().tolist()})
+        ks = sorted({int(k) for k in bb_a["k"].dropna().tolist()})
+        cells = winner_df[winner_df["backbone"] == bb] if not winner_df.empty else pd.DataFrame()
+        n_cells = len(cells)
+        positive = 0
+        best_delta = None
+        delta_owners: dict[float, list[str]] = {}
+        win_counts: Counter = Counter()
+        if n_cells:
+            for _, c in cells.iterrows():
+                d = c["delta"]
+                owner = c["winner_strategy_key"]
+                win_counts[str(owner)] += 1
+                if d > 0:
+                    positive += 1
+                if best_delta is None or d > best_delta:
+                    best_delta = d
+                    delta_owners = {d: [str(owner)]}
+                elif d == best_delta:
+                    delta_owners.setdefault(d, []).append(str(owner))
+        most_cells_winner = min(win_counts, key=lambda k: (-win_counts[k], k)) if win_counts else None
         rows.append(
             {
-                "backbone": backbone,
-                "flat_medoid_disc_genre": fmt(medoid_val),
-                "best_binned_config": best_config,
-                "best_binned_disc_genre": fmt(best_val),
-                "delta_vs_medoid": fmt(delta),
+                "backbone": bb,
+                "active_catalog_classes": len(classes),
+                "distinct_k": len(ks),
+                "evaluation_cells": n_cells,
+                "positive_delta_cells": positive,
+                "best_delta": best_delta if best_delta is not None else None,
+                "most_cells_winner": most_cells_winner,
+                "most_cells_won": win_counts.get(most_cells_winner, 0) if most_cells_winner else 0,
             }
         )
+    return rows
 
-    positive = [d for d in deltas if d > 0]
-    negative = [d for d in deltas if d < 0]
-    if positive and not negative:
-        headline = {
-            "color": "#22c55e",
-            "icon": "✓",
-            "text": (
-                "Every backbone's best binned configuration beats the explicit medoid flat baseline on disc_genre."
-            ),
-        }
-    elif positive:
-        headline = {
-            "color": "#f59e0b",
-            "icon": "⚠",
-            "text": (
-                "At least one backbone's best binned configuration beats the explicit "
-                "medoid flat baseline on disc_genre."
-            ),
-        }
-    else:
-        headline = {
-            "color": "#f87171",
-            "icon": "✕",
-            "text": ("No backbone's best binned configuration beats the explicit medoid flat baseline on disc_genre."),
-        }
+
+def section_summary(analysis_df: pd.DataFrame) -> dict:
+    """Render the per-backbone active catalog status summary section."""
+    if analysis_df is None or analysis_df.empty or "backbone" not in analysis_df.columns:
+        return make_section(
+            "summary",
+            "Catalog Result Status",
+            empty_message="No active catalog analysis results. Run the analyze phase.",
+        )
+
+    table_rows = _summary_rows(analysis_df)
+    if not table_rows:
+        return make_section(
+            "summary",
+            "Catalog Result Status",
+            empty_message="No active catalog analysis results. Run the analyze phase.",
+        )
 
     return make_section(
         "summary",
-        "Summary",
+        "Catalog Result Status",
         description=(
-            "Per-backbone, the single best binned configuration (full identity: pathway, "
-            "head, bin mode, threshold, rep_a, rep_b, score variant) and its disc_genre delta "
-            "against the explicit medoid flat baseline (global_pool:{backbone}:medoid). "
-            "disc_genre is an evaluation lens (retrieval discrimination), not an optimization "
-            "objective. "
-            "delta_vs_medoid = best_binned_disc_genre - flat_medoid_disc_genre. Temporal "
-            "weighting (the weighted directional reductions target-wtd / bidir-wtd / "
-            "norm-pair-wtd) is distinct from representation choice (rep_a / rep_b)."
+            "Per-backbone status of the active catalog analysis.  Each backbone is an "
+            "independent population (EffNet / MusicNN never cross-averaged).  "
+            "evaluation_cells counts the (k x metric) cells with a finite winner; "
+            "positive_delta_cells counts cells where the winner beats the deterministic "
+            "baseline (lowest (canonical_config_id, strategy_key) active class).  See the "
+            "winners section for the full per-cell baseline/winner/delta tables."
         ),
-        stats=[],
-        charts=[],
-        tables=[make_table(rows, id="backbone_summary", title="Backbone summary")],
-        panels=[],
-        subsections=[],
-        warnings=section_warnings,
-        headline=headline,
-        empty_message="",
+        stats=[{"label": "backbones", "value": len(table_rows)}],
+        tables=[
+            make_table(
+                table_rows,
+                id="catalog_result_status",
+                title="Active catalog result status per backbone",
+            )
+        ],
     )

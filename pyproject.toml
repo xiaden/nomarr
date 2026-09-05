@@ -149,7 +149,6 @@ output-format = "json"
 unsafe-fixes = true
 exclude = [
     "scripts/",
-    ".github/skills/",
     "build_resources/essentia/",
     ".opencode/",
 ]

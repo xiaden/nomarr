@@ -1,104 +1,68 @@
-"""Pure threshold-resolution and canonical-identity contracts (Plan A, Phase 2).
+"""Direct normalized-unit-vector L2 threshold resolution and canonical identity (Plan A P1-S2).
 
-This module is intentionally free of DuckDB / IO / audio / numpy-array side
-effects so strategy code and tests can import it without any backend.  It is the
-canonical home for two things:
+This module is the single canonical home for the threshold and canonical-identity
+contract consumed by segmentation configs and the durable segmentation catalog.
+It is intentionally free of DuckDB / IO / audio / numpy side effects so strategy
+code and tests can import it without any backend.
 
-* :class:`ThresholdResolution` and :func:`resolve_threshold` — the P2-S1 pure
-  configured-vs-effective threshold contract.  ``direct_l2`` is the default and
-  guarantees ``effective == configured``; ``std_scaled`` is an explicit
-  legacy-fidelity opt-in that *requires* an explicit calibration basis and
-  records that basis plus the computed effective value.  The old implicit
-  ``x0.1`` fallback never appears here in any form.
-* the P2-S3 deterministic canonical numeric/text encodings and config-hash
-  inputs consumed by later ``seg_config`` rows (deterministic hashes and integer
-  application identities per R9).  These apply to *new* identity/hash
-  computation only — legacy on-disk cache-path lookup (``helpers.binning``
-  ``threshold_key``/``canonical_threshold``) is deliberately left untouched so
-  existing archival readers keep resolving.
+Threshold contract
+------------------
+There is exactly ONE threshold semantics: a finite direct L2 distance between
+normalized unit vectors.  A resolved threshold is immutable and finite and always
+satisfies ``effective == configured`` exactly.  There is no scaling, no
+calibration basis, and no p50/percentile multiplier; no second semantics label
+exists and ``resolve_threshold`` accepts no semantics selector.  The former
+``std_scaled`` and calibration/p50 behavior were removed — they are historical and
+never read at runtime.
 
-Canonical numeric-format decision (documented choice + rationale)
-----------------------------------------------------------------
+Canonical encoding
+------------------
 Each float is rendered via its shortest round-trip ``repr`` (the same binary
-float always yields the same text, so ``0.1`` and ``1e-1`` — the same double —
-are identical), with any exponent form expanded to fixed-point by parsing the
-repr digits through ``decimal.Decimal`` (so there is never scientific-notation
-ambiguity), and ``-0.0`` normalised to ``0.0``.  Fixed-precision formatting was
-rejected because rounding to a fixed number of places can conflate two distinct
-floats; shortest-round-trip text cannot, and is locale-independent.  All
-encoders reject non-finite inputs.
+float always yields the same text), exponent forms are expanded to fixed point
+through :class:`decimal.Decimal`, and ``-0.0`` is normalized to ``0.0``.
+Encoders reject non-finite inputs.
+
+Boundary semantics
+------------------
+Strict ``>`` boundary comparison (a patch is a boundary when its distance to the
+running spherical centroid is strictly greater than the threshold) is owned by the
+segmentation helper in :mod:`helpers.segmentation` / the temporal segment code,
+not by this module.  This module only resolves and canonically encodes the finite
+threshold value.
+
+Encoder version
+---------------
+``config_encoder_version()`` is the SHA-256 of the complete bytes of this module,
+computed lazily on first use and refreshed whenever the module file's metadata
+(mtime or size) changes.  It is deliberately whole-module (not an AST subset), so
+any content edit — including a comment or formatting change — conservatively
+triggers a new version.  There is no manual bump or allowlist.
 """
 
 from __future__ import annotations
 
 import hashlib
 import math
-from collections.abc import Mapping
 from dataclasses import dataclass
 from decimal import Decimal
-from types import MappingProxyType
-from typing import Literal, get_args
+from pathlib import Path
+from typing import Final
 
-# ── Semantics vocabulary ───────────────────────────────────────────────────────
+#: The one and only threshold semantics: a finite direct L2 distance between
+#: normalized unit vectors.  Kept as a named constant so ``ThresholdResolution``
+#: values and catalog manifests compare against a single spelling.
+DIRECT_L2: Final[str] = "direct_l2"
 
-#: The only two threshold-semantics labels (used verbatim in ``seg_config.semantics``).
-ThresholdSemantics = Literal["direct_l2", "std_scaled"]
+#: Default outlier window (consecutive boundary patches absorbed before a hard
+#: split).  Residing here so canonical hash computation and segmentation callers
+#: share one spelling.  The strict ``>`` boundary semantics live downstream.
+DEFAULT_OUTLIER_WINDOW: Final[int] = 3
 
-DIRECT_L2 = "direct_l2"
-STD_SCALED = "std_scaled"
+#: PTC segmentation strategy version (running spherical centroid + strict ``>``).
+PTC_STRATEGY_VERSION: Final[int] = 1
 
-_SEMANTICS: frozenset[str] = frozenset(get_args(ThresholdSemantics))
-
-# Calibration-record vocabulary: the calibration basis is recorded canonically as
-# a flat mapping carrying at least ``statistic`` (a label such as ``"p50"``) and
-# ``value`` (the numeric multiplier basis).  ``statistic`` names *which* statistic
-# is the basis; ``value`` is the finite, positive multiplier applied to
-# ``configured`` to produce the legacy ``std_scaled`` effective threshold.  This is
-# a new explicit vocabulary (the legacy producer stored bare ``p10..sigma_d`` dicts
-# that never identified the basis, which is exactly why the implicit path was dead).
-_CALIBRATION_STATISTIC_KEY = "statistic"
-_CALIBRATION_VALUE_KEY = "value"
-
-# ── Identity-schema constants (P2-S3) ─────────────────────────────────────────
-#: Canonical segmentation outlier window (matches ``helpers.binning.OUTLIER_WINDOW``).
-DEFAULT_OUTLIER_WINDOW: int = 3
-#: Canonical strategy version for the current PTC running-centroid segmentation
-#: track (the algorithm is preserved; only the threshold semantics default changed).
-#: Later plans (C) persist this in ``seg_config.strategy_version``.
-PTC_STRATEGY_VERSION: int = 1
-
-
-# ── Numeric coercion / finiteness ──────────────────────────────────────────────
-
-
-def _coerce_finite(x: object, name: str) -> float:
-    """Return *x* as a finite float, raising TypeError/ValueError with a clear message."""
-    if isinstance(x, (bool, str)):
-        raise TypeError(f"{name} must be a real number; got {type(x).__name__}")
-    try:
-        value = float(x)  # type: ignore[arg-type]
-    except (TypeError, ValueError) as exc:
-        raise TypeError(f"{name} must be a real number; got {type(x).__name__}") from exc
-    if not math.isfinite(value):
-        raise ValueError(f"{name} must be finite (no NaN/Inf); got {x!r}")
-    return value
-
-
-def _coerce_int(x: object, name: str) -> int:
-    """Return *x* as an integer, rejecting bools and non-integral values."""
-    if isinstance(x, bool) or not isinstance(x, int):
-        raise TypeError(f"{name} must be an integer; got {type(x).__name__}")
-    return x
-
-
-def validate_semantics(semantics: object) -> str:
-    """Validate a threshold-semantics label against the canonical vocabulary."""
-    if semantics not in _SEMANTICS:
-        raise ValueError(f"Unknown threshold semantics {semantics!r}. Allowed: {sorted(_SEMANTICS)}")
-    return semantics  # type: ignore[return-value]
-
-
-# ── Threshold resolution (P2-S1) ──────────────────────────────────────────────
+#: Absolute path of this module file, used for whole-module encoder-version hashing.
+_MODULE_PATH: Final[Path] = Path(__file__)
 
 
 @dataclass(frozen=True)
@@ -108,285 +72,216 @@ class ThresholdResolution:
     Attributes
     ----------
     configured:
-        The configured threshold (direct unit-vector L2 distance by default).
+        The finite configured threshold (an L2 distance between unit vectors).
     effective:
-        The threshold actually applied during segmentation.  For ``direct_l2``
-        this is exactly ``configured``; for ``std_scaled`` it is
-        ``configured x calibration-basis``.
+        The finite effective threshold.  By construction ``effective == configured``
+        exactly — there is exactly one mode and no calibration step.
     semantics:
-        ``"direct_l2"`` or ``"std_scaled"`` (the calibration-track label).
-    calibration_record:
-        Read-only mapping carrying the calibration basis for ``std_scaled``, or
-        ``None`` for ``direct_l2``.  Never object identity — a stable serialization
-        is provided by :func:`canonical_calibration_record`.
-
-    All numeric fields are guaranteed finite; non-finite inputs are rejected at
-    construction.  Instances are immutable (frozen dataclass + a read-only
-    ``MappingProxyType`` wrapper around any calibration record).
+        Always :data:`DIRECT_L2` (``"direct_l2"``).  No other semantics exists.
+    encoder_version:
+        The whole-module :func:`config_encoder_version` at resolution time, so the
+        recorded contract pins the exact encoder source that produced it.
     """
 
     configured: float
     effective: float
     semantics: str
-    calibration_record: object  # MappingProxyType | None
+    encoder_version: str
 
     def __post_init__(self) -> None:
         configured = _coerce_finite(self.configured, "configured")
         effective = _coerce_finite(self.effective, "effective")
-        semantics = validate_semantics(self.semantics)
-        calibration_record = self._freeze_calibration(self.calibration_record)
-        # Normalise stored values (floats) and replace any mutable calibration
-        # record with a read-only proxy so the resolution is truly immutable.
+        if self.semantics != DIRECT_L2:
+            raise ValueError(f"only {DIRECT_L2!r} threshold semantics exists; got {self.semantics!r}")
+        # ``effective == configured`` exactly: no scaling, no calibration basis.
+        if effective != configured:
+            raise ValueError(
+                f"effective must equal configured exactly (single direct-L2 mode); "
+                f"configured={configured!r} effective={effective!r}"
+            )
         object.__setattr__(self, "configured", configured)
         object.__setattr__(self, "effective", effective)
-        object.__setattr__(self, "semantics", semantics)
-        object.__setattr__(self, "calibration_record", calibration_record)
-
-    @staticmethod
-    def _freeze_calibration(record: object) -> object:
-        if record is None:
-            return None
-        if not isinstance(record, Mapping):
-            raise TypeError(f"calibration_record must be a Mapping or None; got {type(record).__name__}")
-        return MappingProxyType(dict(record))
+        if not isinstance(self.encoder_version, str) or not self.encoder_version:
+            raise ValueError("encoder_version must be non-empty text")
 
 
-def _require_calibration_basis(calibration_record: object) -> float:
-    """Extract and validate the explicit calibration basis for ``std_scaled``."""
-    if calibration_record is None:
-        raise ValueError(
-            "std_scaled requires an explicit calibration_record carrying the calibration "
-            f"basis (a Mapping with {_CALIBRATION_STATISTIC_KEY!r} and {_CALIBRATION_VALUE_KEY!r}); "
-            "no implicit p50/0.1 fallback is permitted"
-        )
-    if not isinstance(calibration_record, Mapping):
-        raise TypeError(f"calibration_record must be a Mapping for std_scaled; got {type(calibration_record).__name__}")
-    statistic = calibration_record.get(_CALIBRATION_STATISTIC_KEY)
-    if not isinstance(statistic, str) or not statistic.strip():
-        raise ValueError(
-            f"std_scaled calibration_record must identify its basis with {_CALIBRATION_STATISTIC_KEY!r}; "
-            f"got {statistic!r}"
-        )
-    value = calibration_record.get(_CALIBRATION_VALUE_KEY)
-    basis = _coerce_finite(value, f"calibration_record[{_CALIBRATION_VALUE_KEY!r}]")
-    if basis <= 0.0:
-        raise ValueError(f"std_scaled calibration basis must be a finite positive distance; got {basis!r}")
-    return basis
+def _coerce_finite(value: object, name: str) -> float:
+    """Coerce ``value`` to a finite float, rejecting non-numeric and non-finite inputs."""
+    if isinstance(value, bool):
+        raise TypeError(f"{name} must be numeric; got bool")
+    if isinstance(value, (str, bytes, list, tuple, dict, set)) or not isinstance(value, (int, float)):
+        raise TypeError(f"{name} must be numeric; got {type(value).__name__}")
+    result = float(value)
+    if not math.isfinite(result):
+        raise ValueError(f"{name} must be finite; got {value!r}")
+    return result
 
 
-def resolve_threshold(
-    configured: object,
-    *,
-    semantics: object = DIRECT_L2,
-    calibration_record: object = None,
-) -> ThresholdResolution:
-    """Resolve a configured threshold to its effective segmentation threshold.
+def _coerce_int(value: object, name: str) -> int:
+    """Coerce ``value`` to an int, rejecting bool and non-int inputs."""
+    if isinstance(value, bool):
+        raise TypeError(f"{name} must be an int; got bool")
+    if not isinstance(value, int):
+        raise TypeError(f"{name} must be an int; got {type(value).__name__}")
+    return value
 
-    Parameters
-    ----------
-    configured:
-        The configured threshold — a finite real number.
-    semantics:
-        ``"direct_l2"`` (default) or ``"std_scaled"`` (explicit legacy opt-in).
-    calibration_record:
-        A Mapping carrying the explicit calibration basis (``statistic`` +
-        ``value``).  Required for ``std_scaled``; ignored/None for ``direct_l2``.
 
-    Returns
-    -------
-    ThresholdResolution
-        Immutable, finite, deterministic.  ``direct_l2`` returns
-        ``effective == configured`` exactly with no calibration record; the
-        explicit ``std_scaled`` path computes
-        ``effective = configured x basis`` and records the basis.
+def resolve_threshold(configured: object) -> ThresholdResolution:
+    """Resolve a configured threshold into a direct-L2 :class:`ThresholdResolution`.
+
+    There is exactly one mode: the configured value is applied directly as a
+    finite L2 distance between normalized unit vectors (``effective == configured``
+    exactly).  Non-finite or non-numeric inputs are rejected.  No ``semantics`` or
+    ``calibration_record`` selector exists; scaled/calibration/p50 resolution is not
+    representable.
     """
-    configured_f = _coerce_finite(configured, "configured")
-    semantics_s = validate_semantics(semantics)
-
-    if semantics_s == DIRECT_L2:
-        # effective == configured exactly (no arithmetic), calibration basis is
-        # semantically meaningless for a direct distance and is omitted.
-        return ThresholdResolution(
-            configured=configured_f,
-            effective=configured_f,
-            semantics=DIRECT_L2,
-            calibration_record=None,
-        )
-
-    # std_scaled: explicit opt-in only; the basis must be explicit and usable.
-    basis = _require_calibration_basis(calibration_record)
-    effective = configured_f * basis
+    finite = _coerce_finite(configured, "configured")
     return ThresholdResolution(
-        configured=configured_f,
-        effective=effective,
-        semantics=STD_SCALED,
-        calibration_record=calibration_record,
+        configured=finite,
+        effective=finite,
+        semantics=DIRECT_L2,
+        encoder_version=config_encoder_version(),
     )
 
 
-# ── Canonical encoding (P2-S3) ────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Canonical numeric / text encoders
+# ---------------------------------------------------------------------------
 
 
-def canonical_float(x: object) -> str:
-    """Deterministic, locale-independent, exponent-free encoding of a finite float.
+def canonical_float(value: object) -> str:
+    """Deterministic finite shortest-round-trip encoding with ``-0.0`` normalized.
 
-    Same binary float -> same text (``0.1`` and ``1e-1`` are the same double and
-    both encode as ``"0.1"``).  Rejects non-finite inputs.
+    The same binary float always yields the same text; exponent forms are expanded
+    to fixed point.  NaN and ±Inf are rejected.
     """
-    value = _coerce_finite(x, "value")
-    if value == 0.0:
+    finite = _coerce_finite(value, "value")
+    if finite == 0.0:  # normalizes -0.0 and +0.0 to a single spelling
         return "0.0"
-    text = repr(value)
+    # Shortest round-trip repr (same binary float -> same text), then expand any
+    # exponent form to fixed point so there is no spelling/e-notation ambiguity.
+    text = repr(finite)
     if "e" in text or "E" in text:
-        # Expand exponent form to fixed-point by parsing the exact repr digits.
-        return format(Decimal(text), "f")
+        text = format(Decimal(text), "f")
     return text
 
 
-def canonical_int(x: object, name: str = "value") -> str:
-    """Deterministic integer encoding (outlier window, strategy version, alias id)."""
-    return str(_coerce_int(x, name))
+def canonical_int(value: object) -> str:
+    """Deterministic integer encoding (rejects bool and non-int)."""
+    return str(_coerce_int(value, "value"))
 
 
-def canonical_text(x: object, name: str = "value") -> str:
-    """Deterministic text encoding (bin mode / backbone / labels)."""
-    if isinstance(x, bool):
-        raise TypeError(f"{name} must be text; got bool")
-    text = str(x).strip()
-    if not text:
+def canonical_text(value: object, name: str = "text") -> str:
+    """Deterministic text encoding; requires non-empty (non-blank) text."""
+    if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{name} must be non-empty text")
-    return text
+    return value
 
 
-def canonical_bin_mode(bin_mode: object) -> str:
-    return canonical_text(bin_mode, "bin_mode")
+def canonical_bin_mode(value: object) -> str:
+    """Deterministic bin-mode encoding (validated against no fixed set here)."""
+    return canonical_text(value, "bin_mode")
 
 
-def canonical_outlier_window(window: object) -> str:
-    return canonical_int(window, "outlier_window")
+def canonical_outlier_window(value: object) -> str:
+    """Deterministic outlier-window encoding (validated as a positive int)."""
+    window = _coerce_int(value, "outlier_window")
+    if window < 1:
+        raise ValueError(f"outlier_window must be >= 1; got {window}")
+    return str(window)
 
 
-def canonical_strategy_version(version: object) -> str:
-    return canonical_int(version, "strategy_version")
+def canonical_strategy_version(value: object) -> str:
+    """Deterministic strategy-version encoding (validated as a positive int)."""
+    version = _coerce_int(value, "strategy_version")
+    if version < 1:
+        raise ValueError(f"strategy_version must be >= 1; got {version}")
+    return str(version)
 
 
-def canonical_semantics(semantics: object) -> str:
-    return validate_semantics(semantics)
-
-
-def canonical_alias(alias_of_config_id: object) -> str:
-    """Canonical alias target: ``"none"`` when unaliased, else the integer id."""
-    if alias_of_config_id is None:
-        return "none"
-    return canonical_int(alias_of_config_id, "alias_of_config_id")
-
-
-def canonical_threshold(
-    configured: object,
-    effective: object,
-    semantics: object = DIRECT_L2,
-) -> str:
-    """Canonical threshold identity carrying both values and the semantics label.
-
-    Sensitive to semantics: ``direct_l2`` and ``std_scaled`` of the same
-    configured value encode differently (different label), so their config
-    hashes never collide.
-    """
-    return (
-        f"{validate_semantics(semantics)}:"
-        f"configured={canonical_float(configured)}:"
-        f"effective={canonical_float(effective)}"
-    )
-
-
-def canonical_threshold_of(resolution: ThresholdResolution) -> str:
-    """Canonical threshold identity of an existing resolution (see :func:`canonical_threshold`)."""
-    return canonical_threshold(resolution.configured, resolution.effective, resolution.semantics)
-
-
-def canonical_calibration_record(record: object) -> str:
-    """Stable serialization of a calibration basis (not object identity).
-
-    Keys are sorted; numeric values use :func:`canonical_float`; text values use
-    :func:`canonical_text`.  Two equal-content records in different insertion
-    order serialize identically.  ``None`` encodes as ``"none"``.
-    """
-    if record is None:
-        return "none"
-    if not isinstance(record, Mapping):
-        raise TypeError(f"calibration_record must be a Mapping or None; got {type(record).__name__}")
-    parts: list[str] = []
-    for key in sorted(record, key=str):
-        value = record[key]
-        if isinstance(value, bool):
-            encoded = "true" if value else "false"
-        elif isinstance(value, str):
-            encoded = canonical_text(value, f"calibration_record[{key!r}]")
-        else:
-            encoded = canonical_float(value)
-        parts.append(f"{canonical_text(key, 'calibration_record key')}={encoded}")
-    return ";".join(parts)
+# ---------------------------------------------------------------------------
+# Canonical config inputs and hash
+# ---------------------------------------------------------------------------
 
 
 def canonical_config_inputs(
     *,
-    backbone: object,
-    bin_mode: object,
-    threshold_configured: object,
-    threshold_effective: object,
-    semantics: object = DIRECT_L2,
-    calibration_record: object = None,
-    outlier_window: object = DEFAULT_OUTLIER_WINDOW,
-    strategy_version: object = PTC_STRATEGY_VERSION,
-    alias_of_config_id: object = None,
+    backbone: str,
+    bin_mode: str,
+    threshold: float,
+    outlier_window: int,
+    strategy_version: int,
+    encoder_version: str,
 ) -> str:
-    """Canonical pre-hash string in the seg_config ordering.
+    """Deterministic tagged serialization of the seg_config key inputs.
 
-    Field order is fixed (per the parts ledger): backbone, bin mode,
-    threshold_configured, threshold_effective, semantics, calibration_record,
-    outlier_window, strategy_version, alias target.
+    Field order is fixed and documented: backbone, bin_mode, threshold (the
+    single effective==configured direct-L2 value), outlier_window,
+    strategy_version, encoder_version.
     """
-    fields: list[tuple[str, str]] = [
-        ("backbone", canonical_text(backbone, "backbone")),
-        ("bin_mode", canonical_bin_mode(bin_mode)),
-        ("threshold_configured", canonical_float(threshold_configured)),
-        ("threshold_effective", canonical_float(threshold_effective)),
-        ("semantics", canonical_semantics(semantics)),
-        ("calibration_record", canonical_calibration_record(calibration_record)),
-        ("outlier_window", canonical_outlier_window(outlier_window)),
-        ("strategy_version", canonical_strategy_version(strategy_version)),
-        ("alias_of_config_id", canonical_alias(alias_of_config_id)),
+    ordered = [
+        f"backbone={canonical_text(backbone, 'backbone')}",
+        f"bin_mode={canonical_bin_mode(bin_mode)}",
+        f"threshold={canonical_float(threshold)}",
+        f"outlier_window={canonical_outlier_window(outlier_window)}",
+        f"strategy_version={canonical_strategy_version(strategy_version)}",
+        f"encoder_version={canonical_text(encoder_version, 'encoder_version')}",
     ]
-    return "|".join(f"{key}={value}" for key, value in fields)
+    return "|".join(ordered)
 
 
 def canonical_config_hash(
     *,
-    backbone: object,
-    bin_mode: object,
-    threshold_configured: object,
-    threshold_effective: object,
-    semantics: object = DIRECT_L2,
-    calibration_record: object = None,
-    outlier_window: object = DEFAULT_OUTLIER_WINDOW,
-    strategy_version: object = PTC_STRATEGY_VERSION,
-    alias_of_config_id: object = None,
+    backbone: str,
+    bin_mode: str,
+    threshold: float,
+    outlier_window: int,
+    strategy_version: int,
+    encoder_version: str,
 ) -> str:
-    """Deterministic sha256 config hash over :func:`canonical_config_inputs`.
+    """Deterministic SHA-256 canonical identity over the seg_config key ordering.
 
-    The returned hex digest is stable across runs and equivalent numeric
-    spellings, and is sensitive to every segmentation parameter including the
-    semantics label and the calibration record.
+    All parameters are required keyword inputs.  ``threshold`` is the single
+    direct-L2 value (``configured == effective``); there is no semantics or
+    calibration input because only one semantics exists.  The ``encoder_version``
+    is included so any encoder source change conservatively invalidates identity.
     """
     payload = canonical_config_inputs(
         backbone=backbone,
         bin_mode=bin_mode,
-        threshold_configured=threshold_configured,
-        threshold_effective=threshold_effective,
-        semantics=semantics,
-        calibration_record=calibration_record,
+        threshold=threshold,
         outlier_window=outlier_window,
         strategy_version=strategy_version,
-        alias_of_config_id=alias_of_config_id,
-    ).encode("utf-8")
-    return hashlib.sha256(payload).hexdigest()
+        encoder_version=encoder_version,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+# ---------------------------------------------------------------------------
+# Whole-module encoder version
+# ---------------------------------------------------------------------------
+
+#: Cached (mtime_ns, size, version); refreshed when file metadata changes.
+_encoder_version_cache: tuple[int, int, str] | None = None
+
+
+def _module_sha256(data: bytes) -> str:
+    """SHA-256 hexdigest of raw module bytes (testable against arbitrary bytes)."""
+    return hashlib.sha256(data).hexdigest()
+
+
+def config_encoder_version() -> str:
+    """SHA-256 of the complete bytes of ``helpers/thresholds.py``.
+
+    Computed lazily on first use and cached; the cache is keyed by the module
+    file's (mtime, size) so any on-disk content change — including a comment or
+    formatting edit — refreshes the value.  There is no manual bump or allowlist.
+    """
+    global _encoder_version_cache
+    stat = _MODULE_PATH.stat()
+    key = (stat.st_mtime_ns, stat.st_size)
+    if _encoder_version_cache is not None and _encoder_version_cache[:2] == key:
+        return _encoder_version_cache[2]
+    version = _module_sha256(_MODULE_PATH.read_bytes())
+    _encoder_version_cache = (key[0], key[1], version)
+    return version

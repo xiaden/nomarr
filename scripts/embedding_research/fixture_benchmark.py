@@ -45,7 +45,6 @@ from scripts.embedding_research.bounded_scoring import (
     ScoringCandidateView,
     score_bounded_exact,
 )
-from scripts.embedding_research.search_views import APPLICATION_VERSION
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
@@ -105,6 +104,12 @@ def validate_benchmark_report(record: Mapping[str, Any]) -> list[str]:
     return errors
 
 
+#: Fixtures-only application/format version label (was ``search_views.APPLICATION_VERSION``;
+#: the view software triple is gone under the disposable catalog-first model, so the fixture
+#: benchmark carries its own fixtures-only label rather than a search-view identity version).
+_APPLICATION_VERSION = "1"
+
+
 #: Deterministic synthetic backbone/model identity for the fixtures-only surface.  There is
 #: NO real model here — this is a documented FIXTURE model hash, never a measured claim.
 def _fixture_model_hash(backbone: str) -> str:
@@ -116,7 +121,7 @@ def _fixture_software() -> str:
     import duckdb
 
     return (
-        f"application={APPLICATION_VERSION};python={platform.python_version()};"
+        f"application={_APPLICATION_VERSION};python={platform.python_version()};"
         f"numpy={np.__version__};duckdb={duckdb.__version__}"
     )
 

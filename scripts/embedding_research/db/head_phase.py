@@ -1,69 +1,61 @@
-"""DuckDB persistence for shared-boundary head-phase provenance.
+"""DuckDB persistence for canonical catalog-scoped head-analysis provenance.
 
-This module is the **canonical** persistence surface for the active CPU head
-analysis (``common.head_analysis.run_shared_ptc_head_pooling``).  It owns the
-``head_phase_provenance`` table in its Plan E Phase 1 18-column, no-constraint
-superset shape (AMEND ROUND 2 / D2-D3) and enforces the exact canonical-row
-predicate for every reader/report/fixture/coverage calculation.
+This module is the **canonical** persistence surface for the active CPU head analysis
+(``common.head_analysis.run_shared_catalog_head_analysis``).  It owns the
+``head_phase_provenance`` table and enforces the exact canonical-row predicate for every
+reader/report/fixture/coverage calculation.  Legacy archival machinery and the
+``run_id='legacy'`` concept are removed (corrective pass P1-S2): the surface only ever
+writes and reads canonical current rows.
 
-Table contract (D2)
+Table contract
+--------------
+``head_phase_provenance`` has exactly these named columns and **no** PRIMARY KEY /
+UNIQUE / index (DuckDB ART/WAL policy — application identity and uniqueness are asserted
+before commit):
+
+``run_id TEXT NOT NULL``, ``config_id INTEGER``, ``backbone TEXT NOT NULL``, ``head TEXT
+NOT NULL``, ``bin_mode TEXT NOT NULL``, ``threshold_configured DOUBLE``,
+``threshold_effective DOUBLE``, ``semantics TEXT``, ``boundary_source TEXT NOT NULL``,
+``head_pool_variant TEXT NOT NULL``, ``status TEXT NOT NULL``, ``reason TEXT``,
+``n_songs INTEGER NOT NULL``, ``n_pooled INTEGER NOT NULL``, ``finite INTEGER NOT NULL``,
+``scoring_semantics_version INTEGER NOT NULL``, ``reference_corpus_hash TEXT``, and
+``threshold DOUBLE``.
+
+The legacy ``threshold`` column is retained only as a null-for-canonical column (all
+canonical rows carry ``threshold IS NULL``); no code reads or writes it anymore.  The
+``run_id`` of every row is the integer-millisecond-timestamped run identity produced by
+the CLI caller (e.g. ``head-analysis-{started_at_ms}``).
+
+Canonical predicate
 -------------------
-``head_phase_provenance`` has exactly these 18 named columns and **no** PRIMARY
-KEY / UNIQUE / index:
+A canonical current row satisfies: ``config_id IS NOT NULL AND backbone = 'effnet' AND
+bin_mode IN TEMPORAL_BIN_MODES AND threshold_configured IS NOT NULL AND threshold_effective IS
+NOT NULL AND semantics IN PTC_SEMANTICS (direct_l2) AND boundary_source = 'catalog'
+AND head_pool_variant = 'shared_catalog_boundary'``.  Any row outside it is excluded
+from coverage reads (and, being read-only historical data, is unread at runtime).
 
-``run_id TEXT NOT NULL``, ``config_id INTEGER NULL``, ``backbone TEXT NOT NULL``,
-``head TEXT NOT NULL``, ``bin_mode TEXT NOT NULL``, ``threshold_configured
-DOUBLE NULL``, ``threshold_effective DOUBLE NULL``, ``semantics TEXT NULL``,
-``boundary_source TEXT NOT NULL``, ``head_pool_variant TEXT NOT NULL``, ``status
-TEXT NOT NULL``, ``reason TEXT NULL``, ``n_songs INTEGER NOT NULL``, ``n_pooled
-INTEGER NOT NULL``, ``finite INTEGER NOT NULL``, ``scoring_semantics_version
-INTEGER NOT NULL``, ``reference_corpus_hash TEXT NULL``, and legacy ``threshold
-DOUBLE NULL``.
+Application identity is ``(config_id, backbone, head, bin_mode, threshold_configured,
+threshold_effective, semantics, boundary_source, head_pool_variant)`` — ``run_id``
+excluded.  Incoming duplicate canonical identities are rejected; a rerun transactionally
+replaces only the prior canonical row for that identity.
 
-Row shapes (D1/D3)
-------------------
-* **Legacy archival** rows: ``run_id='legacy'``, legacy ``threshold`` populated,
-  canonical-only fields (``config_id`` / ``threshold_configured`` /
-  ``threshold_effective`` / ``semantics``) NULL.  They are read-only archival,
-  never updated, never active coverage, never converted.
-* **Canonical current** rows: non-legacy ``run_id``, ``config_id`` + current
-  threshold/semantics populated, legacy ``threshold`` NULL.  They must satisfy
-  the exact canonical predicate (below).  Only the canonical CPU runner writes
-  them.
-
-Canonical predicate (D3)
-------------------------
-``run_id <> 'legacy' AND config_id IS NOT NULL AND backbone = 'effnet' AND
-bin_mode IN ('temporal_global','temporal_perdim') AND threshold_configured IS
-NOT NULL AND threshold_effective IS NOT NULL AND semantics IN
-('direct_l2','std_scaled') AND boundary_source = 'effnet_ptc' AND
-head_pool_variant = 'shared_effnet_ptc_boundary' AND threshold IS NULL``.
-Rows outside it are archival/unclassified, preserved and excluded.
-
-Application identity (D3) is ``(config_id, backbone, head, bin_mode,
-threshold_configured, threshold_effective, semantics, boundary_source,
-head_pool_variant)`` — ``run_id`` excluded.  Incoming duplicate canonical
-identities are rejected; a rerun transactionally replaces only the prior current
-canonical row for that identity and never touches archival rows.
-
-The surface writes only to its own ``head_phase_provenance`` table and never
-modifies primary ``analyze_metrics`` rows, corpus hashes, catalog/membership, or
-any CTP storage.  Named-column writes mean DTO/DDL column order can differ.
+The surface writes only to its own ``head_phase_provenance`` table and never modifies
+primary ``analyze_metrics`` rows, corpus hashes, catalog/membership, or any CTP storage.
+Named-column writes mean DTO/DDL column order can differ.
 """
 
 from __future__ import annotations
 
 import contextlib
-import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from scripts.embedding_research.cache_identity import SCORING_SEMANTICS_VERSION
 from scripts.embedding_research.common.head_analysis import (
-    BOUNDARY_SOURCE_EFFNET_PTC,
+    BOUNDARY_SOURCE_CATALOG,
     HEAD_POOL_VARIANT,
-    PTC_BIN_MODES,
     PTC_SEMANTICS,
+    SCORING_SEMANTICS_VERSION,
+    TEMPORAL_BIN_MODES,
 )
 from scripts.embedding_research.helpers.thresholds import (
     canonical_float as _canonical_float,
@@ -75,30 +67,20 @@ if TYPE_CHECKING:
 __all__ = [
     "CANONICAL_HEAD_PHASE_WHERE",
     "HEAD_PHASE_PROVENANCE_COLUMNS",
-    "LEGACY_RUN_ID",
     "HeadPhaseProvenanceRow",
-    "append_head_phase_archival_rows",
-    "build_archival_provenance_rows",
     "build_head_phase_provenance_rows",
     "head_phase_config_key",
-    "is_canonical_row",
     "load_head_phase_provenance",
-    "load_head_phase_provenance_all",
-    "migrate_head_phase_provenance",
-    "query_head_phase_done",
     "write_head_phase_provenance",
 ]
 
 #: The single table this surface owns.
 HEAD_PHASE_TABLE = "head_phase_provenance"
 
-#: Sentinel ``run_id`` for read-only legacy archival rows.
-LEGACY_RUN_ID = "legacy"
-
 #: Allowed per-configuration head-phase status values.
 _HEAD_PHASE_STATUSES: frozenset[str] = frozenset({"done", "skipped", "error"})
 
-#: Exact 18-column superset (D2) — DDL order.  ``finite``/counts are INTEGER.
+#: Exact column set — DDL order.  ``finite``/counts are INTEGER.
 HEAD_PHASE_PROVENANCE_COLUMNS: tuple[str, ...] = (
     "run_id",
     "config_id",
@@ -120,19 +102,20 @@ HEAD_PHASE_PROVENANCE_COLUMNS: tuple[str, ...] = (
     "threshold",
 )
 
-#: The exact canonical-row WHERE clause (D3).  Readers, reports, fixtures and
-#: coverage calculations use it; rows outside it are archival/unclassified,
-#: preserved and excluded.
+_SEMANTICS_SQL = ", ".join(repr(s) for s in sorted(PTC_SEMANTICS))
+_BIN_MODES_SQL = ", ".join(repr(b) for b in sorted(TEMPORAL_BIN_MODES))
+
+#: The exact canonical-row WHERE clause.  Readers, reports, fixtures and coverage
+#: calculations use it; any row outside it is historical/unclassified and excluded.
 CANONICAL_HEAD_PHASE_WHERE = (
-    "run_id <> 'legacy'"
-    " AND config_id IS NOT NULL"
+    "config_id IS NOT NULL"
     " AND backbone = 'effnet'"
-    " AND bin_mode IN ('temporal_global', 'temporal_perdim')"
+    f" AND bin_mode IN ({_BIN_MODES_SQL})"
     " AND threshold_configured IS NOT NULL"
     " AND threshold_effective IS NOT NULL"
-    " AND semantics IN ('direct_l2', 'std_scaled')"
-    " AND boundary_source = 'effnet_ptc'"
-    " AND head_pool_variant = 'shared_effnet_ptc_boundary'"
+    f" AND semantics IN ({_SEMANTICS_SQL})"
+    " AND boundary_source = 'catalog'"
+    " AND head_pool_variant = 'shared_catalog_boundary'"
     " AND threshold IS NULL"
 )
 
@@ -141,23 +124,21 @@ _COLUMNS_SQL = ", ".join(HEAD_PHASE_PROVENANCE_COLUMNS)
 
 def head_phase_config_key(
     *,
-    config_id: int | None,
+    config_id: int,
     backbone: str,
     head: str,
     bin_mode: str,
-    threshold_configured: float | None,
-    threshold_effective: float | None,
-    semantics: str | None,
-    boundary_source: str = BOUNDARY_SOURCE_EFFNET_PTC,
+    threshold_configured: float,
+    threshold_effective: float,
+    semantics: str,
+    boundary_source: str = BOUNDARY_SOURCE_CATALOG,
     head_pool_variant: str = HEAD_POOL_VARIANT,
 ) -> str:
     """Application identity for one canonical head-phase tuple (``run_id`` excluded).
 
     The identity is ``(config_id, backbone, head, bin_mode, threshold_configured,
-    threshold_effective, semantics, boundary_source, head_pool_variant)``.  A rerun
-    of the same identity replaces the existing current row rather than creating a
-    second one.  Legacy archival rows never carry an identity (``config_id`` is
-    NULL) and are never passed here.
+    threshold_effective, semantics, boundary_source, head_pool_variant)``.  A rerun of the
+    same identity replaces the existing canonical row rather than creating a second one.
     """
     cfg = "none" if config_id is None else str(int(config_id))
     tc = "none" if threshold_configured is None else repr(float(_canonical_float(threshold_configured)))
@@ -168,14 +149,12 @@ def head_phase_config_key(
 
 @dataclass(frozen=True)
 class HeadPhaseProvenanceRow:
-    """One persisted ``head_phase_provenance`` row (canonical or legacy archival).
+    """One persisted canonical ``head_phase_provenance`` row.
 
-    ``finite`` is persisted as an INTEGER (1/0).  Legacy archival rows carry
-    ``run_id == LEGACY_RUN_ID``, a populated legacy ``threshold``, and NULL
-    canonical-only fields; canonical rows carry non-NULL current fields and a
-    NULL legacy ``threshold``.  This is a plain frozen container — shape
-    validation lives in :func:`write_head_phase_provenance` /
-    :func:`append_head_phase_archival_rows`.
+    ``finite`` is persisted as an INTEGER (1/0).  Canonical rows carry a non-NULL
+    ``config_id`` and current threshold/semantics and a NULL legacy ``threshold``.  This is
+    a plain frozen container — shape validation lives in
+    :func:`write_head_phase_provenance`.
     """
 
     run_id: str
@@ -186,7 +165,7 @@ class HeadPhaseProvenanceRow:
     threshold_configured: float | None = None
     threshold_effective: float | None = None
     semantics: str | None = None
-    boundary_source: str = BOUNDARY_SOURCE_EFFNET_PTC
+    boundary_source: str = BOUNDARY_SOURCE_CATALOG
     head_pool_variant: str = HEAD_POOL_VARIANT
     status: str = "done"
     reason: str | None = None
@@ -196,16 +175,6 @@ class HeadPhaseProvenanceRow:
     scoring_semantics_version: int = SCORING_SEMANTICS_VERSION
     reference_corpus_hash: str | None = None
     threshold: float | None = None
-
-    @property
-    def is_legacy(self) -> bool:
-        """True when this is a read-only legacy archival row."""
-        return self.run_id == LEGACY_RUN_ID
-
-    @property
-    def is_canonical(self) -> bool:
-        """True when the row satisfies the exact canonical-row predicate (D3)."""
-        return is_canonical_row(self)
 
     @property
     def config_key(self) -> str:
@@ -246,71 +215,45 @@ class HeadPhaseProvenanceRow:
         )
 
 
-def is_canonical_row(row: HeadPhaseProvenanceRow) -> bool:
-    """True when ``row`` satisfies the exact canonical-row predicate (D3)."""
-    return (
-        row.run_id != LEGACY_RUN_ID
-        and row.config_id is not None
-        and row.backbone == "effnet"
-        and row.bin_mode in PTC_BIN_MODES
-        and row.threshold_configured is not None
-        and row.threshold_effective is not None
-        and row.semantics in PTC_SEMANTICS
-        and row.boundary_source == BOUNDARY_SOURCE_EFFNET_PTC
-        and row.head_pool_variant == HEAD_POOL_VARIANT
-        and row.threshold is None
-    )
-
-
 def _require_text(value: object, name: str) -> str:
     if not isinstance(value, str) or not value:
         raise ValueError(f"head-phase row {name} must be a non-empty string; got {value!r}")
     return value
 
 
+def _is_canonical_fields(row: HeadPhaseProvenanceRow) -> bool:
+    return (
+        row.config_id is not None
+        and row.backbone == "effnet"
+        and row.bin_mode in TEMPORAL_BIN_MODES
+        and row.threshold_configured is not None
+        and row.threshold_effective is not None
+        and row.semantics in PTC_SEMANTICS
+        and row.boundary_source == BOUNDARY_SOURCE_CATALOG
+        and row.head_pool_variant == HEAD_POOL_VARIANT
+        and row.threshold is None
+    )
+
+
 def _validate_canonical_row(row: HeadPhaseProvenanceRow) -> None:
     """Raise unless ``row`` is a valid canonical current row."""
-    if row.run_id == LEGACY_RUN_ID:
-        raise ValueError(
-            f"legacy archival rows must be appended via append_head_phase_archival_rows, "
-            f"not written as canonical current rows (run_id={row.run_id!r})"
-        )
     _require_text(row.run_id, "run_id")
-    if not is_canonical_row(row):
+    if not _is_canonical_fields(row):
         raise ValueError(
             "canonical current row must satisfy the exact canonical predicate "
-            "(effnet, canonical bin_mode/semantics, non-NULL config_id + configured/effective "
-            "thresholds, effnet_ptc/shared_effnet_ptc_boundary, NULL legacy threshold); "
+            "(effnet, canonical bin_mode/direct-L2 semantics, non-NULL config_id + "
+            "configured/effective thresholds, catalog/shared_catalog_boundary, "
+            "NULL legacy threshold); "
             f"got run_id={row.run_id!r} config_id={row.config_id!r} backbone={row.backbone!r} "
             f"bin_mode={row.bin_mode!r} semantics={row.semantics!r} threshold={row.threshold!r}"
         )
     _validate_row_fields(row)
 
 
-def _validate_archival_row(row: HeadPhaseProvenanceRow) -> None:
-    """Raise unless ``row`` is a valid read-only legacy archival row."""
-    if row.run_id != LEGACY_RUN_ID:
-        raise ValueError(f"only run_id={LEGACY_RUN_ID!r} rows may be appended as archival; got {row.run_id!r}")
-    _require_text(row.backbone, "backbone")
-    _require_text(row.head, "head")
-    _require_text(row.bin_mode, "bin_mode")
-    if row.config_id is not None or row.threshold_configured is not None:
-        raise ValueError(
-            "legacy archival rows must keep canonical-only fields NULL "
-            "(config_id/threshold_configured/threshold_effective/semantics)"
-        )
-    if row.threshold is None:
-        raise ValueError("legacy archival rows must populate the legacy threshold")
-    th = float(row.threshold)
-    if not math.isfinite(th):
-        raise ValueError(f"legacy archival row threshold must be finite; got {row.threshold!r}")
-    _validate_row_fields(row)
-
-
 def _validate_row_fields(row: HeadPhaseProvenanceRow) -> None:
-    if row.boundary_source != BOUNDARY_SOURCE_EFFNET_PTC:
+    if row.boundary_source != BOUNDARY_SOURCE_CATALOG:
         raise ValueError(
-            f"head-phase row boundary_source must be {BOUNDARY_SOURCE_EFFNET_PTC!r}; "
+            f"head-phase row boundary_source must be {BOUNDARY_SOURCE_CATALOG!r}; "
             f"got {row.boundary_source!r} (CTP cache paths must never be repurposed)"
         )
     if row.head_pool_variant != HEAD_POOL_VARIANT:
@@ -351,16 +294,14 @@ def write_head_phase_provenance(con, rows: Iterable[HeadPhaseProvenanceRow]) -> 
     """Persist **canonical current** rows (transactional, replace-same-identity).
 
     Re-validates every row (canonical shape, fixed boundary/variant labels,
-    finite/range counts).  Incoming duplicate canonical identities are rejected
-    with ``ValueError``.  For each identity the prior current canonical row
-    (``run_id <> 'legacy'``) is replaced inside the SAME transaction as the
-    insert; legacy archival rows are never read/touched.  A missing/non-18-col
-    table or any DB error rolls back atomically.
+    finite/range counts).  Incoming duplicate canonical identities are rejected with
+    ``ValueError``.  For each identity the prior canonical row is replaced inside the SAME
+    transaction as the insert.  A missing/non-shaped table or any DB error rolls back
+    atomically.
     """
     materialized = [r if isinstance(r, HeadPhaseProvenanceRow) else HeadPhaseProvenanceRow(**dict(r)) for r in rows]
     if not materialized:
         return
-    # Enforce the exact canonical predicate on every incoming row.
     for r in materialized:
         _validate_canonical_row(r)
     seen: dict[str, HeadPhaseProvenanceRow] = {}
@@ -380,7 +321,7 @@ def write_head_phase_provenance(con, rows: Iterable[HeadPhaseProvenanceRow]) -> 
                 "DELETE FROM head_phase_provenance WHERE "
                 "config_id = ? AND backbone = ? AND head = ? AND bin_mode = ? "
                 "AND threshold_configured = ? AND threshold_effective = ? AND semantics = ? "
-                "AND boundary_source = ? AND head_pool_variant = ? AND run_id <> ?",
+                "AND boundary_source = ? AND head_pool_variant = ?",
                 (
                     r.config_id,
                     r.backbone,
@@ -391,7 +332,6 @@ def write_head_phase_provenance(con, rows: Iterable[HeadPhaseProvenanceRow]) -> 
                     r.semantics,
                     r.boundary_source,
                     r.head_pool_variant,
-                    LEGACY_RUN_ID,
                 ),
             )
         con.executemany(
@@ -400,36 +340,15 @@ def write_head_phase_provenance(con, rows: Iterable[HeadPhaseProvenanceRow]) -> 
         )
 
 
-def append_head_phase_archival_rows(con, rows: Iterable[HeadPhaseProvenanceRow]) -> None:
-    """Append **read-only legacy archival** rows (``run_id='legacy'``).
-
-    Plain inserts — archival rows are never updated, never active coverage, never
-    converted.  The legacy classify runner and legacy ``run.py`` glue use this to
-    append old-shape archival provenance only; it never creates a canonical
-    current row.
-    """
-    materialized = [r if isinstance(r, HeadPhaseProvenanceRow) else HeadPhaseProvenanceRow(**dict(r)) for r in rows]
-    if not materialized:
-        return
-    for r in materialized:
-        _validate_archival_row(r)
-    cols = ", ".join(HEAD_PHASE_PROVENANCE_COLUMNS)
-    placeholders = ", ".join("?" for _ in HEAD_PHASE_PROVENANCE_COLUMNS)
-    con.executemany(
-        f"INSERT INTO head_phase_provenance ({cols}) VALUES ({placeholders})",
-        [r.to_tuple() for r in materialized],
-    )
-
-
 def build_head_phase_provenance_rows(
     manifest: Any,
     reference_corpus_hash: str | None = None,
 ) -> list[HeadPhaseProvenanceRow]:
-    """Convert a canonical :class:`HeadPhaseManifest` to canonical current rows.
+    """Convert a canonical :class:`HeadAnalysisManifest` to canonical current rows.
 
-    Each ``manifest.results`` record (a ``common.head_analysis.HeadPhaseConfigRecord``)
-    becomes one canonical row keyed by its config identity, with the manifest's
-    ``run_id`` and scoring-semantics version.
+    Each ``manifest.results`` record (a ``common.head_analysis.HeadAnalysisConfigRecord``)
+    becomes one canonical row keyed by its config identity, with the manifest's ``run_id``
+    and scoring-semantics version.
     """
     return [
         HeadPhaseProvenanceRow(
@@ -453,44 +372,6 @@ def build_head_phase_provenance_rows(
             threshold=None,
         )
         for rec in manifest.results
-    ]
-
-
-def build_archival_provenance_rows(
-    legacy_manifest: Any,
-    reference_corpus_hash: str | None = None,
-) -> list[HeadPhaseProvenanceRow]:
-    """Convert a **legacy** (``head_pooling``) manifest to archival rows.
-
-    Used by the legacy ``run.py`` head-phase glue: the legacy manifest's results
-    carry ``backbone/head/bin_mode/threshold/boundary_source/head_pool_variant/
-    status/reason/n_songs/n_pooled/finite``.  Produced rows are ``run_id='legacy'``
-    with the legacy ``threshold`` populated and canonical-only fields NULL.
-    """
-    return [
-        HeadPhaseProvenanceRow(
-            run_id=LEGACY_RUN_ID,
-            config_id=None,
-            backbone=rec.backbone,
-            head=rec.head,
-            bin_mode=rec.bin_mode,
-            threshold_configured=None,
-            threshold_effective=None,
-            semantics=None,
-            boundary_source=getattr(rec, "boundary_source", BOUNDARY_SOURCE_EFFNET_PTC),
-            # The legacy head_pooling record has no head_pool_variant attr; the archival
-            # label is fixed to the shared-boundary variant constant.
-            head_pool_variant=HEAD_POOL_VARIANT,
-            status=rec.status,
-            reason=rec.reason or None,
-            n_songs=rec.n_songs,
-            n_pooled=rec.n_pooled,
-            finite=bool(rec.finite),
-            scoring_semantics_version=legacy_manifest.scoring_semantics_version,
-            reference_corpus_hash=reference_corpus_hash,
-            threshold=rec.threshold,
-        )
-        for rec in legacy_manifest.results
     ]
 
 
@@ -520,8 +401,8 @@ def _from_row_tuple(values: tuple[Any, ...]) -> HeadPhaseProvenanceRow:
 def load_head_phase_provenance(con) -> list[HeadPhaseProvenanceRow]:
     """Load the **canonical current** rows (exact canonical predicate), ordered.
 
-    Archival/unclassified rows are preserved in the table but excluded here, per
-    D3.  Used by the coverage report / readers / fixtures.
+    Any historical/unclassified row is preserved in the table but excluded here.  Used by
+    the coverage report / readers / fixtures.
     """
     rows = con.execute(
         f"SELECT {_COLUMNS_SQL} FROM {HEAD_PHASE_TABLE} "
@@ -529,42 +410,3 @@ def load_head_phase_provenance(con) -> list[HeadPhaseProvenanceRow]:
         "ORDER BY config_id, backbone, head, bin_mode"
     ).fetchall()
     return [_from_row_tuple(tuple(r)) for r in rows]
-
-
-def load_head_phase_provenance_all(con) -> list[HeadPhaseProvenanceRow]:
-    """Load **every** row (canonical current + legacy archival/unclassified).
-
-    Intended for migration verification and archival-preservation checks; normal
-    coverage reads use :func:`load_head_phase_provenance`.
-    """
-    rows = con.execute(
-        f"SELECT {_COLUMNS_SQL} FROM {HEAD_PHASE_TABLE} ORDER BY run_id, config_id, backbone, head, bin_mode"
-    ).fetchall()
-    return [_from_row_tuple(tuple(r)) for r in rows]
-
-
-def query_head_phase_done(con) -> set[str]:
-    """Return config keys of canonical rows with status ``done`` (phase-done check).
-
-    A missing table yields an empty set.  Legacy archival rows never count as
-    current coverage and are excluded.
-    """
-    try:
-        rows = con.execute(
-            f"SELECT {_COLUMNS_SQL} FROM {HEAD_PHASE_TABLE} WHERE {CANONICAL_HEAD_PHASE_WHERE} AND status = 'done'"
-        ).fetchall()
-    except Exception:
-        return set()
-    return {_from_row_tuple(tuple(r)).config_key for r in rows}
-
-
-def migrate_head_phase_provenance(con) -> int:
-    """Migrate an old-format ``head_phase_provenance`` to the 18-col superset.
-
-    Delegates to the authoritative backup-first migration in ``_schema`` (which
-    owns the DDL).  Returns the number of rows migrated; ``0`` when the table is
-    absent or already in 18-column shape.  Idempotent.
-    """
-    from scripts.embedding_research.db._schema import migrate_head_phase_provenance as _migrate
-
-    return _migrate(con)

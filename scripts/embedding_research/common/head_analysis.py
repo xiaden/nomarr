@@ -1,39 +1,52 @@
-"""Canonical CPU shared-boundary head analysis (Plan E, Phase 1) — the ACTIVE home.
+"""Canonical CPU catalog-scoped head analysis (Plan E P1-S1/P1-S2) — the ACTIVE home.
 
 This module is the sole **active** home for the CPU head-analysis surface: the
-boundary/variant constants, the per-segment/head value object
-(:class:`HeadBoundaryPoolResult`), the pure exact-membership pooling helper
-(:func:`pool_head_outputs_over_ptc_boundaries`), the per-configuration record
-(:class:`HeadPhaseConfigRecord`) and the orchestration manifest
-(:class:`HeadPhaseManifest`).
+boundary/variant constants, the per-configuration coverage record
+(:class:`HeadAnalysisConfigRecord`), the orchestration manifest
+(:class:`HeadAnalysisManifest`) and the CPU-only catalog runner
+:func:`run_shared_catalog_head_analysis`.
 
-Design rules (DD R4/R5/R13 + the Plan E Phase 1 contract):
-* Head membership is defined **only** by the authoritative ``seg_membership``
-  relation (exact observed ``member_patch_idx`` rows, including absorbed
-  outliers).  Inclusive ``seg_meta.start_idx/end_idx`` are structural report
-  ranges only and are never accepted or inspected here.
-* The operation is **CPU-only and derived**: it consumes frozen ready head
-  streams and catalog scalar rows only.  It never discovers audio, loads models,
-  runs ONNX/CUDA/sklearn, invokes segmentation or CTP, reads artifact paths, or
-  infers membership.
-* Pooled values are **transient** on-demand search-view values: they are never
-  persisted as vectors/cache files or copied medoids.  The only durable
-  head-analysis sink is non-blocking coverage/skip provenance in
-  ``head_phase_provenance``.
-* ``act[1]`` is the class-1 probability (never ``act[0]``).  Every emitted
-  numeric value is finite and JSON-safe.  No new PK/UNIQUE/index is introduced.
+Design rules (parts CONTRACTS §E + the corrective exact-``M_g`` rewire):
+* Head membership is defined **only** by each compact segment's exact searchable
+  set ``M_g = structural[start_idx, end_idx) - absorbed_indices - {mask[i] == 0}``
+  reconstructed via ``helpers.segmentation.reconstruct_searchable_indices`` from the
+  COMPACT ``seg_meta`` rows.  ``start_idx/end_idx`` are structural report ranges that
+  only seed the reconstruction; they are never an inclusive membership authority.
+  There is no ``seg_membership`` table and no inclusive/absorbed-inclusive range is
+  ever pooled.
+* The retained research path has **no committed silence-mask loader** and the §E
+  signature deliberately provides no per-song mask seam, so the runner reconstructs
+  the same membership the compact catalog itself encodes at build time
+  (``mask=None`` => ``M_g = structural[start_idx, end_idx) - absorbed_indices``).
+  Absorbed-outlier rows are always excluded; the "same silence/outlier exclusions"
+  wording means the head gather uses exactly the catalog's searchable indices, never
+  an inclusive range.
+* Config eligibility is canonical/config-keyed: only COMPACT canonical configs with a
+  non-empty ``canonical_config_hash`` and the direct-L2 PTC semantics / bin mode /
+  strategy version are pooled over.  ``alias_of_config_id``/durable aliases/calibration
+  columns are never read.
+* The operation is **CPU-only and derived**: it consumes frozen ready head streams and
+  compact catalog rows only.  It never discovers audio, loads models, runs
+  ONNX/CUDA/sklearn, invokes segmentation or CTP, reads artifact paths, or infers
+  membership.
+* Pooled values are **transient** and never persisted as vectors/cache files or copied
+  medoids.  The only durable head-analysis sink is canonical coverage/skip provenance
+  in ``head_phase_provenance`` written by ``db/head_phase.py`` (the caller persists the
+  returned manifest).
+* The class-1 head value is taken from ``act[1]`` (never ``act[0]``) of each gathered
+  head array; the concatenated ``HeadStreamStore.batch_gather`` columns are in canonical
+  head order and sliced per head by ``dim_by_head``.  Every emitted numeric value is
+  finite and JSON-safe.  No new PK/UNIQUE/index is introduced.
 
-The canonical CPU runner (``run_shared_ptc_head_pooling``) and the named-column
-persistence migration live alongside this pure surface in the same active
-change; the legacy live-ONNX cache/range runner (``classify.run_shared_ptc_head_pooling``)
-and the top-level ``head_pooling.py`` legacy surface remain only as interim
-migration infrastructure until the Plan E CLI rewrite (Phase 4).
+The legacy live-ONNX cache/range runner (``classify.run_shared_ptc_head_pooling``), the
+top-level ``head_pooling.py`` legacy surface, and the retired
+``pool_head_outputs_over_ptc_boundaries`` / ``run_shared_ptc_head_pooling`` symbols from
+this module are deleted with the inclusive pooling paths (P1-S2).
 """
 
 from __future__ import annotations
 
 import json
-import math
 from dataclasses import dataclass
 from typing import Any
 
@@ -42,44 +55,45 @@ import numpy as np
 from scripts.embedding_research.helpers.thresholds import (
     canonical_float as _canonical_float,
 )
-from scripts.embedding_research.helpers.thresholds import (
-    canonical_semantics as _canonical_semantics,
-)
 
 __all__ = [
-    "BOUNDARY_SOURCE_EFFNET_PTC",
+    "BOUNDARY_SOURCE_CATALOG",
     "HEAD_POOL_VARIANT",
-    "PTC_BIN_MODES",
     "PTC_SEMANTICS",
-    "HeadBoundaryPoolResult",
-    "HeadPhaseConfigRecord",
-    "HeadPhaseManifest",
-    "pool_head_outputs_over_ptc_boundaries",
-    "run_shared_ptc_head_pooling",
+    "TEMPORAL_BIN_MODES",
+    "HeadAnalysisConfigRecord",
+    "HeadAnalysisManifest",
+    "run_shared_catalog_head_analysis",
 ]
 
-#: The only boundary source this phase may consume.  CTP boundaries are never
-#: accepted or produced, and no head-specific-segmentation boundary exists.
-BOUNDARY_SOURCE_EFFNET_PTC = "effnet_ptc"
+#: The only boundary source this phase may consume.  CTP boundaries are never accepted
+#: or produced, and no head-specific-segmentation boundary exists.
+BOUNDARY_SOURCE_CATALOG = "catalog"
 
-#: The single explicit label for the shared-boundary head-pooling variant.  It is
-#: part of the head-phase configuration identity and is deliberately disjoint from
-#: any hypothetical head-specific-segmentation variant: this phase pools over the
-#: *already-produced* EffNet PTC boundaries (exact membership) and never creates
+#: The single explicit label for the shared-boundary head-pooling variant.  It is part of
+#: the head-phase configuration identity and is deliberately disjoint from any
+#: hypothetical head-specific-segmentation variant: this phase pools over the
+#: *already-produced* compact-catalog boundaries (exact membership) and never creates
 #: head-specific bins.
-HEAD_POOL_VARIANT = "shared_effnet_ptc_boundary"
+HEAD_POOL_VARIANT = "shared_catalog_boundary"
 
-#: Canonical EffNet PTC ``seg_config`` ``bin_mode`` values eligible for the shared
-#: CPU head analysis (``temporal_global`` / ``temporal_perdim`` running-centroid
-#: PTC tracks).  Other bin modes are never selected.
-PTC_BIN_MODES: frozenset[str] = frozenset({"temporal_global", "temporal_perdim"})
+#: Canonical EffNet ``seg_config`` ``bin_mode`` values eligible for the shared CPU
+#: head analysis.  Other bin modes are never selected.
+TEMPORAL_BIN_MODES: frozenset[str] = frozenset({"temporal_global", "temporal_perdim"})
 
-#: Canonical threshold-semantics labels eligible for the shared CPU head analysis
-#: (``direct_l2`` is the new default; ``std_scaled`` is explicit legacy-fidelity).
-PTC_SEMANTICS: frozenset[str] = frozenset({"direct_l2", "std_scaled"})
+#: Canonical threshold-semantics labels eligible for the shared CPU head analysis.  The
+#: corrective pass is direct-L2 only: ``std_scaled`` and calibration semantics are gone
+#: (DD R3), so only ``direct_l2`` is admissible.
+PTC_SEMANTICS: frozenset[str] = frozenset({"direct_l2"})
 
-#: Class-1 lives at index 1 of the head-activation vector; ``act[0]`` is never
-#: the class-1 value.
+#: Scoring-input semantics contract version for the canonical CPU head-analysis manifest.
+#: This module is the active owner (formerly ``cache_identity.SCORING_SEMANTICS_VERSION``,
+#: deleted with the cache layer in the corrective-pass hard cut).  The value stays pinned
+#: to the search-view / bounded-scoring semantics version (1).
+SCORING_SEMANTICS_VERSION: int = 1
+
+#: Class-1 lives at index 1 of the head-activation vector; ``act[0]`` is never the
+#: class-1 value.
 _CLASS1_INDEX = 1
 
 #: Per-configuration head-phase status vocabulary (mirrors the persistence row).
@@ -87,74 +101,29 @@ _HEAD_PHASE_STATUSES: frozenset[str] = frozenset({"done", "skipped", "error"})
 
 
 # --------------------------------------------------------------------------- #
-# Pure exact-membership value object + pooling helper (P1-S1)                  #
+# Transient per-segment pooling (internal)                                     #
 # --------------------------------------------------------------------------- #
 
 
 @dataclass(frozen=True)
-class HeadBoundaryPoolResult:
-    """One transient pooled head value for one exact segment/head membership.
+class _SegmentPooledHead:
+    """One transient pooled class-1 value for one exact segment membership.
 
     ``acts`` is the float32 ``[C]`` mean head-activation vector over the exact
-    observed member rows (row ``i`` is the activation of source patch
-    ``member_patch_indices[i]``).  ``class1`` is the scalar class-1 value taken
-    from ``acts[_CLASS1_INDEX]`` (the mean of ``act[1]`` over the members) —
-    never ``act[0]``.  ``weight`` is the integer patch weight (equal to the
-    number of exact members, absorbed outliers included).  ``member_patch_indices``
-    and ``is_absorbed_outlier`` are the co-indexed exact observed membership.
-    ``finite`` is True only when every emitted numeric value is finite.
-    ``boundary_source`` is fixed.
+    reconstructed searchable member rows (row ``i`` is the activation of source patch
+    ``member_patch_indices[i]``).  ``class1`` is the scalar class-1 value taken from
+    ``acts[_CLASS1_INDEX]`` (the mean of ``act[1]`` over the members) — never
+    ``act[0]``.  ``weight`` is the searchable count ``|M_g|``.  ``finite`` is True only
+    when every emitted numeric value is finite.  This object is transient: it is never
+    persisted or returned in the orchestration manifest.
     """
 
     acts: np.ndarray
     class1: float
     weight: int
     member_patch_indices: tuple[int, ...]
-    is_absorbed_outlier: tuple[bool, ...]
     segment_id: int
     finite: bool
-    boundary_source: str = BOUNDARY_SOURCE_EFFNET_PTC
-
-    def __post_init__(self) -> None:
-        if self.boundary_source != BOUNDARY_SOURCE_EFFNET_PTC:
-            raise ValueError(
-                f"HeadBoundaryPoolResult boundary_source must be "
-                f"{BOUNDARY_SOURCE_EFFNET_PTC!r}; got {self.boundary_source!r} (CTP never used)"
-            )
-        acts = np.asarray(self.acts, dtype=np.float32)
-        if acts.ndim != 1:
-            raise ValueError(f"pooled acts must be 1-D [C]; got ndim={acts.ndim}")
-        object.__setattr__(self, "acts", acts)
-        if len(acts) < 1:
-            raise ValueError("pooled acts must have at least one class column")
-        if not np.all(np.isfinite(acts)):
-            raise ValueError("pooled acts must be finite (no NaN/Inf)")
-        if not math.isfinite(float(self.class1)):
-            raise ValueError("class1 must be finite")
-        object.__setattr__(self, "class1", float(self.class1))
-        if isinstance(self.weight, bool) or not isinstance(self.weight, int) or self.weight < 1:
-            raise ValueError(f"weight must be a positive integer; got {self.weight!r}")
-        if isinstance(self.segment_id, bool) or not isinstance(self.segment_id, int) or self.segment_id < 0:
-            raise ValueError(f"segment_id must be a non-negative integer; got {self.segment_id!r}")
-        member_len = len(self.member_patch_indices)
-        if member_len == 0:
-            raise ValueError("member_patch_indices must not be empty")
-        if member_len != int(self.weight):
-            raise ValueError(
-                f"weight ({self.weight}) must equal the number of exact member rows "
-                f"({member_len}) including absorbed outliers"
-            )
-        if len(self.is_absorbed_outlier) != member_len:
-            raise ValueError(
-                f"is_absorbed_outlier must be co-indexed with member_patch_indices: "
-                f"{len(self.is_absorbed_outlier)} flags for {member_len} members"
-            )
-        if not all(isinstance(f, bool) for f in self.is_absorbed_outlier):
-            raise ValueError("is_absorbed_outlier entries must be bool")
-        if not all(isinstance(i, bool) or (isinstance(i, int) and i >= 0) for i in self.member_patch_indices):
-            raise ValueError("member_patch_indices must be non-negative integers")
-        if len(set(self.member_patch_indices)) != member_len:
-            raise ValueError("member_patch_indices must be unique observed source indices")
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -162,72 +131,47 @@ class HeadBoundaryPoolResult:
             "class1": float(self.class1),
             "weight": int(self.weight),
             "member_patch_indices": [int(i) for i in self.member_patch_indices],
-            "is_absorbed_outlier": [bool(f) for f in self.is_absorbed_outlier],
             "segment_id": int(self.segment_id),
             "finite": bool(self.finite),
-            "boundary_source": self.boundary_source,
         }
 
     def to_json(self) -> str:
         return json.dumps(self.to_dict(), sort_keys=True)
 
 
-def pool_head_outputs_over_ptc_boundaries(
+def _pool_segment_heads(
     acts: np.ndarray,
     member_patch_indices: Any,
     *,
     segment_id: int,
-    weight: int,
-    is_absorbed_outlier: Any,
-) -> HeadBoundaryPoolResult:
-    """Pool head outputs over one exact PTC-boundary membership (pure).
+) -> _SegmentPooledHead:
+    """Pool the class-1 head value over one exact segment membership (pure, internal).
 
-    ``acts`` must already be gathered **in the exact ``seg_membership`` order**:
+    ``acts`` must already be gathered **in the exact reconstructed ``M_g`` order**:
     finite float32 ``[N, C]`` where row ``i`` is the activation of source patch
-    ``member_patch_indices[i]`` (absorbed outliers included).  The helper pools
-    exactly those rows and never inspects ``start_idx/end_idx``, never infers
-    membership, and performs no IO/audio/model/ONNX/CUDA/segmentation/CTP.
-
-    Parameters
-    ----------
-    acts:
-        ``[N, C] float32`` — the already-gathered exact member rows for one
-        segment (finite, at least one row).
-    member_patch_indices:
-        Length-``N`` observed, non-negative, unique source patch indices,
-        co-indexed with the rows of ``acts``.
-    segment_id:
-        Non-negative integer segment identity.
-    weight:
-        Positive integer patch weight; must equal ``N`` (including absorbed
-        outliers).
-    is_absorbed_outlier:
-        Length-``N`` bool flags co-indexed with ``member_patch_indices``.
-
-    Returns
-    -------
-    :class:`HeadBoundaryPoolResult` with the float32 ``[C]`` mean activation,
-    scalar class-1 from ``act[1]`` (never ``act[0]``), the integer weight, the
-    exact source-index and outlier-flag tuples, the segment id, and ``finite``
-    provenance.
+    ``member_patch_indices[i]`` (the segment's searchable members only; absorbed and
+    mask-silent rows are excluded upstream).  The mean is over exactly those rows and
+    the class-1 value is ``acts.mean(axis=0)[_CLASS1_INDEX]`` — never ``act[0]``.  This
+    performs no IO/audio/model/ONNX/CUDA/segmentation/CTP.
 
     Raises
     ------
     ValueError
-        On malformed input: non-finite / wrong-rank / empty acts, non-co-indexed
-        or non-unique or negative membership indices, flag/weight mismatch, or a
-        non-integer segment id.
+        On malformed input: non-finite / wrong-rank / empty acts, non-co-indexed or
+        non-unique or negative membership indices, or a negative segment id.
     """
     acts_f = np.asarray(acts, dtype=np.float32)
     if acts_f.ndim != 2:
-        raise ValueError(f"acts must be 2-D [N, C]; got ndim={acts_f.ndim}")
+        raise ValueError(f"gathered head rows must be 2-D [N, C]; got ndim={acts_f.ndim}")
     n_rows = int(acts_f.shape[0])
     if n_rows == 0:
-        raise ValueError("acts must contain at least one exact member row")
+        raise ValueError("gathered head rows must contain at least one exact member row")
     if acts_f.shape[1] < 1:
-        raise ValueError("acts must have at least one class column")
+        raise ValueError("gathered head rows must have at least one class column")
     if not np.all(np.isfinite(acts_f)):
-        raise ValueError("acts must be finite (no NaN/Inf)")
+        raise ValueError("gathered head rows must be finite (no NaN/Inf)")
+    if isinstance(segment_id, bool) or not isinstance(segment_id, int) or segment_id < 0:
+        raise ValueError(f"segment_id must be a non-negative integer; got {segment_id!r}")
 
     member_ids = tuple(int(i) for i in member_patch_indices)
     if len(member_ids) != n_rows:
@@ -240,51 +184,36 @@ def pool_head_outputs_over_ptc_boundaries(
     if len(set(member_ids)) != n_rows:
         raise ValueError("member_patch_indices must be unique observed source indices")
 
-    flags = tuple(bool(f) for f in is_absorbed_outlier)
-    if len(flags) != n_rows:
-        raise ValueError(
-            f"is_absorbed_outlier must be co-indexed with member_patch_indices: {len(flags)} flags for {n_rows} members"
-        )
-    if isinstance(weight, bool) or not isinstance(weight, int) or weight != n_rows:
-        raise ValueError(
-            f"weight ({weight!r}) must equal the number of exact member rows ({n_rows}) including absorbed outliers"
-        )
-    if isinstance(segment_id, bool) or not isinstance(segment_id, int) or segment_id < 0:
-        raise ValueError(f"segment_id must be a non-negative integer; got {segment_id!r}")
-
     # Mean over the exact gathered member rows -> one pooled vector per segment.
     pooled = acts_f.mean(axis=0).astype(np.float32)
     class1 = float(pooled[_CLASS1_INDEX])  # act[1], never act[0]
-    finite = bool(np.all(np.isfinite(pooled)) and math.isfinite(class1))
+    finite = bool(np.all(np.isfinite(pooled)))
 
-    return HeadBoundaryPoolResult(
+    return _SegmentPooledHead(
         acts=pooled,
         class1=class1,
-        weight=int(weight),
+        weight=n_rows,
         member_patch_indices=member_ids,
-        is_absorbed_outlier=flags,
         segment_id=int(segment_id),
         finite=finite,
-        boundary_source=BOUNDARY_SOURCE_EFFNET_PTC,
     )
 
 
 # --------------------------------------------------------------------------- #
-# Per-configuration outcome + orchestration manifest (P1-S3)                   #
+# Per-configuration outcome + orchestration manifest (P1-S1)                   #
 # --------------------------------------------------------------------------- #
 
 
 @dataclass(frozen=True)
-class HeadPhaseConfigRecord:
-    """One auditable per-(config, head) outcome of the shared-boundary phase.
+class HeadAnalysisConfigRecord:
+    """One auditable per-(config, head) outcome of the catalog-scoped head phase.
 
-    ``config_id`` is the application identity of the selected canonical
-    ``seg_config`` the head output was pooled over; ``threshold_configured`` /
-    ``threshold_effective`` / ``semantics`` carry that config's resolved
-    threshold identity.  ``status`` is one of ``"done"`` (at least one song
-    pooled), ``"skipped"`` (attempted but nothing pooled), or ``"error"`` (a
-    song's membership/pooling failed validation).  ``reason`` records the
-    skip/error explanation for the report/manifest.
+    ``config_id`` is the application identity of the selected canonical ``seg_config``
+    the head output was pooled over; ``threshold_configured`` / ``threshold_effective``
+    / ``semantics`` carry that config's resolved direct-L2 threshold identity.
+    ``status`` is one of ``"done"`` (at least one song pooled), ``"skipped"`` (attempted
+    but nothing pooled), or ``"error"`` (a song's membership/pooling failed validation).
+    ``reason`` records the skip/error explanation for the manifest.
     """
 
     config_id: int
@@ -299,25 +228,28 @@ class HeadPhaseConfigRecord:
     n_songs: int
     n_pooled: int
     finite: bool
-    boundary_source: str = BOUNDARY_SOURCE_EFFNET_PTC
+    boundary_source: str = BOUNDARY_SOURCE_CATALOG
     head_pool_variant: str = HEAD_POOL_VARIANT
 
     def __post_init__(self) -> None:
-        if self.boundary_source != BOUNDARY_SOURCE_EFFNET_PTC:
+        if self.boundary_source != BOUNDARY_SOURCE_CATALOG:
             raise ValueError(
-                f"head-phase config record boundary_source must be "
-                f"{BOUNDARY_SOURCE_EFFNET_PTC!r}; got {self.boundary_source!r} (CTP never used)"
+                f"head-analysis config record boundary_source must be "
+                f"{BOUNDARY_SOURCE_CATALOG!r}; got {self.boundary_source!r} (CTP never used)"
             )
         if self.head_pool_variant != HEAD_POOL_VARIANT:
             raise ValueError(
-                f"head-phase config record head_pool_variant must be {HEAD_POOL_VARIANT!r}; "
+                f"head-analysis config record head_pool_variant must be {HEAD_POOL_VARIANT!r}; "
                 f"got {self.head_pool_variant!r} (head-specific segmentation is not a shared-boundary row)"
             )
         if self.status not in _HEAD_PHASE_STATUSES:
             raise ValueError(
-                f"head-phase config record status must be one of {sorted(_HEAD_PHASE_STATUSES)}; got {self.status!r}"
+                f"head-analysis config record status must be one of {sorted(_HEAD_PHASE_STATUSES)}; got {self.status!r}"
             )
-        _canonical_semantics(self.semantics)
+        if self.semantics not in PTC_SEMANTICS:
+            raise ValueError(
+                f"head-analysis config record semantics must be one of {sorted(PTC_SEMANTICS)}; got {self.semantics!r}"
+            )
         object.__setattr__(self, "threshold_configured", float(_canonical_float(self.threshold_configured)))
         object.__setattr__(self, "threshold_effective", float(_canonical_float(self.threshold_effective)))
         if isinstance(self.config_id, bool) or not isinstance(self.config_id, int) or self.config_id < 0:
@@ -349,45 +281,38 @@ class HeadPhaseConfigRecord:
 
 
 @dataclass(frozen=True)
-class HeadPhaseManifest:
-    """JSON-safe, deterministic manifest of a canonical shared-boundary head run.
+class HeadAnalysisManifest:
+    """JSON-safe, deterministic manifest of a canonical catalog-scoped head run.
 
-    Records the ``run_id``, the selected canonical ``config_ids``, the sorted
-    head dimensions observed, the per-(config, head) outcomes, and every
-    skip/error reason.  ``primary_analysis_succeeded`` is always True: this
-    optional phase is non-blocking and never mutates the primary corpus/winner
-    rows.
+    Records the ``run_id``, the selected canonical ``config_ids``, the
+    per-(config, head) coverage outcomes, and every deterministic skip/error reason.
+    No pooled vector or medoid value is persisted in this manifest: pooled values are
+    transient.
     """
 
     run_id: str
     config_ids: tuple[int, ...]
-    dimensions: tuple[int, ...]
     boundary_source: str
     head_pool_variant: str
     backbones: tuple[str, ...]
     heads: tuple[str, ...]
-    bin_modes: tuple[str, ...]
     song_ids: tuple[str, ...]
     scoring_semantics_version: int
-    results: tuple[HeadPhaseConfigRecord, ...]
+    results: tuple[HeadAnalysisConfigRecord, ...]
     skip_reasons: tuple[tuple[str, str], ...]
     done: int
     skipped: int
     errors: int
     finite: bool
-    reference_corpus_hash: str | None = None
-    primary_analysis_succeeded: bool = True
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "run_id": self.run_id,
             "config_ids": [int(c) for c in self.config_ids],
-            "dimensions": [int(d) for d in self.dimensions],
             "boundary_source": self.boundary_source,
             "head_pool_variant": self.head_pool_variant,
             "backbones": list(self.backbones),
             "heads": list(self.heads),
-            "bin_modes": list(self.bin_modes),
             "song_ids": list(self.song_ids),
             "scoring_semantics_version": int(self.scoring_semantics_version),
             "results": [r.to_dict() for r in self.results],
@@ -396,8 +321,6 @@ class HeadPhaseManifest:
             "skipped": int(self.skipped),
             "errors": int(self.errors),
             "finite": bool(self.finite),
-            "reference_corpus_hash": self.reference_corpus_hash,
-            "primary_analysis_succeeded": bool(self.primary_analysis_succeeded),
         }
 
     def to_json(self) -> str:
@@ -405,62 +328,99 @@ class HeadPhaseManifest:
 
 
 # --------------------------------------------------------------------------- #
-# Canonical CPU runner (P1-S2)                                                 #
+# Canonical CPU catalog runner (P1-S1)                                         #
 # --------------------------------------------------------------------------- #
 
 
-def _collect_segment_membership(con, config_id: int, song_id: str, membership_fn, segments_fn):
-    """Yield exact per-segment membership for one (config, song).
+def _collect_segment_membership(con, config_id: int, song_id: str, segments_fn, reconstruct_fn, patch_count):
+    """Yield each compact segment's exact reconstructed searchable membership ``M_g``.
 
-    Yields ``(seg_id, member_indices, outlier_flags, weight)`` in ascending seg_id
-    order, using the catalog ``seg_membership`` relation as the ONLY membership
-    source (``seg_meta.start_idx/end_idx`` are never consulted).
+    Reconstructs ``M_g = {start <= i < end} - absorbed_indices - {mask[i] == 0}`` for
+    every compact ``seg_meta`` row via ``reconstruct_fn`` (the canonical
+    ``reconstruct_searchable_indices`` helper) with ``mask=None`` (the retained path has
+    no committed silence-mask loader, matching the catalog's own build semantics).  Yields
+    ``(seg_id, searchable_indices, weight)`` in ascending seg_id order.  Absorbed rows are
+    excluded from pooling inputs; an empty-``M_g`` segment yields nothing.
     """
     segs = segments_fn(con, config_id, song_id)
     for seg in segs:
-        members = membership_fn(con, config_id, song_id, seg.seg_id)
-        if not members:
+        mg = reconstruct_fn(seg, None, patch_count)
+        if len(mg) == 0:
             continue
-        indices = tuple(int(m.member_patch_idx) for m in members)
-        flags = tuple(bool(m.is_absorbed_outlier) for m in members)
-        yield seg.seg_id, indices, flags, len(indices)
+        indices = tuple(int(i) for i in mg)
+        yield seg.seg_id, indices, len(indices)
 
 
-def run_shared_ptc_head_pooling(
-    con,
+def run_shared_catalog_head_analysis(
+    catalog: Any,
     head_store: Any,
     *,
     config_ids: Any = None,
     song_ids: Any = None,
     heads: Any = None,
     run_id: str,
-    reference_corpus_hash: str | None = None,
-    force: bool = False,  # noqa: ARG001 - interface-parity flag; this derived read is always recomputed
-) -> HeadPhaseManifest:
-    """Canonical CPU shared-boundary head analysis (ACTIVE — Plan E Phase 1).
+) -> HeadAnalysisManifest:
+    """Canonical CPU catalog-scoped head analysis (ACTIVE — exact ``M_g`` semantics).
 
-    Deterministic, CPU-only and non-blocking.  Selects canonical EffNet PTC
-    ``seg_config`` rows (or the caller-supplied ``config_ids``), gathers the exact
-    observed ``seg_membership`` rows of each song once per (config, song) through
-    ``HeadStreamStore.batch_gather`` (all heads in canonical sorted-column order),
-    slices per head using the registry ``dim_by_head``, and pools each segment via
-    :func:`pool_head_outputs_over_ptc_boundaries` (exact membership; never
-    ``start_idx/end_idx``).  It performs no audio/model/ONNX/CUDA/sklearn/CTP work
-    and persists no pooled vector/cache/medoid artifact.  The durable sink is
-    non-blocking coverage/skip provenance (the caller writes canonical rows).
+    Deterministic, CPU-only and non-blocking.  ``catalog`` is a compact
+    :class:`CatalogHandle` (or its snapshot ``con`` — resolved duck-typed via
+    ``getattr(catalog, "con", catalog)``, mirroring the D-phase analysis path): the runner
+    reads only the compact ``seg_config``/``catalog_song``/``seg_meta`` tables and
+    reconstructs each segment's exact searchable membership
+    ``M_g = structural[start_idx,end_idx) - absorbed_indices`` via
+    :func:`helpers.segmentation.reconstruct_searchable_indices`.  It never reads a
+    per-patch membership relation, never treats ``start_idx/end_idx`` as an inclusive
+    membership authority, and never reads ``alias_of_config_id``.  Because the retained
+    path has no committed silence-mask loader (and the §E signature provides no mask
+    seam), reconstruction passes ``mask=None`` — the exact membership the compact catalog
+    itself encodes.
 
-    ``force`` is accepted for interface parity; this derived read is always
-    recomputed against the frozen streams/catalog (nothing is cached).
+    Config eligibility is canonical/config-keyed: only COMPACT canonical configs with a
+    non-empty ``canonical_config_hash`` and the direct-L2 PTC semantics / bin mode /
+    strategy version are pooled over.  When ``config_ids`` is ``None`` the default is the
+    canonical compact configs of the default primary backbone ``effnet``.
+
+    Gathers each song's reconstructed searchable rows once per (config, song) through
+    ``HeadStreamStore.batch_gather`` (all heads in canonical sorted-column order), slices
+    per head using the registry ``dim_by_head``, and pools each non-empty segment over its
+    exact ``M_g`` rows taking the class-1 value from ``act[1]`` (never ``act[0]``).  Empty
+    ``M_g`` segments produce no pooled value.  Performs no audio/model/ONNX/CUDA/sklearn/CTP
+    work and persists no pooled vector/cache/medoid artifact; the returned manifest carries
+    deterministic coverage/skip/error outcomes and the caller persists canonical provenance.
+
+    Parameters
+    ----------
+    catalog:
+        A compact :class:`CatalogHandle` (or its snapshot ``con``).
+    head_store:
+        A :class:`HeadStreamStore` (or an interface-parity fake) exposing ``lookup`` and
+        ``batch_gather`` over frozen aligned head rows.
+    config_ids:
+        Optional explicit canonical ``seg_config`` ids to analyze.
+    song_ids:
+        Optional explicit song selection (default: every compact ``catalog_song`` row of
+        the selected configs).
+    heads:
+        Optional explicit head-name selection (default: all heads in the aligned record).
+    run_id:
+        Run identity recorded on the returned manifest.
+
+    Returns
+    -------
+    :class:`HeadAnalysisManifest` with the selected ``config_ids``, per-(config, head)
+    coverage, deterministic skip/error reasons, and a finite status.
     """
-    from scripts.embedding_research.cache_identity import SCORING_SEMANTICS_VERSION as _SCV
     from scripts.embedding_research.catalog import (
-        configs_by_backbone as _configs_by_backbone,
+        compact_catalog_songs_by_config as _config_songs_fn,
     )
     from scripts.embedding_research.catalog import (
-        membership_by_config_song_seg as _membership_fn,
+        compact_configs_by_backbone as _configs_by_backbone,
     )
     from scripts.embedding_research.catalog import (
-        segments_by_config_song as _segments_fn,
+        compact_segments_by_config_song as _segments_fn,
+    )
+    from scripts.embedding_research.helpers.segmentation import (
+        reconstruct_searchable_indices as _reconstruct_mg,
     )
     from scripts.embedding_research.helpers.thresholds import PTC_STRATEGY_VERSION as _PTC_V
     from scripts.embedding_research.streams.records import (
@@ -470,32 +430,36 @@ def run_shared_ptc_head_pooling(
         parse_head_ids as _parse_head_ids,
     )
 
-    effnet_configs = tuple(sorted(_configs_by_backbone(con, "effnet"), key=lambda c: c.config_id))
+    # Lazy catalog attach: accept a CatalogHandle or its snapshot connection.
+    con = getattr(catalog, "con", catalog)
+
+    backbone = "effnet"  # default primary backbone for the shared-boundary head phase.
+    backbone_configs = tuple(sorted(_configs_by_backbone(con, backbone), key=lambda c: c.config_id))
 
     def _eligible(cfg) -> bool:
         return (
-            cfg.alias_of_config_id is None
-            and cfg.semantics in PTC_SEMANTICS
-            and cfg.bin_mode in PTC_BIN_MODES
+            bool(cfg.canonical_config_hash)
+            and cfg.threshold_semantics in PTC_SEMANTICS
+            and cfg.bin_mode in TEMPORAL_BIN_MODES
             and cfg.strategy_version == _PTC_V
         )
 
     requested = {int(c) for c in config_ids} if config_ids is not None else None
     if requested is None:
-        selected = [c for c in effnet_configs if _eligible(c)]
+        selected = [c for c in backbone_configs if _eligible(c)]
         skip_reasons: list[tuple[str, str]] = []
     else:
-        by_id = {c.config_id: c for c in effnet_configs}
+        by_id = {c.config_id: c for c in backbone_configs}
         selected = []
         skip_reasons = []
         for cid in sorted(requested):
             cfg = by_id.get(cid)
             if cfg is None:
-                skip_reasons.append((f"config:{cid}", "no seg_config row for requested config_id"))
-            elif not _eligible(cfg):
                 skip_reasons.append(
-                    (f"config:{cid}", "config not eligible for canonical shared-boundary head analysis")
+                    (f"config:{cid}", f"no seg_config row for requested config_id under backbone {backbone}")
                 )
+            elif not _eligible(cfg):
+                skip_reasons.append((f"config:{cid}", "config not eligible for canonical catalog-scoped head analysis"))
             else:
                 selected.append(cfg)
 
@@ -504,35 +468,55 @@ def run_shared_ptc_head_pooling(
     # key -> [n_attempted_songs, n_pooled_songs, any_error, all_finite, reason]
     agg: dict[tuple[int, str], list] = {}
     processed_song_ids: set[str] = set()
-    discovered_dimensions: set[int] = set()
     active_heads: set[str] = set()
 
     for cfg in selected:
+        song_leaves = {r.song_id: r for r in _config_songs_fn(con, cfg.config_id)}
         if song_ids is not None:
             songs = sorted(str(s) for s in song_ids)
         else:
-            songs = sorted(
-                str(r[0])
-                for r in con.execute(
-                    "SELECT DISTINCT song_id FROM seg_meta WHERE config_id = ?", [cfg.config_id]
-                ).fetchall()
-            )
+            songs = sorted(song_leaves)
         for song in songs:
+            leaf = song_leaves.get(song)
+            if leaf is None:
+                continue
+            patch_count = int(leaf.patch_count)
             segs = list(
                 _collect_segment_membership(
-                    con, cfg.config_id, song, membership_fn=_membership_fn, segments_fn=_segments_fn
+                    con,
+                    cfg.config_id,
+                    song,
+                    segments_fn=_segments_fn,
+                    reconstruct_fn=_reconstruct_mg,
+                    patch_count=patch_count,
                 )
             )
             if not segs:
                 continue
+            record_scope = f"config:{cfg.config_id}:song:{song}"
             try:
                 record = head_store.lookup(song, cfg.backbone)
-            except Exception:
+            except Exception as exc:
+                skip_reasons.append((record_scope, f"head stream lookup failed for backbone {cfg.backbone}: {exc!r}"))
                 continue
-            rec_heads = _parse_head_ids(record.head_ids)
+            raw_head_ids = record.head_ids
+            if not (raw_head_ids and str(raw_head_ids).strip()):
+                skip_reasons.append(
+                    (
+                        record_scope,
+                        f"no frozen head stream available for backbone {cfg.backbone} "
+                        f"(empty head record {raw_head_ids!r})",
+                    )
+                )
+                continue
+            record_heads = _parse_head_ids(raw_head_ids)
             if explicit_heads is not None:
-                rec_heads = tuple(h for h in rec_heads if h in explicit_heads)
-            if not rec_heads:
+                record_heads = tuple(h for h in record_heads if h in explicit_heads)
+            rec_heads = record_heads  # consumed by the offset/pool loops below
+            if not record_heads:
+                # An explicit ``heads=`` restriction may legitimately leave a song with
+                # no matching requested head; that is intended filtering, not a partial
+                # stream/catalog misalignment to report.
                 continue
             dims = _parse_dim(record.dim_by_head)
             offsets: dict[str, tuple[int, int]] = {}
@@ -543,11 +527,18 @@ def run_shared_ptc_head_pooling(
                     offsets[h] = (col, col + d)
                 col += d
             union: list[int] = []
-            for _seg_id, indices, _flags, _w in segs:
+            for _seg_id, indices, _w in segs:
                 union.extend(indices)
             try:
                 gathered = head_store.batch_gather(song, cfg.backbone, union)
-            except Exception:
+            except Exception as exc:
+                skip_reasons.append(
+                    (
+                        record_scope,
+                        f"head stream gather failed for backbone {cfg.backbone} "
+                        f"over {len(union)} searchable rows: {exc!r}",
+                    )
+                )
                 continue
             for head in rec_heads:
                 if head not in offsets:
@@ -561,33 +552,30 @@ def run_shared_ptc_head_pooling(
                 head_pooled = False
                 head_finite = True
                 row_cursor = 0
-                for _seg_id, indices, flags, weight in segs:
+                for _seg_id, indices, _weight in segs:
                     n_members = len(indices)
                     rows = gathered[row_cursor : row_cursor + n_members, start:end]
                     row_cursor += n_members
                     try:
-                        result = pool_head_outputs_over_ptc_boundaries(
+                        pooled = _pool_segment_heads(
                             rows,
                             indices,
                             segment_id=_seg_id,
-                            weight=weight,
-                            is_absorbed_outlier=flags,
                         )
                     except ValueError as exc:
                         entry[2] = True
                         entry[4] = f"membership/pooling validation failed for song {song}: {exc}"
                         break
-                    if result.finite:
+                    if pooled.finite:
                         head_pooled = True
                     else:
                         head_finite = False
-                    discovered_dimensions.add(len(result.acts))
                 if not entry[2]:
                     if head_pooled:
                         entry[1] += 1
                     entry[3] = entry[3] and head_finite
 
-    results: list[HeadPhaseConfigRecord] = []
+    results: list[HeadAnalysisConfigRecord] = []
     done = 0
     skipped = 0
     errors = 0
@@ -609,51 +597,45 @@ def run_shared_ptc_head_pooling(
                 reason = "no song produced a finite pooled head value"
         finite_overall = finite_overall and bool(all_finite and not any_err)
         results.append(
-            HeadPhaseConfigRecord(
+            HeadAnalysisConfigRecord(
                 config_id=config_id,
                 backbone=cfg.backbone,
                 head=head,
                 bin_mode=cfg.bin_mode,
                 threshold_configured=float(cfg.threshold_configured),
                 threshold_effective=float(cfg.threshold_effective),
-                semantics=cfg.semantics,
+                semantics=cfg.threshold_semantics,
                 status=status,
                 reason=reason,
                 n_songs=int(n_songs),
                 n_pooled=int(n_pooled),
                 finite=bool(all_finite and not any_err),
-                boundary_source=BOUNDARY_SOURCE_EFFNET_PTC,
+                boundary_source=BOUNDARY_SOURCE_CATALOG,
                 head_pool_variant=HEAD_POOL_VARIANT,
             )
         )
 
     config_ids_used = tuple(sorted({r.config_id for r in results}))
-    dimensions = tuple(sorted(discovered_dimensions))
     song_tuple = tuple(sorted(processed_song_ids))
     active_head_tuple = tuple(sorted(active_heads))
-    bin_modes = tuple(sorted({r.bin_mode for r in results}))
     skip_reasons.extend(
         (f"config:{cfg.config_id}", "config has no pooled head output")
         for cfg in selected
         if cfg.config_id not in config_ids_used
     )
-    return HeadPhaseManifest(
+    return HeadAnalysisManifest(
         run_id=run_id,
         config_ids=config_ids_used,
-        dimensions=dimensions,
-        boundary_source=BOUNDARY_SOURCE_EFFNET_PTC,
+        boundary_source=BOUNDARY_SOURCE_CATALOG,
         head_pool_variant=HEAD_POOL_VARIANT,
-        backbones=("effnet",),
+        backbones=(backbone,),
         heads=active_head_tuple,
-        bin_modes=bin_modes,
         song_ids=song_tuple,
-        scoring_semantics_version=_SCV,
+        scoring_semantics_version=SCORING_SEMANTICS_VERSION,
         results=tuple(results),
         skip_reasons=tuple(skip_reasons),
         done=done,
         skipped=skipped,
         errors=errors,
         finite=bool(finite_overall),
-        reference_corpus_hash=reference_corpus_hash,
-        primary_analysis_succeeded=True,
     )

@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from collections import defaultdict, deque
+from typing import TYPE_CHECKING
 
-from .models import CodeGraph
+if TYPE_CHECKING:
+    from .models import CodeGraph
 
 
 def compute_reachability(graph: CodeGraph, entrypoints: set[str]) -> None:

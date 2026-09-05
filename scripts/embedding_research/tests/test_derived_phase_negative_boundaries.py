@@ -21,13 +21,8 @@ each test asserts BOTH halves of the gate:
 We drive the REAL canonical entries for the five derived phases:
 ``catalog.build_segmentation_catalog``, ``catalog_report.build_catalog_report``,
 ``common.catalog_analysis.run_catalog_analysis``,
-``common.head_analysis.run_shared_ptc_head_pooling``, and ``report.run``,
+``common.head_analysis.run_shared_catalog_head_analysis``, and ``report.run``,
 reusing the ready-stream + verified-catalog seeding from the catalog tests.
-
-Secondary, complementary: with ``archival_ctp.enabled=true`` semantics, an
-archival CTP analysis row fed through the report winners path never appears as a
-winner/best and the archival label (decoded ``ctp`` head identity) is retained —
-proving the P2-S1/S2 builder-level exclusions hold through the report path.
 """
 
 from __future__ import annotations
@@ -39,11 +34,9 @@ import numpy as np
 from scripts.embedding_research import catalog
 from scripts.embedding_research.catalog_report import build_catalog_report
 from scripts.embedding_research.common import catalog_analysis as ca
-from scripts.embedding_research.common.head_analysis import run_shared_ptc_head_pooling
+from scripts.embedding_research.common.head_analysis import run_shared_catalog_head_analysis
 from scripts.embedding_research.config import discover_audio as _config_discover_audio
 from scripts.embedding_research.report import run as report_run
-from scripts.embedding_research.report._base import ANALYZE_METRICS_COLUMNS, _decode_strategy_key
-from scripts.embedding_research.report._winners_report import section_winners
 from scripts.embedding_research.streams.store import StreamStore
 
 # Optional ML-stack / research-inference availability.  The derived phases never
@@ -89,11 +82,13 @@ def _publish_streams(con, out, song_ids=_SONGS, *, seed: int = 3) -> StreamStore
     return store
 
 
-def _build_catalog(con, store, *, song_ids=_SONGS, threshold: float = 0.7, run_id: str = "run-cat-1"):
-    """Build a single canonical EffNet PTC seg_config with a verified pass."""
+def _build_compact(store, out, *, song_ids=_SONGS, threshold: float = 0.7, run_id: str = "run-cat-guarded"):
+    """Build one VERIFIED COMPACT catalog snapshot into ``out/catalogs/.staging-<run_id>/``."""
+    from scripts.embedding_research.streams import make_current_stream_resolver
+
     rep = catalog.build_segmentation_catalog(
-        con,
-        store,
+        make_current_stream_resolver(store),
+        None,
         [
             catalog.SegConfigInput(
                 backbone="effnet",
@@ -103,32 +98,22 @@ def _build_catalog(con, store, *, song_ids=_SONGS, threshold: float = 0.7, run_i
             )
         ],
         list(song_ids),
-        run_id,
+        output_root=str(out),
+        run_id=run_id,
         verify=True,
     )
     assert rep.verify_ok is True
     return rep
 
 
-def _seed_cataloged(con, out) -> tuple[StreamStore, int]:
-    """Publish ready streams and build a verified catalog; return (store, config_id)."""
-    store = _publish_streams(con, out)
-    rep = _build_catalog(con, store)
-    return store, int(rep.configs[0].config_id)
+def _compact_streams(*, seed: int = 3) -> dict[tuple[str, str], np.ndarray]:
+    """Ready effnet streams for every song (the factory seeding input)."""
+    rng = np.random.default_rng(seed)
+    return {(song, "effnet"): _unit(rng, 10, 6) for song in _SONGS}
 
 
 def _cfg(run_id: str, song_ids=_SONGS, artists=_ARTISTS) -> ca.CatalogAnalysisConfig:
     return ca.CatalogAnalysisConfig(run_id=run_id, backbone="effnet", song_ids=song_ids, artists=artists)
-
-
-def _seed_analyze_rows(con, store, *, run_id: str = "run-an-1"):
-    """Run catalog-first analysis and write run-scoped analyze rows (report input)."""
-    from scripts.embedding_research.db import analyze_scope
-
-    result = ca.run_catalog_analysis(store, con, _cfg(run_id))
-    assert result.finite is True
-    analyze_scope.write_catalog_analyze_rows(con, run_id=run_id, result=result)
-    return result
 
 
 # --------------------------------------------------------------------------- #
@@ -201,40 +186,68 @@ def test_catalog_phase_completes_with_zero_sentinel_calls(con, tmp_path, monkeyp
     store = _publish_streams(con, tmp_path / "out")
     counts = _install_sentinels(monkeypatch)
 
-    rep = _build_catalog(con, store, run_id="run-cat-guarded")
+    rep = _build_compact(store, tmp_path / "out", run_id="run-cat-guarded")
 
     assert rep.verify_ok is True
     assert rep.configs and rep.configs[0].backbone == "effnet"
     _assert_zero_sentinel_calls(counts)
 
 
-def test_catalog_report_phase_completes_with_zero_sentinel_calls(con, tmp_path, monkeypatch):
+def test_catalog_report_phase_completes_with_zero_sentinel_calls(con, tmp_path, monkeypatch, compact_catalog_factory):
     """catalog-report (build_catalog_report) completes over catalog rows only."""
-    _store, config_id = _seed_cataloged(con, tmp_path / "out")
-    counts = _install_sentinels(monkeypatch)
+    harness = compact_catalog_factory(
+        con,
+        tmp_path / "out",
+        streams=_compact_streams(),
+        configs=[_compact_config()],
+        song_ids=list(_SONGS),
+        run_id="run-cat-guarded",
+    )
+    try:
+        counts = _install_sentinels(monkeypatch)
 
-    report = build_catalog_report(con, schema_version=_SCHEMA_VERSION)
+        report = build_catalog_report(harness.con, schema_version=_SCHEMA_VERSION)
 
-    assert config_id in report.canonical_config_ids
-    assert len(report.catalog_fingerprint) == 64
-    assert len(report.search_view_hash) == 64
-    assert report.membership_row_total >= 1
-    _assert_zero_sentinel_calls(counts)
+        assert 1 in report.canonical_config_ids
+        assert len(report.catalog_fingerprint) == 64
+        assert report.membership_row_total >= 1
+        _assert_zero_sentinel_calls(counts)
+    finally:
+        harness.close()
 
 
-def test_analyze_phase_completes_with_zero_sentinel_calls(con, tmp_path, monkeypatch):
+def _compact_config() -> catalog.SegConfigInput:
+    return catalog.SegConfigInput(
+        backbone="effnet",
+        bin_mode="temporal_global",
+        threshold_configured=0.7,
+        threshold_effective=0.7,
+    )
+
+
+def test_analyze_phase_completes_with_zero_sentinel_calls(con, tmp_path, monkeypatch, compact_catalog_factory):
     """analyze (run_catalog_analysis) completes via bounded CPU scoring, no ML."""
-    store, _ = _seed_cataloged(con, tmp_path / "out")
-    counts = _install_sentinels(monkeypatch)
+    harness = compact_catalog_factory(
+        con,
+        tmp_path / "out",
+        streams=_compact_streams(),
+        configs=[_compact_config()],
+        song_ids=list(_SONGS),
+        run_id="run-cat-guarded",
+    )
+    try:
+        counts = _install_sentinels(monkeypatch)
 
-    result = ca.run_catalog_analysis(store, con, _cfg("run-an-guarded"))
+        result = ca.run_catalog_analysis(harness.stream_store, harness.con, _cfg("run-an-guarded"), research_con=con)
 
-    assert result.finite is True
-    assert result.n_queries == len(_SONGS)
-    assert result.strategy_key.startswith("catalog:effnet:")
-    for key in ("map_k", "mrr", "ndcg_k", "recall_k", "disc_artist"):
-        assert np.isfinite(result.metrics[key]), key
-    _assert_zero_sentinel_calls(counts)
+        assert result.finite is True
+        assert result.n_queries == len(_SONGS)
+        assert result.strategy_key.startswith("catalog:effnet:")
+        for key in ("map_k", "mrr", "ndcg_k", "recall_k", "disc_artist"):
+            assert np.isfinite(result.metrics[key]), key
+        _assert_zero_sentinel_calls(counts)
+    finally:
+        harness.close()
 
 
 def _fake_head_store():
@@ -255,136 +268,93 @@ def _fake_head_store():
     return _FakeHeadStore()
 
 
-def test_head_analysis_phase_completes_with_zero_sentinel_calls(con, tmp_path, monkeypatch):
-    """head-analysis (run_shared_ptc_head_pooling) pools over memberships, CPU only."""
-    _store, config_id = _seed_cataloged(con, tmp_path / "out")
-    counts = _install_sentinels(monkeypatch)
-    head_store = _fake_head_store()
+def test_head_analysis_phase_completes_with_zero_sentinel_calls(con, tmp_path, monkeypatch, compact_catalog_factory):
+    """head-analysis (run_shared_catalog_head_analysis) pools exact M_g, CPU only.
 
-    manifest = run_shared_ptc_head_pooling(
-        con,
-        head_store,
-        config_ids=[config_id],
-        song_ids=_SONGS,
-        heads=["mood"],
-        run_id="run-head-guarded",
-        reference_corpus_hash="h",
-    )
-
-    assert manifest.done >= 1
-    assert manifest.errors == 0
-    assert config_id in manifest.config_ids
-    assert manifest.finite is True
-    _assert_zero_sentinel_calls(counts)
-
-
-def test_report_phase_completes_with_zero_sentinel_calls(con, tmp_path, monkeypatch):
-    """report (report.run) renders a report over catalog + analyze rows, no ML."""
-    store, _ = _seed_cataloged(con, tmp_path / "out")
-    _seed_analyze_rows(con, store)
-    out = tmp_path / "report-out"
-    counts = _install_sentinels(monkeypatch)
-
-    report_run(con, str(out))
-
-    assert (out / "report.json").exists()
-    assert (out / "report.html").exists()
-    payload = json.loads((out / "report.json").read_text(encoding="utf-8"))
-    assert payload["schema_version"] == 2
-    assert any(s["id"] == "winners" for s in payload["sections"])
-    _assert_zero_sentinel_calls(counts)
-
-
-# --------------------------------------------------------------------------- #
-# Archival CTP: fed through the report winners path, never a primary winner     #
-# --------------------------------------------------------------------------- #
-
-
-def _wide_row() -> dict:
-    row = dict.fromkeys(ANALYZE_METRICS_COLUMNS)
-    row.update(
-        sim_metric="cosine",
-        k=10,
-        map_k_artist=0.5,
-        map_k_genre=0.5,
-        map_k_head=0.5,
-        map_k_general=0.5,
-        mrr=0.5,
-        ndcg_k_artist=0.5,
-        recall_k_artist=0.5,
-        disc_artist=0.4,
-        disc_genre=0.4,
-        disc_head=0.4,
-        disc_general=0.4,
-        disc_score=0.4,
-    )
-    return row
-
-
-def _archival_report_df():
-    """A fed report df with an explicit medoid baseline + a PTC candidate + an archival CTP row.
-
-    Mirrors an ``archival_ctp.enabled=true`` analysis run whose CTP outputs land in
-    ``analyze_metrics`` under ``ctp:`` keys with a decoded head identity (archival label),
-    but which must never appear as a primary winner/best.
+    Builds a real COMPACT snapshot over the four songs and routes the snapshot
+    (``harness``, whose ``.con`` the runner duck-types) into the runner — the retained
+    ``_run_head_analysis`` seam opens the latest compact snapshot and passes it as the
+    catalog for reads while keeping the research connection for the head store +
+    provenance.  No committed mask loader exists on this path, so reconstruction passes
+    ``mask=None`` (no silence exclusion).
     """
-    import pandas as pd
+    import numpy as _np
 
-    medoid = _wide_row()
-    medoid.update(
-        strategy_key="global_pool:effnet:medoid",
-        strategy_type="global_pool",
-        backbone="effnet",
-        strategy="medoid",
-        map_k_artist=0.6,
+    rng = _np.random.default_rng(3)
+    streams = {}
+    for song in _SONGS:
+        streams[(song, "effnet")] = _unit(rng, 10, 6)
+    harness = compact_catalog_factory(
+        con,
+        tmp_path / "out",
+        streams=streams,
+        configs=[
+            catalog.SegConfigInput(
+                backbone="effnet",
+                bin_mode="temporal_global",
+                threshold_configured=0.7,
+                threshold_effective=0.7,
+            )
+        ],
+        song_ids=list(_SONGS),
+        run_id="run-head-guarded",
     )
-    ptc = _wide_row()
-    ptc.update(
-        strategy_key="ptc:effnet:temporal_global:1.0:median:max:target_weighted",
-        strategy_type="ptc",
-        backbone="effnet",
-        bin_mode="temporal_global",
-        std_thresh=1.0,
-        rep_a="median",
-        rep_b="max",
-        agg_method="target_weighted",
-        map_k_artist=0.8,
+    try:
+        config_id = harness_report_config_id(harness)
+        counts = _install_sentinels(monkeypatch)
+        head_store = _fake_head_store()
+
+        manifest = run_shared_catalog_head_analysis(
+            harness,
+            head_store,
+            config_ids=[config_id],
+            song_ids=_SONGS,
+            heads=["mood"],
+            run_id="run-head-guarded",
+        )
+
+        assert manifest.done >= 1
+        assert manifest.errors == 0
+        assert config_id in manifest.config_ids
+        assert manifest.finite is True
+        _assert_zero_sentinel_calls(counts)
+    finally:
+        harness.close()
+
+
+def harness_report_config_id(harness) -> int:
+    """The canonical compact config id for the built snapshot (single effnet config)."""
+    from scripts.embedding_research.catalog import compact_configs_by_backbone
+
+    return int(compact_configs_by_backbone(harness.con, "effnet")[0].config_id)
+
+
+def test_report_phase_completes_with_zero_sentinel_calls(con, tmp_path, monkeypatch, compact_catalog_factory):
+    """report (report.run) renders a report over catalog + analyze rows, no ML."""
+    from scripts.embedding_research.db import analyze_scope
+
+    harness = compact_catalog_factory(
+        con,
+        tmp_path / "out",
+        streams=_compact_streams(),
+        configs=[_compact_config()],
+        song_ids=list(_SONGS),
+        run_id="run-cat-guarded",
     )
-    ctp = _wide_row()
-    ctp.update(
-        strategy_key="ctp:effnet:genre:1.0:median:max:bidirectional_weighted",
-        strategy_type="ctp",
-        backbone="effnet",
-        head="genre",
-        std_thresh=1.0,
-        rep_a="median",
-        rep_b="max",
-        agg_method="bidirectional_weighted",
-        map_k_artist=0.9,  # highest value — would win if CTP were eligible
-    )
-    return pd.DataFrame([medoid, ptc, ctp], columns=ANALYZE_METRICS_COLUMNS)
+    try:
+        result = ca.run_catalog_analysis(harness.stream_store, harness.con, _cfg("run-an-1"), research_con=con)
+        assert result.finite is True
+        analyze_scope.write_catalog_analyze_rows(con, run_id="run-an-1", result=result)
+        out = tmp_path / "report-out"
+        counts = _install_sentinels(monkeypatch)
 
+        report_run(con, str(out))
 
-def test_archival_ctp_row_fed_through_report_winners_never_primary_and_label_retained():
-    """A fed CTP row is recorded (archival label decoded) yet never a report winner/best."""
-    df = _archival_report_df()
-
-    # Archival label recorded: the CTP analyze row decodes its head identity (genre) — the
-    # report's archival sections render it — and carries strategy_type 'ctp'.
-    decoded = _decode_strategy_key(df[df["strategy_type"] == "ctp"].copy())
-    assert list(decoded["strategy_type"]) == ["ctp"]
-    assert list(decoded["head"]) == ["genre"]
-
-    # Feed the SAME df through the report winners path (section_winners, the report.run
-    # winner surface) and assert the CTP row never appears as a winner/best row.
-    section = section_winners(df)
-    assert section["subsections"], "a PTC winner vs medoid baseline must be computed"
-    cells: list[str] = []
-    for sub in section["subsections"]:
-        for table in sub.get("tables", []):
-            for row in table["rows"]:
-                cells.extend(str(c) for c in row)
-    assert any(c.startswith("ptc:") for c in cells), "the PTC candidate must win the cell"
-    assert not any(c == "ctp" or c.startswith("ctp:") for c in cells), (
-        "CTP must never occupy a primary winner/best slot in the report path"
-    )
+        assert (out / "report.json").exists()
+        assert (out / "report.html").exists()
+        payload = json.loads((out / "report.json").read_text(encoding="utf-8"))
+        assert payload["schema_version"] == 2
+        assert any(s["id"] == "winners" for s in payload["sections"])
+        _assert_zero_sentinel_calls(counts)
+    finally:
+        harness.close()

@@ -1,32 +1,32 @@
 """Phase 4 (P4-S2) — frozen-stream lifecycle and fault matrix.
 
-Pins the DD lifecycle/fault obligations against the store/registry:
+Post-migration (Plan B P1-S2) the stream store is filesystem-authoritative over immutable,
+content-addressed, DIGEST-named artifacts (``streams/<sid>.<bb>.<64hex>.npy``) with a
+self-describing ``.json`` manifest; the ``stream_registry`` table is a rebuildable
+cache/index (never the source of truth).  This file pins the retained lifecycle:
 
-* duplicate re-publication yields ONE registry row pointing at the NEW versioned
-  artifact (no duplicate row, no in-place overwrite);
+* duplicate re-publication yields ONE registry row pointing at the NEW digest artifact
+  (no duplicate row, no in-place overwrite; distinct content lands in a distinct digest
+  file while prior digest bytes survive untouched);
 * partial runs are recorded partial in ``run_provenance`` and the ``corpus_state``
   reconciliation never claims completeness (a partial run cannot masquerade as complete);
-* legacy pre-registry sidecars reconcile/register as ``legacy`` with an explicit
-  assumption and are NEVER provenance-complete; a forced re-embed supersedes with
-  provenance-complete while the legacy bytes survive byte-identical;
 * missing / byte-corrupt / shape-mismatched streams reconcile to ``missing``/``corrupt``
   — a row-field shape corruption that a file hash cannot catch (the file is valid, the
   row's ``(patch_count, dim)`` metadata lies) is caught by the shape comparison;
-* rowless final files are classified ``superseded`` vs ``legacy`` vs ``stray`` and the
-  report exposes them;
-* stale registry rows (artifact gone / never published) reconcile to ``missing``;
-* reconciliation applies EXACTLY the DD transitions ``pending -> ready`` and
-  ``ready -> missing|corrupt`` and nothing else — a ``pending`` row whose artifact is
-  bad is NOT silently promoted (it stays pending and is reported);
-* immutable old bytes survive every force re-publication (byte-identical, no mutation);
-* relocation-safe root-relative references (copy/move the whole output tree to a new
-  root, point the store at the new root, and ``lookup``/``batch_gather`` still resolve);
-* the store-level strict ``verify`` seam (clean passes; missing/corrupt/stray/legacy/
-  unpromoted-pending each raise :class:`VerifyFailureError`; preserved SUPERSEDED
-  archived bytes are NOT a strict failure — the DD-faithful reading, flagged below).
+* stale registry rows (artifact gone / never published) reconcile to ``missing`` and a
+  never-published ``pending`` row is NOT silently promoted (it stays pending);
+* reconciliation applies EXACTLY ``pending -> ready`` (verified) and ``ready ->
+  missing|corrupt`` and nothing else;
+* immutable bytes survive every force re-publication (byte-identical, no mutation);
+* relocation-safe root-relative references (copy the whole output tree to a new root,
+  point the store at the new root, and ``lookup``/``batch_gather`` still resolve);
+* the store-level strict ``verify`` seam (clean passes; missing/corrupt/shape-mismatch/
+  unpromoted-pending each raise :class:`VerifyFailureError`).
 
-Where a behavior is also asserted in earlier test modules this file re-pins it in the
-single lifecycle context (Phase 4 is the lifecycle gate; stronger, not weaker, coverage).
+Legacy/supersession/rowless-orphan classification and ``register_legacy`` are DELETED
+post-migration (Git is the archive); the S5 manifest-only reindex owns orphan/stray
+detection.  Where a behavior is also asserted in earlier test modules this file re-pins
+it in the single lifecycle context (Phase 4 is the lifecycle gate; stronger coverage).
 """
 
 from __future__ import annotations
@@ -69,44 +69,75 @@ def _ready(con, out, song, backbone="effnet", arr=None, run_id="r"):
     return store
 
 
+def _payload_path(store, song, backbone="effnet"):
+    """On-disk payload path for a ready record (resolved via the root-relative ref)."""
+    return store._path(store.lookup(song, backbone).artifact_ref)
+
+
+def _row_status(con, song: str) -> str:
+    return con.execute(
+        "SELECT status FROM stream_registry WHERE song_id = ? AND backbone = 'effnet'", [song]
+    ).fetchone()[0]
+
+
 # ── duplicate re-publication / immutable bytes ─────────────────────────────────
 
 
 @pytest.mark.unit
-def test_republish_one_row_points_at_new_version_no_dup_no_overwrite(con, tmp_path):
-    store = _store(con, tmp_path / "out")
-    store.publish("s1", "effnet", _arr(3, 4, fill=1.0), run_id="r1")
+def test_republish_one_row_points_at_new_digest_no_dup_no_overwrite(con, tmp_path):
+    out = tmp_path / "out"
+    store = _store(con, out)
+    pub1 = store.publish("s1", "effnet", _arr(3, 4, fill=1.0), run_id="r1")
     store.reconcile()
-    v1_path = tmp_path / "out" / "patches" / "s1.effnet.npy"
+    v1_path = out / pub1.artifact_ref
     assert v1_path.is_file()
     v1_bytes = v1_path.read_bytes()
 
-    store.publish("s1", "effnet", _arr(3, 4, fill=7.0), run_id="r2")
+    pub2 = store.publish("s1", "effnet", _arr(3, 4, fill=7.0), run_id="r2")
     store.reconcile()
 
     rows = con.execute("SELECT count(*) FROM stream_registry WHERE song_id='s1' AND backbone='effnet'").fetchone()[0]
     assert rows == 1
     rec = store.lookup("s1", "effnet")
-    assert rec.artifact_ref == "patches/s1.effnet.v2.npy"  # registry points at the NEW artifact
-    assert v1_path.read_bytes() == v1_bytes  # prior bytes untouched (no overwrite)
+    # Registry points at the NEW digest artifact; different content -> different digest file.
+    assert rec.artifact_ref == pub2.artifact_ref
+    assert rec.artifact_ref != pub1.artifact_ref
+    assert v1_path.read_bytes() == v1_bytes  # prior digest bytes untouched (no overwrite)
 
 
 @pytest.mark.unit
 def test_immutable_bytes_across_multiple_force_republishes(con, tmp_path):
-    store = _store(con, tmp_path / "out")
-    published: dict[str, bytes] = {}
+    """Distinct re-published content lands in distinct digest files; all stay byte-identical."""
+    out = tmp_path / "out"
+    store = _store(con, out)
+    refs: list[str] = []
     for i in range(4):
-        store.publish("s1", "effnet", _arr(3, 4, fill=float(i) + 1), run_id=f"r{i}")
+        pub = store.publish("s1", "effnet", _arr(3, 4, fill=float(i) + 1), run_id=f"r{i}")
         store.reconcile()
-        rec = store.lookup("s1", "effnet")
-        p = store._path(rec.artifact_ref)
-        published[rec.artifact_ref] = p.read_bytes()
-    # Every historical artifact is byte-identical and never mutated in place.
-    for ref, blob in published.items():
-        assert store._path(ref).read_bytes() == blob
-    # Only one live registry row, pointing at the newest (.v4).
+        refs.append(pub.artifact_ref)
+    # Distinct content -> distinct digest refs, all still on disk byte-identical.
+    assert len(set(refs)) == 4
+    blobs = {ref: (out / ref).read_bytes() for ref in refs}
+    for ref, blob in blobs.items():
+        assert (out / ref).read_bytes() == blob
+    # Only one live registry row, pointing at the newest digest.
     assert con.execute("SELECT count(*) FROM stream_registry").fetchone()[0] == 1
-    assert store.lookup("s1", "effnet").artifact_ref.endswith(".v4.npy")
+    assert store.lookup("s1", "effnet").artifact_ref == refs[-1]
+
+
+@pytest.mark.unit
+def test_identical_republication_reuses_same_digest_file(con, tmp_path):
+    """Re-publishing IDENTICAL bytes resolves to the same digest file (content addressed)."""
+    out = tmp_path / "out"
+    store = _store(con, out)
+    arr = _arr(3, 4)
+    pub1 = store.publish("s1", "effnet", arr, run_id="r1")
+    store.reconcile()
+    pub2 = store.publish("s1", "effnet", arr, run_id="r2")
+    store.reconcile()
+    assert pub2.artifact_ref == pub1.artifact_ref
+    assert con.execute("SELECT count(*) FROM stream_registry").fetchone()[0] == 1
+    np.testing.assert_array_equal(np.load(out / pub2.artifact_ref, allow_pickle=False), arr)
 
 
 # ── partial runs ───────────────────────────────────────────────────────────────
@@ -140,51 +171,13 @@ def test_partial_run_provenance_and_corpus_state_never_complete(con, tmp_path):
     assert state["reconciliation_status"] == "ok"  # the registry itself reconciled clean
 
 
-# ── legacy sidecars ────────────────────────────────────────────────────────────
-
-
-@pytest.mark.unit
-def test_legacy_bare_file_reconciles_legacy_and_register_never_provenance_complete(con, tmp_path):
-    store = _store(con, tmp_path / "out")
-    out = tmp_path / "out"
-    patches = out / "patches"
-    patches.mkdir(parents=True, exist_ok=True)
-    legacy_arr = np.full((2, 3), 1.0, dtype=np.float32)
-    legacy_path = patches / "song-legacy.effnet.npy"
-    np.save(legacy_path, legacy_arr)
-
-    # Bare pre-registry file reconciles as legacy, never provenance-complete.
-    report = store.reconcile()
-    assert report.legacy == 1 and report.orphan == 1
-    assert not store.has_ready("song-legacy", "effnet")
-
-    # Explicit legacy registration requires an assumption; it is never embed provenance.
-    rec = store.register_legacy(
-        "song-legacy", "effnet", run_id="adopt", provenance_assumption="pre-registry sidecar adopted as-is"
-    )
-    store.reconcile()
-    rec = store.lookup("song-legacy", "effnet")
-    assert rec.status == "ready"
-    assert rec.provenance_source == "legacy"
-    assert rec.provenance_assumption  # explicit, non-empty
-
-    # Forced re-embed supersedes with provenance-complete while legacy bytes survive.
-    legacy_bytes = legacy_path.read_bytes()
-    store.publish("song-legacy", "effnet", _arr(2, 3, fill=5.0), run_id="embed-forced")
-    store.reconcile()
-    rec = store.lookup("song-legacy", "effnet")
-    assert rec.provenance_source == "embed"
-    assert rec.artifact_ref == "patches/song-legacy.effnet.v2.npy"
-    assert legacy_path.read_bytes() == legacy_bytes  # legacy bytes survive byte-identical
-
-
 # ── missing / byte-corrupt / shape-mismatched ─────────────────────────────────
 
 
 @pytest.mark.unit
 def test_missing_stream_reconciles_to_missing(con, tmp_path):
     store = _ready(con, tmp_path / "out", "s1")
-    (tmp_path / "out" / "patches" / "s1.effnet.npy").unlink()
+    _payload_path(store, "s1").unlink()
     report = store.reconcile()
     assert report.missing == 1 and report.ready == 0 and report.stale == 1
     assert report.clean is False
@@ -193,7 +186,7 @@ def test_missing_stream_reconciles_to_missing(con, tmp_path):
 @pytest.mark.unit
 def test_byte_corruption_reconciles_to_corrupt(con, tmp_path):
     store = _ready(con, tmp_path / "out", "s1")
-    p = tmp_path / "out" / "patches" / "s1.effnet.npy"
+    p = _payload_path(store, "s1")
     p.write_bytes(p.read_bytes() + b"\x00")
     report = store.reconcile()
     assert report.corrupt == 1 and report.ready == 0
@@ -220,34 +213,7 @@ def test_shape_mismatched_row_reconciles_to_corrupt(con, tmp_path):
     assert store.has_ready("s1", "effnet") is False
 
 
-# ── orphan classification + stale rows ────────────────────────────────────────
-
-
-@pytest.mark.unit
-def test_rowless_files_classified_superseded_legacy_stray(con, tmp_path):
-    out = tmp_path / "out"
-    patches = out / "patches"
-    # One registered identity with an archived (superseded) v1 and a live v2.
-    store = _store(con, out)
-    store.publish("songA", "effnet", _arr(2, 3, fill=1.0), run_id="r1")
-    store.reconcile()
-    store.publish("songA", "effnet", _arr(2, 3, fill=2.0), run_id="r2")
-    store.reconcile()  # now v2 live, v1 remains as superseded archival bytes
-
-    # A never-registered bare pre-registry file -> legacy.
-    np.save(patches / "songLegacy.effnet.npy", _arr(2, 3))
-    # A versioned file whose identity has no registry row, plus an unparseable name -> stray.
-    np.save(patches / "songGhost.effnet.v3.npy", _arr(2, 3))
-    np.save(patches / "not-a-stream.npy", _arr(2, 3))
-
-    report = store.reconcile()
-    assert report.orphan >= 4
-    assert report.superseded == 1
-    assert report.legacy == 1
-    assert report.stray == 2
-    # Orphan == superseded + legacy + stray (the authoritative decomposition).
-    assert report.orphan == report.superseded + report.legacy + report.stray
-    assert report.clean is False
+# ── stale rows ─────────────────────────────────────────────────────────────────
 
 
 @pytest.mark.unit
@@ -257,14 +223,15 @@ def test_stale_registry_rows_reconcile_to_missing(con, tmp_path):
     # s1: a ready artifact that is then DELETED on disk (stale -> missing).
     store.publish("s1", "effnet", _arr(3, 4), run_id="r-live")
     store.reconcile()
-    a_path = out / "patches" / "s1.effnet.npy"
+    a_path = _payload_path(store, "s1")
     assert a_path.is_file()
     a_path.unlink()
-    # s2: a ready row whose artifact_ref was never created (stale -> missing).
+    # s2: a ready row whose artifact_ref was never created (stale -> missing) but whose
+    # registry row is PENDING (register defaults to pending) — never promoted without a file.
     record = StreamRecord(
         song_id="s2",
         backbone="effnet",
-        artifact_ref="patches/s2.effnet.npy",
+        artifact_ref="streams/s2.effnet." + "c" * 64 + ".npy",
         patch_count=3,
         dim=4,
         dtype="float32",
@@ -277,7 +244,7 @@ def test_stale_registry_rows_reconcile_to_missing(con, tmp_path):
         embed_semantics_version=1,
         provenance_source="embed",
         provenance_assumption="",
-        status="ready",
+        status="pending",
         run_id="r-stale",
         created_at=now_ms(),
         updated_at=now_ms(),
@@ -304,11 +271,11 @@ def test_pending_row_with_bad_file_is_not_silently_promoted(con, tmp_path):
     """A pending row whose artifact is bad stays pending and is reported, never forced ready."""
     out = tmp_path / "out"
     store = _store(con, out)
-    store.publish("s1", "effnet", _arr(3, 4, fill=1.0), run_id="r1")
+    pub = store.publish("s1", "effnet", _arr(3, 4, fill=1.0), run_id="r1")
     # Registry row is pending (publish registers pending; do NOT reconcile first).
     assert _row_status(con, "s1") == "pending"
     # Corrupt the artifact before reconcile.
-    p = out / "patches" / "s1.effnet.npy"
+    p = out / pub.artifact_ref
     p.write_bytes(p.read_bytes() + b"\x00")
     report = store.reconcile()
     # pending only promotes to ready on a verified artifact; a bad one stays pending.
@@ -317,12 +284,6 @@ def test_pending_row_with_bad_file_is_not_silently_promoted(con, tmp_path):
     assert _row_status(con, "s1") == "pending"
     assert not store.has_ready("s1", "effnet")
     assert report.clean is False
-
-
-def _row_status(con, song: str) -> str:
-    return con.execute(
-        "SELECT status FROM stream_registry WHERE song_id = ? AND backbone = 'effnet'", [song]
-    ).fetchone()[0]
 
 
 # ── relocation-safe root-relative references ───────────────────────────────────
@@ -372,7 +333,7 @@ def test_strict_verify_raises_on_corruption(con, tmp_path, corruption_kind):
     store = _store(con, out)
     store.publish("s1", "effnet", _arr(3, 4), run_id="r1")
     store.reconcile()
-    p = out / "patches" / "s1.effnet.npy"
+    p = out / store.lookup("s1", "effnet").artifact_ref
     if corruption_kind == "missing":
         p.unlink()
     elif corruption_kind == "byte_corrupt":
@@ -384,50 +345,12 @@ def test_strict_verify_raises_on_corruption(con, tmp_path, corruption_kind):
 
 
 @pytest.mark.unit
-def test_strict_verify_raises_on_stray_and_legacy_orphans(con, tmp_path):
-    out = tmp_path / "out"
-    store = _ready(con, out, "s1")
-    patches = out / "patches"
-    # stray: an unowned versioned file whose identity has no registry row.
-    np.save(patches / "songX.effnet.v3.npy", _arr(2, 3))
-    with pytest.raises(VerifyFailureError):
-        store.verify(strict=True)
-
-    # legacy: a bare never-registered pre-registry file (not provenance-managed).
-    store2 = _ready(con, out, "s2", arr=_arr(2, 3))
-    np.save(patches / "songLegacy.effnet.npy", _arr(2, 3))
-    with pytest.raises(VerifyFailureError):
-        store2.verify(strict=True)
-
-
-@pytest.mark.unit
 def test_strict_verify_raises_on_unpromoted_pending(con, tmp_path):
     out = tmp_path / "out"
     store = _store(con, out)
-    store.publish("s1", "effnet", _arr(3, 4), run_id="r1")
+    pub = store.publish("s1", "effnet", _arr(3, 4), run_id="r1")
     # Corrupt before reconcile so the pending row can never promote.
-    p = out / "patches" / "s1.effnet.npy"
+    p = out / pub.artifact_ref
     p.write_bytes(p.read_bytes() + b"\x00")
     with pytest.raises(VerifyFailureError):
         store.verify(strict=True)
-
-
-@pytest.mark.unit
-def test_strict_verify_allows_superseded_archived_bytes(con, tmp_path):
-    """DD-faithful reading (flagged): a preserved SUPERSEDED archive is NOT a strict failure.
-
-    Force re-publication archives the old immutable bytes (``superseded``) as the
-    designed immutable-supersession outcome.  ``--verify --strict`` fails only on
-    corruption/missing/unresolved/incomplete artifacts — never on an expected preserved
-    archive, which is cleaned by an explicit archival-scope pass (Plan E).  So a corpus
-    with a superseded v1 but a live verified v2 must pass strict verify.
-    """
-    out = tmp_path / "out"
-    store = _store(con, out)
-    store.publish("s1", "effnet", _arr(3, 4, fill=1.0), run_id="r1")
-    store.reconcile()
-    store.publish("s1", "effnet", _arr(3, 4, fill=2.0), run_id="r2")
-    report = store.verify(strict=True)  # reconciles + strict-checks; must NOT raise
-    assert report.superseded == 1  # the archive is present...
-    assert report.legacy == 0 and report.stray == 0  # ...but it is not a genuine orphan
-    assert report.ready == report.scanned == 1

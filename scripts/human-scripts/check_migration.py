@@ -10,11 +10,11 @@ Validates that old patterns are fully eliminated:
 - Ruff ban exists (only when --expect-ban is specified)
 
 Usage:
-    python scripts/check_migration.py nomarr.helpers.old_module
-    python scripts/check_migration.py nomarr.helpers.old_module.old_function
-    python scripts/check_migration.py --old nomarr.services.queue_svc --new nomarr.services.domain.tagging_svc
-    python scripts/check_migration.py nomarr.services.queue_svc --format=json
-    python scripts/check_migration.py nomarr.helpers.time --expect-ban  # Verify ruff ban exists
+    python scripts/human-scripts/check_migration.py nomarr.helpers.old_module
+    python scripts/human-scripts/check_migration.py nomarr.helpers.old_module.old_function
+    python scripts/human-scripts/check_migration.py --old nomarr.services.queue_svc --new nomarr.services.domain.tagging_svc
+    python scripts/human-scripts/check_migration.py nomarr.services.queue_svc --format=json
+    python scripts/human-scripts/check_migration.py nomarr.helpers.time --expect-ban  # Verify ruff ban exists
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import TypedDict
 
 NOMARR_ROOT = Path("nomarr")
-SKILLS_DIR = Path(".github/skills")
+SKILLS_DIR = Path(".opencode/skills")
 RUFF_TOML = Path("tool_configs/ruff.toml")
 
 

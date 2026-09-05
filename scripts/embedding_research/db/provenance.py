@@ -5,11 +5,12 @@ recreates them):
 
 * ``run_provenance`` — one row per completed phase run (``run_id`` is an application
   string; NO ``PRIMARY KEY``/``UNIQUE``, matching DuckDB ART/WAL policy).  ``retained``
-  protects a row from manifest/view GC; ``view_refs`` is a root-relative view-ref seed
-  (empty now, populated by Plan D).
+  protects a row from manifest/view GC; ``view_refs`` is a root-relative view-ref
+  column holding disposable search-view references (``keyset_hash|content_hash|view_ref`` lines)
+  written by the Plan D analyze path.
 * ``corpus_state`` — a strict SINGLETON: every write verifies zero-or-one rows first and
   raises when more than one exists (that is corruption).  Fields Plan C owns later
-  (``latest_catalog_run_id`` / ``latest_search_view_hash``) are written empty/NULL here.
+  (``latest_catalog_run_id``) are written empty/NULL here.
 
 Timestamps are INTEGER milliseconds (the project wall-clock convention).
 """
@@ -59,7 +60,6 @@ corpus_state_columns: tuple[str, ...] = (
     "eligible_song_count",
     "complete_flag",
     "latest_catalog_run_id",
-    "latest_search_view_hash",
     "reconciled_at",
     "reconciliation_status",
 )
@@ -167,7 +167,6 @@ def update_corpus_state(
     eligible_song_count: int = 0,
     complete_flag: bool = False,
     latest_catalog_run_id: str = "",
-    latest_search_view_hash: str = "",
     reconciled_at: int,
     reconciliation_status: str = "",
 ) -> None:
@@ -191,7 +190,6 @@ def update_corpus_state(
             "eligible_song_count": eligible_song_count,
             "complete_flag": complete_flag,
             "latest_catalog_run_id": latest_catalog_run_id,
-            "latest_search_view_hash": latest_search_view_hash,
             "reconciled_at": reconciled_at,
             "reconciliation_status": reconciliation_status,
         }

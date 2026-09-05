@@ -163,9 +163,9 @@ def test_derived_runner_imports_only_cpu_roots(phase):
 def _referenced_identifier_components(body: ast.AST) -> set[str]:
     """Every identifier component referenced in ``body`` (Names + Attribute-chain parts).
 
-    Substring-style forbidden-token checks false-positive on the canonical
-    ``run_shared_ptc_head_pooling`` (contains ``head_pooling``), so we match
-    forbidden surfaces at whole-identifier granularity instead.
+    Substring-style forbidden-token checks false-positive on identifiers that embed a
+    forbidden surface name (e.g. ``head_pooling``), so we match forbidden surfaces at
+    whole-identifier granularity instead.
     """
     comps: set[str] = set()
     for node in ast.walk(body):
@@ -190,7 +190,7 @@ def test_derived_runner_has_no_forbidden_tokens(phase):
 
 
 def test_head_analysis_runner_uses_canonical_cpu_runner_not_legacy_classify():
-    """head-analysis must invoke common.head_analysis.run_shared_ptc_head_pooling and
+    """head-analysis must invoke common.head_analysis.run_shared_catalog_head_analysis and
     never the classify.py LEGACY live-ONNX runner."""
     runner_name = run_mod.CLI_PHASE_RUNNERS["head-analysis"].__name__
     body = _function_body(runner_name)
@@ -198,7 +198,7 @@ def test_head_analysis_runner_uses_canonical_cpu_runner_not_legacy_classify():
     # imports the canonical CPU shared-head runner
     assert any(p == "common.head_analysis" or p.startswith("common.head_analysis.") for p in imports)
     src = ast.get_source_segment(_RUN_SOURCE, body) or ""
-    assert "run_shared_ptc_head_pooling" in src
+    assert "run_shared_catalog_head_analysis" in src
     # ...and never the classify.py / head_pooling.py LEGACY surfaces.  Imports are
     # already asserted above to come only from common.head_analysis; the identifier
     # check below guards against any inline reference to the LEGACY symbols.
@@ -222,9 +222,18 @@ def _unit(rng, n: int, d: int) -> object:
     return (m / norms).astype(np.float32)
 
 
-def _seed_cataloged(con, out):
-    """Register songs, publish ready effnet streams, and build a verified catalog."""
+def _seed_compact_catalog(con, out) -> None:
+    """Register songs, publish ready effnet streams, build a VERIFIED COMPACT catalog.
+
+    P1-S11 dedicated analyze-dispatch setup: writes the compact snapshot to
+    ``out/catalogs/.staging-run-cat-an/catalog.duckdb`` (never the research DB) and leaves
+    NO live snapshot handle open, so ``_run_single_phase``'s own read-only open is the sole
+    handle.  Kept separate from the shared ``_seed_cataloged`` helper (which the report/
+    head dispatch fixtures still migrate in P1-S13) so this step touches only what the
+    analyze dispatch test needs.
+    """
     from scripts.embedding_research import catalog
+    from scripts.embedding_research.streams import make_current_stream_resolver
     from scripts.embedding_research.streams.store import StreamStore
 
     songs = ("s1", "s2", "s3", "s4")
@@ -240,8 +249,8 @@ def _seed_cataloged(con, out):
         store.publish(song, "effnet", _unit(rng, 10, 6), run_id="run-embed")
     store.reconcile()
     rep = catalog.build_segmentation_catalog(
-        con,
-        store,
+        make_current_stream_resolver(store),
+        None,
         [
             catalog.SegConfigInput(
                 backbone="effnet",
@@ -251,11 +260,22 @@ def _seed_cataloged(con, out):
             )
         ],
         list(songs),
-        "run-cat-seed",
+        output_root=str(out),
+        run_id="run-cat-an",
         verify=True,
     )
     assert rep.verify_ok is True
-    return store, int(rep.configs[0].config_id)
+    # Durably publish the staged catalog so current.json is authoritative for derived phases.
+    from scripts.embedding_research import catalog_storage as _cs
+
+    staging_dir = Path(out) / "catalogs" / ".staging-run-cat-an"
+    dcon = __import__("duckdb").connect(str(staging_dir / _cs.CATALOG_DB_FILE), read_only=True)
+    try:
+        _manifest = _cs.derive_catalog_manifest(dcon)
+    finally:
+        dcon.close()
+    _ph = _cs.publish_catalog_snapshot(staging_dir, manifest=_manifest)
+    _ph.close()
 
 
 def _seed_analyze_rows(con, store, *, run_id="run-an-seed"):
@@ -331,7 +351,7 @@ def _base_cfg(out) -> dict:
 
 def test_catalog_report_dispatch_smoke_zero_forbidden_calls(con, tmp_path, monkeypatch):
     """catalog-report driven through the real dispatch completes, no audio/ML calls."""
-    _seed_cataloged(con, tmp_path / "out")
+    _seed_compact_catalog(con, tmp_path / "out")
     sentinels = _install_audio_sentinels(monkeypatch)
     cfg = _base_cfg(tmp_path / "out")
 
@@ -347,7 +367,7 @@ def test_catalog_report_dispatch_smoke_zero_forbidden_calls(con, tmp_path, monke
 
 def test_analyze_dispatch_smoke_zero_forbidden_calls(con, tmp_path, monkeypatch):
     """analyze driven through the real dispatch completes via bounded CPU scoring."""
-    _store, _config_id = _seed_cataloged(con, tmp_path / "out")
+    _seed_compact_catalog(con, tmp_path / "out")
     sentinels = _install_audio_sentinels(monkeypatch)
     cfg = _base_cfg(tmp_path / "out")
 
@@ -360,15 +380,15 @@ def test_analyze_dispatch_smoke_zero_forbidden_calls(con, tmp_path, monkeypatch)
 
 
 def test_head_analysis_dispatch_invokes_canonical_runner_not_classify(con, tmp_path, monkeypatch):
-    """head-analysis dispatch wiring calls common.head_analysis.run_shared_ptc_head_pooling
+    """head-analysis dispatch wiring calls common.head_analysis.run_shared_catalog_head_analysis
     (the canonical CPU runner) — never the classify.py LEGACY runner."""
     from scripts.embedding_research.common import head_analysis as _head_analysis_mod
 
-    _seed_cataloged(con, tmp_path / "out")
+    _seed_compact_catalog(con, tmp_path / "out")
     calls: list[str] = []
 
     def _fake_manifest(*_a, **_k):
-        calls.append("run_shared_ptc_head_pooling")
+        calls.append("run_shared_catalog_head_analysis")
         return types.SimpleNamespace(
             done=0,
             skipped=0,
@@ -380,9 +400,9 @@ def test_head_analysis_dispatch_invokes_canonical_runner_not_classify(con, tmp_p
             results=[],
         )
 
-    monkeypatch.setattr(_head_analysis_mod, "run_shared_ptc_head_pooling", _fake_manifest)
+    monkeypatch.setattr(_head_analysis_mod, "run_shared_catalog_head_analysis", _fake_manifest)
     cfg = _base_cfg(tmp_path / "out")
 
     run_mod._run_single_phase(con, "head-analysis", cfg)
 
-    assert calls == ["run_shared_ptc_head_pooling"], "head-analysis must invoke the canonical CPU runner"
+    assert calls == ["run_shared_catalog_head_analysis"], "head-analysis must invoke the canonical CPU runner"

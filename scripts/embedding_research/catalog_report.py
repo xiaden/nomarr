@@ -1,51 +1,34 @@
 """Alias resolution/validation, structural-change summaries, and catalog reports
-(Plan C, Phase 4 — P4-S2 + P4-S4).
+(Plan C, Phase 4 — P4-S2 + P4-S4; rewired to the COMPACT durable snapshot in P1-S6(d)).
 
 Aliases
-    Threshold-collapse aliases are preserved as ``seg_config.alias_of_config_id`` pointing an
-    alias row at its canonical config row.  A config is canonical when ``alias_of_config_id``
-    is NULL; otherwise it is an alias.  Both alias and canonical own their ``seg_config`` row;
-    the alias's ``threshold_configured`` may differ but it must *collapse to the canonical
-    meaning*: its effective segmentation meaning ``(backbone, bin_mode, semantics,
-    threshold_effective, outlier_window, strategy_version)`` must equal the canonical's.
-    Aliasing never permits two meanings for one canonical, so :func:`validate_alias_graph`
-    rejects:
-
-    * self-aliasing (``alias_of_config_id == config_id``);
-    * a missing alias target;
-    * an alias whose target is itself an alias (alias-of-alias) — targets must be canonical,
-      which also forbids chains/cycles and "an alias that is itself an alias target";
-    * a meaning conflict — an alias whose effective meaning differs from its canonical's
-      (two meanings under one canonical).
-
-    :func:`resolve_alias_id` reduces any alias id to its canonical id (identity collapses to
-    one canonical meaning); canonical ids resolve to themselves.
+    Alias/collapse evidence is now derived TRANSIENTLY from the current exact /
+    search hashes (DD L266): no durable alias graph or alias column exists.  Two configs whose
+    per-song search leaves are identical produce one scorer execution and are reported as an
+    alias (the lowest ``config_id`` is the representative; the others report to it).  Because
+    every compact config is canonical, capture/structural-change reporting still diffs each
+    config independently, so equal-exact/differing-search structural reporting is preserved.
 
 Structural-change summaries
-    :func:`capture_catalog_structure` snapshots each config's exact per-song membership
-    structure (segments with observed medoid, member/outlier counts, membership-row count).
-    :func:`structural_changes` diffs two snapshots (e.g. two runs) and reports membership /
-    medoid / count / presence changes EXPLICITLY — distinct configurations are never silently
+    :func:`capture_catalog_structure` snapshots each compact config's per-song structure from
+    ``seg_meta`` (observed searchable medoid, ``searchable_count`` member count, ``absorbed_count``
+    absorbed-outlier count).  :func:`structural_changes` diffs two snapshots and reports
+    presence / medoid / count changes EXPLICITLY — distinct configurations are never silently
     collapsed.
 
 Catalog report (P4-S4)
-    :func:`build_catalog_report` reads catalog state + run provenance and produces a listing:
-    canonical configs, aliases, configured + effective thresholds, empty songs (eligible songs
-    lacking catalog coverage), exact membership + absorbed-outlier counts, observed medoid-index
-    changes, structural changes, ``search_view_hash`` and ``catalog_fingerprint``.  Because this
-    report is read from catalog state + run provenance (a DB-derived read), it surfaces only
-    empty songs.
+    :func:`build_catalog_report` reads COMPACT catalog state (``seg_config`` / ``catalog_song`` /
+    ``seg_meta``) and produces a listing: canonical configs, transient alias/collapse entries,
+    configured + effective thresholds, exact searchable + absorbed-outlier counts, observed
+    medoid-index changes, structural changes, ``catalog_fingerprint``.
+    Because the compact snapshot carries no per-patch membership rows, ``membership_row_total``
+    is recomputed as the sum over ``seg_meta.searchable_count`` (never an invented per-row
+    membership count).  ``empty_songs`` lists ``(config_id, song_id)`` pairs whose compact
+    ``catalog_song`` row is metadata-only (zero searchable coverage) under the config.
 
-    Per-config partial/empty/failed run status is NOT derivable from a post-build DB read (per-
-    (config, song) write failures are transient and not persisted per-song), so ``CatalogReport``
-    cannot distinguish a failed song from one never covered.  The per-config ``empty`` /
-    ``partial`` / ``failed`` status that a build run actually recorded is visible only on the
-    build's own return value: each per-config ``ConfigBuildOutcome`` inside
-    :class:`CatalogBuildReport`.configs carries ``status`` and ``failed_songs`` (failed songs are
-    per-config outcome fields, never a single ``CatalogBuildReport`` attribute).  The ``run``
-    provenance row records the run-level ``status``; the per-config ``structural_change_summary``
-    ("/config_id:status:songs=n/m"-style) is stored there for the CLI, but ``report_to_text``
-    renders only the run ``status`` line, not that per-config summary.
+    ``build_catalog_report`` is called with the COMPACT snapshot connection (typically
+    ``CatalogHandle.con``), preserving the §C ``catalog_report(con, catalog: CatalogHandle)``
+    report shape over a published/opened snapshot.
 
     It does NOT wire the CLI (Plan E) and does NOT add a view_manifest or any second catalog-
     state table; no per-song failed/empty table is added in Plan C.
@@ -54,176 +37,43 @@ Catalog report (P4-S4)
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
 
 _log = logging.getLogger(__name__)
 
 from scripts.embedding_research.catalog_identity import (
+    CATALOG_SEMANTICS_VERSION,
     catalog_fingerprint,
-    search_view_hash,
+    collapse_search_representations,
 )
-from scripts.embedding_research.db.provenance import (
-    read_run_provenance,
-)
-from scripts.embedding_research.db.segmentation import (
+from scripts.embedding_research.catalog_storage import (
+    CATALOG_METADATA_TABLE,
+    CATALOG_SONG_TABLE,
+    RUN_PROVENANCE_COLS,
+    RUN_PROVENANCE_TABLE,
+    SEG_CONFIG_COLS,
     SEG_CONFIG_TABLE,
-    SEG_MEMBERSHIP_TABLE,
+    SEG_META_COLS,
     SEG_META_TABLE,
-    seg_config_columns,
-    seg_meta_columns,
+    snapshot_leaf_hashes,
 )
 from scripts.embedding_research.helpers.thresholds import canonical_float
-from scripts.embedding_research.streams.records import STREAM_TABLE
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping
+    from collections.abc import Mapping
 
 __all__ = [
-    "AliasError",
-    "AliasIndex",
-    "AliasMeaningConflictError",
-    "AliasSelfError",
-    "AliasTargetMissingError",
-    "AliasTargetNotCanonicalError",
     "CatalogReport",
     "ConfigSnapshot",
     "SegmentSnapshot",
     "SongSnapshot",
     "StructuralChanges",
-    "build_alias_index",
     "build_catalog_report",
     "capture_catalog_structure",
-    "resolve_alias_id",
+    "catalog_report",
     "structural_changes",
-    "validate_alias_graph",
 ]
-
-
-# ── Alias exceptions ───────────────────────────────────────────────────────────
-
-
-class AliasError(RuntimeError):
-    """Base error for segmentation-config alias validation."""
-
-
-class AliasSelfError(AliasError):
-    """A config aliases itself."""
-
-
-class AliasTargetMissingError(AliasError):
-    """An alias points at a nonexistent config id."""
-
-
-class AliasTargetNotCanonicalError(AliasError):
-    """An alias target is itself an alias (alias-of-alias / chain / cycle)."""
-
-
-class AliasMeaningConflictError(AliasError):
-    """An alias's effective meaning differs from its canonical's (two meanings, one canonical)."""
-
-
-# ── Alias resolution ───────────────────────────────────────────────────────────
-
-#: The fields that define the EFFECTIVE segmentation meaning a config row applies.
-_MEANING_FIELDS: tuple[str, ...] = (
-    "backbone",
-    "bin_mode",
-    "semantics",
-    "threshold_effective",
-    "outlier_window",
-    "strategy_version",
-)
-
-
-def _effective_meaning(cfg: Mapping[str, object]) -> str:
-    """Canonical, order-fixed encoding of a config's effective segmentation meaning.
-
-    Compares floats via their canonical text (0.1 == 1e-1) so equivalent doubles compare
-    equal regardless of the stored literal.  ``threshold_configured`` is deliberately NOT in
-    the meaning — the alias's configured value may differ as long as it collapses to the
-    canonical effective meaning.
-    """
-    parts: list[str] = []
-    for key in _MEANING_FIELDS:
-        value = cfg[key]
-        if key == "threshold_effective":
-            parts.append(f"{key}={canonical_float(float(value))}")
-        else:
-            parts.append(f"{key}={value}")
-    return "|".join(parts)
-
-
-@dataclass(frozen=True)
-class AliasIndex:
-    """Validated alias→canonical mapping over a config set.
-
-    ``canonical_config_ids`` lists canonical config ids ascending; ``alias_targets`` maps each
-    alias config id to its canonical config id (ascending by alias id).
-    """
-
-    canonical_config_ids: tuple[int, ...]
-    alias_targets: dict[int, int]
-
-    @property
-    def alias_config_ids(self) -> tuple[int, ...]:
-        return tuple(sorted(self.alias_targets))
-
-
-def build_alias_index(configs: Iterable[Mapping[str, object]]) -> AliasIndex:
-    """Build a validated alias index from ``seg_config`` row dicts.
-
-    Raises the appropriate :class:`AliasError` subclass on the first invalid alias (self,
-    missing target, non-canonical target / chain, or meaning conflict).  A config with no
-    ``alias_of_config_id`` is canonical and resolves to itself.
-    """
-    by_id: dict[int, dict] = {}
-    for cfg in configs:
-        by_id[int(cfg["config_id"])] = dict(cfg)
-    canonical: list[int] = []
-    alias_targets: dict[int, int] = {}
-    for config_id in sorted(by_id):
-        cfg = by_id[config_id]
-        target_raw = cfg.get("alias_of_config_id")
-        if target_raw is None:
-            canonical.append(config_id)
-            continue
-        target = int(target_raw)
-        if target == config_id:
-            raise AliasSelfError(f"config {config_id} cannot alias itself")
-        if target not in by_id:
-            raise AliasTargetMissingError(f"config {config_id} aliases missing config {target}")
-        tgt = by_id[target]
-        if tgt.get("alias_of_config_id") is not None:
-            raise AliasTargetNotCanonicalError(
-                f"config {config_id} aliases config {target} which is itself an alias "
-                f"(alias targets must be canonical; chains/cycles are rejected)"
-            )
-        if _effective_meaning(cfg) != _effective_meaning(tgt):
-            raise AliasMeaningConflictError(
-                f"config {config_id} aliases canonical config {target} but its effective "
-                f"meaning {_effective_meaning(cfg)!r} differs from the canonical's "
-                f"{_effective_meaning(tgt)!r} — two meanings under one canonical"
-            )
-        alias_targets[config_id] = target
-    return AliasIndex(canonical_config_ids=tuple(canonical), alias_targets=alias_targets)
-
-
-def validate_alias_graph(con) -> AliasIndex:
-    """Load every ``seg_config`` row and validate the alias graph; return the index."""
-    rows = con.execute(
-        f"SELECT {', '.join(seg_config_columns)} FROM {SEG_CONFIG_TABLE} ORDER BY {', '.join(seg_config_columns)}"
-    ).fetchall()
-    configs = [dict(zip(seg_config_columns, row, strict=True)) for row in rows]
-    return build_alias_index(configs)
-
-
-def resolve_alias_id(config_id: int, index: AliasIndex) -> int:
-    """Reduce *config_id* to its canonical id (identity collapses to one canonical meaning)."""
-    canonical = index.alias_targets.get(config_id, config_id)
-    if canonical not in index.canonical_config_ids:
-        raise AliasError(f"config {config_id} does not resolve to a canonical config in the given index")
-    return canonical
 
 
 # ── Structural snapshots and diffs ─────────────────────────────────────────────
@@ -251,28 +101,32 @@ class ConfigSnapshot:
 
 
 def _read_config_snapshot(con, config_id: int) -> ConfigSnapshot:
+    """Snapshot one config's per-song structure from COMPACT ``seg_meta`` rows.
+
+    Medoid maps to ``search_medoid_source_patch_idx`` (``None`` -> ``-1`` sentinel so the
+    int-typed :class:`SegmentSnapshot` stays total); member count maps to ``searchable_count``;
+    absorbed-outlier count maps to ``absorbed_count``.  No per-patch membership rows are
+    invented: ``membership_rows`` is recomputed as ``searchable_count`` (the number of
+    searchable members reconstructed from the compact structural metadata).
+    """
     meta = con.execute(
-        f"SELECT {', '.join(seg_meta_columns)} FROM {SEG_META_TABLE} WHERE config_id = ? ORDER BY song_id, seg_id",
+        f"SELECT {', '.join(SEG_META_COLS)} FROM {SEG_META_TABLE} WHERE config_id = ? ORDER BY song_id, seg_id",
         [config_id],
     ).fetchall()
-    count_rows = con.execute(
-        f"SELECT song_id, seg_id, count(*) FROM {SEG_MEMBERSHIP_TABLE} "
-        "WHERE config_id = ? GROUP BY song_id, seg_id ORDER BY song_id, seg_id",
-        [config_id],
-    ).fetchall()
-    membership_counts = {(str(s), int(sg)): int(n) for s, sg, n in count_rows}
     by_song: dict[str, list[SegmentSnapshot]] = {}
     for row in meta:
-        m = dict(zip(seg_meta_columns, row, strict=True))
+        m = dict(zip(SEG_META_COLS, row, strict=True))
         song = str(m["song_id"])
         seg_id = int(m["seg_id"])
+        medoid = m["search_medoid_source_patch_idx"]
+        searchable_count = int(m["searchable_count"])
         by_song.setdefault(song, []).append(
             SegmentSnapshot(
                 seg_id=seg_id,
-                medoid_source_patch_idx=int(m["medoid_source_patch_idx"]),
-                member_count=int(m["member_count"]),
-                absorbed_outlier_count=int(m["absorbed_outlier_count"]),
-                membership_rows=membership_counts.get((song, seg_id), 0),
+                medoid_source_patch_idx=int(medoid) if medoid is not None else -1,
+                member_count=searchable_count,
+                absorbed_outlier_count=int(m["absorbed_count"]),
+                membership_rows=searchable_count,
             )
         )
     songs = tuple(
@@ -283,7 +137,11 @@ def _read_config_snapshot(con, config_id: int) -> ConfigSnapshot:
 
 
 def capture_catalog_structure(con) -> Mapping[int, ConfigSnapshot]:
-    """Snapshot the exact membership structure of every canonical config id present."""
+    """Snapshot the exact per-song structure of every COMPACT config row present.
+
+    Reads the compact ``seg_config`` (all rows are canonical — there is no
+    ``alias_of_config_id``) and the compact ``seg_meta`` structural data.
+    """
     rows = con.execute(f"SELECT config_id FROM {SEG_CONFIG_TABLE} ORDER BY config_id").fetchall()
     snapshots: dict[int, ConfigSnapshot] = {}
     for (config_id,) in rows:
@@ -404,7 +262,6 @@ class CatalogReport:
     """
 
     catalog_fingerprint: str
-    search_view_hash: str
     canonical_config_ids: tuple[int, ...]
     alias_entries: tuple[tuple[int, int], ...]  # (alias_config_id, canonical_config_id)
     canonical_configs: tuple[dict, ...]
@@ -415,6 +272,15 @@ class CatalogReport:
     config_snapshots: Mapping[int, ConfigSnapshot]
     structural_changes: StructuralChanges | None
     changes: tuple[str, ...]
+    # P1-S13 handle-form linkage + snapshot-representation evidence (empty on the plain
+    # :func:`build_catalog_report` output, populated by the §C ``catalog_report(con, catalog)``
+    # form).  The handle report surfaces exact/search snapshot hashes, never a whole-catalog
+    # search-view identity (DD L258/L266 — ``search_representation_hash`` semantics and the
+    # ``search_view_hash`` removal owned by Plan D P1-S2).
+    catalog_id: str = ""
+    catalog_root: str = ""
+    exact_hash: str = ""
+    search_hash: str = ""
 
     @property
     def alias_count(self) -> int:
@@ -430,15 +296,51 @@ class CatalogReport:
 
 
 def _latest_catalog_run(con, run_id: str | None) -> dict:
+    """Return the latest (or given) ``catalog`` row from the COMPACT run_provenance table.
+
+    The compact snapshot's ``run_provenance`` (``catalog_storage.RUN_PROVENANCE_COLS``) is
+    reserved for the catalog build, but the producer never writes a row into it — build
+    provenance lives on the ``catalog_metadata`` singleton and, once published, in the
+    ``catalog.manifest.json`` capsule.  The report surfaces the owning run only when a row
+    exists; empty snapshots yield ``{}``.
+    """
+    col_csv = ", ".join(RUN_PROVENANCE_COLS)
     if run_id is not None:
-        rows = read_run_provenance(con, run_id=run_id)
-        matches = [r for r in rows if r["phase"] == "catalog"]
-        return matches[0] if matches else {}
-    rows = read_run_provenance(con)
-    for r in sorted(rows, key=lambda r: str(r.get("started_at") or 0)):
-        if r.get("phase") == "catalog":
-            latest = r
-    return latest if "latest" in locals() else {}
+        rows = con.execute(
+            f"SELECT {col_csv} FROM {RUN_PROVENANCE_TABLE} WHERE run_id = ? ORDER BY started_at_ms",
+            [run_id],
+        ).fetchall()
+    else:
+        rows = con.execute(f"SELECT {col_csv} FROM {RUN_PROVENANCE_TABLE} ORDER BY started_at_ms").fetchall()
+    catalog_rows = [dict(zip(RUN_PROVENANCE_COLS, r, strict=True)) for r in rows if str(r[1]) == "catalog"]
+    return catalog_rows[-1] if catalog_rows else {}
+
+
+def _read_all_compact_configs(con) -> dict[int, dict]:
+    """Every COMPACT ``seg_config`` row as a dict keyed by ``config_id`` (all canonical)."""
+    rows = con.execute(f"SELECT {', '.join(SEG_CONFIG_COLS)} FROM {SEG_CONFIG_TABLE} ORDER BY config_id").fetchall()
+    return {int(r[0]): dict(zip(SEG_CONFIG_COLS, r, strict=True)) for r in rows}
+
+
+def _derive_transient_collapse(con, configs: dict[int, dict]) -> tuple[tuple[int, ...], dict[int, int]]:
+    """Derive alias/collapse evidence TRANSIENTLY from the current search leaves (DD L266).
+
+    Delegates to the single source of truth :func:`collapse_search_representations` (shared
+    with the Plan D analysis path) so report and analyze collapse identically: configs whose
+    per-song search leaves are identical collapse to one scorer execution, the lowest
+    ``config_id`` is the representative (canonical) and every other member reports to it as a
+    transient alias.  No durable alias graph or ``alias_of_config_id`` is read or written.
+    """
+    valid = set(configs)
+    classes = [c for c in collapse_search_representations(con) if any(m in valid for m in c.config_ids)]
+    canonical_ids: list[int] = []
+    alias_targets: dict[int, int] = {}
+    for cls in classes:
+        canonical_ids.append(cls.canonical_config_id)
+        for alias_id in cls.alias_ids:
+            if alias_id in valid:
+                alias_targets[alias_id] = cls.canonical_config_id
+    return tuple(sorted(canonical_ids)), alias_targets
 
 
 def build_catalog_report(
@@ -448,82 +350,59 @@ def build_catalog_report(
     run_id: str | None = None,
     baseline_structure: Mapping[int, ConfigSnapshot] | None = None,
 ) -> CatalogReport:
-    """Generate the catalog report (P4-S4).
+    """Generate the catalog report (P4-S4) over the COMPACT durable snapshot.
 
-    Reads the current catalog state and (latest or given) catalog run provenance and emits a
-    listing with every required field.  Uses *baseline_structure* (a prior
-    :func:`capture_catalog_structure` snapshot) to compute observed medoid-index and
-    structural changes; when none is supplied the report exposes the current
-    ``config_snapshots`` and no baseline diff.
+    *con* is the compact snapshot connection (``CatalogHandle.con`` — the §C
+    ``catalog_report(con, catalog: CatalogHandle)`` target).  Reads compact ``seg_config`` /
+    ``catalog_song`` / ``seg_meta``; alias/collapse evidence is derived transiently from the
+    current search leaves (never a durable alias graph).  Uses *baseline_structure* (a prior
+    :func:`capture_catalog_structure` snapshot) to compute observed medoid-index and structural
+    changes; when none is supplied the report exposes the current ``config_snapshots`` and no
+    baseline diff.
     """
     fingerprint = catalog_fingerprint(con, schema_version=schema_version)
-    search_hash = search_view_hash(con)
 
-    configs = {
-        int(cfg["config_id"]): dict(cfg)
-        for cfg in (
-            dict(zip(seg_config_columns, row, strict=True))
-            for row in con.execute(
-                f"SELECT {', '.join(seg_config_columns)} FROM {SEG_CONFIG_TABLE} "
-                f"ORDER BY {', '.join(seg_config_columns)}"
-            ).fetchall()
-        )
-    }
-    try:
-        index = build_alias_index(configs.values())
-    except AliasError as exc:  # pragma: no cover - surfaced defensively
-        # Record the alias-graph corruption before degrading to an all-canonical index so
-        # the exception text is not silently lost.
-        _log.warning("alias graph corrupt; report degrades to an all-canonical index: %s", exc)
-        index = AliasIndex(
-            canonical_config_ids=tuple(sorted(configs)),
-            alias_targets={},
-        )
+    configs = _read_all_compact_configs(con)
+    canonical_config_ids, alias_targets = _derive_transient_collapse(con, configs)
+    alias_entries = tuple((int(alias_id), int(canonical)) for alias_id, canonical in sorted(alias_targets.items()))
+    canonical_set = set(canonical_config_ids)
+    canonical_configs = tuple(configs[cid] for cid in canonical_config_ids)
+    alias_configs = tuple(configs[cid] for cid in sorted(configs) if cid not in canonical_set)
 
-    canonical_configs = tuple(configs[cid] for cid in index.canonical_config_ids)
-    alias_configs = tuple(configs[cid] for cid in index.alias_config_ids)
-    alias_entries = tuple(
-        (int(alias_id), int(canonical)) for alias_id, canonical in sorted(index.alias_targets.items())
-    )
-
-    # Per-config content: segments, membership / outlier counts, empty songs.
+    # Per-config content from compact seg_meta: segment count, exact searchable membership
+    # (recomputed as the sum of ``searchable_count`` — no per-patch membership rows are
+    # invented), and absorbed-outlier total.  Empty songs are the config's metadata-only
+    # (zero-searchable) cataloged songs.
     content: list[dict] = []
     empty_songs: list[tuple[int, str]] = []
-    for cfg in canonical_configs:
-        config_id = int(cfg["config_id"])
-        backbone = str(cfg["backbone"])
-        seg_rows = con.execute(f"SELECT count(*) FROM {SEG_META_TABLE} WHERE config_id = ?", [config_id]).fetchone()[0]
-        mem_rows = con.execute(
-            f"SELECT count(*) FROM {SEG_MEMBERSHIP_TABLE} WHERE config_id = ?", [config_id]
-        ).fetchone()[0]
-        outlier_rows = con.execute(
-            f"SELECT count(*) FROM {SEG_MEMBERSHIP_TABLE} WHERE config_id = ? AND is_absorbed_outlier = true",
+    for config_id in sorted(configs):
+        backbone = str(configs[config_id]["backbone"])
+        seg_rows = int(
+            con.execute(f"SELECT count(*) FROM {SEG_META_TABLE} WHERE config_id = ?", [config_id]).fetchone()[0]
+        )
+        (searchable_total, absorbed_total) = con.execute(
+            f"SELECT coalesce(sum(searchable_count), 0), coalesce(sum(absorbed_count), 0) "
+            f"FROM {SEG_META_TABLE} WHERE config_id = ?",
             [config_id],
-        ).fetchone()[0]
+        ).fetchone()
+        metadata_songs = [
+            str(r[0])
+            for r in con.execute(
+                f"SELECT song_id FROM {CATALOG_SONG_TABLE} "
+                "WHERE config_id = ? AND status = 'metadata_only' ORDER BY song_id",
+                [config_id],
+            ).fetchall()
+        ]
         content.append(
             {
                 "config_id": config_id,
                 "backbone": backbone,
-                "segments": int(seg_rows),
-                "membership_rows": int(mem_rows),
-                "absorbed_outliers": int(outlier_rows),
+                "segments": seg_rows,
+                "membership_rows": int(searchable_total),
+                "absorbed_outliers": int(absorbed_total),
             }
         )
-        covered = {
-            str(r[0])
-            for r in con.execute(
-                f"SELECT DISTINCT song_id FROM {SEG_META_TABLE} WHERE config_id = ?",
-                [config_id],
-            ).fetchall()
-        }
-        ready = {
-            str(r[0])
-            for r in con.execute(
-                f"SELECT DISTINCT song_id FROM {STREAM_TABLE} WHERE backbone = ? AND status = 'ready'",
-                [backbone],
-            ).fetchall()
-        }
-        empty_songs.extend((config_id, song_id) for song_id in sorted(ready - covered))
+        empty_songs.extend((config_id, song_id) for song_id in metadata_songs)
 
     snapshots = capture_catalog_structure(con)
     if baseline_structure is not None:
@@ -536,8 +415,7 @@ def build_catalog_report(
     run = _latest_catalog_run(con, run_id)
     return CatalogReport(
         catalog_fingerprint=fingerprint,
-        search_view_hash=search_hash,
-        canonical_config_ids=tuple(index.canonical_config_ids),
+        canonical_config_ids=canonical_config_ids,
         alias_entries=alias_entries,
         canonical_configs=canonical_configs,
         alias_configs=alias_configs,
@@ -550,18 +428,55 @@ def build_catalog_report(
     )
 
 
+def _catalog_schema_version(con) -> int:
+    """The snapshot's recorded ``catalog_metadata.schema_version`` (fallback = semantics version)."""
+    try:
+        row = con.execute(f"SELECT schema_version FROM {CATALOG_METADATA_TABLE} ORDER BY created_at_ms").fetchone()
+    except Exception:  # pragma: no cover - defensive (schema missing)
+        return CATALOG_SEMANTICS_VERSION
+    return int(row[0]) if row is not None else CATALOG_SEMANTICS_VERSION
+
+
+def catalog_report(con, catalog) -> CatalogReport:
+    """The §C handle-form catalog report: ``catalog_report(con, catalog) -> CatalogReport``.
+
+    *con* is the compact snapshot connection (``catalog.con``) and *catalog* is the
+    ``CatalogHandle`` whose ``catalog_id`` / ``root`` the report links.  Reads the compact
+    ``seg_config`` / ``catalog_song`` / ``seg_meta`` and produces the structural-change,
+    outlier/silence (``absorbed_count`` + metadata-only ``empty_songs``), observed-medoid
+    (``config_snapshots``), searchable-weight (``membership_rows``), exact/search snapshot-hash,
+    and transient alias/collapse evidence.  It surfaces the published catalog's exact/search
+    representation hashes and its durable id/root, and surfaces NO whole-catalog search-view
+    identity: the report hash axis is ``exact_hash`` / ``search_hash``.
+    """
+    schema_version = _catalog_schema_version(con)
+    base = build_catalog_report(con, schema_version=schema_version, baseline_structure=None)
+    exact_hash, search_hash = snapshot_leaf_hashes(con)
+    catalog_root = getattr(catalog, "root", None)
+    return replace(
+        base,
+        catalog_id=str(getattr(catalog, "catalog_id", "")),
+        catalog_root=str(catalog_root) if catalog_root is not None else "",
+        exact_hash=exact_hash,
+        search_hash=search_hash,
+    )
+
+
 def report_to_text(report: CatalogReport) -> str:
     """Render a human-readable listing (used by tests/docs; the CLI phase is Plan E)."""
-    lines: list[str] = [
-        "catalog-report",
-        f"catalog_fingerprint={report.catalog_fingerprint}",
-        f"search_view_hash={report.search_view_hash}",
+    lines: list[str] = ["catalog-report", f"catalog_fingerprint={report.catalog_fingerprint}"]
+    if report.exact_hash:
+        lines.append(f"exact_hash={report.exact_hash}")
+        lines.append(f"search_hash={report.search_hash}")
+        lines.append(f"catalog_id={report.catalog_id}")
+    lines.append(
         f"canonical configs ({len(report.canonical_config_ids)}): "
         + ", ".join(str(cid) for cid in report.canonical_config_ids),
-    ]
+    )
     lines.extend(
         f"  config {cfg['config_id']}: backbone={cfg['backbone']} bin_mode={cfg['bin_mode']} "
-        f"semantics={cfg['semantics']} configured={canonical_float(float(cfg['threshold_configured']))} "
+        f"semantics={cfg['threshold_semantics']} "
+        f"configured={canonical_float(float(cfg['threshold_configured']))} "
         f"effective={canonical_float(float(cfg['threshold_effective']))}"
         for cfg in report.canonical_configs
     )

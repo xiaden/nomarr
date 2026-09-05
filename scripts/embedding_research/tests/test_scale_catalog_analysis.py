@@ -33,7 +33,6 @@ import numpy as np
 from scripts.embedding_research import fixture_benchmark
 from scripts.embedding_research.common import catalog_analysis as ca
 from scripts.embedding_research.db import analyze_scope, load_analyze_metrics
-from scripts.embedding_research.streams.store import StreamStore
 
 # --------------------------------------------------------------------------- #
 # Documented synthetic-corpus surface (P4-S3).                                  #
@@ -75,16 +74,20 @@ def _block_song(rng, blocks: int, per_block: int, d: int) -> np.ndarray:
     return np.asarray(rows, dtype=np.float32)
 
 
-def _build_scale_corpus(con, tmp_path, store_name: str):
-    """Publish one multi-segment effnet stream per song and build TWO canonical configs."""
+def _build_scale_corpus(con, tmp_path, factory, *, store_name: str = "out"):
+    """Publish one multi-segment effnet stream per song and build a COMPACT snapshot harness.
+
+    The two canonical configs are built in ONE compact producer pass (multi-config surface);
+    ``con`` is the RESEARCH connection; the harness's ``.con`` is the compact snapshot for reads.
+    """
     from scripts.embedding_research import catalog
 
-    store = StreamStore(con, output_root=str(tmp_path / store_name))
+    out = tmp_path / store_name
     rng = np.random.default_rng(1)
+    streams = {}
     for song in _SONGS:
         patches = _block_song(rng, _BLOCKS, _PER_BLOCK, _DIM)
-        store.publish(song, "effnet", patches, run_id="run-embed")
-    store.reconcile()
+        streams[(song, "effnet")] = patches
 
     configs = [
         catalog.SegConfigInput(
@@ -95,96 +98,150 @@ def _build_scale_corpus(con, tmp_path, store_name: str):
         )
         for t in _CONFIG_SPECS
     ]
-    for i, config in enumerate(configs):
-        rep = catalog.build_segmentation_catalog(con, store, [config], list(_SONGS), f"run-cat-{i + 1}", verify=True)
-        assert rep.verify_ok is True
-    return store
+    return factory(con, out, streams=streams, configs=configs, song_ids=list(_SONGS), run_id="run-cat-scale")
 
 
 def _cfg(run_id: str) -> ca.CatalogAnalysisConfig:
     return ca.CatalogAnalysisConfig(run_id=run_id, backbone="effnet", song_ids=_SONGS, artists=_ARTISTS, k=5)
 
 
-def test_scale_corpus_yields_several_segments_per_song(con, tmp_path):
+def _analyze(store, harness, con, cfg):
+    """Run catalog-first analysis: catalog reads on the compact snapshot, research writes on con."""
+    return ca.run_catalog_analysis(store, harness.con, cfg, research_con=con)
+
+
+def test_scale_corpus_yields_several_segments_per_song(con, tmp_path, compact_catalog_factory):
     """The synthetic corpus genuinely exercises several segments per song (never assumed)."""
     from scripts.embedding_research import catalog
 
-    _build_scale_corpus(con, tmp_path, "out")
-    config_ids = [c.config_id for c in catalog.configs_by_backbone(con, "effnet")]
-    assert len(config_ids) == len(_CONFIG_SPECS)  # both canonical configs built
-    # A strict segment under the first (coarse) config is expected per block; assert the
-    # threshold/corpus surface has several segments per song, not just one.
-    for song in _SONGS:
-        segs = catalog.segments_by_config_song(con, config_ids[0], song)
-        assert len(segs) >= 2, f"song {song} produced too few segments: {len(segs)}"
-
-
-def test_scale_catalog_analysis_end_to_end_finite_shape_and_counts(con, tmp_path):
-    """Full catalog-first analysis is finite with correct per-query shape/count semantics."""
-    store = _build_scale_corpus(con, tmp_path, "out")
-    result = ca.analyze_catalog_corpus(store, con, _cfg("run-scale-1"))
-
-    assert result.finite is True
-    assert len(result.search_view_hash) == 64
-    assert len(result.config_ids) == len(_CONFIG_SPECS)
-    assert result.strategy_key.startswith("catalog:effnet:max_per_candidate_segment:v1:")
-
-    # Run-scoped metrics are finite.
-    for key in ("map_k", "mrr", "ndcg_k", "recall_k", "disc_artist"):
-        assert np.isfinite(result.metrics[key]), key
-
-    # Shape/count: one per-query result per query song; every query against every OTHER song.
-    assert result.n_queries == len(_SONGS)
-    assert len(result.per_query) == len(_SONGS)
-    for pq in result.per_query:
-        assert pq.all_finite() is True
-        assert pq.query_song_id in _SONGS
-        assert set(pq.candidate_scores) == set(_SONGS) - {pq.query_song_id}
-        assert len(pq.candidate_scores) == len(_SONGS) - 1  # leave-one-out
-        assert pq.dropped_count == 0  # primary retain_all_candidate_segments never drops
-        assert pq.retained_count > 0
-        assert pq.winner_counts  # winning query-source rows got credit
-        assert all(np.isfinite(v) for v in pq.winner_counts.values())
-
-    # The candidate-key provenance must equal the catalog's other-song medoid row addresses.
-    _assert_candidate_keys_match_catalog(con, result)
-
-
-def _assert_candidate_keys_match_catalog(con, result):
-    """per-query candidate_keys equal the exact other-song medoid rows from the catalog."""
-    from scripts.embedding_research import catalog
-
-    config_ids = tuple(sorted(result.config_ids))
-    by_song: dict[str, list[tuple[int, str, int, int]]] = {s: [] for s in _SONGS}
-    for config_id in config_ids:
+    harness = _build_scale_corpus(con, tmp_path, compact_catalog_factory)
+    try:
+        config_ids = [c.config_id for c in catalog.compact_configs_by_backbone(harness.con, "effnet")]
+        assert len(config_ids) == len(_CONFIG_SPECS)  # both canonical configs built
+        # A strict segment under the first (coarse) config is expected per block; assert the
+        # threshold/corpus surface has several COMPACT seg_meta rows per song, not just one.
         for song in _SONGS:
-            for meta in catalog.segments_by_config_song(con, int(config_id), song):
-                by_song[song].append((int(config_id), song, int(meta.seg_id), int(meta.medoid_source_patch_idx)))
+            segs = catalog.compact_segments_by_config_song(harness.con, config_ids[0], song)
+            assert len(segs) >= 2, f"song {song} produced too few segments: {len(segs)}"
+    finally:
+        harness.close()
+
+
+def test_scale_catalog_analysis_end_to_end_finite_shape_and_counts(con, tmp_path, compact_catalog_factory):
+    """Full catalog-first analysis is finite with canonical-per-class shape/count semantics.
+
+    P1-S4 (AMENDED): candidate keys are the CANONICAL rows of each collapsed
+    :class:`SearchRepresentationClass` (aliases never duplicate rows) while ``config_ids`` still
+    carries EVERY participating config and the transient ``representation_classes`` reports the
+    canonical id + sorted aliases.
+    """
+    harness = _build_scale_corpus(con, tmp_path, compact_catalog_factory)
+    try:
+        store = harness.stream_store
+        result = _analyze(store, harness, con, _cfg("run-scale-1"))
+
+        assert result.finite is True
+        assert len(result.view_content_hash) == 64
+        assert len(result.config_ids) == len(_CONFIG_SPECS)
+        assert result.strategy_key.startswith("catalog:effnet:max_per_candidate_segment:v1:")
+
+        # Transient collapse: config_ids = ALL participating configs sorted; representation_classes
+        # reports the canonical id + sorted aliases (no durable alias state on the result either).
+        assert tuple(sorted(result.config_ids)) == result.config_ids
+        assert result.representation_classes
+        assert {c.canonical_config_id for c in result.representation_classes} <= set(result.config_ids)
+        assert {m for c in result.representation_classes for m in c.config_ids} == set(result.config_ids)
+        assert all(cls.n_configs >= 1 for cls in result.representation_classes)
+
+        # Run-scoped metrics are finite.
+        for key in ("map_k", "mrr", "ndcg_k", "recall_k", "disc_artist"):
+            assert np.isfinite(result.metrics[key]), key
+
+        # Shape/count: one per-query result per (searchable) query song; leave-one-out candidates.
+        assert result.n_queries == len(_SONGS)
+        assert len(result.per_query) == len(_SONGS)
+        for pq in result.per_query:
+            assert pq.all_finite() is True
+            assert pq.query_song_id in _SONGS
+            assert set(pq.candidate_scores) == set(_SONGS) - {pq.query_song_id}
+            assert len(pq.candidate_scores) == len(_SONGS) - 1  # leave-one-out
+            assert pq.dropped_count == 0  # primary retain_all_candidate_segments never drops
+            assert pq.retained_count > 0
+            assert pq.winner_counts  # winning query-source rows got credit
+            assert all(np.isfinite(v) for v in pq.winner_counts.values())
+            # NO alias config may appear among a query's candidate keys (canonical-only, deduped).
+            alias_ids = {a for cls in result.representation_classes for a in cls.alias_ids}
+            assert not ({k[0] for k in pq.candidate_keys} & alias_ids)
+
+        # The candidate-key provenance must equal the catalog's canonical other-song medoid rows
+        # (aliases rejected, deduped per collapsed class).
+        _assert_candidate_keys_match_catalog(harness, result)
+    finally:
+        harness.close()
+
+
+def _assert_candidate_keys_match_catalog(harness, result):
+    """per-query candidate_keys equal the exact other-song canonical COMPACT medoid rows.
+
+    P1-S4 (AMENDED): expected keys are derived from the CANONICAL config of each collapsed
+    :class:`SearchRepresentationClass` only — alias configs are rejected (never duplicated).  A
+    key whose ``config_id`` is an alias (or is not a class canonical) fails the assertion.
+    """
+    from scripts.embedding_research import catalog
+    from scripts.embedding_research.catalog_identity import collapse_search_representations
+
+    con = harness.con
+    # Canonical config per current collapse class over the participating (result) configs.
+    participating = set(result.config_ids)
+    canonical_ids = {
+        cls.canonical_config_id for cls in collapse_search_representations(con) if set(cls.config_ids) & participating
+    }
+    alias_ids = {c for c in participating if c not in canonical_ids}
+    assert alias_ids, "fixture must exercise at least one collapsed alias for the canonical-only check"
+    by_song: dict[str, list[tuple[int, str, int, int]]] = {s: [] for s in _SONGS}
+    for config_id in sorted(canonical_ids):
+        for song in _SONGS:
+            for meta in catalog.compact_segments_by_config_song(con, int(config_id), song):
+                if meta.search_medoid_source_patch_idx is not None:
+                    by_song[song].append(
+                        (int(config_id), song, int(meta.seg_id), int(meta.search_medoid_source_patch_idx))
+                    )
     for pq in result.per_query:
+        key_configs = {int(k[0]) for k in pq.candidate_keys}
+        assert key_configs <= canonical_ids, (
+            f"query {pq.query_song_id!r} leaked alias configs {key_configs & alias_ids}"
+        )
+        assert not (key_configs & alias_ids), f"query {pq.query_song_id!r} duplicated alias rows"
         expected = sorted(addr for song in _SONGS for addr in by_song[song] if song != pq.query_song_id)
         assert sorted(pq.candidate_keys) == expected, pq.query_song_id
 
 
-def test_scale_analysis_deterministic_and_run_scoped_persisted(con, tmp_path):
+def test_scale_analysis_deterministic_and_run_scoped_persisted(con, tmp_path, compact_catalog_factory):
     """Identical re-run reproduces metrics (rtol), and rows persist run-scoped + finite."""
-    store = _build_scale_corpus(con, tmp_path, "out")
-    res1 = ca.run_catalog_analysis(store, con, _cfg("run-scale-a"))
-    res2 = ca.run_catalog_analysis(store, con, _cfg("run-scale-b"))
-    for key in res1.metrics:
-        np.testing.assert_allclose(res2.metrics[key], res1.metrics[key], rtol=1e-6)
+    harness = _build_scale_corpus(con, tmp_path, compact_catalog_factory)
+    try:
+        store = harness.stream_store
+        res1 = _analyze(store, harness, con, _cfg("run-scale-a"))
+        res2 = _analyze(store, harness, con, _cfg("run-scale-b"))
+        for key in res1.metrics:
+            np.testing.assert_allclose(res2.metrics[key], res1.metrics[key], rtol=1e-6)
 
-    # Persist run-scope and read back finite aggregate + per-song rows.
-    analyze_scope.write_catalog_analyze_rows(con, run_id="run-scale-a", result=res1)
-    df = load_analyze_metrics(con, run_id="run-scale-a")
-    assert not df.empty
-    assert set(df["strategy_key"]) == {res1.strategy_key}
-    agg = con.execute("SELECT COUNT(*) FROM analyze_metrics WHERE strategy_key=?", (res1.strategy_key,)).fetchone()[0]
-    assert agg > 0
-    per_song = con.execute(
-        "SELECT COUNT(*) FROM song_retrieval_metrics WHERE strategy_key=?", (res1.strategy_key,)
-    ).fetchone()[0]
-    assert per_song == len(_SONGS)
-    assert analyze_scope.run_row_scopes(con, run_id="run-scale-a") == {(res1.strategy_key, "cosine", res1.k)}
+        # Persist run-scope and read back finite aggregate + per-song rows.
+        analyze_scope.write_catalog_analyze_rows(con, run_id="run-scale-a", result=res1)
+        df = load_analyze_metrics(con, run_id="run-scale-a")
+        assert not df.empty
+        assert set(df["strategy_key"]) == {res1.strategy_key}
+        agg = con.execute("SELECT COUNT(*) FROM analyze_metrics WHERE strategy_key=?", (res1.strategy_key,)).fetchone()[
+            0
+        ]
+        assert agg > 0
+        per_song = con.execute(
+            "SELECT COUNT(*) FROM song_retrieval_metrics WHERE strategy_key=?", (res1.strategy_key,)
+        ).fetchone()[0]
+        assert per_song == len(_SONGS)
+        assert analyze_scope.run_row_scopes(con, run_id="run-scale-a") == {(res1.strategy_key, "cosine", res1.k)}
+    finally:
+        harness.close()
 
 
 def test_scale_analysis_attaches_validated_fixtures_only_benchmark_report():

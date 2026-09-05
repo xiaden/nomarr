@@ -1,637 +1,526 @@
-"""Plan C Phase 3 — the one-pass multi-threshold segmentation catalog build.
+"""Compact durable segmentation-catalog build tests (Plan C, P1-S5).
 
-Proves the DD R8 one-pass + bounded-lookup contracts implemented by
-``scripts.embedding_research/catalog.py``:
-
-* one frozen stream load per ``(song, backbone)`` shared across every explicit or
-  generated threshold config in the pass;
-* all explicit/generated thresholds are evaluated (no early skip);
-* no calibration / optimizer / audio / ONNX / CUDA invocation on the catalog path;
-* application id allocation + single-config rebuild scope (``DELETE WHERE config_id=?``
-  only) leaves unrelated configs preserved;
-* full rebuild and partial-song/config statuses are reported;
-* rerun idempotence (same logical config reuses its ``config_id``, never duplicates);
-* the four bounded lookups return correct records and add no DuckDB indexes;
-* the report carries the arithmetic sizing note, per-config completion counts, and the
-  one-load-per-song evidence.
+These exercise :func:`catalog.build_segmentation_catalog` against the COMPACT
+filesystem snapshot model (catalog_storage ``catalog.duckdb`` staging seams), the
+one-load-per-(song, backbone) producer contract, deterministic canonical-hash
+``config_id`` allocation, per-(config, song) partial-failure capture, mask-driven
+searchable/weight semantics, and post-build ``verify`` drift detection.  The suite is
+self-contained: it never touches the disposable research DB, audio, models, or CUDA
+(fake current-stream + whole-song-mask loaders drive every build).  The HARD-CUT compact
+invariants are asserted directly: no ``seg_membership`` table, no indexes / PK / UNIQUE,
+exactly the five compact tables.
 """
 
 from __future__ import annotations
+
+import importlib
+import math
 
 import numpy as np
 import pytest
 
 from scripts.embedding_research import catalog
-from scripts.embedding_research.config import discover_audio as config_discover_audio
-from scripts.embedding_research.helpers.binning import DIST_FNS
+from scripts.embedding_research.catalog_storage import connect
 from scripts.embedding_research.helpers.segmentation import (
-    authoritative_segmentation,
-    validate_full_partition,
+    reconstruct_searchable_indices,
+    select_observed_medoid_source_index,
 )
-from scripts.embedding_research.streams.records import StreamNotFoundError
-from scripts.embedding_research.streams.store import StreamStore
 
-# Optional ML-stack availability.  The catalog path never imports these; if a platform
-# has them installed we still sentinel them (so a regression that reaches them fires);
-# if they are absent they cannot be called, which is itself the CPU-only proof.
-try:  # pragma: no cover - environment dependent
-    import onnxruntime  # type: ignore[import-not-found]
-except Exception:  # pragma: no cover
-    onnxruntime = None  # type: ignore[assignment]
-
-try:  # pragma: no cover - environment dependent
-    import torch  # type: ignore[import-not-found]
-except Exception:  # pragma: no cover
-    torch = None  # type: ignore[assignment]
+COMPACT_TABLES = ("catalog_metadata", "seg_config", "catalog_song", "seg_meta", "run_provenance")
 
 
-def _unit(rng, n: int, d: int, spread: float = 1.5) -> np.ndarray:
-    """Deterministic float32 L2-unit rows (a normalized frozen-stream stand-in)."""
-    m = rng.standard_normal((n, d)) * spread
-    m[0] += 3.0
-    norms = np.linalg.norm(m, axis=1, keepdims=True)
-    norms = np.where(norms == 0.0, 1.0, norms)
-    return (m / norms).astype(np.float32)
+class FakeStreamStore:
+    """A duck-typed current-stream loader: ``.load(song, backbone) -> float32[P,D] | None``.
+
+    Mirrors the real ``make_current_stream_resolver(...).load`` seam: missing streams
+    return ``None`` (fails closed) instead of raising.
+    """
+
+    def __init__(self, streams: dict[tuple[str, str], np.ndarray]) -> None:
+        self._streams = streams
+
+    def load(self, song_id: str, backbone: str):
+        return self._streams.get((song_id, backbone))
 
 
-def _seed(con, out, mapping: dict[tuple[str, str], np.ndarray]) -> StreamStore:
-    """Publish + reconcile one ready frozen stream per ``(song, backbone)`` in *mapping*."""
-    store = StreamStore(con, output_root=out)
-    for (song, backbone), arr in mapping.items():
-        store.publish(song, backbone, arr, run_id="run-embed")
-    store.reconcile()
-    return store
+class FakeMaskStore:
+    """A duck-typed whole-song mask loader: ``.load(song_id) -> uint8[P] | None``."""
+
+    def __init__(self, masks: dict[str, np.ndarray] | None = None) -> None:
+        self._masks = masks or {}
+
+    def load(self, song_id: str):
+        return self._masks.get(song_id)  # None => no silence for that song
 
 
-def _cfg(threshold: float, *, backbone: str = "effnet", bin_mode: str = "temporal_global") -> catalog.SegConfigInput:
-    """A direct-L2 threshold config (configured == effective) over the PTC temporal map."""
-    return catalog.SegConfigInput(
-        backbone=backbone,
-        bin_mode=bin_mode,
-        threshold_configured=threshold,
-        threshold_effective=threshold,
-    )
+def _song_mat(patch_counts: list[int], *, dim: int = 4, seed: float = 1.0) -> np.ndarray:
+    """Deterministic song stream: alternating ``+x`` / ``-x`` unit blocks.
+
+    Adjacent opposite-sign blocks are distance 2 apart, so a ``threshold_effective`` of
+    ``1.0`` hard-splits between blocks while identical rows inside a block never split.
+    Every patch is finite and nonzero (segmentation-safe).
+    """
+    sign = 1.0
+    rows: list[np.ndarray] = []
+    for count in patch_counts:
+        block = np.zeros((count, dim), dtype=np.float32)
+        block[:, 0] = sign
+        block *= seed
+        rows.append(block)
+        sign *= -1.0
+    return np.concatenate(rows, axis=0)
 
 
-def _seg_counts(con) -> tuple[int, int]:
-    return (
-        int(con.execute("SELECT count(*) FROM seg_config").fetchone()[0]),
-        int(con.execute("SELECT count(*) FROM seg_membership").fetchone()[0]),
-    )
+def _open_snapshot(tmp_path, run_id: str):
+    path = tmp_path / "catalogs" / f".staging-{run_id}" / "catalog.duckdb"
+    return connect(path, read_only=True), path
 
 
-def _membership_count(con, config_id: int) -> int:
-    return int(con.execute("SELECT count(*) FROM seg_membership WHERE config_id = ?", [config_id]).fetchone()[0])
+def _tables(con) -> set[str]:
+    rows = con.execute("SELECT table_name FROM information_schema.tables").fetchall()
+    return {r[0] for r in rows}
 
 
-def _index_count(con) -> int:
-    return int(con.execute("SELECT count(*) FROM duckdb_indexes()").fetchone()[0])
-
-
-def _assert_report_clean(rep: catalog.CatalogBuildReport) -> None:
-    assert rep.verify_ok is True
-    assert rep.arithmetic_sizing_note == catalog.ARITHMETIC_SIZING_NOTE
-    assert "ARITHMETIC" in rep.arithmetic_sizing_note.upper()
-
-
-# --------------------------------------------------------------------------- #
-# R8 one-pass build semantics                                                  #
-# --------------------------------------------------------------------------- #
-
-
-def test_one_stream_load_per_song_across_many_threshold_configs(con, tmp_path, monkeypatch):
-    """Five thresholds share ONE stream load per (song, backbone); report proves it."""
-    out = tmp_path / "out"
-    rng = np.random.default_rng(3)
-    store = _seed(con, out, {("s1", "effnet"): _unit(rng, 5, 4), ("s2", "effnet"): _unit(rng, 6, 4)})
-
-    thresholds = [0.4, 0.5, 0.6, 0.7, 0.8]
-    cfgs = [_cfg(t) for t in thresholds]
-
-    # Wrap the real batch_gather with a counting seam: it is the single file-load site.
-    original = store.batch_gather
-    calls: dict[tuple[str, str], int] = {}
-
-    def counting(song, backbone, indices):
-        key = (song, backbone)
-        calls[key] = calls.get(key, 0) + 1
-        return original(song, backbone, indices)
-
-    monkeypatch.setattr(store, "batch_gather", counting)
-
-    rep = catalog.build_segmentation_catalog(con, store, cfgs, ["s1", "s2"], "run-cat-load")
-
-    # Every threshold config was evaluated and completed for both songs.
-    assert len(rep.configs) == 5
-    for outcome in rep.configs:
-        assert outcome.status == "complete"
-        assert outcome.songs_completed == 2
-        assert outcome.total_membership_rows > 0
-
-    # The stream was loaded EXACTLY once per (song, backbone) regardless of config count.
-    assert calls == {("s1", "effnet"): 1, ("s2", "effnet"): 1}
-    assert rep.stream_loads == 2
-    assert rep.load_evidence == (("s1", "effnet", 1), ("s2", "effnet", 1))
-    assert rep.songs_built == 2
-    assert rep.status == "complete"
-    _assert_report_clean(rep)
-    assert _index_count(con) == 0
-
-
-def test_all_explicit_and_generated_thresholds_present_no_early_skip(con, tmp_path):
-    """Distinct thresholds across backbones all get an outcome (nothing silently skipped)."""
-    out = tmp_path / "out"
-    rng = np.random.default_rng(5)
-    store = _seed(
-        con,
-        out,
-        {
-            ("s1", "effnet"): _unit(rng, 5, 4),
-            ("t1", "musicnn"): _unit(rng, 5, 4),
-            ("t2", "musicnn"): _unit(rng, 6, 4),
-        },
-    )
-    cfgs = [
-        _cfg(1.0, backbone="effnet"),
-        _cfg(0.8, backbone="effnet"),
-        _cfg(1.2, backbone="musicnn", bin_mode="temporal_perdim"),
-        _cfg(0.6, backbone="musicnn", bin_mode="temporal_perdim"),
-    ]
-    rep = catalog.build_segmentation_catalog(con, store, cfgs, ["s1", "t1", "t2"], "run-cat-all")
-
-    # Four distinct canonical configs were evaluated; every song's stream was processed.
-    assert len(rep.configs) == 4
-    seen = {(o.backbone, o.threshold_effective) for o in rep.configs}
-    assert seen == {("effnet", 1.0), ("effnet", 0.8), ("musicnn", 1.2), ("musicnn", 0.6)}
-    assert all(o.status == "complete" for o in rep.configs)
-    assert rep.status == "complete"
-    # effnet stream loaded once; musicnn stream loaded once (shared across 2 musicnn cfgs).
-    assert rep.stream_loads == 3
-    assert rep.load_evidence == (
-        ("s1", "effnet", 1),
-        ("t1", "musicnn", 1),
-        ("t2", "musicnn", 1),
-    )
-
-
-def test_persisted_membership_matches_authoritative_segmentation(con, tmp_path):
-    """Per-song persisted membership equals the pure authoritative segmentation map."""
-    out = tmp_path / "out"
-    rng = np.random.default_rng(7)
-    arr = _unit(rng, 6, 4)
-    store = _seed(con, out, {("s1", "effnet"): arr})
-    cfg = _cfg(0.7)
-    rep = catalog.build_segmentation_catalog(con, store, [cfg], ["s1"], "run-cat-match")
-
-    outcome = rep.configs[0]
-    norm = catalog._l2_normalize_rows(arr)
-    segments = authoritative_segmentation(norm, cfg.threshold_effective, DIST_FNS[cfg.bin_mode])
-    validate_full_partition(segments, len(norm))
-
-    expected = {}
-    for seg in segments:
-        for idx in seg.member_indices:
-            expected[(seg.seg_id, idx)] = None
-
-    persisted = catalog.segments_by_config_song(con, outcome.config_id, "s1")
-    assert len(persisted) == len(segments)
-    actual = {}
-    for meta in persisted:
-        assert meta.medoid_source_patch_idx < len(norm)  # observed index, never a vector
-        members = catalog.membership_by_config_song_seg(con, meta.config_id, "s1", meta.seg_id)
-        for member in members:
-            actual[(meta.seg_id, member.member_patch_idx)] = None
-    assert set(actual) == set(expected)
-
-
-# --------------------------------------------------------------------------- #
-# CPU / model-boundary (catalog is numpy + DuckDB only)                        #
-# --------------------------------------------------------------------------- #
-
-
-class _RaisingSentinel:
-    def __init__(self, name: str, events: list[str]) -> None:
-        self.name = name
-        self.events = events
-
-    def __call__(self, *_args, **_kwargs):
-        self.events.append(self.name)
-        raise AssertionError(f"forbidden call during a CPU-only catalog build: {self.name}")
-
-
-def _install_sentinels(monkeypatch) -> dict[str, int]:
-    """Monkeypatch real audio/ONNX/CUDA call sites with raising sentinels."""
-    events: list[str] = []
-    installed: dict[str, _RaisingSentinel] = {}
-    sentinel = _RaisingSentinel("config.discover_audio", events)
-    monkeypatch.setattr(config_discover_audio.__module__ + ".discover_audio", sentinel)
-    installed["config.discover_audio"] = sentinel
-    if onnxruntime is not None:
-        sentinel = _RaisingSentinel("onnxruntime.InferenceSession", events)
-        monkeypatch.setattr(onnxruntime, "InferenceSession", sentinel)
-        installed["onnxruntime.InferenceSession"] = sentinel
-    if torch is not None:
-        sentinel = _RaisingSentinel("torch.cuda.is_available", events)
-        monkeypatch.setattr(torch.cuda, "is_available", sentinel)
-        installed["torch.cuda.is_available"] = sentinel
-    return {name: len(sentinel.events) for name, sentinel in installed.items()}
-
-
-def test_catalog_build_completes_with_zero_audio_model_cuda_calls(con, tmp_path, monkeypatch):
-    """The catalog pass completes with NO calibration/optimizer/audio/ONNX/CUDA call."""
-    out = tmp_path / "out"
-    rng = np.random.default_rng(2)
-    store = _seed(con, out, {("s1", "effnet"): _unit(rng, 5, 4)})
-    counts = _install_sentinels(monkeypatch)
-
-    rep = catalog.build_segmentation_catalog(con, store, [_cfg(0.8)], ["s1"], "run-cat-cpu", verify=True)
-
-    assert rep.status == "complete"
-    assert rep.configs[0].songs_completed == 1
-    assert counts  # at least config.discover_audio is always guarded
-    assert all(count == 0 for count in counts.values()), counts
-
-
-# --------------------------------------------------------------------------- #
-# Identity / rebuild / transaction semantics (P3-S2)                           #
-# --------------------------------------------------------------------------- #
-
-
-def test_config_id_is_application_allocated_and_reused_on_rerun(con, tmp_path):
-    """Same logical config reuses its id across runs; distinct configs get distinct ids."""
-    out = tmp_path / "out"
-    rng = np.random.default_rng(4)
-    store = _seed(con, out, {("s1", "effnet"): _unit(rng, 5, 4)})
-
-    rep1 = catalog.build_segmentation_catalog(con, store, [_cfg(0.9)], ["s1"], "run-cat-id-1")
-    cfg_id1 = rep1.configs[0].config_id
-
-    rep2 = catalog.build_segmentation_catalog(con, store, [_cfg(0.9), _cfg(0.5)], ["s1"], "run-cat-id-2")
-    ids = {o.threshold_effective: o.config_id for o in rep2.configs}
-    assert ids[0.9] == cfg_id1  # reused, not re-allocated
-    assert ids[0.5] != cfg_id1  # genuinely new logical config -> fresh id
-    assert _seg_counts(con)[0] == 2  # still exactly two seg_config rows
-
-
-def test_rerun_idempotence_no_duplicate_config_or_membership_rows(con, tmp_path):
-    """Running the same logical config set twice leaves identical catalog contents."""
-    out = tmp_path / "out"
-    rng = np.random.default_rng(8)
-    store = _seed(
-        con,
-        out,
-        {("s1", "effnet"): _unit(rng, 5, 4), ("s2", "effnet"): _unit(rng, 6, 4)},
-    )
-    cfgs = [_cfg(0.7), _cfg(1.0)]
-
-    rep1 = catalog.build_segmentation_catalog(con, store, cfgs, ["s1", "s2"], "run-cat-rerun")
-    cfg_rows_1, mem_rows_1 = _seg_counts(con)
-
-    rep2 = catalog.build_segmentation_catalog(con, store, cfgs, ["s1", "s2"], "run-cat-rerun", verify=True)
-    cfg_rows_2, mem_rows_2 = _seg_counts(con)
-
-    assert rep2.status == "complete"
-    assert rep2.verify_ok is True
-    assert cfg_rows_2 == cfg_rows_1 == 2  # config rows never duplicated
-    assert mem_rows_2 == mem_rows_1  # membership rows never duplicated
-    # Same allocated ids across both runs.
-    assert {o.threshold_effective: o.config_id for o in rep1.configs} == {
-        o.threshold_effective: o.config_id for o in rep2.configs
+def _cfg(threshold: float, *, backbone: str = "effnet", bin_mode: str = "direct") -> dict:
+    return {
+        "backbone": backbone,
+        "bin_mode": bin_mode,
+        "threshold_configured": threshold,
+        "threshold_effective": threshold,
     }
 
 
-def test_single_config_rebuild_affects_only_that_config_id(con, tmp_path):
-    """Rebuilding one config deletes/rewrites ONLY its rows; the other config survives."""
-    out = tmp_path / "out"
-    rng = np.random.default_rng(9)
-    store = _seed(
-        con,
-        out,
-        {("s1", "effnet"): _unit(rng, 5, 4), ("s2", "effnet"): _unit(rng, 6, 4)},
+# --------------------------------------------------------------------------- #
+# Schema / HARD-CUT invariants                                                #
+# --------------------------------------------------------------------------- #
+
+
+def test_build_persists_only_compact_tables_no_membership_no_indexes(tmp_path):
+    fs = FakeStreamStore({("s1", "effnet"): _song_mat([5, 3]), ("s2", "effnet"): _song_mat([4, 5, 4])})
+    rep = catalog.build_segmentation_catalog(
+        fs, FakeMaskStore(), [_cfg(1.0)], ["s1", "s2"], output_root=str(tmp_path), run_id="run-a", verify=True
     )
-    cfg_a, cfg_b = _cfg(0.8), _cfg(1.2)
-
-    first = catalog.build_segmentation_catalog(con, store, [cfg_a, cfg_b], ["s1", "s2"], "run-cat-sr-1")
-    id_a = {o.threshold_effective: o.config_id for o in first.configs}[0.8]
-    id_b = {o.threshold_effective: o.config_id for o in first.configs}[1.2]
-    before_a = _membership_count(con, id_a)
-    before_b = _membership_count(con, id_b)
-
-    # Single-config rebuild: only cfg_a is in scope.
-    rebuild = catalog.build_segmentation_catalog(con, store, [cfg_a], ["s1", "s2"], "run-cat-sr-2")
-
-    # cfg_a rows were replaced at its own config_id; cfg_b rows are byte-for-byte intact.
-    assert len(rebuild.configs) == 1
-    assert rebuild.configs[0].config_id == id_a
-    assert _membership_count(con, id_a) == before_a  # fully rewritten, no dup, same song scope
-    assert _membership_count(con, id_b) == before_b  # unrelated config untouched
-    assert _seg_counts(con)[0] == 2  # no new/duplicate config row for cfg_a
+    assert rep.verify_ok is True
+    with _open_snapshot(tmp_path, "run-a")[0] as con:
+        tabs = _tables(con)
+        assert set(COMPACT_TABLES) <= tabs
+        assert "seg_membership" not in tabs  # HARD-CUT: no per-patch membership table
+        assert con.execute("SELECT count(*) FROM seg_config").fetchone()[0] == 1
+        assert con.execute("SELECT count(*) FROM catalog_song").fetchone()[0] == 2
+        # s1 (+x/-x, trailing sign never re-joins): 2 structural segments; s2
+        # (+x/-x(5>window)/+x, middle excursion hard-splits): 3 structural segments.
+        assert con.execute("SELECT count(*) FROM seg_meta").fetchone()[0] == 5
+        assert con.execute("SELECT count(*) FROM catalog_metadata").fetchone()[0] == 1
+        # No application indexes / PK / UNIQUE are created (duckdb_indexes stays empty).
+        assert con.execute("SELECT * FROM duckdb_indexes()").fetchall() == []
 
 
-def test_full_rebuild_and_partial_song_statuses(con, tmp_path, monkeypatch):
-    """Full rebuild clears+recreates in-scope configs; partial failures are reported."""
-    out = tmp_path / "out"
-    rng = np.random.default_rng(6)
-    store = _seed(
-        con,
-        out,
-        {("s1", "effnet"): _unit(rng, 5, 4), ("s2", "effnet"): _unit(rng, 6, 4)},
+# --------------------------------------------------------------------------- #
+# One-load-per-(song, backbone) pass + evidence                               #
+# --------------------------------------------------------------------------- #
+
+
+def test_one_stream_load_per_song_shared_across_threshold_configs(tmp_path):
+    """Two thresholds for one backbone => one stream load per (song, backbone), not per config."""
+    fs = FakeStreamStore({("s1", "effnet"): _song_mat([5, 3]), ("s2", "effnet"): _song_mat([8])})
+    rep = catalog.build_segmentation_catalog(
+        fs,
+        FakeMaskStore(),
+        [_cfg(0.4), _cfg(0.9)],
+        ["s1", "s2"],
+        output_root=str(tmp_path),
+        run_id="run-b",
+        verify=True,
     )
-    cfgs = [_cfg(0.6), _cfg(1.1)]
-
-    # Full rebuild over all songs -> both configs complete.
-    full = catalog.build_segmentation_catalog(con, store, cfgs, ["s1", "s2"], "run-cat-full-1")
-    assert full.status == "complete"
-    assert all(o.status == "complete" for o in full.configs)
-
-    # Second full rebuild (new run_id) reuses the same ids, same contents, no duplicates.
-    full2 = catalog.build_segmentation_catalog(con, store, cfgs, ["s1", "s2"], "run-cat-full-2", verify=True)
-    assert full2.status == "complete"
-    assert _seg_counts(con)[1] == full.total_membership_rows
-
-    # Genuine per-song write failure -> partial-song status (never a silent half-write).
-    orig_write = catalog._write_song_membership
-
-    def _flaky(con_, *, config_id, song_id, segments):
-        if song_id == "s2":
-            raise RuntimeError("simulated membership write failure")
-        return orig_write(con_, config_id=config_id, song_id=song_id, segments=segments)
-
-    monkeypatch.setattr(catalog, "_write_song_membership", _flaky)
-    partial = catalog.build_segmentation_catalog(con, store, [_cfg(0.6)], ["s1", "s2"], "run-cat-partial")
-    monkeypatch.undo()
-    assert partial.status == "partial"
-    outcome = partial.configs[0]
-    assert outcome.status == "partial"
-    assert outcome.songs_eligible == 2
-    assert outcome.excluded_songs == 0
-    assert outcome.songs_completed == 1
-    assert outcome.failed_songs == ("s2:RuntimeError",)
+    assert rep.verify_ok is True
+    assert rep.stream_loads == 2  # two (song, backbone) pairs, each loaded once
+    assert dict(rep.load_evidence) == {("s1", "effnet"): 1, ("s2", "effnet"): 1}
+    assert rep.songs_built == 2
+    # Both configs built both songs (configs share the single load).
+    assert rep.total_catalog_songs == 4
+    with _open_snapshot(tmp_path, "run-b")[0] as con:
+        assert con.execute("SELECT count(*) FROM catalog_song").fetchone()[0] == 4
+        assert con.execute("SELECT count(*) FROM seg_config").fetchone()[0] == 2
+        assert "seg_membership" not in _tables(con)
 
 
-def test_unrelated_config_preserved_across_builds(con, tmp_path):
-    """A config not in the current build scope keeps every row through later builds."""
-    out = tmp_path / "out"
-    rng = np.random.default_rng(10)
-    store = _seed(con, out, {("s1", "effnet"): _unit(rng, 5, 4)})
-
-    keep = _cfg(1.0)
-    catalog.build_segmentation_catalog(con, store, [keep, _cfg(0.5)], ["s1"], "run-cat-keep-1")
-    keep_id = {o.threshold_effective: o.config_id for o in catalog.configs_by_backbone(con, "effnet")}[1.0]
-    before = _membership_count(con, keep_id)
-
-    # Rebuild only the OTHER config several times.
-    for i in range(3):
-        catalog.build_segmentation_catalog(con, store, [_cfg(0.5)], ["s1"], f"run-cat-keep-{i}")
-
-    assert _membership_count(con, keep_id) == before  # cfg 1.0 never touched
-    assert catalog.configs_by_backbone(con, "effnet")[0].config_id == 1  # id 1 preserved
-
-
-# --------------------------------------------------------------------------- #
-# Bounded lookups (P3-S3) + no-index guarantee                                 #
-# --------------------------------------------------------------------------- #
-
-
-def test_bounded_lookups_return_correct_records_and_add_no_indexes(con, tmp_path):
-    """The four lookups read correct rows via equality filters; no DuckDB index appears."""
-    out = tmp_path / "out"
-    rng = np.random.default_rng(12)
-    store = _seed(
-        con,
-        out,
-        {("s1", "effnet"): _unit(rng, 5, 4), ("t1", "musicnn"): _unit(rng, 5, 4)},
+def test_all_explicit_configs_present_with_deterministic_config_ids(tmp_path):
+    fs = FakeStreamStore({("s1", "effnet"): _song_mat([8])})
+    thresholds = (0.4, 0.6, 0.9)
+    rep = catalog.build_segmentation_catalog(
+        fs,
+        FakeMaskStore(),
+        [_cfg(t) for t in thresholds],
+        ["s1"],
+        output_root=str(tmp_path),
+        run_id="run-c",
+        verify=True,
     )
-    cfgs = [
-        _cfg(0.7, backbone="effnet"),
-        _cfg(0.9, backbone="musicnn", bin_mode="temporal_perdim"),
-    ]
-    assert _index_count(con) == 0
-    catalog.build_segmentation_catalog(con, store, cfgs, ["s1", "t1"], "run-cat-lk")
-    assert _index_count(con) == 0
+    assert len(rep.configs) == 3
+    assert [o.config_id for o in rep.configs] == [1, 2, 3]
+    assert len({o.canonical_config_hash for o in rep.configs}) == 3
+    with _open_snapshot(tmp_path, "run-c")[0] as con:
+        rows = con.execute(
+            "SELECT config_id, threshold_effective, canonical_config_hash FROM seg_config ORDER BY config_id"
+        ).fetchall()
+        assert [r[0] for r in rows] == [1, 2, 3]
+        assert {float(r[1]) for r in rows} == set(thresholds)
+        assert len({r[2] for r in rows}) == 3
 
-    # configs_by_backbone filters by backbone only.
-    eff = catalog.configs_by_backbone(con, "effnet")
-    mus = catalog.configs_by_backbone(con, "musicnn")
-    assert [c.config_id for c in eff] == [1]
-    assert [c.config_id for c in mus] == [2]
-    assert eff[0].backbone == "effnet" and mus[0].bin_mode == "temporal_perdim"
 
-    # segments_by_config_song filters by (config_id, song_id).
-    segs_s1 = catalog.segments_by_config_song(con, 1, "s1")
-    assert segs_s1 and all(m.config_id == 1 and m.song_id == "s1" for m in segs_s1)
-    # membership_by_config_song_seg scoped to one segment.
-    seg0 = segs_s1[0]
-    members = catalog.membership_by_config_song_seg(con, 1, "s1", seg0.seg_id)
-    assert members and all(m.seg_id == seg0.seg_id for m in members)
-    assert len(members) == seg0.member_count  # row count matches seg_meta member_count
-    assert all(0 <= m.member_patch_idx < 5 for m in members)  # observed source indices
+def test_duplicate_canonical_config_collapses_to_single_row(tmp_path):
+    """Two descriptors with identical canonical identity (differing only in semantics text) collapse."""
+    base = _cfg(0.7)
+    a = dict(base, semantics="direct_l2")
+    b = dict(base, semantics="whatever-cosmetic")
+    fs = FakeStreamStore({("s1", "effnet"): _song_mat([6, 4])})
+    rep = catalog.build_segmentation_catalog(
+        fs, FakeMaskStore(), [a, b], ["s1"], output_root=str(tmp_path), run_id="run-d", verify=True
+    )
+    assert len(rep.configs) == 1
+    with _open_snapshot(tmp_path, "run-d")[0] as con:
+        assert con.execute("SELECT count(*) FROM seg_config").fetchone()[0] == 1
+        assert con.execute("SELECT count(*) FROM catalog_song").fetchone()[0] == 1
 
-    # stream_by_song_backbone returns the ready registry record.
-    rec = catalog.stream_by_song_backbone(con, "s1", "effnet")
-    assert rec.status == "ready"
-    assert rec.patch_count == 5
-    # Non-ready / absent identities raise the documented typed errors.
-    with pytest.raises(StreamNotFoundError):
-        catalog.stream_by_song_backbone(con, "nope", "effnet")
 
-    assert _index_count(con) == 0  # lookups never created an index
+def test_bin_mode_direct_is_accepted_without_dist_fn_validation(tmp_path):
+    """'direct' bin_mode is a legal compact config (NOT validated against DIST_FNS)."""
+    fs = FakeStreamStore({("s1", "effnet"): _song_mat([8])})
+    rep = catalog.build_segmentation_catalog(
+        fs,
+        FakeMaskStore(),
+        [_cfg(1.0, bin_mode="direct")],
+        ["s1"],
+        output_root=str(tmp_path),
+        run_id="run-e",
+        verify=True,
+    )
+    assert rep.total_catalog_songs == 1
+    with _open_snapshot(tmp_path, "run-e")[0] as con:
+        assert con.execute("SELECT bin_mode FROM seg_config").fetchone()[0] == "direct"
 
 
 # --------------------------------------------------------------------------- #
-# QA Round-1 regression paths (eligible/excluded + empty/partial statusing)   #
+# Exclusion / empty / partial-failure semantics                               #
 # --------------------------------------------------------------------------- #
 
 
-def test_requested_song_lacking_ready_stream_is_excluded_not_failed(con, tmp_path):
-    """A requested song with no READY stream is silently excluded and counted, not a failure."""
-    out = tmp_path / "out"
-    rng = np.random.default_rng(21)
-    store = _seed(con, out, {("s1", "effnet"): _unit(rng, 5, 4)})
-
-    rep = catalog.build_segmentation_catalog(con, store, [_cfg(0.8)], ["s1", "missing"], "run-cat-excl")
+def test_song_lacking_ready_stream_is_excluded_not_failed(tmp_path):
+    """A requested song with no ready stream is excluded (counted), never a failure."""
+    fs = FakeStreamStore({("s1", "effnet"): _song_mat([8])})  # s2 has no ready stream
+    rep = catalog.build_segmentation_catalog(
+        fs, FakeMaskStore(), [_cfg(1.0)], ["s1", "s2"], output_root=str(tmp_path), run_id="run-f", verify=True
+    )
+    assert len(rep.configs) == 1
     outcome = rep.configs[0]
-    # s1 has a ready stream (eligible); 'missing' has none -> silently excluded, never a failure.
     assert outcome.songs_eligible == 1
     assert outcome.excluded_songs == 1
     assert outcome.songs_completed == 1
-    assert outcome.status == "complete"
     assert outcome.failed_songs == ()
-    assert _membership_count(con, outcome.config_id) > 0  # only s1 is present
-    assert catalog.segments_by_config_song(con, outcome.config_id, "missing") == ()
+    assert outcome.status == "complete"
+    with _open_snapshot(tmp_path, "run-f")[0] as con:
+        songs = {r[0] for r in con.execute("SELECT song_id FROM catalog_song").fetchall()}
+        assert songs == {"s1"}  # excluded s2 never written
 
 
-def test_no_ready_stream_for_backbone_yields_empty_status(con, tmp_path):
-    """A config whose backbone has zero READY streams is 'empty' (excluded-songs-only), not partial."""
-    out = tmp_path / "out"
-    rng = np.random.default_rng(22)
-    # Only musicnn songs are ready; build an effnet-only config with no ready effnet songs.
-    store = _seed(con, out, {("m1", "musicnn"): _unit(rng, 5, 4)})
-
-    rep = catalog.build_segmentation_catalog(con, store, [_cfg(0.8)], ["m1"], "run-cat-empty")
+def test_no_ready_stream_for_backbone_yields_empty_status(tmp_path):
+    """Zero ready streams for a backbone => empty outcome; config identity still persists."""
+    fs = FakeStreamStore({})  # nothing ready for 'effnet'
+    rep = catalog.build_segmentation_catalog(
+        fs, FakeMaskStore(), [_cfg(1.0)], ["s1"], output_root=str(tmp_path), run_id="run-g", verify=True
+    )
     outcome = rep.configs[0]
-    assert outcome.backbone == "effnet"
+    assert outcome.status == "empty"
     assert outcome.songs_eligible == 0
-    assert outcome.excluded_songs == 1  # the requested song lacks an effnet ready stream
     assert outcome.songs_completed == 0
-    assert outcome.status == "empty"  # 'empty' = no ready stream for this backbone
-    assert _membership_count(con, outcome.config_id) == 0
+    assert rep.status == "partial"
+    with _open_snapshot(tmp_path, "run-g")[0] as con:
+        assert con.execute("SELECT count(*) FROM seg_config").fetchone()[0] == 1  # identity independent of readiness
+        assert con.execute("SELECT count(*) FROM catalog_song").fetchone()[0] == 0
 
 
-def test_subset_scope_rebuild_wipes_out_of_scope_rows_for_same_config(con, tmp_path):
-    """A rerun over a narrower song scope replaces (deletes) the config's prior out-of-scope rows."""
-    out = tmp_path / "out"
-    rng = np.random.default_rng(23)
-    store = _seed(
-        con,
-        out,
-        {("s1", "effnet"): _unit(rng, 5, 4), ("s2", "effnet"): _unit(rng, 6, 4)},
+def test_per_song_failure_is_captured_and_status_partial(tmp_path, monkeypatch):
+    """A raising per-(config, song) persistence leaves a failed_songs entry, never empty."""
+    fs = FakeStreamStore({("s1", "effnet"): _song_mat([8]), ("s2", "effnet"): _song_mat([8])})
+    original = catalog._build_and_persist_song
+
+    def flaky(con, **kwargs):
+        if kwargs["song_id"] == "s2":
+            raise RuntimeError("simulated persistence failure")
+        return original(con, **kwargs)
+
+    monkeypatch.setattr(catalog, "_build_and_persist_song", flaky)
+    rep = catalog.build_segmentation_catalog(
+        fs, FakeMaskStore(), [_cfg(1.0)], ["s1", "s2"], output_root=str(tmp_path), run_id="run-h", verify=True
     )
-    cfg = _cfg(0.9)
-    full = catalog.build_segmentation_catalog(con, store, [cfg], ["s1", "s2"], "run-cat-wipe-1")
-    cid = full.configs[0].config_id
-    assert _membership_count(con, cid) > 0
-    assert len(catalog.segments_by_config_song(con, cid, "s2")) > 0
-
-    # Rebuild the SAME logical config over only s1: the prior s2 catalog rows must be gone.
-    narrow = catalog.build_segmentation_catalog(con, store, [cfg], ["s1"], "run-cat-wipe-2")
-    assert narrow.configs[0].config_id == cid  # id reused (same canonical config)
-    assert len(catalog.segments_by_config_song(con, cid, "s1")) > 0
-    assert catalog.segments_by_config_song(con, cid, "s2") == ()  # out-of-scope rows deleted
-
-
-def test_all_writes_fail_is_partial_not_empty(con, tmp_path, monkeypatch):
-    """A config with eligible songs whose EVERY write fails reads 'partial', never 'empty'."""
-    out = tmp_path / "out"
-    rng = np.random.default_rng(24)
-    store = _seed(
-        con,
-        out,
-        {("s1", "effnet"): _unit(rng, 5, 4), ("s2", "effnet"): _unit(rng, 6, 4)},
-    )
-
-    def _all_fail(con_, *, config_id, song_id, segments):
-        # Every (config, song) write fails so the outcome must read 'partial', not 'empty'.
-        del con_, config_id, song_id, segments
-        raise RuntimeError("simulated total write failure")
-
-    monkeypatch.setattr(catalog, "_write_song_membership", _all_fail)
-    rep = catalog.build_segmentation_catalog(con, store, [_cfg(0.7)], ["s1", "s2"], "run-cat-allfail")
-    monkeypatch.undo()
-
+    assert rep.status == "partial"
     outcome = rep.configs[0]
-    assert outcome.songs_eligible == 2  # both ready streams: not 'empty'
-    assert outcome.songs_completed == 0
-    # failed-first ordering: every write failed => genuine failures, so 'partial' not 'empty'.
     assert outcome.status == "partial"
-    assert set(outcome.failed_songs) == {"s1:RuntimeError", "s2:RuntimeError"}
+    assert outcome.songs_eligible == 2
+    assert outcome.songs_completed == 1
+    assert outcome.failed_songs == ("s2:RuntimeError",)
+    with _open_snapshot(tmp_path, "run-h")[0] as con:
+        songs = {r[0] for r in con.execute("SELECT song_id FROM catalog_song").fetchall()}
+        assert songs == {"s1"}  # s2's partial write never landed
 
 
-def test_validation_and_verification_error_paths_raise(con, tmp_path, monkeypatch):
-    """CatalogValidationError (bad input) and CatalogVerificationError (verify drift) propagate."""
-    out = tmp_path / "out"
-    rng = np.random.default_rng(25)
-    store = _seed(con, out, {("s1", "effnet"): _unit(rng, 5, 4)})
+# --------------------------------------------------------------------------- #
+# Mask semantics / metadata-only songs                                        #
+# --------------------------------------------------------------------------- #
 
-    # No configs.
+
+def test_mask_silence_reduces_searchable_total_and_persists_weight(tmp_path):
+    """Masked (silent) patches are searchable-excluded; weights reflect remaining mass."""
+    mat = _song_mat([5])
+    mask = np.ones(5, dtype=np.uint8)
+    mask[2] = 0  # one silent patch inside the single segment
+    fs = FakeStreamStore({("s1", "effnet"): mat})
+    rep = catalog.build_segmentation_catalog(
+        fs, FakeMaskStore({"s1": mask}), [_cfg(1.0)], ["s1"], output_root=str(tmp_path), run_id="run-i", verify=True
+    )
+    assert rep.total_segments == 1
+    with _open_snapshot(tmp_path, "run-i")[0] as con:
+        assert con.execute("SELECT total_searchable_count FROM catalog_song").fetchone()[0] == 4
+        seg = con.execute(
+            "SELECT searchable_count, search_medoid_source_patch_idx, searchable_weight FROM seg_meta"
+        ).fetchone()
+        assert seg[0] == 4  # patch 2 masked out
+        assert seg[1] == 0  # smallest source index among the +x block
+        assert seg[2] == pytest.approx(1.0)  # 4/4 mass in this single segment
+
+
+def test_fully_silent_song_is_metadata_only_no_seg_rows(tmp_path):
+    """A fully masked stream persists a catalog_song row (metadata_only), never searchable."""
+    fs = FakeStreamStore({("s1", "effnet"): _song_mat([5])})
+    mask = np.zeros(5, dtype=np.uint8)  # fully silent
+    rep = catalog.build_segmentation_catalog(
+        fs, FakeMaskStore({"s1": mask}), [_cfg(1.0)], ["s1"], output_root=str(tmp_path), run_id="run-j", verify=True
+    )
+    assert rep.verify_ok is True
+    assert rep.total_segments == 0
+    with _open_snapshot(tmp_path, "run-j")[0] as con:
+        row = con.execute("SELECT total_searchable_count, status FROM catalog_song").fetchone()
+        assert row[0] == 0
+        assert row[1] == "metadata_only"
+        assert con.execute("SELECT count(*) FROM seg_meta").fetchone()[0] == 0
+
+
+# --------------------------------------------------------------------------- #
+# Validation / verification error paths                                       #
+# --------------------------------------------------------------------------- #
+
+
+def test_validation_errors_raise_and_error_chain(tmp_path):
+    fs = FakeStreamStore({("s1", "effnet"): _song_mat([8])})
+    fm = FakeMaskStore()
     with pytest.raises(catalog.CatalogValidationError):
-        catalog.build_segmentation_catalog(con, store, [], ["s1"], "run-cat-val-1")
-    # No song ids.
+        catalog.build_segmentation_catalog(fs, fm, [], ["s1"], output_root=str(tmp_path), run_id="r")
     with pytest.raises(catalog.CatalogValidationError):
-        catalog.build_segmentation_catalog(con, store, [_cfg(0.8)], [], "run-cat-val-2")
-    # Blank run_id.
+        catalog.build_segmentation_catalog(fs, fm, [_cfg(1.0)], [], output_root=str(tmp_path), run_id="r")
     with pytest.raises(catalog.CatalogValidationError):
-        catalog.build_segmentation_catalog(con, store, [_cfg(0.8)], ["s1"], "  ")
-    # All the validation errors derive from the shared CatalogError base.
+        catalog.build_segmentation_catalog(fs, fm, [_cfg(1.0)], ["s1"], output_root=str(tmp_path), run_id="   ")
     assert issubclass(catalog.CatalogValidationError, catalog.CatalogError)
     assert issubclass(catalog.CatalogError, RuntimeError)
-
-    # verify=True with simulated post-build drift raises CatalogVerificationError.
-    monkeypatch.setattr(catalog, "_post_build_verify", lambda *_, **__: ("simulated drift",))
-    with pytest.raises(catalog.CatalogVerificationError):
-        catalog.build_segmentation_catalog(con, store, [_cfg(0.8)], ["s1"], "run-cat-ver", verify=True)
-    monkeypatch.undo()
     assert issubclass(catalog.CatalogVerificationError, catalog.CatalogError)
 
 
-def test_post_build_verify_set_based_catches_same_drift_classes(con, tmp_path):
-    """The set-based ``_post_build_verify`` catches the same drift classes as the old per-row loops.
+def test_verify_drift_raises_catalog_verification_error(tmp_path, monkeypatch):
+    """verify=True raises CatalogVerificationError when the snapshot is internally inconsistent."""
+    fs = FakeStreamStore({("s1", "effnet"): _song_mat([5, 3])})
+    original = catalog._write_catalog_song_row
 
-    Pins the Phase-round-2 rewrite of ``_post_build_verify``: orphaned seg_meta (a built config
-    row missing), orphaned membership (a seg_meta row missing under its membership), a membership
-    row count that disagrees with ``seg_meta.member_count``, and a member index outside the
-    verified stream all remain detectable through the set-based anti-joins / grouped-count query
-    (per built config scope).  Scoping means rows belonging to configs outside the caller's
-    ``outcomes`` set are intentionally not flagged.
-    """
-    out = tmp_path / "out"
-    rng = np.random.default_rng(77)
-    store = _seed(
-        con,
-        out,
-        {("s1", "effnet"): _unit(rng, 5, 4), ("s2", "effnet"): _unit(rng, 6, 4)},
-    )
-
-    def _build(run_id_: str):
-        return catalog.build_segmentation_catalog(con, store, [_cfg(0.7)], ["s1", "s2"], run_id_, verify=False)
-
-    # Clean DB: the set-based verifier reports no drift on just-built configs.
-    clean = _build("run-clean")
-    assert catalog._post_build_verify(con, outcomes=clean.configs, run_id="run-clean") == ()
-
-    # (a) Orphaned seg_meta: the built config's seg_config row is gone.
-    rep = _build("run-a")
-    cid = rep.configs[0].config_id
-    con.execute("DELETE FROM seg_config WHERE config_id = ?", [cid])
-    assert any(
-        "seg_config missing for built config_id" in e
-        for e in catalog._post_build_verify(con, outcomes=rep.configs, run_id="run-a")
-    )
-
-    # (b) Orphaned membership: a seg_meta row is removed, orphaning its membership rows.
-    rep = _build("run-b")
-    cid = rep.configs[0].config_id
-    seg = con.execute("SELECT song_id, seg_id FROM seg_meta WHERE config_id = ? LIMIT 1", [cid]).fetchone()
-    assert seg is not None  # a ready stream always yields >= 1 segment for these configs
-    song_id, seg_id = seg
-    assert (
+    def corrupt_total(con, **kwargs):
+        result = original(con, **kwargs)
         con.execute(
-            "SELECT count(*) FROM seg_membership WHERE config_id = ? AND song_id = ? AND seg_id = ?",
-            [cid, song_id, seg_id],
-        ).fetchone()[0]
-        > 0
-    )
-    con.execute(
-        "DELETE FROM seg_meta WHERE config_id = ? AND song_id = ? AND seg_id = ?",
-        [cid, song_id, seg_id],
-    )
-    assert any(
-        "references a seg_meta row that does not exist" in e
-        for e in catalog._post_build_verify(con, outcomes=rep.configs, run_id="run-b")
-    )
+            "UPDATE catalog_song SET total_searchable_count = total_searchable_count + 1 "
+            "WHERE config_id = ? AND song_id = ?",
+            [kwargs["config_id"], kwargs["song_id"]],
+        )
+        return result
 
-    # (c) Membership count drift: persisted membership rows disagree with seg_meta.member_count.
-    rep = _build("run-c")
-    cid = rep.configs[0].config_id
-    con.execute("UPDATE seg_meta SET member_count = member_count + 1 WHERE config_id = ?", [cid])
-    assert any(
-        "!=" in e and "member_count" in e for e in catalog._post_build_verify(con, outcomes=rep.configs, run_id="run-c")
-    )
+    monkeypatch.setattr(catalog, "_write_catalog_song_row", corrupt_total)
+    with pytest.raises(catalog.CatalogVerificationError):
+        catalog.build_segmentation_catalog(
+            fs, FakeMaskStore(), [_cfg(1.0)], ["s1"], output_root=str(tmp_path), run_id="run-k", verify=True
+        )
 
-    # (d) Member index outside the verified stream's patch_count.
-    rep = _build("run-d")
-    cid = rep.configs[0].config_id
-    patch_cap = int(con.execute("SELECT max(patch_count) FROM stream_registry").fetchone()[0])
-    row = con.execute(
-        "SELECT song_id, seg_id, member_patch_idx FROM seg_membership WHERE config_id = ? LIMIT 1",
-        [cid],
-    ).fetchone()
-    con.execute(
-        "UPDATE seg_membership SET member_patch_idx = ? "
-        "WHERE config_id = ? AND song_id = ? AND seg_id = ? AND member_patch_idx = ?",
-        [patch_cap + 50, cid, row[0], row[1], row[2]],
+
+# --------------------------------------------------------------------------- #
+# Deterministic rerun equivalence                                             #
+# --------------------------------------------------------------------------- #
+
+
+def test_rerun_produces_deterministic_equivalent_snapshot(tmp_path):
+    """Two identical builds into distinct staging snapshots produce equal content hashes."""
+    streams = {("s1", "effnet"): _song_mat([5, 3]), ("s2", "effnet"): _song_mat([8])}
+    fs = FakeStreamStore(streams)
+    rep_a = catalog.build_segmentation_catalog(
+        fs,
+        FakeMaskStore(),
+        [_cfg(0.5), _cfg(0.9)],
+        ["s1", "s2"],
+        output_root=str(tmp_path),
+        run_id="run-A",
+        verify=True,
     )
-    assert any(
-        "outside the verified frozen source stream" in e
-        for e in catalog._post_build_verify(con, outcomes=rep.configs, run_id="run-d")
+    rep_b = catalog.build_segmentation_catalog(
+        fs,
+        FakeMaskStore(),
+        [_cfg(0.5), _cfg(0.9)],
+        ["s1", "s2"],
+        output_root=str(tmp_path),
+        run_id="run-B",
+        verify=True,
     )
+    assert rep_a.exact_hash == rep_b.exact_hash
+    assert rep_a.search_hash == rep_b.search_hash
+
+    with _open_snapshot(tmp_path, "run-A")[0] as con_a, _open_snapshot(tmp_path, "run-B")[0] as con_b:
+        # Content-deterministic rows are run_id-free for catalog_song; compare them wholesale.
+        assert (
+            con_a.execute("SELECT * FROM catalog_song ORDER BY config_id, song_id").fetchall()
+            == con_b.execute("SELECT * FROM catalog_song ORDER BY config_id, song_id").fetchall()
+        )
+        # seg_config/seg_meta carry run-scoped identity/provenance; compare everything else.
+        assert (
+            con_a.execute(
+                "SELECT config_id, backbone, bin_mode, threshold_configured, threshold_effective, "
+                "threshold_semantics, outlier_window, strategy_version, canonical_config_hash "
+                "FROM seg_config ORDER BY config_id"
+            ).fetchall()
+            == con_b.execute(
+                "SELECT config_id, backbone, bin_mode, threshold_configured, threshold_effective, "
+                "threshold_semantics, outlier_window, strategy_version, canonical_config_hash "
+                "FROM seg_config ORDER BY config_id"
+            ).fetchall()
+        )
+        assert (
+            con_a.execute(
+                "SELECT config_id, song_id, seg_id, start_idx, end_idx, absorbed_indices, absorbed_count, "
+                "searchable_count, search_medoid_source_patch_idx, searchable_weight, structural_identity "
+                "FROM seg_meta ORDER BY config_id, song_id, seg_id"
+            ).fetchall()
+            == con_b.execute(
+                "SELECT config_id, song_id, seg_id, start_idx, end_idx, absorbed_indices, absorbed_count, "
+                "searchable_count, search_medoid_source_patch_idx, searchable_weight, structural_identity "
+                "FROM seg_meta ORDER BY config_id, song_id, seg_id"
+            ).fetchall()
+        )
+
+
+# --------------------------------------------------------------------------- #
+# Model / audio / CUDA call guard                                             #
+# --------------------------------------------------------------------------- #
+
+
+def test_build_completes_with_zero_audio_model_cuda_calls(tmp_path, monkeypatch):
+    """The compact producer never reaches audio discovery, ONNX, or CUDA, even under verify."""
+    from scripts.embedding_research import config as _config
+
+    def boom(*_args, **_kwargs):  # pragma: no cover - asserts the path is never reached
+        raise AssertionError("audio/model/CUDA path must never run during a compact catalog build")
+
+    monkeypatch.setattr(_config, "discover_audio", boom, raising=False)
+    for mod_name in ("onnxruntime", "torch"):
+        try:
+            mod = importlib.import_module(mod_name)
+        except Exception:  # not installed -> cannot be reached anyway
+            continue
+        if mod_name == "onnxruntime" and hasattr(mod, "InferenceSession"):
+            monkeypatch.setattr(mod, "InferenceSession", boom, raising=False)
+        if mod_name == "torch" and hasattr(mod, "cuda"):
+            monkeypatch.setattr(mod.cuda, "is_available", boom, raising=False)
+    fs = FakeStreamStore({("s1", "effnet"): _song_mat([8])})
+    rep = catalog.build_segmentation_catalog(
+        fs, FakeMaskStore(), [_cfg(1.0)], ["s1"], output_root=str(tmp_path), run_id="run-l", verify=True
+    )
+    assert rep.verify_ok is True
+
+
+# --------------------------------------------------------------------------- #
+# Persisted catalog rows: no NaN/Infinity anywhere + medoid == observed recompute #
+# --------------------------------------------------------------------------- #
+
+
+def _finite(value) -> bool:
+    """True when *value* is None or a finite float/int."""
+    return value is None or math.isfinite(float(value))
+
+
+def test_built_snapshot_rows_finite_and_medoid_is_observed_source_index(tmp_path):
+    """Every durable numeric catalog row is finite, and each persisted medoid equals the
+    independently-recomputed max-centrality observed source index over the segment's
+    reconstructed searchable set (real silence mask, not the structural range).
+
+    Mirrors the DD no-NaN/Infinity ledger item at the compact snapshot level (families
+    (i)/(h)): nothing in seg_config / catalog_song / seg_meta may carry NaN/Infinity, and
+    the persisted ``search_medoid_source_patch_idx`` must be the OBSERVED source index
+    recomputed from the same frozen stream + mask + absorbed exceptions — never a
+    synthetic/geometry-derived value.
+    """
+    mat = _song_mat([5, 3])  # +x block [0,5), -x block [5,8); each row unit length
+    mask = np.ones(8, dtype=np.uint8)
+    mask[2] = 0  # silent inside seg [0,5)
+    mask[6] = 0  # silent inside seg [5,8)
+    fs = FakeStreamStore({("s1", "effnet"): mat})
+    rep = catalog.build_segmentation_catalog(
+        fs,
+        FakeMaskStore({"s1": mask}),
+        [_cfg(1.0)],
+        ["s1"],
+        output_root=str(tmp_path),
+        run_id="run-medoid",
+        verify=True,
+    )
+    assert rep.verify_ok is True
+    unit_matrix = catalog._l2_normalize_rows(mat)
+
+    with _open_snapshot(tmp_path, "run-medoid")[0] as con:
+        # --- No NaN/Infinity in the durable seg_config numeric columns. ---
+        for row in con.execute(
+            "SELECT threshold_configured, threshold_effective, outlier_window, strategy_version FROM seg_config"
+        ).fetchall():
+            assert all(_finite(v) for v in row)
+        # configured == effective exactly (single direct-L2 contract).
+        cfg_row = con.execute("SELECT threshold_configured, threshold_effective FROM seg_config").fetchone()
+        assert float(cfg_row[0]) == float(cfg_row[1]) == 1.0
+
+        # --- No NaN/Infinity in catalog_song numeric columns; total agrees. ---
+        song_rows = con.execute("SELECT patch_count, total_searchable_count FROM catalog_song").fetchall()
+        assert len(song_rows) == 1
+        assert all(_finite(v) for v in song_rows[0])
+        assert int(song_rows[0][1]) == 6  # 8 patches - 2 silent
+
+        # --- config_id + per-(config, song) structural rows. ---
+        config_id = catalog.compact_configs_by_backbone(con, "effnet")[0].config_id
+        segs = catalog.compact_segments_by_config_song(con, config_id, "s1")
+
+        seg_rows = con.execute(
+            "SELECT start_idx, end_idx, absorbed_count, searchable_count, "
+            "search_medoid_source_patch_idx, searchable_weight FROM seg_meta ORDER BY seg_id"
+        ).fetchall()
+        # --- No NaN/Infinity in any seg_meta numeric column. ---
+        for row in seg_rows:
+            assert all(_finite(v) for v in row)
+
+        total_searchable = int(song_rows[0][1])
+        assert sum(int(r[3]) for r in seg_rows) == total_searchable
+        # weights sum to one over the searchable mass.
+        assert sum(float(r[5]) for r in seg_rows) == pytest.approx(1.0)
+        assert all(0.0 <= float(r[5]) <= 1.0 for r in seg_rows)
+
+        # --- Persisted medoid == independent observed-medoid recompute over the real mask. ---
+        expected = {
+            # seg [0,5): searchable {0,1,3,4} (patch 2 silent) -> smallest-index +x row 0.
+            # seg [5,8): searchable {5,7} (patch 6 silent) -> smallest-index -x row 5.
+            0: 0,
+            1: 5,
+        }
+        for seg in segs:
+            searchable = reconstruct_searchable_indices(seg, mask, patch_count=int(mat.shape[0]))
+            recomputed_medoid, _centrality = select_observed_medoid_source_index(unit_matrix, searchable)
+            assert seg.search_medoid_source_patch_idx == recomputed_medoid == expected[int(seg.seg_id)]
+            assert seg.searchable_count == len(searchable)
+            # recomputed medoid is an OBSERVED, finite, in-range source index.
+            assert recomputed_medoid is not None
+            assert 0 <= recomputed_medoid < int(mat.shape[0])

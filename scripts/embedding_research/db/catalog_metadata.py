@@ -9,7 +9,7 @@ require:
                    backbone_set, latest_catalog_run_id, latest_config_ids, reconciled_at)``
 
 * ``catalog_semantics_version`` — the catalog semantics / segmentation-semantics contract
-  version that (when it changes) invalidates ``search_view_hash``.
+  version that (when it changes) invalidates every identity hash (the catalog-schema axis).
 * ``serialization_version`` — the canonical serialization ordering/encoding contract
   version (changing it changes every identity hash — the "ordering-contract change" axis).
 * ``manifest_version`` — the manifest format version that feeds identity hashes.

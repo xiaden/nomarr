@@ -44,7 +44,6 @@ CORPUS_STATE_EXPECTED = {
     "eligible_song_count": "INTEGER",
     "complete_flag": "BOOLEAN",
     "latest_catalog_run_id": "VARCHAR",
-    "latest_search_view_hash": "VARCHAR",
     "reconciled_at": "BIGINT",
     "reconciliation_status": "VARCHAR",
 }

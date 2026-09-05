@@ -5,8 +5,7 @@ DD "Post-crash verification canary": before any ``catalog`` / ``analyze`` /
 requests it — a rollback-only canary probes EVERY surviving table with a
 ``PRIMARY KEY`` or ``UNIQUE`` constraint.  The inventory is enumerated from
 DuckDB metadata at runtime (``duckdb_constraints()``) — never hardcoded as a
-permanent list.  Empty tables are recorded ``empty`` (NOT corrupt: CTP-disabled
-empty tables are expected).  A non-empty table's lexicographically-smallest key
+permanent list.  Empty tables are recorded ``empty`` (NOT corrupt).  A non-empty table's lexicographically-smallest key
 row is captured in full, deleted by key, re-inserted, and the transaction is
 ROLLED BACK unconditionally — probe writes are NEVER committed.  Any failure
 (delete-count mismatch, insert/index/constraint failure, any probe exception)
@@ -24,44 +23,29 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import numpy as np
 import pytest
 
 from scripts.embedding_research import run as run_mod
 from scripts.embedding_research.db import canary
 
-# The legacy/active tables in db/_schema.py that declare a PRIMARY KEY / UNIQUE.
+# The surviving tables in db/_schema.py that declare a PRIMARY KEY / UNIQUE after
+# the P1-S5 Wave 2b hard cut physically removed the thirteen obsolete tables.
 # Used ONLY as a static expectation log; the canary's runtime inventory is never
 # hardcoded — it is enumerated from duckdb_constraints() at runtime.
 _EXPECTED_PK_UNIQUE_TABLES = frozenset(
     {
         "songs",
-        "pooled_vecs",
-        "head_results",
-        "binned_calibration",
-        "head_agreement_rows",
-        "patch_features",
-        "binned_pair_sims",
-        "binned_song_stats",
-        "binned_classify_ctp",
-        "truncation_robustness_rows",
-        "binned_ctp_vecs",
-        "binned_ptc_ctp_metrics",
-        "head_sim_corr_rows",
         "phase_timings",
-        "stratified_corpus",
         "song_retrieval_metrics",
     }
 )
 
-# Active tables deliberately WITHOUT any PK/UNIQUE must never appear in the probe set.
+# Retained tables deliberately WITHOUT any PK/UNIQUE must never appear in the probe set.
 _EXPECTED_NO_PK_TABLES = {
     "stream_registry",
     "head_stream_registry",
     "run_provenance",
-    "seg_config",
-    "seg_meta",
-    "seg_membership",
+    "corpus_state",
     "head_phase_provenance",
     "analyze_metrics",
     "catalog_metadata",
@@ -83,8 +67,8 @@ def test_canary_enumerates_every_pk_unique_table_from_duckdb_metadata(con):
 def test_canary_enumerates_key_columns(con):
     inv = dict(canary.enumerate_pk_unique_tables(con))
     assert inv["songs"] == ("song_id",)
-    assert set(inv["stratified_corpus"]) == {"config_hash", "song_id"}
     assert set(inv["phase_timings"]) == {"run_ts", "phase"}
+    assert set(inv["song_retrieval_metrics"]) == {"strategy_key", "sim_metric", "k", "song_id"}
 
 
 # --------------------------------------------------------------------------- #
@@ -113,28 +97,25 @@ def _seed_row(con, table: str, columns: list, row: list) -> None:
 
 
 def test_canary_probe_rolls_back_and_leaves_rows_unchanged(con):
-    # songs (single-col PK), phase_timings (composite PK), binned_calibration (PK),
-    # pooled_vecs (FLOAT[] vector column round-trips through capture/re-insert).
+    # songs (single-col PK), phase_timings (composite PK), song_retrieval_metrics
+    # (composite PK) — the three surviving constrained tables after the hard cut.
     _seed_row(con, "songs", ["song_id", "path", "artist"], ["sX", "/audio/sX.mp3", "Z"])
     _seed_row(con, "phase_timings", ["run_ts", "phase", "elapsed_s"], ["ts1", "analyze", 1.5])
-    _seed_row(con, "binned_calibration", ["backbone", "dist_mode", "n_patches"], ["effnet", "direct_l2", 3])
     _seed_row(
         con,
-        "pooled_vecs",
-        ["song_id", "backbone", "strategy", "vec"],
-        ["sX", "effnet", "global_pool", np.arange(6, dtype=np.float32).tolist()],
+        "song_retrieval_metrics",
+        ["strategy_key", "sim_metric", "k", "song_id", "ap_k"],
+        ["catalog:effnet:max_per_candidate_segment:v1:abc", "cosine", 10, "sX", 0.42],
     )
     before = {
-        t: con.execute(f"SELECT * FROM {t}").fetchall()
-        for t in ("songs", "phase_timings", "binned_calibration", "pooled_vecs")
+        t: con.execute(f"SELECT * FROM {t}").fetchall() for t in ("songs", "phase_timings", "song_retrieval_metrics")
     }
 
     report = canary.run_rollback_canary(con)
 
     assert report.tables["songs"] == "ok"
     assert report.tables["phase_timings"] == "ok"
-    assert report.tables["binned_calibration"] == "ok"
-    assert report.tables["pooled_vecs"] == "ok"
+    assert report.tables["song_retrieval_metrics"] == "ok"
     # Rolled back unconditionally: every seeded row is still present, byte-identical.
     for table, rows in before.items():
         assert con.execute(f"SELECT * FROM {table}").fetchall() == rows, table

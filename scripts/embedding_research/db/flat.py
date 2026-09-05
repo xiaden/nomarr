@@ -1,81 +1,20 @@
-"""Flat-embedding pipeline scalar tables and filesystem-backed caches.
+"""Analyze/retrieval-metrics persistence tables.
 
-Pooled vectors and head activations are no longer stored in DuckDB — they
-live on the filesystem via cache modules. This module only handles
-scalar/metadata tables plus unified analyze metrics.
+The flat-pipeline filesystem head/activation caches (``upsert_head``,
+``head_strategy_done``, ``load_head_labels``) were deleted with the cache layer
+in the corrective-pass hard cut. This module now only hosts the active
+``analyze_metrics`` and ``song_retrieval_metrics`` persistence used by the
+catalog-analysis writer (``db.analyze_scope.write_catalog_analyze_rows``).
 """
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING
 
 import numpy as np
 
 if TYPE_CHECKING:
     import pandas as pd
-
-_log = logging.getLogger(__name__)
-
-
-# ── head activations (filesystem) ────────────────────────────────────────────
-# head_results was a DuckDB table that stored flat PTC/CTP softmax outputs.
-# All reads/writes now go through cache.flat_heads instead.
-
-
-def upsert_head(
-    song_id: str,
-    backbone: str,
-    head: str,
-    strategy: str,
-    pathway: str,
-    act: list[float],
-) -> None:
-    """Write a single head activation to the filesystem cache."""
-    import numpy as _np
-
-    from scripts.embedding_research.cache import flat_heads as _fh
-
-    _fh.save(backbone, head, strategy, pathway, song_id, _np.asarray(act, dtype=_np.float32))
-
-
-def head_strategy_done(song_id: str, backbone: str, head: str, strategy: str) -> bool:
-    """Return True iff both ptc and ctp activations are cached for this combination."""
-    from scripts.embedding_research.cache import flat_heads as _fh
-
-    return _fh.is_done(backbone, head, strategy, song_id)
-
-
-def load_head_labels(
-    sids: list[str],
-    backbone: str,
-    head: str,
-    strategy: str,
-    pathway: str,
-    label_names: list[str],
-) -> list[str] | None:
-    """Return per-song majority-class label for (head, strategy, pathway).
-
-    Returns None if >20% of songs are missing.
-    """
-    from scripts.embedding_research.cache import flat_heads as _fh
-
-    act_map = _fh.load_bulk(backbone, head, strategy, pathway, sids)
-
-    labels = []
-    missing = 0
-    for sid in sids:
-        act = act_map.get(sid)
-        if act is None:
-            missing += 1
-            labels.append("unknown")
-        else:
-            cls = int(np.argmax(act))
-            labels.append(label_names[cls] if cls < len(label_names) else f"class_{cls}")
-
-    if missing > 0.2 * len(sids):
-        return None
-    return labels
 
 
 # ── analyze_metrics ───────────────────────────────────────────────────────────
@@ -159,12 +98,12 @@ def write_analyze_metrics(
     Args:
         con: DuckDB connection.
         strategy_key: Strategy identifier.
-        strategy_type: Strategy type label (e.g. ``"global_pool"``/``"ptc"``/``"catalog"``).
+        strategy_type: Strategy type label (e.g. ``"catalog"``).
         sim_metric: Similarity metric name (e.g. ``"cosine"``).
         k: Retrieval cut-off.
         metrics: Metric values keyed by metric name; entries with `None` (or list/array)
-            values are skipped.  The default ``run_id='legacy'`` keeps the legacy full-matrix
-            path (``common.analyze``/``run.py``) byte-identical in effect post-migration.
+            values are skipped.  The default ``run_id='legacy'`` tags pre-migration / baseline
+            rows; run-scoped callers pass their own ``run_id``.
     """
     rows: list[tuple] = []
     for name, value in metrics.items():

@@ -18,16 +18,9 @@ from scripts.embedding_research.db import (
 from scripts.embedding_research.db._schema import ensure_schema
 from scripts.embedding_research.db.flat import (
     clear_song_retrieval_metrics,
-    head_strategy_done,
-    upsert_head,
     write_song_retrieval_metrics,
 )
 from scripts.embedding_research.db.queries import query_analysis_done
-from scripts.embedding_research.db.stratify import (
-    clear_stale_stratification,
-    load_stratified_sids,
-    write_stratified_sids,
-)
 
 # ---------------------------------------------------------------------------
 # Fixture
@@ -49,23 +42,14 @@ def con():
 
 
 EXPECTED_TABLES = {
+    # Retained core experiment + provenance tables.  The obsolete copied-vector /
+    # threshold / stratification tables were PHYSICALLY REMOVED at Plan E P1-S5
+    # Wave 2b (zero live writers/readers after the hard-cut deletion of the legacy
+    # report tables and db/stratify.py); they must never reappear.
     "songs",
-    "pooled_vecs",
-    "head_results",
     "analyze_metrics",
-    "binned_calibration",
-    "head_agreement_rows",
-    "patch_features",
-    "binned_pair_sims",
-    "binned_song_stats",
-    "binned_classify_ctp",
-    "truncation_robustness_rows",
-    "binned_ctp_vecs",
-    "binned_ptc_ctp_metrics",
-    "head_sim_corr_rows",
     "phase_timings",
     "song_retrieval_metrics",
-    "stratified_corpus",
     "head_phase_provenance",
     # Frozen observation stream registries (Plan B, Phase 1) — scalar metadata over float32
     # sidecars, no PK/UNIQUE (application-level identity).
@@ -76,12 +60,26 @@ EXPECTED_TABLES = {
     "run_provenance",
     "corpus_state",
     "catalog_metadata",
-    # Segmentation catalog (Plan C, Phase 1) — PRIMARY segmentation schema, scalar columns
-    # only, no PK/UNIQUE (application-level integrity).
-    "seg_config",
-    "seg_meta",
-    "seg_membership",
 }
+
+# The thirteen tables removed in the P1-S5 Wave 2b hard cut.  Asserted absent.
+REMOVED_TABLES = frozenset(
+    {
+        "pooled_vecs",
+        "head_results",
+        "head_agreement_rows",
+        "patch_features",
+        "binned_pair_sims",
+        "binned_classify_ctp",
+        "binned_song_stats",
+        "truncation_robustness_rows",
+        "binned_ctp_vecs",
+        "binned_ptc_ctp_metrics",
+        "head_sim_corr_rows",
+        "binned_calibration",
+        "stratified_corpus",
+    }
+)
 
 
 def test_schema_creates_all_tables(con):
@@ -90,31 +88,11 @@ def test_schema_creates_all_tables(con):
     assert actual == EXPECTED_TABLES, f"Missing: {EXPECTED_TABLES - actual}  Extra: {actual - EXPECTED_TABLES}"
 
 
-# ---------------------------------------------------------------------------
-# 2-4. head_results / head_strategy_done
-# ---------------------------------------------------------------------------
-
-
-def test_upsert_head_roundtrip(con, tmp_flat_head_cache):  # noqa: ARG001 - fixtures used for side effects
-    from scripts.embedding_research.cache import flat_heads
-
-    act = [0.3, 0.7]
-    upsert_head("s1", "bb", "hd", "mean", "ptc", act)
-    result = flat_heads.load("bb", "hd", "mean", "ptc", "s1")
-    assert result is not None
-    assert list(result) == pytest.approx(act)
-
-
-def test_head_strategy_done_false_when_missing(con, tmp_flat_head_cache):  # noqa: ARG001
-    result = head_strategy_done("s_none", "bb", "hd", "mean")
-    assert result is False
-
-
-def test_head_strategy_done_true_when_both_pathways(con, tmp_flat_head_cache):  # noqa: ARG001
-    upsert_head("s2", "bb", "hd", "mean", "ptc", [0.4, 0.6])
-    assert head_strategy_done("s2", "bb", "hd", "mean") is False
-    upsert_head("s2", "bb", "hd", "mean", "ctp", [0.55, 0.45])
-    assert head_strategy_done("s2", "bb", "hd", "mean") is True
+def test_schema_has_no_removed_tables(con):
+    """The P1-S5 Wave 2b hard cut physically removed the thirteen obsolete tables."""
+    rows = con.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'").fetchall()
+    actual = {r[0] for r in rows}
+    assert REMOVED_TABLES.isdisjoint(actual), f"Removed tables still present: {REMOVED_TABLES & actual}"
 
 
 # ---------------------------------------------------------------------------
@@ -353,61 +331,6 @@ def test_fresh_schema_analyze_metrics_has_run_id_and_no_pk(con):
         "VALUES ('legacy', 'bb/mean', 'flat', 'cosine', 10, 'disc_general', 0.99)"
     )
     assert int(con.execute("SELECT COUNT(*) FROM analyze_metrics").fetchone()[0]) == 2
-
-
-def test_load_stratified_sids_returns_empty_frozenset_when_no_rows(con):
-    result = load_stratified_sids(con, "hash-empty")
-
-    assert result == frozenset()
-
-
-def test_load_stratified_sids_returns_only_rows_for_matching_hash(con):
-    con.executemany(
-        "INSERT INTO stratified_corpus (config_hash, song_id) VALUES (?, ?)",
-        [("hash-a", "s001"), ("hash-a", "s002"), ("hash-b", "s999")],
-    )
-
-    result = load_stratified_sids(con, "hash-a")
-
-    assert result == frozenset({"s001", "s002"})
-
-
-def test_write_stratified_sids_inserts_rows(con):
-    write_stratified_sids(con, "hash-write", frozenset({"s003", "s001", "s002"}))
-
-    rows = con.execute(
-        "SELECT song_id FROM stratified_corpus WHERE config_hash = ? ORDER BY song_id",
-        ["hash-write"],
-    ).fetchall()
-
-    assert rows == [("s001",), ("s002",), ("s003",)]
-
-
-def test_write_stratified_sids_ignores_duplicate_inserts(con):
-    song_ids = frozenset({"s010", "s011"})
-
-    write_stratified_sids(con, "hash-dup", song_ids)
-    write_stratified_sids(con, "hash-dup", song_ids)
-
-    rows = con.execute(
-        "SELECT song_id FROM stratified_corpus WHERE config_hash = ? ORDER BY song_id",
-        ["hash-dup"],
-    ).fetchall()
-
-    assert rows == [("s010",), ("s011",)]
-
-
-def test_clear_stale_stratification_deletes_rows_with_different_hash_only(con):
-    con.executemany(
-        "INSERT INTO stratified_corpus (config_hash, song_id) VALUES (?, ?)",
-        [("keep-hash", "s001"), ("keep-hash", "s002"), ("stale-hash", "s999")],
-    )
-
-    clear_stale_stratification(con, "keep-hash")
-
-    rows = con.execute("SELECT config_hash, song_id FROM stratified_corpus ORDER BY config_hash, song_id").fetchall()
-
-    assert rows == [("keep-hash", "s001"), ("keep-hash", "s002")]
 
 
 def test_clear_song_retrieval_metrics_deletes_only_matching_rows(con):

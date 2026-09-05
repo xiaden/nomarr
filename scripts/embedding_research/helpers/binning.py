@@ -1,7 +1,12 @@
-"""Temporal-binning algorithms and config constants shared by strategy_binned and classify.
+"""Temporal-segmentation algorithms and distance/config constants (retained surface).
 
-Moving these here eliminates the awkward dependency where ``classify.py`` had to
-import pure algorithms from the ``strategy_binned`` strategy-implementation module.
+This module is the retained temporal-segmentation helper library for the active
+catalog/segmentation/run surfaces.  It provides the strict ``>`` boundary
+:func:`temporal_segment` semantics (with the frozen ``OUTLIER_WINDOW=3`` outlier
+absorption), the L2 / Chebyshev distance functions behind ``DIST_FNS``, and the
+frozen catalog sweep literals (``DIST_THRESHOLDS`` / ``BIN_MODES``) that replaced the
+removed ``[binning]`` config grid.  The obsolete copied-vector/CTP sweep constants and
+cache-semantics-version helpers were removed with their deleted surfaces.
 """
 
 from __future__ import annotations
@@ -10,59 +15,16 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from .toml import load_research_config
-
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-_cfg = load_research_config()
-
-# ── Config-derived constants ──────────────────────────────────────────────────
-
-DIST_THRESHOLDS: list[float] = _cfg.get("binning", {}).get("dist_thresholds", [0.3, 0.5, 0.7, 1.0])
-BIN_MODES: list[str] = _cfg.get("binning", {}).get("bin_modes", ["temporal_global", "temporal_perdim"])
-CTP_SCORE_THRESHOLDS: list[float] = _cfg.get("binning", {}).get("ctp_score_thresholds", [0.05, 0.10, 0.15, 0.20])
-
-# Cache/data semantics versions used for cache identity and invalidation.
-VECTOR_SEMANTICS_VERSION: int = 2
-THRESHOLD_SEMANTICS_VERSION: int = 2
-OPTIMIZER_SEMANTICS_VERSION: int = 2
-BIN_PAYLOAD_VERSION: int = 3
+# Frozen catalog sweep literals (previously driven by the removed ``[binning]``
+# config section).  The strict current schema does not carry these; they are frozen
+# constants consumed by run.py's catalog input generation.
+DIST_THRESHOLDS: list[float] = [0.95, 1.0, 1.05, 1.1, 1.15, 1.2, 1.25, 1.3, 1.35, 1.4, 1.45, 1.5]
+BIN_MODES: list[str] = ["temporal_global", "temporal_perdim"]
 
 OUTLIER_WINDOW: int = 3
-
-
-def threshold_key(x: float) -> str:
-    """Canonical threshold identity used in paths/keys/report rows."""
-    return f"{float(x):.3f}"
-
-
-def canonical_threshold(x: float) -> float:
-    """Canonical threshold float used for numeric comparisons/math."""
-    return round(float(x), 3)
-
-
-def temporal_global_equivalents(dist_thresh: float) -> tuple[float, float]:
-    """Return (cosine_equivalent, angle_degrees) for temporal_global L2 threshold.
-
-    For unit vectors: dist = sqrt(2 - 2*cos(theta))
-                    => cos(theta) = 1 - dist^2 / 2
-    """
-    cos_equiv = 1.0 - (float(dist_thresh) ** 2) / 2.0
-    cos_equiv = float(np.clip(cos_equiv, -1.0, 1.0))
-    angle_deg = float(np.degrees(np.arccos(cos_equiv)))
-    return cos_equiv, angle_deg
-
-
-def cache_semantics_tag() -> str:
-    """Stable cache-tag carrying semantics versions for invalidation."""
-    return (
-        f"vs{VECTOR_SEMANTICS_VERSION}"
-        f"_ts{THRESHOLD_SEMANTICS_VERSION}"
-        f"_os{OPTIMIZER_SEMANTICS_VERSION}"
-        f"_bp{BIN_PAYLOAD_VERSION}"
-    )
-
 
 # ── Distance functions ────────────────────────────────────────────────────────
 

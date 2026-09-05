@@ -104,9 +104,15 @@ def _unit(rng, n: int, d: int) -> np.ndarray:
     return (m / norms).astype(np.float32)
 
 
-def _build_corpus(con, out) -> StreamStore:
-    """Publish one ready effnet stream per song and build a verified catalog."""
+def _build_corpus(con, out) -> tuple[StreamStore, object]:
+    """Publish one ready effnet stream per song and build a VERIFIED COMPACT catalog.
+
+    Returns ``(store, handle)`` where *handle* is the open read-only compact snapshot handle
+    (caller must ``.close()`` it) whose ``.con`` the analysis reads from.
+    """
     from scripts.embedding_research import catalog
+    from scripts.embedding_research.catalog_storage import open_snapshot_file
+    from scripts.embedding_research.streams import make_current_stream_resolver
 
     store = StreamStore(con, output_root=str(out))
     rng = np.random.default_rng(7)
@@ -114,8 +120,8 @@ def _build_corpus(con, out) -> StreamStore:
         store.publish(song, "effnet", _unit(rng, 10, 6), run_id="run-embed")
     store.reconcile()
     rep = catalog.build_segmentation_catalog(
-        con,
-        store,
+        make_current_stream_resolver(store),
+        None,
         [
             catalog.SegConfigInput(
                 backbone="effnet",
@@ -125,17 +131,22 @@ def _build_corpus(con, out) -> StreamStore:
             )
         ],
         list(_SONGS),
-        "run-cat-1",
+        output_root=str(out),
+        run_id="run-cat-1",
         verify=True,
     )
     assert rep.verify_ok is True
-    return store
+    handle = open_snapshot_file(f"{out}/catalogs/.staging-run-cat-1/catalog.duckdb", read_only=True)
+    return store, handle
 
 
 def _run_full_analysis(con, tmp_path) -> ca.CatalogAnalysisResult:
-    store = _build_corpus(con, tmp_path / "out")
-    cfg = ca.CatalogAnalysisConfig(run_id="run-ann-1", backbone="effnet", song_ids=_SONGS, artists=_ARTISTS)
-    return ca.analyze_catalog_corpus(store, con, cfg)
+    store, handle = _build_corpus(con, tmp_path / "out")
+    try:
+        cfg = ca.CatalogAnalysisConfig(run_id="run-ann-1", backbone="effnet", song_ids=_SONGS, artists=_ARTISTS)
+        return ca.analyze_catalog_corpus(store, handle.con, cfg, research_con=con)
+    finally:
+        handle.close()
 
 
 # --------------------------------------------------------------------------- #
@@ -150,14 +161,17 @@ def test_full_analysis_exact_cpu_completes_with_zero_sentinel_calls(con, tmp_pat
     AND every installed sentinel recorded ZERO calls.  A sentinel firing would raise and
     fail the test — catching a sentinel exception is never a success path.
     """
-    store = _build_corpus(con, tmp_path / "out")
+    store, handle = _build_corpus(con, tmp_path / "out")
     counts = _install_sentinels(monkeypatch)
 
     cfg = ca.CatalogAnalysisConfig(run_id="run-ann-1", backbone="effnet", song_ids=_SONGS, artists=_ARTISTS)
-    result = ca.analyze_catalog_corpus(store, con, cfg)
+    try:
+        result = ca.analyze_catalog_corpus(store, handle.con, cfg, research_con=con)
 
-    assert result.finite is True
-    assert len(result.per_query) == len(_SONGS)
+        assert result.finite is True
+        assert len(result.per_query) == len(_SONGS)
+    finally:
+        handle.close()
     assert counts  # at least config.discover_audio is always guarded
     assert all(count == 0 for count in counts.values()), counts
 

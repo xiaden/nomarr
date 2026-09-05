@@ -187,12 +187,8 @@ def stratify_songs(songs: list[dict], limit: int | None) -> list[dict]:
             for s in by_artist[artist]:
                 alb[s.get("album", "unknown")].append(s)
             album_lists = sorted(alb.values(), key=lambda lst: lst[0].get("album", ""))
-            interleaved: list[dict] = []
             max_pa = max(len(lst) for lst in album_lists)
-            for i in range(max_pa):
-                for alst in album_lists:
-                    if i < len(alst):
-                        interleaved.append(alst[i])
+            interleaved = [alst[i] for i in range(max_pa) for alst in album_lists if i < len(alst)]
             artist_queues[artist] = interleaved
 
         artist_order = sorted(artist_queues.keys())

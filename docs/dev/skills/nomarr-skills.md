@@ -6,32 +6,33 @@ This document describes the Agent Skills specific to the Nomarr codebase.
 
 ## Skill Inventory
 
-All Nomarr skills are stored in `.github/skills/`. There are **11 active skills**:
+All active Nomarr skills live under `.opencode/skills/`, one directory per skill, with the
+skill body in `.opencode/skills/<skill-name>/SKILL.md`. `.opencode/skills/` is the single
+active project skill directory — the only tree agents discover skills from and the one the
+validator scans.
+
+The live inventory is not a fixed list: it is the sorted set of skill directories currently
+present under `.opencode/skills/` (each containing a `SKILL.md`). Generate and validate it with:
+
+```bash
+python scripts/human-scripts/validate_skills.py          # text summary of every active skill
+python scripts/human-scripts/validate_skills.py --format=json
+python scripts/human-scripts/validate_skills.py --check-refs
+```
 
 ```
-.github/skills/
-├── code-discovery/SKILL.md
-├── code-generation/SKILL.md
-├── code-migration/SKILL.md
-├── doc-coauthoring/SKILL.md
-├── feature-execution/SKILL.md
-├── feature-planning/SKILL.md
-├── mcp-builder/SKILL.md
-├── playwright-cli/SKILL.md
-├── quality-analysis/SKILL.md
-├── skill-creator/SKILL.md
-└── skill-maintenance/SKILL.md
+.opencode/skills/
+├── <skill-name>/SKILL.md
+├── <skill-name>/references/   # optional; loaded only when referenced
+└── ...
 ```
+
+Each skill's `name` and `description` frontmatter is the source of truth for when it triggers;
+see the individual `SKILL.md` files for current guidance.
 
 ---
 
 ## Tooling & Workflow Skills
-
-### code-discovery
-
-**Trigger:** Exploring codebase structure, discovering module APIs, understanding imports, checking what functions exist.
-
-Provides scripts that replace manual file reading with structured discovery. Use MCP tools (`read_module_api`, `locate_module_symbol`, `trace_module_calls`) as the primary discovery mechanism.
 
 ### code-generation
 

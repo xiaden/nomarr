@@ -1,4 +1,10 @@
-"""Shared rendering primitives: formatting helpers and Plotly chart/table/section builders."""
+"""Shared rendering primitives: formatting helpers and Plotly chart/table/section builders.
+
+Research-only.  This module owns the pure rendering surface shared by every report
+section plus the single source of truth for the active catalog identity vocabulary
+(the ``catalog:{backbone}:{score_variant}:v{version}:{keyset}`` decode).  It carries NO
+legacy strategy/head/bin/weighted vocabulary.
+"""
 
 from __future__ import annotations
 
@@ -21,6 +27,7 @@ _FONT_COLOR = "#e0e0e8"
 _H_SMALL = 320
 _H_MED = 420
 _H_LARGE = 560
+
 
 # ---------------------------------------------------------------------------
 # Plotly helpers
@@ -62,75 +69,58 @@ def make_chart(fig: go.Figure, *, id: str = "", title: str = "") -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Column name lists (single source of truth for query / display)
+# Catalog identity vocabulary
 # ---------------------------------------------------------------------------
 
-ANALYZE_METRICS_COLUMNS = [
+#: strategy_type written by the catalog analyze pipeline for every active analysis row.
+CATALOG_STRATEGY_TYPE = "catalog"
+
+#: The enriched long-form columns produced by ``report._retrieval.query_analyze_metrics``.
+#: Every row is one literal ``analyze_metrics`` (strategy_key, sim_metric, k, metric, value)
+#: cell for a ``strategy_type == 'catalog'`` class, enriched with the decoded active
+#: identity + provenance scope fields (canonical_config_id / alias_ids / view_content_hash).
+CATALOG_ANALYSIS_COLUMNS: list[str] = [
+    "run_id",
+    "backbone",
     "strategy_key",
     "strategy_type",
     "sim_metric",
     "k",
-    "backbone",
-    "strategy",
-    "head",
-    "bin_mode",
-    "std_thresh",
-    "rep_a",
-    "rep_b",
-    "agg_method",
-    "disc_general",
-    "disc_artist",
-    "disc_genre",
-    "disc_head",
-    "disc_score",
-    "mean_within",
-    "mean_cross",
-    "map_k",
-    "mrr",
-    "ndcg_k",
-    "recall_k",
-    "recall_k_genre",
-    "precision_k_genre",
-    "map_k_artist",
-    "ndcg_k_artist",
-    "recall_k_artist",
-    "map_k_genre",
-    "mrr_genre",
-    "ndcg_k_genre",
-    "map_k_head",
-    "mrr_head",
-    "ndcg_k_head",
-    "recall_k_head",
-    "map_k_general",
-    "mean_within_artist",
-    "var_within_artist",
-    "mean_cross_artist",
-    "var_cross_artist",
-    "mean_within_genre",
-    "var_within_genre",
-    "mean_cross_genre",
-    "var_cross_genre",
-    "mean_within_head",
-    "var_within_head",
-    "mean_cross_head",
-    "var_cross_head",
-    "var_ap_k_genre",
-    "kurt_ap_k_genre",
-    "var_ap_k_head",
-    "kurt_ap_k_head",
-    "var_mrr_genre",
-    "kurt_mrr_genre",
-    "var_mrr_head",
-    "kurt_mrr_head",
-    "flat_binned_spearman",
-    "flat_binned_beneficial_reorder_rate",
+    "score_variant",
+    "scoring_semantics_version",
+    "representation_hash",
+    "canonical_config_id",
+    "alias_ids",
+    "view_content_hash",
+    "metric",
+    "value",
 ]
 
-STRATEGY_TYPES = ["global_pool", "ptc", "ctp"]
 
-# ---------------------------------------------------------------------------
-# Data formatting helpers
-# ---------------------------------------------------------------------------
+def decode_catalog_strategy_key(strategy_key: str) -> dict[str, Any] | None:
+    """Decode an active ``catalog:{backbone}:{score_variant}:v{version}:{keyset}`` identity.
+
+    Returns a dict with ``backbone``, ``score_variant``, ``scoring_semantics_version`` and
+    ``keyset_hash`` (the trailing 16-hex search-representation marker), or ``None`` when the
+    key is not a well-formed catalog identity.  The scoring-semantics version is parsed from
+    the ``v<version>`` segment; a malformed segment yields ``None`` (never a silent 0).
+    """
+    if not isinstance(strategy_key, str) or not strategy_key.startswith("catalog:"):
+        return None
+    parts = strategy_key.split(":")
+    if len(parts) != 5 or not parts[1] or not parts[2]:
+        return None
+    version_seg = parts[3]
+    if not version_seg.startswith("v") or not version_seg[1:].isdigit():
+        return None
+    if not parts[4]:
+        return None
+    return {
+        "backbone": parts[1],
+        "score_variant": parts[2],
+        "scoring_semantics_version": int(version_seg[1:]),
+        "keyset_hash": parts[4],
+    }
 
 
 def empty_df(columns: list[str]) -> pd.DataFrame:
@@ -138,45 +128,9 @@ def empty_df(columns: list[str]) -> pd.DataFrame:
     return pd.DataFrame(columns=columns)
 
 
-def _decode_strategy_key(df: pd.DataFrame) -> pd.DataFrame:
-    """Append derived strategy configuration columns decoded from ``strategy_key``."""
-    decoded = df.copy()
-    decoded = decoded.assign(
-        backbone=None,
-        strategy=None,
-        head=None,
-        bin_mode=None,
-        std_thresh=None,
-        rep_a=None,
-        rep_b=None,
-        agg_method=None,
-    )
-    if decoded.empty or "strategy_key" not in decoded.columns or "strategy_type" not in decoded.columns:
-        return decoded
-
-    parts = decoded["strategy_key"].astype(str).str.split(":")
-    global_pool_mask = decoded["strategy_type"] == "global_pool"
-    ptc_mask = decoded["strategy_type"] == "ptc"
-    ctp_mask = decoded["strategy_type"] == "ctp"
-
-    decoded.loc[global_pool_mask, "backbone"] = parts[global_pool_mask].str[1]
-    decoded.loc[global_pool_mask, "strategy"] = parts[global_pool_mask].str[2]
-
-    decoded.loc[ptc_mask, "backbone"] = parts[ptc_mask].str[1]
-    decoded.loc[ptc_mask, "bin_mode"] = parts[ptc_mask].str[2]
-    decoded.loc[ptc_mask, "std_thresh"] = pd.to_numeric(parts[ptc_mask].str[3], errors="coerce")
-    decoded.loc[ptc_mask, "rep_a"] = parts[ptc_mask].str[4]
-    decoded.loc[ptc_mask, "rep_b"] = parts[ptc_mask].str[5]
-    decoded.loc[ptc_mask, "agg_method"] = parts[ptc_mask].str[6]
-
-    decoded.loc[ctp_mask, "backbone"] = parts[ctp_mask].str[1]
-    decoded.loc[ctp_mask, "head"] = parts[ctp_mask].str[2]
-    decoded.loc[ctp_mask, "std_thresh"] = pd.to_numeric(parts[ctp_mask].str[3], errors="coerce")
-    decoded.loc[ctp_mask, "rep_a"] = parts[ctp_mask].str[4]
-    decoded.loc[ctp_mask, "rep_b"] = parts[ctp_mask].str[5]
-    decoded.loc[ctp_mask, "agg_method"] = parts[ctp_mask].str[6]
-
-    return decoded
+# ---------------------------------------------------------------------------
+# Data formatting helpers
+# ---------------------------------------------------------------------------
 
 
 def fmt(v) -> str:
@@ -190,150 +144,11 @@ def fmt(v) -> str:
     return str(v)
 
 
-def rep_label(rep: str | None) -> str:
-    """Human-readable pooling label for report tables."""
-    if rep is None:
+def _alias_text(alias_ids) -> str:
+    """Render an ordered alias list as a compact comma-joined string ('—' when empty)."""
+    if not alias_ids:
         return "—"
-    rep_s = str(rep)
-    if rep_s == "median":
-        return "coord-median"
-    if rep_s == "medoid":
-        return "medoid"
-    return rep_s
-
-
-def agg_label(agg: str | None) -> str:
-    """Human-readable aggregation / score-variant label for report tables.
-
-    Position 6 of a ptc/ctp strategy key carries the explicit score-variant
-    identity: the primary ``max_per_candidate_segment`` method or one of the
-    opt-in legacy weighted hypotheses.  A generic mean/median/max/min/medoid
-    aggregate is not a labelled scoring method and is never produced here.
-    """
-    if agg is None:
-        return "—"
-    agg_s = str(agg)
-    if agg_s == "max_per_candidate_segment":
-        return "max-per-candidate"
-    if agg_s == "target_weighted":
-        return "target-wtd"
-    if agg_s == "bidirectional_weighted":
-        return "bidir-wtd"
-    if agg_s == "normalized_mean_pair_weighted":
-        return "norm-pair-wtd"
-    return agg_s
-
-
-# Documented ambiguity (tie / collision) variants for the explicit score variants
-# (Plan A scoring-primary contract).  The primary max-per-candidate-segment method
-# uses the ``first_index + retain_all_candidate_segments`` variant (one contribution
-# per candidate segment, denominator = sum of all candidate weights); the documented
-# alternative is ``equal_tie_split + unique_source_max``.  Legacy weighted hypotheses
-# are single formulas with no per-candidate tie/collision ambiguity and are labelled
-# as such.
-_PRIMARY_SCORE_VARIANT = "max_per_candidate_segment"
-_PRIMARY_AMBIGUITY_VARIANT = "first_index + retain_all_candidate_segments"
-_ALTERNATIVE_AMBIGUITY_VARIANT = "equal_tie_split + unique_source_max"
-_LEGACY_WEIGHTED_HYPOTHESIS_VARIANT = "legacy_weighted_hypothesis"
-_LEGACY_WEIGHTED_AGGS = ("target_weighted", "bidirectional_weighted", "normalized_mean_pair_weighted")
-
-
-def ambiguity_variant_label(agg: str | None) -> str:
-    """Human-readable ambiguity (tie/collision) variant for a score-variant label.
-
-    Every ptc/ctp strategy key carries an explicit score-variant identity in
-    position 6.  The primary ``max_per_candidate_segment`` variant always uses the
-    documented ``first_index + retain_all_candidate_segments`` tie/collision policy;
-    the legacy weighted hypotheses are single formulas with no per-candidate
-    ambiguity.  Returns ``—`` for the flat baseline or an unknown label.
-    """
-    if agg is None:
-        return "—"
-    agg_s = str(agg)
-    if agg_s == _PRIMARY_SCORE_VARIANT:
-        return _PRIMARY_AMBIGUITY_VARIANT
-    if agg_s in _LEGACY_WEIGHTED_AGGS:
-        return _LEGACY_WEIGHTED_HYPOTHESIS_VARIANT
-    return "—"
-
-
-def binned_config_label(
-    *,
-    bin_mode: str | None,
-    std_thresh,
-    rep_a: str | None,
-    rep_b: str | None,
-    agg_method: str | None,
-) -> str:
-    """Stable human-readable binned config label used throughout the report."""
-    t = f"{float(std_thresh):g}" if pd.notna(std_thresh) else "—"
-    return f"{bin_mode}/{t}/{rep_label(rep_a)}x{rep_label(rep_b)}/{agg_label(agg_method)}"
-
-
-def canonical_flat_baseline(
-    rows: pd.DataFrame,
-    backbone: str,
-    *,
-    k: int | None = None,
-) -> pd.DataFrame:
-    """Resolve exactly the ``global_pool:{backbone}:medoid`` rows.
-
-    This is the single explicit medoid baseline per backbone. It never falls back to
-    max/median/mean across flat strategies and never mixes backbones. A missing medoid
-    row yields an empty DataFrame — callers must not substitute another aggregation.
-    ``k`` optionally narrows to one evaluation K.
-    """
-    out = rows.iloc[0:0].copy()
-    if rows.empty or "strategy_key" not in rows.columns or "strategy_type" not in rows.columns:
-        return out
-    expected = f"global_pool:{backbone}:medoid"
-    mask = (rows["strategy_type"] == "global_pool") & (rows["strategy_key"] == expected)
-    if "backbone" in rows.columns:
-        mask &= rows["backbone"] == backbone
-    if "strategy" in rows.columns:
-        mask &= rows["strategy"] == "medoid"
-    if k is not None and "k" in rows.columns:
-        mask &= rows["k"] == k
-    return rows.loc[mask].copy()
-
-
-def flat_medoid_value(
-    rows: pd.DataFrame,
-    backbone: str,
-    col: str,
-    *,
-    k: int | None = None,
-) -> float | None:
-    """Return the medoid-baseline value for *col* on *backbone*, or None if absent.
-
-    Picks one deterministic value from the medoid rows (they differ only by evaluation
-    K when multiple K are present); never aggregates across flat strategies.
-    """
-    medoid = canonical_flat_baseline(rows, backbone, k=k)
-    if medoid.empty or col not in medoid.columns:
-        return None
-    vals = medoid[col].dropna()
-    if vals.empty:
-        return None
-    return float(vals.max())
-
-
-def binned_identity_label(row) -> str:
-    """Full-identity binned label: pathway + head + bin/rep/agg configuration."""
-    st = row.get("strategy_type")
-    pathway = {"ptc": "PTC", "ctp": "CTP"}.get(str(st), str(st) if st is not None else "?")
-    head = row.get("head")
-    head_part = ""
-    if head is not None and not (isinstance(head, float) and pd.isna(head)):
-        head_part = f"/head={head}"
-    base = binned_config_label(
-        bin_mode=row.get("bin_mode"),
-        std_thresh=row.get("std_thresh"),
-        rep_a=row.get("rep_a"),
-        rep_b=row.get("rep_b"),
-        agg_method=row.get("agg_method"),
-    )
-    return f"{pathway}{head_part}/{base}"
+    return ",".join(str(a) for a in alias_ids)
 
 
 def table_exists(con, name: str) -> bool:
@@ -343,20 +158,6 @@ def table_exists(con, name: str) -> bool:
         return len(rows) > 0
     except Exception:
         return False
-
-
-def _pareto_front_indices(x: list[float], y: list[float]) -> set[int]:
-    """Return indices of Pareto-optimal points (not dominated on both axes, higher = better)."""
-    n = len(x)
-    dominated: set[int] = set()
-    for i in range(n):
-        for j in range(n):
-            if i == j:
-                continue
-            if x[j] >= x[i] and y[j] >= y[i] and (x[j] > x[i] or y[j] > y[i]):
-                dominated.add(i)
-                break
-    return set(range(n)) - dominated
 
 
 # ---------------------------------------------------------------------------

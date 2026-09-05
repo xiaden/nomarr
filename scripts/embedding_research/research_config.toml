@@ -1,168 +1,25 @@
-# Embedding Research Pipeline Configuration
-# Edit this file to control what the pipeline computes.
-# Re-run `python run.py reset` then a fresh pipeline run to apply changes cleanly.
+# Strict current research configuration (Plan A P1-S3).
+#
+# This file describes ONLY the executable current eight-phase/maintenance settings.
+# There is no permissive fallback: a missing, malformed, or schema-violating file
+# is a named error from ``helpers.toml.load_research_config`` — never ``{}``.
+#
+# Forbidden key families are rejected outright and do not appear here: archival
+# CTP, std_scaled / calibration / p50 threshold semantics, ``rep_a``/``rep_b``,
+# weighted-reduction / optimizer vocabulary, and obsolete pooling / threshold /
+# optimizer sections.  Each backbone population is a separate experiment; backbones
+# are never cross-averaged.
 
 [pipeline]
-# Budget target for stratified selection (applied after full-corpus membership scoring).
-# 0 = no budget cap (keep full selected set).
-# Small values are useful for quick verification runs.
-limit = 0
-# Recompute rows that are already in the DB.  Leave false for normal incremental runs.
-force = false
-# ONNX execution device.  "cpu" or "cuda".
-device = "cuda"
-# Restrict to specific backbones.  The follow-on primary experiment runs
-# EffNet ONLY by default.  MusicNN remains supported by the existing independent
-# backbone machinery and is enabled ONLY by explicit selection here (e.g.
-# backbones = ["effnet", "musicnn"]); it is never part of default runs.
+# EffNet is the default backbone.  MusicNN is an EXPLICIT opt-in: add "musicnn"
+# here only when a genuinely supported MusicNN population is being built.
 backbones = ["effnet"]
-# Restrict to specific heads.  Comment out to run all.
-# heads = ["mood_happy", "mood_sad"]
-
-[archival_ctp]
-# Deferred/archival CTP (centroid-to-patch) switch.  Default DISABLED: CTP
-# segment functions, caches, and archival loaders remain available and callable,
-# but CTP requirements, rows, and winner candidates are excluded from the
-# default primary corpus and primary report grid.  Set enabled = true to include
-# CTP explicitly (archival diagnostics only, visibly separated from primary
-# output).
-enabled = false
-
-# [head] — OPTIONAL shared-boundary head phase (Plan B). Pools classifier head
-# outputs over the shared EffNet PTC cache boundaries ONLY (boundary_source =
-# "effnet_ptc", head_pool_variant = "shared_effnet_ptc_boundary"): never head-
-# specific segmentation, never the CTP score-stream segmenter, never CTP cache
-# paths. It is non-blocking and additive — provenance rows land only in
-# head_phase_provenance and never mutate primary rows, the corpus, or the winner
-# grid. It runs after primary analysis using the [pipeline] backbones / heads /
-# force keys (EffNet by default); the boundary source and pool variant are fixed
-# constants, not configurable here.
-
-[binning]
-# Normalized L2 distance thresholds (unit vectors; L2 dist ~1.0 ≈ 60° separation).
-# Productive range confirmed ~0.7–1.4; lower bound set at 0.5 to capture the near-identical tail.
-dist_thresholds = [0.95, 1.0, 1.05, 1.1, 1.15, 1.2, 1.25, 1.3, 1.35, 1.4, 1.45, 1.5]
-# Segmentation algorithm variants default: "temporal_global", "temporal_perdim"
-bin_modes = ["temporal_global", "temporal_perdim"]
-# CTP score-space thresholds: absolute half-width in head-score space [0, 1].
-# A patch whose score differs from the current segment mean by more than this
-# value opens a new bin.  Corpus- and song-variance-independent.
-# A song that doesn't vary on a head produces exactly one bin (expected).
-ctp_score_thresholds = [0.05, 0.10, 0.15, 0.20]
-
-[stratify]
-# Genres with fewer than this count are bucketed into "__other__" for
-# balancing purposes (songs are still eligible for selection).
-min_genre_size = 10
-
-# Soft objective weights for greedy budgeted subset selection.
-weight_genre = 1.0
-weight_head = 1.0
-weight_artist = 0.35
-
-# Anchor-based overbudget tolerance curve (log-space interpolation).
-# Example intention: ~+10 tolerated around limit=20, ~+100 around limit=2000.
-budget_anchor_small_limit = 20
-budget_anchor_small_over = 10
-budget_anchor_large_limit = 2000
-budget_anchor_large_over = 100
-
-# Size penalty controls: objective subtracts size_penalty_weight * |n-limit|
-# and adds extra quadratic cost for overbudget beyond tolerance.
-size_penalty_weight = 0.6
-overbudget_quad_weight = 0.05
-
-# Hard guardrail: max selected size = limit + tolerance * hard_overbudget_multiplier.
-hard_overbudget_multiplier = 3.0
-
-[pooling]
-# Explicit flat (global-pool) strategy list. The benchmark baseline is the
-# OBSERVED global medoid (global_pool:{backbone}:medoid) — an observed raw
-# patch, never the coordinate-wise synthetic "median" strategy. The follow-on
-# primary experiment narrows this to flat_strategies=["medoid"]. Each
-# configured backbone (EffNet, MusicNN) is an independent population: its own
-# matching-corpus manifest, its own independently keyed medoid, its own report
-# rows — the two backbones are never cross-averaged.
-# Available: mean, trimmed_10, trimmed_20, median (coordinate-wise synthetic),
-#            max_norm, l2norm_mean, medoid (observed patch)
-flat_strategies = ["medoid"]
-# Representations computed per bin segment and used to build the sim matrix.
-# The follow-on primary experiment uses rep_types=["medoid"] (observed segment).
-# Available: mean, median (coordinate-wise synthetic), medoid (observed segment), max, min
-rep_types   = ["medoid"]
-# PRIMARY score variant: max_per_candidate_segment (deduplicated — one
-# contribution per candidate segment, patch-count weighted, with collision /
-# winner / cosine / contribution traces). The primary ambiguity variant is
-# "first_index + retain_all_candidate_segments"; a documented alternative is
-# "equal_tie_split + unique_source_max". Trace fields (bounded, finite-only,
-# persisted as scalars in analyze_metrics and exposed as trace_* columns in the
-# report): trace_n_pairs, trace_numerator_sum/mean, trace_denominator_sum/mean,
-# trace_collision_count, trace_winner_count, trace_retained_contributions,
-# trace_dropped_contributions, trace_finite. This is the authoritative scoring
-# method of the follow-on primary experiment. A generic mean/median/max/min/
-# medoid aggregate must never re-enter here (validate_score_variant rejects it).
-score_variants = ["max_per_candidate_segment"]
-
-[pooling.hypotheses]
-# Legacy weighted directional reductions (Part B). These are labelled comparison
-# HYPOTHESES, NOT the primary scoring formula. They remain implemented and
-# numerically tested and may be evaluated EXPLICITLY by adding their names to
-# `pooling.score_variants` above (opt-in only). They are never evaluated by
-# default and are not declared as primary semantics.
-#   target_weighted(S, w_target)   = (1/n_A)*sum_a( sum_b(w_target[b]*S[a,b]) / sum_b(w_target[b]) )
-#   normalized_mean_pair_weighted  = sum_ab(w_A[a]*w_B[b]*S[a,b]) / (sum_a(w_A[a])*sum_b(w_B[b]))
-#   bidirectional_weighted         = (target_weighted(fwd,w_fwd_tgt)+target_weighted(rev,w_rev_tgt))/2
-# target_weighted is DIRECTIONAL (forward A->B differs from reverse B->A, e.g.
-# 0.6333333333 vs 0.6000000000 on the fixture); the reverse matrix is supplied
-# separately, never derived by transpose. bidirectional_weighted is symmetric
-# only when the reverse direction is supplied consistently.
-# Legacy generic reductions (mean/median/max/min) and agg_method="medoid" are
-# intentionally rejected; rep_type="medoid" (an observed per-bin representation)
-# remains valid alongside these reductions.
-weighted_reductions = ["target_weighted", "bidirectional_weighted", "normalized_mean_pair_weighted"]
-
-[similarity]
-metrics = ["cosine"]
+# heads omitted => infer-heads runs every registered head.
+device = "cpu"          # cpu | gpu | cuda (gpu and cuda both map to the GPU device)
+limit = 0               # 0 = no corpus limit
+force = false
 
 [analysis]
-# Retrieval list depth
 k = 10
-# ThreadPoolExecutor workers for the analysis phase
-workers = 6
-# Set blas_threads to an integer to cap BLAS threads via threadpoolctl; 0 = no cap
+workers = 4
 blas_threads = 1
-
-[optimization]
-# Set enabled = true to optimize per-(backbone, bin_mode) distance threshold
-# before embed. Default optimizer is grid search (GSS optional via method="gss").
-enabled = false
-# Search bounds for dist_thresh in direct unit-vector L2 distance units.
-# For temporal_global this is NOT a std multiplier.
-search_range = [0.30, 2.0]
-# method = "grid" | "gss"
-method = "grid"
-# Optional explicit threshold grid. If omitted, uses search_range with grid_step.
-# grid = [0.50, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9]
-grid_step = 0.05
-# Number of songs to evaluate on per function call.
-subsample_size = 200
-# Disc metric to maximise: disc_artist, disc_genre, disc_general.
-objective = "disc_general"
-# Stop when the search interval width falls below tolerance.
-tolerance = 0.02
-# Hard cap on function evaluations.
-max_evals = 500
-
-[optimization.strategy]
-# Optimizer evaluation pathway (single strategy at a time).
-# rep_type is the OBSERVED-source per-bin representation the optimizer evaluates:
-# "medoid" selects the actual observed segment patch (never a synthetic vector).
-# The stale coordinate-wise synthetic "median" rep is REJECTED by the config
-# vocabulary (validate_optimizer_representation) — selecting it would write a
-# never-observed bin vector into the sim matrix. agg_method supports the three
-# weighted directional reductions: target_weighted, bidirectional_weighted,
-# normalized_mean_pair_weighted. Legacy generic reductions (mean/median/max/min)
-# and agg_method=medoid are rejected.
-rep_type = "medoid"
-agg_method = "target_weighted"
-metric = "cosine"

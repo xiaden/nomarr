@@ -5,9 +5,12 @@ from __future__ import annotations
 import json
 from dataclasses import asdict
 from datetime import datetime
-from pathlib import Path
+from typing import TYPE_CHECKING
 
-from .models import CodeGraph
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from .models import CodeGraph
 
 
 def write_output(graph: CodeGraph, output_path: Path, project_root: Path, search_paths: list[Path]) -> None:

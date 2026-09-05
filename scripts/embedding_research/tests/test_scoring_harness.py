@@ -13,9 +13,7 @@ deduplicated score) *before* any formula is treated as authoritative.  They cove
 - proof that collision metadata (groups, winner indices, weights, cosine maxima,
   retention, numeric contributions) is complete;
 - proof that every ambiguity variant is deterministic across repeated runs;
-- the ``run_scoring_harness`` driver over the max-per-candidate score and the three
-  legacy weighted reductions (labeled ``legacy_weighted_hypothesis`` comparison
-  formulas).
+- the ``run_scoring_harness`` driver over the max-per-candidate score.
 """
 
 from __future__ import annotations
@@ -27,7 +25,6 @@ import numpy as np
 import pytest
 
 from scripts.embedding_research.scoring_harness import (
-    LegacyWeightedFixture,
     ScoringFixture,
     SegmentScoreInput,
     run_scoring_harness,
@@ -414,20 +411,13 @@ _TIE_FIXTURE = ScoringFixture(
     expected_retain_all_score=_TIE_COS,
 )
 
-_LEGACY_FIXTURE = LegacyWeightedFixture(
-    name="legacy",
-    similarity=np.array([[1.0, 0.2], [0.4, 0.8]]),
-    source_weights=np.array([1.0, 3.0]),
-    target_weights=np.array([2.0, 1.0]),
-)
-
 
 def test_run_scoring_harness_report_shape_and_variants() -> None:
     variants = [
         ("first_index", "retain_all_candidate_segments"),
         ("equal_tie_split", "unique_source_max"),
     ]
-    report = run_scoring_harness([_COLLISION_FIXTURE, _TIE_FIXTURE], variants, legacy_fixtures=[_LEGACY_FIXTURE])
+    report = run_scoring_harness([_COLLISION_FIXTURE, _TIE_FIXTURE], variants)
     assert report.fixtures == ("collision", "equal_tie")
     assert report.variants == tuple(variant_name(tp, cp) for tp, cp in variants)
     assert report.finite is True
@@ -442,7 +432,7 @@ def test_run_scoring_harness_matches_expected_values() -> None:
         ("first_index", "retain_all_candidate_segments"),
         ("equal_tie_split", "unique_source_max"),
     ]
-    report = run_scoring_harness([_COLLISION_FIXTURE, _TIE_FIXTURE], variants, legacy_fixtures=[_LEGACY_FIXTURE])
+    report = run_scoring_harness([_COLLISION_FIXTURE, _TIE_FIXTURE], variants)
     primary = variant_name("first_index", "retain_all_candidate_segments")
     coll_trace = report.traces[primary]["collision"]
     np.testing.assert_allclose(coll_trace.score, _COLLISION_RETAIN_ALL_SCORE, rtol=_TOL, atol=_TOL)
@@ -453,30 +443,12 @@ def test_run_scoring_harness_matches_expected_values() -> None:
     np.testing.assert_allclose(tie_trace.score, _TIE_COS, rtol=_TOL, atol=_TOL)
 
 
-def test_run_scoring_harness_legacy_weighted_labeled_hypotheses() -> None:
-    report = run_scoring_harness(
-        [_COLLISION_FIXTURE],
-        [("first_index", "retain_all_candidate_segments")],
-        legacy_fixtures=[_LEGACY_FIXTURE],
-    )
-    # Exact legacy fixture values from test_weighted_scoring.py (labeled hypotheses).
-    np.testing.assert_allclose(
-        report.legacy_weighted["legacy:target_weighted"], 0.6333333333333333, rtol=_TOL, atol=_TOL
-    )
-    np.testing.assert_allclose(
-        report.legacy_weighted["legacy:normalized_mean_pair_weighted"], 0.5833333333333333, rtol=_TOL, atol=_TOL
-    )
-    np.testing.assert_allclose(
-        report.legacy_weighted["legacy:bidirectional_weighted"], 0.6166666666666667, rtol=_TOL, atol=_TOL
-    )
-
-
 def test_run_scoring_harness_report_is_json_safe() -> None:
     variants = [
         ("first_index", "retain_all_candidate_segments"),
         ("equal_tie_split", "unique_source_max"),
     ]
-    report = run_scoring_harness([_COLLISION_FIXTURE, _TIE_FIXTURE], variants, legacy_fixtures=[_LEGACY_FIXTURE])
+    report = run_scoring_harness([_COLLISION_FIXTURE, _TIE_FIXTURE], variants)
     payload = json.loads(report.to_json())
     assert payload["deterministic"] is True
     assert payload["finite"] is True

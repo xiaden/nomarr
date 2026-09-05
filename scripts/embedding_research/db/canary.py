@@ -6,8 +6,8 @@ requests it — probe **every** surviving table that carries a ``PRIMARY KEY`` o
 ``UNIQUE`` constraint by:
 
 1. capturing the exact schema/columns of the table;
-2. recording an empty table as ``empty`` (NOT corrupt — CTP-disabled empty tables
-   are expected under ``archival_ctp.enabled=false``);
+2. recording an empty table as ``empty`` (NOT corrupt — empty surviving tables are
+   expected);
 3. for a non-empty table, deterministically selecting the lexicographically
    smallest row under the table's declared key (the first stable ordered row),
 4. capturing that sentinel's COMPLETE wide row by explicit column list (all
@@ -69,7 +69,7 @@ class CanaryProbeReport:
 
     ``ok`` means the non-empty table survived a delete/re-insert/rollback probe
     byte-identically row-wise; ``empty`` means the table had zero rows (expected,
-    e.g. CTP-disabled tables) and required no sentinel.
+    e.g. a freshly-created songs table) and required no sentinel.
     """
 
     tables: dict[str, str] = field(default_factory=dict)

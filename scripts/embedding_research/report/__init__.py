@@ -9,24 +9,12 @@ from typing import Any
 
 from plotly.offline import get_plotlyjs
 
-from ._binned import (
-    section_bin_diversity,
-    section_bin_mode_comparison,
-    section_flat_binned_correlation,
-    section_segment_counts,
-    section_threshold_sweep,
-)
 from ._corpus import disc_score_warning, section_corpus
 from ._efficiency import section_efficiency
-from ._heads import (
-    section_head_output_shared_ptc_boundary,
-    section_head_sim_corr,
-    section_head_value,
-)
-from ._optimizer import section_optimizer
-from ._retrieval import query_analyze_metrics, section_per_backbone, section_unified_table
+from ._heads import section_head_analysis
+from ._provenance import section_provenance
+from ._retrieval import query_analyze_metrics, section_analysis
 from ._summary import section_summary
-from ._truncation import section_truncation
 from ._winners_report import section_winners
 
 _REPORT_SCHEMA_VERSION = 2
@@ -295,25 +283,29 @@ def _payload(
 # ---------------------------------------------------------------------------
 
 
-def run(con, out_path=None, *, matching_corpora: dict[str, Any] | None = None, head_phase_manifest=None) -> None:
+def run(con, out_path=None, *, run_id: str | None = None) -> dict:
     """Generate the embedding research report and write HTML + JSON files.
+
+    Emits EXACTLY seven schema-v2 sections, in order: ``summary``, ``corpus``,
+    ``analysis``, ``winners``, ``head-analysis``, ``provenance``, ``efficiency``.
 
     Parameters
     ----------
     con:
-        Open DuckDB connection with embedding results.
+        Open DuckDB connection with active catalog analysis + head provenance results.
     out_path:
         Required directory where ``report.html`` and ``report.json`` will be written.
         Raises ``ValueError`` if not provided.
-    matching_corpora:
-        Optional ``backbone -> MatchingCorpusManifest`` mapping.  When supplied it is
-        threaded into the winners section so every winner-delta row carries the real
-        corpus hash/size for its backbone.
-    head_phase_manifest:
-        Optional :class:`~scripts.embedding_research.head_pooling.HeadPhaseManifest`
-        from the shared EffNet PTC boundary head phase.  When supplied it is threaded
-        into the ``head-output-shared-ptc-boundary`` section for preparation-status
-        and coverage warnings.
+    run_id:
+        Optional physical run-scope selector.  When given, only that run's catalog analysis
+        rows feed the analysis/winners/summary sections and only that run's provenance is
+        reported.  When ``None`` (the default) the active completed scope is used: every
+        completed catalog analysis and head-provenance record present is rendered.  No
+        inference is ever performed at report time — the report is rendered verbatim from
+        completed phases.
+
+    Returns:
+        The assembled payload dict (also written to ``report.json`` / ``report.html``).
     """
     import pathlib
 
@@ -326,32 +318,20 @@ def run(con, out_path=None, *, matching_corpora: dict[str, Any] | None = None, h
     print("Generating report…")
 
     # Data loaders
-    df, _ = _step("query_analyze_metrics", lambda: query_analyze_metrics(con))
+    df, _ = _step("query_analyze_metrics", lambda: query_analyze_metrics(con, run_id=run_id))
 
     # Global warnings
     warnings, _ = _step("disc_score_warning", lambda: disc_score_warning(con))
 
-    # Section builders
+    # Section builders (exact order contract).
     sections_raw: list[tuple[str, Any]] = [
         ("summary", lambda: section_summary(df)),
         ("corpus", lambda: section_corpus(con)),
-        ("optimizer", section_optimizer),
-        ("unified-ranking", lambda: section_unified_table(df)),
-        ("per-backbone", lambda: section_per_backbone(df)),
-        ("winners", lambda: section_winners(df, corpus_by_backbone=matching_corpora)),
-        ("threshold-sweep", lambda: section_threshold_sweep(df)),
-        ("bin-diversity", lambda: section_bin_diversity(con)),
-        ("segment-counts", lambda: section_segment_counts(con)),
-        ("bin-mode-comparison", lambda: section_bin_mode_comparison(df)),
-        ("flat-binned-corr", lambda: section_flat_binned_correlation(df)),
-        ("head-sim-corr", lambda: section_head_sim_corr(con)),
-        ("head-value", lambda: section_head_value(con, flat_df=df[df["strategy_type"] == "global_pool"])),
-        (
-            "head-output-shared-ptc-boundary",
-            lambda: section_head_output_shared_ptc_boundary(con, manifest=head_phase_manifest),
-        ),
+        ("analysis", lambda: section_analysis(df)),
+        ("winners", lambda: section_winners(df)),
+        ("head-analysis", lambda: section_head_analysis(con)),
+        ("provenance", lambda: section_provenance(con, run_id=run_id)),
         ("efficiency", lambda: section_efficiency(con)),
-        ("truncation", lambda: section_truncation(con)),
     ]
 
     sections: list[dict] = []
@@ -373,3 +353,4 @@ def run(con, out_path=None, *, matching_corpora: dict[str, Any] | None = None, h
     print(f"  Wrote {html_path}")
 
     print("Report done.")
+    return payload

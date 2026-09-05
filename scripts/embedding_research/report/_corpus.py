@@ -1,4 +1,8 @@
-"""Corpus health and overview section."""
+"""Active songs / corpus health section.
+
+Research-only.  Renders the retained ``songs`` table as corpus health for the active
+matching corpus.  No retired pipeline vocabulary.
+"""
 
 from __future__ import annotations
 
@@ -29,10 +33,10 @@ def disc_score_warning(con) -> list[dict]:
                     "detail": (
                         f"All {n_songs} songs are from the same artist, so disc_score cannot be "
                         f"computed (requires both within-artist and cross-artist pairs). "
-                        f"Sections that rank by disc_score will show 0.0 everywhere \u2014 this is "
-                        f"expected, not a bug. Add songs from multiple artists to get meaningful "
-                        f"discrimination scores. The Head \u00d7 Similarity Correlation and "
-                        f"PTC / CTP Alignment sections are unaffected."
+                        f"Discrimination metrics in the analysis and winners sections will show "
+                        f"0.0 everywhere \u2014 this is expected, not a bug. Add songs from multiple "
+                        f"artists to get meaningful discrimination scores. The corpus, "
+                        f"head-analysis, and efficiency sections are unaffected."
                     ),
                 }
             ]
@@ -62,13 +66,13 @@ def section_corpus(con) -> dict:
     try:
         n_songs = con.execute("SELECT COUNT(*) FROM songs").fetchone()[0]
     except Exception:
-        return make_section("corpus", "Corpus Overview", empty_message="No songs table found.")
+        return make_section("corpus", "Active Songs & Corpus Health", empty_message="No songs table found.")
 
     if n_songs == 0:
         return make_section(
             "corpus",
-            "Corpus Overview",
-            empty_message="No songs in the database yet. Run the embed phase.",
+            "Active Songs & Corpus Health",
+            empty_message="No songs in the database yet. Run the ingest phase.",
         )
 
     try:
@@ -79,7 +83,7 @@ def section_corpus(con) -> dict:
             "FROM songs GROUP BY artist ORDER BY n DESC, artist"
         ).df()
     except Exception:
-        return make_section("corpus", "Corpus Overview", empty_message="Could not load corpus data.")
+        return make_section("corpus", "Active Songs & Corpus Health", empty_message="Could not load corpus data.")
 
     mean_spa = round(n_songs / max(1, n_artists), 1)
     multi = int((per_artist["n"] >= 2).sum())
@@ -126,8 +130,9 @@ def section_corpus(con) -> dict:
 
     return make_section(
         "corpus",
-        "Corpus Overview",
+        "Active Songs & Corpus Health",
         description=(
+            "Active matching corpus used by the catalog analysis and head analysis. "
             "Trust signal for all discrimination metrics. "
             "Artists with only 1 song cannot form within-artist pairs, so disc_score "
             "cannot be computed for them. "

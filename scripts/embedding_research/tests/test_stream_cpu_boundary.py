@@ -194,21 +194,26 @@ def test_cpu_consumer_completes_with_zero_sentinel_calls(con, tmp_path, monkeypa
 
 
 @pytest.mark.unit
-def test_head_and_stream_read_surfaces_are_cpu_only_even_with_orphan_present(con, tmp_path, monkeypatch):
-    """Reconcile/verify reports an orphan CPU-only (no sentinel) and still zero ML calls.
+def test_head_and_stream_read_surfaces_are_cpu_only_even_when_tree_dirty(con, tmp_path, monkeypatch):
+    """Reconcile/verify reports a dirty tree CPU-only (no sentinel) and still zero ML calls.
 
-    A rowless stray file must be classified purely from filesystem + registry metadata —
-    the report exposes it and the read surfaces never reach audio/model/CUDA even when
-    the tree is not clean.
+    A corrupted manifest/payload must be classified purely from filesystem + registry
+    metadata — the report exposes the corrupt artifact and the read surfaces never reach
+    audio/model/CUDA even when the tree is not clean.  (Rowless-orphan classification was
+    removed post-migration; orphan/stray detection moved to the S5 manifest-only reindex,
+    which is likewise a CPU-only filesystem walk.)
     """
     out = tmp_path / "out"
     stream_store, _head_store = _seed_readables(con, out)
-    # Drop a stray final file into the patches dir (a genuine orphan).
-    np.save(out / "patches" / "orphanSong.effnet.v9.npy", _arr(2, 3))
+    # Corrupt the ready stream's self-describing manifest so the tree is no longer clean.
+    rec = stream_store.lookup("songC", "effnet")
+    manifest = stream_store._path(rec.artifact_ref[:-4] + ".json")
+    with open(manifest, "ab") as handle:
+        handle.write(b"\x00")
     counts = _install_sentinels(monkeypatch)
 
     report = stream_store.verify(strict=False)  # non-strict: reports, never raises
-    assert report.stray == 1
+    assert report.corrupt == 1
     assert report.clean is False
     assert all(count == 0 for count in counts.values()), counts
 
