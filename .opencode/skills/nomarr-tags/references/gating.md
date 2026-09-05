@@ -135,7 +135,7 @@ Per inference run, `upsert_segment_stats_batch()` stores per-label `{mean, std, 
 
 4. **`MOOD_MAPPING` only covers two regression heads** (`approachability_regression`, `engagement_regression`). Classification-based mood heads use `KNOWN_MODELS` labels directly via a separate code path — the two registries are not unified.
 
-5. **Ghost tag vertices after curation**: Orphan cleanup excludes tags that have `tag_model_output` provenance edges even if they have no `song_has_tags` links — these accumulate after curation operations that don't clean up provenance edges.
+5. **Ghost tag vertices after curation**: Orphan cleanup excludes tags that have `tag_model_output` provenance edges even if they have no `song_tags` links — these accumulate after curation operations that don't clean up provenance edges.
 
 6. **`nom:mood-*` stored as JSON-encoded lists**: The `tags` collection schema declares `value` as `str`, but mood values are JSON-encoded lists. Reconstruction is handled by `tag_parsing_comp.py` but this is undocumented at the schema level.
 

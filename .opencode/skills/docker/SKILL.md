@@ -10,9 +10,9 @@ The containerized dev environment lives in `.devcontainer/`. The compose file is
 | Service name | Container name | Image |
 | --- | --- | --- |
 | `nomarr` | `nomarr-dev` | built from repo `dockerfile` |
-| `nomarr-postgres` | `nomarr-postgres-dev` | `postgres:16` |
+| `nomarr-postgres` | `nomarr-postgres-dev` | `pgvector/pgvector:pg17` |
 
-The `devcontainer.json` wires this compose stack into VS Code Dev Containers. The workspace folder inside the container is `/workspace` (the full repo, read-only). The active Python source is at `/app/nomarr` (bind-mounted from `../nomarr` — editable without rebuild).
+The `devcontainer.json` wires this compose stack into VS Code Dev Containers. The workspace folder inside the container is `/workspace` (the full repo, bind-mounted read-write). The active Python source is at `/app/nomarr` (bind-mounted from `../nomarr` — editable without rebuild).
 
 Key paths inside `.devcontainer/` (all gitignored except the compose and JSON files):
 
@@ -23,10 +23,12 @@ Key paths inside `.devcontainer/` (all gitignored except the compose and JSON fi
 | `nomarr.dev.env` | Env vars for the `nomarr` service |
 | `nomarr-postgres.dev.env` | Env vars for the `nomarr-postgres` service |
 | `config/` | Nomarr runtime config — populated on first start |
-| `postgres-data/` | PostgreSQL data directory — delete to reset the DB |
+| `pg_data_dev` (compose named volume) | PostgreSQL data volume — `docker compose down -v` deletes it to reset |
 | `test-media/` | Drop audio files here to create a scannable library |
 
-Templates for the env files live in `docker/nomarr.env.example` and `docker/nomarr-postgres.env.example`.
+`nomarr-arangodb.dev.env` is an **obsolete ArangoDB remnant** (no ArangoDB service exists in the compose stack) — ignore it. PostgreSQL data lives in the `pg_data_dev` named volume declared in `docker-compose.dev.yaml`, not in a bind-mounted `postgres-data/` directory.
+
+The nomarr env template is `docker/nomarr.env.example`. There is **no** `docker/nomarr-postgres.env.example`; postgres defaults come from `docker/nomarr-postgres.env` (`POSTGRES_USER=nomarr`, `POSTGRES_PASSWORD=nomarr`, `POSTGRES_DB=nomarr`).
 
 ---
 
@@ -117,17 +119,22 @@ The `.devcontainer/` env files are gitignored and must be created before `compos
 ```powershell
 # From the repo root
 Copy-Item docker/nomarr.env.example .devcontainer/nomarr.dev.env
-Copy-Item docker/nomarr-postgres.env.example .devcontainer/nomarr-postgres.dev.env
 ```
 
-Then edit `.devcontainer/nomarr.dev.env`:
-```
-DATABASE_URL=postgresql+psycopg2://nomarr:nomarr_dev_password@nomarr-postgres:5432/nomarr  # service name on the compose network — do NOT use localhost
+`.devcontainer/nomarr-postgres.dev.env` is referenced by the compose file (`env_file`) but is not committed — create it from `docker/nomarr-postgres.env`:
+```powershell
+Copy-Item docker/nomarr-postgres.env .devcontainer/nomarr-postgres.dev.env
 ```
 
-Edit `.devcontainer/nomarr-postgres.dev.env`:
+`.devcontainer/nomarr.dev.env` (current committed default):
 ```
-POSTGRES_PASSWORD=nomarr_dev_password
+DATABASE_URL=postgresql+psycopg2://nomarr:nomarr@nomarr-postgres:5432/nomarr  # service name on the compose network — do NOT use localhost
+```
+
+`.devcontainer/nomarr-postgres.dev.env` (from `docker/nomarr-postgres.env`):
+```
+POSTGRES_USER=nomarr
+POSTGRES_PASSWORD=nomarr
 POSTGRES_DB=nomarr
 ```
 
@@ -149,7 +156,7 @@ Tears down the compose stack, rebuilds the `nomarr-dev` Docker image from `docke
 - `dockerfile.base` changed
 - Extensions or settings in `devcontainer.json` changed
 
-**Cost:** Full image build (minutes). PostgreSQL data is preserved (bind mount in `.devcontainer/postgres-data/`). Nomarr config is preserved (bind mount in `.devcontainer/config/`).
+**Cost:** Full image build (minutes). PostgreSQL data is preserved in the `pg_data_dev` named volume. Nomarr config is preserved (bind mount in `.devcontainer/config/`).
 
 ### Restart Container (Dev Containers: Restart Container)
 
@@ -180,12 +187,10 @@ Disconnects VS Code from the container but does not stop it. `shutdownAction: "s
 
 `nomarr-dev` has a `depends_on` condition requiring `nomarr-postgres-dev` to be healthy before `nomarr-dev` starts. The sequence is:
 
-1. `nomarr-postgres-dev` starts → waits up to 60s total (10s start period + 5 retries × 10s)  
-   Healthcheck: `pg_isready -U nomarr -d nomarr`
-2. Once PostgreSQL is healthy, `nomarr-dev` starts → waits up to 180s total (60s start period + 12 retries × 10s)  
-   Healthcheck: `curl -sf http://127.0.0.1:8356/info`
+1. `nomarr-postgres-dev` starts → healthcheck `pg_isready -U nomarr` (`start_period: 30s`, `interval: 5s`, `retries: 5`)
+2. Once PostgreSQL is healthy, `nomarr-dev` starts → healthcheck `curl -sf http://127.0.0.1:8356/info` (`start_period: 60s`, `interval: 10s`, `retries: 12`)
 
-**Total cold-start time:** Up to 4 minutes. A large `postgres-data/` directory makes PostgreSQL slower to start. This is normal — wait the full window before declaring failure.
+**Total cold-start time:** Up to ~4 minutes. A large `pg_data_dev` volume makes PostgreSQL slower to start. This is normal — wait the full window before declaring failure.
 
 ### Expected timing on first run (empty DB)
 
@@ -248,7 +253,7 @@ Common causes in priority order:
 1. **GPU not available** — `could not select device driver "nvidia"` in compose output. Fix: install NVIDIA Container Toolkit, or the machine has no NVIDIA GPU.
 2. **PostgreSQL not healthy** — nomarr-dev never starts because its `depends_on` condition is not met. Check `docker logs nomarr-postgres-dev`.
 3. **Missing env file** — compose fails immediately with `env file ... not found`. Create from templates (see Env File Bootstrap section).
-4. **Port already in use** — `bind: address already in use` for 8356 or 8529. Find and stop the conflicting process.
+4. **Port already in use** — `bind: address already in use` for 8356 (API) or 5432 (PostgreSQL). Find and stop the conflicting process.
 5. **Config error in nomarr** — check `docker logs nomarr-dev` for Python tracebacks or `validate_environment()` failures.
 
 ### What's actually inside the running container?
@@ -358,7 +363,7 @@ docker exec nomarr-postgres-dev psql -U nomarr -d nomarr -c "\dt"
 docker exec nomarr-postgres-dev psql -U nomarr -d nomarr -c "
   SELECT 'songs' AS tbl, COUNT(*) FROM songs
   UNION ALL SELECT 'tags', COUNT(*) FROM tags
-  UNION ALL SELECT 'song_has_tags', COUNT(*) FROM song_has_tags;"
+  UNION ALL SELECT 'song_tags', COUNT(*) FROM song_tags;"
 
 # Library scan status
 docker exec nomarr-postgres-dev psql -U nomarr -d nomarr -c "
@@ -379,7 +384,7 @@ docker exec nomarr-postgres-dev psql -U nomarr -d nomarr -c "
 - `libraries` — library config and scan state
 - `songs` — scanned audio files (one row per file)
 - `tags` — tag rows `{name, value}` (e.g. `{name: "artist", value: "Beatles"}`)
-- `song_has_tags` — join table `songs.id` → `tags.id`
+- `song_tags` — join table `songs.id` → `tags.id` (with `confidence`, `source`, `created_at`)
 - `library_folders` — folder-level cache for quick scan skipping
 - `calibration_state`, `calibration_history` — calibration data
 - `sessions` — auth sessions
@@ -402,12 +407,12 @@ SELECT COUNT(*) FROM songs;
 SELECT name, COUNT(*) AS c FROM tags GROUP BY name ORDER BY c DESC;
 
 -- Sample joins
-SELECT sf.song_id, sf.tag_id FROM song_has_tags sf LIMIT 3;
+SELECT st.song_id, st.tag_id FROM song_tags st LIMIT 3;
 
 -- Orphaned rows
-SELECT COUNT(*) FROM song_has_tags sf
-  LEFT JOIN songs lf ON sf.song_id = lf.id
-  WHERE lf.id IS NULL;
+SELECT COUNT(*) FROM song_tags st
+  LEFT JOIN songs s ON st.song_id = s.id
+  WHERE s.id IS NULL;
 ```
 
 ---
@@ -422,7 +427,7 @@ Keep digging without asking when:
 
 Ask the user before:
 
-- Wiping `.devcontainer/postgres-data/` (destroys local database state)
+- Wiping the `pg_data_dev` volume / `docker compose down -v` (destroys local database state)
 - Wiping `.devcontainer/config/` (destroys Nomarr config and generated credentials)
 - Running `docker compose down -v` (removes named volumes)
 - Running `docker system prune` (host-wide, affects all Docker projects)

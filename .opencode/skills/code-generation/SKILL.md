@@ -22,14 +22,15 @@ description: Use when generating boilerplate code, __init__.py files, or test sc
 **Usage:**
 
 ```bash
-python scripts/generate_inits.py
+python scripts/human-scripts/generate_inits.py
 ```
 
 **How it works:**
 
-1. Scans Python modules for public names (classes, functions, constants)
+1. Recursively scans every package under `nomarr/` for public names (classes, functions, constants), skipping the config's `excluded_packages` and any `__init__.py` marked manually-managed
 2. Generates `__init__.py` with `__all__` listing public exports
-3. Uses config from `scripts/configs/generate_inits_config.yml`
+3. Uses config from `scripts/human-scripts/configs/generate_inits_config.yml`
+4. Ruff-formats each generated file (best-effort)
 
 **What it exports:**
 
@@ -55,14 +56,16 @@ python scripts/generate_inits.py
 
 ```bash
 # Generate tests for a module
-python scripts/generate_tests.py nomarr.services.domain.tagging_svc --output tests/unit/services/test_tagging_svc.py
+python scripts/human-scripts/generate_tests.py nomarr.components.tagging.tag_write_comp --output tests/unit/components/test_tag_write_comp.py
 
 # Preview without writing
-python scripts/generate_tests.py nomarr.components.ml.ml_embed_comp --preview
+python scripts/human-scripts/generate_tests.py nomarr.components.tagging.tag_write_comp --preview
 
-# Specify layer for auto-fixture selection
-python scripts/generate_tests.py nomarr.workflows.processing.process_file_wf --layer workflows
+# Specify layer for auto-fixture selection (data | services | ml | interfaces)
+python scripts/human-scripts/generate_tests.py nomarr.services.infrastructure.pipeline_svc --layer services
 ```
+
+**CLI:** positional `module`, plus `--output/-o` (default auto-derives `tests/unit/<pkg>/test_<module>.py`), `--preview` (prints the scaffold without writing), and `--layer` with choices `data | services | ml | interfaces` (auto-detected from the module path if omitted).
 
 **Generated tests include:**
 
@@ -80,16 +83,16 @@ python scripts/generate_tests.py nomarr.workflows.processing.process_file_wf --l
 2. **Update exports:**
 
    ```bash
-   python scripts/generate_inits.py
+   python scripts/human-scripts/generate_inits.py
    ```
 
 3. **Generate test scaffold:**
 
    ```bash
-   python scripts/generate_tests.py nomarr.components.new_comp --output tests/unit/components/test_new_comp.py --preview
+   python scripts/human-scripts/generate_tests.py nomarr.components.new_comp --output tests/unit/components/test_new_comp.py --preview
    
    # If preview looks good:
-   python scripts/generate_tests.py nomarr.components.new_comp --output tests/unit/components/test_new_comp.py
+   python scripts/human-scripts/generate_tests.py nomarr.components.new_comp --output tests/unit/components/test_new_comp.py
    ```
 
 4. **Fill in test implementations**
@@ -100,7 +103,7 @@ python scripts/generate_tests.py nomarr.workflows.processing.process_file_wf --l
 
 ```bash
 # After adding/removing public functions:
-python scripts/generate_inits.py
+python scripts/human-scripts/generate_inits.py
 
 # Review changes:
 git diff nomarr/*/__init__.py
@@ -112,27 +115,39 @@ git diff nomarr/*/__init__.py
 
 ### generate_inits_config.yml
 
-Located at `scripts/configs/generate_inits_config.yml`:
+Located at `scripts/human-scripts/configs/generate_inits_config.yml`:
 
 ```yaml
-# Packages to scan
-packages:
-  - nomarr.services
-  - nomarr.workflows
-  - nomarr.components
-  - nomarr.persistence
-  - nomarr.helpers
-
-# Names to never export
+# Names that should never be re-exported in generated __init__.py files
 banned_exports:
-  - TYPE_CHECKING
-  - annotations
+  - get_config
+
+# Marker that flags an __init__.py as manually-managed (never overwritten)
+manual_init_marker: "# MANUAL_INIT"
+manual_indicators:
+  - APIRouter
+
+# Max line length for single-line imports
+max_import_line_length: 88
+
+# Packages with custom __init__.py logic (paths relative to nomarr/)
+excluded_packages:
+  - nomarr/interfaces/api
+  - nomarr/interfaces/cli
+  - nomarr/services
+  - nomarr/persistence
+  - nomarr/helpers
+  - nomarr/components/ml
+  - nomarr/workflows
 ```
+
+`generate_inits.py` writes an `__init__.py` for every package under `nomarr/` not in `excluded_packages` and not marked manually-managed. Review generated files with `git diff` before committing.
 
 ---
 
 ## Key Rules
 
-- **Run `generate_inits.py` after adding public symbols** — keeps exports consistent
+- **Run `scripts/human-scripts/generate_inits.py` after adding public symbols** — keeps exports consistent; it skips `excluded_packages` and files marked `# MANUAL_INIT`
 - **Use `--preview` before writing test files** — verify structure is correct
 - **Generated tests are scaffolds** — you still need to fill in assertions and edge cases
+- `--layer` only accepts `data | services | ml | interfaces`; pass a service/workflow module as `--layer services` where fixture selection applies

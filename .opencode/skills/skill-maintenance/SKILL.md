@@ -17,16 +17,16 @@ description: Use when creating, updating, auditing, or validating Agent Skills. 
 
 ```bash
 # Validate all skills
-python scripts/validate_skills.py
+python scripts/human-scripts/validate_skills.py
 
 # Validate one skill
-python scripts/validate_skills.py layer-helpers
+python scripts/human-scripts/validate_skills.py code-generation
 
 # JSON output
-python scripts/validate_skills.py --format=json
+python scripts/human-scripts/validate_skills.py --format=json
 
 # Also check if code references exist
-python scripts/validate_skills.py --check-refs
+python scripts/human-scripts/validate_skills.py --check-refs
 ```
 
 **Checks performed:**
@@ -43,7 +43,7 @@ python scripts/validate_skills.py --check-refs
 
 ## Creating a New Skill
 
-1. **Create directory:** `.github/skills/<skill-name>/`
+1. **Create directory:** `.opencode/skills/<skill-name>/`
 2. **Create `SKILL.md`** with frontmatter:
 
 ```markdown
@@ -70,7 +70,7 @@ Instructions...
 - [ ] Check 2 **→ Consequence**
 ```
 
-1. **Validate:** `python scripts/validate_skills.py skill-name`
+1. **Validate:** `python scripts/human-scripts/validate_skills.py skill-name`
 
 ---
 
@@ -83,7 +83,7 @@ Instructions...
 1. **Identify what changed** — code location, API, or rules
 2. **Read the current skill** — understand existing structure
 3. **Update ONLY affected sections** — don't reformat unrelated content
-4. **Validate:** `python scripts/validate_skills.py <skill-name> --check-refs`
+4. **Validate:** `python scripts/human-scripts/validate_skills.py <skill-name> --check-refs`
 5. **Test:** Does the skill trigger correctly? Are examples still valid?
 
 **Rules:**
@@ -141,10 +141,10 @@ Code references in skills can become stale when code moves.
 
 ```bash
 # Find invalid references
-python scripts/validate_skills.py --check-refs
+python scripts/human-scripts/validate_skills.py --check-refs
 
 # Check specific skill
-python scripts/validate_skills.py layer-components --check-refs
+python scripts/human-scripts/validate_skills.py nomarr-layers --check-refs
 ```
 
 **Fix invalid references:**
@@ -161,27 +161,29 @@ Run monthly or after major refactors:
 
 ```bash
 # 1. Validate all skills
-python scripts/validate_skills.py --check-refs
+python scripts/human-scripts/validate_skills.py --check-refs
 
 # 2. Review any invalid references
 # 3. Update stale skills
 # 4. Re-validate
-python scripts/validate_skills.py
+python scripts/human-scripts/validate_skills.py
 ```
 
 ---
 
 ## Skill Locations
 
-Nomarr skills are organized by purpose:
+Active Nomarr skills live under `.opencode/skills/<skill-name>/SKILL.md` — that directory is the single discoverable inventory (the validator lists the sorted active directory as the live inventory). Skills are named by domain:
 
- | Skill | Purpose |
+ | Example Skill | Purpose |
  | ------- | --------- |
- | `layer-*` | Architecture layer guidance |
- | `code-discovery` | Codebase exploration tools |
+ | `nomarr-layers` | Architecture layer guidance |
+ | `code-intel-usage` | Code-intel MCP tool usage |
  | `code-generation` | Boilerplate generation |
- | `quality-analysis` | QC and linting tools |
+ | `ci-lint-test-gates` | QC and linting gates |
  | `skill-maintenance` | This skill (meta) |
+
+See `docs/dev/skills/README.md` and `docs/dev/skills/nomarr-skills.md` for the inventory and format guidance.
 
 ---
 

@@ -24,7 +24,7 @@ Nomarr has **four** Tag/Tags dataclass definitions for the same concept ("a musi
 | 1 (IN USE) | `nomarr/helpers/dto/tags_dto.py` | `Tag(key: str, value: tuple[TagValue,...])`, `Tags(items)` — frozen, **no validation**, empty allowed | 16 (see below) |
 | 2 (DEAD) | `nomarr/helpers/dataclasses/tags_dataclass.py` | `Tag(name: str, values: tuple[TagValue,...])`, `Tags(items)` — frozen+slots, **validated**, non-empty required | **ZERO** (only its own `__init__.py` re-export) |
 | 3 (V2 SCAFFOLDING) | `v2/nomarr/helpers/dataclasses/tags_dataclass.py` | identical to #2 | only other unused `v2/nomarr/...` dataclasses (TYPE_CHECKING) |
-| 4 (DEAD) | `nomarr/components/library/songs/song_class.py:21-26` | `Tag(name: str, value: str)` — **scalar** value | **ZERO** (`grep song_class` = 0 matches; `Song` allowlisted in deadcode_allowlist.py:1009) |
+| 4 (DEAD) | `song_class` legacy module (deleted; was at `.../songs/song_class.py`) | `Tag(name: str, value: str)` — **scalar** value | **ZERO** (`grep song_class` = 0 matches; `Song` allowlisted in deadcode_allowlist.py:1009) |
 
 - `TagValue = str | int | float | bool` — identical in all files; `tag_write_comp.py` and `tag_parsing_comp.py` import only `TagValue` and are **unaffected** by the migration.
 - The skill `library-files-data-flow` claims song_class is used by playlist import / embedding research — **stale**; verified zero importers.
@@ -69,7 +69,7 @@ Working tree was dirty at research start (`song_tags_comp.py` + its test); a con
 - `nomarr/helpers/dto/tags_dto.py` (full read)
 - `nomarr/helpers/dataclasses/tags_dataclass.py` + `__init__.py` (full read)
 - `v2/nomarr/helpers/dataclasses/tags_dataclass.py`, `song_dataclass.py` (full read)
-- `nomarr/components/library/songs/song_class.py` (full read)
+- The legacy `song_class` module (read in full before it was deleted) — historically defined the scalar `Tag(name, value)` plus `Vector`/`Song`
 - All 16 importer files (read or symbol-grepped)
 - ADR-041, ADR-032 (via persistence-domain-model skill), deadcode_allowlist.py
 - Log L108 (this research), L105 (tag row contract), L99 (hydration facade)

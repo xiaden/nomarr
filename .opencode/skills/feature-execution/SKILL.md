@@ -1,6 +1,6 @@
 ---
 name: feature-execution
-description: Use when executing implementation plans produced by the feature-planning skill. Orchestrates execution subagents (one plan phase at a time), dispatches review subagents for thorough quality enforcement after each plan, and manages fix cycles when review finds issues. Trigger when: (1) the user explicitly says "execute the plans", "implement the feature", or "work through the plans"; OR (2) the user asks to start implementation and every plan for the single feature being executed (all lettered plans A–Z for that specific feature slug, covering its full scope) exists and is schema-valid in artifacts/plans/pending/TASK-*-{A..Z}-*.md. Not for single-plan execution — use plan_complete_step directly for those.
+description: 'Use when executing implementation plans produced by the feature-planning skill. Orchestrates execution subagents (one plan phase at a time), dispatches review subagents for thorough quality enforcement after each plan, and manages fix cycles when review finds issues. Trigger when: (1) the user explicitly says "execute the plans", "implement the feature", or "work through the plans"; OR (2) the user asks to start implementation and every plan for the single feature being executed (all lettered plans A–Z for that specific feature slug, covering its full scope) exists and is schema-valid in artifacts/plans/pending/TASK-*-{A..Z}-*.md. Not for single-plan execution — use plan_complete_step directly for those.'
 ---
 
 # Feature Execution

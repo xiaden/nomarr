@@ -20,7 +20,7 @@ When moving logic from one location to another:
 - [ ] **Update skills** that reference the old location
 - [ ] **Add ruff rules** to ban imports from the old location
 - [ ] **Delete the old code** (not deprecate - delete)
-- [ ] **Run validate_skills.py** to catch stale references
+- [ ] **Run `scripts/human-scripts/validate_skills.py`** to catch stale references
 - [ ] **Run tests** to confirm nothing broke
 
 If you can't check all boxes, the migration isn't done.
@@ -36,7 +36,7 @@ Every responsibility has exactly ONE canonical owner:
  | Library path construction | `path_comp.py` | `files_helper.py` |
  | Wall-clock timestamps | `time_helper.now_ms()` | `time.time()` |
  | Monotonic intervals | `time_helper.internal_ms()` | `time.monotonic()` |
- | Essentia calls | `ml_backend_essentia_comp.py` | anywhere else |
+ | Essentia calls | `nomarr/components/ml/audio/ml_audio_comp.py`, `ml_preprocess_comp.py` | anywhere else |
  | Logging setup | `logging_helper.get_logger()` | `logging.getLogger()` |
  | Config access | Injected `AppConfig` | `os.environ`, `config.yaml` |
 
@@ -66,7 +66,7 @@ Prevent layer violations:
 ```
 helpers cannot import from services
 workflows cannot import from interfaces
-only ml_backend_essentia_comp.py may import essentia
+only components/ml/audio (ml_audio_comp.py, ml_preprocess_comp.py) may import essentia
 ```
 
 ### 3. Skills (Documentation-Level)
@@ -78,7 +78,7 @@ Every skill documents what IS canonical, not what WAS.
 Catches stale references in skills:
 
 ```bash
-python scripts/validate_skills.py --check-refs
+python scripts/human-scripts/validate_skills.py --check-refs
 ```
 
 ---
@@ -136,7 +136,7 @@ Update the callers directly.
 
 ```bash
 # Find all usages of the old pattern
-python scripts/discover_import_chains.py nomarr.helpers.files_helper
+python scripts/human-scripts/discover_import_chains.py nomarr.helpers.files_helper
 
 # Or grep for specific functions
 grep -r "build_path" nomarr/
@@ -174,17 +174,17 @@ git rm nomarr/helpers/old_module.py
 ### Step 6: Update Skills
 
 ```bash
-python scripts/validate_skills.py --check-refs
+python scripts/human-scripts/validate_skills.py --check-refs
 ```
 
 ### Step 7: Verify Migration Complete
 
 ```bash
 # Check that all traces are gone
-python scripts/check_migration.py nomarr.helpers.old_module
+python scripts/human-scripts/check_migration.py nomarr.helpers.old_module
 
 # If migration plan included a ruff ban, verify it exists
-python scripts/check_migration.py nomarr.helpers.old_module --expect-ban
+python scripts/human-scripts/check_migration.py nomarr.helpers.old_module --expect-ban
 
 # Full QC
 ruff check nomarr/
@@ -300,7 +300,7 @@ sqlite3.OperationalError: cannot open savepoint - SQL statements in progress
 Before considering a migration complete, run:
 
 ```bash
-python scripts/check_migration.py nomarr.old.pattern
+python scripts/human-scripts/check_migration.py nomarr.old.pattern
 ```
 
 The script validates:

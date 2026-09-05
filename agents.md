@@ -1,6 +1,6 @@
 # Nomarr Agent Skills
 
-This document catalogs the agent skills available in Nomarr's `.opencode/skills/` directory. Skills provide specialized knowledge that agents load on demand during development tasks.
+This document is a **convenience subset** cataloging selected agent skills available in Nomarr's `.opencode/skills/` directory. Skills provide specialized knowledge that agents load on demand during development tasks. The authoritative live inventory is produced by `python scripts/human-scripts/validate_skills.py` and lives in `docs/dev/skills/nomarr-skills.md`.
 
 ---
 
@@ -92,10 +92,6 @@ Browser automation for web testing, form filling, screenshots, and data extracti
 
 ## Agent Tooling Skills
 
-### `code-discovery`
-
-Scripts for exploring codebase structure, discovering module APIs, and understanding imports without manual file reading.
-
 ### `code-generation`
 
 Scripts for generating boilerplate code, `__init__.py` files, and test scaffolds following project conventions.
@@ -127,10 +123,6 @@ On-demand external documentation fetching via Context7 MCP — retrieval of curr
 ### `feature-planning` / `feature-execution`
 
 Pipeline for decomposing major features into dependency-ordered implementation plans and executing them through subagents.
-
-### `subsystem-orientation`
-
-Template for creating subsystem orientation skills after deep research on stable code areas.
 
 ---
 

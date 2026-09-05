@@ -9,7 +9,7 @@ You have just done expensive research on a stable subsystem. Capture the mental 
 
 ## Check Before Creating
 
-**Before creating a new skill, check if one already exists** for this subsystem. Skills live in `.github/skills/` and `code-intel/skills/`. If a skill exists:
+**Before creating a new skill, check if one already exists** for this subsystem. Active skills live in `.opencode/skills/`. If a skill exists:
 - **Extend it** with what you just learned — do not create a duplicate
 - Update the `## Coverage` section (see below)
 - If you learned something that contradicts the skill, fix the skill and note the change
@@ -40,11 +40,10 @@ If an agent reads all the files in the subsystem but still doesn't know *why* it
 
 ## Structure
 
-Place Nomarr subsystem skills in `.github/skills/{subsystem-name}/SKILL.md`.
-Place generic/tooling skills in `code-intel/skills/{skill-name}/SKILL.md`.
+Place subsystem skills in `.opencode/skills/{subsystem-name}/SKILL.md`.
 
 ```
-.github/skills/my-subsystem/
+.opencode/skills/my-subsystem/
 ├── SKILL.md                  ← required: frontmatter + summary + key files table
 └── references/
     └── architecture.md       ← optional: full topology, schema, invariants if large

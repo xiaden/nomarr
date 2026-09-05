@@ -34,10 +34,10 @@ The critical gap: **ADR-041 mandates domain dataclasses as the persistence-compo
 | Library repository | `nomarr/persistence/database/library_repo.py` |
 | Tag repository | `nomarr/persistence/database/tag_repo.py` |
 | Shared repository helpers | `nomarr/persistence/database/repo_helpers.py` |
-| ORM models (30 files) | `nomarr/persistence/models/*.py` |
+| ORM models (30 .py modules) | `nomarr/persistence/models/` |
 | Persistence layer documentation | `nomarr/persistence/PERSISTENCE.md` |
 | V1 domain dataclass (only one) | `nomarr/helpers/dataclasses/tags_dataclass.py` |
-| DTO TypedDicts (28 files) | `nomarr/helpers/dto/*.py` |
+| DTO TypedDicts (28 .py modules) | `nomarr/helpers/dto/` |
 | Repository return types | `nomarr/helpers/dto/repo_dto.py` |
 | V2 Song domain dataclass | `v2/nomarr/helpers/dataclasses/song_dataclass.py` |
 | V2 Library domain dataclass | `v2/nomarr/helpers/dataclasses/library_dataclass.py` |

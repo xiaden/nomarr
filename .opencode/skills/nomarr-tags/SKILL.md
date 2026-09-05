@@ -1,6 +1,6 @@
 ---
 name: nomarr-tags
-description: Deep reference for the Nomarr nom: tag system. Use when creating, gating, storing, reading, curating, or calibrating tags — including any work on ML-to-tag pipelines, confidence thresholds, tier logic, opponent suppression, mood aggregation, calibration, tag writeback to audio files, or tag curation (rename/merge/split). Also covers the database tag schema and the nom: namespace convention.
+description: 'Deep reference for the Nomarr nom: tag system. Use when creating, gating, storing, reading, curating, or calibrating tags — including any work on ML-to-tag pipelines, confidence thresholds, tier logic, opponent suppression, mood aggregation, calibration, tag writeback to audio files, or tag curation (rename/merge/split). Also covers the database tag schema and the nom: namespace convention.'
 ---
 
 # Nomarr Tag System
@@ -17,8 +17,9 @@ Two-tier architecture: PostgreSQL is the source of truth (relational tables); au
 
 | Area | File |
 | ------ | ------ |
-| Tag DB schema | `nomarr/persistence/collections.py`, `nomarr/persistence/models/tag.py` |
-| Tag DTO | `nomarr/helpers/dto/tags_dto.py` |
+| Tag DB schema (`tags` + `song_tags` join) | `nomarr/persistence/models/tag.py`, `nomarr/persistence/models/song_tag.py` |
+| Tag value-object (canonical) | `nomarr/helpers/dataclasses/tags_dataclass.py` (`nomarr/helpers/dto/tags_dto.py` is a backward-compat re-export shim) |
+| Tag row↔domain mapper | `nomarr/persistence/mappers/tag_mapper.py` (`tags_from_tag_rows`, `tag_rows_from_tags`) |
 | ML head decision + tier | `nomarr/components/ml/inference/ml_heads_comp.py` |
 | Head pipeline (pool + decide) | `nomarr/components/ml/inference/ml_head_pipeline_comp.py` |
 | Known models + OPPONENT_MAP | `nomarr/components/ml/onnx/ml_known_models_comp.py` |
@@ -33,7 +34,7 @@ Two-tier architecture: PostgreSQL is the source of truth (relational tables); au
 | Mood file-write gate | `nomarr/workflows/processing/write_file_tags_wf.py` (`_filter_tags_for_mode`) |
 | Head spec / Cascade dataclass | `nomarr/helpers/dto/ml_head_dto.py` |
 | Orphan cleanup workflow | `nomarr/workflows/library/cleanup_orphaned_tags_wf.py` |
-| Tag interface routes | `nomarr/interfaces/routes/tag_route.py`, `nomarr/interfaces/routes/tag_curation_route.py`, `nomarr/interfaces/routes/library_route.py` |
+| Tag interface routes (web) | `nomarr/interfaces/api/web/tags_if.py`, `nomarr/interfaces/api/web/tag_curation_if.py`, `nomarr/interfaces/api/web/library_if.py` |
 
 ---
 
@@ -72,12 +73,12 @@ Two `Tag`/`Tags` dataclasses exist. Only one is live.
 ### LIVE (canonical): `tags_dataclass` — `nomarr/helpers/dataclasses/tags_dataclass.py`
 - `Tag{name: str, values: tuple[TagValue, ...]}` frozen+slots; `Tags` canonicalizes (merges dup names, dedupes values, sorts by name), `has_name`, `get_values`. `TagValue = str|int|float|bool` declared here. Carries **no** database-row API or persistence fields (docstring: canonical `Tag`/`Tags`, per ADR-041/tag-boundary CONTRACTS.md).
 - `nomarr/helpers/dto/tags_dto.py` is now a **backward-compat re-export shim** (`from nomarr.helpers.dataclasses.tags_dataclass import Tag, Tags, TagValue`) — legacy `.key`/`.value` attribute names and the `from_dict`/`from_db_rows`/`to_dict`/`to_db_rows` factories are gone.
-- **Row↔domain conversion is owned by `nomarr/persistence/mappers/tag_mapper.py`**: `tags_from_tag_rows(rows) -> Tags` (groups `{name, value}` rows into canonical domain `Tags`) and `tag_rows_from_tags(tags, *, namespace, source)` (domain→write-payload rows `{"name", "value", "namespace", "source"}`).
+- **Row↔domain conversion is owned by `nomarr/persistence/mappers/tag_mapper.py`**: `tags_from_tag_rows(rows) -> Tags` (groups `{name, value}` rows into canonical domain `Tags`) and `tag_rows_from_tags(tags, *, namespace)` (domain→write-payload rows `{"name", "value", "namespace"}`; `namespace` normalized blank→`default`, explicit `nom` preserved; never emits `source`).
 - **Consumers**: `tag_query_comp.py` uses `tags_from_tag_rows`; tag-workflow/model comps (e.g. `tag_parsing_comp`, `tag_write_comp`, `tagging_aggregation_comp`, `tagging_reader_comp`, `tagging_writer_comp`, `process_file_wf`, `file_write_comp`, `write_file_tags_wf`, `write_calibrated_tags_wf`, `processing_dto`) and `tagging_svc/curation.py` consume `Tag`/`Tags`/`TagValue` via the shim (`.name`/.`values`, `.items`).
-- `nomarr/helpers/dataclasses.py` (empty module) coexists with the `dataclasses/` package; package shadows the module.
+- The former empty `dataclasses.py` module (directly under `helpers/`) was removed; only the `dataclasses/` package remains (`nomarr/helpers/dataclasses/`).
 
-### DEAD: `song_class` — `nomarr/components/library/songs/song_class.py`
-- `Tag{name: str, value: str}` scalar mutable; `Vector`; `Song`. Zero importers (module docstring: "zero consumers in active runtime code", deletion candidate per Plan F). Referenced only by `deadcode_allowlist.py:1009-1010,746-747` and `.opencode/skills/library-files-data-flow/SKILL.md`. No literal `TagV2`/`TagsV2` exists anywhere; "v2" in `__version__.py` = DB schema.
+### DEAD: the legacy `song_class` module (deleted)
+- The legacy song_class module (scalar-mutable `Tag{name, value}`, `Vector`, `Song`) has been **deleted** — do not reference it. The canonical `Tag`/`Tags`/`TagValue` live in `tags_dataclass` above; the canonical song domain object is `Song` in `nomarr/helpers/dataclasses/song_dataclass.py` (see `library-files-data-flow`). No literal `TagV2`/`TagsV2` exists anywhere; "v2" in `__version__.py` = DB schema.
 
 ### Library/song tag paths (FileTag contract — not domain Tag/Tags)
 - Library song-tag query paths (`song_tags_comp.py`, `library_song_query_comp.py`) and `library_svc/songs.py` pass/return the **library-owned `FileTag`** DTO (`nomarr/helpers/dto/library_dto.py`, `.key`/`.value`/`.tag_type`/`.is_nomarr`), not dict rows. Row→`FileTag` projection is centralized in `nomarr/components/library/tag_mapping_comp.py` (`file_tag_from_tag_row` / `is_numeric_tag_value`).

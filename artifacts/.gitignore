@@ -19,3 +19,10 @@
 # Plan examples are committed — agents use them as templates (no plan-gen tool yet)
 !plans/examples/
 !plans/examples/*.md
+
+# Archived skills (with superseded-by policy README) are durable cleanup deliverables — committed
+!skills/
+!skills/archive/
+!skills/archive/README.md
+!skills/archive/*/
+!skills/archive/**/SKILL.md

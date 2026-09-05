@@ -44,7 +44,7 @@ Also include:
 - Target plan: `artifacts/plans/pending/TASK-{feature}-{letter}-*.md`
 - Contracts ledger: `artifacts/designs/parts/{feature}/CONTRACTS.md`
 - Feature parts README: `artifacts/designs/parts/{feature}/README.md`
-- This review protocol: `.github/skills/feature-execution/references/review-protocol.md`
+- This review protocol: `.opencode/skills/feature-execution/references/review-protocol.md`
 
 ## Plan Content
 {Paste the full plan file. The reviewer needs to verify that what was implemented

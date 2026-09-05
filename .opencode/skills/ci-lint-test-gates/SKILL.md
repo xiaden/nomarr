@@ -57,7 +57,7 @@ marker semantics and exclusions, local tooling (`lint_project_backend`,
 - **Location:** `.github/workflows/e2e.yml:3-11`, `docs-check.yml:3-14`, `codeql.yml:14-20`
 - **What:**
   - E2E is **manual-only** (`workflow_dispatch`, image tag defaults to short-SHA). Local: `cd e2e && npx playwright test` against the Docker stack.
-  - `docs-check` is **PR-only**: if changed files match `nomarr/(interfaces|services|workflows|components|persistence|helpers)/*.py` or `build_resources/models/*.json`, then `readme.md` or `API_REFERENCE.md` must also change.
+  - `docs-check` is **PR-only** and fires only when a PR changes `.py` files under any of `nomarr/`'s layer subdirectories (`interfaces`, `services`, `workflows`, `components`, `persistence`, `helpers`) or `.json` files under `build_resources/models/` — in that case `readme.md` or `API_REFERENCE.md` must also change. The exact trigger regex lives in `.github/workflows/docs-check.yml`.
   - CodeQL is **main-target only** (push to main, PR to main, weekly). Check-runs are matrix legs `Analyze (actions)`, `Analyze (go)`, `Analyze (javascript-typescript)`, `Analyze (python)` — validated with `--require analyze`.
 - **Why it matters:** These three are NOT required on every commit. `REQUIRED_CHECKS` marks e2e NOT-APPLICABLE on push/pr, docs-check NOT-APPLICABLE on push/manual, analyze main-target only.
 

@@ -74,7 +74,7 @@ If Phase 1, write: "This is the first phase. No prior work."}
  | Target plan | `artifacts/plans/pending/TASK-{feature}-{letter}-*.md` | Phase boundaries, step descriptions, what NOT to implement yet |
  | Contracts ledger | `artifacts/designs/parts/{feature}/CONTRACTS.md` | Method signatures to call or create — prevents guessing |
  | Feature parts README | `artifacts/designs/parts/{feature}/README.md` | Execution rounds, dependency order, scope boundaries |
- | This prompt template | `.github/skills/feature-execution/references/execution-protocol.md` | Reference for constructing the subagent prompt |
+ | This prompt template | `.opencode/skills/feature-execution/references/execution-protocol.md` | Reference for constructing the subagent prompt |
  | **Layer instructions — include ALL that apply to this phase:** | | |
  | Interfaces layer | `.github/instructions/interfaces.instructions.md` | Route handlers, auth, Pydantic-only-here rule |
  | Services layer | `.github/instructions/services.instructions.md` | DI wiring, thinness, no business logic |
