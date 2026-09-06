@@ -72,23 +72,53 @@ def _unit(rng, n: int, d: int) -> np.ndarray:
     return (m / norms).astype(np.float32)
 
 
+def _publish_committed_stream(store, song_id: str, matrix: np.ndarray, *, run_id: str, backbone: str = "effnet"):
+    """Publish a stream AND its complete committed observation group (all-searchable mask).
+
+    P1-S3: the store-backed current-stream resolver resolves ONLY complete committed
+    groups, so every helper that builds a catalog does so from the complete committed
+    groups published here, resolving the mask through the two-key store-backed seam
+    ``make_current_mask_resolver(store)`` (stream via ``make_current_stream_resolver``).
+    """
+    import hashlib as _hashlib
+
+    from scripts.embedding_research.streams.masks import MaskPayload
+
+    matrix = np.ascontiguousarray(matrix, dtype=np.float32)
+    record = store.publish(song_id, backbone, matrix, run_id=run_id)
+    store.publish_observation_group(
+        record,
+        MaskPayload(
+            song_id=song_id,
+            backbone=backbone,
+            patch_count=matrix.shape[0],
+            mask=np.ones(matrix.shape[0], dtype=np.uint8),
+            params_id="0" * 64,
+            audio_content_sha256=_hashlib.sha256(b"fixture-audio-content").hexdigest(),
+            run_id=run_id,
+            created_at=1,
+        ),
+    )
+    return record
+
+
 def _publish_streams(con, out, song_ids=_SONGS, *, seed: int = 3) -> StreamStore:
     """Publish one ready effnet stream per song (the embed upstream artifact)."""
     store = StreamStore(con, output_root=str(out))
     rng = np.random.default_rng(seed)
     for song in song_ids:
-        store.publish(song, "effnet", _unit(rng, 10, 6), run_id="run-embed")
+        _publish_committed_stream(store, song, _unit(rng, 10, 6), run_id="run-embed")
     store.reconcile()
     return store
 
 
 def _build_compact(store, out, *, song_ids=_SONGS, threshold: float = 0.7, run_id: str = "run-cat-guarded"):
     """Build one VERIFIED COMPACT catalog snapshot into ``out/catalogs/.staging-<run_id>/``."""
-    from scripts.embedding_research.streams import make_current_stream_resolver
+    from scripts.embedding_research.streams import make_current_mask_resolver, make_current_stream_resolver
 
     rep = catalog.build_segmentation_catalog(
         make_current_stream_resolver(store),
-        None,
+        make_current_mask_resolver(store),
         [
             catalog.SegConfigInput(
                 backbone="effnet",
@@ -275,8 +305,9 @@ def test_head_analysis_phase_completes_with_zero_sentinel_calls(con, tmp_path, m
     (``harness``, whose ``.con`` the runner duck-types) into the runner — the retained
     ``_run_head_analysis`` seam opens the latest compact snapshot and passes it as the
     catalog for reads while keeping the research connection for the head store +
-    provenance.  No committed mask loader exists on this path, so reconstruction passes
-    ``mask=None`` (no silence exclusion).
+    provenance.  Head membership is reconstructed from the same committed all-searchable
+    mask that built the catalog (resolved via ``make_current_mask_resolver``), so no
+    silence exclusion applies and no audio/model/ONNX/CUDA surface is reached.
     """
     import numpy as _np
 
@@ -303,10 +334,12 @@ def test_head_analysis_phase_completes_with_zero_sentinel_calls(con, tmp_path, m
         config_id = harness_report_config_id(harness)
         counts = _install_sentinels(monkeypatch)
         head_store = _fake_head_store()
+        from scripts.embedding_research.streams import make_current_mask_resolver as _make_current_mask_resolver
 
         manifest = run_shared_catalog_head_analysis(
             harness,
             head_store,
+            mask_store=_make_current_mask_resolver(harness.stream_store),
             config_ids=[config_id],
             song_ids=_SONGS,
             heads=["mood"],

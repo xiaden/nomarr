@@ -21,9 +21,11 @@ import numpy as np
 import pytest
 
 from scripts.embedding_research.db._schema import ensure_schema
+from scripts.embedding_research.streams.heads_current import current_marker_path, resolve_current_head_suite
 from scripts.embedding_research.streams.masks import MaskPayload
 from scripts.embedding_research.streams.records import (
     STREAM_TABLE,
+    HeadSuiteCurrentError,
     StreamNotFoundError,
 )
 from scripts.embedding_research.streams.reindex import (
@@ -77,6 +79,7 @@ def _seed_corpus(out, *, with_heads: bool = True) -> np.ndarray:
             mask=np.ones(PATCH, dtype=np.uint8),
             run_id="run-1",
             params_id="mask-params-1",
+            audio_content_sha256="0" * 64,  # valid 64-hex identity: shared group-readiness requires it
         )
         store.publish_observation_group(rec, mask)
         if with_heads:
@@ -313,3 +316,186 @@ def test_reindex_retains_row_contract_columns_and_statuses(tmp_path, con):
     ).fetchone()
     assert head_ids == "head_logit" and dim_by_head == "head_logit=2"
     assert status_col == "ready"
+
+
+def _head_mat(seed: int = 0) -> dict[str, np.ndarray]:
+    """A deterministic single-head ``[PATCH, 2]`` float32 array (seed-varied)."""
+    rng = np.random.default_rng(seed)
+    return {"head_logit": rng.random((PATCH, 2), dtype=np.float32)}
+
+
+def _commit_masked_stream(out, *, seed: int = 0) -> object:
+    """Publish a committed stream+mask observation group; return the committed stream record."""
+    con = _fresh_con()
+    try:
+        store = StreamStore(con, output_root=out)
+        rec = store.publish("s1", "effnet", _embeddings(seed), run_id=f"run-{seed}")
+        store.publish_observation_group(
+            rec,
+            MaskPayload(
+                song_id="s1",
+                backbone="effnet",
+                patch_count=PATCH,
+                mask=np.ones(PATCH, dtype=np.uint8),
+                run_id=f"run-{seed}",
+                params_id=f"mask-{seed}",
+                audio_content_sha256="0" * 64,
+            ),
+        )
+        return rec
+    finally:
+        con.close()
+
+
+def _publish_head_suite(out, *, stream_ref: str, seed: int = 0) -> None:
+    con = _fresh_con()
+    try:
+        HeadStreamStore(con, output_root=out).publish(
+            "s1",
+            "effnet",
+            _head_mat(seed),
+            run_id=f"run-{seed}",
+            patch_count=PATCH,
+            alignment_version="1",
+            expected_head_ids={"head_logit"},
+            stream_ref=stream_ref,
+        )
+    finally:
+        con.close()
+
+
+# ── Plan C P1-S4: CURRENT head-suite marker is authoritative for reindex ───────
+
+
+def test_resolve_current_head_suite_returns_marker_selected_complete_suite(tmp_path, con):
+    """A committed + marker-selected complete head suite resolves to a selection."""
+    out = tmp_path / "root"
+    _seed_corpus(out)  # committed stream group + marker-published head suite
+
+    selection = resolve_current_head_suite(out, "s1", "effnet")
+    doc = json.loads(current_marker_path(out, "s1", "effnet").read_text())
+    assert selection.marker.head_payload_ref == doc["head_payload_ref"]
+    assert selection.record.artifact_ref == doc["head_payload_ref"]
+    assert selection.record.song_id == "s1" and selection.record.backbone == "effnet"
+    assert selection.record.patch_count == PATCH
+    assert selection.stream_ref == doc["stream_ref"]
+    assert selection.record.head_ids == "head_logit"
+
+    # The marker-selected suite is what reindex rebuilds ready (DB-deletion recovery).
+    report = reconcile_current_manifests(out, con)
+    assert report.clean
+    head = HeadStreamStore(con, output_root=out).lookup("s1", "effnet")
+    assert head.status == "ready" and head.artifact_ref == selection.record.artifact_ref
+
+
+def test_resolve_current_head_suite_refuses_missing_marker(tmp_path):
+    """No CURRENT marker -> selection refused (fail-closed, no fallback)."""
+    out = tmp_path / "root"
+    _seed_corpus(out, with_heads=False)  # committed stream group but NO head suite/marker
+    with pytest.raises(HeadSuiteCurrentError, match="no CURRENT"):
+        resolve_current_head_suite(out, "s1", "effnet")
+
+
+def test_resolve_current_head_suite_refuses_malformed_marker(tmp_path):
+    """A malformed CURRENT marker document -> selection refused (never tolerated)."""
+    out = tmp_path / "root"
+    _seed_corpus(out)
+    marker_path = current_marker_path(out, "s1", "effnet")
+    doc = json.loads(marker_path.read_text())
+    del doc["head_ids"]
+    marker_path.write_text(json.dumps(doc))
+    with pytest.raises(HeadSuiteCurrentError, match="missing required field"):
+        resolve_current_head_suite(out, "s1", "effnet")
+
+
+def test_reindex_refuses_stale_marker_referencing_superseded_stream(tmp_path, con):
+    """A marker bound to an OLD committed stream is superseded -> never selected/indexed."""
+    out = tmp_path / "root"
+    out.mkdir(parents=True, exist_ok=True)
+    rec_a = _commit_masked_stream(out, seed=0)  # committed stream A (initially current)
+    _publish_head_suite(out, stream_ref=rec_a.artifact_ref, seed=0)  # head aligned to A
+    _commit_masked_stream(out, seed=1)  # newer committed stream B now supersedes A
+
+    report = reconcile_current_manifests(out, con)
+    # Only the committed stream B is indexed ready; the A-aligned head suite is superseded.
+    assert report.ready == 1
+    assert report.scanned == 2  # 1 committed-stream identity + 1 head marker identity
+    with pytest.raises(StreamNotFoundError):
+        HeadStreamStore(con, output_root=out).lookup("s1", "effnet")
+    assert any("superseded" in issue and "head" in issue for issue in report.issues)
+
+
+def test_reindex_refuses_head_manifest_without_current_marker(tmp_path, con):
+    """A head suite with NO CURRENT marker is superseded/unselected -> refused, not indexed."""
+    out = tmp_path / "root"
+    out.mkdir(parents=True, exist_ok=True)
+    rec_a = _commit_masked_stream(out, seed=0)
+    _publish_head_suite(out, stream_ref=rec_a.artifact_ref, seed=0)
+    current_marker_path(out, "s1", "effnet").unlink()  # simulate marker loss
+
+    report = reconcile_current_manifests(out, con)
+    assert report.ready == 1  # only the committed stream indexed
+    with pytest.raises(StreamNotFoundError):
+        HeadStreamStore(con, output_root=out).lookup("s1", "effnet")
+    assert any("no CURRENT head-suite marker" in issue for issue in report.issues)
+
+
+def test_reindex_never_guesses_currency_by_sibling_head_manifests(tmp_path, con):
+    """Two head generations for one identity: reindex indexes ONLY the marker-selected one."""
+    out = tmp_path / "root"
+    out.mkdir(parents=True, exist_ok=True)
+    rec = _commit_masked_stream(out, seed=0)
+    _publish_head_suite(out, stream_ref=rec.artifact_ref, seed=0)  # generation 1 -> marker
+    _publish_head_suite(out, stream_ref=rec.artifact_ref, seed=1)  # generation 2 -> marker replaces
+    assert len(list((out / "heads").glob("*.npz"))) == 2  # two immutable generations coexist
+
+    report = reconcile_current_manifests(out, con)
+    assert report.clean
+    head = HeadStreamStore(con, output_root=out).lookup("s1", "effnet")
+    assert head.status == "ready"
+    # The marker references the NEWEST (seed-1) suite, not the seed-0 sibling.
+    assert head.artifact_ref == _head_ref_of(out)
+
+
+def _head_ref_of(out) -> str:
+    doc = json.loads(current_marker_path(out, "s1", "effnet").read_text())
+    return doc["head_payload_ref"]
+
+
+# ── committed-group mask refusal on reindex (P1-S1/P1-S7 spec) ───────────────
+
+
+def test_reindex_refuses_committed_group_with_corrupt_mask_payload(tmp_path, con):
+    """P1-S1 spec: a committed observation group whose mask payload is corrupt is REFUSED
+    on reindex (fails closed) — never rebuilt ready from the intact stream alone.
+
+    The stream manifest+payload are untouched; only the committed mask bytes are corrupted,
+    so a lenient reindex would happily rebuild the stream row.  It must not.
+    """
+    _seed_corpus(tmp_path)
+    mask_files = sorted((tmp_path / "audio_masks").glob("*.npy"))
+    assert mask_files, "seeded corpus should have committed a mask payload"
+    mask_files[0].write_bytes(b"this is not a valid uint8 npy payload")
+    report = reconcile_current_manifests(tmp_path, con)
+    assert report.clean is False, "corrupt committed mask must make the report unclean"
+    assert any("mask" in issue.lower() for issue in report.issues), report.issues
+
+
+def test_reindex_refuses_committed_group_with_wrong_length_mask(tmp_path, con):
+    """P1-S1 spec: a committed mask whose payload length disagrees with the stream's
+    patch_count is refused (digest + shape both fail closed) — never rebuilt ready.
+    """
+    import io
+
+    import numpy as np
+
+    from scripts.embedding_research.streams.masks import mask_npy_bytes
+
+    _seed_corpus(tmp_path)
+    mask_files = sorted((tmp_path / "audio_masks").glob("*.npy"))
+    assert mask_files
+    # Wrong-length uint8 payload (valid npy, wrong shape) -> digest + length both break.
+    mask_files[0].write_bytes(io.BytesIO(mask_npy_bytes(np.zeros(9, dtype=np.uint8))).getvalue())
+    report = reconcile_current_manifests(tmp_path, con)
+    assert report.clean is False, "wrong-length committed mask must make the report unclean"
+    assert any("mask" in issue.lower() for issue in report.issues), report.issues

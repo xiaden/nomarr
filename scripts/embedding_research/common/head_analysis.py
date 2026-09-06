@@ -14,13 +14,14 @@ Design rules (parts CONTRACTS §E + the corrective exact-``M_g`` rewire):
   only seed the reconstruction; they are never an inclusive membership authority.
   There is no ``seg_membership`` table and no inclusive/absorbed-inclusive range is
   ever pooled.
-* The retained research path has **no committed silence-mask loader** and the §E
-  signature deliberately provides no per-song mask seam, so the runner reconstructs
-  the same membership the compact catalog itself encodes at build time
-  (``mask=None`` => ``M_g = structural[start_idx, end_idx) - absorbed_indices``).
-  Absorbed-outlier rows are always excluded; the "same silence/outlier exclusions"
-  wording means the head gather uses exactly the catalog's searchable indices, never
-  an inclusive range.
+* Head membership consumes the SAME committed silence-mask authority the compact
+  catalog used at build time: the runner resolves each ``(song_id, backbone)`` song's
+  committed ``uint8`` mask through the sole store-backed committed-mask resolver
+  (``mask_store``) and reconstructs
+  ``M_g = structural[start_idx, end_idx) - absorbed_indices - {mask[i] == 0}`` from it.
+  A missing/invalid committed mask is never interpreted as no silence — such a song is
+  reported and skipped, never pooled all-searchable.  Fully-silent (empty-``M_g``)
+  segments are skipped without any audio/model/ONNX/CUDA access.
 * Config eligibility is canonical/config-keyed: only COMPACT canonical configs with a
   non-empty ``canonical_config_hash`` and the direct-L2 PTC semantics / bin mode /
   strategy version are pooled over.  ``alias_of_config_id``/durable aliases/calibration
@@ -332,19 +333,21 @@ class HeadAnalysisManifest:
 # --------------------------------------------------------------------------- #
 
 
-def _collect_segment_membership(con, config_id: int, song_id: str, segments_fn, reconstruct_fn, patch_count):
+def _collect_segment_membership(con, config_id: int, song_id: str, segments_fn, reconstruct_fn, patch_count, *, mask):
     """Yield each compact segment's exact reconstructed searchable membership ``M_g``.
 
     Reconstructs ``M_g = {start <= i < end} - absorbed_indices - {mask[i] == 0}`` for
     every compact ``seg_meta`` row via ``reconstruct_fn`` (the canonical
-    ``reconstruct_searchable_indices`` helper) with ``mask=None`` (the retained path has
-    no committed silence-mask loader, matching the catalog's own build semantics).  Yields
-    ``(seg_id, searchable_indices, weight)`` in ascending seg_id order.  Absorbed rows are
-    excluded from pooling inputs; an empty-``M_g`` segment yields nothing.
+    ``reconstruct_searchable_indices`` helper) over the SAME committed ``uint8`` silence
+    mask (``mask``) that segmented the song at catalog build time — never ``mask=None``
+    (a missing mask is never interpreted as no silence).  Yields
+    ``(seg_id, searchable_indices, weight)`` in ascending seg_id order.  Absorbed and
+    mask-silent rows are excluded from pooling inputs; an empty-``M_g`` (fully silent)
+    segment yields nothing.
     """
     segs = segments_fn(con, config_id, song_id)
     for seg in segs:
-        mg = reconstruct_fn(seg, None, patch_count)
+        mg = reconstruct_fn(seg, mask, patch_count)
         if len(mg) == 0:
             continue
         indices = tuple(int(i) for i in mg)
@@ -355,6 +358,7 @@ def run_shared_catalog_head_analysis(
     catalog: Any,
     head_store: Any,
     *,
+    mask_store: Any,
     config_ids: Any = None,
     song_ids: Any = None,
     heads: Any = None,
@@ -367,13 +371,13 @@ def run_shared_catalog_head_analysis(
     ``getattr(catalog, "con", catalog)``, mirroring the D-phase analysis path): the runner
     reads only the compact ``seg_config``/``catalog_song``/``seg_meta`` tables and
     reconstructs each segment's exact searchable membership
-    ``M_g = structural[start_idx,end_idx) - absorbed_indices`` via
-    :func:`helpers.segmentation.reconstruct_searchable_indices`.  It never reads a
-    per-patch membership relation, never treats ``start_idx/end_idx`` as an inclusive
-    membership authority, and never reads ``alias_of_config_id``.  Because the retained
-    path has no committed silence-mask loader (and the §E signature provides no mask
-    seam), reconstruction passes ``mask=None`` — the exact membership the compact catalog
-    itself encodes.
+    ``M_g = structural[start_idx,end_idx) - absorbed_indices - {mask[i] == 0}`` via
+    :func:`helpers.segmentation.reconstruct_searchable_indices` over the SAME committed
+    silence mask the compact catalog encoded at build time.  It never reads a per-patch
+    membership relation, never treats ``start_idx/end_idx`` as an inclusive membership
+    authority, and never reads ``alias_of_config_id``.  Membership therefore matches the
+    catalog exactly by construction — the head pool excludes precisely the committed-silent
+    and absorbed-outlier source indices the catalog rows exclude.
 
     Config eligibility is canonical/config-keyed: only COMPACT canonical configs with a
     non-empty ``canonical_config_hash`` and the direct-L2 PTC semantics / bin mode /
@@ -384,7 +388,8 @@ def run_shared_catalog_head_analysis(
     ``HeadStreamStore.batch_gather`` (all heads in canonical sorted-column order), slices
     per head using the registry ``dim_by_head``, and pools each non-empty segment over its
     exact ``M_g`` rows taking the class-1 value from ``act[1]`` (never ``act[0]``).  Empty
-    ``M_g`` segments produce no pooled value.  Performs no audio/model/ONNX/CUDA/sklearn/CTP
+    (fully-silent) ``M_g`` segments produce no pooled value and are skipped without any
+    audio/model/ONNX/CUDA/sklearn/CTP work.  Performs no audio/model/ONNX/CUDA/sklearn/CTP
     work and persists no pooled vector/cache/medoid artifact; the returned manifest carries
     deterministic coverage/skip/error outcomes and the caller persists canonical provenance.
 
@@ -395,6 +400,13 @@ def run_shared_catalog_head_analysis(
     head_store:
         A :class:`HeadStreamStore` (or an interface-parity fake) exposing ``lookup`` and
         ``batch_gather`` over frozen aligned head rows.
+    mask_store:
+        The committed-mask read seam (``.load(song_id, backbone) -> uint8[patch_count] |
+        None``; the real seam is ``make_current_mask_resolver``) resolving each song's
+        silence mask from the SAME complete committed observation group that authorises
+        the catalog read.  Reconstruction never passes ``mask=None``: a song whose
+        committed mask is absent or invalid is reported and skipped (never pooled
+        all-searchable), and a missing mask is never interpreted as no silence.
     config_ids:
         Optional explicit canonical ``seg_config`` ids to analyze.
     song_ids:
@@ -481,6 +493,30 @@ def run_shared_catalog_head_analysis(
             if leaf is None:
                 continue
             patch_count = int(leaf.patch_count)
+            record_scope = f"config:{cfg.config_id}:song:{song}"
+            # Resolve the song's committed silence mask from the SAME complete committed
+            # observation group that built the catalog.  A missing/invalid committed mask
+            # fails closed (reported + skipped) — never an implicit all-searchable default.
+            try:
+                committed_mask = mask_store.load(song, cfg.backbone)
+            except Exception as exc:
+                skip_reasons.append(
+                    (
+                        record_scope,
+                        f"committed silence mask load refused for backbone {cfg.backbone}: {exc!r}",
+                    )
+                )
+                continue
+            if committed_mask is None:
+                skip_reasons.append(
+                    (
+                        record_scope,
+                        f"no committed silence mask for group ({song!r}, {cfg.backbone!r}); head "
+                        "membership cannot be reconstructed (a missing committed mask is never "
+                        "treated as no silence)",
+                    )
+                )
+                continue
             segs = list(
                 _collect_segment_membership(
                     con,
@@ -489,11 +525,11 @@ def run_shared_catalog_head_analysis(
                     segments_fn=_segments_fn,
                     reconstruct_fn=_reconstruct_mg,
                     patch_count=patch_count,
+                    mask=committed_mask,
                 )
             )
             if not segs:
                 continue
-            record_scope = f"config:{cfg.config_id}:song:{song}"
             try:
                 record = head_store.lookup(song, cfg.backbone)
             except Exception as exc:

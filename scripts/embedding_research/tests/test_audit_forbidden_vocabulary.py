@@ -2,42 +2,31 @@
 
 Posture
 -------
-Git is the source archive and the corrective pass is a hard cut: the retained
-(current) runtime and configuration foundation must contain ZERO executable
-scaled / calibration / p50 / CTP-config / alias / compatibility vocabulary.
-Legacy surfaces that a LATER plan (B-E) will delete are inventoried in
-``scripts/embedding_research/CONTRACTS.md`` § "Plan A deletion inventory" and may
-retain their historical vocabulary until they are deleted.  Historical prose
-(docstrings / comments) may mention superseded terms for traceability but must
-never be executable.
+Git is the source archive and the corrective passes are complete (the Plan A
+threshold/config foundation cut, the Plan E P1-S5 whole-tree hard cut, the Plan B
+identity/reader cuts, and the Plan C P1-S1..S7 temporal-dispatch / head-marker /
+CLI-vocabulary cuts).  The retained (current) runtime and configuration foundation must
+contain ZERO executable scaled / calibration / p50 / CTP-config / CTP / ANN-FAISS /
+alias / compatibility / dual-write / old-parser / retired-command-aliasing vocabulary.
+No later "deletion inventory" surface remains: every surface this file once
+inventoried for a later plan was deleted (or retained-stripped) by its owner plan, so
+the per-token allowlist below is empty except for two retained prose-only mentions.
+Historical prose (docstrings / comments) may mention superseded terms for traceability
+but must never be executable.
 
-The audit has two layers:
-
-1. Foundation check (hard, no allowlist): the three threshold/configuration
-   files — ``helpers/thresholds.py``, ``helpers/toml.py`` and
-   ``research_config.toml`` — must contain ZERO executable forbidden vocabulary
-   (identifiers and configuration keys; docstring/comment prose excluded).
-
-2. Whole-tree regression guard: every executable occurrence of a forbidden token
-   in any *non-test* source/config file must be recorded in the per-token
-   allowlist below (mirroring the CONTRACTS.md deletion inventory).  A new
-   executable occurrence in a file that is NOT allowlisted fails the audit.
-
-Tightening for Plans E/F: as a later plan deletes an inventory surface, it also
-removes that surface's allowlist entries (in the CONTRACTS.md inventory and here);
-any residual executable occurrence in a still-retained file then fails — so the
-audit stays meaningful as the tree shrinks.  Test files are governed by
-import/collection (a test importing a removed foundation symbol fails immediately)
-and by their inventoried legacy module; they are intentionally outside this
-runtime/config scan.
-
-Interpretation recorded for QA (see step annotation): for the end of Plan A the
-audit scopes its *strict executable* requirement to the threshold/config
-foundation (layer 1) plus the whole-tree regression guard over non-test
-runtime/config (layer 2).  Whole-tree surfaces owned by later plans
-(``search_view_hash``, ANN/FAISS, per-patch membership, legacy run.py
-orchestration, binned/CTP/weighted modules) are CONTRACTS.md inventory entries,
-not failures, in Plan A.
+The audit is a single whole-tree regression guard: every executable occurrence of a
+forbidden token (identifier or configuration key; docstring/comment prose excluded) in
+any *non-test* source/config file must be recorded in the per-token allowlist below.  A
+new executable occurrence in a file that is NOT allowlisted fails the audit — so a
+reintroduced CTP/ANN/FAISS/fallback/dual-write/old-parser/alias/retired-command surface
+fails immediately.  ``legacy_phase_aliases`` is forbidden to pin the removed
+``LEGACY_PHASE_ALIASES`` constant: the retired command names ``stratify``/``segment``/
+``classify``/``head`` are ordinary unknown commands (proved structurally in
+``tests/test_phase4_dispatch_boundaries.py`` and textually below), and no named
+retired-command compatibility path or 'retired/legacy phase name' special message may
+return.  Test files are governed by import/collection and by their own negative tests;
+they are intentionally outside this runtime/config scan (this file lives under
+``tests/`` and is therefore already excluded by the guard below).
 """
 
 from __future__ import annotations
@@ -48,13 +37,14 @@ import tokenize
 
 _ROOT = pathlib.Path(__file__).parents[1]  # scripts/embedding_research
 
-#: Threshold/config/alias/compatibility tokens that the retained runtime must not
-#: use executably.  ``search_view_hash`` (removed Plan D P1-S2) and the ANN/FAISS
-#: backends (``ANNIndex``/``ann_recall_sweep``/``faiss`` — removed under Plan D P1-S6;
-#: their allowlist entries are gone, so ANY residual executable reference now fails)
-#: are deleted.  Per-patch membership and binned/CTP strategy identifiers are owned by
-#: Plans C/E and live in the CONTRACTS.md inventory — any retained executable reference
-#: must be inventoried (allowlisted) or removed.
+#: Threshold/config/alias/compatibility/old-parser/retired-command tokens that the retained
+#: runtime must not use executably.  Every inventoried surface is deleted, so ANY residual
+#: executable reference now fails: ``search_view_hash`` (removed P1-S2), the ANN/FAISS backends
+#: (``ANNIndex``/``ann_recall_sweep``/``faiss``/``hnsw``/``_faiss`` — removed P1-S6), the
+#: per-patch membership / alias / calibration fields (removed P1-S12), and the legacy
+#: adoption/old-parser branches (``register_legacy``/``_classify_rowless``/``_family_versions``/
+#: ``_next_artifact_ref`` — removed Plan B).  ``legacy_phase_aliases`` (removed Plan C P1-S7)
+#: pins the retired-command alias set so it cannot return.
 _FORBIDDEN_TOKENS: tuple[str, ...] = (
     "search_view_hash",
     "std_scaled",
@@ -77,6 +67,7 @@ _FORBIDDEN_TOKENS: tuple[str, ...] = (
     "faiss",  # optional ANN backend / dependency (removed under Plan D P1-S6)
     "hnsw",  # faiss HNSW ANN index flavour (removed with the FAISS backend)
     "_faiss",  # lazy FAISS-availability flag removed with the backend
+    "legacy_phase_aliases",  # removed alias set (run.py P1-S7); retired names are ordinary unknown commands
     # C-owned membership surfaces retired at P1-S12 (research seg_membership relation and
     # its read helpers / column names; compact alias_of_config_id + calibration_record).
     # ``is_absorbed_outlier`` is intentionally NOT here: it is a legitimate E-owned
@@ -302,3 +293,24 @@ def test_foundation_imports_no_production_and_no_inference_runtime() -> None:
     assert "BAD=" not in result.stdout or result.stdout.strip().endswith("BAD="), (
         f"threshold/config foundation imported production/inference runtime: {result.stdout.strip()}"
     )
+
+
+# ---------------------------------------------------------------------------
+# P1-S8: retired-command hard-cut guard (no named alias / no special message)
+# ---------------------------------------------------------------------------
+
+
+def test_no_named_retired_command_compatibility_path_in_cli_source() -> None:
+    """The run.py CLI carries no named retired-command alias set and no
+    'retired/legacy phase name' special-case message (both removed in Plan C P1-S7).
+
+    The retired names ``stratify``/``segment``/``classify``/``head`` are handled ONLY as
+    ordinary unknown commands: ``LEGACY_PHASE_ALIASES`` is gone (pinned by the
+    ``legacy_phase_aliases`` token above and the not-hasattr guard in
+    ``tests/test_phase4_dispatch_boundaries.py``), and no compatibility/alias rejection
+    string special-cases them.  Reintroducing either marker fails this guard.
+    """
+    run_src = (_ROOT / "run.py").read_text(encoding="utf-8")
+    assert "LEGACY_PHASE_ALIASES" not in run_src, "LEGACY_PHASE_ALIASES must stay removed from run.py"
+    assert "retired/legacy phase name" not in run_src, "retired-command special message must stay removed"
+    assert "legacy phase name" not in run_src, "no named legacy-phase rejection wording may return"

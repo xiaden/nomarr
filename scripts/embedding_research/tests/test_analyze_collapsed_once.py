@@ -134,8 +134,10 @@ def _build_collapsed_corpus(compact_catalog_factory, con, out, *, song_ids=_SONG
     )
 
 
-def _analysis_cfg(run_id: str, song_ids=_SONGS, artists=_ARTISTS) -> ca.CatalogAnalysisConfig:
-    return ca.CatalogAnalysisConfig(run_id=run_id, backbone=_BACKBONE, song_ids=tuple(song_ids), artists=dict(artists))
+def _analysis_cfg(run_id: str, song_ids=_SONGS, artists=_ARTISTS, config_ids=()) -> ca.CatalogAnalysisConfig:
+    return ca.CatalogAnalysisConfig(
+        run_id=run_id, backbone=_BACKBONE, song_ids=tuple(song_ids), artists=dict(artists), config_ids=config_ids
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -463,9 +465,14 @@ def test_analyze_metrics_run_scoped_and_view_ref_deduped(compact_catalog_factory
 def test_scorer_seam_feeds_one_canonical_input_per_logical_pair_across_two_classes(
     compact_catalog_factory, con, tmp_path, monkeypatch
 ):
-    """P1-S5 AMEND: across TWO collapse classes the scheduler still calls the scorer ONCE per
-    logical query/candidate input, feeding canonical rows only — never once per alias and never a
-    second call per class-member config (0.9/1.0 collapse to one class; 0.2 is a distinct class)."""
+    """P1-S5 AMEND (per-class retrieval passes): two DISTINCT search classes are NEVER unioned.
+
+    0.9/1.0 collapse to ONE class; 0.2 is a DISTINCT second class.  An unpinned whole-backbone
+    analyze scope spanning both classes refuses (CatalogRefusalError — never silently merged into
+    one candidate pool).  Driving each class as its own retrieval pass calls the scorer exactly
+    N*(N-1) times PER class (2 classes => 2*N*(N-1)), each pass's candidate view carrying ONLY
+    that class's canonical rows; alias configs add zero executions and never appear in a pass.
+    """
     streams = {}
     for axis, song in enumerate(sorted(_SONGS)):
         streams[(song, _BACKBONE)] = _stream(axis % 4, 0.5)
@@ -499,20 +506,140 @@ def test_scorer_seam_feeds_one_canonical_input_per_logical_pair_across_two_class
 
         monkeypatch.setattr(bounded_scoring, "score_bounded_exact", _score_spy)
 
-        result = ca.analyze_catalog_corpus(
-            harness.stream_store, harness.con, _analysis_cfg("run-p1s5-two-class"), research_con=con
-        )
+        # (a) An UNPINNED whole-backbone scope over two distinct classes must REFUSE — the two
+        #     classes are never silently unioned into one candidate pool (P1-S4 fail-closed).
+        unpinned = _analysis_cfg("run-p1s5-two-class")
+        with pytest.raises(ca.CatalogRefusalError):
+            ca.analyze_catalog_corpus(harness.stream_store, harness.con, unpinned, research_con=con)
 
-        n_logical = len(_SONGS) * (len(_SONGS) - 1)  # leave-one-out query/candidate pairs
-        # One scorer execution per logical pair across BOTH classes (never per class-member/alias).
+        # (b) Drive each distinct class as its OWN retrieval pass (the run.py contract): the scorer
+        #     runs once per class leave-one-out pass over that class's canonical rows only.
+        n_logical = len(_SONGS) * (len(_SONGS) - 1)
+        seen_pass_configs: set[int] = set()
+        for cls in classes:
+            scorer_calls["n"] = 0
+            scorer_calls["candidate_configs"] = set()
+            per_class_cfg = _analysis_cfg("run-p1s5-two-class", config_ids=cls.config_ids)
+            result = ca.analyze_catalog_corpus(harness.stream_store, harness.con, per_class_cfg, research_con=con)
+            assert scorer_calls["n"] == n_logical, "one scorer call per logical pair within this class"
+            # Candidate views carry ONLY this class's canonical config — never the other class.
+            assert scorer_calls["candidate_configs"] == {cls.canonical_config_id}
+            assert scorer_calls["candidate_configs"].isdisjoint(alias_ids)
+            seen_pass_configs.add(cls.canonical_config_id)
+            assert result.finite is True and result.n_queries == len(_SONGS)
+            assert result.config_ids == cls.config_ids
+            for pq in result.per_query:
+                assert pq.all_finite() is True
+                assert {int(k[0]) for k in pq.candidate_keys} == {cls.canonical_config_id}
+                assert not any(int(k[0]) in alias_ids for k in pq.candidate_keys)
+
+        # Both distinct classes executed exactly once (two passes), each over its own canonical rows.
+        assert seen_pass_configs == canonical_ids
         assert scorer_calls["n"] == n_logical
-        # Candidate views carry canonical rows from every class, and NEVER an alias config.
-        assert scorer_calls["candidate_configs"] == canonical_ids
+    finally:
+        harness.close()
+
+
+# --------------------------------------------------------------------------- #
+# 11. P1-S3 red gate: run.py::_run_analyze drives per-class retrieval passes   #
+# --------------------------------------------------------------------------- #
+
+
+def test_run_analyze_path_schedules_each_distinct_class_exactly_once(
+    compact_catalog_factory, con, tmp_path, monkeypatch
+):
+    """P1-S3 red gate through the REAL run.py::_run_analyze path (not an analyze bypass).
+
+    A durable two-distinct-class catalog (0.9/1.0 collapse; 0.2 is a second class) is analyzed by
+    driving ``run_mod._run_analyze`` end to end.  The gate proves:
+
+    (a) exactly ONE disposable view is materialized PER analysis scope/class (2 classes => 2
+        ``materialize_search_view`` calls);
+    (b) the bounded-exact runner is invoked EXACTLY ONCE per unique class — each class its own
+        leave-one-out pass over only that class's canonical rows (2 classes => 2*N*(N-1) scorer
+        calls), never one merged pass and never once per alias;
+    (c) every alias is exposed in the transient/result data via ``representation_classes``
+        (canonical id + sorted aliases) — zero additional executions for aliases;
+    (d) aliases are NEVER appended to any candidate union (each scorer candidate view carries only
+        its own class's canonical config);
+    (e) two DISTINCT search classes are each executed exactly once and never unioned into one.
+    """
+    from scripts.embedding_research import run as run_mod
+
+    out = tmp_path / "runpy-out"
+    # Register songs in the research DB so run.py's load_all_songs() finds artists.
+    for song in _SONGS:
+        con.execute(
+            "INSERT INTO songs (song_id, path, artist) VALUES (?, ?, ?)",
+            (song, f"/audio/{song}.mp3", _ARTISTS[song]),
+        )
+    streams = {(song, _BACKBONE): _stream(axis % 4, 0.5) for axis, song in enumerate(sorted(_SONGS))}
+    harness = compact_catalog_factory(
+        con, out, streams=streams, configs=[_cfg(0.9), _cfg(1.0), _cfg(0.2)], song_ids=list(_SONGS), run_id=_RUN
+    )
+    try:
+        from scripts.embedding_research.catalog_identity import collapse_search_representations
+
+        classes = collapse_search_representations(harness.con)
+        assert len(classes) == 2
+        canonical_ids = {c.canonical_config_id for c in classes}
+        assert len(canonical_ids) == 2
+        alias_ids = {i for c in classes for i in c.alias_ids}
+        assert alias_ids  # collapse alias exercised
+
+        # Close the harness's live snapshot handle so run.py's OWN read-only open is the sole
+        # handle (DuckDB single-writer rule across this process).  All needed reads (classes) are
+        # done above; the durable current.json stays authoritative on disk for run.py to reopen.
+        harness.handle.close()
+
+        materialize_calls = {"n": 0}
+        real_materialize = sv.materialize_search_view
+        scorer_calls = {"n": 0, "candidate_configs": set()}
+        real_score = bounded_scoring.score_bounded_exact
+
+        def _spy_materialize(catalog_ref, stream_store, **kwargs):
+            materialize_calls["n"] += 1
+            return real_materialize(catalog_ref, stream_store, **kwargs)
+
+        def _spy_score(*a, **k):
+            scorer_calls["n"] += 1
+            cand = k.get("candidate_view")
+            if cand is not None:
+                scorer_calls["candidate_configs"].update(int(r[0]) for r in cand.row_addresses)
+            return real_score(*a, **k)
+
+        monkeypatch.setattr(sv, "materialize_search_view", _spy_materialize)
+        monkeypatch.setattr(bounded_scoring, "score_bounded_exact", _spy_score)
+
+        run_cfg = {"output_root": str(out), "backbones": [_BACKBONE], "k": 10}
+        ret = run_mod._run_analyze(con, run_cfg, run_id="run-p1s3-runpy")
+
+        # (a) one disposable view per analysis scope/class.
+        assert materialize_calls["n"] == 2, "one view materialized per distinct class"
+        # (b)+(e) scorer invoked once per unique class, each over its own canonical rows only.
+        assert scorer_calls["n"] == 2 * len(_SONGS) * (len(_SONGS) - 1), (
+            "two distinct classes each run their own N*(N-1) leave-one-out pass"
+        )
+        assert scorer_calls["candidate_configs"] == canonical_ids, "each pass feeds its own canonical rows"
+        # (d) aliases never appear in any candidate union.
         assert scorer_calls["candidate_configs"].isdisjoint(alias_ids)
-        assert result.finite is True and result.n_queries == len(_SONGS)
-        for pq in result.per_query:
-            assert pq.all_finite() is True
-            assert {int(k[0]) for k in pq.candidate_keys}.issubset(canonical_ids)
-            assert not any(int(k[0]) in alias_ids for k in pq.candidate_keys)
+        assert ret["song_count"] == len(_SONGS)
+        assert ret["self_recorded"] is True
+
+        # (c) aliases exposed in the persisted/transient result data via per-class analyze_scope rows.
+        from scripts.embedding_research.db import analyze_scope as _scope
+
+        scopes = _scope.run_row_scopes(con, run_id="run-p1s3-runpy")
+        assert len(scopes) == 2, "one analyze_scope strategy row per distinct class"
+        # The aggregate rows each carry a class-distinct persisted strategy identity that report decodes
+        # per class (report._alias_and_canonical treats each row's config_ids as ONE class).
+        distinct_sks = {
+            r[0]
+            for r in con.execute(
+                "SELECT DISTINCT strategy_key FROM analyze_metrics WHERE run_id = 'run-p1s3-runpy'"
+            ).fetchall()
+        }
+        assert len(distinct_sks) == 2, "one persisted analyze_scope strategy identity per distinct class"
+        assert scopes == {(sk, "cosine", 10) for sk in distinct_sks}
     finally:
         harness.close()

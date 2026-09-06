@@ -204,9 +204,24 @@ def _craft_segment(
 
 
 def _run(harness, store, cfg_id, **overrides):
-    kwargs = {"config_ids": [cfg_id], "song_ids": ["s1"], "heads": ["mood"], "run_id": "r"}
+    from scripts.embedding_research.streams import make_current_mask_resolver
+
+    kwargs = {
+        "config_ids": [cfg_id],
+        "song_ids": ["s1"],
+        "heads": ["mood"],
+        "run_id": "r",
+        "mask_store": make_current_mask_resolver(harness.stream_store),
+    }
     kwargs.update(overrides)
     return run_shared_catalog_head_analysis(harness.con, store, **kwargs)
+
+
+def _mask_store(harness):
+    """The committed-mask read seam for a harness's fully-committed observation groups."""
+    from scripts.embedding_research.streams import make_current_mask_resolver
+
+    return make_current_mask_resolver(harness.stream_store)
 
 
 # ---------------------------------------------------------------------------
@@ -278,7 +293,9 @@ def test_runner_default_configs_select_effnet_eligible(con, tmp_path, compact_ca
         _craft_segment(harness, cfg_id, "s1", seg_id=0, start_idx=0, end_idx=6, absorbed=())
 
         store = _FakeHeadStore()
-        manifest = run_shared_catalog_head_analysis(harness.con, store, run_id="r-default")
+        manifest = run_shared_catalog_head_analysis(
+            harness.con, store, mask_store=_mask_store(harness), run_id="r-default"
+        )
 
         assert cfg_id in manifest.config_ids
         assert manifest.done >= 1 and manifest.errors == 0
@@ -345,7 +362,13 @@ def test_runner_reports_missing_frozen_head_stream_with_reason(con, tmp_path, co
     try:
         store = _MissingStreamHeadStore(missing={"s2"})
         manifest = run_shared_catalog_head_analysis(
-            harness.con, store, config_ids=[cfg_id], song_ids=["s1", "s2"], heads=["mood"], run_id="r"
+            harness.con,
+            store,
+            mask_store=_mask_store(harness),
+            config_ids=[cfg_id],
+            song_ids=["s1", "s2"],
+            heads=["mood"],
+            run_id="r",
         )
 
         # s1 still pools; the aggregated coverage record counts only songs that pooled.
@@ -375,7 +398,13 @@ def test_runner_reports_head_lookup_failure_reason(con, tmp_path, compact_catalo
     try:
         store = _MissingStreamHeadStore(missing={"s2"}, raise_on_lookup=True)
         manifest = run_shared_catalog_head_analysis(
-            harness.con, store, config_ids=[cfg_id], song_ids=["s1", "s2"], heads=["mood"], run_id="r"
+            harness.con,
+            store,
+            mask_store=_mask_store(harness),
+            config_ids=[cfg_id],
+            song_ids=["s1", "s2"],
+            heads=["mood"],
+            run_id="r",
         )
 
         assert manifest.done == 1 and manifest.errors == 0
@@ -394,7 +423,13 @@ def test_runner_full_coverage_has_no_spurious_skip_reasons(con, tmp_path, compac
     try:
         store = _FakeHeadStore()
         manifest = run_shared_catalog_head_analysis(
-            harness.con, store, config_ids=[cfg_id], song_ids=["s1", "s2"], heads=["mood"], run_id="r"
+            harness.con,
+            store,
+            mask_store=_mask_store(harness),
+            config_ids=[cfg_id],
+            song_ids=["s1", "s2"],
+            heads=["mood"],
+            run_id="r",
         )
 
         assert manifest.skip_reasons == ()
@@ -481,3 +516,68 @@ def test_active_runner_is_cpu_boundary_no_persistence_no_forbidden_calls() -> No
     names = _function_body_code_names("common/head_analysis.py", "run_shared_catalog_head_analysis")
     overlap = _FORBIDDEN & names
     assert not overlap, f"forbidden tokens referenced by the active runner: {sorted(overlap)}"
+
+
+# ---------------------------------------------------------------------------
+# P1-S6: head pooling excludes the same silent source indices as the catalog
+# ---------------------------------------------------------------------------
+
+
+def _build_silent_harness(compact_catalog_factory, con, tmp_path, *, silent_idx):
+    """Build a compact catalog whose committed mask marks ``silent_idx`` silent.
+
+    The catalog ``seg_meta`` rows are then overwritten with one fresh structural segment
+    spanning the full patch range, so the head runner's reconstruction is what decides
+    membership.  Silent exclusion must come from the SAME committed mask that built the
+    catalog (threaded by P1-S6) — never from re-inference, audio, or a no-mask default.
+    """
+    silent = np.ones(_STREAM.shape[0], dtype=np.uint8)
+    silent[silent_idx] = 0
+    harness = compact_catalog_factory(
+        con,
+        tmp_path,
+        streams={("s1", "effnet"): _STREAM},
+        configs=[_effnet_config()],
+        song_ids=["s1"],
+        masks={"s1": silent},
+    )
+    from scripts.embedding_research.catalog import compact_configs_by_backbone
+
+    config_id = compact_configs_by_backbone(harness.con, "effnet")[0].config_id
+    return harness, config_id
+
+
+def test_head_pooling_excludes_committed_silent_source_indices(con, tmp_path, compact_catalog_factory):
+    """P1-S6 spec: head pooling over compact ``M_g`` gathers exactly the same non-silent
+    source indices the catalog segmented — a silent source index is NEVER pooled.
+
+    Expected RED until P1-S6 threads the committed mask resolver into the head runner
+    (today it reconstructs membership mask-free, so the silent index is wrongly gathered).
+    """
+    harness, config_id = _build_silent_harness(compact_catalog_factory, con, tmp_path, silent_idx=2)
+    store = _FakeHeadStore()
+    try:
+        _craft_segment(harness, config_id, "s1", seg_id=0, start_idx=0, end_idx=_STREAM.shape[0])
+        _run(harness, store, config_id)
+    finally:
+        harness.close()
+    assert store.gather_requests, "expected head pooling to run"
+    gathered = set(store.gather_requests[0])
+    assert 2 not in gathered, "silent source index 2 must not be head-pooled"
+    assert sorted(gathered) == [0, 1, 3, 4, 5]
+
+
+def test_head_pooling_empty_silent_segment_skips_gathering(con, tmp_path, compact_catalog_factory):
+    """P1-S6 spec: a segment that is ENTIRELY silent (no searchable member) is skipped —
+    the head store is never asked to gather it.  Expected RED until P1-S6 (today the
+    structural range is pooled regardless of silence).
+    """
+    harness, config_id = _build_silent_harness(compact_catalog_factory, con, tmp_path, silent_idx=0)
+    store = _FakeHeadStore()
+    try:
+        # Silent covers the whole single-member segment [0,1).
+        _craft_segment(harness, config_id, "s1", seg_id=0, start_idx=0, end_idx=1)
+        _run(harness, store, config_id)
+    finally:
+        harness.close()
+    assert store.gather_requests == [], "a fully silent segment must not be head-pooled"

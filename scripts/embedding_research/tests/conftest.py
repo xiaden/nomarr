@@ -44,11 +44,15 @@ class CompactCatalogHarness:
         ``make_current_stream_resolver(stream_store)`` — the exact store-backed current-
         stream seam the P1-S5 producer consumed.
     mask_store:
-        The read-only per-song silence-mask provider used to build this catalog
-        (``.load(song_id) -> uint8[P] | None``).  ``mask_store.load`` returns the exact mask
-        passed in via *masks* (``None`` => no silent patches).  P1-S10's head-analysis
-        runner accepts the same duck so mask-injected tests exercise silence exclusion
-        consistently between the catalog build and the head reader.
+        The two-key committed-mask store used to build this catalog
+        (``.load(song_id, backbone) -> uint8[P] | None``).  It is backed by EXACTLY the
+        committed per-``(song_id, backbone)`` masks the fixture published as complete
+        committed observation groups (an explicit per-song mask when given, else all-ones
+        matching the old "no silence" semantics).  ``None`` from ``load`` means *no
+        committed mask for that group* (the catalog build refuses such a song — it never
+        treats absence as no silence).  P1-S10's head-analysis runner accepts the same duck
+        so mask-injected tests exercise silence exclusion consistently between the catalog
+        build and the head reader.
     """
 
     def __init__(
@@ -81,44 +85,40 @@ class CompactCatalogHarness:
         return self.handle.con
 
     def mask(self, song_id: str):
-        """Read-only per-song silence mask used for *song_id* (``None`` => no silence).
+        """Committed whole-song silence mask used for *song_id* (per its published group).
 
-        Returns exactly what ``mask_store.load(song_id)`` returns — the ``uint8[P]`` mask
-        passed in via *masks* at build time, or ``None`` when the song has no silent
-        patches.  Intended so mask-injected tests can feed ``harness.mask_store`` to the
-        head-analysis runner and observe the same silence exclusion the catalog build used.
+        Returns the ``uint8[P]`` committed mask that was published for *song_id*'s stream
+        group and applied by the catalog build — an explicit per-song mask when one was
+        given via *masks*, else an all-ones mask (no silent patches).  ``None`` only when no
+        committed group exists for the song.  The committed mask (never a ``None``-means-
+        no-silence fallback) is what a downstream mask consumer must use.
         """
         if self.mask_store is None:
             return None
-        return self.mask_store.load(song_id)
+        return self.mask_store.load_for_song(song_id)
 
 
-class _ResearchMaskStore:
-    """mask_store duck for the fixture: ``.load(song_id) -> uint8[P] | None``.
+class _CommittedMaskStore:
+    """Two-key committed-mask duck: ``.load(song_id, backbone) -> uint8[P] | None``.
 
-    The research layer has NO committed masks, so by default every song is fully
-    searchable (``load`` returns ``None`` => no silent patches).  Tests may inject explicit
-    per-song masks via ``masks`` to drive silence semantics.  A ``None`` value in *masks*
-    also means "no silence".
+    Backed by EXACTLY the per-``(song_id, backbone)`` uint8 masks the fixture published as
+    complete committed observation groups.  ``load`` returns ``None`` only when there is no
+    committed mask for that exact group (which the catalog build REFUSES, never reading as
+    "no silence").  ``load_for_song`` returns the committed mask for a song across whichever
+    backbone(s) it was published under (fixtures publish one stream per song).
     """
 
-    def __init__(self, masks: dict[str, Any] | None = None) -> None:
-        self._masks = dict(masks or {})
+    def __init__(self, masks: dict[tuple[str, str], Any]) -> None:
+        self._masks = dict(masks)
 
-    def load(self, song_id: str):
-        if song_id in self._masks:
-            return self._masks[song_id]
+    def load(self, song_id: str, backbone: str):
+        return self._masks.get((song_id, backbone))
+
+    def load_for_song(self, song_id: str):
+        for (s, _backbone), mask in self._masks.items():
+            if s == song_id:
+                return mask
         return None
-
-
-class _FixtureMaskStoreDuck:
-    """Concrete per-song mask store used by :func:`build_compact_catalog`."""
-
-    def __init__(self, masks: dict[str, Any]) -> None:
-        self._store = _ResearchMaskStore(masks)
-
-    def load(self, song_id: str):
-        return self._store.load(song_id)
 
 
 def publish_current_catalog(output_root, run_id: str) -> str:
@@ -190,16 +190,47 @@ def build_compact_catalog(
         run_id = f"fixture-{uuid.uuid4().hex[:12]}"
     song_ids = list(song_ids) if song_ids is not None else sorted({s for (s, _b) in streams})
 
-    # (a) publish streams via StreamStore + reconcile on the research connection.
+    # (a) publish streams via StreamStore + reconcile on the research connection.  Each
+    # stream is ALSO published as a complete committed observation group (mask + commit
+    # marker), because the store-backed current-stream resolver now resolves ONLY complete
+    # committed groups — a stream-only registry row can no longer authorise a catalog read.
+    # The committed mask mirrors what the per-song duck ``mask_store`` serves the catalog
+    # build (an explicit per-song mask when provided, else all-searchable), so the build's
+    # silence semantics are unchanged while the group on disk is fully committed.
+    import hashlib as _hashlib
+
+    from scripts.embedding_research.streams.masks import MaskPayload
+
+    fixture_masks = masks or {}
+    committed: dict[tuple[str, str], Any] = {}
     store = StreamStore(research_con, output_root=str(output_root))
     for (song_id, backbone), matrix in streams.items():
         matrix = np.ascontiguousarray(matrix, dtype=np.float32)
-        store.publish(song_id, backbone, matrix, run_id=run_id)
+        record = store.publish(song_id, backbone, matrix, run_id=run_id)
+        explicit = fixture_masks.get(song_id)
+        if explicit is None:
+            mask = np.ones(matrix.shape[0], dtype=np.uint8)
+        else:
+            mask = np.asarray(explicit, dtype=np.uint8)
+        committed[(song_id, backbone)] = mask
+        payload = MaskPayload(
+            song_id=song_id,
+            backbone=backbone,
+            patch_count=matrix.shape[0],
+            mask=mask,
+            params_id="0" * 64,
+            audio_content_sha256=_hashlib.sha256(b"fixture-audio-content").hexdigest(),
+            run_id=run_id,
+            created_at=1,
+        )
+        store.publish_observation_group(record, payload)
     store.reconcile()
 
-    # (b) build the compact snapshot via the P1-S5 producer (mask_store = no committed masks).
+    # (b) build the compact snapshot via the P1-S5 producer (mask_store = the committed
+    #     two-key mask store, backed by EXACTLY the per-(song, backbone) masks published
+    #     above as committed groups).
     resolver = make_current_stream_resolver(store)
-    mask_store = _FixtureMaskStoreDuck(masks)
+    mask_store = _CommittedMaskStore(committed)
     report = catalog.build_segmentation_catalog(
         resolver,
         mask_store,

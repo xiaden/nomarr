@@ -14,6 +14,9 @@ This is the "thin interface" seam from the DD (``scripts/embedding_research`` A-
   artifact under ``streams/`` / ``heads/`` (never replacing bytes at an existing digest),
   writes a self-describing ``.json`` manifest beside it, then registers the identity
   ``pending`` via the app-level duplicate guard (transactional delete-then-insert).
+  The head writer additionally durably publishes the filesystem-authoritative
+  ``heads/current/`` CURRENT-suite marker (payload + manifest + CURRENT marker are the
+  three durable writes), superseding any prior marker for the ``(song_id, backbone)``.
 * :meth:`StreamStore.reconcile` — promote ``pending`` rows whose **manifest + payload**
   validate to ``ready``, demote ``ready`` rows whose artifact degrades to
   ``missing``/``corrupt``, and return a :class:`ReconcileReport`.
@@ -40,7 +43,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
@@ -49,6 +52,7 @@ import numpy as np
 from scripts.embedding_research.config import OUTPUT_ROOT
 from scripts.embedding_research.db import stream_registry as _reg
 from scripts.embedding_research.streams.masks import (
+    CurrentMaskResolver,
     MaskPayload,
     mask_npy_bytes,
     mask_record_from_payload,
@@ -72,6 +76,7 @@ from scripts.embedding_research.streams.records import (
     HeadStreamRecord,
     MaskRecord,
     ObservationCommit,
+    ObservationGroupIdentity,
     ReconcileReport,
     StreamNotFoundError,
     StreamNotReadyError,
@@ -89,10 +94,14 @@ from scripts.embedding_research.streams.records import (
 )
 
 __all__ = [
+    "CommittedObservation",
+    "CurrentMaskResolver",
     "CurrentStreamResolver",
     "HeadStreamStore",
     "StreamStore",
+    "make_current_mask_resolver",
     "make_current_stream_resolver",
+    "observation_group_ready",
 ]
 
 
@@ -768,42 +777,24 @@ class StreamStore(_RegistryStore):
         *,
         stream_record: StreamRecord | None = None,
     ) -> bool:
-        """True only when the FULL observation group verifies: marker + stream + mask all valid.
+        """True only when a COMPLETE committed observation group verifies (fail-closed).
 
-        Registry-ready for an observation group requires the commit marker AND the referenced
-        stream manifest+payload AND the referenced mask manifest+payload all to verify, with
-        matching logical identity.  Partial states (stream only; stream+mask with no commit;
-        a commit referencing a missing/corrupt stream or mask) are never ready.
+        This is the SINGLE shared group-level READY predicate — the same one the current
+        stream/mask resolvers and reindex use.  It delegates to the filesystem-authoritative
+        :meth:`_resolve_committed_observation` core (the newest VALID committed group wins),
+        so a group is READY only when a digest-grammar commit marker AND its referenced
+        current-format stream/mask manifests AND both payloads (bytes/size/SHA-256/dtype/
+        shape/finite + identity/alignment/audio-fingerprint/mask-semantics checks) all
+        verify ON DISK.  A registry row claiming ``ready`` is cache metadata only and NEVER
+        makes a group READY on its own.  Partial states — stream only; stream+mask with no
+        commit marker; a commit referencing a missing/corrupt/wrong-length/wrong-digest
+        stream or mask — are never ready.  When *stream_record* is given, the resolved
+        committed group must be the exact one that record references.
         """
-        for doc in self._commit_documents(song_id, backbone):
-            if stream_record is not None and doc.get("stream_ref") != stream_record.artifact_ref:
-                continue
-            stream_ref = doc.get("stream_ref")
-            mask_ref = doc.get("mask_ref")
-            if not isinstance(stream_ref, str) or not isinstance(mask_ref, str):
-                continue
-            try:
-                stream_record_obj = (
-                    stream_record
-                    if stream_record is not None
-                    else self._record_cls.from_row(
-                        tuple(_reg.select_row(self._con, self._table, self._columns, song_id, backbone))
-                    )  # type: ignore[arg-type]  # row values come from untyped duckdb-backed registry select; cast at from_row boundary
-                )
-            except (TypeError, ValueError, StreamStoreError):
-                continue
-            if stream_record_obj is None or stream_record_obj.artifact_ref != stream_ref:
-                continue
-            try:
-                mask_ok = self._mask_payload_ok(self._mask_record_from_doc(doc))
-            except (ValueError, TypeError, OSError):
-                mask_ok = False
-            if not mask_ok:
-                continue
-            if not self._stream_group_ok(song_id, backbone, stream_ref):
-                continue
-            return True
-        return False
+        observation = self._resolve_committed_observation(song_id, backbone)
+        if observation is None:
+            return False
+        return not (stream_record is not None and observation.identity.stream_ref != stream_record.artifact_ref)
 
     def _mask_record_from_doc(self, doc: dict[str, object]) -> MaskRecord:
         """Rehydrate a :class:`MaskRecord` from a parsed commit's referenced mask manifest."""
@@ -832,32 +823,6 @@ class StreamStore(_RegistryStore):
             created_at=manifest.get("created_at"),
             status=str(manifest.get("status", "ready")),
         )
-
-    def _stream_group_ok(self, song_id: str, backbone: str, stream_ref: str) -> bool:
-        """Does the referenced stream manifest + payload verify on disk (no registry read)?"""
-        path = self._path(stream_ref)
-        if not path.is_file():
-            return False
-        try:
-            row = _reg.select_row(self._con, self._table, self._columns, song_id, backbone)
-        except Exception:
-            row = None
-        try:
-            if row is not None:
-                record = self._record_cls.from_row(tuple(row))
-                return record.artifact_ref == stream_ref and self._artifact_ok(path, record)
-        except (ValueError, TypeError):
-            return False
-        # No registry row (e.g. DB-less check): validate the manifest + payload directly.
-        try:
-            manifest = read_json_manifest(self._path(payload_to_manifest_ref(stream_ref)))
-        except ValueError:
-            return False
-        return bool(
-            manifest.get("kind") == self._manifest_kind
-            and manifest.get("song_id") == song_id
-            and manifest.get("backbone") == backbone
-        ) and _sha256_hex(path) == str(manifest.get("payload_sha256"))
 
     def ready_stream_record(self, song_id: str, backbone: str) -> StreamRecord | None:
         """Return the ready stream record for ``(song_id, backbone)`` or ``None``.
@@ -897,6 +862,218 @@ class StreamStore(_RegistryStore):
                 if isinstance(audio_fp, str) and len(audio_fp) == 64:
                     return audio_fp
         return None
+
+    # ── committed-group filesystem-authoritative read seam (P1-S2) ────────────
+    # The resolvers / catalog / head consumers must read a stream and its silence
+    # mask ONLY as ONE complete committed observation group.  ``load_committed_observation``
+    # is that filesystem-authoritative seam: it validates the newest valid commit marker
+    # filename grammar + content digest, the referenced current-format stream/mask
+    # manifests, the payload bytes/size/SHA-256/dtype/shape/finite values, stream-mask
+    # patch-count equality, the alignment token, the audio fingerprint and mask semantics
+    # version that the mask manifest and marker agree on, and only then returns BOTH
+    # payloads plus the immutable group identity.  Absent or invalid groups raise a typed
+    # fail-closed refusal (``StreamValidationError``) — never a partial stream/mask and
+    # never silence-as-absence.  The private :meth:`_resolve_committed_observation` is the
+    # shared group-resolution helper later steps (P1-S3 shared predicate, catalog/head
+    # consumers) reuse.
+
+    @staticmethod
+    def _ref_digest(artifact_ref: str, suffix: str) -> str:
+        """The 64-hex payload digest parsed from a digest-grammar artifact ref (or refuse)."""
+        from scripts.embedding_research.streams.publication import parse_artifact_name
+
+        parsed = parse_artifact_name(artifact_ref.rsplit("/", 1)[-1], suffix)
+        if parsed is None:
+            raise StreamValidationError(f"{artifact_ref!r} is not a current-format digest artifact; group refused")
+        return parsed.digest
+
+    def _load_stream_payload(self, stream_ref: str, patch_count: int, dim: int) -> np.ndarray:
+        """Load + fully validate the committed stream payload bytes (sha/dtype/shape/finite)."""
+        path = self._path(stream_ref)
+        if not path.is_file():
+            raise StreamValidationError(f"committed stream payload missing: {stream_ref!r}; group refused")
+        digest = self._ref_digest(stream_ref, ".npy")
+        if _sha256_hex(path) != digest:
+            raise StreamValidationError(f"committed stream SHA-256 mismatch for {stream_ref!r}; group refused")
+        try:
+            arr = np.load(str(path), allow_pickle=False)
+        except (OSError, ValueError) as exc:
+            raise StreamValidationError(
+                f"committed stream payload unreadable {stream_ref!r}: {exc}; group refused"
+            ) from exc
+        if not isinstance(arr, np.ndarray) or arr.dtype != np.dtype(STREAM_DTYPE):
+            raise StreamValidationError(f"committed stream {stream_ref!r} is not float32; group refused")
+        if arr.shape != (patch_count, dim):
+            raise StreamValidationError(
+                f"committed stream {stream_ref!r} shape {arr.shape} != ({patch_count}, {dim}); group refused"
+            )
+        if not np.isfinite(arr).all():
+            raise StreamValidationError(f"committed stream {stream_ref!r} contains non-finite values; group refused")
+        return np.asarray(arr, dtype=np.float32)
+
+    def _load_mask_payload(self, mask_ref: str, patch_count: int) -> np.ndarray:
+        """Load + fully validate the committed mask payload bytes (sha/dtype/shape/values)."""
+        path = self._path(mask_ref)
+        if not path.is_file():
+            raise StreamValidationError(f"committed mask payload missing: {mask_ref!r}; group refused")
+        digest = self._ref_digest(mask_ref, ".npy")
+        if _sha256_hex(path) != digest:
+            raise StreamValidationError(f"committed mask SHA-256 mismatch for {mask_ref!r}; group refused")
+        try:
+            arr = np.load(str(path), allow_pickle=False)
+        except (OSError, ValueError) as exc:
+            raise StreamValidationError(
+                f"committed mask payload unreadable {mask_ref!r}: {exc}; group refused"
+            ) from exc
+        if not isinstance(arr, np.ndarray) or arr.dtype != np.dtype("uint8"):
+            raise StreamValidationError(f"committed mask {mask_ref!r} is not uint8; group refused")
+        if arr.shape != (patch_count,):
+            raise StreamValidationError(
+                f"committed mask {mask_ref!r} shape {arr.shape} != ({patch_count},); group refused"
+            )
+        if arr.size and not np.isin(arr, (0, 1)).all():
+            raise StreamValidationError(f"committed mask {mask_ref!r} contains non-0/1 values; group refused")
+        return np.asarray(arr, dtype=np.uint8)
+
+    def _observation_from_marker(self, doc: dict[str, object], song_id: str, backbone: str) -> CommittedObservation:
+        """Validate one commit marker + its referenced group and materialize, or refuse.
+
+        Raises :class:`StreamValidationError` (a typed fail-closed refusal) when the
+        marker's format/identity/digest/alignment/audio-fingerprint/semantics chain or any
+        referenced manifest/payload fails; on success returns the materialized
+        :class:`CommittedObservation`.  Called per candidate marker from
+        :meth:`_resolve_committed_observation` so the NEWEST VALID marker wins.
+        """
+        if str(doc.get("song_id")) != song_id or str(doc.get("backbone")) != backbone:
+            raise StreamValidationError(
+                f"commit marker identity ({doc.get('song_id')!r}, {doc.get('backbone')!r}) "
+                f"!= request ({song_id!r}, {backbone!r}); group refused"
+            )
+        if str(doc.get("group_format_version")) != "1":
+            raise StreamValidationError(
+                f"unsupported group_format_version {doc.get('group_format_version')!r}; group refused"
+            )
+        stream_ref = doc.get("stream_ref")
+        mask_ref = doc.get("mask_ref")
+        if not isinstance(stream_ref, str) or not isinstance(mask_ref, str):
+            raise StreamValidationError("commit marker missing stream_ref/mask_ref; group refused")
+        if doc.get("alignment_token") != f"{stream_ref}:{mask_ref}":
+            raise StreamValidationError(
+                "commit marker alignment_token does not bind the referenced stream+mask; group refused"
+            )
+        mask_semantics = doc.get("mask_semantics_version")
+        if mask_semantics != "1":
+            raise StreamValidationError(f"unsupported mask_semantics_version {mask_semantics!r}; group refused")
+        marker_audio = doc.get("audio_content_sha256")
+        if not isinstance(marker_audio, str) or len(marker_audio) != 64:
+            raise StreamValidationError("commit marker audio_content_sha256 is not a 64-hex fingerprint; group refused")
+        stream_digest = self._ref_digest(stream_ref, ".npy")
+        mask_digest = self._ref_digest(mask_ref, ".npy")
+
+        # Referenced current-format stream manifest identity + payload.
+        try:
+            stream_manifest = read_json_manifest(self._path(payload_to_manifest_ref(stream_ref)))
+        except ValueError as exc:
+            raise StreamValidationError(f"committed stream manifest unreadable: {exc}; group refused") from exc
+        if not (
+            stream_manifest.get("kind") == "stream"
+            and stream_manifest.get("schema_version") == "1"
+            and stream_manifest.get("payload_sha256") == stream_digest
+            and stream_manifest.get("song_id") == song_id
+            and stream_manifest.get("backbone") == backbone
+        ):
+            raise StreamValidationError(
+                f"committed stream manifest does not self-describe {stream_ref!r}; group refused"
+            )
+        try:
+            stream_patch_count = int(stream_manifest.get("patch_count"))
+            stream_dim = int(stream_manifest.get("dim"))
+        except (TypeError, ValueError) as exc:
+            raise StreamValidationError("committed stream manifest missing patch_count/dim; group refused") from exc
+
+        # Referenced current-format mask manifest identity + payload.
+        try:
+            mask_manifest = read_json_manifest(self._path(payload_to_manifest_ref(mask_ref)))
+        except ValueError as exc:
+            raise StreamValidationError(f"committed mask manifest unreadable: {exc}; group refused") from exc
+        if not (
+            mask_manifest.get("kind") == "mask"
+            and mask_manifest.get("schema_version") == "1"
+            and mask_manifest.get("payload_sha256") == mask_digest
+            and mask_manifest.get("song_id") == song_id
+            and mask_manifest.get("backbone") == backbone
+        ):
+            raise StreamValidationError(f"committed mask manifest does not self-describe {mask_ref!r}; group refused")
+        mask_patch_count = int(mask_manifest.get("patch_count"))
+        # Stream-mask patch-count equality (supplemental alignment, never proof).
+        if mask_patch_count != stream_patch_count:
+            raise StreamValidationError(
+                f"committed mask patch_count {mask_patch_count} != stream patch_count "
+                f"{stream_patch_count}; group refused"
+            )
+        # Audio fingerprint + mask semantics must agree between mask manifest and marker.
+        mask_manifest_audio = mask_manifest.get("audio_content_sha256")
+        if mask_manifest_audio != marker_audio:
+            raise StreamValidationError(
+                "committed mask audio fingerprint does not match the commit marker; group refused"
+            )
+        mask_manifest_semantics = mask_manifest.get("mask_semantics_version")
+        if mask_manifest_semantics != mask_semantics:
+            raise StreamValidationError(
+                f"committed mask mask_semantics_version {mask_manifest_semantics!r} != commit "
+                f"marker {mask_semantics!r}; group refused"
+            )
+
+        stream = self._load_stream_payload(stream_ref, stream_patch_count, stream_dim)
+        mask = self._load_mask_payload(mask_ref, mask_patch_count)
+        identity = ObservationGroupIdentity(
+            song_id=song_id,
+            backbone=backbone,
+            stream_ref=stream_ref,
+            stream_digest=stream_digest,
+            mask_ref=mask_ref,
+            mask_digest=mask_digest,
+            alignment_token=f"{stream_ref}:{mask_ref}",
+            audio_content_sha256=str(marker_audio),
+            mask_semantics_version=str(mask_semantics),
+            commit_sha256=str(doc.get("commit_sha256")),
+        )
+        return CommittedObservation(identity=identity, stream=stream, mask=mask)
+
+    def _resolve_committed_observation(self, song_id: str, backbone: str) -> CommittedObservation | None:
+        """The newest VALID committed group for ``(song_id, backbone)``, or ``None``.
+
+        Iterates the digest-grammar commit markers newest-first (each already validated
+        for marker filename grammar + content digest by :meth:`_commit_documents`) and
+        returns the first whose full stream+mask group verifies.  A corrupt newer group
+        does not poison resolution of an older fully-valid group.  ``None`` when no marker
+        yields a fully-valid group.
+        """
+        for doc in self._commit_documents(song_id, backbone):
+            try:
+                return self._observation_from_marker(doc, song_id, backbone)
+            except (StreamValidationError, ValueError, TypeError, KeyError, OSError):
+                continue
+        return None
+
+    def load_committed_observation(self, song_id: str, backbone: str) -> CommittedObservation:
+        """Filesystem-authoritative read of the newest VALID committed observation group.
+
+        Returns the materialized :class:`CommittedObservation` (immutable identity + both
+        validated payloads) for ``(song_id, backbone)``, or raises the typed fail-closed
+        refusal :class:`StreamValidationError` when no complete committed group exists
+        (stream-only / uncommitted / corrupt / wrong-length / wrong-digest / identity,
+        alignment, audio-fingerprint, mask-semantics, or format-version defect).  NEVER
+        returns a partial stream/mask and never interprets mask absence as no silence.
+        """
+        observation = self._resolve_committed_observation(song_id, backbone)
+        if observation is None:
+            raise StreamValidationError(
+                f"no valid committed observation group for ({song_id!r}, {backbone!r}): a "
+                "complete committed stream+mask+identity group is required and absent, "
+                "corrupt, uncommitted, or mismatched groups are refused"
+            )
+        return observation
 
 
 class HeadStreamStore(_RegistryStore):
@@ -1023,8 +1200,12 @@ class HeadStreamStore(_RegistryStore):
         The suite is serialized to ``.npz`` bytes, written to the immutable digest-named
         ``heads/<sid>.<backbone>.<sha256>.npz`` artifact (never replacing bytes at an
         existing digest) followed by its self-describing ``.json`` manifest, and the
-        ``(song_id, backbone)`` head row is replaced with a ``pending`` record.  The caller
-        reconciles the phase to promote to ``ready``.
+        ``(song_id, backbone)`` head row is replaced with a ``pending`` record.  A third
+        durable write publishes the filesystem-authoritative CURRENT head-suite marker at
+        ``heads/current/<song_id>.<backbone>.json`` (via ``publish_current_marker_for_record``),
+        atomically replacing any prior marker so this freshly committed suite supersedes
+        older generations for the identity (immutable payload/manifest bytes are never
+        touched).  The caller reconciles the phase to promote to ``ready``.
         """
         ops = file_ops if file_ops is not None else FileOps()
         arrays: dict[str, np.ndarray] = {str(name): arr for name, arr in dict(head_arrays).items()}
@@ -1098,6 +1279,23 @@ class HeadStreamStore(_RegistryStore):
             stream_ref=stream_ref,
             dataset=dataset,
             head_set_semantics_version=head_set_semantics_version,
+        )
+        # Publish the filesystem-authoritative CURRENT head-suite marker (Plan C P1-S4):
+        # a freshly inferred/committed suite supersedes any prior marker for this
+        # (song_id, backbone).  The marker is a fixed-path atomic replace under
+        # heads/current/ (never the immutable payload/manifest bytes above).  Imported
+        # lazily to keep the module import graph acyclic (heads_current imports store).
+        from scripts.embedding_research.streams.heads_current import publish_current_marker_for_record
+
+        publish_current_marker_for_record(
+            self._output_root,
+            record,
+            stream_ref=stream_ref,
+            stream_digest=self._stream_digest_from_ref(stream_ref),
+            head_set_fingerprint=self._head_set_fingerprint(record),
+            head_set_semantics_version=head_set_semantics_version,
+            model_suite_fingerprint=backbone_model_hash,
+            file_ops=ops,
         )
         return self.replace(record, status="pending")
 
@@ -1198,18 +1396,16 @@ class CurrentStreamResolver(Protocol):
 
 
 class _StoreBackedCurrentStreamResolver:
-    """Store-backed resolver over the CURRENT (pre-observation-commit) store surface.
+    """Store-backed current-stream resolver over COMPLETE COMMITTED observation groups.
 
-    Resolution consumes the retained registry ``artifact_ref`` only as a cache/index lookup:
-    ``StreamStore.lookup`` gates on a ``ready`` row, and ``StreamStore.batch_gather`` validates
-    the on-disk payload (SHA-256, dtype, shape, finite values, ``allow_pickle=False``) before
-    returning rows.  The whole-matrix read is expressed as a full source-index gather so every
-    validation in the store surface runs; any store error fails closed to ``None``.  The
-    resolver gates only on a ``ready`` registry row plus current manifest/payload validation
-    through ``lookup``/``batch_gather`` — it does NOT check observation-commit groups.
-    Observation-commit group authority is enforced by the ``observation_group_ready`` flow and
-    by reindex, not by this resolver; production embed publishes the observation group before
-    reconcile, so every production-ready row is group-committed.
+    ``load`` resolves the stream through :meth:`StreamStore.load_committed_observation` —
+    the SAME filesystem-authoritative complete-group core the current-mask resolver and
+    reindex use.  The newest digest-grammar commit marker plus its referenced current-format
+    stream and mask manifests and BOTH payloads (bytes/size/SHA-256/dtype/shape/finite,
+    identity, alignment, audio-fingerprint, mask-semantics) must fully verify before the
+    stream is returned.  A registry ``ready`` row is cache metadata only and can NEVER
+    authorise a stream by itself — a stream-only or otherwise incomplete group fails closed
+    to ``None``.  There is NO mask-less fallback and NO old-format fallback.
     """
 
     __slots__ = ("_store",)
@@ -1219,15 +1415,93 @@ class _StoreBackedCurrentStreamResolver:
 
     def load(self, song_id: str, backbone: str) -> np.ndarray | None:
         try:
-            record = self._store.lookup(song_id, backbone)
+            observation = self._store.load_committed_observation(song_id, backbone)
         except StreamStoreError:
             return None
-        try:
-            return self._store.batch_gather(song_id, backbone, range(record.patch_count))
-        except StreamStoreError:
-            return None
+        return observation.stream
 
 
 def make_current_stream_resolver(store: StreamStore) -> CurrentStreamResolver:
-    """Return the transitional store-backed :class:`CurrentStreamResolver` for *store*."""
+    """Return the store-backed :class:`CurrentStreamResolver` for *store*.
+
+    ``load`` resolves ONLY a complete committed observation group (stream + aligned mask +
+    valid commit/identity marker, all identity/digest/alignment/audio-fingerprint/semantics
+    checks passing); a registry ``ready`` row is cache metadata and never authorises a
+    stream by itself.  Absent/incomplete/corrupt groups fail closed to ``None``.
+    """
     return _StoreBackedCurrentStreamResolver(store)
+
+
+def observation_group_ready(
+    store: StreamStore,
+    song_id: str,
+    backbone: str,
+    *,
+    stream_record: StreamRecord | None = None,
+) -> bool:
+    """Module-level shared complete-group READY predicate (P1-S3).
+
+    Exactly the same complete-group predicate the current stream/mask resolvers and reindex
+    use: it delegates to :meth:`StreamStore.observation_group_ready` (which in turn
+    delegates to the ``_resolve_committed_observation`` filesystem-authoritative core).
+    ``store`` must be a :class:`StreamStore` bound to the output root whose filesystem group
+    is being checked — the predicate MUST reach the filesystem group check, so it needs a
+    store handle.  A registry row claiming ``ready`` never makes a group READY by itself.
+    """
+    return store.observation_group_ready(song_id, backbone, stream_record=stream_record)
+
+
+@dataclass(frozen=True)
+class CommittedObservation:
+    """A fully-validated committed stream + aligned mask + immutable group identity.
+
+    Returned by :meth:`StreamStore.load_committed_observation`.  Carries the immutable
+    :class:`~scripts.embedding_research.streams.records.ObservationGroupIdentity` plus the
+    validated payload arrays: ``stream`` is the float32 ``[patch_count, dim]`` embedding
+    patch matrix and ``mask`` is the aligned ``uint8[patch_count]`` silence mask
+    (``1`` = searchable, ``0`` = silent).  A :class:`CommittedObservation` is never partial:
+    it is materialized only after the marker, both current-format manifests and both
+    payload bytes/size/SHA-256/dtype/shape/finite/alignment/audio-fingerprint/semantics
+    checks all pass.
+    """
+
+    identity: ObservationGroupIdentity
+    stream: np.ndarray
+    mask: np.ndarray
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.identity, ObservationGroupIdentity):
+            raise TypeError("CommittedObservation.identity must be an ObservationGroupIdentity")
+
+
+class _StoreBackedCurrentMaskResolver:
+    """Store-backed committed current-mask resolver over the observation-commit group.
+
+    ``load`` resolves the mask from the SAME complete committed group that authorises the
+    stream (``StreamStore.load_committed_observation``), so the group identity is always
+    verified before a mask is returned.  Absent and corrupt/invalid groups both fail
+    closed to ``None`` (the typed group refusal from ``load_committed_observation`` is
+    caught) — never an implicit all-searchable mask, never a partial mask.
+    """
+
+    __slots__ = ("_store",)
+
+    def __init__(self, store: StreamStore) -> None:
+        self._store = store
+
+    def load(self, song_id: str, backbone: str) -> np.ndarray | None:
+        try:
+            observation = self._store.load_committed_observation(song_id, backbone)
+        except StreamStoreError:
+            return None
+        return None if observation is None else observation.mask
+
+
+def make_current_mask_resolver(store: StreamStore) -> CurrentMaskResolver:
+    """Return the sole store-backed :class:`CurrentMaskResolver` for *store*.
+
+    This is the only mask-read seam for catalog/head consumers — it exposes no
+    filesystem-path API and resolves masks only from complete committed observation
+    groups.
+    """
+    return _StoreBackedCurrentMaskResolver(store)

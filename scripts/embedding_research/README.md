@@ -24,10 +24,17 @@ The default primary experiment is deliberately narrow (see `CONTRACTS.md`):
 - **backbone**: `effnet` only by default; MusicNN is enabled only by explicit selection
   (`backbones=["effnet","musicnn"]`) and is never part of default runs.
 - **representation**: the active catalog is the COMPACT canonical `seg_config` rows under the single
-  finite direct-L2 semantics (`configured == effective`); there is no flat/PTC/CTP strategy baseline
-  and no copied-vector representation. Winner/delta baselines are chosen deterministically per
-  `(backbone, sim_metric, k, metric)` as the lowest `(canonical_config_id, strategy_key)` active
-  catalog class after collapse — never a synthesized flat medoid baseline.
+  finite direct-L2 semantics (`configured == effective`); there is no flat/PTC/CTP *strategy* baseline,
+  no copied-vector representation, and no synthetic (coordinate-wise) medoid. Segmentation dispatches
+  the two retained temporal `bin_mode` values through `helpers/binning.DIST_FNS` — `temporal_global`
+  → direct unit-vector L2, `temporal_perdim` → per-dimension Chebyshev — and fails closed on unknown
+  modes and on the retired `'direct'` mode (no mismatched / advertised-but-hardcoded metric). Analysis executes each
+  distinct current search-representation class exactly once over only its canonical rows (per-class
+  retrieval passes, never a merged union — see `CONTRACTS.md`). The winner/delta baseline per
+  `(backbone, sim_metric, k, metric)` is the **observed** `global_pool:{backbone}:medoid` searchable-patch
+  medoid (restored by the Plan B corrective pass as an active silence-aware observed baseline — an
+  observed source row's unit vector, never a synthesized flat medoid and never the lowest active catalog
+  class).
 - **primary score variant**: `max_per_candidate_segment` — patch-count-weighted, deduplicated, with
   collision/winner/cosine/contribution traces and explicit tie/collision ambiguity variants.
 - **CTP is hard-disabled and its legacy surface is DELETED** (Plan A removed the `[archival_ctp]`
@@ -39,8 +46,9 @@ The default primary experiment is deliberately narrow (see `CONTRACTS.md`):
 
 ## CLI phases (explicit phase boundaries)
 
-`python run.py <phase>` exposes **exactly eight** phase boundaries (see `CONTRACTS.md`
-for the binding responsibility table and `run.py` for the runner wiring):
+`python run.py <command>` is EXACTLY a **twelve-command** CLI — the eight phase verbs below plus
+the four maintenance commands in the next subsection. The eight explicit phase boundaries are
+(see `CONTRACTS.md` for the binding responsibility table and `run.py` for the runner wiring):
 
 ```
 ingest -> embed -> infer-heads -> catalog -> catalog-report -> analyze -> head-analysis -> report
@@ -59,14 +67,18 @@ ingest -> embed -> infer-heads -> catalog -> catalog-report -> analyze -> head-a
 
 Only `ingest`, `embed`, and `infer-heads` may discover audio, load models, create ML sessions, or run
 inference (CPU or CUDA). The five derived phases (`catalog`…`report`) consume only manifests,
-registries, DuckDB catalog rows, and frozen stream/head artifacts; each runs with audio/model
+registries, DuckDB catalog rows, frozen stream/head artifacts, and the committed observation groups
+(immutable stream + aligned silence mask + commit/identity marker) that authorise the catalog and
+head-analysis reads; each runs with audio/model
 directories, ONNX sessions, and CUDA entirely absent, and their runner bodies import only CPU-only
 modules (enforced structurally and by call-level sentinel tests in
 `tests/test_phase4_dispatch_boundaries.py`).
 
 The old pipeline names `stratify`, `segment`, `classify`, and `head` are **retired**: they are not
-phases and are rejected loudly by the CLI (never silently aliased, exit code `2`). Stratification is an explicit
-catalog input/config step (selects/generates the corpus + config surface before the per-song pass),
+phases and are ordinary unknown commands — `LEGACY_PHASE_ALIASES` and the named compatibility
+rejection path were REMOVED in the Plan C hard cut (P1-S7), so they exit `2` through the identical
+code path as any unrecognized verb (never silently aliased, no special-case). Stratification is an
+explicit catalog input/config step (selects/generates the corpus + config surface before the per-song pass),
 not a phase. The legacy orchestration functions were **deleted** in the Plan E P1-S3 hard cut
 (superseded run.py orchestration/loaders/model cache and legacy phase wrappers are gone). The
 remaining legacy module/table surfaces (`classify.py`, `head_pooling.py`, `strategy_*/`, legacy
@@ -82,8 +94,8 @@ deletion inventory for the per-row EXECUTED dispositions.
   and reports corruption; `--strict` freshly rehashes every current payload so a same-size tamper is
   caught. Exit `1` on refusal.
 - `python run.py reindex` is a thin public wrapper over `reconcile_current_manifests`: it walks only
-  current filesystem sources and rebuilds the registry/cache/corpus metadata; it never opens
-  audio/models/ONNX/CUDA/sessions/segmentation.
+  current filesystem sources and rebuilds the registry/cache rows (validating optional `corpus/` and
+  `catalogs/` manifests); it never opens audio/models/ONNX/CUDA/sessions/segmentation.
 - `python run.py cleanup --scope {staging|stray|views}` report-then-remove **only** current-format
   candidates from the filename grammar + manifest relationships: `staging` (catalog
   `.staging-*` dirs + `.staging/*.tmp` leftovers), `stray` (digest-named payloads with no sibling
@@ -156,14 +168,37 @@ layout under `{OUTPUT_ROOT}`:
 | `streams/` | digest-named float32 patch matrix `<sid>.<bb>.<64-hex-sha256>.npy` | `.json` manifest (kind `stream`) |
 | `audio_masks/` | digest-named `uint8` mask (length `patch_count`, `1 = searchable`) `.npy` | `.json` manifest (kind `mask`) |
 | `heads/` | digest-named concatenated head-suite `.npz` | `.json` manifest (kind `head`) |
+| `heads/current/` | fixed-path CURRENT marker `<sid>.<bb>.json` per identity (head-suite analogue of `catalogs/current.json`), atomically replaced on supersession | — |
 | `observation_commits/` | commit marker `<sid>.<bb>.<64-hex>.json`, written **last** | — |
 
 - **Grammar / immutability.** The only payload grammar is `<song_id>.<backbone>.<64-hex-lowercase-sha256>.<suffix>`; bare and `.vN` names are never written or parsed (`parse_artifact_name` is the digest-only parser). Publication is staged `.tmp` write → `fsync(file)` → close → atomic rename → `fsync(dir)`; bytes at an existing digest are never replaced (content-addressed, no-replace). A registry row/status (`pending`/`ready`/`missing`/`corrupt`) reflects a validated current group; the rows/columns (`STREAM_REGISTRY_COLUMNS`/`HEAD_STREAM_REGISTRY_COLUMNS`, `STREAM_TABLE`/`HEAD_STREAM_TABLE`, `row_tuple`/`from_row`) remain as cache until Plans C/E migrate their consumers.
 - **Mask semantics v1** (`audio_masks/`): pinned `essentia_rms_dbfs_v1`, `-60 dBFS`, two-frame silent-run removal, `fraction_active_ge 0.5`, two-patch hysteresis; derived via production `get_params`/`compute_log_mel`/`extract_patches` plus the sole approved frozen replay of frame-range arithmetic. Zero model/session/ONNX/CUDA for (re)derivation.
 - **Heads.** `infer-heads` publishes one immutable, digest-named `.npz` + manifest per song/backbone with the complete canonical head inventory, exact committed-stream `patch_count` alignment, finite/dimension checks, and manifest provenance. `HeadStreamStore.batch_gather(song_id, backbone, source_patch_indices, *, forbid_duplicates=False) -> np.ndarray` returns validated float32 `[N, total_dim]` with columns concatenated in canonical head order (source-index gather).
-- **Current-reader seam.** Retained current-format readers resolve current payloads through the single
-  `CurrentStreamResolver`/`make_current_stream_resolver` seam (`streams/store.py`, re-exported from `streams/__init__.py`): the registry `artifact_ref` is used only as a cache lookup, and the resolver resolves a row-`ready` cache entry whose current self-describing manifest and payload validate through `StreamStore.lookup`/`batch_gather`. Observation-commit group authority is NOT enforced by the resolver itself — it is enforced by the group publication/readiness flow (`observation_group_ready`) and by reindex; production embed always publishes the observation group before reconcile, so every production-ready row is group-committed. Absent, non-`ready`, or corrupt payloads fail closed (return `None`).
-- **Reindex.** `streams/reindex.py` exposes `reconcile_current_manifests(root, con)` and the public `reindex(root, con)` maintenance wrapper. They walk only current-format digest manifests/commit markers (plus optional `corpus/`/`catalogs/` manifests), validate refs/digests/shape/dtype/finite/alignment/commit-readiness/catalog WAL state, and rebuild the retained registry cache rows from the filesystem after a DB deletion. They refuse corrupt/incomplete/mismatched/WAL-bearing state and never open audio/models/ONNX/CUDA, parse old names, or rerun segmentation. Reindex is exposed as the `streams.reindex` module API (`reconcile_current_manifests`/`reindex`); CLI wiring is deferred to Plan E.
+- **Heads/CURRENT marker (Plan C).** `streams/heads_current.py` owns one fixed-path, per-identity
+  marker at `heads/current/<sid>.<bb>.json` that selects the CURRENT complete head suite among many
+  immutable on-disk generations for an identity. `HeadStreamStore.publish` publishes it (staged
+  durable write → atomic replace, strict `generation` bump) for every freshly-inferred suite; it is
+  never a digest name. `resolve_current_head_suite` accepts ONLY the marker-selected suite aligned
+  to the CURRENT committed stream and fails closed on a missing/malformed/stale/mismatched marker or
+  a marker referencing a superseded stream — selection NEVER falls back to mtime/lexical order. Head
+  reindex rebuilds head registry rows ONLY from these markers and performs no inference.
+- **Committed observation groups + the sole read seams.** The only usable observation is a COMPLETE
+  committed observation group: the immutable stream + the aligned audio-derived silence mask + the
+  commit/identity marker (`observation_commits/<sid>.<bb>.<commit>.json`, written last). Catalog
+  construction, canonical head analysis, and FS-reindex readiness all REQUIRE such a group; there is
+  no stream-only, mask-less, or uncommitted read path. Active consumers read through the two
+  store-backed seams constructed from their `StreamStore` — `CurrentStreamResolver`/
+  `make_current_stream_resolver` (`.load(song_id, backbone) -> float32[P,D] | None`) and
+  `CurrentMaskResolver`/`make_current_mask_resolver` (`.load(song_id, backbone) -> uint8[P] | None`)
+  — plus `StreamStore.load_committed_observation`, and NO filesystem-path, one-argument, or no-mask
+  loader exists. Every seam resolves ONLY a complete committed group via the ONE shared
+  `observation_group_ready`/`StreamStore.observation_group_ready` predicate (newest valid commit on
+  disk: marker content digest + referenced current-format stream/mask manifests + payload
+  bytes/digest/dtype/shape/finite + identity, alignment, audio-fingerprint, mask-semantics checks). A
+  registry `ready` row is cache metadata only and never authorizes a group by itself. Missing /
+  corrupt / wrong-length / wrong-digest / uncommitted masks fail closed and are never interpreted as
+  no silence.
+- **Reindex.** `streams/reindex.py` exposes `reconcile_current_manifests(root, con)` and the public `reindex(root, con)` maintenance wrapper. They walk only current-format digest manifests/commit markers (plus optional `corpus/`/`catalogs/` manifests) and rebuild the retained registry cache rows from the filesystem after a DB deletion. FS-reindex readiness is defined IDENTICALLY to the rest of the system: `_rebuild_stream_registry` rebuilds a stream-registry row ONLY from a complete committed observation group that satisfies the shared `observation_group_ready` predicate (via `load_committed_observation`); incomplete / mismatched / stream-only artifacts are reported refused, and a ready row is never rebuilt from a stream-only artifact. They validate refs/digests/shape/dtype/finite/alignment/commit-readiness/catalog WAL state, refuse corrupt/incomplete/mismatched/WAL-bearing state, and never open audio/models/ONNX/CUDA, parse old names, or rerun segmentation. Head-suite registry rows are rebuilt ONLY from the `heads/current/` CURRENT markers via `resolve_current_head_suite` (marker-selected complete suites aligned to the current committed stream; see the Heads/CURRENT marker bullet above). Reindex is exposed as the `streams.reindex` module API (`reconcile_current_manifests`/`reindex`).
 - **References / timestamps.** Payloads, manifests, commit markers, and registry rows carry only root-relative artifact refs; timestamps are integer milliseconds. Same-run ordering is payload/manifest/commit first, then the validated registry cache row, before any retained reader consumes the group.
 
 Registry row/status consumers (`catalog.py`, `catalog_identity.py`, `db/segmentation.py`,
@@ -185,9 +220,11 @@ inference:
   / metric / value plus catalog strategy identity, score variant, scoring-semantics version,
   view-content-hash provenance, canonical config id, and sorted alias ids.
 - `winners` — deterministic winner / delta / factor tables per backbone. The baseline per
-  `(backbone, sim_metric, k, metric)` is the lowest `(canonical_config_id, strategy_key)` active
-  catalog class after collapse; the winner is the highest finite metric with `strategy_key` tie-break;
-  `delta = winner - baseline`. Aliases are sorted and never duplicate score rows.
+  `(backbone, sim_metric, k, metric)` is the observed `global_pool:{backbone}:medoid` medoid baseline row
+  (when a finite one shares that exact scope); the medoid is never itself a winner candidate. The winner
+  is the highest finite segmented catalog class with `strategy_key` tie-break; `delta = winner - baseline`
+  is finite. A cell without a finite medoid baseline row emits no delta row. Aliases are sorted and never
+  duplicate score rows.
 - `head-analysis` — canonical `head_phase_provenance` per supported backbone with finite / status /
   coverage and provenance.
 - `provenance` — active `run_provenance`, command lines, hashes, warnings, reuse/refusal decisions,

@@ -7,7 +7,9 @@ persistence + provenance-scope path.
 
 from __future__ import annotations
 
+from scripts.embedding_research.baseline import MEDOID_STRATEGY_TYPE, medoid_strategy_key_for
 from scripts.embedding_research.common.catalog_analysis import CatalogAnalysisResult
+from scripts.embedding_research.db import write_analyze_metrics
 from scripts.embedding_research.db.analyze_scope import write_catalog_analyze_rows
 
 
@@ -71,6 +73,35 @@ def seed_catalog(
     return write_catalog_analyze_rows(con, run_id=run_id, result=result)
 
 
+def seed_medoid_baseline(
+    con,
+    *,
+    run_id: str,
+    backbone: str,
+    k: int,
+    metrics: dict[str, float],
+) -> str:
+    """Persist one observed global-medoid baseline row (run-scoped, no scope/provenance row).
+
+    The medoid baseline is persisted through the same real ``analyze_metrics`` writer the
+    analyze producer uses (``db.write_analyze_metrics`` under ``strategy_type ==
+    MEDOID_STRATEGY_TYPE`` == ``"global_pool"``, key ``global_pool:{backbone}:medoid``,
+    ``sim_metric="cosine"``).  It is deliberately NOT a catalog class: no analyze-scope /
+    run_provenance row and no config identity.
+    """
+    key = medoid_strategy_key_for(backbone)
+    write_analyze_metrics(
+        con,
+        key,
+        MEDOID_STRATEGY_TYPE,
+        "cosine",
+        int(k),
+        dict(metrics),
+        run_id=run_id,
+    )
+    return key
+
+
 def seed_phase_timing(con, *, run_ts: str = "run-1", phase: str = "analyze", elapsed_s: float = 1.5) -> None:
     from scripts.embedding_research.db._schema import upsert_phase_timing
 
@@ -83,9 +114,12 @@ def catalog_key(backbone: str, keyset: str = "abc") -> str:
 
 
 #: Forbidden legacy vocabulary that must NEVER appear in an emitted report section/table id,
-#: key, title, description, warning, or value (the hard-cut report contract).
+#: key, title, description, warning, or value (the hard-cut report contract).  ``global_pool`` is
+#: NOT on this list: the observed ``global_pool:{backbone}:medoid`` baseline strategy key is a
+#: legitimate emitted winner-section value under the medoid-baseline contract (the remaining
+#: tokens — ptc/ctp/binned/truncation/optimizer/weighted/rep_a/rep_b/calibration — stay enforced;
+#: see test_audit_forbidden_vocabulary.py for the source-audit gate, which is unchanged).
 FORBIDDEN_REPORT_VOCABULARY: tuple[str, ...] = (
-    "global_pool",
     "ptc",
     "ctp",
     "binned",

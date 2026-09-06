@@ -48,6 +48,36 @@ def _seed_songs(con):
         )
 
 
+def _publish_committed_stream(store, song_id: str, matrix: np.ndarray, *, run_id: str, backbone: str = "effnet"):
+    """Publish a stream AND its complete committed observation group (all-searchable mask).
+
+    P1-S3: the store-backed current-stream resolver resolves ONLY complete committed
+    groups, so every helper that builds a catalog does so from the complete committed
+    groups published here, resolving the mask through the two-key store-backed seam
+    ``make_current_mask_resolver(store)`` (stream via ``make_current_stream_resolver``).
+    """
+    import hashlib as _hashlib
+
+    from scripts.embedding_research.streams.masks import MaskPayload
+
+    matrix = np.ascontiguousarray(matrix, dtype=np.float32)
+    record = store.publish(song_id, backbone, matrix, run_id=run_id)
+    store.publish_observation_group(
+        record,
+        MaskPayload(
+            song_id=song_id,
+            backbone=backbone,
+            patch_count=matrix.shape[0],
+            mask=np.ones(matrix.shape[0], dtype=np.uint8),
+            params_id="0" * 64,
+            audio_content_sha256=_hashlib.sha256(b"fixture-audio-content").hexdigest(),
+            run_id=run_id,
+            created_at=1,
+        ),
+    )
+    return record
+
+
 def _seed_catalog(con, out) -> str:
     """Register songs, publish ready effnet streams, build a VERIFIED COMPACT catalog.
 
@@ -57,7 +87,7 @@ def _seed_catalog(con, out) -> str:
     SNAPSHOT connection (the connection the derived-phase preflight now reads).
     """
     from scripts.embedding_research import catalog
-    from scripts.embedding_research.streams import make_current_stream_resolver
+    from scripts.embedding_research.streams import make_current_mask_resolver, make_current_stream_resolver
     from scripts.embedding_research.streams.store import StreamStore
 
     songs = ("s1", "s2", "s3", "s4")
@@ -65,11 +95,11 @@ def _seed_catalog(con, out) -> str:
     store = StreamStore(con, output_root=str(out))
     rng = np.random.default_rng(3)
     for song in songs:
-        store.publish(song, "effnet", _unit(rng, 10, 6), run_id="run-embed")
+        _publish_committed_stream(store, song, _unit(rng, 10, 6), run_id="run-embed")
     store.reconcile()
     rep = catalog.build_segmentation_catalog(
         make_current_stream_resolver(store),
-        None,
+        make_current_mask_resolver(store),
         [
             catalog.SegConfigInput(
                 backbone="effnet",

@@ -12,8 +12,11 @@ Scope (DD frozen-observation corrective pass, ``cleanup_current``):
 * ``stray`` — remove only current-format digest-named payloads that no current
   manifest references (no sibling ``.json`` manifest) plus valid current-format
   catalogs in ``catalogs/<id>/`` that ``current.json`` does not select.
-* ``views`` — remove disposable search-view materializations under
-  ``<root>/disposable_views/``.
+* ``views`` — remove disposable search-view materialization keyset dirs under
+   ``<root>/views/<keyset_hash>/`` that no retained analysis run references.  The
+   ``views/`` sub-directory name must match the sole producer
+   ``search_views.VIEW_DIR_NAME`` (the canonical source of truth) — never the
+   superseded DD layout name.
 
 Candidates are derived from the current-format grammar (``parse_artifact_name``)
 and manifest relationships ALONE — never a legacy classifier / rehasher /
@@ -22,8 +25,10 @@ adoption / supersession path.  The obsolete scopes (``dead``/``archival``/
 the deleted tables/directories they referenced (Plan E P1-S5 hard cut).
 
 ``reset_analysis`` removes ONLY the disposable ``research.duckdb`` (+ WAL) and
-the ``disposable_views/`` tree.  Tier 1/2 payloads — corpus/, streams/, heads/,
-audio_masks/, observation_commits/, catalogs/ — are preserved byte-for-byte.
+the whole ``views/`` tree (retained-run protection never survives reset — its
+``view_refs`` live in the deleted research DB).  Tier 1/2 payloads — corpus/,
+streams/, heads/, audio_masks/, observation_commits/, catalogs/ — are preserved
+byte-for-byte.
 """
 
 from __future__ import annotations
@@ -34,6 +39,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
+from scripts.embedding_research.db import provenance as _prov
 from scripts.embedding_research.streams.publication import parse_artifact_name
 
 _log = logging.getLogger(__name__)
@@ -53,7 +59,10 @@ _STAGING_WRITE_SUBDIRS: tuple[str, ...] = ("streams", "heads", "audio_masks", "o
 _CATALOGS_DIR = "catalogs"
 _CATALOGS_CURRENT = "current.json"
 _CATALOG_MANIFEST = "catalog.manifest.json"
-_VIEWS_DIR = "disposable_views"
+#: Sub-directory under the output root holding disposable search-view keyset dirs.  Named
+#: ``views`` to match the SOLE producer ``search_views.VIEW_DIR_NAME`` (the canonical source
+#: of truth) — the superseded DD layout name must not drift back in here.
+_VIEWS_DIR = "views"
 
 
 @dataclass
@@ -135,6 +144,47 @@ def _stray_catalog_dirs(root: Path) -> list[Path]:
     return out
 
 
+#: A ``run_provenance.view_refs`` line already parsed into ``(keyset_hash, content_hash, view_ref)``.
+#: ``view_ref`` is the root-relative ``views/<keyset_hash>`` reference.
+_VIEWREF_FIELDS = 3
+
+
+def _retained_view_dirs(root: Path, con) -> list[Path]:
+    """View keyset dirs under ``root/views/`` protected by a retained analysis run.
+
+    Reads the research connection *con* (the READ-ONLY ``research.duckdb`` opened by the
+    caller for the ``views`` cleanup scope; ``None`` or a connection without the
+    ``run_provenance`` table means there is NO retained run — so nothing is protected and
+    every existing view is GC-eligible).  A run opts in with ``retained=True``; each of its
+    ``view_refs`` lines (``keyset_hash|content_hash|view_ref``) protects the referenced
+    ``views/<keyset_hash>/`` keyset dir.  Only refs rooted under the ``views/`` sub-directory
+    are honored.
+    """
+    if con is None:
+        return []
+    protected: list[Path] = []
+    try:
+        rows = _prov.read_run_provenance(con)
+    except Exception:
+        # Connection cannot serve retained provenance (e.g. missing table/DB) -> the
+        # absence of a readable store means no retained run: nothing is protected.
+        return []
+    for row in rows:
+        if not row.get("retained"):
+            continue
+        for ln in str(row.get("view_refs") or "").splitlines():
+            fields = ln.split("|")
+            if len(fields) != _VIEWREF_FIELDS:
+                continue
+            view_ref = fields[2]
+            parts = Path(view_ref).parts
+            if not parts or parts[0] != _VIEWS_DIR:
+                # Only refs under the disposable ``views/`` area can protect anything here.
+                continue
+            protected.append(root.joinpath(*parts))
+    return sorted(protected)
+
+
 def _view_entries(root: Path) -> list[Path]:
     views = root / _VIEWS_DIR
     if not views.is_dir():
@@ -163,16 +213,19 @@ def _remove_file(target: Path, report: CleanupReport) -> None:
 
 def cleanup_current(
     root: Path,
-    _con,
+    con,
     *,
     scope: CleanupScope,
     dry_run: bool = True,
 ) -> CleanupReport:
     """Report-then-remove current-format candidates for *scope* (see module docstring).
 
-    *con* is accepted for signature parity with the module CONTRACTS but is not
-    required: every candidate here is derived from the filesystem grammar and
-    manifest relationships, so DB access is unnecessary.
+    *con* is used ONLY by the ``views`` scope: it is the caller's READ-ONLY research
+    connection (``research.duckdb``) whose ``run_provenance`` ``retained`` rows protect
+    referenced view keyset dirs from GC.  ``None`` means no retained refs are available (DB
+    absent / not readable), so every existing view is GC-eligible.  The caller never writes
+    to *con* here.  Every other scope derives candidates purely from the filesystem grammar
+    and manifest relationships, so DB access is unnecessary for them.
     """
     root = Path(root)
     report = CleanupReport(scope=scope, dry_run=dry_run)
@@ -193,11 +246,19 @@ def cleanup_current(
         return report
 
     if scope == "views":
+        protected = _retained_view_dirs(root, con)
+        protected_set = set(protected)
         for v in _view_entries(root):
+            if v in protected_set:
+                report.skipped.append(str(v))
+                continue
             _remove_tree(v, report)
-        # Remove the (now possibly empty) disposable views dir itself.
+        # Remove the ``views/`` parent dir itself only once it is empty afterward — evaluated on
+        # the simulated post-state.  A real run GCs every non-protected keyset dir, so the parent
+        # is retained whenever a protected (skipped) dir survives; the dry-run report claims the
+        # removal only when a real run would actually empty ``views/``.
         views = root / _VIEWS_DIR
-        if views.is_dir() and (report.dry_run or not any(views.iterdir())):
+        if views.is_dir() and not any(v in protected_set for v in views.iterdir()):
             _remove_tree(views, report)
         return report
 

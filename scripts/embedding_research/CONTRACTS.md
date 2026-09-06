@@ -6,7 +6,7 @@
 
 Only `scripts/embedding_research`, its tests/docs, and formal planning artifacts are in scope. No production or frontend changes. A′ uses immutable float32 NumPy `.npy`/`.npz` sidecars plus DuckDB scalar metadata/catalog. Parquet, DuckDB BLOB/tar/Zarr payloads, ANN v1, optimizer prerequisites, DuckDB 2.x migration, and deferred production quantized streams are excluded.
 
-Current invariants (post-Plan E P1-S5 hard cut): a single finite direct-L2 threshold contract with `configured == effective` exactly; the compact filesystem catalog whose structural `seg_meta` yields exact searchable `M_g` reconstructed on read (never a per-patch table, never an inclusive range), with absorbed outliers represented exactly and search medoids stored as observed source patch indices; class-1 `act[1]` canonical head pooling over `boundary_source="catalog"` / `head_pool_variant="shared_catalog_boundary"`; and catalog-scoped strategy-key identity decoded from `catalog:{backbone}:{score_variant}:v{version}:{keyset}`. Former invariants that named DELETED surfaces are historical only: the `global_pool:{backbone}:medoid` global identity (the `global_pool` strategy was removed in P1-S5; the report baseline is now the lowest active `(canonical_config_id, strategy_key)` catalog class), the `np.minimum((h_scores * 10).astype(np.int32), 9)` stratification formula (`db/stratify.py` deleted), and the running-spherical-centroid PTC semantics with `OUTLIER_WINDOW=3` (`strategy_ptc` deleted). Still held regardless of surface: no synthetic/coordinate `median`, no `agg_method=medoid`, no `disc_album`, no non-finite output, and no cross-backbone corpus mixing.
+Current invariants (post-Plan E P1-S5 hard cut, plus the Plan B identity/collapse/baseline corrective pass): a single finite direct-L2 threshold contract with `configured == effective` exactly; the compact filesystem catalog whose structural `seg_meta` yields exact searchable `M_g` reconstructed on read (never a per-patch table, never an inclusive range), with absorbed outliers represented exactly and search medoids stored as observed source patch indices; per-config exact/search hash preimages that bind each leaf to its song id and fold the frozen stream + committed-mask digests, mask/scoring semantics and versions, ordered medoid source indices and normalized weights, and (for the exact hash) the full canonical structural rows — structural-only changes alter song/exact identity but never split a search class when the actual ordered scoring inputs stay equal (see the collapse contract below); class-1 `act[1]` canonical head pooling over `boundary_source="catalog"` / `head_pool_variant="shared_catalog_boundary"`; catalog-scoped strategy-key identity decoded from `catalog:{backbone}:{score_variant}:v{version}:{keyset}`; analysis that schedules every distinct current `SearchRepresentationClass` exactly once as its own leave-one-out pass over only that class's canonical rows (per-class retrieval passes, never a merged union); and the observed `global_pool:{backbone}:medoid` searchable-patch medoid RESTORED as an ACTIVE baseline (Plan B P1-S5..S7) against which the report computes per-`(backbone, sim_metric, k, metric)` winner/delta rows. Former invariants that named DELETED surfaces are historical only: the `np.minimum((h_scores * 10).astype(np.int32), 9)` stratification formula (`db/stratify.py` deleted) and the running-spherical-centroid PTC semantics with `OUTLIER_WINDOW=3` (`strategy_ptc` deleted). Still held regardless of surface: no synthetic/coordinate `median`, no `agg_method=medoid`, no `disc_album`, no non-finite output, and no cross-backbone corpus mixing — the observed medoid baseline is an observed source row's unit vector (source index + centrality only), never a synthetic/coordinate-wise vector.
 
 ## Threshold and configuration contracts (current — Plan A corrective pass)
 
@@ -37,7 +37,11 @@ direct normalized-unit-vector L2 semantics; it has no `semantics` or
 Plan C) carry no ``semantics``/``calibration_record``/``alias_of_config_id`` columns —
 the corrective compact model is canonical-only under a single direct-L2 semantics, and
 the alias machinery plus those fields were dropped when the old research ``seg_*`` schema
-was retired (P1-S12).
+was retired (P1-S12).  The resolved threshold is one scalar with `configured == effective` and
+semantics `direct_l2` in every retained mode.  The temporal ``bin_mode`` never introduces a
+second threshold semantics — it selects only the *boundary distance function* that compares
+that same scalar: direct unit-vector L2 for ``temporal_global`` and per-dimension Chebyshev
+for ``temporal_perdim`` (see the Plan C temporal-dispatch subsection below).
 
 The strict configuration loader lives in `helpers/toml.py`:
 `load_research_config(path: Path | None = None) -> CurrentResearchConfig` accepts
@@ -61,6 +65,39 @@ StreamStore.reconcile(...) -> ReconcileReport
 `StreamRecord` fields: `song_id`, `backbone`, opaque root-relative `artifact_ref`, `patch_count`, `dim`, `dtype`, `format_version`, `fingerprint_sha256`, `preprocess_fn`, `preprocess_version`, `backbone_model_hash`, `audio_params`, `embed_semantics_version`, `provenance_source`, `provenance_assumption`, `status`, `run_id`, `created_at`, `updated_at`. Only `ready` records whose SHA-256, shape, dtype, finite values, and `allow_pickle=False` load validate may be gathered. Paths are never IDs or SQL keys.
 
 Publication is staged `.tmp` write, file `fsync`, close, atomic rename, directory `fsync`, transactional `pending` registration, then reconcile to exactly `ready`, `missing`, or `corrupt`. Current filesystem manifests and observation commits are authoritative; registry rows are rebuildable index/cache metadata. Plan B removes legacy adoption/supersession internals and old bare/`.vN` parser branches after an orphan check, while downstream registry consumers remain until Plans C/E migrate them. Immutable current bytes are never replaced at an existing digest.
+
+### Committed observation groups — the only usable observation (current)
+
+A **committed observation group** is the immutable publication unit a derived consumer may read:
+the immutable embedding **stream**, the **aligned audio-derived silence mask**, and the
+**commit/identity marker** (`observation_commits/<song_id>.<backbone>.<commit_sha256>.json`, written
+last). A complete, valid group is REQUIRED for compact catalog construction
+(`build_segmentation_catalog`), for canonical head analysis, and for FS-reindex readiness. There is
+no stream-only, mask-less, uncommitted, or old-format read path, and no compatibility/fallback
+reader or dual write.
+
+Readiness is ONE shared filesystem-authoritative predicate used by the current-stream resolver, the
+current-mask resolver, the catalog producer preflight, and reindex:
+`observation_group_ready(store, song_id, backbone, *, stream_record=None)` (module-level,
+re-exported from `streams/`) delegates to `StreamStore.observation_group_ready`, which selects the
+NEWEST valid committed group by verifying — on disk — the marker content digest, the referenced
+current-format stream and mask manifests, both payload bytes/size/SHA-256/dtype/shape/finite values,
+stream-mask identity, patch-count equality, alignment token, audio fingerprint, and mask semantics.
+A registry row claiming `ready` is cache metadata ONLY and never authorizes a group by itself.
+
+The two SOLE read seams are store-backed and expose no filesystem-path API:
+`StreamStore.load_committed_observation(song_id, backbone) -> CommittedObservation` materializes
+the validated immutable identity plus both payload arrays (stream `float32[P,D]`, aligned mask
+`uint8[P]`; `1` = searchable) and raises the typed `StreamValidationError` ('group refused') for
+absent/corrupt/wrong-length/wrong-digest/uncommitted/mismatched groups; `CurrentStreamResolver`
+(`make_current_stream_resolver`) and `CurrentMaskResolver` (`make_current_mask_resolver`) each
+resolve ONLY a complete committed group. Catalog and head consumers construct these resolvers from
+their `StreamStore`; no ad-hoc, literal-`None`, or one-argument mask loader exists.
+
+Fail-closed semantics: missing, corrupt, wrong-length, wrong-digest, uncommitted, or mismatched
+masks are typed refusals (catalog: per-input `MaskRefusalError`; head: per-song skip/error reason;
+reindex: refused issue). Absence is NEVER interpreted as no silence — a group without a valid
+aligned mask is refused, never silently rebuilt or pooled all-searchable.
 
 ### Plan B retained-reader resolution handoff
 
@@ -166,7 +203,7 @@ The primary score is `max_per_candidate_segment` with `first_index + retain_all_
 
 ### Phase 1 (Plan D) implemented surface — `search_views.py`
 
-Implements the ledger `SearchViewRecord` (Plan A P2-S4; Plan D). Catalog-first public API: `materialize_search_view(catalog, stream_store, *, song_ids, backbone, run_id, working_memory) -> SearchViewRecord` (catalog is duck-typed via `getattr(catalog, "con", catalog)`; gathers ONLY observed `seg_meta.search_medoid_source_patch_idx` medoids; no audio/model/ONNX/CUDA calls; finite-only, failing closed on non-finite source data) and `record_search_view(research_con, record, *, run_id=None)`. `SearchViewRecord` carries `keyset_hash`/`content_hash`/`view_ref`/`row_addresses`/`vectors`/`weights` and no `search_view_hash`. Removed under P1-S2: `SearchViewKey`, `AnalysisCorpus`, `QueryKeyset`, `search_view_hash`-bearing keysets, `validate_search_view_keyset`, `StaleSearchViewError`, and the software-version triple. Views are single-backbone; config ids default to every canonical `seg_config` of the backbone.
+Implements the ledger `SearchViewRecord` (Plan A P2-S4; Plan D). Catalog-first public API: `materialize_search_view(catalog, stream_store, *, song_ids, backbone, run_id, working_memory, config_ids: tuple[int, ...] | None = None) -> SearchViewRecord` — catalog is duck-typed via `getattr(catalog, "con", catalog)`; gathers ONLY observed `seg_meta.search_medoid_source_patch_idx` medoids; makes no audio/model/ONNX/CUDA calls; finite-only, failing closed on non-finite source data. `config_ids=None` (default = original full-backbone behavior) gathers the whole backbone canonical config surface; a per-class `config_ids` scope restricts gathering to those rows so each class gets its own keyset/content identity (distinct classes never share one strategy row). Companion `record_search_view(research_con, record, *, run_id=None)` records the returned view's provenance. `SearchViewRecord` carries `keyset_hash`/`content_hash`/`view_ref`/`row_addresses`/`vectors`/`weights` and no `search_view_hash`. Removed under P1-S2: `SearchViewKey`, `AnalysisCorpus`, `QueryKeyset`, `search_view_hash`-bearing keysets, `validate_search_view_keyset`, `StaleSearchViewError`, and the software-version triple. Views are single-backbone; config ids default to every canonical `seg_config` of the backbone.
 
 **On-disk payload (disposable views).** Each view is written under the stream store's output root at `views/<keyset_hash>/` (`view_ref` is the root-relative `views/<keyset_hash>`), physically `vectors.npy` (float32 `[N, D]`, `allow_pickle=False`; row `i` = `row_addresses[i]`) plus `keys.json` (canonical keyset + ordered `rows` `[config_id, song_id, seg_id, medoid_source_patch_idx]`). Medoids are gathered ONLY by catalog `seg_meta.search_medoid_source_patch_idx` via `batch_gather`, never from ranges/copies/paths. `content_hash` = sha256 over `keyset_hash` + ordered row lines + little-endian float64 weights + little-endian float32 vector `tobytes()`, recomputable independently of the file bytes.
 
@@ -200,7 +237,7 @@ member ``config_id``; members/aliases are sorted ascending; classes are sorted b
 ``config_id``.  ``exact_segmentation_hash`` (``SHA256(encoder_version || canonical config fields ||
 sorted exact leaves)``) additionally includes the canonical config fields, so search-collapsed configs still carry DISTINCT exact hashes and remain structurally distinguishable.  There is NO durable alias graph / alias column / alias file — equivalence classes are a pure read recomputed from stored search hashes every run.  ``catalog`` is a compact CatalogHandle / snapshot connection (duck-typed via ``getattr(catalog, "con", catalog)``).
 
-**Plan D analyze DTO and scheduling contract.** ``analyze_catalog_corpus`` materializes one disposable all-config view for the run, then projects the canonical (lowest ``config_id``) rows for each current ``SearchRepresentationClass``. Each logical query/candidate scoring input executes once per class; alias rows are never appended to the candidate union, so they cannot double-count candidates, weights, winners, retained rows, or deltas. Distinct classes retain the ordinary bounded query/candidate loop and combine with the existing ``max_per_candidate_segment`` semantics; normal analysis does not retain a full N×N trace. ``CatalogAnalysisResult.config_ids`` is the sorted tuple of every participating config, while transient ``representation_classes`` carries each search hash's canonical ID and sorted aliases. ``n_candidate_rows`` and every ``PerQueryResult.candidate_keys`` count/reference canonical searchable medoid rows only, deterministically sorted; ``candidate_scores`` and ``winner_counts`` retain the existing finite corpus/winner schema. Alias configs inherit the canonical class's identical score, winner, and delta identity through this transient mapping; no alias-specific persisted rows or durable alias state is introduced, and structural/exact identity remains distinct through the catalog/report surfaces.
+**Analyze DTO and scheduling contract (per-class retrieval passes — Plan B P1-S3/S4 corrective).** Class membership is recomputed from CURRENT compact ``catalog_song`` ``search_leaf`` rows on every run (never a durable alias graph / alias column / alias file). The scheduler runs each distinct ``SearchRepresentationClass`` exactly ONCE as its OWN leave-one-out query/candidate pass over ONLY that class's canonical (lowest-``config_id``) rows, under the existing ``max_per_candidate_segment`` bounded semantics; the scorer total is the sum over distinct classes of ``N×(N-1)``. Alias configs add ZERO executions and are never appended to any candidate union, so they cannot double-count candidates, weights, winners, retained rows, deltas, or execution counters. Distinct classes are NEVER merged into one candidate pool: an unpinned whole-backbone scope whose participating configs collapse to more than one distinct class raises the typed ``CatalogRefusalError`` (fails closed) rather than unioning, and ``run.py::_run_analyze`` schedules each class by pinning ``config_ids`` to that one class's members. Each per-class pass materializes its OWN disposable search view over that class's config surface (distinct keyset/content hash ⇒ distinct ``strategy_key``, so per-class ``analyze_scope`` rows never collide) and executes exactly one leave-one-out loop; normal analysis retains no full N×N trace. ``run.py::_run_analyze`` persists ONE ``analyze_scope`` strategy row PER CLASS whose ``config_ids`` are that class's members canonical-first, so each persisted ``analyze_metrics`` row carries per-class config identity. Within one scheduled single-class call, ``CatalogAnalysisResult.config_ids`` is that class's sorted member tuple, while transient ``representation_classes`` carries each search hash's canonical ID and sorted aliases. ``n_candidate_rows`` and every ``PerQueryResult.candidate_keys`` count/reference canonical searchable medoid rows only, deterministically sorted; ``candidate_scores`` and ``winner_counts`` retain the existing finite corpus/winner schema. Alias configs inherit the canonical class's identical score, winner, and delta identity through this transient mapping; no alias-specific persisted rows or durable alias state is introduced, and structural/exact identity remains distinct through the catalog/report surfaces.
 
 **Lazy attach + typed refusal (P1-S4).** ``analyze_catalog_corpus``/``run_catalog_analysis`` accept a compact ``CatalogHandle``, a snapshot connection, or a snapshot PATH string. A path is opened read-only at run time (lazy attach) and closed in ``finally``; a non-compact connection (no ``seg_config`` / no rows for the backbone), a missing snapshot, or a corrupt/non-DuckDB file raises the typed ``CatalogRefusalError`` (exported from ``common.catalog_analysis``) and fails CLOSED — there is NO silent skip and NO stale-catalog fallback. Writes stay strictly run-scoped: the analysis touches only its own (``run_id``, scope) rows and never issues a global DELETE of ``analyze_metrics`` or of retained/other-run rows (a re-run leaves retained + unrelated rows intact).
 
@@ -208,13 +245,22 @@ sorted exact leaves)``) additionally includes the canonical config fields, so se
 delegates to :func:`collapse_search_representations`, so report alias evidence and the Plan D
 analysis path share one collapse implementation.  Spec tests: `tests/test_search_representation_collapse.py`.
 
+### Observed global-pool medoid baseline (Plan B P1-S5..S7 corrective pass)
+
+``global_pool:{backbone}:medoid`` (``GLOBAL_MEDOID_STRATEGY_KEY == "global_pool:effnet:medoid"`` via :func:`baseline.medoid_strategy_key_for`) is RESTORED as an ACTIVE *silence-aware observed searchable-patch baseline* — it is NOT a deleted/historical surface and NOT a cache or compatibility path. The per-song medoid is an OBSERVED source row selected by the SAME mean-cosine / smallest-source-index rule as the segment medoid (:func:`helpers.segmentation.observed_global_medoid` → ``ObservedMedoid``), exposing ONLY ``source_index`` + ``centrality`` — never a synthetic/coordinate-wise vector and never ``agg_method=medoid``.
+
+- **Analyze-side producer (P1-S6).** ``run.py::_run_analyze`` emits, per backbone AFTER the per-class loop and gated on the run config ``emit_medoid_baseline`` (DEFAULT OFF — an analyze-phase opt-in so baseline-less analyze runs keep byte-identical class rows), ONE run-scoped observed-medoid baseline metric identity via ``run_and_persist_medoid_baseline`` → ``analyze_medoid_baseline`` (``common/catalog_analysis``). Each cataloged song is represented by its observed whole-song global-medoid UNIT vector from the committed observation (``StreamStore.load_committed_observation`` + ``baseline.observed_global_medoid_unit_vector``, over the committed ``mask == 1`` population); the producer runs ONE leave-one-out cosine pass per song through the SAME bounded scorer + the SAME evaluation lenses as the segmented classes, over the SAME corpus / ``sim_metric == 'cosine'`` / ``k``, so per-cell metric keys align exactly with a segmented class. Zero-searchable songs produce NO vector and are excluded from BOTH the baseline population and candidate search; fewer than two searchable medoid songs yields no row; non-finite values raise ``NonFiniteResultError`` (fail closed). Rows are persisted run-scoped via ``db.write_analyze_metrics`` with ``strategy_key == global_pool:{backbone}:medoid``, ``strategy_type == MEDOID_STRATEGY_TYPE`` (``'global_pool'``, deliberately DISTINCT from ``'catalog'``), and NO ``config_ids`` / no ``analyze_scope`` row / no ``run_provenance`` row — the medoid baseline is NOT a class and is never in winner candidacy.
+- **Report read seam (P1-S7).** ``report._retrieval.query_analyze_metrics`` stays CATALOG-ONLY forever (pinned by ``tests/test_report.py``), so the medoid rows never reach ``section_analysis``. The medoid rows are read by the DISTINCT loader ``report/_retrieval.py::query_medoid_baselines`` (``analyze_metrics WHERE strategy_type = 'global_pool'``), decoded to a ``CATALOG_ANALYSIS_COLUMNS``-shaped frame (``canonical_config_id = None``, ``alias_ids = []``, no score-variant/semantics/provenance), and joined to the catalog-only frame by ``(backbone, sim_metric, k, metric)`` via ``report/_retrieval.py::query_winners_metrics``. ``report.run`` feeds the ENRICHED frame ONLY to the summary/winners sections; ``section_analysis`` keeps the catalog-only df.
+- **Winners/delta (P1-S7).** ``report/_winners.py::build_winner_delta_rows`` delegates per-cell baseline/winner/delta selection to ``baseline.build_baseline_delta_rows``: the baseline is the observed medoid row for that backbone/cell (NEVER a winner candidate, even when its value beats every segmented class ⇒ finite negative delta); the winner is the highest finite segmented catalog class (ties → lowest ``strategy_key``); ``delta = winner − baseline`` per cell; a cell WITHOUT a finite medoid baseline row emits nothing; a present non-finite value raises ``ValueError`` (fail closed). The builder's ``BASELINE_DELTA_COLUMNS`` are remapped to ``CATALOG_WINNER_DELTA_COLUMNS`` (``baseline_canonical_config_id = None``, ``n_classes``); ``build_factor_rows`` skips non-catalog (``global_pool``) rows. The old lowest-active-``(canonical_config_id, strategy_key)``-catalog-class baseline logic is GONE.
+- **Fixture.** ``report.json`` and the report fixture seeds were regenerated to the medoid-baseline contract: ``generate_fixture_report`` seeds ``global_pool:{effnet,musicnn}:medoid`` rows per backbone/k, and ``tests/_report_seed.seed_medoid_baseline`` writes run-scoped ``global_pool`` rows through the SAME ``db.write_analyze_metrics`` writer/schema as the analyze producer. No legacy / alias / dual-write / compatibility surface is introduced.
+
 ## Shared heads, CTP, cleanup, and CLI
 
 Head analysis uses frozen aligned head streams and exact catalog membership (including absorbed outliers), the ACTIVE labels `boundary_source="catalog"` and `head_pool_variant="shared_catalog_boundary"`, class-1 `act[1]`, finite outputs, and non-blocking provenance. Inclusive ranges cannot define head membership. **CTP is hard-disabled, non-runnable, and its whole legacy surface is DELETED (Plan E P1-S5)**: Plan A removed the `[archival_ctp]` switch and the strict `helpers/toml.py` loader rejects the section, so no config can enable CTP and no CTP work/config/vector/row occurs in any run; Plan E P1-S5 then deleted the retained CTP module/cache/table inventory (see the deletion inventory below). The older `effnet_ptc`/`shared_effnet_ptc_boundary` boundary labels were renamed to `catalog`/`shared_catalog_boundary` in the corrective pass.
 
 Active artifacts are streams/head streams/registries/catalog/manifest/provenance/current analysis/docs. The former archival/dead classes — legacy flat/PTC/head/CTP caches and readers, compatibility tables, copied medoid vectors, obsolete tables/writers, and zero-caller APIs (incl. `classify.py`/`head_pooling.py`/`pooling.py`/`corpus.py` and the `strategy_*` modules) — were deleted outright in the Plan E P1-S5 hard cut (Wave 2b), so no archival/dead artifact remains to classify. Current-format cleanup scopes are `staging`, `stray`, and `views` (report-then-remove, current-format grammar + manifest relationships only); `reset --scope analysis` removes only the disposable `research.duckdb`(+WAL) and disposable views. The obsolete `dead`/`archival`/`analysis-run` scopes are gone from the CLI and their module-level table/cache deletion was completed in Plan E P1-S5 (Wave 2b); `cleanup_current` accepts only `staging`|`stray`|`views` and `reset` only `analysis`. Normal analysis never globally deletes Tier 1/2 results.
 
-CLI boundaries are exactly the eight phases `ingest`, `embed`, `infer-heads`, `catalog`, `catalog-report`, `analyze`, `head-analysis`, and `report` plus the four maintenance commands `verify`, `reindex`, `cleanup`, and `reset`. Legacy aliases (`stratify`, `segment`, `classify`, `head`) and unknown commands exit `2`. Only the first three phases may discover audio/load models/create sessions/run ONNX. Derived phases work without audio/models/ONNX/CUDA and support `--verify`; a rollback-only canary over every surviving legacy PK/UNIQUE table runs when `--verify` is set or when a post-crash signature is detected (a surviving `<db>.wal` or any non-`completed` `run_provenance` row) before derived-phase reads, blocks on failure, and instructs EXPORT/IMPORT repair. SIGKILL is bookkeeping/order evidence, not power-loss durability proof.
+CLI boundaries are exactly the eight phases `ingest`, `embed`, `infer-heads`, `catalog`, `catalog-report`, `analyze`, `head-analysis`, and `report` plus the four maintenance commands `verify`, `reindex`, `cleanup`, and `reset` — EXACTLY twelve commands. The retired names (`stratify`, `segment`, `classify`, `head`) are ordinary unknown commands: `LEGACY_PHASE_ALIASES` and the named compatibility rejection path are removed (Plan C P1-S7), so they exit `2` identically to any unrecognized verb with no special-case. Only the first three phases may discover audio/load models/create sessions/run ONNX. Derived phases work without audio/models/ONNX/CUDA and support `--verify`; a rollback-only canary over every surviving legacy PK/UNIQUE table runs when `--verify` is set or when a post-crash signature is detected (a surviving `<db>.wal` or any non-`completed` `run_provenance` row) before derived-phase reads, blocks on failure, and instructs EXPORT/IMPORT repair. SIGKILL is bookkeeping/order evidence, not power-loss durability proof.
 
 One exclusive run lock (`fcntl.flock` non-blocking) guards every branch that opens the DB or mutates artifacts — all eight phases and verify/reindex/cleanup/reset. The lock file lives at `OUTPUT_ROOT/.run-lock` when the output root is local, else under the local temp dir keyed by a hash of the resolved DB path (never beside an unreliable non-local file). Contention exits `2` with a diagnostic; the lock is released on every exit path. `verify [--strict]` audits current-format manifests/payloads/digests/shape/finite and the current catalog, owns read-write WAL recovery/checkpoint of a WAL-bearing current catalog, and refuses corruption (commit markers are not part of verify's scope — `reindex` / `reconcile_current_manifests` validates them); `--strict` freshly rehashes every payload so a same-size tamper is caught. `reindex` is a thin public wrapper over `reconcile_current_manifests` and never opens audio/models/sessions. Exit codes: `0` success, `1` validation/refusal/corruption, `2` lock contention or usage.
 
@@ -231,6 +277,7 @@ run_shared_catalog_head_analysis(
     catalog: CatalogHandle,
     head_store: HeadStreamStore,
     *,
+    mask_store: CurrentMaskResolver,
     config_ids: Sequence[int] | None = None,
     song_ids: Collection[str] | None = None,
     heads: Collection[str] | None = None,
@@ -251,9 +298,15 @@ and, for per-song skips, the scope grammar `config:{config_id}:song:{song_id}` (
 Membership is exact searchable `M_g`, reconstructed per `(config_id, song_id)` from the COMPACT
 structural `seg_meta` ranges (`start_idx` inclusive, `end_idx` exclusive) minus `absorbed_indices`
 via `helpers/segmentation.reconstruct_searchable_indices` — never an inclusive/absorbed-inclusive
-range and never a `seg_membership` per-patch table (there is none). The signature carries no
-silence-mask seam and no committed mask loader exists on this path, so reconstruction passes
-`mask=None`, matching the catalog's own build semantics (structural span minus absorbed). Eligible
+range, never a `seg_membership` per-patch table (there is none), and never `mask=None`. Reconstructed
+`M_g` is therefore the structural span minus absorbed outliers minus the committed-mask-silent
+indices (`{mask[i] == 0}`), over the SAME committed silence mask that built the catalog; the mask is
+REQUIRED and never optional (`reconstruct_searchable_indices` raises on a missing mask). Each
+`(song_id, backbone)`'s mask is resolved through the required two-key `mask_store.load(song_id,
+backbone)` seam (the sole `make_current_mask_resolver` committed-group seam); a song whose committed
+mask is absent or invalid is reported with a skip/error reason and is never pooled all-searchable — a
+missing mask is never interpreted as no silence, and fully-silent segments are skipped without
+audio/model/session/ONNX/CUDA access. Eligible
 selected configs are COMPACT canonical (`canonical_config_hash` non-empty) with `semantics ==
 "direct_l2"`, `bin_mode` in `temporal_global|temporal_perdim`, and `strategy_version ==
 PTC_STRATEGY_VERSION`; without `config_ids` the runner selects exactly those eligible EffNet compact
@@ -304,7 +357,7 @@ delta / factor summary or an explicit empty-active-results message); `corpus` sh
 corpus health; `analysis` shows ONLY `analyze_metrics` rows with `strategy_type == 'catalog'`
 (run_id / sim_metric / k / metric / value plus catalog strategy identity, score variant,
 scoring-semantics version, view-content-hash provenance, canonical config id, and sorted alias
-ids); `winners` shows deterministic winner / delta / factor tables per backbone; `head-analysis`
+ids); the observed `global_pool:{backbone}:medoid` baseline rows are excluded here (the catalog-only `analysis` frame; they are read only by the winners loader) — see the observed-global-pool-medoid-baseline subsection; `winners` shows deterministic winner / delta / factor tables per backbone whose baseline per `(backbone, sim_metric, k, metric)` is the observed medoid baseline (never a winner candidate); `head-analysis`
 shows canonical `head_phase_provenance` per supported backbone with finite / status / coverage and
 provenance; `provenance` shows active `run_provenance`, command lines, hashes, warnings,
 reuse/refusal decisions, and limitations; `efficiency` shows retained `phase_timings`. Emitted keys
@@ -317,6 +370,98 @@ final evidence report — it is not that separate report.
 ## Verification
 
 Required tests cover direct/legacy threshold tracks, exact membership/medoids, one-pass loads, hashes/aliases, bounded oracle equivalence, lifecycle/fault/corruption, negative boundaries, root relocation/export-import, stale invalidation, scale/memory, run-scoped migration/resets/schema, CTP zero rows, fixture/report validation, full research pytest, compileall, ruff format/check, and an explicit diff audit excluding `nomarr/` and `frontend/`.
+
+## Plan B → Plan C handoff — identity / collapse / observed baseline
+
+This corrective pass (Plan B) strengthened identity, made collapse scheduling per-class, and restored the active observed `global_pool:{backbone}:medoid` baseline described above. Plan C consumers must NOT reintroduce the superseded surfaces and MUST respect:
+
+- **(a) `emit_medoid_baseline` is an analyze-phase opt-in (DEFAULT OFF).** A real baseline-bearing analyze run must set the run config ``emit_medoid_baseline = True``; the report CLI durable-input path Plan C owns must enable the flag wherever a winner/delta baseline is required. Flag-less analyze runs persist class rows only, and their winner tables render with medoid-baseline cells absent (documented cell absence — no phantom delta).
+- **(b) Row layout under the flag.** Analyze persists ONE ``analyze_scope`` strategy row PER CLASS (``config_ids`` = that class's members canonical-first) PLUS ONE ``strategy_type == 'global_pool'`` ``analyze_metrics`` row per backbone (``strategy_key == global_pool:{backbone}:medoid``, no config/alias/scope/provenance row). Do not add a second row per class or a per-config baseline.
+- **(c) Winners/delta read path.** Read the medoid baseline rows with ``report._retrieval.query_medoid_baselines`` and concat them with the catalog-only frame through ``report._retrieval.query_winners_metrics``; feed the enriched frame only to summary/winners. Per-cell baseline/winner/delta selection delegates to ``baseline.build_baseline_delta_rows`` (``report/_winners.build_winner_delta_rows`` remaps to ``CATALOG_WINNER_DELTA_COLUMNS``; ``build_factor_rows`` skips non-catalog rows). Do not reimplement a lowest-active-catalog-class baseline.
+- **(d) `query_analyze_metrics` stays catalog-only forever.** The medoid rows must never flow through it into ``section_analysis`` (pinned by ``tests/test_report.py``).
+- **(e) Fixture regeneration.** Any seed change must regenerate ``report.json`` via ``generate_fixture_report`` and keep ``validate_fixture_report`` + the audit gate green; seeds write run-scoped ``global_pool`` rows through ``db.write_analyze_metrics`` (``tests/_report_seed.seed_medoid_baseline``).
+- **(f) No legacy/alias/dual-write/compat surfaces.** Do not reintroduce the deleted ``strategy_global_pool`` module, copied/flat medoid vectors, coordinate-wise medians, a durable alias graph, ``search_view_hash``, or a second catalog architecture. The medoid baseline is an observed source-row unit vector read only through the committed-observation seam.
+- **(g) Hash field-order/semantics contracts (reindex/verify must not violate).** Per-song ``exact_leaf`` = a fixed tagged header (``exact``/``song``/``pc;total``/``stream_digest``/``mask_digest``/``mask_semantics``/``scoring_semantics``) + one canonical structural row per segment in ``seg_id`` order (``seg_id,start_idx,end_idx,absorbed_indices,absorbed_count,searchable_count,search_medoid_source_patch_idx,searchable_weight``); per-song ``search_leaf`` = the same header (``search`` prefix) + ``n_medoids`` + ONLY the ordered medoid-bearing rows as positional ``medoid{i}:src=<tagged int>;weight=<tagged float>`` lines (boundaries/absorbed/counts excluded so structural-only changes never split a search class). ``search_representation_hash`` = ``SHA256(<literal lines>)`` over this exact leading shape (each element a trailing-``\n`` line, in order): a literal domain-tag header line ``search_representation_hash``, a labelled ``encoder_version=<version>`` line, a labelled ``scoring_input_semantics=<semantics>`` line, an ``n_songs=<n>`` line, then one per-pair ``'song=<id>\n<leaf>'`` block per song in fixed ascending ``song_id`` order (``catalog_identity._config_leaf_values``). ``exact_segmentation_hash`` uses the same element ordering but leads with the literal ``exact_segmentation_hash`` domain-tag line and inserts the canonical config fields line immediately after the ``encoder_version=<version>`` line (before ``n_songs``); it never emits a ``scoring_input_semantics=`` line. The frozen stream digest + committed-mask digest and the mask/scoring semantics/versions are REQUIRED preimage inputs for BOTH leaves — reindex/verify must reproduce them from the complete committed observation group (never from path/name, registry-only, or mask-less state), must not drop the song binding, reorder the pairs, omit ``n_songs``, or serialize a stale/absent digest. ``song_signature`` prefixes ``song_id`` and folds the ``catalog_song`` leaf rows + ``seg_meta`` structural rows; ``catalog_fingerprint`` stays manifest-only (excludes its own value).
+
+## Plan C temporal dispatch, heads/CURRENT marker, and CLI hard cut (landed)
+
+These clauses record the Plan C corrective-pass end state (P1-S1..S8) in the active surface
+and supersede any provisional wording elsewhere in this file that implied a direct-L2-only
+*distance* in every mode or a named legacy-command path.
+
+### Temporal-mode segmentation dispatch (P1-S1/S2)
+
+The two retained temporal ``bin_mode`` values dispatch their real boundary distance through
+the canonical ``helpers/binning.py::DIST_FNS`` map (never a hardcoded or mismatched metric):
+
+* ``temporal_global`` → ``global_dist`` — direct normalized-unit-vector L2 distance
+  (``np.linalg.norm(patch - centroid)``), the same finite direct-L2 distance the threshold
+  contract resolves (``configured == effective``, ``semantics == 'direct_l2'``).
+* ``temporal_perdim`` → ``perdim_dist`` — per-dimension Chebyshev distance
+  (``np.max(np.abs(patch - centroid))``).
+
+``bin_mode`` selects which distance function the strict ``> threshold`` boundary applies; it
+never alters the single direct-L2 threshold semantics. ``run_spherical_segmentation(...,
+bin_mode=..., outlier_window=OUTLIER_WINDOW)`` (``helpers/segmentation.py``) sets
+``dist_fn = DIST_FNS[bin_mode]`` and FAILS CLOSED (``ValueError`` naming the supported
+``temporal_global|temporal_perdim`` modes) for any unknown mode; the ``catalog.py`` config
+layer (``_coerce_compact_config`` / ``SegConfigInput`` validation) accepts ONLY ``DIST_FNS``
+modes and rejects the retired ``'direct'`` mode and any unknown value with
+``CatalogValidationError`` — no lenient fallback, no alias map, no dead mode. The catalog
+builder threads each config's ``bin_mode`` into the runner, so the advertised mode and the
+executed boundary distance always match (golden differing-boundary tests pin ``temporal_global``
+hard-splitting where ``temporal_perdim`` merges, and exact-threshold strictness).
+
+### Filesystem-authoritative heads/CURRENT head-suite marker (P1-S3/S4)
+
+The head-suite selection owner is ``streams/heads_current.py`` (the exact marker owner
+selected by the Plan C implementation): one **fixed-path** per-identity marker at
+``heads/current/<song_id>.<backbone>.json`` (song_id dot-free; backbone dot/slash-free) — the
+head-suite analogue of ``catalogs/current.json`` and of the per-identity observation-commit
+markers. It is NOT a digest name and is never parsed by ``parse_artifact_name``, so it cannot
+collide with ``heads/*.npz``/``.json`` payloads/manifests. ``publish_head_suite_current`` /
+``publish_current_marker_for_record`` durably publish it (staged write → ``fsync`` file →
+close → atomic rename → ``fsync`` dir), and ``HeadStreamStore.publish`` threads publication
+for every freshly-inferred suite; immutable head payload/manifest bytes are never rewritten,
+and each supersession atomically replaces the marker at the fixed path with a strictly
+monotonic ``generation``. Each marker (``HeadSuiteCurrentMarker``, ``kind='head-current'`` /
+schema ``'1'``) binds the selected head payload ref + sha256, the committed stream ref +
+digest, head-set/model-suite fingerprints and semantics, ``head_ids``/``dim_by_head``/
+``patch_count``, ``alignment_token = stream_ref:head_payload_ref`` + alignment version,
+``generation``, and ``created_at``.
+
+``resolve_current_head_suite(root, song_id, backbone) -> HeadSuiteSelection`` is the sole
+current-head selector: it accepts ONLY the marker-selected COMPLETE suite aligned to the
+CURRENT committed stream (resolved through the shared ``StreamStore.load_committed_observation``
+committed-group core). A missing, malformed, stale, or mismatched marker — or one referencing a
+superseded (no-longer-current) committed stream — raises the typed ``HeadSuiteCurrentError``;
+selection NEVER falls back to mtime/lexical ordering of sibling head artifacts.
+``streams/reindex.py::_rebuild_head_registry`` rebuilds head registry rows ONLY from marker
+identities via ``resolve_current_head_suite``; a current-format head manifest present WITHOUT
+a CURRENT marker is reported as a refusal (superseded/unselected, never indexed, never guessed
+by mtime/lexical order). Reindex performs no inference/model/session/ONNX/CUDA work and never
+interprets historical names.
+
+### CLI hard cut and retained lineage (P1-S7)
+
+The CLI is EXACTLY twelve commands — eight phase verbs
+``ingest``/``embed``/``infer-heads``/``catalog``/``catalog-report``/``analyze``/
+``head-analysis``/``report`` plus the four maintenance commands
+``verify``/``reindex``/``cleanup``/``reset``. ``LEGACY_PHASE_ALIASES`` and every named
+compatibility rejection path are REMOVED: the retired names ``stratify``, ``segment``,
+``classify``, and ``head`` are ordinary unknown commands and exit ``2`` through the IDENTICAL
+code path as any unrecognized verb (no special-casing, no distinct 'retired/legacy phase name'
+message). No CTP expansion/config, no ANN/FAISS, and no compatibility shim / fallback reader /
+dual-write / archival-callable / old-parser surface remains executable anywhere in the retained
+tree. The HEAD surface carries no ``run_id='legacy'`` concept (removed in the P1-S2
+head-identity corrective pass).
+
+``analyze_metrics`` rows with ``run_id='legacy'`` are RETAINED CURRENT baseline lineage — not
+an obsolete concept removed by this hard cut: pre-migration Tier1/2 rows were copied read-only
+by the backup-first migration (``LEGACY_RUN_ID`` in ``db/_schema.py``), are excluded from
+active/run scope, and are never modified by the protected-scope writers
+(``db/flat.py``/``db/analyze_scope.py``; ``run.py`` run-scoped count guard) — see the schema
+section above. Removing that lineage is out of scope of this pass.
 
 ## repair-plan Plan A baseline — implemented outcomes (Phases 1–2, 2026-09-02) — HISTORICAL
 

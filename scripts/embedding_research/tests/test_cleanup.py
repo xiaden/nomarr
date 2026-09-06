@@ -93,18 +93,42 @@ def test_cleanup_stray_removes_unselected_valid_catalog(tmp_path):
 # ── cleanup_current --scope views ─────────────────────────────────────────────
 
 
-def test_cleanup_views_removes_disposable_views(tmp_path):
-    v = _write(tmp_path, "disposable_views/xyz/payload.npy", b"view")
+def test_cleanup_views_removes_view_tree(tmp_path):
+    v = _write(tmp_path, "views/xyz/payload.npy", b"view")
     report = cleanup.cleanup_current(tmp_path, None, scope="views", dry_run=False)
     assert not v.exists()
-    assert not (tmp_path / "disposable_views").exists()
+    assert not (tmp_path / "views").exists()
     assert report.changed
 
 
 def test_cleanup_views_dry_run_reports(tmp_path):
-    v = _write(tmp_path, "disposable_views/xyz/payload.npy", b"view")
-    cleanup.cleanup_current(tmp_path, None, scope="views", dry_run=True)
+    v = _write(tmp_path, "views/xyz/payload.npy", b"view")
+    report = cleanup.cleanup_current(tmp_path, None, scope="views", dry_run=True)
     assert v.exists()
+    # Nothing is retained-run-protected, so a real run would empty ``views/`` and the report
+    # claims both the keyset dir and the parent ``views/`` removal on the simulated post-state.
+    assert str(tmp_path / "views" / "xyz") in report.removed
+    assert str(tmp_path / "views") in report.removed
+
+
+def test_cleanup_views_dry_run_protected_parent_not_reported(con, tmp_path):
+    """A dry-run views GC with a retained-run-referenced keyset dir must report the protected
+    dir as skipped, the unprotected dir as removed, and must NOT claim the parent ``views/``
+    removal (a real run would not empty it).  Nothing is deleted in a dry run."""
+    root = tmp_path / "root"
+    protected_keyset = _hashref("d")
+    unprotected_keyset = _hashref("e")
+    _seed_view(root, protected_keyset)
+    _seed_view(root, unprotected_keyset)
+    _write_retained_run(con, view_refs=f"k1|c1|views/{protected_keyset}")
+
+    report = cleanup.cleanup_current(root, con, scope="views", dry_run=True)
+
+    assert str(root / "views" / protected_keyset) in report.skipped
+    assert str(root / "views" / unprotected_keyset) in report.removed
+    assert str(root / "views") not in report.removed, "views/ survives because a protected dir is kept"
+    assert (root / "views" / protected_keyset).is_dir()
+    assert (root / "views" / unprotected_keyset).is_dir()
 
 
 # ── reset_analysis --scope analysis ───────────────────────────────────────────
@@ -114,7 +138,7 @@ def _seed_tree(root, db_path):
     root.mkdir(parents=True, exist_ok=True)
     db = _write(root, str(db_path), b"research-duckdb")
     wal = _write(root, f"{db_path}.wal", b"wal")
-    view = _write(root, "disposable_views/k/p.npy", b"view")
+    view = _write(root, "views/k/p.npy", b"view")
     # Tier 1/2 payloads (must be preserved byte-for-byte)
     tier12 = [
         "corpus/manifest.json",
@@ -156,3 +180,100 @@ def test_reset_analysis_missing_db_is_noop(tmp_path):
     db_path = tmp_path / "research.duckdb"
     report = cleanup.reset_analysis(tmp_path, db_path, dry_run=False)
     assert report.removed == []
+
+
+def _hashref(hexchar: str) -> str:
+    return hexchar * 64
+
+
+def _seed_view(root, keyset: str, rel: str = "payload.npy") -> None:
+    _write(root, f"views/{keyset}/{rel}", b"view")
+
+
+def _write_retained_run(db_con, **extra):
+    """Ensure schema on *db_con* and record a retained analyze run referencing a view."""
+    from scripts.embedding_research.db import provenance as _prov
+    from scripts.embedding_research.db._schema import ensure_schema
+
+    ensure_schema(db_con)
+    _prov.write_run_provenance(
+        db_con,
+        run_id="retained-run",
+        phase="analyze",
+        status="complete",
+        started_at=0,
+        finished_at=0,
+        retained=True,
+        **extra,
+    )
+
+
+def test_cleanup_views_preserves_retained_run_refs_deletes_unretained_run(con, tmp_path):
+    """GC may delete only views not referenced by a retained run; protected keyset dirs
+    survive and ``views/`` is only removed once empty."""
+    root = tmp_path / "root"
+    retained_keyset = _hashref("b")
+    unretained_keyset = _hashref("a")
+    _seed_view(root, retained_keyset)
+    _seed_view(root, unretained_keyset)
+    from scripts.embedding_research.db import provenance as _prov
+
+    _prov.write_run_provenance(
+        con,
+        run_id="retained-run",
+        phase="analyze",
+        status="complete",
+        started_at=0,
+        finished_at=0,
+        retained=True,
+        view_refs=f"k1|c1|views/{retained_keyset}",
+    )
+
+    report = cleanup.cleanup_current(root, con, scope="views", dry_run=False)
+
+    assert not (root / "views" / unretained_keyset).exists(), "un-retained view must be GC'd"
+    assert (root / "views" / retained_keyset).is_dir(), "retained-run-referenced view survives"
+    assert str(root / "views" / retained_keyset) in report.skipped
+    assert (root / "views").is_dir(), "views/ parent stays because a protected dir survives"
+
+
+def test_cleanup_views_no_db_deletes_all_views(tmp_path):
+    """research.duckdb absent (no conn -> no retained refs): every view is GC-eligible and the
+    whole ``views/`` tree is removed."""
+    root = tmp_path / "root"
+    _seed_view(root, _hashref("a"))
+    _seed_view(root, _hashref("b"))
+
+    report = cleanup.cleanup_current(root, None, scope="views", dry_run=False)
+
+    assert not (root / "views").exists()
+    assert report.skipped == [], "no DB -> nothing is retained-protected"
+    assert report.changed
+
+
+def test_reset_analysis_removes_views_regardless_of_retention(tmp_path):
+    """reset --scope analysis removes research.duckdb + WAL + the whole views/ tree regardless
+    of a retained run (retained protection lives only for ``cleanup --scope views``; the
+    retained view_refs are deleted along with the research DB)."""
+    import duckdb as duckdb_mod
+
+    root = tmp_path / "root"
+    db_path = root / "research.duckdb"
+    keyset = _hashref("c")
+    _seed_view(root, keyset)
+    _write(root, "research.duckdb.wal", b"wal")
+    # A real research.duckdb holding a retained analyze run that references the view.
+    db_con = duckdb_mod.connect(str(db_path))
+    try:
+        _write_retained_run(db_con, view_refs=f"k1|c1|views/{keyset}")
+    finally:
+        db_con.close()
+    assert (root / "views" / keyset).is_dir()
+
+    report = cleanup.reset_analysis(root, db_path, dry_run=False)
+
+    assert report.removed, "reset must remove the disposable tier"
+    assert not db_path.exists(), "research.duckdb removed despite retained run"
+    assert not (root / "research.duckdb.wal").exists()
+    assert not (root / "views").exists(), "views tree removed regardless of retention"
+    assert not (root / "views" / keyset).exists()

@@ -260,6 +260,57 @@ def test_spherical_segmentation_rejects_non_finite_input(bad):
 
 
 # --------------------------------------------------------------------------- #
+# Temporal dispatch: bin_mode drives the boundary metric, strict > both modes     #
+# --------------------------------------------------------------------------- #
+
+
+def test_temporal_global_and_perdim_segment_same_stream_differently():
+    """L2 and Chebyshev boundaries genuinely differ: the mode selects the real metric.
+
+    ``a=(1,0)`` vs ``b=(0.6,0.8)``: ``dist_global = sqrt(0.8) ~ 0.8944 > 0.85`` (splits),
+    while ``dist_perdim = 0.8 <= 0.85`` (merges).  A runner that hardcoded L2 (ignoring
+    ``bin_mode``) would report two segments for BOTH modes, breaking the perdim assertion.
+    """
+    a = np.array([1.0, 0.0])
+    b = np.array([0.6, 0.8])
+    patches = _unit_rows(a, b)
+
+    global_segs = _future("run_spherical_segmentation")(patches, 0.85, bin_mode="temporal_global")
+    perdim_segs = _future("run_spherical_segmentation")(patches, 0.85, bin_mode="temporal_perdim")
+
+    assert len(global_segs) == 2
+    assert [(s.start_idx, s.end_idx) for s in global_segs] == [(0, 1), (1, 2)]
+    assert len(perdim_segs) == 1
+    seg = perdim_segs[0]
+    assert (seg.start_idx, seg.end_idx) == (0, 2)
+    assert tuple(seg.absorbed_indices) == ()
+
+
+@pytest.mark.unit
+def test_perdim_exactly_at_threshold_is_not_a_split():
+    """Strict ``>`` holds for Chebyshev too: distance == threshold is NOT a boundary."""
+    a = np.array([1.0, 0.0])
+    b = np.array([0.0, 1.0])  # Chebyshev distance to (1,0) is exactly 1.0 (integer-exact)
+    patches = _unit_rows(a, b)
+    segments = _future("run_spherical_segmentation")(patches, 1.0, bin_mode="temporal_perdim")
+    assert len(segments) == 1
+    seg = segments[0]
+    assert (seg.start_idx, seg.end_idx) == (0, 2)
+    assert tuple(seg.absorbed_indices) == ()
+
+
+@pytest.mark.unit
+def test_run_spherical_segmentation_unknown_bin_mode_fails_closed():
+    """Unknown / retired bin modes are refused (fail closed), never silently L2."""
+    a = np.array([1.0, 0.0])
+    b = np.array([0.6, 0.8])
+    patches = _unit_rows(a, b)
+    for bad_mode in ("direct", "temporal_quantile", "bogus"):
+        with pytest.raises(ValueError, match="bin_mode"):
+            _future("run_spherical_segmentation")(patches, 0.85, bin_mode=bad_mode)
+
+
+# --------------------------------------------------------------------------- #
 # Observed-source medoid edges: zero-norm / non-finite / null                    #
 # --------------------------------------------------------------------------- #
 
@@ -310,3 +361,34 @@ def test_compact_catalog_has_no_per_patch_membership_table_name():
     assert sorted(COMPACT_TABLES) == sorted(
         ("catalog_metadata", "seg_config", "catalog_song", "seg_meta", "run_provenance")
     )
+
+
+@pytest.mark.unit
+def test_membership_mask_is_committed_authority_and_never_optional():
+    """Silence is authoritative committed data; a None mask is NEVER an all-searchable default.
+
+    The corrective pass forbids interpreting a missing mask as "no silent patches".  The
+    reconstruction home therefore fails closed on a None mask (it must raise), so a caller
+    can never accidentally build an all-searchable catalog from an absent committed mask.
+    """
+    with pytest.raises((TypeError, ValueError, NotImplementedError)):
+        _reconstruct(_CompactMeta(0, 4), None, 4)
+
+
+@pytest.mark.unit
+def test_membership_mask_carries_the_committed_silence_into_every_segment():
+    """Every segment's searchable membership subtracts the SAME committed song mask."""
+    # Full song mask: patches {1,3,6,8} are silent (searchable elsewhere).
+    song_mask = _ones(10, silent=(1, 3, 6, 8))
+    metas = (
+        _CompactMeta(0, 3),  # {0,1,2} - silent{1} -> {0,2}
+        _CompactMeta(3, 7, (5,)),  # {3,4,5,6} - absorbed{5} - silent{3,6} -> {4}
+        _CompactMeta(7, 10, (9,)),  # {7,8,9} - absorbed{9} - silent{8} -> {7}
+    )
+    expected = [[0, 2], [4], [7]]
+    for meta, want in zip(metas, expected, strict=False):
+        got = _reconstruct(meta, song_mask, 10)
+        np.testing.assert_array_equal(got, np.asarray(want, dtype=int))
+    # Reconstructing each segment over the same committed song mask covers every
+    # searchable source index exactly once -> silence is fully partitioned away.
+    assert sorted(int(i) for m in metas for i in _reconstruct(m, song_mask, 10)) == [0, 2, 4, 7]

@@ -182,7 +182,7 @@ def test_f_research_db_delete_reindex_rerun_reuse_equality(tmp_path, monkeypatch
     _seed_songs(con, songs=_FOUR, artists=_A_ARTISTS)
     from scripts.embedding_research import catalog_storage as _cs
     from scripts.embedding_research.catalog import build_segmentation_catalog
-    from scripts.embedding_research.streams import make_current_stream_resolver
+    from scripts.embedding_research.streams import make_current_mask_resolver, make_current_stream_resolver
     from scripts.embedding_research.streams.store import StreamStore
 
     store = StreamStore(con, output_root=str(out))
@@ -195,12 +195,13 @@ def test_f_research_db_delete_reindex_rerun_reuse_equality(tmp_path, monkeypatch
             mask=np.ones(mat.shape[0], dtype=np.uint8),
             run_id="run-embed",
             params_id="mask-params-1",
+            audio_content_sha256="0" * 64,  # valid 64-hex: group-resolver readiness requires it
         )
         store.publish_observation_group(rec, mask)
     store.reconcile()  # promote committed groups to ready so the catalog build sees them
     rep = build_segmentation_catalog(
         make_current_stream_resolver(store),
-        None,
+        make_current_mask_resolver(store),
         [_seg_config(0.7)],
         list(_FOUR),
         output_root=str(out),
@@ -256,7 +257,7 @@ def test_f_research_db_delete_reindex_rerun_reuse_equality(tmp_path, monkeypatch
         p = tmp_path / f"research.duckdb{suffix}"
         if p.is_file():
             p.unlink()
-    view_dir = out / "disposable_views"
+    view_dir = out / "views"
     if view_dir.is_dir():
         import shutil
 
@@ -294,3 +295,124 @@ def test_f_research_db_delete_reindex_rerun_reuse_equality(tmp_path, monkeypatch
         assert after_fs[key] == before_fs[key], f"payload bytes changed for {key}"
     con2.close()
     assert catalog_id  # keep reference to published catalog alive for lint clarity
+
+
+# ── P1-S1/P1-S7: reindex rebuilds ONLY committed groups (never a stream-only artifact) ──
+
+
+def test_reindex_rebuilds_only_committed_groups_never_stream_only(tmp_path):
+    """The category-(f) disposability proof extends to readiness: after the research DB is
+    thrown away, FS reindex restores ready status ONLY for songs whose stream has a valid
+    committed observation group.  A stream published without a committed group is refused
+    and never reported ready (missing mask must fail closed, never read as no-silence).
+    """
+    import duckdb
+
+    from scripts.embedding_research.streams import StreamStore
+    from scripts.embedding_research.streams.reindex import reindex
+
+    out = tmp_path
+    con = duckdb.connect()
+    ensure_schema(con)
+    store = StreamStore(con, output_root=str(out))
+    rng = np.random.RandomState(0)
+
+    def _emb(n):
+        return rng.rand(n, 4).astype(np.float32)
+
+    # s1: fully committed observation group (stream + aligned mask + commit marker).
+    rec1 = store.publish("s1", "effnet", _emb(5), run_id="run-embed")
+    store.publish_observation_group(
+        rec1,
+        MaskPayload(
+            song_id="s1",
+            backbone="effnet",
+            patch_count=5,
+            mask=np.ones(5, dtype=np.uint8),
+            run_id="run-embed",
+            params_id="mask-params-1",
+            audio_content_sha256="0" * 64,  # valid 64-hex identity: shared group-readiness requires it
+        ),
+    )
+    # s2: stream-only artifact (published, NO committed group) — must never become ready.
+    store.publish("s2", "effnet", _emb(5), run_id="run-embed")
+    con.close()
+
+    con2 = duckdb.connect()
+    ensure_schema(con2)
+    ri = reindex(out, con2)
+    status_by_song = {
+        r[0]: r[1] for r in con2.execute("SELECT song_id, status FROM stream_registry ORDER BY song_id").fetchall()
+    }
+    assert status_by_song.get("s1") == "ready", "committed group must rebuild ready"
+    assert status_by_song.get("s2") != "ready", "stream-only artifact must not rebuild ready"
+    assert any("commit" in i.lower() or "marker" in i.lower() for i in ri.issues), ri.issues
+
+
+def test_reindex_head_path_is_cpu_only_and_marker_authoritative(con, tmp_path, monkeypatch):
+    """Reindex rebuilds the head suite ONLY from the CURRENT marker, with CPU-only sentinels."""
+    import builtins
+
+    import duckdb
+    import numpy as np
+
+    from scripts.embedding_research.streams.masks import MaskPayload
+    from scripts.embedding_research.streams.store import HeadStreamStore, StreamStore
+
+    out = tmp_path / "root"
+    seed_con = duckdb.connect(":memory:")
+    ensure_schema(seed_con)
+    try:
+        store = StreamStore(seed_con, output_root=out)
+        emb = np.random.default_rng(0).random((3, 4), dtype=np.float32)
+        rec = store.publish("s1", "effnet", emb, run_id="run-1")
+        store.publish_observation_group(
+            rec,
+            MaskPayload(
+                song_id="s1",
+                backbone="effnet",
+                patch_count=3,
+                mask=np.ones(3, dtype=np.uint8),
+                run_id="run-1",
+                params_id="p",
+                audio_content_sha256="0" * 64,
+            ),
+        )
+        HeadStreamStore(seed_con, output_root=out).publish(
+            "s1",
+            "effnet",
+            {"head_logit": np.arange(6, dtype=np.float32).reshape(3, 2)},
+            run_id="run-1",
+            patch_count=3,
+            alignment_version="1",
+            expected_head_ids={"head_logit"},
+            stream_ref=rec.artifact_ref,
+        )
+    finally:
+        seed_con.close()
+
+    # Behavioral CPU sentinel: any banned-runtime import or inference/audio call during
+    # reindex must raise (reindex + the CURRENT-head resolution are filesystem-only).
+    real_import = builtins.__import__
+    banned_runtime = {"onnxruntime", "torch", "essentia", "tensorflow", "librosa"}
+
+    def _guarded_import(name, *a, **k):
+        if name.split(".")[0] in banned_runtime:
+            raise AssertionError(f"reindex reached a banned runtime import: {name}")
+        return real_import(name, *a, **k)
+
+    monkeypatch.setattr(builtins, "__import__", _guarded_import)
+    import scripts.embedding_research.common.infer_heads as _infer_heads_mod
+
+    def _forbidden(*_a, **_k):
+        raise AssertionError("reindex must never run inference")
+
+    monkeypatch.setattr(_infer_heads_mod, "infer_heads", _forbidden)
+
+    from scripts.embedding_research.streams.reindex import reindex
+
+    report = reindex(out, con)
+    assert report.clean
+    head = HeadStreamStore(con, output_root=out).lookup("s1", "effnet")
+    assert head.status == "ready"
+    assert head.artifact_ref.startswith("heads/")

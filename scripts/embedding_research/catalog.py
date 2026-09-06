@@ -60,6 +60,7 @@ from scripts.embedding_research.catalog_storage import (
     SEG_META_COLS,
     SEG_META_TABLE,
     canonical_absorbed_indices,
+    canonical_field_value,
     canonical_row_text,
     ensure_catalog_metadata_singleton,
     ensure_schema,
@@ -119,7 +120,7 @@ CATALOG_PHASE = "catalog"
 ARITHMETIC_SIZING_NOTE = (
     "~10,000 songs x ~100 patches x ~10 configs ~ 10M compact seg_meta rows "
     "(ARITHMETIC SIZING, not an empirical claim); per-song work O(P_s*D + T*P_s) with one "
-    "stream load per (song, backbone) and one mask load per song, thresholds sharing the pass."
+    "stream load per (song, backbone) and one committed mask load per (song, backbone), thresholds sharing the pass."
 )
 
 #: Compact ``catalog_song.status`` values.  A song with zero searchable patches across all
@@ -150,6 +151,19 @@ class CatalogValidationError(CatalogError):
 
 class CatalogVerificationError(CatalogError):
     """A ``verify=True`` post-build check found catalog rows inconsistent with intent."""
+
+
+class MaskRefusalError(CatalogError):
+    """A song's committed silence mask is absent or invalid for its exact ``(song_id, backbone)``.
+
+    The compact catalog build requires a complete committed observation group per
+    ``(song_id, backbone)``: an immutable embedding stream PLUS its aligned audio-derived
+    committed silence mask PLUS commit/identity metadata.  A missing / corrupt /
+    wrong-length / wrong-digest / uncommitted mask is a typed per-input refusal raised here
+    and recorded on the offending config's ``failed_songs`` — it is NEVER interpreted as
+    "no silent patches" (the build fails closed, it does not fall open to an all-searchable
+    song).
+    """
 
 
 # --------------------------------------------------------------------------- #
@@ -234,10 +248,11 @@ class SegConfigInput:
 class _CompactConfig:
     """A resolved, deduplicated compact segmentation config for one build pass.
 
-    Compact configs accept ``bin_mode`` values beyond the legacy ``DIST_FNS`` set (e.g.
-    ``"direct"``): the compact model does NOT validate ``bin_mode`` against ``DIST_FNS``.
-    ``canonical_config_hash`` is the deterministic identity over the seg_config key
-    ordering (backbone / bin_mode / threshold_effective / outlier_window /
+    Compact configs dispatch their segmentation boundary metric through the canonical
+    :data:`~scripts.embedding_research.helpers.binning.DIST_FNS` map, so ``bin_mode`` is
+    validated against ``DIST_FNS`` (fail closed: obsolete ``"direct"`` and other unknown
+    modes are refused).  ``canonical_config_hash`` is the deterministic identity over the
+    seg_config key ordering (backbone / bin_mode / threshold_effective / outlier_window /
     strategy_version / whole-module encoder_version) — independent of the human-readable
     ``threshold_semantics`` text.
     """
@@ -362,11 +377,13 @@ def _digest_bytes(data: bytes) -> str:
 def _coerce_compact_config(raw: Any) -> _CompactConfig:
     """Resolve one config descriptor (Mapping or attribute object) into a ``_CompactConfig``.
 
-    Accepts both the legacy :class:`SegConfigInput` (attribute access) and plain mapping
+    Accepts both attribute-object descriptors (:class:`SegConfigInput`) and plain mapping
     descriptors carrying ``backbone`` / ``bin_mode`` / ``threshold_configured`` /
     ``threshold_effective`` (optionally ``outlier_window`` / ``strategy_version`` /
-    ``semantics``).  Does NOT validate ``bin_mode`` against ``DIST_FNS`` — the compact
-    model permits ``"direct"`` and other non-DIST_FNS bin modes.
+    ``semantics``).  ``bin_mode`` is validated against the canonical
+    :data:`~scripts.embedding_research.helpers.binning.DIST_FNS` map and fails closed:
+    only ``"temporal_global"`` / ``"temporal_perdim"`` are accepted, and the obsolete
+    ``"direct"`` vocabulary (retired) is refused along with any other unknown mode.
     """
     if isinstance(raw, Mapping):
         fields: dict[str, Any] = dict(raw)
@@ -389,6 +406,8 @@ def _coerce_compact_config(raw: Any) -> _CompactConfig:
         raise CatalogValidationError("backbone must be non-empty text")
     if not bin_mode:
         raise CatalogValidationError("bin_mode must be non-empty text")
+    if bin_mode not in DIST_FNS:
+        raise CatalogValidationError(f"unknown bin_mode {bin_mode!r}; supported: {sorted(DIST_FNS)}")
     for name, value in (("threshold_configured", threshold_configured), ("threshold_effective", threshold_effective)):
         if not math.isfinite(value):
             raise CatalogValidationError(f"{name} must be finite; got {value!r}")
@@ -455,66 +474,137 @@ def _structural_identity(seg: Any) -> str:
     return _digest_bytes(("seg\n" + pre).encode("utf-8"))
 
 
-def _load_song_mask(mask_store: Any, song_id: str) -> np.ndarray | None:
-    """Load the whole-song uint8 mask for *song_id* once (``None`` => no silence).
+def _load_song_mask(mask_store: Any, song_id: str, backbone: str, *, patch_count: int) -> np.ndarray:
+    """Load the committed whole-song ``uint8[patch_count]`` silence mask for one ``(song_id, backbone)``.
 
-    The mask store is a NEW duck-typed loader ``.load(song_id) -> uint8[P]`` (no
-    ``MaskStore`` class exists).  A ``None`` / failed mask means "no silent patches", so
-    the whole structural range is searchable (fails open on absent mask data).
+    ``mask_store`` is the two-key committed-mask seam (``.load(song_id, backbone) ->
+    uint8[patch_count] | None``); the real seam is ``make_current_mask_resolver``.  The mask
+    MUST come from the same complete committed observation group that authorises the stream
+    read for the exact ``(song_id, backbone)`` — there is no filesystem-path API and no
+    per-song fallback.  A ``None`` return means *no committed mask for this group* and is a
+    typed per-input refusal (raised, never treated as "no silence").  A returned mask is
+    validated as ``uint8[patch_count]`` (dtype, 1-D, length == *patch_count*); any corrupt /
+    wrong-length / wrong-digest / wrong-dtype mask is refused.
+
+    Raises
+    ------
+    MaskRefusalError
+        When no committed mask store is provided, the committed-mask seam cannot produce a
+        mask (absent group or seam error), or the returned mask is not a valid
+        ``uint8[patch_count]`` silence mask for this exact group.
     """
     if mask_store is None:
-        return None
+        raise MaskRefusalError(
+            f"no committed mask store provided for ({song_id!r}, {backbone!r}); a catalog build "
+            "requires a committed silence mask per (song_id, backbone) observation group"
+        )
     try:
-        result = mask_store.load(song_id)
-    except Exception:
-        return None
+        result = mask_store.load(song_id, backbone)
+    except Exception as exc:  # the committed seam refused (e.g. corrupt/uncommitted group)
+        raise MaskRefusalError(
+            f"committed mask seam refused for ({song_id!r}, {backbone!r}): {type(exc).__name__}: {exc}"
+        ) from exc
     if result is None:
-        return None
+        raise MaskRefusalError(
+            f"no committed mask for group ({song_id!r}, {backbone!r}); catalog fails closed "
+            "(a missing mask is never interpreted as no silence)"
+        )
     arr = np.asarray(result)
-    if arr.size == 0:
-        return None
+    if arr.dtype != np.dtype("uint8"):
+        raise MaskRefusalError(f"committed mask for ({song_id!r}, {backbone!r}) must be uint8; got dtype {arr.dtype}")
+    if arr.ndim != 1 or arr.shape[0] != patch_count:
+        raise MaskRefusalError(
+            f"committed mask for ({song_id!r}, {backbone!r}) must be uint8[{patch_count}]; "
+            f"got shape {arr.shape} (wrong-length mask is refused, never truncated)"
+        )
     return arr
 
 
-def _song_leaves(con, config_id: int, song_id: str, *, patch_count: int, total_searchable: int) -> tuple[str, str]:
+def _song_leaves(
+    con,
+    config_id: int,
+    song_id: str,
+    *,
+    patch_count: int,
+    total_searchable: int,
+    stream_digest: str,
+    mask_digest: str,
+    mask_semantics_version: str,
+    scoring_semantics_version: int,
+) -> tuple[str, str]:
     """Deterministic exact/search leaf hashes for one persisted ``catalog_song``.
 
     Reads the just-written compact ``seg_meta`` rows for ``(config_id, song_id)`` (in
-    ``seg_id`` order) and hashes two DISTINCT canonical projections: ``exact`` covers the
-    structural/membership-reconstruction content; ``search`` covers the searchable
-    medoid/weight content.  The preimages are prefixed and bound to ``patch_count`` and
-    ``total_searchable_count`` so the two leaves differ even for an empty segment set and
-    match whatever the snapshot persisted.  Returns ``(exact_leaf, search_leaf)``.
+    ``seg_id`` order) and hashes two DISTINCT canonical projections in fixed tagged
+    order, binding each leaf to the song's immutable provenance digest inputs:
+
+    * ``exact`` — the full canonical structural/membership-reconstruction evidence: every
+      ``seg_meta`` row (boundaries, sparse absorbed indices/count, searchable count,
+      observed medoid source index and normalized weight) PLUS the song identity and the
+      frozen stream / committed-mask digests and mask/scoring semantics.  Any structural,
+      boundary, absorbed, count, medoid, weight, stream/mask-digest or semantics change
+      alters the exact leaf.
+    * ``search`` — ONLY the ordered scoring inputs that reproduce a song's candidate
+      rows: the frozen stream + committed-mask digests (so two streams that segment
+      identically but carry different medoid vector bytes / masks NEVER collapse), the
+      mask/scoring semantics, and the ordered medoid source indices + normalized weights
+      of the searchable segments (in ``seg_id`` order, positional — a permutation of the
+      medoid/weight sequence or a weight change alters the leaf).  Exact structural
+      fields that do not affect the ordered medoid+weight inputs (boundaries, absorbed
+      sets, per-seg counts) are deliberately EXCLUDED so a structural-only change that
+      leaves the actual ordered scoring rows equal does not split a search class.
+
+    The preimages are bound to ``patch_count`` / ``total_searchable_count`` and the song id
+    so the two leaves differ even for an empty segment set and match whatever the snapshot
+    persisted.  Returns ``(exact_leaf, search_leaf)``.
     """
     rows = con.execute(
         f"SELECT {', '.join(SEG_META_COLS)} FROM {SEG_META_TABLE} WHERE config_id = ? AND song_id = ? ORDER BY seg_id",
         [int(config_id), song_id],
     ).fetchall()
     row_maps = [dict(zip(SEG_META_COLS, r, strict=True)) for r in rows]
-    head = f"pc={int(patch_count)};total={int(total_searchable)}\n"
-    exact_pre = (
-        "exact\n"
-        + head
-        + "\n".join(
-            canonical_row_text(
-                m,
-                columns=("seg_id", "start_idx", "end_idx", "absorbed_indices", "absorbed_count", "searchable_count"),
-            )
-            for m in row_maps
+
+    def _header(prefix: str) -> list[str]:
+        return [
+            prefix,
+            f"song={song_id}",
+            f"pc={int(patch_count)};total={int(total_searchable)}",
+            f"stream_digest={stream_digest}",
+            f"mask_digest={mask_digest}",
+            f"mask_semantics={mask_semantics_version}",
+            f"scoring_semantics={int(scoring_semantics_version)}",
+        ]
+
+    exact_lines = _header("exact")
+    exact_lines.extend(
+        canonical_row_text(
+            m,
+            columns=(
+                "seg_id",
+                "start_idx",
+                "end_idx",
+                "absorbed_indices",
+                "absorbed_count",
+                "searchable_count",
+                "search_medoid_source_patch_idx",
+                "searchable_weight",
+            ),
         )
+        for m in row_maps
     )
-    search_pre = (
-        "search\n"
-        + head
-        + "\n".join(
-            canonical_row_text(
-                m,
-                columns=("seg_id", "searchable_count", "search_medoid_source_patch_idx", "searchable_weight"),
-            )
-            for m in row_maps
+
+    medoid_rows = [m for m in row_maps if m.get("search_medoid_source_patch_idx") is not None]
+    search_lines = _header("search")
+    search_lines.append(f"n_medoids={len(medoid_rows)}")
+    for i, m in enumerate(medoid_rows):
+        search_lines.append(
+            f"medoid{i}:src={canonical_field_value(int(m['search_medoid_source_patch_idx']))};"
+            f"weight={canonical_field_value(float(m['searchable_weight']))}"
         )
+
+    return _digest_bytes(("\n".join(exact_lines)).encode("utf-8")), _digest_bytes(
+        ("\n".join(search_lines)).encode("utf-8")
     )
-    return _digest_bytes(exact_pre.encode("utf-8")), _digest_bytes(search_pre.encode("utf-8"))
 
 
 def _write_config_rows(con, cfg: _CompactConfig, config_id: int, *, run_id: str) -> None:
@@ -683,7 +773,7 @@ def _build_and_persist_song(
     cfg: _CompactConfig,
     song_id: str,
     unit_matrix: np.ndarray,
-    mask: np.ndarray | None,
+    mask: np.ndarray,
     patch_count: int,
     run_id: str,
     encoder_version: str,
@@ -692,13 +782,26 @@ def _build_and_persist_song(
 ) -> tuple[int, int]:
     """Segment one song under one config and persist ``seg_meta`` + ``catalog_song``.
 
+    ``mask`` is the VALIDATED committed ``uint8[patch_count]`` silence mask for this exact
+    ``(song_id, backbone)`` group (``_load_song_mask`` refused any absent / invalid mask
+    upstream, so it is never ``None`` here and never an implicit all-searchable default).
+    Returns ``(num_segments, total_searchable)``.
+
     Returns ``(num_segments, total_searchable)``.  A song whose structural segments all
     yield zero searchable mass is metadata-only: it gets a ``catalog_song`` row (status
     ``metadata_only``, zero totals) and NO ``seg_meta`` rows.  Raises on any compute /
     persistence failure (the caller captures it as a per-(config, song) partial failure).
     """
+    if mask is None:
+        raise MaskRefusalError(
+            f"internal: _build_and_persist_song requires a committed mask for ({song_id!r}, "
+            f"{cfg.backbone!r}); a None mask is never treated as no silence"
+        )
     segments = run_spherical_segmentation(
-        unit_matrix, float(cfg.threshold_effective), outlier_window=cfg.outlier_window
+        unit_matrix,
+        float(cfg.threshold_effective),
+        bin_mode=cfg.bin_mode,
+        outlier_window=cfg.outlier_window,
     )
     computed: list[tuple[Any, int, tuple[int, ...]]] = []
     total = 0
@@ -709,7 +812,17 @@ def _build_and_persist_song(
         total += count
         computed.append((seg, count, tuple(int(i) for i in searchable)))
     if total == 0:
-        exact_leaf, search_leaf = _song_leaves(con, config_id, song_id, patch_count=patch_count, total_searchable=0)
+        exact_leaf, search_leaf = _song_leaves(
+            con,
+            config_id,
+            song_id,
+            patch_count=patch_count,
+            total_searchable=0,
+            stream_digest=stream_digest,
+            mask_digest=mask_digest,
+            mask_semantics_version=_MASK_SEMANTICS_VERSION,
+            scoring_semantics_version=_SCORING_SEMANTICS_VERSION,
+        )
         _write_catalog_song_row(
             con,
             config_id=config_id,
@@ -737,7 +850,17 @@ def _build_and_persist_song(
         total_searchable=total,
         computed=computed,
     )
-    exact_leaf, search_leaf = _song_leaves(con, config_id, song_id, patch_count=patch_count, total_searchable=total)
+    exact_leaf, search_leaf = _song_leaves(
+        con,
+        config_id,
+        song_id,
+        patch_count=patch_count,
+        total_searchable=total,
+        stream_digest=stream_digest,
+        mask_digest=mask_digest,
+        mask_semantics_version=_MASK_SEMANTICS_VERSION,
+        scoring_semantics_version=_SCORING_SEMANTICS_VERSION,
+    )
     _write_catalog_song_row(
         con,
         config_id=config_id,
@@ -778,7 +901,7 @@ def build_segmentation_catalog(
     """Build a compact segmentation catalog snapshot in one pass per (song, backbone).
 
     Each verified ``(song, backbone)`` stream is loaded EXACTLY ONCE and shared by every
-    requested threshold config of that backbone (one mask load per song).  The snapshot
+    requested threshold config of that backbone (one committed mask load per (song, backbone)).  The snapshot
     is written to ``output_root/catalogs/.staging-<run_id>/catalog.duckdb`` (a fresh file
     per run) or, when ``output_root`` is ``None``, to an in-memory DuckDB.  The compact
     snapshot stores structural ``seg_config``/``catalog_song``/``seg_meta`` rows plus
@@ -786,10 +909,14 @@ def build_segmentation_catalog(
     assigned deterministically (sorted canonical hashes, 1..n) and logical duplicates
     collapse.
 
-    ``mask_store`` is the new duck-typed whole-song mask loader (``.load(song_id) ->
-    uint8[P]``); a ``None``/failed mask means no silent patches.  ``stream_store`` is any
-    current-stream loader with ``.load(song_id, backbone) -> float32[P,D] | None`` (the
-    real seam is ``make_current_stream_resolver``).
+    ``mask_store`` is the two-key committed-mask seam (``.load(song_id, backbone) ->
+    uint8[P] | None``); the real seam is ``make_current_mask_resolver``.  The mask MUST
+    come from the same complete committed observation group that authorises the stream for
+    the exact ``(song_id, backbone)``.  A missing / corrupt / wrong-length / wrong-digest /
+    uncommitted mask is a TYPED per-input refusal (the song is refused, never silently
+    built all-searchable — ``None`` is never interpreted as "no silence").
+    ``stream_store`` is any current-stream loader with ``.load(song_id, backbone) ->
+    float32[P,D] | None`` (the real seam is ``make_current_stream_resolver``).
 
     A requested song with no ready stream for a config's backbone is silently excluded
     (counted on the outcome, never a failure); genuine per-(config, song) failures are
@@ -884,7 +1011,6 @@ def _run_build(
             "catalog_songs": 0,
         }
 
-    mask_cache: dict[str, np.ndarray | None] = {}
     load_evidence: dict[tuple[str, str], int] = {}
     stream_loads = 0
     songs_built = 0
@@ -903,18 +1029,23 @@ def _run_build(
                 continue  # no ready stream for this (song, backbone): silently excluded
             ready_count += 1
             stream_loads += 1
-            songs_built += 1
             load_evidence[(song, backbone)] = load_evidence.get((song, backbone), 0) + 1
 
             unit = _l2_normalize_rows(matrix)
             patch_count = int(unit.shape[0])
-            if song not in mask_cache:
-                mask_cache[song] = _load_song_mask(mask_store, song)
-            mask = mask_cache[song]
+            # The committed silence mask is required for this exact (song, backbone).  An
+            # absent / corrupt / wrong-length / wrong-digest mask is a TYPED per-input
+            # refusal: the song is never built all-searchable and is recorded on every
+            # config of the backbone (fails closed; a missing mask is never "no silence").
+            try:
+                mask = _load_song_mask(mask_store, song, backbone, patch_count=patch_count)
+            except MaskRefusalError as exc:
+                for cfg in backbone_cfgs:
+                    per_cfg[cfg.canonical_config_hash]["failed"].append(f"{song}:{type(exc).__name__}")
+                continue
+            songs_built += 1
             stream_digest = _digest_bytes(np.ascontiguousarray(matrix, dtype=np.float32).tobytes())
-            mask_digest = (
-                _digest_bytes(np.ascontiguousarray(mask, dtype=np.uint8).tobytes()) if mask is not None else "no-mask"
-            )
+            mask_digest = _digest_bytes(np.ascontiguousarray(mask, dtype=np.uint8).tobytes())
 
             for cfg in backbone_cfgs:
                 state = per_cfg[cfg.canonical_config_hash]

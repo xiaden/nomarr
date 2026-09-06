@@ -162,12 +162,15 @@ def _catalog_con(catalog):
     return catalog if con is None else con
 
 
-def _resolve_config_ids(catalog, backbone: str) -> tuple[int, ...]:
-    """Every canonical compact ``seg_config`` row for *backbone*, sorted by ``config_id``.
+def _resolve_config_ids(catalog, backbone: str, config_ids=None) -> tuple[int, ...]:
+    """In-scope canonical ``seg_config`` rows for *backbone*, sorted by ``config_id``.
 
-    The materialization gathers the FULL backbone config surface present in the catalog (there
-    is no corpus-level ``config_ids`` pin and no ``alias_of_config_id`` in the compact model).
+    When ``config_ids`` is given (a per-class scope) it is honored verbatim as the view's
+    config surface; otherwise the view gathers the FULL backbone canonical config surface
+    (no corpus-level ``config_ids`` pin and no ``alias_of_config_id`` in the compact model).
     """
+    if config_ids is not None:
+        return tuple(sorted(int(c) for c in config_ids))
     con = _catalog_con(catalog)
     return tuple(sorted(int(c.config_id) for c in compact_configs_by_backbone(con, backbone)))
 
@@ -300,6 +303,7 @@ def materialize_search_view(
     backbone: str,
     run_id: str,
     working_memory: int,
+    config_ids=None,
 ) -> SearchViewRecord:
     """Gather + store one disposable catalog-first search view; return a :class:`SearchViewRecord`.
 
@@ -318,6 +322,10 @@ def materialize_search_view(
     * ``working_memory`` — an explicit bounded-memory budget (bytes) accepted and validated here
       (the scorer turns it into query/candidate chunk budgets).  A build hint, not an identity
       dimension.
+    * ``config_ids`` — optional in-scope config surface for the view.  When given (a per-class
+      scope) the view gathers rows only for these ``config_id`` rows; otherwise it gathers the
+      full backbone canonical config surface.  Per-class materialization gives each class its own
+      keyset/content identity so distinct classes never share one strategy row.
 
     The view file is ALWAYS regenerated (gathered + rewritten) — the existence of a previous
     view file never authorizes reuse or a skip.  This function makes NO audio/model/ONNX/CUDA
@@ -336,7 +344,7 @@ def materialize_search_view(
         if not isinstance(song, str) or not song.strip():
             raise SearchViewValidationError("song_ids must contain only non-empty text")
 
-    config_ids = _resolve_config_ids(catalog, backbone)
+    config_ids = _resolve_config_ids(catalog, backbone, config_ids=config_ids)
     rows = _collect_rows(catalog, config_ids, songs)
     if not rows:
         raise SearchViewError(

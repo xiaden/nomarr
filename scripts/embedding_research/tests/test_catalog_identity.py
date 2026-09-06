@@ -59,7 +59,7 @@ def _song_mat(blocks: list[int], *, dim: int = 4, seed: float = 1.0) -> np.ndarr
 def _cfg(threshold: float) -> dict:
     return {
         "backbone": "effnet",
-        "bin_mode": "direct",
+        "bin_mode": "temporal_global",
         "threshold_configured": threshold,
         "threshold_effective": threshold,
     }
@@ -164,6 +164,21 @@ def test_song_signature_sensitive_to_stream_reembed(con, tmp_path, compact_catal
         harness.con.execute(
             "UPDATE catalog_song SET stream_digest = ? WHERE song_id = 's1'",
             [hashlib.sha256(b"re-embedded").hexdigest()],
+        )
+        assert ci.song_signature(harness.con, "s1") != before
+    finally:
+        harness.close()
+
+
+def test_song_signature_sensitive_to_mask_digest(con, tmp_path, compact_catalog_factory):
+    # Aligned committed-mask digest axis (Plan B P1-S2): mutate catalog_song.mask_digest
+    # -> the per-song exact signature must change, mirroring the stream-digest axis above.
+    harness = _build(con, tmp_path, compact_catalog_factory)
+    try:
+        before = ci.song_signature(harness.con, "s1")
+        harness.con.execute(
+            "UPDATE catalog_song SET mask_digest = ? WHERE song_id = 's1'",
+            [hashlib.sha256(b"different-aligned-mask").hexdigest()],
         )
         assert ci.song_signature(harness.con, "s1") != before
     finally:

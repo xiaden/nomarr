@@ -44,7 +44,9 @@ for _p in (_ROOT, _PKG_DIR):
 
 import duckdb
 
+from scripts.embedding_research.baseline import MEDOID_STRATEGY_TYPE, medoid_strategy_key_for
 from scripts.embedding_research.config import REPORT_DIR
+from scripts.embedding_research.db import write_analyze_metrics
 from scripts.embedding_research.db._schema import ensure_schema, upsert_phase_timing
 from scripts.embedding_research.db.analyze_scope import write_catalog_analyze_rows
 from scripts.embedding_research.db.head_phase import HeadPhaseProvenanceRow, write_head_phase_provenance
@@ -228,6 +230,33 @@ def _persist_catalog_class(
     write_catalog_analyze_rows(con, run_id=run_id, result=result)
 
 
+def _seed_medoid_baselines(con, run_id: str) -> None:
+    """Seed each backbone's observed global-medoid baseline rows (one per k, run-scoped).
+
+    The winners/deltas section under the observed-medoid contract emits a winner/delta row per
+    (backbone, k, metric) cell ONLY when a medoid baseline row shares that exact scope.  Each
+    backbone gets a deterministic ``global_pool:{backbone}:medoid`` row (map_k/mrr, cosine) for
+    every k that has segmented classes, persisted run-scoped under ``MEDOID_STRATEGY_TYPE`` —
+    the same writer/schema the analyze producer (run.py with ``emit_medoid_baseline``) uses, but
+    with NO analyze-scope/provenance row and NO config identity (a baseline, never a class).
+    """
+    medoid_metrics = {
+        "effnet": {"map_k": 0.5, "mrr": 0.4},
+        "musicnn": {"map_k": 0.5, "mrr": 0.4},
+    }
+    for backbone, metrics in medoid_metrics.items():
+        for k in (5, 10):
+            write_analyze_metrics(
+                con,
+                medoid_strategy_key_for(backbone),
+                MEDOID_STRATEGY_TYPE,
+                "cosine",
+                k,
+                dict(metrics),
+                run_id=run_id,
+            )
+
+
 def _seed_head_provenance(con, run_id: str) -> None:
     """Canonical EffNet head-phase provenance (the head-analysis surface is EffNet-only)."""
     rows = [
@@ -283,6 +312,7 @@ def build_fixture_con() -> duckdb.DuckDBPyConnection:
     _seed_songs(con)
     _seed_run_provenance(con, run_id)
     _seed_catalog_classes(con, run_id)
+    _seed_medoid_baselines(con, run_id)
     _seed_head_provenance(con, run_id)
     _seed_phase_timings(con, run_id)
     return con

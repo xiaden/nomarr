@@ -9,6 +9,10 @@ Research-only.  This module owns the single active reader over ``analyze_metrics
   enriched with the decoded identity and the provenance-scope fields
   (``canonical_config_id`` / ``alias_ids`` / ``view_content_hash``) read from the analyze
   run scope recorded in ``run_provenance``.
+* :func:`query_medoid_baselines` returns the observed ``global_pool:{backbone}:medoid``
+  baseline ``analyze_metrics`` rows (``strategy_type == "global_pool"``) as a decoded frame.
+* :func:`query_winners_metrics` concatenates the catalog classes with those medoid baseline
+  rows into the winners/summary frame (catalog classes plus per-backbone baselines).
 * :func:`section_analysis` renders those rows into the ``analysis`` schema-v2 section, one
   per-backbone subsection.
 """
@@ -19,6 +23,7 @@ from typing import Any
 
 import pandas as pd
 
+from scripts.embedding_research.baseline import MEDOID_STRATEGY_TYPE
 from scripts.embedding_research.db.analyze_scope import parse_analyze_scope
 
 from ._base import (
@@ -165,6 +170,108 @@ def query_analyze_metrics(
     enriched["k"] = enriched["k"].astype(int)
     order = ["backbone", "k", "strategy_key", "metric"]
     return enriched.sort_values(order, kind="mergesort").reset_index(drop=True)
+
+
+def query_medoid_baselines(
+    con,
+    *,
+    run_id: str | None = None,
+) -> pd.DataFrame:
+    """Load the observed global-medoid baseline ``analyze_metrics`` rows as a decoded frame.
+
+    Distinct from :func:`query_analyze_metrics` (catalog-only, pinned forever): reads every
+    ``analyze_metrics`` row with ``strategy_type == MEDOID_STRATEGY_TYPE`` (``"global_pool"``,
+    the observed ``global_pool:{backbone}:medoid`` baseline persisted by the analyze phase),
+    optionally restricted to *run_id*.  Each row is one literal
+    ``(strategy_key, sim_metric, k, metric, value)`` cell of that baseline identity; backbone is
+    parsed from the strategy key.  A medoid baseline is NOT a catalog class — it has no config
+    identity or provenance scope, so ``score_variant`` / ``scoring_semantics_version`` /
+    ``representation_hash`` / ``canonical_config_id`` / ``alias_ids`` / ``view_content_hash``
+    are ``None``/empty.  Rows whose key is not a well-formed ``global_pool:{bb}:medoid`` key are
+    dropped (a data-integrity anomaly, never a strategy-filter).  Returns an empty
+    :data:`CATALOG_ANALYSIS_COLUMNS` frame when the table is absent or has no medoid rows.
+    """
+    columns = list(CATALOG_ANALYSIS_COLUMNS)
+    if not table_exists(con, "analyze_metrics"):
+        return empty_df(columns)
+
+    params: list[object] = [MEDOID_STRATEGY_TYPE]
+    where_run = ""
+    if run_id is not None:
+        where_run = " AND run_id = ?"
+        params.append(run_id)
+    try:
+        df = con.execute(
+            "SELECT run_id, strategy_key, sim_metric, k, metric, value "
+            "FROM analyze_metrics WHERE strategy_type = ?" + where_run,
+            params,
+        ).df()
+    except Exception:
+        return empty_df(columns)
+
+    if df.empty:
+        return empty_df(columns)
+
+    backbones: list[Any] = []
+    valid = []
+    for sk in df["strategy_key"]:
+        parts = str(sk).split(":")
+        if len(parts) == 3 and parts[0] == "global_pool" and bool(parts[1]) and parts[2] == "medoid":
+            backbones.append(parts[1])
+            valid.append(True)
+        else:
+            backbones.append(None)
+            valid.append(False)
+    keep = [i for i, ok in enumerate(valid) if ok]
+    if not keep:
+        return empty_df(columns)
+    df = df.iloc[keep].reset_index(drop=True)
+    backbone_col = [backbones[i] for i in keep]
+
+    enriched = pd.DataFrame(
+        {
+            "run_id": df["run_id"],
+            "backbone": backbone_col,
+            "strategy_key": df["strategy_key"],
+            "strategy_type": MEDOID_STRATEGY_TYPE,
+            "sim_metric": df["sim_metric"],
+            "k": df["k"].astype(int),
+            "score_variant": [None] * len(df),
+            "scoring_semantics_version": [None] * len(df),
+            "representation_hash": [None] * len(df),
+            "canonical_config_id": [None] * len(df),
+            "alias_ids": [[] for _ in range(len(df))],
+            "view_content_hash": [None] * len(df),
+            "metric": df["metric"],
+            "value": df["value"],
+        }
+    )
+    order = ["backbone", "k", "strategy_key", "metric"]
+    return enriched.sort_values(order, kind="mergesort").reset_index(drop=True)
+
+
+def query_winners_metrics(
+    con,
+    *,
+    run_id: str | None = None,
+) -> pd.DataFrame:
+    """The decoded winners/summary frame: catalog classes PLUS observed medoid baselines.
+
+    Concatenation of :func:`query_analyze_metrics` (catalog classes) and
+    :func:`query_medoid_baselines` (per-backbone observed ``global_pool:{backbone}:medoid``
+    baselines), both run-scoped identically.  This enriched frame carries each cell's medoid
+    baseline row so :func:`build_winner_delta_rows` (and the summary / winners sections) can
+    delegate baseline/winner/delta selection to the observed medoid.  ``section_analysis`` must
+    keep using the catalog-only :func:`query_analyze_metrics` frame (never this one), so the
+    catalog-only pin in ``tests/test_report.py`` stays valid.
+    """
+    catalog = query_analyze_metrics(con, run_id=run_id)
+    medoid = query_medoid_baselines(con, run_id=run_id)
+    if medoid.empty:
+        return catalog
+    if catalog.empty:
+        return medoid
+    return pd.concat([catalog, medoid], ignore_index=True)
 
 
 # ---------------------------------------------------------------------------

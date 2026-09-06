@@ -13,6 +13,7 @@ from scripts.embedding_research.tests._report_seed import (
     assert_no_forbidden_vocabulary,
     catalog_key,
     seed_catalog,
+    seed_medoid_baseline,
 )
 
 # Active keys allowed in emitted section/table columns.
@@ -92,6 +93,8 @@ def test_section_winners_renders_per_backbone_tables(con):
         k=5,
         metrics={"map_k": 0.5},
     )
+    seed_medoid_baseline(con, run_id="run-1", backbone="effnet", k=5, metrics={"map_k": 0.4})
+    seed_medoid_baseline(con, run_id="run-1", backbone="musicnn", k=5, metrics={"map_k": 0.3})
     section = section_winners(_load(con))
     assert section["id"] == "winners"
     backbones = [sub["title"] for sub in section["subsections"]]
@@ -121,6 +124,7 @@ def test_section_summary_per_backbone_and_empty(con):
         metrics={"map_k": 0.7},
         config_ids=(1,),
     )
+    seed_medoid_baseline(con, run_id="run-1", backbone="effnet", k=5, metrics={"map_k": 0.4})
     section = section_summary(_load(con))
     table = section["tables"][0]
     assert table["id"] == "catalog_result_status"
@@ -131,9 +135,9 @@ def test_section_summary_per_backbone_and_empty(con):
 
 
 def _load(con):
-    from scripts.embedding_research.report._retrieval import query_analyze_metrics
+    from scripts.embedding_research.report._retrieval import query_winners_metrics
 
-    return query_analyze_metrics(con)
+    return query_winners_metrics(con)
 
 
 def _load_empty():

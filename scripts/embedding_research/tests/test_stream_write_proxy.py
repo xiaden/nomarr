@@ -4,9 +4,13 @@ The durable-create contract (DD lifecycle L114-122, CONTRACTS.md L34) is exactly
 
     fsync(file) -> close(file) -> atomic rename -> fsync(destination directory)
 
-Post-migration (Plan B P1-S2) publication performs TWO such durable sequences in order for
-each published artifact: first the digest-named payload (``streams/<sid>.<bb>.<64hex>.npy``
-for streams, ``heads/...npz`` for head suites) then its self-describing ``.json`` manifest.
+Post-migration (Plan B P1-S2) publication performs durable sequences in order for each
+published artifact: first the digest-named payload (``streams/<sid>.<bb>.<64hex>.npy`` for
+streams, ``heads/...npz`` for head suites) then its self-describing ``.json`` manifest.
+From Plan C P1-S4 a head-suite ``HeadStreamStore.publish`` additionally performs a THIRD
+durable sequence for the filesystem-authoritative ``heads/current/<sid>.<bb>.json`` CURRENT
+marker (an atomic replace at a fixed path), so exactly three sequences are recorded for a
+head publish: payload, manifest, then the CURRENT marker.
 
 Two obligations are pinned here for BOTH observation writers (backbone stream via
 ``StreamStore.publish`` and the head-suite via ``HeadStreamStore.publish``):
@@ -83,7 +87,7 @@ def test_backbone_npy_publish_exact_durable_order(con, tmp_path):
 
 @pytest.mark.unit
 def test_head_npz_publish_exact_durable_order(con, tmp_path):
-    """HeadStreamStore.publish applies the SAME two durable sequences to the head-suite .npz."""
+    """HeadStreamStore.publish applies THREE durable sequences: payload, manifest, CURRENT marker."""
     store = HeadStreamStore(con, output_root=tmp_path / "out")
     recorder = RecordingFileOps()
     store.publish(
@@ -102,7 +106,8 @@ def test_head_npz_publish_exact_durable_order(con, tmp_path):
         ("rename", "file"),
         ("fsync", "dir"),
     ]
-    assert recorder.order == one_durable + one_durable
+    # payload + manifest + the filesystem-authoritative CURRENT head-suite marker.
+    assert recorder.order == one_durable + one_durable + one_durable
 
 
 # ── SIGKILL / bookkeeping — SEPARATELY LABELED (never durability proof) ────────

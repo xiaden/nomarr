@@ -75,6 +75,19 @@ class VerifyFailureError(StreamStoreError):
     """
 
 
+class HeadSuiteCurrentError(StreamStoreError):
+    """A filesystem head-suite ``CURRENT`` marker is missing/malformed/stale/mismatched.
+
+    Raised by :func:`~scripts.embedding_research.streams.heads_current.resolve_current_head_suite`
+    (and surfaced as a reindex refusal) when a ``(song_id, backbone)`` current head-suite
+    selection cannot be honoured: no CURRENT marker, a malformed/invalid marker, a marker
+    whose referenced head payload/manifest is missing/corrupt/mismatched, or a marker whose
+    referenced committed stream is no longer the current committed stream (an older suite
+    is superseded and never selected).  Selection NEVER falls back to lexical or mtime
+    ordering of sibling head artifacts.
+    """
+
+
 # ── Vocabulary / identity constants ───────────────────────────────────────────
 
 #: The only v1 payload dtype (float32 payload codec).
@@ -446,6 +459,152 @@ class HeadStreamRecord:
         return replace(self, status=validate_status(status))
 
 
+# ── Filesystem-authoritative CURRENT head-suite marker (Plan C P1-S4) ──────────
+
+
+@dataclass(frozen=True)
+class HeadSuiteCurrentMarker:
+    """Immutable filesystem marker binding the CURRENT selected head suite (contract C).
+
+    One fixed-path marker per ``(song_id, backbone)`` (published under ``heads/current/``
+    and atomically replaced on supersession) records the EXACT selection decision reindex
+    and the current-head resolver must honour — it is filesystem-authoritative and is
+    NEVER guessed by mtime or lexical order of sibling head artifacts.
+
+    The marker binds:
+
+    * the selected head payload root-relative ref + its 64-hex content digest
+      (``head_payload_ref`` / ``head_payload_sha256``);
+    * the committed backbone stream alignment (``stream_ref`` / ``stream_digest``) and
+      the ``alignment_token``/``alignment_version`` that tie the suite to that stream;
+    * the model-suite fingerprint (``model_suite_fingerprint`` = the head manifest's
+      ``backbone_model_hash``) and the head-set identity/semantics
+      (``head_set_fingerprint`` / ``head_set_semantics_version`` plus the canonical
+      ``head_ids``/``dim_by_head``/``patch_count`` — so dimensions are bound);
+    * a monotonically increasing ``generation`` and the ``created_at`` timestamp.
+
+    Instances are immutable and self-validating (identity grammar, root-relative refs,
+    digest fingerprints, alignment-token consistency, canonical head-set/dimension
+    serialization, generation/timestamp bounds).
+    """
+
+    song_id: str
+    backbone: str
+    head_payload_ref: str
+    head_payload_sha256: str
+    stream_ref: str
+    stream_digest: str
+    model_suite_fingerprint: str
+    head_set_fingerprint: str
+    head_set_semantics_version: str
+    alignment_token: str
+    alignment_version: str
+    head_ids: str
+    dim_by_head: str
+    patch_count: int
+    generation: int
+    created_at: int
+    marker_schema_version: str = "1"
+    kind: str = "head-current"
+
+    def __post_init__(self) -> None:
+        song_id = _require_text(self.song_id, "song_id")
+        backbone = _require_text(self.backbone, "backbone")
+        if "." in song_id:
+            raise ValueError(f"head-current song_id must be a dot-free token; got {song_id!r}")
+        head_payload_ref = validate_artifact_ref(self.head_payload_ref)
+        head_payload_sha256 = validate_fingerprint(self.head_payload_sha256)
+        if head_payload_ref.endswith(".json"):
+            raise ValueError(f"head_payload_ref must reference the digest payload; got {head_payload_ref!r}")
+        stream_ref = str(self.stream_ref)
+        if stream_ref:
+            stream_ref = validate_artifact_ref(stream_ref)
+            stream_digest = validate_fingerprint(self.stream_digest)
+        else:
+            if self.stream_digest:
+                raise ValueError("stream_digest must be empty when no committed stream is bound")
+            stream_digest = ""
+        model_fp = str(self.model_suite_fingerprint)
+        if model_fp and _FINGERPRINT_RE.match(model_fp) is None:
+            raise ValueError(f"model_suite_fingerprint must be empty or 64-hex; got {model_fp!r}")
+        head_set_fp = validate_fingerprint(self.head_set_fingerprint)
+        head_set_semantics = _require_text(self.head_set_semantics_version, "head_set_semantics_version")
+        alignment_token = str(self.alignment_token)
+        if alignment_token != f"{stream_ref}:{head_payload_ref}":
+            raise ValueError(
+                f"alignment_token must bind the referenced stream+head payload "
+                f"({stream_ref!r}:{head_payload_ref!r}); got {alignment_token!r}"
+            )
+        alignment_version = _require_text(self.alignment_version, "alignment_version")
+        head_ids = canonical_head_ids(parse_head_ids(self.head_ids))
+        dims = parse_dim_by_head(self.dim_by_head)
+        if set(dims) != set(parse_head_ids(head_ids)):
+            raise ValueError("head_ids and dim_by_head disagree on the head set in the CURRENT marker")
+        dim_by_head = canonical_dim_by_head(dims)
+        patch_count = _require_int(self.patch_count, "patch_count", minimum=1)
+        generation = _require_int(self.generation, "generation", minimum=1)
+        created = _require_int(self.created_at, "created_at")
+        if self.marker_schema_version != "1":
+            raise ValueError(f"unsupported marker_schema_version {self.marker_schema_version!r}")
+        if self.kind != "head-current":
+            raise ValueError(f"marker kind must be 'head-current'; got {self.kind!r}")
+        object.__setattr__(self, "song_id", song_id)
+        object.__setattr__(self, "backbone", backbone)
+        object.__setattr__(self, "head_payload_ref", head_payload_ref)
+        object.__setattr__(self, "head_payload_sha256", head_payload_sha256)
+        object.__setattr__(self, "stream_ref", stream_ref)
+        object.__setattr__(self, "stream_digest", stream_digest)
+        object.__setattr__(self, "model_suite_fingerprint", model_fp)
+        object.__setattr__(self, "head_set_fingerprint", head_set_fp)
+        object.__setattr__(self, "head_set_semantics_version", head_set_semantics)
+        object.__setattr__(self, "alignment_token", alignment_token)
+        object.__setattr__(self, "alignment_version", alignment_version)
+        object.__setattr__(self, "head_ids", head_ids)
+        object.__setattr__(self, "dim_by_head", dim_by_head)
+        object.__setattr__(self, "patch_count", patch_count)
+        object.__setattr__(self, "generation", generation)
+        object.__setattr__(self, "created_at", created)
+
+
+@dataclass(frozen=True)
+class HeadSuiteSelection:
+    """The result of a marker-validated current head-suite selection (contract C).
+
+    Returned by :func:`~scripts.embedding_research.streams.heads_current.resolve_current_head_suite`
+    ONLY when the CURRENT marker and every referenced artifact verify: ``marker`` is the
+    validated :class:`HeadSuiteCurrentMarker`, ``record`` is the :class:`HeadStreamRecord`
+    rehydrated from the marker-referenced head manifest (cross-checked against the marker's
+    bound identity/fingerprints/alignment/dimensions) and ``stream_ref``/``stream_digest``
+    are the CURRENT committed stream the suite is aligned to.  Older valid suites (not
+    referenced by the CURRENT marker) are superseded and never surface here.
+    """
+
+    song_id: str
+    backbone: str
+    marker: HeadSuiteCurrentMarker
+    record: HeadStreamRecord
+    stream_ref: str
+    stream_digest: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.marker, HeadSuiteCurrentMarker):
+            raise TypeError("HeadSuiteSelection.marker must be a HeadSuiteCurrentMarker")
+        if not isinstance(self.record, HeadStreamRecord):
+            raise TypeError("HeadSuiteSelection.record must be a HeadStreamRecord")
+        if self.marker.song_id != self.song_id or self.marker.backbone != self.backbone:
+            raise ValueError("HeadSuiteSelection marker/identity song_id/backbone mismatch")
+        if (
+            self.record.song_id != self.song_id
+            or self.record.backbone != self.backbone
+            or self.record.artifact_ref != self.marker.head_payload_ref
+            or self.record.fingerprint_sha256 != self.marker.head_payload_sha256
+            or self.record.patch_count != self.marker.patch_count
+        ):
+            raise ValueError("HeadSuiteSelection record does not match the CURRENT marker selection")
+        if self.stream_ref != self.marker.stream_ref or self.stream_digest != self.marker.stream_digest:
+            raise ValueError("HeadSuiteSelection committed stream does not match the CURRENT marker alignment")
+
+
 # ── ReconcileReport ───────────────────────────────────────────────────────────
 
 
@@ -613,6 +772,57 @@ class ObservationCommit:
             raise ValueError("commit created_at must be non-negative")
         if self.status not in STREAM_STATUSES:
             raise ValueError(f"invalid commit status {self.status!r}")
+
+
+@dataclass(frozen=True)
+class ObservationGroupIdentity:
+    """Immutable identity of ONE complete committed stream+mask observation group.
+
+    This is the typed identity a catalog/head/reindex consumer requires before it may
+    use a stream or its silence mask: the immutable embedding ``stream_ref`` plus its
+    ``stream_digest``, the aligned audio-derived ``mask_ref`` plus its ``mask_digest``,
+    the ``alignment_token`` that binds them as one group, the ``audio_content_sha256``
+    fingerprint the mask manifest and the commit marker agree on, the
+    ``mask_semantics_version`` naming the uint8 mask grammar, and the ``commit_sha256``
+    marker content digest that seals the group.
+
+    It is rehydrated ONLY from a valid current-format commit marker plus its referenced
+    current-format manifests/payloads (see ``StreamStore.load_committed_observation``);
+    it is never constructed from unverified inputs.  Instances are immutable.
+    """
+
+    song_id: str
+    backbone: str
+    stream_ref: str
+    stream_digest: str
+    mask_ref: str
+    mask_digest: str
+    alignment_token: str
+    audio_content_sha256: str
+    mask_semantics_version: str
+    commit_sha256: str
+
+    def __post_init__(self) -> None:
+        if not self.song_id or "." in self.song_id:
+            raise ValueError("observation group song_id must be a dot-free token")
+        if not self.backbone:
+            raise ValueError("observation group backbone must be non-empty")
+        stream_ref = validate_artifact_ref(self.stream_ref)
+        mask_ref = validate_artifact_ref(self.mask_ref)
+        stream_digest = validate_fingerprint(self.stream_digest)
+        mask_digest = validate_fingerprint(self.mask_digest)
+        audio_content_sha256 = validate_fingerprint(self.audio_content_sha256)
+        commit_sha256 = validate_fingerprint(self.commit_sha256)
+        alignment_token = _require_text(self.alignment_token, "alignment_token")
+        mask_semantics_version = _require_text(self.mask_semantics_version, "mask_semantics_version")
+        object.__setattr__(self, "stream_ref", stream_ref)
+        object.__setattr__(self, "mask_ref", mask_ref)
+        object.__setattr__(self, "stream_digest", stream_digest)
+        object.__setattr__(self, "mask_digest", mask_digest)
+        object.__setattr__(self, "audio_content_sha256", audio_content_sha256)
+        object.__setattr__(self, "commit_sha256", commit_sha256)
+        object.__setattr__(self, "alignment_token", alignment_token)
+        object.__setattr__(self, "mask_semantics_version", mask_semantics_version)
 
 
 @dataclass(frozen=True)

@@ -30,11 +30,26 @@ class _FakeStreamStore:
 
 
 class _FakeMaskStore:
-    def __init__(self, masks: dict[str, np.ndarray] | None = None) -> None:
+    """Two-key committed-mask duck: ``.load(song_id, backbone) -> uint8[P] | None``.
+
+    Returns an explicit per-song mask when given (a ``None`` value in *masks* means no
+    explicit mask => the committed all-ones "no silence" group); otherwise an all-ones mask
+    of the exact stream patch count.  ``None`` only for a group with no stream (refused by
+    the build).
+    """
+
+    def __init__(self, streams, masks: dict[str, np.ndarray | None] | None = None) -> None:
+        self._streams = streams
         self._masks = masks or {}
 
-    def load(self, song_id: str):
-        return self._masks.get(song_id)
+    def load(self, song_id: str, backbone: str):
+        explicit = self._masks.get(song_id)
+        stream = self._streams.get((song_id, backbone))
+        if stream is None:
+            return None
+        if explicit is not None:
+            return np.asarray(explicit, dtype=np.uint8)
+        return np.ones(stream.shape[0], dtype=np.uint8)
 
 
 def _mat(patch_counts: list[int], *, dim: int = 4, seed: float = 1.0) -> np.ndarray:
@@ -63,7 +78,7 @@ def _build(root, run_id: str, *, songs, masks=None, thresholds=(1.0, 0.4)):
     streams = {(_s, "effnet"): _mat([5, 3] if _s.endswith("1") else [4, 5, 4]) for _s in songs}
     rep = catalog.build_segmentation_catalog(
         _FakeStreamStore(streams),
-        _FakeMaskStore(masks),
+        _FakeMaskStore(streams, masks),
         [_cfg(t) for t in thresholds],
         list(songs),
         output_root=str(root),

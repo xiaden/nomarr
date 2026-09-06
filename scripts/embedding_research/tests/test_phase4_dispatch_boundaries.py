@@ -8,8 +8,9 @@ sessions / run ONNX.  The five derived phases are CPU-only: each derived runner
 body may import/reference ONLY ``DERIVED_ALLOWED_IMPORT_ROOTS`` modules and must
 never contain ``DERIVED_FORBIDDEN_TOKENS``.  Stratification is catalog input
 (config/corpus generation inside the ``catalog`` phase), NOT a phase.  Retired
-legacy names (``stratify segment classify head``) are rejected loudly, never
-silently aliased.
+legacy names (``stratify segment classify head``) are ordinary unknown commands —
+they follow the exact same rejection path as any unrecognized verb, with no named
+alias or compatibility rejection path.
 
 This file is the structural (phase-call-graph) proof the Phase-4 dispatch
 comments in ``run.py`` point to, plus CLI-level dispatch tests and a call-level
@@ -93,11 +94,14 @@ def test_audio_are_first_three_derived_are_the_five():
     assert len(run_mod.DERIVED_PHASES) == 5
 
 
-def test_legacy_aliases_are_never_silent_phase_aliases():
-    # The retired names are a disjoint, explicit reject set — never a phase.
-    assert frozenset({"stratify", "segment", "classify", "head"}) == run_mod.LEGACY_PHASE_ALIASES
-    assert run_mod.LEGACY_PHASE_ALIASES.isdisjoint(run_mod.CLI_PHASES)
-    assert run_mod.LEGACY_PHASE_ALIASES.isdisjoint(run_mod.CLI_PHASE_RUNNERS)
+def test_retired_names_are_unknown_commands_not_phases():
+    # The retired names are not phases, runners, or maintenance commands, and the
+    # legacy alias map / compatibility rejection path is gone entirely.
+    for name in ("stratify", "segment", "classify", "head"):
+        assert name not in run_mod.CLI_PHASES
+        assert name not in run_mod.CLI_PHASE_RUNNERS
+        assert name not in run_mod.MAINTENANCE_COMMANDS
+    assert not hasattr(run_mod, "LEGACY_PHASE_ALIASES")
 
 
 def test_cleanup_reset_are_maintenance_not_phase_runners():
@@ -113,19 +117,13 @@ def test_cli_phase_runners_map_exactly_the_eight_phases():
     assert run_mod.CLI_PHASE_RUNNERS["catalog"].__name__ == "_run_catalog"
 
 
-@pytest.mark.parametrize("legacy", ["stratify", "segment", "classify", "head"])
-def test_resolve_command_rejects_each_legacy_alias(caplog, legacy):
+@pytest.mark.parametrize("unknown", ["frobnicate", "stratify", "segment", "classify", "head"])
+def test_resolve_command_rejects_unknown_command(caplog, unknown):
+    # Retired names (stratify/segment/classify/head) are ordinary unknown commands:
+    # identical exit code and ``unknown command`` message to any other unrecognized
+    # verb — no named alias or compatibility rejection path special-cases them.
     with pytest.raises(SystemExit) as exc:
-        run_mod._resolve_command(legacy)
-    assert exc.value.code == 2
-    msgs = [r.message for r in caplog.records]
-    assert any("retired/legacy phase name" in m and "Valid phases" in m for m in msgs)
-    assert any(all(p in m for p in ("ingest", "catalog", "head-analysis", "report")) for m in msgs)
-
-
-def test_resolve_command_rejects_unknown_command(caplog):
-    with pytest.raises(SystemExit) as exc:
-        run_mod._resolve_command("frobnicate")
+        run_mod._resolve_command(unknown)
     assert exc.value.code == 2
     msgs = [r.message for r in caplog.records]
     assert any("unknown command" in m for m in msgs)
@@ -138,7 +136,6 @@ def test_resolve_command_accepts_each_phase(phase):
 
 def test_stratification_is_catalog_input_not_a_phase():
     assert "stratify" not in run_mod.CLI_PHASES
-    assert "stratify" in run_mod.LEGACY_PHASE_ALIASES
     body = ast.get_source_segment(_RUN_SOURCE, _function_body("_run_catalog"))
     # catalog performs corpus/config selection (stratification) as catalog input —
     # it reaches the canonical stratify/budget selection helper and builds configs.
@@ -222,6 +219,38 @@ def _unit(rng, n: int, d: int) -> object:
     return (m / norms).astype(np.float32)
 
 
+def _publish_committed_stream(store, song_id: str, matrix, *, run_id: str, backbone: str = "effnet"):
+    """Publish a stream AND its complete committed observation group (all-searchable mask).
+
+    P1-S3: the store-backed current-stream resolver resolves ONLY complete committed
+    groups, so every helper that builds a catalog does so from the complete committed
+    groups published here, resolving the mask through the two-key store-backed seam
+    ``make_current_mask_resolver(store)`` (stream via ``make_current_stream_resolver``).
+    """
+    import hashlib as _hashlib
+
+    import numpy as _np
+
+    from scripts.embedding_research.streams.masks import MaskPayload
+
+    matrix = _np.ascontiguousarray(matrix, dtype=_np.float32)
+    record = store.publish(song_id, backbone, matrix, run_id=run_id)
+    store.publish_observation_group(
+        record,
+        MaskPayload(
+            song_id=song_id,
+            backbone=backbone,
+            patch_count=matrix.shape[0],
+            mask=_np.ones(matrix.shape[0], dtype=_np.uint8),
+            params_id="0" * 64,
+            audio_content_sha256=_hashlib.sha256(b"fixture-audio-content").hexdigest(),
+            run_id=run_id,
+            created_at=1,
+        ),
+    )
+    return record
+
+
 def _seed_compact_catalog(con, out) -> None:
     """Register songs, publish ready effnet streams, build a VERIFIED COMPACT catalog.
 
@@ -233,7 +262,7 @@ def _seed_compact_catalog(con, out) -> None:
     analyze dispatch test needs.
     """
     from scripts.embedding_research import catalog
-    from scripts.embedding_research.streams import make_current_stream_resolver
+    from scripts.embedding_research.streams import make_current_mask_resolver, make_current_stream_resolver
     from scripts.embedding_research.streams.store import StreamStore
 
     songs = ("s1", "s2", "s3", "s4")
@@ -246,11 +275,11 @@ def _seed_compact_catalog(con, out) -> None:
     store = StreamStore(con, output_root=str(out))
     rng = __import__("numpy").random.default_rng(3)
     for song in songs:
-        store.publish(song, "effnet", _unit(rng, 10, 6), run_id="run-embed")
+        _publish_committed_stream(store, song, _unit(rng, 10, 6), run_id="run-embed")
     store.reconcile()
     rep = catalog.build_segmentation_catalog(
         make_current_stream_resolver(store),
-        None,
+        make_current_mask_resolver(store),
         [
             catalog.SegConfigInput(
                 backbone="effnet",
@@ -406,3 +435,215 @@ def test_head_analysis_dispatch_invokes_canonical_runner_not_classify(con, tmp_p
     run_mod._run_single_phase(con, "head-analysis", cfg)
 
     assert calls == ["run_shared_catalog_head_analysis"], "head-analysis must invoke the canonical CPU runner"
+
+
+# ---------------------------------------------------------------------------
+# P1-S5: the real ``catalog`` runner must wire committed mask/stream resolvers
+# ---------------------------------------------------------------------------
+
+
+def test_run_catalog_wires_a_stream_resolver_not_none(con):
+    """P1-S5 spec: ``_run_catalog`` hands ``build_segmentation_catalog`` resolver expressions,
+    never a literal ``None`` stream/mask loader.  Expected RED until P1-S5 replaces the
+    fail-open ``None == no silence`` research seam.
+    """
+    import ast
+    import inspect
+
+    _ = con
+    src = inspect.getsource(run_mod._run_catalog)
+    call = next(
+        n
+        for n in ast.walk(ast.parse(src))
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "build_segmentation_catalog"
+    )
+    assert len(call.args) >= 2
+    # Both the stream and mask loaders are resolver expressions (not None), so silence is
+    # never silently dropped at the run.py catalog entry point.
+    for pos in (0, 1):
+        arg = call.args[pos]
+        is_literal_none = isinstance(arg, ast.Constant) and arg.value is None
+        assert not is_literal_none, f"build_segmentation_catalog argument {pos} must not be a literal None"
+
+
+def test_run_catalog_constructs_a_committed_mask_resolver():
+    """P1-S5 spec: the real catalog runner builds the mask loader from StreamStore, so the
+    run.py catalog path consumes the committed mask (silent patches excluded), matching FS
+    reindex readiness.  Expected RED until P1-S5 wires ``make_current_mask_resolver``.
+    """
+    import inspect
+
+    from scripts.embedding_research.streams.store import make_current_mask_resolver  # red until P1-S5
+
+    src = inspect.getsource(run_mod._run_catalog)
+    assert "make_current_mask_resolver" in src, "_run_catalog must construct the current mask resolver"
+    _ = make_current_mask_resolver
+
+
+# --------------------------------------------------------------------------- #
+# P1-S5: the real run.py catalog path excludes deliberately silent patches      #
+# --------------------------------------------------------------------------- #
+
+
+def _publish_committed_stream_with_mask(store, song_id: str, matrix, mask, *, run_id: str, backbone: str = "effnet"):
+    """Publish a stream AND its complete committed observation group with an EXPLICIT mask.
+
+    The committed mask (``uint8[P]``, 0 == silent) is what the store-backed committed-mask
+    resolver the run.py catalog path builds will serve ``build_segmentation_catalog``, so a
+    deliberately silent region in *mask* is excluded from the durable catalog exactly as the
+    FS-reindex readiness predicate resolves it.
+    """
+    import hashlib as _hashlib
+
+    import numpy as _np
+
+    from scripts.embedding_research.streams.masks import MaskPayload
+
+    matrix = _np.ascontiguousarray(matrix, dtype=_np.float32)
+    mask = _np.asarray(mask, dtype=_np.uint8)
+    record = store.publish(song_id, backbone, matrix, run_id=run_id)
+    store.publish_observation_group(
+        record,
+        MaskPayload(
+            song_id=song_id,
+            backbone=backbone,
+            patch_count=int(matrix.shape[0]),
+            mask=mask,
+            params_id="0" * 64,
+            audio_content_sha256=_hashlib.sha256(b"fixture-audio-content").hexdigest(),
+            run_id=run_id,
+            created_at=1,
+        ),
+    )
+    return record
+
+
+def _unit_constant_rows(n: int, dim: int = 4) -> object:
+    """n identical unit rows (all ``+x``): zero pair distance => no segmentation splits and no
+    absorbed geometric outliers, so every non-silent patch belongs to exactly one segment."""
+    import numpy as np
+
+    rows = np.zeros((n, dim), dtype=np.float32)
+    rows[:, 0] = 1.0
+    return rows
+
+
+def test_run_catalog_path_excludes_deliberately_silent_patches(con, tmp_path):
+    """P1-S5 (authoritative): the REAL run.py catalog function path durably publishes a compact
+    catalog whose searchable membership ``M_g``, observed source-index medoid, searchable totals
+    and weights all EXCLUDE a deliberately silent region of a committed stream, while a fully
+    silent song stays metadata-only.  Drives ``run_mod._run_catalog`` (via the CLI dispatch
+    single-phase wrapper) with complete committed observation groups — never a re-implementation
+    of the build.
+    """
+    import numpy as np
+
+    from scripts.embedding_research import catalog
+    from scripts.embedding_research import catalog_storage as _cs
+    from scripts.embedding_research.helpers.segmentation import (
+        reconstruct_searchable_indices,
+        select_observed_medoid_source_index,
+    )
+    from scripts.embedding_research.streams.store import StreamStore
+
+    out_root = tmp_path / "out"
+    # Song s1: 8 identical patches with a deliberately silent region at source indices {2, 6}.
+    # Song s2: fully silent (all patches masked) => zero-searchable metadata-only retention.
+    silent = {2, 6}
+    committed_masks = {
+        "s1": np.array([1, 1, 0, 1, 1, 1, 0, 1], dtype=np.uint8),
+        "s2": np.zeros(8, dtype=np.uint8),
+    }
+    for song in ("s1", "s2"):
+        con.execute(
+            "INSERT INTO songs (song_id, path, artist) VALUES (?, ?, ?)",
+            (song, f"/audio/{song}.mp3", "A"),
+        )
+    store = StreamStore(con, output_root=str(out_root))
+    mat = _unit_constant_rows(8)
+    for song in ("s1", "s2"):
+        _publish_committed_stream_with_mask(store, song, mat, committed_masks[song], run_id="run-embed")
+    store.reconcile()
+
+    cfg = {
+        "output_root": out_root,
+        "verify": False,
+        "strict": False,
+        "retained": False,
+        "force": False,
+        "backbones": ["effnet"],
+        "catalog_bin_modes": ["temporal_global"],
+        "catalog_thresholds": [1.0],
+    }
+    # Drive the ACTUAL run.py catalog command path (preflight thin gate + _run_catalog wiring +
+    # durable snapshot publication).
+    run_mod._run_single_phase(con, "catalog", cfg)
+
+    handle = _cs.open_current_catalog(out_root, verify=True)
+    try:
+        configs = catalog.compact_configs_by_backbone(handle.con, "effnet")
+        assert len(configs) == 1
+        config_id = configs[0].config_id
+
+        songs = {s.song_id: s for s in catalog.compact_catalog_songs_by_config(handle.con, config_id)}
+        # s1 searchable TOTAL excludes the deliberately silent patches (8 - 2 = 6).
+        assert int(songs["s1"].total_searchable_count) == 6
+        # s2 fully silent => metadata-only, zero searchable.
+        assert int(songs["s2"].total_searchable_count) == 0
+        assert songs["s2"].status == "metadata_only"
+
+        # s1 exactly one segment (identical rows never split) whose exact searchable membership
+        # M_g = structural range minus silence excludes every silent source index.
+        segs = catalog.compact_segments_by_config_song(handle.con, config_id, "s1")
+        assert len(segs) == 1
+        seg = segs[0]
+        mask = committed_masks["s1"]
+        searchable = np.asarray(reconstruct_searchable_indices(seg, mask, patch_count=8), dtype=int)
+        assert silent.isdisjoint({int(i) for i in searchable})
+        assert {int(i) for i in searchable} == {0, 1, 3, 4, 5, 7}
+        assert int(seg.searchable_count) == len(searchable) == 6
+
+        # Medoid selection happens over the reconstructed searchable set: never a silent index.
+        assert seg.search_medoid_source_patch_idx is not None
+        assert seg.search_medoid_source_patch_idx not in silent
+        unit = catalog._l2_normalize_rows(mat)
+        recomputed_medoid, _centrality = select_observed_medoid_source_index(unit, list(searchable))
+        assert seg.search_medoid_source_patch_idx == recomputed_medoid
+        assert 0 <= recomputed_medoid < 8
+
+        # Weight = this segment's searchable mass over s1's whole-song searchable total (6/6).
+        assert float(seg.searchable_weight) == pytest.approx(1.0)
+
+        # Fully silent s2 produced NO seg_meta rows (metadata-only retention).
+        assert catalog.compact_segments_by_config_song(handle.con, config_id, "s2") == ()
+    finally:
+        handle.close()
+
+
+def test_catalog_preflight_refuses_incomplete_committed_group_under_strict(con, tmp_path):
+    """P1-S5: ``_preflight_derived_phase`` refuses (--strict) a requested catalog input whose
+    committed observation group is incomplete (stream published but NO committed mask/commit
+    marker) BEFORE any catalog construction treats it as valid."""
+
+    from scripts.embedding_research.streams.store import StreamStore
+
+    out_root = tmp_path / "out"
+    con.execute(
+        "INSERT INTO songs (song_id, path, artist) VALUES (?, ?, ?)",
+        ("s1", "/audio/s1.mp3", "A"),
+    )
+    store = StreamStore(con, output_root=str(out_root))
+    # Publish ONLY the stream — no committed mask / commit marker => INCOMPLETE committed group.
+    store.publish("s1", "effnet", _unit_constant_rows(4), run_id="run-embed")
+
+    cfg = {
+        "output_root": out_root,
+        "verify": True,
+        "strict": True,
+        "retained": False,
+        "force": False,
+        "backbones": ["effnet"],
+    }
+    with pytest.raises(run_mod._MissingArtifactError) as exc:
+        run_mod._run_single_phase(con, "catalog", cfg)
+    assert "incomplete" in str(exc.value) or "lack a complete committed observation group" in str(exc.value)

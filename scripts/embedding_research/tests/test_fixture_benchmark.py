@@ -38,6 +38,9 @@ def test_produced_record_carries_full_metadata_and_validates_clean():
     # The whole required metadata vocabulary is present and populated.
     for name in fb.REQUIRED_BENCHMARK_FIELDS:
         assert data[name] is not None, name
+    # The record carries the explicit no-empirical-retrieval statement its validator requires.
+    assert data["no_empirical_statement"] == fb.NO_EMPIRICAL_STATEMENT
+    assert data["no_empirical_statement"].strip()
     # The documented vocabulary pieces map to real (fixture) values.
     assert data["n_songs"] > 0
     assert data["patch_distribution"]["row_distribution"] == "uniform"
@@ -84,6 +87,19 @@ def test_validator_rejects_unlabelled_fixtures_only_report():
     del record["fixtures_only"]
     errors = fb.validate_benchmark_report(record)
     assert errors
+
+
+def test_validator_rejects_missing_or_empty_no_empirical_statement():
+    """The validator REQUIRES the explicit synthetic/no-empirical statement text."""
+    record = fb.run_bounded_benchmark(seed=7).to_dict()
+    record["no_empirical_statement"] = "   "
+    errors = fb.validate_benchmark_report(record)
+    assert errors
+    assert any("no-empirical-retrieval statement" in e for e in errors), errors
+
+    del record["no_empirical_statement"]
+    errors = fb.validate_benchmark_report(record)
+    assert any(fb._MISSING in e and "no_empirical_statement" in e for e in errors), errors
 
 
 def test_validator_accepts_a_complete_fixtures_labelled_report():

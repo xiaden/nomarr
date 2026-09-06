@@ -13,7 +13,7 @@ from ._corpus import disc_score_warning, section_corpus
 from ._efficiency import section_efficiency
 from ._heads import section_head_analysis
 from ._provenance import section_provenance
-from ._retrieval import query_analyze_metrics, section_analysis
+from ._retrieval import query_analyze_metrics, query_winners_metrics, section_analysis
 from ._summary import section_summary
 from ._winners_report import section_winners
 
@@ -297,12 +297,15 @@ def run(con, out_path=None, *, run_id: str | None = None) -> dict:
         Required directory where ``report.html`` and ``report.json`` will be written.
         Raises ``ValueError`` if not provided.
     run_id:
-        Optional physical run-scope selector.  When given, only that run's catalog analysis
-        rows feed the analysis/winners/summary sections and only that run's provenance is
-        reported.  When ``None`` (the default) the active completed scope is used: every
-        completed catalog analysis and head-provenance record present is rendered.  No
-        inference is ever performed at report time — the report is rendered verbatim from
-        completed phases.
+        Optional physical run-scope selector naming a completed analyze scope.  When given, only
+        that run's catalog analysis rows feed the analysis/winners/summary sections and only that
+        run's provenance is reported.  When ``None`` (the default) every catalog-analysis row
+        present is rendered — this whole-set read is the DIRECT-caller contract (empty databases
+        and seeded tests); the run.py ``report`` CLI never relies on it, resolving and passing an
+        explicit completed analyze scope via ``_run_report`` (which rejects incomplete scopes
+        rather than blending runs).  Head provenance is inherently current (rows replace
+        same-identity), so the head-analysis section is not run-scoped.  No inference is ever
+        performed at report time — the report is rendered verbatim from completed phases.
 
     Returns:
         The assembled payload dict (also written to ``report.json`` / ``report.html``).
@@ -317,18 +320,22 @@ def run(con, out_path=None, *, run_id: str | None = None) -> dict:
 
     print("Generating report…")
 
-    # Data loaders
+    # Data loaders.  ``df`` is the catalog-only decoded frame (drives the analysis section;
+    # the catalog-only pin in tests/test_report.py stays valid).  ``wdf`` additionally carries
+    # each cell's observed ``global_pool:{backbone}:medoid`` baseline row, which the summary and
+    # winners sections consume (the medoid is never a winner candidate).
     df, _ = _step("query_analyze_metrics", lambda: query_analyze_metrics(con, run_id=run_id))
+    wdf, _ = _step("query_winners_metrics", lambda: query_winners_metrics(con, run_id=run_id))
 
     # Global warnings
     warnings, _ = _step("disc_score_warning", lambda: disc_score_warning(con))
 
     # Section builders (exact order contract).
     sections_raw: list[tuple[str, Any]] = [
-        ("summary", lambda: section_summary(df)),
+        ("summary", lambda: section_summary(wdf)),
         ("corpus", lambda: section_corpus(con)),
         ("analysis", lambda: section_analysis(df)),
-        ("winners", lambda: section_winners(df)),
+        ("winners", lambda: section_winners(wdf)),
         ("head-analysis", lambda: section_head_analysis(con)),
         ("provenance", lambda: section_provenance(con, run_id=run_id)),
         ("efficiency", lambda: section_efficiency(con)),

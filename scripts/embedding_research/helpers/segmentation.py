@@ -38,13 +38,15 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from scripts.embedding_research.helpers.binning import OUTLIER_WINDOW
+from scripts.embedding_research.helpers.binning import DIST_FNS, OUTLIER_WINDOW
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
 __all__ = [
+    "ObservedMedoid",
     "StructuralSegment",
+    "observed_global_medoid",
     "reconstruct_searchable_indices",
     "run_spherical_segmentation",
     "select_observed_medoid_source_index",
@@ -80,15 +82,20 @@ def run_spherical_segmentation(
     unit_patches: np.ndarray,
     threshold: float,
     *,
+    bin_mode: str = "temporal_global",
     outlier_window: int = OUTLIER_WINDOW,
 ) -> list[StructuralSegment]:
     """Segment a patch matrix with the finite unit-vector spherical running centroid.
 
     Reproduces the PTC running-centroid contract exactly: finite-only input
-    (NaN/Infinity raise :class:`ValueError`), strict ``>`` direct-L2 boundary (a
-    patch exactly at the threshold is NOT a split), ``outlier_window`` absorption
-    with return, and hard splitting (an excursion exceeding the window is an
-    ordinary *searchable* structural segment, never absorbed).  Nonzero rows are
+    (NaN/Infinity raise :class:`ValueError`), strict ``>`` boundary (a patch
+    exactly at the threshold is NOT a split), ``outlier_window`` absorption with
+    return, and hard splitting (an excursion exceeding the window is an ordinary
+    *searchable* structural segment, never absorbed).  The boundary metric is
+    dispatched through the canonical distance map :data:`DIST_FNS`: ``bin_mode``
+    ``"temporal_global"`` uses direct L2 (:func:`global_dist`) and
+    ``"temporal_perdim"`` uses per-dimension Chebyshev (:func:`perdim_dist`);
+    any other mode fails closed with :class:`ValueError`.  Nonzero rows are
     normalized to unit vectors; the running centroid is the renormalized spherical
     sum of in-range members.
 
@@ -96,6 +103,9 @@ def run_spherical_segmentation(
     each with an EXCLUSIVE ``end_idx`` and ascending ``absorbed_indices``.  An
     empty matrix returns ``[]``.
     """
+    if bin_mode not in DIST_FNS:
+        raise ValueError(f"unknown bin_mode {bin_mode!r}; supported: {sorted(DIST_FNS)}")
+    dist_fn = DIST_FNS[bin_mode]
     patches = np.asarray(unit_patches)
     if patches.ndim != 2:
         raise ValueError(f"unit_patches must be a 2-D [n, D] matrix; got shape {patches.shape}")
@@ -114,7 +124,7 @@ def run_spherical_segmentation(
     normed[nz] = patches[nz] / norms[nz, None]
 
     def is_boundary(idx: int, centroid: np.ndarray) -> bool:
-        return float(np.linalg.norm(normed[idx] - centroid)) > threshold
+        return dist_fn(normed[idx], centroid) > threshold
 
     def renorm(vec: np.ndarray) -> np.ndarray:
         mag = float(np.linalg.norm(vec))
@@ -177,7 +187,7 @@ def run_spherical_segmentation(
 
 def reconstruct_searchable_indices(
     meta: object,
-    mask: np.ndarray | None,
+    mask: np.ndarray,
     patch_count: int,
 ) -> np.ndarray:
     """Exactly reconstruct a segment's searchable membership ``M_g`` (sorted source indices).
@@ -190,19 +200,27 @@ def reconstruct_searchable_indices(
 
     The structural range is NEVER treated as authoritative membership.  Returns a
     sorted integer array of the searchable source indices; an absorbed index outside
-    ``[start, end)`` is a no-op.  ``mask`` is the whole-song ``uint8`` silence mask
-    (``1`` = searchable, ``0`` = silent); rows beyond a shorter mask are searchable.
+    ``[start, end)`` is a no-op.  ``mask`` is the whole-song committed ``uint8``
+    silence mask (``1`` = searchable, ``0`` = silent) for the exact ``(song_id,
+    backbone)`` observation group; it is REQUIRED and never optional — a ``None`` mask
+    is refused (fail closed) because a missing committed mask is never interpreted as
+    no silence.
     """
+    if mask is None:
+        raise ValueError(
+            "reconstruct_searchable_indices requires the committed silence mask for the exact "
+            "(song_id, backbone) observation group; a None mask is never interpreted as no "
+            "silence (missing/corrupt masks must fail closed)"
+        )
     start = int(meta.start_idx)
     end = int(meta.end_idx)
     absorbed = tuple(int(i) for i in (meta.absorbed_indices or ()))
     patch_count = int(patch_count)
     excluded = np.zeros(patch_count, dtype=bool)
-    if mask is not None:
-        arr = np.asarray(mask)
-        limit = min(arr.shape[0], patch_count)
-        if limit > 0:
-            excluded[:limit] = np.asarray(arr[:limit] == 0, dtype=bool)
+    arr = np.asarray(mask)
+    limit = min(arr.shape[0], patch_count)
+    if limit > 0:
+        excluded[:limit] = np.asarray(arr[:limit] == 0, dtype=bool)
     for idx in absorbed:
         if start <= idx < end and 0 <= idx < patch_count:
             excluded[idx] = True
@@ -242,3 +260,51 @@ def select_observed_medoid_source_index(
     cand_sources = [s for s, ok in zip(ordered, nonzero, strict=True) if ok]
     best_source = int(cand_sources[best_local])
     return best_source, float(means[best_local])
+
+
+@dataclass(frozen=True)
+class ObservedMedoid:
+    """The observed global medoid result for one song / searchable population.
+
+    ``source_index`` is the observed source patch index (an ORIGINAL committed-stream
+    row, never a synthetic/coordinate-wise median vector) with maximal mean-cosine
+    centrality over the provided searchable source population; ``centrality`` is that
+    mean cosine (including self) over the finite nonzero candidate rows.  When there is
+    no finite nonzero searchable candidate (an empty population or a whole song that is
+    zero-searchable / all-zero-norm) both fields are ``None`` — there is NO baseline
+    vector, so the song contributes nothing to a baseline corpus or candidate search.
+    """
+
+    source_index: int | None
+    centrality: float | None
+
+
+# --------------------------------------------------------------------------- #
+# Global (whole-song) observed medoid (DD "Membership, segmentation, medoids,
+# and weights" L238; Plan B §B).  Uses the SAME observed-source mean-cosine /
+# smallest-source-index-tie rule as the segment medoid (select_observed_medoid_source_index)
+# over the whole-song non-silent searchable population.  NEVER a synthetic median,
+# never ``pool_medoid_raw`` / ``pool_medoid_norm``.  The caller supplies the already
+# unit-normalised patch rows and the searchable source indices (non-silent patches,
+# and any absorbed/otherwise-excluded positions the caller's population excludes).
+# --------------------------------------------------------------------------- #
+def observed_global_medoid(
+    unit_patches: np.ndarray,
+    searchable_source_indices: Sequence[int],
+) -> ObservedMedoid:
+    """Select the observed global medoid among finite nonzero searchable source rows.
+
+    Silence/absorbed-aware: the population is whatever ``searchable_source_indices``
+    the caller passes (e.g. all non-silent ``mask == 1`` source patches for the whole
+    song, or a narrower set that also excludes absorbed positions).  Applies the exact
+    segment-medoid rule (:func:`select_observed_medoid_source_index`) — maximal mean
+    cosine over the finite NONZERO candidate rows, smallest source index wins an exact
+    tie, zero-norm rows are never selected — and returns an :class:`ObservedMedoid`.
+
+    ``unit_patches`` must already be row-unit-normalised finite patches (a zero-norm row
+    is never a medoid candidate).  Zero-searchable (empty population) and all-zero-norm
+    populations return ``ObservedMedoid(None, None)`` — no baseline vector.  Non-finite
+    input among the candidate rows raises :class:`ValueError` (never a silent medoid).
+    """
+    source_index, centrality = select_observed_medoid_source_index(unit_patches, searchable_source_indices)
+    return ObservedMedoid(source_index=source_index, centrality=centrality)

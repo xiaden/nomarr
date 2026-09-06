@@ -128,6 +128,12 @@ def test_encoder_version_is_64_hex() -> None:
     int(v, 16)  # must be hex
 
 
+def test_encoder_version_is_deterministic_across_calls() -> None:
+    """The whole-module encoder-version guard is call-order independent and repeatable, so
+    every exact/search leaf and config preimage that folds it is deterministic (Plan B P1-S2)."""
+    assert config_encoder_version() == config_encoder_version()
+
+
 def test_module_sha256_two_source_strings_differ() -> None:
     """Two different source byte strings always hash differently (content-addressed)."""
     from scripts.embedding_research.helpers.thresholds import _module_sha256

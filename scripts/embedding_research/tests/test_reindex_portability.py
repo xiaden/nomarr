@@ -98,6 +98,7 @@ def _mask(song_id: str = "s1", backbone: str = "effnet", run_id: str = "run-1") 
         mask=np.ones(PATCH, dtype=np.uint8),
         run_id=run_id,
         params_id="mask-params-1",
+        audio_content_sha256="0" * 64,  # valid 64-hex identity: shared group-readiness requires it
     )
 
 
@@ -527,3 +528,66 @@ def test_relocated_root_leaves_no_absolute_path_in_persisted_manifests(tmp_path,
     for table in (STREAM_TABLE, "head_stream_registry"):
         for (ref,) in con2.execute(f"SELECT artifact_ref FROM {table}").fetchall():
             assert not ref.startswith("/") and ".." not in ref
+
+
+# ── P1-S1/P1-S7: committed-mask corruption refuses recreation (never a no-silence rebuild) ──
+
+
+def test_recreated_registry_refuses_committed_group_with_corrupt_mask(tmp_path, con):
+    """Corrupting a committed mask payload on disk makes recreation REFUSE that identity —
+    readiness is derived from the on-disk committed group (portable/copyable), never from a
+    cache row or an implicit all-searchable default.
+    """
+    _seed(tmp_path, with_heads=False)
+    mask_file = _mask_npy_file(tmp_path)
+    mask_file.write_bytes(b"not a valid uint8 npy payload")
+    report = reconcile_current_manifests(tmp_path, con)
+    assert report.clean is False, "corrupt committed mask must make recreation unclean"
+    assert any("mask" in issue.lower() for issue in report.issues), report.issues
+    ready_rows = con.execute(f"SELECT count(*) FROM {STREAM_TABLE} WHERE status = 'ready'").fetchone()[0]
+    assert ready_rows == 0, "an identity with a corrupt committed mask must not be recreated ready"
+
+
+def test_recreated_registry_refuses_committed_group_with_wrong_length_mask(tmp_path, con):
+    """A committed mask whose payload length disagrees with the stream is refused on
+    recreation (fail-closed), exactly as FS reindex treats it.
+    """
+    _seed(tmp_path, with_heads=False)
+    mask_file = _mask_npy_file(tmp_path)
+    import io
+
+    from scripts.embedding_research.streams.masks import mask_npy_bytes
+
+    mask_file.write_bytes(io.BytesIO(mask_npy_bytes(np.zeros(9, dtype=np.uint8))).getvalue())
+    report = reconcile_current_manifests(tmp_path, con)
+    assert report.clean is False, "wrong-length committed mask must make recreation unclean"
+    ready_rows = con.execute(f"SELECT count(*) FROM {STREAM_TABLE} WHERE status = 'ready'").fetchone()[0]
+    assert ready_rows == 0
+
+
+def test_head_current_marker_and_payload_bytes_survive_relocation_and_reindex(tmp_path):
+    """The heads/current marker + referenced head payload are portable and immutable."""
+    from scripts.embedding_research.streams.heads_current import current_marker_path
+
+    out1 = tmp_path / "a"
+    _seed(out1)
+    assert reindex(out1, _fresh_con()).clean
+    marker1 = (out1 / "heads" / "current" / "s1.effnet.json").read_bytes()
+    payload1 = _digest_of(_head_npz_file(out1))
+
+    # Export/relocate the whole tree and reindex at the new root (registry-deletion style).
+    out2 = tmp_path / "b"
+    shutil.copytree(out1, out2)
+    assert reindex(out2, _fresh_con()).clean
+
+    marker2_path = current_marker_path(out2, "s1", "effnet")
+    assert marker2_path.is_file()
+    assert marker2_path.read_bytes() == marker1, "CURRENT marker bytes must survive relocation"
+    assert _digest_of(_head_npz_file(out2)) == payload1, "head payload bytes must be unchanged"
+
+    # The marker-referenced suite resolves at the relocated root (root-relative refs port).
+    from scripts.embedding_research.streams.heads_current import resolve_current_head_suite
+
+    selection = resolve_current_head_suite(out2, "s1", "effnet")
+    assert selection.record.artifact_ref.startswith("heads/")
+    assert selection.record.status in ("pending", "ready")

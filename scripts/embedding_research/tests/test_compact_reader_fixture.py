@@ -42,7 +42,7 @@ def _song_mat(blocks: list[int], *, dim: int = 4, seed: float = 1.0) -> np.ndarr
 def _cfg(threshold: float) -> dict:
     return {
         "backbone": "effnet",
-        "bin_mode": "direct",
+        "bin_mode": "temporal_global",
         "threshold_configured": threshold,
         "threshold_effective": threshold,
     }
@@ -70,7 +70,7 @@ def test_compact_read_helpers_read_back_built_snapshot(con, tmp_path, compact_ca
         assert sorted(c.config_id for c in cfgs) == [1, 2]
         for c in cfgs:
             assert c.backbone == "effnet"
-            assert c.bin_mode == "direct"
+            assert c.bin_mode == "temporal_global"
             assert c.threshold_configured == c.threshold_effective
             assert c.canonical_config_hash
             assert not hasattr(c, "alias_of_config_id")  # canonical-only config semantics
@@ -104,6 +104,8 @@ def test_compact_read_helpers_read_back_built_snapshot(con, tmp_path, compact_ca
 
 def test_compact_seg_rows_reconstruct_to_catalog_total(con, tmp_path, compact_catalog_factory):
     """Reconstructing searchable indices from CompactSegRecord rows matches catalog_song totals."""
+    from scripts.embedding_research.streams import make_current_mask_resolver
+
     harness = compact_catalog_factory(
         con,
         tmp_path,
@@ -116,11 +118,15 @@ def test_compact_seg_rows_reconstruct_to_catalog_total(con, tmp_path, compact_ca
         cfgs = catalog.compact_configs_by_backbone(harness.con, "effnet")
         assert len(cfgs) == 1
         config_id = cfgs[0].config_id
+        # The committed two-key contract: each song's whole-song silence mask comes from its
+        # complete committed observation group (an all-searchable committed mask here).
+        mask_store = make_current_mask_resolver(harness.stream_store)
         for song in ("s1", "s2"):
             leaf = catalog.compact_catalog_song(harness.con, config_id, song)
             segs = catalog.compact_segments_by_config_song(harness.con, config_id, song)
-            # No committed research masks => mask=None (whole structural range searchable).
-            reconstructed = sum(int(reconstruct_searchable_indices(seg, None, leaf.patch_count).size) for seg in segs)
+            mask = mask_store.load(song, "effnet")
+            assert mask is not None, "every cataloged song has a committed silence mask"
+            reconstructed = sum(int(reconstruct_searchable_indices(seg, mask, leaf.patch_count).size) for seg in segs)
             assert reconstructed == leaf.total_searchable_count
     finally:
         harness.close()

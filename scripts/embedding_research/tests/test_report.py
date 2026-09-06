@@ -111,6 +111,33 @@ def test_run_id_scope_filters_catalog_rows(con, tmp_path):
     assert _section_ids(payload) == list(EXACT_SECTION_IDS)
 
 
+def test_run_id_scope_filters_provenance_history(con, tmp_path):
+    """A run-scoped report renders ONLY that run's ledger in the provenance section."""
+    seed_catalog(
+        con,
+        run_id="run-1",
+        backbone="effnet",
+        strategy_key=catalog_key("effnet", "k1"),
+        k=5,
+        metrics={"map_k": 0.6},
+    )
+    seed_catalog(
+        con,
+        run_id="run-2",
+        backbone="effnet",
+        strategy_key=catalog_key("effnet", "k2"),
+        k=5,
+        metrics={"map_k": 0.7},
+    )
+
+    payload = report_run(con, tmp_path, run_id="run-2")
+    provenance = next(s for s in payload["sections"] if s["id"] == "provenance")
+    history = next(t for t in provenance["tables"] if t["id"] == "run_history")
+    run_ids = {row[0] for row in history["rows"]}
+    assert run_ids == {"run-2"}  # run-1's analyze ledger is never blended into a run-2 report
+    assert provenance["stats"][0]["value"] == 1  # "recorded runs"
+
+
 def test_decode_catalog_strategy_key():
     got = decode_catalog_strategy_key("catalog:effnet:max_per_candidate_segment:v1:aabbcc")
     assert got is not None

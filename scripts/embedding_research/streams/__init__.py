@@ -21,6 +21,7 @@ from scripts.embedding_research.streams.records import (
     STREAM_TABLE,
     DuplicateStreamError,
     HeadStreamRecord,
+    ObservationGroupIdentity,
     ReconcileReport,
     ReindexReport,
     StreamNotFoundError,
@@ -44,10 +45,14 @@ from scripts.embedding_research.streams.reindex import (
     reindex,
 )
 from scripts.embedding_research.streams.store import (
+    CommittedObservation,
+    CurrentMaskResolver,
     CurrentStreamResolver,
     HeadStreamStore,
     StreamStore,
+    make_current_mask_resolver,
     make_current_stream_resolver,
+    observation_group_ready,
 )
 
 __all__ = [
@@ -57,10 +62,13 @@ __all__ = [
     "STREAM_REGISTRY_COLUMNS",
     "STREAM_STATUSES",
     "STREAM_TABLE",
+    "CommittedObservation",
+    "CurrentMaskResolver",
     "CurrentStreamResolver",
     "DuplicateStreamError",
     "HeadStreamRecord",
     "HeadStreamStore",
+    "ObservationGroupIdentity",
     "ReconcileReport",
     "ReindexReport",
     "StreamNotFoundError",
@@ -72,8 +80,10 @@ __all__ = [
     "VerifyFailureError",
     "canonical_dim_by_head",
     "canonical_head_ids",
+    "make_current_mask_resolver",
     "make_current_stream_resolver",
     "now_ms",
+    "observation_group_ready",
     "parse_dim_by_head",
     "parse_head_ids",
     "reconcile_current_manifests",

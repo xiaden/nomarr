@@ -36,6 +36,7 @@ import hashlib
 import io
 import math
 from dataclasses import dataclass
+from typing import Protocol, runtime_checkable
 
 import numpy as np
 
@@ -158,6 +159,25 @@ def _drop_short_silent_runs(flags: np.ndarray, min_run: int) -> np.ndarray:
         else:
             i += 1
     return out
+
+
+@runtime_checkable
+class CurrentMaskResolver(Protocol):
+    """The committed current-mask read seam for catalog/head consumers (P1-S2).
+
+    ``load(song_id, backbone)`` returns the committed silence mask for one logical
+    ``(song_id, backbone)`` group as ``uint8[patch_count]`` (``1`` = searchable,
+    ``0`` = silent), resolved from the SAME complete committed observation group that
+    authorises the stream — never from a stream-only registry row and never as an
+    implicit all-searchable default.  ``None`` when the committed group cannot be
+    resolved (absent, corrupt, wrong-length, wrong-digest, or mismatched); consumers
+    must treat ``None`` as fail-closed and never as no silence.
+
+    Runtime consumers obtain one via :func:`~scripts.embedding_research.streams.store.make_current_mask_resolver`;
+    this Protocol is the seam they type against (no filesystem-path API).
+    """
+
+    def load(self, song_id: str, backbone: str) -> np.ndarray | None: ...
 
 
 @dataclass(frozen=True)
@@ -363,6 +383,7 @@ __all__ = [
     "MIN_RUN_PATCHES",
     "MIN_SILENT_RUN_FRAMES",
     "PREPROCESS_FN",
+    "CurrentMaskResolver",
     "MaskPayload",
     "canonical_audio_fingerprint",
     "derive_audio_mask",

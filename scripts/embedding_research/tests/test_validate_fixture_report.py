@@ -232,3 +232,144 @@ def test_validator_rejects_empty_corpus(tmp_path):
     with pytest.raises(ValueError) as exc:
         validator.validate_fixture_report(path)
     assert "positive active song count" in str(exc.value)
+
+
+# ---------------------------------------------------------------------------
+# P1-S7: durable identity / baseline / head / provenance / phase-vocabulary
+# contract on the real generated fixture (round-trip + tamper cases)
+# ---------------------------------------------------------------------------
+
+
+def _find_table(owner, table_id):
+    """Locate *table_id* at section level or inside any subsection/panel."""
+    for table in owner.get("tables", []):
+        if table.get("id") == table_id:
+            return table
+    for sub in owner.get("subsections", []):
+        for table in sub.get("tables", []):
+            if table.get("id") == table_id:
+                return table
+    return None
+
+
+def _mutate_and_expect_fail(tmp_path, mutation, needle):
+    """Regenerate a fixture, apply *mutation* to the loaded payload, assert the validator rejects."""
+    path = _generate_fixture(tmp_path)
+    data = _load(path)
+    mutation(data)
+    path.write_text(json.dumps(data), encoding="utf-8")
+    with pytest.raises(ValueError) as exc:
+        validator.validate_fixture_report(path)
+    assert needle in str(exc.value)
+
+
+def test_full_fixture_carries_durable_identity_baseline_head_and_phases(tmp_path):
+    """Positive: the current-schema fixture report exposes every P1-S7 durable surface."""
+    path = _generate_fixture(tmp_path)
+    validator.validate_fixture_report(path)  # must not raise
+    payload = _load(path)
+    by_id = _sections(payload)
+
+    # Human HTML output present beside the machine JSON.
+    assert (tmp_path / "report.html").is_file()
+
+    # Durable identity/equivalence columns on the analysis surface.
+    for backbone in ("effnet", "musicnn"):
+        sub = next(s for s in by_id["analysis"]["subsections"] if s["title"] == backbone)
+        tbl = _find_table(sub, f"catalog_analysis_{backbone}")
+        for col in ("canonical_config_id", "alias_ids", "representation_hash", "view_content_hash"):
+            assert col in tbl["columns"], col
+
+    # Baseline/delta: every winner delta row's baseline is the observed global medoid, no config.
+    for backbone in ("effnet", "musicnn"):
+        sub = next(s for s in by_id["winners"]["subsections"] if s["title"] == backbone)
+        dt = _find_table(sub, f"winner_delta_{backbone}")
+        bsk = dt["columns"].index("baseline_strategy_key")
+        bcid = dt["columns"].index("baseline_canonical_config_id")
+        assert all(r[bsk] == f"global_pool:{backbone}:medoid" for r in dt["rows"])
+        assert all(r[bcid] == "—" for r in dt["rows"])
+
+    # Exactly the eight CLI phase names are recorded on the provenance phase surface.
+    prov = by_id["provenance"]
+    rh = _find_table(prov, "run_history")
+    phases = {r[rh["columns"].index("phase")] for r in rh["rows"]}
+    assert phases == set(validator.EXACT_PHASE_NAMES)
+
+
+def test_validator_requires_human_html_sibling(tmp_path):
+    path = _generate_fixture(tmp_path)
+    (tmp_path / "report.html").unlink()
+    with pytest.raises(ValueError) as exc:
+        validator.validate_fixture_report(path)
+    assert "human HTML output missing" in str(exc.value)
+
+
+def test_validator_rejects_baseline_not_global_pool_medoid(tmp_path):
+    def mutate(data):
+        winners = next(s for s in data["sections"] if s["id"] == "winners")
+        sub = next(s for s in winners["subsections"] if s["title"] == "effnet")
+        dt = _find_table(sub, "winner_delta_effnet")
+        dt["rows"][0][dt["columns"].index("baseline_strategy_key")] = "global_pool:effnet:min"
+
+    _mutate_and_expect_fail(tmp_path, mutate, "!= global_pool:effnet:medoid")
+
+
+def test_validator_rejects_baseline_carrying_config_identity(tmp_path):
+    def mutate(data):
+        winners = next(s for s in data["sections"] if s["id"] == "winners")
+        sub = next(s for s in winners["subsections"] if s["title"] == "effnet")
+        dt = _find_table(sub, "winner_delta_effnet")
+        dt["rows"][0][dt["columns"].index("baseline_canonical_config_id")] = "3"
+
+    _mutate_and_expect_fail(tmp_path, mutate, "baseline carries a config id")
+
+
+def test_validator_rejects_missing_phase_from_provenance(tmp_path):
+    def mutate(data):
+        prov = next(s for s in data["sections"] if s["id"] == "provenance")
+        rh = _find_table(prov, "run_history")
+        ph = rh["columns"].index("phase")
+        rh["rows"] = [r for r in rh["rows"] if r[ph] != "ingest"]
+
+    _mutate_and_expect_fail(tmp_path, mutate, "not all eight CLI phase names")
+
+
+def test_validator_rejects_obsolete_phase_name(tmp_path):
+    def mutate(data):
+        prov = next(s for s in data["sections"] if s["id"] == "provenance")
+        rh = _find_table(prov, "run_history")
+        rh["rows"][0][rh["columns"].index("phase")] = "stratify"
+
+    _mutate_and_expect_fail(tmp_path, mutate, "obsolete/unexpected phase name")
+
+
+def test_validator_rejects_non_finite_head_coverage(tmp_path):
+    def mutate(data):
+        ha = next(s for s in data["sections"] if s["id"] == "head-analysis")
+        tbl = _find_table(ha, "head_phase_provenance_effnet")
+        tbl["rows"][0][tbl["columns"].index("coverage")] = "NaN"
+
+    _mutate_and_expect_fail(tmp_path, mutate, "non-finite")
+
+
+def test_validator_rejects_missing_durable_identity_column(tmp_path):
+    def mutate(data):
+        analysis = next(s for s in data["sections"] if s["id"] == "analysis")
+        sub = next(s for s in analysis["subsections"] if s["title"] == "effnet")
+        tbl = _find_table(sub, "catalog_analysis_effnet")
+        i = tbl["columns"].index("representation_hash")
+        for row in tbl["rows"]:
+            del row[i]
+        del tbl["columns"][i]
+
+    _mutate_and_expect_fail(tmp_path, mutate, "missing durable identity column")
+
+
+def test_validator_rejects_inconsistent_class_identity(tmp_path):
+    def mutate(data):
+        analysis = next(s for s in data["sections"] if s["id"] == "analysis")
+        sub = next(s for s in analysis["subsections"] if s["title"] == "effnet")
+        tbl = _find_table(sub, "catalog_analysis_effnet")
+        tbl["rows"][1][tbl["columns"].index("representation_hash")] = "zz"
+
+    _mutate_and_expect_fail(tmp_path, mutate, "inconsistent identity")

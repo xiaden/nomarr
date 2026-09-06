@@ -385,20 +385,23 @@ def _config_identity_encoder_version(con, config_id: int) -> str:
     return versions.pop()
 
 
-def _config_leaf_values(con, config_id: int, leaf_column: str) -> tuple[str, ...]:
-    """The config's per-song leaf values under *leaf_column*, sorted ascending by value.
+def _config_leaf_values(con, config_id: int, leaf_column: str) -> tuple[tuple[str, str], ...]:
+    """The config's per-song leaf values under *leaf_column*, bound to their song in FIXED song order.
 
     Reads the CURRENT compact ``catalog_song`` rows every call (recomputed from stored
-    hashes; no durable alias graph/column/file is consulted).  Sorting by leaf value is
-    deterministic and makes the collapse independent of physical row order.
+    hashes; no durable alias graph/column/file is consulted).  Each ``(song_id, leaf)``
+    pair keeps the leaf bound to the song that produced it; pairs are serialized in fixed
+    ascending ``song_id`` order so a config's preimage is independent of physical row order
+    yet sensitive to which SONGS (and song identities) the config covers — a cross-corpus /
+    song-set difference changes the config hash instead of being sorted away.
     """
     if leaf_column not in (_EXACT_LEAF_COL, _SEARCH_LEAF_COL):
         raise ValueError(f"leaf_column must be {_EXACT_LEAF_COL!r} or {_SEARCH_LEAF_COL!r}")
     rows = con.execute(
-        f"SELECT {leaf_column} FROM {CATALOG_SONG_TABLE} WHERE config_id = ?",
+        f"SELECT song_id, {leaf_column} FROM {CATALOG_SONG_TABLE} WHERE config_id = ?",
         [int(config_id)],
     ).fetchall()
-    return tuple(sorted(str(r[0]) for r in rows))
+    return tuple(sorted((str(song), str(leaf)) for song, leaf in rows))
 
 
 def _canon_config_fields(con, config_id: int) -> str:
@@ -410,23 +413,27 @@ def _canon_config_fields(con, config_id: int) -> str:
 def search_representation_hash(catalog, config_id: int) -> str:
     """DD L263 per-config search-representation hash over the CURRENT catalog rows.
 
-    ``SHA256(encoder_version || scoring-input semantics || sorted search leaves)``.  The
-    config's canonical fields (threshold etc.) are deliberately EXCLUDED, so two direct
-    thresholds that produce identical searchable medoid sets collapse.  ``catalog`` is a
+    ``SHA256(encoder_version || scoring-input semantics || per-song search leaves in fixed
+    song order)``.  Each search leaf is bound to the ``song_id`` that produced it and already
+    encodes the frozen stream + committed-mask digests, mask/scoring semantics, and ordered
+    medoid source indices + normalized weights.  The config's canonical fields (threshold
+    etc.) are deliberately EXCLUDED, so two direct thresholds that produce identical ordered
+    searchable medoid+weight inputs collapse — but a cross-corpus song-set/identity difference
+    or a change in the actual scoring input bytes/order/weights does NOT.  ``catalog`` is a
     compact CatalogHandle / snapshot connection (duck-typed via ``con``).
     """
     con = _identity_con(catalog)
     cfg = _config_row(con, config_id)
     semantics = str(cfg["threshold_semantics"])
     encoder = _config_identity_encoder_version(con, config_id)
-    leaves = _config_leaf_values(con, config_id, _SEARCH_LEAF_COL)
+    leaf_pairs = _config_leaf_values(con, config_id, _SEARCH_LEAF_COL)
     pre = "\n".join(
         [
             "search_representation_hash",
             f"encoder_version={encoder}",
             f"scoring_input_semantics={semantics}",
-            f"n_songs={len(leaves)}",
-            *leaves,
+            f"n_songs={len(leaf_pairs)}",
+            *(f"song={song}\n{leaf}" for song, leaf in leaf_pairs),
         ]
     )
     return hashlib.sha256(pre.encode("utf-8")).hexdigest()
@@ -435,23 +442,24 @@ def search_representation_hash(catalog, config_id: int) -> str:
 def exact_segmentation_hash(catalog, config_id: int) -> str:
     """DD L258 per-config exact-segmentation hash over the CURRENT catalog rows.
 
-    ``SHA256(encoder_version || canonical config fields || sorted exact leaves)``.  Unlike
-    the search hash, it INCLUDES the canonical config fields (``threshold_effective`` etc.),
-    so two search-collapsed configs with distinct thresholds still carry DISTINCT exact
-    hashes and remain structurally distinguishable.  ``catalog`` is a compact CatalogHandle /
-    snapshot connection (duck-typed via ``con``).
+    ``SHA256(encoder_version || canonical config fields || per-song exact leaves in fixed
+    song order)``.  Unlike the search hash, it INCLUDES the canonical config fields
+    (``threshold_effective`` etc.) and each exact leaf carries the full canonical structural
+    evidence + stream/mask digests, so two search-collapsed configs with distinct thresholds
+    still carry DISTINCT exact hashes and remain structurally distinguishable.  ``catalog`` is
+    a compact CatalogHandle / snapshot connection (duck-typed via ``con``).
     """
     con = _identity_con(catalog)
     encoder = _config_identity_encoder_version(con, config_id)
     fields = _canon_config_fields(con, config_id)
-    leaves = _config_leaf_values(con, config_id, _EXACT_LEAF_COL)
+    leaf_pairs = _config_leaf_values(con, config_id, _EXACT_LEAF_COL)
     pre = "\n".join(
         [
             "exact_segmentation_hash",
             f"encoder_version={encoder}",
             fields,
-            f"n_songs={len(leaves)}",
-            *leaves,
+            f"n_songs={len(leaf_pairs)}",
+            *(f"song={song}\n{leaf}" for song, leaf in leaf_pairs),
         ]
     )
     return hashlib.sha256(pre.encode("utf-8")).hexdigest()

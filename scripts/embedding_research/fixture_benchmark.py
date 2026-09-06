@@ -60,6 +60,12 @@ __all__ = [
 #: Every benchmark/fixture-report output must carry this fixtures-only label (truthy).
 FIXTURES_ONLY = True
 
+#: Explicit no-empirical-retrieval statement every fixture benchmark record must carry (and its
+#: validator must REQUIRE) so the labelled fixture is never mistaken for a real-corpus/model claim.
+NO_EMPIRICAL_STATEMENT = (
+    "FIXTURES-ONLY SYNTHETIC — deterministic fixture surface, no empirical corpus/model retrieval claim."
+)
+
 #: Canonical field set a benchmark record must carry before its numbers may be used.
 #: Vocabulary maps to the P4-S3 requirement: ``n_songs`` (songs), ``patch_distribution``,
 #: ``dimension``, ``backbone`` + ``model_hash`` (backbone/model hash), ``hardware``,
@@ -81,6 +87,7 @@ REQUIRED_BENCHMARK_FIELDS: tuple[str, ...] = (
     "candidate_chunk_size",
     "working_memory_bytes",
     "fixtures_only",
+    "no_empirical_statement",
 )
 
 #: Error message prefix used by validate_benchmark_report for a missing required field.
@@ -100,6 +107,12 @@ def validate_benchmark_report(record: Mapping[str, Any]) -> list[str]:
         errors.append(
             "benchmark is not labelled fixtures_only=True; it must never be "
             "presented as an empirical corpus/model claim"
+        )
+    stmt = record.get("no_empirical_statement")
+    if not (isinstance(stmt, str) and stmt.strip()):
+        errors.append(
+            "benchmark is missing the explicit no-empirical-retrieval statement; "
+            "a fixture benchmark must never be presented as a real-corpus/model result"
         )
     return errors
 
@@ -163,6 +176,7 @@ class BenchmarkRecord:
     candidate_chunk_size: int
     working_memory_bytes: int
     fixtures_only: bool = FIXTURES_ONLY
+    no_empirical_statement: str = NO_EMPIRICAL_STATEMENT
     # Additional observed, labelled context (not required fields but informative).
     k_rows: int = 0
     m_rows: int = 0
@@ -268,6 +282,7 @@ def run_bounded_benchmark(
         query_chunk_size=int(result.query_chunk_size),
         candidate_chunk_size=int(result.candidate_chunk_size),
         working_memory_bytes=int(result.working_memory),
+        no_empirical_statement=NO_EMPIRICAL_STATEMENT,
         k_rows=k_rows,
         m_rows=m_rows,
         full_product_bytes=int(full_product_bytes),

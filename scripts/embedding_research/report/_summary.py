@@ -21,8 +21,11 @@ def _summary_rows(analysis_df: pd.DataFrame) -> list[dict]:
     rows: list[dict] = []
     for bb in backbones:
         bb_a = analysis_df[analysis_df["backbone"] == bb]
-        classes = sorted({str(s) for s in bb_a["strategy_key"].dropna().tolist()})
-        ks = sorted({int(k) for k in bb_a["k"].dropna().tolist()})
+        # active_catalog_classes / distinct_k count catalog classes only — an observed
+        # ``global_pool:{bb}:medoid`` baseline row is a baseline, not a class.
+        bb_catalog = bb_a[bb_a["strategy_key"].astype(str).str.startswith("catalog:")]
+        classes = sorted({str(s) for s in bb_catalog["strategy_key"].dropna().tolist()})
+        ks = sorted({int(k) for k in bb_catalog["k"].dropna().tolist()})
         cells = winner_df[winner_df["backbone"] == bb] if not winner_df.empty else pd.DataFrame()
         n_cells = len(cells)
         positive = 0
@@ -80,10 +83,12 @@ def section_summary(analysis_df: pd.DataFrame) -> dict:
         description=(
             "Per-backbone status of the active catalog analysis.  Each backbone is an "
             "independent population (EffNet / MusicNN never cross-averaged).  "
-            "evaluation_cells counts the (k x metric) cells with a finite winner; "
-            "positive_delta_cells counts cells where the winner beats the deterministic "
-            "baseline (lowest (canonical_config_id, strategy_key) active class).  See the "
-            "winners section for the full per-cell baseline/winner/delta tables."
+            "evaluation_cells counts the (k x metric) cells with a finite observed-medoid baseline "
+            "and a finite winner (cells without a run-scoped medoid baseline are absent, not zero); "
+            "positive_delta_cells counts cells where the winner beats the observed "
+            "global-medoid baseline (global_pool:{backbone}:medoid) over the same "
+            "corpus / sim_metric / k / metric.  See the winners section for the full "
+            "per-cell baseline/winner/delta tables."
         ),
         stats=[{"label": "backbones", "value": len(table_rows)}],
         tables=[

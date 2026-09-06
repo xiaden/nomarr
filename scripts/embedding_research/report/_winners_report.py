@@ -133,11 +133,12 @@ def section_winners(analysis_df: pd.DataFrame) -> dict:
         "Catalog Winners & Deltas",
         description=(
             "Deterministic per-(sim_metric, k, metric) winner/delta tables and per-class "
-            "factor rosters, rendered separately for each backbone.  baseline = the active "
-            "class with the lowest (canonical_config_id, strategy_key); winner = the highest "
-            "finite value with strategy_key tie-break; delta = winner - baseline.  Equal "
-            "representations were collapsed to one class by the analyze pipeline, so alias "
-            "lists never create duplicate score rows."
+            "factor rosters, rendered separately for each backbone.  baseline = the observed "
+            "global-medoid baseline (global_pool:{backbone}:medoid) scored over the same "
+            "corpus / sim_metric / k / metric, never a winner candidate; winner = the highest "
+            "finite catalog-class value with strategy_key tie-break; delta = winner - baseline.  "
+            "Equal representations were collapsed to one class by the analyze pipeline, so "
+            "alias lists never create duplicate score rows."
         ),
         subsections=subsections,
     )

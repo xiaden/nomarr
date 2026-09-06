@@ -26,26 +26,21 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import numpy as np
-
 from scripts.embedding_research.db import stream_registry as _reg
-from scripts.embedding_research.streams.publication import (
-    _file_sha256_hex,
-    parse_artifact_name,
-    read_json_manifest,
+from scripts.embedding_research.streams.heads_current import (
+    CURRENT_SUBDIR,
+    resolve_current_head_suite,
 )
+from scripts.embedding_research.streams.publication import parse_artifact_name, read_json_manifest
 from scripts.embedding_research.streams.records import (
     HEAD_STREAM_REGISTRY_COLUMNS,
     HEAD_STREAM_TABLE,
-    STREAM_DTYPE,
     STREAM_REGISTRY_COLUMNS,
     STREAM_TABLE,
-    HeadStreamRecord,
+    HeadSuiteCurrentError,
     ReindexReport,
     StreamRecord,
     now_ms,
-    parse_dim_by_head,
-    parse_head_ids,
     payload_to_manifest_ref,
 )
 from scripts.embedding_research.streams.store import HeadStreamStore, StreamStore
@@ -56,6 +51,8 @@ __all__ = ["reconcile_current_manifests", "reindex"]
 _CATALOGS_DIR = "catalogs"
 _CATALOGS_CURRENT = "current.json"
 _CORPUS_DIR = "corpus"
+#: Fixed-path per-identity CURRENT head-suite marker suffix (Plan C P1-S4).
+_HEAD_CURRENT_SUFFIX = ".json"
 
 
 def _record_from_doc(record_cls, columns: tuple[str, ...], doc: dict[str, object]):
@@ -74,48 +71,6 @@ def _record_from_doc(record_cls, columns: tuple[str, ...], doc: dict[str, object
         else:
             values.append(doc.get(column))
     return record_cls.from_row(tuple(values))
-
-
-def _stream_payload_ok(path: Path, record) -> bool:
-    """Digest + dtype + shape + finite validation of a float32 stream payload."""
-    if not path.is_file():
-        return False
-    if _file_sha256_hex(path) != record.fingerprint_sha256:
-        return False
-    try:
-        arr = np.load(str(path), allow_pickle=False)
-    except (OSError, ValueError):
-        return False
-    return bool(
-        isinstance(arr, np.ndarray)
-        and arr.dtype == np.dtype(STREAM_DTYPE)
-        and arr.shape == (record.patch_count, record.dim)
-        and np.isfinite(arr).all()
-    )
-
-
-def _head_payload_ok(path: Path, record) -> bool:
-    """Digest + npz layout (head_ids/dim_by_head) + finite validation of a head payload."""
-    if not path.is_file():
-        return False
-    if _file_sha256_hex(path) != record.fingerprint_sha256:
-        return False
-    try:
-        npz = np.load(str(path), allow_pickle=False)
-        dims = parse_dim_by_head(record.dim_by_head)
-        ids = parse_head_ids(record.head_ids)
-    except (OSError, ValueError, KeyError):
-        return False
-    if set(npz.keys()) != set(ids):
-        return False
-    for head in ids:
-        arr = npz[head]
-        expected = (record.patch_count, dims[head])
-        if not isinstance(arr, np.ndarray) or arr.dtype != np.dtype(STREAM_DTYPE):
-            return False
-        if arr.shape != expected or not bool(np.isfinite(arr).all()):
-            return False
-    return True
 
 
 def _digest_subdir_payloads(root: Path, subdir: str, suffix: str) -> list[Path]:
@@ -211,7 +166,22 @@ def _clear_registries(con) -> None:
 
 
 def _rebuild_stream_registry(store: StreamStore, issues: list[str]) -> tuple[int, int, int]:
-    """Rebuild stream_registry from committed observation groups; returns (scanned, ready, rebuilt)."""
+    """Rebuild stream_registry cache rows ONLY from complete committed observation groups.
+
+    Readiness is defined IDENTICALLY to the rest of the system: a ``(song_id, backbone)``
+    group is rebuilt ``ready`` only when the shared complete-group predicate
+    :meth:`StreamStore.observation_group_ready` (delegating to the filesystem-authoritative
+    ``_resolve_committed_observation`` core) verifies a committed stream + aligned silence
+    mask + commit/identity group on disk — the SAME predicate the current stream/mask
+    resolvers use.  A registry row's cached ``ready`` status is never consulted (the
+    registries are cleared first); every row is re-derived from the filesystem alone.
+
+    Partial states are refused and reported, never rebuilt ready and never read as
+    no-silence: stream-only; stream+mask without a valid commit marker; or a commit whose
+    referenced stream/mask manifest/payload is missing, corrupt, wrong-length,
+    wrong-digest, identity/alignment/audio-fingerprint/mask-semantics mismatched or
+    uncommitted.  Reindex NEVER rebuilds a ready row from a stream-only artifact.
+    """
     scanned = ready = rebuilt = 0
     commit_dir = store.output_root / store._commit_subdir  # type: ignore[attr-defined]  # private StreamStore attr accessed within the streams package
     identities: set[tuple[str, str]] = set()
@@ -236,62 +206,41 @@ def _rebuild_stream_registry(store: StreamStore, issues: list[str]) -> tuple[int
 
     for song_id, backbone in sorted(identities):
         scanned += 1
-        docs = store._commit_documents(song_id, backbone)  # type: ignore[attr-defined]  # private StreamStore method accessed within the streams package
-        if not docs:
-            issues.append(f"stream group ({song_id!r}, {backbone!r}): no valid commit marker; refused")
+        # THE readiness decision: the shared complete-committed-group predicate (the same
+        # filesystem-authoritative core the current stream/mask resolvers use).  A group is
+        # rebuilt ready only when the committed mask and commit marker are present and
+        # valid; missing/corrupt/wrong-length/wrong-digest/uncommitted masks fail closed.
+        if not store.observation_group_ready(song_id, backbone):  # type: ignore[attr-defined]  # private StreamStore method accessed within the streams package
+            issues.append(
+                f"stream group ({song_id!r}, {backbone!r}): no complete committed observation "
+                "group on disk — committed mask/stream payload missing, corrupt, wrong-length, "
+                "wrong-digest, uncommitted, or identity/alignment/audio-fingerprint/"
+                "mask-semantics/commit-marker defect; refused"
+            )
             continue
-        doc = docs[0]  # newest-first -> current committed group
-        stream_ref = doc.get("stream_ref")
-        mask_ref = doc.get("mask_ref")
-        if not isinstance(stream_ref, str) or not isinstance(mask_ref, str):
-            issues.append(f"stream group ({song_id!r}, {backbone!r}): commit refs malformed; refused")
-            continue
-        if not (
-            stream_ref.startswith(f"{store._default_subdir}/")  # type: ignore[attr-defined]  # private StreamStore attr accessed within the streams package
-            and mask_ref.startswith(f"{store._mask_subdir}/")
-        ):  # type: ignore[attr-defined]  # store._mask_subdir is a private StreamStore attr within the package
-            issues.append(f"stream group ({song_id!r}, {backbone!r}): non-current refs; refused")
-            continue
-        # Reconstruct the stream record from its self-describing manifest.
-        manifest_path = store.output_root / payload_to_manifest_ref(stream_ref)
-        if not manifest_path.is_file():
-            issues.append(f"stream group ({song_id!r}, {backbone!r}): stream manifest missing; refused")
-            continue
+        # Ready: rebuild the cache row from the validated committed group's own stream
+        # manifest (its row pre-image).  The manifest must self-describe the exact committed
+        # artifact the predicate resolved — reindex never writes a cache row whose pre-image
+        # disagrees with the on-disk digest ref it was resolved from (a tampered
+        # ``artifact_ref``/``fingerprint_sha256`` is refused, never written ready).
+        obs = store.load_committed_observation(song_id, backbone)  # type: ignore[attr-defined]  # private StreamStore method accessed within the streams package
+        manifest_path = store.output_root / payload_to_manifest_ref(obs.identity.stream_ref)
         try:
             manifest = read_json_manifest(manifest_path)
             record = _record_from_doc(StreamRecord, STREAM_REGISTRY_COLUMNS, manifest)
         except (ValueError, TypeError) as exc:
-            issues.append(f"stream group ({song_id!r}, {backbone!r}): stream manifest invalid: {exc}")
+            issues.append(f"stream group ({song_id!r}, {backbone!r}): stream manifest invalid: {exc}; refused")
             continue
-        if (
-            manifest.get("kind") != "stream"
-            or manifest.get("schema_version") != "1"
-            or record.song_id != song_id
-            or record.backbone != backbone
-            or record.artifact_ref != stream_ref
-        ):
-            issues.append(f"stream group ({song_id!r}, {backbone!r}): manifest/commit mismatch; refused")
+        if record.fingerprint_sha256 != obs.identity.stream_digest:
+            issues.append(
+                f"stream group ({song_id!r}, {backbone!r}): committed stream payload/manifest digest mismatch; refused"
+            )
             continue
-        # Stream payload: digest + shape + dtype + finite.
-        payload_path = store.output_root / stream_ref
-        if not _stream_payload_ok(payload_path, record):
-            issues.append(f"stream group ({song_id!r}, {backbone!r}): stream payload corrupt/mismatched; refused")
-            continue
-        # Mask referenced by the commit: digest + uint8[pc] + identity/alignment.
-        try:
-            mask_record = store._mask_record_from_doc(doc)  # type: ignore[attr-defined]  # private StreamStore method accessed within the streams package
-            mask_ok = store._mask_payload_ok(mask_record)  # type: ignore[attr-defined]  # private StreamStore method accessed within the streams package
-        except (ValueError, TypeError, OSError):
-            mask_ok = False
-        if not mask_ok:
-            issues.append(f"stream group ({song_id!r}, {backbone!r}): committed mask corrupt/missing; refused")
-            continue
-        if (
-            mask_record.song_id != song_id
-            or mask_record.backbone != backbone
-            or mask_record.patch_count != record.patch_count
-        ):
-            issues.append(f"stream group ({song_id!r}, {backbone!r}): stream/mask alignment mismatch; refused")
+        if record.artifact_ref != obs.identity.stream_ref or record.song_id != song_id or record.backbone != backbone:
+            issues.append(
+                f"stream group ({song_id!r}, {backbone!r}): stream manifest does not "
+                "self-describe the committed stream/mask group; refused"
+            )
             continue
         record = _with_status(record, "ready")
         _reg.insert_row(store._con, STREAM_TABLE, STREAM_REGISTRY_COLUMNS, record.row_tuple())  # type: ignore[attr-defined]  # store._con is a private StreamStore attr accessed within the package
@@ -300,46 +249,74 @@ def _rebuild_stream_registry(store: StreamStore, issues: list[str]) -> tuple[int
     return scanned, ready, rebuilt
 
 
-def _rebuild_head_registry(store: HeadStreamStore, issues: list[str]) -> tuple[int, int, int]:
-    """Rebuild head_stream_registry from current head manifests; returns (scanned, ready, rebuilt)."""
-    scanned = ready = rebuilt = 0
+def _current_marker_identities(store: HeadStreamStore) -> set[tuple[str, str]]:
+    """The ``(song_id, backbone)`` identities that HAVE a CURRENT head-suite marker.
+
+    Marker files live at the fixed path ``heads/current/<song_id>.<backbone>.json`` (not a
+    digest grammar name, so they are never parsed by ``parse_artifact_name`` and never
+    collide with head manifests/payloads under ``heads/``).
+    """
+    identities: set[tuple[str, str]] = set()
+    current_dir = store.output_root / CURRENT_SUBDIR
+    if not current_dir.is_dir():
+        return identities
+    for path in current_dir.glob(f"*{_HEAD_CURRENT_SUFFIX}"):
+        stem = path.name[: -len(_HEAD_CURRENT_SUFFIX)]
+        parts = stem.split(".")
+        if len(parts) == 2 and all(parts):
+            identities.add((parts[0], parts[1]))
+    return identities
+
+
+def _head_manifests_without_marker(store: HeadStreamStore, marked: set[tuple[str, str]]) -> set[tuple[str, str]]:
+    """Head identities whose current-format ``heads/*.json`` manifest has NO CURRENT marker.
+
+    Such head suites were published before/detached from a CURRENT selection: they are
+    superseded/unselected and reindex must never index them nor guess currency by mtime or
+    lexical order.  They are reported as a refusal (never silently resolved).
+    """
+    present: set[tuple[str, str]] = set()
     head_dir = store.output_root / store._default_subdir  # type: ignore[attr-defined]  # private HeadStreamStore attr accessed within the streams package
-    manifests_by_id: dict[tuple[str, str], list[Path]] = {}
     if head_dir.is_dir():
-        for path in sorted(head_dir.glob("*.json")):
+        for path in head_dir.glob("*.json"):
             parsed = parse_artifact_name(path.name, ".json")
             if parsed is not None:
-                manifests_by_id.setdefault((parsed.song_id, parsed.backbone), []).append(path)
+                present.add((parsed.song_id, parsed.backbone))
+    return present - marked
 
-    for identity, paths in sorted(manifests_by_id.items()):
+
+def _rebuild_head_registry(store: HeadStreamStore, issues: list[str]) -> tuple[int, int, int]:
+    """Rebuild head_stream_registry cache rows from CURRENT marker-selected suites only.
+
+    The ``heads/current/<song_id>.<backbone>.json`` CURRENT marker is the single
+    filesystem-authoritative selection for which complete head suite is current: reindex
+    NEVER guesses currency by mtime or lexical order and never picks among sibling head
+    manifests.  Each marker identity is resolved through
+    :func:`~scripts.embedding_research.streams.heads_current.resolve_current_head_suite`,
+    which refuses a missing/malformed/stale/mismatched marker, a suite not aligned to the
+    CURRENT committed stream, or a referenced head payload/manifest that is missing/
+    corrupt/mismatched.  Head manifests present without a CURRENT marker are superseded and
+    reported as a refusal (not indexed).  Returns ``(scanned, ready, rebuilt)``.
+    """
+    marked = _current_marker_identities(store)
+    unmarked = _head_manifests_without_marker(store, marked)
+    if unmarked:
+        issues.append(
+            f"{len(unmarked)} head manifest identity/identities with no CURRENT head-suite marker "
+            "(superseded/unselected suite refused, not indexed)"
+        )
+
+    scanned = ready = rebuilt = 0
+    root = store.output_root
+    for song_id, backbone in sorted(marked):
         scanned += 1
-        song_id, backbone = identity
-        if len(paths) != 1:
-            issues.append(
-                f"head identity ({song_id!r}, {backbone!r}): {len(paths)} current head manifests — "
-                "ambiguous current artifact without a marker; refused"
-            )
-            continue
-        manifest_path = paths[0]
         try:
-            manifest = read_json_manifest(manifest_path)
-            record = _record_from_doc(HeadStreamRecord, HEAD_STREAM_REGISTRY_COLUMNS, manifest)
-        except (ValueError, TypeError) as exc:
-            issues.append(f"head ({song_id!r}, {backbone!r}): manifest invalid: {exc}")
+            selection = resolve_current_head_suite(root, song_id, backbone)
+        except HeadSuiteCurrentError as exc:
+            issues.append(f"head ({song_id!r}, {backbone!r}): {exc}")
             continue
-        if (
-            manifest.get("kind") != "head"
-            or manifest.get("schema_version") != "1"
-            or record.song_id != song_id
-            or record.backbone != backbone
-        ):
-            issues.append(f"head ({song_id!r}, {backbone!r}): manifest mismatch; refused")
-            continue
-        if not _head_payload_ok(store.output_root / record.artifact_ref, record):
-            issues.append(f"head ({song_id!r}, {backbone!r}): payload corrupt/mismatched; refused")
-            continue
-        record = _with_status(record, "ready")
-        _reg.insert_row(store._con, HEAD_STREAM_TABLE, HEAD_STREAM_REGISTRY_COLUMNS, record.row_tuple())  # type: ignore[attr-defined]  # store._con is a private StreamStore attr accessed within the package
+        record = _with_status(selection.record, "ready")
+        _reg.insert_row(store._con, HEAD_STREAM_TABLE, HEAD_STREAM_REGISTRY_COLUMNS, record.row_tuple())  # type: ignore[attr-defined]  # store._con is a private HeadStreamStore attr accessed within the package
         ready += 1
         rebuilt += 1
     return scanned, ready, rebuilt

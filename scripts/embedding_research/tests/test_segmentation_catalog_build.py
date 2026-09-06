@@ -44,13 +44,26 @@ class FakeStreamStore:
 
 
 class FakeMaskStore:
-    """A duck-typed whole-song mask loader: ``.load(song_id) -> uint8[P] | None``."""
+    """A duck-typed committed-mask loader: ``.load(song_id, backbone) -> uint8[P] | None``.
 
-    def __init__(self, masks: dict[str, np.ndarray] | None = None) -> None:
+    Mirrors the two-key committed-mask seam.  Returns an explicit per-song mask when one is
+    given; otherwise an all-ones mask of the exact stream patch count (the fixture's
+    committed "no silent patches" group).  ``None`` only when there is no committed mask
+    for that ``(song_id, backbone)`` group — the catalog build refuses such a song, never
+    reading a missing mask as no silence.
+    """
+
+    def __init__(self, streams, masks: dict[str, np.ndarray] | None = None) -> None:
+        self._streams = streams
         self._masks = masks or {}
 
-    def load(self, song_id: str):
-        return self._masks.get(song_id)  # None => no silence for that song
+    def load(self, song_id: str, backbone: str):
+        if song_id in self._masks:
+            return np.asarray(self._masks[song_id], dtype=np.uint8)
+        stream = self._streams.load(song_id, backbone)
+        if stream is None:
+            return None
+        return np.ones(stream.shape[0], dtype=np.uint8)
 
 
 def _song_mat(patch_counts: list[int], *, dim: int = 4, seed: float = 1.0) -> np.ndarray:
@@ -81,7 +94,7 @@ def _tables(con) -> set[str]:
     return {r[0] for r in rows}
 
 
-def _cfg(threshold: float, *, backbone: str = "effnet", bin_mode: str = "direct") -> dict:
+def _cfg(threshold: float, *, backbone: str = "effnet", bin_mode: str = "temporal_global") -> dict:
     return {
         "backbone": backbone,
         "bin_mode": bin_mode,
@@ -98,7 +111,7 @@ def _cfg(threshold: float, *, backbone: str = "effnet", bin_mode: str = "direct"
 def test_build_persists_only_compact_tables_no_membership_no_indexes(tmp_path):
     fs = FakeStreamStore({("s1", "effnet"): _song_mat([5, 3]), ("s2", "effnet"): _song_mat([4, 5, 4])})
     rep = catalog.build_segmentation_catalog(
-        fs, FakeMaskStore(), [_cfg(1.0)], ["s1", "s2"], output_root=str(tmp_path), run_id="run-a", verify=True
+        fs, FakeMaskStore(fs), [_cfg(1.0)], ["s1", "s2"], output_root=str(tmp_path), run_id="run-a", verify=True
     )
     assert rep.verify_ok is True
     with _open_snapshot(tmp_path, "run-a")[0] as con:
@@ -125,7 +138,7 @@ def test_one_stream_load_per_song_shared_across_threshold_configs(tmp_path):
     fs = FakeStreamStore({("s1", "effnet"): _song_mat([5, 3]), ("s2", "effnet"): _song_mat([8])})
     rep = catalog.build_segmentation_catalog(
         fs,
-        FakeMaskStore(),
+        FakeMaskStore(fs),
         [_cfg(0.4), _cfg(0.9)],
         ["s1", "s2"],
         output_root=str(tmp_path),
@@ -149,7 +162,7 @@ def test_all_explicit_configs_present_with_deterministic_config_ids(tmp_path):
     thresholds = (0.4, 0.6, 0.9)
     rep = catalog.build_segmentation_catalog(
         fs,
-        FakeMaskStore(),
+        FakeMaskStore(fs),
         [_cfg(t) for t in thresholds],
         ["s1"],
         output_root=str(tmp_path),
@@ -175,7 +188,7 @@ def test_duplicate_canonical_config_collapses_to_single_row(tmp_path):
     b = dict(base, semantics="whatever-cosmetic")
     fs = FakeStreamStore({("s1", "effnet"): _song_mat([6, 4])})
     rep = catalog.build_segmentation_catalog(
-        fs, FakeMaskStore(), [a, b], ["s1"], output_root=str(tmp_path), run_id="run-d", verify=True
+        fs, FakeMaskStore(fs), [a, b], ["s1"], output_root=str(tmp_path), run_id="run-d", verify=True
     )
     assert len(rep.configs) == 1
     with _open_snapshot(tmp_path, "run-d")[0] as con:
@@ -183,21 +196,24 @@ def test_duplicate_canonical_config_collapses_to_single_row(tmp_path):
         assert con.execute("SELECT count(*) FROM catalog_song").fetchone()[0] == 1
 
 
-def test_bin_mode_direct_is_accepted_without_dist_fn_validation(tmp_path):
-    """'direct' bin_mode is a legal compact config (NOT validated against DIST_FNS)."""
+def test_bin_mode_direct_is_refused_not_accepted(tmp_path):
+    """The retired 'direct' bin_mode is REFUSED by the config-validation layer (fail closed).
+
+    Only the canonical ``DIST_FNS`` modes (``temporal_global`` / ``temporal_perdim``) are
+    accepted; the obsolete ``"direct"`` vocabulary is refused along with any unknown mode.
+    """
     fs = FakeStreamStore({("s1", "effnet"): _song_mat([8])})
-    rep = catalog.build_segmentation_catalog(
-        fs,
-        FakeMaskStore(),
-        [_cfg(1.0, bin_mode="direct")],
-        ["s1"],
-        output_root=str(tmp_path),
-        run_id="run-e",
-        verify=True,
-    )
-    assert rep.total_catalog_songs == 1
-    with _open_snapshot(tmp_path, "run-e")[0] as con:
-        assert con.execute("SELECT bin_mode FROM seg_config").fetchone()[0] == "direct"
+    for bad_mode in ("direct", "not_a_mode"):
+        with pytest.raises(catalog.CatalogValidationError, match="bin_mode"):
+            catalog.build_segmentation_catalog(
+                fs,
+                FakeMaskStore(fs),
+                [_cfg(1.0, bin_mode=bad_mode)],
+                ["s1"],
+                output_root=str(tmp_path),
+                run_id=f"run-e-{bad_mode}",
+                verify=True,
+            )
 
 
 # --------------------------------------------------------------------------- #
@@ -209,7 +225,7 @@ def test_song_lacking_ready_stream_is_excluded_not_failed(tmp_path):
     """A requested song with no ready stream is excluded (counted), never a failure."""
     fs = FakeStreamStore({("s1", "effnet"): _song_mat([8])})  # s2 has no ready stream
     rep = catalog.build_segmentation_catalog(
-        fs, FakeMaskStore(), [_cfg(1.0)], ["s1", "s2"], output_root=str(tmp_path), run_id="run-f", verify=True
+        fs, FakeMaskStore(fs), [_cfg(1.0)], ["s1", "s2"], output_root=str(tmp_path), run_id="run-f", verify=True
     )
     assert len(rep.configs) == 1
     outcome = rep.configs[0]
@@ -227,7 +243,7 @@ def test_no_ready_stream_for_backbone_yields_empty_status(tmp_path):
     """Zero ready streams for a backbone => empty outcome; config identity still persists."""
     fs = FakeStreamStore({})  # nothing ready for 'effnet'
     rep = catalog.build_segmentation_catalog(
-        fs, FakeMaskStore(), [_cfg(1.0)], ["s1"], output_root=str(tmp_path), run_id="run-g", verify=True
+        fs, FakeMaskStore(fs), [_cfg(1.0)], ["s1"], output_root=str(tmp_path), run_id="run-g", verify=True
     )
     outcome = rep.configs[0]
     assert outcome.status == "empty"
@@ -251,7 +267,7 @@ def test_per_song_failure_is_captured_and_status_partial(tmp_path, monkeypatch):
 
     monkeypatch.setattr(catalog, "_build_and_persist_song", flaky)
     rep = catalog.build_segmentation_catalog(
-        fs, FakeMaskStore(), [_cfg(1.0)], ["s1", "s2"], output_root=str(tmp_path), run_id="run-h", verify=True
+        fs, FakeMaskStore(fs), [_cfg(1.0)], ["s1", "s2"], output_root=str(tmp_path), run_id="run-h", verify=True
     )
     assert rep.status == "partial"
     outcome = rep.configs[0]
@@ -276,7 +292,7 @@ def test_mask_silence_reduces_searchable_total_and_persists_weight(tmp_path):
     mask[2] = 0  # one silent patch inside the single segment
     fs = FakeStreamStore({("s1", "effnet"): mat})
     rep = catalog.build_segmentation_catalog(
-        fs, FakeMaskStore({"s1": mask}), [_cfg(1.0)], ["s1"], output_root=str(tmp_path), run_id="run-i", verify=True
+        fs, FakeMaskStore(fs, {"s1": mask}), [_cfg(1.0)], ["s1"], output_root=str(tmp_path), run_id="run-i", verify=True
     )
     assert rep.total_segments == 1
     with _open_snapshot(tmp_path, "run-i")[0] as con:
@@ -294,7 +310,7 @@ def test_fully_silent_song_is_metadata_only_no_seg_rows(tmp_path):
     fs = FakeStreamStore({("s1", "effnet"): _song_mat([5])})
     mask = np.zeros(5, dtype=np.uint8)  # fully silent
     rep = catalog.build_segmentation_catalog(
-        fs, FakeMaskStore({"s1": mask}), [_cfg(1.0)], ["s1"], output_root=str(tmp_path), run_id="run-j", verify=True
+        fs, FakeMaskStore(fs, {"s1": mask}), [_cfg(1.0)], ["s1"], output_root=str(tmp_path), run_id="run-j", verify=True
     )
     assert rep.verify_ok is True
     assert rep.total_segments == 0
@@ -312,7 +328,7 @@ def test_fully_silent_song_is_metadata_only_no_seg_rows(tmp_path):
 
 def test_validation_errors_raise_and_error_chain(tmp_path):
     fs = FakeStreamStore({("s1", "effnet"): _song_mat([8])})
-    fm = FakeMaskStore()
+    fm = FakeMaskStore(fs)
     with pytest.raises(catalog.CatalogValidationError):
         catalog.build_segmentation_catalog(fs, fm, [], ["s1"], output_root=str(tmp_path), run_id="r")
     with pytest.raises(catalog.CatalogValidationError):
@@ -341,7 +357,7 @@ def test_verify_drift_raises_catalog_verification_error(tmp_path, monkeypatch):
     monkeypatch.setattr(catalog, "_write_catalog_song_row", corrupt_total)
     with pytest.raises(catalog.CatalogVerificationError):
         catalog.build_segmentation_catalog(
-            fs, FakeMaskStore(), [_cfg(1.0)], ["s1"], output_root=str(tmp_path), run_id="run-k", verify=True
+            fs, FakeMaskStore(fs), [_cfg(1.0)], ["s1"], output_root=str(tmp_path), run_id="run-k", verify=True
         )
 
 
@@ -356,7 +372,7 @@ def test_rerun_produces_deterministic_equivalent_snapshot(tmp_path):
     fs = FakeStreamStore(streams)
     rep_a = catalog.build_segmentation_catalog(
         fs,
-        FakeMaskStore(),
+        FakeMaskStore(fs),
         [_cfg(0.5), _cfg(0.9)],
         ["s1", "s2"],
         output_root=str(tmp_path),
@@ -365,7 +381,7 @@ def test_rerun_produces_deterministic_equivalent_snapshot(tmp_path):
     )
     rep_b = catalog.build_segmentation_catalog(
         fs,
-        FakeMaskStore(),
+        FakeMaskStore(fs),
         [_cfg(0.5), _cfg(0.9)],
         ["s1", "s2"],
         output_root=str(tmp_path),
@@ -432,7 +448,7 @@ def test_build_completes_with_zero_audio_model_cuda_calls(tmp_path, monkeypatch)
             monkeypatch.setattr(mod.cuda, "is_available", boom, raising=False)
     fs = FakeStreamStore({("s1", "effnet"): _song_mat([8])})
     rep = catalog.build_segmentation_catalog(
-        fs, FakeMaskStore(), [_cfg(1.0)], ["s1"], output_root=str(tmp_path), run_id="run-l", verify=True
+        fs, FakeMaskStore(fs), [_cfg(1.0)], ["s1"], output_root=str(tmp_path), run_id="run-l", verify=True
     )
     assert rep.verify_ok is True
 
@@ -465,7 +481,7 @@ def test_built_snapshot_rows_finite_and_medoid_is_observed_source_index(tmp_path
     fs = FakeStreamStore({("s1", "effnet"): mat})
     rep = catalog.build_segmentation_catalog(
         fs,
-        FakeMaskStore({"s1": mask}),
+        FakeMaskStore(fs, {"s1": mask}),
         [_cfg(1.0)],
         ["s1"],
         output_root=str(tmp_path),

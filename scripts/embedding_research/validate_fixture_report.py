@@ -50,8 +50,10 @@ EXACT_SECTION_IDS: tuple[str, ...] = (
 EXPECTED_BACKBONES: tuple[str, ...] = ("effnet", "musicnn")
 
 #: Forbidden legacy vocabulary that must never appear in the emitted fixture report.
+#: ``global_pool`` is intentionally absent: the observed ``global_pool:{backbone}:medoid``
+#: baseline strategy key is a legitimate winner-section value under the medoid-baseline
+#: contract (aligned with tests/_report_seed.py::FORBIDDEN_REPORT_VOCABULARY).
 FORBIDDEN_REPORT_VOCABULARY: tuple[str, ...] = (
-    "global_pool",
     "ptc",
     "ctp",
     "binned",
@@ -65,6 +67,40 @@ FORBIDDEN_REPORT_VOCABULARY: tuple[str, ...] = (
 
 #: Message of the synthetic-fixture warning the generator must attach.
 SYNTHETIC_WARNING_MESSAGE = "SYNTHETIC FIXTURE — no empirical retrieval claim."
+
+#: The eight EXACT active CLI phase names (run.CLI_PHASES) permitted on report phase
+#: surfaces.  The validator requires exactly this vocabulary for the executed pipeline and
+#: rejects any obsolete phase name (``stratify``/``segment``/``classify``/standalone ``head``)
+#: in phase position.
+EXACT_PHASE_NAMES: tuple[str, ...] = (
+    "ingest",
+    "embed",
+    "infer-heads",
+    "catalog",
+    "catalog-report",
+    "analyze",
+    "head-analysis",
+    "report",
+)
+
+#: Maintenance verbs additionally permitted on a phase surface where the generator records
+#: them (verify/reindex/cleanup/reset).  The in-memory fixture generator records only the
+#: eight executed CLI phases, so a compliant current fixture carries exactly EXACT_PHASE_NAMES;
+#: the maintenance names are an allow-list so a fixture that records maintenance provenance is
+#: still valid rather than spuriously rejected.
+MAINTENANCE_PHASE_NAMES: tuple[str, ...] = ("verify", "reindex", "cleanup", "reset")
+
+#: Every phase name that may legally appear on a report phase surface.
+ALLOWED_PHASE_NAMES: tuple[str, ...] = EXACT_PHASE_NAMES + MAINTENANCE_PHASE_NAMES
+
+#: Obsolete phase names that must never appear on a report phase surface (retired command
+#: verbs).  ``head`` is intentionally NOT here (``head-analysis`` is a legitimate current phase
+#: name); a standalone ``head`` phase value is excluded by the exact-vocabulary assertion.
+OBSOLETE_PHASE_NAMES: tuple[str, ...] = ("stratify", "segment", "classify")
+
+#: Em-dash sentinel report cells use for a ``None`` / absent identity (a baseline has no
+#: config identity; an alias-free class has no alias ids).
+_NONE_CELL = "—"
 
 _NON_FINITE_RE = re.compile(r"^[-+]?inf(?:inity)?$|^nan$", re.IGNORECASE)
 
@@ -129,6 +165,35 @@ def _subsection_titles(section: dict) -> list[str]:
     return [sub.get("title", "") for sub in section.get("subsections", [])]
 
 
+def _cell(table: dict, row, column: str):
+    """Return the *row* cell under *column* (None when the column is absent)."""
+    if column in table.get("columns", []):
+        return row[table["columns"].index(column)]
+    return None
+
+
+def _is_none_cell(value) -> bool:
+    """True when *value* renders an absent/None identity (em-dash, empty, or None)."""
+    return value is None or value == _NONE_CELL or value == ""
+
+
+def _finite_cell(value) -> bool:
+    """Whether a report cell is finite — non-numeric labels are tolerated, only NaN/Inf flags."""
+    if isinstance(value, bool):
+        return True
+    if isinstance(value, (int, float)):
+        return math.isfinite(float(value))
+    if isinstance(value, str):
+        s = value.strip()
+        if not s or s in ("True", "False", _NONE_CELL):
+            return True
+        try:
+            return math.isfinite(float(s))
+        except ValueError:
+            return True  # a non-numeric label cell, not a number
+    return True
+
+
 # ---------------------------------------------------------------------------
 # Validator
 # ---------------------------------------------------------------------------
@@ -188,6 +253,14 @@ def validate_fixture_report(path: str | Path) -> None:
         problems,
         SYNTHETIC_WARNING_MESSAGE in messages,
         "synthetic-fixture / no-empirical-retrieval-claim warning missing from report.warnings",
+    )
+
+    # ── human HTML output present alongside the machine JSON (report.html sibling) ─────
+    html_path = report_path.with_name("report.html")
+    _check(
+        problems,
+        html_path.is_file() and html_path.stat().st_size > 0,
+        f"human HTML output missing or empty beside the machine JSON: {html_path}",
     )
 
     summary = _find_section(sections, "summary")
@@ -254,6 +327,45 @@ def validate_fixture_report(path: str | Path) -> None:
             aa_count = sum(1 for row in effnet.get("rows", []) if row[scol].endswith(":aa"))
             _check(problems, aa_count == 4, f"alias 'aa' not collapsed (expected 4 rows, got {aa_count})")
 
+        # ── durable identity / equivalence fields the analysis surface exposes ────────
+        # Every per-backbone analysis table must carry the durable per-class identities:
+        # the canonical config id, its sorted alias ids (collapsed classes counted once),
+        # the representation (equivalence) hash, and the materialized view content hash.
+        for backbone in EXPECTED_BACKBONES:
+            table = _find_table(analysis, f"catalog_analysis_{backbone}")
+            if table is not None and not table.get("empty"):
+                cols = table.get("columns", [])
+                for identity_col in (
+                    "canonical_config_id",
+                    "alias_ids",
+                    "representation_hash",
+                    "view_content_hash",
+                ):
+                    _check(
+                        problems,
+                        identity_col in cols,
+                        f"catalog_analysis_{backbone} missing durable identity column {identity_col}",
+                    )
+                if all(c in cols for c in ("strategy_key", "canonical_config_id", "representation_hash")):
+                    # Durable equivalence identity: every row of one strategy_key (class) must
+                    # share the same canonical config id and representation hash across K/metric.
+                    seen: dict[str, tuple] = {}
+                    for row in table.get("rows", []):
+                        key = row[cols.index("strategy_key")]
+                        ident = (row[cols.index("canonical_config_id")], row[cols.index("representation_hash")])
+                        _check(
+                            problems,
+                            key not in seen or seen[key] == ident,
+                            f"catalog_analysis_{backbone} class {key!r} carries inconsistent identity {ident} vs {seen.get(key)}",
+                        )
+                        seen[key] = ident
+                    for key, (config_id, rep_hash) in seen.items():
+                        _check(
+                            problems,
+                            not _is_none_cell(config_id) and bool(rep_hash),
+                            f"catalog_analysis_{backbone} class {key!r} missing canonical_config_id/representation_hash",
+                        )
+
     # ── winners: deterministic winner/delta/factor tables per backbone ─────────────
     _check(problems, winners is not None, "winners section missing")
     if winners is not None:
@@ -272,6 +384,61 @@ def validate_fixture_report(path: str | Path) -> None:
                 factors is not None and not factors.get("empty"),
                 f"winners missing non-empty factor_classes_{backbone} table",
             )
+            if factors is not None and not factors.get("empty"):
+                fcols = factors.get("columns", [])
+                for identity_col in ("canonical_config_id", "alias_ids", "representation_hash"):
+                    _check(
+                        problems,
+                        identity_col in fcols,
+                        f"factor_classes_{backbone} missing durable identity column {identity_col}",
+                    )
+            # ── baseline / delta fields (observed-medoid contract) ──────────────────────
+            # The baseline for every cell is the observed global medoid for this backbone
+            # (``global_pool:{backbone}:medoid``); it is never a config class, so it carries
+            # baseline_canonical_config_id = None and never wins.  Delta rows must be finite.
+            if delta is not None and not delta.get("empty"):
+                dcols = delta.get("columns", [])
+                for field in (
+                    "n_classes",
+                    "baseline_strategy_key",
+                    "baseline_canonical_config_id",
+                    "baseline_value",
+                    "delta",
+                ):
+                    _check(
+                        problems,
+                        field in dcols,
+                        f"winner_delta_{backbone} missing field column {field}",
+                    )
+                if all(
+                    c in dcols
+                    for c in (
+                        "baseline_strategy_key",
+                        "baseline_canonical_config_id",
+                        "delta",
+                        "winner_canonical_config_id",
+                    )
+                ):
+                    bsk = dcols.index("baseline_strategy_key")
+                    bcid = dcols.index("baseline_canonical_config_id")
+                    wcid = dcols.index("winner_canonical_config_id")
+                    delta_i = dcols.index("delta")
+                    for row in delta.get("rows", []):
+                        _check(
+                            problems,
+                            row[bsk] == f"global_pool:{backbone}:medoid",
+                            f"winner_delta_{backbone} baseline identity {row[bsk]!r} != global_pool:{backbone}:medoid",
+                        )
+                        _check(
+                            problems,
+                            _is_none_cell(row[bcid]),
+                            f"winner_delta_{backbone} baseline carries a config id {row[bcid]!r} (must be None)",
+                        )
+                        _check(
+                            problems,
+                            not _is_none_cell(row[wcid]) and _finite_cell(row[delta_i]),
+                            f"winner_delta_{backbone} missing finite delta/winner for baseline {row[bsk]!r}",
+                        )
 
     # ── head-analysis: canonical provenance (catalog / shared_catalog_boundary) ───
     _check(problems, head_analysis is not None, "head-analysis section missing")
@@ -286,6 +453,20 @@ def validate_fixture_report(path: str | Path) -> None:
             cols = table.get("columns", [])
             for required in ("boundary_source", "head_pool_variant", "status", "finite", "coverage"):
                 _check(problems, required in cols, f"head_phase_provenance_effnet missing column {required}")
+            # Canonical head rows over committed masks carry finite coverage/pooling values.
+            for numeric_col in ("n_songs", "n_pooled", "coverage", "threshold_effective"):
+                _check(
+                    problems,
+                    numeric_col in cols,
+                    f"head_phase_provenance_effnet missing head field column {numeric_col}",
+                )
+                if numeric_col in cols:
+                    idx = cols.index(numeric_col)
+                    _check(
+                        problems,
+                        all(_finite_cell(r[idx]) for r in table.get("rows", [])),
+                        f"head_phase_provenance_effnet carries non-finite {numeric_col} value",
+                    )
             bs = cols.index("boundary_source") if "boundary_source" in cols else -1
             hpv = cols.index("head_pool_variant") if "head_pool_variant" in cols else -1
             if bs >= 0:
@@ -310,6 +491,52 @@ def validate_fixture_report(path: str | Path) -> None:
             history is not None and len(history.get("rows", [])) > 0,
             "provenance must render a populated run_history table",
         )
+        # ── exactly the eight CLI phase names (+ optional maintenance verbs) appear ──
+        # Report phase surfaces are: run_history.phase and artifact_hashes.phase rows, plus the
+        # phase-named timing_history columns in the efficiency section.  Every surfaced phase
+        # must be in the allowed vocabulary (the eight exact CLI phases, or a maintenance verb
+        # recorded where the generator records one); the executed set must be exactly the eight
+        # phases, and no obsolete phase name may surface.
+        phase_surfaces: list[str] = []
+        if history is not None and not history.get("empty") and "phase" in history.get("columns", []):
+            hcols = history["columns"]
+            phase_surfaces += [r[hcols.index("phase")] for r in history.get("rows", [])]
+        artifact_hashes = _find_table(provenance, "artifact_hashes")
+        if (
+            artifact_hashes is not None
+            and not artifact_hashes.get("empty")
+            and "phase" in artifact_hashes.get("columns", [])
+        ):
+            acols = artifact_hashes["columns"]
+            phase_surfaces += [r[acols.index("phase")] for r in artifact_hashes.get("rows", [])]
+        phase_surfaces = [p for p in phase_surfaces if p not in (None, _NONE_CELL, "")]
+        surfaced = set(phase_surfaces)
+        _check(
+            problems,
+            surfaced <= set(ALLOWED_PHASE_NAMES),
+            f"obsolete/unexpected phase name on a report phase surface: {sorted(surfaced - set(ALLOWED_PHASE_NAMES))}",
+        )
+        _check(
+            problems,
+            surfaced >= set(EXACT_PHASE_NAMES),
+            f"not all eight CLI phase names recorded in provenance: missing {sorted(set(EXACT_PHASE_NAMES) - surfaced)}",
+        )
+        _check(
+            problems,
+            not (surfaced & set(OBSOLETE_PHASE_NAMES)),
+            f"obsolete phase name(s) emitted: {sorted(surfaced & set(OBSOLETE_PHASE_NAMES))}",
+        )
+        # Run provenance rows carry finite (integer-ms) started_at/finished_at timings.
+        if history is not None and not history.get("empty"):
+            hcols = history.get("columns", [])
+            for ts_col in ("started_at", "finished_at"):
+                if ts_col in hcols:
+                    ts_i = hcols.index(ts_col)
+                    _check(
+                        problems,
+                        all(_finite_cell(r[ts_i]) for r in history.get("rows", [])),
+                        f"run_history carries non-finite {ts_col} value",
+                    )
 
     # ── efficiency: retained phase timings history ────────────────────────────────
     _check(problems, efficiency is not None, "efficiency section missing")
@@ -320,6 +547,20 @@ def validate_fixture_report(path: str | Path) -> None:
             history is not None and len(history.get("rows", [])) > 0,
             "efficiency must render the retained timing_history table",
         )
+        # Every phase-named timing column is one of the eight exact CLI phases (no obsolete
+        # phase vocabulary in the timing pivot).
+        if history is not None and not history.get("empty"):
+            timed_phases = [c for c in history.get("columns", []) if c != "run"]
+            _check(
+                problems,
+                set(timed_phases) <= set(EXACT_PHASE_NAMES),
+                f"timing_history carries non-pipeline/obsolete phase column(s): {sorted(set(timed_phases) - set(EXACT_PHASE_NAMES))}",
+            )
+            _check(
+                problems,
+                all(_finite_cell(v) for row in history.get("rows", []) for v in row[1:]),
+                "timing_history carries a non-finite elapsed value",
+            )
 
     if problems:
         raise ValueError("fixture report violates the schema-v2 contract:\n  - " + "\n  - ".join(problems))

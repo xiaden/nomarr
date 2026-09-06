@@ -278,7 +278,7 @@ def test_build_records_one_stream_load_per_song_backbone_pass():
     """
 
     class _FakeMask:
-        def load(self, _song_id: str) -> np.ndarray:
+        def load(self, _song_id: str, _backbone: str) -> np.ndarray:
             return np.ones(8, dtype=np.uint8)
 
     class _FakeStream:
@@ -298,7 +298,7 @@ def test_build_records_one_stream_load_per_song_backbone_pass():
     configs = [
         {
             "backbone": "synthetic",
-            "bin_mode": "direct",
+            "bin_mode": "temporal_global",
             "threshold_configured": 1.0,
             "threshold_effective": 1.0,
         }

@@ -111,13 +111,19 @@ __all__ = [
     "NonFiniteResultError",
     "PerQueryResult",
     "analyze_catalog_corpus",
+    "analyze_medoid_baseline",
     "candidate_weights_from_catalog",
     "materialize_corpus_view",
+    "run_and_persist_medoid_baseline",
     "run_catalog_analysis",
 ]
 
 _PRIMARY_SCORE_VARIANT = "max_per_candidate_segment"
 _STRATEGY_TYPE = "catalog"
+#: Sentinel row-address fields for a whole-song medoid representation (it has no catalog
+#: config / structural segment of its own).  These keys never reach the persisted report.
+_MEDOID_ROW_CONFIG_ID = -1
+_MEDOID_SEG_ID = -1
 
 
 class NonFiniteResultError(ValueError):
@@ -271,6 +277,7 @@ def materialize_corpus_view(store, catalog, cfg: CatalogAnalysisConfig, *, resea
         backbone=cfg.backbone,
         run_id=cfg.run_id,
         working_memory=cfg.working_memory,
+        config_ids=cfg.config_ids or None,
     )
     if research_con is not None:
         sv.record_search_view(research_con, record, run_id=cfg.run_id)
@@ -439,6 +446,18 @@ def _run_attached_analysis(store, con, cfg: CatalogAnalysisConfig, *, research_c
     # Per-run transient collapse (canonical = lowest config_id; alias rows projected out).
     classes = _analysis_representation_classes(con, cfg)
     participating = _participating_config_ids(con, cfg)
+    if not cfg.config_ids and len(classes) > 1:
+        # Distinct search representations must NEVER be unioned into one query/candidate pass.
+        # Per-class scheduling is the caller's job (run.py loops classes and pins config_ids to a
+        # single class's members each call).  An unpinned whole-backbone scope that spans multiple
+        # distinct classes fails closed rather than silently merging them.
+        raise CatalogRefusalError(
+            f"backbone {cfg.backbone!r} participating configs collapse to {len(classes)} distinct "
+            f"search representation classes (canonical ids "
+            f"{[c.canonical_config_id for c in classes]}); schedule each class as its own retrieval "
+            f"pass by pinning cfg.config_ids to a single class's members — distinct classes are "
+            f"never unioned into one candidate pool"
+        )
     canonical_ids = frozenset(c.canonical_config_id for c in classes)
     keep = _canonical_row_mask(record, canonical_ids)
     p_addrs = tuple(addr for addr, k in zip(record.row_addresses, keep, strict=True) if k)
@@ -534,6 +553,151 @@ def _run_attached_analysis(store, con, cfg: CatalogAnalysisConfig, *, research_c
 def analyze_catalog_corpus(store, catalog, cfg: CatalogAnalysisConfig, *, research_con=None) -> CatalogAnalysisResult:
     """Facade returning the finite run-scoped catalog-first analysis result (see run_catalog_analysis)."""
     return run_catalog_analysis(store, catalog, cfg, research_con=research_con)
+
+
+def analyze_medoid_baseline(
+    store,
+    *,
+    backbone: str,
+    song_ids,
+    artists,
+    k: int = 10,
+    working_memory: int = 32 * 1024 * 1024,
+) -> dict[str, float] | None:
+    """Score the observed global-medoid baseline for ``backbone`` and return its aggregate metrics.
+
+    P1-S6 analyze-side PRODUCER: one additional scored retrieval per backbone that represents
+    EACH cataloged searchable song by its observed whole-song ``global_pool:{backbone}:medoid``
+    UNIT vector (selected from the song's committed observation group by
+    ``baseline.observed_global_medoid_unit_vector`` over the committed ``mask == 1``
+    population).  Zero-searchable songs (no medoid vector) are EXCLUDED from both the baseline
+    population and candidate search.  It is NOT a catalog class: it never unions with class
+    candidate pools, never alters per-class execution counts, and is never a winner candidate
+    (downstream report keeps it out of candidacy).
+
+    The scored pass reuses the SAME bounded scorer seam (``_score_query_vs_song``) and the SAME
+    retrieval-metric lenses (:class:`_Lenses`) as the segmented class passes, over the SAME
+    corpus, sim_metric (``cosine``) and ``k`` — so the emitted per-cell values (``map_k``,
+    ``mrr``, ``ndcg_k``, ``recall_k``, ``disc_artist``/``disc_score``) align EXACTLY with a
+    segmented class's cell keys, which is what lets ``build_baseline_delta_rows`` do its
+    exact-scope baseline/delta join.
+
+    CPU-only (numpy + the bounded scorer); no durable cache, alias graph, synthetic/
+    coordinate-wise medoid, or cross-backbone union.  Non-finite results raise
+    :class:`NonFiniteResultError`.  Returns ``None`` when fewer than two searchable medoid
+    songs make leave-one-out impossible (no baseline for that backbone) — the caller persists
+    NOTHING in that case.
+    """
+    from scripts.embedding_research.baseline import observed_global_medoid_unit_vector
+    from scripts.embedding_research.streams import StreamStoreError
+
+    song_ids = tuple(song_ids)
+    cfg = CatalogAnalysisConfig(
+        run_id="",
+        backbone=backbone,
+        song_ids=song_ids,
+        artists=dict(artists),
+        k=int(k),
+        working_memory=working_memory,
+    )
+    # Gather each cataloged song's observed global medoid UNIT vector (exclude zero-searchable
+    # songs and songs with no committed observation group).
+    medoid_vectors: dict[str, np.ndarray] = {}
+    for song in sorted(song_ids):
+        try:
+            observation = store.load_committed_observation(song, backbone)
+        except StreamStoreError:
+            # No committed observation group -> the song is not searchable in this corpus
+            # (metadata-only) -> no baseline vector, excluded from baseline + candidate search.
+            continue
+        vec = observed_global_medoid_unit_vector(observation)
+        if vec is None:
+            continue
+        medoid_vectors[song] = vec
+    searchable = sorted(medoid_vectors)
+    if len(searchable) < 2:
+        # Leave-one-out over a singleton/empty population is undefined -> no baseline.
+        return None
+
+    per_query: list[PerQueryResult] = []
+    for query_song in searchable:
+        q_vec = np.asarray(medoid_vectors[query_song], dtype=np.float32)[None, :]
+        q_w = np.asarray([1.0], dtype=np.float32)
+        cand_scores: dict[str, float] = {}
+        all_keys: list[tuple[int, str, int, int]] = []
+        for cand_song in searchable:
+            if cand_song == query_song:
+                continue
+            c_vec = np.asarray(medoid_vectors[cand_song], dtype=np.float32)[None, :]
+            keys = ((_MEDOID_ROW_CONFIG_ID, cand_song, _MEDOID_SEG_ID, 0),)
+            score, _winners, _retained, _dropped = _score_query_vs_song(
+                cfg, q_vec, q_w, c_vec, np.asarray([1.0], dtype=np.float32), keys
+            )
+            cand_scores[cand_song] = score
+            all_keys.extend(keys)
+        if not cand_scores:
+            continue
+        top = max(cand_scores.values())
+        if not np.isfinite(top):
+            raise NonFiniteResultError(f"query {query_song!r} non-finite medoid-baseline top candidate score")
+        per_query.append(
+            PerQueryResult(
+                query_song_id=query_song,
+                score=float(top),
+                winner_counts={},
+                candidate_scores=cand_scores,
+                candidate_keys=tuple(all_keys),
+                retained_count=0,
+                dropped_count=0,
+                variant=cfg.score_variant,
+            )
+        )
+    if not per_query:
+        return None
+    metrics, _per_song = _Lenses(cfg).evaluate(per_query)
+    return metrics
+
+
+def run_and_persist_medoid_baseline(
+    con,
+    store,
+    *,
+    run_id: str,
+    backbone: str,
+    song_ids,
+    artists,
+    k: int = 10,
+    working_memory: int = 32 * 1024 * 1024,
+) -> dict[str, float] | None:
+    """Score the observed global-medoid baseline and persist it run-scoped (the run.py seam).
+
+    Convenience over :func:`analyze_medoid_baseline` that, when a baseline is computable
+    (>= 2 searchable medoid songs), persists it as ``analyze_metrics`` rows under
+    ``strategy_key == baseline.medoid_strategy_key_for(backbone)`` and the NON-``catalog``
+    ``strategy_type == baseline.MEDOID_STRATEGY_TYPE`` (``"global_pool"``), run-scoped so a
+    re-run replaces only its own rows.  Returns the emitted aggregate metrics (or ``None``
+    when no baseline is computable — nothing persisted).  Kept here (not in ``run.py``)
+    because ``run.py`` derived-runner bodies may import only the narrow CPU root set; this
+    module already owns the analyze scoring machinery and may reach ``db``/``baseline``.
+    """
+    from scripts.embedding_research import db
+    from scripts.embedding_research.baseline import MEDOID_STRATEGY_TYPE, medoid_strategy_key_for
+
+    metrics = analyze_medoid_baseline(
+        store, backbone=backbone, song_ids=song_ids, artists=artists, k=int(k), working_memory=working_memory
+    )
+    if metrics is None:
+        return None
+    db.write_analyze_metrics(
+        con,
+        medoid_strategy_key_for(backbone),
+        MEDOID_STRATEGY_TYPE,
+        "cosine",
+        int(k),
+        metrics,
+        run_id=run_id,
+    )
+    return metrics
 
 
 def _strategy_key(cfg: CatalogAnalysisConfig, record: SearchViewRecord) -> str:

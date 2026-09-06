@@ -23,6 +23,7 @@ from __future__ import annotations
 import numpy as np
 
 from scripts.embedding_research.helpers.binning import (
+    BIN_MODES,
     DIST_FNS,
     OUTLIER_WINDOW,
     global_dist,
@@ -46,6 +47,17 @@ def test_dist_fns_map_modes_correctly() -> None:
     """temporal_global -> global_dist (L2); temporal_perdim -> perdim_dist (Chebyshev)."""
     assert DIST_FNS["temporal_global"] is global_dist
     assert DIST_FNS["temporal_perdim"] is perdim_dist
+
+
+def test_dist_fns_advertise_exactly_the_retained_bin_modes() -> None:
+    """No mode is advertised without an implementation, and no ghost mode remains.
+
+    The dispatched distance map exposes exactly the two retained temporal modes that the
+    structural runner and config layer accept; the retired ``"direct"`` vocabulary and any
+    other legacy mode are absent (so they can never be silently dispatched).
+    """
+    assert set(DIST_FNS) == set(BIN_MODES) == {"temporal_global", "temporal_perdim"}
+    assert "direct" not in DIST_FNS
 
 
 def test_global_dist_is_euclidean_l2() -> None:

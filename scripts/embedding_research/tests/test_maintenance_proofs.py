@@ -20,9 +20,9 @@ items that the current-format wiring fully owns:
     pulls onnxruntime / torch / CUDA / nomarr production.
 
 Catalog-integration proofs that depend on the published ``catalogs/<id>`` +
-``current.json`` authoritative layout (which ``run.py`` analyze/head-analysis do
-not yet consume — that wiring is a P1-S5 residual) are intentionally deferred
-and named in the P1-S4 step annotation, not half-implemented here.
+``current.json`` authoritative layout (``run.py`` analyze/head-analysis did not
+consume it at the time these were written — that wiring was a P1-S5 residual) are
+intentionally deferred and named in the P1-S4 step annotation, not half-implemented here.
 """
 
 from __future__ import annotations
@@ -140,7 +140,7 @@ def _seed_mixed_artifact_tree(root: pathlib.Path) -> None:
     (root / "catalogs" / "unselected" / "catalog.manifest.json").write_text("{}", encoding="utf-8")
     (root / "catalogs" / "unselected" / "catalog.duckdb").write_bytes(b"\x02" * 4)
     # Disposable view.
-    view = root / "disposable_views" / "v"
+    view = root / "views" / "v"
     view.mkdir(parents=True, exist_ok=True)
     (view / "part.parquet").write_bytes(b"pv")
 
@@ -188,8 +188,8 @@ def test_cleanup_staging_and_views_current_format_only(tmp_path):
     assert (root / "catalogs" / "pub").is_dir(), "staging cleanup must not touch a published catalog"
 
     views = cleanup.cleanup_current(root, None, scope="views", dry_run=False)
-    assert views.removed, "disposable_views must be reported"
-    assert not (root / "disposable_views").exists()
+    assert views.removed, "disposable views must be reported"
+    assert not (root / "views").exists()
 
 
 # --------------------------------------------------------------------------- #
@@ -244,8 +244,8 @@ def test_reset_analysis_removes_only_disposable_db_and_views(tmp_path):
     con.execute("CREATE TABLE t (i INTEGER)")
     con.close()
     (pathlib.Path(f"{db_path}.wal")).write_bytes(b"wal")
-    (root / "disposable_views" / "v").mkdir(parents=True)
-    (root / "disposable_views" / "v" / "x").write_bytes(b"view")
+    (root / "views" / "v").mkdir(parents=True)
+    (root / "views" / "v" / "x").write_bytes(b"view")
 
     preserved_dirs = ("corpus", "streams", "heads", "audio_masks", "observation_commits", "catalogs")
     before = {d: _tree_digests(root / d) for d in preserved_dirs if (root / d).exists()}
@@ -253,7 +253,7 @@ def test_reset_analysis_removes_only_disposable_db_and_views(tmp_path):
     report = cleanup.reset_analysis(root, db_path, dry_run=False)
     assert any("research.duckdb" in r for r in report.removed)
     assert not db_path.exists() and not pathlib.Path(f"{db_path}.wal").exists()
-    assert not (root / "disposable_views").exists()
+    assert not (root / "views").exists()
 
     # Tier 1/2 payloads are byte-identical after reset.
     after = {d: _tree_digests(root / d) for d in preserved_dirs if (root / d).exists()}

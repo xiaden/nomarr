@@ -88,7 +88,7 @@ def _verify_payload_families(root: Path, *, strict: bool, report: VerificationRe
                 continue
             report.verified += 1
             if strict:
-                _strict_payload_check(sub, payload, suffix, identity.digest, report)
+                _strict_payload_check(sub, payload, suffix, identity.digest, manifest, report)
 
 
 def _strict_payload_check(
@@ -96,9 +96,16 @@ def _strict_payload_check(
     payload: Path,
     suffix: str,
     expected_digest: str,
+    manifest: dict,
     report: VerificationReport,
 ) -> None:
-    """Freshly hash *payload* and validate its loaded content (shape/finite/dtype)."""
+    """Freshly hash *payload* and validate its loaded content (shape/finite/dtype).
+
+    The structural check is family-aware via *sub*: ``streams`` (float .npy) and
+    ``heads`` (per-key float .npz) must carry finite floating data, while
+    ``audio_masks`` payloads are uint8 masks by contract (never NaN/Inf) whose
+    length must equal the ``patch_count`` declared by the sibling *manifest*.
+    """
     try:
         actual = _file_sha256_hex(payload)
     except OSError:
@@ -124,12 +131,26 @@ def _strict_payload_check(
                     return
         else:
             arr = np.load(payload, allow_pickle=False)
-            if not np.issubdtype(arr.dtype, np.floating):
-                report.refusals.append(f"{sub}/{payload.name}: non-floating payload")
-                return
-            if not np.isfinite(arr).all():
-                report.refusals.append(f"{sub}/{payload.name}: non-finite payload")
-                return
+            if sub == "audio_masks":
+                patch_count = manifest.get("patch_count")
+                if not isinstance(patch_count, int):
+                    report.refusals.append(f"{sub}/{payload.name}: sibling manifest carries no patch_count")
+                    return
+                if arr.dtype != np.uint8:
+                    report.refusals.append(f"{sub}/{payload.name}: mask payload is not uint8")
+                    return
+                if arr.ndim != 1 or arr.size != patch_count:
+                    report.refusals.append(
+                        f"{sub}/{payload.name}: mask payload length {arr.size} != declared patch_count {patch_count}"
+                    )
+                    return
+            else:
+                if not np.issubdtype(arr.dtype, np.floating):
+                    report.refusals.append(f"{sub}/{payload.name}: non-floating payload")
+                    return
+                if not np.isfinite(arr).all():
+                    report.refusals.append(f"{sub}/{payload.name}: non-finite payload")
+                    return
     except (OSError, ValueError):
         report.refusals.append(f"{sub}/{payload.name}: payload unreadable/unloadable during strict verification")
 

@@ -621,3 +621,52 @@ def test_regenerate_masks_is_cpu_only_no_session_inference(monkeypatch, con, tmp
     assert tally["regenerated"] == 1  # s1
     assert tally["refused"] == 1  # s2 (audio changed)
     assert calls["published"] == 1
+
+
+# ── committed-mask read seam (P1-S2/S3 spec, expected RED until implemented) ──
+
+
+def test_future_current_mask_resolver_returns_the_committed_mask(con, tmp_path):
+    """P1-S2 spec: ``make_current_mask_resolver(...).load(song, backbone)`` returns ONLY
+    the committed uint8 mask — never a mask-less all-searchable default.
+    """
+    from scripts.embedding_research.streams.masks import CurrentMaskResolver  # red until P1-S2
+    from scripts.embedding_research.streams.store import make_current_mask_resolver  # red until P1-S2
+
+    _ = CurrentMaskResolver
+    store, rec = _publish_stream(con, tmp_path)
+    store.publish_observation_group(rec, _mask_payload("songA", "effnet", rec.patch_count))
+    store.reconcile()
+    resolver = make_current_mask_resolver(_store(con, tmp_path))
+    loaded = resolver.load("songA", "effnet")
+    assert loaded is not None
+    assert loaded.dtype == np.uint8
+    np.testing.assert_array_equal(loaded, np.ones(rec.patch_count, dtype=np.uint8))
+
+
+def test_future_current_mask_resolver_refuses_stream_only(con, tmp_path):
+    """P1-S2 spec: a stream-only observation (no committed mask) resolves to None / refusal,
+    never to an implicit all-searchable mask.
+    """
+    from scripts.embedding_research.streams.store import make_current_mask_resolver  # red until P1-S2
+
+    _publish_stream(con, tmp_path)  # stream only, no committed group
+    resolver = make_current_mask_resolver(_store(con, tmp_path))
+    assert resolver.load("songA", "effnet") is None  # fails closed
+
+
+def test_future_current_mask_resolver_refuses_wrong_length_committed_mask(con, tmp_path):
+    """P1-S2 spec: a committed mask whose payload length != the stream's patch_count is
+    refused (never returned as authoritative silence).
+    """
+    import io
+
+    from scripts.embedding_research.streams.store import make_current_mask_resolver  # red until P1-S2
+
+    store, rec = _publish_stream(con, tmp_path)
+    commit = store.publish_observation_group(rec, _mask_payload("songA", "effnet", rec.patch_count))
+    store.reconcile()
+    bad = mask_npy_bytes(np.ones(rec.patch_count + 3, dtype=np.uint8))
+    (tmp_path / commit.mask_ref).write_bytes(io.BytesIO(bad).getvalue())
+    resolver = make_current_mask_resolver(_store(con, tmp_path))
+    assert resolver.load("songA", "effnet") is None  # wrong length / digest -> refuse

@@ -19,8 +19,9 @@ Run one command:
   python run.py <command>
 
 Stratification is catalog input (config/corpus selection), NOT a separate phase.
-The retired legacy phase names (``stratify``, ``segment``, ``classify``, ``head``)
-fail loudly (exit 2) — they are never silently aliased.
+Any unrecognized command — including the retired legacy names ``stratify``,
+``segment``, ``classify``, ``head`` — exits 2 as an ordinary unknown command.
+No named alias or compatibility rejection path special-cases them.
 
 Maintenance:
 
@@ -81,8 +82,8 @@ _log = logging.getLogger(__name__)
 #
 # The CLI exposes EXACTLY eight phases: ingest, embed, infer-heads, catalog,
 # catalog-report, analyze, head-analysis, report — plus cleanup and reset as
-# EXPLICIT SEPARATE maintenance operations (wired to cleanup.py scopes / the
-# legacy reset helpers, not to the phase sequence).
+# EXPLICIT SEPARATE maintenance operations (wired to cleanup.py scopes,
+# not to the phase sequence).
 #
 # CPU/inference boundaries (DD): only the first three phases may discover audio,
 # load models, create ML sessions or run ONNX.  The five derived phases are
@@ -106,7 +107,9 @@ _log = logging.getLogger(__name__)
 # streams; catalog reuses config_id by canonical hash and replaces only that
 # config's rows; analyze writes run-scoped replace), so run_id is deliberately
 # NOT reused across invocations.  `--retained` opts a run into retained=true so
-# view/reset GC protects it.  embed / infer-heads / analyze record their own
+# `cleanup --scope views` GC protects the run's referenced view keyset dirs (view_refs).
+# `reset --scope analysis` removes the whole disposable tier (research.duckdb + views)
+# regardless — retention never survives reset.  embed / infer-heads / analyze record their own
 # run_provenance row(s) inside their canonical modules (single-source); ingest,
 # catalog, catalog-report, head-analysis and report have their row recorded
 # here by the CLI.
@@ -122,11 +125,6 @@ CLI_PHASES: tuple[str, ...] = (
     "head-analysis",
     "report",
 )
-
-# Legacy phase names that previously mapped to opaque orchestration.  They are
-# NOT valid new-CLI phase names: selecting one is a clear error (never a silent
-# alias), per CONTRACTS.md CLI boundaries.
-LEGACY_PHASE_ALIASES: frozenset[str] = frozenset({"stratify", "segment", "classify", "head"})
 
 AUDIO_PHASES: frozenset[str] = frozenset({"ingest", "embed", "infer-heads"})
 DERIVED_PHASES: frozenset[str] = frozenset(CLI_PHASES) - AUDIO_PHASES
@@ -359,7 +357,6 @@ def _run_infer_heads(con, cfg: dict, run_id: str) -> dict:
         con,
         force=bool(cfg.get("force", False)),
         backbones=cfg.get("backbones"),
-        heads=cfg.get("heads"),
         device=cfg.get("device", "cpu"),
         run_id=run_id,
     )
@@ -375,18 +372,28 @@ def _run_infer_heads(con, cfg: dict, run_id: str) -> dict:
 def _run_catalog(con, cfg: dict, run_id: str) -> dict:
     """catalog: verify streams, select corpus + configs, build seg catalog (CPU)."""
     from scripts.embedding_research.catalog import build_segmentation_catalog
-    from scripts.embedding_research.streams import StreamStore, make_current_stream_resolver
+    from scripts.embedding_research.streams import (
+        StreamStore,
+        make_current_mask_resolver,
+        make_current_stream_resolver,
+    )
 
     out_root = cfg.get("output_root") or OUTPUT_ROOT
     configs = _catalog_seg_configs(cfg)
     song_ids = _catalog_corpus_song_ids(con)
-    # Compact producer contract: stream_store is a current-stream loader
-    # (``.load(song, backbone) -> float32[P,D] | None``); mask_store is the new duck
-    # whole-song uint8 loader (``None`` == no silence at this research layer).
-    stream_store = make_current_stream_resolver(StreamStore(con, output_root=str(out_root)))
+    # Catalog producer contract: the catalog phase consumes the SAME complete committed
+    # observation group (immutable stream + aligned committed silence mask + commit/identity
+    # metadata) that FS reindex and every head-analysis read use.  One store is bound and the
+    # SOLE store-backed resolver is constructed per role: the current-stream resolver
+    # (``.load(song, backbone) -> float32[P,D] | None``) and the committed-mask resolver
+    # (``.load(song, backbone) -> uint8[P] | None``).  ``build_segmentation_catalog`` REFUSES
+    # (typed per-input ``MaskRefusalError``) any song whose committed mask is absent or
+    # invalid — silence is never inferred from a missing mask, and no ad-hoc or no-mask loader
+    # is ever passed here.
+    store = StreamStore(con, output_root=str(out_root))
     build_segmentation_catalog(
-        stream_store,
-        None,
+        make_current_stream_resolver(store),
+        make_current_mask_resolver(store),
         configs,
         song_ids,
         output_root=out_root,
@@ -496,10 +503,17 @@ def _run_analyze(con, cfg: dict, run_id: str) -> dict:
     via ``handle.con``; the research *con* is retained for disposable
     view/analyze-metrics/provenance writes.  Both the handle and *con* stay open
     for the whole phase; the handle is closed in ``finally``.
+
+    The phase emits one leave-one-out scored ``analyze_metrics`` pass per current
+    SearchRepresentationClass (per-class scheduling).  Per-backbone observed global-pool
+    medoid baseline emission is an additional opt-in (run cfg ``emit_medoid_baseline``,
+    DEFAULT OFF) scored pass that emits one ``global_pool:{backbone}:medoid`` row per
+    backbone after the per-class loop, only when the flag is enabled.
     """
     from scripts.embedding_research.common.catalog_analysis import (
         CatalogAnalysisConfig,
         analyze_catalog_corpus,
+        run_and_persist_medoid_baseline,
     )
     from scripts.embedding_research.db.analyze_scope import write_catalog_analyze_rows
     from scripts.embedding_research.db.songs import load_all_songs
@@ -519,15 +533,49 @@ def _run_analyze(con, cfg: dict, run_id: str) -> dict:
             if not song_ids:
                 _log.warning("analyze: no cataloged corpus for backbone %r — run `catalog` first", backbone)
                 continue
-            analysis_cfg = CatalogAnalysisConfig(
-                run_id=run_id,
-                backbone=backbone,
-                song_ids=tuple(song_ids),
-                artists=artists,
-                k=int(cfg.get("k", 10)),
-            )
-            result = analyze_catalog_corpus(store, handle.con, analysis_cfg, research_con=con)
-            write_catalog_analyze_rows(con, run_id=run_id, result=result)
+            # Per-class scheduling: each distinct current SearchRepresentationClass over this
+            # backbone's participating configs is analyzed as its OWN leave-one-out pass over only
+            # that class's canonical rows, persisted as its own analyze_scope strategy row.  Alias
+            # configs add zero passes and are never appended to any candidate union.
+            from scripts.embedding_research import catalog as _catalog
+            from scripts.embedding_research.catalog_identity import collapse_search_representations
+
+            backbone_cids = {c.config_id for c in _catalog.compact_configs_by_backbone(handle.con, backbone)}
+            for cls in collapse_search_representations(handle.con):
+                members = tuple(sorted(c for c in cls.config_ids if c in backbone_cids))
+                if not members:
+                    continue
+                analysis_cfg = CatalogAnalysisConfig(
+                    run_id=run_id,
+                    backbone=backbone,
+                    song_ids=tuple(song_ids),
+                    artists=artists,
+                    k=int(cfg.get("k", 10)),
+                    config_ids=members,
+                )
+                result = analyze_catalog_corpus(store, handle.con, analysis_cfg, research_con=con)
+                write_catalog_analyze_rows(con, run_id=run_id, result=result)
+
+            # P1-S6: emit ONE observed global-medoid baseline metric identity per backbone, alongside
+            # the segmented catalog classes.  Opt-in via run cfg ``emit_medoid_baseline`` (default
+            # off) so the P1-S3/S4 execution-count/scope fixtures (which assert analyze_metrics class
+            # rows == per-class scope rows) stay byte-identical.  This is an ADDITIONAL scored
+            # retrieval pass — NOT a class: each searchable song is represented by its observed
+            # whole-song global medoid, zero-searchable songs are excluded, and the pass never unions
+            # with class candidates, adds no class execution, and is never a winner candidate.  It is
+            # persisted run-scoped under strategy_type != 'catalog' so report's catalog-only
+            # query_analyze_metrics keeps excluding it from section_analysis; the P1-S7 winners
+            # loader reads it through a distinct path.
+            if cfg.get("emit_medoid_baseline"):
+                run_and_persist_medoid_baseline(
+                    con,
+                    store,
+                    run_id=run_id,
+                    backbone=backbone,
+                    song_ids=song_ids,
+                    artists=artists,
+                    k=int(cfg.get("k", 10)),
+                )
             total += len(song_ids)
     finally:
         handle.close()
@@ -539,29 +587,32 @@ def _run_head_analysis(con, cfg: dict, run_id: str) -> dict:
     """head-analysis: CPU head pooling over exact compact M_g memberships (CPU).
 
     Opens the latest COMPACT snapshot locally for catalog reads (the runner reconstructs
-    each segment's exact searchable ``M_g`` from compact ``seg_meta`` rows) and retains the
-    research connection ``con`` for the ``HeadStreamStore`` and coverage/skip provenance
-    writes.  When no compact snapshot exists it warns and skips (never routes the research
-    connection into the compact-only reader).  P1-S11 aligns preflight detection with this
-    same resolver.
+    each segment's exact searchable ``M_g`` from compact ``seg_meta`` rows over the same
+    committed silence mask that built the catalog) and retains the research connection
+    ``con`` for the ``HeadStreamStore`` and coverage/skip provenance writes.  When no
+    compact snapshot exists it warns and skips (never routes the research connection into
+    the compact-only reader).  P1-S11 aligns preflight detection with this same resolver.
     """
     from scripts.embedding_research.common.head_analysis import run_shared_catalog_head_analysis
     from scripts.embedding_research.db.head_phase import (
         build_head_phase_provenance_rows,
         write_head_phase_provenance,
     )
-    from scripts.embedding_research.streams import HeadStreamStore
+    from scripts.embedding_research.streams import HeadStreamStore, StreamStore, make_current_mask_resolver
 
     out_root = Path(cfg.get("output_root") or OUTPUT_ROOT)
     handle = _open_derived_catalog(out_root, "head-analysis")
     if handle is None:
         _warn_no_catalog("head-analysis")
         return {"song_count": 0}
+    store = StreamStore(con, output_root=str(out_root))
+    mask_store = make_current_mask_resolver(store)
     head_store = HeadStreamStore(con, output_root=str(out_root))
     try:
         manifest = run_shared_catalog_head_analysis(
             handle,
             head_store,
+            mask_store=mask_store,
             run_id=run_id,
         )
     finally:
@@ -579,13 +630,75 @@ def _run_head_analysis(con, cfg: dict, run_id: str) -> dict:
     return {"song_count": len(manifest.song_ids)}
 
 
+def _completed_analyze_run_ids(con) -> list[str]:
+    """Completed ``analyze`` run ids present in ``run_provenance``, oldest first.
+
+    An ``analyze`` run is *completed* when it has at least one ``phase == 'analyze'`` row whose
+    status is ``complete`` (the analyze producer's own scope rows) or ``completed`` (a wrapper
+    recording).  This is the deterministic completion signal the report phase resolves — there is
+    no status column on ``analyze_metrics`` itself, so completion lives in ``run_provenance``.
+    Ordering is stable: ascending ``finished_at``/``started_at`` then ascending ``run_id``.
+    """
+    from scripts.embedding_research.db.provenance import read_run_provenance
+
+    analyze_rows = [
+        r for r in read_run_provenance(con) if r["phase"] == "analyze" and r["status"] in {"complete", "completed"}
+    ]
+
+    def _stamp(row: dict) -> tuple[int, str]:
+        return (int(row.get("finished_at") or row.get("started_at") or 0), str(row["run_id"]))
+
+    analyze_rows.sort(key=_stamp)
+    return [r["run_id"] for r in analyze_rows]
+
+
+def _resolve_report_run_id(con, cfg: dict) -> str | None:
+    """Resolve the completed analyze scope the report phase renders.
+
+    Returns the run_id the report must be scoped to (never blends runs):
+
+    * ``cfg["report_run_id"]`` is honoured only when it names a completed analyze run; otherwise
+      ``None`` is returned and the caller rejects the request (explicit-but-incomplete).
+    * With no explicit request, the most recent completed analyze run is returned.
+    * With no completed analyze run at all, ``None`` is returned (the caller renders an empty
+      report or rejects when run-scoped analyze rows are orphaned).
+    """
+    requested = cfg.get("report_run_id")
+    completed = _completed_analyze_run_ids(con)
+    if requested is not None:
+        return requested if requested in completed else None
+    return completed[-1] if completed else None
+
+
 def _run_report(con, cfg: dict, _run_id: str) -> dict:
-    """report: render results + provenance, never infers (CPU)."""
+    """report: render results + provenance, never infers (CPU).
+
+    Renders a single completed scope: ``cfg["report_run_id"]`` when it names a completed analyze
+    run, otherwise the most recent completed analyze run resolved deterministically from
+    ``run_provenance``.  Incomplete scopes are rejected rather than silently blended into a
+    whole-set read — either run-scoped ``analyze_metrics`` rows with no completed analyze scope,
+    or an explicitly requested scope that is not a completed analyze run.  An empty database (no
+    run-scoped analyze rows) renders an empty report, preserving the preflight-warned path.
+    """
     from scripts.embedding_research.config import REPORT_DIR as _REPORT_DIR
     from scripts.embedding_research.report import run as _report_run
 
     out_dir = Path(cfg.get("report_dir") or _REPORT_DIR)
-    _report_run(con, out_dir)
+    run_id = _resolve_report_run_id(con, cfg)
+    if run_id is None and (cfg.get("report_run_id") is not None or _has_analyze_metrics(con)):
+        if cfg.get("report_run_id") is not None:
+            msg = (
+                "phase 'report': requested report scope run_id="
+                f"{cfg['report_run_id']!r} is not a completed analyze scope; "
+                "run `analyze` to completion for that run"
+            )
+        else:
+            msg = (
+                "phase 'report': run-scoped analyze_metrics rows are present but no completed "
+                "analyze scope is recorded; run `analyze` to completion (refusing to blend runs)"
+            )
+        raise _MissingArtifactError(msg)
+    _report_run(con, out_dir, run_id=run_id)
     return {"song_count": 0, "output_artifact_hashes": "report.json,report.html"}
 
 
@@ -640,6 +753,32 @@ def _canonical_config_duplicates(con) -> int:
     )
 
 
+def _incomplete_catalog_committed_groups(con, cfg) -> list[str]:
+    """Requested catalog input ``(song, backbone)`` pairs lacking a COMPLETE committed group.
+
+    A song/backbone is catalogable only when it has a complete committed observation group
+    (immutable stream + aligned committed silence mask + commit/identity marker) — the same
+    group-level READY predicate FS reindex and the runtime resolvers use.  Returns
+    ``"song:backbone"`` keys for every requested ``(song, backbone)`` whose committed group is
+    not ready, so the catalog preflight can refuse them before any catalog construction treats
+    an incomplete input as valid.  A registry row claiming ``ready`` never authorises a group.
+    """
+    from scripts.embedding_research.streams import StreamStore, observation_group_ready
+
+    out_root = Path(cfg.get("output_root") or OUTPUT_ROOT)
+    store = StreamStore(con, output_root=str(out_root))
+    songs = _catalog_corpus_song_ids(con)
+    if not songs:
+        return []
+    backbones = cfg.get("backbones") or ["effnet"]
+    return [
+        f"{song_id}:{backbone}"
+        for backbone in backbones
+        for song_id in songs
+        if not observation_group_ready(store, song_id, backbone)
+    ]
+
+
 def _preflight_derived_phase(con, phase: str, cfg: dict, *, db_path=None) -> list[str]:
     """Post-crash canary + artifact-presence gate for the five derived phases.
 
@@ -670,6 +809,22 @@ def _preflight_derived_phase(con, phase: str, cfg: dict, *, db_path=None) -> lis
     # 1) rollback-only canary over every surviving PK/UNIQUE table.
     canary_report = run_rollback_canary(con)
     notes.append(f"canary ok: {len(canary_report.ok)} probed, {len(canary_report.empty)} empty")
+    # 1b) the catalog PRODUCER consumes complete committed observation groups.  Before any
+    #     catalog construction, refuse (strict) / warn (verify) requested inputs that lack a
+    #     complete committed group (stream + aligned committed mask + commit marker) so an
+    #     incomplete input is never handed to build_segmentation_catalog as if it were valid.
+    if phase == "catalog":
+        gaps = _incomplete_catalog_committed_groups(con, cfg)
+        if gaps:
+            msg = (
+                f"phase 'catalog': {len(gaps)} requested input(s) lack a complete committed "
+                f"observation group (stream+aligned-mask+commit): {', '.join(gaps)}. Catalog "
+                "refuses incomplete inputs — run `embed` to publish complete committed groups."
+            )
+            if strict:
+                raise _MissingArtifactError(msg)
+            notes.append(f"warning: {msg}")
+        return notes
     # 2) required derived inputs (only consumers read catalog/analyze artifacts).  The
     #    catalog-presence / duplicate checks read the COMPACT snapshot (opened via the
     #    shared resolver and closed here); only report's analyze_metrics probe reads the
@@ -916,18 +1071,11 @@ def _resolve_command(cmd: str) -> str:
 
     Returns the command unchanged when it is one of the eight phase names or one
     of the four maintenance keywords (``verify`` / ``reindex`` / ``cleanup`` /
-    ``reset``).  Retired legacy aliases (``stratify``/``segment``/``classify``/
-    ``head``) and unknown commands raise ``SystemExit(2)`` naming the valid
-    commands — they are never silently aliased.
+    ``reset``).  Any unrecognized command — including the retired legacy names
+    (``stratify``/``segment``/``classify``/``head``), which are now ordinary
+    unknown commands with no named alias or compatibility rejection path —
+    raises ``SystemExit(2)`` naming the valid commands.
     """
-    if cmd in LEGACY_PHASE_ALIASES:
-        _log.error(
-            "%r is a retired/legacy phase name and is not a valid new-CLI command. Valid phases: %s (maintenance: %s)",
-            cmd,
-            ", ".join(CLI_PHASES),
-            ", ".join(sorted(MAINTENANCE_COMMANDS)),
-        )
-        raise SystemExit(2)
     if cmd not in CLI_PHASES and cmd not in MAINTENANCE_COMMANDS:
         _log.error(
             "unknown command %r. Valid phases: %s. Maintenance: %s.",
@@ -1122,11 +1270,11 @@ def _cmd_reindex(_args) -> None:
     ``reconcile_current_manifests``).  CPU-only: never opens audio/models/sessions.
     """
     from scripts.embedding_research import db as _db_mod
-    from scripts.embedding_research.streams import reindex as _reindex
+    from scripts.embedding_research.streams.reindex import reindex as _reindex_run
 
     with duckdb.connect(str(DB_PATH)) as con:
         _db_mod.ensure_schema(con)
-        report = _reindex.reindex(OUTPUT_ROOT, con)
+        report = _reindex_run(OUTPUT_ROOT, con)
     _log.info(
         "reindex scanned=%d rows_rebuilt=%d ready=%d orphan=%d issues=%d",
         report.scanned,
@@ -1139,6 +1287,20 @@ def _cmd_reindex(_args) -> None:
         _log.warning("reindex issue: %s", _issue)
     if report.issues:
         raise SystemExit(1)
+
+
+def _open_cleanup_con():
+    """Open a READ-ONLY ``research.duckdb`` connection for retention-aware view cleanup.
+
+    Returns ``None`` when the DB file is absent or cannot be opened read-only — the caller
+    then treats that as ``no retained refs`` (every existing view is GC-eligible).  The
+    connection is read-only, so ``cleanup --scope views`` can never take the run lock or
+    write to ``research.duckdb``.
+    """
+    try:
+        return duckdb.connect(str(DB_PATH), read_only=True)
+    except Exception:
+        return None
 
 
 def _cmd_cleanup(args) -> None:
@@ -1155,7 +1317,16 @@ def _cmd_cleanup(args) -> None:
         _log.error("cleanup requires --scope {staging|stray|views}; got %r", scope)
         raise SystemExit(2)
     dry = args.dry_run if args.dry_run is not None else (scope in ("staging", "stray"))
-    report = _cleanup.cleanup_current(OUTPUT_ROOT, None, scope=scope, dry_run=dry)
+    # ``views`` GC is retention-aware: it may delete only view keyset dirs NOT referenced by
+    # a retained run.  Open a READ-ONLY research.duckdb connection to read the protected
+    # ``run_provenance`` refs (a live DB is never required — absence == no retained refs ->
+    # every existing view is GC-eligible).  Never take the run lock; never write here.
+    con = None
+    if scope == "views":
+        con = _open_cleanup_con()
+    report = _cleanup.cleanup_current(OUTPUT_ROOT, con, scope=scope, dry_run=dry)
+    if con is not None:
+        con.close()
     _log.info(
         "cleanup scope=%s dry_run=%s removed=%d skipped=%d refused=%d",
         scope,
@@ -1175,8 +1346,9 @@ def _cmd_cleanup(args) -> None:
 def _cmd_reset(args) -> None:
     """``python run.py reset --scope analysis`` — drop the disposable analysis DB + views.
 
-    Removes ONLY the disposable ``research.duckdb`` (and WAL) plus the
-    ``disposable_views/`` tree; Tier 1/2 payloads (corpus/, streams/, heads/,
+    Removes ONLY the disposable ``research.duckdb`` (and WAL) plus the whole
+    ``views/`` tree (retained-run protection never survives reset — view_refs live in the
+    deleted research DB); Tier 1/2 payloads (corpus/, streams/, heads/,
     audio_masks/, observation_commits/, catalogs/) are preserved byte-for-byte.
     Any other scope is refused (nonzero).
     """
