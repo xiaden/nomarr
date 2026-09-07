@@ -56,7 +56,7 @@ ACTIVE — frozen-stream / catalog / provenance + core live-writer tables (prima
 
 from __future__ import annotations
 
-from contextlib import contextmanager, suppress
+from contextlib import contextmanager
 
 # Lazy import so the module can be imported without duckdb installed
 # (the caller gets an ImportError only when they call connect()).
@@ -219,8 +219,8 @@ CREATE TABLE IF NOT EXISTS catalog_metadata (
 """
 
 # -- head_phase_provenance (Plan E, Phase 1 AMEND ROUND 2 — 18-col superset) -----
-# Kept OUT of the monolithic ``_DDL`` so the backup-first migration below owns its
-# lifecycle and there is a single source of truth for the column definitions.  It has
+# Kept OUT of the monolithic ``_DDL`` so the 18-column definitions live here as the
+# single source of truth (``_HPP_COLUMN_DEFS`` feeds ``_HPP_CREATE``).  It has
 # NO PRIMARY KEY / UNIQUE / index (DuckDB ART/WAL policy — application identity and
 # uniqueness are asserted before commit and rechecked after write).
 _HPP_COLUMN_DEFS: tuple[str, ...] = (
@@ -261,19 +261,34 @@ def _table_has_column(con, table: str, column: str) -> bool:
     return bool(row and row[0])
 
 
-# ── analyze_metrics run_id migration (Plan E P3-S3) ────────────────────────────
+def _column_default(con, table: str, column: str):
+    """Return the ``column_default`` for one column, or None when the column is absent.
 
-#: Post-migration column definitions for ``analyze_metrics``.  The run_id column is the
-#: physical row-level realization of the Plan C/D ``analyze_scope`` bookkeeping: legacy
-#: (pre-migration) rows are copied read-only as ``run_id='legacy'`` and every later
-#: run-scoped write stamps its own ``run_id``.  The old four-column PRIMARY KEY is dropped;
-#: DuckDB ART/WAL policy (like ``head_phase_provenance``) allows no PK/UNIQUE/index on a
-#: maintained table — application-level uniqueness is asserted on write within a run_id
-#: (see ``db.flat.write_analyze_metrics``: it replaces only its own run scope).  The
-#: ``DEFAULT 'legacy'`` keeps un-scoped/legacy writers (and direct fixture inserts) behaving
-#: exactly as before migration, tagging their rows as the shared legacy/baseline scope.
+    DuckDB surfaces a column DEFAULT as its expression string via
+    ``information_schema.columns.column_default`` (e.g. ``'legacy'`` for ``DEFAULT
+    'legacy'``) and NULL for a column with no default.  Used by the stale-schema refusal
+    guard to catch a HEAD-era pre-cut table whose ``run_id`` column still carries a
+    ``DEFAULT 'legacy'`` but holds no ``'legacy'`` rows to trip the row-presence check.
+    """
+    row = con.execute(
+        "SELECT column_default FROM information_schema.columns WHERE table_name = ? AND column_name = ?",
+        [table, column],
+    ).fetchone()
+    return row[0] if row else None
+
+
+# ── analyze_metrics (one current run-scoped schema) ──────────────────────────
+
+#: Column definitions for ``analyze_metrics``.  The ``run_id`` column is the row-level
+#: realization of the analyze-scope bookkeeping and carries ONE current meaning: the run that
+#: produced the row.  There is no pre-cut / legacy partition, no ``DEFAULT 'legacy'`` and no
+#: reserved legacy run id — every row is written by a run-scoped caller that supplies the
+#: current ``run_id``.  The old four-column PRIMARY KEY was dropped; DuckDB ART/WAL policy
+#: (like ``head_phase_provenance``) allows no PK/UNIQUE/index on a maintained table —
+#: application-level uniqueness is asserted on write within a run_id (see
+#: ``db.flat.write_analyze_metrics``: it replaces only its own run scope).
 _ANALYZE_METRICS_COLUMN_DEFS: tuple[str, ...] = (
-    "run_id         TEXT NOT NULL DEFAULT 'legacy'",
+    "run_id         TEXT NOT NULL",
     "strategy_key   TEXT NOT NULL",
     "strategy_type  TEXT NOT NULL",
     "sim_metric     TEXT NOT NULL",
@@ -288,69 +303,63 @@ _ANALYZE_METRICS_CREATE = (
 )
 
 
-#: Run_id used for pre-migration (legacy) ``analyze_metrics`` rows.
-LEGACY_RUN_ID = "legacy"
+class StaleSchemaError(RuntimeError):
+    """A pre-cut (legacy-partitioned) ``analyze_metrics`` schema/table was detected.
 
-
-def migrate_analyze_metrics_provenance(con) -> int:
-    """Backup-first, transactional create-copy-drop-rename adding ``run_id`` to ``analyze_metrics``.
-
-    If ``analyze_metrics`` is absent, or already carries the ``run_id`` column (i.e. already
-    migrated), this is a no-op returning ``0``.  Otherwise it:
-
-    1. Takes a full pre-migration snapshot into ``analyze_metrics_backup`` (the recorded
-       backup location) — nothing destructive happens first.
-    2. In ONE transaction: creates the run_id-annotated replacement, copies every
-       pre-existing row read-only as ``run_id='legacy'``, drops the old table (dropping the
-       legacy four-column PRIMARY KEY), and renames the replacement into place.
-    3. Verifies schema (column count) and readable rows (count preserved and every migrated
-       row is a legacy ``run_id='legacy'`` row) before committing.
-
-    No PK/UNIQUE/index is added.  Returns the number of migrated legacy rows (``0`` when no
-    migration ran).
+    Raised by :func:`ensure_schema` when an existing ``analyze_metrics`` table cannot be
+    treated as the ONE current run-scoped schema — either it predates the ``run_id`` column,
+    or it carries ``run_id='legacy'`` rows copied by the removed pre-cut migration, or whose
+    ``run_id`` column exposes a non-None DEFAULT (a HEAD-era pre-cut shape carrying
+    ``DEFAULT 'legacy'`` with no rows to trip the row-presence check).  The corrective hard
+    cut REFUSES such a table rather than relabeling/copying its rows into an executable
+    legacy partition: the table must be explicitly reset/recreated (``run.py reset --scope
+    analysis`` removes the disposable research DB + views; re-running the phase then
+    recreates the current schema) before analysis proceeds.
     """
-    _require_duckdb()
+
+
+def _ensure_current_analyze_metrics(con) -> None:
+    """Create the current ``analyze_metrics`` schema or refuse a stale pre-cut table.
+
+    * absent table -> create the current run-scoped schema;
+    * present CURRENT table (has ``run_id`` with no column default, no legacy-partition rows)
+      -> no-op (``CREATE TABLE IF NOT EXISTS`` idempotency);
+    * present table lacking ``run_id`` (pre-cut), OR containing ``run_id='legacy'`` rows (a
+      legacy partition left by the removed pre-cut migration), OR exposing a NON-None
+      ``run_id`` column default (a HEAD-era table that has the ``run_id`` column with
+      ``DEFAULT 'legacy'`` but no ``'legacy'`` rows to trip the row-presence check) -> raise
+      :class:`StaleSchemaError` so the operator explicitly resets/recreates the schema instead
+      of silently relabeling stale rows as current or leaving a dormant ``DEFAULT 'legacy'``
+      on the live column.
+    """
     if not _table_exists(con, "analyze_metrics"):
-        return 0
-    if _table_has_column(con, "analyze_metrics", "run_id"):
-        return 0
-    n_old = int(con.execute("SELECT COUNT(*) FROM analyze_metrics").fetchone()[0])
-    # Backup-first: full snapshot recorded at analyze_metrics_backup.
-    con.execute("CREATE OR REPLACE TABLE analyze_metrics_backup AS SELECT * FROM analyze_metrics")
-    try:
-        con.execute("BEGIN TRANSACTION")
-        con.execute("CREATE TABLE analyze_metrics_new (\n    " + ",\n    ".join(_ANALYZE_METRICS_COLUMN_DEFS) + "\n)")
-        con.execute(
-            "INSERT INTO analyze_metrics_new (run_id, strategy_key, strategy_type, sim_metric, k, metric, value) "
-            "SELECT 'legacy', strategy_key, strategy_type, sim_metric, k, metric, value FROM analyze_metrics"
+        con.execute(_ANALYZE_METRICS_CREATE)
+        return
+    if not _table_has_column(con, "analyze_metrics", "run_id"):
+        raise StaleSchemaError(
+            "analyze_metrics exists WITHOUT the current run_id column (a pre-cut schema). "
+            "Refusing to run on it: the hard cut makes analyze_metrics one current "
+            "run-scoped schema with no legacy partition. Reset/recreate explicitly (e.g. "
+            "`python run.py reset --scope analysis`, or drop + recreate the DB) and re-run "
+            "the phase."
         )
-        con.execute("DROP TABLE analyze_metrics")
-        con.execute("ALTER TABLE analyze_metrics_new RENAME TO analyze_metrics")
-        # Post-migration verification before commit.
-        n_cols = int(
-            con.execute(
-                "SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'analyze_metrics'"
-            ).fetchone()[0]
+    if _column_default(con, "analyze_metrics", "run_id") is not None:
+        raise StaleSchemaError(
+            "analyze_metrics has a run_id column with a DEFAULT ('legacy'); the current "
+            "hard-cut schema pins run_id with NO default (every row is written by a "
+            "run-scoped caller). Refusing to run on it rather than silently accept a dormant "
+            "legacy default on the live column. Reset/recreate explicitly (e.g. `python "
+            "run.py reset --scope analysis`) and re-run the phase."
         )
-        n_new = int(con.execute("SELECT COUNT(*) FROM analyze_metrics").fetchone()[0])
-        if n_cols != len(_ANALYZE_METRICS_COLUMN_DEFS):
-            raise RuntimeError(
-                f"analyze_metrics migration column verification failed: {n_cols} columns "
-                f"(expected {len(_ANALYZE_METRICS_COLUMN_DEFS)})"
-            )
-        if n_new != n_old:
-            raise RuntimeError(
-                f"analyze_metrics migration row-preservation verification failed: {n_new} rows (expected {n_old})"
-            )
-        bad = int(con.execute("SELECT COUNT(*) FROM analyze_metrics WHERE run_id <> 'legacy'").fetchone()[0])
-        if bad:
-            raise RuntimeError(f"analyze_metrics migration produced {bad} non-legacy rows")
-        con.execute("COMMIT")
-    except Exception:
-        with suppress(Exception):
-            con.execute("ROLLBACK")
-        raise
-    return n_old
+    legacy_rows = int(con.execute("SELECT COUNT(*) FROM analyze_metrics WHERE run_id = 'legacy'").fetchone()[0])
+    if legacy_rows:
+        raise StaleSchemaError(
+            "analyze_metrics carries run_id='legacy' rows (a legacy partition copied by the "
+            "removed pre-cut migration). Refusing to run on them: old rows are never relabeled "
+            "into an executable legacy partition. Reset/recreate explicitly (e.g. `python "
+            "run.py reset --scope analysis`) and re-run the phase."
+        )
+    con.execute(_ANALYZE_METRICS_CREATE)
 
 
 def _require_duckdb() -> None:
@@ -426,13 +435,14 @@ def storage_version_label(value: object) -> str:
 def ensure_schema(con) -> None:
     """Execute the DDL against an already-open connection. Safe to call multiple times.
 
-    Creates the canonical 18-column ``head_phase_provenance`` table (owned outside the
-    monolithic ``_DDL``), then the monolithic DDL and the ``analyze_metrics`` table.
+    Ensures the current run-scoped ``analyze_metrics`` table (creating it when absent, or
+    raising :class:`StaleSchemaError` when a stale pre-cut / legacy-partitioned table is
+    present — never relabeling old rows), then the monolithic DDL and the canonical 18-column
+    ``head_phase_provenance`` table (owned outside the monolithic ``_DDL``).
     """
     _require_duckdb()
-    migrate_analyze_metrics_provenance(con)
+    _ensure_current_analyze_metrics(con)
     con.execute(_DDL)
-    con.execute(_ANALYZE_METRICS_CREATE)
     con.execute(_HPP_CREATE)
 
 

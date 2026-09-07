@@ -9,6 +9,14 @@ Ongoing notes from research runs. Add findings as they emerge — don't wait for
 > scaled/calibration/optimizer/weighted/pooling config. The code does not read these historical
 > notes at runtime.
 
+> **Historical note (execution-reporting-repair Plan C Phase 2, 2026-09):** `disc_score` existed
+> as a backwards-compatible alias of the active discrimination metric `disc_artist` (an alias-copy
+> write in the discrimination-lens evaluators and a now-removed corpus warning/step name). It was
+> removed outright in the Plan C Phase-2 hard cut: the sole active discrimination metric is now
+> `disc_artist` (semantics and finite-output checks unchanged), and no executable producer,
+> consumer, warning, fixture, or report surface references `disc_score` any longer. This paragraph
+> is HISTORICAL narrative only — it is never read by runtime or tests.
+
 ---
 
 ## Open Questions / Deferred Experiments

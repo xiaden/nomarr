@@ -277,7 +277,17 @@ def test_full_fixture_carries_durable_identity_baseline_head_and_phases(tmp_path
     for backbone in ("effnet", "musicnn"):
         sub = next(s for s in by_id["analysis"]["subsections"] if s["title"] == backbone)
         tbl = _find_table(sub, f"catalog_analysis_{backbone}")
-        for col in ("canonical_config_id", "alias_ids", "representation_hash", "view_content_hash"):
+        for col in (
+            "canonical_config_id",
+            "alias_ids",
+            "representation_hash",
+            "view_content_hash",
+            "catalog_id",
+            "catalog_fingerprint",
+            "view_keyset_hash",
+            "evaluation_corpus_hash",
+            "evaluation_corpus_comparable",
+        ):
             assert col in tbl["columns"], col
 
     # Baseline/delta: every winner delta row's baseline is the observed global medoid, no config.
@@ -373,3 +383,22 @@ def test_validator_rejects_inconsistent_class_identity(tmp_path):
         tbl["rows"][1][tbl["columns"].index("representation_hash")] = "zz"
 
     _mutate_and_expect_fail(tmp_path, mutate, "inconsistent identity")
+
+
+def test_validator_rejects_semantic_collapsed_into_disposable_keyset(tmp_path):
+    """P2-S1: a row whose representation_hash equals its view_keyset_hash must be rejected.
+
+    The whole point of the durable-vs-disposable separation is that the report never renders a
+    disposable view/keyset hash as the SEMANTIC representation hash.  Collapsing the two into one
+    column value is a durable-identity defect the validator must fail closed on.
+    """
+
+    def mutate(data):
+        analysis = next(s for s in data["sections"] if s["id"] == "analysis")
+        sub = next(s for s in analysis["subsections"] if s["title"] == "effnet")
+        tbl = _find_table(sub, "catalog_analysis_effnet")
+        r = tbl["columns"].index("representation_hash")
+        v = tbl["columns"].index("view_keyset_hash")
+        tbl["rows"][0][r] = tbl["rows"][0][v]
+
+    _mutate_and_expect_fail(tmp_path, mutate, "never equal the disposable view_keyset_hash")

@@ -85,6 +85,7 @@ from scripts.embedding_research.tests.fixture_runtime_harness import (
     SentinelRegistry,
     _Patch,
 )
+from scripts.embedding_research.tests.test_deterministic_fixture_outputs import REPORT_METRICS
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -199,7 +200,7 @@ def run(tmp_path_factory):
     db_path = scratch / "research.duckdb"
     con = duckdb.connect(str(db_path))
     ensure_schema(con)
-    runner = FixtureCliRunner(con, out, thresholds=THRESHOLDS, emit_medoid_baseline=True)
+    runner = FixtureCliRunner(con, out, thresholds=THRESHOLDS)
     runner.run_all()
     # Checkpoint + release the DB so the pristine file copy is clean (no -wal/-shm).
     con.close()
@@ -239,7 +240,7 @@ def test_delete_reindex_rerun_reuse_durability(run, tmp_path, monkeypatch):
     assert len(baseline_analyze) > 0, "pre-deletion analyze must produce analyze_metrics rows"
     assert len(baseline_head) > 0, "pre-deletion head-analysis must produce head_phase_provenance rows"
     assert n_catalog_classes == 2, "fixture collapses to two per-class executions pre-deletion"
-    assert n_baseline == 6, "one medoid-baseline value row per REPORT_METRIC (6)"
+    assert n_baseline == len(REPORT_METRICS), "one medoid-baseline value row per active REPORT_METRIC"
     assert base_report_run == 1, "report phase must have a recorded run row pre-deletion"
 
     # The report machine artifact must exist pre-deletion.
@@ -326,7 +327,7 @@ def test_delete_reindex_rerun_reuse_durability(run, tmp_path, monkeypatch):
     assert rerun_reg.zero_for(_FORBIDDEN_KEYS), f"re-run phases made forbidden calls: {rerun_reg.counts}"
     assert rerun_reg[_SEGMENTATION_KEY] == 0, "no segmentation recomputation may occur during the re-run"
     assert len(post_analyze) > 0 and len(post_head) > 0
-    assert post_catalog_classes == 2 and post_baseline == 6 and post_report_run == 1
+    assert post_catalog_classes == 2 and post_baseline == len(REPORT_METRICS) and post_report_run == 1
 
     # -- (5) COMPARE post-deletion to the pre-deletion baseline ------------------------ #
     # Logical rows reproduce byte-for-byte (same replayed run ids => same run-scoped keys).
@@ -347,3 +348,78 @@ def test_delete_reindex_rerun_reuse_durability(run, tmp_path, monkeypatch):
     assert _catalog_dirs(work_out) == baseline_catalog_dirs, "no new catalog directory may appear"
     post_current = json.loads((work_out / "catalogs" / "current.json").read_text())
     assert post_current == baseline_current, "catalogs/current.json must still point at the same catalog"
+
+
+# --------------------------------------------------------------------------- #
+# Plan D Phase 2 (P2-S3): fresh analyze run over the SAME catalog — disposable #
+# view identity changes while the durable semantic hash stays stable.          #
+# --------------------------------------------------------------------------- #
+def test_fresh_analyze_run_changes_disposable_but_semantic_hash_stable(run, tmp_path):
+    """P2-S3: semantic search hashes stay stable across a fresh analyze run (disposable changes).
+
+    The disposable view ``keyset_hash`` / ``view_content_hash`` are run-scoped (the keyset
+    preimage embeds the run id), so re-running the analyze phase over the IDENTICAL compact
+    catalog with a FRESH run id regenerates the disposable search views with a DIFFERENT
+    disposable identity while the durable semantic ``search_representation_hash`` — a pure
+    function of the catalog's search inputs — stays identical.  This proves report/durable
+    comparison is by durable SEMANTIC identity, never by the disposable view/keyset identity,
+    complementing the byte-stability proof in
+    ``test_delete_reindex_rerun_reuse_durability`` (which replays identical run ids).
+    """
+    from scripts.embedding_research.db.analyze_scope import parse_analyze_scope
+
+    out, db_path, runner = run.out, run.db_path, run.runner
+    original_rid = runner.evidence.phase_run_id("analyze")
+
+    # Hermetic copy so the fresh run's new views never touch the pristine module fixture.
+    work = tmp_path / "fresh-run"
+    work_out = work / "out"
+    work_db = work / "research.duckdb"
+    shutil.copytree(out, work_out)
+    shutil.copy2(db_path, work_db)
+    assert _durable_map(work_out)  # copy must carry the durable committed artifact bytes.
+
+    work_con = duckdb.connect(str(work_db))
+    ensure_schema(work_con)
+    try:
+        fresh_rid = "analyze-999999"
+        cfg = runner._cfg("analyze", fresh_rid)
+        cfg["output_root"] = work_out  # write disposable views into the copy, never the pristine tree.
+        cfg["report_dir"] = work_out / "report"
+        reg = SentinelRegistry()
+        with _Patch() as p:
+            runner._install_forbidden_sentinels(p, reg)
+            runner._install_segmentation_sentinel(p, reg)
+            run_mod._run_single_phase(work_con, "analyze", cfg, db_path=str(work_db))
+        assert reg.zero_for(_FORBIDDEN_KEYS), f"fresh analyze made forbidden calls: {reg.counts}"
+        assert reg[_SEGMENTATION_KEY] == 0, "no segmentation recompute may occur during a fresh analyze"
+
+        def _class_scope(run_id: str) -> tuple[set[str], set[str]]:
+            semantic: set[str] = set()
+            keysets: set[str] = set()
+            rows = work_con.execute(
+                "SELECT output_artifact_hashes FROM run_provenance WHERE run_id=? AND phase='analyze'",
+                [run_id],
+            ).fetchall()
+            for (blob,) in rows:
+                if not blob:
+                    continue
+                for line in blob.splitlines():
+                    p = parse_analyze_scope(line.strip())
+                    if p and p.get("scope_kind") == "catalog_class" and p.get("search_representation_hash"):
+                        semantic.add(p["search_representation_hash"])
+                        keysets.add(p["view_keyset_hash"])
+            return semantic, keysets
+
+        sem_a, keys_a = _class_scope(original_rid)
+        sem_b, keys_b = _class_scope(fresh_rid)
+        assert len(sem_a) == 2 and len(sem_b) == 2, "each analyze run records exactly the two search classes"
+        # Durable SEMANTIC identity is stable across the fresh (disposable-regenerating) run.
+        assert sem_a == sem_b, "semantic search hashes must stay stable across a fresh analyze run"
+        # Disposable view keyset identity CHANGED (run-scoped), so rows are compared by semantic
+        # identity, never by disposable identity — and never equal to a semantic hash.
+        assert keys_a, "class scopes must record a disposable view keyset"
+        assert keys_a.isdisjoint(keys_b), "a fresh run must produce a different disposable view keyset"
+        assert sem_a.isdisjoint(keys_a | keys_b), "a semantic hash must never equal a disposable keyset"
+    finally:
+        work_con.close()

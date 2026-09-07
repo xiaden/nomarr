@@ -32,7 +32,12 @@ from scripts.embedding_research.tests._report_seed import (
 # Observed global-medoid baseline delta builder (P1-S5/S6; report wired in S7) #
 # --------------------------------------------------------------------------- #
 def _delta_frame(rows: list[dict]) -> pd.DataFrame:
-    """A decoded long frame carrying segmented class + medoid rows for the given backbones."""
+    """A decoded long frame carrying segmented class + medoid rows for the given backbones.
+
+    Every row carries the SAME comparable evaluation-corpus identity so a segmented class and its
+    medoid baseline match under the matching-only delta gate (the legacy identity-less structural
+    match is gone under the corrective hard cut).
+    """
     return pd.DataFrame(
         [
             {
@@ -41,6 +46,11 @@ def _delta_frame(rows: list[dict]) -> pd.DataFrame:
                 "metric": "map_k",
                 "canonical_config_id": None,
                 "alias_ids": [],
+                "evaluation_corpus_hash": "fixture-corpus",
+                "evaluation_corpus_count": 4,
+                "evaluation_corpus_comparable": True,
+                "evaluation_corpus_missing_count": 0,
+                "evaluation_corpus_missing_digest": None,
                 **r,
             }
             for r in rows
@@ -64,9 +74,9 @@ def _medoid_row(backbone: str, value: float) -> dict:
 
 def test_baseline_delta_columns_contract():
     df = _delta_frame([_catalog_row("effnet", "a", 0.6, 1, []), _medoid_row("effnet", 0.4)])
-    rows = build_baseline_delta_rows(df)
-    assert list(rows.columns) == list(BASELINE_DELTA_COLUMNS)
-    assert len(rows) == 1
+    matched = build_baseline_delta_rows(df).rows
+    assert len(matched) == 1
+    assert set(matched[0]) == set(BASELINE_DELTA_COLUMNS)
 
 
 def test_winner_delta_arithmetic_against_medoid_baseline():
@@ -77,7 +87,7 @@ def test_winner_delta_arithmetic_against_medoid_baseline():
             _medoid_row("effnet", 0.55),
         ]
     )
-    r = build_baseline_delta_rows(df).iloc[0]
+    r = build_baseline_delta_rows(df).rows[0]
     assert r["baseline_strategy_key"] == medoid_strategy_key_for("effnet")
     assert r["baseline_value"] == pytest.approx(0.55)
     assert r["winner_value"] == pytest.approx(0.8)
@@ -92,8 +102,8 @@ def test_winner_tie_breaks_to_lowest_strategy_key_against_medoid():
             _medoid_row("effnet", 0.7),
         ]
     )
-    rows = build_baseline_delta_rows(df)
-    r = rows.iloc[0]
+    matched = build_baseline_delta_rows(df).rows
+    r = matched[0]
     assert r["winner_strategy_key"] == catalog_key("effnet", "aab")
     assert r["delta"] == pytest.approx(0.0)
 
@@ -109,9 +119,9 @@ def test_medoid_baseline_per_backbone_identity_no_cross_backbone():
             _medoid_row("musicnn", 0.1),
         ]
     )
-    rows = build_baseline_delta_rows(df)
-    assert set(rows["backbone"]) == {"effnet", "musicnn"}
-    by = dict(zip(rows["backbone"], rows.to_dict("records"), strict=False))
+    matched = build_baseline_delta_rows(df).rows
+    by = {r["backbone"]: r for r in matched}
+    assert set(by) == {"effnet", "musicnn"}
     assert by["effnet"]["baseline_strategy_key"] == "global_pool:effnet:medoid"
     assert by["musicnn"]["baseline_strategy_key"] == "global_pool:musicnn:medoid"
     assert by["effnet"]["baseline_value"] == pytest.approx(0.6)

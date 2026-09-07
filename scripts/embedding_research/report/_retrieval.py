@@ -7,8 +7,10 @@ Research-only.  This module owns the single active reader over ``analyze_metrics
   ever read — there is no legacy strategy allowlist.  Each row is one literal
   ``(strategy_key, sim_metric, k, metric, value)`` cell of an active catalog class,
   enriched with the decoded identity and the provenance-scope fields
-  (``canonical_config_id`` / ``alias_ids`` / ``view_content_hash``) read from the analyze
-  run scope recorded in ``run_provenance``.
+  (``canonical_config_id`` / ``alias_ids`` / the DURABLE SEMANTIC ``representation_hash`` /
+  catalog anchor / per-member evidence / ``view_keyset_hash`` / ``view_content_hash``) read
+  from the analyze run scope recorded in ``run_provenance``.  A disposable keyset is never
+  promoted into the semantic ``representation_hash`` column.
 * :func:`query_medoid_baselines` returns the observed ``global_pool:{backbone}:medoid``
   baseline ``analyze_metrics`` rows (``strategy_type == "global_pool"``) as a decoded frame.
 * :func:`query_winners_metrics` concatenates the catalog classes with those medoid baseline
@@ -42,7 +44,9 @@ def _scope_map(con, *, run_id: str | None = None) -> dict[str, dict[str, Any]]:
     """Map catalog strategy_key -> analyze run-scope dict from ``run_provenance``.
 
     Reads ``phase='analyze'`` provenance rows' ``output_artifact_hashes`` and parses each
-    canonical ``analyze_scope_v1`` line (:func:`parse_analyze_scope`).  When *run_id* is given
+    canonical ``analyze_scope_v2`` line (there is a SINGLE analyze-scope schema in the runtime;
+    ``parse_analyze_scope`` returns ``None`` for any non-``analyze_scope_v2|`` line, so a
+    historical v1 line is simply ignored — never a fallback/current path).  When *run_id* is given
     only that run's provenance rows are scanned, else every analyze provenance row is scanned
     (the whole active completed scope).  Returns ``{strategy_key: scope}``.
     """
@@ -75,6 +79,26 @@ def _scope_map(con, *, run_id: str | None = None) -> dict[str, dict[str, Any]]:
     return out
 
 
+def _scope_corpus(cfg: dict[str, Any] | None) -> tuple[Any, Any, Any, Any, Any]:
+    """A row's persisted evaluation-corpus columns from its analyze scope dict.
+
+    Mirrors the ``evaluation_corpus_*`` keys written onto the single ``analyze_scope_v2``
+    provenance line; ``(None,)*5`` when the scope carries no corpus identity (absent/empty scope).
+    """
+    if not cfg:
+        return (None, None, None, None, None)
+    h = cfg.get("evaluation_corpus_hash")
+    if not h:
+        return (None, None, None, None, None)
+    return (
+        h,
+        cfg.get("evaluation_corpus_count"),
+        cfg.get("evaluation_corpus_comparable"),
+        cfg.get("evaluation_corpus_missing_count"),
+        cfg.get("evaluation_corpus_missing_digest") or None,
+    )
+
+
 def _alias_and_canonical(config_ids: Any) -> tuple[Any, list[Any]]:
     """Split a sorted class member list into (canonical_config_id, sorted alias_ids).
 
@@ -98,7 +122,11 @@ def query_analyze_metrics(
     restricted to the physical ``run_id`` column equalling *run_id*), decodes each active
     ``catalog:{backbone}:{score_variant}:v{version}:{keyset}`` strategy key, and enriches the
     row with the provenance-scope config identity (``canonical_config_id``, sorted
-    ``alias_ids``) and ``view_content_hash`` where the analyze run scope is recorded.
+    ``alias_ids``), the DURABLE SEMANTIC ``representation_hash``, catalog anchor, per-member
+    evidence and ``view_content_hash`` where the analyze run scope is recorded.  A row whose
+    durable scope carries no semantic hash is rendered visibly incomplete (``representation_hash``
+    None) — the disposable strategy-key keyset is surfaced separately as ``view_keyset_hash`` and
+    is never promoted into the semantic column.
 
     Returns an empty frame with :data:`CATALOG_ANALYSIS_COLUMNS` when the table is absent,
     has no catalog rows, or a query fails (so callers render empty sections rather than crash).
@@ -139,15 +167,62 @@ def query_analyze_metrics(
     )
 
     scope = _scope_map(con, run_id=run_id)
+    decoded_list = list(decoded.loc[valid])
     canonical: list[Any] = []
     alias_ids: list[Any] = []
+    config_ids: list[Any] = []
+    members: list[Any] = []
+    semantic_hashes: list[Any] = []
+    cat_ids: list[Any] = []
+    cat_fprints: list[Any] = []
     view_hashes: list[Any] = []
-    for key in df["strategy_key"]:
+    view_keysets: list[Any] = []
+    corpus_hash: list[Any] = []
+    corpus_count: list[Any] = []
+    corpus_comparable: list[Any] = []
+    corpus_missing_count: list[Any] = []
+    corpus_missing_digest: list[Any] = []
+    for i, key in enumerate(df["strategy_key"]):
         cfg = scope.get(key)
-        ccid, aliases = _alias_and_canonical(cfg.get("config_ids") if cfg else None)
-        canonical.append(ccid)
-        alias_ids.append(aliases)
-        view_hashes.append(cfg.get("view_content_hash") if cfg else None)
+        # The disposable per-run view keyset rides in the strategy-key trailing segment; the
+        # durable semantic representation hash (when recorded) is preferred over it so the
+        # report never renders a disposable view/keyset hash as semantic identity.
+        view_keyset = str(decoded_list[i]["keyset_hash"])
+        view_keysets.append(view_keyset)
+        if cfg:
+            ccid, aliases = _alias_and_canonical(cfg.get("config_ids"))
+            canonical.append(ccid)
+            alias_ids.append(aliases)
+            config_ids.append(list(cfg.get("config_ids") or []))
+            members.append(list(cfg.get("members") or []))
+            semantic = cfg.get("search_representation_hash")
+            # The semantic representation hash is the DURABLE catalog value; a genuinely
+            # identity-less structural scope (no durable semantic recorded) stays VISIBLY
+            # incomplete (None) rather than promoting the disposable keyset into the semantic
+            # column (Plan B P3 removed the transitional keyset fallback).
+            semantic_hashes.append(semantic or None)
+            cat_ids.append(cfg.get("catalog_id") or None)
+            cat_fprints.append(cfg.get("catalog_fingerprint") or None)
+            view_hashes.append(cfg.get("view_content_hash") or None)
+            ch, cc, ccmp, cmc, cmd = _scope_corpus(cfg)
+        else:
+            # No provenance scope recorded: no durable semantic identity exists for the row, so
+            # identity fields stay empty and it is rendered visibly incomplete — the disposable
+            # keyset (carried separately in view_keyset_hash) is NEVER promoted to semantic.
+            canonical.append(None)
+            alias_ids.append([])
+            config_ids.append([])
+            members.append([])
+            semantic_hashes.append(None)
+            cat_ids.append(None)
+            cat_fprints.append(None)
+            view_hashes.append(None)
+            ch, cc, ccmp, cmc, cmd = (None, None, None, None, None)
+        corpus_hash.append(ch)
+        corpus_count.append(cc)
+        corpus_comparable.append(ccmp)
+        corpus_missing_count.append(cmc)
+        corpus_missing_digest.append(cmd)
 
     enriched = pd.DataFrame(
         {
@@ -159,10 +234,20 @@ def query_analyze_metrics(
             "k": df["k"],
             "score_variant": identity["score_variant"],
             "scoring_semantics_version": identity["scoring_semantics_version"],
-            "representation_hash": identity["keyset_hash"],
+            "representation_hash": semantic_hashes,
+            "catalog_id": cat_ids,
+            "catalog_fingerprint": cat_fprints,
             "canonical_config_id": canonical,
             "alias_ids": alias_ids,
+            "config_ids": config_ids,
+            "view_keyset_hash": view_keysets,
             "view_content_hash": view_hashes,
+            "class_members": members,
+            "evaluation_corpus_hash": corpus_hash,
+            "evaluation_corpus_count": corpus_count,
+            "evaluation_corpus_comparable": corpus_comparable,
+            "evaluation_corpus_missing_count": corpus_missing_count,
+            "evaluation_corpus_missing_digest": corpus_missing_digest,
             "metric": df["metric"],
             "value": df["value"],
         }
@@ -184,10 +269,14 @@ def query_medoid_baselines(
     the observed ``global_pool:{backbone}:medoid`` baseline persisted by the analyze phase),
     optionally restricted to *run_id*.  Each row is one literal
     ``(strategy_key, sim_metric, k, metric, value)`` cell of that baseline identity; backbone is
-    parsed from the strategy key.  A medoid baseline is NOT a catalog class — it has no config
-    identity or provenance scope, so ``score_variant`` / ``scoring_semantics_version`` /
-    ``representation_hash`` / ``canonical_config_id`` / ``alias_ids`` / ``view_content_hash``
-    are ``None``/empty.  Rows whose key is not a well-formed ``global_pool:{bb}:medoid`` key are
+    parsed from the strategy key.  A medoid baseline is NOT a catalog class, so it carries no
+    class representation of its own (``representation_hash`` / ``canonical_config_id`` /
+    ``alias_ids`` / ``config_ids`` / ``class_members`` / ``view_*`` are empty) — but its persisted
+    ``analyze_scope_v2`` provenance line is surfaced, so ``score_variant`` /
+    ``scoring_semantics_version`` / ``catalog_id`` / ``catalog_fingerprint`` / the
+    evaluation-corpus identity (``evaluation_corpus_*``) are NOT left blank (a baseline scope
+    anchors to the same compact catalog + corpus as the classes it benchmarks against).  Rows
+    whose key is not a well-formed ``global_pool:{bb}:medoid`` key are
     dropped (a data-integrity anomaly, never a strategy-filter).  Returns an empty
     :data:`CATALOG_ANALYSIS_COLUMNS` frame when the table is absent or has no medoid rows.
     """
@@ -228,6 +317,23 @@ def query_medoid_baselines(
     df = df.iloc[keep].reset_index(drop=True)
     backbone_col = [backbones[i] for i in keep]
 
+    scope = _scope_map(con, run_id=run_id)
+    corpus: list[tuple[Any, Any, Any, Any, Any]] = [_scope_corpus(scope.get(str(sk))) for sk in df["strategy_key"]]
+    # A medoid baseline is not a config class, but its persisted scope carries the compact
+    # catalog anchor + score/scoring-semantics provenance of the analyze run; surface those
+    # rather than leaving the baseline's identity columns blank.  config / member / semantic /
+    # disposable-view identity stays empty (a baseline has no class representation of its own).
+    score_variants: list[Any] = []
+    semantics_versions: list[Any] = []
+    cat_ids: list[Any] = []
+    cat_fprints: list[Any] = []
+    for sk in df["strategy_key"]:
+        cfg = scope.get(str(sk))
+        score_variants.append(cfg.get("score_variant") if cfg else None)
+        semantics_versions.append(cfg.get("scoring_semantics_version") if cfg else None)
+        cat_ids.append(cfg.get("catalog_id") or None if cfg else None)
+        cat_fprints.append(cfg.get("catalog_fingerprint") or None if cfg else None)
+
     enriched = pd.DataFrame(
         {
             "run_id": df["run_id"],
@@ -236,12 +342,22 @@ def query_medoid_baselines(
             "strategy_type": MEDOID_STRATEGY_TYPE,
             "sim_metric": df["sim_metric"],
             "k": df["k"].astype(int),
-            "score_variant": [None] * len(df),
-            "scoring_semantics_version": [None] * len(df),
+            "score_variant": score_variants,
+            "scoring_semantics_version": semantics_versions,
             "representation_hash": [None] * len(df),
+            "catalog_id": cat_ids,
+            "catalog_fingerprint": cat_fprints,
             "canonical_config_id": [None] * len(df),
             "alias_ids": [[] for _ in range(len(df))],
+            "config_ids": [[] for _ in range(len(df))],
+            "view_keyset_hash": [""] * len(df),
             "view_content_hash": [None] * len(df),
+            "class_members": [[] for _ in range(len(df))],
+            "evaluation_corpus_hash": [c[0] for c in corpus],
+            "evaluation_corpus_count": [c[1] for c in corpus],
+            "evaluation_corpus_comparable": [c[2] for c in corpus],
+            "evaluation_corpus_missing_count": [c[3] for c in corpus],
+            "evaluation_corpus_missing_digest": [c[4] for c in corpus],
             "metric": df["metric"],
             "value": df["value"],
         }
@@ -280,9 +396,19 @@ def query_winners_metrics(
 
 
 def _class_table_rows(bb_df: pd.DataFrame) -> list[dict]:
-    """One analysis row per (strategy_key, k, metric) cell for a backbone, alias-joined."""
+    """One analysis row per (strategy_key, k, metric) cell for a backbone, alias-joined.
+
+    Renders the full durable v2 identity surface distinctly: the SEMANTIC
+    ``representation_hash`` (never a keyset), the DISPOSABLE ``view_keyset_hash`` (kept in a
+    separate column so the two never look identical), the compact-catalog anchor
+    (``catalog_id``/``catalog_fingerprint``), the ordered membership (``canonical_config_id`` /
+    ``alias_ids`` / ``config_ids``), score/scoring-semantics versions, and the persisted
+    evaluation-corpus identity + missing evidence.  All fields come directly from the durable
+    scope line — nothing is inferred from a later catalog.
+    """
     rows: list[dict] = []
     for _, r in bb_df.iterrows():
+        corpus_hash = r.get("evaluation_corpus_hash")
         rows.append(
             {
                 "run_id": fmt(r.get("run_id")) if pd.notna(r.get("run_id")) else "—",
@@ -295,9 +421,48 @@ def _class_table_rows(bb_df: pd.DataFrame) -> list[dict]:
                 "scoring_semantics_version": int(r["scoring_semantics_version"]),
                 "canonical_config_id": fmt(r.get("canonical_config_id")),
                 "alias_ids": _alias_text(r.get("alias_ids")),
-                "representation_hash": r["representation_hash"],
+                "config_ids": _alias_text(r.get("config_ids")),
+                "catalog_id": fmt(r.get("catalog_id")),
+                "catalog_fingerprint": fmt(r.get("catalog_fingerprint")),
+                "representation_hash": fmt(r.get("representation_hash")),
+                "view_keyset_hash": fmt(r.get("view_keyset_hash")),
                 "view_content_hash": fmt(r.get("view_content_hash")),
+                "evaluation_corpus_hash": fmt(corpus_hash) if corpus_hash is not None else "—",
+                "evaluation_corpus_count": fmt(r.get("evaluation_corpus_count")),
+                "evaluation_corpus_comparable": fmt(r.get("evaluation_corpus_comparable")),
+                "evaluation_corpus_missing_count": fmt(r.get("evaluation_corpus_missing_count")),
+                "evaluation_corpus_missing_digest": fmt(r.get("evaluation_corpus_missing_digest")),
             }
+        )
+    return rows
+
+
+def _member_rows(bb_df: pd.DataFrame) -> list[dict]:
+    """One row per (class, member) surfacing per-member configured/effective threshold, bin mode
+    and exact segmentation hash directly from the durable v2 member records.
+
+    ``bb_df`` is the enriched per-backbone frame; the enriched ``class_members`` list repeats on
+    every metric row of a class, so membership is deduped per strategy_key.  Rows do NOT carry the
+    strategy-key literal (kept on the main catalog table) — the semantic hash ties each member row
+    back to its class.  Identity-less structural rows (no member records) yield no rows.
+    """
+    rows: list[dict] = []
+    seen: set[str] = set()
+    for _, r in bb_df.iterrows():
+        sk = str(r["strategy_key"])
+        if sk in seen:
+            continue
+        seen.add(sk)
+        rows.extend(
+            {
+                "representation_hash": fmt(r.get("representation_hash")),
+                "config_id": fmt(m.get("config_id")),
+                "threshold_configured": fmt(m.get("threshold_configured")),
+                "threshold_effective": fmt(m.get("threshold_effective")),
+                "bin_mode": fmt(m.get("bin_mode")),
+                "exact_segmentation_hash": fmt(m.get("exact_segmentation_hash")),
+            }
+            for m in (r.get("class_members") or [])
         )
     return rows
 
@@ -311,7 +476,9 @@ def _alias_text(alias_ids) -> str:
 def section_analysis(df: pd.DataFrame) -> dict:
     """Render the active catalog ``analyze_metrics`` rows into the ``analysis`` section.
 
-    One per-backbone subsection, each with a table of decoded catalog rows.  Equal search
+    One per-backbone subsection with a table of decoded catalog rows (one per metric cell)
+    carrying the full separated identity surface, plus a collapsible per-class/member table
+    surfacing the per-member threshold/bin/exact-segmentation evidence.  Equal search
     representations were collapsed to one class by the analyze pipeline, so each
     ``strategy_key`` appears once per (sim_metric, k, metric) cell with its sorted alias list
     carried alongside — aliases never create duplicate metric/score rows.
@@ -329,6 +496,26 @@ def section_analysis(df: pd.DataFrame) -> dict:
         table_rows = _class_table_rows(bb_df)
         if not table_rows:
             continue
+        tables: list[dict] = [
+            make_table(
+                table_rows,
+                id=f"catalog_analysis_{backbone}",
+                title=f"Active catalog analysis rows ({backbone})",
+                collapsible=True,
+                summary_text=f"{len(table_rows)} active catalog row(s)",
+            )
+        ]
+        member_rows = _member_rows(bb_df)
+        if member_rows:
+            tables.append(
+                make_table(
+                    member_rows,
+                    id=f"catalog_members_{backbone}",
+                    title=f"Search-representation member evidence ({backbone})",
+                    collapsible=True,
+                    summary_text=f"{len(member_rows)} member row(s) (thresholds / bin / exact hash)",
+                )
+            )
         subsections.append(
             {
                 "id": f"analysis-{backbone}",
@@ -336,15 +523,7 @@ def section_analysis(df: pd.DataFrame) -> dict:
                 "description": "",
                 "stats": [],
                 "charts": [],
-                "tables": [
-                    make_table(
-                        table_rows,
-                        id=f"catalog_analysis_{backbone}",
-                        title=f"Active catalog analysis rows ({backbone})",
-                        collapsible=True,
-                        summary_text=f"{len(table_rows)} active catalog row(s)",
-                    )
-                ],
+                "tables": tables,
                 "panels": [],
                 "subsections": [],
                 "warnings": [],
@@ -365,10 +544,15 @@ def section_analysis(df: pd.DataFrame) -> dict:
         "Catalog Analysis",
         description=(
             "Active catalog-only analyze_metrics rows: one row per (strategy_key, sim_metric, "
-            "k, metric).  Each strategy_key is a collapsed search-representation class "
-            "(equal representations scored once); its sorted alias config ids and the "
-            "view-content/representation hash provenance are carried on every row.  EffNet and "
-            "MusicNN are independent per-backbone populations and are never cross-averaged."
+            "k, metric).  Each strategy_key is a collapsed search-representation class (equal "
+            "representations scored once); every row renders the DURABLE SEMANTIC "
+            "representation_hash distinctly from the DISPOSABLE per-run view_keyset_hash, plus "
+            "the compact-catalog anchor, canonical/member/alias config ids, score/scoring "
+            "versions and the persisted evaluation-corpus identity/missing evidence — all read "
+            "directly from the analyze-scope v2 line, never inferred from a later catalog.  The "
+            "per-class member table surfaces each member's configured/effective threshold, bin "
+            "mode and exact segmentation hash.  EffNet and MusicNN are independent per-backbone "
+            "populations and are never cross-averaged."
         ),
         subsections=subsections,
     )

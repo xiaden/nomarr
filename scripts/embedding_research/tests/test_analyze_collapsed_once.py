@@ -330,9 +330,9 @@ def _seed_retained_and_unrelated(con):
     )
     unrelated = "global_pool:effnet:mean"
     con.execute(
-        "INSERT INTO analyze_metrics (strategy_key, strategy_type, sim_metric, k, metric, value) "
-        "VALUES (?, 'global_pool', 'cosine', 10, 'disc_general', 0.99)",
-        (unrelated,),
+        "INSERT INTO analyze_metrics (run_id, strategy_key, strategy_type, sim_metric, k, metric, value) "
+        "VALUES (?, ?, 'global_pool', 'cosine', 10, 'disc_general', 0.99)",
+        ("retained-run-0", unrelated),
     )
     return unrelated
 
@@ -557,7 +557,9 @@ def test_run_analyze_path_schedules_each_distinct_class_exactly_once(
         ``materialize_search_view`` calls);
     (b) the bounded-exact runner is invoked EXACTLY ONCE per unique class — each class its own
         leave-one-out pass over only that class's canonical rows (2 classes => 2*N*(N-1) scorer
-        calls), never one merged pass and never once per alias;
+        calls), never one merged pass and never once per alias; PLUS the MANDATORY observed medoid
+        baseline pass (its own N*(N-1) leave-one-out over the searchable corpus, non-class sentinel
+        config);
     (c) every alias is exposed in the transient/result data via ``representation_classes``
         (canonical id + sorted aliases) — zero additional executions for aliases;
     (d) aliases are NEVER appended to any candidate union (each scorer candidate view carries only
@@ -614,14 +616,21 @@ def test_run_analyze_path_schedules_each_distinct_class_exactly_once(
         run_cfg = {"output_root": str(out), "backbones": [_BACKBONE], "k": 10}
         ret = run_mod._run_analyze(con, run_cfg, run_id="run-p1s3-runpy")
 
-        # (a) one disposable view per analysis scope/class.
+        # (a) one disposable view per analysis scope/class (the mandatory medoid baseline pass is
+        # observed-source-row only — it materializes NO view and adds no class).
         assert materialize_calls["n"] == 2, "one view materialized per distinct class"
-        # (b)+(e) scorer invoked once per unique class, each over its own canonical rows only.
-        assert scorer_calls["n"] == 2 * len(_SONGS) * (len(_SONGS) - 1), (
-            "two distinct classes each run their own N*(N-1) leave-one-out pass"
+        # (b)+(e) scorer invoked once per unique class over its own canonical rows, PLUS the MANDATORY
+        # observed medoid baseline pass (execution-reporting Plan A P2) which runs its OWN N*(N-1)
+        # leave-one-out pass over the searchable corpus -> 2*N*(N-1) class + N*(N-1) baseline.
+        assert scorer_calls["n"] == 3 * len(_SONGS) * (len(_SONGS) - 1), (
+            "two distinct classes (2*N*(N-1)) plus one mandatory observed medoid baseline pass (N*(N-1))"
         )
-        assert scorer_calls["candidate_configs"] == canonical_ids, "each pass feeds its own canonical rows"
-        # (d) aliases never appear in any candidate union.
+        # Class candidate configs are EXACTLY the two canonical ids; the baseline pass's candidate view
+        # uses its non-class sentinel config (-1) and is never a class/winner candidate.
+        class_candidate_configs = scorer_calls["candidate_configs"] - {-1}
+        assert class_candidate_configs == canonical_ids, "each class pass feeds its own canonical rows"
+        assert -1 in scorer_calls["candidate_configs"], "observed medoid baseline pass is present"
+        # (d) aliases never appear in any candidate union (nor in the baseline's non-class sentinel).
         assert scorer_calls["candidate_configs"].isdisjoint(alias_ids)
         assert ret["song_count"] == len(_SONGS)
         assert ret["self_recorded"] is True
@@ -630,16 +639,19 @@ def test_run_analyze_path_schedules_each_distinct_class_exactly_once(
         from scripts.embedding_research.db import analyze_scope as _scope
 
         scopes = _scope.run_row_scopes(con, run_id="run-p1s3-runpy")
-        assert len(scopes) == 2, "one analyze_scope strategy row per distinct class"
+        assert len(scopes) == 3, "one analyze_scope strategy row per distinct class + the medoid baseline scope"
         # The aggregate rows each carry a class-distinct persisted strategy identity that report decodes
-        # per class (report._alias_and_canonical treats each row's config_ids as ONE class).
+        # per class (report._alias_and_canonical treats each row's config_ids as ONE class), plus the
+        # non-class global_pool medoid baseline strategy identity.
         distinct_sks = {
             r[0]
             for r in con.execute(
                 "SELECT DISTINCT strategy_key FROM analyze_metrics WHERE run_id = 'run-p1s3-runpy'"
             ).fetchall()
         }
-        assert len(distinct_sks) == 2, "one persisted analyze_scope strategy identity per distinct class"
+        assert len(distinct_sks) == 3, (
+            "one persisted analyze_scope strategy identity per distinct class + one global_pool baseline"
+        )
         assert scopes == {(sk, "cosine", 10) for sk in distinct_sks}
     finally:
         harness.close()

@@ -49,10 +49,63 @@ def _factor_rows(factor_df: pd.DataFrame, backbone: str) -> list[dict]:
                 "k": int(r["k"]),
                 "canonical_config_id": _maybe_int(r.get("canonical_config_id")),
                 "alias_ids": _alias_text(r.get("alias_ids")),
-                "representation_hash": r["representation_hash"],
+                "representation_hash": r.get("representation_hash"),
+                "view_keyset_hash": r.get("view_keyset_hash"),
+                "catalog_id": r.get("catalog_id"),
             }
         )
     return rows
+
+
+_INCOMPLETE_COLUMNS = [
+    "strategy_key",
+    "sim_metric",
+    "k",
+    "metric",
+    "baseline_strategy_key",
+    "reason",
+    "baseline_evaluation_corpus_hash",
+    "baseline_evaluation_corpus_count",
+    "baseline_evaluation_corpus_comparable",
+    "representation_evaluation_corpus_hash",
+    "representation_evaluation_corpus_count",
+    "representation_evaluation_corpus_comparable",
+    "representation_missing_count",
+    "representation_missing_digest",
+]
+
+
+def _incomplete_rows(winner_df: pd.DataFrame, backbone: str) -> list[dict]:
+    """Render the matched-only-excluded incomplete diagnostics for *backbone* as row dicts.
+
+    Reads ``winner_df.attrs["baseline_incomplete"]`` (the ``BaselineDeltaResult.incomplete``
+    tuples carried across the winners DataFrame boundary by ``build_winner_delta_rows``) and maps
+    each to the :data:`_INCOMPLETE_COLUMNS` row shape so a partial / non-comparable / unequal
+    representation is VISIBLY surfaced in the winners section (never silently absent).
+    """
+    out: list[dict] = []
+    for entry in winner_df.attrs.get("baseline_incomplete", ()) if winner_df is not None else ():
+        if str(entry.get("backbone")) != backbone:
+            continue
+        out.append(
+            {
+                "strategy_key": entry.get("strategy_key"),
+                "sim_metric": entry.get("sim_metric"),
+                "k": entry.get("k"),
+                "metric": entry.get("metric"),
+                "baseline_strategy_key": entry.get("baseline_strategy_key"),
+                "reason": entry.get("reason"),
+                "baseline_evaluation_corpus_hash": entry.get("baseline_evaluation_corpus_hash"),
+                "baseline_evaluation_corpus_count": entry.get("baseline_evaluation_corpus_count"),
+                "baseline_evaluation_corpus_comparable": entry.get("baseline_evaluation_corpus_comparable"),
+                "representation_evaluation_corpus_hash": entry.get("representation_evaluation_corpus_hash"),
+                "representation_evaluation_corpus_count": entry.get("representation_evaluation_corpus_count"),
+                "representation_evaluation_corpus_comparable": entry.get("representation_evaluation_corpus_comparable"),
+                "representation_missing_count": entry.get("representation_missing_count"),
+                "representation_missing_digest": entry.get("representation_missing_digest"),
+            }
+        )
+    return out
 
 
 def _alias_text(v) -> str:
@@ -83,6 +136,7 @@ def section_winners(analysis_df: pd.DataFrame) -> dict:
     for backbone in backbones:
         cells = _cell_rows(winner_df, backbone)
         factors = _factor_rows(factor_df, backbone)
+        incomplete = _incomplete_rows(winner_df, backbone)
         tables = []
         if cells:
             tables.append(
@@ -101,6 +155,15 @@ def section_winners(analysis_df: pd.DataFrame) -> dict:
                     title=f"Active catalog class factors ({backbone})",
                     summary_text=f"{len(factors)} factor row(s)",
                     open=False,
+                )
+            )
+        if incomplete:
+            tables.append(
+                make_table(
+                    incomplete,
+                    id=f"incomplete_representations_{backbone}",
+                    title=f"Incomplete / non-comparable representations ({backbone})",
+                    summary_text=f"{len(incomplete)} representation(s) excluded from matched deltas",
                 )
             )
         if not tables:
@@ -137,8 +200,13 @@ def section_winners(analysis_df: pd.DataFrame) -> dict:
             "global-medoid baseline (global_pool:{backbone}:medoid) scored over the same "
             "corpus / sim_metric / k / metric, never a winner candidate; winner = the highest "
             "finite catalog-class value with strategy_key tie-break; delta = winner - baseline.  "
-            "Equal representations were collapsed to one class by the analyze pipeline, so "
-            "alias lists never create duplicate score rows."
+            "Each factor row renders the class's DURABLE SEMANTIC representation_hash distinctly "
+            "from its DISPOSABLE view_keyset_hash plus catalog anchor.  Equal representations were "
+            "collapsed to one class by the analyze pipeline, so alias lists never create duplicate "
+            "score rows.  A partial / non-comparable / unequal representation is never a matched "
+            "winner: it is excluded from the winner/delta table and rendered explicitly in the "
+            "per-backbone incomplete-representations table (with its reason and corpus/missing "
+            "evidence)."
         ),
         subsections=subsections,
     )

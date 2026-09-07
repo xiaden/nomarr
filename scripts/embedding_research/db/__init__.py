@@ -22,10 +22,9 @@ canary          — post-crash durability canary (dynamic PK/UNIQUE probe)
 """
 
 from ._schema import (
-    LEGACY_RUN_ID,
+    StaleSchemaError,
     connect,
     ensure_schema,
-    migrate_analyze_metrics_provenance,
     require_supported_duckdb,
     storage_version_label,
     upsert_phase_timing,
@@ -85,7 +84,6 @@ from .stream_registry import (
 )
 
 __all__ = [
-    "LEGACY_RUN_ID",
     "REPAIR_GUIDANCE",
     "CanaryCorruptionError",
     "CanaryProbeReport",
@@ -94,6 +92,7 @@ __all__ = [
     "HeadPhaseProvenanceRow",
     "SegStreamNotReadyError",
     "SegmentationError",
+    "StaleSchemaError",
     "build_head_phase_provenance_rows",
     "catalog_metadata_columns",
     "clear_song_retrieval_metrics",
@@ -106,7 +105,6 @@ __all__ = [
     "load_all_songs",
     "load_analyze_metrics",
     "load_head_phase_provenance",
-    "migrate_analyze_metrics_provenance",
     "probe_table",
     "query_analysis_done",
     "raise_if_head_duplicate",

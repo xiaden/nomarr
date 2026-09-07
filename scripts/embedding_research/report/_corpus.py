@@ -19,8 +19,8 @@ from ._base import (
 )
 
 
-def disc_score_warning(con) -> list[dict]:
-    """Return warning dicts if disc_score is degenerate (not enough artists / songs)."""
+def disc_artist_warning(con) -> list[dict]:
+    """Return warning dicts if disc_artist is degenerate (not enough artists / songs)."""
     try:
         n_artists = con.execute("SELECT COUNT(DISTINCT artist) FROM songs").fetchone()[0]
         n_songs = con.execute("SELECT COUNT(*) FROM songs").fetchone()[0]
@@ -31,7 +31,7 @@ def disc_score_warning(con) -> list[dict]:
                     "level": "error",
                     "message": "Single-artist corpus detected",
                     "detail": (
-                        f"All {n_songs} songs are from the same artist, so disc_score cannot be "
+                        f"All {n_songs} songs are from the same artist, so disc_artist cannot be "
                         f"computed (requires both within-artist and cross-artist pairs). "
                         f"Discrimination metrics in the analysis and winners sections will show "
                         f"0.0 everywhere \u2014 this is expected, not a bug. Add songs from multiple "
@@ -51,7 +51,7 @@ def disc_score_warning(con) -> list[dict]:
                     "message": "No within-artist pairs",
                     "detail": (
                         f"Every artist has exactly 1 song ({n_songs} songs, {n_artists} artists), "
-                        f"so disc_score cannot be computed. Add multiple songs per artist to get "
+                        f"so disc_artist cannot be computed. Add multiple songs per artist to get "
                         f"meaningful retrieval discrimination scores."
                     ),
                 }
@@ -134,7 +134,7 @@ def section_corpus(con) -> dict:
         description=(
             "Active matching corpus used by the catalog analysis and head analysis. "
             "Trust signal for all discrimination metrics. "
-            "Artists with only 1 song cannot form within-artist pairs, so disc_score "
+            "Artists with only 1 song cannot form within-artist pairs, so disc_artist "
             "cannot be computed for them. "
             "Green bars = contributor (\u22652 songs); red bars = no-pair songs (1 song)."
         ),

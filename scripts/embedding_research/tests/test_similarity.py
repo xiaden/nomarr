@@ -349,15 +349,12 @@ def test_disc_head_single_song_corpus():
         "disc_general",
         "disc_genre",
         "disc_head",
-        "disc_score",
         "map_k_artist",
         "map_k_genre",
         "map_k_head",
-        "mean_cross",
         "mean_cross_artist",
         "mean_cross_genre",
         "mean_cross_head",
-        "mean_within",
         "mean_within_artist",
         "mean_within_genre",
         "mean_within_head",
@@ -433,7 +430,7 @@ def test_map_k_head_none_when_no_head_scores():
 
 
 def test_var_within_cross_artist_nonneg():
-    """Artist within/cross variance metrics should be non-negative and preserve the back-compat alias."""
+    """Artist within/cross variance and mean metrics should be non-negative."""
     sim = _block_sim(within=0.9, cross=0.1)
     labels = ["A", "A", "B", "B"]
 
@@ -441,7 +438,8 @@ def test_var_within_cross_artist_nonneg():
 
     assert m["var_within_artist"] >= 0
     assert m["var_cross_artist"] >= 0
-    assert m["mean_within_artist"] == m["mean_within"]
+    assert m["mean_within_artist"] >= 0
+    assert m["mean_cross_artist"] >= 0
 
 
 def test_var_within_cross_genre_nonneg():

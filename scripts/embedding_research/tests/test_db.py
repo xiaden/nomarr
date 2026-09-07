@@ -10,12 +10,10 @@ import pandas as pd
 import pytest
 
 from scripts.embedding_research.db import (
-    LEGACY_RUN_ID,
     load_analyze_metrics,
-    migrate_analyze_metrics_provenance,
     write_analyze_metrics,
 )
-from scripts.embedding_research.db._schema import ensure_schema
+from scripts.embedding_research.db._schema import StaleSchemaError, ensure_schema
 from scripts.embedding_research.db.flat import (
     clear_song_retrieval_metrics,
     write_song_retrieval_metrics,
@@ -101,7 +99,7 @@ def test_schema_has_no_removed_tables(con):
 
 
 def test_write_analyze_metrics_inserts_rows(con):
-    write_analyze_metrics(con, "bb/mean", "flat", "cosine", 10, {"disc_general": 0.42, "map_10": 0.55})
+    write_analyze_metrics(con, "bb/mean", "flat", "cosine", 10, {"disc_general": 0.42, "map_10": 0.55}, run_id="run-1")
     rows = con.execute("SELECT metric, value FROM analyze_metrics ORDER BY metric").fetchall()
     assert len(rows) == 2
     metric_map = dict(rows)
@@ -121,7 +119,7 @@ def test_write_analyze_metrics_uses_named_columns(con):
             captured["sql"] = sql
             return con.executemany(sql, params)
 
-    write_analyze_metrics(_Recorder(), "bb/mean", "flat", "cosine", 10, {"disc_general": 0.42})
+    write_analyze_metrics(_Recorder(), "bb/mean", "flat", "cosine", 10, {"disc_general": 0.42}, run_id="run-1")
     assert "INSERT INTO analyze_metrics" in captured["sql"]
     assert "(run_id, strategy_key, strategy_type, sim_metric, k, metric, value)" in captured["sql"]
     assert captured["sql"].count("?") == 7
@@ -134,8 +132,8 @@ def test_strategy_identity_retains_k_and_metric(con):
     and ``k`` are retained as PK columns so distinct K / metric values never collide.
     """
     key = "ptc:bb:temporal_global:0.50:mean:max:target_weighted"
-    write_analyze_metrics(con, key, "ptc", "cosine", 5, {"mrr": 0.4})
-    write_analyze_metrics(con, key, "ptc", "cosine", 10, {"mrr": 0.6})
+    write_analyze_metrics(con, key, "ptc", "cosine", 5, {"mrr": 0.4}, run_id="run-1")
+    write_analyze_metrics(con, key, "ptc", "cosine", 10, {"mrr": 0.6}, run_id="run-1")
     rows = con.execute("SELECT sim_metric, k FROM analyze_metrics ORDER BY k").fetchall()
     assert rows == [("cosine", 5), ("cosine", 10)]
     df = load_analyze_metrics(con)
@@ -145,28 +143,28 @@ def test_strategy_identity_retains_k_and_metric(con):
 
 
 def test_write_analyze_metrics_skips_none_values(con):
-    write_analyze_metrics(con, "bb/mean", "flat", "cosine", 10, {"disc_general": 0.42, "map_10": None})
+    write_analyze_metrics(con, "bb/mean", "flat", "cosine", 10, {"disc_general": 0.42, "map_10": None}, run_id="run-1")
     rows = con.execute("SELECT metric FROM analyze_metrics").fetchall()
     assert len(rows) == 1
     assert rows[0][0] == "disc_general"
 
 
 def test_write_analyze_metrics_insert_or_replace(con):
-    write_analyze_metrics(con, "bb/mean", "flat", "cosine", 10, {"disc_general": 0.42})
-    write_analyze_metrics(con, "bb/mean", "flat", "cosine", 10, {"disc_general": 0.99})
+    write_analyze_metrics(con, "bb/mean", "flat", "cosine", 10, {"disc_general": 0.42}, run_id="run-1")
+    write_analyze_metrics(con, "bb/mean", "flat", "cosine", 10, {"disc_general": 0.99}, run_id="run-1")
     rows = con.execute("SELECT value FROM analyze_metrics WHERE metric='disc_general'").fetchall()
     assert len(rows) == 1
     assert rows[0][0] == pytest.approx(0.99)
 
 
 def test_write_analyze_metrics_run_scope_isolation(con):
-    """P3-S3: a writer replaces only its own (run_id, scope); other runs + legacy baseline survive."""
+    """A writer replaces only its own (run_id, scope); other runs survive."""
     key = "ptc:bb:scope-isolation"
-    write_analyze_metrics(con, key, "ptc", "cosine", 10, {"disc_general": 0.10}, run_id=LEGACY_RUN_ID)
-    write_analyze_metrics(con, key, "ptc", "cosine", 10, {"disc_general": 0.50}, run_id="run-a")
-    write_analyze_metrics(con, key, "ptc", "cosine", 10, {"disc_general": 0.90}, run_id="run-b")
-    # Re-running run-a replaces only run-a's row for this scope.
-    write_analyze_metrics(con, key, "ptc", "cosine", 10, {"disc_general": 0.70}, run_id="run-a")
+    write_analyze_metrics(con, key, "ptc", "cosine", 10, {"disc_general": 0.10}, run_id="run-a")
+    write_analyze_metrics(con, key, "ptc", "cosine", 10, {"disc_general": 0.50}, run_id="run-b")
+    write_analyze_metrics(con, key, "ptc", "cosine", 10, {"disc_general": 0.90}, run_id="run-c")
+    # Re-running run-b replaces only run-b's row for this scope.
+    write_analyze_metrics(con, key, "ptc", "cosine", 10, {"disc_general": 0.70}, run_id="run-b")
 
     def _value(run_id: str) -> float:
         return float(
@@ -176,17 +174,17 @@ def test_write_analyze_metrics_run_scope_isolation(con):
             ).fetchone()[0]
         )
 
-    assert _value(LEGACY_RUN_ID) == pytest.approx(0.10)
-    assert _value("run-a") == pytest.approx(0.70)
-    assert _value("run-b") == pytest.approx(0.90)
+    assert _value("run-a") == pytest.approx(0.10)
+    assert _value("run-b") == pytest.approx(0.70)
+    assert _value("run-c") == pytest.approx(0.90)
     # Whole-table (default) read still sees every generation.
     assert query_analysis_done(con) == {(key, "cosine", 10)}
-    assert query_analysis_done(con, run_id="run-a") == {(key, "cosine", 10)}
     assert query_analysis_done(con, run_id="run-b") == {(key, "cosine", 10)}
-    # The default load_analyze_metrics is a whole-table view (unchanged on a single generation).
+    assert query_analysis_done(con, run_id="run-c") == {(key, "cosine", 10)}
+    # The default load_analyze_metrics is a whole-table view.
     assert len(load_analyze_metrics(con)) == 1
-    assert len(load_analyze_metrics(con, run_id="run-a")) == 1
-    assert len(load_analyze_metrics(con, run_id="run-a")) == len(load_analyze_metrics(con, run_id="run-b"))
+    assert len(load_analyze_metrics(con, run_id="run-b")) == 1
+    assert len(load_analyze_metrics(con, run_id="run-c")) == 1
 
 
 def test_write_analyze_metrics_roundtrip(con):
@@ -197,6 +195,7 @@ def test_write_analyze_metrics_roundtrip(con):
         sim_metric="cosine",
         k=10,
         metrics={"map_k": 0.55, "disc_general": 0.42},
+        run_id="run-1",
     )
     df = load_analyze_metrics(con)
     assert len(df) >= 1
@@ -211,9 +210,9 @@ def test_load_analyze_metrics_empty_returns_empty_df(con):
 
 
 def test_load_analyze_metrics_sorted_by_disc_general_desc(con):
-    write_analyze_metrics(con, "bb/mean", "flat", "cosine", 10, {"disc_general": 0.30})
-    write_analyze_metrics(con, "bb/max", "flat", "cosine", 10, {"disc_general": 0.80})
-    write_analyze_metrics(con, "bb/min", "flat", "cosine", 10, {"disc_general": 0.55})
+    write_analyze_metrics(con, "bb/mean", "flat", "cosine", 10, {"disc_general": 0.30}, run_id="run-1")
+    write_analyze_metrics(con, "bb/max", "flat", "cosine", 10, {"disc_general": 0.80}, run_id="run-1")
+    write_analyze_metrics(con, "bb/min", "flat", "cosine", 10, {"disc_general": 0.55}, run_id="run-1")
     df = load_analyze_metrics(con)
     assert list(df["disc_general"]) == pytest.approx([0.80, 0.55, 0.30])
 
@@ -224,8 +223,8 @@ def test_load_analyze_metrics_sorted_by_disc_general_desc(con):
 
 
 def test_query_analysis_done_returns_tuples(con):
-    write_analyze_metrics(con, "bb/mean", "flat", "cosine", 10, {"disc_general": 0.42})
-    write_analyze_metrics(con, "bb/max", "flat", "cosine", 5, {"disc_general": 0.55})
+    write_analyze_metrics(con, "bb/mean", "flat", "cosine", 10, {"disc_general": 0.42}, run_id="run-1")
+    write_analyze_metrics(con, "bb/max", "flat", "cosine", 5, {"disc_general": 0.55}, run_id="run-1")
     result = query_analysis_done(con)
     assert ("bb/mean", "cosine", 10) in result
     assert ("bb/max", "cosine", 5) in result
@@ -244,11 +243,10 @@ def test_query_analysis_done_returns_empty_set_on_missing_table(con):
 
 
 # ---------------------------------------------------------------------------
-# P3-S3: analyze_metrics run_id migration
+# Hard cut: one current run-scoped analyze_metrics schema
 # ---------------------------------------------------------------------------
 
-
-_LEGACY_ANALYZE_METRICS_DDL = """
+_LEGACY_PRECUT_ANALYZE_METRICS_DDL = """
 CREATE TABLE IF NOT EXISTS analyze_metrics (
     strategy_key  TEXT NOT NULL,
     strategy_type TEXT NOT NULL,
@@ -261,76 +259,114 @@ CREATE TABLE IF NOT EXISTS analyze_metrics (
 """
 
 
-def test_migrate_analyze_metrics_provenance_preserves_legacy_rows_and_drops_pk():
-    """P3-S3: backup-first migration copies rows as run_id='legacy' and drops the legacy PK."""
-    legacy = duckdb.connect(":memory:")
-    legacy.execute(_LEGACY_ANALYZE_METRICS_DDL)
-    legacy.execute(
-        "INSERT INTO analyze_metrics (strategy_key, strategy_type, sim_metric, k, metric, value) VALUES "
-        "('global_pool:bb:mean', 'global_pool', 'cosine', 10, 'disc_general', 0.42),"
-        "('global_pool:bb:mean', 'global_pool', 'cosine', 10, 'map_10', 0.55)"
-    )
-    n = migrate_analyze_metrics_provenance(legacy)
-    assert n == 2
-    cols = {"run_id", "strategy_key", "strategy_type", "sim_metric", "k", "metric", "value"}
-    actual = {
-        row[0]
-        for row in legacy.execute(
-            "SELECT column_name FROM information_schema.columns WHERE table_name='analyze_metrics'"
-        ).fetchall()
-    }
-    assert cols == actual
-    # Every migrated row is the read-only legacy baseline.
-    rows = legacy.execute("SELECT run_id, metric, value FROM analyze_metrics ORDER BY metric").fetchall()
-    assert rows == [("legacy", "disc_general", 0.42), ("legacy", "map_10", 0.55)]
-    # The legacy PRIMARY KEY is gone: a duplicate legacy identity is accepted at the storage layer
-    # (application-level uniqueness is enforced on write, not by a constraint).
-    legacy.execute(
-        "INSERT INTO analyze_metrics (run_id, strategy_key, strategy_type, sim_metric, k, metric, value) VALUES "
-        "('legacy', 'global_pool:bb:mean', 'global_pool', 'cosine', 10, 'disc_general', 0.99)"
-    )
-    assert (
-        int(
-            legacy.execute(
-                "SELECT COUNT(*) FROM analyze_metrics "
-                "WHERE strategy_key='global_pool:bb:mean' AND metric='disc_general'"
-            ).fetchone()[0]
+def _run_id_column_default(con):
+    row = con.execute(
+        "SELECT column_default, is_nullable FROM information_schema.columns "
+        "WHERE table_name='analyze_metrics' AND column_name='run_id'"
+    ).fetchone()
+    return (row[0], row[1]) if row else None
+
+
+def test_write_analyze_metrics_requires_run_id(con):
+    """P1-S4 spec: write_analyze_metrics REQUIRES the current run id (no default)."""
+    with pytest.raises(TypeError):
+        write_analyze_metrics(con, "bb/mean", "flat", "cosine", 10, {"disc_general": 0.42})
+
+
+def test_analyze_metrics_current_schema_run_id_required_no_default(con):
+    """P1-S4 spec: the current schema creates run_id TEXT NOT NULL with NO DEFAULT."""
+    default, nullable = _run_id_column_default(con)
+    assert default is None  # no DEFAULT 'legacy' (or any default) tags rows
+    assert nullable == "NO"
+    # An unscoped INSERT omitting run_id is refused (the current run identity is required).
+    with pytest.raises(duckdb.ConstraintException):
+        con.execute(
+            "INSERT INTO analyze_metrics (strategy_key, strategy_type, sim_metric, k, metric, value) "
+            "VALUES ('bb/mean', 'flat', 'cosine', 10, 'disc_general', 0.42)"
         )
-        == 2
-    )
-    # A full pre-migration snapshot is retained as the recorded backup.
-    assert "analyze_metrics_backup" in {
-        r[0]
-        for r in legacy.execute(
-            "SELECT table_name FROM information_schema.tables WHERE table_name='analyze_metrics_backup'"
-        ).fetchall()
-    }
-    # Idempotent / guarded: a second migration is a no-op returning 0.
-    assert migrate_analyze_metrics_provenance(legacy) == 0
-    legacy.close()
 
 
-def test_migrate_analyze_metrics_provenance_missing_table_is_noop():
-    fresh = duckdb.connect(":memory:")
-    assert migrate_analyze_metrics_provenance(fresh) == 0
-    fresh.close()
-
-
-def test_fresh_schema_analyze_metrics_has_run_id_and_no_pk(con):
-    cols = {
-        row[0]
-        for row in con.execute(
-            "SELECT column_name FROM information_schema.columns WHERE table_name='analyze_metrics'"
-        ).fetchall()
-    }
-    assert "run_id" in cols
-    # A duplicate legacy identity is permitted by the storage layer (no PK/UNIQUE/index).
-    write_analyze_metrics(con, "bb/mean", "flat", "cosine", 10, {"disc_general": 0.42})
-    con.execute(
-        "INSERT INTO analyze_metrics (run_id, strategy_key, strategy_type, sim_metric, k, metric, value) "
-        "VALUES ('legacy', 'bb/mean', 'flat', 'cosine', 10, 'disc_general', 0.99)"
-    )
+def test_analyze_metrics_no_pk_duplicate_run_rows_accepted(con):
+    """No PK/UNIQUE/index: duplicate scope rows across distinct runs are accepted at the storage
+    layer (application-level uniqueness is asserted on write within a run_id)."""
+    write_analyze_metrics(con, "bb/mean", "flat", "cosine", 10, {"disc_general": 0.42}, run_id="run-1")
+    write_analyze_metrics(con, "bb/mean", "flat", "cosine", 10, {"disc_general": 0.42}, run_id="run-2")
     assert int(con.execute("SELECT COUNT(*) FROM analyze_metrics").fetchone()[0]) == 2
+
+
+def test_current_schema_has_no_legacy_partition_or_backup(con):
+    """P1-S4 spec: writing a current run never produces a legacy partition or a backup table."""
+    write_analyze_metrics(con, "bb/mean", "flat", "cosine", 10, {"disc_general": 0.42}, run_id="run-1")
+    rows = con.execute("SELECT run_id FROM analyze_metrics").fetchall()
+    assert rows and all(r[0] != "legacy" for r in rows)
+    n_backup = con.execute(
+        "SELECT COUNT(*) FROM information_schema.tables WHERE table_name='analyze_metrics_backup'"
+    ).fetchone()[0]
+    assert not n_backup
+
+
+def test_ensure_schema_creates_current_schema_fresh():
+    """P1-S4 spec: a fresh connection gets the current run-scoped analyze_metrics table."""
+    c = duckdb.connect(":memory:")
+    ensure_schema(c)
+    assert _run_id_column_default(c)[0] is None
+    c.close()
+
+
+def test_ensure_schema_refuses_precut_table_without_run_id():
+    """P1-S4 spec: a stale pre-cut analyze_metrics (no run_id) is refused, never migrated."""
+    stale = duckdb.connect(":memory:")
+    stale.execute(_LEGACY_PRECUT_ANALYZE_METRICS_DDL)
+    with pytest.raises(StaleSchemaError):
+        ensure_schema(stale)
+    # Nothing was relabeled / copied into an executable legacy partition.
+    assert _run_id_column_default(stale) is None
+    stale.close()
+
+
+def test_ensure_schema_refuses_legacy_partition_rows():
+    """P1-S4 spec: a table carrying run_id='legacy' rows (old pre-cut migration) is refused."""
+    stale = duckdb.connect(":memory:")
+    stale.execute(
+        "CREATE TABLE analyze_metrics (run_id TEXT NOT NULL, strategy_key TEXT NOT NULL, "
+        "strategy_type TEXT NOT NULL, sim_metric TEXT NOT NULL, k INTEGER NOT NULL, "
+        "metric TEXT NOT NULL, value DOUBLE)"
+    )
+    stale.execute(
+        "INSERT INTO analyze_metrics (run_id, strategy_key, strategy_type, sim_metric, k, metric, value) "
+        "VALUES ('legacy', 'bb/mean', 'flat', 'cosine', 10, 'disc_general', 0.42)"
+    )
+    with pytest.raises(StaleSchemaError):
+        ensure_schema(stale)
+    stale.close()
+
+
+def test_ensure_schema_refuses_head_era_run_id_default_even_with_zero_rows():
+    """P1-S4 spec: a HEAD-era table whose run_id column has ``DEFAULT 'legacy'`` but holds no
+    'legacy' rows is still refused (the dormant legacy default is never silently accepted).
+
+    Row-presence alone cannot catch this shape: with ZERO rows the row-presence check finds
+    no ``run_id='legacy'`` rows and would let the table pass with a dormant ``DEFAULT
+    'legacy'`` left on the live column.  Refuse instead, matching the no-default current
+    schema (``_run_id_column_default`` is already None for a fresh current schema).
+    """
+    stale = duckdb.connect(":memory:")
+    stale.execute(
+        "CREATE TABLE analyze_metrics (run_id TEXT NOT NULL DEFAULT 'legacy', strategy_key TEXT NOT NULL, "
+        "strategy_type TEXT NOT NULL, sim_metric TEXT NOT NULL, k INTEGER NOT NULL, "
+        "metric TEXT NOT NULL, value DOUBLE)"
+    )
+    # Zero rows: the row-presence staleness check alone would find nothing to refuse.
+    with pytest.raises(StaleSchemaError):
+        ensure_schema(stale)
+    stale.close()
+
+
+def test_ensure_schema_accepts_current_schema_idempotent(con):
+    """P1-S4 spec: re-running ensure_schema on a current schema is a no-op (CREATE IF NOT EXISTS)."""
+    write_analyze_metrics(con, "bb/mean", "flat", "cosine", 10, {"disc_general": 0.42}, run_id="run-1")
+    ensure_schema(con)  # must not raise
+    assert con.execute("SELECT COUNT(*) FROM analyze_metrics").fetchone()[0] == 1
 
 
 def test_clear_song_retrieval_metrics_deletes_only_matching_rows(con):

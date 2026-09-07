@@ -14,7 +14,7 @@ def query_analysis_done(con, *, run_id: str | None = None) -> set[tuple[str, str
 
     Args:
         con: DuckDB connection.
-        run_id: Optional run-scoped filter (post-migration reader contract).  When given, only the
+        run_id: Optional run-scoped filter.  When given, only the
             distinct strategy scopes whose physical ``run_id`` column equals *run_id* are returned, so a
             caller can query "is this run's analysis done?" without seeing unrelated runs.  When ``None``,
             returns every distinct tuple already present in ``analyze_metrics`` (default read semantics).

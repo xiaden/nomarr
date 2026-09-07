@@ -129,15 +129,11 @@ def compute_retrieval_metrics(
       per_head_corr  : dict[head_name, corr] — Spearman r per head (empty if
                        ``head_names`` absent)
 
-    ``disc_score`` is preserved as an alias of ``disc_artist`` for back-compat.
-
     Within/cross similarity statistics (artist, genre, head):
       mean_within_artist, var_within_artist : mean and variance of within-artist
                        pair similarities (upper triangle)
       mean_cross_artist, var_cross_artist   : mean and variance of cross-artist
                        pair similarities
-      mean_within, mean_cross               : back-compat aliases for the artist
-                       within/cross means
       mean_within_genre, var_within_genre,
       mean_cross_genre, var_cross_genre     : same for genre pairs; ``None`` if
                        ``genres`` not provided
@@ -528,7 +524,6 @@ def compute_retrieval_metrics(
         "precision_k_genre": precision_k_genre,
         "ap_k_genre": _ps_ap_genre,
         "ap_k_head": _ps_ap_head,
-        "disc_score": disc,
         "disc_artist": disc,
         "disc_genre": disc_genre,
         "disc_head": disc_head,
@@ -538,8 +533,6 @@ def compute_retrieval_metrics(
         "var_within_artist": var_within_artist,
         "mean_cross_artist": float(np.mean(cross_sims)) if cross_sims else 0.0,
         "var_cross_artist": var_cross_artist,
-        "mean_within": float(np.mean(within_sims)) if within_sims else 0.0,
-        "mean_cross": float(np.mean(cross_sims)) if cross_sims else 0.0,
         "mean_within_genre": mean_within_genre,
         "var_within_genre": var_within_genre,
         "mean_cross_genre": mean_cross_genre,

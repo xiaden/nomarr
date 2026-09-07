@@ -23,10 +23,10 @@ All metrics used in the embedding research pipeline, with their meaning and rank
 
 | Metric | Notes |
 |--------|-------|
-| `disc_score` | Raw pairwise sim gap (artist only, not genre/head). Less informative than `disc_general`. |
+| ~~`disc_score`~~ | **Removed (execution-reporting-repair Plan C hard cut).** Was a back-compat alias of `disc_artist`; `disc_artist` is now the sole active discrimination metric. Historical. |
 | `mrr` | Mean Reciprocal Rank. Useful for top-1 analysis, not primary. |
 | `recall_k` | Recall@k. Use alongside MAP, not standalone. |
-| `mean_within` / `mean_cross` | Raw within-group and cross-group cosine means. Useful for diagnosing collapse. |
+| `mean_within_artist` / `mean_cross_artist` | Raw within-group and cross-group cosine means. The bare `mean_within` / `mean_cross` back-compat aliases were removed (execution-reporting-repair Plan C hard cut); use the canonical `_artist` keys. |
 | `per_head_corr` | Spearman correlation between pairwise cosine sim and mean head-score difference. Measures whether embedding geometry tracks head predictions. |
 | `flat_binned_spearman` | Rank correlation between flat and binned similarity rankings for same song pairs. High value = binned adds no ordering information. |
 | `flat_binned_beneficial_reorder_rate` | Fraction of pairs where binned ranking moves a same-artist pair higher than flat did. Positive = useful reordering. |

@@ -99,6 +99,7 @@ from scripts.embedding_research.tests.fixture_runtime_harness import (
     SentinelRegistry,
     _Patch,
 )
+from scripts.embedding_research.tests.test_deterministic_fixture_outputs import REPORT_METRICS
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -251,7 +252,7 @@ def run(tmp_path_factory):
     db_path = scratch / "research.duckdb"
     con = duckdb.connect(str(db_path))
     ensure_schema(con)
-    runner = FixtureCliRunner(con, out, thresholds=THRESHOLDS, emit_medoid_baseline=True)
+    runner = FixtureCliRunner(con, out, thresholds=THRESHOLDS)
     runner.run_all()
     # Checkpoint + release the DB so the pristine file copy is clean (no -wal/-shm).
     con.close()
@@ -476,6 +477,34 @@ def test_cleanup_views_preserves_retained_run_referenced_view(run, tmp_path, mon
 # ─────────────────────────────────────────────────────────────────────────── #
 # Deliverable 3 — retired scope / command rejection (exit 2, no compat)        #
 # ─────────────────────────────────────────────────────────────────────────── #
+def test_cli_cleanup_staging_and_stray_scopes_exit_zero_zero_forbidden(run, tmp_path, monkeypatch):
+    """P3-S1: cleanup --scope staging|stray driven through the real ``run._cmd_cleanup`` seam
+    returns cleanly (exit 0) on a clean fixture copy and makes ZERO audio/model/ONNX/CUDA/
+    segmentation calls.
+
+    ``test_cleanup_views_*`` already drive ``cleanup --scope views`` through ``run._cmd_cleanup``;
+    this closes the corresponding real-CLI exit-0 boundary for the staging and stray scopes
+    (the destructive ``dry_run=False`` pass removes nothing from the already-clean fixture copy
+    and never touches committed Tier-1 payloads).
+    """
+    for scope in ("staging", "stray"):
+        work_out, work_db = _copy_fixture(run, tmp_path, f"cleanup-{scope}-cli")
+        baseline_tier1 = _tier1_map(run.out)
+        reg = SentinelRegistry()
+        monkeypatch.setattr(run_mod, "OUTPUT_ROOT", work_out)
+        monkeypatch.setattr(run_mod, "DB_PATH", work_db)
+        with _Patch() as p:
+            _arm_sentinels(p, reg, run.runner, segmentation=True)
+            # The exact body the CLI dispatches for `cleanup --scope {staging|stray}`.  A clean
+            # fixture copy has no leftover staging writes / strays, so the destructive pass
+            # removes nothing and returns cleanly (exit 0 per docs: no refusals).
+            result = run_mod._cmd_cleanup(SimpleNamespace(scope=scope, dry_run=False))
+        assert result is None, f"cleanup --scope {scope} must return cleanly (exit 0)"
+        assert reg.zero_for(_FORBIDDEN_KEYS), f"cleanup --scope {scope} made forbidden calls: {reg.counts}"
+        assert reg[_SEGMENTATION_KEY] == 0, f"cleanup --scope {scope} must make zero segmentation calls"
+        assert _tier1_map(work_out) == baseline_tier1, "cleanup must never remove committed Tier-1 payloads"
+
+
 def test_cleanup_rejects_retired_scopes_exit2():
     """cleanup --scope <retired-scope-name> is an ordinary usage error (exit 2) with no
     compatibility handling or fuzzy suggestion of retired names."""
@@ -538,7 +567,7 @@ def test_post_reset_reindex_and_derived_rerun_match_baseline(run, tmp_path, monk
     finally:
         base_con.close()
     assert len(baseline_analyze) > 0 and len(baseline_head) > 0
-    assert n_catalog_classes == 2 and n_baseline == 6
+    assert n_catalog_classes == 2 and n_baseline == len(REPORT_METRICS)
 
     baseline_report_json = (out / "report" / "report.json").read_text()
     baseline_tier1 = _tier1_map(out)
@@ -601,7 +630,7 @@ def test_post_reset_reindex_and_derived_rerun_match_baseline(run, tmp_path, monk
 
     assert rerun_reg.zero_for(_FORBIDDEN_KEYS), f"derived re-run made forbidden calls: {rerun_reg.counts}"
     assert rerun_reg[_SEGMENTATION_KEY] == 0, "no segmentation recomputation may occur post-reset"
-    assert post_catalog_classes == 2 and post_baseline == 6
+    assert post_catalog_classes == 2 and post_baseline == len(REPORT_METRICS)
 
     # -- COMPARE to the pre-reset baseline ------------------------------------ #
     assert post_analyze == baseline_analyze, "analyze results must reproduce identically post-reset"

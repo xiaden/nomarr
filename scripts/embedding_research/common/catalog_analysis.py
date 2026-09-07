@@ -6,11 +6,11 @@ The PRIMARY retrieval-analysis path for the frozen-stream segmentation catalog. 
 each query song against every candidate song's gathered medoid rows with the bounded exact scorer
 (:func:`scripts.embedding_research.bounded_scoring.score_bounded_exact`).
 
-This is the medoid-to-medoid primary path the design (DD R10/R11/R12) mandates.  It does NOT read
-the legacy copied ``flat_vecs`` / ``binned_ptc`` / ``binned_ptc_heads`` / CTP caches — those remain
-explicitly-labelled read-only **archival** compatibility paths for golden comparisons (see the
-``cache.*`` module docstrings and P3-S3) and are never silently fallen back to here (no
-"if catalog empty -> read archival" logic exists).
+This is the medoid-to-medoid primary path the design (DD R10/R11/R12) mandates.  It reads only the
+current catalog memberships (``seg_meta`` medoid source indices) and the disposable gathered search
+view — the former copied ``flat_vecs`` / ``binned_ptc`` / ``binned_ptc_heads`` / CTP cache readers
+were DELETED in the hard cut (execution-reporting-repair Plan C, Wave 2b), so no read-only archival
+compatibility path and no "if catalog empty -> read archival" fallback exists anywhere in the tree.
 
 One analysis invocation ===
   * per-run view materialization (views ALWAYS regenerated; existence never authorizes reuse — Phase
@@ -31,16 +31,16 @@ Primary scoring semantics are preserved verbatim by the bounded scorer: ``max_pe
 + ``first_index`` + ``retain_all_candidate_segments`` (P2).  Determinism and no cross-backbone
 mixing are inherited from Phase 1 views (single-backbone corpus) and the deterministic scorer.
 
-Run-scoping (P3-S4)
--------------------
-``analyze_metrics`` carries a physical ``run_id`` column (added by the backup-first migration;
-legacy rows carry ``run_id='legacy'``).  This module's results are written by
+Run-scoping (one current run-scoped schema)
+-------------------------------------------
+``analyze_metrics`` carries a physical ``run_id`` column with one current meaning (the run that
+produced the row); there is no pre-cut / legacy partition.  This module's results are written by
 :func:`db.analyze_scope.write_catalog_analyze_rows`, the run-scoped writer which:
   * keys rows by a corpus/config/score-variant ``strategy_key`` and stamps each aggregate row with the
-    run's physical ``run_id``.  Since the migration the table carries no PRIMARY KEY, so uniqueness is
-    asserted at the application layer: writing a strategy scope REPLACES only that run's own
-    ``(run_id, strategy scope)`` rows (delete-then-insert in the caller's transaction), never unrelated
-    retained-run rows or legacy baseline/corpus rows,
+    run's physical ``run_id`` (REQUIRED — supplied by the caller; no default).  The table carries no
+    PRIMARY KEY, so uniqueness is asserted at the application layer: writing a strategy scope
+    REPLACES only that run's own ``(run_id, strategy scope)`` rows (delete-then-insert in the
+    caller's transaction), never unrelated / retained-run rows,
   * records the run's output-row scope in ``run_provenance.output_artifact_hashes`` so cleanup/reset
     can identify exactly this run's rows,
   * never globally deletes ``analyze_metrics``.
@@ -96,8 +96,14 @@ from scripts.embedding_research.catalog import (
     compact_segments_by_config_song,
 )
 from scripts.embedding_research.catalog_identity import (
+    EvaluationCorpusIdentity,
     SearchRepresentationClass,
     collapse_search_representations,
+    exact_segmentation_hash,
+    song_ids_digest,
+)
+from scripts.embedding_research.catalog_identity import (
+    catalog_fingerprint as _catalog_fingerprint,
 )
 from scripts.embedding_research.search_views import SCORING_SEMANTICS_VERSION, SearchViewRecord
 
@@ -105,6 +111,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
 __all__ = [
+    "AnalyzeRefusalError",
     "CatalogAnalysisConfig",
     "CatalogAnalysisResult",
     "CatalogRefusalError",
@@ -137,6 +144,18 @@ class CatalogRefusalError(ValueError):
     connection is not a valid compact catalog for the run's backbone.  Analysis FAILS CLOSED
     with this typed refusal — there is never a silent/stale fallback to an older catalog or
     to a non-compact research connection.
+    """
+
+
+class AnalyzeRefusalError(ValueError):
+    """The analyze scope for a backbone refuses to run / cannot complete (fail-closed).
+
+    Raised when a requested backbone cannot produce the MANDATORY observed
+    ``global_pool:{backbone}:medoid`` baseline (its evaluation corpus is not analyzable, or
+    fewer than two searchable medoid songs make the observed baseline undefined) so the
+    analyze phase FAILS rather than presenting a successful baseline-less scope or a
+    fabricated baseline vector.  The analyze runner surfaces this as a ``failed`` phase
+    outcome (never a silent success).
     """
 
 
@@ -174,6 +193,11 @@ class CatalogAnalysisConfig:
     * ``artists`` — per-song ground-truth artist labels (song_id -> label).  These are inputs to the
       *lens layer* (relevance); they are independent of how medoid vectors are gathered.
     * ``config_ids`` — config surface (empty = every canonical config of the backbone).
+    * ``evaluation_corpus`` — the backbone's resolved :class:`EvaluationCorpusIdentity` (optional).
+      When set, ``song_ids`` MUST be this identity's eligible population and the pass compares each
+      eligible song against this representation: an eligible song with no canonical searchable medoid
+      row in THIS representation makes it non-comparable (missing-medoid invalidation), so no matched
+      retrieval metric is emitted/persisted as complete.
     * ``k`` — retrieval cut-off for the lenses.
     * ``working_memory`` — bounded-memory byte budget (view build + each bounded score).
     * ``score_variant``/``tie_policy``/``collision_policy`` — primary scoring semantics (defaults
@@ -185,6 +209,7 @@ class CatalogAnalysisConfig:
     song_ids: tuple[str, ...]
     artists: Mapping[str, str]
     config_ids: tuple[int, ...] = ()
+    evaluation_corpus: EvaluationCorpusIdentity | None = None
     k: int = 10
     working_memory: int = 32 * 1024 * 1024
     score_variant: str = _PRIMARY_SCORE_VARIANT
@@ -206,6 +231,24 @@ class CatalogAnalysisResult:
     canonical (lowest) ``config_id`` plus sorted aliases.  ``n_candidate_rows`` counts the unique
     CANONICAL searchable medoid rows that enter the query/candidate union (alias rows are excluded).
     ``finite`` is always True (any non-finite value raises :class:`NonFiniteResultError` first).
+
+    When the run pinned an ``evaluation_corpus`` (``evaluation_corpus`` is set), ``comparable`` is
+    True only when every eligible corpus song carries a canonical searchable medoid row in THIS
+    representation; a representation that lost an eligible song (PTC absorption) is ``comparable ==
+    False`` with the loss surfaced in ``missing_song_ids`` / ``missing_count`` / ``missing_digest``
+    and NO matched retrieval metrics emitted (``metrics``/``per_song``/``per_query`` empty,
+    ``n_queries == 0``) so the caller never persists a partial configuration as a complete outcome.
+
+    A comparable real-catalog result also carries its durable SEMANTIC identity for the v2 scope
+    writer: ``catalog_id``/``catalog_fingerprint`` (read from the compact ``catalog_metadata``
+    singleton / :func:`catalog_identity.catalog_fingerprint`), the analyzed class's SEMANTIC
+    ``search_representation_hash`` (:func:`catalog_identity.search_representation_hash` value of the
+    analyzed search-representation class — NEVER the disposable view/keyset hash), the ordered
+    per-member ``members`` records (``config_id`` + configured/effective threshold + ``bin_mode`` +
+    ``exact_segmentation_hash``), and the DISPOSABLE per-run ``view_keyset_hash`` (the strategy-key
+    keyset component) kept distinct from ``view_content_hash``.  A structural fixture result
+    (``_report_seed`` / identity-less seed, no real catalog) leaves these fields at their empty
+    defaults.
     """
 
     run_id: str
@@ -223,6 +266,16 @@ class CatalogAnalysisResult:
     per_query: tuple[PerQueryResult, ...]
     n_queries: int
     n_candidate_rows: int
+    evaluation_corpus: EvaluationCorpusIdentity | None = None
+    comparable: bool = True
+    missing_song_ids: tuple[str, ...] = ()
+    missing_count: int = 0
+    missing_digest: str | None = None
+    catalog_id: str = ""
+    catalog_fingerprint: str = ""
+    search_representation_hash: str = ""
+    view_keyset_hash: str = ""
+    members: tuple = ()
 
 
 # --------------------------------------------------------------------------- #
@@ -410,10 +463,68 @@ def _positions_by_song(addrs) -> dict[str, list[int]]:
         out.setdefault(row[1], []).append(i)
     return out
 
+    # --------------------------------------------------------------------------- #
+    # Top-level driver                                                             #
+    # --------------------------------------------------------------------------- #
 
-# --------------------------------------------------------------------------- #
-# Top-level driver                                                             #
-# --------------------------------------------------------------------------- #
+
+def _catalog_scope_identity(con, participating: tuple[int, ...], classes):
+    """Durable v2 identity fields for a comparable analyzed class scope.
+
+    Returns ``(catalog_id, catalog_fingerprint, semantic_hash, members)``.  ``semantic_hash`` is the
+    analyzed class's ``catalog_identity.search_representation_hash`` value (NEVER the disposable
+    view/keyset hash).  ``members`` are ``ScopeMemberIdentity`` records aligned to the sorted
+    ``participating`` configs (configured/effective threshold + ``bin_mode`` from the compact
+    ``seg_config`` row, plus each member's exact segmentation hash).  FAILS CLOSED: a real analyzed
+    class whose compact catalog identity cannot be fully resolved (missing ``seg_config`` row for a
+    participating config, missing ``catalog_metadata`` singleton, or unreadable fingerprint) raises
+    rather than degrading to an empty/identity-less "apparently usable" result — the durable writer
+    refuses an incomplete scope before any metric row is persisted.
+    """
+    from scripts.embedding_research.db.analyze_scope import ScopeMemberIdentity
+
+    semantic_hash = ""
+    participating_set = set(participating)
+    for cls in classes:
+        if set(cls.config_ids) == participating_set:
+            semantic_hash = cls.search_representation_hash
+            break
+    else:
+        if len(classes) == 1:
+            semantic_hash = classes[0].search_representation_hash
+    cfg_rows: dict[int, tuple] = {}
+    for row in con.execute(
+        "SELECT config_id, bin_mode, threshold_configured, threshold_effective FROM seg_config"
+    ).fetchall():
+        cfg_rows[int(row[0])] = row
+    members = []
+    for cid in participating:
+        row = cfg_rows.get(cid)
+        if row is None:
+            raise ValueError(
+                f"cannot derive complete analyze-scope identity: no compact seg_config row for "
+                f"participating config_id {cid}"
+            )
+        exact = exact_segmentation_hash(con, cid)
+        members.append(
+            ScopeMemberIdentity(
+                config_id=cid,
+                threshold_configured=float(row[2]),
+                threshold_effective=float(row[3]),
+                bin_mode=str(row[1]),
+                exact_segmentation_hash=exact,
+            )
+        )
+    meta = con.execute("SELECT catalog_id, schema_version FROM catalog_metadata ORDER BY catalog_id LIMIT 1").fetchone()
+    if meta is None:
+        raise ValueError("cannot derive complete analyze-scope identity: compact catalog_metadata singleton missing")
+    catalog_id = str(meta[0])
+    catalog_fingerprint = _catalog_fingerprint(con, schema_version=int(meta[1]))
+    if not catalog_id:
+        raise ValueError("cannot derive complete analyze-scope identity: empty catalog_id")
+    if not catalog_fingerprint:
+        raise ValueError("cannot derive complete analyze-scope identity: empty catalog_fingerprint")
+    return catalog_id, catalog_fingerprint, semantic_hash, tuple(members)
 
 
 def run_catalog_analysis(store, catalog, cfg: CatalogAnalysisConfig, *, research_con=None) -> CatalogAnalysisResult:
@@ -474,6 +585,43 @@ def _run_attached_analysis(store, con, cfg: CatalogAnalysisConfig, *, research_c
     # path (a poisoned canonical weight is caught before persistence).
     p_weights = candidate_weights_from_catalog(con, p_addrs)
     song_rows = _song_rows(p_addrs, p_vecs)
+    corpus = cfg.evaluation_corpus
+    if corpus is not None:
+        # Per-representation comparability (missing-medoid invalidation — execution-reporting P1-S3):
+        # every eligible whole-song song must still carry at least one canonical searchable medoid
+        # row in THIS representation after collapse.  A song PTC absorption emptied (eligible whole
+        # song but no searchable segment medoid here) makes the representation non-comparable: it
+        # emits NO matched retrieval metric/delta, its structural evidence is the catalog rows
+        # themselves (retained), and the loss is surfaced as missing-song evidence for the caller to
+        # refuse persisting as a complete outcome.
+        missing_songs = tuple(sorted(s for s in corpus.song_ids if s not in song_rows))
+    else:
+        missing_songs = ()
+    comparable = not missing_songs
+    if not comparable:
+        return CatalogAnalysisResult(
+            run_id=cfg.run_id,
+            backbone=cfg.backbone,
+            config_ids=participating,
+            representation_classes=classes,
+            k=cfg.k,
+            view_content_hash=record.content_hash,
+            score_variant=cfg.score_variant,
+            scoring_semantics_version=SCORING_SEMANTICS_VERSION,
+            strategy_key=_strategy_key(cfg, record),
+            finite=True,
+            metrics={},
+            per_song={},
+            per_query=(),
+            n_queries=0,
+            n_candidate_rows=len(p_addrs),
+            evaluation_corpus=corpus,
+            comparable=False,
+            missing_song_ids=missing_songs,
+            missing_count=len(missing_songs),
+            missing_digest=song_ids_digest(missing_songs) if missing_songs else None,
+        )
+
     # Searchable songs only: a zero-searchable (metadata-only) song has no canonical medoid rows and
     # is excluded from both the query set and the candidate set (never an error).
     searchable = [s for s in cfg.song_ids if s in song_rows]
@@ -531,6 +679,9 @@ def _run_attached_analysis(store, con, cfg: CatalogAnalysisConfig, *, research_c
 
     lenses = _Lenses(cfg)
     metrics, per_song = lenses.evaluate(per_query)
+    catalog_id, catalog_fingerprint, semantic_hash, member_records = _catalog_scope_identity(
+        con, participating, classes
+    )
     return CatalogAnalysisResult(
         run_id=cfg.run_id,
         backbone=cfg.backbone,
@@ -547,6 +698,16 @@ def _run_attached_analysis(store, con, cfg: CatalogAnalysisConfig, *, research_c
         per_query=tuple(per_query),
         n_queries=len(per_query),
         n_candidate_rows=len(p_addrs),
+        evaluation_corpus=corpus,
+        comparable=True,
+        missing_song_ids=(),
+        missing_count=0,
+        missing_digest=None,
+        catalog_id=catalog_id,
+        catalog_fingerprint=catalog_fingerprint,
+        search_representation_hash=semantic_hash,
+        view_keyset_hash=record.keyset_hash[:16],
+        members=member_records,
     )
 
 
@@ -563,8 +724,14 @@ def analyze_medoid_baseline(
     artists,
     k: int = 10,
     working_memory: int = 32 * 1024 * 1024,
+    evaluation_corpus: EvaluationCorpusIdentity | None = None,
 ) -> dict[str, float] | None:
     """Score the observed global-medoid baseline for ``backbone`` and return its aggregate metrics.
+
+    When ``evaluation_corpus`` is given, the baseline population is EXACTLY that identity's eligible
+    ``song_ids`` (resolved once at the analyze boundary) — never re-derived from the raw ``song_ids``
+    list or a later catalog.  Without it, the population is the committed/searchable subset of
+    ``song_ids`` (legacy direct-call behavior).
 
     P1-S6 analyze-side PRODUCER: one additional scored retrieval per backbone that represents
     EACH cataloged searchable song by its observed whole-song ``global_pool:{backbone}:medoid``
@@ -578,7 +745,7 @@ def analyze_medoid_baseline(
     The scored pass reuses the SAME bounded scorer seam (``_score_query_vs_song``) and the SAME
     retrieval-metric lenses (:class:`_Lenses`) as the segmented class passes, over the SAME
     corpus, sim_metric (``cosine``) and ``k`` — so the emitted per-cell values (``map_k``,
-    ``mrr``, ``ndcg_k``, ``recall_k``, ``disc_artist``/``disc_score``) align EXACTLY with a
+    ``mrr``, ``ndcg_k``, ``recall_k``, ``disc_artist``) align EXACTLY with a
     segmented class's cell keys, which is what lets ``build_baseline_delta_rows`` do its
     exact-scope baseline/delta join.
 
@@ -592,18 +759,22 @@ def analyze_medoid_baseline(
     from scripts.embedding_research.streams import StreamStoreError
 
     song_ids = tuple(song_ids)
+    # The observed whole-song baseline MUST reuse the resolved corpus identity's eligible population
+    # exactly when one is supplied (never a separately-derived population from a later view/catalog).
+    population = tuple(evaluation_corpus.song_ids) if evaluation_corpus is not None else song_ids
     cfg = CatalogAnalysisConfig(
         run_id="",
         backbone=backbone,
-        song_ids=song_ids,
+        song_ids=population,
         artists=dict(artists),
         k=int(k),
         working_memory=working_memory,
+        evaluation_corpus=evaluation_corpus,
     )
     # Gather each cataloged song's observed global medoid UNIT vector (exclude zero-searchable
     # songs and songs with no committed observation group).
     medoid_vectors: dict[str, np.ndarray] = {}
-    for song in sorted(song_ids):
+    for song in sorted(population):
         try:
             observation = store.load_committed_observation(song, backbone)
         except StreamStoreError:
@@ -668,6 +839,9 @@ def run_and_persist_medoid_baseline(
     artists,
     k: int = 10,
     working_memory: int = 32 * 1024 * 1024,
+    evaluation_corpus: EvaluationCorpusIdentity | None = None,
+    catalog_id: str = "",
+    catalog_fingerprint: str = "",
 ) -> dict[str, float] | None:
     """Score the observed global-medoid baseline and persist it run-scoped (the run.py seam).
 
@@ -675,27 +849,82 @@ def run_and_persist_medoid_baseline(
     (>= 2 searchable medoid songs), persists it as ``analyze_metrics`` rows under
     ``strategy_key == baseline.medoid_strategy_key_for(backbone)`` and the NON-``catalog``
     ``strategy_type == baseline.MEDOID_STRATEGY_TYPE`` (``"global_pool"``), run-scoped so a
-    re-run replaces only its own rows.  Returns the emitted aggregate metrics (or ``None``
-    when no baseline is computable — nothing persisted).  Kept here (not in ``run.py``)
-    because ``run.py`` derived-runner bodies may import only the narrow CPU root set; this
-    module already owns the analyze scoring machinery and may reach ``db``/``baseline``.
+    re-run replaces only its own rows.  The scope is recorded on the run's ``analyze``
+    provenance (an ``analyze_scope_v2`` line carrying the evaluation-corpus identity when
+    supplied, plus the catalog anchor ``catalog_id``/``catalog_fingerprint`` when the caller
+    passes them) so every baseline row is tied to ONE explicit corpus — the baseline remains a
+    NON-class ``global_pool`` row (never a winner candidate, never merged with class
+    candidates).  Returns the emitted aggregate metrics (or ``None`` when no baseline is
+    computable — nothing persisted; the mandatory-baseline runner fails closed on ``None``).
+    Kept here (not in ``run.py``) because ``run.py`` derived-runner bodies may import only
+    the narrow CPU root set; this module already owns the analyze scoring machinery and may
+    reach ``db``/``baseline``.
     """
     from scripts.embedding_research import db
     from scripts.embedding_research.baseline import MEDOID_STRATEGY_TYPE, medoid_strategy_key_for
+    from scripts.embedding_research.db.analyze_scope import (
+        SCOPE_KIND_OBSERVED_BASELINE,
+        AnalyzeScopeIdentity,
+        decode_analyze_scope_v2,
+        encode_analyze_scope_v2,
+        record_analyze_run_scope,
+    )
 
     metrics = analyze_medoid_baseline(
-        store, backbone=backbone, song_ids=song_ids, artists=artists, k=int(k), working_memory=working_memory
+        store,
+        backbone=backbone,
+        song_ids=song_ids,
+        artists=artists,
+        k=int(k),
+        working_memory=working_memory,
+        evaluation_corpus=evaluation_corpus,
     )
     if metrics is None:
         return None
+    medoid_key = medoid_strategy_key_for(backbone)
+    # Tie the baseline rows to the run's ONE explicit evaluation corpus (Plan A P2-S3) and its
+    # catalog anchor, as an analyze_scope_v2 NON-class identity (execution-reporting Plan B
+    # P1-S2 / corrective P5): config_ids/canonical/alias/members/view keyset+content are empty,
+    # it never enters the 'catalog' strategy type, per-class execution, or winner candidacy, and
+    # it is explicitly TAGGED ``observed_baseline`` (scope_kind) — never an identity-less
+    # exemption.
+    identity = AnalyzeScopeIdentity(
+        strategy_key=medoid_key,
+        sim_metric="cosine",
+        k=int(k),
+        backbone=backbone,
+        scope_kind=SCOPE_KIND_OBSERVED_BASELINE,
+        catalog_id=catalog_id,
+        catalog_fingerprint=catalog_fingerprint,
+        score_variant=_PRIMARY_SCORE_VARIANT,
+        scoring_semantics_version=SCORING_SEMANTICS_VERSION,
+        evaluation_corpus_hash=evaluation_corpus.corpus_hash if evaluation_corpus is not None else None,
+        evaluation_corpus_count=int(evaluation_corpus.count) if evaluation_corpus is not None else None,
+        evaluation_corpus_comparable=bool(evaluation_corpus.comparable) if evaluation_corpus is not None else False,
+        evaluation_corpus_missing_count=int(evaluation_corpus.missing_count) if evaluation_corpus is not None else 0,
+        evaluation_corpus_missing_digest=(
+            (evaluation_corpus.missing_digest or "") if evaluation_corpus is not None else ""
+        ),
+    )
+    # Fail-closed atomic boundary: preflight/encode/decode-validate the COMPLETE v2 scope BEFORE
+    # the first metric insert so an incomplete baseline identity leaves ZERO metric rows (no
+    # orphan/partial write, mirroring write_catalog_analyze_rows).
+    _encoded = encode_analyze_scope_v2(identity)
+    if decode_analyze_scope_v2(_encoded) != identity:
+        raise ValueError("refusing to persist medoid baseline: scope identity did not round-trip")
     db.write_analyze_metrics(
         con,
-        medoid_strategy_key_for(backbone),
+        medoid_key,
         MEDOID_STRATEGY_TYPE,
         "cosine",
         int(k),
         metrics,
         run_id=run_id,
+    )
+    record_analyze_run_scope(
+        con,
+        run_id=run_id,
+        identity=identity,
     )
     return metrics
 
@@ -762,7 +991,6 @@ class _Lenses:
         disc = float(np.mean(within_all)) - float(np.mean(cross_all))
         _require_finite(disc, "disc_artist")
         metrics["disc_artist"] = disc
-        metrics["disc_score"] = disc  # back-compat alias == disc_artist (per similarity contract)
         return metrics, per_song
 
     def _per_song_metrics(self, pq: PerQueryResult) -> dict[str, float] | None:

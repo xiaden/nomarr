@@ -64,6 +64,21 @@ _ACTIVE_KEYS = {
     "song_count",
     "warning_count",
     "phase",
+    # Deliberately added by Plan B P3-S1: the winners factor roster renders the DURABLE SEMANTIC
+    # representation_hash distinctly from the DISPOSABLE view_keyset_hash plus the catalog anchor;
+    # the winners section also renders the incomplete/non-comparable representations table whose
+    # per-cell reason + corpus/missing evidence columns follow.
+    "view_keyset_hash",
+    "catalog_id",
+    "reason",
+    "baseline_evaluation_corpus_hash",
+    "baseline_evaluation_corpus_count",
+    "baseline_evaluation_corpus_comparable",
+    "representation_evaluation_corpus_hash",
+    "representation_evaluation_corpus_count",
+    "representation_evaluation_corpus_comparable",
+    "representation_missing_count",
+    "representation_missing_digest",
 }
 
 

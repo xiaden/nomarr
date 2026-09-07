@@ -505,12 +505,24 @@ def _run_analyze(con, cfg: dict, run_id: str) -> dict:
     for the whole phase; the handle is closed in ``finally``.
 
     The phase emits one leave-one-out scored ``analyze_metrics`` pass per current
-    SearchRepresentationClass (per-class scheduling).  Per-backbone observed global-pool
-    medoid baseline emission is an additional opt-in (run cfg ``emit_medoid_baseline``,
-    DEFAULT OFF) scored pass that emits one ``global_pool:{backbone}:medoid`` row per
-    backbone after the per-class loop, only when the flag is enabled.
+    SearchRepresentationClass (per-class scheduling), and — MANDATORILY, never behind any
+    config flag or argparse option — exactly ONE observed ``global_pool:{backbone}:medoid``
+    baseline row per successfully analyzed backbone, emitted AFTER the per-class loop, over
+    the SAME resolved evaluation corpus / scorer / ``k`` / sim_metric (``cosine``) / lenses as
+    the segmented class passes.  A requested backbone that cannot yield that observed baseline
+    (its evaluation corpus is not analyzable, or fewer than two searchable medoid songs make
+    leave-one-out undefined) FAILS the analyze scope with :class:`AnalyzeRefusalError` — never
+    a successful baseline-less scope and never a fabricated baseline vector.
+
+    One explicit :class:`~scripts.embedding_research.catalog_identity.EvaluationCorpusIdentity`
+    is resolved per backbone at this analyze boundary and threaded into every segmented class pass
+    and the whole-song baseline, so all passes share the SAME eligible population.  A sub-2 eligible
+    corpus (``eligible == False``) refuses the analyze scope (no partial complete outcome); a
+    segmented class whose representation loses an eligible song's searchable medoid is
+    ``not comparable`` and is likewise not written as a complete scope.
     """
     from scripts.embedding_research.common.catalog_analysis import (
+        AnalyzeRefusalError,
         CatalogAnalysisConfig,
         analyze_catalog_corpus,
         run_and_persist_medoid_baseline,
@@ -533,12 +545,31 @@ def _run_analyze(con, cfg: dict, run_id: str) -> dict:
             if not song_ids:
                 _log.warning("analyze: no cataloged corpus for backbone %r — run `catalog` first", backbone)
                 continue
+            # Resolve the backbone's ONE explicit evaluation-corpus identity at the analyze boundary
+            # and reuse that SAME population (never re-derived from a later catalog or a disposable
+            # view keyset/content hash) across every segmented class pass and the whole-song baseline.
+            from scripts.embedding_research.catalog_identity import (
+                collapse_search_representations,
+                resolve_evaluation_corpus,
+            )
+
+            identity = resolve_evaluation_corpus(handle.con, store, song_ids, backbone=backbone)
+            if not identity.eligible:
+                # A sub-2 eligible corpus cannot yield the MANDATORY leave-one-out observed baseline.
+                # This is NOT a silent success: recording nothing and continuing would present a
+                # successful baseline-less scope for the requested backbone, so the analyze scope
+                # FAILS CLOSED (execution-reporting Plan A P2-S1) — never a fabricated baseline.
+                raise AnalyzeRefusalError(
+                    f"analyze: backbone {backbone!r} evaluation corpus has {identity.count} eligible "
+                    f"song(s) (need >= 2); the mandatory observed global-pool medoid baseline cannot be "
+                    f"computed — analyze scope refuses"
+                )
+            population = identity.song_ids
             # Per-class scheduling: each distinct current SearchRepresentationClass over this
             # backbone's participating configs is analyzed as its OWN leave-one-out pass over only
             # that class's canonical rows, persisted as its own analyze_scope strategy row.  Alias
             # configs add zero passes and are never appended to any candidate union.
             from scripts.embedding_research import catalog as _catalog
-            from scripts.embedding_research.catalog_identity import collapse_search_representations
 
             backbone_cids = {c.config_id for c in _catalog.compact_configs_by_backbone(handle.con, backbone)}
             for cls in collapse_search_representations(handle.con):
@@ -548,33 +579,76 @@ def _run_analyze(con, cfg: dict, run_id: str) -> dict:
                 analysis_cfg = CatalogAnalysisConfig(
                     run_id=run_id,
                     backbone=backbone,
-                    song_ids=tuple(song_ids),
+                    song_ids=population,
                     artists=artists,
                     k=int(cfg.get("k", 10)),
                     config_ids=members,
+                    evaluation_corpus=identity,
                 )
                 result = analyze_catalog_corpus(store, handle.con, analysis_cfg, research_con=con)
+                if not result.comparable:
+                    # Missing-medoid invalidation (execution-reporting P1-S3): an eligible whole-song
+                    # song lost its searchable segment medoid in this representation (PTC absorption),
+                    # so this partial configuration is NOT recorded as a complete outcome.
+                    _log.warning(
+                        "analyze: backbone %r representation config_ids=%s is not comparable; "
+                        "%d eligible song(s) lost a searchable medoid (%s) — not recorded as complete",
+                        backbone,
+                        members,
+                        result.missing_count,
+                        ",".join(result.missing_song_ids),
+                    )
+                    continue
                 write_catalog_analyze_rows(con, run_id=run_id, result=result)
 
-            # P1-S6: emit ONE observed global-medoid baseline metric identity per backbone, alongside
-            # the segmented catalog classes.  Opt-in via run cfg ``emit_medoid_baseline`` (default
-            # off) so the P1-S3/S4 execution-count/scope fixtures (which assert analyze_metrics class
-            # rows == per-class scope rows) stay byte-identical.  This is an ADDITIONAL scored
-            # retrieval pass — NOT a class: each searchable song is represented by its observed
-            # whole-song global medoid, zero-searchable songs are excluded, and the pass never unions
-            # with class candidates, adds no class execution, and is never a winner candidate.  It is
-            # persisted run-scoped under strategy_type != 'catalog' so report's catalog-only
-            # query_analyze_metrics keeps excluding it from section_analysis; the P1-S7 winners
-            # loader reads it through a distinct path.
-            if cfg.get("emit_medoid_baseline"):
-                run_and_persist_medoid_baseline(
-                    con,
-                    store,
-                    run_id=run_id,
-                    backbone=backbone,
-                    song_ids=song_ids,
-                    artists=artists,
-                    k=int(cfg.get("k", 10)),
+            # MANDATORY (execution-reporting Plan A P2): emit exactly ONE observed global-medoid
+            # baseline metric identity per successfully analyzed backbone, after the per-class loop.
+            # This is an ADDITIONAL scored retrieval pass — NOT a class: each searchable song is
+            # represented by its observed whole-song global medoid, zero-searchable songs are
+            # excluded, and the pass never unions with class candidates, adds no class execution, and
+            # is never a winner candidate.  It is persisted run-scoped under strategy_type !=
+            # 'catalog' so report's catalog-only query_analyze_metrics keeps excluding it from
+            # section_analysis; the winners loader reads it through a distinct path.  The baseline is
+            # MANDATORY and UNCONDITIONAL — there is no opt-in emit gate and no hidden config/fixture
+            # switch — so a backbone whose mandatory observed baseline cannot be produced
+            # (run_and_persist_medoid_baseline returns ``None``) FAILS CLOSED.
+            # Resolve the compact catalog anchor (id + manifest fingerprint) once per backbone so the
+            # mandatory baseline scope carries the same durable catalog identity as the class scopes.
+            # This FAILS CLOSED exactly like the class-scope identity resolution above (the
+            # catalog_class path refuses an incomplete anchor): a baseline scope is NEVER recorded
+            # with a partial anchor — catalog_id beside an EMPTY fingerprint — on the failure path
+            # the class scopes refuse.  A missing compact catalog_metadata singleton refuses, and a
+            # fingerprint-derivation failure PROPAGATES (no broad suppression/silent '' fallback) so
+            # the observed baseline cannot silently weaken its durable identity.
+            from scripts.embedding_research.catalog_identity import catalog_fingerprint
+
+            _meta = handle.con.execute(
+                "SELECT catalog_id, schema_version FROM catalog_metadata ORDER BY catalog_id LIMIT 1"
+            ).fetchone()
+            if _meta is None:
+                raise AnalyzeRefusalError(
+                    "analyze: cannot resolve the mandatory observed-baseline catalog anchor: "
+                    "compact catalog_metadata singleton is missing"
+                )
+            _cat_id = str(_meta[0])
+            _cat_fp = catalog_fingerprint(handle.con, schema_version=int(_meta[1]))
+            baseline_metrics = run_and_persist_medoid_baseline(
+                con,
+                store,
+                run_id=run_id,
+                backbone=backbone,
+                song_ids=population,
+                artists=artists,
+                k=int(cfg.get("k", 10)),
+                evaluation_corpus=identity,
+                catalog_id=_cat_id,
+                catalog_fingerprint=_cat_fp,
+            )
+            if baseline_metrics is None:
+                raise AnalyzeRefusalError(
+                    f"analyze: backbone {backbone!r} cannot produce the mandatory observed "
+                    f"global_pool:{backbone}:medoid baseline (fewer than two searchable medoid songs) "
+                    f"— analyze scope refuses"
                 )
             total += len(song_ids)
     finally:
@@ -732,8 +806,12 @@ def _has_canonical_catalog(con) -> bool:
 
 
 def _has_analyze_metrics(con) -> bool:
-    """True when at least one non-legacy (run-scoped) analyze_metrics row exists."""
-    n = con.execute("SELECT count(*) FROM analyze_metrics WHERE run_id <> 'legacy'").fetchone()[0]
+    """True when at least one run-scoped ``analyze_metrics`` row exists.
+
+    Every ``analyze_metrics`` row is run-scoped (there is no pre-cut legacy partition), so the
+    presence of any row is the presence of run-scoped rows.
+    """
+    n = con.execute("SELECT count(*) FROM analyze_metrics").fetchone()[0]
     return bool(n)
 
 

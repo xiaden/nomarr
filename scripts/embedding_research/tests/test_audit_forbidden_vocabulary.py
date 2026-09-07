@@ -80,6 +80,31 @@ _FORBIDDEN_TOKENS: tuple[str, ...] = (
     "SegMembershipRecord",
     "member_patch_idx",
     "membership_version",
+    # Plan B corrective hard-cut: the analyze-scope v1 machine is REMOVED from the runtime
+    # (sole schema is analyze_scope_v2).  These pin the retired v1 prefix constant and the
+    # bare (un-versioned) v1 encoder/decoder names so a v1 encoder/parser/compat reader cannot
+    # be reintroduced.  ``parse_analyze_scope`` is deliberately NOT here: it is the legal v2
+    # parser in db/analyze_scope.py, and exact-NAME matching means the v2 ``encode/decode
+    # _analyze_scope_v2`` and ``_SCOPE_V2_PREFIX`` identifiers are NOT hits for these tokens.
+    "analyze_scope_v1",
+    "_scope_prefix",  # retired v1 prefix constant (not the current _SCOPE_V2_PREFIX)
+    "encode_analyze_scope",  # bare name; encode_analyze_scope_v2 is a distinct exact token
+    "decode_analyze_scope",  # bare name; decode_analyze_scope_v2 is a distinct exact token
+    # Plan C P3-S1/S2 hard cut: the removed analyze opt-in, pre-cut migration machinery, and
+    # transitional back-compat paths must not reappear as executable identifiers.  These pin the
+    # removed ``emit_medoid_baseline`` opt-in, the ``LEGACY_RUN_ID`` constant,
+    # ``migrate_analyze_metrics_provenance()``, and the ``analyze_metrics_backup`` backup table at
+    # the identifier level; reintroduction as a config key / argparse flag / string literal is
+    # caught by the raw-substring tests at the bottom of this module.  ``compatibility`` and
+    # ``deprecated`` are pinned so a reintroduced compatibility reader/alias path or deprecated
+    # transitional runtime path cannot be NAMED as an identifier.  Current-state PROSE (e.g. ``no
+    # compatibility DDL is introduced``) is never a NAME token and stays allowed.
+    "emit_medoid_baseline",
+    "legacy_run_id",
+    "migrate_analyze_metrics_provenance",
+    "analyze_metrics_backup",
+    "compatibility",
+    "deprecated",
 )
 
 #: Per-token allowlist of non-test files (relative to scripts/embedding_research)
@@ -314,3 +339,171 @@ def test_no_named_retired_command_compatibility_path_in_cli_source() -> None:
     assert "LEGACY_PHASE_ALIASES" not in run_src, "LEGACY_PHASE_ALIASES must stay removed from run.py"
     assert "retired/legacy phase name" not in run_src, "retired-command special message must stay removed"
     assert "legacy phase name" not in run_src, "no named legacy-phase rejection wording may return"
+
+
+# ---------------------------------------------------------------------------
+# Plan C P2-S4: disc_score alias hard-cut guard (sole active metric is disc_artist)
+# ---------------------------------------------------------------------------
+
+
+def test_no_executable_disc_score_metric_alias_in_non_test_tree() -> None:
+    """P2-S4: ``disc_artist`` is the sole active discrimination metric.
+
+    No non-test source/config file under ``scripts/embedding_research`` may reference
+    ``disc_score`` anywhere — producer write, consumer read, warning/step name, report
+    column, docstring, or comment — because the hard cut removes the alias outright and
+    even a docstring mention inside the executable tree would read as current behavior.
+    Historical prose on the removed alias lives ONLY in ``FINDINGS.md`` / ``CONTRACTS.md``
+    (markdown, never scanned here and never consumed by runtime/tests).
+
+    A raw-text substring scan (not the NAME-only ``_executable_names`` tokenizer) is used
+    because ``disc_score`` appears as a string-literal dict key / step label, which the
+    NAME-token scanner would miss.
+    """
+    offenders = [
+        rel for rel in sorted(_iter_source_files()) if "disc_score" in (_ROOT / rel).read_text(encoding="utf-8")
+    ]
+    assert not offenders, "disc_score must have zero executable/report occurrences in the non-test tree:\n" + "\n".join(
+        f"  {rel}" for rel in offenders
+    )
+
+
+def test_disc_artist_present_in_all_active_discrimination_surfaces() -> None:
+    """P2-S4: the sole active discrimination metric ``disc_artist`` remains present in
+    every required active surface: lens metric emission (baseline + classes), the
+    similarity metric emission, and the report/corpus discrimination warning."""
+    required = {
+        "common/catalog_analysis.py": "disc_artist",  # active lens metric emission
+        "similarity.py": "disc_artist",  # metric emission
+        "report/_corpus.py": "disc_artist",  # corpus-degeneracy warning names the active metric
+    }
+    missing = [rel for rel, token in required.items() if token not in (_ROOT / rel).read_text(encoding="utf-8")]
+    assert not missing, f"disc_artist missing from active discrimination surface(s): {missing}"
+
+
+# ---------------------------------------------------------------------------
+# Plan C P3-S1/S2: analyze hard-cut transitional-vocabulary guard.
+#
+# The NAME-token layer above cannot see config keys, argparse option strings, or string-literal
+# migration callables, so these raw-substring scans over the non-test source/config tree close
+# that gap for the REMOVED analyze emit/migration surface and the transitional back-compat /
+# deprecated phrasings.  Genuinely historical prose about these tokens lives only in
+# FINDINGS.md/CONTRACTS.md markdown (never scanned here); current-state prose that asserts a
+# surface's ABSENCE (e.g. "no compatibility DDL is introduced") is not a transitional path and
+# remains allowed.
+# ---------------------------------------------------------------------------
+
+#: Removed analyze opt-in / pre-cut-migration tokens (raw lower-cased substrings) that must never
+#: reappear in the non-test source/config tree: the ``emit_medoid_baseline`` config key / argparse
+#: flag / fixture switch, the deleted ``LEGACY_RUN_ID`` constant,
+#: ``migrate_analyze_metrics_provenance()``, and the ``analyze_metrics_backup`` backup table.
+_REMOVED_ANALYZE_TOKENS: tuple[str, ...] = (
+    "emit_medoid_baseline",
+    "emit-medoid-baseline",
+    "legacy_run_id",
+    "migrate_analyze_metrics_provenance",
+    "analyze_metrics_backup",
+)
+
+#: Executable back-compat / deprecated transitional phrasings that must not appear in the non-test
+#: executable tree (reintroduced backward-compatibility alias/reader or a deprecated runtime path).
+_BACKCOMPAT_DEPRECATED_SUBSTRINGS: tuple[str, ...] = (
+    "back-compat",
+    "back_compat",
+    "back-compatibility",
+    "backward-compat",
+    "backward_compat",
+    "backward-compatibility",
+    "deprecated",
+)
+
+#: The ONLY non-test source file allowed to carry the executable ``run_id = 'legacy'`` SQL literal:
+#: db/_schema.py, whose stale pre-cut-schema REFUSAL guard (StaleSchemaError) detects a legacy
+#: partition left behind by the removed backup-first migration and refuses rather than relabeling.
+#: No writer/migration may ever produce or read ``run_id='legacy'`` rows as a current/retained
+#: partition.  (Current-state PROSE naming the ``run_id='legacy'`` concept's absence is prose, not
+#: this spaced executable literal, and is unaffected.)
+_RUN_ID_LEGACY_SQL_CARRIER = frozenset({"db/_schema.py"})
+
+
+def _read_non_test_sources() -> list[str]:
+    return sorted(_iter_source_files())
+
+
+def test_no_removed_analyze_emit_migration_vocabulary_in_non_test_tree() -> None:
+    """P3-S1/S2: no removed analyze opt-in / pre-cut-migration token remains executable.
+
+    ``emit_medoid_baseline`` / ``--emit-medoid-baseline`` (no hidden baseline switch, no config
+    key, no fixture), ``LEGACY_RUN_ID``, ``migrate_analyze_metrics_provenance()``, and the
+    ``analyze_metrics_backup`` backup table must have ZERO occurrences in any non-test source/
+    config file.  ``python run.py analyze`` therefore ALWAYS emits the mandatory observed
+    baseline.  Historical prose about these tokens is confined to FINDINGS.md/CONTRACTS.md.
+    Raw-substring scan because these are reintroducible as config-key / argparse-flag strings the
+    NAME tokenizer would miss.
+    """
+    offenders = [
+        (rel, token)
+        for rel in _read_non_test_sources()
+        for token in _REMOVED_ANALYZE_TOKENS
+        if token in (_ROOT / rel).read_text(encoding="utf-8")
+    ]
+    assert not offenders, "removed analyze emit/migration vocabulary in non-test tree:\n" + "\n".join(
+        f"  {rel}: {token}" for rel, token in offenders
+    )
+
+
+def test_no_executable_backcompat_or_deprecated_transitional_vocabulary_in_non_test_tree() -> None:
+    """P3-S2: no executable back-compat / deprecated transitional path in the non-test tree.
+
+    A reintroduced backward-compatibility alias/reader or a deprecated transitional runtime path
+    named under any back-compat/backward/deprecated phrasing fails the audit.  Genuinely historical
+    prose is confined to FINDINGS.md/CONTRACTS.md; current-state prose asserting a surface's ABSENCE
+    remains allowed because it states current behavior rather than introducing a transitional path.
+    """
+    offenders = [
+        (rel, token)
+        for rel in _read_non_test_sources()
+        for token in _BACKCOMPAT_DEPRECATED_SUBSTRINGS
+        if token in (_ROOT / rel).read_text(encoding="utf-8")
+    ]
+    assert not offenders, "executable back-compat/deprecated transitional vocabulary:\n" + "\n".join(
+        f"  {rel}: {token}" for rel, token in offenders
+    )
+
+
+def test_run_id_legacy_executable_literal_confined_to_stale_schema_refusal_guard() -> None:
+    """P3-S2: the executable ``run_id = 'legacy'`` SQL literal exists only as the refusal guard.
+
+    db/_schema.py is the ONE allowed non-test carrier: its stale pre-cut-schema detector refuses
+    (StaleSchemaError) any analyze_metrics table carrying a legacy partition left by the removed
+    migration; it never writes or copies such a row.  No other non-test executable file may carry
+    the literal, so a reintroduced migration/writer that produces or reads ``run_id='legacy'`` rows
+    as a current/retained partition fails immediately.
+
+    A verbatim reintroduction of the REMOVED pre-cut runtime row-distinguishing EXCLUSION
+    predicate (``WHERE run_id <> 'legacy'``) is never allowed either: such a predicate exists only
+    in a runtime that still distinguishes a legacy partition it can read alongside the current
+    run — a shape the hard cut removed.  Zero occurrences of the ``<> 'legacy'`` / ``!= 'legacy'``
+    exclusion forms are asserted across every non-test .py/.toml below ``scripts/embedding_research``
+    (raw-substring scan matching the spaced-carrier scan above; it catches verbatim reintroduction
+    of the removed predicate in both operator spellings, not whitespace/quoting-drift variants).
+    No allowlist is needed today: no carrier exists outside
+    the StaleSchemaError refusal guard, which uses ``= 'legacy'``, never ``<>``.
+    """
+    literal = "run_id = 'legacy'"
+    carriers = [rel for rel in _read_non_test_sources() if literal in (_ROOT / rel).read_text(encoding="utf-8")]
+    extra = [rel for rel in carriers if rel not in _RUN_ID_LEGACY_SQL_CARRIER]
+    assert not extra, f"executable run_id='legacy' literal outside the refusal guard: {extra}"
+    assert carriers, "db/_schema.py must retain its stale-schema run_id='legacy' refusal guard"
+
+    # The removed row-distinguishing exclusion predicate is absent in ALL forms (this is the
+    # pre-cut runtime's shape that the hard cut deleted — see the docstring above).
+    exclusion_forms = ("<> 'legacy'", "!= 'legacy'")
+    offenders = [
+        rel
+        for rel in _read_non_test_sources()
+        if any(form in (_ROOT / rel).read_text(encoding="utf-8") for form in exclusion_forms)
+    ]
+    assert not offenders, "reintroduced run_id exclusion predicate in non-test tree:\n" + "\n".join(
+        f"  {rel}" for rel in offenders
+    )

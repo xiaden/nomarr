@@ -367,6 +367,61 @@ def validate_fixture_report(path: str | Path) -> None:
                         )
 
     # ── winners: deterministic winner/delta/factor tables per backbone ─────────────
+    # ---- full durable v2 identity surface on the analysis rows (Plan D P2-S1) ----
+    # Every per-backbone analysis row must carry the COMPLETE durable identity: the compact
+    # catalog anchor (catalog_id / catalog_fingerprint), the DISPOSABLE view keyset in a column
+    # SEPARATE from the SEMANTIC representation hash, and the persisted evaluation-corpus
+    # identity/count/comparability.  The semantic representation hash must never be collapsed
+    # into (or equal) the disposable view keyset hash.
+    if analysis is not None:
+        for backbone in EXPECTED_BACKBONES:
+            table = _find_table(analysis, f"catalog_analysis_{backbone}")
+            if table is None or table.get("empty"):
+                continue
+            cols = table.get("columns", [])
+            for col in (
+                "catalog_id",
+                "catalog_fingerprint",
+                "view_keyset_hash",
+                "evaluation_corpus_hash",
+                "evaluation_corpus_count",
+                "evaluation_corpus_comparable",
+            ):
+                _check(
+                    problems,
+                    col in cols,
+                    f"catalog_analysis_{backbone} missing durable identity column {col}",
+                )
+            if all(
+                c in cols
+                for c in (
+                    "representation_hash",
+                    "view_keyset_hash",
+                    "catalog_id",
+                    "catalog_fingerprint",
+                )
+            ):
+                r_idx = cols.index("representation_hash")
+                v_idx = cols.index("view_keyset_hash")
+                cid_idx = cols.index("catalog_id")
+                fp_idx = cols.index("catalog_fingerprint")
+                for row in table.get("rows", []):
+                    _check(
+                        problems,
+                        not _is_none_cell(row[r_idx]) and not _is_none_cell(row[v_idx]),
+                        f"catalog_analysis_{backbone} row must carry both a semantic hash and a separate view keyset",
+                    )
+                    _check(
+                        problems,
+                        row[r_idx] != row[v_idx],
+                        f"catalog_analysis_{backbone} semantic representation_hash must never equal the disposable view_keyset_hash",
+                    )
+                    _check(
+                        problems,
+                        not _is_none_cell(row[cid_idx]) and not _is_none_cell(row[fp_idx]),
+                        f"catalog_analysis_{backbone} row must carry the compact catalog anchor",
+                    )
+
     _check(problems, winners is not None, "winners section missing")
     if winners is not None:
         titles = _subsection_titles(winners)

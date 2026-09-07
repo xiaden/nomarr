@@ -83,14 +83,34 @@ SEARCHABLE_TOTAL: dict[str, int] = {
 }
 
 #: The report metrics analysed per class (fixed set produced by the analyze phase).
-REPORT_METRICS = ("disc_artist", "disc_score", "map_k", "mrr", "ndcg_k", "recall_k")
+REPORT_METRICS = ("disc_artist", "map_k", "mrr", "ndcg_k", "recall_k")
 
 #: Payload-grammar regex: <song_id>.<backbone>.<64-hex-sha256><.suffix>.
 _PAYLOAD_RE = re.compile(r"^([A-Za-z0-9_]+)\.([A-Za-z0-9_]+)\.([0-9a-f]{64})\.(npy|npz|json)$")
 
-#: Forbidden vocabulary that must not appear in any pipeline machine output.  ``ann`` is checked
-#: as a standalone word only (substrings like ``canonical`` legitimately contain "ann").
-_FORBIDDEN_SUBSTRINGS = ("ctp", "compat", "fallback", "legacy", "onnx", "cuda", "dual-write")
+#: Forbidden vocabulary that must not appear in any pipeline machine output (report.json/
+#: report.html/catalog_report.txt/commit-marker JSON/manifests over the real deterministic run).
+#: ``ann`` is checked as a standalone word only (substrings like ``canonical`` legitimately
+#: contain "ann").  Plan C P3-S2 adds the removed analyze emit/migration tokens and the
+#: back-compat/deprecated transitional phrasings to the P1-era set; ``legacy``/``compat`` already
+#: subsume ``legacy_run_id``/``back-compat``/``backward-compatibility``.
+_FORBIDDEN_SUBSTRINGS = (
+    "ctp",
+    "compat",
+    "fallback",
+    "legacy",
+    "onnx",
+    "cuda",
+    "dual-write",
+    # P3-S2 transitional tokens (``disc_score`` alias and removed analyze surface).
+    "disc_score",
+    "emit_medoid_baseline",
+    "emit-medoid-baseline",
+    "back_compat",
+    "deprecated",
+    "migrate_analyze_metrics_provenance",
+    "analyze_metrics_backup",
+)
 
 
 @dataclass
@@ -145,9 +165,7 @@ def run(tmp_path_factory) -> RunSnapshot:
     con = duckdb.connect(":memory:")
     ensure_schema(con)
     out = tmp_path_factory.mktemp("det-outputs")
-    runner = FixtureCliRunner(
-        con, out, thresholds=(*ALIAS_CONFIG_THRESHOLDS, DISTINCT_CONFIG_THRESHOLD), emit_medoid_baseline=True
-    )
+    runner = FixtureCliRunner(con, out, thresholds=(*ALIAS_CONFIG_THRESHOLDS, DISTINCT_CONFIG_THRESHOLD))
     runner.run_all()
     return RunSnapshot(runner=runner, con=con, output_root=out)
 
@@ -659,6 +677,26 @@ def test_no_forbidden_vocabulary_in_any_machine_output(run):
         _assert_no_forbidden_vocabulary(blob, f"machine-output #{i}")
 
 
+def test_real_seam_run_report_is_not_mislabeled_synthetic(run):
+    """P3-S4: a real seam run's report is NOT mislabeled with the generator-only SYNTHETIC banner.
+
+    ``generate_fixture_report.py`` injects ``SYNTHETIC_WARNING`` into its GENERATED fixture
+    report (the validator requires it there).  The real ``FixtureCliRunner`` eight-phase run is a
+    genuine OBSERVED run over the deterministic synthetic data — labeling it with the generator's
+    "SYNTHETIC FIXTURE — no empirical retrieval claim." banner would be a false statement, so the
+    real run's machine + human reports must NOT carry that marker.  This pins the P3-S4 labeling
+    boundary (measured evidence labeled correctly; real seam runs never mislabeled synthetic).
+    """
+    from scripts.embedding_research.generate_fixture_report import SYNTHETIC_WARNING
+
+    marker = SYNTHETIC_WARNING["message"]
+    assert "SYNTHETIC" in marker and "no empirical retrieval claim" in marker
+    report_json = (run.output_root / "report" / "report.json").read_text()
+    report_html = (run.output_root / "report" / "report.html").read_text()
+    assert marker not in report_json, "real seam run report.json must not carry the generator-only synthetic banner"
+    assert marker not in report_html, "real seam run report.html must not carry the generator-only synthetic banner"
+
+
 # --------------------------------------------------------------------------- #
 # 11. Run provenance ids + finite timings                                       #
 # --------------------------------------------------------------------------- #
@@ -680,3 +718,244 @@ def test_analyze_head_analysis_report_run_ids_recorded_with_finite_timing(run):
     timings = run.con.execute("SELECT elapsed_s FROM phase_timings").fetchall()
     for (elapsed,) in timings:
         assert math.isfinite(float(elapsed))
+
+
+# --------------------------------------------------------------------------- #
+# Plan D P1-S3: the ONE per-backbone evaluation-corpus identity on the durable #
+# analyze scope (real effnet fixture, incl. sil / abs included, z0 excluded).  #
+# --------------------------------------------------------------------------- #
+def test_durable_analyze_scope_carries_one_real_evaluation_corpus_identity(run):
+    """P1-S3: the persisted analyze scope lines all share the resolve_evaluation_corpus identity.
+
+    Corpus identity flows from ``catalog_identity.resolve_evaluation_corpus`` over the compact
+    catalog's requested song ids (the same seam ``run.py::_run_analyze`` threads into every class
+    and the mandatory baseline).  For THIS fixture backbone (effnet) the catalog-requested set is
+    exactly the seven searchable songs: ``sil`` and ``abs`` are present (their committed silence
+    masks are honoured — at least one non-silent whole-song patch each), and ``z0`` is absent from
+    ``seg_meta`` (metadata-only, zero searchable) so it is never even requested.  Re-resolving the
+    durable catalog after the run must reproduce the SAME hash/count/comparability that every
+    class scope and the baseline scope persisted — proving report/durable identity does not depend
+    on a later catalog pointer or a disposable view keyset.
+    """
+    from scripts.embedding_research.catalog_identity import resolve_evaluation_corpus
+    from scripts.embedding_research.db import analyze_scope as _scope
+    from scripts.embedding_research.streams import StreamStore
+
+    with run.open_catalog() as cat:
+        # Mirror run.py's _analysis_corpus_song_ids: requested = distinct seg_meta songs per backbone.
+        requested = [
+            r[0]
+            for r in cat.execute(
+                "SELECT DISTINCT sm.song_id FROM seg_meta sm "
+                "JOIN seg_config c ON sm.config_id = c.config_id WHERE c.backbone = ? ORDER BY 1",
+                (BACKBONE,),
+            ).fetchall()
+        ]
+        identity = resolve_evaluation_corpus(
+            cat, StreamStore(run.con, output_root=str(run.output_root)), requested, backbone=BACKBONE
+        )
+    # Exactly the seven searchable songs: sil + abs included (mask-aware, still non-silent), z0
+    # excluded (never requested — no seg_meta rows).  All requested songs are eligible so the
+    # whole-song corpus is comparable with zero missing evidence.
+    assert set(requested) == set(SEARCHABLE_SONGS) and len(SEARCHABLE_SONGS) == 7
+    assert identity.eligible is True and identity.comparable is True
+    assert identity.count == len(SEARCHABLE_SONGS) == 7
+    assert set(identity.song_ids) == set(SEARCHABLE_SONGS)
+    assert identity.missing_song_ids == () and identity.missing_count == 0
+
+    # Every corpus-bearing persisted analyze scope line (each distinct class scope AND the
+    # mandatory observed-medoid baseline scope) names this ONE real identity.
+    parsed: list[dict[str, Any]] = []
+    for (blob,) in run.con.execute(
+        "SELECT output_artifact_hashes FROM run_provenance WHERE phase='analyze'"
+    ).fetchall():
+        if not blob:
+            continue
+        for line in blob.splitlines():
+            p = _scope.parse_analyze_scope(line.strip())
+            if p is not None and "evaluation_corpus_hash" in p:
+                parsed.append(p)
+    assert parsed, "analyze must persist at least one corpus-bearing scope line"
+    hashes = {p["evaluation_corpus_hash"] for p in parsed}
+    assert hashes == {identity.corpus_hash}, "all scope lines must share the real resolve_evaluation_corpus hash"
+    for p in parsed:
+        assert p["evaluation_corpus_count"] == identity.count == 7
+        assert p["evaluation_corpus_comparable"] is True
+        assert p["evaluation_corpus_missing_count"] == 0
+
+
+# --------------------------------------------------------------------------- #
+# Plan D Phase 2 (P2-S2 / P2-S3 / P2-S4): evidence over the REAL fixture render #
+# --------------------------------------------------------------------------- #
+def _report_analysis_rows(report: dict, backbone: str = "effnet") -> list[dict]:
+    """The decoded ``catalog_analysis_{backbone}`` rows from a real ``report.json``."""
+    analysis = next(s for s in report["sections"] if s["id"] == "analysis")
+    sub = next(s for s in analysis["subsections"] if s["title"] == backbone)
+    table = next(t for t in sub["tables"] if t["id"] == f"catalog_analysis_{backbone}")
+    return [dict(zip(table["columns"], r, strict=False)) for r in table["rows"]]
+
+
+def test_report_rendered_semantic_hash_equals_durable_catalog_search_hash(run):
+    """P2-S2: the real report's rendered representation_hash IS the durable catalog identity.
+
+    Reads the REAL deterministic fixture ``report.json`` analysis rows and recomputes each
+    analyzed class's semantic hash over the surviving compact catalog with
+    ``catalog_identity.search_representation_hash`` — the same primitive the analyze phase
+    consumed.  The rendered semantic identity must equal that durable catalog hash for every
+    analyzed class and every metric row, never a disposable view/keyset hash (rendered in its
+    own separate column).
+    """
+    from scripts.embedding_research.catalog_identity import collapse_search_representations
+
+    report = json.loads((run.output_root / "report" / "report.json").read_text())
+    rows = _report_analysis_rows(report)
+    assert rows, "the real report must render catalog analysis rows"
+
+    with run.open_catalog() as cat:
+        classes = collapse_search_representations(cat)
+    durable = {int(c.canonical_config_id): c.search_representation_hash for c in classes}
+    assert len(durable) == 2, "fixture collapses to the alias 0.9/1.0 class + the distinct 0.2 class"
+
+    for r in rows:
+        cid = int(r["canonical_config_id"])
+        assert r["representation_hash"] == durable[cid], (
+            "rendered representation_hash must equal the durable catalog search_representation_hash"
+        )
+        assert r["representation_hash"] != r["view_keyset_hash"], (
+            "semantic hash must never equal the disposable view keyset hash"
+        )
+        assert r["catalog_id"] and r["catalog_fingerprint"], "catalog anchor must render on every row"
+    assert {r["representation_hash"] for r in rows} == set(durable.values())
+
+
+def test_report_matched_rows_share_one_durable_corpus_identity(run):
+    """P2-S2: rendered segmented rows and the matched medoid baseline carry the SAME corpus.
+
+    Every rendered catalog analysis row names one durable evaluation-corpus identity
+    (hash/count/comparable) that re-resolves to the catalog's ``resolve_evaluation_corpus``
+    identity; the observed ``global_pool:{backbone}:medoid`` baseline they are matched against
+    carries that SAME corpus identity.  Because every real representation is comparable, the
+    report renders NO incomplete-representation diagnostics — nothing is silently dropped.
+    """
+    from scripts.embedding_research.catalog_identity import resolve_evaluation_corpus
+    from scripts.embedding_research.report._retrieval import query_medoid_baselines
+    from scripts.embedding_research.streams import StreamStore
+
+    report = json.loads((run.output_root / "report" / "report.json").read_text())
+    rows = _report_analysis_rows(report)
+    assert rows
+
+    with run.open_catalog() as cat:
+        requested = [
+            r[0]
+            for r in cat.execute(
+                "SELECT DISTINCT sm.song_id FROM seg_meta sm "
+                "JOIN seg_config c ON sm.config_id = c.config_id WHERE c.backbone = ? ORDER BY 1",
+                (BACKBONE,),
+            ).fetchall()
+        ]
+        identity = resolve_evaluation_corpus(
+            cat, StreamStore(run.con, output_root=str(run.output_root)), requested, backbone=BACKBONE
+        )
+
+    # Every rendered segmented row names this ONE durable corpus identity.
+    for r in rows:
+        assert r["evaluation_corpus_hash"] == identity.corpus_hash
+        assert int(r["evaluation_corpus_count"]) == identity.count == len(SEARCHABLE_SONGS) == 7
+        assert r["evaluation_corpus_comparable"] == "True"
+        assert int(r["evaluation_corpus_missing_count"]) == 0
+
+    # The medoid baseline the segmented rows are matched against carries the SAME corpus hash.
+    analyze_rid = run.evidence.phase_run_id("analyze")
+    base = query_medoid_baselines(run.con, run_id=analyze_rid)
+    assert not base.empty and (base["backbone"] == BACKBONE).all()
+    assert set(base["evaluation_corpus_hash"]) == {identity.corpus_hash}
+
+    # Nothing was dropped on the fully-comparable real corpus.
+    winners = next(s for s in report["sections"] if s["id"] == "winners")
+    incomplete_ids = [
+        t["id"]
+        for sub in winners.get("subsections", [])
+        for t in sub.get("tables", [])
+        if t["id"].startswith("incomplete_representations_")
+    ]
+    assert incomplete_ids == [], f"comparable real corpus must not render incomplete diagnostics: {incomplete_ids}"
+
+
+def test_report_member_and_equivalence_evidence_rendered_on_real_run(run):
+    """P2-S4: the real report renders per-member threshold/bin/exact evidence + alias equivalence.
+
+    The ``catalog_members_effnet`` table must surface one row per member of every collapsed
+    search class carrying the configured==effective threshold (equal to the durable catalog
+    ``seg_config``), the ``temporal_global`` bin mode and an exact segmentation hash distinct
+    from the class's semantic hash.  The analysis rows must surface the alias-equivalence
+    collapse (the 1.0 alias folds under the 0.9 canonical; the 0.2 config is its own singleton).
+    """
+    report = json.loads((run.output_root / "report" / "report.json").read_text())
+    analysis = next(s for s in report["sections"] if s["id"] == "analysis")
+    sub = next(s for s in analysis["subsections"] if s["title"] == "effnet")
+    members = next(t for t in sub["tables"] if t["id"] == "catalog_members_effnet")
+    mrows = [dict(zip(members["columns"], r, strict=False)) for r in members["rows"]]
+    # One member row per member of every collapsed class (alias class members 0.9 + 1.0 and
+    # the distinct 0.2 singleton -> exactly the three fixture seg_config ids).
+    assert {int(m["config_id"]) for m in mrows} == {run.config_id_for(t) for t in ALL_THRESHOLDS}
+    for m in mrows:
+        cid = int(m["config_id"])
+        assert float(m["threshold_configured"]) == pytest.approx(run.threshold_for_config(cid))
+        assert m["threshold_configured"] == m["threshold_effective"]
+        assert m["bin_mode"] == "temporal_global"
+        assert m["exact_segmentation_hash"] not in ("", "—")
+        assert m["representation_hash"] != m["exact_segmentation_hash"], (
+            "the exact per-config segmentation hash must differ from the class semantic hash"
+        )
+
+    # Alias equivalence: rendered analysis rows expose canonical + alias ids per collapsed class.
+    alias_cid = run.config_id_for(ALIAS_CONFIG_THRESHOLDS[0])
+    other_alias_cid = run.config_id_for(ALIAS_CONFIG_THRESHOLDS[1])
+    distinct_cid = run.config_id_for(DISTINCT_CONFIG_THRESHOLD)
+    alias_of = {}
+    for r in _report_analysis_rows(report):
+        cid = int(r["canonical_config_id"])
+        alias_of.setdefault(cid, set()).update(int(a) for a in r["alias_ids"].split(",") if a not in ("", "—"))
+    assert alias_cid in alias_of and other_alias_cid in alias_of[alias_cid], (
+        f"alias config {other_alias_cid} must fold under canonical {alias_cid}"
+    )
+    assert distinct_cid in alias_of and not alias_of[distinct_cid], (
+        f"distinct config {distinct_cid} must be its own canonical singleton"
+    )
+
+
+def test_report_semantic_identity_stable_across_rerender_independent_of_disposable_views(run, tmp_path):
+    """P2-S3: re-rendering the report over the same durable DB yields stable semantic identity.
+
+    The report is rendered VERBATIM from the persisted analyze scope/metrics (never from any
+    disposable view file that may have been regenerated between renders).  Re-rendering the real
+    DB into a fresh output directory reproduces byte-for-byte the same durable semantic
+    ``representation_hash`` set (equal to the catalog recompute) while the disposable view
+    keyset stays in its own column and is never equal to the semantic identity — the report
+    compares/identifies rows by durable semantic identity, never by a disposable view identity.
+    Combined with the DB+view deletion/reindex re-run byte-stability proof in
+    ``test_deterministic_fixture_durability`` this closes the view-regeneration independence
+    clause on the real seam.
+    """
+    from scripts.embedding_research.catalog_identity import collapse_search_representations
+    from scripts.embedding_research.report import run as report_run
+
+    analyze_rid = run.evidence.phase_run_id("analyze")
+    first = json.loads((run.output_root / "report" / "report.json").read_text())
+    first_rows = _report_analysis_rows(first)
+
+    # Re-render the SAME durable DB into a fresh directory (an independent second render).
+    second = report_run(run.con, tmp_path / "rerender", run_id=analyze_rid)
+    second_rows = _report_analysis_rows(second)
+    assert len(second_rows) == len(first_rows)
+
+    with run.open_catalog() as cat:
+        durable = {c.search_representation_hash for c in collapse_search_representations(cat)}
+
+    for a, b in zip(first_rows, second_rows, strict=True):
+        assert a["strategy_key"] == b["strategy_key"]
+        assert a["representation_hash"] == b["representation_hash"], "semantic identity must be stable"
+        assert a["representation_hash"] in durable
+        assert a["representation_hash"] != a["view_keyset_hash"]
+        assert b["representation_hash"] != b["view_keyset_hash"]

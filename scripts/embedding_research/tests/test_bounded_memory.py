@@ -318,18 +318,9 @@ def test_non_finite_analysis_rejected_before_persistence_no_partial_write(con, t
         good = ca.run_catalog_analysis(store, handle.con, cfg, research_con=con)
         assert good.finite is True
         # Record a scope for the good run to prove it is NOT disturbed by the poisoned run.
-        analyze_scope.record_analyze_run_scope(
-            con,
-            run_id="run-poison",
-            strategy_key=good.strategy_key,
-            sim_metric="cosine",
-            k=good.k,
-            backbone=good.backbone,
-            config_ids=good.config_ids,
-            view_content_hash=good.view_content_hash,
-            score_variant=good.score_variant,
-            scoring_semantics_version=good.scoring_semantics_version,
-        )
+        # Persist the good result through the REAL writer seam, which builds + records its complete
+        # v2 catalog_class scope (the corrective gate refuses the old hand-built incomplete identity).
+        analyze_scope.write_catalog_analyze_rows(con, run_id="run-poison", result=good)
         good_scopes = analyze_scope.run_row_scopes(con, run_id="run-poison")
         assert good_scopes, "good run scope must be recorded"
 

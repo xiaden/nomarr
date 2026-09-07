@@ -403,7 +403,8 @@ def test_analyze_dispatch_smoke_zero_forbidden_calls(con, tmp_path, monkeypatch)
     run_mod._run_single_phase(con, "analyze", cfg)
 
     # analyze self-records its run-scoped metrics (its own run_id), no forbidden call.
-    n = con.execute("SELECT count(*) FROM analyze_metrics WHERE run_id <> 'legacy'").fetchone()[0]
+    # Every analyze_metrics row is run-scoped (no legacy partition), so presence is the assertion.
+    n = con.execute("SELECT count(*) FROM analyze_metrics").fetchone()[0]
     assert n >= 1
     _assert_zero_sentinel_calls(sentinels)
 

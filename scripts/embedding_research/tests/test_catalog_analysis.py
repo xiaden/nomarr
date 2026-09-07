@@ -169,9 +169,9 @@ def _seed_retained_and_unrelated_rows(con):
     )
     unrelated = "global_pool:effnet:mean"
     con.execute(
-        "INSERT INTO analyze_metrics (strategy_key, strategy_type, sim_metric, k, metric, value) "
-        "VALUES (?, 'global_pool', 'cosine', 10, 'disc_general', 0.99)",
-        (unrelated,),
+        "INSERT INTO analyze_metrics (run_id, strategy_key, strategy_type, sim_metric, k, metric, value) "
+        "VALUES (?, ?, 'global_pool', 'cosine', 10, 'disc_general', 0.99)",
+        ("retained-run-0", unrelated),
     )
     con.execute(
         "INSERT INTO song_retrieval_metrics (strategy_key, sim_metric, k, song_id, ap_k) "

@@ -52,7 +52,7 @@ import pytest
 
 from scripts.embedding_research import run as run_mod
 from scripts.embedding_research import verify
-from scripts.embedding_research.db._schema import ensure_schema
+from scripts.embedding_research.db._schema import StaleSchemaError, ensure_schema
 from scripts.embedding_research.streams import HeadStreamStore
 from scripts.embedding_research.streams.heads_current import current_marker_path, resolve_current_head_suite
 from scripts.embedding_research.streams.records import HeadSuiteCurrentError
@@ -115,7 +115,7 @@ def run(tmp_path_factory):
     """
     con = _fresh_con()
     out = tmp_path_factory.mktemp("det-maintenance")
-    runner = FixtureCliRunner(con, out, thresholds=THRESHOLDS, emit_medoid_baseline=True)
+    runner = FixtureCliRunner(con, out, thresholds=THRESHOLDS)
     runner.run_all()
     return SimpleNamespace(out=out, con=con, runner=runner)
 
@@ -488,3 +488,104 @@ def test_retired_and_unknown_command_names_are_ordinary_unknown_commands(alias):
     with pytest.raises(SystemExit) as exc:
         run_mod._resolve_command(alias)
     assert exc.value.code == 2
+
+
+# --------------------------------------------------------------------------- #
+# Plan D P3-S1: CLI-level exit-code refusal paths not yet asserted at the real #
+# maintenance-command seam (verify --strict committed-uint8-mask tamper;       #
+# reindex with a missing committed-mask payload).                              #
+# --------------------------------------------------------------------------- #
+def test_cli_verify_strict_committed_mask_tamper_exit_one_naming_payload(run, work, tmp_path, monkeypatch):
+    """P3-S1: verify --strict exits 1 on a tampered committed uint8 mask, naming the payload.
+
+    ``test_cli_verify_exit_codes_clean_zero_tamper_one`` pins the CLI exit-1 mapping for a
+    committed STREAM tamper; this extends the same real ``run._cmd_verify`` seam to the
+    committed uint8-MASK tamper the strict structural check also refuses (uint8[P] by
+    contract) — the exact "verify --strict exit 1 naming payload digest-mismatch" path.
+    """
+    out = _copy_of(run.out, work)
+    monkeypatch.setattr(run_mod, "OUTPUT_ROOT", out)
+    monkeypatch.setattr(run_mod, "DB_PATH", tmp_path / "unused.duckdb")
+
+    # Clean root -> _cmd_verify returns (exit 0).
+    run_mod._cmd_verify(SimpleNamespace(strict=True))
+
+    # Tamper the committed uint8 mask (same size, digest-name + sibling manifest kept).
+    mask = _s1_mask(out)
+    pristine = _s1_mask(run.out).read_bytes()
+    data = bytearray(mask.read_bytes())
+    data[-1] ^= 0xFF
+    assert len(data) == mask.stat().st_size
+    mask.write_bytes(bytes(data))
+
+    # The strict refusal NAMES the payload (digest mismatch), and the CLI maps it to exit 1.
+    strict = verify.verify_current_artifacts(out, strict=True)
+    assert any("does not match its name digest" in r for r in strict.refusals), strict.refusals
+    assert any("audio_masks/" in r and f"s1.{BACKBONE}." in r for r in strict.refusals), strict.refusals
+    with pytest.raises(SystemExit) as exc:
+        run_mod._cmd_verify(SimpleNamespace(strict=True))
+    assert exc.value.code == 1
+
+    # Restore -> clean exit again.
+    mask.write_bytes(pristine)
+    run_mod._cmd_verify(SimpleNamespace(strict=True))
+
+
+def test_cli_reindex_missing_committed_mask_payload_exit_one(run, work, tmp_path, monkeypatch):
+    """P3-S1: reindex exits 1 on a committed group whose committed mask payload is missing.
+
+    ``test_cli_reindex_exit_codes_clean_zero_refusal_one`` pins the CLI exit-1 mapping for a
+    removed observation-commit marker; this extends the same real ``run._cmd_reindex`` seam to
+    the missing committed-MASK-payload refusal (the group is never silently treated as
+    all-searchable — reindex refuses and exits 1).
+    """
+    out = _copy_of(run.out, work)
+    db = tmp_path / "research.duckdb"
+    monkeypatch.setattr(run_mod, "OUTPUT_ROOT", out)
+    monkeypatch.setattr(run_mod, "DB_PATH", db)
+
+    # Intact root -> _cmd_reindex returns cleanly (rebuilds into the file DB).
+    run_mod._cmd_reindex(SimpleNamespace())
+
+    # Remove s1's committed uint8 mask payload (stream + sibling manifest + commit marker kept)
+    # -> reindex refuses (incomplete committed group), exit 1.
+    mask = _s1_mask(out)
+    pristine = mask.read_bytes()
+    mask.unlink()
+    with pytest.raises(SystemExit) as exc:
+        run_mod._cmd_reindex(SimpleNamespace())
+    assert exc.value.code == 1
+
+    mask.write_bytes(pristine)  # restore
+    run_mod._cmd_reindex(SimpleNamespace())
+
+
+def test_reindex_refuses_stale_schema_no_legacy_fallback(run, work, tmp_path, monkeypatch):
+    """P3-S3: reindex on a stale pre-cut research DB REFUSES via StaleSchemaError — never a
+    legacy/old-schema fallback.
+
+    The hard cut makes ``analyze_metrics`` ONE current run-scoped schema.  A research DB whose
+    ``analyze_metrics`` predates the ``run_id`` column must make the reindex command refuse
+    (:class:`StaleSchemaError` from the ``ensure_schema`` guard) rather than silently downgrade,
+    relabel, or re-seed stale rows into a current schema.  The refusal leaves the stale table
+    byte-untouched.
+    """
+    out = _copy_of(run.out, work)
+    stale_db = tmp_path / "stale.duckdb"
+    # Build a pre-cut research DB: analyze_metrics WITHOUT the current run_id column.
+    with duckdb.connect(str(stale_db)) as c:
+        c.execute("CREATE TABLE analyze_metrics (strategy_key VARCHAR, metric VARCHAR, value DOUBLE)")
+    monkeypatch.setattr(run_mod, "OUTPUT_ROOT", out)
+    monkeypatch.setattr(run_mod, "DB_PATH", stale_db)
+
+    # The reindex command refuses (StaleSchemaError propagates from the ensure_schema guard) —
+    # it never proceeds to scan manifests or fall back to a legacy schema.
+    with pytest.raises(StaleSchemaError):
+        run_mod._cmd_reindex(SimpleNamespace())
+
+    # No legacy/old-schema fallback was consulted: the stale table is left untouched (still
+    # lacks run_id, zero rows) — nothing was relabeled or migrated into a current schema.
+    with duckdb.connect(str(stale_db)) as c:
+        cols = [r[0] for r in c.execute("DESCRIBE analyze_metrics").fetchall()]
+        assert "run_id" not in cols, "the stale analyze_metrics table must not gain a run_id column"
+        assert c.execute("SELECT count(*) FROM analyze_metrics").fetchone()[0] == 0

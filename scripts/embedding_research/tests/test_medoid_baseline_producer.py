@@ -1,25 +1,25 @@
-"""Plan B P1-S6 — analyze-side observed global-medoid baseline PRODUCER (spec-first).
+"""Analyze-side observed global-medoid baseline PRODUCER (spec-first).
 
-These fixtures pin the reopened P1-S6 deliverable: the ANALYZE phase emits ONE observed
-``global_pool:{backbone}:medoid`` baseline metric identity per backbone, scored as an
-ADDITIONAL retrieval pass over the SAME corpus / sim_metric / k / metric scope as the
-segmented catalog classes, persisted run-scoped under a NON-``catalog`` ``strategy_type``.
-Zero-searchable songs are excluded from both the baseline population and candidate search,
-per-class execution counts are untouched (the P1-S3/S4 fixtures keep passing), and
-``baseline.build_baseline_delta_rows`` over the persisted decoded rows yields the finite
-per-cell deltas P1-S7's winners loader will consume.
+These fixtures pin the reopened P1-S6 deliverable as made MANDATORY by execution-reporting
+Plan A P2: the ANALYZE phase emits EXACTLY ONE observed ``global_pool:{backbone}:medoid``
+baseline metric identity per successfully analyzed backbone, unconditionally (there is NO
+``emit_medoid_baseline`` config key or argparse flag), scored as an ADDITIONAL retrieval pass
+over the SAME corpus / sim_metric / k / metric scope as the segmented catalog classes,
+persisted run-scoped under a NON-``catalog`` ``strategy_type``.  Zero-searchable songs are
+excluded from both the baseline population and candidate search, per-class execution counts
+are untouched (the P1-S3/S4 fixtures keep passing), and ``baseline.build_baseline_delta_rows``
+over the persisted decoded rows yields the finite per-cell deltas the winners loader consumes.
 
 Gates:
 
 1. ``common.catalog_analysis.analyze_medoid_baseline`` returns metric keys IDENTICAL to a
-   segmented class's (``map_k``/``mrr``/``ndcg_k``/``recall_k``/``disc_artist``/``disc_score``)
+   segmented class's (``map_k``/``mrr``/``ndcg_k``/``recall_k``/``disc_artist``)
    for the same backbone/corpus/k — cell alignment for the exact-scope baseline join;
 2. a fully-silent (zero-searchable) song in ``song_ids`` is EXCLUDED from the medoid corpus
    (its presence never changes the baseline values);
-3. driving the REAL ``run.py::_run_analyze`` with ``emit_medoid_baseline`` persists EXACTLY
-   ONE ``global_pool`` row per backbone whose ``strategy_key == medoid_strategy_key_for(backbone)``,
-   run-scoped, never a catalog row — while the per-class execution/scope fixtures stay green
-   when the flag is off;
+3. driving the REAL ``run.py::_run_analyze`` (MANDATORY baseline — no ``emit_medoid_baseline``
+   gate, no hidden switch) persists EXACTLY ONE ``global_pool`` row per backbone whose
+   ``strategy_key == medoid_strategy_key_for(backbone)``, run-scoped, never a catalog row;
 4. ``build_baseline_delta_rows`` over the persisted class + medoid rows yields a finite delta
    per segmented result sharing the exact scope.
 
@@ -31,7 +31,6 @@ from __future__ import annotations
 import math
 
 import numpy as np
-import pandas as pd
 import pytest
 
 from scripts.embedding_research import catalog as catalog_mod
@@ -49,7 +48,7 @@ _BACKBONE = "effnet"
 _SONGS = ("s1", "s2", "s3", "s4")
 _ARTISTS = {"s1": "A", "s2": "A", "s3": "B", "s4": "B"}
 _RUN = "run-p1s6-medoid-producer"
-_CLASS_METRIC_KEYS = ("map_k", "mrr", "ndcg_k", "recall_k", "disc_artist", "disc_score")
+_CLASS_METRIC_KEYS = ("map_k", "mrr", "ndcg_k", "recall_k", "disc_artist")
 
 
 def _cfg(threshold: float) -> catalog_mod.SegConfigInput:
@@ -161,16 +160,14 @@ def _decode_rows(con, run_id):
 
 
 def test_run_analyze_emits_one_global_pool_baseline_row_per_backbone(compact_catalog_factory, con, tmp_path):
-    """The REAL run.py::_run_analyze path (emit_medoid_baseline) persists one medoid baseline per backbone."""
+    """The REAL run.py::_run_analyze path (MANDATORY baseline) persists one medoid baseline per backbone."""
     from scripts.embedding_research import run as run_mod
 
     out = tmp_path / "runpy-medoid"
     harness = _build(compact_catalog_factory, con, out)
     try:
         harness.handle.close()  # let run.py reopen the durable current.json read-only (single-writer)
-        ret = run_mod._run_analyze(
-            con, {"output_root": str(out), "backbones": [_BACKBONE], "k": 10, "emit_medoid_baseline": True}, run_id=_RUN
-        )
+        ret = run_mod._run_analyze(con, {"output_root": str(out), "backbones": [_BACKBONE], "k": 10}, run_id=_RUN)
         assert ret["song_count"] == len(_SONGS)
         decoded = _decode_rows(con, _RUN)
         medoid_keys = decoded.get(MEDOID_STRATEGY_TYPE, {})
@@ -196,35 +193,26 @@ def test_persisted_class_and_medoid_rows_yield_finite_baseline_deltas(compact_ca
     harness = _build(compact_catalog_factory, con, out)
     try:
         harness.handle.close()
-        run_mod._run_analyze(
-            con, {"output_root": str(out), "backbones": [_BACKBONE], "k": 10, "emit_medoid_baseline": True}, run_id=_RUN
-        )
+        run_mod._run_analyze(con, {"output_root": str(out), "backbones": [_BACKBONE], "k": 10}, run_id=_RUN)
         decoded = _decode_rows(con, _RUN)
         catalog_rows = decoded["catalog"]
         class_key = next(iter(catalog_rows))
         medoid_key = medoid_strategy_key_for(_BACKBONE)
-        # Assemble the decoded long frame the P1-S7 winners loader will build (class + medoid rows).
-        frame_rows = []
-        for strategy_type in ("catalog", MEDOID_STRATEGY_TYPE):
-            for sk, metrics in decoded[strategy_type].items():
-                for metric, value in metrics.items():
-                    frame_rows.append(
-                        {
-                            "backbone": _BACKBONE,
-                            "sim_metric": "cosine",
-                            "k": 10,
-                            "metric": metric,
-                            "strategy_key": sk,
-                            "value": value,
-                            "canonical_config_id": None,
-                            "alias_ids": [],
-                        }
-                    )
-        df = build_baseline_delta_rows(pd.DataFrame(frame_rows))
+        # Build the delta over the REAL winners loader (which carries each row's persisted
+        # analyze_scope_v2 evaluation-corpus identity), NOT a hand-assembled identity-less frame —
+        # the legacy identity-less structural match is gone under the corrective hard cut.
+        from scripts.embedding_research.report._retrieval import query_winners_metrics
+
+        winners = query_winners_metrics(con, run_id=_RUN)
+        result = build_baseline_delta_rows(winners)
+        matched = result.rows
         # Every segmented result cell (one per class metric key) gets a finite delta row.
-        assert set(df["metric"]) == set(_CLASS_METRIC_KEYS)
-        assert set(df["baseline_strategy_key"]) == {medoid_key}
-        assert set(df["winner_strategy_key"]) == {class_key}
-        assert (df["delta"].map(math.isfinite)).all()
+        assert {r["metric"] for r in matched} == set(_CLASS_METRIC_KEYS)
+        assert {r["baseline_strategy_key"] for r in matched} == {medoid_key}
+        assert {r["winner_strategy_key"] for r in matched} == {class_key}
+        assert all(math.isfinite(float(r["delta"])) for r in matched)
+        # The persisted class + medoid rows share the real run's equal comparable evaluation corpus,
+        # so nothing is surfaced as an incomplete diagnostic.
+        assert result.incomplete == ()
     finally:
         harness.close()

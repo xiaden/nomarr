@@ -73,13 +73,17 @@ __all__ = [
     "CATALOG_MANIFEST_VERSION",
     "CATALOG_SEMANTICS_VERSION",
     "CATALOG_SERIALIZATION_VERSION",
+    "EVALUATION_CORPUS_SEMANTICS_VERSION",
     "CatalogIdentityContext",
+    "EvaluationCorpusIdentity",
     "SearchRepresentationClass",
     "catalog_fingerprint",
     "catalog_state_payload",
     "collapse_search_representations",
     "exact_segmentation_hash",
+    "resolve_evaluation_corpus",
     "search_representation_hash",
+    "song_ids_digest",
     "song_signature",
     "verify_catalog_logical_identity",
 ]
@@ -493,6 +497,194 @@ def collapse_search_representations(catalog) -> tuple[SearchRepresentationClass,
     ]
     classes.sort(key=lambda c: c.canonical_config_id)
     return tuple(classes)
+
+
+# ── Evaluation-corpus identity (execution-reporting-repair Plan A, P1) ──────────
+# One explicit, deterministic evaluation-corpus identity per backbone, resolved ONCE at the
+# analyze/catalog boundary and threaded through every canonical segmented class pass AND the
+# observed whole-song medoid baseline path.  No later/current catalog is consulted when the
+# identity is derived; the eligible population is frozen in the identity at resolve time.
+#
+# Eligibility is exactly a catalog-requested song with a valid committed stream+mask AND at
+# least one non-silent whole-song patch.  Silent-only (zero-searchable) and uncommitted songs
+# are EXCLUDED with evidence (``missing_song_ids`` / ``missing_count`` / ``missing_digest``),
+# never silently pooled as all-searchable.  A per-representation loss after PTC absorption is
+# surfaced separately per representation (see ``common.catalog_analysis``), never by mutating
+# this frozen whole-song identity.
+
+#: Version of the evaluation-corpus identity semantics.  Bump when the eligibility rule or the
+#: canonical tagged serialization changes such that an equal population yields a different hash.
+EVALUATION_CORPUS_SEMANTICS_VERSION: int = 1
+#: Minimum eligible songs a backbone needs before a leave-one-out evaluation (segmented pass or
+#: observed baseline) is meaningful.  A sub-2 eligible corpus is ``eligible == False`` so the
+#: analyze scope records a failed/incomplete outcome rather than a fabricated singleton success.
+_MIN_ANALYZABLE_EVALUATION_SONGS: int = 2
+
+
+@dataclass(frozen=True)
+class EvaluationCorpusIdentity:
+    """The backbone's single resolved evaluation-corpus identity (frozen, deterministic).
+
+    ``song_ids`` is the canonical sorted set of ELIGIBLE catalog-requested songs (valid
+    committed stream+mask AND >= 1 non-silent whole-song patch); ``count`` / ``corpus_hash``
+    are the deterministic population summary over exactly that set.  ``eligible`` is whether
+    the corpus is analyzable via leave-one-out (>= :data:`_MIN_ANALYZABLE_EVALUATION_SONGS`
+    eligible songs); ``comparable`` is the whole-song view (== ``eligible``: a whole-song
+    medoid representation never loses an eligible song — per-representation losses after PTC
+    absorption are surfaced separately and set the *representation* non-comparable, not this
+    shared identity).  ``missing_song_ids`` / ``missing_count`` / ``missing_digest`` carry the
+    excluded-requested-song evidence (requested songs that did not meet eligibility).
+
+    This identity is the population every segmented class and the whole-song baseline must
+    reuse EXACTLY — it is never re-derived from a later catalog or a disposable view keyset.
+    """
+
+    backbone: str
+    song_ids: tuple[str, ...]
+    corpus_hash: str
+    count: int
+    eligible: bool
+    comparable: bool
+    missing_song_ids: tuple[str, ...]
+    missing_count: int
+    missing_digest: str | None
+    semantics_version: int
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.backbone, str) or not self.backbone:
+            raise TypeError("backbone must be non-empty text")
+        if isinstance(self.semantics_version, bool) or not isinstance(self.semantics_version, int):
+            raise TypeError("semantics_version must be an integer")
+        if isinstance(self.count, bool) or not isinstance(self.count, int):
+            raise TypeError("count must be an integer")
+        if isinstance(self.missing_count, bool) or not isinstance(self.missing_count, int):
+            raise TypeError("missing_count must be an integer")
+        if not isinstance(self.song_ids, tuple) or any(not isinstance(s, str) for s in self.song_ids):
+            raise TypeError("song_ids must be a tuple of song-id strings")
+        if not isinstance(self.missing_song_ids, tuple) or any(not isinstance(s, str) for s in self.missing_song_ids):
+            raise TypeError("missing_song_ids must be a tuple of song-id strings")
+        # Canonical population: canonical sorted song ids, never empty when eligible.
+        object.__setattr__(self, "song_ids", tuple(sorted(set(self.song_ids))))
+        object.__setattr__(self, "missing_song_ids", tuple(sorted(set(self.missing_song_ids))))
+        if self.count != len(self.song_ids):
+            raise ValueError(f"count={self.count} must equal the resolved eligible song count {len(self.song_ids)}")
+        if self.missing_count != len(self.missing_song_ids):
+            raise ValueError(
+                f"missing_count={self.missing_count} must equal the excluded song count {len(self.missing_song_ids)}"
+            )
+        # A comparable population must be eligible and may not double-count a song as both eligible
+        # and missing (a resolved song is either eligible or excluded, never both).
+        overlap = set(self.song_ids) & set(self.missing_song_ids)
+        if overlap:
+            raise ValueError(f"song ids cannot be both eligible and excluded: {sorted(overlap)}")
+        if self.comparable and not self.eligible:
+            raise ValueError("an ineligible corpus cannot be comparable")
+        if not self.eligible and self.song_ids and len(self.song_ids) >= _MIN_ANALYZABLE_EVALUATION_SONGS:
+            raise ValueError("a >=2-song corpus must be eligible")
+        # ``missing_song_ids`` is EXCLUDED-requested evidence and may legitimately coexist with a
+        # comparable eligible population (e.g. 4 eligible + 1 silent requested song).  Per-
+        # representation losses (an eligible song lacking a searchable medoid in one class) are NOT
+        # recorded on this shared whole-song identity — the analyzer surfaces them as the
+        # representation's own non-comparable result.
+
+
+def _evaluation_corpus_payload(backbone: str, song_ids: Sequence[str], semantics_version: int) -> str:
+    """Deterministic tagged pre-image for an evaluation-corpus identity hash."""
+    return "\n".join(
+        [
+            "evaluation_corpus",
+            f"semantics_version={int(semantics_version)}",
+            f"backbone={backbone}",
+            f"song_count={len(song_ids)}",
+            "song_ids=" + ",".join(sorted(song_ids)),
+        ]
+    )
+
+
+def song_ids_digest(song_ids: Sequence[str]) -> str:
+    """Deterministic SHA-256 over a sorted song-id set (the missing-evidence digest)."""
+    body = "\n".join(f"song={s}" for s in sorted(set(song_ids)))
+    return hashlib.sha256(body.encode("utf-8")).hexdigest()
+
+
+def resolve_evaluation_corpus(catalog, stream_store, requested_song_ids, *, backbone: str) -> EvaluationCorpusIdentity:
+    """Resolve the backbone's single explicit evaluation-corpus identity (fail-closed eligibility).
+
+    A requested song is ELIGIBLE exactly when its committed observation group is valid
+    (``stream_store.load_committed_observation`` succeeds) AND it has at least one non-silent
+    whole-song patch (committed ``mask`` row ``== 1``; patches beyond a shorter committed mask
+    count as searchable per the whole-song source-index rule).  Every other requested song is
+    EXCLUDED with evidence into ``missing_song_ids`` — never silently pooled all-searchable.
+
+    ``catalog`` (a compact CatalogHandle / its snapshot connection) FAILS CLOSED with a
+    ``ValueError`` when the backbone has no segmented config surface, so an identity is never
+    resolved for a backbone the current catalog does not actually segment.  ``requested_song_ids``
+    are the catalog-requested population selected once at the analyze/catalog boundary; the
+    eligible subset is frozen in the returned identity (no later catalog / disposable view keyset
+    is ever consulted to re-derive it).
+    """
+    con = _identity_con(catalog)
+    if not _backbone_has_config_surface(con, backbone):
+        raise ValueError(
+            f"catalog has no seg_config rows for backbone {backbone!r}; cannot resolve an evaluation corpus"
+        )
+
+    import numpy as _np
+
+    from scripts.embedding_research.streams import StreamStoreError
+
+    requested = tuple(sorted({str(s) for s in requested_song_ids}))
+    eligible: list[str] = []
+    missing: list[str] = []
+    for song in requested:
+        try:
+            observation = stream_store.load_committed_observation(song, backbone)
+        except StreamStoreError:
+            # No valid committed observation group -> the song is not searchable in this corpus
+            # (uncommitted / corrupt / absent) -> excluded with evidence.
+            missing.append(song)
+            continue
+        stream = _np.asarray(observation.stream, dtype=_np.float32)
+        mask = _np.asarray(observation.mask, dtype=_np.uint8)
+        patch_count = int(stream.shape[0])
+        # Whole-song non-silent source indices (a mask shorter than the stream leaves trailing
+        # patches searchable); a fully-silent (zero-searchable) song is excluded with evidence.
+        non_silent = _np.ones(patch_count, dtype=bool)
+        length = min(int(mask.shape[0]), patch_count)
+        if length:
+            non_silent[:length] = _np.asarray(mask[:length] == 1, dtype=bool)
+        if not bool(_np.any(non_silent)):
+            missing.append(song)
+            continue
+        eligible.append(song)
+
+    song_ids = tuple(sorted(eligible))
+    missing_song_ids = tuple(sorted(missing))
+    semantics_version = EVALUATION_CORPUS_SEMANTICS_VERSION
+    eligible_flag = len(song_ids) >= _MIN_ANALYZABLE_EVALUATION_SONGS
+    return EvaluationCorpusIdentity(
+        backbone=backbone,
+        song_ids=song_ids,
+        corpus_hash=hashlib.sha256(
+            _evaluation_corpus_payload(backbone, song_ids, semantics_version).encode("utf-8")
+        ).hexdigest(),
+        count=len(song_ids),
+        eligible=eligible_flag,
+        comparable=eligible_flag,
+        missing_song_ids=missing_song_ids,
+        missing_count=len(missing_song_ids),
+        missing_digest=song_ids_digest(missing_song_ids) if missing_song_ids else None,
+        semantics_version=semantics_version,
+    )
+
+
+def _backbone_has_config_surface(con, backbone: str) -> bool:
+    """True when *con* is queryable and the backbone has at least one compact ``seg_config`` row."""
+    try:
+        row = con.execute(f"SELECT count(*) FROM {SEG_CONFIG_TABLE} WHERE backbone = ?", [backbone]).fetchone()
+    except Exception:
+        return False
+    return bool(row and row[0])
 
 
 # ── Logical export/import verification ─────────────────────────────────────────

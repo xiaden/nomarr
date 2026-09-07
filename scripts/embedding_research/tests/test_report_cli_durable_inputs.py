@@ -1,14 +1,14 @@
 """Report CLI durable-input tests through the real ``run.py::_run_report`` path.
 
 Research-only.  Drives the actual report CLI runner (``run_mod._run_report``) against a
-DuckDB database seeded with a COMPLETED run scope whose run config carries
-``emit_medoid_baseline=True`` semantics — durable catalog identity, recomputed equivalence
-classes / sorted aliases, persisted ``global_pool:{backbone}:medoid`` baselines + per-class
-deltas, run-scoped catalog metrics, canonical head provenance/results, and command/artifact
-provenance.  Asserts the emitted ``report.json`` + ``report.html`` consume exactly that active
-scope and NO other (no run blending), that incomplete scopes are rejected rather than silently
-blended, and that the report CLI path performs no report-time inference/audio/model/ONNX/CUDA
-access (structural + behavioral guards).
+DuckDB database seeded with a COMPLETED run scope that carries the MANDATORY observed-medoid-
+baseline semantics (unconditional — no emit key) — durable catalog identity, recomputed equivalence
+classes / sorted aliases, persisted MANDATORY ``global_pool:{backbone}:medoid`` baselines +
+per-class deltas, run-scoped catalog metrics, canonical head provenance/results, and
+command/artifact provenance.  Asserts the emitted ``report.json`` + ``report.html`` consume
+exactly that active scope and NO other (no run blending), that incomplete scopes are rejected
+rather than silently blended, and that the report CLI path performs no report-time
+inference/audio/model/ONNX/CUDA access (structural + behavioral guards).
 
 The completion/scope-resolution signal lives in ``run_provenance`` (there is no status column on
 ``analyze_metrics``), so every run below seeds an ``analyze`` provenance row with an explicit
@@ -39,7 +39,7 @@ _CONFIG_HASH = "deadbeefcafe0001"
 _COMMANDS = {
     "catalog": "python run.py catalog",
     "catalog-report": "python run.py catalog-report",
-    "analyze": "python run.py analyze --emit-medoid-baseline",
+    "analyze": "python run.py analyze",
     "head-analysis": "python run.py head-analysis",
     "report": "python run.py report",
 }
@@ -47,7 +47,7 @@ _BASE_MS = 1_700_000_000_000  # stable integer-ms anchor (deterministic)
 
 
 def _seed_songs(con, *, n=3) -> None:
-    # A single artist so disc_score_warning emits a real warning (durable warnings section).
+    # A single artist so disc_artist_warning emits a real warning (durable warnings section).
     con.executemany(
         "INSERT INTO songs (song_id, path, artist, album, title, genre) VALUES (?, ?, ?, ?, ?, ?)",
         [(f"s{i}", f"/audio/s{i}.flac", "Alice", "A", f"Title {i}", "jazz") for i in range(1, n + 1)],
@@ -83,7 +83,7 @@ def _seed_run(
 
     The ``analyze`` provenance row is pre-created (status ``complete``) with an explicit
     ``finished_at`` so the report-phase resolver deterministically orders runs by ``idx``, then
-    ``write_catalog_analyze_rows`` (via ``seed_catalog``) appends its ``analyze_scope_v1`` lines
+    ``write_catalog_analyze_rows`` (via ``seed_catalog``) appends its ``analyze_scope_v2`` lines
     to that single row — the exact durable identity the report provenance scope-mapping consumes.
     """
     started = _BASE_MS + idx * 10_000

@@ -9,7 +9,7 @@ from typing import Any
 
 from plotly.offline import get_plotlyjs
 
-from ._corpus import disc_score_warning, section_corpus
+from ._corpus import disc_artist_warning, section_corpus
 from ._efficiency import section_efficiency
 from ._heads import section_head_analysis
 from ._provenance import section_provenance
@@ -328,7 +328,7 @@ def run(con, out_path=None, *, run_id: str | None = None) -> dict:
     wdf, _ = _step("query_winners_metrics", lambda: query_winners_metrics(con, run_id=run_id))
 
     # Global warnings
-    warnings, _ = _step("disc_score_warning", lambda: disc_score_warning(con))
+    warnings, _ = _step("disc_artist_warning", lambda: disc_artist_warning(con))
 
     # Section builders (exact order contract).
     sections_raw: list[tuple[str, Any]] = [

@@ -43,7 +43,7 @@ def _fresh_runner(tmp_path: Path) -> FixtureCliRunner:
     con = duckdb.connect(":memory:")
     ensure_schema(con)
     out = tmp_path / "out"
-    return FixtureCliRunner(con, out, thresholds=CONFIG_THRESHOLDS, emit_medoid_baseline=True)
+    return FixtureCliRunner(con, out, thresholds=CONFIG_THRESHOLDS)
 
 
 @pytest.fixture
@@ -179,8 +179,9 @@ def test_analyze_emits_class_and_global_pool_medoid_rows(runner):
     runner.run_all()
     rows = runner.con.execute("SELECT DISTINCT strategy_type FROM analyze_metrics ORDER BY 1").fetchall()
     types = {r[0] for r in rows}
-    # The per-class retrieval passes write 'catalog'-typed strategy rows; emit_medoid_baseline
-    # adds the 'global_pool' observed-medoid baseline row(s) (never a candidate class).
+    # The per-class retrieval passes write 'catalog'-typed strategy rows; the MANDATORY observed
+    # medoid baseline (unconditional — no emit flag) adds the 'global_pool' row(s) (never a
+    # candidate class).
     assert "catalog" in types
     assert "global_pool" in types
 

@@ -45,6 +45,8 @@ def _summary_rows(analysis_df: pd.DataFrame) -> list[dict]:
                 elif d == best_delta:
                     delta_owners.setdefault(d, []).append(str(owner))
         most_cells_winner = min(win_counts, key=lambda k: (-win_counts[k], k)) if win_counts else None
+        # Incomplete / non-comparable representations for this backbone (never a matched winner).
+        incomplete_bb = [e for e in winner_df.attrs.get("baseline_incomplete", ()) if str(e.get("backbone")) == bb]
         rows.append(
             {
                 "backbone": bb,
@@ -55,6 +57,7 @@ def _summary_rows(analysis_df: pd.DataFrame) -> list[dict]:
                 "best_delta": best_delta if best_delta is not None else None,
                 "most_cells_winner": most_cells_winner,
                 "most_cells_won": win_counts.get(most_cells_winner, 0) if most_cells_winner else 0,
+                "incomplete_representations": len(incomplete_bb),
             }
         )
     return rows
@@ -87,8 +90,10 @@ def section_summary(analysis_df: pd.DataFrame) -> dict:
             "and a finite winner (cells without a run-scoped medoid baseline are absent, not zero); "
             "positive_delta_cells counts cells where the winner beats the observed "
             "global-medoid baseline (global_pool:{backbone}:medoid) over the same "
-            "corpus / sim_metric / k / metric.  See the winners section for the full "
-            "per-cell baseline/winner/delta tables."
+            "corpus / sim_metric / k / metric.  incomplete_representations counts the partial / "
+            "non-comparable / unequal representations for the backbone that were excluded from "
+            "matched deltas (surfaced per-cell in the winners section).  See the winners section "
+            "for the full per-cell baseline/winner/delta tables."
         ),
         stats=[{"label": "backbones", "value": len(table_rows)}],
         tables=[

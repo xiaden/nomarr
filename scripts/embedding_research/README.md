@@ -330,10 +330,17 @@ read-only compatibility, only under an explicit label/opt-in, never a primary in
   > `stream_registry` / `head_stream_registry` / `run_provenance` + `catalog_metadata` here are
   > rebuildable registries/provenance only.
 
-**[Archival] — legacy-compatibility rows inside an active table:**
+**[Archival] — legacy-compatibility rows inside an active table: no longer applies.**
 
-- `analyze_metrics` rows with `run_id='legacy'` — read-only, excluded from active
-  coverage, protected from normal reset / view GC.
+- `analyze_metrics` rows with `run_id='legacy'` no longer exist: the analyze hard cut REMOVED the
+  pre-cut backup-first migration (old rows copied as `run_id='legacy'`), the `'legacy'` default, and
+  the run-exclusion predicate. `analyze_metrics` now has ONE current run-scoped schema with a
+  required non-null `run_id` (no default, no legacy partition). A stale pre-cut table that still
+  lacks `run_id`, carries any `run_id='legacy'` row, or exposes a non-None `run_id` column
+  default (a HEAD-era pre-cut shape carrying `DEFAULT 'legacy'` with no rows to trip the
+  row-presence check) is refused by `db/_schema.py`'s `StaleSchemaError` guard and reset via
+  `python run.py reset --scope analysis` — never read or relabeled into current lineage. Every
+  `analyze_metrics` row is a live run-scoped row under a real caller-supplied run id.
 
 **[Historical — Plan E P1-S5.]** The twelve legacy PK/UNIQUE tables previously classed [Dead]
 (`pooled_vecs`, `head_results`, `head_agreement_rows`, `binned_pair_sims`, `patch_features`,

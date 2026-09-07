@@ -25,7 +25,7 @@ subsections  warnings  headline  empty_message
 - `empty_message` is a non-empty string when no data is present; `None` or `""` when data exists.
 - Never return early with a partial dict — callers check all 11 keys.
 - Pass values to `make_table` unformatted; `make_table` calls `fmt()` internally.
-- `disc_score_warning` must return `[]` on exception — never raise from it.
+- `disc_artist_warning` must return `[]` on exception — never raise from it (renamed from `disc_score_warning` in the execution-reporting-repair Plan C hard cut; no `disc_score` surface remains).
 
 ---
 

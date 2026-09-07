@@ -6,7 +6,7 @@
 
 Only `scripts/embedding_research`, its tests/docs, and formal planning artifacts are in scope. No production or frontend changes. A′ uses immutable float32 NumPy `.npy`/`.npz` sidecars plus DuckDB scalar metadata/catalog. Parquet, DuckDB BLOB/tar/Zarr payloads, ANN v1, optimizer prerequisites, DuckDB 2.x migration, and deferred production quantized streams are excluded.
 
-Current invariants (post-Plan E P1-S5 hard cut, plus the Plan B identity/collapse/baseline corrective pass): a single finite direct-L2 threshold contract with `configured == effective` exactly; the compact filesystem catalog whose structural `seg_meta` yields exact searchable `M_g` reconstructed on read (never a per-patch table, never an inclusive range), with absorbed outliers represented exactly and search medoids stored as observed source patch indices; per-config exact/search hash preimages that bind each leaf to its song id and fold the frozen stream + committed-mask digests, mask/scoring semantics and versions, ordered medoid source indices and normalized weights, and (for the exact hash) the full canonical structural rows — structural-only changes alter song/exact identity but never split a search class when the actual ordered scoring inputs stay equal (see the collapse contract below); class-1 `act[1]` canonical head pooling over `boundary_source="catalog"` / `head_pool_variant="shared_catalog_boundary"`; catalog-scoped strategy-key identity decoded from `catalog:{backbone}:{score_variant}:v{version}:{keyset}`; analysis that schedules every distinct current `SearchRepresentationClass` exactly once as its own leave-one-out pass over only that class's canonical rows (per-class retrieval passes, never a merged union); and the observed `global_pool:{backbone}:medoid` searchable-patch medoid RESTORED as an ACTIVE baseline (Plan B P1-S5..S7) against which the report computes per-`(backbone, sim_metric, k, metric)` winner/delta rows. Former invariants that named DELETED surfaces are historical only: the `np.minimum((h_scores * 10).astype(np.int32), 9)` stratification formula (`db/stratify.py` deleted) and the running-spherical-centroid PTC semantics with `OUTLIER_WINDOW=3` (`strategy_ptc` deleted). Still held regardless of surface: no synthetic/coordinate `median`, no `agg_method=medoid`, no `disc_album`, no non-finite output, and no cross-backbone corpus mixing — the observed medoid baseline is an observed source row's unit vector (source index + centrality only), never a synthetic/coordinate-wise vector.
+Current invariants (post-Plan E P1-S5 hard cut, plus the Plan B identity/collapse/baseline corrective pass): a single finite direct-L2 threshold contract with `configured == effective` exactly; the compact filesystem catalog whose structural `seg_meta` yields exact searchable `M_g` reconstructed on read (never a per-patch table, never an inclusive range), with absorbed outliers represented exactly and search medoids stored as observed source patch indices; per-config exact/search hash preimages that bind each leaf to its song id and fold the frozen stream + committed-mask digests, mask/scoring semantics and versions, ordered medoid source indices and normalized weights, and (for the exact hash) the full canonical structural rows — structural-only changes alter song/exact identity but never split a search class when the actual ordered scoring inputs stay equal (see the collapse contract below); class-1 `act[1]` canonical head pooling over `boundary_source="catalog"` / `head_pool_variant="shared_catalog_boundary"`; catalog-scoped strategy-key identity decoded from `catalog:{backbone}:{score_variant}:v{version}:{keyset}`; analysis that schedules every distinct current `SearchRepresentationClass` exactly once as its own leave-one-out pass over only that class's canonical rows (per-class retrieval passes, never a merged union); and the observed `global_pool:{backbone}:medoid` searchable-patch medoid RESTORED as an ACTIVE baseline (Plan B P1-S5..S7) against which the report computes per-`(backbone, sim_metric, k, metric)` winner/delta rows. Former invariants that named DELETED surfaces are historical only: the `np.minimum((h_scores * 10).astype(np.int32), 9)` stratification formula (`db/stratify.py` deleted) and the running-spherical-centroid PTC semantics with `OUTLIER_WINDOW=3` (`strategy_ptc` deleted). Still held regardless of surface: no synthetic/coordinate `median`, no `agg_method=medoid`, no `disc_album`, no non-finite output, and no cross-backbone corpus mixing — the observed medoid baseline is an observed source row's unit vector (source index + centrality only), never a synthetic/coordinate-wise vector. The active discrimination metric vocabulary is `disc_artist`-only: no `disc_score` alias write/read/warning/fixture/report column remains anywhere executable (removed in the execution-reporting-repair Plan C Phase-2 hard cut).
 
 ## Threshold and configuration contracts (current — Plan A corrective pass)
 
@@ -139,9 +139,9 @@ New/maintained active tables use scalar columns and intentionally have no new `P
 - singleton `corpus_state(state_version, registered_song_count, eligible_song_count, complete_flag, latest_catalog_run_id, reconciled_at, reconciliation_status)` (the `latest_search_view_hash` column was REMOVED under **Plan D P1-S2**); zero/one application check.
 - `catalog_metadata(catalog_semantics_version, serialization_version, manifest_version, backbone_set, latest_run/config identifiers)`; metadata only.
 
-No vector BLOBs, `view_manifest`, or artifact-classification table is introduced. Legacy tables are retained only when an explicit archival/golden obligation exists. `analyze_metrics` is migrated backup-first to include `run_id`, with legacy rows copied as `run_id='legacy'`; readers and writes are run-scoped.
+No vector BLOBs, `view_manifest`, or artifact-classification table is introduced. Legacy tables are retained only when an explicit archival/golden obligation exists. `analyze_metrics` has ONE current run-scoped schema (see the schema section): `run_id` is a required non-null `TEXT` column with no default and no `'legacy'` partition — the pre-cut backup-first migration (which copied old rows as `run_id='legacy'`) is REMOVED, so no executable writer or reader touches a `run_id='legacy'` row as current lineage. All readers and writes are run-scoped under a caller-supplied current run id. A stale pre-cut table (missing `run_id`, carrying any `run_id='legacy'` rows, or exposing a non-None `run_id` column default such as the HEAD-era `DEFAULT 'legacy'` shape with no rows to trip the row-presence check) is refused with `StaleSchemaError` and explicitly reset via `python run.py reset --scope analysis` — never relabeled into an executable legacy partition.
 
-**Current 10-table research schema (Plan E P1-S5 hard cut).** The retained DuckDB tables are exactly `songs` (PK `song_id`), `analyze_metrics` (run-scoped, no PK; legacy rows copied as `run_id='legacy'`), `song_retrieval_metrics` (PK `strategy_key,sim_metric,k,song_id`), `head_phase_provenance` (18-column canonical sink, no PK), `phase_timings` (PK `run_ts,phase`; the active efficiency source), and `stream_registry` / `head_stream_registry` / `run_provenance` / `corpus_state` / `catalog_metadata` (registry/provenance/catalog tables, no PK/UNIQUE). The thirteen obsolete copied-vector/threshold/stratification tables — `pooled_vecs`, `head_results`, `head_agreement_rows`, `patch_features`, `binned_pair_sims`, `binned_classify_ctp`, `binned_song_stats`, `truncation_robustness_rows`, `binned_ctp_vecs`, `binned_ptc_ctp_metrics`, `head_sim_corr_rows`, `binned_calibration`, and `stratified_corpus` — were PHYSICALLY REMOVED (DDL dropped, no replacement or compatibility DDL) in Plan E P1-S5 (Wave 2b), together with their dead writer/read paths (`db/binned.py`, `db/truncation.py`, `db/stratify.py`) and the now-empty `db/__init__.py` facade entries.
+**Current 10-table research schema (Plan E P1-S5 hard cut).** The retained DuckDB tables are exactly `songs` (PK `song_id`), `analyze_metrics` (one current run-scoped schema: `run_id TEXT NOT NULL` no default, no `'legacy'` partition, no PK), `song_retrieval_metrics` (PK `strategy_key,sim_metric,k,song_id`), `head_phase_provenance` (18-column canonical sink, no PK), `phase_timings` (PK `run_ts,phase`; the active efficiency source), and `stream_registry` / `head_stream_registry` / `run_provenance` / `corpus_state` / `catalog_metadata` (registry/provenance/catalog tables, no PK/UNIQUE). The thirteen obsolete copied-vector/threshold/stratification tables — `pooled_vecs`, `head_results`, `head_agreement_rows`, `patch_features`, `binned_pair_sims`, `binned_classify_ctp`, `binned_song_stats`, `truncation_robustness_rows`, `binned_ctp_vecs`, `binned_ptc_ctp_metrics`, `head_sim_corr_rows`, `binned_calibration`, and `stratified_corpus` — were PHYSICALLY REMOVED (DDL dropped, no replacement or compatibility DDL) in Plan E P1-S5 (Wave 2b), together with their dead writer/read paths (`db/binned.py`, `db/truncation.py`, `db/stratify.py`) and the now-empty `db/__init__.py` facade entries.
 
 ## Catalog and identity APIs
 
@@ -249,10 +249,103 @@ analysis path share one collapse implementation.  Spec tests: `tests/test_search
 
 ``global_pool:{backbone}:medoid`` (``GLOBAL_MEDOID_STRATEGY_KEY == "global_pool:effnet:medoid"`` via :func:`baseline.medoid_strategy_key_for`) is RESTORED as an ACTIVE *silence-aware observed searchable-patch baseline* — it is NOT a deleted/historical surface and NOT a cache or compatibility path. The per-song medoid is an OBSERVED source row selected by the SAME mean-cosine / smallest-source-index rule as the segment medoid (:func:`helpers.segmentation.observed_global_medoid` → ``ObservedMedoid``), exposing ONLY ``source_index`` + ``centrality`` — never a synthetic/coordinate-wise vector and never ``agg_method=medoid``.
 
-- **Analyze-side producer (P1-S6).** ``run.py::_run_analyze`` emits, per backbone AFTER the per-class loop and gated on the run config ``emit_medoid_baseline`` (DEFAULT OFF — an analyze-phase opt-in so baseline-less analyze runs keep byte-identical class rows), ONE run-scoped observed-medoid baseline metric identity via ``run_and_persist_medoid_baseline`` → ``analyze_medoid_baseline`` (``common/catalog_analysis``). Each cataloged song is represented by its observed whole-song global-medoid UNIT vector from the committed observation (``StreamStore.load_committed_observation`` + ``baseline.observed_global_medoid_unit_vector``, over the committed ``mask == 1`` population); the producer runs ONE leave-one-out cosine pass per song through the SAME bounded scorer + the SAME evaluation lenses as the segmented classes, over the SAME corpus / ``sim_metric == 'cosine'`` / ``k``, so per-cell metric keys align exactly with a segmented class. Zero-searchable songs produce NO vector and are excluded from BOTH the baseline population and candidate search; fewer than two searchable medoid songs yields no row; non-finite values raise ``NonFiniteResultError`` (fail closed). Rows are persisted run-scoped via ``db.write_analyze_metrics`` with ``strategy_key == global_pool:{backbone}:medoid``, ``strategy_type == MEDOID_STRATEGY_TYPE`` (``'global_pool'``, deliberately DISTINCT from ``'catalog'``), and NO ``config_ids`` / no ``analyze_scope`` row / no ``run_provenance`` row — the medoid baseline is NOT a class and is never in winner candidacy.
-- **Report read seam (P1-S7).** ``report._retrieval.query_analyze_metrics`` stays CATALOG-ONLY forever (pinned by ``tests/test_report.py``), so the medoid rows never reach ``section_analysis``. The medoid rows are read by the DISTINCT loader ``report/_retrieval.py::query_medoid_baselines`` (``analyze_metrics WHERE strategy_type = 'global_pool'``), decoded to a ``CATALOG_ANALYSIS_COLUMNS``-shaped frame (``canonical_config_id = None``, ``alias_ids = []``, no score-variant/semantics/provenance), and joined to the catalog-only frame by ``(backbone, sim_metric, k, metric)`` via ``report/_retrieval.py::query_winners_metrics``. ``report.run`` feeds the ENRICHED frame ONLY to the summary/winners sections; ``section_analysis`` keeps the catalog-only df.
-- **Winners/delta (P1-S7).** ``report/_winners.py::build_winner_delta_rows`` delegates per-cell baseline/winner/delta selection to ``baseline.build_baseline_delta_rows``: the baseline is the observed medoid row for that backbone/cell (NEVER a winner candidate, even when its value beats every segmented class ⇒ finite negative delta); the winner is the highest finite segmented catalog class (ties → lowest ``strategy_key``); ``delta = winner − baseline`` per cell; a cell WITHOUT a finite medoid baseline row emits nothing; a present non-finite value raises ``ValueError`` (fail closed). The builder's ``BASELINE_DELTA_COLUMNS`` are remapped to ``CATALOG_WINNER_DELTA_COLUMNS`` (``baseline_canonical_config_id = None``, ``n_classes``); ``build_factor_rows`` skips non-catalog (``global_pool``) rows. The old lowest-active-``(canonical_config_id, strategy_key)``-catalog-class baseline logic is GONE.
-- **Fixture.** ``report.json`` and the report fixture seeds were regenerated to the medoid-baseline contract: ``generate_fixture_report`` seeds ``global_pool:{effnet,musicnn}:medoid`` rows per backbone/k, and ``tests/_report_seed.seed_medoid_baseline`` writes run-scoped ``global_pool`` rows through the SAME ``db.write_analyze_metrics`` writer/schema as the analyze producer. No legacy / alias / dual-write / compatibility surface is introduced.
+- **Analyze-side producer (P1-S6; made MANDATORY by execution-reporting-repair Plan A P2).**
+  ``run.py::_run_analyze`` emits, per backbone AFTER the per-class loop, exactly ONE run-scoped
+  observed-medoid baseline metric identity via ``run_and_persist_medoid_baseline`` →
+  ``analyze_medoid_baseline`` (``common/catalog_analysis``).  There is NO ``emit_medoid_baseline``
+  config key and no argparse flag anywhere executable — unconditional emission is the ONLY behavior,
+  and a requested backbone that cannot yield the observed baseline (a sub-2 ``eligible`` evaluation
+  corpus, or fewer than two searchable medoid songs) FAILS CLOSED with
+  ``common.catalog_analysis.AnalyzeRefusalError`` (the analyze phase is recorded ``failed``, never a
+  successful baseline-less scope, never a fabricated vector).  Each cataloged song is represented by
+  its observed whole-song global-medoid UNIT vector from the committed observation
+  (``StreamStore.load_committed_observation`` + ``baseline.observed_global_medoid_unit_vector``, over
+  the committed ``mask == 1`` population); the producer runs ONE leave-one-out cosine pass per song
+  through the SAME bounded scorer + the SAME evaluation lenses as the segmented classes, over the
+  SAME corpus / ``sim_metric == 'cosine'`` / ``k``, so per-cell metric keys align exactly with a
+  segmented class.  Zero-searchable songs produce NO vector and are excluded from BOTH the baseline
+  population and candidate search; non-finite values raise ``NonFiniteResultError`` (fail closed).
+  Rows are persisted run-scoped via ``db.write_analyze_metrics`` with ``strategy_key ==
+  global_pool:{backbone}:medoid``, ``strategy_type == MEDOID_STRATEGY_TYPE`` (``'global_pool'``,
+  deliberately DISTINCT from ``'catalog'``).  The baseline remains NOT a class (no ``config_ids``, not
+  merged with class candidates, never in winner candidacy), but its scope IS recorded on the run's
+  ``analyze`` provenance — an ``analyze_scope`` line carrying the resolved evaluation-corpus
+identity (Plan A P2-S3) so its rows are tied to one explicit corpus (this supersedes the earlier
+"no scope / no provenance row" contract).  Since the Plan B corrective hard cut ``analyze_scope_v2``
+is the SOLE runtime analyze-scope schema (:func:`db.analyze_scope.encode_analyze_scope_v2`); the v1
+prefix/parser/encoder/decoder and any compatibility/fallback reader are removed.  ``parse_analyze_scope``
+recognizes ONLY ``analyze_scope_v2|`` lines — a historical v1 line parses to ``None`` and is never
+reinterpreted as current data — and no dual-write or fallback reader remains.
+- **Report read seam (P1-S7; baseline provenance enriched Plan B P2).** ``report._retrieval.query_analyze_metrics`` stays CATALOG-ONLY forever (pinned by ``tests/test_report.py``), so the medoid rows never reach ``section_analysis``. The medoid rows are read by the DISTINCT loader ``report/_retrieval.py::query_medoid_baselines`` (``analyze_metrics WHERE strategy_type = 'global_pool'``), decoded to a ``CATALOG_ANALYSIS_COLUMNS``-shaped frame (``canonical_config_id = None``, ``alias_ids = []``, ``representation_hash = None``, no config/member/view identity — a baseline is not a class — but since Plan B P2 it surfaces its OWN scope provenance: the fixture catalog anchor, ``score_variant``/``scoring_semantics_version`` and the resolved evaluation-corpus identity read from its ``analyze_scope_v2`` line), and joined to the catalog-only frame by ``(backbone, sim_metric, k, metric)`` via ``report/_retrieval.py::query_winners_metrics``. ``report.run`` feeds the ENRICHED frame ONLY to the summary/winners sections; ``section_analysis`` keeps the catalog-only df.
+- **Winners/delta (P1-S7; matching-only from execution-reporting-repair Plan A P3).** ``report/_winners.py::build_winner_delta_rows`` (still DataFrame-returning: the report section contract) delegates per-cell baseline/winner/delta selection to ``baseline.build_baseline_delta_rows`` and consumes ONLY the ``BaselineDeltaResult.rows`` of its structured result, remapping to ``CATALOG_WINNER_DELTA_COLUMNS``; a representation that cannot match produces no winner/delta row here and is surfaced as that builder's ``incomplete`` diagnostics (which Plan B P3 renders VISIBLY — see the report render surface below). The baseline is the observed medoid row for that backbone/cell (NEVER a winner candidate, even when its value beats every segmented class ⇒ finite negative delta); the winner is the highest finite matched segmented catalog class (ties → lowest ``strategy_key``); ``delta = winner − baseline`` per cell; a cell WITHOUT a finite medoid baseline row emits nothing; a present non-finite value raises ``ValueError`` (fail closed). ``build_factor_rows`` skips non-catalog (``global_pool``) rows. The old lowest-active-``(canonical_config_id, strategy_key)``-catalog-class baseline logic is GONE.
+- **Fixture.** ``report.json`` and the report fixture seeds were regenerated to the medoid-baseline contract: ``generate_fixture_report`` seeds ``global_pool:{effnet,musicnn}:medoid`` rows per backbone/k, and ``tests/_report_seed.seed_medoid_baseline`` writes run-scoped ``global_pool`` rows through the SAME ``db.write_analyze_metrics`` writer/schema as the analyze producer. Since Plan B P3 the shared seed helpers persist FULL ``analyze_scope_v2`` identities by default (semantic hash, catalog anchor, per-member thresholds/bin/exact, and — for both segmented and baseline rows — an explicit evaluation-corpus identity when supplied); ``tests/_report_seed.py`` is the single seed-migration point consumed by every report test. No legacy / alias / dual-write / compatibility surface is introduced.
+
+### Report render surface (execution-reporting-repair Plan B P3 — current)
+
+The schema-v2 seven-section report RENDERS the separated identity surface directly from the
+durable ``analyze_scope_v2`` scope, never inferring any field from a later catalog:
+
+- **Semantic vs disposable DISTINCTLY.** Every rendered catalog-analysis row and the winners
+  factor roster expose the DURABLE SEMANTIC ``representation_hash``
+  (``catalog_identity.search_representation_hash``) in a column SEPARATE from the DISPOSABLE
+  ``view_keyset_hash`` and ``view_content_hash``.  The read loader never promotes a keyset into
+  the semantic column; a genuinely identity-less structural row (no catalog anchor recorded)
+  renders VISIBLY INCOMPLETE (``representation_hash`` empty/None) with its disposable keyset
+  carried only in ``view_keyset_hash`` (Plan B P3 removed the Plan-B-P2 transitional keyset
+  fallback — no dual path remains for catalog rows).
+- **Catalog / corpus / config / threshold / bin / exact / score evidence.** The analysis
+  section's ``catalog_analysis_{backbone}`` table carries ``catalog_id``/``catalog_fingerprint``,
+  ``canonical_config_id``/``alias_ids``/``config_ids``, the five evaluation-corpus columns
+  (hash/count/comparable/missing_count/missing_digest), ``score_variant`` and
+  ``scoring_semantics_version``.  A per-backbone ``catalog_members_{backbone}`` detail table
+  surfaces each class member's ``threshold_configured``/``threshold_effective`` (configured ==
+  effective), ``bin_mode`` and ``exact_segmentation_hash``.
+- **Incomplete / non-comparable representations are VISIBLE and never render as matched.**
+  ``build_winner_delta_rows`` carries ``BaselineDeltaResult.incomplete`` on
+  ``frame.attrs["baseline_incomplete"]``; the winners section renders them as a per-backbone
+  ``incomplete_representations_{backbone}`` table (strategy_key, baseline_strategy_key, sim/k/
+  metric, per-cell ``reason``, and both sides' corpus hash/count/comparability plus the
+  representation's missing count/digest) and the summary section's ``catalog_result_status`` row
+  carries an ``incomplete_representations`` per-backbone count.  A partial / non-comparable /
+  unequal representation never contributes a matched delta cell.
+- **Exactly seven sections + catalog-only analysis preserved.** ``section_analysis`` still reads
+  only the catalog-only df; the observed-medoid baseline enters summary/winners inputs only (key
+  ``global_pool:{backbone}:medoid``), is never a factor row and never an ``analysis`` row, and no
+  inferred historical identity is introduced.
+
+- **``scope_kind`` discriminator (``analyze_scope_v2`` current contract).** Every ``analyze_scope_v2``
+  line carries a ``scope_kind`` tag (one of ``db.analyze_scope.SCOPE_KIND_*``) of exactly one of
+  ``catalog_class`` (an anchored catalog class), ``observed_baseline`` (the non-class
+  ``global_pool:{backbone}:medoid`` baseline), or ``structural_fixture`` (a deliberately catalog-less /
+  unanchored row — represented explicitly BY THE TAG, never as an identity-less catalog class).
+  Non-applicable fields are empty BY THE TAG (``observed_baseline`` keeps ``config_ids``/``members``/
+  ``search_representation_hash`` empty; ``structural_fixture`` keeps ``catalog_id`` and
+  ``search_representation_hash`` empty while its structural ``config_ids`` membership is required);
+  there is no identity-less / empty-field exemption.  ``infer_scope_kind`` tags an unanchored analyze
+  result as ``structural_fixture``, and a structural fixture is readable but renders VISIBLY
+  INCOMPLETE — never complete, never matched.
+
+### BaselineDeltaResult and the matching-only delta gate (execution-reporting-repair Plan A P3 — current)
+
+``baseline.py`` delegates the delta decision to a pure builder that returns a STRUCTURED result — it never returns a raw DataFrame of delta rows and never compares populations implicitly:
+
+```python
+@dataclass(frozen=True)
+class BaselineDeltaResult:
+    rows: tuple[Mapping[str, object], ...]       # matched per-cell delta records (BASELINE_DELTA_COLUMNS each)
+    incomplete: tuple[Mapping[str, object], ...] # surfaced diagnostics for representations that could not be compared
+
+build_baseline_delta_rows(analysis_df, *, evaluation_corpus: EvaluationCorpusIdentity | None = None) -> BaselineDeltaResult
+```
+
+``analysis_df`` is the decoded long-form winners frame (the shape from ``report._retrieval.query_winners_metrics``) whose rows carry at least ``backbone``/``sim_metric``/``k``/``metric``/``strategy_key``/``value`` and, for corpus-bearing rows, the five persisted evaluation-corpus columns (:data:`baseline.CORPUS_IDENTITY_COLUMNS`, each decoded from the row's single ``analyze_scope_v2`` provenance line via ``parse_analyze_scope`` — a historical ``v1`` line parses to None and is never reinterpreted). ``build_winner_delta_rows`` remaps only the MATCHED ``rows`` to ``CATALOG_WINNER_DELTA_COLUMNS``; ``build_factor_rows`` skips non-catalog rows.
+
+- **Matching gate (equal-identity / comparable / finite).** A segmented class wins a ``(backbone, sim_metric, k, metric)`` cell ONLY when it shares the observed-medoid baseline's evaluation corpus (``corpus_hash`` equal) AND is comparable AND finite. Equal ``{A,B,C,D}`` baseline vs segmented ``{A,B,C,D}`` matches and emits a delta; a segmented ``{A,B,C}`` NEVER matches a ``{A,B,C,D}`` baseline and never partially matches on the shared subset (no silent intersection). The winner is the highest finite MATCHED segmented class (ties → lowest ``strategy_key``); ``delta = winner − baseline``.
+- **Surfaced ``incomplete``.** A segmented class that does NOT match (unequal population, non-comparable, or a corpus identity present on only ONE side of the comparison) is excluded from winner candidacy and surfaced as an ``incomplete`` diagnostic retaining its ``strategy_key``, per-cell provenance, and its corpus hash/count/comparability plus excluded-song missing count/digest (individual missing song ids are not persisted on scope lines). The observed-medoid baseline is never a winner candidate and never yields an ``incomplete`` row against itself.
+- **No-cross-backbone.** Cells are keyed per ``(backbone, sim_metric, k, metric)`` and the medoid key is ``medoid_strategy_key_for(backbone)``; a backbone's medoid is never the baseline for another backbone's cell.
+- **No non-finite.** A present non-finite value (the medoid's or a segmented class's) raises ``ValueError`` (fail closed) — no NaN/Inf delta is ever emitted.
+- **Optional ``evaluation_corpus`` kwarg.** Supplies the baseline's authoritative identity only when the medoid row itself carries none (row identity, when present, wins); it never widens the gate into a structural match. A frame with NO corpus identity columns on either side is never a structural candidate — every such cell is surfaced as an ``incomplete`` diagnostic (``evaluation-corpus identity absent on both sides``), because the single analyze-scope contract (Plan B hard cut) admits no identity-less match.
+- **Calls that supersede the old contract.** A cell WITHOUT a finite medoid baseline row emits no delta and nothing to compare; ``build_baseline_delta_rows`` never fabricates a row and never falls back to a lowest-active-catalog-class baseline. Spec pin: ``tests/test_baseline_delta_matching.py`` (adversarial ``{A,B,C,D}``/``X``/``Y`` fixture).
 
 ## Shared heads, CTP, cleanup, and CLI
 
@@ -367,6 +460,66 @@ renderer/loader (or uses the active completed scope when none is supplied) and w
 `report.json`/`report.html` without inference. The fixture/validator contract is an input to Plan F's
 final evidence report — it is not that separate report.
 
+## Evaluation-corpus identity (execution-reporting-repair Plan A P1 — current)
+
+There is ONE explicit evaluation-corpus identity per backbone, resolved once at the analyze boundary
+and threaded unchanged into every segmented-class pass and the whole-song medoid baseline.  Its home
+is the top-level ``catalog_identity`` module (already an allowed derived-import root):
+
+```python
+@dataclass(frozen=True)
+class EvaluationCorpusIdentity:
+    backbone: str
+    song_ids: tuple[str, ...]    # canonical sorted catalog-requested songs (the eligible population)
+    corpus_hash: str             # explicit deterministic identity (tagged serialization pre-image)
+    count: int
+    eligible: bool               # True iff count >= 2 (leave-one-out is undefined below 2)
+    comparable: bool             # resolved == eligible; a representation can degrade it to False
+    missing_song_ids: tuple[str, ...]  # requested songs excluded/missing (uncommitted / silent / lost)
+    missing_count: int
+    missing_digest: str | None
+    semantics_version: int       # EVALUATION_CORPUS_SEMANTICS_VERSION == 1
+
+resolve_evaluation_corpus(catalog, stream_store, requested_song_ids, *, backbone) -> EvaluationCorpusIdentity
+```
+
+* **Eligibility is exactly** ``valid committed stream+mask (load_committed_observation succeeds) AND
+  at least one non-silent whole-song patch`` (patches at/beyond a shorter mask's length are
+  searchable).  A requested song with no committed observation group, or a fully-silent committed
+  song, is EXCLUDED into ``missing_song_ids`` with a deterministic ``missing_digest`` — never
+  silently pooled searchable.
+* **Determinism.** ``song_ids`` is the canonical sorted eligible population and ``corpus_hash`` a
+  SHA-256 over a deterministic tagged pre-image (``evaluation_corpus`` / ``semantics_version`` /
+  ``backbone`` / ``song_count`` / ``song_ids`` lines) — re-resolving the same population in any
+  request ORDER yields an identical frozen identity.  The identity is built once from the catalog
+  boundary and is never re-derived from a later current catalog or a disposable view keyset/content
+  hash.
+* **Sub-2 eligible** → ``eligible == comparable == False`` (leave-one-out undefined).  Because the
+observed baseline is MANDATORY, ``run.py::_run_analyze`` REFUSES (raises ``AnalyzeRefusalError``,
+phase recorded ``failed``) a requested backbone whose resolved evaluation corpus is sub-2 rather than
+silently skipping it — no fabricated/partial baseline-less success (execution-reporting Plan A P2).
+* **Missing-medoid invalidation (P1-S3).**  ``CatalogAnalysisConfig.evaluation_corpus`` (and
+``CatalogAnalysisResult.evaluation_corpus``) pin the resolved identity on each class pass.  When an
+ELIGIBLE corpus song carries no canonical searchable medoid row in that representation (PTC
+absorption emptied it), the result is ``comparable == False`` with ``missing_song_ids`` /
+``missing_count`` / ``missing_digest`` set and NO matched retrieval metric/delta emitted
+(``metrics``/``per_song``/``per_query`` empty, ``n_queries == 0``); structural catalog evidence is
+retained.  ``db/analyze_scope.write_catalog_analyze_rows`` constructs the complete scope and
+encode/decode-validates it (:func:`db.analyze_scope.encode_analyze_scope_v2` refuses an incomplete
+scope via ``_raise_if_incomplete``) BEFORE any aggregate or per-song metric row is written — an
+incomplete scope fails closed and leaves ZERO metric rows behind (no orphans, no partial writes).  It
+also REFUSES (``ValueError``) to persist a non-comparable (partial) result as complete, and
+``run.py::_run_analyze`` skips writing an
+incomparable class.  ``run.py`` resolves the identity once per backbone and threads ``song_ids`` /
+``evaluation_corpus`` into every class config and into ``analyze_medoid_baseline`` /
+``run_and_persist_medoid_baseline`` (which use ``identity.song_ids`` as the population when an
+identity is supplied).  Every segmented class scope and the recorded baseline scope carry the
+evaluation-corpus hash/count/comparability + excluded-song missing evidence on their
+``analyze_scope_v2`` provenance line (execution-reporting Plan A P2-S3).  ~~``emit_medoid_baseline``
+remains an analyze opt-in (DEFAULT OFF) — its removal is a later plan's scope.~~ SUPERSEDED by Plan A
+P2: the baseline is MANDATORY and unconditional (no ``emit_medoid_baseline`` key/flag anywhere
+executable).
+
 ## Verification
 
 Required tests cover direct/legacy threshold tracks, exact membership/medoids, one-pass loads, hashes/aliases, bounded oracle equivalence, lifecycle/fault/corruption, negative boundaries, root relocation/export-import, stale invalidation, scale/memory, run-scoped migration/resets/schema, CTP zero rows, fixture/report validation, full research pytest, compileall, ruff format/check, and an explicit diff audit excluding `nomarr/` and `frontend/`.
@@ -375,8 +528,8 @@ Required tests cover direct/legacy threshold tracks, exact membership/medoids, o
 
 This corrective pass (Plan B) strengthened identity, made collapse scheduling per-class, and restored the active observed `global_pool:{backbone}:medoid` baseline described above. Plan C consumers must NOT reintroduce the superseded surfaces and MUST respect:
 
-- **(a) `emit_medoid_baseline` is an analyze-phase opt-in (DEFAULT OFF).** A real baseline-bearing analyze run must set the run config ``emit_medoid_baseline = True``; the report CLI durable-input path Plan C owns must enable the flag wherever a winner/delta baseline is required. Flag-less analyze runs persist class rows only, and their winner tables render with medoid-baseline cells absent (documented cell absence — no phantom delta).
-- **(b) Row layout under the flag.** Analyze persists ONE ``analyze_scope`` strategy row PER CLASS (``config_ids`` = that class's members canonical-first) PLUS ONE ``strategy_type == 'global_pool'`` ``analyze_metrics`` row per backbone (``strategy_key == global_pool:{backbone}:medoid``, no config/alias/scope/provenance row). Do not add a second row per class or a per-config baseline.
+- **(a) The observed `global_pool:{backbone}:medoid` baseline is MANDATORY and unconditional (Plan A P2).** There is no `emit_medoid_baseline` analyze-phase opt-in and no hidden config/fixture switch. `python run.py analyze` emits exactly one observed baseline row per successfully analyzed backbone; a backbone that cannot yield it fails/incompletes the analyze scope (`AnalyzeRefusalError`), never a successful baseline-less result.
+- **(b) Row layout.** Analyze persists ONE ``analyze_scope`` strategy row PER CLASS (``config_ids`` = that class's members canonical-first) PLUS ONE ``strategy_type == 'global_pool'`` ``analyze_metrics`` row per backbone (``strategy_key == global_pool:{backbone}:medoid``). The baseline has no ``config_ids`` / is never a class, never merged with class candidates, never a winner candidate; its analyze_scope_v2 provenance line (with the resolved evaluation-corpus identity) is recorded like any other row scope. Do not add a second row per class or a per-config baseline.
 - **(c) Winners/delta read path.** Read the medoid baseline rows with ``report._retrieval.query_medoid_baselines`` and concat them with the catalog-only frame through ``report._retrieval.query_winners_metrics``; feed the enriched frame only to summary/winners. Per-cell baseline/winner/delta selection delegates to ``baseline.build_baseline_delta_rows`` (``report/_winners.build_winner_delta_rows`` remaps to ``CATALOG_WINNER_DELTA_COLUMNS``; ``build_factor_rows`` skips non-catalog rows). Do not reimplement a lowest-active-catalog-class baseline.
 - **(d) `query_analyze_metrics` stays catalog-only forever.** The medoid rows must never flow through it into ``section_analysis`` (pinned by ``tests/test_report.py``).
 - **(e) Fixture regeneration.** Any seed change must regenerate ``report.json`` via ``generate_fixture_report`` and keep ``validate_fixture_report`` + the audit gate green; seeds write run-scoped ``global_pool`` rows through ``db.write_analyze_metrics`` (``tests/_report_seed.seed_medoid_baseline``).
@@ -456,12 +609,17 @@ dual-write / archival-callable / old-parser surface remains executable anywhere 
 tree. The HEAD surface carries no ``run_id='legacy'`` concept (removed in the P1-S2
 head-identity corrective pass).
 
-``analyze_metrics`` rows with ``run_id='legacy'`` are RETAINED CURRENT baseline lineage — not
-an obsolete concept removed by this hard cut: pre-migration Tier1/2 rows were copied read-only
-by the backup-first migration (``LEGACY_RUN_ID`` in ``db/_schema.py``), are excluded from
-active/run scope, and are never modified by the protected-scope writers
-(``db/flat.py``/``db/analyze_scope.py``; ``run.py`` run-scoped count guard) — see the schema
-section above. Removing that lineage is out of scope of this pass.
+``analyze_metrics`` no longer carries any ``run_id='legacy'`` RETAINED-CURRENT lineage. The
+pre-cut backup-first migration that copied Tier1/2 rows read-only as ``run_id='legacy'``
+(``LEGACY_RUN_ID`` in ``db/_schema.py``) was REMOVED in the analyze hard cut, together with its
+``'legacy'`` default and run-exclusion predicate. ``db/_schema.py``'s only remaining reference to
+the literal is its ``StaleSchemaError`` REFUSAL guard: an existing table that still lacks
+``run_id``, carries any ``run_id='legacy'`` row, or exposes a non-None ``run_id`` column default
+(a HEAD-era pre-cut shape carrying ``DEFAULT 'legacy'`` with no rows to trip the row-presence
+check) is refused rather than relabeled, and reset with ``python run.py reset --scope analysis``.
+Every active ``analyze_metrics``
+row therefore carries a real caller-supplied run id; there is no runtime live-vs-archived legacy
+partition because none exists.
 
 ## repair-plan Plan A baseline — implemented outcomes (Phases 1–2, 2026-09-02) — HISTORICAL
 

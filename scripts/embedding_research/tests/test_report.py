@@ -11,7 +11,11 @@ import json
 
 import pytest
 
-from scripts.embedding_research.db.analyze_scope import record_analyze_run_scope
+from scripts.embedding_research.db.analyze_scope import (
+    AnalyzeScopeIdentity,
+    ScopeMemberIdentity,
+    record_analyze_run_scope,
+)
 from scripts.embedding_research.db.flat import write_analyze_metrics
 from scripts.embedding_research.report import run as report_run
 from scripts.embedding_research.report._base import decode_catalog_strategy_key
@@ -158,7 +162,7 @@ def test_query_analyze_metrics_catalog_only_never_legacy_allowlist(con):
         "cosine",
         5,
         {"map_k": 0.8},
-        run_id="legacy",
+        run_id="run-other",
     )
     seed_catalog(
         con,
@@ -184,19 +188,39 @@ def test_query_analyze_metrics_empty_when_table_absent(con):
 
 
 def test_scope_recorded_alias_ids_and_canonical(con):
-    # Record the analyze scope (config_ids=(4, 9)) for a class.
+    # Record the analyze scope for a REAL catalog class (config_ids=(4, 9)) with a COMPLETE
+    # v2 catalog_class identity (catalog anchor + semantic hash + ordered per-member evidence) —
+    # the corrective gate refuses an incomplete class scope, so the migration must supply the full
+    # durable identity to exercise canonical/alias ordering on the read surface.
     sk = catalog_key("musicnn", "ee")
+    members = tuple(
+        ScopeMemberIdentity(
+            config_id=cid,
+            threshold_configured=0.5,
+            threshold_effective=0.5,
+            bin_mode="temporal_global",
+            exact_segmentation_hash=f"m{cid}" + "e" * 30,
+        )
+        for cid in (4, 9)
+    )
     record_analyze_run_scope(
         con,
         run_id="run-1",
-        strategy_key=sk,
-        sim_metric="cosine",
-        k=10,
-        backbone="musicnn",
-        config_ids=(4, 9),
-        view_content_hash="vh1",
-        score_variant="max_per_candidate_segment",
-        scoring_semantics_version=1,
+        identity=AnalyzeScopeIdentity(
+            strategy_key=sk,
+            sim_metric="cosine",
+            k=10,
+            backbone="musicnn",
+            catalog_id="catalog-9",
+            catalog_fingerprint="cf" * 32,
+            search_representation_hash="a" * 64,
+            config_ids=(4, 9),
+            members=members,
+            view_keyset_hash="ee",
+            view_content_hash="vh1",
+            score_variant="max_per_candidate_segment",
+            scoring_semantics_version=1,
+        ),
     )
     write_analyze_metrics(
         con,

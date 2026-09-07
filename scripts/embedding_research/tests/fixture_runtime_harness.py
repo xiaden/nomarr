@@ -383,7 +383,6 @@ class FixtureCliRunner:
         thresholds: tuple[float, ...] = (0.9, 1.0, 0.2),
         heads: tuple[str, ...] = ("timbre",),
         k: int = 10,
-        emit_medoid_baseline: bool = True,
     ) -> None:
         from pathlib import Path
 
@@ -396,7 +395,6 @@ class FixtureCliRunner:
         self.heads = list(heads)
         self.thresholds = [float(t) for t in thresholds]
         self.k = int(k)
-        self.emit_medoid_baseline = bool(emit_medoid_baseline)
         self._song_ids: tuple[str, ...] = self._load_song_ids()
         _install_nomarr_leaf_modules()
         self.evidence = FixtureRunEvidence(output_root=self.output_root)
@@ -415,32 +413,60 @@ class FixtureCliRunner:
         return [Path(f"/fixture/audio/{song}.mp3") for song in self._song_ids]
 
     # -- per-phase config --------------------------------------------------- #
-    def _cfg(self, phase: str, run_id: str, *, verify: bool = False, strict: bool = False) -> dict[str, Any]:
-        cfg: dict[str, Any] = {
-            "limit": None,
-            "force": False,
-            "regenerate_masks": False,
-            "device": "cpu",
-            "backbones": list(self.backbones),
-            "heads": list(self.heads),
-            "k": self.k,
-            "workers": 1,
-            "blas_threads": None,
-            "catalog_bin_modes": ["temporal_global"],
-            "catalog_thresholds": list(self.thresholds),
-            "output_root": self.output_root,
-            "report_dir": self.output_root / "report",
-            "retained": False,
-            "verify": bool(verify),
-            "strict": bool(strict),
-            "run_id": run_id,
-            "config_hash": "",
-        }
-        if phase == "analyze":
-            # P1-S6: emit ONE observed global-medoid baseline metric identity per backbone
-            # after the per-class loop, so P1-S3 can prove baseline + winner deltas.  The
-            # flag gates an ADDITIONAL scored pass; it never adds a search class.
-            cfg["emit_medoid_baseline"] = self.emit_medoid_baseline
+    def _cfg(self, _phase: str, run_id: str, *, verify: bool = False, strict: bool = False) -> dict[str, Any]:
+        """Build the per-phase config through the REAL CLI/config seam.
+
+        Phase config is produced by :func:`run._build_run_config` over an argparse
+        ``Namespace`` mirroring the exact defaults ``run.main`` registers (device/force/
+        regenerate_masks/retained/verify/strict); that is the SAME seam ``run.main`` drives
+        after ``argparse`` for a real ``python run.py <phase>`` invocation, so every
+        seam-derived field (backbones/device/limit/k/workers/blas_threads/retained/
+        ``config_hash`` from the strict ``research_config.toml`` loader, the frozen
+        ``helpers.binning`` sweep defaults) genuinely comes from the real config/CLI seam —
+        never a hand-built dict that could silently diverge from what a production run reads.
+
+        Only the deterministic fixture's *controlled input surface* is overlaid afterward, and
+        each override is seam-honest:
+
+        * ``output_root`` / ``report_dir`` — output isolation so fixture artifacts land under a
+          caller-supplied tmp root instead of the repository-external ``OUTPUT_ROOT`` (unit tests
+          must never leak into ``/workspace/scripts/outputs/embedding_research``).  This is the
+          same isolation ``run.main``'s ``_RunLock``/DB resolution applies via ``RESEARCH_DB_PATH``.
+        * ``run_id`` — the deterministic per-phase run id recorded by the harness.
+        * ``backbones`` / ``heads`` — the runner's constructed corpus/head surface (the synthetic
+          audio/model seams replay exactly these; ``infer-heads`` uses ``self.heads`` to build the
+          injected ``_HEADS`` registry).
+        * ``catalog_bin_modes`` / ``catalog_thresholds`` — the fixture's COMPACT catalog sweep
+          (single ``temporal_global`` mode over ``{0.9, 1.0, 0.2}``).  This is the documented
+          test-only override seam on ``_catalog_seg_configs`` (the catalog input sweep the real
+          seam seeds from the frozen ``helpers.binning`` literals); it keeps the deterministic
+          corpus's alias/distinct search-class structure intact.
+
+        The analyze phase has NO baseline option anywhere — the mandatory observed
+        ``global_pool:{backbone}:medoid`` baseline is unconditional in ``run.py::_run_analyze``
+        (execution-reporting Plan A P2), so routing config through the real seam can never hide or
+        re-add an ``emit_medoid_baseline`` key/flag.
+        """
+        import argparse
+
+        import scripts.embedding_research.run as _run
+
+        args = argparse.Namespace(
+            device=None,
+            force=False,
+            regenerate_masks=False,
+            retained=False,
+            verify=bool(verify),
+            strict=bool(strict),
+        )
+        cfg: dict[str, Any] = _run._build_run_config(args)
+        cfg["output_root"] = self.output_root
+        cfg["report_dir"] = self.output_root / "report"
+        cfg["run_id"] = run_id
+        cfg["backbones"] = list(self.backbones)
+        cfg["heads"] = list(self.heads)
+        cfg["catalog_bin_modes"] = ["temporal_global"]
+        cfg["catalog_thresholds"] = list(self.thresholds)
         return cfg
 
     # -- audio-phase injection --------------------------------------------- #

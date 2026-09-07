@@ -30,6 +30,7 @@ It never inserts any removed table and never emits forbidden legacy vocabulary.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -45,10 +46,20 @@ for _p in (_ROOT, _PKG_DIR):
 import duckdb
 
 from scripts.embedding_research.baseline import MEDOID_STRATEGY_TYPE, medoid_strategy_key_for
+from scripts.embedding_research.catalog_identity import (
+    EVALUATION_CORPUS_SEMANTICS_VERSION,
+    EvaluationCorpusIdentity,
+)
 from scripts.embedding_research.config import REPORT_DIR
 from scripts.embedding_research.db import write_analyze_metrics
 from scripts.embedding_research.db._schema import ensure_schema, upsert_phase_timing
-from scripts.embedding_research.db.analyze_scope import write_catalog_analyze_rows
+from scripts.embedding_research.db.analyze_scope import (
+    SCOPE_KIND_OBSERVED_BASELINE,
+    AnalyzeScopeIdentity,
+    ScopeMemberIdentity,
+    record_analyze_run_scope,
+    write_catalog_analyze_rows,
+)
 from scripts.embedding_research.db.head_phase import HeadPhaseProvenanceRow, write_head_phase_provenance
 from scripts.embedding_research.db.provenance import write_run_provenance
 from scripts.embedding_research.db.songs import upsert_song
@@ -90,6 +101,58 @@ def _catalog_key(backbone: str, keyset: str) -> str:
     return f"catalog:{backbone}:{_SCORE_VARIANT}:v{_SEMANTICS_VERSION}:{keyset}"
 
 
+# Deterministic fixture identities (analyze_scope_v2).  Every seeded class and its backbone's
+# observed-medoid baseline are REAL catalog_class / observed_baseline scopes sharing the same
+# per-backbone catalog anchor AND the same comparable evaluation-corpus identity, so the winners
+# delta gate (which has NO identity-less structural fallback) forms matched per-cell deltas.
+_FIXTURE_SONGS = ("s1", "s2", "s3", "s4", "s5")
+_FIXTURE_BIN_MODE = "temporal_global"
+_FIXTURE_THRESHOLD = 0.5
+
+
+def _fixture_catalog(backbone: str) -> tuple[str, str]:
+    """(catalog_id, catalog_fingerprint) deterministic per backbone."""
+    catalog_id = f"catalog-{backbone}-fixture-0000"
+    fingerprint = hashlib.sha256(f"fixture-catalog:{backbone}".encode()).hexdigest()
+    return catalog_id, fingerprint
+
+
+def _fixture_corpus(backbone: str) -> EvaluationCorpusIdentity:
+    """The comparable evaluation-corpus identity shared by every seeded {backbone} scope."""
+    return EvaluationCorpusIdentity(
+        backbone=backbone,
+        song_ids=_FIXTURE_SONGS,
+        corpus_hash=hashlib.sha256(f"fixture-eval-corpus:{backbone}".encode()).hexdigest()[:16],
+        count=len(_FIXTURE_SONGS),
+        eligible=True,
+        comparable=True,
+        missing_song_ids=(),
+        missing_count=0,
+        missing_digest=None,
+        semantics_version=EVALUATION_CORPUS_SEMANTICS_VERSION,
+    )
+
+
+def _fixture_rep_hash(backbone: str, config_ids: tuple[int, ...]) -> str:
+    """Deterministic durable semantic representation hash for a class (stable across K/metric)."""
+    payload = f"fixture-rep:{backbone}:" + ",".join(str(c) for c in sorted(config_ids))
+    return hashlib.sha256(payload.encode()).hexdigest()
+
+
+def _fixture_members(config_ids: tuple[int, ...]) -> tuple[ScopeMemberIdentity, ...]:
+    """Ordered per-config member evidence (configured/effective threshold, bin, exact segmentation)."""
+    return tuple(
+        ScopeMemberIdentity(
+            config_id=c,
+            threshold_configured=_FIXTURE_THRESHOLD,
+            threshold_effective=_FIXTURE_THRESHOLD,
+            bin_mode=_FIXTURE_BIN_MODE,
+            exact_segmentation_hash=hashlib.sha256(f"fixture-member:{c}".encode()).hexdigest(),
+        )
+        for c in config_ids
+    )
+
+
 # ---------------------------------------------------------------------------
 # Seeding
 # ---------------------------------------------------------------------------
@@ -111,7 +174,7 @@ def _seed_run_provenance(con, run_id: str) -> None:
     """Seed one active run's provenance history across all eight CLI phases.
 
     The ``analyze`` row is seeded with empty ``output_artifact_hashes`` so the catalog
-    writer's run-scope bookkeeping appends its ``analyze_scope_v1`` lines to that single
+    writer's run-scope bookkeeping appends its ``analyze_scope_v2`` lines to that single
     row (the real persistence path the report provenance scope-mapping consumes).
     """
     base = 1_700_000_000_000  # stable integer-ms anchor (deterministic)
@@ -210,6 +273,12 @@ def _persist_catalog_class(
     from scripts.embedding_research.common.catalog_analysis import CatalogAnalysisResult
 
     strategy_key = _catalog_key(backbone, keyset)
+    # A REAL catalog_class scope: durable catalog anchor + semantic representation hash (stable
+    # across K/metric) + ordered per-config member evidence + the shared comparable evaluation
+    # corpus.  The corrective hard cut removed the identity-less structural fixture path, so a
+    # class row must carry a complete v2 identity to persist and to match its backbone baseline.
+    catalog_id, catalog_fingerprint = _fixture_catalog(backbone)
+    corpus = _fixture_corpus(backbone)
     result = CatalogAnalysisResult(
         run_id=run_id,
         backbone=backbone,
@@ -226,6 +295,16 @@ def _persist_catalog_class(
         per_query=(),
         n_queries=0,
         n_candidate_rows=0,
+        evaluation_corpus=corpus,
+        comparable=True,
+        missing_song_ids=(),
+        missing_count=0,
+        missing_digest=None,
+        catalog_id=catalog_id,
+        catalog_fingerprint=catalog_fingerprint,
+        search_representation_hash=_fixture_rep_hash(backbone, config_ids),
+        view_keyset_hash=keyset[:16],
+        members=_fixture_members(config_ids),
     )
     write_catalog_analyze_rows(con, run_id=run_id, result=result)
 
@@ -237,14 +316,20 @@ def _seed_medoid_baselines(con, run_id: str) -> None:
     (backbone, k, metric) cell ONLY when a medoid baseline row shares that exact scope.  Each
     backbone gets a deterministic ``global_pool:{backbone}:medoid`` row (map_k/mrr, cosine) for
     every k that has segmented classes, persisted run-scoped under ``MEDOID_STRATEGY_TYPE`` —
-    the same writer/schema the analyze producer (run.py with ``emit_medoid_baseline``) uses, but
-    with NO analyze-scope/provenance row and NO config identity (a baseline, never a class).
+    the same writer/schema the MANDATORY analyze producer (run.py, Plan A P2) uses, with no
+    config identity (a baseline, never a class).  Each baseline row also records its
+    ``analyze_scope_v2`` provenance line TAGGED ``observed_baseline`` (scope_kind) carrying the
+    backbone's catalog anchor and the shared comparable evaluation-corpus identity — mirroring
+    ``run_and_persist_medoid_baseline`` — so the report delta gate matches it against the
+    backbone's classes under the matching-only (no structural fallback) contract.
     """
     medoid_metrics = {
         "effnet": {"map_k": 0.5, "mrr": 0.4},
         "musicnn": {"map_k": 0.5, "mrr": 0.4},
     }
     for backbone, metrics in medoid_metrics.items():
+        catalog_id, catalog_fingerprint = _fixture_catalog(backbone)
+        corpus = _fixture_corpus(backbone)
         for k in (5, 10):
             write_analyze_metrics(
                 con,
@@ -254,6 +339,26 @@ def _seed_medoid_baselines(con, run_id: str) -> None:
                 k,
                 dict(metrics),
                 run_id=run_id,
+            )
+            record_analyze_run_scope(
+                con,
+                run_id=run_id,
+                identity=AnalyzeScopeIdentity(
+                    strategy_key=medoid_strategy_key_for(backbone),
+                    sim_metric="cosine",
+                    k=k,
+                    backbone=backbone,
+                    scope_kind=SCOPE_KIND_OBSERVED_BASELINE,
+                    catalog_id=catalog_id,
+                    catalog_fingerprint=catalog_fingerprint,
+                    score_variant=_SCORE_VARIANT,
+                    scoring_semantics_version=_SEMANTICS_VERSION,
+                    evaluation_corpus_hash=corpus.corpus_hash,
+                    evaluation_corpus_count=int(corpus.count),
+                    evaluation_corpus_comparable=bool(corpus.comparable),
+                    evaluation_corpus_missing_count=int(corpus.missing_count),
+                    evaluation_corpus_missing_digest=corpus.missing_digest or "",
+                ),
             )
 
 

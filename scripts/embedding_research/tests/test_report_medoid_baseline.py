@@ -17,6 +17,7 @@ import pytest
 
 from scripts.embedding_research.baseline import (
     BASELINE_DELTA_COLUMNS,
+    BaselineDeltaResult,
     build_baseline_delta_rows,
     medoid_strategy_key_for,
 )
@@ -35,6 +36,17 @@ from scripts.embedding_research.tests._report_seed import (
 _EB = "effnet"
 _ES = medoid_strategy_key_for(_EB)
 
+#: Shared equal comparable evaluation-corpus identity every synthetic frame row carries, so a
+#: segmented class and its medoid baseline MATCH under the matching-only delta gate (the legacy
+#: identity-less structural match is gone under the corrective hard cut).
+_FIXTURE_CORPUS = {
+    "evaluation_corpus_hash": "fixture-corpus-effnet",
+    "evaluation_corpus_count": 4,
+    "evaluation_corpus_comparable": True,
+    "evaluation_corpus_missing_count": 0,
+    "evaluation_corpus_missing_digest": None,
+}
+
 
 def _frame(rows: list[dict]) -> pd.DataFrame:
     """A decoded long frame (analysis_df shape) carrying segmented classes + medoid rows."""
@@ -47,6 +59,7 @@ def _frame(rows: list[dict]) -> pd.DataFrame:
                 "metric": "map_k",
                 "canonical_config_id": None,
                 "alias_ids": [],
+                **_FIXTURE_CORPUS,
                 **r,
             }
             for r in rows
@@ -65,10 +78,6 @@ def _seg(key: str, value: float, ccid: int) -> dict:
 
 def _medoid(value: float) -> dict:
     return {"strategy_key": _ES, "value": value}
-
-
-def _baseline_rows(df: pd.DataFrame) -> pd.DataFrame:
-    return build_baseline_delta_rows(df)
 
 
 def _winner_rows(con, backbone: str | None = None):
@@ -117,7 +126,7 @@ def test_baseline_is_observed_medoid_not_lowest_config_through_loader(con):
 
 def test_flat_medoid_row_is_baseline_when_run_scoped(con):
     # The observed global_pool medoid row is now the baseline when it is in the run's scope.
-    # A DIFFERENT run's ("legacy") medoid row must stay out of the run-scoped winners loader,
+    # A DIFFERENT run's ("run-other") medoid row must stay out of the run-scoped winners loader,
     # and the catalog-only query_analyze_metrics loader must never return the medoid row.
     write_analyze_metrics(
         con,
@@ -126,7 +135,7 @@ def test_flat_medoid_row_is_baseline_when_run_scoped(con):
         "cosine",
         5,
         {"map_k": 0.99},
-        run_id="legacy",
+        run_id="run-other",
     )
     seed_catalog(
         con,
@@ -240,14 +249,23 @@ def test_empty_analysis_yields_empty_winner_rows(con):
 # --------------------------------------------------------------------------- #
 # Observed global-medoid baseline (P1-S5/S6; consumed by the report in P1-S7)  #
 # --------------------------------------------------------------------------- #
+def _matched_rows(df: pd.DataFrame) -> tuple:
+    """The MATCHED delta records of the structured result (equal-corpus frames match)."""
+    return build_baseline_delta_rows(df).rows
+
+
+def _baseline_result(df: pd.DataFrame) -> BaselineDeltaResult:
+    return build_baseline_delta_rows(df)
+
+
 def test_baseline_is_observed_global_medoid_not_lowest_class():
     # Class A (config 2) is LOW value; class B (config 10) is HIGH.  Under the restored
     # observed-baseline contract the baseline is the global_pool:effnet:medoid row (value 0.5),
     # NOT the lowest-canonical-config class.
     df = _frame([_seg("lowval", 0.3, 2), _seg("highval", 0.9, 10), _medoid(0.5)])
-    rows = _baseline_rows(df)
+    rows = _matched_rows(df)
     assert len(rows) == 1
-    r = rows.iloc[0]
+    r = rows[0]
     assert r["baseline_strategy_key"] == _ES
     assert r["baseline_value"] == pytest.approx(0.5)
     assert r["winner_strategy_key"] == catalog_key(_EB, "highval")
@@ -258,9 +276,9 @@ def test_baseline_is_observed_global_medoid_not_lowest_class():
 def test_medoid_never_a_winner_cell():
     # The medoid baseline is never a winner candidate even when it beats every segmented class.
     df = _frame([_seg("only", 0.4, 7), _medoid(0.99)])
-    rows = _baseline_rows(df)
+    rows = _matched_rows(df)
     assert len(rows) == 1
-    r = rows.iloc[0]
+    r = rows[0]
     assert r["baseline_strategy_key"] == _ES
     assert r["winner_strategy_key"] == catalog_key(_EB, "only")
     assert r["baseline_value"] == pytest.approx(0.99)
@@ -279,38 +297,39 @@ def test_delta_row_for_every_segmented_result_cell_same_scope():
             {**_medoid(0.3), "metric": "mrr"},
         ]
     )
-    rows = _baseline_rows(df)
-    assert sorted(set(rows["metric"])) == ["map_k", "mrr"]
+    rows = _matched_rows(df)
+    assert sorted({r["metric"] for r in rows}) == ["map_k", "mrr"]
     assert len(rows) == 2
-    mk = rows[rows["metric"] == "map_k"].iloc[0]
-    mr = rows[rows["metric"] == "mrr"].iloc[0]
+    mk = next(r for r in rows if r["metric"] == "map_k")
+    mr = next(r for r in rows if r["metric"] == "mrr")
     assert mk["delta"] == pytest.approx(0.6 - 0.5)
     assert mr["delta"] == pytest.approx(0.4 - 0.3)
-    # A delta is emitted only where a segmented result shares the baseline's exact scope.
-    assert list(rows.columns) == list(BASELINE_DELTA_COLUMNS)
+    # A delta is emitted only where a segmented result shares the baseline's exact scope; each
+    # matched record carries exactly the baseline/delta column contract.
+    assert all(set(r) == set(BASELINE_DELTA_COLUMNS) for r in rows)
 
 
 def test_cell_without_medoid_baseline_emits_nothing():
     # A segmented result with NO observed medoid baseline row for its scope (e.g. the backbone
-    # has no medoid in scope) must not emit a phantom delta; likewise a lone medoid row with no
-    # segmented result emits nothing.
+    # has no medoid in scope) must not emit a phantom delta and nothing to compare is surfaced;
+    # likewise a lone medoid row with no segmented result emits nothing.
     df = _frame([_seg("a", 0.6, 1)])
-    assert _baseline_rows(df).empty
+    assert _baseline_result(df).rows == ()
     df2 = _frame([_medoid(0.5)])
-    assert _baseline_rows(df2).empty
+    assert _baseline_result(df2).rows == ()
 
 
 def test_baseline_delta_non_finite_fails_closed():
     df = _frame([_seg("a", 0.6, 1), _medoid(float("nan"))])
     with pytest.raises(ValueError):
-        _baseline_rows(df)
+        _baseline_result(df)
     inf_df = _frame([_seg("a", float("inf"), 1), _medoid(0.5)])
     with pytest.raises(ValueError):
-        _baseline_rows(inf_df)
+        _baseline_result(inf_df)
 
 
-def test_empty_baseline_frame_columns():
-    rows = _baseline_rows(pd.DataFrame())
-    assert rows.empty
-    assert list(rows.columns) == list(BASELINE_DELTA_COLUMNS)
+def test_empty_baseline_result_is_empty():
+    res = _baseline_result(pd.DataFrame())
+    assert res.rows == ()
+    assert res.incomplete == ()
     assert _ES == "global_pool:effnet:medoid"

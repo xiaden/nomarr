@@ -64,6 +64,12 @@ Binary ONNX classifiers attached to a backbone. Each head takes a backbone embed
 
 ## What to Compare Against
 
+> **Historical (superseded by the execution-reporting-repair hard cut).** This section described
+> the deleted binned/flat/CTP candidate-replacement ranking methodology. `disc_score`,
+> `binned_retrieval_rows`/`retrieval_rows`, `ptc_ctp_rows`, and the `disc_general` summary metric
+> no longer exist; active analysis is catalog-only (see the embedding-research CONTRACTS report
+> contract). The rows below are retained only as clearly-marked historical prose.
+
 | Research question | Baseline |
 |---|---|
 | Better sim search? | `retrieval_rows` where `strategy="mean"` and `sim_metric="cosine"` |
