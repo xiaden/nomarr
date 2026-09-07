@@ -19,46 +19,111 @@ from ._base import (
 )
 
 
-def disc_artist_warning(con) -> list[dict]:
-    """Return warning dicts if disc_artist is degenerate (not enough artists / songs)."""
+def _label_degeneracy_warnings(
+    con,
+    ruler: str,
+    label_column: str,
+    *,
+    error_id: str,
+    error_message: str,
+    pairs_id: str,
+    pairs_message: str,
+) -> list[dict]:
+    """Degeneracy warning for ONE label ruler's corpus population (artist / genre).
+
+    A ruler whose labeled corpus population has fewer than two distinct labels cannot form
+    the within-vs-cross pairs its ``disc_<ruler>`` aggregate needs; the report surfaces this
+    as an ``error`` (single label value) or a ``warning`` (every label has exactly one song,
+    so no within-<ruler> pair exists).  ``label_column`` is a ``songs`` column; NULL/blank
+    values count as MISSING labels for that ruler and are excluded from the labeled
+    population (mirroring the compute-layer per-ruler missing-label exclusion).
+    """
     try:
-        n_artists = con.execute("SELECT COUNT(DISTINCT artist) FROM songs").fetchone()[0]
-        n_songs = con.execute("SELECT COUNT(*) FROM songs").fetchone()[0]
-        if n_artists < 2:
-            return [
-                {
-                    "id": "single_artist",
-                    "level": "error",
-                    "message": "Single-artist corpus detected",
-                    "detail": (
-                        f"All {n_songs} songs are from the same artist, so disc_artist cannot be "
-                        f"computed (requires both within-artist and cross-artist pairs). "
-                        f"Discrimination metrics in the analysis and winners sections will show "
-                        f"0.0 everywhere \u2014 this is expected, not a bug. Add songs from multiple "
-                        f"artists to get meaningful discrimination scores. The corpus, "
-                        f"head-analysis, and efficiency sections are unaffected."
-                    ),
-                }
-            ]
-        solo_artists = con.execute(
-            "SELECT COUNT(*) FROM (  SELECT artist FROM songs GROUP BY artist HAVING COUNT(*) = 1)"
+        n_labeled = con.execute(
+            f"SELECT COUNT(*) FROM songs WHERE {label_column} IS NOT NULL "
+            f"AND TRIM(CAST({label_column} AS VARCHAR)) <> ''"
         ).fetchone()[0]
-        if solo_artists == n_artists:
-            return [
-                {
-                    "id": "no_within_artist_pairs",
-                    "level": "warning",
-                    "message": "No within-artist pairs",
-                    "detail": (
-                        f"Every artist has exactly 1 song ({n_songs} songs, {n_artists} artists), "
-                        f"so disc_artist cannot be computed. Add multiple songs per artist to get "
-                        f"meaningful retrieval discrimination scores."
-                    ),
-                }
-            ]
+        n_distinct = con.execute(
+            f"SELECT COUNT(DISTINCT {label_column}) FROM songs WHERE {label_column} IS NOT NULL "
+            f"AND TRIM(CAST({label_column} AS VARCHAR)) <> ''"
+        ).fetchone()[0]
     except Exception:
-        pass
+        return []
+    if n_distinct < 2:
+        return [
+            {
+                "id": error_id,
+                "level": "error",
+                "message": error_message,
+                "detail": (
+                    f"Only {n_labeled} labeled song(s) across {n_distinct} distinct "
+                    f"{ruler} label value(s), so disc_{ruler} cannot be computed (it needs "
+                    f"both within-{ruler} and cross-{ruler} pair scores). Discrimination "
+                    f"metrics for the {ruler} ruler in the analysis and winners sections will "
+                    f"show 0.0 (guarded) \u2014 expected, not a bug. Add songs across multiple "
+                    f"{ruler} labels to get meaningful {ruler} discrimination."
+                ),
+            }
+        ]
+    try:
+        n_solo = con.execute(
+            f"SELECT COUNT(*) FROM (SELECT {label_column} FROM songs "
+            f"WHERE {label_column} IS NOT NULL AND TRIM(CAST({label_column} AS VARCHAR)) <> '' "
+            f"GROUP BY {label_column} HAVING COUNT(*) = 1)"
+        ).fetchone()[0]
+    except Exception:
+        return []
+    if n_solo == n_distinct:
+        return [
+            {
+                "id": pairs_id,
+                "level": "warning",
+                "message": pairs_message,
+                "detail": (
+                    f"Every {ruler} label value has exactly 1 song ({n_distinct} distinct "
+                    f"{ruler} labels), so disc_{ruler} cannot be computed. Add multiple songs "
+                    f"per {ruler} label to get meaningful {ruler} retrieval discrimination."
+                ),
+            }
+        ]
     return []
+
+
+def ruler_disc_warnings(con) -> list[dict]:
+    """Return per-ruler discrimination warnings when a ruler's labeled population is degenerate.
+
+    Emits the historical ``single_artist`` / ``no_within_artist_pairs`` artist warnings plus the
+    analogous ``single_genre`` / ``no_within_genre_pairs`` genre warnings, each computed from
+    that ruler's OWN labeled population (the ``songs.artist`` / ``songs.genre`` columns with
+    NULL/blank excluded as missing).  Head-ruler discrimination degeneracy is NOT surfaced here
+    because per-song head-tuple labels live in the committed head artifacts (not a ``songs``
+    column the report corpus layer can read); the head ruler's ``disc_head`` guard is enforced
+    at the compute layer (:class:`RulerResult.disc_guard`) instead.
+    """
+    warnings: list[dict] = []
+    warnings.extend(
+        _label_degeneracy_warnings(
+            con,
+            "artist",
+            "artist",
+            error_id="single_artist",
+            error_message="Single-artist corpus detected",
+            pairs_id="no_within_artist_pairs",
+            pairs_message="No within-artist pairs",
+        )
+    )
+    warnings.extend(
+        _label_degeneracy_warnings(
+            con,
+            "genre",
+            "genre",
+            error_id="single_genre",
+            error_message="Single-genre corpus detected",
+            pairs_id="no_within_genre_pairs",
+            pairs_message="No within-genre pairs",
+        )
+    )
+    return warnings
 
 
 def section_corpus(con) -> dict:

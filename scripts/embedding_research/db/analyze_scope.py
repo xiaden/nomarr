@@ -137,6 +137,22 @@ class AnalyzeScopeIdentity:
     evaluation_corpus_comparable: bool = False
     evaluation_corpus_missing_count: int = 0
     evaluation_corpus_missing_digest: str = ""
+    # ── COMPLETE persisted corpus identity / evidence (Plan C Phase 1) ───────────────
+    # The compact per-row corpus-identity carries exact digest proof of the eligible +
+    # requested membership sets, the observation-binding digest the corpus was resolved
+    # against, the semantics/version identity, and explicit completeness + integrity
+    # self-check fields — so the baseline delta / report equality gate can detect an altered
+    # membership or observation binding that keeps an equal-looking hash/count.  These are
+    # backward-readable additions to the five legacy ``evaluation_corpus_*`` keys (which are
+    # preserved unchanged).
+    evaluation_corpus_semantics_version: int | None = None
+    evaluation_corpus_eligible: bool = False
+    evaluation_corpus_eligible_digest: str = ""
+    evaluation_corpus_requested_count: int | None = None
+    evaluation_corpus_requested_digest: str = ""
+    evaluation_corpus_observation_digest: str = ""
+    evaluation_corpus_complete: bool = False
+    evaluation_corpus_integrity: str = ""
 
     def __post_init__(self) -> None:
         # Deterministic canonical ordering: config_ids ascending => canonical = lowest member,
@@ -172,6 +188,14 @@ def _corpus_scope_fields(evaluation_corpus) -> dict[str, Any] | None:
         "evaluation_corpus_comparable": bool(evaluation_corpus.comparable),
         "evaluation_corpus_missing_count": int(evaluation_corpus.missing_count),
         "evaluation_corpus_missing_digest": evaluation_corpus.missing_digest or "",
+        "evaluation_corpus_semantics_version": int(evaluation_corpus.semantics_version),
+        "evaluation_corpus_eligible": bool(evaluation_corpus.eligible),
+        "evaluation_corpus_eligible_digest": evaluation_corpus.eligible_digest or "",
+        "evaluation_corpus_requested_count": int(evaluation_corpus.requested_count),
+        "evaluation_corpus_requested_digest": evaluation_corpus.requested_digest or "",
+        "evaluation_corpus_observation_digest": evaluation_corpus.observation_digest or "",
+        "evaluation_corpus_complete": bool(evaluation_corpus.completeness),
+        "evaluation_corpus_integrity": evaluation_corpus.integrity or "",
     }
 
 
@@ -208,6 +232,14 @@ def _identity_payload(identity: AnalyzeScopeIdentity) -> dict[str, Any]:
         "evaluation_corpus_comparable": bool(identity.evaluation_corpus_comparable),
         "evaluation_corpus_missing_count": int(identity.evaluation_corpus_missing_count),
         "evaluation_corpus_missing_digest": identity.evaluation_corpus_missing_digest or "",
+        "evaluation_corpus_semantics_version": identity.evaluation_corpus_semantics_version,
+        "evaluation_corpus_eligible": bool(identity.evaluation_corpus_eligible),
+        "evaluation_corpus_eligible_digest": identity.evaluation_corpus_eligible_digest or "",
+        "evaluation_corpus_requested_count": identity.evaluation_corpus_requested_count,
+        "evaluation_corpus_requested_digest": identity.evaluation_corpus_requested_digest or "",
+        "evaluation_corpus_observation_digest": identity.evaluation_corpus_observation_digest or "",
+        "evaluation_corpus_complete": bool(identity.evaluation_corpus_complete),
+        "evaluation_corpus_integrity": identity.evaluation_corpus_integrity or "",
     }
 
 
@@ -337,6 +369,14 @@ def decode_analyze_scope_v2(text: str) -> AnalyzeScopeIdentity | None:
         evaluation_corpus_comparable=bool(p.get("evaluation_corpus_comparable", False)),
         evaluation_corpus_missing_count=int(p.get("evaluation_corpus_missing_count", 0)),
         evaluation_corpus_missing_digest=p.get("evaluation_corpus_missing_digest", "") or "",
+        evaluation_corpus_semantics_version=p.get("evaluation_corpus_semantics_version"),
+        evaluation_corpus_eligible=bool(p.get("evaluation_corpus_eligible", False)),
+        evaluation_corpus_eligible_digest=p.get("evaluation_corpus_eligible_digest", "") or "",
+        evaluation_corpus_requested_count=p.get("evaluation_corpus_requested_count"),
+        evaluation_corpus_requested_digest=p.get("evaluation_corpus_requested_digest", "") or "",
+        evaluation_corpus_observation_digest=p.get("evaluation_corpus_observation_digest", "") or "",
+        evaluation_corpus_complete=bool(p.get("evaluation_corpus_complete", False)),
+        evaluation_corpus_integrity=p.get("evaluation_corpus_integrity", "") or "",
     )
 
 
@@ -438,6 +478,249 @@ def _now_ms() -> int:
     return int(time.time() * 1000)
 
 
+# --------------------------------------------------------------------------- #
+# Invocation obligations + terminal state (execution-reporting Plan B P1)      #
+# --------------------------------------------------------------------------- #
+# An analyze invocation's obligations and its single terminal outcome are recorded as
+# canonical single-line records APPENDED into the SAME ``run_provenance.output_artifact_hashes``
+# that already carries the ``analyze_scope_v2`` scope lines (the existing ``prefix|json`` line
+# store).  Scope lines are append-only EVIDENCE and never terminalize the invocation; only a
+# matching terminal record (appended after every obligation resolved) does.  The producer starts
+# an invocation with ``analyze_invocation_v1|...`` (its declared obligations), then appends
+# ``analyze_terminal_v1|...`` (outcome ``completed``) ONLY when every obligation resolves.
+#
+# The terminal record is the report-completion signal the grouped run predicate requires, so a
+# run whose scope rows exist but whose invocation is still open (running, no terminal) is never a
+# completed analyze scope.  A same-run ``status == 'failed'`` analyze provenance row (written by
+# ``_run_single_phase`` on any exception) continues to veto the whole run.  The marker lines do
+# not affect ``parse_analyze_scope``/``run_row_scopes`` (they skip non-``analyze_scope_v2``
+# lines) or report provenance rendering (which surfaces ``output_artifact_hashes`` verbatim).
+
+#: Single-line invocation-obligations record prefix (the invocation is ``running`` from this line).
+_INVOCATION_PREFIX = "analyze_invocation_v1"
+#: Single-line terminal-outcome record prefix (appended once, only after obligations resolve).
+_TERMINAL_PREFIX = "analyze_terminal_v1"
+#: The one terminal outcome that makes a run a clean completed analyze scope.
+_TERMINAL_COMPLETED = "completed"
+
+#: Canonical single-line markers (record-kind discriminators) — kept importable for predicates.
+INVOCATION_MARKER_PREFIX = _INVOCATION_PREFIX
+TERMINAL_MARKER_PREFIX = _TERMINAL_PREFIX
+TERMINAL_OUTCOME_COMPLETED = _TERMINAL_COMPLETED
+
+
+class AnalyzeInvocationError(RuntimeError):
+    """The invocation-obligations/terminal lifecycle contract was violated (duplicate/conflict)."""
+
+
+class AnalyzeInvocationIncompleteError(AnalyzeInvocationError):
+    """An invocation obligation is unresolved, so the run cannot terminalize ``completed``.
+
+    Raised by :func:`terminalize_analyze_completed` when a declared obligation (a requested
+    backbone's MANDATORY observed ``global_pool:{backbone}:medoid`` baseline) has no persisted
+    evidence, or when no obligations-start record exists to terminalize.  The caller fails
+    closed (propagates -> a ``failed`` analyze provenance row) rather than recording a terminal
+    ``completed`` for an invocation whose obligations are not all resolved.
+    """
+
+
+def _output_lines(blob: str | None) -> list[str]:
+    return [ln for ln in (blob or "").splitlines() if ln.strip()] if blob else []
+
+
+def _marker_payload(line: str, prefix: str) -> dict | None:
+    """Parse a ``<prefix>|<json>`` line to its payload dict; None for any other line."""
+    if not line.startswith(prefix + "|"):
+        return None
+    try:
+        payload = json.loads(line.split("|", 1)[1])
+    except (ValueError, TypeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _analyze_row_blobs(con, *, run_id: str) -> list[str]:
+    rows = con.execute(
+        "SELECT output_artifact_hashes FROM run_provenance WHERE run_id=? AND phase=?",
+        (run_id, _ANALYZE_PHASE),
+    ).fetchall()
+    return [(b or "") for (b,) in rows]
+
+
+def encode_invocation_obligations(backbones) -> dict:
+    """Canonical obligations payload for an analyze invocation over *backbones*.
+
+    *backbones* is an ordered iterable of ``(backbone, baseline_key)`` pairs (the requested
+    backbone + its MANDATORY observed ``global_pool:{backbone}:medoid`` baseline strategy key),
+    deterministically sorted by backbone.  Each entry is a per-backbone obligation: analyze every
+    search-representation class over that backbone AND emit its mandatory medoid baseline.
+    """
+    ordered = sorted((str(b), str(k)) for b, k in backbones)
+    return {
+        "version": 1,
+        "backbones": [{"backbone": b, "mandatory_baseline": k} for b, k in ordered],
+    }
+
+
+def record_analyze_invocation(
+    con,
+    *,
+    run_id: str,
+    backbones,
+    started_at: int | None = None,
+) -> None:
+    """Start an analyze invocation by recording its declared obligations (``running``).
+
+    Appends the ``analyze_invocation_v1|...`` record onto the run's ``phase='analyze'``
+    provenance row(s) (creating a ``complete``-status row when none exists yet, so the invocation
+    ledger anchor always precedes/coincides with the scope evidence).  Raises
+    :class:`AnalyzeInvocationError` if the run already has an invocation record (a run starts its
+    invocation exactly once).  Views/scopes recorded later are evidence on the same append-only
+    rows and never terminalize this invocation.
+    """
+    payload = encode_invocation_obligations(backbones)
+    line = f"{_INVOCATION_PREFIX}|{json.dumps(payload, sort_keys=True, separators=(',', ':'))}"
+    for blob in _analyze_row_blobs(con, run_id=run_id):
+        if any(_marker_payload(ln, _INVOCATION_PREFIX) is not None for ln in _output_lines(blob)):
+            raise AnalyzeInvocationError(
+                f"analyze invocation obligations already recorded for run_id={run_id!r}; "
+                "an invocation starts exactly once"
+            )
+    _append_analyze_line(con, run_id=run_id, line=line, started_at=started_at)
+
+
+def invocation_state(con, *, run_id: str) -> dict:
+    """Return the run's invocation-obligations/terminal state for report-completion predicates.
+
+    Returns ``{"obligations_present": bool, "obligations": dict|None,
+    "terminal_completed": bool}``.  ``obligations_present`` is True when the run carries an
+    ``analyze_invocation_v1`` record; ``terminal_completed`` is True when it additionally carries
+    a ``completed`` ``analyze_terminal_v1`` record.  A run with obligations but no completed
+    terminal is an OPEN (running / incompletely-obligated) invocation.
+    """
+    obligations_present = False
+    terminal_completed = False
+    obligations_payload: dict | None = None
+    for blob in _analyze_row_blobs(con, run_id=run_id):
+        for ln in _output_lines(blob):
+            inv = _marker_payload(ln, _INVOCATION_PREFIX)
+            if inv is not None:
+                obligations_present = True
+                obligations_payload = inv
+                continue
+            term = _marker_payload(ln, _TERMINAL_PREFIX)
+            if term is not None and term.get("outcome") == _TERMINAL_COMPLETED:
+                terminal_completed = True
+    return {
+        "obligations_present": obligations_present,
+        "obligations": obligations_payload,
+        "terminal_completed": terminal_completed,
+    }
+
+
+def terminalize_analyze_completed(
+    con,
+    *,
+    run_id: str,
+    finished_at: int | None = None,
+) -> None:
+    """Terminalize *run_id*'s analyze invocation to ``completed`` after every obligation resolves.
+
+    Appends the ``analyze_terminal_v1|{"outcome":"completed"}`` record onto the run's
+    ``phase='analyze'`` provenance row(s) and stamps ``finished_at`` on them.  Refuses (raises)
+    without recording anything when:
+
+    * the run has NO obligations-start record (nothing to terminalize) — :class:`AnalyzeInvocationIncompleteError`;
+    * a terminal record already exists (duplicate terminalization) — :class:`AnalyzeInvocationError`;
+    * a declared obligation's MANDATORY observed baseline has no persisted ``analyze_metrics``
+      evidence under its strategy key (an obligation is unresolved) — :class:`AnalyzeInvocationIncompleteError`.
+
+    The ``completed`` terminal is therefore written exactly once and only for a clean all-obligation
+    invocation.  On any refusal the caller fails closed (propagates -> a ``failed`` analyze row),
+    leaving any partial scope evidence append-only (never deleted, never reportable as completed).
+    """
+    if finished_at is None:
+        finished_at = _now_ms()
+    state = invocation_state(con, run_id=run_id)
+    if not state["obligations_present"]:
+        raise AnalyzeInvocationIncompleteError(
+            f"cannot terminalize run_id={run_id!r} completed: no analyze invocation obligations "
+            "record exists (the invocation was never started)"
+        )
+    if state["terminal_completed"]:
+        raise AnalyzeInvocationError(
+            f"refusing duplicate terminalization of run_id={run_id!r}: a completed terminal "
+            "already exists (an invocation has exactly one terminal outcome)"
+        )
+    obligations = state["obligations"] or {}
+    unresolved: list[str] = []
+    for entry in obligations.get("backbones", []):
+        key = str(entry.get("mandatory_baseline", ""))
+        backbone = str(entry.get("backbone", ""))
+        if not key:
+            unresolved.append(f"{backbone}: missing mandatory baseline key")
+            continue
+        n = con.execute(
+            "SELECT count(*) FROM analyze_metrics WHERE run_id=? AND strategy_key=?",
+            (run_id, key),
+        ).fetchone()[0]
+        if not n:
+            unresolved.append(f"{backbone}: no {key} baseline evidence")
+    if unresolved:
+        raise AnalyzeInvocationIncompleteError(
+            f"refusing to terminalize run_id={run_id!r} completed with unresolved obligations: " + "; ".join(unresolved)
+        )
+    line = f"{_TERMINAL_PREFIX}|{json.dumps({'outcome': _TERMINAL_COMPLETED}, sort_keys=True, separators=(',', ':'))}"
+    _append_analyze_line(con, run_id=run_id, line=line, started_at=None, finished_at=finished_at)
+
+
+def _append_analyze_line(
+    con,
+    *,
+    run_id: str,
+    line: str,
+    started_at: int | None = None,
+    finished_at: int | None = None,
+) -> None:
+    """Append one canonical single-line record onto the run's ``phase='analyze'`` row(s).
+
+    Mirrors ``record_analyze_run_scope`` merge semantics: appends *line* (deduped) to every
+    existing ``phase='analyze'`` row of the run; when no such row exists yet one is created
+    (status ``complete``) so the record's anchor always exists.  Rows of other runs (incl.
+    retained) are never modified.  ``finished_at`` is stamped only when supplied (terminalize).
+    """
+    existing = con.execute(
+        "SELECT rowid FROM run_provenance WHERE run_id=? AND phase=?",
+        (run_id, _ANALYZE_PHASE),
+    ).fetchall()
+    if not existing:
+        from scripts.embedding_research.db.provenance import write_run_provenance
+
+        write_run_provenance(
+            con,
+            run_id=run_id,
+            phase=_ANALYZE_PHASE,
+            status="complete",
+            started_at=started_at if started_at is not None else _now_ms(),
+            finished_at=finished_at if finished_at is not None else _now_ms(),
+            output_artifact_hashes=line,
+        )
+        return
+    stamp_sql = "output_artifact_hashes = ?"
+    params: list[object] = []
+    for (rowid,) in existing:
+        (blob,) = con.execute("SELECT output_artifact_hashes FROM run_provenance WHERE rowid=?", (rowid,)).fetchone()
+        lines = _output_lines(blob)
+        if line not in lines:
+            lines.append(line)
+        if finished_at is not None:
+            stamp_sql = "output_artifact_hashes = ?, finished_at = ?"
+            params = ["\n".join(lines), int(finished_at)]
+        else:
+            params = ["\n".join(lines)]
+        con.execute(f"UPDATE run_provenance SET {stamp_sql} WHERE rowid=?", (*params, rowid))
+
+
 def infer_scope_kind(result) -> str:
     """The v2 ``scope_kind`` an analyze *result* producer should record.
 
@@ -508,6 +791,14 @@ def write_catalog_analyze_rows(
         evaluation_corpus_comparable=bool((corpus or {}).get("evaluation_corpus_comparable", False)),
         evaluation_corpus_missing_count=int((corpus or {}).get("evaluation_corpus_missing_count", 0)),
         evaluation_corpus_missing_digest=(corpus or {}).get("evaluation_corpus_missing_digest", "") or "",
+        evaluation_corpus_semantics_version=(corpus or {}).get("evaluation_corpus_semantics_version"),
+        evaluation_corpus_eligible=bool((corpus or {}).get("evaluation_corpus_eligible", False)),
+        evaluation_corpus_eligible_digest=(corpus or {}).get("evaluation_corpus_eligible_digest", "") or "",
+        evaluation_corpus_requested_count=(corpus or {}).get("evaluation_corpus_requested_count"),
+        evaluation_corpus_requested_digest=(corpus or {}).get("evaluation_corpus_requested_digest", "") or "",
+        evaluation_corpus_observation_digest=(corpus or {}).get("evaluation_corpus_observation_digest", "") or "",
+        evaluation_corpus_complete=bool((corpus or {}).get("evaluation_corpus_complete", False)),
+        evaluation_corpus_integrity=(corpus or {}).get("evaluation_corpus_integrity", "") or "",
     )
     # Preflight encode + decode-validate the complete v2 scope (raises on an incomplete scope for its
     # inferred kind) BEFORE the first metric-row insert — the fail-closed atomicity boundary.
@@ -518,15 +809,20 @@ def write_catalog_analyze_rows(
     # only this run's own (run_id, strategy scope) rows, never another run's rows.
     db.write_analyze_metrics(con, strategy_key, "catalog", sim_metric, result.k, dict(result.metrics), run_id=run_id)
     # Per-song rows: clear only this strategy scope, then write using the song_retrieval_metrics
-    # writer contract (parallel lists keyed by song_ids).
+    # writer contract (parallel lists keyed by song_ids).  The FIXED historical per-song columns
+    # are the artist-ruler-only surface (no DDL): bare ``ap_k``/``mrr``/``recall_k`` are populated
+    # from the artist-suffixed ``map_k_artist``/``mrr_artist``/``recall_k_artist`` active values and
+    # ``disc_artist_contrib`` from the artist per-song contribution; genre/head per-song is not
+    # representable in the flat schema and stays explicitly historical-empty (the writer never
+    # pretends a genre/head ruler).
     db.clear_song_retrieval_metrics(con, strategy_key, sim_metric, result.k)
     song_ids = sorted(result.per_song)
     per_song = {
         "song_ids": song_ids,
-        "ap_k": [float(result.per_song[s]["map_k"]) for s in song_ids],
-        "mrr": [float(result.per_song[s]["mrr"]) for s in song_ids],
-        "recall_k": [float(result.per_song[s]["recall_k"]) for s in song_ids],
-        "disc_artist_contrib": [float(result.per_song[s]["within"] - result.per_song[s]["cross"]) for s in song_ids],
+        "ap_k": [float(result.per_song[s]["map_k_artist"]) for s in song_ids],
+        "mrr": [float(result.per_song[s]["mrr_artist"]) for s in song_ids],
+        "recall_k": [float(result.per_song[s]["recall_k_artist"]) for s in song_ids],
+        "disc_artist_contrib": [float(result.per_song[s]["disc_artist"]) for s in song_ids],
         "disc_genre_contrib": [],
         "disc_head_contrib": [],
     }

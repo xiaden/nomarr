@@ -94,10 +94,20 @@ def _first_seg_meta(harness) -> tuple[int, str, int]:
 
 def _normalize_build_volatiles(harness) -> None:
     """Freeze the volatile build columns (run tags + build timestamp) so two independently-built
-    but otherwise identical compact snapshots compare byte-for-byte."""
+    but otherwise identical compact snapshots compare byte-for-byte.
+
+    ``observation_evidence.commit_sha256`` is also frozen: a rerun of the build fixture mints a
+    NEW commit marker (its content digest carries the volatile ``created_at`` / ``run_id``) even
+    over byte-identical streams+masks, so two fixtures over the same committed CONTENT (identical
+    content-addressed refs/digests/audio-fingerprint/mask-semantics) differ only by that
+    re-minted marker.  Freezing it lets rerun-idempotence (identical committed content ->
+    identical logical catalog) hold; a genuinely different committed observation (different
+    bytes -> different refs/digests/fingerprint) still changes identity.
+    """
     harness.con.execute("UPDATE catalog_metadata SET created_at_ms = 7777, run_id = 'frozen', catalog_id = 'frozen-id'")
     harness.con.execute("UPDATE seg_config SET run_id = 'frozen'")
     harness.con.execute("UPDATE seg_meta SET provenance = 'frozen'")
+    harness.con.execute("UPDATE observation_evidence SET commit_sha256 = 'frozen-commit'")
 
 
 # ── Canonical serialization determinism ────────────────────────────────────────

@@ -122,9 +122,11 @@ def test_alias_and_distinct_search_classes(fixture):
     assert set(map(frozenset, by_th)) == {frozenset(ALIAS_THRESHOLDS), frozenset(DISTINCT_THRESHOLDS)}
     alias_cls = by_th[tuple(sorted(ALIAS_THRESHOLDS))]
     distinct_cls = by_th[tuple(sorted(DISTINCT_THRESHOLDS))]
-    # alias class: two configs, canonical = the smaller threshold, one alias member.
+    # alias class: two configs, one canonical representative (0.9 or 1.0 — hash-order chosen) + alias.
     assert len(alias_cls.config_ids) == 2 and len(alias_cls.alias_ids) == 1
-    assert _threshold_of(fixture, alias_cls.canonical_config_id) == min(ALIAS_THRESHOLDS)
+    canon_th = _threshold_of(fixture, alias_cls.canonical_config_id)
+    assert canon_th in set(ALIAS_THRESHOLDS)
+    assert _threshold_of(fixture, alias_cls.alias_ids[0]) in set(ALIAS_THRESHOLDS) - {canon_th}
     # distinct class is its own canonical with no alias.
     assert len(distinct_cls.config_ids) == 1 and not distinct_cls.alias_ids
     assert distinct_cls.canonical_config_id == distinct_cls.config_ids[0]

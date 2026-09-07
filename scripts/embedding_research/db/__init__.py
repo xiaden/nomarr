@@ -13,6 +13,7 @@ _types          — shared DB row DTO definitions
 songs           — songs table + song-level read helpers
 flat            — analyze_metrics + song_retrieval_metrics persistence
 head_phase      — head_phase_provenance table + provenance helpers
+incomplete_diagnostics — analyze_incomplete_diagnostics table + non-comparable diagnostics
 queries         — query_* progress-check helpers
 provenance      — run_provenance + corpus_state tables + read/write helpers
 stream_registry — stream_registry / head_stream_registry low-level row CRUD
@@ -57,6 +58,12 @@ from .head_phase import (
     load_head_phase_provenance,
     write_head_phase_provenance,
 )
+from .incomplete_diagnostics import (
+    DiagnosticError,
+    incomplete_diagnostic_columns,
+    read_incomplete_analyze_diagnostics,
+    write_incomplete_analyze_diagnostic,
+)
 from .provenance import (
     CorpusStateCorruptionError,
     corpus_state_columns,
@@ -89,6 +96,7 @@ __all__ = [
     "CanaryProbeReport",
     "CatalogMetadataCorruptionError",
     "CorpusStateCorruptionError",
+    "DiagnosticError",
     "HeadPhaseProvenanceRow",
     "SegStreamNotReadyError",
     "SegmentationError",
@@ -102,6 +110,7 @@ __all__ = [
     "ensure_schema",
     "enumerate_pk_unique_tables",
     "head_phase_config_key",
+    "incomplete_diagnostic_columns",
     "load_all_songs",
     "load_analyze_metrics",
     "load_head_phase_provenance",
@@ -111,6 +120,7 @@ __all__ = [
     "raise_if_stream_duplicate",
     "read_catalog_metadata",
     "read_corpus_state",
+    "read_incomplete_analyze_diagnostics",
     "read_run_provenance",
     "require_supported_duckdb",
     "run_provenance_columns",
@@ -123,6 +133,7 @@ __all__ = [
     "upsert_song",
     "write_analyze_metrics",
     "write_head_phase_provenance",
+    "write_incomplete_analyze_diagnostic",
     "write_run_provenance",
     "write_song_retrieval_metrics",
 ]

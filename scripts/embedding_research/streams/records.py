@@ -781,14 +781,21 @@ class ObservationGroupIdentity:
     This is the typed identity a catalog/head/reindex consumer requires before it may
     use a stream or its silence mask: the immutable embedding ``stream_ref`` plus its
     ``stream_digest``, the aligned audio-derived ``mask_ref`` plus its ``mask_digest``,
-    the ``alignment_token`` that binds them as one group, the ``audio_content_sha256``
+    the ``alignment_token`` that binds them as one group, the ``patch_count`` the stream
+    and mask agree on (their shared frame length), the ``audio_content_sha256``
     fingerprint the mask manifest and the commit marker agree on, the
-    ``mask_semantics_version`` naming the uint8 mask grammar, and the ``commit_sha256``
+    ``mask_semantics_version`` naming the uint8 mask grammar, the
+    ``group_format_version`` sealing the marker grammar, and the ``commit_sha256``
     marker content digest that seals the group.
 
     It is rehydrated ONLY from a valid current-format commit marker plus its referenced
     current-format manifests/payloads (see ``StreamStore.load_committed_observation``);
     it is never constructed from unverified inputs.  Instances are immutable.
+
+    ``patch_count`` and ``group_format_version`` make the identity the COMPLETE immutable
+    observation-version evidence that a compact catalog records per requested
+    ``(song_id, backbone)`` and that every catalog-derived phase re-verifies against the
+    current committed group (Plan A observation binding).
     """
 
     song_id: str
@@ -798,9 +805,11 @@ class ObservationGroupIdentity:
     mask_ref: str
     mask_digest: str
     alignment_token: str
-    audio_content_sha256: str
-    mask_semantics_version: str
-    commit_sha256: str
+    patch_count: int = 0
+    audio_content_sha256: str = ""
+    mask_semantics_version: str = ""
+    group_format_version: str = ""
+    commit_sha256: str = ""
 
     def __post_init__(self) -> None:
         if not self.song_id or "." in self.song_id:
@@ -815,6 +824,9 @@ class ObservationGroupIdentity:
         commit_sha256 = validate_fingerprint(self.commit_sha256)
         alignment_token = _require_text(self.alignment_token, "alignment_token")
         mask_semantics_version = _require_text(self.mask_semantics_version, "mask_semantics_version")
+        group_format_version = _require_text(self.group_format_version, "group_format_version")
+        if int(self.patch_count) <= 0:
+            raise ValueError("observation group patch_count must be a positive integer")
         object.__setattr__(self, "stream_ref", stream_ref)
         object.__setattr__(self, "mask_ref", mask_ref)
         object.__setattr__(self, "stream_digest", stream_digest)
@@ -823,6 +835,8 @@ class ObservationGroupIdentity:
         object.__setattr__(self, "commit_sha256", commit_sha256)
         object.__setattr__(self, "alignment_token", alignment_token)
         object.__setattr__(self, "mask_semantics_version", mask_semantics_version)
+        object.__setattr__(self, "group_format_version", group_format_version)
+        object.__setattr__(self, "patch_count", int(self.patch_count))
 
 
 @dataclass(frozen=True)

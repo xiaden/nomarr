@@ -72,6 +72,15 @@ _INCOMPLETE_COLUMNS = [
     "representation_evaluation_corpus_comparable",
     "representation_missing_count",
     "representation_missing_digest",
+    # Plan B P2 enrichment (persisted non-comparable diagnostics only; a derive-path unequal/
+    # baseline-match incomplete entry renders these blank): the tested class's durable SEMANTIC
+    # representation hash + canonical config id + full tested-threshold membership, and the
+    # actual lost-song membership (observation evidence) — so the diagnostic shows WHICH tested
+    # class lost songs and HOW MANY / WHICH eligible songs.
+    "search_representation_hash",
+    "canonical_config_id",
+    "config_ids",
+    "missing_song_ids",
 ]
 
 
@@ -103,6 +112,10 @@ def _incomplete_rows(winner_df: pd.DataFrame, backbone: str) -> list[dict]:
                 "representation_evaluation_corpus_comparable": entry.get("representation_evaluation_corpus_comparable"),
                 "representation_missing_count": entry.get("representation_missing_count"),
                 "representation_missing_digest": entry.get("representation_missing_digest"),
+                "search_representation_hash": entry.get("search_representation_hash"),
+                "canonical_config_id": entry.get("canonical_config_id"),
+                "config_ids": _alias_text(entry.get("config_ids")),
+                "missing_song_ids": _alias_text(entry.get("missing_song_ids")),
             }
         )
     return out

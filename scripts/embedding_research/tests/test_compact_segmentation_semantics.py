@@ -45,7 +45,14 @@ from scripts.embedding_research.helpers import segmentation as seg_mod
 
 #: Intended compact ``seg_meta`` / ``catalog_song`` table set (no per-patch membership
 #: table, no per-patch rows).  Recorded for P1-S3 so the schema is built to this shape.
-COMPACT_TABLES = ("catalog_metadata", "seg_config", "catalog_song", "seg_meta", "run_provenance")
+COMPACT_TABLES = (
+    "catalog_metadata",
+    "seg_config",
+    "catalog_song",
+    "seg_meta",
+    "observation_evidence",
+    "run_provenance",
+)
 
 
 @dataclass(frozen=True)
@@ -357,9 +364,16 @@ def test_observed_medoid_rejects_non_finite_candidate_row(bad):
 def test_compact_catalog_has_no_per_patch_membership_table_name():
     """The intended compact table set never includes a per-patch membership table."""
     assert "seg_membership" not in COMPACT_TABLES
-    # The five compact scalar tables are the complete durable catalog surface.
+    # The six compact scalar tables are the complete durable catalog surface.
     assert sorted(COMPACT_TABLES) == sorted(
-        ("catalog_metadata", "seg_config", "catalog_song", "seg_meta", "run_provenance")
+        (
+            "catalog_metadata",
+            "seg_config",
+            "catalog_song",
+            "seg_meta",
+            "observation_evidence",
+            "run_provenance",
+        )
     )
 
 
@@ -392,3 +406,25 @@ def test_membership_mask_carries_the_committed_silence_into_every_segment():
     # Reconstructing each segment over the same committed song mask covers every
     # searchable source index exactly once -> silence is fully partitioned away.
     assert sorted(int(i) for m in metas for i in _reconstruct(m, song_mask, 10)) == [0, 2, 4, 7]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "bad_mask",
+    [
+        pytest.param(np.zeros(3, dtype=np.uint8), id="short"),
+        pytest.param(np.ones(7, dtype=np.uint8), id="long"),
+        pytest.param(np.ones(6, dtype=np.int64), id="wrong-dtype"),
+        pytest.param(np.ones((1, 6), dtype=np.uint8), id="non-1D"),
+        pytest.param(None, id="missing"),
+    ],
+)
+def test_reconstruction_refuses_malformed_committed_mask(bad_mask):
+    """The head/catalog mask seam requires an EXACT ``uint8[patch_count]`` mask.
+
+    A short mask is never truncated with trailing patches searchable; long, wrong-dtype,
+    non-1D, and missing masks are typed refusals (fail closed) — never an all-searchable
+    or trailing-searchable population.
+    """
+    with pytest.raises(ValueError):
+        _reconstruct(_CompactMeta(0, 6), bad_mask, 6)

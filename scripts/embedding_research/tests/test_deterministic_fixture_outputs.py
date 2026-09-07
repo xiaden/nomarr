@@ -82,8 +82,28 @@ SEARCHABLE_TOTAL: dict[str, int] = {
     "z0": 0,
 }
 
-#: The report metrics analysed per class (fixed set produced by the analyze phase).
-REPORT_METRICS = ("disc_artist", "map_k", "mrr", "ndcg_k", "recall_k")
+#: The suffixed retrieval vocabulary each analyze class / medoid baseline emits (fixed set
+#: produced by the analyze phase, amended P3-S2).  No generic unsuffixed or composite key.
+REPORT_METRICS = (
+    "map_k_artist",
+    "mrr_artist",
+    "ndcg_k_artist",
+    "recall_k_artist",
+    "disc_artist",
+    "map_k_genre",
+    "mrr_genre",
+    "ndcg_k_genre",
+    "recall_k_genre",
+    "disc_genre",
+    "map_k_head",
+    "mrr_head",
+    "ndcg_k_head",
+    "recall_k_head",
+    "disc_head",
+    "n_queries_artist",
+    "n_queries_genre",
+    "n_queries_head",
+)
 
 #: Payload-grammar regex: <song_id>.<backbone>.<64-hex-sha256><.suffix>.
 _PAYLOAD_RE = re.compile(r"^([A-Za-z0-9_]+)\.([A-Za-z0-9_]+)\.([0-9a-f]{64})\.(npy|npz|json)$")
@@ -346,11 +366,12 @@ def test_compact_catalog_and_current_pointer(run):
             "SELECT config_id, threshold_configured, threshold_effective, threshold_semantics"
             " FROM seg_config ORDER BY config_id"
         ).fetchall()
-    # config ids are the integer app identity; thresholds are the fixture's configured==effective.
-    assert [float(r[1]) for r in rows] == list(ALL_THRESHOLDS)
-    assert [float(r[2]) for r in rows] == list(ALL_THRESHOLDS)
-    assert [r[3] for r in rows] == ["direct_l2"] * 3
+    # config ids are the integer app identity 1..3 (hash-derived ORDER is not pinned across
+    # encoder-version changes); thresholds are the fixture's configured==effective set.
     assert [int(r[0]) for r in rows] == [1, 2, 3]
+    assert sorted(float(r[1]) for r in rows) == sorted(ALL_THRESHOLDS)
+    assert sorted(float(r[2]) for r in rows) == sorted(ALL_THRESHOLDS)
+    assert [r[3] for r in rows] == ["direct_distance"] * 3
 
 
 def test_catalog_song_and_seg_meta_match_fixture_literals(run):
@@ -433,11 +454,17 @@ def test_catalog_report_artifact_has_expected_content(run):
     """catalog-report wrote catalog_report.txt describing the canonical/alias/empty-songs surface."""
     txt = (run.output_root / "report" / "catalog_report.txt").read_text()
     assert txt.startswith("catalog-report")
-    alias_cid = run.config_id_for(ALIAS_CONFIG_THRESHOLDS[0])
-    other_alias_cid = run.config_id_for(ALIAS_CONFIG_THRESHOLDS[1])
+    from scripts.embedding_research.catalog_identity import collapse_search_representations
+
     distinct_cid = run.config_id_for(DISTINCT_CONFIG_THRESHOLD)
-    # The report lists the two canonical search classes (alias canonical + distinct) and the alias.
-    assert f"canonical configs (2): {alias_cid}, {distinct_cid}" in txt
+    with run.open_catalog() as c:
+        classes = list(collapse_search_representations(c))
+    alias_cls = next(cls for cls in classes if distinct_cid not in (set(cls.config_ids) | set(cls.alias_ids)))
+    alias_cid = alias_cls.canonical_config_id  # representative (0.9 or 1.0 — hash-order chosen)
+    other_alias_cid = next(iter(alias_cls.alias_ids))  # the folded non-representative alias
+    # The report lists the two canonical search classes (alias representative + distinct) and the alias.
+    canon_cids = ", ".join(str(i) for i in sorted([alias_cid, distinct_cid]))
+    assert f"canonical configs (2): {canon_cids}" in txt
     assert f"alias {other_alias_cid} -> canonical {alias_cid}" in txt
     # z0 is the empty song under every config (metadata-only, zero searchable mass).
     for cid in (alias_cid, other_alias_cid, distinct_cid):
@@ -488,18 +515,26 @@ def test_analyze_one_execution_per_unique_search_class(run):
 
 
 def test_alias_members_add_zero_executions_and_never_appear_alone(run):
-    """The 1.0 alias config is folded into the 0.9 canonical class, not scored separately."""
+    """The two alias thresholds fold into ONE canonical class (one canonical, one folded alias).
+
+    Which threshold is the representative is hash-order-determined (0.9 and 1.0 are equal
+    search representations), so the assertions are representative-agnostic.
+    """
     from scripts.embedding_research.catalog_identity import collapse_search_representations
 
     with run.open_catalog() as c:
-        classes = collapse_search_representations(c)
-    alias_cls = next(cls for cls in classes if run.config_id_for(DISTINCT_CONFIG_THRESHOLD) not in cls.config_ids)
-    assert run.config_id_for(ALIAS_CONFIG_THRESHOLDS[0]) in alias_cls.config_ids
-    assert run.config_id_for(ALIAS_CONFIG_THRESHOLDS[1]) in alias_cls.alias_ids
-    assert run.config_id_for(DISTINCT_CONFIG_THRESHOLD) not in alias_cls.config_ids
+        classes = list(collapse_search_representations(c))
+    alias_members = {run.config_id_for(t) for t in ALIAS_CONFIG_THRESHOLDS}
+    distinct_cid = run.config_id_for(DISTINCT_CONFIG_THRESHOLD)
+    alias_cls = next(cls for cls in classes if distinct_cid not in (set(cls.config_ids) | set(cls.alias_ids)))
+    # both alias thresholds are members; exactly one is the canonical representative, the sibling folds
+    assert set(alias_cls.config_ids) | set(alias_cls.alias_ids) == alias_members
+    assert alias_cls.canonical_config_id in alias_members
+    assert set(alias_cls.alias_ids) == alias_members - {alias_cls.canonical_config_id}
+    assert distinct_cid not in set(alias_cls.config_ids) | set(alias_cls.alias_ids)
     # The distinct class is its own canonical with no alias.
-    distinct_cls = next(cls for cls in classes if cls is not alias_cls)
-    assert len(distinct_cls.config_ids) == 1 and not distinct_cls.alias_ids
+    distinct_cls = next(cls for cls in classes if distinct_cid in set(cls.config_ids) | set(cls.alias_ids))
+    assert tuple(distinct_cls.config_ids) == (distinct_cid,) and not distinct_cls.alias_ids
 
 
 # --------------------------------------------------------------------------- #
@@ -591,10 +626,14 @@ def test_global_pool_medoid_baseline_rows_exist_and_never_win(run):
     for row in _winner_delta_rows(report):
         assert row["baseline_strategy_key"] == MEDOID_BASELINE_KEY
         assert row["winner_strategy_key"].startswith("catalog:")
-        # delta = winner - baseline, finite.
+        # delta = winner - baseline, finite.  winner/baseline/delta each pass through the
+        # report JSON as floats sourced from np.float32 aggregate cells, so a near-equal
+        # winner-vs-baseline cell (common for the per-ruler genre/head cells added in P3-S2)
+        # can differ from ``baseline + delta`` at ~float32 scale (~1e-4); compare with an
+        # absolute tolerance that absorbs that quantization while still pinning the invariant.
         delta = float(row["delta"])
         assert math.isfinite(delta)
-        assert float(row["winner_value"]) == pytest.approx(float(row["baseline_value"]) + delta)
+        assert float(row["winner_value"]) == pytest.approx(float(row["baseline_value"]) + delta, abs=1e-3)
 
 
 def test_per_song_baseline_medoid_sources_match_frozen_literals_on_committed_bytes(run):
@@ -625,7 +664,7 @@ def test_canonical_head_analysis_rows_over_committed_masks(run):
     assert cids == sorted(run.config_id_for(t) for t in ALL_THRESHOLDS)
     for r in rows:
         assert r[1] == BACKBONE and r[2] == HEAD_ID
-        assert r[3] == "temporal_global" and r[4] == "direct_l2"
+        assert r[3] == "temporal_global" and r[4] == "direct_distance"
         assert r[5] == "catalog" and r[6] == "shared_catalog_boundary"
         assert r[7] == "done" and int(r[8]) == len(SEARCHABLE_SONGS) == 7 and int(r[9]) == 7
         assert int(r[10]) == 1  # finite
@@ -737,31 +776,29 @@ def test_durable_analyze_scope_carries_one_real_evaluation_corpus_identity(run):
     class scope and the baseline scope persisted — proving report/durable identity does not depend
     on a later catalog pointer or a disposable view keyset.
     """
-    from scripts.embedding_research.catalog_identity import resolve_evaluation_corpus
+    from scripts.embedding_research.catalog_identity import (
+        catalog_requested_song_ids,
+        resolve_evaluation_corpus,
+    )
     from scripts.embedding_research.db import analyze_scope as _scope
     from scripts.embedding_research.streams import StreamStore
 
     with run.open_catalog() as cat:
-        # Mirror run.py's _analysis_corpus_song_ids: requested = distinct seg_meta songs per backbone.
-        requested = [
-            r[0]
-            for r in cat.execute(
-                "SELECT DISTINCT sm.song_id FROM seg_meta sm "
-                "JOIN seg_config c ON sm.config_id = c.config_id WHERE c.backbone = ? ORDER BY 1",
-                (BACKBONE,),
-            ).fetchall()
-        ]
+        # Mirror run.py's requested population seam (P2-S1): the catalog-REQUESTED surface
+        # (catalog_song leaves under a config of the backbone), resolved BEFORE seg_meta /
+        # representation searchability — NOT the seg_meta-derived set.
+        requested = catalog_requested_song_ids(cat, BACKBONE)
         identity = resolve_evaluation_corpus(
             cat, StreamStore(run.con, output_root=str(run.output_root)), requested, backbone=BACKBONE
         )
-    # Exactly the seven searchable songs: sil + abs included (mask-aware, still non-silent), z0
-    # excluded (never requested — no seg_meta rows).  All requested songs are eligible so the
-    # whole-song corpus is comparable with zero missing evidence.
-    assert set(requested) == set(SEARCHABLE_SONGS) and len(SEARCHABLE_SONGS) == 7
+    # The seven searchable songs are the ELIGIBLE population: sil + abs included (mask-aware,
+    # still non-silent), and z0 (committed but fully-silent, metadata-only catalog_song leaf with
+    # no seg_meta rows) is REQUESTED and carried as excluded missing evidence — never silently
+    # dropped from the requested population.
+    assert set(identity.song_ids) == set(SEARCHABLE_SONGS) and len(SEARCHABLE_SONGS) == 7
     assert identity.eligible is True and identity.comparable is True
     assert identity.count == len(SEARCHABLE_SONGS) == 7
-    assert set(identity.song_ids) == set(SEARCHABLE_SONGS)
-    assert identity.missing_song_ids == () and identity.missing_count == 0
+    assert identity.missing_song_ids == ("z0",) and identity.missing_count == 1
 
     # Every corpus-bearing persisted analyze scope line (each distinct class scope AND the
     # mandatory observed-medoid baseline scope) names this ONE real identity.
@@ -781,7 +818,7 @@ def test_durable_analyze_scope_carries_one_real_evaluation_corpus_identity(run):
     for p in parsed:
         assert p["evaluation_corpus_count"] == identity.count == 7
         assert p["evaluation_corpus_comparable"] is True
-        assert p["evaluation_corpus_missing_count"] == 0
+        assert p["evaluation_corpus_missing_count"] == identity.missing_count == 1
 
 
 # --------------------------------------------------------------------------- #
@@ -837,7 +874,10 @@ def test_report_matched_rows_share_one_durable_corpus_identity(run):
     carries that SAME corpus identity.  Because every real representation is comparable, the
     report renders NO incomplete-representation diagnostics — nothing is silently dropped.
     """
-    from scripts.embedding_research.catalog_identity import resolve_evaluation_corpus
+    from scripts.embedding_research.catalog_identity import (
+        catalog_requested_song_ids,
+        resolve_evaluation_corpus,
+    )
     from scripts.embedding_research.report._retrieval import query_medoid_baselines
     from scripts.embedding_research.streams import StreamStore
 
@@ -846,24 +886,19 @@ def test_report_matched_rows_share_one_durable_corpus_identity(run):
     assert rows
 
     with run.open_catalog() as cat:
-        requested = [
-            r[0]
-            for r in cat.execute(
-                "SELECT DISTINCT sm.song_id FROM seg_meta sm "
-                "JOIN seg_config c ON sm.config_id = c.config_id WHERE c.backbone = ? ORDER BY 1",
-                (BACKBONE,),
-            ).fetchall()
-        ]
+        # Mirror run.py's requested population seam (P2-S1): catalog-requested surface, NOT seg_meta.
+        requested = catalog_requested_song_ids(cat, BACKBONE)
         identity = resolve_evaluation_corpus(
             cat, StreamStore(run.con, output_root=str(run.output_root)), requested, backbone=BACKBONE
         )
 
-    # Every rendered segmented row names this ONE durable corpus identity.
+    # Every rendered segmented row names this ONE durable corpus identity.  The requested surface
+    # includes z0 (committed, fully-silent, metadata-only) which is excluded as missing evidence.
     for r in rows:
         assert r["evaluation_corpus_hash"] == identity.corpus_hash
         assert int(r["evaluation_corpus_count"]) == identity.count == len(SEARCHABLE_SONGS) == 7
         assert r["evaluation_corpus_comparable"] == "True"
-        assert int(r["evaluation_corpus_missing_count"]) == 0
+        assert int(r["evaluation_corpus_missing_count"]) == identity.missing_count == 1
 
     # The medoid baseline the segmented rows are matched against carries the SAME corpus hash.
     analyze_rid = run.evidence.phase_run_id("analyze")
@@ -880,6 +915,96 @@ def test_report_matched_rows_share_one_durable_corpus_identity(run):
         if t["id"].startswith("incomplete_representations_")
     ]
     assert incomplete_ids == [], f"comparable real corpus must not render incomplete diagnostics: {incomplete_ids}"
+
+
+def test_report_carries_complete_corpus_identity_evidence_on_report_frames(run):
+    """P2-S3: the report-consumed frames carry the FULL complete 13-column corpus surface.
+
+    Plan C Phase 1 extended the persisted evaluation-corpus identity from the legacy
+    hash/count/comparable surface to a COMPLETE evidence surface (requested + eligible digest
+    proofs, requested population size, observation-binding digest, an explicit completeness
+    marker, and an integrity self-check).  This seam test proves that the frames the report
+    winner/delta and incomplete gates actually compare -- the segmented ``catalog`` analysis
+    frame AND the matched ``global_pool:{backbone}:medoid`` baseline frame -- expose every one
+    of the 13 columns with evidence consistent with the re-resolved COMPLETE identity
+    (``completeness=True`` + non-empty integrity), so a delta decision never runs on a
+    truncated/identity-less corpus view.
+    """
+    from scripts.embedding_research.catalog_identity import (
+        catalog_requested_song_ids,
+        resolve_evaluation_corpus,
+    )
+    from scripts.embedding_research.report._retrieval import (
+        query_analyze_metrics,
+        query_medoid_baselines,
+    )
+    from scripts.embedding_research.streams import StreamStore
+
+    with run.open_catalog() as cat:
+        requested = catalog_requested_song_ids(cat, BACKBONE)
+        identity = resolve_evaluation_corpus(
+            cat, StreamStore(run.con, output_root=str(run.output_root)), requested, backbone=BACKBONE
+        )
+    # The re-resolved identity is COMPLETE (flagged complete, integrity self-check present).
+    assert identity.completeness is True
+    assert identity.integrity
+
+    analyze_rid = run.evidence.phase_run_id("analyze")
+
+    # The full 13-column surface columns, as named on the decoded report frames.
+    thirteen = [
+        "evaluation_corpus_hash",
+        "evaluation_corpus_count",
+        "evaluation_corpus_comparable",
+        "evaluation_corpus_missing_count",
+        "evaluation_corpus_missing_digest",
+        "evaluation_corpus_semantics_version",
+        "evaluation_corpus_eligible",
+        "evaluation_corpus_eligible_digest",
+        "evaluation_corpus_requested_count",
+        "evaluation_corpus_requested_digest",
+        "evaluation_corpus_observation_digest",
+        "evaluation_corpus_complete",
+        "evaluation_corpus_integrity",
+    ]
+
+    # Segmented catalog analysis frame: every class row carries the complete surface.
+    cat_df = query_analyze_metrics(run.con, run_id=analyze_rid)
+    assert not cat_df.empty
+    for col in thirteen:
+        assert col in cat_df.columns, f"segmented report frame missing complete corpus column {col}"
+    for _, row in cat_df.iterrows():
+        assert row["evaluation_corpus_hash"] == identity.corpus_hash
+        assert int(row["evaluation_corpus_count"]) == identity.count
+        assert str(row["evaluation_corpus_comparable"]).lower() == "true"
+        assert int(row["evaluation_corpus_requested_count"]) == identity.requested_count
+        assert row["evaluation_corpus_requested_digest"] == identity.requested_digest
+        assert row["evaluation_corpus_eligible_digest"] == identity.eligible_digest
+        assert row["evaluation_corpus_observation_digest"] == identity.observation_digest
+        assert bool(row["evaluation_corpus_complete"]) is True
+        assert row["evaluation_corpus_integrity"] == identity.integrity
+
+    # Matched medoid-baseline frame carries the SAME complete surface.
+    base = query_medoid_baselines(run.con, run_id=analyze_rid)
+    assert not base.empty and (base["backbone"] == BACKBONE).all()
+    for col in thirteen:
+        assert col in base.columns, f"medoid baseline frame missing complete corpus column {col}"
+    for _, row in base.iterrows():
+        assert row["evaluation_corpus_hash"] == identity.corpus_hash
+        assert bool(row["evaluation_corpus_complete"]) is True
+        assert row["evaluation_corpus_integrity"] == identity.integrity
+        assert row["evaluation_corpus_observation_digest"] == identity.observation_digest
+
+    # Emitted report JSON surfaces the digest/observation evidence (not just legacy hash/count).
+    report = json.loads((run.output_root / "report" / "report.json").read_text())
+    rows = _report_analysis_rows(report)
+    assert rows
+    for r in rows:
+        assert r["evaluation_corpus_hash"] == identity.corpus_hash
+        assert r["evaluation_corpus_comparable"] == "True"
+    # On the comparable fixture the corpus/observation evidence appears complete on the baseline
+    # carrier rows (see the complete-delta gate tests for field-level adversarial mismatch).
+    del rows
 
 
 def test_report_member_and_equivalence_evidence_rendered_on_real_run(run):
@@ -910,15 +1035,15 @@ def test_report_member_and_equivalence_evidence_rendered_on_real_run(run):
         )
 
     # Alias equivalence: rendered analysis rows expose canonical + alias ids per collapsed class.
-    alias_cid = run.config_id_for(ALIAS_CONFIG_THRESHOLDS[0])
-    other_alias_cid = run.config_id_for(ALIAS_CONFIG_THRESHOLDS[1])
     distinct_cid = run.config_id_for(DISTINCT_CONFIG_THRESHOLD)
+    alias_members = {run.config_id_for(t) for t in ALIAS_CONFIG_THRESHOLDS}
     alias_of = {}
     for r in _report_analysis_rows(report):
         cid = int(r["canonical_config_id"])
         alias_of.setdefault(cid, set()).update(int(a) for a in r["alias_ids"].split(",") if a not in ("", "—"))
-    assert alias_cid in alias_of and other_alias_cid in alias_of[alias_cid], (
-        f"alias config {other_alias_cid} must fold under canonical {alias_cid}"
+    # the two alias thresholds fold under ONE canonical class (representative is either one)
+    assert any({k} | aliases == alias_members for k, aliases in alias_of.items()), (
+        f"the alias thresholds {sorted(alias_members)} must fold under a single canonical class"
     )
     assert distinct_cid in alias_of and not alias_of[distinct_cid], (
         f"distinct config {distinct_cid} must be its own canonical singleton"

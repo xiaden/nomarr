@@ -68,7 +68,7 @@ def _effnet_config() -> SegConfigInput:
         bin_mode="temporal_global",
         threshold_configured=0.7,
         threshold_effective=0.7,
-        semantics="direct_l2",
+        semantics="direct_distance",
         outlier_window=3,
         strategy_version=PTC_STRATEGY_VERSION,
     )

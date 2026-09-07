@@ -9,7 +9,7 @@ from typing import Any
 
 from plotly.offline import get_plotlyjs
 
-from ._corpus import disc_artist_warning, section_corpus
+from ._corpus import ruler_disc_warnings, section_corpus
 from ._efficiency import section_efficiency
 from ._heads import section_head_analysis
 from ._provenance import section_provenance
@@ -297,7 +297,9 @@ def run(con, out_path=None, *, run_id: str | None = None) -> dict:
         Required directory where ``report.html`` and ``report.json`` will be written.
         Raises ``ValueError`` if not provided.
     run_id:
-        Optional physical run-scope selector naming a completed analyze scope.  When given, only
+        Optional physical run-scope selector naming a completed analyze scope (per the CLI's
+        grouped per-run predicate: the run has at least one ``complete``/``completed`` ``analyze``
+        provenance row and no ``failed`` one).  When given, only
         that run's catalog analysis rows feed the analysis/winners/summary sections and only that
         run's provenance is reported.  When ``None`` (the default) every catalog-analysis row
         present is rendered — this whole-set read is the DIRECT-caller contract (empty databases
@@ -328,7 +330,7 @@ def run(con, out_path=None, *, run_id: str | None = None) -> dict:
     wdf, _ = _step("query_winners_metrics", lambda: query_winners_metrics(con, run_id=run_id))
 
     # Global warnings
-    warnings, _ = _step("disc_artist_warning", lambda: disc_artist_warning(con))
+    warnings, _ = _step("discrimination_warnings", lambda: ruler_disc_warnings(con))
 
     # Section builders (exact order contract).
     sections_raw: list[tuple[str, Any]] = [

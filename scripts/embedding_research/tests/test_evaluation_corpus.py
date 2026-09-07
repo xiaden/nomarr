@@ -33,6 +33,7 @@ from scripts.embedding_research import catalog as catalog_mod
 from scripts.embedding_research.catalog_identity import (
     EVALUATION_CORPUS_SEMANTICS_VERSION,
     EvaluationCorpusIdentity,
+    catalog_requested_song_ids,
     resolve_evaluation_corpus,
 )
 from scripts.embedding_research.common import catalog_analysis as ca
@@ -420,5 +421,144 @@ def test_comparable_result_is_still_persisted(compact_catalog_factory, con, tmp_
         assert result.comparable is True and result.n_queries == 4
         sk = analyze_scope.write_catalog_analyze_rows(con, run_id="run-p1-complete", result=result)
         assert con.execute("SELECT count(*) FROM analyze_metrics WHERE strategy_key=?", (sk,)).fetchone()[0] > 0
+    finally:
+        harness.close()
+
+
+# --------------------------------------------------------------------------- #
+# P2-S1: requested population is the catalog-requested surface (independent of  #
+# seg_meta / representation searchability).                                     #
+# --------------------------------------------------------------------------- #
+
+
+def test_catalog_requested_population_is_independent_of_seg_meta(compact_catalog_factory, con, tmp_path):
+    """A fully-silent requested song stays in the requested surface (carried as missing).
+
+    ``s4`` is requested and committed but fully silent -> it is a ``metadata_only``
+    ``catalog_song`` leaf with NO ``seg_meta`` rows.  The requested population must still
+    include it (resolved from the requested surface, not from ``seg_meta``), so the corpus
+    resolution carries it as excluded ``missing`` evidence rather than silently dropping it.
+    """
+    silent = np.zeros(6, dtype=np.uint8)  # s4 fully silent
+    harness = _build(
+        compact_catalog_factory,
+        con,
+        tmp_path / "out",
+        catalog_song_ids=_SONGS,
+        masks={"s4": silent},
+    )
+    try:
+        # Requested surface = every catalog_song leaf under a config of the backbone.
+        requested = catalog_requested_song_ids(harness.con, _BACKBONE)
+        assert requested == _SONGS  # s4 retained even though it produced no segments
+
+        # s4 produced NO seg_meta rows but IS a metadata_only requested leaf.
+        assert (
+            harness.con.execute(
+                "SELECT count(*) FROM seg_meta sm "
+                "JOIN seg_config c ON c.config_id=sm.config_id "
+                "WHERE c.backbone=? AND sm.song_id='s4'",
+                (_BACKBONE,),
+            ).fetchone()[0]
+            == 0
+        )
+
+        ident = resolve_evaluation_corpus(harness.con, harness.stream_store, requested, backbone=_BACKBONE)
+        # s4 (whole-song silent) is eligible-population-excluded but NOT dropped: it is
+        # carried as missing evidence because it is part of the catalog-requested surface.
+        assert ident.song_ids == ("s1", "s2", "s3")
+        assert ident.missing_song_ids == ("s4",) and ident.missing_count == 1
+        assert ident.count == 3 and ident.eligible is True
+    finally:
+        harness.close()
+
+
+def test_whole_song_no_segment_song_stays_in_shared_corpus_and_degrades_only_the_representation(
+    compact_catalog_factory, con, tmp_path
+):
+    """P2-S3: an eligible whole-song song with no representation segment medoid stays in the shared
+    corpus; ONLY that representation becomes explicitly non-comparable.
+
+    ``s4`` is requested, committed, and whole-song non-silent (eligible) but the cataloged
+    representation has no segment medoid for it (s4 committed-but-not-cataloged).  The SHARED
+    corpus identity still contains s4 and stays ``comparable`` (whole-song view); the
+    representation that cannot carry s4 degrades to ``comparable == False`` with missing
+    evidence, while the shared identity object is unchanged.
+    """
+    harness = _build(
+        compact_catalog_factory,
+        con,
+        tmp_path / "out",
+        catalog_song_ids=("s1", "s2", "s3"),
+        stream_song_ids=_SONGS,
+    )
+    try:
+        store = harness.stream_store
+        ident = resolve_evaluation_corpus(harness.con, store, _SONGS, backbone=_BACKBONE)
+        # s4 is committed + non-silent whole-song -> ELIGIBLE in the shared corpus.
+        assert ident.song_ids == _SONGS and "s4" in ident.song_ids
+        # Whole-song view is not degraded by any single representation losing a medoid.
+        assert ident.eligible is True and ident.comparable is True
+
+        cfg = ca.CatalogAnalysisConfig(
+            run_id="run-p2-no-segment",
+            backbone=_BACKBONE,
+            song_ids=ident.song_ids,
+            artists=dict(_ARTISTS),
+            evaluation_corpus=ident,
+        )
+        result = ca.analyze_catalog_corpus(store, harness.con, cfg, research_con=con)
+        # ONLY the representation is non-comparable; the shared identity is untouched.
+        assert result.comparable is False
+        assert result.missing_song_ids == ("s4",) and result.missing_count == 1
+        assert result.evaluation_corpus is ident
+        assert ident.song_ids == _SONGS and ident.comparable is True
+    finally:
+        harness.close()
+
+
+# --------------------------------------------------------------------------- #
+# P2-S2: the corpus resolver fails closed on a malformed committed mask.        #
+# --------------------------------------------------------------------------- #
+
+
+class _MalformedObservation:
+    """Duck observation whose mask is whatever the test injects (no loader validation)."""
+
+    def __init__(self, mask):
+        self.stream = np.ones((6, 4), dtype=np.float32)
+        self.mask = mask
+
+
+class _MalformedMaskStore:
+    def __init__(self, mask):
+        self._mask = mask
+
+    def load_committed_observation(self, _song_id, _backbone):
+        return _MalformedObservation(self._mask)
+
+
+@pytest.mark.parametrize(
+    "bad_mask",
+    [
+        pytest.param(np.array([1, 0, 1], dtype=np.uint8), id="short"),
+        pytest.param(np.array([1, 1, 1, 1, 1, 1, 1], dtype=np.uint8), id="long"),
+        pytest.param(np.array([1, 1, 1, 1, 1, 1], dtype=np.int64), id="wrong-dtype"),
+        pytest.param(np.array([[1, 1, 1, 1, 1, 1]], dtype=np.uint8), id="non-1D"),
+        pytest.param(None, id="missing"),
+    ],
+)
+def test_corpus_resolver_refuses_malformed_committed_mask(compact_catalog_factory, con, tmp_path, bad_mask):
+    """The corpus eligibility seam requires an EXACT ``uint8[patch_count]`` committed mask.
+
+    A short/wrong-length/wrong-dtype/non-1D/missing mask is a typed refusal (fail closed) —
+    a shorter mask is NEVER interpreted with trailing whole-song patches searchable, and
+    absence is never interpreted as no silence.
+    """
+    harness = _build(compact_catalog_factory, con, tmp_path / "out", catalog_song_ids=_SONGS)
+    try:
+        store = _MalformedMaskStore(bad_mask)
+        with pytest.raises(ValueError):
+            resolve_evaluation_corpus(harness.con, store, _SONGS, backbone=_BACKBONE)
     finally:
         harness.close()

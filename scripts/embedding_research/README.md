@@ -10,10 +10,12 @@ corpus and emits a static HTML report for offline inspection.
 > **Current (corrective pass)**: the configuration loader in `helpers/toml.py` is strict —
 > `research_config.toml` describes ONLY the executable current `[pipeline]` (EffNet default;
 > explicit MusicNN opt-in) and `[analysis]` settings; a missing/malformed/schema-invalid file
-> raises a named error, never warn-and-return `{}`. Thresholds have exactly ONE semantics — finite
-> direct L2 between normalized unit vectors, `configured == effective` — via
-> `helpers/thresholds.py` (`resolve_threshold`, `canonical_float`, `canonical_config_hash`,
-> `config_encoder_version`). `std_scaled`/calibration/p50 and all old config sections are removed.
+> raises a named error, never warn-and-return `{}`. Thresholds have exactly ONE application
+> semantics — `direct_distance`, `configured == effective` (stored in `seg_config.threshold_semantics`)
+> — resolved via `helpers/thresholds.py` (`resolve_threshold`, `canonical_float`, `canonical_config_hash`,
+> `config_encoder_version`). The executed distance metric is never stored; it is derived from the config's
+> `bin_mode` via `helpers/binning.DIST_FNS` (`l2` for `temporal_global`, `chebyshev` for `temporal_perdim`).
+> `std_scaled`/calibration/p50 and all old config sections are removed.
 > Whole-tree deletion surfaces owned by later plans are inventoried in `CONTRACTS.md` §
 > "Plan A deletion inventory".
 
@@ -24,11 +26,17 @@ The default primary experiment is deliberately narrow (see `CONTRACTS.md`):
 - **backbone**: `effnet` only by default; MusicNN is enabled only by explicit selection
   (`backbones=["effnet","musicnn"]`) and is never part of default runs.
 - **representation**: the active catalog is the COMPACT canonical `seg_config` rows under the single
-  finite direct-L2 semantics (`configured == effective`); there is no flat/PTC/CTP *strategy* baseline,
+  threshold-*application* semantics `direct_distance` (`configured == effective`, stored in
+  `seg_config.threshold_semantics`); the executed distance metric is never stored (derived from `bin_mode`
+  via `helpers/binning.DIST_FNS`, see below); there is no flat/PTC/CTP *strategy* baseline,
   no copied-vector representation, and no synthetic (coordinate-wise) medoid. Segmentation dispatches
   the two retained temporal `bin_mode` values through `helpers/binning.DIST_FNS` — `temporal_global`
-  → direct unit-vector L2, `temporal_perdim` → per-dimension Chebyshev — and fails closed on unknown
-  modes and on the retired `'direct'` mode (no mismatched / advertised-but-hardcoded metric). Analysis executes each
+  → direct unit-vector L2 (`l2`), `temporal_perdim` → per-dimension Chebyshev (`chebyshev`) — and fails
+  closed on unknown modes and on the retired `'direct'` mode (advertised metric == executed metric by
+  construction). `temporal_global`/L2 is the sole PRIMARY (and sole canonical-head) experiment;
+  `temporal_perdim`/Chebyshev is retained only as a separately named SECONDARY experiment with its own
+  declared, persisted threshold grid, and equal numeric thresholds are distinct experiment identities
+  (never deduplicated across metrics). Analysis executes each
   distinct current search-representation class exactly once over only its canonical rows (per-class
   retrieval passes, never a merged union — see `CONTRACTS.md`). The winner/delta baseline per
   `(backbone, sim_metric, k, metric)` is the **observed** `global_pool:{backbone}:medoid` searchable-patch
@@ -43,6 +51,14 @@ The default primary experiment is deliberately narrow (see `CONTRACTS.md`):
   winner/delta rows.
 - **evaluation lenses**: MAP, MRR, NDCG, Recall, and discrimination are evaluation lenses, not
   optimization objectives, and are never collapsed into one composite.
+- **independent rulers**: artist, genre, and frozen semantic-head agreement are three independent rulers,
+  each with its own suffixed finite aggregate values and evaluable-query count
+  (`map_k_artist`/`mrr_artist`/`ndcg_k_artist`/`recall_k_artist`/`disc_artist`/`n_queries_artist` and the
+  parallel `_genre`/`_head` suffixes). Missing/null artist/genre values and songs lacking complete frozen-head
+  evidence are PER-RULER exclusions (never guessed, never substituted with `unknown`, never a run failure).
+  The observed `global_pool:{backbone}:medoid` carries the same three rulers' values/counts and is never a
+  class/winner candidate. The fixed per-song `song_retrieval_metrics` surface stays artist-ruler-only, with
+  `disc_genre_contrib`/`disc_head_contrib` explicitly historical-empty.
 
 ## CLI phases (explicit phase boundaries)
 
@@ -301,7 +317,7 @@ read-only compatibility, only under an explicit label/opt-in, never a primary in
 > `db/truncation.py`, `db/stratify.py`, `cache/*`, `cache_identity.py`, `classify.py`,
 > `head_pooling.py`, `strategy_ctp/`, `strategy_binned/`, `strategy_global_pool/`,
 > `common/analyze.py`, `common/stratify.py` deletion, and the legacy `report/_*.py` migration to the
-> seven-section catalog contract. The current 10-table schema is listed in the "Required generated
+> seven-section catalog contract. The current 11-table schema is listed in the "Required generated
 > outputs" table and `CONTRACTS.md`; the authoritative deletion inventory with per-row EXECUTED
 > dispositions is `CONTRACTS.md`'s Plan A deletion inventory. Only the [Active] rows below remain
 > current.
@@ -320,6 +336,10 @@ read-only compatibility, only under an explicit label/opt-in, never a primary in
 - `run_provenance` — per-phase run rows, incl. `retained` flag + `view_refs`.
 - `corpus_state` — singleton post-run corpus state.
 - `catalog_metadata` — metadata-only singleton.
+- `analyze_incomplete_diagnostics` — versioned non-metric diagnostics for non-comparable
+  representations (`db/incomplete_diagnostics.write_incomplete_analyze_diagnostic`, written only
+  after the mandatory observed baseline succeeds; no PK/UNIQUE, app-scoped replacement by
+  `(run_id, strategy_key, sim_metric, k)`).
 
   > **Note — the segmentation catalog is NOT a DuckDB table here.** The five *compact*
   > catalog tables (`catalog_metadata` / `seg_config` / `catalog_song` / `seg_meta` /
@@ -366,7 +386,9 @@ phases read directly.
 (writes `head_phase_provenance` only);
 `common/catalog_analysis.py` + `db/analyze_scope.write_catalog_analyze_rows`;
 `search_views.materialize_search_view` (disposable view writer);
-`db/flat.write_analyze_metrics`; report readers (`report/_*.py`, DB scalars + manifests only).
+`db/flat.write_analyze_metrics`;
+`db/incomplete_diagnostics.py` (`write_incomplete_analyze_diagnostic` /
+`read_incomplete_analyze_diagnostics`); report readers (`report/_*.py`, DB scalars + manifests only).
 
 **[Historical — Plan E P1-S5.]** The modules previously listed as [Archival] — `classify.py`
 (`run_shared_ptc_head_pooling`), `head_pooling.py`, `strategy_ctp/segment_fn.py`, and
@@ -399,3 +421,31 @@ deletion were removed in Plan E P1-S5.
 `--dry-run` is the default for `cleanup` `staging`/`stray`. Legacy/bare/`.vN` names are never
 classified or removed. No default/global reset of Tier 1/2 baseline/corpus results; an artifact
 outside the current inventory is unclassified and never deleted.
+
+
+## Apparatus-v1.0 remaining corrective pass
+
+> **Landed/current-state note (2026-09, Plans A→B→C-Phases-1-2).** The dependency chain below is no
+> longer merely "remaining": execution-reporting Plans A (observation-corpus-metrics) and B
+> (atomic-lifecycle-diagnostics) are LANDED (QA-passed), and Plan C Phases 1–2 — complete corpus
+> deltas + the deterministic fixture/adversarial gate battery — are LANDED in the working tree.
+> Only Plan C P3-S2 (commit) and P3-S3 (QA-PushManager Gate-1 publication) remain pending. The
+> older execution/reporting Plans E/F/G prose elsewhere is SUPERSEDED/HISTORICAL for execution by this
+> broader chain — do not read E/F/G-era "complete equality / hash-only delta / subset" claims as
+> current contract. Current delta semantics: only genuinely equal COMPLETE persisted corpus
+> identity/evidence (13-field surface) yields a delta; any differing/one-sided field yields an
+> explicit incomplete diagnostic with a field-level reason (see the Plan C landed addendum in
+> `CONTRACTS.md`).
+
+The pushed candidate `cc3a17155f30e35674f85086c3aa09d60d2d147c` was the input state for the dependency-ordered corrective chain below. The older pending execution/reporting Plans E/F/G are superseded for execution by this broader chain and must not be run independently:
+
+```text
+A observation binding, corpus semantics, rulers, and metric identity
+  -> B atomic analyze lifecycle and durable incomplete diagnostics
+    -> C complete corpus deltas, deterministic verification, and QA-PushManager Gate 1 publication
+```
+
+This pass preserves the filesystem-first immutable observation architecture, compact catalog, CPU-only derived phases, source-index medoids, bounded exact scoring, v2-only analyze scope, mandatory observed global-medoid baseline, evaluation-corpus identity, semantic/disposable identity separation, seven-section report, and research-only scope. It does not run a real corpus/model/audio/ONNX sweep and does not add
+compatibility readers, fallback paths, dual writes, CTP, ANN, production changes, or frontend
+changes. See the appended apparatus-v1.0 section of `CONTRACTS.md` and the task plans A/B/C (and
+their landed addenda) for binding details; Plans E/F/G are historical for execution.

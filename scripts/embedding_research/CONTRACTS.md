@@ -6,13 +6,17 @@
 
 Only `scripts/embedding_research`, its tests/docs, and formal planning artifacts are in scope. No production or frontend changes. A′ uses immutable float32 NumPy `.npy`/`.npz` sidecars plus DuckDB scalar metadata/catalog. Parquet, DuckDB BLOB/tar/Zarr payloads, ANN v1, optimizer prerequisites, DuckDB 2.x migration, and deferred production quantized streams are excluded.
 
-Current invariants (post-Plan E P1-S5 hard cut, plus the Plan B identity/collapse/baseline corrective pass): a single finite direct-L2 threshold contract with `configured == effective` exactly; the compact filesystem catalog whose structural `seg_meta` yields exact searchable `M_g` reconstructed on read (never a per-patch table, never an inclusive range), with absorbed outliers represented exactly and search medoids stored as observed source patch indices; per-config exact/search hash preimages that bind each leaf to its song id and fold the frozen stream + committed-mask digests, mask/scoring semantics and versions, ordered medoid source indices and normalized weights, and (for the exact hash) the full canonical structural rows — structural-only changes alter song/exact identity but never split a search class when the actual ordered scoring inputs stay equal (see the collapse contract below); class-1 `act[1]` canonical head pooling over `boundary_source="catalog"` / `head_pool_variant="shared_catalog_boundary"`; catalog-scoped strategy-key identity decoded from `catalog:{backbone}:{score_variant}:v{version}:{keyset}`; analysis that schedules every distinct current `SearchRepresentationClass` exactly once as its own leave-one-out pass over only that class's canonical rows (per-class retrieval passes, never a merged union); and the observed `global_pool:{backbone}:medoid` searchable-patch medoid RESTORED as an ACTIVE baseline (Plan B P1-S5..S7) against which the report computes per-`(backbone, sim_metric, k, metric)` winner/delta rows. Former invariants that named DELETED surfaces are historical only: the `np.minimum((h_scores * 10).astype(np.int32), 9)` stratification formula (`db/stratify.py` deleted) and the running-spherical-centroid PTC semantics with `OUTLIER_WINDOW=3` (`strategy_ptc` deleted). Still held regardless of surface: no synthetic/coordinate `median`, no `agg_method=medoid`, no `disc_album`, no non-finite output, and no cross-backbone corpus mixing — the observed medoid baseline is an observed source row's unit vector (source index + centrality only), never a synthetic/coordinate-wise vector. The active discrimination metric vocabulary is `disc_artist`-only: no `disc_score` alias write/read/warning/fixture/report column remains anywhere executable (removed in the execution-reporting-repair Plan C Phase-2 hard cut).
+Current invariants (post-Plan E P1-S5 hard cut, plus the Plan B identity/collapse/baseline corrective pass, plus the Plan A corrective amendment): a single finite threshold-application contract `direct_distance` with `configured == effective` exactly — its executed distance metric is never stored but derived from the config's `bin_mode` via `helpers/binning.DIST_FNS` (`l2` for `temporal_global`, `chebyshev` for `temporal_perdim`); the compact filesystem catalog whose structural `seg_meta` yields exact searchable `M_g` reconstructed on read (never a per-patch table, never an inclusive range), with absorbed outliers represented exactly and search medoids stored as observed source patch indices; per-config exact/search hash preimages that bind each leaf to its song id and fold the frozen stream + committed-mask digests, mask/scoring semantics and versions, ordered medoid source indices and normalized weights, and (for the exact hash) the full canonical structural rows — structural-only changes alter song/exact identity but never split a search class when the actual ordered scoring inputs stay equal (see the collapse contract below); class-1 `act[1]` canonical head pooling over `boundary_source="catalog"` / `head_pool_variant="shared_catalog_boundary"`; catalog-scoped strategy-key identity decoded from `catalog:{backbone}:{score_variant}:v{version}:{keyset}`; analysis that schedules every distinct current `SearchRepresentationClass` exactly once as its own leave-one-out pass over only that class's canonical rows (per-class retrieval passes, never a merged union); and the observed `global_pool:{backbone}:medoid` searchable-patch medoid RESTORED as an ACTIVE baseline (Plan B P1-S5..S7) against which the report computes per-`(backbone, sim_metric, k, metric)` winner/delta rows. Former invariants that named DELETED surfaces are historical only: the `np.minimum((h_scores * 10).astype(np.int32), 9)` stratification formula (`db/stratify.py` deleted) and the running-spherical-centroid PTC semantics with `OUTLIER_WINDOW=3` (`strategy_ptc` deleted). Still held regardless of surface: no synthetic/coordinate `median`, no `agg_method=medoid`, no `disc_album`, no non-finite output, and no cross-backbone corpus mixing — the observed medoid baseline is an observed source row's unit vector (source index + centrality only), never a synthetic/coordinate-wise vector. The active discrimination vocabulary is the three independent ruler metrics `disc_artist`/`disc_genre`/`disc_head`, each computed on its own ruler-labeled population; no `disc_score` alias write/read/warning/fixture/report column remains anywhere executable (removed in the execution-reporting-repair Plan C Phase-2 hard cut), and `disc_genre_contrib`/`disc_head_contrib` remain explicitly historical-empty on the fixed artist-only per-song surface.
 
 ## Threshold and configuration contracts (current — Plan A corrective pass)
 
-There is exactly ONE threshold contract: a finite DIRECT L2 distance between
-normalized unit vectors, with `configured == effective` exactly.  Scaled
-(`std_scaled`), calibration/p50, weighted-reduction, and per-threshold cache/
+There is exactly ONE threshold contract: a single finite threshold-*application*
+semantics `direct_distance` applied directly to the boundary, with `configured ==
+effective` exactly. The executed boundary distance metric is never stored — it is
+derived from the config's `bin_mode` through the same `helpers/binning.DIST_FNS`
+dispatch that runs segmentation (`l2` for `temporal_global`, `chebyshev` for
+`temporal_perdim`), so the advertised metric always equals the executed metric.
+Scaled (`std_scaled`), calibration/p50, weighted-reduction, and per-threshold cache/
 table vocabulary were removed and are historical only.  The pure API home is
 `helpers/thresholds.py`, free of DuckDB/IO/audio deps:
 
@@ -21,7 +25,7 @@ table vocabulary were removed and are historical only.  The pure API home is
 class ThresholdResolution:
     configured: float      # finite
     effective: float       # finite; == configured exactly
-    semantics: str         # == "direct_l2" (the only semantics)
+    semantics: str         # == "direct_distance" (threshold application; the only semantics)
     encoder_version: str   # SHA-256 of helpers/thresholds.py bytes (whole-module)
 
 resolve_threshold(configured: object) -> ThresholdResolution   # single arg only
@@ -32,16 +36,20 @@ config_encoder_version() -> str            # lazy whole-module SHA-256, metadata
 ```
 
 `resolve_threshold` accepts only a finite numeric `configured` and always returns
-direct normalized-unit-vector L2 semantics; it has no `semantics` or
+the `direct_distance` application semantics; it has no `semantics` or
 `calibration_record` parameter.  The COMPACT snapshot ``seg_config`` rows (delivered by
-Plan C) carry no ``semantics``/``calibration_record``/``alias_of_config_id`` columns —
-the corrective compact model is canonical-only under a single direct-L2 semantics, and
-the alias machinery plus those fields were dropped when the old research ``seg_*`` schema
-was retired (P1-S12).  The resolved threshold is one scalar with `configured == effective` and
-semantics `direct_l2` in every retained mode.  The temporal ``bin_mode`` never introduces a
-second threshold semantics — it selects only the *boundary distance function* that compares
-that same scalar: direct unit-vector L2 for ``temporal_global`` and per-dimension Chebyshev
-for ``temporal_perdim`` (see the Plan C temporal-dispatch subsection below).
+Plan C) carry the threshold-application label in their stored ``threshold_semantics`` column
+(always `direct_distance`) and NO stored distance-metric column — the executed metric is
+derived from ``bin_mode`` — and no ``calibration_record``/``alias_of_config_id`` columns.
+The corrective compact model is canonical-only under a single `direct_distance`
+application semantics, and the alias machinery plus those fields were dropped when the
+old research ``seg_*`` schema was retired (P1-S12).  The resolved threshold is one scalar
+with `configured == effective` and application semantics `direct_distance` in every
+retained mode.  The temporal ``bin_mode`` never introduces a second threshold-application
+semantics — it selects only the *derived distance metric* that compares that same scalar:
+direct unit-vector L2 (`global_dist`, metric `l2`) for ``temporal_global`` and per-dimension
+Chebyshev (`perdim_dist`, metric `chebyshev`) for ``temporal_perdim`` (see the Plan C
+temporal-dispatch subsection below).
 
 The strict configuration loader lives in `helpers/toml.py`:
 `load_research_config(path: Path | None = None) -> CurrentResearchConfig` accepts
@@ -141,7 +149,7 @@ New/maintained active tables use scalar columns and intentionally have no new `P
 
 No vector BLOBs, `view_manifest`, or artifact-classification table is introduced. Legacy tables are retained only when an explicit archival/golden obligation exists. `analyze_metrics` has ONE current run-scoped schema (see the schema section): `run_id` is a required non-null `TEXT` column with no default and no `'legacy'` partition — the pre-cut backup-first migration (which copied old rows as `run_id='legacy'`) is REMOVED, so no executable writer or reader touches a `run_id='legacy'` row as current lineage. All readers and writes are run-scoped under a caller-supplied current run id. A stale pre-cut table (missing `run_id`, carrying any `run_id='legacy'` rows, or exposing a non-None `run_id` column default such as the HEAD-era `DEFAULT 'legacy'` shape with no rows to trip the row-presence check) is refused with `StaleSchemaError` and explicitly reset via `python run.py reset --scope analysis` — never relabeled into an executable legacy partition.
 
-**Current 10-table research schema (Plan E P1-S5 hard cut).** The retained DuckDB tables are exactly `songs` (PK `song_id`), `analyze_metrics` (one current run-scoped schema: `run_id TEXT NOT NULL` no default, no `'legacy'` partition, no PK), `song_retrieval_metrics` (PK `strategy_key,sim_metric,k,song_id`), `head_phase_provenance` (18-column canonical sink, no PK), `phase_timings` (PK `run_ts,phase`; the active efficiency source), and `stream_registry` / `head_stream_registry` / `run_provenance` / `corpus_state` / `catalog_metadata` (registry/provenance/catalog tables, no PK/UNIQUE). The thirteen obsolete copied-vector/threshold/stratification tables — `pooled_vecs`, `head_results`, `head_agreement_rows`, `patch_features`, `binned_pair_sims`, `binned_classify_ctp`, `binned_song_stats`, `truncation_robustness_rows`, `binned_ctp_vecs`, `binned_ptc_ctp_metrics`, `head_sim_corr_rows`, `binned_calibration`, and `stratified_corpus` — were PHYSICALLY REMOVED (DDL dropped, no replacement or compatibility DDL) in Plan E P1-S5 (Wave 2b), together with their dead writer/read paths (`db/binned.py`, `db/truncation.py`, `db/stratify.py`) and the now-empty `db/__init__.py` facade entries.
+**Current 11-table research schema (Plan E P1-S5 hard cut, plus ``analyze_incomplete_diagnostics`` under execution-reporting Plan B P2).** The retained DuckDB tables are exactly `songs` (PK `song_id`), `analyze_metrics` (one current run-scoped schema: `run_id TEXT NOT NULL` no default, no `'legacy'` partition, no PK), `song_retrieval_metrics` (PK `strategy_key,sim_metric,k,song_id`), `head_phase_provenance` (18-column canonical sink, no PK), `phase_timings` (PK `run_ts,phase`; the active efficiency source), `stream_registry` / `head_stream_registry` / `run_provenance` / `corpus_state` / `catalog_metadata` (registry/provenance/catalog tables, no PK/UNIQUE), and `analyze_incomplete_diagnostics` (30-column versioned non-metric diagnostics for non-comparable representations, no PK/UNIQUE; app-scoped replacement by `(run_id, strategy_key, sim_metric, k)`). The thirteen obsolete copied-vector/threshold/stratification tables — `pooled_vecs`, `head_results`, `head_agreement_rows`, `patch_features`, `binned_pair_sims`, `binned_classify_ctp`, `binned_song_stats`, `truncation_robustness_rows`, `binned_ctp_vecs`, `binned_ptc_ctp_metrics`, `head_sim_corr_rows`, `binned_calibration`, and `stratified_corpus` — were PHYSICALLY REMOVED (DDL dropped, no replacement or compatibility DDL) in Plan E P1-S5 (Wave 2b), together with their dead writer/read paths (`db/binned.py`, `db/truncation.py`, `db/stratify.py`) and the now-empty `db/__init__.py` facade entries.
 
 ## Catalog and identity APIs
 
@@ -338,10 +346,10 @@ class BaselineDeltaResult:
 build_baseline_delta_rows(analysis_df, *, evaluation_corpus: EvaluationCorpusIdentity | None = None) -> BaselineDeltaResult
 ```
 
-``analysis_df`` is the decoded long-form winners frame (the shape from ``report._retrieval.query_winners_metrics``) whose rows carry at least ``backbone``/``sim_metric``/``k``/``metric``/``strategy_key``/``value`` and, for corpus-bearing rows, the five persisted evaluation-corpus columns (:data:`baseline.CORPUS_IDENTITY_COLUMNS`, each decoded from the row's single ``analyze_scope_v2`` provenance line via ``parse_analyze_scope`` — a historical ``v1`` line parses to None and is never reinterpreted). ``build_winner_delta_rows`` remaps only the MATCHED ``rows`` to ``CATALOG_WINNER_DELTA_COLUMNS``; ``build_factor_rows`` skips non-catalog rows.
+``analysis_df`` is the decoded long-form winners frame (the shape from ``report._retrieval.query_winners_metrics``) whose rows carry at least ``backbone``/``sim_metric``/``k``/``metric``/``strategy_key``/``value`` and, for corpus-bearing rows, the complete thirteen-column evaluation-corpus surface (:data:`baseline.CORPUS_IDENTITY_COLUMNS` — legacy five fields plus semantics/eligible + digest proofs/completeness/integrity, each decoded from the row's single ``analyze_scope_v2`` provenance line via ``parse_analyze_scope`` — a historical ``v1`` line parses to None and is never reinterpreted). ``build_winner_delta_rows`` remaps only the MATCHED ``rows`` to ``CATALOG_WINNER_DELTA_COLUMNS``; ``build_factor_rows`` skips non-catalog rows.
 
-- **Matching gate (equal-identity / comparable / finite).** A segmented class wins a ``(backbone, sim_metric, k, metric)`` cell ONLY when it shares the observed-medoid baseline's evaluation corpus (``corpus_hash`` equal) AND is comparable AND finite. Equal ``{A,B,C,D}`` baseline vs segmented ``{A,B,C,D}`` matches and emits a delta; a segmented ``{A,B,C}`` NEVER matches a ``{A,B,C,D}`` baseline and never partially matches on the shared subset (no silent intersection). The winner is the highest finite MATCHED segmented class (ties → lowest ``strategy_key``); ``delta = winner − baseline``.
-- **Surfaced ``incomplete``.** A segmented class that does NOT match (unequal population, non-comparable, or a corpus identity present on only ONE side of the comparison) is excluded from winner candidacy and surfaced as an ``incomplete`` diagnostic retaining its ``strategy_key``, per-cell provenance, and its corpus hash/count/comparability plus excluded-song missing count/digest (individual missing song ids are not persisted on scope lines). The observed-medoid baseline is never a winner candidate and never yields an ``incomplete`` row against itself.
+- **Matching gate (complete-identity / comparable / finite).** A segmented class wins a ``(backbone, sim_metric, k, metric)`` cell ONLY when its evaluation-corpus identity is FULLY EQUAL to the observed-medoid baseline's across EVERY carried field (:func:`baseline._CorpusIdentity.mismatched_fields` returns empty) AND it is comparable AND finite. ``mismatched_fields`` treats a field present on only ONE side as unequal (present-vs-absent = truncated/one-sided evidence), so equal ``{A,B,C,D}`` baseline vs segmented ``{A,B,C,D}`` (identical complete identity) matches and emits a delta; a segmented ``{A,B,C}`` NEVER matches a ``{A,B,C,D}`` baseline (``eligible count differs``/``eligible membership digest differs`` … field-level reason) and never partially matches on the shared subset (no silent intersection). An altered membership or observation binding that keeps an equal-looking ``corpus_hash``/``count`` is still detected as unequal via the digest/integrity fields. The winner is the highest finite MATCHED segmented class (ties → lowest ``strategy_key``); ``delta = winner − baseline``.
+- **Surfaced ``incomplete``.** A segmented class that does NOT match (any corpus identity/evidence field differs or is one-sided, unequal population, non-comparable, or a corpus identity present on only ONE side of the comparison) is excluded from winner candidacy and surfaced as an ``incomplete`` diagnostic whose reason enumerates the differing/one-sided fields (via ``mismatched_fields`` human labels), retaining its ``strategy_key``, per-cell provenance, and its complete corpus evidence (count/hash/comparability plus missing count/digest and the digest proofs). The observed-medoid baseline is never a winner candidate and never yields an ``incomplete`` row against itself.
 - **No-cross-backbone.** Cells are keyed per ``(backbone, sim_metric, k, metric)`` and the medoid key is ``medoid_strategy_key_for(backbone)``; a backbone's medoid is never the baseline for another backbone's cell.
 - **No non-finite.** A present non-finite value (the medoid's or a segmented class's) raises ``ValueError`` (fail closed) — no NaN/Inf delta is ever emitted.
 - **Optional ``evaluation_corpus`` kwarg.** Supplies the baseline's authoritative identity only when the medoid row itself carries none (row identity, when present, wins); it never widens the gate into a structural match. A frame with NO corpus identity columns on either side is never a structural candidate — every such cell is surfaced as an ``incomplete`` diagnostic (``evaluation-corpus identity absent on both sides``), because the single analyze-scope contract (Plan B hard cut) admits no identity-less match.
@@ -401,7 +409,8 @@ mask is absent or invalid is reported with a skip/error reason and is never pool
 missing mask is never interpreted as no silence, and fully-silent segments are skipped without
 audio/model/session/ONNX/CUDA access. Eligible
 selected configs are COMPACT canonical (`canonical_config_hash` non-empty) with `semantics ==
-"direct_l2"`, `bin_mode` in `temporal_global|temporal_perdim`, and `strategy_version ==
+"direct_distance"`, `bin_mode` in `TEMPORAL_BIN_MODES` (`temporal_global`, L2-primary only), and
+`strategy_version ==
 PTC_STRATEGY_VERSION`; without `config_ids` the runner selects exactly those eligible EffNet compact
 configs. Gathered head values are read via `HeadStreamStore.batch_gather` over the exact union of
 searchable source indices once per song, and per-head columns are sliced in canonical `dim_by_head`
@@ -429,11 +438,13 @@ with the P1-S2 corrective pass). The `threshold` column is retained only as a `N
 column.
 
 The exact canonical-row predicate for readers, reports, fixtures, and coverage is `config_id IS NOT
-NULL AND backbone = 'effnet' AND bin_mode IN ('temporal_global','temporal_perdim') AND
-threshold_configured IS NOT NULL AND threshold_effective IS NOT NULL AND semantics IN ('direct_l2')
+NULL AND backbone = 'effnet' AND bin_mode IN ('temporal_global') AND
+threshold_configured IS NOT NULL AND threshold_effective IS NOT NULL AND semantics IN ('direct_distance')
 AND boundary_source = 'catalog' AND head_pool_variant = 'shared_catalog_boundary' AND
-threshold IS NULL`. The canonical surface is EffNet-only (`backbone = 'effnet'`); the active bin modes
-are the two `TEMPORAL_BIN_MODES` values and the semantics are `PTC_SEMANTICS` (`direct_l2`). Rows are
+threshold IS NULL`. The canonical surface is EffNet-only (`backbone = 'effnet'`); the active bin mode is
+the single `TEMPORAL_BIN_MODES` value `temporal_global` (L2-primary only, so Chebyshev is never
+canonical head evidence) and the semantics is the single `PTC_SEMANTICS` value `direct_distance`
+(threshold *application*, never a metric; the executed metric is derived from `bin_mode`). Rows are
 canonical-only; there is no archival/unclassified partition. Application
 identity is `(config_id, backbone, head, bin_mode, threshold_configured, threshold_effective,
 semantics, boundary_source, head_pool_variant)`, excluding `run_id`; incoming duplicate identities
@@ -455,8 +466,15 @@ shows canonical `head_phase_provenance` per supported backbone with finite / sta
 provenance; `provenance` shows active `run_provenance`, command lines, hashes, warnings,
 reuse/refusal decisions, and limitations; `efficiency` shows retained `phase_timings`. Emitted keys
 are active-only; no emitted section/table ID, title, key, warning, or value uses forbidden legacy
-vocabulary or a retired phase name. `run.py` passes the selected completed report run scope into the
-renderer/loader (or uses the active completed scope when none is supplied) and writes only
+vocabulary or a retired phase name. Completed-scope selection is PER `run_id` (a grouped per-run
+predicate over append-only provenance): the resolver groups every `phase == 'analyze'`
+`run_provenance` row for a run and treats the run as a completed analyze scope only when at least
+one of its analyze rows is `complete`/`completed` AND none is `failed` — a single `failed` analyze
+row vetoes the ENTIRE run, so a contradictory run that carries both completed analyze rows and a
+later failed re-run row is never auto-selected and is refused through an explicit `report_run_id`
+(fail closed). A clean completed run stays deterministically selectable and the report data remains
+run-scoped (never blends runs). `run.py` passes the selected completed report run scope into the
+renderer/loader (or resolves the active completed scope when none is supplied) and writes only
 `report.json`/`report.html` without inference. The fixture/validator contract is an input to Plan F's
 final evidence report — it is not that separate report.
 
@@ -479,9 +497,29 @@ class EvaluationCorpusIdentity:
     missing_count: int
     missing_digest: str | None
     semantics_version: int       # EVALUATION_CORPUS_SEMANTICS_VERSION == 1
+    # ── COMPLETE corpus identity / evidence (Plan C Phase 1) ────────────────────────
+    requested_song_ids: tuple[str, ...] = ()   # requested = eligible U missing (in-memory)
+    requested_count: int = 0                   # persisted; == len(requested_song_ids)
+    requested_digest: str | None = None        # exact digest proof of the requested membership set
+    eligible_digest: str | None = None         # exact digest proof of the eligible membership set
+    observation_digest: str | None = None      # digest over each requested song's recorded observation-evidence row
+    completeness: bool = False                 # True = full proof required; refuses truncated evidence in __post_init__
+    integrity: str | None = None               # integrity self-check over the complete evidence
 
 resolve_evaluation_corpus(catalog, stream_store, requested_song_ids, *, backbone) -> EvaluationCorpusIdentity
 ```
+
+* **COMPLETE 13-column surface (Plan C Phase 1).** The persisted scope-line form of the identity
+  (`db/analyze_scope._corpus_scope_fields` + `baseline.CORPUS_IDENTITY_COLUMNS`, mirrored by
+  `report/_base.CATALOG_ANALYSIS_COLUMNS` / `report._retrieval._scope_corpus`) carries the legacy
+  five fields (hash/count/comparable/missing_count/missing_digest) PLUS the semantics_version/
+  eligible flag and the exact-digest proofs, completeness marker, and integrity self-check —
+  exactly thirteen `evaluation_corpus_*` columns.  Because the compact row form carries exact
+  digest proof (never raw id lists) of eligible + requested membership and of the resolved
+  observation binding, an altered membership or observation binding that keeps an equal-looking
+  hash/count is still detected.  `completeness=True` identities FAIL CLOSED in `__post_init__`
+  (raise on truncated / identity-less / internally inconsistent evidence) before any write; see the
+  Plan C landed addendum in the apparatus-v1.0 section for the gate semantics.
 
 * **Eligibility is exactly** ``valid committed stream+mask (load_committed_observation succeeds) AND
   at least one non-silent whole-song patch`` (patches at/beyond a shorter mask's length are
@@ -514,8 +552,10 @@ incomparable class.  ``run.py`` resolves the identity once per backbone and thre
 ``evaluation_corpus`` into every class config and into ``analyze_medoid_baseline`` /
 ``run_and_persist_medoid_baseline`` (which use ``identity.song_ids`` as the population when an
 identity is supplied).  Every segmented class scope and the recorded baseline scope carry the
-evaluation-corpus hash/count/comparability + excluded-song missing evidence on their
-``analyze_scope_v2`` provenance line (execution-reporting Plan A P2-S3).  ~~``emit_medoid_baseline``
+full COMPLETE evaluation-corpus identity/evidence (all 13 `evaluation_corpus_*` fields: hash/
+count/comparability + eligible/missing evidence + semantics/eligible flag + exact digest proofs +
+completeness/integrity — see the 13-column-surface bullet above) on their `analyze_scope_v2`
+provenance line (execution-reporting Plan A P2-S3; extended to the complete surface by Plan C P1).  ~~``emit_medoid_baseline``
 remains an analyze opt-in (DEFAULT OFF) — its removal is a later plan's scope.~~ SUPERSEDED by Plan A
 P2: the baseline is MANDATORY and unconditional (no ``emit_medoid_baseline`` key/flag anywhere
 executable).
@@ -548,13 +588,15 @@ The two retained temporal ``bin_mode`` values dispatch their real boundary dista
 the canonical ``helpers/binning.py::DIST_FNS`` map (never a hardcoded or mismatched metric):
 
 * ``temporal_global`` → ``global_dist`` — direct normalized-unit-vector L2 distance
-  (``np.linalg.norm(patch - centroid)``), the same finite direct-L2 distance the threshold
-  contract resolves (``configured == effective``, ``semantics == 'direct_l2'``).
+  (``np.linalg.norm(patch - centroid)``) — the derived metric ``l2`` for the threshold
+  application ``direct_distance`` (``configured == effective``, ``semantics ==
+  'direct_distance'``).
 * ``temporal_perdim`` → ``perdim_dist`` — per-dimension Chebyshev distance
   (``np.max(np.abs(patch - centroid))``).
 
 ``bin_mode`` selects which distance function the strict ``> threshold`` boundary applies; it
-never alters the single direct-L2 threshold semantics. ``run_spherical_segmentation(...,
+never alters the single ``direct_distance`` threshold-application semantics (the metric is the
+``bin_mode``-derived dispatch above, never stored). ``run_spherical_segmentation(...,
 bin_mode=..., outlier_window=OUTLIER_WINDOW)`` (``helpers/segmentation.py``) sets
 ``dist_fn = DIST_FNS[bin_mode]`` and FAILS CLOSED (``ValueError`` naming the supported
 ``temporal_global|temporal_perdim`` modes) for any unknown mode; the ``catalog.py`` config
@@ -782,3 +824,92 @@ part of B's deletion surface.
 scaled-config opt-in in `resolve_threshold`; `canonical_semantics`,
 `canonical_calibration_record`, `canonical_alias`, `canonical_threshold(_of)`
 threshold helpers; permissive warn-and-default `{}` loader behavior.
+
+
+## Apparatus-v1.0 remaining execution/reporting corrective pass (planned)
+
+The pushed candidate `cc3a17155f30e35674f85086c3aa09d60d2d147c` is the input state for the dependency-ordered corrective plans below. This section is the current planning contract for the remaining blockers; implementation must not execute the older pending E/F/G plans independently.
+
+Dependency order:
+
+```text
+TASK-apparatus-v1.0-execution-reporting-blockers-A-observation-corpus-metrics
+  -> TASK-apparatus-v1.0-execution-reporting-blockers-B-atomic-lifecycle-diagnostics
+    -> TASK-apparatus-v1.0-execution-reporting-blockers-C-corpus-delta-verification-publication
+```
+
+### Observation binding and corpus population
+
+Every compact catalog snapshot records versioned immutable observation evidence for each requested `(song_id, backbone)`: committed stream/mask refs and digests, commit/identity, patch count/alignment, audio fingerprint, mask semantics, and format/version identity. Before catalog-derived gathering/search, segmented analysis, observed global-medoid baseline, or shared head analysis, the current committed group must match that recorded evidence exactly; a superseded group, including a newer group selected after catalog build, is refused. There is no fallback to an older group, no mask-less interpretation, and no alternate artifact reader.
+
+The evaluation corpus is the catalog-requested song/backbone population resolved before `seg_meta` or disposable searchability. Eligibility filters only a valid catalog-bound committed observation and at least one non-silent whole-song patch. An eligible whole-song song with no representation segment medoid remains in the shared corpus and makes that representation explicitly non-comparable. Every active mask seam requires exact `uint8[patch_count]` length; short, long, missing, wrong-dtype, or otherwise malformed masks fail closed.
+
+### Rulers and experiment identity
+
+> **Corrective-pass implementation contract (landed — Phases 1–3 of this corrective plan):** the earlier ``direct_l2`` paragraphs above are now HISTORICAL vocabulary, superseded by the landed amendment. The active tree exposes the corrective model: threshold *application* ``direct_distance`` with the executed distance metric derived from the ``bin_mode`` ``DIST_FNS`` dispatch (``l2`` for ``temporal_global``, ``chebyshev`` for ``temporal_perdim``); ``temporal_global``/L2 as the sole primary (and sole canonical-head) experiment; any retained ``temporal_perdim``/Chebyshev surface a separately named secondary experiment with its own grid; and the three independent rulers below. Where a sentence above still names ``direct_l2`` it describes the pre-landing state and must be read as historical, not as current vocabulary.
+
+Artist, genre, and frozen semantic-head agreement are independent rulers. Each has its own finite aggregate values, persisted/reportable evaluable-query count, and label-resolution evidence. The same independent rulers are applied to segmented results and the observed global-medoid control. No combined optimization score exists.
+
+`temporal_global`/L2 is the sole primary experiment. Any retained `temporal_perdim`/Chebyshev surface is a separately named experiment with its own declared grid; equal numeric thresholds never imply equivalent identity. Threshold application and distance metric are separate identity fields (for example `direct_distance` plus `l2` or `chebyshev`); active Chebyshev records never use the false `direct_l2` label. Config hashes, catalog/head/analyze scope identity, and reports carry the experiment and metric identity.
+
+### Atomic analyze and complete evidence
+
+An analyze invocation is `running` until every requested backbone, every representation-class comparability decision, and every mandatory `global_pool:{backbone}:medoid` baseline resolves. Views/scopes are append-only phase evidence and cannot terminalize the invocation. Exactly one clean terminal `completed` outcome is reportable; any later failure, including after an earlier class or on a later backbone, makes the invocation `failed` and excludes it from completed report selection.
+
+Non-comparable tested classes are persisted after that backbone's mandatory baseline succeeds as versioned, report-readable non-metric diagnostics containing tested threshold/class identity, observation/corpus evidence, reason, and missing evidence. They are never `analyze_metrics` rows or complete `analyze_scope_v2` lines and are rendered visibly as incomplete without a winner/delta.
+
+Baseline deltas require complete equality of persisted corpus identity/evidence (requested and eligible membership, missing evidence, observation binding, semantics/version, and completeness), not merely equal-looking hash/count or a compatible subset. Deterministic fixture and adversarial tests are the only execution evidence for this corrective pass; no real corpus/model/audio/ONNX sweep is permitted. After implementation, the repair is committed and submitted to QA-PushManager from Gate 1; any rejection is repaired and reattempted until the new commit is approved and pushed.
+
+> **Landed addendum (execution-reporting Plan B P1/P2 — atomic analyze/complete evidence).** The
+> planning-contract prose above is superseded for the *mechanism* by the landed implementation, which
+> deliberately rides marker lines rather than a status column or a new provenance table:
+>
+> (a) **Carrier.** The invocation lifecycle rides `analyze_invocation_v1` (obligations start;
+>     opens with status `running`) and `analyze_terminal_v1` (outcome `completed`) marker lines
+>     appended into `run_provenance.output_artifact_hashes`. This is deliberate — NOT a status
+>     column and NOT a new table — because the pinned fixture vocabulary allows an analyze run
+>     exactly one provenance row with status in {`complete`, `completed`}, so lifecycle state must
+>     travel in output marker lines, never new rows/statuses.
+> (b) **Grouped per-run completion predicate** (report selection): a `failed` analyze row vetoes the
+>     whole run; when obligations marker lines are present the run is completed only if it also
+>     carries an `analyze_terminal_v1` outcome `completed` terminal (obligations present ⇒ terminal
+>     required; scope/evidence rows alone never terminalize); a run with NO obligations record falls
+>     back to the historical scope-evidence predicate, keeping pre-obligation/synthetic scope-only
+>     runs reportable exactly as before.
+> (c) **`analyze_incomplete_diagnostics` table.** Versioned non-metric diagnostics for non-comparable
+>     tested classes, written only after that backbone's mandatory observed baseline succeeds; never
+>     `analyze_metrics` rows or complete `analyze_scope_v2` lines. Replacement is app-scoped to
+>     `(run_id, strategy_key, sim_metric, k)`.
+>
+> **Landed addendum (execution-reporting Plan C P1/P2 — complete corpus deltas + deterministic
+> publication evidence).** The planning-contract sentence above ("Baseline deltas require complete
+> equality ...") is superseded for the *mechanism* by the landed implementation, which now compares
+> EVERY persisted corpus identity/evidence field and surfaces a field-level reason when any differs
+> or is one-sided:
+>
+> (a) **Complete persisted identity.** The shared `EvaluationCorpusIdentity` (top-level
+>     `catalog_identity`) now carries, alongside the legacy hash/count/comparability/missing
+>     evidence/semantics fields, exact digest proof of the eligible and requested membership sets
+>     (`evaluation_corpus_eligible_digest`, `evaluation_corpus_requested_digest`), the requested
+>     population size (`evaluation_corpus_requested_count`), the observation-binding digest the
+>     corpus was resolved against (`evaluation_corpus_observation_digest`, over each requested
+>     song's recorded catalog observation-evidence row), an explicit completeness marker
+>     (`evaluation_corpus_complete`), and an integrity self-check (`evaluation_corpus_integrity`).
+>     `completeness=True` identities FAIL CLOSED in `__post_init__` — a truncated, identity-less,
+>     or internally inconsistent evidence set is refused before any write.
+> (b) **13-column equality gate.** `build_baseline_delta_rows` (and the report winner path, which
+>     delegates to it via `build_winner_delta_rows`) compares EVERY carried field through
+>     `_CorpusIdentity.mismatched_fields(other)`: any field that differs, OR is present on only one
+>     side (present-vs-absent = truncated/one-sided evidence), excludes that cell from a matched
+>     delta. A `{A,B,C,D}` baseline vs a `{A,B,C}` segmented candidate therefore yields NO delta and
+>     an explicit incomplete diagnostic whose reason enumerates the differing/one-sided fields
+>     (e.g. "eligible count differs") — a compatible-looking equal hash/count that hides altered
+>     membership or missing observation evidence is still detected as unequal. Only genuinely equal
+>     complete identities produce a delta.
+> (c) **Deterministic-only publication evidence.** This corrective pass is verified ONLY by
+>     deterministic fixture + adversarial tests (`tests/test_plan_c_complete_corpus_identity.py`),
+>     never by a real corpus/model/audio/ONNX sweep. The repair is committed and submitted to
+>     QA-PushManager from Gate 1 after every deterministic gate passes; any rejection is repaired,
+>     the relevant earlier plan re-executed, affected gates rerun, and a replacement commit
+>     reattempted until the new commit is approved and pushed. Prior candidate approval does not
+>     carry forward.

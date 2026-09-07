@@ -48,7 +48,21 @@ _BACKBONE = "effnet"
 _SONGS = ("s1", "s2", "s3", "s4")
 _ARTISTS = {"s1": "A", "s2": "A", "s3": "B", "s4": "B"}
 _RUN = "run-p1s6-medoid-producer"
-_CLASS_METRIC_KEYS = ("map_k", "mrr", "ndcg_k", "recall_k", "disc_artist")
+_CLASS_METRIC_KEYS = (
+    "map_k_artist",
+    "mrr_artist",
+    "ndcg_k_artist",
+    "recall_k_artist",
+    "disc_artist",
+    # n_queries_* counts are emitted for every ruler (0 when a ruler has no labeled population).
+    "n_queries_artist",
+    "n_queries_genre",
+    "n_queries_head",
+)
+
+#: The SCORED (non-count) suffixed cells a class/medoid emits for this artist-only fixture — the
+#: keys that form baseline/winner delta rows (n_queries_* counts are excluded from that machinery).
+_SCORED_CLASS_METRIC_KEYS = ("map_k_artist", "mrr_artist", "ndcg_k_artist", "recall_k_artist", "disc_artist")
 
 
 def _cfg(threshold: float) -> catalog_mod.SegConfigInput:
@@ -116,7 +130,7 @@ def test_medoid_producer_metrics_keys_match_a_segmented_class(compact_catalog_fa
         assert tuple(sorted(metrics)) == tuple(sorted(_CLASS_METRIC_KEYS))
         for value in metrics.values():
             assert np.isfinite(value)
-        assert metrics["map_k"] >= 0.0 and metrics["map_k"] <= 1.0
+        assert metrics["map_k_artist"] >= 0.0 and metrics["map_k_artist"] <= 1.0
     finally:
         harness.close()
 
@@ -207,7 +221,7 @@ def test_persisted_class_and_medoid_rows_yield_finite_baseline_deltas(compact_ca
         result = build_baseline_delta_rows(winners)
         matched = result.rows
         # Every segmented result cell (one per class metric key) gets a finite delta row.
-        assert {r["metric"] for r in matched} == set(_CLASS_METRIC_KEYS)
+        assert {r["metric"] for r in matched} == set(_SCORED_CLASS_METRIC_KEYS)
         assert {r["baseline_strategy_key"] for r in matched} == {medoid_key}
         assert {r["winner_strategy_key"] for r in matched} == {class_key}
         assert all(math.isfinite(float(r["delta"])) for r in matched)

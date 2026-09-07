@@ -79,13 +79,18 @@ BOUNDARY_SOURCE_CATALOG = "catalog"
 HEAD_POOL_VARIANT = "shared_catalog_boundary"
 
 #: Canonical EffNet ``seg_config`` ``bin_mode`` values eligible for the shared CPU
-#: head analysis.  Other bin modes are never selected.
-TEMPORAL_BIN_MODES: frozenset[str] = frozenset({"temporal_global", "temporal_perdim"})
+#: head analysis.  Canonical head provenance is L2-primary (``temporal_global``)
+#: ONLY: ``temporal_perdim``/Chebyshev rows are never admitted as canonical head
+#: evidence, so only the primary experiment's configs are selected here.
+TEMPORAL_BIN_MODES: frozenset[str] = frozenset({"temporal_global"})
 
-#: Canonical threshold-semantics labels eligible for the shared CPU head analysis.  The
-#: corrective pass is direct-L2 only: ``std_scaled`` and calibration semantics are gone
-#: (DD R3), so only ``direct_l2`` is admissible.
-PTC_SEMANTICS: frozenset[str] = frozenset({"direct_l2"})
+#: Canonical threshold-application semantics labels eligible for the shared CPU
+#: head analysis.  The corrective pass is a single direct-distance application:
+#: ``std_scaled`` and calibration semantics are gone (DD R3), so only
+#: ``direct_distance`` is admissible.  This label names the APPLICATION only and
+#: never implies a metric (the executed metric for canonical-head rows is ``l2``,
+#: derived from the L2-primary ``temporal_global`` mode).
+PTC_SEMANTICS: frozenset[str] = frozenset({"direct_distance"})
 
 #: Scoring-input semantics contract version for the canonical CPU head-analysis manifest.
 #: This module is the active owner (formerly ``cache_identity.SCORING_SEMANTICS_VERSION``,

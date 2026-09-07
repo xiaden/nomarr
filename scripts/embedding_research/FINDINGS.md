@@ -4,10 +4,27 @@ Ongoing notes from research runs. Add findings as they emerge — don't wait for
 
 > **Current-state note (Plan A corrective pass)**: entries below that discuss `std_scaled`,
 > calibration/p50 scaling, or the old permissive config sections are HISTORICAL. The threshold
-> contract is now a single finite direct L2 between normalized unit vectors (`configured ==
-> effective`) in `helpers/thresholds.py`, and `helpers/toml.py` is a strict loader that rejects any
+> contract is now a single finite threshold-*application* `direct_distance` (`configured == effective`,
+> stored in `seg_config.threshold_semantics`) resolved in `helpers/thresholds.py`, with the executed distance
+> metric derived from `bin_mode` via `helpers/binning.DIST_FNS` (`l2` for `temporal_global`, `chebyshev` for
+> `temporal_perdim`); and `helpers/toml.py` is a strict loader that rejects any
 > scaled/calibration/optimizer/weighted/pooling config. The code does not read these historical
 > notes at runtime.
+
+> **Superseded (Plan A corrective P3 amendment — rulers and experiment identity, 2026-09):**
+> FINDINGS prose below that predates the P3-S3 amendment and names the pre-amendment vocabulary —
+> `direct_l2` (or a combined "direct-L2 contract/semantics") as the ACTIVE threshold/distance label, canonical
+> head semantics as `direct_l2`, a single `disc_artist`-only discrimination metric, or a "seg_config carries
+> no semantics column" model — describes the tree state BEFORE the amendment and is HISTORICAL narrative
+> only (retained for traceability; never read by runtime or tests). The active tree separates threshold
+> *application* `direct_distance` from the executed distance metric derived from `bin_mode` via
+> `helpers/binning.DIST_FNS` (`l2` for `temporal_global`, `chebyshev` for `temporal_perdim`); `temporal_global`/L2
+> is the sole primary (and sole canonical-head) experiment, `temporal_perdim`/Chebyshev a separately named
+> secondary with its own declared grid; artist/genre/frozen semantic-head are three independent suffixed rulers
+> with per-ruler `n_queries_*`; and `disc_genre_contrib`/`disc_head_contrib` stay explicitly historical-empty.
+> Examples of now-superseded prose include the head-pass P1-S1/S2 section ("head semantics is `direct_l2`-only"),
+> the Part A audit and legacy-fidelity `direct_l2`-default prose, the Plan A P2 threshold-decision section, and
+> the ptc-token-constant rationale's `PTC_SEMANTICS` value claim (all below, in their dated sections).
 
 > **Historical note (execution-reporting-repair Plan C Phase 2, 2026-09):** `disc_score` existed
 > as a backwards-compatible alias of the active discrimination metric `disc_artist` (an alias-copy
@@ -16,6 +33,20 @@ Ongoing notes from research runs. Add findings as they emerge — don't wait for
 > `disc_artist` (semantics and finite-output checks unchanged), and no executable producer,
 > consumer, warning, fixture, or report surface references `disc_score` any longer. This paragraph
 > is HISTORICAL narrative only — it is never read by runtime or tests.
+
+> **Current-state note (apparatus-v1.0 Plans A→B→C-Phase-1 landed, 2026-09):** entries below
+> describing baseline-delta matching as comparing only an equal-looking corpus `hash`/`count`/size
+> (or a compatible subset/intersection) against a medoid baseline are SUPERSEDED/HISTORICAL for
+> execution by the corrective chain. The active gate (`baseline.build_baseline_delta_rows` + the
+> report winner path) compares EVERY persisted corpus identity/evidence field — the complete
+> 13-column `evaluation_corpus_*` surface (legacy hash/count/comparable/missing evidence plus
+> semantics/eligible flag, exact digest proofs of the eligible + requested membership sets and the
+> resolved observation binding, the requested population size, an explicit completeness marker, and
+> an integrity self-check). A differing or one-sided field yields NO delta and an explicit
+> incomplete diagnostic with a field-level reason; only genuinely equal COMPLETE identity yields a
+> delta. No real corpus/model/audio/ONNX sweep is part of this corrective pass — deterministic
+> fixture/adversarial tests are the execution evidence. See the Plan C landed addendum in the
+> apparatus-v1.0 section of `CONTRACTS.md`.
 
 ---
 
@@ -988,6 +1019,11 @@ gitignored (not present in the diff). No embedding_research change reaches produ
   as PASS with rationale. (Note: the `std_scaled` audit allowlist entry for common/head_analysis.py
   protects only a prose-comment occurrence at head_analysis.py L85 — the tree has zero executable
   `std_scaled`.)
+
+  > **Superseded value (Plan A P3-S3 amendment):** the `PTC_SEMANTICS` value recorded above was `{"direct_l2"}`.
+  > After P3-S3 the constant (NAME unchanged, still never emitted vocabulary) is `frozenset({"direct_distance"})`
+  > and `TEMPORAL_BIN_MODES` is `{"temporal_global"}` only (L2-primary canonical-head selection) in
+  > `common/head_analysis.py`; the pre-amendment value claim is historical.
 
 ### Tree state handed to Plan F
 

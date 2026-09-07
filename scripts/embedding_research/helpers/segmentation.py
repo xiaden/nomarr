@@ -48,6 +48,7 @@ __all__ = [
     "StructuralSegment",
     "observed_global_medoid",
     "reconstruct_searchable_indices",
+    "require_exact_whole_song_mask",
     "run_spherical_segmentation",
     "select_observed_medoid_source_index",
 ]
@@ -185,6 +186,39 @@ def run_spherical_segmentation(
     return out
 
 
+def require_exact_whole_song_mask(mask: object, patch_count: int) -> np.ndarray:
+    """Validate an exact ``uint8[patch_count]`` 1-D whole-song silence mask or refuse.
+
+    ``mask`` must be a 1-D ``uint8`` array whose length EXACTLY equals *patch_count* (the
+    committed stream's patch count for the exact ``(song_id, backbone)`` group).  The
+    committed silence mask is REQUIRED and never optional.  A ``None`` (missing), short,
+    long, wrong-dtype, or non-1D mask raises a typed ``ValueError`` refusal — a shorter
+    mask is NEVER interpreted with trailing patches searchable (no short-mask truncation
+    or all-searchable fail-open), and absence is never interpreted as no silence.
+
+    Returns the validated mask as a ``uint8[patch_count]`` array.
+    """
+    if mask is None:
+        raise ValueError(
+            "a whole-song committed silence mask is required for the exact (song_id, "
+            "backbone) observation group; None is never interpreted as no silence (a "
+            "missing mask must fail closed)"
+        )
+    patch_count = int(patch_count)
+    arr = np.asarray(mask)
+    if arr.dtype != np.dtype("uint8"):
+        raise ValueError(
+            f"whole-song committed silence mask must be uint8; got dtype {arr.dtype} (wrong-dtype masks fail closed)"
+        )
+    if arr.ndim != 1 or arr.shape[0] != patch_count:
+        raise ValueError(
+            f"whole-song committed silence mask must be a 1-D uint8[{patch_count}] array; "
+            f"got shape {arr.shape} — short/long/non-1D masks fail closed, never truncated "
+            "or treated as trailing-searchable"
+        )
+    return arr
+
+
 def reconstruct_searchable_indices(
     meta: object,
     mask: np.ndarray,
@@ -200,27 +234,24 @@ def reconstruct_searchable_indices(
 
     The structural range is NEVER treated as authoritative membership.  Returns a
     sorted integer array of the searchable source indices; an absorbed index outside
-    ``[start, end)`` is a no-op.  ``mask`` is the whole-song committed ``uint8``
-    silence mask (``1`` = searchable, ``0`` = silent) for the exact ``(song_id,
-    backbone)`` observation group; it is REQUIRED and never optional — a ``None`` mask
-    is refused (fail closed) because a missing committed mask is never interpreted as
-    no silence.
+    ``[start, end)`` is a no-op.  ``mask`` is the whole-song committed
+    ``uint8[patch_count]`` silence mask (``1`` = searchable, ``0`` = silent) for the
+    exact ``(song_id, backbone)`` observation group; it is REQUIRED and never optional
+    and must be EXACTLY ``uint8[patch_count]``.  A None/short/long/wrong-dtype/non-1D
+    mask is refused (fail closed) — a shorter mask is never interpreted with trailing
+    patches searchable and a missing committed mask is never interpreted as no silence.
     """
-    if mask is None:
-        raise ValueError(
-            "reconstruct_searchable_indices requires the committed silence mask for the exact "
-            "(song_id, backbone) observation group; a None mask is never interpreted as no "
-            "silence (missing/corrupt masks must fail closed)"
-        )
+    patch_count = int(patch_count)
+    # The mask is REQUIRED and must be an exact ``uint8[patch_count]`` 1-D whole-song silence
+    # mask.  A None/short/long/wrong-dtype/non-1D mask is a typed refusal — a shorter mask is
+    # NEVER interpreted with trailing patches searchable and a missing mask is never
+    # interpreted as no silence.
+    arr = require_exact_whole_song_mask(mask, patch_count)
     start = int(meta.start_idx)
     end = int(meta.end_idx)
     absorbed = tuple(int(i) for i in (meta.absorbed_indices or ()))
-    patch_count = int(patch_count)
     excluded = np.zeros(patch_count, dtype=bool)
-    arr = np.asarray(mask)
-    limit = min(arr.shape[0], patch_count)
-    if limit > 0:
-        excluded[:limit] = np.asarray(arr[:limit] == 0, dtype=bool)
+    excluded[:] = np.asarray(arr == 0, dtype=bool)
     for idx in absorbed:
         if start <= idx < end and 0 <= idx < patch_count:
             excluded[idx] = True

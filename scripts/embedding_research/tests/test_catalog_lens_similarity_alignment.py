@@ -79,16 +79,16 @@ def _assert_catalog_equals_similarity(k: int, monkeypatch) -> None:
     legacy = similarity.compute_retrieval_metrics(sim, labels, k=k)
 
     checks = [
-        ("map_k", "map_k_artist"),
-        ("mrr", "mrr"),
-        ("ndcg_k", "ndcg_k_artist"),
-        ("recall_k", "recall_k_artist"),
+        ("map_k_artist", "map_k_artist"),
+        ("mrr_artist", "mrr"),
+        ("ndcg_k_artist", "ndcg_k_artist"),
+        ("recall_k_artist", "recall_k_artist"),
     ]
     for cat_key, legacy_key in checks:
         np.testing.assert_allclose(cats[cat_key], legacy[legacy_key], rtol=1e-9, atol=1e-12)
     # MRR over the full ranking: a lone-R1 query s1 whose only peer s0 sits beyond k<=3 still earns 1/4.
-    assert cats["mrr"] > 0.0
-    assert cats["ndcg_k"] >= 0.0
+    assert cats["mrr_artist"] > 0.0
+    assert cats["ndcg_k_artist"] >= 0.0
 
 
 def test_lens_map_mrr_ndcg_recall_equal_similarity_within_k(monkeypatch) -> None:
@@ -124,5 +124,5 @@ def test_ndcg_single_top_relevant_is_one_dot_zero() -> None:
             variant="fixture",
         )
         (metrics, _per_song) = ca._Lenses(cfg).evaluate([pq])
-        np.testing.assert_allclose(metrics["ndcg_k"], 1.0, rtol=0, atol=1e-12)
-        np.testing.assert_allclose(metrics["mrr"], 1.0, rtol=0, atol=1e-12)
+        np.testing.assert_allclose(metrics["ndcg_k_artist"], 1.0, rtol=0, atol=1e-12)
+        np.testing.assert_allclose(metrics["mrr_artist"], 1.0, rtol=0, atol=1e-12)

@@ -94,6 +94,7 @@ def test_generator_db_contract_only_retained_tables():
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         expected = {
+            "analyze_incomplete_diagnostics",
             "analyze_metrics",
             "catalog_metadata",
             "corpus_state",

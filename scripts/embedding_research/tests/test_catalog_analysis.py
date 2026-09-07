@@ -111,7 +111,7 @@ def test_catalog_analysis_end_to_end_finite_and_identity_carrying(con, tmp_path,
         # A single distinct config forms one singleton class (canonical == itself, no aliases).
         assert all(cls.n_configs == 1 and cls.alias_ids == () for cls in result.representation_classes)
         assert result.n_queries == len(_SONGS)
-        for key in ("map_k", "mrr", "ndcg_k", "recall_k", "disc_artist"):
+        for key in ("map_k_artist", "mrr_artist", "ndcg_k_artist", "recall_k_artist", "disc_artist"):
             assert np.isfinite(result.metrics[key]), key
         assert all(pq.all_finite() for pq in result.per_query)
         # Candidate weight factor is non-uniform (weighted corpus) => scores finite and ordered.

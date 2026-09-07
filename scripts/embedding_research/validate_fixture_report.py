@@ -11,6 +11,18 @@ vocabulary.
 
 :func:`validate_fixture_report` returns ``None`` on success and raises
 :class:`ValueError` describing the first contract violation otherwise.
+
+This validator enforces the schema-v2 fixture surface structurally: EXACTLY the seven sections,
+presence of the durable identity columns on each ``catalog_analysis_{bb}`` table — including the
+three corpus columns ``evaluation_corpus_hash`` / ``evaluation_corpus_count`` /
+``evaluation_corpus_comparable`` — and that every row's semantic representation hash is
+non-null and never equal to its disposable ``view_keyset_hash``.  It does NOT independently
+re-prove the full 13-column completeness/evidence surface and does not query
+``analyze_incomplete_diagnostics``: that complete-evidence (and zero-incomplete, clean-fixture)
+claim is asserted by the deterministic test suite — ``tests/test_deterministic_fixture_outputs.py`` for the complete
+real-writer path, and the Plan-B seam tests (``tests/test_analyze_incomplete_diagnostics.py`` /
+the invocation-atomic suite) for the WITH-incomplete rendering contract
+(visible as incomplete, no winner/delta).
 """
 
 from __future__ import annotations

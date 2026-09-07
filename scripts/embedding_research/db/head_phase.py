@@ -29,9 +29,10 @@ the CLI caller (e.g. ``head-analysis-{started_at_ms}``).
 Canonical predicate
 -------------------
 A canonical current row satisfies: ``config_id IS NOT NULL AND backbone = 'effnet' AND
-bin_mode IN TEMPORAL_BIN_MODES AND threshold_configured IS NOT NULL AND threshold_effective IS
-NOT NULL AND semantics IN PTC_SEMANTICS (direct_l2) AND boundary_source = 'catalog'
-AND head_pool_variant = 'shared_catalog_boundary'``.  Any row outside it is excluded
+bin_mode IN TEMPORAL_BIN_MODES (temporal_global, L2-primary only) AND threshold_configured
+IS NOT NULL AND threshold_effective IS NOT NULL AND semantics IN PTC_SEMANTICS
+(direct_distance) AND boundary_source = 'catalog' AND head_pool_variant =
+'shared_catalog_boundary'``.  Any row outside it is excluded
 from coverage reads (and, being read-only historical data, is unread at runtime).
 
 Application identity is ``(config_id, backbone, head, bin_mode, threshold_configured,
@@ -241,7 +242,8 @@ def _validate_canonical_row(row: HeadPhaseProvenanceRow) -> None:
     if not _is_canonical_fields(row):
         raise ValueError(
             "canonical current row must satisfy the exact canonical predicate "
-            "(effnet, canonical bin_mode/direct-L2 semantics, non-NULL config_id + "
+            "(effnet, L2-primary temporal_global mode, direct-distance semantics, "
+            "non-NULL config_id + "
             "configured/effective thresholds, catalog/shared_catalog_boundary, "
             "NULL legacy threshold); "
             f"got run_id={row.run_id!r} config_id={row.config_id!r} backbone={row.backbone!r} "

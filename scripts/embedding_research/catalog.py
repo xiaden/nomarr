@@ -55,6 +55,8 @@ import numpy as np
 from scripts.embedding_research.catalog_storage import (
     CATALOG_SONG_COLS,
     CATALOG_SONG_TABLE,
+    OBSERVATION_EVIDENCE_COLS,
+    OBSERVATION_EVIDENCE_TABLE,
     SEG_CONFIG_COLS,
     SEG_CONFIG_TABLE,
     SEG_META_COLS,
@@ -68,6 +70,7 @@ from scripts.embedding_research.catalog_storage import (
     raise_if_duplicate_canonical_config,
     raise_if_duplicate_catalog_song,
     raise_if_duplicate_config,
+    raise_if_duplicate_observation_evidence,
 )
 from scripts.embedding_research.helpers import segmentation as _segmentation_module
 from scripts.embedding_research.helpers.binning import DIST_FNS
@@ -78,7 +81,7 @@ from scripts.embedding_research.helpers.segmentation import (
 )
 from scripts.embedding_research.helpers.thresholds import (
     DEFAULT_OUTLIER_WINDOW,
-    DIRECT_L2,
+    DIRECT_DISTANCE,
     PTC_STRATEGY_VERSION,
     canonical_config_hash,
     config_encoder_version,
@@ -188,13 +191,15 @@ class SegConfigInput:
     bin_mode: str
     threshold_configured: float
     threshold_effective: float
-    semantics: str = "direct_l2"
+    semantics: str = DIRECT_DISTANCE
     outlier_window: int = DEFAULT_OUTLIER_WINDOW
     strategy_version: int = PTC_STRATEGY_VERSION
 
     def __post_init__(self) -> None:
-        if self.semantics != DIRECT_L2:
-            raise CatalogValidationError(f"only {DIRECT_L2!r} threshold semantics exists; got {self.semantics!r}")
+        if self.semantics != DIRECT_DISTANCE:
+            raise CatalogValidationError(
+                f"only {DIRECT_DISTANCE!r} threshold-application semantics exists; got {self.semantics!r}"
+            )
         if self.bin_mode not in DIST_FNS:
             raise CatalogValidationError(f"unknown bin_mode {self.bin_mode!r}; supported: {sorted(DIST_FNS)}")
         if not isinstance(self.backbone, str) or not self.backbone.strip():
@@ -222,7 +227,7 @@ class SegConfigInput:
             bin_mode=bin_mode,
             threshold_configured=resolution.configured,
             threshold_effective=resolution.effective,
-            semantics=DIRECT_L2,
+            semantics=DIRECT_DISTANCE,
             outlier_window=outlier_window,
             strategy_version=strategy_version,
         )
@@ -400,7 +405,7 @@ def _coerce_compact_config(raw: Any) -> _CompactConfig:
         raise CatalogValidationError(f"thresholds must be numeric; got {exc!r}") from exc
     outlier_window = int(get("outlier_window", DEFAULT_OUTLIER_WINDOW))
     strategy_version = int(get("strategy_version", PTC_STRATEGY_VERSION))
-    threshold_semantics = str(get("semantics", "direct_l2") or "direct_l2")
+    threshold_semantics = str(get("semantics", DIRECT_DISTANCE) or DIRECT_DISTANCE)
 
     if not backbone:
         raise CatalogValidationError("backbone must be non-empty text")
@@ -969,6 +974,68 @@ def build_segmentation_catalog(
         )
 
 
+def _record_observation_evidence(con, stream_store, song_id, backbone, patch_count) -> None:
+    """Record committed observation-version evidence for a just-built ``(song_id, backbone)``.
+
+    Pulls the committed :class:`ObservationGroupIdentity` from the build's stream seam when it
+    exposes one (the store-backed current-stream resolver does) and persists one
+    ``observation_evidence`` row carrying that group's exact refs/digests/commit/patch-count/
+    alignment/audio-fingerprint/mask-semantics/group-format.  A build seam without
+    committed-identity access (plain array fakes) records nothing — such catalogs carry no
+    committed-observation binding and are never used by the catalog-bound derived phases.  The
+    stream/mask payload digests recorded here are the committed artifacts' own ``.npy`` payload
+    digests (the streams committed vocabulary), which differ from the catalog leaf's
+    raw-float32 ``stream_digest``/``mask_digest`` recomputed over the loaded arrays — the two
+    vocabularies are deliberately not compared.  A patch-count disagreement between the just
+    built array and the committed group is a typed build refusal.
+    """
+    identity_loader = getattr(stream_store, "committed_identity", None)
+    if identity_loader is None:
+        return
+    identity = identity_loader(song_id, backbone)
+    if identity is None:
+        return
+    if int(identity.patch_count) != patch_count:
+        raise CatalogValidationError(
+            f"catalog build for ({song_id!r}, {backbone!r}) patch_count {patch_count} "
+            f"disagrees with the committed observation group patch_count {identity.patch_count}; "
+            "the catalog was not built over the resolved committed group and is refused"
+        )
+    _write_observation_evidence_row(con, identity)
+
+
+def _write_observation_evidence_row(con, identity) -> None:
+    """Persist one compact ``observation_evidence`` row for a built ``(song_id, backbone)``.
+
+    The row seals the exact committed observation-version evidence of the immutable group
+    this catalog was built over (stream/mask refs + digests, commit identity, patch
+    count/alignment, audio fingerprint, mask semantics, and group format version) so later
+    catalog-derived phases can fail-closed verify the CURRENT committed group still matches.
+    ``identity`` is a streams-layer :class:`ObservationGroupIdentity` (or duck with the same
+    fields); exactly one row per requested ``(song_id, backbone)`` is recorded.
+    """
+    raise_if_duplicate_observation_evidence(con, identity.song_id, identity.backbone)
+    values: list[object] = [
+        identity.song_id,
+        identity.backbone,
+        identity.stream_ref,
+        identity.stream_digest,
+        identity.mask_ref,
+        identity.mask_digest,
+        identity.commit_sha256,
+        identity.alignment_token,
+        int(identity.patch_count),
+        identity.audio_content_sha256,
+        identity.mask_semantics_version,
+        identity.group_format_version,
+    ]
+    placeholders = ", ".join("?" for _ in OBSERVATION_EVIDENCE_COLS)
+    con.execute(
+        f"INSERT INTO {OBSERVATION_EVIDENCE_TABLE} ({', '.join(OBSERVATION_EVIDENCE_COLS)}) VALUES ({placeholders})",
+        values,
+    )
+
+
 def _run_build(
     con,
     *,
@@ -1047,6 +1114,14 @@ def _run_build(
             stream_digest = _digest_bytes(np.ascontiguousarray(matrix, dtype=np.float32).tobytes())
             mask_digest = _digest_bytes(np.ascontiguousarray(mask, dtype=np.uint8).tobytes())
 
+            # Plan A observation binding: persist the exact committed observation-version
+            # evidence for this requested (song, backbone) so every later catalog-derived
+            # phase can fail-closed verify the CURRENT committed group still matches the
+            # snapshot exactly.  When the build seam exposes committed identity (the
+            # store-backed current-stream resolver does), record it; a digest/patch-count
+            # disagreement between the arrays just built and the committed identity means
+            # the catalog was NOT built over the resolved committed group and is refused.
+            _record_observation_evidence(con, stream_store, song, backbone, patch_count)
             for cfg in backbone_cfgs:
                 state = per_cfg[cfg.canonical_config_hash]
                 try:

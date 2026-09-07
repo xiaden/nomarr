@@ -154,7 +154,7 @@ def test_scale_catalog_analysis_end_to_end_finite_shape_and_counts(con, tmp_path
         assert all(cls.n_configs >= 1 for cls in result.representation_classes)
 
         # Run-scoped metrics are finite.
-        for key in ("map_k", "mrr", "ndcg_k", "recall_k", "disc_artist"):
+        for key in ("map_k_artist", "mrr_artist", "ndcg_k_artist", "recall_k_artist", "disc_artist"):
             assert np.isfinite(result.metrics[key]), key
 
         # Shape/count: one per-query result per (searchable) query song; leave-one-out candidates.

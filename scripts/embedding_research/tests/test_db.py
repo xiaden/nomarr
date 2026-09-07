@@ -46,6 +46,7 @@ EXPECTED_TABLES = {
     # report tables and db/stratify.py); they must never reappear.
     "songs",
     "analyze_metrics",
+    "analyze_incomplete_diagnostics",
     "phase_timings",
     "song_retrieval_metrics",
     "head_phase_provenance",

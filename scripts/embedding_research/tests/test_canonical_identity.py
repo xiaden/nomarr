@@ -17,7 +17,7 @@ from __future__ import annotations
 import pytest
 
 from scripts.embedding_research.helpers.thresholds import (
-    DIRECT_L2,
+    DIRECT_DISTANCE,
     ThresholdResolution,
     canonical_bin_mode,
     canonical_config_hash,
@@ -88,7 +88,7 @@ def test_canonical_int_rejects_bool_and_non_int() -> None:
 
 def test_canonical_text_non_empty() -> None:
     assert canonical_text("effnet") == "effnet"
-    assert canonical_text("direct_l2") == "direct_l2"
+    assert canonical_text("direct_distance") == "direct_distance"
     with pytest.raises(ValueError):
         canonical_text("")
     with pytest.raises(ValueError):
@@ -241,7 +241,7 @@ def test_config_hash_resolution_helper_shape() -> None:
     """A resolved direct-L2 ThresholdResolution carries the canonical finite fields."""
     res = resolve_threshold(1.25)
     assert isinstance(res, ThresholdResolution)
-    assert res.semantics == DIRECT_L2
+    assert res.semantics == DIRECT_DISTANCE
     assert res.effective == res.configured == 1.25
     assert res.encoder_version
     # The config hash is computed from the resolved threshold + whole-module version.

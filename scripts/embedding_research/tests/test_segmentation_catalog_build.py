@@ -26,7 +26,14 @@ from scripts.embedding_research.helpers.segmentation import (
     select_observed_medoid_source_index,
 )
 
-COMPACT_TABLES = ("catalog_metadata", "seg_config", "catalog_song", "seg_meta", "run_provenance")
+COMPACT_TABLES = (
+    "catalog_metadata",
+    "seg_config",
+    "catalog_song",
+    "seg_meta",
+    "observation_evidence",
+    "run_provenance",
+)
 
 
 class FakeStreamStore:
@@ -184,7 +191,7 @@ def test_all_explicit_configs_present_with_deterministic_config_ids(tmp_path):
 def test_duplicate_canonical_config_collapses_to_single_row(tmp_path):
     """Two descriptors with identical canonical identity (differing only in semantics text) collapse."""
     base = _cfg(0.7)
-    a = dict(base, semantics="direct_l2")
+    a = dict(base, semantics="direct_distance")
     b = dict(base, semantics="whatever-cosmetic")
     fs = FakeStreamStore({("s1", "effnet"): _song_mat([6, 4])})
     rep = catalog.build_segmentation_catalog(

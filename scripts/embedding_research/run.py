@@ -46,6 +46,7 @@ from __future__ import annotations
 import argparse
 import fcntl
 import hashlib
+import json
 import logging
 import os
 import sys
@@ -137,6 +138,7 @@ DERIVED_ALLOWED_IMPORT_ROOTS: frozenset[str] = frozenset(
     {
         # top-level CPU modules
         "catalog",
+        "catalog_binding",
         "catalog_identity",
         "catalog_report",
         "config",
@@ -146,6 +148,7 @@ DERIVED_ALLOWED_IMPORT_ROOTS: frozenset[str] = frozenset(
         "db.analyze_scope",
         "db.songs",
         "db.head_phase",
+        "db.incomplete_diagnostics",
         # common/* canonical CPU analysis modules
         "common.catalog_analysis",
         "common.head_analysis",
@@ -255,7 +258,7 @@ def _catalog_seg_configs(cfg: dict) -> list:
             bin_mode=bin_mode,
             threshold_configured=threshold,
             threshold_effective=threshold,
-            semantics="direct_l2",
+            semantics="direct_distance",
         )
         for backbone in backbones
         for bin_mode in bin_modes
@@ -278,26 +281,19 @@ def _catalog_corpus_song_ids(con) -> list[str]:
 
 
 def _analysis_corpus_song_ids(con, backbone: str) -> list[str]:
-    """The songs actually cataloged (compact ``seg_meta`` rows) for *backbone*.
+    """The catalog-REQUESTED ``(song, backbone)`` population for *backbone* (pre-segmentation).
 
-    *con* is a COMPACT snapshot connection (``handle.con``); the compact snapshot
-    stores only canonical ``seg_config`` rows (no alias graph), so every config is
-    canonical and no ``alias_of_config_id`` filter is needed or possible.  The
-    corpus is the distinct songs that produced segments (``seg_meta``) under a
-    config of *backbone* — derived `analyze` reads its corpus from these frozen
-    rows (the real cataloged corpus) rather than re-selecting.
+    *con* is a COMPACT snapshot connection (``handle.con``).  The evaluation-corpus requested
+    population is the catalog's requested ``(song_id, backbone)`` surface — every distinct
+    song the catalog was built over for *backbone* (``catalog_song`` leaves under its
+    canonical ``seg_config`` rows) — resolved BEFORE ``seg_meta`` / representation
+    searchability.  A fully-silent requested song (``metadata_only`` ``catalog_song`` leaf,
+    no ``seg_meta`` rows) is retained in this requested set so the corpus resolution carries
+    it as excluded ``missing`` evidence rather than silently dropping it.
     """
-    rows = con.execute(
-        """
-        SELECT DISTINCT sm.song_id
-        FROM seg_meta sm
-        JOIN seg_config c ON c.config_id = sm.config_id
-        WHERE c.backbone = ?
-        ORDER BY 1
-        """,
-        (backbone,),
-    ).fetchall()
-    return [r[0] for r in rows]
+    from scripts.embedding_research.catalog_identity import catalog_requested_song_ids
+
+    return list(catalog_requested_song_ids(con, backbone))
 
 
 # ── phase runners ──────────────────────────────────────────────────────────────
@@ -519,15 +515,35 @@ def _run_analyze(con, cfg: dict, run_id: str) -> dict:
     and the whole-song baseline, so all passes share the SAME eligible population.  A sub-2 eligible
     corpus (``eligible == False``) refuses the analyze scope (no partial complete outcome); a
     segmented class whose representation loses an eligible song's searchable medoid is
-    ``not comparable`` and is likewise not written as a complete scope.
+    ``not comparable`` — never an ``analyze_metrics`` row or a complete ``analyze_scope_v2`` line —
+    and is RETAINED to be persisted as a durable versioned diagnostic only after that backbone's
+    mandatory observed baseline succeeds (Plan B P2).
+
+    Invocation lifecycle (execution-reporting Plan B P1/P2): before the per-backbone loop the
+    invocation anchors its declared obligations via ``record_analyze_invocation`` (every requested
+    backbone that will actually be analyzed, each carrying that backbone's MANDATORY observed
+    ``global_pool:{backbone}:medoid`` baseline key) so the ledger starts ``running`` BEFORE any
+    segmented pass.  Within each backbone, per-class catalog-bound corpus resolution + segmented
+    analysis runs and every non-comparable representation is retained in a per-backbone pending
+    list.  Only after that backbone's mandatory observed ``global_pool:{backbone}:medoid`` baseline
+    succeeds (``run_and_persist_medoid_baseline`` returned non-None) is each retained non-comparable
+    result durably persisted via ``write_incomplete_analyze_diagnostic`` — never as an
+    ``analyze_metrics`` row or a complete ``analyze_scope_v2`` line.  After the WHOLE loop body
+    succeeds, ``terminalize_analyze_completed`` re-validates each declared baseline's
+    ``analyze_metrics`` evidence and raises (-> a ``failed`` analyze row) if any obligation is
+    unresolved, so a partial scope is never recorded as a clean completed invocation.  Any exception
+    mid-body (after an earlier class or on a later backbone) propagates past the terminalize point,
+    leaving the invocation open + a ``failed`` provenance row; partial evidence is never deleted.
     """
     from scripts.embedding_research.common.catalog_analysis import (
         AnalyzeRefusalError,
         CatalogAnalysisConfig,
         analyze_catalog_corpus,
+        resolve_head_ruler_labels,
         run_and_persist_medoid_baseline,
     )
     from scripts.embedding_research.db.analyze_scope import write_catalog_analyze_rows
+    from scripts.embedding_research.db.incomplete_diagnostics import write_incomplete_analyze_diagnostic
     from scripts.embedding_research.db.songs import load_all_songs
     from scripts.embedding_research.streams import StreamStore
 
@@ -538,9 +554,49 @@ def _run_analyze(con, cfg: dict, run_id: str) -> dict:
         return {"song_count": 0, "self_recorded": True}
     try:
         store = StreamStore(con, output_root=str(out_root))
-        artists = {r["song_id"]: (r["artist"] or "unknown") for r in load_all_songs(con)}
+        # Ruler label sources (amended P3-S1) come from the PERSISTED ``songs`` table.  A null/blank
+        # artist or genre is a MISSING label for that ruler (a per-ruler exclusion) and is NEVER
+        # substituted with ``"unknown"`` — the historic ``(r["artist"] or "unknown")`` coercion is
+        # gone so a missing label is not fabricated into a same-artist relevance group.
+        _song_rows = load_all_songs(con)
+        artists = {r["song_id"]: r["artist"] for r in _song_rows}
+        genres = {r["song_id"]: r["genre"] for r in _song_rows}
         total = 0
-        for backbone in cfg.get("backbones") or ["effnet"]:
+        # Obligation-backed invocation lifecycle (execution-reporting Plan B P1): an analyze
+        # invocation records its declared obligations (every requested backbone that will be
+        # analyzed, plus that backbone's MANDATORY observed ``global_pool:{backbone}:medoid``
+        # baseline) as a RUNNING ledger record BEFORE any segmented pass, then terminalizes
+        # ``completed`` only after the whole phase body finishes with every obligation resolved.
+        # Scope/evidence rows are append-only and NEVER terminalize the invocation; any exception
+        # (after an earlier class or on a later backbone) propagates past the terminalize point,
+        # leaving the invocation open and a ``failed`` analyze provenance row in its place.
+        from scripts.embedding_research.db.analyze_scope import (
+            record_analyze_invocation,
+            terminalize_analyze_completed,
+        )
+
+        requested = cfg.get("backbones") or ["effnet"]
+        # A requested backbone is an obligation only when it has a cataloged corpus that will
+        # ACTUALLY be analyzed (mirrors the loop's eligibility gating): corpus-less backbones are
+        # skipped with a warning, and a sub-2-eligible corpus REFUSES below — so a backbone that
+        # will refuse is never claimed as an obligation and never leaves a ``complete`` invocation
+        # anchor behind (the whole run fails closed on the refused backbone instead).  Each
+        # obligation carries its backbone's MANDATORY observed ``global_pool:{backbone}:medoid``
+        # baseline key (the same literal the baseline writer persists under).
+        from scripts.embedding_research.catalog_identity import resolve_evaluation_corpus
+
+        _attempted: list[tuple[str, str]] = []
+        for _bb in requested:
+            _songs = _analysis_corpus_song_ids(handle.con, _bb)
+            if not _songs:
+                continue
+            _identity = resolve_evaluation_corpus(handle.con, store, _songs, backbone=_bb)
+            if not _identity.eligible:
+                continue
+            _attempted.append((str(_bb), f"global_pool:{_bb}:medoid"))
+        if _attempted:
+            record_analyze_invocation(con, run_id=run_id, backbones=_attempted)
+        for backbone in requested:
             song_ids = _analysis_corpus_song_ids(handle.con, backbone)
             if not song_ids:
                 _log.warning("analyze: no cataloged corpus for backbone %r — run `catalog` first", backbone)
@@ -565,6 +621,22 @@ def _run_analyze(con, cfg: dict, run_id: str) -> dict:
                     f"computed — analyze scope refuses"
                 )
             population = identity.song_ids
+            # Apparatus Plan A P1-S2: bind every derived phase to the catalog observation
+            # version.  Before ANY gathering/search, segmented class pass, or the mandatory
+            # observed global-medoid baseline for this backbone, verify the CURRENT committed
+            # observation group for every requested song matches the evidence the catalog
+            # recorded at build time EXACTLY; a superseded/newer/older/mismatched group is a
+            # typed refusal (never a silent rebind to another committed group).  The same
+            # fail-closed seam guards head analysis in ``_run_head_analysis``.
+            from scripts.embedding_research.catalog_binding import verify_catalog_observation_binding
+
+            verify_catalog_observation_binding(handle.con, store, backbone=backbone, song_ids=population)
+            # Head ruler (amended P3-S1): resolve the frozen committed semantic-head label for every
+            # eligible song ONCE per backbone (the committed head suite is representation-independent
+            # and identical across class passes and the medoid baseline).  EffNet-only and CPU-only;
+            # a song missing its marker-aligned committed suite/mask/binary head simply gets NO head
+            # label (excluded from the head ruler), while a present non-finite pooled value raises.
+            head_labels = resolve_head_ruler_labels(store, out_root, tuple(population), backbone=backbone)
             # Per-class scheduling: each distinct current SearchRepresentationClass over this
             # backbone's participating configs is analyzed as its OWN leave-one-out pass over only
             # that class's canonical rows, persisted as its own analyze_scope strategy row.  Alias
@@ -572,6 +644,12 @@ def _run_analyze(con, cfg: dict, run_id: str) -> dict:
             from scripts.embedding_research import catalog as _catalog
 
             backbone_cids = {c.config_id for c in _catalog.compact_configs_by_backbone(handle.con, backbone)}
+            # Non-comparable representations for this backbone are RETAINED (execution-reporting Plan
+            # B P2): a skipped class is never an ``analyze_metrics`` row and never a complete
+            # ``analyze_scope_v2`` line — its only durable evidence is a versioned diagnostic, written
+            # ONLY after this backbone's mandatory observed baseline below succeeds (never on the
+            # refusal/failure path — fail closed, no orphan rows).
+            _pending_incomplete: list = []
             for cls in collapse_search_representations(handle.con):
                 members = tuple(sorted(c for c in cls.config_ids if c in backbone_cids))
                 if not members:
@@ -581,6 +659,8 @@ def _run_analyze(con, cfg: dict, run_id: str) -> dict:
                     backbone=backbone,
                     song_ids=population,
                     artists=artists,
+                    genres=genres,
+                    head_labels=head_labels,
                     k=int(cfg.get("k", 10)),
                     config_ids=members,
                     evaluation_corpus=identity,
@@ -589,15 +669,19 @@ def _run_analyze(con, cfg: dict, run_id: str) -> dict:
                 if not result.comparable:
                     # Missing-medoid invalidation (execution-reporting P1-S3): an eligible whole-song
                     # song lost its searchable segment medoid in this representation (PTC absorption),
-                    # so this partial configuration is NOT recorded as a complete outcome.
+                    # so this partial configuration is NOT recorded as a complete outcome.  It is
+                    # RETAINED and its diagnostic is persisted only after the mandatory baseline below
+                    # succeeds (Plan B P2) — never as an ``analyze_metrics`` row or a complete scope.
                     _log.warning(
                         "analyze: backbone %r representation config_ids=%s is not comparable; "
-                        "%d eligible song(s) lost a searchable medoid (%s) — not recorded as complete",
+                        "%d eligible song(s) lost a searchable medoid (%s) — not recorded as complete, "
+                        "diagnostic queued until the mandatory baseline succeeds",
                         backbone,
                         members,
                         result.missing_count,
                         ",".join(result.missing_song_ids),
                     )
+                    _pending_incomplete.append(result)
                     continue
                 write_catalog_analyze_rows(con, run_id=run_id, result=result)
 
@@ -639,6 +723,8 @@ def _run_analyze(con, cfg: dict, run_id: str) -> dict:
                 backbone=backbone,
                 song_ids=population,
                 artists=artists,
+                genres=genres,
+                head_labels=head_labels,
                 k=int(cfg.get("k", 10)),
                 evaluation_corpus=identity,
                 catalog_id=_cat_id,
@@ -650,9 +736,36 @@ def _run_analyze(con, cfg: dict, run_id: str) -> dict:
                     f"global_pool:{backbone}:medoid baseline (fewer than two searchable medoid songs) "
                     f"— analyze scope refuses"
                 )
+            # Plan B P2: this backbone's MANDATORY observed baseline succeeded, so every retained
+            # non-comparable representation is now durably persisted as a versioned, report-readable
+            # diagnostic (scoped replacement by ``(run_id, strategy_key, sim_metric, k)``).  If this
+            # backbone (or a later one) later fails, the Phase-1 invocation veto already excludes the
+            # whole run from clean completed-report selection, so these diagnostics are never rendered
+            # as a clean completed report.
+            for _inc in _pending_incomplete:
+                write_incomplete_analyze_diagnostic(
+                    con,
+                    run_id=run_id,
+                    result=_inc,
+                    baseline_corpus=identity,
+                    reason=(
+                        f"segmented representation is non-comparable: {_inc.missing_count} "
+                        f"eligible whole-song song(s) lost a searchable segment medoid in this "
+                        f"representation ({','.join(_inc.missing_song_ids)}); NOT recorded as a "
+                        "complete analyze_metrics/scope — its evidence is this diagnostic"
+                    ),
+                )
             total += len(song_ids)
     finally:
         handle.close()
+    # Reaching here means every requested-and-attempted backbone completed its per-class passes
+    # AND emitted its MANDATORY observed medoid baseline (any failure would have raised earlier).
+    # Terminalize the invocation COMPLETED only now, after every obligation resolved; the
+    # terminalizer re-validates each declared backbone's baseline evidence and refuses (raises ->
+    # a ``failed`` analyze row) if any obligation is unresolved, so a partial scope is never
+    # recorded as a clean completed invocation.
+    if _attempted:
+        terminalize_analyze_completed(con, run_id=run_id)
     # analyze records its own run_provenance row via materialize/record_*_scope.
     return {"song_count": total, "self_recorded": True}
 
@@ -682,6 +795,20 @@ def _run_head_analysis(con, cfg: dict, run_id: str) -> dict:
     store = StreamStore(con, output_root=str(out_root))
     mask_store = make_current_mask_resolver(store)
     head_store = HeadStreamStore(con, output_root=str(out_root))
+    # Apparatus Plan A P1-S2: bind shared head analysis to the catalog observation version
+    # BEFORE the runner gathers any head stream.  Shared catalog head analysis is an EffNet
+    # backbone phase, so bind every catalog-recorded EffNet song against its CURRENT committed
+    # group — a superseded/newer/older/mismatched group is a typed refusal.
+    from scripts.embedding_research.catalog_binding import verify_catalog_observation_binding
+
+    head_song_ids = [
+        str(r[0])
+        for r in handle.con.execute(
+            "SELECT DISTINCT song_id FROM observation_evidence WHERE backbone = 'effnet' ORDER BY song_id"
+        ).fetchall()
+    ]
+    if head_song_ids:
+        verify_catalog_observation_binding(handle.con, store, backbone="effnet", song_ids=head_song_ids)
     try:
         manifest = run_shared_catalog_head_analysis(
             handle,
@@ -707,33 +834,106 @@ def _run_head_analysis(con, cfg: dict, run_id: str) -> dict:
 def _completed_analyze_run_ids(con) -> list[str]:
     """Completed ``analyze`` run ids present in ``run_provenance``, oldest first.
 
-    An ``analyze`` run is *completed* when it has at least one ``phase == 'analyze'`` row whose
-    status is ``complete`` (the analyze producer's own scope rows) or ``completed`` (a wrapper
-    recording).  This is the deterministic completion signal the report phase resolves — there is
-    no status column on ``analyze_metrics`` itself, so completion lives in ``run_provenance``.
-    Ordering is stable: ascending ``finished_at``/``started_at`` then ascending ``run_id``.
+    Completion is decided PER ``run_id`` by grouping every ``phase == 'analyze'`` provenance row
+    for that run (append-only ``run_provenance`` has no PK/UNIQUE on ``run_id``, so a run may hold
+    several same-phase rows — the analyze producer's own scope rows and wrapper recordings).  The
+    base predicate for a completed run is: it has at least one ``phase == 'analyze'`` row with
+    status ``complete``/``completed``, and NONE of its analyze rows has status ``failed``.  A single
+    failed analyze row vetoes the ENTIRE run, so a contradictory run carrying both completed analyze
+    rows and a later failed analyze row never surfaces as a completed scope and can never render
+    partial metrics as a completed report.  For an invocation-backed run (see below) this base
+    predicate is necessary but NOT sufficient — it must also be a clean all-obligation terminal
+    invocation.
+
+    Obligation-gated completion: an invocation-backed run (its analyze rows carry an
+    ``analyze_invocation_v1`` obligations record written by the Plan-B producer) is completed only when
+    that record is paired with a ``completed`` ``analyze_terminal_v1`` terminal record — scope/evidence
+    rows alone NEVER terminalize an invocation.  A pre-obligation run (no invocation record; e.g.
+    historical/synthetic scope-only rows) falls back to the historical scope-evidence predicate (>=1
+    ``complete``/``completed`` analyze row, no ``failed``), keeping such runs reportable exactly as
+    before.  This is the deterministic completion signal the report phase resolves — there is no status
+    column on ``analyze_metrics`` itself, so completion lives in ``run_provenance``.
+    The returned ids are deduplicated (one entry per completed run) and deterministically ordered:
+    ascending representative ``finished_at``/``started_at`` (integer ms; the existing fallback chain
+    ``finished_at or started_at or 0``, with the EARLIEST stamp among the run's non-failed
+    complete/completed analyze rows chosen as that run's representative) then ascending ``run_id``.
     """
+    from scripts.embedding_research.db.analyze_scope import (
+        INVOCATION_MARKER_PREFIX,
+        TERMINAL_MARKER_PREFIX,
+        TERMINAL_OUTCOME_COMPLETED,
+    )
     from scripts.embedding_research.db.provenance import read_run_provenance
 
-    analyze_rows = [
-        r for r in read_run_provenance(con) if r["phase"] == "analyze" and r["status"] in {"complete", "completed"}
+    analyze_rows = [r for r in read_run_provenance(con) if r["phase"] == "analyze"]
+
+    # Group every analyze row by run_id; a failed row vetoes the whole run.  Obligation/terminal
+    # marker lines may ride on any of the run's analyze rows (the Plan-B producer merges them into
+    # the same append-only row that carries the scope lines), so obligations-presence and the
+    # completed terminal are read from the rows' output lines, not from any status column.  The
+    # representative stamp is the earliest ``finished_at``/``started_at`` among the run's non-failed
+    # complete/completed analyze rows (unchanged for pre-obligation scope-only runs).
+    _buckets: dict[str, dict] = {}
+    for row in analyze_rows:
+        rid = str(row["run_id"])
+        bucket = _buckets.setdefault(
+            rid,
+            {"failed": False, "obligations_present": False, "terminal_completed": False},
+        )
+        if row["status"] == "failed":
+            bucket["failed"] = True
+            continue
+        if row["status"] in {"complete", "completed"}:
+            stamp = int(row.get("finished_at") or row.get("started_at") or 0)
+            if bucket.get("stamp") is None or stamp < bucket["stamp"]:
+                bucket["stamp"] = stamp
+        for _ln in (row.get("output_artifact_hashes") or "").splitlines():
+            _line = _ln.strip()
+            if not _line:
+                continue
+            if _line.startswith(INVOCATION_MARKER_PREFIX + "|"):
+                bucket["obligations_present"] = True
+            elif _line.startswith(TERMINAL_MARKER_PREFIX + "|"):
+                try:
+                    _outcome = json.loads(_line.split("|", 1)[1]).get("outcome")
+                except (ValueError, TypeError):
+                    _outcome = None
+                if _outcome == TERMINAL_OUTCOME_COMPLETED:
+                    bucket["terminal_completed"] = True
+
+    def _is_completed(bucket: dict) -> bool:
+        if bucket["failed"]:
+            return False
+        if bucket["obligations_present"]:
+            # Scopes/evidence never terminalize an invocation-backed run: it must carry the
+            # completed terminal (written only after every obligation resolved).
+            return bucket["terminal_completed"]
+        # Pre-obligation (historical/synthetic) scope-only run: existing scope-evidence predicate.
+        return bucket.get("stamp") is not None
+
+    completed = [
+        (rid, bucket["stamp"])
+        for rid, bucket in _buckets.items()
+        if _is_completed(bucket) and bucket.get("stamp") is not None
     ]
-
-    def _stamp(row: dict) -> tuple[int, str]:
-        return (int(row.get("finished_at") or row.get("started_at") or 0), str(row["run_id"]))
-
-    analyze_rows.sort(key=_stamp)
-    return [r["run_id"] for r in analyze_rows]
+    completed.sort(key=lambda kv: (kv[1], kv[0]))
+    return [rid for rid, _stamp in completed]
 
 
 def _resolve_report_run_id(con, cfg: dict) -> str | None:
     """Resolve the completed analyze scope the report phase renders.
 
+    Operates on the grouped per-run completion set from :func:`_completed_analyze_run_ids`: a run
+    counts as a completed analyze scope only when at least one of its ``analyze`` rows is
+    ``complete``/``completed`` AND none is ``failed`` — any failed analyze row vetoes the whole run
+    whatever its other rows claim, so a contradictory complete-plus-failed run is never resolvable.
     Returns the run_id the report must be scoped to (never blends runs):
 
-    * ``cfg["report_run_id"]`` is honoured only when it names a completed analyze run; otherwise
-      ``None`` is returned and the caller rejects the request (explicit-but-incomplete).
-    * With no explicit request, the most recent completed analyze run is returned.
+    * ``cfg["report_run_id"]`` is honoured only when it names a completed analyze run; a
+      contradictory (or incomplete/bogus) run is not completed, so ``None`` is returned here and the
+      caller rejects the request (explicit-but-incomplete, fail closed).
+    * With no explicit request, the most recent CLEAN completed analyze run is returned — a newer
+      contradictory run falls through to the newest clean completed run.
     * With no completed analyze run at all, ``None`` is returned (the caller renders an empty
       report or rejects when run-scoped analyze rows are orphaned).
     """
@@ -749,10 +949,13 @@ def _run_report(con, cfg: dict, _run_id: str) -> dict:
 
     Renders a single completed scope: ``cfg["report_run_id"]`` when it names a completed analyze
     run, otherwise the most recent completed analyze run resolved deterministically from
-    ``run_provenance``.  Incomplete scopes are rejected rather than silently blended into a
-    whole-set read — either run-scoped ``analyze_metrics`` rows with no completed analyze scope,
-    or an explicitly requested scope that is not a completed analyze run.  An empty database (no
-    run-scoped analyze rows) renders an empty report, preserving the preflight-warned path.
+    ``run_provenance`` via the grouped per-run predicate — a run with any failed ``analyze`` row is
+    NOT completed (the failed row vetoes the whole run) and is therefore never selected and is
+    refused when named explicitly.  Incomplete scopes are rejected rather than silently blended
+    into a whole-set read — either run-scoped ``analyze_metrics`` rows with no completed analyze
+    scope, or an explicitly requested scope that is not a completed analyze run (including a
+    contradictory complete-plus-failed run).  An empty database (no run-scoped analyze rows)
+    renders an empty report, preserving the preflight-warned path.
     """
     from scripts.embedding_research.config import REPORT_DIR as _REPORT_DIR
     from scripts.embedding_research.report import run as _report_run

@@ -1034,8 +1034,10 @@ class StreamStore(_RegistryStore):
             mask_ref=mask_ref,
             mask_digest=mask_digest,
             alignment_token=f"{stream_ref}:{mask_ref}",
+            patch_count=stream_patch_count,
             audio_content_sha256=str(marker_audio),
             mask_semantics_version=str(mask_semantics),
+            group_format_version=str(doc.get("group_format_version")),
             commit_sha256=str(doc.get("commit_sha256")),
         )
         return CommittedObservation(identity=identity, stream=stream, mask=mask)
@@ -1074,6 +1076,20 @@ class StreamStore(_RegistryStore):
                 "corrupt, uncommitted, or mismatched groups are refused"
             )
         return observation
+
+    def load_committed_identity(self, song_id: str, backbone: str) -> ObservationGroupIdentity:
+        """The immutable committed observation identity for ``(song_id, backbone)``.
+
+        Returns the validated :class:`ObservationGroupIdentity` (refs + digests +
+        patch-count/alignment + audio fingerprint + mask semantics + group format +
+        commit identity) of the newest VALID committed group, raising the typed
+        :class:`StreamValidationError` when no complete committed group exists.  This is
+        the authoritative identity-only reader a catalog-binding seam uses to compare the
+        CURRENT committed group against the evidence a compact catalog recorded at build
+        time (Plan A observation binding) — same filesystem-authoritative core as
+        :meth:`load_committed_observation`.
+        """
+        return self.load_committed_observation(song_id, backbone).identity
 
 
 class HeadStreamStore(_RegistryStore):
@@ -1419,6 +1435,20 @@ class _StoreBackedCurrentStreamResolver:
         except StreamStoreError:
             return None
         return observation.stream
+
+    def committed_identity(self, song_id: str, backbone: str) -> ObservationGroupIdentity | None:
+        """The validated committed-group identity, or ``None`` when no complete group exists.
+
+        Lets the compact catalog producer record the exact committed observation-version
+        evidence (refs/digests/patch-count/alignment/audio-fingerprint/mask-semantics/
+        group-format/commit) it built over — the same filesystem-authoritative group its
+        ``load`` array came from.
+        """
+        try:
+            observation = self._store.load_committed_observation(song_id, backbone)
+        except StreamStoreError:
+            return None
+        return observation.identity
 
 
 def make_current_stream_resolver(store: StreamStore) -> CurrentStreamResolver:

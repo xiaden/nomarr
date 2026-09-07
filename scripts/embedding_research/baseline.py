@@ -35,7 +35,11 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from scripts.embedding_research.helpers.segmentation import ObservedMedoid, observed_global_medoid
+from scripts.embedding_research.helpers.segmentation import (
+    ObservedMedoid,
+    observed_global_medoid,
+    require_exact_whole_song_mask,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -89,19 +93,16 @@ def whole_song_searchable_source_indices(mask: np.ndarray, patch_count: int) -> 
 
     This is the DD "all non-silent searchable patches" population over which the global
     medoid is selected (absorption is a per-segment concept and does not exclude a patch
-    from the UNSEGMENTED global population).  ``mask`` is the whole-song committed ``uint8``
-    silence mask (``1`` = searchable, ``0`` = silent) for the exact ``(song_id, backbone)``
-    observation group; rows at or beyond a shorter mask are searchable (mask runs only to
-    the group's patch count).  A fully-silent song yields an empty array (zero-searchable →
-    no baseline vector).
+    from the UNSEGMENTED global population).  ``mask`` must be the whole-song committed
+    ``uint8[patch_count]`` silence mask (``1`` = searchable, ``0`` = silent) for the exact
+    ``(song_id, backbone)`` observation group.  The mask is REQUIRED and must be EXACTLY
+    ``uint8[patch_count]``: a None/short/long/wrong-dtype/non-1D mask raises a typed
+    ``ValueError`` (fail closed) — a shorter mask is NEVER truncated or read with trailing
+    patches searchable, and a missing mask is never interpreted as no silence.  A
+    fully-silent song yields an empty array (zero-searchable → no baseline vector).
     """
-    patch_count = int(patch_count)
-    arr = np.asarray(mask)
-    length = min(arr.shape[0], patch_count)
-    indicator = np.ones(patch_count, dtype=bool)
-    if length > 0:
-        indicator[:length] = np.asarray(arr[:length] == 1, dtype=bool)
-    return np.nonzero(indicator)[0].astype(int)
+    arr = require_exact_whole_song_mask(mask, int(patch_count))
+    return np.nonzero(arr == 1)[0].astype(int)
 
 
 def observed_global_medoid_from_observation(observation: Any) -> ObservedMedoid:
@@ -118,8 +119,9 @@ def observed_global_medoid_from_observation(observation: Any) -> ObservedMedoid:
     among the candidate rows raises ``ValueError`` (never a silent medoid).
     """
     unit = _to_unit_rows(np.asarray(observation.stream, dtype=np.float32))
-    mask = np.asarray(observation.mask, dtype=np.uint8)
-    searchable = whole_song_searchable_source_indices(mask, int(unit.shape[0]))
+    # Pass the committed mask RAW (no dtype coercion): a wrong-dtype/short/long/non-1D
+    # mask is a typed refusal from the exact-mask validator, never silently coerced.
+    searchable = whole_song_searchable_source_indices(observation.mask, int(unit.shape[0]))
     return observed_global_medoid(unit, searchable)
 
 
@@ -134,8 +136,9 @@ def observed_global_medoid_unit_vector(observation: Any) -> np.ndarray | None:
     such a song is excluded from the baseline population AND candidate search).
     """
     unit = _to_unit_rows(np.asarray(observation.stream, dtype=np.float32))
-    mask = np.asarray(observation.mask, dtype=np.uint8)
-    searchable = whole_song_searchable_source_indices(mask, int(unit.shape[0]))
+    # Pass the committed mask RAW (no dtype coercion): a wrong-dtype/short/long/non-1D
+    # mask is a typed refusal from the exact-mask validator, never silently coerced.
+    searchable = whole_song_searchable_source_indices(observation.mask, int(unit.shape[0]))
     medoid = observed_global_medoid(unit, searchable)
     if medoid.source_index is None:
         return None
@@ -179,6 +182,13 @@ BASELINE_DELTA_COLUMNS: list[str] = [
 ]
 
 
+#: Per-ruler ruler-evaluable-query COUNT cells (the ``n_queries_*`` EAV rows each segmented-class
+#: writer AND the medoid-baseline writer emit).  These are query counts, not scored retrieval
+#: cells, so they are excluded from the baseline/winner delta machinery in
+#: :func:`build_baseline_delta_rows` — no ``n_queries_*`` medoid key ever enters winner-delta logic.
+_NON_SCORED_COUNT_METRICS: frozenset[str] = frozenset({"n_queries_artist", "n_queries_genre", "n_queries_head"})
+
+
 def _is_finite(v: Any) -> bool:
     if isinstance(v, bool):
         return False
@@ -196,16 +206,48 @@ def _refuse_non_finite(values: list[float], context: str) -> None:
 
 #: Per-row evaluation-corpus identity columns (when present on the decoded frame) that the
 #: matching-only delta gate reads.  They mirror the ``evaluation_corpus_*`` keys persisted on
-#: each ``analyze_scope_v2`` provenance line (execution-reporting-repair Plan A P2-S3).
-#: A frame row that carries NO corpus identity (no such columns / empty hash) is never a
-#: structural-match candidate: it is surfaced as an incomplete diagnostic (see
-#: :func:`build_baseline_delta_rows`).
+#: each ``analyze_scope_v2`` provenance line (execution-reporting-repair Plan A P2-S3), plus
+#: the COMPLETE corpus identity/evidence extensions (Plan C Phase 1): semantics/version, the
+#: eligible flag, exact digest proof of the eligible + requested membership sets, the
+#: observation-binding digest the corpus was resolved against, and explicit completeness +
+#: integrity self-check fields.  The equality gate compares EVERY carried field, so an altered
+#: membership or observation binding that keeps an equal-looking ``corpus_hash``/``count`` is
+#: still detected as unequal.  A frame row that carries NO corpus identity (no such columns /
+#: empty hash) is never a structural-match candidate: it is surfaced as an incomplete
+#: diagnostic (see :func:`build_baseline_delta_rows`).
 CORPUS_IDENTITY_COLUMNS: tuple[str, ...] = (
     "evaluation_corpus_hash",
     "evaluation_corpus_count",
     "evaluation_corpus_comparable",
     "evaluation_corpus_missing_count",
     "evaluation_corpus_missing_digest",
+    "evaluation_corpus_semantics_version",
+    "evaluation_corpus_eligible",
+    "evaluation_corpus_eligible_digest",
+    "evaluation_corpus_requested_count",
+    "evaluation_corpus_requested_digest",
+    "evaluation_corpus_observation_digest",
+    "evaluation_corpus_complete",
+    "evaluation_corpus_integrity",
+)
+
+#: The persisted corpus keys whose equality the matching gate compares (all of
+#: :data:`CORPUS_IDENTITY_COLUMNS`).  Each is either a scalar identity field or an exact
+#: digest proof over a membership / observation-binding set.
+_CORPUS_MISMATCH_LABELS: tuple[tuple[str, str], ...] = (
+    ("evaluation_corpus_hash", "corpus hash"),
+    ("evaluation_corpus_count", "eligible count"),
+    ("evaluation_corpus_comparable", "comparability"),
+    ("evaluation_corpus_missing_count", "missing count"),
+    ("evaluation_corpus_missing_digest", "missing evidence digest"),
+    ("evaluation_corpus_semantics_version", "semantics version"),
+    ("evaluation_corpus_eligible", "eligible flag"),
+    ("evaluation_corpus_eligible_digest", "eligible membership digest"),
+    ("evaluation_corpus_requested_count", "requested count"),
+    ("evaluation_corpus_requested_digest", "requested membership digest"),
+    ("evaluation_corpus_observation_digest", "observation-binding digest"),
+    ("evaluation_corpus_complete", "completeness marker"),
+    ("evaluation_corpus_integrity", "integrity self-check"),
 )
 
 
@@ -230,13 +272,69 @@ class BaselineDeltaResult:
 
 @dataclass(frozen=True)
 class _CorpusIdentity:
-    """The decoded per-row evaluation-corpus identity the delta gate compares."""
+    """The decoded per-row evaluation-corpus identity the delta gate compares.
 
+    Carries EVERY persisted corpus identity/evidence field (the legacy hash/count/comparability/
+    missing evidence plus the Plan C Phase 1 semantics/eligible/digest-proof/completeness/integrity
+    extensions).  A field is ``None`` (absent) when the row carries no value for it.
+    """
+
+    fields: Mapping[str, Any]
     hash: str
-    count: int
-    comparable: bool
-    missing_count: int
-    missing_digest: str | None
+
+    @property
+    def comparable(self) -> bool:
+        return bool(self.fields.get("evaluation_corpus_comparable", False))
+
+    @property
+    def count(self) -> int:
+        return int(self.fields.get("evaluation_corpus_count") or 0)
+
+    @property
+    def missing_count(self) -> int:
+        return int(self.fields.get("evaluation_corpus_missing_count") or 0)
+
+    @property
+    def missing_digest(self) -> str | None:
+        return self.fields.get("evaluation_corpus_missing_digest")
+
+    def mismatched_fields(self, other: _CorpusIdentity) -> list[str]:
+        """Human labels of corpus identity/evidence fields that differ (or are one-sided).
+
+        A field is a mismatch when BOTH sides carry a value and they differ, OR when exactly one
+        side carries a value (present-vs-absent = unequal/truncated evidence).  Two genuinely
+        equal complete identities (every carried value equal) yield an empty list.
+        """
+        out: list[str] = []
+        for key, label in _CORPUS_MISMATCH_LABELS:
+            a = self.fields.get(key)
+            b = other.fields.get(key)
+            if a is None and b is None:
+                continue
+            if a is None or b is None:
+                out.append(f"{label} present on only one side")
+            elif a != b:
+                out.append(f"{label} differs ({a!r} vs {b!r})")
+        return out
+
+
+_CORPUS_ABSENT = frozenset({None, "", float("nan")})
+
+
+def _corpus_scalar(value: Any) -> Any:
+    """Normalize one persisted corpus value to a comparable scalar (None when absent)."""
+    if value is None:
+        return None
+    try:
+        f = float(value)
+        if math.isnan(f):
+            return None
+    except (TypeError, ValueError):
+        pass
+    if isinstance(value, bool) or (isinstance(value, (int, float)) and not isinstance(value, bool)):
+        return value
+    s = str(value)
+    return None if s == "" else s
 
 
 def _row_corpus_identity(r: Mapping[str, object]) -> _CorpusIdentity | None:
@@ -244,26 +342,33 @@ def _row_corpus_identity(r: Mapping[str, object]) -> _CorpusIdentity | None:
     h = r.get("evaluation_corpus_hash")
     if not h or (isinstance(h, float) and math.isnan(float(h))):
         return None
-    return _CorpusIdentity(
-        hash=str(h),
-        count=int(r.get("evaluation_corpus_count") or 0),
-        comparable=bool(r.get("evaluation_corpus_comparable")),
-        missing_count=int(r.get("evaluation_corpus_missing_count") or 0),
-        missing_digest=(r.get("evaluation_corpus_missing_digest") or "") or None,
-    )
+    fields: dict[str, Any] = {}
+    for key in CORPUS_IDENTITY_COLUMNS:
+        fields[key] = _corpus_scalar(r.get(key))
+    fields["evaluation_corpus_hash"] = str(h)
+    return _CorpusIdentity(fields=fields, hash=str(h))
 
 
 def _identity_from_corpus(evaluation_corpus: Any) -> _CorpusIdentity | None:
     """Decode an :class:`~scripts.embedding_research.catalog_identity.EvaluationCorpusIdentity` for the gate."""
     if evaluation_corpus is None:
         return None
-    return _CorpusIdentity(
-        hash=str(evaluation_corpus.corpus_hash),
-        count=int(evaluation_corpus.count),
-        comparable=bool(evaluation_corpus.comparable),
-        missing_count=int(evaluation_corpus.missing_count),
-        missing_digest=evaluation_corpus.missing_digest or None,
-    )
+    raw = {
+        "evaluation_corpus_hash": str(evaluation_corpus.corpus_hash),
+        "evaluation_corpus_count": int(evaluation_corpus.count),
+        "evaluation_corpus_comparable": bool(evaluation_corpus.comparable),
+        "evaluation_corpus_missing_count": int(evaluation_corpus.missing_count),
+        "evaluation_corpus_missing_digest": evaluation_corpus.missing_digest or None,
+        "evaluation_corpus_semantics_version": int(evaluation_corpus.semantics_version),
+        "evaluation_corpus_eligible": bool(evaluation_corpus.eligible),
+        "evaluation_corpus_eligible_digest": evaluation_corpus.eligible_digest or None,
+        "evaluation_corpus_requested_count": int(evaluation_corpus.requested_count),
+        "evaluation_corpus_requested_digest": evaluation_corpus.requested_digest or None,
+        "evaluation_corpus_observation_digest": evaluation_corpus.observation_digest or None,
+        "evaluation_corpus_complete": bool(evaluation_corpus.completeness),
+        "evaluation_corpus_integrity": evaluation_corpus.integrity or None,
+    }
+    return _CorpusIdentity(fields=raw, hash=str(evaluation_corpus.corpus_hash))
 
 
 def _incomplete_entry(
@@ -317,7 +422,8 @@ def build_baseline_delta_rows(
     ``analyze_scope_v2`` provenance line) the builder enforces MATCHING-ONLY deltas:
 
     * **matching gate** — a segmented class may win a cell ONLY when it shares the
-      observed-medoid baseline's evaluation-corpus identity (equal ``corpus_hash``) AND is
+      observed-medoid baseline's evaluation-corpus identity (equal complete corpus
+      identity/evidence — ``_CorpusIdentity.mismatched_fields`` empty) AND is
       comparable AND finite.  Equal ``{A,B,C,D}`` baseline vs segmented ``{A,B,C,D}``
       matches; a segmented ``{A,B,C}`` never matches a ``{A,B,C,D}`` baseline and never
       partially matches on the shared subset (no silent intersection).
@@ -372,6 +478,12 @@ def build_baseline_delta_rows(
     incomplete: list[dict] = []
     for key in sorted(cells):
         backbone, sim_metric, k, metric = key
+        if metric in _NON_SCORED_COUNT_METRICS:
+            # ``n_queries_*`` are per-ruler ruler-evaluable-query COUNTS (persisted as EAV rows by
+            # both each segmented-class writer and the medoid-baseline writer), not scored
+            # retrieval cells.  They never form a baseline/winner delta or an ``incomplete``
+            # diagnostic, so these cells are excluded from the winner-delta machinery entirely.
+            continue
         rows = cells[key]
         medoid_key = medoid_strategy_key_for(backbone)
         medoid_rows = [r for r in rows if str(r["strategy_key"]) == medoid_key]
@@ -396,21 +508,24 @@ def build_baseline_delta_rows(
             seg_identity = _row_corpus_identity(seg)
             reason: str | None = None
             if baseline_identity is not None and seg_identity is not None:
-                if (
-                    baseline_identity.comparable
-                    and seg_identity.comparable
-                    and baseline_identity.hash == seg_identity.hash
-                ):
-                    pass  # equal, comparable populations -> candidate
-                elif not baseline_identity.comparable:
+                if not baseline_identity.comparable:
                     reason = "observed-medoid baseline representation is non-comparable"
                 elif not seg_identity.comparable:
                     reason = "segmented representation is non-comparable (lost a baseline-eligible song)"
                 else:
-                    reason = (
-                        "segmented representation's evaluation corpus differs from the observed-medoid "
-                        "baseline corpus (unequal populations never partially match)"
-                    )
+                    # Complete corpus identity/evidence equality: a segmented class may win a cell
+                    # ONLY when EVERY carried corpus identity/evidence field (membership, missing
+                    # evidence, observation binding, semantics/version, completeness/integrity)
+                    # equals the observed-medoid baseline's — not merely an equal-looking hash/
+                    # count or a compatible subset.  A mismatch on ANY field excludes the cell.
+                    mismatches = seg_identity.mismatched_fields(baseline_identity)
+                    if mismatches:
+                        reason = (
+                            "segmented representation's evaluation corpus differs from the observed-medoid "
+                            "baseline corpus on: "
+                            + "; ".join(mismatches)
+                            + " (unequal/truncated populations or evidence never partially match)"
+                        )
             elif baseline_identity is not None or seg_identity is not None:
                 reason = "evaluation-corpus identity present on only one side of the baseline/segmented comparison"
             else:

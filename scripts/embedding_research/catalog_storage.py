@@ -64,6 +64,8 @@ __all__ = [
     "CATALOG_SONG_COLS",
     "CATALOG_SONG_TABLE",
     "CATALOG_TABLES",
+    "OBSERVATION_EVIDENCE_COLS",
+    "OBSERVATION_EVIDENCE_TABLE",
     "RUN_PROVENANCE_COLS",
     "RUN_PROVENANCE_TABLE",
     "SEG_CONFIG_COLS",
@@ -80,6 +82,7 @@ __all__ = [
     "CatalogStorageError",
     "CatalogWalError",
     "DuplicateConfigError",
+    "DuplicateObservationEvidenceError",
     "DuplicateRunProvenanceError",
     "DuplicateSegmentError",
     "DuplicateSongError",
@@ -95,12 +98,14 @@ __all__ = [
     "ensure_catalog_metadata_singleton",
     "ensure_schema",
     "now_ms",
+    "observation_evidence_exists",
     "open_current_catalog",
     "open_snapshot_file",
     "publish_catalog_snapshot",
     "raise_if_duplicate_canonical_config",
     "raise_if_duplicate_catalog_song",
     "raise_if_duplicate_config",
+    "raise_if_duplicate_observation_evidence",
     "raise_if_duplicate_run_provenance",
     "raise_if_duplicate_seg_meta",
     "seg_meta_row_exists",
@@ -109,11 +114,17 @@ __all__ = [
 
 #: The intended compact snapshot table set, in canonical creation order.  Mirrors the
 #: P1-S2 ``COMPACT_TABLES`` guard: a durable catalog with NO per-patch membership table.
+#: ``observation_evidence`` is the per-``(song_id, backbone)`` committed observation-version
+#: evidence ledger added by the Plan A observation-binding corrective pass: one row per
+#: requested ``(song_id, backbone)`` whose committed group the catalog was built over,
+#: sealing the exact stream/mask refs+digests, commit identity, patch count/alignment,
+#: audio fingerprint, mask semantics, and group format version into catalog identity.
 CATALOG_TABLES: Final[tuple[str, ...]] = (
     "catalog_metadata",
     "seg_config",
     "catalog_song",
     "seg_meta",
+    "observation_evidence",
     "run_provenance",
 )
 
@@ -121,6 +132,7 @@ CATALOG_METADATA_TABLE: Final[str] = "catalog_metadata"
 SEG_CONFIG_TABLE: Final[str] = "seg_config"
 CATALOG_SONG_TABLE: Final[str] = "catalog_song"
 SEG_META_TABLE: Final[str] = "seg_meta"
+OBSERVATION_EVIDENCE_TABLE: Final[str] = "observation_evidence"
 RUN_PROVENANCE_TABLE: Final[str] = "run_provenance"
 
 
@@ -170,6 +182,29 @@ SEG_META_COLS: Final[tuple[str, ...]] = (
     "searchable_weight",
     "structural_identity",
     "provenance",
+)
+
+#: ``observation_evidence`` (Plan A observation binding): ONE row per requested
+#: ``(song_id, backbone)`` whose committed observation group the catalog was built over,
+#: sealing the exact immutable observation-version evidence into catalog identity.  The
+#: column vocabulary mirrors the streams-layer ObservationGroupIdentity (the single
+#: committed-observation evidence carrier): stream/mask artifact refs and payload
+#: digests, the commit_sha256 identity, the alignment_token binding stream+mask, the
+#: patch_count/alignment frame length, the audio_content_sha256 fingerprint, the
+#: mask_semantics_version, and the group_format_version.
+OBSERVATION_EVIDENCE_COLS: Final[tuple[str, ...]] = (
+    "song_id",
+    "backbone",
+    "stream_ref",
+    "stream_digest",
+    "mask_ref",
+    "mask_digest",
+    "commit_sha256",
+    "alignment_token",
+    "patch_count",
+    "audio_content_sha256",
+    "mask_semantics_version",
+    "group_format_version",
 )
 
 #: ``catalog_metadata`` (DD L209): a metadata-only SINGLETON (zero-or-one row per
@@ -261,6 +296,20 @@ _TABLE_COLUMN_SPECS: Final[dict[str, tuple[tuple[str, str], ...]]] = {
         ("encoder_version", "VARCHAR NOT NULL"),
         ("params_id", "VARCHAR NOT NULL"),
         ("status", "VARCHAR NOT NULL"),
+    ),
+    OBSERVATION_EVIDENCE_TABLE: (
+        ("song_id", "VARCHAR NOT NULL"),
+        ("backbone", "VARCHAR NOT NULL"),
+        ("stream_ref", "VARCHAR NOT NULL"),
+        ("stream_digest", "VARCHAR NOT NULL"),
+        ("mask_ref", "VARCHAR NOT NULL"),
+        ("mask_digest", "VARCHAR NOT NULL"),
+        ("commit_sha256", "VARCHAR NOT NULL"),
+        ("alignment_token", "VARCHAR NOT NULL"),
+        ("patch_count", "INTEGER NOT NULL"),
+        ("audio_content_sha256", "VARCHAR NOT NULL"),
+        ("mask_semantics_version", "VARCHAR NOT NULL"),
+        ("group_format_version", "VARCHAR NOT NULL"),
     ),
     SEG_META_TABLE: (
         ("config_id", "INTEGER NOT NULL"),
@@ -601,6 +650,10 @@ class DuplicateRunProvenanceError(CatalogStorageError):
     """Two ``run_provenance`` rows collide on ``(run_id, phase)``."""
 
 
+class DuplicateObservationEvidenceError(CatalogStorageError):
+    """Two ``observation_evidence`` rows collide on ``(song_id, backbone)``."""
+
+
 class CatalogMetadataCorruptionError(CatalogStorageError):
     """``catalog_metadata`` holds more than one row — the singleton invariant is broken."""
 
@@ -674,6 +727,20 @@ def raise_if_duplicate_catalog_song(con: duckdb.DuckDBPyConnection, config_id: i
 def seg_meta_row_exists(con: duckdb.DuckDBPyConnection, config_id: int, song_id: str, seg_id: int) -> bool:
     """True when a ``seg_meta`` row exists for ``(config_id, song_id, seg_id)``."""
     return _exists(con, SEG_META_TABLE, "config_id = ? AND song_id = ? AND seg_id = ?", [config_id, song_id, seg_id])
+
+
+def observation_evidence_exists(con: duckdb.DuckDBPyConnection, song_id: str, backbone: str) -> bool:
+    """True when an ``observation_evidence`` row exists for ``(song_id, backbone)``."""
+    return _exists(con, OBSERVATION_EVIDENCE_TABLE, "song_id = ? AND backbone = ?", [song_id, backbone])
+
+
+def raise_if_duplicate_observation_evidence(con: duckdb.DuckDBPyConnection, song_id: str, backbone: str) -> None:
+    """Reject a duplicate ``observation_evidence`` ``(song_id, backbone)`` row."""
+    if observation_evidence_exists(con, song_id, backbone):
+        raise DuplicateObservationEvidenceError(
+            f"observation_evidence already holds (song_id={song_id!r}, backbone={backbone!r}); "
+            "one committed observation evidence row per requested (song_id, backbone)"
+        )
 
 
 def raise_if_duplicate_seg_meta(con: duckdb.DuckDBPyConnection, config_id: int, song_id: str, seg_id: int) -> None:

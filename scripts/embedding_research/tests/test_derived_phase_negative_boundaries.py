@@ -273,7 +273,7 @@ def test_analyze_phase_completes_with_zero_sentinel_calls(con, tmp_path, monkeyp
         assert result.finite is True
         assert result.n_queries == len(_SONGS)
         assert result.strategy_key.startswith("catalog:effnet:")
-        for key in ("map_k", "mrr", "ndcg_k", "recall_k", "disc_artist"):
+        for key in ("map_k_artist", "mrr_artist", "ndcg_k_artist", "recall_k_artist", "disc_artist"):
             assert np.isfinite(result.metrics[key]), key
         _assert_zero_sentinel_calls(counts)
     finally:

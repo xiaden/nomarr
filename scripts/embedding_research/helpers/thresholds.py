@@ -1,4 +1,4 @@
-"""Direct normalized-unit-vector L2 threshold resolution and canonical identity (Plan A P1-S2).
+"""Direct threshold resolution and canonical identity (Plan A corrective pass).
 
 This module is the single canonical home for the threshold and canonical-identity
 contract consumed by segmentation configs and the durable segmentation catalog.
@@ -7,13 +7,17 @@ code and tests can import it without any backend.
 
 Threshold contract
 ------------------
-There is exactly ONE threshold semantics: a finite direct L2 distance between
-normalized unit vectors.  A resolved threshold is immutable and finite and always
-satisfies ``effective == configured`` exactly.  There is no scaling, no
-calibration basis, and no p50/percentile multiplier; no second semantics label
-exists and ``resolve_threshold`` accepts no semantics selector.  The former
-``std_scaled`` and calibration/p50 behavior were removed — they are historical and
-never read at runtime.
+There is exactly ONE threshold *application*: ``direct_distance`` — a finite
+boundary value applied directly with no scaling, calibration basis, or
+p50/percentile multiplier (``effective == configured`` exactly).  The application
+label deliberately names only the application mode; it NEVER implies a distance
+metric.  The executed distance metric is owned by the ``bin_mode`` dispatch
+(``helpers.binning.DIST_FNS``) and derived from it — ``l2`` for ``temporal_global``
+and ``chebyshev`` for ``temporal_perdim`` — so an equal numeric threshold under
+the two experiments is a distinct identity and a ``temporal_perdim`` row never
+carries an L2-implying label.  ``resolve_threshold`` accepts no semantics or
+metric selector.  The former ``std_scaled`` and calibration/p50 behavior were
+removed — they are historical and never read at runtime.
 
 Canonical encoding
 ------------------
@@ -48,10 +52,13 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Final
 
-#: The one and only threshold semantics: a finite direct L2 distance between
-#: normalized unit vectors.  Kept as a named constant so ``ThresholdResolution``
-#: values and catalog manifests compare against a single spelling.
-DIRECT_L2: Final[str] = "direct_l2"
+#: The one and only threshold-application semantics: a finite boundary value
+#: applied directly (no scaling / calibration).  This is an APPLICATION label
+#: independent of the executed distance metric (which is derived from ``bin_mode``
+#: via ``helpers.binning.DIST_FNS``).  Kept as a named constant so
+#: ``ThresholdResolution`` values and catalog manifests compare against a single
+#: spelling.
+DIRECT_DISTANCE: Final[str] = "direct_distance"
 
 #: Default outlier window (consecutive boundary patches absorbed before a hard
 #: split).  Residing here so canonical hash computation and segmentation callers
@@ -72,12 +79,14 @@ class ThresholdResolution:
     Attributes
     ----------
     configured:
-        The finite configured threshold (an L2 distance between unit vectors).
+        The finite configured threshold (a scalar boundary value applied directly).
     effective:
         The finite effective threshold.  By construction ``effective == configured``
-        exactly — there is exactly one mode and no calibration step.
+        exactly — there is exactly one application mode and no calibration step.
     semantics:
-        Always :data:`DIRECT_L2` (``"direct_l2"``).  No other semantics exists.
+        Always :data:`DIRECT_DISTANCE` (``"direct_distance"``) — the threshold
+        APPLICATION label.  It never implies a distance metric; the executed metric
+        is derived from the config's ``bin_mode`` via ``helpers.binning.DIST_FNS``.
     encoder_version:
         The whole-module :func:`config_encoder_version` at resolution time, so the
         recorded contract pins the exact encoder source that produced it.
@@ -91,12 +100,12 @@ class ThresholdResolution:
     def __post_init__(self) -> None:
         configured = _coerce_finite(self.configured, "configured")
         effective = _coerce_finite(self.effective, "effective")
-        if self.semantics != DIRECT_L2:
-            raise ValueError(f"only {DIRECT_L2!r} threshold semantics exists; got {self.semantics!r}")
+        if self.semantics != DIRECT_DISTANCE:
+            raise ValueError(f"only {DIRECT_DISTANCE!r} threshold-application semantics exists; got {self.semantics!r}")
         # ``effective == configured`` exactly: no scaling, no calibration basis.
         if effective != configured:
             raise ValueError(
-                f"effective must equal configured exactly (single direct-L2 mode); "
+                f"effective must equal configured exactly (single direct-distance application); "
                 f"configured={configured!r} effective={effective!r}"
             )
         object.__setattr__(self, "configured", configured)
@@ -127,19 +136,21 @@ def _coerce_int(value: object, name: str) -> int:
 
 
 def resolve_threshold(configured: object) -> ThresholdResolution:
-    """Resolve a configured threshold into a direct-L2 :class:`ThresholdResolution`.
+    """Resolve a configured threshold into a direct-distance :class:`ThresholdResolution`.
 
-    There is exactly one mode: the configured value is applied directly as a
-    finite L2 distance between normalized unit vectors (``effective == configured``
-    exactly).  Non-finite or non-numeric inputs are rejected.  No ``semantics`` or
-    ``calibration_record`` selector exists; scaled/calibration/p50 resolution is not
-    representable.
+    There is exactly one application mode: the configured value is applied directly
+    as a finite scalar boundary value (``effective == configured`` exactly).
+    Non-finite or non-numeric inputs are rejected.  The semantics is the
+    application label :data:`DIRECT_DISTANCE` and never implies a distance metric;
+    the executed metric is derived from the config's ``bin_mode``.  No ``semantics``
+    or ``calibration_record`` selector exists; scaled/calibration/p50 resolution is
+    not representable.
     """
     finite = _coerce_finite(configured, "configured")
     return ThresholdResolution(
         configured=finite,
         effective=finite,
-        semantics=DIRECT_L2,
+        semantics=DIRECT_DISTANCE,
         encoder_version=config_encoder_version(),
     )
 
@@ -242,9 +253,12 @@ def canonical_config_hash(
     """Deterministic SHA-256 canonical identity over the seg_config key ordering.
 
     All parameters are required keyword inputs.  ``threshold`` is the single
-    direct-L2 value (``configured == effective``); there is no semantics or
-    calibration input because only one semantics exists.  The ``encoder_version``
-    is included so any encoder source change conservatively invalidates identity.
+    direct-distance value (``configured == effective``); there is no metric or
+    calibration input because the executed metric is derived from ``bin_mode`` and
+    only one application semantics exists.  ``bin_mode`` is folded in, so an equal
+    numeric threshold under ``temporal_global`` vs ``temporal_perdim`` is a
+    DISTINCT identity.  The ``encoder_version`` is included so any encoder source
+    change conservatively invalidates identity.
     """
     payload = canonical_config_inputs(
         backbone=backbone,

@@ -186,6 +186,14 @@ def test_no_path_derived_identity(tmp_path, compact_catalog_factory):
     hb = _two_seg_harness(_fresh_con(), tmp_path / "root-b", compact_catalog_factory, run_id="same-run")
     try:
         assert ha.snapshot_path != hb.snapshot_path  # genuinely different durable locations
+        # Freeze the volatile committed-group commit marker digest in both catalogs: the
+        # commit marker content digest folds the wall-clock created_at / run tag, so two
+        # identical catalogs built a moment apart carry DIFFERENT commit markers.  Their
+        # per-song signatures must agree once that build-volatile is pinned (the committed
+        # content — stream/mask refs+digests, patch count, audio fingerprint, semantics —
+        # is byte-identical across roots; no output_root/path is folded into identity).
+        for harness in (ha, hb):
+            harness.con.execute("UPDATE observation_evidence SET commit_sha256 = 'frozen-commit'")
         ca, cb = _config_id(ha), _config_id(hb)
         assert ci.search_representation_hash(ha, ca) == ci.search_representation_hash(hb, cb)
         assert ci.exact_segmentation_hash(ha, ca) == ci.exact_segmentation_hash(hb, cb)

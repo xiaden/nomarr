@@ -42,7 +42,16 @@ import pytest
 from scripts.embedding_research.helpers import segmentation as seg_mod
 
 #: Intended compact table set — a durable catalog with NO per-patch membership table.
-COMPACT_TABLES = ("catalog_metadata", "seg_config", "catalog_song", "seg_meta", "run_provenance")
+#: ``observation_evidence`` (the per-requested-song committed observation-version ledger) is
+#: part of the Plan A observation-binding corrective surface.
+COMPACT_TABLES = (
+    "catalog_metadata",
+    "seg_config",
+    "catalog_song",
+    "seg_meta",
+    "observation_evidence",
+    "run_provenance",
+)
 
 #: Intended compact column sets (recorded for P1-S3).  No per-patch rows, no copied
 #: threshold vectors, no new PK/UNIQUE constraints.
@@ -84,6 +93,23 @@ SEG_META_COLS = (
     "searchable_weight",
     "structural_identity",
     "provenance",
+)
+#: ``observation_evidence`` column set (Plan A observation binding).  One row per requested
+#: ``(song_id, backbone)`` sealing the committed observation-version evidence the catalog was
+#: built over — mirror of the streams ObservationGroupIdentity.
+OBSERVATION_EVIDENCE_COLS = (
+    "song_id",
+    "backbone",
+    "stream_ref",
+    "stream_digest",
+    "mask_ref",
+    "mask_digest",
+    "commit_sha256",
+    "alignment_token",
+    "patch_count",
+    "audio_content_sha256",
+    "mask_semantics_version",
+    "group_format_version",
 )
 
 

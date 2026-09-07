@@ -26,6 +26,18 @@ The fixture exercises the schema-v2 contract:
   * retained ``phase_timings`` restricted to the eight exact CLI phase names.
 
 It never inserts any removed table and never emits forbidden legacy vocabulary.
+
+Corpus-identity surface (Plan C complete-corpus): each seeded segmented class and observed
+``global_pool:{backbone}:medoid`` baseline carries the comparable BASE ``evaluation_corpus_*``
+identity only — backbone/song_ids/corpus_hash/count/eligible/comparable (all the fixture sets
+eligible + comparable) on its ``analyze_scope_v2`` provenance line.  It does NOT seed the full
+13-column digest/evidence surface: ``_fixture_corpus`` leaves ``completeness`` at its default
+``False`` and all the Plan C digest proofs (membership-set digests, observation-binding digest,
+completeness/integrity) empty/``None`` — the 11-table generator DB has no
+``observation_evidence`` table, so a genuine observation binding is unrepresentable there.  The
+``completeness=True`` complete-evidence surface is proven instead by the deterministic
+real-writer seam test (``tests/test_deterministic_fixture_outputs.py``), not by this synthetic
+generator.
 """
 
 from __future__ import annotations
@@ -212,6 +224,8 @@ def _seed_catalog_classes(con, run_id: str) -> None:
     Each backbone gets TWO catalog classes over K in {5, 10}, so the winners section has a
     deterministic winner/delta/factor story per backbone.  EffNet class ``effnet:aa`` uses
     ``config_ids=(1, 5)`` to exercise sorted alias ids (equal representations counted once).
+    Class metrics use the SUFFIXED artist vocabulary (map_k_artist/mrr_artist) plus the
+    ``n_queries_*`` counts the real analyze writer emits.
     """
     classes = [
         # EffNet population — two classes, one with an alias (1 canonical + 5 alias).
@@ -220,14 +234,14 @@ def _seed_catalog_classes(con, run_id: str) -> None:
             "keyset": "aa",
             "config_ids": (1, 5),
             "view": "viewhash-effnet-aa",
-            "metrics": {"map_k": 0.55, "mrr": 0.45},
+            "metrics": {"map_k_artist": 0.55, "mrr_artist": 0.45},
         },
         {
             "backbone": "effnet",
             "keyset": "bb",
             "config_ids": (3,),
             "view": "viewhash-effnet-bb",
-            "metrics": {"map_k": 0.82, "mrr": 0.71},
+            "metrics": {"map_k_artist": 0.82, "mrr_artist": 0.71},
         },
         # MusicNN population — independent two-class story.
         {
@@ -235,14 +249,14 @@ def _seed_catalog_classes(con, run_id: str) -> None:
             "keyset": "mm",
             "config_ids": (1,),
             "view": "viewhash-musicnn-mm",
-            "metrics": {"map_k": 0.66, "mrr": 0.58},
+            "metrics": {"map_k_artist": 0.66, "mrr_artist": 0.58},
         },
         {
             "backbone": "musicnn",
             "keyset": "m2",
             "config_ids": (2,),
             "view": "viewhash-musicnn-m2",
-            "metrics": {"map_k": 0.61, "mrr": 0.52},
+            "metrics": {"map_k_artist": 0.61, "mrr_artist": 0.52},
         },
     ]
     for k in (5, 10):
@@ -273,6 +287,11 @@ def _persist_catalog_class(
     from scripts.embedding_research.common.catalog_analysis import CatalogAnalysisResult
 
     strategy_key = _catalog_key(backbone, keyset)
+    # The real analyze writer emits per-ruler ``n_queries_*`` EAV counts alongside the scored
+    # suffixed keys; mirror that so the fixture exercises the n_queries_* exclusion from the
+    # baseline/winner-delta machinery (these fixture classes are artist-ruler-scored only).
+    metrics_with_counts = dict(metrics)
+    metrics_with_counts.update({"n_queries_artist": 5.0, "n_queries_genre": 0.0, "n_queries_head": 0.0})
     # A REAL catalog_class scope: durable catalog anchor + semantic representation hash (stable
     # across K/metric) + ordered per-config member evidence + the shared comparable evaluation
     # corpus.  The corrective hard cut removed the identity-less structural fixture path, so a
@@ -290,7 +309,7 @@ def _persist_catalog_class(
         scoring_semantics_version=_SEMANTICS_VERSION,
         strategy_key=strategy_key,
         finite=True,
-        metrics=dict(metrics),
+        metrics=metrics_with_counts,
         per_song={},
         per_query=(),
         n_queries=0,
@@ -324,10 +343,12 @@ def _seed_medoid_baselines(con, run_id: str) -> None:
     backbone's classes under the matching-only (no structural fallback) contract.
     """
     medoid_metrics = {
-        "effnet": {"map_k": 0.5, "mrr": 0.4},
-        "musicnn": {"map_k": 0.5, "mrr": 0.4},
+        "effnet": {"map_k_artist": 0.5, "mrr_artist": 0.4},
+        "musicnn": {"map_k_artist": 0.5, "mrr_artist": 0.4},
     }
     for backbone, metrics in medoid_metrics.items():
+        metrics_with_counts = dict(metrics)
+        metrics_with_counts.update({"n_queries_artist": 5.0, "n_queries_genre": 0.0, "n_queries_head": 0.0})
         catalog_id, catalog_fingerprint = _fixture_catalog(backbone)
         corpus = _fixture_corpus(backbone)
         for k in (5, 10):
@@ -337,7 +358,7 @@ def _seed_medoid_baselines(con, run_id: str) -> None:
                 MEDOID_STRATEGY_TYPE,
                 "cosine",
                 k,
-                dict(metrics),
+                metrics_with_counts,
                 run_id=run_id,
             )
             record_analyze_run_scope(
@@ -358,6 +379,14 @@ def _seed_medoid_baselines(con, run_id: str) -> None:
                     evaluation_corpus_comparable=bool(corpus.comparable),
                     evaluation_corpus_missing_count=int(corpus.missing_count),
                     evaluation_corpus_missing_digest=corpus.missing_digest or "",
+                    evaluation_corpus_semantics_version=int(corpus.semantics_version),
+                    evaluation_corpus_eligible=bool(corpus.eligible),
+                    evaluation_corpus_eligible_digest=corpus.eligible_digest or "",
+                    evaluation_corpus_requested_count=int(corpus.requested_count),
+                    evaluation_corpus_requested_digest=corpus.requested_digest or "",
+                    evaluation_corpus_observation_digest=corpus.observation_digest or "",
+                    evaluation_corpus_complete=bool(corpus.completeness),
+                    evaluation_corpus_integrity=corpus.integrity or "",
                 ),
             )
 
@@ -373,7 +402,7 @@ def _seed_head_provenance(con, run_id: str) -> None:
             bin_mode="temporal_global",
             threshold_configured=0.7,
             threshold_effective=0.7,
-            semantics="direct_l2",
+            semantics="direct_distance",
             status="done",
             n_songs=5,
             n_pooled=5,

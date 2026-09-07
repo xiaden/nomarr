@@ -1,8 +1,9 @@
-"""Unit tests for the direct-L2-only threshold-resolution contract (Plan A P1-S2).
+"""Unit tests for the direct-distance threshold-resolution contract (Plan A corrective pass).
 
-The contract is the spec: there is exactly ONE threshold semantics — a finite
-DIRECT normalized-unit-vector L2 distance — so ``ThresholdResolution`` is
-immutable, all its numeric fields are finite, ``semantics == "direct_l2"``, and
+The contract is the spec: there is exactly ONE threshold APPLICATION — a finite
+boundary value applied directly (no scaling) — so ``ThresholdResolution`` is
+immutable, all its numeric fields are finite, ``semantics == "direct_distance"``
+(the application label, independent of the executed distance metric), and
 ``effective == configured`` exactly.  ``resolve_threshold(configured)`` takes a
 single positional numeric argument and rejects non-finite and non-numeric
 inputs.  Scaled/calibration/p50 resolution and every second-semantics branch were
@@ -20,27 +21,27 @@ from dataclasses import FrozenInstanceError
 import pytest
 
 from scripts.embedding_research.helpers.thresholds import (
-    DIRECT_L2,
+    DIRECT_DISTANCE,
     ThresholdResolution,
     resolve_threshold,
 )
 
-# ── direct_l2: the single semantics ───────────────────────────────────────────
+# ── direct_distance: the single application semantics ────────────────────────
 
 
-def test_direct_l2_effective_equals_configured() -> None:
-    """resolve_threshold is direct-L2; effective == configured exactly (no arithmetic)."""
+def test_direct_distance_effective_equals_configured() -> None:
+    """resolve_threshold is direct-distance; effective == configured exactly (no scaling)."""
     configured = 1.25
     res = resolve_threshold(configured)
-    assert res.semantics == DIRECT_L2
-    assert res.semantics == "direct_l2"
+    assert res.semantics == DIRECT_DISTANCE
+    assert res.semantics == "direct_distance"
     assert res.effective == configured
     assert res.configured == configured
     assert res.effective is res.configured or res.effective == res.configured
 
 
 def test_accepts_zero_and_small_configured() -> None:
-    """Any finite configured value is allowed under direct-L2."""
+    """Any finite configured value is allowed under the direct-distance application."""
     for value in (0.0, 0.05, 1.5):
         res = resolve_threshold(value)
         assert res.effective == value
@@ -55,7 +56,7 @@ def test_resolution_records_encoder_version() -> None:
 
 
 def test_resolution_has_no_calibration_field() -> None:
-    """No calibration_record field exists on the direct-only resolution."""
+    """No calibration_record field exists on the direct-distance-only resolution."""
     res = resolve_threshold(1.0)
     assert not hasattr(res, "calibration_record")
 
@@ -80,7 +81,7 @@ def test_reject_invalid_configured_type(bad: object) -> None:
 @pytest.mark.parametrize(
     "kw",
     [
-        {"semantics": "direct_l2"},
+        {"semantics": "direct_distance"},
         {"semantics": "std_scaled"},
         {"calibration_record": {"statistic": "p50", "value": 0.8}},
     ],
@@ -104,11 +105,11 @@ def test_resolution_is_immutable() -> None:
 def test_direct_construction_rejects_non_finite() -> None:
     """Constructing ThresholdResolution with a non-finite field is rejected."""
     with pytest.raises(ValueError):
-        ThresholdResolution(configured=1.0, effective=float("nan"), semantics="direct_l2", encoder_version="x")
+        ThresholdResolution(configured=1.0, effective=float("nan"), semantics="direct_distance", encoder_version="x")
 
 
 def test_direct_construction_rejects_wrong_semantics() -> None:
-    """Constructing ThresholdResolution with a non-direct_l2 semantics is rejected."""
+    """Constructing ThresholdResolution with a non-direct_distance semantics is rejected."""
     with pytest.raises(ValueError):
         ThresholdResolution(configured=1.0, effective=1.0, semantics="std_scaled", encoder_version="x")
 
@@ -116,7 +117,7 @@ def test_direct_construction_rejects_wrong_semantics() -> None:
 def test_direct_construction_rejects_effective_not_equal_configured() -> None:
     """Constructing ThresholdResolution where effective != configured is rejected."""
     with pytest.raises(ValueError):
-        ThresholdResolution(configured=1.0, effective=0.9, semantics="direct_l2", encoder_version="x")
+        ThresholdResolution(configured=1.0, effective=0.9, semantics="direct_distance", encoder_version="x")
 
 
 def test_direct_construction_finite_guarantee_holds() -> None:

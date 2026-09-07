@@ -31,6 +31,9 @@ from scripts.embedding_research.tests.test_compact_catalog_scale_weights import 
     COMPACT_TABLES as PINNED_COMPACT_TABLES,
 )
 from scripts.embedding_research.tests.test_compact_catalog_scale_weights import (
+    OBSERVATION_EVIDENCE_COLS as PINNED_OBSERVATION_EVIDENCE_COLS,
+)
+from scripts.embedding_research.tests.test_compact_catalog_scale_weights import (
     SEG_CONFIG_COLS as PINNED_SEG_CONFIG_COLS,
 )
 from scripts.embedding_research.tests.test_compact_catalog_scale_weights import (
@@ -41,7 +44,8 @@ from scripts.embedding_research.tests.test_compact_catalog_scale_weights import 
 def _table_column_map(con) -> dict[str, set[str]]:
     """table -> set of column names present on the connection."""
     rows = con.execute(
-        "SELECT table_name, column_name FROM information_schema.columns WHERE table_name IN (?, ?, ?, ?, ?)",
+        "SELECT table_name, column_name FROM information_schema.columns "
+        f"WHERE table_name IN ({', '.join('?' for _ in storage.CATALOG_TABLES)})",
         list(storage.CATALOG_TABLES),
     ).fetchall()
     result: dict[str, set[str]] = {name: set() for name in storage.CATALOG_TABLES}
@@ -64,10 +68,15 @@ def test_module_imports_cleanly():
 
 
 def test_compact_table_set_matches_pinned_guard():
-    """The five-table snapshot set matches the P1-S2 COMPACT_TABLES guard (no membership table)."""
+    """The compact snapshot set matches the COMPACT_TABLES guard (no membership table)."""
     assert storage.CATALOG_TABLES == PINNED_COMPACT_TABLES
     assert "seg_membership" not in storage.CATALOG_TABLES
-    assert len(storage.CATALOG_TABLES) == 5
+    assert len(storage.CATALOG_TABLES) == 6
+
+
+def test_observation_evidence_columns_match_pinned_constants():
+    """observation_evidence DDL column set is exactly the pinned OBSERVATION_EVIDENCE_COLS."""
+    assert storage.OBSERVATION_EVIDENCE_COLS == PINNED_OBSERVATION_EVIDENCE_COLS
 
 
 def test_seg_config_columns_match_pinned_constants():
@@ -137,7 +146,7 @@ def test_run_provenance_columns_cover_dd_l213_semantics():
 
 
 def test_created_schema_column_sets_match_module_and_has_no_membership(tmp_path):
-    """ensure_schema creates the five tables whose columns match the module's tuples."""
+    """ensure_schema creates the compact tables whose columns match the module's tuples."""
     db_path = tmp_path / "snapshot.duckdb"
     con = duckdb.connect(str(db_path))
     try:
@@ -149,6 +158,7 @@ def test_created_schema_column_sets_match_module_and_has_no_membership(tmp_path)
         assert columns[storage.SEG_CONFIG_TABLE] == set(storage.SEG_CONFIG_COLS)
         assert columns[storage.CATALOG_SONG_TABLE] == set(storage.CATALOG_SONG_COLS)
         assert columns[storage.SEG_META_TABLE] == set(storage.SEG_META_COLS)
+        assert columns[storage.OBSERVATION_EVIDENCE_TABLE] == set(storage.OBSERVATION_EVIDENCE_COLS)
         assert columns[storage.CATALOG_METADATA_TABLE] == set(storage.CATALOG_METADATA_COLS)
         assert columns[storage.RUN_PROVENANCE_TABLE] == set(storage.RUN_PROVENANCE_COLS)
     finally:

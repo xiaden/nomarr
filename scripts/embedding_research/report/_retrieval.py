@@ -21,12 +21,14 @@ Research-only.  This module owns the single active reader over ``analyze_metrics
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import pandas as pd
 
 from scripts.embedding_research.baseline import MEDOID_STRATEGY_TYPE
 from scripts.embedding_research.db.analyze_scope import parse_analyze_scope
+from scripts.embedding_research.db.incomplete_diagnostics import read_incomplete_analyze_diagnostics
 
 from ._base import (
     CATALOG_ANALYSIS_COLUMNS,
@@ -79,23 +81,32 @@ def _scope_map(con, *, run_id: str | None = None) -> dict[str, dict[str, Any]]:
     return out
 
 
-def _scope_corpus(cfg: dict[str, Any] | None) -> tuple[Any, Any, Any, Any, Any]:
+def _scope_corpus(cfg: dict[str, Any] | None) -> tuple[Any, ...]:
     """A row's persisted evaluation-corpus columns from its analyze scope dict.
 
     Mirrors the ``evaluation_corpus_*`` keys written onto the single ``analyze_scope_v2``
-    provenance line; ``(None,)*5`` when the scope carries no corpus identity (absent/empty scope).
+    provenance line (the five legacy keys plus the Plan C Phase 1 complete identity/evidence
+    extensions); ``(None,)*13`` when the scope carries no corpus identity (absent/empty scope).
     """
     if not cfg:
-        return (None, None, None, None, None)
+        return (None,) * 13
     h = cfg.get("evaluation_corpus_hash")
     if not h:
-        return (None, None, None, None, None)
+        return (None,) * 13
     return (
         h,
         cfg.get("evaluation_corpus_count"),
         cfg.get("evaluation_corpus_comparable"),
         cfg.get("evaluation_corpus_missing_count"),
         cfg.get("evaluation_corpus_missing_digest") or None,
+        cfg.get("evaluation_corpus_semantics_version"),
+        cfg.get("evaluation_corpus_eligible"),
+        cfg.get("evaluation_corpus_eligible_digest") or None,
+        cfg.get("evaluation_corpus_requested_count"),
+        cfg.get("evaluation_corpus_requested_digest") or None,
+        cfg.get("evaluation_corpus_observation_digest") or None,
+        cfg.get("evaluation_corpus_complete"),
+        cfg.get("evaluation_corpus_integrity") or None,
     )
 
 
@@ -152,6 +163,14 @@ def query_analyze_metrics(
     if df.empty:
         return empty_df(columns)
 
+    # Per-ruler ``n_queries_*`` cells are ruler-evaluable-query COUNTS, not scored retrieval
+    # cells: they never enter the analysis / winners / summary / winner-delta surfaces, so they
+    # are excluded from the catalog-only decoded frame here (each class's n_queries_* EAV rows
+    # still exist under its strategy key; they are simply not scored cells to render/benchmark).
+    df = df[~df["metric"].str.startswith("n_queries_")].reset_index(drop=True)
+    if df.empty:
+        return empty_df(columns)
+
     # Decode the active catalog identity; rows whose key is not a well-formed catalog key are
     # dropped (a data-integrity anomaly, never a strategy-filter).
     decoded = df["strategy_key"].map(decode_catalog_strategy_key)
@@ -177,11 +196,23 @@ def query_analyze_metrics(
     cat_fprints: list[Any] = []
     view_hashes: list[Any] = []
     view_keysets: list[Any] = []
-    corpus_hash: list[Any] = []
-    corpus_count: list[Any] = []
-    corpus_comparable: list[Any] = []
-    corpus_missing_count: list[Any] = []
-    corpus_missing_digest: list[Any] = []
+    # Parallel per-row corpus-identity column lists (the 13 ``evaluation_corpus_*`` persisted
+    # keys decoded from each scope line by ``_scope_corpus``).
+    corpus_cols: dict[str, list[Any]] = {
+        "corpus_hash": [],
+        "corpus_count": [],
+        "corpus_comparable": [],
+        "corpus_missing_count": [],
+        "corpus_missing_digest": [],
+        "corpus_semantics_version": [],
+        "corpus_eligible": [],
+        "corpus_eligible_digest": [],
+        "corpus_requested_count": [],
+        "corpus_requested_digest": [],
+        "corpus_observation_digest": [],
+        "corpus_complete": [],
+        "corpus_integrity": [],
+    }
     for i, key in enumerate(df["strategy_key"]):
         cfg = scope.get(key)
         # The disposable per-run view keyset rides in the strategy-key trailing segment; the
@@ -189,6 +220,7 @@ def query_analyze_metrics(
         # report never renders a disposable view/keyset hash as semantic identity.
         view_keyset = str(decoded_list[i]["keyset_hash"])
         view_keysets.append(view_keyset)
+        corpus_parts = _scope_corpus(cfg)
         if cfg:
             ccid, aliases = _alias_and_canonical(cfg.get("config_ids"))
             canonical.append(ccid)
@@ -204,7 +236,6 @@ def query_analyze_metrics(
             cat_ids.append(cfg.get("catalog_id") or None)
             cat_fprints.append(cfg.get("catalog_fingerprint") or None)
             view_hashes.append(cfg.get("view_content_hash") or None)
-            ch, cc, ccmp, cmc, cmd = _scope_corpus(cfg)
         else:
             # No provenance scope recorded: no durable semantic identity exists for the row, so
             # identity fields stay empty and it is rendered visibly incomplete — the disposable
@@ -217,12 +248,8 @@ def query_analyze_metrics(
             cat_ids.append(None)
             cat_fprints.append(None)
             view_hashes.append(None)
-            ch, cc, ccmp, cmc, cmd = (None, None, None, None, None)
-        corpus_hash.append(ch)
-        corpus_count.append(cc)
-        corpus_comparable.append(ccmp)
-        corpus_missing_count.append(cmc)
-        corpus_missing_digest.append(cmd)
+        for _name, _value in zip(corpus_cols, corpus_parts, strict=False):
+            corpus_cols[_name].append(_value)
 
     enriched = pd.DataFrame(
         {
@@ -243,11 +270,19 @@ def query_analyze_metrics(
             "view_keyset_hash": view_keysets,
             "view_content_hash": view_hashes,
             "class_members": members,
-            "evaluation_corpus_hash": corpus_hash,
-            "evaluation_corpus_count": corpus_count,
-            "evaluation_corpus_comparable": corpus_comparable,
-            "evaluation_corpus_missing_count": corpus_missing_count,
-            "evaluation_corpus_missing_digest": corpus_missing_digest,
+            "evaluation_corpus_hash": corpus_cols["corpus_hash"],
+            "evaluation_corpus_count": corpus_cols["corpus_count"],
+            "evaluation_corpus_comparable": corpus_cols["corpus_comparable"],
+            "evaluation_corpus_missing_count": corpus_cols["corpus_missing_count"],
+            "evaluation_corpus_missing_digest": corpus_cols["corpus_missing_digest"],
+            "evaluation_corpus_semantics_version": corpus_cols["corpus_semantics_version"],
+            "evaluation_corpus_eligible": corpus_cols["corpus_eligible"],
+            "evaluation_corpus_eligible_digest": corpus_cols["corpus_eligible_digest"],
+            "evaluation_corpus_requested_count": corpus_cols["corpus_requested_count"],
+            "evaluation_corpus_requested_digest": corpus_cols["corpus_requested_digest"],
+            "evaluation_corpus_observation_digest": corpus_cols["corpus_observation_digest"],
+            "evaluation_corpus_complete": corpus_cols["corpus_complete"],
+            "evaluation_corpus_integrity": corpus_cols["corpus_integrity"],
             "metric": df["metric"],
             "value": df["value"],
         }
@@ -301,6 +336,12 @@ def query_medoid_baselines(
     if df.empty:
         return empty_df(columns)
 
+    # ``n_queries_*`` counts on the medoid baseline never enter the winners/summary benchmark
+    # surfaces (they are counts, not scored cells) — mirror the catalog loader filter.
+    df = df[~df["metric"].str.startswith("n_queries_")].reset_index(drop=True)
+    if df.empty:
+        return empty_df(columns)
+
     backbones: list[Any] = []
     valid = []
     for sk in df["strategy_key"]:
@@ -318,7 +359,7 @@ def query_medoid_baselines(
     backbone_col = [backbones[i] for i in keep]
 
     scope = _scope_map(con, run_id=run_id)
-    corpus: list[tuple[Any, Any, Any, Any, Any]] = [_scope_corpus(scope.get(str(sk))) for sk in df["strategy_key"]]
+    corpus: list[tuple[Any, ...]] = [_scope_corpus(scope.get(str(sk))) for sk in df["strategy_key"]]
     # A medoid baseline is not a config class, but its persisted scope carries the compact
     # catalog anchor + score/scoring-semantics provenance of the analyze run; surface those
     # rather than leaving the baseline's identity columns blank.  config / member / semantic /
@@ -358,6 +399,14 @@ def query_medoid_baselines(
             "evaluation_corpus_comparable": [c[2] for c in corpus],
             "evaluation_corpus_missing_count": [c[3] for c in corpus],
             "evaluation_corpus_missing_digest": [c[4] for c in corpus],
+            "evaluation_corpus_semantics_version": [c[5] for c in corpus],
+            "evaluation_corpus_eligible": [c[6] for c in corpus],
+            "evaluation_corpus_eligible_digest": [c[7] for c in corpus],
+            "evaluation_corpus_requested_count": [c[8] for c in corpus],
+            "evaluation_corpus_requested_digest": [c[9] for c in corpus],
+            "evaluation_corpus_observation_digest": [c[10] for c in corpus],
+            "evaluation_corpus_complete": [c[11] for c in corpus],
+            "evaluation_corpus_integrity": [c[12] for c in corpus],
             "metric": df["metric"],
             "value": df["value"],
         }
@@ -384,10 +433,83 @@ def query_winners_metrics(
     catalog = query_analyze_metrics(con, run_id=run_id)
     medoid = query_medoid_baselines(con, run_id=run_id)
     if medoid.empty:
-        return catalog
-    if catalog.empty:
-        return medoid
-    return pd.concat([catalog, medoid], ignore_index=True)
+        frame = catalog
+    elif catalog.empty:
+        frame = medoid
+    else:
+        frame = pd.concat([catalog, medoid], ignore_index=True)
+    # Plan B P2: persist the run-scoped non-comparable representation diagnostics on the winners
+    # frame so ``build_winner_delta_rows`` can merge them into ``attrs["baseline_incomplete"]``.
+    # A run whose invocation later failed is never resolved as a clean completed run_id here, so
+    # its diagnostics are excluded from clean completed-report selection by construction.
+    frame.attrs["persisted_incomplete_diagnostics"] = query_incomplete_analyze_diagnostics(con, run_id=run_id)
+    return frame
+
+
+def query_incomplete_analyze_diagnostics(
+    con,
+    *,
+    run_id: str | None = None,
+) -> tuple[dict, ...]:
+    """Return persisted non-comparable diagnostics normalized to the report incomplete shape.
+
+    Reads the ``analyze_incomplete_diagnostics`` table (optionally restricted to *run_id*) and
+    normalizes each versioned diagnostic into the EXACT report incomplete-representation mapping
+    shape emitted by ``baseline._incomplete_entry``.  Each normalized entry carries the 14 derive
+    keys ``report._winners_report`` renders under :data:`_INCOMPLETE_COLUMNS` (strategy/config
+    identity, sim metric/K, reason, the baseline (mandatory observed medoid) vs representation
+    evaluation-corpus hash/count/comparability, and the representation's missing count/digest),
+    PLUS ``backbone`` and the 4 durable class-identity enrichment keys that ``_INCOMPLETE_COLUMNS``
+    now also renders (``search_representation_hash`` / ``canonical_config_id`` / ``config_ids`` /
+    ``missing_song_ids``).  Class identity is never the disposable view/keyset hash; ``metric``
+    stays ``""`` because a non-comparable representation was never scored per-metric (it is
+    representation-incomplete, not a partial metric cell).
+    A non-comparable representation NEVER becomes an ``analyze_metrics`` row or complete scope, so
+    it is only ever surfaced here as visibly incomplete, with no winner/delta.  Returns ``()`` when
+    the table is absent or no rows match (no diagnostics == zero change to any clean report).
+    """
+    entries: list[dict] = []
+    for row in read_incomplete_analyze_diagnostics(con, run_id=run_id):
+        missing_song_ids: list[str] = []
+        if row.get("missing_song_ids_json"):
+            try:
+                missing_song_ids = json.loads(row["missing_song_ids_json"])
+            except json.JSONDecodeError:
+                missing_song_ids = []
+        config_ids: list[int] = []
+        if row.get("config_ids_json"):
+            try:
+                config_ids = json.loads(row["config_ids_json"])
+            except json.JSONDecodeError:
+                config_ids = []
+        entries.append(
+            {
+                "backbone": row.get("backbone") or "",
+                "sim_metric": row.get("sim_metric") or "",
+                "k": row.get("k") or 0,
+                "metric": row.get("metric") or "",
+                "strategy_key": row.get("strategy_key") or "",
+                "baseline_strategy_key": row.get("baseline_strategy_key") or "",
+                "reason": row.get("reason") or "",
+                "baseline_evaluation_corpus_hash": row.get("baseline_evaluation_corpus_hash"),
+                "baseline_evaluation_corpus_count": row.get("baseline_evaluation_corpus_count"),
+                "baseline_evaluation_corpus_comparable": row.get("baseline_evaluation_corpus_comparable"),
+                "representation_evaluation_corpus_hash": row.get("evaluation_corpus_hash"),
+                "representation_evaluation_corpus_count": row.get("evaluation_corpus_count"),
+                "representation_evaluation_corpus_comparable": row.get("evaluation_corpus_comparable"),
+                "representation_missing_count": row.get("missing_count"),
+                "representation_missing_digest": row.get("missing_digest"),
+                # Durable class/threshold identity + tested-threshold membership (never omitted;
+                # surfaced so a reader can see WHICH tested class lost songs), plus the actual lost
+                # song membership.  These ride on the entry and are rendered via the incomplete
+                # table's shared column set when the representation row is present.
+                "search_representation_hash": row.get("search_representation_hash"),
+                "canonical_config_id": row.get("canonical_config_id"),
+                "config_ids": tuple(int(c) for c in config_ids) if config_ids else (),
+                "missing_song_ids": tuple(str(s) for s in missing_song_ids) if missing_song_ids else (),
+            }
+        )
+    return tuple(entries)
 
 
 # ---------------------------------------------------------------------------

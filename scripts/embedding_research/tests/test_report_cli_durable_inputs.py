@@ -47,10 +47,15 @@ _BASE_MS = 1_700_000_000_000  # stable integer-ms anchor (deterministic)
 
 
 def _seed_songs(con, *, n=3) -> None:
-    # A single artist so disc_artist_warning emits a real warning (durable warnings section).
+    # A single artist (so the artist-ruler disc warning fires for the durable warnings section)
+    # but one distinct genre per song (so the genre ruler is NOT degenerate and adds no warning).
+    genres = ["jazz", "rock", "folk", "country", "classical", "ambient", "blues", "metal"]
     con.executemany(
         "INSERT INTO songs (song_id, path, artist, album, title, genre) VALUES (?, ?, ?, ?, ?, ?)",
-        [(f"s{i}", f"/audio/s{i}.flac", "Alice", "A", f"Title {i}", "jazz") for i in range(1, n + 1)],
+        [
+            (f"s{i}", f"/audio/s{i}.flac", "Alice", "A", f"Title {i}", genres[(i - 1) % len(genres)])
+            for i in range(1, n + 1)
+        ],
     )
 
 
@@ -64,7 +69,7 @@ def _seed_head_provenance(con, run_id: str) -> None:
             bin_mode="temporal_global",
             threshold_configured=0.7,
             threshold_effective=0.7,
-            semantics="direct_l2",
+            semantics="direct_distance",
             status="done",
             n_songs=3,
             n_pooled=3,
@@ -324,3 +329,119 @@ def test_cli_report_never_reaches_inference_audio_model_session(con, tmp_path, m
     assert meta["output_artifact_hashes"] == "report.json,report.html"
     assert (out / "report.json").exists()
     assert (out / "report.html").exists()
+
+
+# ── contradictory (complete+failed) same-run shape regressions ──────────────────
+
+
+def _append_failed_analyze(con, *, run_id: str, idx: int) -> None:
+    """Append a ``status='failed'`` ``analyze`` provenance row for an existing run.
+
+    Mirrors ``run_mod._run_single_phase``'s exception recording: a re-run/attempt of the SAME
+    ``run_id`` that raises appends a ``failed`` analyze row AFTER the run's complete/completed
+    rows, so the run becomes contradictory (complete+failed) under append-only provenance (no
+    PK/UNIQUE on ``run_id``).  The stamp is a deterministic integer-ms time strictly after the
+    complete row's ``finished_at`` (``_BASE_MS + idx*10_000 + 6_000``) so ordering stays stable.
+    """
+    started = _BASE_MS + idx * 10_000
+    write_run_provenance(
+        con,
+        run_id=run_id,
+        phase="analyze",
+        status="failed",
+        started_at=started + 9_000,
+        finished_at=started + 9_500,
+        command_line=_COMMANDS["analyze"],
+        config_hash=_CONFIG_HASH,
+        song_count=3,
+    )
+
+
+def test_completed_analyze_run_ids_groups_by_run_and_vetoes_failed(con):
+    """Unit pin: completion is per-run (grouped), any failed analyze row vetoes the whole run.
+
+    A clean single-row run and a deduped multi-row clean run survive; a contradictory
+    complete-plus-failed run and a failed-only run are excluded; output is one entry per run
+    ordered by representative stamp (earliest among complete/completed rows) then run_id.
+    """
+    _seed_songs(con)
+    _seed_run(con, run_id="run-a", idx=0, classes=_OLD_CLASSES, medoid=_OLD_MEDOID)
+    # run-b: a COMPLETE scope plus a LATER failed analyze re-run row of the SAME run_id.
+    _seed_run(con, run_id="run-b", idx=1, classes=_ACTIVE_CLASSES, medoid=_ACTIVE_MEDOID)
+    _append_failed_analyze(con, run_id="run-b", idx=1)
+    # run-c: only a failed analyze row (no completed analyze scope ever recorded).
+    _seed_run(con, run_id="run-c", idx=2, classes=_ACTIVE_CLASSES, medoid=_ACTIVE_MEDOID)
+    _append_failed_analyze(con, run_id="run-c", idx=2)
+    # Delete run-c's complete scope row so only its failed analyze row remains.
+    con.execute("DELETE FROM run_provenance WHERE run_id = 'run-c' AND status != 'failed'")
+    # run-d: TWO complete analyze rows of the SAME run_id -> deduped to one entry (representative
+    # stamp = earliest complete row, so it still sorts before run-b would have).
+    _seed_run(con, run_id="run-d", idx=3, classes=_OLD_CLASSES, medoid=_OLD_MEDOID)
+    write_run_provenance(
+        con,
+        run_id="run-d",
+        phase="analyze",
+        status="complete",
+        started_at=_BASE_MS + 3 * 10_000 + 20_000,
+        finished_at=_BASE_MS + 3 * 10_000 + 26_000,
+        command_line=_COMMANDS["analyze"],
+        config_hash=_CONFIG_HASH,
+        song_count=3,
+    )
+
+    # run-a (stamp base+6000) then run-d (stamp base+30000+6000=base+36000); run-b and run-c vetoed.
+    assert run_mod._completed_analyze_run_ids(con) == ["run-a", "run-d"]
+
+
+def test_cli_report_does_not_auto_select_contradictory_run(con, tmp_path):
+    """A same-run complete+failed analyze shape is NOT auto-selected (contradictory-only).
+
+    With the contradictory run the only analyze scope present, auto-selection must fall through to
+    no completed scope and refuse rather than render partial metrics as a completed report.
+    """
+    _seed_songs(con)
+    _seed_run(con, run_id="run-contra", idx=0, classes=_ACTIVE_CLASSES, medoid=_ACTIVE_MEDOID, seed_heads=True)
+    _append_failed_analyze(con, run_id="run-contra", idx=0)
+    assert run_mod._completed_analyze_run_ids(con) == []
+
+    out = tmp_path / "out-contra"
+    with pytest.raises(run_mod._MissingArtifactError) as exc:
+        run_mod._run_report(con, {"report_dir": str(out)}, "report-7")
+    assert "completed analyze scope" in str(exc.value)
+    assert not (out / "report.json").exists()
+
+
+def test_cli_report_explicit_contradictory_run_is_refused(con, tmp_path):
+    """An explicit ``report_run_id`` naming a contradictory complete+failed run is refused."""
+    _seed_songs(con)
+    _seed_run(con, run_id="run-contra", idx=0, classes=_ACTIVE_CLASSES, medoid=_ACTIVE_MEDOID, seed_heads=True)
+    _append_failed_analyze(con, run_id="run-contra", idx=0)
+
+    out = tmp_path / "out-contra-explicit"
+    with pytest.raises(run_mod._MissingArtifactError) as exc:
+        run_mod._run_report(con, {"report_dir": str(out), "report_run_id": "run-contra"}, "report-8")
+    assert "not a completed analyze scope" in str(exc.value)
+    assert not (out / "report.json").exists()
+
+
+def test_cli_report_skips_newer_contradictory_selects_older_clean(con, tmp_path):
+    """Auto-selection skips a NEWER contradictory run and renders the older clean run, no blending."""
+    _seed_songs(con)
+    _seed_run(con, run_id="run-clean", idx=0, classes=_OLD_CLASSES, medoid=_OLD_MEDOID, seed_heads=True)
+    _seed_run(con, run_id="run-contra", idx=1, classes=_ACTIVE_CLASSES, medoid=_ACTIVE_MEDOID)
+    _append_failed_analyze(con, run_id="run-contra", idx=1)
+
+    out = tmp_path / "out-clean-over-contra"
+    meta = run_mod._run_report(con, {"report_dir": str(out)}, "report-9")
+    assert meta == {"song_count": 0, "output_artifact_hashes": "report.json,report.html"}
+
+    payload = json.loads((out / "report.json").read_text(encoding="utf-8"))
+    assert_no_forbidden_vocabulary(payload)
+    # The older CLEAN run is resolved and rendered verbatim; the newer contradictory run is neither
+    # auto-selected nor blended into any run-scoped section.
+    atext = json.dumps(_load_section(payload, "analysis"))
+    assert catalog_key("effnet", "zz") in atext  # clean run's class present
+    assert catalog_key("effnet", "aa") not in atext  # newer contradictory run's class absent
+    for sid in ("summary", "analysis", "winners", "provenance"):
+        assert "run-contra" not in json.dumps(_load_section(payload, sid))
+    assert "run-clean" in json.dumps(_load_section(payload, "provenance"))

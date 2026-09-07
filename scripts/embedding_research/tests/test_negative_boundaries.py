@@ -35,21 +35,21 @@ import pytest
 from scripts.embedding_research.db import _schema as db_schema
 from scripts.embedding_research.helpers import toml as toml_mod
 from scripts.embedding_research.helpers.thresholds import (
-    DIRECT_L2,
+    DIRECT_DISTANCE,
     canonical_config_hash,
     canonical_config_inputs,
     resolve_threshold,
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 1. Single direct-L2 threshold contract; no scaled/calibration/p50 surface
+# 1. Single direct-distance threshold contract; no scaled/calibration/p50 surface
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def test_direct_l2_effective_equals_configured_never_scaled() -> None:
-    """Under the single direct-L2 semantics effective == configured exactly."""
+def test_direct_distance_effective_equals_configured_never_scaled() -> None:
+    """Under the single direct-distance semantics effective == configured exactly."""
     resolution = resolve_threshold(1.2)
-    assert resolution.semantics == DIRECT_L2
+    assert resolution.semantics == DIRECT_DISTANCE
     assert resolution.effective == 1.2
     assert resolution.configured == 1.2
     # No hidden p50 basis, no multiplier: the field no longer exists.

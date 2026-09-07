@@ -56,11 +56,14 @@ from scripts.embedding_research.catalog_storage import (
     CATALOG_METADATA_TABLE,
     CATALOG_SONG_COLS,
     CATALOG_SONG_TABLE,
+    OBSERVATION_EVIDENCE_COLS,
+    OBSERVATION_EVIDENCE_TABLE,
     SEG_CONFIG_COLS,
     SEG_CONFIG_TABLE,
     SEG_META_COLS,
     SEG_META_TABLE,
 )
+from scripts.embedding_research.helpers.binning import distance_metric_label
 from scripts.embedding_research.helpers.thresholds import (
     PTC_STRATEGY_VERSION,
     canonical_float,
@@ -78,9 +81,12 @@ __all__ = [
     "EvaluationCorpusIdentity",
     "SearchRepresentationClass",
     "catalog_fingerprint",
+    "catalog_requested_song_ids",
     "catalog_state_payload",
     "collapse_search_representations",
+    "evaluation_corpus_integrity",
     "exact_segmentation_hash",
+    "observation_binding_digest",
     "resolve_evaluation_corpus",
     "search_representation_hash",
     "song_ids_digest",
@@ -223,6 +229,12 @@ def song_signature(con, song_id: str) -> str:
         [song_id],
     ).fetchall()
     lines.extend(_row_line(_SEG_SIGNATURE_COLS, row) for row in seg_rows)
+    ev_rows = con.execute(
+        f"SELECT {', '.join(OBSERVATION_EVIDENCE_COLS)} FROM {OBSERVATION_EVIDENCE_TABLE} "
+        "WHERE song_id = ? ORDER BY backbone",
+        [song_id],
+    ).fetchall()
+    lines.extend(_row_line(OBSERVATION_EVIDENCE_COLS, row) for row in ev_rows)
     body = "\n".join(sorted(lines))
     return hashlib.sha256(body.encode("utf-8")).hexdigest()
 
@@ -234,15 +246,19 @@ def _catalog_song_ids(con) -> list[str]:
 
 # ── Manifest-only catalog fingerprint (complete logical state, non-self-referential) ──
 
-#: The four compact logical tables (plus the schema version) the fingerprint covers.  The
+#: The compact logical tables (plus the schema version) the fingerprint covers.  The
 #: fingerprint serializes the COMPACT snapshot (``seg_config`` / ``catalog_song`` /
-#: ``seg_meta`` / ``catalog_metadata``), never the old research-only fingerprint tables
-#: referencing ``seg_membership`` / ``stream_registry`` / ``corpus_state``.  Volatile
-#: ``run_provenance`` is intentionally not part of the logical-state fingerprint.
+#: ``seg_meta`` / ``catalog_metadata`` / ``observation_evidence``), never the old
+#: research-only fingerprint tables referencing ``seg_membership`` / ``stream_registry`` /
+#: ``corpus_state``.  Volatile ``run_provenance`` is intentionally not part of the
+#: logical-state fingerprint.  ``observation_evidence`` (the per-requested-song committed
+#: observation-version ledger) is folded in so a catalog built over a different committed
+#: observation version is a different logical catalog (Plan A observation binding).
 _FINGERPRINT_TABLES: tuple[tuple[str, tuple[str, ...]], ...] = (
     (SEG_CONFIG_TABLE, SEG_CONFIG_COLS),
     (CATALOG_SONG_TABLE, CATALOG_SONG_COLS),
     (SEG_META_TABLE, SEG_META_COLS),
+    (OBSERVATION_EVIDENCE_TABLE, OBSERVATION_EVIDENCE_COLS),
     (CATALOG_METADATA_TABLE, CATALOG_METADATA_COLS),
 )
 
@@ -251,7 +267,8 @@ def catalog_state_payload(con, *, schema_version: int) -> str:
     """The canonical pre-image of :func:`catalog_fingerprint` (non-self-referential).
 
     Serializes the COMPACT logical state: every canonicalized row of ``seg_config`` /
-    ``catalog_song`` / ``seg_meta`` / ``catalog_metadata`` plus the *schema_version* marker.
+    ``catalog_song`` / ``seg_meta`` / ``catalog_metadata`` / ``observation_evidence`` plus the
+    *schema_version* marker.
     The ``catalog_fingerprint`` value is deliberately absent — it is manifest-only and lives
     in no table column, so it can never be part of its own input.
     """
@@ -370,6 +387,16 @@ def _config_row(con, config_id: int) -> dict:
     return dict(zip(SEG_CONFIG_COLS, row, strict=True))
 
 
+def _distance_metric_for(bin_mode: str) -> str:
+    """Derived, never-stored distance-metric label for a config's ``bin_mode``.
+
+    Delegates to ``helpers.binning.distance_metric_label`` so the advertised metric is
+    obtained from the SAME ``DIST_FNS[bin_mode]`` dispatch that executed segmentation
+    (``temporal_global`` -> ``l2``, ``temporal_perdim`` -> ``chebyshev``).
+    """
+    return distance_metric_label(str(bin_mode))
+
+
 def _config_identity_encoder_version(con, config_id: int) -> str:
     """The config's recorded per-song ``encoder_version`` (constant across its songs).
 
@@ -429,6 +456,12 @@ def search_representation_hash(catalog, config_id: int) -> str:
     con = _identity_con(catalog)
     cfg = _config_row(con, config_id)
     semantics = str(cfg["threshold_semantics"])
+    bin_mode = str(cfg["bin_mode"])
+    # The advertised distance metric is DERIVED from the bin_mode dispatch that
+    # executed segmentation (never stored), so equal numeric thresholds under
+    # temporal_global (l2) vs temporal_perdim (chebyshev) are DIFFERENT experiments
+    # and never collapse into one search representation.
+    metric = _distance_metric_for(bin_mode)
     encoder = _config_identity_encoder_version(con, config_id)
     leaf_pairs = _config_leaf_values(con, config_id, _SEARCH_LEAF_COL)
     pre = "\n".join(
@@ -436,6 +469,8 @@ def search_representation_hash(catalog, config_id: int) -> str:
             "search_representation_hash",
             f"encoder_version={encoder}",
             f"scoring_input_semantics={semantics}",
+            f"experiment={bin_mode}",
+            f"distance_metric={metric}",
             f"n_songs={len(leaf_pairs)}",
             *(f"song={song}\n{leaf}" for song, leaf in leaf_pairs),
         ]
@@ -549,6 +584,21 @@ class EvaluationCorpusIdentity:
     missing_count: int
     missing_digest: str | None
     semantics_version: int
+    # ── COMPLETE corpus identity / evidence (Plan C Phase 1) ──────────────────────────
+    # The compact persisted scope-line form cannot embed full song-id lists for large
+    # populations, so membership + observation-binding evidence is carried as exact digest
+    # proof of the membership sets (never the raw id lists).  These fields let the baseline
+    # delta / report equality gate detect an altered membership or observation binding that
+    # keeps an equal-looking ``corpus_hash``/``count``.  ``requested_song_ids`` is kept in
+    # memory (the requested population this identity was resolved over = eligible U missing)
+    # but is persisted only as ``requested_count`` + ``requested_digest``.
+    requested_song_ids: tuple[str, ...] = ()
+    requested_count: int = 0
+    requested_digest: str | None = None
+    eligible_digest: str | None = None
+    observation_digest: str | None = None
+    completeness: bool = False
+    integrity: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.backbone, str) or not self.backbone:
@@ -581,6 +631,38 @@ class EvaluationCorpusIdentity:
             raise ValueError("an ineligible corpus cannot be comparable")
         if not self.eligible and self.song_ids and len(self.song_ids) >= _MIN_ANALYZABLE_EVALUATION_SONGS:
             raise ValueError("a >=2-song corpus must be eligible")
+        if isinstance(self.requested_song_ids, tuple) and any(not isinstance(s, str) for s in self.requested_song_ids):
+            raise TypeError("requested_song_ids must be a tuple of song-id strings")
+        if self.requested_song_ids:
+            object.__setattr__(self, "requested_song_ids", tuple(sorted(set(self.requested_song_ids))))
+            # A resolved corpus's requested population is exactly eligible U excluded(requested).
+            if set(self.requested_song_ids) != set(self.song_ids) | set(self.missing_song_ids):
+                raise ValueError(
+                    "requested_song_ids must be the full requested population = eligible song_ids "
+                    "U missing_song_ids (never a subset or a divergent set)"
+                )
+            if int(self.requested_count) != len(self.requested_song_ids):
+                raise ValueError(
+                    f"requested_count={self.requested_count} must equal the requested population "
+                    f"size {len(self.requested_song_ids)}"
+                )
+        # A ``completeness``-flagged identity carries the FULL resolved membership + observation-
+        # binding proof (never truncated / identity-less / internally inconsistent evidence).
+        if self.completeness:
+            missing_proof: list[str] = []
+            if not self.requested_song_ids or not self.requested_digest:
+                missing_proof.append("requested membership proof (requested_song_ids/requested_digest)")
+            if not self.eligible_digest:
+                missing_proof.append("eligible membership proof (eligible_digest)")
+            if not self.observation_digest:
+                missing_proof.append("observation-binding proof (observation_digest)")
+            if not self.integrity:
+                missing_proof.append("integrity self-check (integrity)")
+            if missing_proof:
+                raise ValueError(
+                    "refusing an incomplete/truncated evaluation-corpus identity flagged complete: "
+                    + ", ".join(missing_proof)
+                )
         # ``missing_song_ids`` is EXCLUDED-requested evidence and may legitimately coexist with a
         # comparable eligible population (e.g. 4 eligible + 1 silent requested song).  Per-
         # representation losses (an eligible song lacking a searchable medoid in one class) are NOT
@@ -607,14 +689,82 @@ def song_ids_digest(song_ids: Sequence[str]) -> str:
     return hashlib.sha256(body.encode("utf-8")).hexdigest()
 
 
+def observation_binding_digest(con, requested_song_ids: Sequence[str], *, backbone: str) -> str:
+    """Deterministic observation-binding proof the requested corpus was resolved against.
+
+    SHA-256 over each requested ``(song, backbone)``'s recorded compact
+    ``observation_evidence`` row (the committed stream/mask refs + digests, commit identity,
+    alignment, patch count, audio fingerprint, mask + group-format semantics) — the EXACT
+    evidence :mod:`catalog_binding` requires a derived phase to bind to.  A requested song
+    with no recorded evidence row folds in an explicit ``<absent>`` marker (never silently
+    skipped), so a corpus resolved against a different / missing observation version carries
+    a different digest even when its eligible membership (and thus ``corpus_hash``/``count``)
+    look equal.  Deterministic and CPU-only.
+    """
+    lines: list[str] = []
+    for song in sorted(set(requested_song_ids)):
+        try:
+            row = con.execute(
+                f"SELECT {', '.join(OBSERVATION_EVIDENCE_COLS)} FROM {OBSERVATION_EVIDENCE_TABLE} "
+                "WHERE song_id = ? AND backbone = ?",
+                [song, backbone],
+            ).fetchone()
+        except Exception:  # no recorded evidence surface (e.g. a test/structural catalog) -> absent
+            row = None
+        if row is None:
+            lines.append(f"song={song}\0<absent>")
+            continue
+        vals = dict(zip(OBSERVATION_EVIDENCE_COLS, row, strict=False))
+        evidence = ";".join(f"{k}={vals[k]}" for k in OBSERVATION_EVIDENCE_COLS[2:])
+        lines.append(f"song={song}\0{evidence}")
+    body = "\n".join(sorted(lines))
+    return hashlib.sha256(body.encode("utf-8")).hexdigest()
+
+
+def evaluation_corpus_integrity(identity: EvaluationCorpusIdentity) -> str:
+    """Deterministic integrity self-check over every OTHER persisted corpus field.
+
+    The corpus identity's exact-membership/evidence proof digest: SHA-256 over a canonical
+    tagged serialization of every non-integrity corpus field, so any internally inconsistent /
+    tampered identity (a hash/count that no longer matches the membership/observation evidence)
+    fails the equality gate's integrity field even when the per-field digests look plausible.
+    CPU-only.
+    """
+    payload = "\n".join(
+        [
+            "evaluation_corpus_integrity",
+            f"backbone={identity.backbone}",
+            f"semantics_version={int(identity.semantics_version)}",
+            f"corpus_hash={identity.corpus_hash}",
+            f"count={int(identity.count)}",
+            f"eligible={int(bool(identity.eligible))}",
+            f"comparable={int(bool(identity.comparable))}",
+            f"requested_count={int(identity.requested_count)}",
+            f"requested_digest={identity.requested_digest or ''}",
+            f"eligible_digest={identity.eligible_digest or ''}",
+            f"missing_count={int(identity.missing_count)}",
+            f"missing_digest={identity.missing_digest or ''}",
+            f"observation_digest={identity.observation_digest or ''}",
+            f"completeness={int(bool(identity.completeness))}",
+        ]
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 def resolve_evaluation_corpus(catalog, stream_store, requested_song_ids, *, backbone: str) -> EvaluationCorpusIdentity:
     """Resolve the backbone's single explicit evaluation-corpus identity (fail-closed eligibility).
 
     A requested song is ELIGIBLE exactly when its committed observation group is valid
-    (``stream_store.load_committed_observation`` succeeds) AND it has at least one non-silent
-    whole-song patch (committed ``mask`` row ``== 1``; patches beyond a shorter committed mask
-    count as searchable per the whole-song source-index rule).  Every other requested song is
-    EXCLUDED with evidence into ``missing_song_ids`` — never silently pooled all-searchable.
+    (``stream_store.load_committed_observation`` succeeds) AND it has at least one
+    non-silent whole-song patch (committed ``mask`` row ``== 1``).  Eligibility is
+    resolved independently of ``seg_meta`` and of any representation/disposable
+    searchability.  Every other requested song is EXCLUDED with evidence into
+    ``missing_song_ids`` — never silently pooled all-searchable.
+
+    The committed observation's aligned mask must be EXACTLY ``uint8[patch_count]`` (the
+    committed-group loader and this resolver refuse a None/short/long/wrong-dtype/non-1D
+    mask — a shorter mask is never interpreted with trailing patches searchable and
+    absence is never interpreted as no silence).
 
     ``catalog`` (a compact CatalogHandle / its snapshot connection) FAILS CLOSED with a
     ``ValueError`` when the backbone has no segmented config surface, so an identity is never
@@ -631,6 +781,9 @@ def resolve_evaluation_corpus(catalog, stream_store, requested_song_ids, *, back
 
     import numpy as _np
 
+    from scripts.embedding_research.helpers.segmentation import (
+        require_exact_whole_song_mask as _require_exact_mask,
+    )
     from scripts.embedding_research.streams import StreamStoreError
 
     requested = tuple(sorted({str(s) for s in requested_song_ids}))
@@ -645,15 +798,13 @@ def resolve_evaluation_corpus(catalog, stream_store, requested_song_ids, *, back
             missing.append(song)
             continue
         stream = _np.asarray(observation.stream, dtype=_np.float32)
-        mask = _np.asarray(observation.mask, dtype=_np.uint8)
         patch_count = int(stream.shape[0])
-        # Whole-song non-silent source indices (a mask shorter than the stream leaves trailing
-        # patches searchable); a fully-silent (zero-searchable) song is excluded with evidence.
-        non_silent = _np.ones(patch_count, dtype=bool)
-        length = min(int(mask.shape[0]), patch_count)
-        if length:
-            non_silent[:length] = _np.asarray(mask[:length] == 1, dtype=bool)
-        if not bool(_np.any(non_silent)):
+        # The committed mask must be EXACTLY uint8[patch_count]; pass it RAW (no dtype
+        # coercion) so a wrong-dtype/short/long/non-1D mask is a typed refusal — never a
+        # trailing-searchable fail-open.  Whole-song non-silent is exactly {i | mask[i]==1};
+        # a fully-silent (zero-searchable) song is excluded with evidence.
+        mask = _require_exact_mask(observation.mask, patch_count)
+        if not bool(_np.any(mask == 1)):
             missing.append(song)
             continue
         eligible.append(song)
@@ -662,12 +813,25 @@ def resolve_evaluation_corpus(catalog, stream_store, requested_song_ids, *, back
     missing_song_ids = tuple(sorted(missing))
     semantics_version = EVALUATION_CORPUS_SEMANTICS_VERSION
     eligible_flag = len(song_ids) >= _MIN_ANALYZABLE_EVALUATION_SONGS
-    return EvaluationCorpusIdentity(
+    corpus_hash = hashlib.sha256(
+        _evaluation_corpus_payload(backbone, song_ids, semantics_version).encode("utf-8")
+    ).hexdigest()
+    # ── COMPLETE corpus identity / evidence proof (Plan C Phase 1) ──────────────────
+    # The returned identity carries the FULL requested membership (the requested population =
+    # eligible U missing), exact digest proof of the eligible + requested membership sets, the
+    # observation-binding digest over the committed evidence the corpus was resolved against,
+    # and an explicit completeness + integrity self-check.  The compact persisted form keeps
+    # only ``requested_count`` + ``requested_digest`` (never the raw id lists) so large
+    # populations stay comparable, but the equality gate can still detect an altered membership
+    # that keeps an equal-looking ``corpus_hash``/``count``.
+    requested_count = len(requested)
+    requested_digest = song_ids_digest(requested)
+    eligible_digest = song_ids_digest(song_ids)
+    observation_digest = observation_binding_digest(con, requested, backbone=backbone)
+    base = EvaluationCorpusIdentity(
         backbone=backbone,
         song_ids=song_ids,
-        corpus_hash=hashlib.sha256(
-            _evaluation_corpus_payload(backbone, song_ids, semantics_version).encode("utf-8")
-        ).hexdigest(),
+        corpus_hash=corpus_hash,
         count=len(song_ids),
         eligible=eligible_flag,
         comparable=eligible_flag,
@@ -675,7 +839,63 @@ def resolve_evaluation_corpus(catalog, stream_store, requested_song_ids, *, back
         missing_count=len(missing_song_ids),
         missing_digest=song_ids_digest(missing_song_ids) if missing_song_ids else None,
         semantics_version=semantics_version,
+        requested_song_ids=requested,
+        requested_count=requested_count,
+        requested_digest=requested_digest,
+        eligible_digest=eligible_digest,
+        observation_digest=observation_digest,
+        completeness=False,
+        integrity=None,
     )
+    # The integrity self-check is computed over a base identity (itself never flagged complete),
+    # then the final complete identity carries it so __post_init__'s completeness gate passes.
+    return EvaluationCorpusIdentity(
+        backbone=base.backbone,
+        song_ids=base.song_ids,
+        corpus_hash=base.corpus_hash,
+        count=base.count,
+        eligible=base.eligible,
+        comparable=base.comparable,
+        missing_song_ids=base.missing_song_ids,
+        missing_count=base.missing_count,
+        missing_digest=base.missing_digest,
+        semantics_version=base.semantics_version,
+        requested_song_ids=base.requested_song_ids,
+        requested_count=base.requested_count,
+        requested_digest=base.requested_digest,
+        eligible_digest=base.eligible_digest,
+        observation_digest=base.observation_digest,
+        completeness=True,
+        integrity=evaluation_corpus_integrity(base),
+    )
+
+
+def catalog_requested_song_ids(con, backbone: str) -> tuple[str, ...]:
+    """The catalog-requested ``(song, backbone)`` population, resolved before segmentation.
+
+    The evaluation-corpus requested population is the catalog's REQUESTED ``(song_id,
+    backbone)`` surface: every distinct song the compact catalog was built over for
+    *backbone* (``catalog_song`` rows under any canonical ``seg_config`` of *backbone*).  It
+    is resolved from the requested surface, NOT from ``seg_meta`` — a fully-silent requested
+    song that produced no segments (a ``metadata_only`` ``catalog_song`` leaf with no
+    ``seg_meta`` rows) is still part of the requested population so it is carried as
+    excluded ``missing`` evidence, never silently dropped from the corpus.  This is the
+    population passed to :func:`resolve_evaluation_corpus` at the analyze boundary, so
+    eligibility is independent of representation searchability.
+
+    Returns the canonical sorted tuple of requested song ids for *backbone*.
+    """
+    rows = con.execute(
+        f"""
+        SELECT DISTINCT cs.song_id
+        FROM {CATALOG_SONG_TABLE} cs
+        JOIN {SEG_CONFIG_TABLE} c ON c.config_id = cs.config_id
+        WHERE c.backbone = ?
+        ORDER BY 1
+        """,
+        [backbone],
+    ).fetchall()
+    return tuple(str(r[0]) for r in rows)
 
 
 def _backbone_has_config_surface(con, backbone: str) -> bool:

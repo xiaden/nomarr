@@ -268,6 +268,14 @@ def seed_medoid_baseline(
             evaluation_corpus_comparable=bool(efc.comparable) if efc is not None else False,
             evaluation_corpus_missing_count=int(efc.missing_count) if efc is not None else 0,
             evaluation_corpus_missing_digest=(efc.missing_digest or "") if efc is not None else "",
+            evaluation_corpus_semantics_version=(int(efc.semantics_version) if efc is not None else None),
+            evaluation_corpus_eligible=bool(efc.eligible) if efc is not None else False,
+            evaluation_corpus_eligible_digest=((efc.eligible_digest or "") if efc is not None else ""),
+            evaluation_corpus_requested_count=(int(efc.requested_count) if efc is not None else None),
+            evaluation_corpus_requested_digest=((efc.requested_digest or "") if efc is not None else ""),
+            evaluation_corpus_observation_digest=((efc.observation_digest or "") if efc is not None else ""),
+            evaluation_corpus_complete=bool(efc.completeness) if efc is not None else False,
+            evaluation_corpus_integrity=((efc.integrity or "") if efc is not None else ""),
         ),
     )
     return key

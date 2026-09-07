@@ -1,7 +1,7 @@
 """
 DuckDB schema, connection management, and DDL for the embedding research DB.
 
-Tables (10 total)
+Tables (11 total)
 -----------------
 The obsolete copied-vector / threshold / stratification tables that earlier corrective
 passes (P1-S5 Wave 1 / Wave 2a) stripped their writers and readers from are now PHYSICALLY
@@ -51,6 +51,19 @@ ACTIVE — frozen-stream / catalog / provenance + core live-writer tables (prima
                              n_songs, n_pooled, finite, scoring_semantics_version,
                              reference_corpus_hash, threshold)  -- 18-col, no PK/UNIQUE;
                              canonical current rows only
+  analyze_incomplete_diagnostics (run_id, strategy_key, sim_metric, k, backbone,
+                             experiment, diagnostic_version, status, reason, metric,
+                             catalog_id, catalog_fingerprint, search_representation_hash,
+                             canonical_config_id, config_ids_json, members_json,
+                             observation_evidence_json, evaluation_corpus_hash,
+                             evaluation_corpus_count, evaluation_corpus_comparable,
+                             missing_song_ids_json, missing_count, missing_digest,
+                             ruler_status_json, query_count, baseline_strategy_key,
+                             baseline_evaluation_corpus_hash,
+                             baseline_evaluation_corpus_count,
+                             baseline_evaluation_corpus_comparable, created_at)
+                             -- non-metric diagnostics, no PK/UNIQUE; app-scoped
+                             replacement by (run_id, strategy_key, sim_metric, k)
   phase_timings             (run_ts, phase, elapsed_s)  -- active efficiency source
 """
 
@@ -247,6 +260,59 @@ _HPP_COLUMN_DEFS: tuple[str, ...] = (
 #: ``CREATE TABLE IF NOT EXISTS`` statement for the canonical 18-column table.
 _HPP_CREATE = "CREATE TABLE IF NOT EXISTS head_phase_provenance (\n    " + ",\n    ".join(_HPP_COLUMN_DEFS) + "\n);"
 
+# -- analyze_incomplete_diagnostics (execution-reporting Plan B P2) -------------
+# Durable, report-readable NON-METRIC diagnostics for a non-comparable (skipped)
+# catalog search-representation class.  Kept OUT of the monolithic ``_DDL`` so the
+# column definitions live here as the single source of truth
+# (``_INCOMPLETE_DIAGNOSTIC_COLUMN_DEFS`` feeds ``_INCOMPLETE_DIAGNOSTICS_CREATE``
+# and ``db.incomplete_diagnostics.incomplete_diagnostic_columns``).  A row carries
+# version + run/backbone/experiment/class/threshold/member identity, observation and
+# complete evaluation-corpus evidence, sim/K, reason, missing membership/count/
+# digest, ruler/query-count status, the MANDATORY observed-baseline evidence, and a
+# creation timestamp.  It is NEVER an ``analyze_metrics`` row and NEVER a complete
+# ``analyze_scope_v2`` line.  No PRIMARY KEY / UNIQUE / index (DuckDB ART/WAL policy):
+# application-scoped replacement is by ``(run_id, strategy_key, sim_metric, k)``,
+# preserving unrelated runs exactly.
+_INCOMPLETE_DIAGNOSTIC_COLUMN_DEFS: tuple[str, ...] = (
+    "run_id                                TEXT NOT NULL",
+    "strategy_key                          TEXT NOT NULL",
+    "sim_metric                            TEXT NOT NULL",
+    "k                                     INTEGER NOT NULL",
+    "backbone                              TEXT NOT NULL",
+    "experiment                            TEXT NOT NULL",
+    "diagnostic_version                    INTEGER NOT NULL",
+    "status                                TEXT NOT NULL",
+    "reason                                TEXT NOT NULL",
+    "metric                                TEXT NOT NULL",
+    "catalog_id                            TEXT NOT NULL",
+    "catalog_fingerprint                   TEXT NOT NULL",
+    "search_representation_hash            TEXT NOT NULL",
+    "canonical_config_id                   INTEGER NOT NULL",
+    "config_ids_json                       TEXT NOT NULL",
+    "members_json                          TEXT NOT NULL",
+    "observation_evidence_json             TEXT NOT NULL",
+    "evaluation_corpus_hash                TEXT NOT NULL",
+    "evaluation_corpus_count               INTEGER NOT NULL",
+    "evaluation_corpus_comparable          BOOLEAN NOT NULL",
+    "missing_song_ids_json                 TEXT NOT NULL",
+    "missing_count                         INTEGER NOT NULL",
+    "missing_digest                        TEXT NULL",
+    "ruler_status_json                     TEXT NOT NULL",
+    "query_count                           INTEGER NOT NULL",
+    "baseline_strategy_key                 TEXT NOT NULL",
+    "baseline_evaluation_corpus_hash       TEXT NOT NULL",
+    "baseline_evaluation_corpus_count      INTEGER NOT NULL",
+    "baseline_evaluation_corpus_comparable BOOLEAN NOT NULL",
+    "created_at                            BIGINT NOT NULL",
+)
+
+#: ``CREATE TABLE IF NOT EXISTS`` statement for the diagnostic table.
+_INCOMPLETE_DIAGNOSTICS_CREATE = (
+    "CREATE TABLE IF NOT EXISTS analyze_incomplete_diagnostics (\n    "
+    + ",\n    ".join(_INCOMPLETE_DIAGNOSTIC_COLUMN_DEFS)
+    + "\n);"
+)
+
 
 def _table_exists(con, table: str) -> bool:
     row = con.execute("SELECT COUNT(*) FROM information_schema.tables WHERE table_name = ?", [table]).fetchone()
@@ -437,13 +503,16 @@ def ensure_schema(con) -> None:
 
     Ensures the current run-scoped ``analyze_metrics`` table (creating it when absent, or
     raising :class:`StaleSchemaError` when a stale pre-cut / legacy-partitioned table is
-    present — never relabeling old rows), then the monolithic DDL and the canonical 18-column
-    ``head_phase_provenance`` table (owned outside the monolithic ``_DDL``).
+    present — never relabeling old rows), then the monolithic DDL and the two tables owned
+    outside the monolithic ``_DDL``: the canonical 18-column ``head_phase_provenance`` table
+    and the 30-column ``analyze_incomplete_diagnostics`` table (``_INCOMPLETE_DIAGNOSTICS_CREATE``,
+    built from ``_INCOMPLETE_DIAGNOSTIC_COLUMN_DEFS``).
     """
     _require_duckdb()
     _ensure_current_analyze_metrics(con)
     con.execute(_DDL)
     con.execute(_HPP_CREATE)
+    con.execute(_INCOMPLETE_DIAGNOSTICS_CREATE)
 
 
 def upsert_phase_timing(con, run_ts: str, phase: str, elapsed_s: float) -> None:

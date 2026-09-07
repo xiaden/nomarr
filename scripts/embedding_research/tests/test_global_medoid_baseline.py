@@ -215,9 +215,28 @@ def test_committed_bridge_whole_song_searchable_set_matches_mask():
     mask = np.array([1, 1, 0, 1, 0], dtype=np.uint8)
     idx = whole_song_searchable_source_indices(mask, 5)
     assert idx.tolist() == [0, 1, 3]
-    # Rows at/after a shorter mask's length are searchable (mask only runs to patch_count).
-    short = np.array([0], dtype=np.uint8)
-    assert whole_song_searchable_source_indices(short, 4).tolist() == [1, 2, 3]
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        pytest.param(np.array([0], dtype=np.uint8), id="short"),
+        pytest.param(np.array([1, 1, 0, 1, 0, 1], dtype=np.uint8), id="long"),
+        pytest.param(np.array([1, 1, 0, 1, 0], dtype=np.int64), id="wrong-dtype"),
+        pytest.param(np.array([[1, 1, 0, 1, 0]], dtype=np.uint8), id="non-1D"),
+    ],
+)
+def test_whole_song_searchable_rejects_malformed_mask(bad):
+    # A shorter/wrong-length/wrong-dtype/non-1D mask is a typed refusal (fail closed) — it is
+    # NEVER truncated with trailing patches searchable.
+    with pytest.raises(ValueError):
+        whole_song_searchable_source_indices(bad, 5)
+
+
+def test_whole_song_searchable_rejects_missing_mask():
+    # A missing mask is never interpreted as no silence.
+    with pytest.raises(ValueError):
+        whole_song_searchable_source_indices(None, 5)
 
 
 # --------------------------------------------------------------------------- #

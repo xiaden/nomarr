@@ -62,7 +62,7 @@ def _canonical_config_record(
     bin_mode="temporal_global",
     threshold_configured=1.0,
     threshold_effective=1.0,
-    semantics="direct_l2",
+    semantics="direct_distance",
     status="done",
     reason="",
     n_songs=2,
@@ -118,7 +118,7 @@ def _canonical_row(**overrides):
         "bin_mode": "temporal_global",
         "threshold_configured": 1.0,
         "threshold_effective": 1.0,
-        "semantics": "direct_l2",
+        "semantics": "direct_distance",
         "boundary_source": BOUNDARY_SOURCE_CATALOG,
         "head_pool_variant": HEAD_POOL_VARIANT,
         "status": "done",
@@ -169,14 +169,14 @@ def test_head_phase_table_is_18_column_no_pk(con):
     assert indexes == 0
 
 
-def test_canonical_predicate_is_direct_l2_only():
+def test_canonical_predicate_is_direct_distance_only():
     """The canonical predicate admits only canonical direct-L2 EffNet shared-boundary rows."""
     assert "config_id IS NOT NULL" in CANONICAL_HEAD_PHASE_WHERE
     assert "backbone = 'effnet'" in CANONICAL_HEAD_PHASE_WHERE
-    assert "bin_mode IN ('temporal_global', 'temporal_perdim')" in CANONICAL_HEAD_PHASE_WHERE
+    assert "bin_mode IN ('temporal_global')" in CANONICAL_HEAD_PHASE_WHERE
     assert "threshold_configured IS NOT NULL" in CANONICAL_HEAD_PHASE_WHERE
     assert "threshold_effective IS NOT NULL" in CANONICAL_HEAD_PHASE_WHERE
-    assert "semantics IN ('direct_l2')" in CANONICAL_HEAD_PHASE_WHERE
+    assert "semantics IN ('direct_distance')" in CANONICAL_HEAD_PHASE_WHERE
     assert "boundary_source = 'catalog'" in CANONICAL_HEAD_PHASE_WHERE
     assert "head_pool_variant = 'shared_catalog_boundary'" in CANONICAL_HEAD_PHASE_WHERE
     assert "threshold IS NULL" in CANONICAL_HEAD_PHASE_WHERE
@@ -200,7 +200,7 @@ def test_write_head_phase_provenance_roundtrip(con):
     assert got.bin_mode == "temporal_global"
     assert got.threshold_configured == pytest.approx(1.0)
     assert got.threshold_effective == pytest.approx(1.0)
-    assert got.semantics == "direct_l2"
+    assert got.semantics == "direct_distance"
     assert got.threshold is None
     assert got.run_id == "run-canonical"
     # canonical fields non-NULL; legacy threshold column NULL for canonical rows.
@@ -277,7 +277,7 @@ def test_head_phase_config_key_excludes_run_id():
     k2 = _identity_of(_canonical_row(run_id="r2"))
     assert k1 == k2  # application identity ignores run_id
     assert k1.startswith("head:")
-    assert k1 == ("head:7:effnet:mood:temporal_global:1.0:1.0:direct_l2:catalog:shared_catalog_boundary")
+    assert k1 == ("head:7:effnet:mood:temporal_global:1.0:1.0:direct_distance:catalog:shared_catalog_boundary")
     # Different heads / configs / semantics are distinct identities.
     assert _identity_of(_canonical_row(head="timbre")) != k1
     assert _identity_of(_canonical_row(config_id=9)) != k1
@@ -305,7 +305,7 @@ def test_build_rows_from_canonical_manifest():
     assert r.threshold is None
     assert r.threshold_configured == pytest.approx(1.0)
     assert r.threshold_effective == pytest.approx(1.0)
-    assert r.semantics == "direct_l2"
+    assert r.semantics == "direct_distance"
     assert r.boundary_source == BOUNDARY_SOURCE_CATALOG
     assert r.head_pool_variant == HEAD_POOL_VARIANT
     assert r.status == "done" and r.n_songs == 2 and r.n_pooled == 2

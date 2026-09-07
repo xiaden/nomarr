@@ -83,8 +83,11 @@ fails closed rather than silently guessing on an unattachable catalog.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -115,15 +118,114 @@ __all__ = [
     "CatalogAnalysisConfig",
     "CatalogAnalysisResult",
     "CatalogRefusalError",
+    "HeadSongLabel",
     "NonFiniteResultError",
     "PerQueryResult",
+    "RulerLabelSource",
+    "RulerResult",
     "analyze_catalog_corpus",
     "analyze_medoid_baseline",
+    "analyze_medoid_baseline_rulers",
     "candidate_weights_from_catalog",
     "materialize_corpus_view",
+    "resolve_head_ruler_labels",
     "run_and_persist_medoid_baseline",
     "run_catalog_analysis",
 ]
+
+# --------------------------------------------------------------------------- #
+# Independent-ruler label-source identity (Plan A P3-S1)                         #
+# --------------------------------------------------------------------------- #
+
+#: Label-source vocabulary (amended P3-S1: artist + genre read persisted
+#: ``songs.artist`` / ``songs.genre``; head reads the frozen committed semantic-head
+#: suite selected by the filesystem ``heads/current`` marker).  ``None``/blank values are
+#: a MISSING label (a per-ruler exclusion), never substituted with a guessed label.
+_ARTIST_SOURCE = "songs.artist"
+_GENRE_SOURCE = "songs.genre"
+#: Version of the artist/genre label-source contract (persisted DB columns).
+_SONGS_LABEL_SOURCE_VERSION = "songs-table-v1"
+#: Head label-source identity is the filesystem marker schema + EffNet committed suite.
+_HEAD_SOURCE = "head:effnet:heads/current"
+_HEAD_SOURCE_VERSION = "head-current-v1"
+
+
+@dataclass(frozen=True)
+class HeadSongLabel:
+    """The frozen semantic-head label for ONE song (amended P3-S1 full-tuple ruler).
+
+    ``full_tuple`` is the ordered ``((head_id, label_index), ...)`` tuple over EVERY
+    canonical head in canonical sorted head-suite order; two songs are head-relevant
+    exactly when their complete ordered tuples are identical.  ``labels`` exposes the
+    canonical ``HEAD_LABELS[head][label_index]`` text aligned to ``full_tuple`` and
+    ``pooled`` the finite pooled class-1 means aligned to ``full_tuple``.  The remaining
+    fields retain the label-resolution EVIDENCE: marker/stream identity, mask identity,
+    searchable-row count and head-set/version.
+
+    A song carries a head label ONLY when every required head is present, binary
+    (``dim == 2``), aligned, and its pooled value is finite.  Missing marker/suite/stream/
+    mask/row evidence means the song has NO head label (excluded from the head ruler); a
+    present non-finite activation raises ``NonFiniteResultError`` at resolution time.
+    """
+
+    song_id: str
+    backbone: str
+    full_tuple: tuple[tuple[str, int], ...]
+    labels: tuple[str, ...]
+    pooled: tuple[float, ...]
+    searchable_rows: int
+    head_set_fingerprint: str
+    head_ids: str
+    dim_by_head: str
+    alignment_version: str
+    stream_ref: str
+    stream_digest: str
+    mask_ref: str
+    mask_digest: str
+    commit_sha256: str
+
+
+@dataclass(frozen=True)
+class RulerLabelSource:
+    """Deterministic label-source / evidence identity for ONE ruler (result-level).
+
+    Carries the label source + contract version, the count of songs that resolve a label
+    for the ruler (the ruler's population), the count of songs that did NOT (missing-label
+    per-ruler exclusion), and a deterministic digest of the label map.  ``note`` carries
+    ruler-specific evidence (e.g. the head-set/version / active head-suite identity).
+    """
+
+    source: str
+    version: str
+    song_count: int
+    missing_count: int
+    digest: str
+    note: str = ""
+
+
+@dataclass(frozen=True)
+class RulerResult:
+    """Aggregate retrieval-lens outcome for ONE independent ruler (result-level).
+
+    ``active`` is False when the ruler had no evaluable query (its ``n_queries`` is 0 and
+    the retrieval aggregates are undefined -> 0.0).  ``disc`` is the mean-within minus
+    mean-cross discrimination value; for the head ruler it is the FINITE guarded ``0.0``
+    (with the guard reason in ``disc_guard``) when the labeled population has fewer than
+    two distinct full-tuple groups or either pair set is empty.  ``n_queries`` counts only
+    ruler-evaluable queries after that ruler's missing-label and no-relevant-candidate
+    exclusions.
+    """
+
+    ruler: str
+    active: bool
+    n_queries: int
+    map_k: float
+    mrr: float
+    ndcg_k: float
+    recall_k: float
+    disc: float
+    disc_guard: str = ""
+
 
 _PRIMARY_SCORE_VARIANT = "max_per_candidate_segment"
 _STRATEGY_TYPE = "catalog"
@@ -215,6 +317,13 @@ class CatalogAnalysisConfig:
     score_variant: str = _PRIMARY_SCORE_VARIANT
     tie_policy: str = "first_index"
     collision_policy: str = "retain_all_candidate_segments"
+    #: Independent-ruler label sources (amended P3-S1).  ``genres`` mirrors ``artists``
+    #: from the persisted ``songs.genre`` column; ``head_labels`` maps song_id -> its
+    #: frozen semantic-head :class:`HeadSongLabel`.  For every ruler a ``None``/blank value
+    #: (or the ABSENCE of a ``head_labels`` entry) is a MISSING label -> that song is
+    #: excluded from the ruler's query/candidate membership (never substituted).
+    genres: Mapping[str, str] = field(default_factory=dict)
+    head_labels: Mapping[str, HeadSongLabel] = field(default_factory=dict)
 
 
 @dataclass
@@ -276,6 +385,15 @@ class CatalogAnalysisResult:
     search_representation_hash: str = ""
     view_keyset_hash: str = ""
     members: tuple = ()
+    #: Independent-ruler aggregates + label-source/evidence identity (amended P3-S1),
+    #: delivered at the RESULT level.  ``rulers`` maps ``"artist"`` / ``"genre"`` /
+    #: ``"head"`` -> the ruler's :class:`RulerResult` (``n_queries`` per ruler).  At the RESULT
+    #: level ``metrics`` / ``per_song`` ARE the ruler-suffixed artist vocabulary (``map_k_artist`` /
+    #: ``mrr_artist`` / ``ndcg_k_artist`` / ``recall_k_artist`` / ``disc_artist``); ``rulers`` /
+    #: ``ruler_sources`` carry the per-ruler aggregates + label-source identity.  These fields are
+    #: the compute surface P3-S2 consumes.  Empty on a non-comparable result.
+    rulers: dict[str, RulerResult] = field(default_factory=dict)
+    ruler_sources: dict[str, RulerLabelSource] = field(default_factory=dict)
 
 
 # --------------------------------------------------------------------------- #
@@ -678,7 +796,15 @@ def _run_attached_analysis(store, con, cfg: CatalogAnalysisConfig, *, research_c
         )
 
     lenses = _Lenses(cfg)
-    metrics, per_song = lenses.evaluate(per_query)
+    rulers, ruler_sources = lenses.evaluate_rulers(per_query)
+    # Amended P3-S2: the result's aggregate surface is the FINITE SUFFIXED vocabulary built from
+    # the per-ruler results (never the bare generic keys).  The historical artist fail-closed
+    # contract is preserved: a comparable class whose artist ruler produced NO relevance-bearing
+    # query raises (no artist suffixed aggregates / per-song to emit) exactly as the bare path did.
+    if not rulers["artist"].active:
+        raise NonFiniteResultError("no query produced finite, relevance-bearing artist results")
+    metrics = _suffixed_aggregate_metrics(rulers)
+    _artist_ruler, per_song = lenses._reduce("artist", per_query, want_per_song=True)
     catalog_id, catalog_fingerprint, semantic_hash, member_records = _catalog_scope_identity(
         con, participating, classes
     )
@@ -708,6 +834,8 @@ def _run_attached_analysis(store, con, cfg: CatalogAnalysisConfig, *, research_c
         search_representation_hash=semantic_hash,
         view_keyset_hash=record.keyset_hash[:16],
         members=member_records,
+        rulers=rulers,
+        ruler_sources=ruler_sources,
     )
 
 
@@ -725,6 +853,8 @@ def analyze_medoid_baseline(
     k: int = 10,
     working_memory: int = 32 * 1024 * 1024,
     evaluation_corpus: EvaluationCorpusIdentity | None = None,
+    genres: Mapping[str, str] | None = None,
+    head_labels: Mapping[str, HeadSongLabel] | None = None,
 ) -> dict[str, float] | None:
     """Score the observed global-medoid baseline for ``backbone`` and return its aggregate metrics.
 
@@ -755,6 +885,73 @@ def analyze_medoid_baseline(
     songs make leave-one-out impossible (no baseline for that backbone) — the caller persists
     NOTHING in that case.
     """
+    scored = _score_medoid_baseline(
+        store,
+        backbone=backbone,
+        song_ids=song_ids,
+        artists=artists,
+        k=k,
+        working_memory=working_memory,
+        evaluation_corpus=evaluation_corpus,
+        genres=genres,
+        head_labels=head_labels,
+    )
+    if scored is None:
+        return None
+    cfg, per_query = scored
+    rulers, _sources = _Lenses(cfg).evaluate_rulers(per_query)
+    return _suffixed_aggregate_metrics(rulers)
+
+
+def analyze_medoid_baseline_rulers(
+    store,
+    *,
+    backbone: str,
+    song_ids,
+    artists,
+    k: int = 10,
+    working_memory: int = 32 * 1024 * 1024,
+    evaluation_corpus: EvaluationCorpusIdentity | None = None,
+    genres: Mapping[str, str] | None = None,
+    head_labels: Mapping[str, HeadSongLabel] | None = None,
+) -> tuple[dict[str, RulerResult], dict[str, RulerLabelSource]] | None:
+    """Score the observed global-medoid baseline and return ALL THREE ruler aggregates.
+
+    The observed whole-song medoid control carries the SAME three independent rulers (artist /
+    genre / head) as the segmented class passes (amended P3-S1).  Returns ``(rulers, sources)``
+    (each mapping ruler name -> its aggregate/source) or ``None`` when the baseline is not
+    computable.  Compute-only — persistence of the per-ruler vocabulary is A2's surface.
+    """
+    scored = _score_medoid_baseline(
+        store,
+        backbone=backbone,
+        song_ids=song_ids,
+        artists=artists,
+        k=k,
+        working_memory=working_memory,
+        evaluation_corpus=evaluation_corpus,
+        genres=genres,
+        head_labels=head_labels,
+    )
+    if scored is None:
+        return None
+    cfg, per_query = scored
+    return _Lenses(cfg).evaluate_rulers(per_query)
+
+
+def _score_medoid_baseline(
+    store,
+    *,
+    backbone: str,
+    song_ids,
+    artists,
+    k: int = 10,
+    working_memory: int = 32 * 1024 * 1024,
+    evaluation_corpus: EvaluationCorpusIdentity | None = None,
+    genres: Mapping[str, str] | None = None,
+    head_labels: Mapping[str, HeadSongLabel] | None = None,
+) -> tuple[CatalogAnalysisConfig, list[PerQueryResult]] | None:
+    """Shared observed-global-medoid scoring core used by the public baseline facades."""
     from scripts.embedding_research.baseline import observed_global_medoid_unit_vector
     from scripts.embedding_research.streams import StreamStoreError
 
@@ -770,6 +967,8 @@ def analyze_medoid_baseline(
         k=int(k),
         working_memory=working_memory,
         evaluation_corpus=evaluation_corpus,
+        genres=dict(genres) if genres is not None else {},
+        head_labels=dict(head_labels) if head_labels is not None else {},
     )
     # Gather each cataloged song's observed global medoid UNIT vector (exclude zero-searchable
     # songs and songs with no committed observation group).
@@ -825,8 +1024,7 @@ def analyze_medoid_baseline(
         )
     if not per_query:
         return None
-    metrics, _per_song = _Lenses(cfg).evaluate(per_query)
-    return metrics
+    return cfg, per_query
 
 
 def run_and_persist_medoid_baseline(
@@ -842,6 +1040,8 @@ def run_and_persist_medoid_baseline(
     evaluation_corpus: EvaluationCorpusIdentity | None = None,
     catalog_id: str = "",
     catalog_fingerprint: str = "",
+    genres: Mapping[str, str] | None = None,
+    head_labels: Mapping[str, HeadSongLabel] | None = None,
 ) -> dict[str, float] | None:
     """Score the observed global-medoid baseline and persist it run-scoped (the run.py seam).
 
@@ -878,6 +1078,8 @@ def run_and_persist_medoid_baseline(
         k=int(k),
         working_memory=working_memory,
         evaluation_corpus=evaluation_corpus,
+        genres=genres,
+        head_labels=head_labels,
     )
     if metrics is None:
         return None
@@ -905,6 +1107,24 @@ def run_and_persist_medoid_baseline(
         evaluation_corpus_missing_digest=(
             (evaluation_corpus.missing_digest or "") if evaluation_corpus is not None else ""
         ),
+        evaluation_corpus_semantics_version=(
+            int(evaluation_corpus.semantics_version) if evaluation_corpus is not None else None
+        ),
+        evaluation_corpus_eligible=bool(evaluation_corpus.eligible) if evaluation_corpus is not None else False,
+        evaluation_corpus_eligible_digest=(
+            (evaluation_corpus.eligible_digest or "") if evaluation_corpus is not None else ""
+        ),
+        evaluation_corpus_requested_count=(
+            int(evaluation_corpus.requested_count) if evaluation_corpus is not None else None
+        ),
+        evaluation_corpus_requested_digest=(
+            (evaluation_corpus.requested_digest or "") if evaluation_corpus is not None else ""
+        ),
+        evaluation_corpus_observation_digest=(
+            (evaluation_corpus.observation_digest or "") if evaluation_corpus is not None else ""
+        ),
+        evaluation_corpus_complete=bool(evaluation_corpus.completeness) if evaluation_corpus is not None else False,
+        evaluation_corpus_integrity=((evaluation_corpus.integrity or "") if evaluation_corpus is not None else ""),
     )
     # Fail-closed atomic boundary: preflight/encode/decode-validate the COMPLETE v2 scope BEFORE
     # the first metric insert so an incomplete baseline identity leaves ZERO metric rows (no
@@ -946,122 +1166,440 @@ def _resolved_config_ids(catalog, backbone: str) -> tuple[int, ...]:
 
 
 class _Lenses:
-    """Independent evaluation lenses over the SAME per-query winner/score results.
+    """Independent retrieval-metric lenses over the SAME per-query winner/score results.
 
-    Each lens is finite-only.  AP/MRR/NDCG/Recall mirror ``similarity``'s ranked-list arithmetic
-    (deliberately NOT rewritten) over a per-query candidate-song ranking; discrimination is
-    mean-within minus mean-cross of the per-song values.  Per-song lenses are computed first;
-    aggregates are their means.  Any non-finite value raises :class:`NonFiniteResultError`.
+    Each lens is finite-only.  AP/MRR/NDCG/Recall mirror ``similarity``'s ranked-list
+    arithmetic (deliberately NOT rewritten) over a per-query candidate-song ranking;
+    discrimination is mean-within minus mean-cross of the per-song values.  Per-song
+    lenses are computed first; aggregates are their means.  Any non-finite value raises
+    :class:`NonFiniteResultError`.
 
-    Mirror guarantees mirror ``similarity.compute_retrieval_metrics`` exactly: NDCG discounts a
-    1-based top-ranked hit by log2(rank + 1) (== similarity's ``log2(r + 2)`` over 0-based ``r``,
-    so a single top-ranked relevant song yields NDCG 1.0), and MRR scans the FULL ranking -- a first
-    same-artist hit beyond ``k`` still contributes 1/rank, matching similarity's full-matrix MRR
-    (never k-truncated).  AP@k and Recall@k stay k-bounded as in similarity.
+    Mirror guarantees mirror ``similarity.compute_retrieval_metrics`` exactly: NDCG
+    discounts a 1-based top-ranked hit by log2(rank + 1) (== similarity's ``log2(r + 2)``
+    over 0-based ``r``, so a single top-ranked relevant song yields NDCG 1.0), and MRR
+    scans the FULL ranking -- a first same-label hit beyond ``k`` still contributes
+    1/rank, matching similarity's full-matrix MRR (never k-truncated).  AP@k and Recall@k
+    stay k-bounded as in similarity.
+
+    Amended P3-S1 generalizes the machinery to THREE independent rulers (artist / genre /
+    head).  ``evaluate`` emits the suffixed artist-ruler keys (``map_k_artist`` / ``mrr_artist`` /
+    ``ndcg_k_artist`` / ``recall_k_artist`` / ``disc_artist``); ``evaluate_rulers`` computes every
+    ruler's aggregates + label
+    source identity for the RESULT level.  Every ruler independently restricts query and
+    candidate membership to songs with that ruler's label; a ``None``/blank label or an
+    absent head tuple is a MISSING label (per-ruler exclusion, never guessed); a query
+    with no same-label candidate is excluded from that ruler's ``n_queries`` and
+    aggregates.  The head ruler groups by the COMPLETE full tuple and applies the
+    ``>= 2``-distinct-group + both-pair-sets discrimination guard (else finite guarded
+    ``0.0`` with the reason visible in :class:`RulerResult.disc_guard`).
     """
 
     def __init__(self, cfg: CatalogAnalysisConfig) -> None:
         self._cfg = cfg
-        self._artist = dict(cfg.artists)
+        # Label maps are normalised so a None/blank value is ABSENT (missing label).  ``Mapping``
+        # value type keeps the per-ruler maps covariant (str keys, text OR full-tuple values).
+        self._labels: dict[str, Mapping[str, object]] = {
+            "artist": _norm_label_map(cfg.artists),
+            "genre": _norm_label_map(cfg.genres),
+        }
+        head = {sid: hl.full_tuple for sid, hl in (cfg.head_labels or {}).items()}
+        self._labels["head"] = head
 
+    # ── historical artist emission surface (artist ruler only) ────────────────
     def evaluate(self, per_query: Sequence[PerQueryResult]) -> tuple[dict[str, float], dict[str, dict[str, float]]]:
-        totals = {"map_k": 0.0, "mrr": 0.0, "ndcg_k": 0.0, "recall_k": 0.0}
+        metrics, per_song = self._reduce("artist", per_query, want_per_song=True)
+        assert per_song is not None
+        if not metrics.active:
+            # Preserve the historical fail-closed contract: a corpus where NO query produced
+            # an artist-relevance-bearing result cannot emit a valid artist suffixed surface.
+            raise NonFiniteResultError("no query produced finite, relevance-bearing results")
+        out: dict[str, float] = {
+            "map_k_artist": metrics.map_k,
+            "mrr_artist": metrics.mrr,
+            "ndcg_k_artist": metrics.ndcg_k,
+            "recall_k_artist": metrics.recall_k,
+            "disc_artist": metrics.disc,
+        }
+        for key, value in out.items():
+            _require_finite(value, f"aggregate {key}")
+        return out, per_song
+
+    # ── per-ruler aggregates + label-source identity (result-level compute) ──
+    def evaluate_rulers(
+        self, per_query: Sequence[PerQueryResult]
+    ) -> tuple[dict[str, RulerResult], dict[str, RulerLabelSource]]:
+        rulers: dict[str, RulerResult] = {}
+        sources: dict[str, RulerLabelSource] = {}
+        for ruler in ("artist", "genre", "head"):
+            result, _per_song = self._reduce(ruler, per_query, want_per_song=False)
+            rulers[ruler] = result
+            sources[ruler] = self._label_source(ruler)
+        return rulers, sources
+
+    def _label_source(self, ruler: str) -> RulerLabelSource:
+        """Deterministic label-source identity for *ruler* over the cfg label maps."""
+        lmap = self._labels[ruler]
+        song_count = len(lmap)
+        if ruler == "artist":
+            source, version = _ARTIST_SOURCE, _SONGS_LABEL_SOURCE_VERSION
+            note = ""
+        elif ruler == "genre":
+            source, version = _GENRE_SOURCE, _SONGS_LABEL_SOURCE_VERSION
+            note = ""
+        else:
+            source, version = _HEAD_SOURCE, _HEAD_SOURCE_VERSION
+            note = self._head_source_note()
+        missing = sum(1 for sid in self._cfg.song_ids if sid not in lmap)
+        return RulerLabelSource(
+            source=source,
+            version=version,
+            song_count=song_count,
+            missing_count=missing,
+            digest=_label_map_digest(lmap),
+            note=note,
+        )
+
+    def _head_source_note(self) -> str:
+        """Head-set/version evidence aggregated across the cfg head labels (empty when none)."""
+        seen: set[tuple] = set()
+        for hl in (self._cfg.head_labels or {}).values():
+            seen.add(
+                (
+                    hl.head_set_fingerprint,
+                    hl.head_ids,
+                    hl.dim_by_head,
+                    hl.alignment_version,
+                )
+            )
+        if not seen:
+            return "no head-labeled songs"
+        fp, ids, dims, align = min(seen)
+        return f"head_set_fingerprint={fp}; head_ids={ids}; dim_by_head={dims}; alignment_version={align}"
+
+    def _reduce(self, ruler: str, per_query: Sequence[PerQueryResult], *, want_per_song: bool):
+        """Per-ruler reduce over the ranked candidate songs (mirrors the artist arithmetic).
+
+        Returns ``(RulerResult, per_song_or_None)``.  ``per_song`` (built only when
+        ``want_per_song``) maps query song id -> the ruler-suffixed values
+        ``{map_k_{ruler}, mrr_{ruler}, recall_k_{ruler}, disc_{ruler}}`` (``disc`` = mean-
+        within minus mean-cross).
+        """
+        k = self._cfg.k
+        lmap = self._labels[ruler]
+        key_fn = lmap.get
+        guard_disc = ruler == "head"
+        totals = [0.0, 0.0, 0.0, 0.0]
         within_all: list[float] = []
         cross_all: list[float] = []
-        per_song: dict[str, dict[str, float]] = {}
+        within_pairs = 0
+        cross_pairs = 0
+        per_song: dict[str, dict[str, float]] | None = {} if want_per_song else None
         n = 0
         for pq in per_query:
-            sm = self._per_song_metrics(pq)
-            if sm is None:
+            qk = key_fn(pq.query_song_id)
+            if qk is None:
+                # Missing label on the query -> excluded from this ruler's query set.
                 continue
-            per_song[pq.query_song_id] = sm
+            ranked = sorted(pq.candidate_scores.items(), key=lambda kv: (-float(kv[1]), kv[0]))
+            # Restrict the candidate ranking to songs with this ruler's label.
+            ranked_l = [(s, v) for s, v in ranked if key_fn(s) is not None]
+            rel = [s for s, _v in ranked_l if s != pq.query_song_id and key_fn(s) == qk]
+            if not rel:
+                # No same-label candidate -> no-relevant-candidate per-ruler exclusion.
+                continue
+            # AP@k
+            hits = 0
+            ap = 0.0
+            for rank, (song, _v) in enumerate(ranked_l[:k], start=1):
+                if song != pq.query_song_id and key_fn(song) == qk:
+                    hits += 1
+                    ap += hits / rank
+            ap /= min(k, len(rel))
+            # MRR — over the FULL ranking (never k-truncated).
+            mrr = 0.0
+            for rank, (song, _v) in enumerate(ranked_l, start=1):
+                if song != pq.query_song_id and key_fn(song) == qk:
+                    mrr = 1.0 / rank
+                    break
+            ndcg = _ndcg_at_k(ranked_l, k, qk, lmap, pq.query_song_id)
+            rec_hits = sum(1 for song, _v in ranked_l[:k] if song != pq.query_song_id and key_fn(song) == qk)
+            rec = rec_hits / min(k, len(rel))
+            within = [v for s, v in pq.candidate_scores.items() if s != pq.query_song_id and key_fn(s) == qk]
+            cross = [
+                v
+                for s, v in pq.candidate_scores.items()
+                if s != pq.query_song_id and key_fn(s) is not None and key_fn(s) != qk
+            ]
+            wm = float(np.mean(within)) if within else 0.0
+            xm = float(np.mean(cross)) if cross else 0.0
+            within_pairs += len(within)
+            cross_pairs += len(cross)
+            values = {
+                f"map_k_{ruler}": float(ap),
+                f"mrr_{ruler}": float(mrr),
+                f"recall_k_{ruler}": float(rec),
+                f"disc_{ruler}": float(wm - xm),
+            }
+            for key, value in values.items():
+                _require_finite(value, f"{ruler}.{pq.query_song_id}.{key}")
+            if per_song is not None:
+                per_song[pq.query_song_id] = values
+            for i, val in enumerate((ap, mrr, ndcg, rec)):
+                totals[i] += val
+            within_all.append(wm)
+            cross_all.append(xm)
             n += 1
-            for key in totals:
-                totals[key] += float(sm[key])
-            within_all.append(float(sm["within"]))
-            cross_all.append(float(sm["cross"]))
 
         if n == 0:
-            raise NonFiniteResultError("no query produced finite, relevance-bearing results")
+            guard = "no ruler-labeled query produced a relevant candidate"
+            return (
+                RulerResult(
+                    ruler=ruler,
+                    active=False,
+                    n_queries=0,
+                    map_k=0.0,
+                    mrr=0.0,
+                    ndcg_k=0.0,
+                    recall_k=0.0,
+                    disc=0.0,
+                    disc_guard=guard,
+                ),
+                per_song,
+            )
 
-        metrics: dict[str, float] = {}
-        for key, total in totals.items():
-            metrics[key] = total / n
-            _require_finite(metrics[key], f"aggregate {key}")
-        disc = float(np.mean(within_all)) - float(np.mean(cross_all))
-        _require_finite(disc, "disc_artist")
-        metrics["disc_artist"] = disc
-        return metrics, per_song
-
-    def _per_song_metrics(self, pq: PerQueryResult) -> dict[str, float] | None:
-        k = self._cfg.k
-        qartist = self._artist.get(pq.query_song_id)
-        if qartist is None:
-            raise NonFiniteResultError(f"no artist label for query {pq.query_song_id!r}; cannot lens")
-        # Rank candidate songs by bounded max_per_candidate_segment (desc), tie-break by song id.
-        ranked = sorted(pq.candidate_scores.items(), key=lambda kv: (-float(kv[1]), kv[0]))
-        rel = [s for s, _v in ranked if s != pq.query_song_id and self._artist.get(s) == qartist]
-        if not rel:
-            return None  # no same-artist candidate -> relevance lens undefined for this query
-        # AP@k
-        hits = 0
-        ap = 0.0
-        for rank, (song, _v) in enumerate(ranked[:k], start=1):
-            if song != pq.query_song_id and self._artist.get(song) == qartist:
-                hits += 1
-                ap += hits / rank
-        ap /= min(k, len(rel))
-        # MRR — over the FULL ranking (not k-truncated), mirroring ``similarity``'s
-        # compute_retrieval_metrics reciprocal-rank: a first same-artist hit beyond k
-        # still counts (1/rank), exactly as the legacy full-matrix MRR does.
-        mrr = 0.0
-        for rank, (song, _v) in enumerate(ranked, start=1):
-            if song != pq.query_song_id and self._artist.get(song) == qartist:
-                mrr = 1.0 / rank
-                break
-        # NDCG@k / Recall@k
-        ndcg = _ndcg_at_k(ranked, k, qartist, self._artist, pq.query_song_id)
-        rec_hits = sum(1 for song, _v in ranked[:k] if song != pq.query_song_id and self._artist.get(song) == qartist)
-        rec = rec_hits / min(k, len(rel))
-        within = [
-            v
-            for song, v in pq.candidate_scores.items()
-            if song != pq.query_song_id and self._artist.get(song) == qartist
-        ]
-        cross = [
-            v
-            for song, v in pq.candidate_scores.items()
-            if song != pq.query_song_id and self._artist.get(song) != qartist
-        ]
-        values = {
-            "map_k": float(ap),
-            "mrr": float(mrr),
-            "ndcg_k": float(ndcg),
-            "recall_k": float(rec),
-            "within": float(np.mean(within)) if within else 0.0,
-            "cross": float(np.mean(cross)) if cross else 0.0,
-        }
-        for key, value in values.items():
-            _require_finite(value, f"{pq.query_song_id}.{key}")
-        return values
+        map_k, mrr, ndcg, recall = (total / n for total in totals)
+        if guard_disc:
+            distinct = len(set(lmap.values()))
+            if distinct < 2:
+                disc, guard = 0.0, f"<2 distinct tuple groups ({distinct})"
+            elif within_pairs == 0:
+                disc, guard = 0.0, "no within-tuple pair scores"
+            elif cross_pairs == 0:
+                disc, guard = 0.0, "no cross-tuple pair scores"
+            else:
+                disc = float(np.mean(within_all)) - float(np.mean(cross_all))
+                guard = ""
+        else:
+            disc = float(np.mean(within_all)) - float(np.mean(cross_all))
+            guard = ""
+        _require_finite(disc, f"{ruler}.disc")
+        return (
+            RulerResult(
+                ruler=ruler,
+                active=True,
+                n_queries=n,
+                map_k=float(map_k),
+                mrr=float(mrr),
+                ndcg_k=float(ndcg),
+                recall_k=float(recall),
+                disc=disc,
+                disc_guard=guard,
+            ),
+            per_song,
+        )
 
 
-def _ndcg_at_k(ranked, k: int, qartist: str, artists: Mapping[str, str], query_song_id: str) -> float:
-    """NDCG@k over same-artist relevance (mirrors ``similarity``'s discounted-gain arithmetic).
+def _ndcg_at_k(ranked, k: int, qkey: object, labels: Mapping[str, object], query_song_id: str) -> float:
+    """NDCG@k over same-label relevance (mirrors ``similarity``'s discounted-gain arithmetic).
 
-    Discount is 1/log2(rank + 1) for 1-based ``rank`` -- equivalent to ``similarity``'s
-    ``h / log2(r + 2)`` for 0-based ``r``, so a single top-ranked relevant song is NDCG 1.0.
+    ``labels`` is the ruler's label map (song_id -> label key); ``qkey`` is the query's
+    label key (an artist/genre string or a head full tuple).  Discount is 1/log2(rank + 1)
+    for 1-based ``rank`` -- equivalent to ``similarity``'s ``h / log2(r + 2)`` for 0-based
+    ``r``, so a single top-ranked relevant song is NDCG 1.0.
     """
     dcg = 0.0
     for rank, (song, _v) in enumerate(ranked[:k], start=1):
-        if song != query_song_id and artists.get(song) == qartist:
+        if song != query_song_id and labels.get(song) == qkey:
             dcg += 1.0 / np.log2(rank + 1)
-    rel_total = sum(1 for s, a in artists.items() if s != query_song_id and a == qartist)
+    rel_total = sum(1 for s, a in labels.items() if s != query_song_id and a == qkey)
     n_rel = min(k, rel_total)
     idcg = sum(1.0 / np.log2(r + 1) for r in range(1, n_rel + 1))
     return float(dcg / idcg) if idcg > 0 else 0.0
 
 
+def _norm_label_map(source: Mapping[str, str]) -> dict[str, str]:
+    """Drop ``None``/blank labels from a raw song_id -> text label map.
+
+    A missing/blank value is a MISSING label for that ruler (per-ruler exclusion), never
+    substituted with a guessed label.
+    """
+    out: dict[str, str] = {}
+    for sid, value in source.items():
+        if value is None:
+            continue
+        text = str(value)
+        if not text.strip():
+            continue
+        out[sid] = text
+    return out
+
+
+def _label_map_digest(lmap: Mapping[str, object]) -> str:
+    """Deterministic sha256 digest over a song_id -> label-key map (label-map evidence)."""
+
+    def _jsonable(key: object) -> object:
+        if isinstance(key, tuple):
+            return [_jsonable(item) for item in key]
+        return key
+
+    items = json.dumps(
+        [[str(sid), _jsonable(key)] for sid, key in sorted(lmap.items())],
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(items.encode("utf-8")).hexdigest()
+
+
 def _require_finite(value: float, name: str) -> None:
     if not np.isfinite(value):
         raise NonFiniteResultError(f"non-finite {name}={value!r}; refusing to persist")
+
+
+#: The independent rulers' canonical order (artist / genre / head) — the order in which the
+#: suffixed aggregate retrieval vocabulary is produced and persisted.
+_RULER_NAMES: tuple[str, ...] = ("artist", "genre", "head")
+
+#: The five per-ruler aggregate RulerResult fields that become suffixed retrieval keys.
+_RULER_AGG_FIELDS: tuple[str, ...] = ("map_k", "mrr", "ndcg_k", "recall_k", "disc")
+
+
+def _suffixed_aggregate_metrics(rulers: Mapping[str, RulerResult]) -> dict[str, float]:
+    """The finite suffixed aggregate retrieval dict built from per-ruler RulerResults.
+
+    Emits the five suffixed retrieval aggregates (``map_k_X``/``mrr_X``/``ndcg_k_X``/
+    ``recall_k_X``/``disc_X``) for EVERY ACTIVE ruler (``n_queries > 0``) plus
+    ``n_queries_X`` for every ruler (``0`` when that ruler had no ruler-evaluable query after
+    its missing-label and no-relevant-candidate exclusions).  An INACTIVE ruler never emits a
+    fabricated zero retrieval value.  Keys use exactly the finite suffixed 18-key vocabulary
+    — no generic unsuffixed or composite key.
+    """
+    out: dict[str, float] = {}
+    for ruler in _RULER_NAMES:
+        rr = rulers[ruler]
+        out[f"n_queries_{ruler}"] = float(rr.n_queries)
+        if not rr.active:
+            continue
+        for agg_field in _RULER_AGG_FIELDS:
+            key = f"{agg_field}_{ruler}"
+            value = getattr(rr, agg_field)
+            _require_finite(value, key)
+            out[key] = float(value)
+    return out
+
+
+def resolve_head_ruler_labels(store, out_root, song_ids, backbone: str = "effnet") -> dict[str, HeadSongLabel]:
+    """Resolve the frozen semantic-head ruler label for every *song_ids* member (amended P3-S1).
+
+    EffNet-only, CPU-only, read-only over the committed artifacts.  For each song the head
+    suite is selected ONLY by the filesystem-authoritative ``heads/current/<song_id>.<backbone>.json``
+    CURRENT marker, aligned to the song's current committed observation group.  Only committed
+    whole-song searchable source rows ``i`` where the exact committed ``uint8[patch_count]`` mask
+    ``== 1`` are pooled (never segment ``M_g`` rows, never legacy continuous score windows).  For
+    each canonical head in canonical sorted head-suite order the mean frozen activation over those
+    rows is taken; ``act[1]`` is the class-1 probability; the song is classified ``side index 1``
+    iff that pooled value is finite and ``>= 0.5``, else index 0.  Canonical text is
+    ``HEAD_LABELS[head][index]``.
+
+    A song gets a :class:`HeadSongLabel` ONLY when: the CURRENT marker resolves AND is aligned to
+    the committed group (stream + mask); every required head of the suite is present, binary
+    (``dim == 2``), and canonical-labelable; at least one committed searchable row exists; and every
+    pooled value is present and finite.  Missing marker/suite/stream/mask/row/label evidence is a
+    MISSING label (excluded from the head ruler only — never an error, never substituted).  A
+    PRESENT non-finite activation or pooled value raises :class:`NonFiniteResultError` (never
+    coerced, never excluded).
+    """
+    import numpy as _np
+
+    from scripts.embedding_research import config as _config
+    from scripts.embedding_research.streams.heads_current import (
+        HeadSuiteCurrentError,
+        resolve_current_head_suite,
+    )
+    from scripts.embedding_research.streams.store import StreamStoreError
+
+    out_root_path = Path(out_root)
+    labels: dict[str, HeadSongLabel] = {}
+    if backbone != "effnet":
+        # The head ruler is EffNet-only (the semantic-head phase is EffNet-scoped).
+        return labels
+    for song_id in sorted(song_ids):
+        try:
+            selection = resolve_current_head_suite(out_root_path, song_id, backbone)
+        except HeadSuiteCurrentError:
+            continue  # missing marker / not aligned -> MISSING head label (per-ruler exclusion)
+        try:
+            observation = store.load_committed_observation(song_id, backbone)
+        except StreamStoreError:
+            continue
+        record = selection.record
+        identity = observation.identity
+        mask = observation.mask
+        if mask is None or identity is None:
+            continue
+        mask = _np.asarray(mask)
+        if mask.ndim != 1 or mask.dtype not in ("uint8", "int8"):
+            continue
+        # Only committed whole-song searchable rows where the exact mask == 1.
+        idx = _np.flatnonzero(mask == 1)
+        if idx.size == 0:
+            continue
+        head_ids = tuple(h for h in str(record.head_ids).split(",") if h)
+        if not head_ids:
+            continue
+        try:
+            payload = _np.load(out_root_path / record.artifact_ref, allow_pickle=False)
+        except (OSError, ValueError, TypeError):
+            continue
+        pooled: list[float] = []
+        sides: list[tuple[str, int]] = []
+        labelable = True
+        for head in head_ids:
+            canonical = _config.HEAD_LABELS.get(head)
+            if canonical is None:
+                labelable = False
+                break
+            if head not in payload.files:
+                labelable = False
+                break
+            arr = payload[head]
+            if not hasattr(arr, "ndim") or arr.ndim != 2:
+                labelable = False
+                break
+            dim = arr.shape[1]
+            if dim != 2:
+                # Not a binary head -> not a labelable ruler head (missing label for this song).
+                labelable = False
+                break
+            rows = _np.asarray(arr, dtype=_np.float32)[idx]
+            if not _np.isfinite(rows).all():
+                raise NonFiniteResultError(
+                    f"head ruler: present non-finite activation for song {song_id!r} head {head!r}; "
+                    f"refusing to classify"
+                )
+            mean = rows.mean(axis=0)
+            pooled_value = float(mean[1])  # act[1] = class-1 probability
+            _require_finite(pooled_value, f"head {head!r} song {song_id!r} pooled value")
+            side = 1 if pooled_value >= 0.5 else 0
+            pooled.append(pooled_value)
+            sides.append((head, side))
+        if not labelable or len(sides) != len(head_ids):
+            continue
+        full_tuple = tuple(sides)
+        labels[song_id] = HeadSongLabel(
+            song_id=song_id,
+            backbone=backbone,
+            full_tuple=full_tuple,
+            labels=tuple(_config.HEAD_LABELS[head][side] for head, side in sides),
+            pooled=tuple(pooled),
+            searchable_rows=int(idx.size),
+            head_set_fingerprint=getattr(record, "head_set_fingerprint", "") or "",
+            head_ids=str(record.head_ids),
+            dim_by_head=str(record.dim_by_head),
+            alignment_version=str(record.alignment_version),
+            stream_ref=str(identity.stream_ref),
+            stream_digest=str(identity.stream_digest),
+            mask_ref=str(identity.mask_ref),
+            mask_digest=str(identity.mask_digest),
+            commit_sha256=str(identity.commit_sha256),
+        )
+    return labels

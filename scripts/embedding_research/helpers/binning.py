@@ -48,6 +48,29 @@ DIST_FNS: dict[str, Callable[[np.ndarray, np.ndarray], float]] = {
     "temporal_perdim": perdim_dist,
 }
 
+#: Canonical derived-metric name of each executed distance function.  The metric is
+#: a DERIVED label (never a stored column) obtained from the SAME dispatch that
+#: executes segmentation, so the advertised metric always equals the executed one
+#: by construction: ``temporal_global`` -> L2, ``temporal_perdim`` -> Chebyshev.
+_DIST_METRIC_BY_FN: dict[Callable[[np.ndarray, np.ndarray], float], str] = {
+    global_dist: "l2",
+    perdim_dist: "chebyshev",
+}
+
+
+def distance_metric_label(bin_mode: str) -> str:
+    """Derive the advertised distance-metric label for *bin_mode* (never stored).
+
+    The label is taken from the distance function that ``DIST_FNS[bin_mode]``
+    actually executes, so the advertised ``l2``/``chebyshev`` metric equals the
+    executed segmentation metric by construction.  Unknown modes fail closed with
+    ``ValueError`` (mirrors the ``DIST_FNS`` dispatch boundary).
+    """
+    fn = DIST_FNS.get(bin_mode)
+    if fn is None:
+        raise ValueError(f"unknown bin_mode {bin_mode!r}; supported: {sorted(DIST_FNS)}")
+    return _DIST_METRIC_BY_FN[fn]
+
 
 # ── Segmentation algorithm ────────────────────────────────────────────────────
 

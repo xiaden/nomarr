@@ -98,16 +98,23 @@ def build_winner_delta_rows(analysis_df: pd.DataFrame) -> pd.DataFrame:
         return out
 
     base = build_baseline_delta_rows(analysis_df)
+    # Plan B P2: additionally surface persisted non-comparable representation diagnostics (read by
+    # ``report._retrieval.query_winners_metrics`` onto the frame attrs) so a skipped class that was
+    # never an ``analyze_metrics`` row / complete scope is still rendered visibly incomplete.  They
+    # can never collide with ``base.incomplete`` (a non-comparable rep has no metric row, so the
+    # derive-path builder never sees it), so a plain concatenation is safe.
+    persisted = tuple(analysis_df.attrs.get("persisted_incomplete_diagnostics", ()))
+    incomplete = tuple(base.incomplete) + persisted
     if not base.rows:
         out = pd.DataFrame(columns=columns)
-        out.attrs["baseline_incomplete"] = tuple(base.incomplete)
+        out.attrs["baseline_incomplete"] = incomplete
         return out
 
     out = pd.DataFrame(list(base.rows)).rename(columns={"n_segmented_classes": "n_classes"})
     out["baseline_canonical_config_id"] = None
     # Reorder to the report's canonical winner/delta column contract.
     out = out.reindex(columns=columns).reset_index(drop=True)
-    out.attrs["baseline_incomplete"] = tuple(base.incomplete)
+    out.attrs["baseline_incomplete"] = incomplete
     return out
 
 

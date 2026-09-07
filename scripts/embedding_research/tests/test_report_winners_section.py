@@ -79,6 +79,12 @@ _ACTIVE_KEYS = {
     "representation_evaluation_corpus_comparable",
     "representation_missing_count",
     "representation_missing_digest",
+    # Plan B P2: persisted non-comparable diagnostics also surface the tested class's durable
+    # SEMANTIC representation hash, canonical config id + full tested-threshold membership, and
+    # the actual lost-song membership (observation evidence).
+    "search_representation_hash",
+    "config_ids",
+    "missing_song_ids",
 }
 
 
