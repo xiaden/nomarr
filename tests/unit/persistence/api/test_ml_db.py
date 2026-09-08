@@ -26,7 +26,7 @@ from nomarr.helpers.dataclasses.ml_model_dataclass import RegisteredModel
 from nomarr.helpers.dataclasses.ml_model_output_dataclass import ModelOutput
 from nomarr.helpers.dataclasses.ml_output_stream_dataclass import OutputStream, OutputStreamWrite
 from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
-from nomarr.helpers.dataclasses.vector_dataclass import EmbeddingCounts, SongVector, VectorMatch
+from nomarr.helpers.dataclasses.vector_dataclass import BackboneVectorWrite, EmbeddingCounts, SongVector, VectorMatch
 from nomarr.helpers.dto.calibration_repo_dto import CalibrationStateJoined
 from nomarr.persistence.api.ml import MlDb
 
@@ -655,12 +655,13 @@ def test_replace_song_inference_results_makes_single_aggregate_call() -> None:
 
 
 # ---------------------------------------------------------------------------
-# P1-S2 spec-first: typed aggregate boundary (TASK-ml-write-boundary-leaks-
-# storage-representation-A). The facade must accept a semantic SongIdentity and
-# typed BackboneVectorWrite/OutputStreamWrite commands and pass them through to
-# the repository WITHOUT laundering stream commands back into dictionaries. These
-# tests are the spec and fail until Phase 2 lands (they exercise the current
-# legacy integer-song_id/raw-dict signature).
+# P1-S2 permanent typed-boundary contract (TASK-ml-write-boundary-leaks-
+# storage-representation-A-typed-inference-write-boundary). Phase 2 landed: the
+# facade accepts a semantic SongIdentity and typed BackboneVectorWrite/
+# OutputStreamWrite commands and passes them through to the repository WITHOUT
+# laundering stream commands back into dictionaries. These tests pin that
+# permanent contract — an integer song key and raw row dicts are rejected here
+# (never laundered), so no storage representation leaks across the boundary.
 # ---------------------------------------------------------------------------
 
 _SPEC_LIBRARY = LibraryIdentity(name="music", root_path="/music")
@@ -668,9 +669,7 @@ _SPEC_SONG = SongIdentity(library=_SPEC_LIBRARY, normalized_path="/music/a.mp3")
 
 
 def _typed_backbone_write():
-    """Resolve BackboneVectorWrite at runtime; clear failure before Phase 2 lands."""
-    from nomarr.helpers.dataclasses.vector_dataclass import BackboneVectorWrite  # type: ignore[attr-defined]
-
+    """Build a typed BackboneVectorWrite command for the permanent typed boundary."""
     return BackboneVectorWrite(
         vector=(0.1, 0.2, 0.3),
         num_segments=3,
@@ -734,10 +733,12 @@ def test_aggregate_does_not_launder_stream_commands_to_dicts() -> None:
 def test_aggregate_rejects_integer_song_key() -> None:
     """R1: no integer song storage key may cross the ML facade."""
     db, _, _, _, _, _ = _make_ml_db()
-    with pytest.raises(TypeError):
+    # Pass the integer positionally as `song` so the isinstance(song, SongIdentity)
+    # guard at ml.py:533 fires (the TypeError is NOT signature binding).
+    with pytest.raises(TypeError, match="song must be a SongIdentity"):
         db.replace_song_inference_results(
-            song_id=42,  # type: ignore[call-arg]
-            backbone="openl3",
+            42,  # type: ignore[arg-type]
+            "openl3",
             vectors=[_typed_backbone_write()],
             output_streams=[_typed_stream()],
         )

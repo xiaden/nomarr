@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING, Any
 import orjson
 import pytest
 from alembic.config import Config as AlembicConfig
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 from testcontainers.community.postgres import PostgresContainer
 
 from alembic import command
@@ -98,6 +100,46 @@ def db(run_alembic_migrations) -> Generator[Database, None, None]:
     database = Database(url=run_alembic_migrations, echo=False, pool_size=2, max_overflow=5)
     yield database
     database.close()
+
+
+@pytest.fixture(scope="session")
+def pg_engine(run_alembic_migrations):
+    """Session-scoped synchronous SQLAlchemy engine on the real migrated PostgreSQL.
+
+    Unlike the SQLite ``pg_engine`` in ``tests/unit/persistence/database/conftest.py``,
+    this engine targets the live pgvector:pg17 container and so can run the ML
+    inference aggregate, whose ``embeddings`` table uses a PostgreSQL-only
+    ``HALFVEC`` column. Schema is provided by the already-run Alembic migrations.
+    """
+    engine = create_engine(run_alembic_migrations, echo=False)
+    try:
+        yield engine
+    finally:
+        engine.dispose()
+
+
+@pytest.fixture()
+def inference_session(pg_engine):
+    """Per-test transactional session on the real PostgreSQL container.
+
+    Mirrors the ``pg_session`` fixture used by SQLite repository tests (a
+    connection-bound SAVEPOINT session that rolls back at the end of every test)
+    but on the real pgvector database, so the ML write aggregate and its
+    ``(song, backbone)``-scoped replacement and rollback semantics can be
+    exercised against the true ``embeddings`` table. After each test the outer
+    transaction rolls back, leaving no residue.
+    """
+    engine = pg_engine
+    conn = engine.connect()
+    conn.begin()
+    conn.begin_nested()
+    session = Session(bind=conn)
+    try:
+        yield session
+    finally:
+        session.close()
+        conn.rollback()
+        conn.close()
 
 
 # ---------------------------------------------------------------------------

@@ -221,3 +221,175 @@ class TestNoPersistenceLeakage:
         for cls in (SongVector, VectorMatch, EmbeddingCounts):
             for name in FACTORIES:
                 assert not hasattr(cls, name), f"{cls.__name__} must not expose {name!r}"
+
+
+# ---------------------------------------------------------------------------
+# P1-S2 spec-first: BackboneVectorWrite (TASK-ml-write-boundary-leaks-storage-
+# representation-A). The symbol does NOT exist until Phase 2; these tests are the
+# spec and are expected to fail (ImportError/AttributeError at runtime) until
+# `BackboneVectorWrite` lands in nomarr/helpers/dataclasses/vector_dataclass.py.
+# Imports are deferred into a helper so this module still collects and the
+# already-landed read-path tests above keep running.
+# ---------------------------------------------------------------------------
+
+BACKBONE_WRITE_STORAGE_FIELDS = (
+    "id",
+    "_id",
+    "_key",
+    "song_id",
+    "backbone_id",
+    "embed_dim",
+    "embedding_vector",
+    "embedding",
+    "model_id",
+    "tier",
+    "created_at",
+    "updated_at",
+)
+
+
+class _BackboneWriteMissingError(Exception):
+    """Raised while the spec-first BackboneVectorWrite symbol is not yet present."""
+
+
+def _backbone_write_cls() -> type:
+    """Resolve BackboneVectorWrite at runtime; fail with a clear spec-first message pre-landing."""
+    try:
+        from nomarr.helpers.dataclasses.vector_dataclass import BackboneVectorWrite as Cls
+    except ImportError as exc:  # pragma: no cover - exercised only before Phase 2 lands
+        raise _BackboneWriteMissingError(
+            "BackboneVectorWrite not yet defined; spec-first until Phase 2 (P2-S1)"
+        ) from exc
+    return Cls
+
+
+def _backbone_write(**kwargs: object) -> object:
+    cls = _backbone_write_cls()
+    base: dict[str, object] = {
+        "vector": (0.1, 0.2, 0.3),
+        "num_segments": 3,
+        "model_suite_hash": "suite-hash",
+        "genres": None,
+        "segmentation_hash": None,
+    }
+    base.update(kwargs)
+    return cls(**base)  # type: ignore[arg-type, no-any-return]
+
+
+@pytest.mark.unit
+class TestBackboneVectorWriteSpec:
+    """P1-S2 spec: frozen/slotted vector-write command with NO storage fields."""
+
+    def test_is_frozen_and_slotted(self) -> None:
+        write = _backbone_write()
+        with pytest.raises(AttributeError):
+            write.vector = (9.0,)  # type: ignore[misc]
+        assert not hasattr(write, "__dict__")
+
+    def test_equality_by_value(self) -> None:
+        assert _backbone_write() == _backbone_write()
+        assert _backbone_write(vector=(0.9,)) != _backbone_write(vector=(0.1,))
+
+    def test_field_types(self) -> None:
+        write = _backbone_write(
+            vector=(0.5, -0.5),
+            num_segments=2,
+            model_suite_hash="h",
+            genres=("a", "b"),
+        )
+        assert isinstance(write.vector, tuple)
+        assert isinstance(write.num_segments, int)
+        assert isinstance(write.model_suite_hash, str)
+        assert write.genres == ("a", "b")
+        assert write.segmentation_hash is None
+
+    def test_num_segments_and_genres_optional(self) -> None:
+        write = _backbone_write(num_segments=None, genres=None)
+        assert write.num_segments is None
+        assert write.genres is None
+
+    def test_none_genres_distinct_from_empty_tuple(self) -> None:
+        assert _backbone_write(genres=None).genres is None
+        assert _backbone_write(genres=()).genres == ()
+
+    def test_preserves_vector_values_and_order(self) -> None:
+        stored = (0.1, -0.2, 0.3, 0.4)
+        assert _backbone_write(vector=stored).vector == stored
+
+    def test_segmentation_hash_is_always_none(self) -> None:
+        # The command carries NO segmentation artifact; persistence always writes
+        # segmentation_hash=NULL. Any caller-supplied non-None value is invalid.
+        cls = _backbone_write_cls()
+        with pytest.raises((TypeError, ValueError)):
+            cls(
+                vector=(0.1,),
+                num_segments=1,
+                model_suite_hash="h",
+                genres=None,
+                segmentation_hash="not-null",
+            )
+
+    def test_rejects_non_vector_tuple(self) -> None:
+        cls = _backbone_write_cls()
+        with pytest.raises((TypeError, ValueError)):
+            cls(
+                vector="not-a-tuple",
+                num_segments=1,
+                model_suite_hash="h",
+                genres=None,
+            )
+
+    def test_rejects_blank_suite_hash(self) -> None:
+        cls = _backbone_write_cls()
+        with pytest.raises((TypeError, ValueError)):
+            cls(vector=(0.1,), num_segments=1, model_suite_hash="   ", genres=None)
+
+    def test_positional_construction_is_forbidden(self) -> None:
+        # kw_only=True means the generated __init__ takes no positional args, so a
+        # docs-literal positional build (e.g. (vector, suite_hash, num_segments))
+        # can never misbind model_suite_hash into num_segments and instead fails
+        # loudly. Regression pin: a future revert to a non-kw_only dataclass would
+        # silently accept this construction and fail this test.
+        cls = _backbone_write_cls()
+        with pytest.raises(TypeError):
+            cls((0.1, 0.2), "suite-hash", 1)  # type: ignore[misc, call-arg]
+
+    def test_no_storage_fields(self) -> None:
+        write = _backbone_write()
+        for attr in BACKBONE_WRITE_STORAGE_FIELDS:
+            assert not hasattr(write, attr), f"BackboneVectorWrite must not expose storage field {attr!r}"
+
+    def test_no_embed_dim_attribute(self) -> None:
+        # Persistence derives embed_dim=len(vector); the command never carries it.
+        write = _backbone_write()
+        assert not hasattr(write, "embed_dim")
+
+    def test_no_persistence_factories_or_projections(self) -> None:
+        cls = _backbone_write_cls()
+        for name in FACTORIES:
+            assert not hasattr(cls, name), f"BackboneVectorWrite must not expose {name!r}"
+
+    def test_rejects_unknown_storage_keyword(self) -> None:
+        cls = _backbone_write_cls()
+        with pytest.raises(TypeError):
+            cls(
+                vector=(0.1,),
+                num_segments=1,
+                model_suite_hash="h",
+                genres=None,
+                embedding_vector=[0.1, 0.2],  # storage key must not be accepted
+            )
+
+    def test_rejects_embed_dim_keyword(self) -> None:
+        # embed_dim is storage-derived and must not be accepted as a constructor
+        # keyword. Split from test_rejects_unknown_storage_keyword so each rejected
+        # keyword is independently reachable (one pytest.raises per construction).
+        cls = _backbone_write_cls()
+        with pytest.raises(TypeError):
+            cls(
+                vector=(0.1,),
+                num_segments=1,
+                model_suite_hash="h",
+                genres=None,
+                embed_dim=1280,  # storage-derived field must not be accepted
+            )

@@ -14,7 +14,11 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
     from nomarr.helpers.dataclasses.tags_dataclass import Tags
+    from nomarr.helpers.dataclasses.vector_dataclass import BackboneVectorWrite
 
 
 @dataclass
@@ -118,17 +122,17 @@ class DeferredOutputStreamWrite:
 
 @dataclass
 class DeferredBackboneVectorWrite:
-    """Deferred canonical vector payload for one backbone.
+    """Deferred typed vector commands for one backbone.
 
-    Carries the canonical backbone identifier plus its canonical
-    ``{embedding_vector | embedding, model_id, backbone_id?}`` vector payloads.
-    These are persisted via the aggregate ``db.ml.replace_song_inference_results``
-    alongside the song's output streams in one ``(song_id, backbone)``-scoped
-    atomic replacement.
+    Carries the backbone name plus the typed :class:`BackboneVectorWrite`
+    commands derived for it. These are persisted via the aggregate
+    ``db.ml.replace_song_inference_results`` alongside the song's output streams
+    in one ``(song, backbone)``-scoped atomic replacement. Commands carry only
+    application semantics — no storage-shaped keys cross this boundary.
     """
 
     backbone: str
-    vector_payloads: list[dict[str, Any]]
+    vectors: Sequence[BackboneVectorWrite]
 
 
 @dataclass
@@ -147,9 +151,13 @@ class DeferredFileWrites:
                                           per backbone)
     4. ``mark_song_processed``            (only if 1-3 succeeded)
     5. ``release_claim``                  (always, even on error)
+
+    ``song`` is the semantic :class:`SongIdentity` of the processed file; the
+    worker resolves it to the storage song row only inside persistence. No
+    integer storage key crosses this deferred-write boundary.
     """
 
-    file_id: str
+    song: SongIdentity
     path: str
     db_tags: dict[str, Any]
     namespace: str

@@ -38,6 +38,8 @@ from nomarr.helpers.time_helper import internal_ms
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from nomarr.components.ml.onnx.ml_cache import ONNXModelCache
+    from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
+    from nomarr.helpers.dataclasses.vector_dataclass import BackboneVectorWrite
     from nomarr.persistence.db import Database
 
 
@@ -46,7 +48,7 @@ def process_file_workflow(
     config: ProcessorConfig,
     cache: ONNXModelCache,
     db: Database,
-    file_id: str | None = None,
+    song: SongIdentity | None = None,
 ) -> ProcessFileResult:
     """Run the full ML tagging pipeline for one audio file.
 
@@ -57,7 +59,10 @@ def process_file_workflow(
         path: Path to the audio file.
         config: Processing configuration (models_dir, namespace, tagger_version, etc.).
         db: Database instance. Required for path resolution and metadata writes.
-        file_id: song document id. Avoids path-based lookup when provided.
+        song: Semantic identity of the song under processing. When provided, ML
+            commands (typed backbone vectors + resolved output streams) are
+            packaged into deferred writes carried on the result; the caller
+            resolves the identity to the storage row only inside persistence.
         cache: ONNXModelCache instance. Required; auto-warmed if not already warm.
 
     Returns:
@@ -108,9 +113,9 @@ def process_file_workflow(
     regression_heads: list[tuple[Any, list[float]]] = []
     total_heads_succeeded = 0
     all_raw_output_streams: dict[str, list[Any]] = {}
-    # Backbone -> canonical vector payloads, persisted later via the deferred-
+    # Backbone -> typed vector commands, persisted later via the deferred-
     # write aggregate (``db.ml.replace_song_inference_results``) scoped by backbone.
-    backbone_vector_payloads: dict[str, list[dict[str, Any]]] = {}
+    backbone_vector_commands: dict[str, list[BackboneVectorWrite]] = {}
     # Compute model suite hash once for vector persistence (not per backbone)
     model_suite_hash = compute_model_suite_hash(config.models_dir)
 
@@ -164,15 +169,15 @@ def process_file_workflow(
         regression_heads.extend(result.regression_heads)
         all_head_outputs.extend(result.all_head_outputs)
         all_raw_output_streams.update(result.raw_output_streams_by_model_path)
-        # Derive pooled track-level embedding payload for this backbone. The
-        # DB write is deferred: the payload is carried to the worker, which
+        # Derive pooled track-level embedding command for this backbone. The
+        # DB write is deferred: the typed command is carried to the worker, which
         # persists it through the aggregate scoped to (song, backbone) so other
         # backbones' vectors are never erased.
-        if file_id is not None:
+        if song is not None:
             assert library_path.library_id is not None  # validated above
-            vector_payload = persist_backbone_vector(backbone, embeddings_2d, model_suite_hash, path)
-            if vector_payload is not None:
-                backbone_vector_payloads.setdefault(backbone, []).append(vector_payload)
+            vector_command = persist_backbone_vector(backbone, embeddings_2d, model_suite_hash, path)
+            if vector_command is not None:
+                backbone_vector_commands.setdefault(backbone, []).append(vector_command)
         del embeddings_2d
         logger.debug(f"[processor] Released {backbone} embeddings from memory")
     if total_heads_succeeded == 0:
@@ -202,7 +207,7 @@ def process_file_workflow(
     tags_accum.update(mood_tags)
     resolved_output_streams: list[DeferredOutputStreamWrite] = []
     if all_raw_output_streams:
-        output_index_map = db.ml.build_model_output_index_map()
+        output_index_map = db.ml.model_output_index_map()
         for model_path, output_streams in all_raw_output_streams.items():
             output_ids_by_index = output_index_map.get(model_path)
             if output_ids_by_index is None:
@@ -233,9 +238,9 @@ def process_file_workflow(
     tags_accum[config.version_tag_key] = config.tagger_version
     db_tags = dict(tags_accum)
     deferred: DeferredFileWrites | None = None
-    if file_id is not None:
+    if song is not None:
         deferred = DeferredFileWrites(
-            file_id=file_id,
+            song=song,
             path=path,
             db_tags=db_tags,
             namespace=config.namespace,
@@ -243,8 +248,8 @@ def process_file_workflow(
             chromaprint=shared_chromaprint,
             raw_output_streams=resolved_output_streams,
             backbone_vectors=[
-                DeferredBackboneVectorWrite(backbone=backbone, vector_payloads=payloads)
-                for backbone, payloads in backbone_vector_payloads.items()
+                DeferredBackboneVectorWrite(backbone=backbone, vectors=commands)
+                for backbone, commands in backbone_vector_commands.items()
             ],
         )
     elapsed_ms = internal_ms().value - start_all.value

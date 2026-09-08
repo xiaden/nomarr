@@ -12,7 +12,7 @@ import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from multiprocessing import Event
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from nomarr.components.library.library_song_mutation_comp import update_last_tagged_at
 from nomarr.helpers.constants.file_states import (
@@ -106,16 +106,22 @@ def _malloc_trim() -> None:
         ctypes.CDLL("libc.so.6").malloc_trim(0)
 
 
-def _execute_deferred_writes(db: Database, writes: DeferredFileWrites, worker_id: str) -> None:
-    """Persist deferred file writes and release the worker claim."""
+def _execute_deferred_writes(db: Database, writes: DeferredFileWrites, worker_id: str, song_id: int) -> None:
+    """Persist deferred file writes and release the worker claim.
+
+    ``song_id`` is the non-ML integer claim/state handle owned by the
+    discovery worker; it is used only for the unrelated tag/chromaprint/state/
+    claim lifecycle calls and never enters the ML facade. The ML aggregate is
+    addressed by the semantic ``writes.song`` :class:`SongIdentity` carried on
+    the deferred payload.
+    """
     from nomarr.components.library.library_song_mutation_comp import set_chromaprint
     from nomarr.components.library.library_song_state_comp import transition_song_state
     from nomarr.components.library.song_sync_comp import save_song_tags
     from nomarr.components.tagging.tag_parsing_comp import parse_tag_values
     from nomarr.components.workers.worker_discovery_comp import release_claim
+    from nomarr.helpers.dataclasses.ml_output_stream_dataclass import OutputStreamWrite
 
-    song_id_str = writes.file_id
-    song_id = int(song_id_str)
     try:
         parsed_nom_tags = parse_tag_values(writes.db_tags) if writes.db_tags else {}
         prefixed_nom_tags = {
@@ -125,46 +131,46 @@ def _execute_deferred_writes(db: Database, writes: DeferredFileWrites, worker_id
         if writes.chromaprint:
             set_chromaprint(db, song_id, writes.chromaprint)
         if writes.raw_output_streams or writes.backbone_vectors:
-            from nomarr.components.ml.inference.ml_output_stream_store_comp import (
-                StreamWrite as _StreamWrite,
-            )
-            from nomarr.components.ml.inference.ml_output_stream_store_comp import (
-                build_output_stream_payloads,
-            )
-
-            # Route streams through the canonical payload builder so duplicate
-            # output_ids across model paths collapse to a single row (last-wins
-            # per output_id), matching the pre-plan upsert normalization and
-            # the aggregate's replace contract.
-            stream_payloads = build_output_stream_payloads(cast("list[_StreamWrite]", writes.raw_output_streams))
+            # Map deferred (stdlib-mirror) stream commands 1:1 to the domain
+            # command. Persistence owns output-index mapping and last-wins
+            # deduplication; no caller-side stream normalization happens here,
+            # so duplicate output_ids are passed through verbatim.
+            stream_writes = [
+                OutputStreamWrite(
+                    output_id=stream.output_id,
+                    values=stream.values,
+                    output_index=stream.output_index,
+                )
+                for stream in writes.raw_output_streams
+            ]
             if writes.backbone_vectors:
                 # One atomic aggregate call per backbone. Each call re-inserts
-                # the full canonical stream set and replaces only that
-                # backbone's vectors, so persisting one backbone never erases
-                # another backbone's vectors.
+                # the full stream set and replaces only that backbone's
+                # vectors, so persisting one backbone never erases another
+                # backbone's vectors.
                 #
                 # When raw_output_streams is empty while backbone vectors
-                # exist, stream_payloads is [] and the aggregate deliberately
+                # exist, stream_writes is [] and the aggregate deliberately
                 # replaces the song's existing streams with none. That is an
                 # intentional stream replacement, per the aggregate's replace
-                # contract (it atomically replaces song_id output streams and
-                # (song_id, backbone) vectors; it does not preserve streams it
+                # contract (it atomically replaces the song's output streams
+                # and (song, backbone) vectors; it does not preserve streams it
                 # is not given).
                 for backbone_write in writes.backbone_vectors:
                     db.ml.replace_song_inference_results(
-                        song_id=song_id,
+                        song=writes.song,
                         backbone=backbone_write.backbone,
-                        vectors=backbone_write.vector_payloads,
-                        output_streams=stream_payloads,
+                        vectors=backbone_write.vectors,
+                        output_streams=stream_writes,
                     )
-            elif stream_payloads:
+            elif stream_writes:
                 # Streams only (no backbone vectors) — persist through the
                 # aggregate with no vectors to replace.
                 db.ml.replace_song_inference_results(
-                    song_id=song_id,
+                    song=writes.song,
                     backbone="",
                     vectors=[],
-                    output_streams=stream_payloads,
+                    output_streams=stream_writes,
                 )
         transition_song_state(db, [song_id], STATE_NOT_PROCESSED, STATE_PROCESSED)
         update_last_tagged_at(db, song_id)
@@ -413,6 +419,24 @@ class DiscoveryWorker(multiprocessing.Process):
             release_claim(db, song_id, self.worker_id)
             return pending_write, False
         file_path = file_doc["path"]
+        # Resolve the claimed integer handle to its semantic SongIdentity through
+        # the authoritative library facade BEFORE any deferred ML write is
+        # constructed. The integer handle is used only for the unrelated
+        # claim/state lifecycle calls in ``_execute_deferred_writes``; it never
+        # enters the ML facade.
+        song_identity = db.library.resolve_song_identity(song_id)
+        if song_identity is None:
+            logger.warning(
+                "[%s] Could not resolve SongIdentity for claimed file %s; marking errored for retry",
+                self.worker_id,
+                song_id,
+            )
+            try:
+                transition_song_state(db, [song_id], STATE_NOT_ERRORED, STATE_ERRORED)
+            except Exception:
+                logger.warning("[%s] Failed to set errored state for %s", self.worker_id, song_id, exc_info=True)
+            release_claim(db, song_id, self.worker_id)
+            return pending_write, False
         try:
             file_size = os.path.getsize(file_path)
         except OSError:
@@ -421,7 +445,7 @@ class DiscoveryWorker(multiprocessing.Process):
         sys.stdout.flush()
         sys.stderr.flush()
         assert onnx_cache is not None, "onnx_cache must be warmed before processing"
-        result = process_file_workflow(path=file_path, config=config, db=db, file_id=str(song_id), cache=onnx_cache)
+        result = process_file_workflow(path=file_path, config=config, db=db, song=song_identity, cache=onnx_cache)
         logger.debug("[%s] Workflow returned for %s", self.worker_id, file_path)
         _malloc_trim()
         if pending_write is not None:
@@ -440,7 +464,9 @@ class DiscoveryWorker(multiprocessing.Process):
             release_claim(db, song_id, self.worker_id)
             return None, True
         if result.deferred_writes is not None:
-            pending_write = write_executor.submit(_execute_deferred_writes, db, result.deferred_writes, self.worker_id)
+            pending_write = write_executor.submit(
+                _execute_deferred_writes, db, result.deferred_writes, self.worker_id, song_id
+            )
             timing = f" | {result.timing_summary}" if result.timing_summary else ""
             logger.debug(
                 "[%s] Completed %s in %.2fs (%d heads, %d tags)%s",
@@ -460,14 +486,14 @@ class DiscoveryWorker(multiprocessing.Process):
         from nomarr.components.workers.worker_discovery_comp import release_claim
 
         next_errors = consecutive_errors + 1
-        logger.exception("[%s] Error processing %s: %s", self.worker_id, song_id, error)
+        logger.error("[%s] Error processing %s: %s", self.worker_id, song_id, error)
         try:
             transition_song_state(db, [song_id], STATE_NOT_ERRORED, STATE_ERRORED)
         except Exception:
             logger.warning("[%s] Failed to set errored state for %s", self.worker_id, song_id, exc_info=True)
         release_claim(db, song_id, self.worker_id)
         if next_errors >= MAX_CONSECUTIVE_ERRORS:
-            logger.exception("[%s] Too many consecutive errors (%d), shutting down", self.worker_id, next_errors)
+            logger.error("[%s] Too many consecutive errors (%d), shutting down", self.worker_id, next_errors)
         return next_errors
 
     def run(self) -> None:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pickle
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -13,6 +14,8 @@ from nomarr.helpers.constants.file_states import (
     STATE_PROCESSED,
 )
 from nomarr.helpers.dataclasses.ml_output_stream_dataclass import OutputStreamWrite
+from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
+from nomarr.helpers.dataclasses.vector_dataclass import BackboneVectorWrite
 from nomarr.helpers.dto.processing_dto import (
     DeferredBackboneVectorWrite,
     DeferredFileWrites,
@@ -36,6 +39,23 @@ def _make_worker_self(worker_id: str = "worker:tag:0") -> MagicMock:
     mock_self._stop_event = MagicMock()
     mock_self._stop_event.is_set.return_value = False
     return mock_self
+
+
+def _song(normalized_path: str = "song.flac") -> SongIdentity:
+    """Semantic identity the worker resolves a claimed handle to before ML writes."""
+    return SongIdentity(
+        library=LibraryIdentity(name="music", root_path="/music"),
+        normalized_path=normalized_path,
+    )
+
+
+def _vector_command(*, vector=(0.25, 0.25), suite="suite-hash", num_segments=3) -> BackboneVectorWrite:
+    """Typed backbone write command used to build deferred payloads."""
+    return BackboneVectorWrite(
+        vector=tuple(vector),
+        model_suite_hash=suite,
+        num_segments=num_segments,
+    )
 
 
 class TestDatabaseUrlValidation:
@@ -314,20 +334,41 @@ class TestCheckResourceHeadroom:
 
 
 class TestProcessClaimedFile:
-    """Tests for DiscoveryWorker._process_claimed_file."""
+    """Tests for DiscoveryWorker._process_claimed_file.
+
+    The worker resolves the claimed integer handle to a semantic ``SongIdentity``
+    (``db.library.resolve_song_identity``) before any deferred ML write, passes
+    that identity to the workflow as ``song=``, and carries the integer handle
+    only alongside the deferred payload at executor submission time for the
+    unrelated non-ML claim/state lifecycle calls.
+    """
 
     _PATCH_RELEASE = "nomarr.components.workers.worker_discovery_comp.release_claim"
     _PATCH_PROCESS = "nomarr.workflows.processing.process_file_wf.process_file_workflow"
     _PATCH_GET_FILE = "nomarr.components.library.library_song_query_comp.get_song_by_id"
+    _PATCH_TRANSITION = "nomarr.components.library.library_song_state_comp.transition_song_state"
     _PATCH_UPDATE_TAGGED = f"{_MODULE}.update_last_tagged_at"
     _PATCH_GETSIZE = f"{_MODULE}.os.path.getsize"
     _PATCH_MALLOC_TRIM = f"{_MODULE}._malloc_trim"
+    _SONG_ID = 42
 
     def _call(self, mock_self, db, file_id, config, onnx_cache, pending_write, write_executor):
         from nomarr.services.infrastructure.workers.discovery_worker import DiscoveryWorker
 
         return DiscoveryWorker._process_claimed_file(
             mock_self, db, file_id, config, onnx_cache, pending_write, write_executor
+        )
+
+    def _deferred_writes(self) -> DeferredFileWrites:
+        return DeferredFileWrites(
+            song=_song(),
+            path="D:/music/song.mp3",
+            db_tags={"nom:genre": ["rock"]},
+            namespace="nom",
+            tagger_version="v-test",
+            chromaprint="fp",
+            raw_output_streams=[DeferredOutputStreamWrite(output_id="out-0", values=[0.1, 0.9], output_index=0)],
+            backbone_vectors=[DeferredBackboneVectorWrite(backbone="bb1", vectors=[_vector_command()])],
         )
 
     @pytest.mark.unit
@@ -342,7 +383,7 @@ class TestProcessClaimedFile:
         result = self._call(
             mock_self,
             mock_db,
-            f"{'songs'}/missing",
+            self._SONG_ID,
             MagicMock(),
             MagicMock(),
             pending_write,
@@ -350,10 +391,48 @@ class TestProcessClaimedFile:
         )
 
         assert result == (pending_write, False)
-        mock_release_claim.assert_called_once_with(mock_db, f"{'songs'}/missing", "worker:tag:0")
+        mock_release_claim.assert_called_once_with(mock_db, self._SONG_ID, "worker:tag:0")
+        # Identity resolution is not attempted when the file doc is absent.
+        mock_db.library.resolve_song_identity.assert_not_called()
 
     @pytest.mark.unit
-    @patch("nomarr.components.library.library_song_state_comp.transition_song_state")
+    @patch(_PATCH_RELEASE)
+    @patch(_PATCH_PROCESS)
+    @patch(_PATCH_TRANSITION)
+    @patch(_PATCH_GET_FILE)
+    def test_unresolved_identity_marks_errored_and_releases_claim_without_workflow(
+        self, mock_get_file_by_id, mock_transition_file_state, mock_process_file_workflow, mock_release_claim
+    ):
+        """resolve_song_identity returning None is the negative path: no ML write."""
+        mock_self = _make_worker_self()
+        mock_db = MagicMock()
+        mock_get_file_by_id.return_value = {"path": "D:/music/song.mp3"}
+        mock_db.library.resolve_song_identity.return_value = None
+        pending_write = MagicMock()
+
+        result = self._call(
+            mock_self,
+            mock_db,
+            self._SONG_ID,
+            MagicMock(),
+            MagicMock(),
+            pending_write,
+            MagicMock(),
+        )
+
+        assert result == (pending_write, False)
+        mock_db.library.resolve_song_identity.assert_called_once_with(self._SONG_ID)
+        mock_process_file_workflow.assert_not_called()
+        mock_transition_file_state.assert_called_once_with(
+            mock_db,
+            [self._SONG_ID],
+            STATE_NOT_ERRORED,
+            STATE_ERRORED,
+        )
+        mock_release_claim.assert_called_once_with(mock_db, self._SONG_ID, "worker:tag:0")
+
+    @pytest.mark.unit
+    @patch(_PATCH_TRANSITION)
     @patch(_PATCH_UPDATE_TAGGED)
     @patch(_PATCH_RELEASE)
     @patch(_PATCH_MALLOC_TRIM)
@@ -373,6 +452,7 @@ class TestProcessClaimedFile:
         mock_self = _make_worker_self()
         mock_db = MagicMock()
         mock_get_file_by_id.return_value = {"path": "D:/music/song.mp3"}
+        mock_db.library.resolve_song_identity.return_value = _song()
         mock_getsize.return_value = 1234
         pending_write = MagicMock()
         mock_process_file_workflow.return_value = MagicMock(
@@ -384,7 +464,7 @@ class TestProcessClaimedFile:
         result = self._call(
             mock_self,
             mock_db,
-            f"{'songs'}/abc",
+            self._SONG_ID,
             MagicMock(),
             MagicMock(),
             pending_write,
@@ -393,13 +473,15 @@ class TestProcessClaimedFile:
 
         assert result == (None, True)
         pending_write.result.assert_called_once_with()
+        mock_process_file_workflow.assert_called_once()
+        assert mock_process_file_workflow.call_args.kwargs["song"] == _song()
         mock_transition_file_state.assert_called_once_with(
             mock_db,
-            [f"{'songs'}/abc"],
+            [self._SONG_ID],
             STATE_NOT_PROCESSED,
             STATE_PROCESSED,
         )
-        mock_release_claim.assert_called_once_with(mock_db, f"{'songs'}/abc", "worker:tag:0")
+        mock_release_claim.assert_called_once_with(mock_db, self._SONG_ID, "worker:tag:0")
         mock_malloc_trim.assert_called_once_with()
 
     @pytest.mark.unit
@@ -414,6 +496,7 @@ class TestProcessClaimedFile:
         mock_self = _make_worker_self()
         mock_db = MagicMock()
         mock_get_file_by_id.return_value = {"path": "D:/music/broken.mp3"}
+        mock_db.library.resolve_song_identity.return_value = _song()
         mock_getsize.return_value = 1234
         mock_process_file_workflow.return_value = MagicMock(
             heads_processed=0,
@@ -425,7 +508,7 @@ class TestProcessClaimedFile:
         result = self._call(
             mock_self,
             mock_db,
-            "songs/broken",
+            self._SONG_ID,
             MagicMock(),
             MagicMock(),
             None,
@@ -433,7 +516,7 @@ class TestProcessClaimedFile:
         )
 
         assert result == (None, False)
-        mock_release_claim.assert_called_once_with(mock_db, "songs/broken", "worker:tag:0")
+        mock_release_claim.assert_called_once_with(mock_db, self._SONG_ID, "worker:tag:0")
         mock_malloc_trim.assert_called_once_with()
 
     @pytest.mark.unit
@@ -450,11 +533,12 @@ class TestProcessClaimedFile:
         mock_self = _make_worker_self()
         mock_db = MagicMock()
         mock_get_file_by_id.return_value = {"path": "D:/music/song.mp3"}
+        mock_db.library.resolve_song_identity.return_value = _song()
         mock_getsize.return_value = 4321
         write_executor = MagicMock()
         new_future = MagicMock()
         write_executor.submit.return_value = new_future
-        deferred_writes = [MagicMock()]
+        deferred_writes = self._deferred_writes()
         mock_process_file_workflow.return_value = MagicMock(
             heads_processed=2,
             tags_written=5,
@@ -467,7 +551,7 @@ class TestProcessClaimedFile:
         result = self._call(
             mock_self,
             mock_db,
-            f"{'songs'}/abc",
+            self._SONG_ID,
             MagicMock(),
             MagicMock(),
             None,
@@ -475,11 +559,16 @@ class TestProcessClaimedFile:
         )
 
         assert result == (new_future, True)
+        mock_process_file_workflow.assert_called_once()
+        assert mock_process_file_workflow.call_args.kwargs["song"] == _song()
+        # The integer handle rides alongside the semantic deferred payload at
+        # submission time (never inside the DTO) for the non-ML lifecycle calls.
         write_executor.submit.assert_called_once_with(
             _execute_deferred_writes,
             mock_db,
             deferred_writes,
             mock_self.worker_id,
+            self._SONG_ID,
         )
         mock_release_claim.assert_not_called()
         mock_malloc_trim.assert_called_once_with()
@@ -496,6 +585,7 @@ class TestProcessClaimedFile:
         mock_self = _make_worker_self()
         mock_db = MagicMock()
         mock_get_file_by_id.return_value = {"path": "D:/music/song.mp3"}
+        mock_db.library.resolve_song_identity.return_value = _song()
         mock_getsize.return_value = 9876
         mock_process_file_workflow.return_value = MagicMock(
             heads_processed=1,
@@ -506,7 +596,7 @@ class TestProcessClaimedFile:
         result = self._call(
             mock_self,
             mock_db,
-            f"{'songs'}/abc",
+            self._SONG_ID,
             MagicMock(),
             MagicMock(),
             None,
@@ -514,12 +604,20 @@ class TestProcessClaimedFile:
         )
 
         assert result == (None, True)
-        mock_release_claim.assert_called_once_with(mock_db, f"{'songs'}/abc", "worker:tag:0")
+        mock_release_claim.assert_called_once_with(mock_db, self._SONG_ID, "worker:tag:0")
         mock_malloc_trim.assert_called_once_with()
 
 
 class TestExecuteDeferredWrites:
-    """Focused tests for ``_execute_deferred_writes`` routing payloads through the aggregate."""
+    """Focused tests for ``_execute_deferred_writes`` routing typed commands
+    through the semantic aggregate.
+
+    The deferred payload carries ``song: SongIdentity`` plus typed
+    ``BackboneVectorWrite``/``OutputStreamWrite`` commands. The worker addresses
+    the ML aggregate with ``song=`` only; the non-ML lifecycle calls (tags /
+    chromaprint / state / claim) receive the integer claim handle that is
+    passed alongside the payload at submission time.
+    """
 
     _PATCH_PARSE = "nomarr.components.tagging.tag_parsing_comp.parse_tag_values"
     _PATCH_SAVE_TAGS = "nomarr.components.library.song_sync_comp.save_song_tags"
@@ -527,8 +625,9 @@ class TestExecuteDeferredWrites:
     _PATCH_TRANSITION = "nomarr.components.library.library_song_state_comp.transition_song_state"
     _PATCH_RELEASE = "nomarr.components.workers.worker_discovery_comp.release_claim"
     _PATCH_UPDATE_TAGGED = f"{_MODULE}.update_last_tagged_at"
+    _SONG_ID = 42
 
-    def _call(self, db, writes):
+    def _call(self, db, writes, song_id: int = _SONG_ID):
         """Invoke ``_execute_deferred_writes`` with component deps mocked."""
         from nomarr.services.infrastructure.workers.discovery_worker import _execute_deferred_writes
 
@@ -540,12 +639,12 @@ class TestExecuteDeferredWrites:
             patch(self._PATCH_RELEASE) as mock_release,
             patch(self._PATCH_UPDATE_TAGGED),
         ):
-            _execute_deferred_writes(db, writes, "worker:tag:0")
+            _execute_deferred_writes(db, writes, "worker:tag:0", song_id)
         return mock_transition, mock_release
 
     def _writes(self, *, with_vectors: bool = True, with_streams: bool = True) -> DeferredFileWrites:
         return DeferredFileWrites(
-            file_id="42",
+            song=_song(),
             path="/music/a.flac",
             db_tags={"nom:genre": ["rock"]},
             namespace="nom",
@@ -557,78 +656,65 @@ class TestExecuteDeferredWrites:
                 else []
             ),
             backbone_vectors=(
-                [
-                    DeferredBackboneVectorWrite(
-                        backbone="bb1",
-                        vector_payloads=[
-                            {
-                                "backbone_id": "bb1",
-                                "model_id": "suite-hash",
-                                "embedding_vector": [0.25, 0.25],
-                                "embed_dim": 2,
-                                "num_segments": 3,
-                            }
-                        ],
-                    )
-                ]
-                if with_vectors
-                else []
+                [DeferredBackboneVectorWrite(backbone="bb1", vectors=[_vector_command()])] if with_vectors else []
             ),
         )
 
-    def test_routes_streams_and_vectors_through_aggregate_single_call(self) -> None:
+    def test_routes_typed_vectors_and_streams_through_aggregate_single_call(self) -> None:
         db = MagicMock()
         writes = self._writes()
         _, mock_release = self._call(db, writes)
 
+        # The aggregate is addressed by the semantic identity and typed commands;
+        # the integer claim handle is used only for the non-ML claim release.
         db.ml.replace_song_inference_results.assert_called_once_with(
-            song_id=42,
+            song=_song(),
             backbone="bb1",
-            vectors=[
-                {
-                    "backbone_id": "bb1",
-                    "model_id": "suite-hash",
-                    "embedding_vector": [0.25, 0.25],
-                    "embed_dim": 2,
-                    "num_segments": 3,
-                }
-            ],
+            vectors=[_vector_command()],
             output_streams=[OutputStreamWrite(output_id="out-0", values=[0.1, 0.9], output_index=0)],
         )
-        mock_release.assert_called_once_with(db, 42, "worker:tag:0")
+        mock_release.assert_called_once_with(db, self._SONG_ID, "worker:tag:0")
 
-    def test_routes_streams_only_when_no_backbone_vectors(self) -> None:
+    def test_no_integer_song_key_or_raw_storage_dict_reaches_ml_facade(self) -> None:
+        db = MagicMock()
+        writes = self._writes()
+        self._call(db, writes)
+
+        call = db.ml.replace_song_inference_results.call_args
+        assert call.kwargs.get("song") == _song()
+        assert isinstance(call.kwargs["song"], SongIdentity)
+        assert "song_id" not in call.kwargs
+        assert "file_id" not in call.kwargs
+        assert all(isinstance(v, BackboneVectorWrite) for v in call.kwargs["vectors"])
+        assert all(isinstance(s, OutputStreamWrite) for s in call.kwargs["output_streams"])
+        assert not any(hasattr(v, "embed_dim") for v in call.kwargs["vectors"])
+
+    def test_routes_streams_only_sentinel_when_no_backbone_vectors(self) -> None:
         db = MagicMock()
         writes = self._writes(with_vectors=False)
         _, mock_release = self._call(db, writes)
 
         db.ml.replace_song_inference_results.assert_called_once_with(
-            song_id=42,
+            song=_song(),
             backbone="",
             vectors=[],
             output_streams=[OutputStreamWrite(output_id="out-0", values=[0.1, 0.9], output_index=0)],
         )
-        mock_release.assert_called_once()
+        mock_release.assert_called_once_with(db, self._SONG_ID, "worker:tag:0")
 
     def test_multiple_backbones_never_erase_each_other(self) -> None:
         db = MagicMock()
         writes = DeferredFileWrites(
-            file_id="42",
+            song=_song(),
             path="/music/a.flac",
             db_tags={},
             namespace="nom",
             tagger_version="v-test",
             chromaprint=None,
-            raw_output_streams=[OutputStreamWrite(output_id="out-0", values=[0.1, 0.9], output_index=0)],
+            raw_output_streams=[DeferredOutputStreamWrite(output_id="out-0", values=[0.1, 0.9], output_index=0)],
             backbone_vectors=[
-                DeferredBackboneVectorWrite(
-                    backbone="bb1",
-                    vector_payloads=[{"backbone_id": "bb1", "model_id": "h", "embedding_vector": [0.5, 0.5]}],
-                ),
-                DeferredBackboneVectorWrite(
-                    backbone="openl3",
-                    vector_payloads=[{"backbone_id": "openl3", "model_id": "h", "embedding_vector": [0.6, 0.4]}],
-                ),
+                DeferredBackboneVectorWrite(backbone="bb1", vectors=[_vector_command(suite="h1")]),
+                DeferredBackboneVectorWrite(backbone="openl3", vectors=[_vector_command(suite="h2")]),
             ],
         )
         _, mock_release = self._call(db, writes)
@@ -637,34 +723,54 @@ class TestExecuteDeferredWrites:
         bb1_call, openl3_call = db.ml.replace_song_inference_results.call_args_list
         assert bb1_call.kwargs["backbone"] == "bb1"
         assert openl3_call.kwargs["backbone"] == "openl3"
-        # each per-backbone call carries the full canonical stream set (with index)
+        assert bb1_call.kwargs["song"] == _song()
+        assert openl3_call.kwargs["song"] == _song()
+        # each per-backbone call carries the full stream set (with index)
         expected_streams = [OutputStreamWrite(output_id="out-0", values=[0.1, 0.9], output_index=0)]
         assert bb1_call.kwargs["output_streams"] == expected_streams
         assert openl3_call.kwargs["output_streams"] == expected_streams
-        mock_release.assert_called_once()
+        mock_release.assert_called_once_with(db, self._SONG_ID, "worker:tag:0")
 
     def test_backbones_without_streams_replaces_streams_with_none(self) -> None:
-        """Backbones present with no streams: aggregate called once with vectors and
-        output_streams=[], and streams are replaced per the aggregate replace contract."""
+        """Backbones present with no streams: aggregate called with vectors and
+        output_streams=[], replacing the song's streams per the aggregate replace
+        contract."""
         db = MagicMock()
         writes = self._writes(with_vectors=True, with_streams=False)
         _, mock_release = self._call(db, writes)
 
         db.ml.replace_song_inference_results.assert_called_once_with(
-            song_id=42,
+            song=_song(),
             backbone="bb1",
-            vectors=[
-                {
-                    "backbone_id": "bb1",
-                    "model_id": "suite-hash",
-                    "embedding_vector": [0.25, 0.25],
-                    "embed_dim": 2,
-                    "num_segments": 3,
-                }
-            ],
+            vectors=[_vector_command()],
             output_streams=[],
         )
-        mock_release.assert_called_once_with(db, 42, "worker:tag:0")
+        mock_release.assert_called_once_with(db, self._SONG_ID, "worker:tag:0")
+
+    def test_duplicate_output_ids_passed_through_verbatim_without_caller_dedup(self) -> None:
+        """Duplicate output_ids reach persistence verbatim — persistence owns
+        last-wins deduplication, so no caller-side normalization helper runs."""
+        db = MagicMock()
+        writes = DeferredFileWrites(
+            song=_song(),
+            path="/music/a.flac",
+            db_tags={},
+            namespace="nom",
+            tagger_version="v-test",
+            chromaprint=None,
+            raw_output_streams=[
+                DeferredOutputStreamWrite(output_id="head_0", values=[0.1, 0.9], output_index=0),
+                DeferredOutputStreamWrite(output_id="head_0", values=[0.4, 0.6], output_index=0),
+            ],
+            backbone_vectors=[DeferredBackboneVectorWrite(backbone="bb1", vectors=[_vector_command()])],
+        )
+        self._call(db, writes)
+
+        call = db.ml.replace_song_inference_results.call_args
+        assert call.kwargs["output_streams"] == [
+            OutputStreamWrite(output_id="head_0", values=[0.1, 0.9], output_index=0),
+            OutputStreamWrite(output_id="head_0", values=[0.4, 0.6], output_index=0),
+        ]
 
     def test_aggregate_failure_sets_errored_and_releases_claim(self) -> None:
         db = MagicMock()
@@ -672,8 +778,47 @@ class TestExecuteDeferredWrites:
         writes = self._writes()
         mock_transition, mock_release = self._call(db, writes)
 
-        mock_transition.assert_any_call(db, [42], STATE_NOT_ERRORED, STATE_ERRORED)
-        mock_release.assert_called_once_with(db, 42, "worker:tag:0")
+        mock_transition.assert_any_call(db, [self._SONG_ID], STATE_NOT_ERRORED, STATE_ERRORED)
+        mock_release.assert_called_once_with(db, self._SONG_ID, "worker:tag:0")
+
+    def test_multi_backbone_partial_failure_keeps_earlier_commits_and_releases(self) -> None:
+        """Injected failure on a later backbone leaves the earlier backbone call
+        committed and prevents the processed transitions; song is marked errored
+        (retry-eligible) and the claim is released."""
+        db = MagicMock()
+        received: list[tuple[str, SongIdentity, list[BackboneVectorWrite], list[OutputStreamWrite]]] = []
+
+        def _flaky(song, backbone, *, vectors, output_streams):
+            received.append((backbone, song, list(vectors), list(output_streams)))
+            if backbone == "openl3":
+                raise RuntimeError("injected second-backbone failure")
+
+        db.ml.replace_song_inference_results.side_effect = _flaky
+        writes = DeferredFileWrites(
+            song=_song(),
+            path="/music/a.flac",
+            db_tags={},
+            namespace="nom",
+            tagger_version="v-test",
+            chromaprint=None,
+            raw_output_streams=[DeferredOutputStreamWrite(output_id="out-0", values=[0.1, 0.9], output_index=0)],
+            backbone_vectors=[
+                DeferredBackboneVectorWrite(backbone="bb1", vectors=[_vector_command(suite="h1")]),
+                DeferredBackboneVectorWrite(backbone="openl3", vectors=[_vector_command(suite="h2")]),
+            ],
+        )
+        mock_transition, mock_release = self._call(db, writes)
+
+        # bb1 was dispatched (committed), then the later backbone failed.
+        assert [r[0] for r in received] == ["bb1", "openl3"]
+        assert received[0][1] == _song()
+        assert isinstance(received[0][1], SongIdentity)
+        assert all(isinstance(v, BackboneVectorWrite) for v in received[0][2])
+        assert all(isinstance(s, OutputStreamWrite) for s in received[0][3])
+        # success-path processed transition never runs; errored marking did.
+        mock_transition.assert_any_call(db, [self._SONG_ID], STATE_NOT_ERRORED, STATE_ERRORED)
+        assert STATE_PROCESSED not in [a.args[-1] for a in mock_transition.call_args_list]
+        mock_release.assert_called_once_with(db, self._SONG_ID, "worker:tag:0")
 
     def test_no_write_when_no_streams_and_no_vectors(self) -> None:
         db = MagicMock()
@@ -681,7 +826,89 @@ class TestExecuteDeferredWrites:
         _, mock_release = self._call(db, writes)
 
         db.ml.replace_song_inference_results.assert_not_called()
-        mock_release.assert_called_once()
+        mock_release.assert_called_once_with(db, self._SONG_ID, "worker:tag:0")
+
+    def test_deferred_semantic_payload_survives_pickle_reload(self) -> None:
+        """P4-S4: a deferred semantic DTO round-trips through pickle (the reload
+        surrogate for the object-passing ThreadPoolExecutor boundary) with its
+        SongIdentity and typed commands intact and no storage handle/dict leak."""
+        writes = DeferredFileWrites(
+            song=_song(),
+            path="/music/a.flac",
+            db_tags={"nom:genre": ["rock"]},
+            namespace="nom",
+            tagger_version="v-test",
+            chromaprint="fp",
+            raw_output_streams=[DeferredOutputStreamWrite(output_id="out-0", values=[0.1, 0.9], output_index=0)],
+            backbone_vectors=[DeferredBackboneVectorWrite(backbone="bb1", vectors=[_vector_command()])],
+        )
+        reloaded = pickle.loads(pickle.dumps(writes))
+
+        assert reloaded == writes
+        assert reloaded.song == _song()
+        assert isinstance(reloaded.song, SongIdentity)
+        assert not hasattr(reloaded, "file_id")
+        vector_cmd = reloaded.backbone_vectors[0].vectors[0]
+        assert isinstance(vector_cmd, BackboneVectorWrite)
+
+    def test_retry_after_injected_failure_dispatches_fresh_semantic_commands(self) -> None:
+        """P4-S4: after a restart-style reload and an injected later-backbone
+        failure, a retry re-dispatches fresh semantic commands from the same DTO
+        — it never replays partial persistence state or a storage key."""
+        from nomarr.services.infrastructure.workers.discovery_worker import _execute_deferred_writes
+
+        writes = pickle.loads(
+            pickle.dumps(
+                DeferredFileWrites(
+                    song=_song(),
+                    path="/music/a.flac",
+                    db_tags={},
+                    namespace="nom",
+                    tagger_version="v-test",
+                    chromaprint=None,
+                    raw_output_streams=[
+                        DeferredOutputStreamWrite(output_id="out-0", values=[0.1, 0.9], output_index=0)
+                    ],
+                    backbone_vectors=[
+                        DeferredBackboneVectorWrite(backbone="bb1", vectors=[_vector_command(suite="h1")]),
+                        DeferredBackboneVectorWrite(backbone="openl3", vectors=[_vector_command(suite="h2")]),
+                    ],
+                )
+            )
+        )
+        db = MagicMock()
+        received: list[tuple[str, SongIdentity, list[BackboneVectorWrite], list[OutputStreamWrite]]] = []
+        failures_left = {"n": 1}
+
+        def flaky(song, backbone, *, vectors, output_streams):
+            received.append((backbone, song, list(vectors), list(output_streams)))
+            if backbone == "openl3" and failures_left["n"] > 0:
+                failures_left["n"] -= 1
+                raise RuntimeError("injected failure on later backbone")
+
+        db.ml.replace_song_inference_results.side_effect = flaky
+        with (
+            patch(self._PATCH_PARSE, return_value={}),
+            patch(self._PATCH_SAVE_TAGS),
+            patch(self._PATCH_CHROMAPRINT),
+            patch(self._PATCH_TRANSITION),
+            patch(self._PATCH_RELEASE),
+            patch(self._PATCH_UPDATE_TAGGED),
+        ):
+            # first attempt fails on the later backbone (after bb1 committed)
+            _execute_deferred_writes(db, writes, "worker:tag:0", self._SONG_ID)
+            # retry after restart — fresh semantic commands from the same DTO
+            _execute_deferred_writes(db, writes, "worker:tag:0", self._SONG_ID)
+
+        # dispatched order: bb1 (attempt), openl3 (failed attempt), then the
+        # retry re-dispatches fresh semantic commands bb1 then openl3 — never a
+        # replay of partial persistence state or a storage key.
+        assert [r[0] for r in received] == ["bb1", "openl3", "bb1", "openl3"]
+        for _backbone, song, vectors, streams in received:
+            assert song == _song()
+            assert isinstance(song, SongIdentity)
+            assert all(isinstance(v, BackboneVectorWrite) for v in vectors)
+            assert all(isinstance(s, OutputStreamWrite) for s in streams)
 
 
 # ---------------------------------------------------------------------------

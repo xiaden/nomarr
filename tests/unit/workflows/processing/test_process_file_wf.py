@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -12,15 +13,29 @@ import pytest
 from nomarr.components.ml.audio.ml_audio_comp import AudioLoadCrashError
 from nomarr.components.ml.inference.ml_backbone_embed_comp import BackboneEmbedding, BackboneEmbeddingResult
 from nomarr.helpers.dataclasses.library_dataclass import Library
+from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
+from nomarr.helpers.dataclasses.vector_dataclass import BackboneVectorWrite
 from nomarr.helpers.dto.ml_dto import LoadAudioMonoResult, ProcessHeadPredictionsResult, RawOutputStream
 from nomarr.helpers.dto.processing_dto import DeferredBackboneVectorWrite, DeferredOutputStreamWrite, ProcessorConfig
 from nomarr.workflows.processing.process_file_wf import process_file_workflow
 
 
+def _song() -> SongIdentity:
+    return SongIdentity(library=LibraryIdentity(name="music", root_path="/music"), normalized_path="song.flac")
+
+
 @pytest.mark.unit
 @pytest.mark.mocked
-def test_process_file_workflow_packages_resolved_output_streams_and_skips_missing_indexes() -> None:
-    """Resolved output-index mappings become deferred writes; missing ones are skipped."""
+def test_process_file_workflow_packages_resolved_output_streams_and_skips_missing_indexes(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Registered output-index mappings become deferred writes; missing ones and unregistered paths are skipped.
+
+    Only the single semantic registry association (``model_output_index_map``) is
+    performed, and it attaches the registry-provided stable string ``output_id``
+    to typed ``DeferredOutputStreamWrite`` commands. Missing output indexes and
+    unregistered model paths are skipped with the existing warnings.
+    """
     config = ProcessorConfig(
         models_dir="models",
         min_duration_s=30,
@@ -31,6 +46,7 @@ def test_process_file_workflow_packages_resolved_output_streams_and_skips_missin
         tagger_version="v-test",
     )
     model_path = "models/heads/genre.onnx"
+    unregistered_model_path = "models/heads/unregistered.onnx"
     head_model = cast("Any", SimpleNamespace(meta=SimpleNamespace(name="genre-head")))
     cache = cast(
         "Any",
@@ -41,7 +57,7 @@ def test_process_file_workflow_packages_resolved_output_streams_and_skips_missin
         ),
     )
     mock_db = MagicMock()
-    mock_db.ml.build_model_output_index_map.return_value = {
+    mock_db.ml.model_output_index_map.return_value = {
         model_path: {0: "ml_model_outputs/out-0", 2: "ml_model_outputs/out-2"}
     }
     library_path = MagicMock()
@@ -63,12 +79,14 @@ def test_process_file_workflow_packages_resolved_output_streams_and_skips_missin
                 RawOutputStream(output_index=0, values=[0.1, 0.9]),
                 RawOutputStream(output_index=1, values=[0.4, 0.6]),
                 RawOutputStream(output_index=2, values=[0.7, 0.3]),
-            ]
+            ],
+            unregistered_model_path: [RawOutputStream(output_index=0, values=[0.5, 0.5])],
         },
         per_head_timings={},
     )
 
     with (
+        caplog.at_level(logging.WARNING, logger="nomarr.workflows.processing.process_file_wf"),
         patch("nomarr.workflows.processing.process_file_wf.build_library_path_from_db", return_value=library_path),
         patch("nomarr.workflows.processing.process_file_wf.compute_model_suite_hash", return_value="suite-hash"),
         patch(
@@ -80,13 +98,11 @@ def test_process_file_workflow_packages_resolved_output_streams_and_skips_missin
         patch("nomarr.workflows.processing.process_file_wf.run_heads", return_value=head_result),
         patch(
             "nomarr.workflows.processing.process_file_wf.persist_backbone_vector",
-            return_value={
-                "backbone_id": "bb1",
-                "model_id": "suite-hash",
-                "embedding_vector": [0.25, 0.25],
-                "embed_dim": 2,
-                "num_segments": 3,
-            },
+            return_value=BackboneVectorWrite(
+                vector=(0.25, 0.25),
+                model_suite_hash="suite-hash",
+                num_segments=3,
+            ),
         ) as persist_vector_mock,
         patch("nomarr.workflows.processing.process_file_wf.collect_mood_outputs", return_value={}),
         patch("nomarr.workflows.processing.process_file_wf.build_timing_summary", return_value="timing-summary"),
@@ -96,27 +112,26 @@ def test_process_file_workflow_packages_resolved_output_streams_and_skips_missin
             config=config,
             cache=cache,
             db=mock_db,
-            file_id=1,
+            song=_song(),
         )
 
-    mock_db.ml.build_model_output_index_map.assert_called_once_with()
+    mock_db.ml.model_output_index_map.assert_called_once_with()
     persist_vector_mock.assert_called_once()
     assert persist_vector_mock.call_args.args[0] == "bb1"
     assert persist_vector_mock.call_args.args[2] == "suite-hash"
     assert result.tags is not None
     assert result.tags.to_dict() == {"tagger_version": ("v-test",)}
     assert result.deferred_writes is not None
+    assert result.deferred_writes.song == _song()
     assert result.deferred_writes.backbone_vectors == [
         DeferredBackboneVectorWrite(
             backbone="bb1",
-            vector_payloads=[
-                {
-                    "backbone_id": "bb1",
-                    "model_id": "suite-hash",
-                    "embedding_vector": [0.25, 0.25],
-                    "embed_dim": 2,
-                    "num_segments": 3,
-                }
+            vectors=[
+                BackboneVectorWrite(
+                    vector=(0.25, 0.25),
+                    model_suite_hash="suite-hash",
+                    num_segments=3,
+                )
             ],
         )
     ]
@@ -124,6 +139,15 @@ def test_process_file_workflow_packages_resolved_output_streams_and_skips_missin
         DeferredOutputStreamWrite(output_id="ml_model_outputs/out-0", values=[0.1, 0.9], output_index=0),
         DeferredOutputStreamWrite(output_id="ml_model_outputs/out-2", values=[0.7, 0.3], output_index=2),
     ]
+    # No storage-shaped keys / storage ids anywhere on the deferred payloads.
+    assert not hasattr(result.deferred_writes, "file_id")
+    vector_cmd = result.deferred_writes.backbone_vectors[0].vectors[0]
+    assert isinstance(vector_cmd, BackboneVectorWrite)
+    # Registry gating warnings are preserved: one for the unregistered model
+    # path, one for the missing output index (index 1 on the registered path).
+    warning_messages = [record.message for record in caplog.records if record.levelno == logging.WARNING]
+    assert any("Missing output registry for models/heads/unregistered.onnx" in m for m in warning_messages)
+    assert any(f"Missing output id for {model_path}[1]" in m for m in warning_messages)
 
 
 @pytest.mark.unit
@@ -162,7 +186,7 @@ def test_audio_load_crash_preserves_song_record() -> None:
         ),
         patch("nomarr.workflows.processing.process_file_wf.bulk_delete_songs") as delete_mock,
     ):
-        result = process_file_workflow("song.flac", config, cache, db, file_id="1")
+        result = process_file_workflow("song.flac", config, cache, db, song=_song())
 
     delete_mock.assert_not_called()
     assert result.head_results == {"_crash": {"status": "crash", "reason": "decoder unavailable"}}
@@ -196,7 +220,7 @@ def test_not_found_path_returns_result_with_tags_none() -> None:
         patch("nomarr.workflows.processing.process_file_wf.build_library_path_from_db", return_value=library_path),
         patch("nomarr.workflows.processing.process_file_wf.bulk_delete_songs") as delete_mock,
     ):
-        result = process_file_workflow("song.flac", config, cache, db, file_id="1")
+        result = process_file_workflow("song.flac", config, cache, db, song=_song())
 
     delete_mock.assert_called_once_with(db, ["song.flac"], library)
     assert result.tags is None
@@ -229,7 +253,7 @@ def test_not_found_path_skips_delete_when_library_gone() -> None:
         patch("nomarr.workflows.processing.process_file_wf.build_library_path_from_db", return_value=library_path),
         patch("nomarr.workflows.processing.process_file_wf.bulk_delete_songs") as delete_mock,
     ):
-        result = process_file_workflow("song.flac", config, cache, db, file_id="1")
+        result = process_file_workflow("song.flac", config, cache, db, song=_song())
 
     delete_mock.assert_not_called()
     assert result.tags is None
@@ -275,7 +299,7 @@ def test_all_heads_skipped_returns_tags_none() -> None:
         patch("nomarr.workflows.processing.process_file_wf.compute_chromaprint", return_value="fp"),
         patch("nomarr.workflows.processing.process_file_wf.compute_backbone_embeddings", return_value=embed_result),
     ):
-        result = process_file_workflow("song.flac", config, cache, db, file_id="1")
+        result = process_file_workflow("song.flac", config, cache, db, song=_song())
 
     assert result.tags is None
     assert result.head_results == {"genre-head": {"status": "skipped", "reason": "audio too short"}}

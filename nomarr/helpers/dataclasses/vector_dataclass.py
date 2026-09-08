@@ -2,8 +2,10 @@
 
 These types are the contract at the ML persistence intent boundary for the
 corrected read/search surface: :class:`SongVector` (one stored embedding for a
-song/backbone), :class:`VectorMatch` (one ANN search result), and
-:class:`EmbeddingCounts` (hot/cold embedding tallies).  They reuse the existing
+song/backbone), :class:`VectorMatch` (one ANN search result),
+:class:`EmbeddingCounts` (hot/cold embedding tallies), and
+:class:`BackboneVectorWrite` (the typed command that replaces one backbone's
+stored embedding for a song).  They reuse the existing
 :class:`~nomarr.helpers.dataclasses.song_command_dataclass.SongIdentity` natural
 identity and carry only application semantics.  Row identifiers, storage
 primary keys, table/column names, and timestamps remain persistence concerns
@@ -77,4 +79,47 @@ class EmbeddingCounts:
     cold_count: int
 
 
-__all__ = ["EmbeddingCounts", "SongVector", "VectorMatch"]
+@dataclass(frozen=True, slots=True, kw_only=True)
+class BackboneVectorWrite:
+    """Command to replace one backbone's stored embedding for a song.
+
+    Carries only application semantics: the embedding ``vector`` as an ordered
+    tuple of floats, the optional ``num_segments``, the semantic
+    ``model_suite_hash`` (persistence maps it to the persisted ``model_id``
+    column while the persisted ``model_suite_hash`` column stays ``""``), the
+    optional ``genres`` (``None`` persists as NULL, distinct from ``()``), and
+    ``segmentation_hash`` which must remain ``None`` (persistence always writes
+    ``segmentation_hash=NULL``).  Storage concerns are intentionally omitted:
+    ``embed_dim`` is derived by persistence as ``len(vector)``, and storage ids,
+    tier, and timestamps never cross this boundary.
+
+    Note: the dataclass is ``kw_only`` so positional construction is
+    impossible -- a docs-literal positional build can never misbind
+    ``model_suite_hash`` into ``num_segments`` and instead fails loudly with a
+    ``TypeError``. Callers always build the command with keyword arguments.
+    """
+
+    vector: tuple[float, ...]
+    model_suite_hash: str
+    num_segments: int | None = None
+    genres: tuple[str, ...] | None = None
+    segmentation_hash: None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.vector, tuple):
+            raise TypeError("BackboneVectorWrite.vector must be a tuple")
+        vector = tuple(float(value) for value in self.vector)
+        object.__setattr__(self, "vector", vector)
+        if self.num_segments is not None and not isinstance(self.num_segments, int):
+            raise TypeError("BackboneVectorWrite.num_segments must be an int or None")
+        if not isinstance(self.model_suite_hash, str):
+            raise TypeError("BackboneVectorWrite.model_suite_hash must be a str")
+        if not self.model_suite_hash.strip():
+            raise ValueError("BackboneVectorWrite.model_suite_hash must not be blank")
+        if self.genres is not None and not isinstance(self.genres, tuple):
+            raise TypeError("BackboneVectorWrite.genres must be a tuple or None")
+        if self.segmentation_hash is not None:
+            raise ValueError("BackboneVectorWrite.segmentation_hash must remain None")
+
+
+__all__ = ["BackboneVectorWrite", "EmbeddingCounts", "SongVector", "VectorMatch"]
