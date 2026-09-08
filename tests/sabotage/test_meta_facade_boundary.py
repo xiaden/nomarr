@@ -38,6 +38,8 @@ from pathlib import Path
 
 import pytest
 
+from nomarr.helpers.config_schema import ALL_CONFIG_KEYS
+
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 
 # Directories that must go through the semantic facade (not the meta storage).
@@ -78,9 +80,13 @@ STORAGE_PREFIX_PATTERN = re.compile(r"['\"](?:ml_model_vram:|capacity_estimate:)
 # ``config_`` prefix is PART of the pinned ``ConfigOption.key`` contract
 # (test_meta_facade_semantics: ``option.key == "config_scan_interval"``), so it
 # legitimately appears in facade-level tests and in config_svc's sanctioned
-# read-side strip (see CONFIG_PREFIX_ALLOWLIST below). It is therefore scanned
-# only in production caller code and scripts, and not in tests.
-CONFIG_PREFIX_PATTERN = re.compile(r"['\"]config_")
+# read-side strip (see CONFIG_PREFIX_ALLOWLIST below). Match only complete
+# physical keys from the canonical schema: research identifiers such as
+# ``config_id`` and ``config_hash`` are unrelated domain fields and must not be
+# mistaken for persistence-key leakage.
+CONFIG_PREFIX_PATTERN = re.compile(
+    rf"['\"]config_(?:{'|'.join(re.escape(key) for key in sorted(ALL_CONFIG_KEYS, key=len, reverse=True))})['\"]"
+)
 
 # The renamed clear-result field. ``meta_keys_cleared`` was renamed to
 # ``bookkeeping_values_cleared`` (Plan A, user-approved); reintroduction of the
@@ -223,6 +229,11 @@ class TestNoStoragePrefixLeak:
             "persistence-owned; callers use the semantic model/capacity intents.\n"
             f"{_format(violations)}"
         )
+
+    def test_config_prefix_pattern_matches_only_canonical_storage_keys(self) -> None:
+        assert CONFIG_PREFIX_PATTERN.search('"config_library_root"')
+        assert not CONFIG_PREFIX_PATTERN.search('"config_id"')
+        assert not CONFIG_PREFIX_PATTERN.search('"config_hash"')
 
     def test_no_config_storage_prefix_in_production_or_scripts(self) -> None:
         violations: list[tuple[str, int, str]] = []
