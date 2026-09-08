@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 from itertools import count
+from unittest.mock import MagicMock
 
 import pytest
 from sqlalchemy import delete, insert
+from sqlalchemy.exc import IntegrityError
 
+from nomarr.helpers.exceptions import DatabaseStateError
 from nomarr.persistence.database.song_repo import SongRepository
 from nomarr.persistence.models.library import Library
 from nomarr.persistence.models.song import Song
@@ -511,3 +514,189 @@ class TestSongRepository:
         repo.truncate_song_links()
         result = pg_session.execute(select(SongTag))
         assert len(result.all()) == 0
+
+
+def _move_payload(
+    *,
+    path: str,
+    normalized_path: str,
+    file_size: int = 4321,
+    modified_time: int = 8765,
+    duration_seconds: float | None = 223.5,
+    is_valid: int = 1,
+    scanned_at: int = 5555,
+) -> dict:
+    """A canonical move payload mirroring the atomic-fields shape."""
+    return {
+        "path": path,
+        "normalized_path": normalized_path,
+        "file_size": file_size,
+        "modified_time": modified_time,
+        "duration_seconds": duration_seconds,
+        "is_valid": is_valid,
+        "scanned_at": scanned_at,
+    }
+
+
+@pytest.mark.unit
+@pytest.mark.integration
+class TestMoveSongAtomic:
+    """``SongRepository.move_song`` single-statement atomicity on SQLite.
+
+    SQLite enforces the same unique constraints (``uq_songs_library_path``,
+    ``uq_songs_library_norm_path``) declared on the ORM model and the same
+    single-``UPDATE`` semantics, so in-place all-field success, uniqueness
+    rollback, and no-partial-row-state are deterministically provable here.
+    PostgreSQL/DuplicateEntityError translation is covered by the facade-boundary
+    mocks and the real-DB characterization suite.
+    """
+
+    def test_move_updates_all_fields_in_place_preserving_identity(self, pg_session) -> None:
+        lib_id = _create_library(pg_session)
+        song_id = _create_song(pg_session, lib_id, "/music/a.mp3")
+        repo = SongRepository(pg_session)
+
+        ok = repo.move_song(song_id, _move_payload(path="/music/z.mp3", normalized_path="z.mp3"))
+
+        assert ok is True
+        row = repo.get_song(song_id)
+        assert row is not None
+        # Same row (stable Song identity), same owning library — updated in place.
+        assert row["id"] == song_id
+        assert row["library_id"] == lib_id
+        assert row["path"] == "/music/z.mp3"
+        assert row["normalized_path"] == "z.mp3"
+        assert row["file_size"] == 4321
+        assert row["modified_time"] == 8765
+        assert row["duration_seconds"] == 223.5
+        assert row["is_valid"] == 1
+        assert row["scanned_at"] == 5555
+
+    def test_move_returns_false_and_writes_nothing_when_identity_missing(self, pg_session) -> None:
+        lib_id = _create_library(pg_session)
+        repo = SongRepository(pg_session)
+
+        ok = repo.move_song(999999, _move_payload(path="/music/ghost.mp3", normalized_path="ghost.mp3"))
+
+        assert ok is False
+        # No replacement row is fabricated for a missing/stale identity.
+        assert repo.get_song_by_path("/music/ghost.mp3", lib_id) is None
+
+    def test_move_does_not_touch_unrelated_columns(self, pg_session) -> None:
+        """A concurrent write to an unrelated column (e.g. chromaprint) is never
+        clobbered by a move: the single UPDATE writes only the atomic columns."""
+        lib_id = _create_library(pg_session)
+        song_id = _create_song(pg_session, lib_id, "/music/a.mp3")
+        repo = SongRepository(pg_session)
+        # Simulate a separate writer having set an unrelated column.
+        repo.update_song(song_id, {"chromaprint": "cp-123", "tagged": 1})
+        baseline = repo.get_song(song_id)
+        assert baseline is not None
+
+        repo.move_song(song_id, _move_payload(path="/music/z.mp3", normalized_path="z.mp3"))
+
+        row = repo.get_song(song_id)
+        assert row is not None
+        for col in (
+            "library_id",
+            "folder_id",
+            "chromaprint",
+            "needs_tagging",
+            "tagged",
+            "calibration_hash",
+            "write_claimed_by",
+            "last_tagged_at",
+            "created_at",
+        ):
+            assert row[col] == baseline[col], f"move must not overwrite '{col}'"
+
+    def test_path_uniqueness_conflict_leaves_original_row_unchanged(self, pg_session) -> None:
+        lib_id = _create_library(pg_session)
+        song_a = _create_song(pg_session, lib_id, "/music/a.mp3")
+        _create_song(pg_session, lib_id, "/music/b.mp3")
+        repo = SongRepository(pg_session)
+        before = repo.get_song(song_a)
+        assert before is not None
+
+        with pytest.raises(DatabaseStateError):
+            repo.move_song(song_a, _move_payload(path="/music/b.mp3", normalized_path="b.mp3"))
+
+        # The move rolled back completely — no partial row state.
+        after = repo.get_song(song_a)
+        assert after is not None
+        for col in (
+            "path",
+            "normalized_path",
+            "file_size",
+            "modified_time",
+            "duration_seconds",
+            "is_valid",
+            "scanned_at",
+        ):
+            assert after[col] == before[col], f"'{col}' must roll back on uniqueness conflict"
+
+    def test_normalized_path_uniqueness_conflict_rolls_back_whole_move(self, pg_session) -> None:
+        lib_id = _create_library(pg_session)
+        song_a = _create_song(pg_session, lib_id, "/music/a.mp3")
+        _create_song(pg_session, lib_id, "/music/b.mp3", normalized_path="/music/b.mp3")
+        repo = SongRepository(pg_session)
+        before = repo.get_song(song_a)
+        assert before is not None
+
+        # Distinct physical path but colliding normalized_path → norm-path conflict.
+        with pytest.raises(DatabaseStateError):
+            repo.move_song(
+                song_a,
+                _move_payload(path="/music/c.mp3", normalized_path="/music/b.mp3"),
+            )
+
+        after = repo.get_song(song_a)
+        assert after is not None
+        assert after["path"] == "/music/a.mp3"
+        assert after["normalized_path"] == "/music/a.mp3"
+        assert after["file_size"] == before["file_size"]
+        assert after["modified_time"] == before["modified_time"]
+
+    def test_cross_library_path_collision_is_not_a_conflict(self, pg_session) -> None:
+        """Uniqueness is scoped to (library_id, path): moving within the row's own
+        library only conflicts with a sibling in THAT library."""
+        lib1 = _create_library(pg_session)
+        lib2 = _create_library(pg_session)
+        song_a = _create_song(pg_session, lib1, "/music/a.mp3")
+        # A same-path song in a different library does NOT block the move.
+        _create_song(pg_session, lib2, "/music/b.mp3")
+
+        repo = SongRepository(pg_session)
+        assert repo.move_song(song_a, _move_payload(path="/music/b.mp3", normalized_path="b.mp3")) is True
+
+
+@pytest.mark.unit
+class TestMoveSongPersistenceBoundary:
+    """Failure injection at the repo/session boundary (P3-S6): a failure either
+    at statement execution (unique conflict on SQLite/Postgres) or at the final
+    ``commit`` propagates out of ``move_song`` with the single statement never
+    partially applied."""
+
+    def _repo(self, session) -> SongRepository:
+        return SongRepository(session)
+
+    def test_commit_failure_propagates(self) -> None:
+        session = MagicMock()
+        session.execute.return_value.fetchone.return_value = (1,)
+        session.commit.side_effect = RuntimeError("commit failed")
+        repo = self._repo(session)
+
+        with pytest.raises(RuntimeError, match="commit failed"):
+            repo.move_song(7, _move_payload(path="/music/z.mp3", normalized_path="z.mp3"))
+
+        session.execute.assert_called_once()
+
+    def test_statement_execution_failure_aborts_before_commit(self) -> None:
+        session = MagicMock()
+        session.execute.side_effect = IntegrityError("stmt", {}, Exception("dup"))
+        repo = self._repo(session)
+
+        with pytest.raises(DatabaseStateError):
+            repo.move_song(7, _move_payload(path="/music/z.mp3", normalized_path="z.mp3"))
+
+        session.commit.assert_not_called()

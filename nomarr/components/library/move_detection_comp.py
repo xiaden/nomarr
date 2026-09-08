@@ -13,6 +13,7 @@ from nomarr.components.library.library_song_mutation_comp import update_song_pat
 from nomarr.components.library.library_song_query_comp import find_move_candidate_by_chromaprint
 from nomarr.components.library.metadata_extraction_comp import compute_chromaprint_for_file
 from nomarr.components.metadata.entity_seeding_comp import _extract_entity_tags, build_song_tag_assignments
+from nomarr.helpers.dataclasses.song_command_dataclass import SongPathUpdate, SongScanUpdate
 from nomarr.persistence import Database
 
 logger = logging.getLogger(__name__)
@@ -25,7 +26,7 @@ class FileMove:
 
     old_path: str
     new_path: str
-    file_id: int  # DB id of the moved file
+    song_id: int  # stable Song application identity of the moved row (ADR-047 §8)
     chromaprint: str
     old_duration: float | None
     new_duration: float | None
@@ -164,7 +165,7 @@ def detect_file_moves(
                         move = FileMove(
                             old_path=removed_file["path"],
                             new_path=new_path,
-                            file_id=removed_file["id"],
+                            song_id=removed_file["id"],
                             chromaprint=new_chromaprint,
                             old_duration=removed_duration,
                             new_duration=new_duration,
@@ -210,7 +211,9 @@ def apply_detected_moves(
     """Persist detected file moves to the database.
 
     For each move:
-    1. Updates the file record path / size / mtime via ``update_song_path``
+    1. Persists the move atomically via one complete ``SongPathUpdate`` command
+       (stable Song identity + destination path + full scan data) through the
+       mutation-component adapter, which makes exactly one move-intent call.
     2. Re-seeds entity tags from the new file's metadata
 
     Args:
@@ -231,26 +234,29 @@ def apply_detected_moves(
             relative = new_path_obj.relative_to(library_root)
             computed_normalized_path = relative.as_posix()
         except ValueError:
-            # new_path not under library_root; skip normalization
+            # new_path not under library_root; skip normalization (defensive;
+            # a detected move's destination is always inside the library).
             computed_normalized_path = None
 
-        update_song_path(
-            db,
-            song_id=move.file_id,
+        command = SongPathUpdate(
+            song_id=move.song_id,
             new_path=move.new_path,
-            file_size=move.new_file_size,
-            modified_time=move.new_modified_time,
-            duration_seconds=move.new_duration,
-            normalized_path=computed_normalized_path,
+            scan=SongScanUpdate(
+                normalized_path=computed_normalized_path,
+                file_size=move.new_file_size,
+                modified_time=move.new_modified_time,
+                duration_seconds=move.new_duration,
+            ),
         )
+        update_song_path(db, command)
 
         new_metadata = metadata_map.get(move.new_path)
         if new_metadata:
             try:
                 entity_tags = _extract_entity_tags(new_metadata)
-                assignments = build_song_tag_assignments(move.file_id, entity_tags)
+                assignments = build_song_tag_assignments(move.song_id, entity_tags)
                 if assignments:
-                    song_identity = db.library.resolve_song_identity(move.file_id)
+                    song_identity = db.library.resolve_song_identity(move.song_id)
                     if song_identity is not None:
                         db.library.replace_song_tags(song_identity, assignments)
             except RuntimeError as e:
@@ -328,7 +334,7 @@ def detect_file_move_via_db(
     return FileMove(
         old_path=candidate["path"],
         new_path=new_path,
-        file_id=candidate["id"],
+        song_id=candidate["id"],
         chromaprint=chromaprint,
         old_duration=removed_duration,
         new_duration=new_duration,

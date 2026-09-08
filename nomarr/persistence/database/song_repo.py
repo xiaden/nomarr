@@ -165,6 +165,42 @@ class SongRepository:
                 update_by_field(_T, "id", song_id, fields, session=self._session)
             self._session.commit()
 
+    def move_song(self, song_id: int, fields: dict[str, Any]) -> bool:
+        """Atomically move/relocate an existing song row to a new locator.
+
+        Updates the destination ``path``/``normalized_path`` locators together
+        with the full scan metadata (*fields*) in ONE ``UPDATE`` statement and
+        ONE commit boundary, so either every supplied field is written or none
+        is. ``song_id`` is the stable Song identity (ADR-047 §8): the row must
+        already exist and is updated in place — a move never inserts, deletes,
+        or recreates a row, so Song associations (tags, state assignments,
+        streams, embeddings) remain attached.
+
+        A destination uniqueness conflict on ``(library_id, path)`` or
+        ``(library_id, normalized_path)`` (the row's owning ``library_id`` is
+        unchanged by a move) or any other persistence failure raises before the
+        commit and rolls back the single statement, leaving the original row's
+        locator and scan metadata unchanged.
+
+        Args:
+            song_id: Stable Song application/entity identity.
+            fields: Row columns to write (path, normalized_path, file_size,
+                modified_time, duration_seconds, is_valid, scanned_at).
+
+        Returns:
+            ``True`` when an existing row was updated, ``False`` when no row
+            exists for *song_id* (a missing/stale identity). A ``False`` return
+            writes nothing and never fabricates a replacement row.
+
+        """
+        with map_persistence_exceptions():
+            with self._session.begin_nested():
+                stmt = update(_T).where(_T.c.id == song_id).values(**fields).returning(_T.c.id)
+                result = self._session.execute(stmt)
+                updated = result.fetchone() is not None
+            self._session.commit()
+            return updated
+
     def update_song_metadata_fields(self, song_id: int, fields: dict[str, Any]) -> None:
         """Update ONLY the supplied metadata-cache fields on a song row.
 
