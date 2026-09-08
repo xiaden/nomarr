@@ -41,22 +41,32 @@ class TaggingCurationMixin:
             msg = f"Tags with 'nom:' prefix are read-only and cannot be edited: {identity.name}={identity.value}"
             raise ValueError(msg)
 
-    def _get_tag_or_error(self, tag_id: str) -> TagRef:
-        """Resolve an opaque external tag id to its domain identity, or raise ValueError."""
-        identity = self.db.resolve_tag_identity(int(tag_id))
-        if identity is None:
-            msg = f"Tag not found: {tag_id}"
-            raise ValueError(msg)
-        return identity
+    def _get_tag_or_error(self, identity: TagRef) -> TagRef:
+        """Resolve a complete natural tag identity via the facade, or raise ValueError.
 
-    def rename_tag(self, tag_id: str, new_value: str) -> RenameResult:
+        The interface boundary owns decoding an opaque handle to ``TagRef`` before
+        this service is called, so ``identity`` is already the complete natural
+        (name, value, namespace) key. This helper verifies that natural tag still
+        exists in the database through ``db.library.get_tag`` -- never a storage
+        primary key, never ``int()`` conversion, never the root tag bridge. A
+        missing natural identity is a deterministic not-found ``ValueError`` that
+        the interface maps to its existing 400/404 policy.
+        """
+        resolved = self.db.library.get_tag(identity)
+        if resolved is None:
+            msg = f"Tag not found: {identity.name}={identity.value}"
+            raise ValueError(msg)
+        return resolved
+
+    def rename_tag(self, source_tag: TagRef, new_value: str) -> RenameResult:
         """Rename a tag to a new value.
 
         Rejects nom: prefix tags (ADR-009). Creates target tag if needed,
         then relinks all edges from source to target.
 
         Args:
-            tag_id: Source tag id (e.g., "12345")
+            source_tag: Complete natural identity of the source tag (``TagRef``).
+                The interface decodes an opaque handle to ``TagRef`` before calling.
             new_value: New value for the tag
 
         Returns:
@@ -66,7 +76,7 @@ class TaggingCurationMixin:
             ValueError: If tag not found or has nom: prefix
 
         """
-        source_tag = self._get_tag_or_error(tag_id)
+        source_tag = self._get_tag_or_error(source_tag)
         self._reject_nom_prefix(identity=source_tag)
 
         target_identity = self.db.library.ensure_tag(TagRef(name=source_tag.name, value=new_value, namespace="default"))
@@ -79,15 +89,15 @@ class TaggingCurationMixin:
 
         return RenameResult(moved=relink.moved, merged_into_existing=merged_into_existing)
 
-    def merge_tags(self, source_tag_ids: list[str], canonical_tag_id: str) -> MergeResult:
+    def merge_tags(self, source_tags: list[TagRef], canonical_tag: TagRef) -> MergeResult:
         """Merge multiple source tags into a canonical tag.
 
         Rejects nom: prefix tags (ADR-009). Iterates each source through
         relink_tag_edges to the canonical target.
 
         Args:
-            source_tag_ids: Tag ids to merge FROM
-            canonical_tag_id: Tag id to merge INTO
+            source_tags: Complete natural identities of the tags to merge FROM.
+            canonical_tag: Complete natural identity of the tag to merge INTO.
 
         Returns:
             MergeResult with total_moved and sources_removed counts
@@ -96,16 +106,16 @@ class TaggingCurationMixin:
             ValueError: If any tag not found or has nom: prefix
 
         """
-        canonical_tag = self._get_tag_or_error(canonical_tag_id)
+        canonical_tag = self._get_tag_or_error(canonical_tag)
         self._reject_nom_prefix(identity=canonical_tag)
 
         total_moved = 0
         sources_removed = 0
 
-        for source_id in source_tag_ids:
-            if source_id == canonical_tag_id:
+        for source_tag in source_tags:
+            if source_tag == canonical_tag:
                 continue
-            source_tag = self._get_tag_or_error(source_id)
+            source_tag = self._get_tag_or_error(source_tag)
             self._reject_nom_prefix(identity=source_tag)
 
             relink = relink_tag_edges(self.db, source_tag, canonical_tag)
@@ -118,15 +128,17 @@ class TaggingCurationMixin:
 
         return MergeResult(total_moved=total_moved, sources_removed=sources_removed)
 
-    def split_tag(self, source_tag_id: str, song_ids: list[str], new_value: str) -> SplitResult:
+    def split_tag(self, source_tag: TagRef, song_ids: list[str], new_value: str) -> SplitResult:
         """Split selected songs from a tag into a new tag value.
 
         Rejects nom: prefix tags (ADR-009). Creates a new tag with the given
         value and relinks only the specified songs.
 
         Args:
-            source_tag_id: Tag id to split FROM
-            song_ids: Song ids to move to the new tag
+            source_tag: Complete natural identity of the source tag to split FROM.
+                The interface decodes an opaque handle to ``TagRef`` before calling.
+            song_ids: Song ids to move to the new tag. Song identity is the
+                separate song boundary and is not reinterpreted as a tag id.
             new_value: Value for the new tag
 
         Returns:
@@ -136,7 +148,7 @@ class TaggingCurationMixin:
             ValueError: If tag not found or has nom: prefix
 
         """
-        source_tag = self._get_tag_or_error(source_tag_id)
+        source_tag = self._get_tag_or_error(source_tag)
         self._reject_nom_prefix(identity=source_tag)
 
         target_identity = self.db.library.ensure_tag(TagRef(name=source_tag.name, value=new_value, namespace="default"))

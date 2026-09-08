@@ -29,6 +29,7 @@ from nomarr.workflows.library.cleanup_orphaned_tags_wf import cleanup_orphaned_t
 
 if TYPE_CHECKING:
     from nomarr.helpers.dataclasses.library_dataclass import Library
+    from nomarr.helpers.dataclasses.song_tag_dataclass import TagRef
     from nomarr.helpers.dto.library_dto import WriteTagsResult
     from nomarr.persistence.db import Database
 
@@ -78,6 +79,7 @@ class TaggingQueryMixin:
                 id=t["id"],
                 name=t["name"],
                 value=str(t["value"]),
+                namespace=t.get("namespace", "default"),
                 song_count=t.get("song_count", 0),
             )
             for t in raw_tags
@@ -86,14 +88,15 @@ class TaggingQueryMixin:
 
     def get_tag_songs(
         self,
-        tag_id: str,
+        identity: TagRef,
         limit: int = 50,
         offset: int = 0,
     ) -> dict[str, Any]:
         """Get songs linked to a tag with metadata.
 
         Args:
-            tag_id: Tag id
+            identity: Complete natural tag identity (``TagRef``). The interface
+                decodes an opaque handle to ``TagRef`` before calling (Plan D).
             limit: Max results
             offset: Pagination offset
 
@@ -101,8 +104,8 @@ class TaggingQueryMixin:
             Dict with songs list and total count.
 
         """
-        raw_songs = get_tag_songs_with_metadata(self.db, int(tag_id), limit=limit, offset=offset)
-        total = count_songs_for_tag(self.db, int(tag_id))
+        raw_songs = get_tag_songs_with_metadata(self.db, identity, limit=limit, offset=offset)
+        total = count_songs_for_tag(self.db, identity)
 
         songs: list[TagSongItem] = [
             TagSongItem(

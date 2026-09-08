@@ -9,7 +9,23 @@ import type { FileTag } from "./files";
 // Types mirroring backend DTOs (helpers/dto/tag_curation_dto.py)
 // ──────────────────────────────────────────────────────────────────────────────
 
+/**
+ * A single listed tag value row.
+ *
+ * `id` is an OPAQUE complete-TagRef wire handle (a versioned, URL-safe
+ * base64url string, e.g. `t1....`) that the backend encodes at the HTTP
+ * boundary from the full natural identity `(name, value, namespace)`. It
+ * contains no storage primary key and must NEVER be decoded, parsed, split,
+ * base64-decoded, re-encoded, or reconstructed from `name`/`value`. The row's
+ * natural identity for display is carried by the separate `name`/`value`
+ * fields; `id` is purely an opaque, refreshable row/action key.
+ *
+ * Every listed item always carries an `id` (the backend `TagValueItemResponse`
+ * requires it), so the frontend never needs to fall back to `value` when `id`
+ * is absent.
+ */
 export interface TagValueItem {
+  /** Opaque complete-TagRef handle (string). Forward unchanged; never parse. */
   id: string;
   name: string;
   value: string;
@@ -113,6 +129,22 @@ export async function getFileTags(
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Tag Curation API
+//
+// Wire-handle contract (see artifacts/designs/parts/tag-curation-identity-mismatch/CONTRACTS.md):
+//
+//   - Every tag identifier on the wire (`TagValueItem.id`, `tag_id`,
+//     `source_tag_ids`, `canonical_tag_id`, `source_tag_id`) is an OPAQUE
+//     complete-TagRef handle string (e.g. `t1.<base64url>`), never a storage
+//     primary key and never the bare natural value. Two tags with identical
+//     (name, value) in different namespaces (default vs nom) yield DIFFERENT
+//     handles.
+//   - The frontend MUST forward these strings UNCHANGED to query params / request
+//     bodies and MUST NOT decode, parse, split, base64-decode, re-encode,
+//     substring, or reconstruct them. Never derive an id from name/value; never
+//     fall back to `value` when an `id` is absent. After a rename the old handle
+//     stops resolving (no longer yields songs); a refreshed listing emits the new
+//     identity's handle, so treat the id as an opaque, refreshable key.
+//   - All wire fields stay strings. No client-side encoding of tag identities.
 // ──────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -134,6 +166,10 @@ export async function fetchTagValues(
 
 /**
  * Fetch songs associated with a tag, with pagination.
+ *
+ * `tagId` is an opaque complete-TagRef handle (string). It is URL-encoded only
+ * for transit and forwarded unchanged as the path segment; never decode, parse,
+ * or reconstruct it from the row's name/value.
  */
 export async function fetchTagSongs(
   tagId: string,
@@ -151,6 +187,11 @@ export async function fetchTagSongs(
 
 /**
  * Rename a tag to a new value. Returns move count and whether it merged.
+ *
+ * `tagId` is an opaque complete-TagRef handle (string), forwarded unchanged as
+ * the request's `tag_id` body field. After a successful rename the old handle no
+ * longer resolves (it no longer yields songs); callers must refetch the listing
+ * to obtain the new identity's handle.
  */
 export async function renameTag(
   tagId: string,
@@ -164,6 +205,11 @@ export async function renameTag(
 
 /**
  * Merge multiple source tags into a single canonical tag.
+ *
+ * `sourceTagIds` and `canonicalTagId` are opaque complete-TagRef handles
+ * (strings), forwarded unchanged as `source_tag_ids` / `canonical_tag_id` body
+ * fields. `canonicalTagId` may equal the backend id of a listed source tag; the
+ * caller (not this client) decides which listed ids are sources vs canonical.
  */
 export async function mergeTags(
   sourceTagIds: string[],
@@ -177,6 +223,11 @@ export async function mergeTags(
 
 /**
  * Split a subset of songs from a tag into a new tag value.
+ *
+ * `sourceTagId` is an opaque complete-TagRef handle (string). It is forwarded
+ * unchanged as the request's `source_tag_id` body field; never decode, parse,
+ * or reconstruct it from `newValue` or the tag's name. `songIds` are song ids
+ * (a distinct boundary contract) and are not reinterpreted as tag ids.
  */
 export async function splitTag(
   sourceTagId: string,

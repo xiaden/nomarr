@@ -8,7 +8,6 @@ scoped session, and all repository instances, and exposes the ``app``,
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import scoped_session
 
@@ -17,6 +16,7 @@ from nomarr.persistence.database.calibration_repo import CalibrationRepo
 from nomarr.persistence.database.embedding_stream_repo import EmbeddingStreamRepository
 from nomarr.persistence.database.folder_repo import FolderRepository
 from nomarr.persistence.database.library_repo import LibraryRepository
+from nomarr.persistence.database.library_reset_repo import LibraryResetRepo
 from nomarr.persistence.database.ml_inference_repo import MlInferenceRepo
 from nomarr.persistence.database.model_repo import ModelRepo
 from nomarr.persistence.database.output_repo import OutputRepo
@@ -28,13 +28,7 @@ from nomarr.persistence.database.song_state_repo import SongStateRepository
 from nomarr.persistence.database.song_tag_repo import SongTagRepository
 from nomarr.persistence.database.tag_repo import TagRepository
 from nomarr.persistence.database.vector_repo import VectorRepo
-from nomarr.persistence.mappers.song_tag_mapper import tag_identity_from_row
 from nomarr.persistence.pg_engine import create_pg_engine, session_factory
-
-if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
-
-    from nomarr.helpers.dataclasses.song_tag_dataclass import TagRef
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +99,7 @@ class Database:
         self._calibration_repo = CalibrationRepo(self._scoped)
         self._embedding_stream_repo = EmbeddingStreamRepository(self._scoped)
         self._ml_inference_repo = MlInferenceRepo(self._scoped)
+        self._library_reset_repo = LibraryResetRepo(self._scoped)
 
         # Import here to avoid circular imports
         from nomarr.persistence.api.application import AppDb
@@ -167,6 +162,7 @@ class Database:
             tags=tags,
             scans=scans,
             regions=regions,
+            library_reset_repo=self._library_reset_repo,
         )
         self.ml = MlDb(
             session=self._scoped,
@@ -190,34 +186,3 @@ class Database:
     def set_version(self, version: str) -> None:
         """Persist the schema version."""
         self.app.set_schema_version(version)
-
-    # ------------------------------------------------------------------
-    # Tag boundary resolver (P3, song-tag correction)
-    # ------------------------------------------------------------------
-    # Lookup-only root-database conversion for callers that still receive an
-    # opaque external tag ID. Backed by a set-based TagRepository primary-key
-    # read + song_tag_mapper.tag_identity_from_row. Never creates tags; not a
-    # LibraryTagsDb/LibraryDb tag method or forwarder; no tag ID ever passes
-    # into an ordinary tag-facade method.
-
-    def resolve_tag_identity(self, tag_id: int) -> TagRef | None:
-        """Resolve an opaque external tag handle to its domain identity.
-
-        ``None`` when the tag is missing. Lookup-only: never creates tags.
-        """
-        result = self.resolve_tag_identities([tag_id])
-        return result.get(tag_id)
-
-    def resolve_tag_identities(
-        self,
-        tag_ids: Sequence[int],
-    ) -> Mapping[int, TagRef]:
-        """Resolve a batch of opaque external tag handles (set-based).
-
-        One set-based ``TagRepository`` primary-key read; unresolved ids are
-        omitted and empty input yields ``{}``.
-        """
-        if not tag_ids:
-            return {}
-        rows = self._tag_repo.get_tags_by_ids(list(tag_ids))
-        return {int(r["id"]): tag_identity_from_row(r) for r in rows}

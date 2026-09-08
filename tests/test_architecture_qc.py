@@ -1459,3 +1459,142 @@ def test_calibration_superseded_methods_have_no_surface_or_callers() -> None:
         "db.ml.maintenance; the deprecated routine MlDb truncate shims are "
         "removed. Found a non-maintenance truncate call.\n" + "\n".join(truncate_non_maintenance)
     )
+
+
+# ── Tag-PK bridge retirement boundary (TASK-tag-curation-identity-mismatch-G) ─
+# The root Database tag-PK resolver (``Database.resolve_tag_identity`` /
+# ``resolve_tag_identities``) was retired after the repo-wide zero-caller audit
+# (P1-S1/P1-S3). Caller code above persistence must reach tags by natural
+# ``TagRef`` through the sealed ``db.library`` tag facade, never by an integer
+# tag primary key, by an ``int(tag_id)`` conversion, or by a raw ``TagRow``
+# shape. These scans codify the Bridge-retirement contract so the root resolver
+# and integer tag conversions cannot reappear above persistence, while leaving
+# persistence-internal integer storage keys and repo mechanics untouched.
+
+# Non-persistence production layers that must route tags only by natural
+# identity (never by storage PK).
+_TAG_PK_BRIDGE_SCAN_DIRS = [
+    Path("nomarr/components"),
+    Path("nomarr/services"),
+    Path("nomarr/workflows"),
+    Path("nomarr/interfaces"),
+    Path("nomarr/helpers"),
+]
+
+# DTO home files that legitimately define the raw tag storage shape (with its
+# integer PK field); excluded from the integer-tag-contract token scan below
+# (they are the definitions, not callers).
+_TAG_PK_DTO_HOME_FILES = {
+    PROJECT_ROOT / "nomarr" / "helpers" / "dto" / "repo_dto.py",
+}
+
+# Raw ``TagRow`` storage shapes must not cross into caller-facing layers.
+# ``nomarr/helpers`` is omitted: it is where the persistence DTO lives, and
+# repo-internal wiring may reference the row type.
+_TAG_ROW_SCAN_DIRS = [
+    Path("nomarr/components"),
+    Path("nomarr/services"),
+    Path("nomarr/workflows"),
+    Path("nomarr/interfaces"),
+]
+
+# Retired root resolver identifiers and integer tag-conversion contract tokens
+# that must never reappear above persistence (docstrings/comments excluded).
+_TAG_PK_CONVERSION_PATTERNS = (
+    re.compile(r"resolve_tag_identity"),
+    re.compile(r"resolve_tag_identities"),
+    re.compile(r"int\(\s*tag_ids?\s*\)"),
+    re.compile(r"\btag_id:\s*int\b"),
+    re.compile(r"\btag_ids:\s*(?:list|Sequence|set|tuple)\[[^\]]*int"),
+)
+_TAG_ROW_PATTERN = re.compile(r"\bTagRow\b")
+
+
+@pytest.mark.code_smell
+@pytest.mark.slow
+def test_no_tag_pk_resolver_or_int_conversion_above_persistence() -> None:
+    """Root tag resolver + integer tag conversions stay out of caller code.
+
+    The root Database tag-PK resolver (``Database.resolve_tag_identity`` /
+    ``resolve_tag_identities``) was deleted after the zero-caller audit
+    (P1-S3). It must not reappear on ``Database``, and no caller code above
+    persistence may route tags by integer primary key, perform ``int(tag_id)``
+    conversion, or declare an integer tag-id facade parameter. Tag storage PKs
+    are persistence-private; the public tag contract is natural ``TagRef`` via
+    ``db.library``.
+    """
+    db_file = PROJECT_ROOT / "nomarr" / "persistence" / "db.py"
+    content = db_file.read_text(encoding="utf-8")
+    for name in ("resolve_tag_identity", "resolve_tag_identities"):
+        assert re.search(rf"\bdef\s+{re.escape(name)}\s*\(", content) is None, (
+            f"Retired root tag-PK resolver {name} reappeared on "
+            "nomarr/persistence/db.py. Natural db.library tag facades are the "
+            "only tag identity surface."
+        )
+
+    violations: list[tuple[str, int, str]] = []
+    for py_file in _iter_py_targets(list(_TAG_PK_BRIDGE_SCAN_DIRS)):
+        if py_file in _TAG_PK_DTO_HOME_FILES:
+            continue
+        try:
+            file_content = py_file.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        doc_lines = _docstring_lines(file_content)
+        rel_path = py_file.relative_to(PROJECT_ROOT).as_posix()
+        for line_num, line in enumerate(file_content.splitlines(), start=1):
+            if line.lstrip().startswith("#") or line_num in doc_lines:
+                continue
+            for pat in _TAG_PK_CONVERSION_PATTERNS:
+                if pat.search(line):
+                    violations.append((rel_path, line_num, line.strip()))
+                    break
+
+    if violations:
+        report = "\n".join(f"  {p}:{ln}: {txt}" for p, ln, txt in sorted(set(violations))[:20])
+        if len(violations) > 20:
+            report += f"\n  ... and {len(violations) - 20} more"
+        pytest.fail(
+            "Integer tag-PK routing above persistence (retired root resolver "
+            "name, int(tag_id) conversion, or integer tag-id facade parameter). "
+            "Tag storage PKs are persistence-private; route tags by natural "
+            "TagRef through db.library. Persistence internals may keep private "
+            "integer storage keys.\n" + report
+        )
+
+
+@pytest.mark.code_smell
+@pytest.mark.slow
+def test_no_raw_tag_row_above_persistence() -> None:
+    """Raw ``TagRow`` shapes never cross into caller-facing layers.
+
+    ``TagRow`` (nomarr/helpers/dto/repo_dto.py) is a persistence row DTO whose
+    ``id`` is the integer storage PK. Higher layers use domain ``Tag``/``TagRef``
+    values; a raw ``TagRow`` reference in components/services/workflows/
+    interfaces would leak the storage primary-key contract. Persistence internals
+    and the helpers DTO home file are not scanned (they legitimately own the
+    shape).
+    """
+    violations: list[tuple[str, int, str]] = []
+    for py_file in _iter_py_targets(list(_TAG_ROW_SCAN_DIRS)):
+        try:
+            file_content = py_file.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        doc_lines = _docstring_lines(file_content)
+        rel_path = py_file.relative_to(PROJECT_ROOT).as_posix()
+        for line_num, line in enumerate(file_content.splitlines(), start=1):
+            if line.lstrip().startswith("#") or line_num in doc_lines:
+                continue
+            if _TAG_ROW_PATTERN.search(line):
+                violations.append((rel_path, line_num, line.strip()))
+
+    if violations:
+        report = "\n".join(f"  {p}:{ln}: {txt}" for p, ln, txt in sorted(set(violations))[:20])
+        if len(violations) > 20:
+            report += f"\n  ... and {len(violations) - 20} more"
+        pytest.fail(
+            "Raw TagRow storage shape leaked above persistence. Higher layers "
+            "must use domain Tag/TagRef values; TagRow is persistence-private "
+            "and its integer PK must not cross the boundary.\n" + report
+        )

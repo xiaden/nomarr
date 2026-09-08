@@ -12,9 +12,18 @@ class RelinkResult(TypedDict):
 
 
 class TagValueItem(TypedDict):
+    """Service-facing projection for one listed tag value.
+
+    ``namespace`` carries the complete natural identity so the HTTP interface
+    encoder can emit a namespace-distinct opaque handle; it is an internal
+    service/DTO field, not a public response field (the web response model
+    exposes only ``id``/``name``/``value``/``song_count``).
+    """
+
     id: str
     name: str
     value: str
+    namespace: str
     song_count: int
 
 

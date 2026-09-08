@@ -3,9 +3,10 @@
 All reads route through the sealed intent-level tag facade (``LibraryTagsDb``)
 using domain identities (``TagRef`` / ``SongIdentity``) and typed domain
 results (``SongTagAssignment`` / ``Song`` / ``SongTagMatch`` / ``TagUsage``).
-Numeric song handles are translated with the song-side identity bridge
-(``db.library.resolve_song_identity(s)``); numeric tag handles come from the
-root ``db.resolve_tag_identity`` (opaque external tag ids only).
+Song handles are translated with the song-side identity bridge
+(``db.library.resolve_song_identity(s)``). Tag get/count/list-song paths
+accept complete natural ``TagRef`` identities and never parse ``tag_id`` or
+convert a numeric natural value into a storage tag primary key.
 """
 
 from __future__ import annotations
@@ -136,29 +137,32 @@ def _library_song_ids(db: Database, library_id: int) -> set[int] | None:
     return set(db.library.list_library_song_ids(library, limit=None))
 
 
-def get_tag(db: Database, tag_id: int) -> dict[str, Any] | None:
-    """Resolve one opaque external tag id to a tag document.
+def get_tag(db: Database, identity: TagRef) -> dict[str, Any] | None:
+    """Resolve one complete natural tag identity to a tag document.
 
-    Returns a dict with ``id`` (the external tag id), ``name``, ``value`` and
-    ``namespace`` so the caller-facing dict shape is preserved while the lookup
-    goes through the root tag-identity bridge (never an integer tag facade).
+    Accepts a ``TagRef`` natural identity and returns a dict with ``name``,
+    ``value`` and ``namespace``, or ``None`` when no tag carries that exact
+    natural key. The lookup goes through ``db.library.get_tag`` (never the root
+    tag-identity bridge or an integer tag facade). ``id`` mirrors the listing
+    projection (``list_tags_by_name``) and carries the natural value.
     """
-    identity = db.resolve_tag_identity(tag_id)
-    if identity is None:
+    resolved = db.library.get_tag(identity)
+    if resolved is None:
         return None
     return {
-        "id": tag_id,
-        "name": identity.name,
-        "value": identity.value,
-        "namespace": identity.namespace,
+        "id": resolved.value,
+        "name": resolved.name,
+        "value": resolved.value,
+        "namespace": resolved.namespace,
     }
 
 
-def count_songs_for_tag(db: Database, tag_id: int) -> int:
-    """Count files linked to one opaque external tag id."""
-    identity = db.resolve_tag_identity(tag_id)
-    if identity is None:
-        return 0
+def count_songs_for_tag(db: Database, identity: TagRef) -> int:
+    """Count files linked to one complete natural tag identity.
+
+    Matches the exact ``(name, value, namespace)`` natural key via
+    ``db.library.find_songs_with_tag``; a tag with no matching row yields 0.
+    """
     return len(db.library.find_songs_with_tag(identity, limit=None))
 
 
@@ -185,11 +189,16 @@ def list_tags_by_name(
         # Default path: sort by value, paginated server-side
         usages = list(db.library.list_tags_with_song_count(name=name, search=search, limit=limit, offset=offset))
 
+    # Complete natural identity is projected so the interface boundary can encode
+    # a namespace-distinct opaque handle: two tags with identical (name, value) in
+    # different namespaces must not collapse into one id. The storage primary key
+    # stays inside persistence.
     return [
         {
             "id": usage.identity.value,
             "name": usage.identity.name,
             "value": usage.identity.value,
+            "namespace": usage.identity.namespace,
             "song_count": usage.song_count,
         }
         for usage in usages
@@ -239,11 +248,12 @@ def get_nomarr_tags_bulk(db: Database, file_ids: list[int]) -> dict[int, Tags]:
     return result
 
 
-def list_songs_for_tag(db: Database, tag_id: int, limit: int = 100, offset: int = 0) -> list[int]:
-    """List song ids connected to one opaque external tag id."""
-    identity = db.resolve_tag_identity(tag_id)
-    if identity is None:
-        return []
+def list_songs_for_tag(db: Database, identity: TagRef, limit: int = 100, offset: int = 0) -> list[int]:
+    """List song ids connected to one complete natural tag identity.
+
+    Matches the exact ``(name, value, namespace)`` natural key via
+    ``db.library.find_songs_with_tag``; a tag with no matching row yields [].
+    """
     return [song.song_id for song in db.library.find_songs_with_tag(identity, limit=limit, offset=offset)]
 
 
@@ -367,10 +377,10 @@ def get_tag_values_grouped_by_file(db: Database, file_ids: list[int], name: str)
     return result
 
 
-def get_tag_songs_with_metadata(db: Database, tag_id: int, limit: int = 50, offset: int = 0) -> list[TagSongItem]:
+def get_tag_songs_with_metadata(db: Database, identity: TagRef, limit: int = 50, offset: int = 0) -> list[TagSongItem]:
     """Return song rows for a tag with basic file metadata."""
     result: list[TagSongItem] = []
-    for song_id in list_songs_for_tag(db, tag_id, limit=limit, offset=offset):
+    for song_id in list_songs_for_tag(db, identity, limit=limit, offset=offset):
         song = db.library.get_song(song_id)
         if song is None:
             continue

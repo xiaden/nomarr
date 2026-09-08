@@ -7,7 +7,9 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
+from nomarr.helpers.dataclasses.song_tag_dataclass import TagRef
 from nomarr.helpers.logging_helper import sanitize_exception_message
+from nomarr.helpers.tag_handle_codec import TagHandleError, decode_tag_handle, encode_tag_handle
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.id_codec import decode_library_name, decode_path_id
 from nomarr.interfaces.api.web.dependencies import get_library_service, get_tagging_service
@@ -130,11 +132,18 @@ async def rename_tag(
     request: RenameTagRequest,
     tagging_service: Annotated[TaggingService, Depends(get_tagging_service)],
 ) -> RenameTagResponse:
-    """Rename a tag to a new value."""
+    """Rename a tag to a new value.
+
+    ``request.tag_id`` is an opaque complete-``TagRef`` handle. The interface
+    owns HTTP decoding: it decodes the handle to a ``TagRef`` before the service
+    call. A malformed handle raises :class:`TagHandleError` (a ``ValueError``),
+    mapping to the same 400 policy as curation validation.
+    """
     try:
+        source_tag = decode_tag_handle(request.tag_id)
         result = await asyncio.to_thread(
             tagging_service.rename_tag,
-            tag_id=request.tag_id,
+            source_tag=source_tag,
             new_value=request.new_value,
         )
         return RenameTagResponse.model_validate(result)
@@ -153,12 +162,19 @@ async def merge_tags(
     request: MergeTagsRequest,
     tagging_service: Annotated[TaggingService, Depends(get_tagging_service)],
 ) -> MergeTagsResponse:
-    """Merge multiple tags into a canonical tag."""
+    """Merge multiple tags into a canonical tag.
+
+    ``source_tag_ids``/``canonical_tag_id`` are opaque complete-``TagRef``
+    handles decoded to ``TagRef`` values at the HTTP boundary before the service
+    call. Malformed handles map to 400 (same policy as curation validation).
+    """
     try:
+        source_tags = [decode_tag_handle(s) for s in request.source_tag_ids]
+        canonical_tag = decode_tag_handle(request.canonical_tag_id)
         result = await asyncio.to_thread(
             tagging_service.merge_tags,
-            source_tag_ids=request.source_tag_ids,
-            canonical_tag_id=request.canonical_tag_id,
+            source_tags=source_tags,
+            canonical_tag=canonical_tag,
         )
         return MergeTagsResponse.model_validate(result)
     except ValueError as e:
@@ -176,11 +192,17 @@ async def split_tag(
     request: SplitTagRequest,
     tagging_service: Annotated[TaggingService, Depends(get_tagging_service)],
 ) -> SplitTagResponse:
-    """Split selected songs from a tag into a new tag value."""
+    """Split selected songs from a tag into a new tag value.
+
+    ``request.source_tag_id`` is an opaque complete-``TagRef`` handle decoded to
+    a ``TagRef`` at the HTTP boundary before the service call. Malformed
+    handles map to 400 (same policy as curation validation).
+    """
     try:
+        source_tag = decode_tag_handle(request.source_tag_id)
         result = await asyncio.to_thread(
             tagging_service.split_tag,
-            source_tag_id=request.source_tag_id,
+            source_tag=source_tag,
             song_ids=request.song_ids,
             new_value=request.new_value,
         )
@@ -203,7 +225,15 @@ async def list_tag_values(
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> TagListResponse:
-    """List tag values with optional filtering and pagination."""
+    """List tag values with optional filtering and pagination.
+
+    Each listed ``id`` is an opaque complete-``TagRef`` handle encoded here at
+    the HTTP boundary from the complete natural identity (``name``, ``value``,
+    ``namespace``) the service projected, so two tags with identical
+    (name, value) in different namespaces remain distinct. Public response
+    fields stay ``id``/``name``/``value``/``song_count``; no persistence key or
+    TagRef-internal field is exposed.
+    """
     try:
         result = await asyncio.to_thread(
             tagging_service.list_tag_values,
@@ -212,7 +242,16 @@ async def list_tag_values(
             limit=limit,
             offset=offset,
         )
-        return TagListResponse.model_validate(result)
+        tags = [
+            TagValueItemResponse(
+                id=encode_tag_handle(TagRef(name=t["name"], value=t["value"], namespace=t.get("namespace", "default"))),
+                name=t["name"],
+                value=t["value"],
+                song_count=t["song_count"],
+            )
+            for t in result["tags"]
+        ]
+        return TagListResponse(tags=tags, total=result["total"])
     except Exception as e:
         logger.exception("[Web API] Error listing tag values")
         raise HTTPException(
@@ -228,15 +267,25 @@ async def get_tag_songs(
     limit: Annotated[int, Query(ge=1, le=500)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> TagSongsResponse:
-    """Get songs linked to a tag with metadata."""
+    """Get songs linked to a tag with metadata.
+
+    The path ``tag_id`` is an opaque complete-``TagRef`` handle. The interface
+    owns HTTP decoding: it decodes the handle to a ``TagRef`` before the query
+    service call. A malformed handle maps to 400 (malformed input); a service
+    ValueError (e.g. a not-found identity surfaced by the service) maps to the
+    route's existing 404 branch.
+    """
     try:
+        identity = decode_tag_handle(tag_id)
         result = await asyncio.to_thread(
             tagging_service.get_tag_songs,
-            tag_id=tag_id,
+            identity=identity,
             limit=limit,
             offset=offset,
         )
         return TagSongsResponse.model_validate(result)
+    except TagHandleError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from None
     except Exception as e:

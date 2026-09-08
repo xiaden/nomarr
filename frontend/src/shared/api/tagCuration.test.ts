@@ -24,6 +24,21 @@ vi.mock("./client", async (importOriginal) => {
   };
 });
 
+// Opaque complete-TagRef wire handles (versioned, URL-safe base64url). These are
+// produced by the backend codec from canonical {name, value, namespace} JSON and
+// must be treated by the frontend as opaque strings — never decoded, parsed, or
+// reconstructed from name/value. The numeric/Unicode natural values below live in
+// the *decoded* payload only; on the wire the frontend sees only the opaque handle
+// and the separate `value` field.
+const HANDLE_ELECTRONIC =
+  "t1.eyJuYW1lIjoiZ2VucmUiLCJuYW1lc3BhY2UiOiJkZWZhdWx0IiwidmFsdWUiOiJFbGVjdHJvbmljIn0=";
+const HANDLE_UNICODE =
+  "t1.eyJuYW1lIjoiZ2VucmUiLCJuYW1lc3BhY2UiOiJkZWZhdWx0IiwidmFsdWUiOiJcdTAwYzlsZWN0cm9uaXF1ZSBcdWQ4M2RcdWRlMDAifQ==";
+const HANDLE_NUMERIC =
+  "t1.eyJuYW1lIjoiZ2VucmUiLCJuYW1lc3BhY2UiOiJkZWZhdWx0IiwidmFsdWUiOiIxMjAifQ==";
+const HANDLE_NOM =
+  "t1.eyJuYW1lIjoibW9vZCIsIm5hbWVzcGFjZSI6Im5vbSIsInZhbHVlIjoiSGFwcHkifQ==";
+
 describe("cleanupOrphanedTags", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -272,6 +287,109 @@ describe("updateFileTags", () => {
     expect(patch).toHaveBeenCalledWith(
       "/api/web/tag-curation/file/42/tag",
       { name: "genre", values: ["Rock"] }
+    );
+  });
+});
+
+describe("opaque complete-TagRef handle propagation", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("fetchTagSongs URL-encodes an opaque handle byte-for-byte into the path", async () => {
+    const response = { songs: [], total: 0 };
+    vi.mocked(get).mockResolvedValue(response);
+
+    await expect(fetchTagSongs(HANDLE_ELECTRONIC, 50, 0)).resolves.toEqual(
+      response
+    );
+
+    // encodeURIComponent escapes the base64 '=' padding to %3D so the raw handle
+    // survives transit unchanged (the backend URL-decodes it back to the original
+    // '='-containing opaque string). No decoding/parsing happens client-side.
+    expect(get).toHaveBeenCalledWith(
+      `/api/web/tag-curation/${encodeURIComponent(HANDLE_ELECTRONIC)}/song?limit=50&offset=0`
+    );
+    // Confirm the assertion is concrete (the '=' really is escaped, not left raw).
+    expect(encodeURIComponent(HANDLE_ELECTRONIC)).toContain("%3D");
+  });
+
+  it("renameTag forwards the opaque handle unchanged as tag_id with a numeric natural new_value string", async () => {
+    const response = { moved: 5, merged_into_existing: false };
+    vi.mocked(post).mockResolvedValue(response);
+
+    await expect(renameTag(HANDLE_NUMERIC, "120")).resolves.toEqual(response);
+
+    expect(post).toHaveBeenCalledWith("/api/web/tag-curation/rename", {
+      tag_id: HANDLE_NUMERIC,
+      new_value: "120",
+    });
+    // Both are plain strings — never parsed into numbers or storage ids.
+    const [, body] = vi.mocked(post).mock.calls[0] as unknown as [
+      unknown,
+      { tag_id: unknown; new_value: unknown }
+    ];
+    expect(typeof body.tag_id).toBe("string");
+    expect(typeof body.new_value).toBe("string");
+  });
+
+  it("mergeTags forwards distinct opaque handles unchanged for sources and canonical", async () => {
+    const response = { total_moved: 10, sources_removed: 1 };
+    vi.mocked(post).mockResolvedValue(response);
+
+    await expect(mergeTags([HANDLE_ELECTRONIC, HANDLE_NUMERIC], HANDLE_NOM)).resolves.toEqual(
+      response
+    );
+
+    expect(post).toHaveBeenCalledWith("/api/web/tag-curation/merge", {
+      source_tag_ids: [HANDLE_ELECTRONIC, HANDLE_NUMERIC],
+      canonical_tag_id: HANDLE_NOM,
+    });
+  });
+
+  it("splitTag forwards the opaque source handle and a special-character new value unchanged", async () => {
+    const response = { moved: 3, new_tag_created: true };
+    vi.mocked(post).mockResolvedValue(response);
+
+    await expect(splitTag(HANDLE_UNICODE, ["10", "11"], "Électronique 😀")).resolves.toEqual(
+      response
+    );
+
+    expect(post).toHaveBeenCalledWith("/api/web/tag-curation/split", {
+      source_tag_id: HANDLE_UNICODE,
+      song_ids: ["10", "11"],
+      new_value: "Électronique 😀",
+    });
+  });
+
+  it("fetchTagValues keeps each opaque id distinct from its separate value field (unicode, numeric, nom)", async () => {
+    const rows = [
+      { id: HANDLE_ELECTRONIC, name: "genre", value: "Electronic", song_count: 4 },
+      { id: HANDLE_UNICODE, name: "genre", value: "Électronique 😀", song_count: 2 },
+      { id: HANDLE_NUMERIC, name: "genre", value: "120", song_count: 9 },
+      { id: HANDLE_NOM, name: "mood", value: "Happy", song_count: 7 },
+    ];
+    vi.mocked(get).mockResolvedValue({ tags: rows, total: rows.length });
+
+    const result = await fetchTagValues();
+
+    // Ids are opaque handles that never equal their natural value, and identical
+    // (name,value) would still differ across namespaces — here value "Happy" in nom
+    // has its own id. Every field keeps its declared type (id/value string, count int).
+    result.tags.forEach((row) => {
+      expect(typeof row.id).toBe("string");
+      expect(row.id.startsWith("t1.")).toBe(true);
+      expect(typeof row.value).toBe("string");
+      expect(typeof row.song_count).toBe("number");
+    });
+    expect(result.tags.map((t) => t.id)).toEqual([
+      HANDLE_ELECTRONIC,
+      HANDLE_UNICODE,
+      HANDLE_NUMERIC,
+      HANDLE_NOM,
+    ]);
+    expect(result.tags.map((t) => t.id)).not.toEqual(
+      result.tags.map((t) => t.value)
     );
   });
 });

@@ -1,23 +1,23 @@
 # mypy: disable-error-code=func-returns-value
-"""Bridge contract tests for the P3 identity bridge.
+"""Facade identity-boundary contract tests.
 
-Phase 3 (``TASK-song-intent-facade-correction-A``) adds a typed
-numeric-handle → natural-identity bridge that unblocks caller migration onto
-the sealed domain tag surface:
+Phase 3 (``TASK-song-intent-facade-correction-A``) added a typed
+numeric-handle → natural-identity bridge on the song side that unblocks caller
+migration onto the sealed domain tag surface:
 
 - ``LibrarySongsDb`` / ``LibraryDb`` ``resolve_song_identity`` /
   ``resolve_song_identities`` / ``resolve_library_identity`` /
   ``resolve_library_identities`` — the song-side adapter. Resolves song/library
   storage handles to ``SongIdentity`` / ``LibraryIdentity`` natural references.
   No row, ``Song``, ``Library``, or storage id is exposed.
-- ``Database.resolve_tag_identity`` / ``resolve_tag_identities`` — the
-  root-database, lookup-only tag boundary resolver for opaque external tag IDs.
-  It never creates tags, is not a ``LibraryTagsDb``/``LibraryDb`` method or
-  forwarder, and no tag id is passed into an ordinary tag-facade method.
 
-The sealed ``library_tags.py`` surface is unchanged by this phase: the bridge
-adds no ID-taking method to the tag facade, and ordinary tag methods still
-accept/return ``TagRef``/``SongIdentity`` only.
+The root ``Database`` tag boundary resolver (``resolve_tag_identity`` /
+``resolve_tag_identities``) was retired after the repo-wide caller migration
+(CONTRACTS.md, "Bridge-retirement contract"): the zero-caller audit proved
+safe deletion, the methods are gone, and no integer tag primary key may enter
+the public tag contract. This module asserts their permanent absence and that
+the natural ``library_tags`` surface alone carries the full tag intent surface,
+taking only ``TagRef``/``SongIdentity`` and never an integer tag PK.
 """
 
 from __future__ import annotations
@@ -31,7 +31,6 @@ from nomarr.helpers.dataclasses.song_command_dataclass import (
     LibraryIdentity,
     SongIdentity,
 )
-from nomarr.helpers.dataclasses.song_tag_dataclass import TagRef
 from nomarr.persistence.api.library import LibraryDb
 from nomarr.persistence.api.library_songs import LibrarySongsDb
 from nomarr.persistence.api.library_tags import LibraryTagsDb
@@ -52,14 +51,6 @@ def _make_songs_db() -> tuple[LibrarySongsDb, MagicMock, MagicMock]:
         library_repo=library_repo,
     )
     return songs, song_repo, library_repo
-
-
-def _make_db_with_tag_repo(tag_repo: MagicMock) -> Database:
-    # Construct Database without running the heavy __init__ (engine + repos);
-    # the resolver only touches self._tag_repo.
-    db = object.__new__(Database)
-    db._tag_repo = tag_repo
-    return db
 
 
 def _song_row(song_id: int, library_id: int, normalized_path: str) -> dict:
@@ -179,58 +170,35 @@ class TestLibraryIdentityBridge:
 
 
 @pytest.mark.unit
-class TestTagRefBridge:
-    """Database tag-handle → TagRef boundary resolver."""
+class TestRootTagBridgeRetired:
+    """The root Database tag-PK resolver is deleted and stays absent.
 
-    def test_resolve_tag_identity_maps_domain_identity(self) -> None:
-        tag_repo = MagicMock()
-        tag_repo.get_tags_by_ids.return_value = [{"id": 9, "name": "artist", "value": "X", "namespace": ""}]
-        db = _make_db_with_tag_repo(tag_repo)
-        result = db.resolve_tag_identity(9)
-        assert result == TagRef(name="artist", value="X", namespace="")
-        tag_repo.get_tags_by_ids.assert_called_once_with([9])
+    CONTRACTS.md "Bridge-retirement contract": ``Database.resolve_tag_identity``
+    / ``resolve_tag_identities`` were lookup-only root-database conversions that
+    accepted opaque integer tag PKs. After every caller migrated onto the
+    natural facade (``TagRef`` / ``db.library.get_tag``), the zero-caller audit
+    proved safe deletion. They must never reappear on ``Database`` or the tag
+    facades, and the natural facade must carry the full tag intent surface.
+    """
 
-    def test_resolve_tag_identity_missing_returns_none(self) -> None:
-        tag_repo = MagicMock()
-        tag_repo.get_tags_by_ids.return_value = []
-        db = _make_db_with_tag_repo(tag_repo)
-        assert db.resolve_tag_identity(9) is None
+    def test_root_database_exposes_no_tag_resolver(self) -> None:
+        assert not hasattr(Database, "resolve_tag_identity")
+        assert not hasattr(Database, "resolve_tag_identities")
 
-    def test_resolve_tag_identities_set_based_unresolved_omitted(self) -> None:
-        tag_repo = MagicMock()
-        tag_repo.get_tags_by_ids.return_value = [
-            {"id": 9, "name": "artist", "value": "X", "namespace": "nom"},
-            {"id": 10, "name": "genre", "value": "Jazz", "namespace": ""},
-        ]
-        db = _make_db_with_tag_repo(tag_repo)
-        result = db.resolve_tag_identities([8, 9, 10])
-        assert result == {
-            9: TagRef(name="artist", value="X", namespace="nom"),
-            10: TagRef(name="genre", value="Jazz", namespace=""),
-        }
-        tag_repo.get_tags_by_ids.assert_called_once_with([8, 9, 10])
+    def test_tag_facades_expose_no_tag_resolver(self) -> None:
+        # The tag boundary conversion was never a LibraryTagsDb/LibraryDb method
+        # or forwarder, and the natural facade must not re-add an ID-taking
+        # resolver either.
+        for cls in (LibraryTagsDb, LibraryDb):
+            assert not hasattr(cls, "resolve_tag_identity")
+            assert not hasattr(cls, "resolve_tag_identities")
 
-    def test_resolve_tag_identities_empty_batch_returns_empty(self) -> None:
-        tag_repo = MagicMock()
-        db = _make_db_with_tag_repo(tag_repo)
-        assert db.resolve_tag_identities([]) == {}
-        tag_repo.get_tags_by_ids.assert_not_called()
-
-    def test_resolver_is_lookup_only_never_creates(self) -> None:
-        tag_repo = MagicMock()
-        tag_repo.get_tags_by_ids.return_value = []
-        db = _make_db_with_tag_repo(tag_repo)
-        assert db.resolve_tag_identity(9) is None
-        tag_repo.get_or_create_tag.assert_not_called()
-        tag_repo.get_or_create_tags_batch.assert_not_called()
-
-    def test_resolver_not_on_tag_facade(self) -> None:
-        # The tag resolver is a root-database boundary conversion, NOT a
-        # LibraryTagsDb/LibraryDb tag method or forwarder.
-        assert not hasattr(LibraryTagsDb, "resolve_tag_identity")
-        assert not hasattr(LibraryTagsDb, "resolve_tag_identities")
-        assert not hasattr(LibraryDb, "resolve_tag_identity")
-        assert not hasattr(LibraryDb, "resolve_tag_identities")
+    def test_natural_facade_carries_full_intent_surface(self) -> None:
+        # Tag identity entry points live on the sealed natural facade only.
+        for cls in (LibraryTagsDb, LibraryDb):
+            assert hasattr(cls, "get_tag")
+            assert hasattr(cls, "ensure_tag")
+            assert hasattr(cls, "relink_tags")
 
 
 @pytest.mark.unit

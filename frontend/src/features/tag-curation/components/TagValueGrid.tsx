@@ -68,16 +68,16 @@ export function TagValueGrid({ name, prefix }: TagValueGridProps): React.JSX.Ele
       try {
         await rename(newRow.id, newRow.value);
         return newRow;
-      } catch (error) {
-        const gridApi = apiRef.current;
-        if (gridApi) {
-          gridApi.updateRows([oldRow]);
-          gridApi.stopCellEditMode({ id: oldRow.id, field: "value" });
-        }
-        throw error;
+      } catch {
+        // Roll back a failed rename by resolving with the ORIGINAL row. The grid
+        // then restores the row keyed by its opaque `id` and exits edit mode.
+        // (Rejecting here would instead keep the cell in edit mode with the
+        // uncommitted value under @mui/x-data-grid v8.) The error itself is
+        // already surfaced by useCurationActions, so it need not re-throw.
+        return oldRow;
       }
     },
-    [apiRef, rename]
+    [rename]
   );
 
   const columns = useMemo<GridColDef<TagValueItem>[]>(
@@ -194,7 +194,9 @@ export function TagValueGrid({ name, prefix }: TagValueGridProps): React.JSX.Ele
         }}
         processRowUpdate={processRowUpdate}
         onProcessRowUpdateError={() => {
-          // Roll back handled by DataGrid; error shown via useCurationActions
+          // No-op: processRowUpdate never rejects — a failed rename resolves with
+          // the original row (revert + exit edit mode) and useCurationActions
+          // surfaces the error. Kept as a defensive no-op for any unexpected path.
         }}
         getRowClassName={(params) => {
           const row = params.row as TagValueItem;

@@ -44,17 +44,25 @@ def _library_song_ids(db: Database, library: Library) -> set[int]:
     return {song.song_id for song in db.library.list_songs(library, limit=None)}
 
 
-def _tag_file_ids(db: Database, tag_id: int) -> set[int]:
-    """Return file ids linked to one opaque external tag id."""
-    identity = db.resolve_tag_identity(tag_id)
-    if identity is None:
-        return set()
+def _tag_file_ids(db: Database, identity: TagRef) -> set[int]:
+    """Return file ids linked to one complete natural tag identity.
+
+    DEAD CODE (no repository-wide caller); retained after the Plan-G bridge
+    audit. Migrated to the natural
+    ``db.library.find_songs_with_tag(identity)`` lookup so no stats path
+    references a tag storage primary key (the root tag-PK bridge is retired).
+    """
     return {song.song_id for song in db.library.find_songs_with_tag(identity, limit=None)}
 
 
-def _song_count_for_tag(db: Database, tag_id: int) -> int:
-    """Count songs targeting one opaque external tag id."""
-    return len(_tag_file_ids(db, tag_id))
+def _song_count_for_tag(db: Database, identity: TagRef) -> int:
+    """Count songs targeting one complete natural tag identity.
+
+    DEAD CODE (no repository-wide caller); retained for the Plan-G bridge
+    audit. Counts via the natural song lookup (``_tag_file_ids``); never parses
+    a storage tag id.
+    """
+    return len(_tag_file_ids(db, identity))
 
 
 def _scoped_song_count_for_tag(

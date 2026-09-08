@@ -3,8 +3,9 @@
 Phase 6 rewrite: asserts the migrated domain-facing API. All reads route
 through the sealed ``LibraryTagsDb`` facade using ``TagRef`` /
 ``SongIdentity`` and typed results (``SongTagAssignment`` / ``Song`` /
-``TagUsage``); numeric handles are translated by the identity bridge
-(``db.resolve_tag_identity`` / ``db.library.resolve_song_identity(s)``).
+``TagUsage``); song handles are translated by the song-side identity bridge
+(``db.library.resolve_song_identity(s)``). Tag reads accept complete natural
+``TagRef`` identities and never parse an integer tag primary key.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from nomarr.components.tagging.tag_query_comp import (
     _first_assignment_value,
     _matches_tag_operator,
     _numeric_value,
+    count_songs_for_tag,
     count_tags_by_name,
     get_distinct_tag_values_for_files,
     get_file_ids_for_mood_tags,
@@ -25,6 +27,7 @@ from nomarr.components.tagging.tag_query_comp import (
     get_nomarr_tags_bulk,
     get_song_tags,
     get_tag,
+    get_tag_songs_with_metadata,
     get_tag_values_grouped_by_file,
     list_songs_for_tag,
     list_tags_by_name,
@@ -195,8 +198,8 @@ class TestListTagsByName:
         result = list_tags_by_name(mock_db, name="genre", limit=10, offset=0)
 
         assert result == [
-            {"id": "Rock", "name": "genre", "value": "Rock", "song_count": 4},
-            {"id": "Jazz", "name": "genre", "value": "Jazz", "song_count": 2},
+            {"id": "Rock", "name": "genre", "value": "Rock", "namespace": "default", "song_count": 4},
+            {"id": "Jazz", "name": "genre", "value": "Jazz", "namespace": "default", "song_count": 2},
         ]
         mock_db.library.list_tags_with_song_count.assert_called_once_with(name="genre", search=None, limit=10, offset=0)
 
@@ -213,8 +216,8 @@ class TestListTagsByName:
         result = list_tags_by_name(mock_db, name="genre", limit=10, offset=0, sort_by_count=True)
 
         assert result == [
-            {"id": "Jazz", "name": "genre", "value": "Jazz", "song_count": 3},
-            {"id": "Rock", "name": "genre", "value": "Rock", "song_count": 1},
+            {"id": "Jazz", "name": "genre", "value": "Jazz", "namespace": "default", "song_count": 3},
+            {"id": "Rock", "name": "genre", "value": "Rock", "namespace": "default", "song_count": 1},
         ]
         mock_db.library.count_tags_filtered.assert_called_once_with(name="genre", search=None)
         mock_db.library.list_tags_with_song_count.assert_called_once_with(name="genre", search=None, limit=2, offset=0)
@@ -225,26 +228,109 @@ class TestGetTag:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_resolves_tag_identity_and_returns_dict(self) -> None:
+    def test_resolves_natural_identity_and_returns_dict(self) -> None:
         mock_db = MagicMock()
-        mock_db.resolve_tag_identity.return_value = TagRef(name="genre", value="rock")
+        rock = TagRef(name="genre", value="rock")
+        mock_db.library.get_tag.return_value = rock
 
-        result = get_tag(mock_db, 5)
+        result = get_tag(mock_db, rock)
 
-        # Ordinary tags normalize to the literal "default" namespace.
-        assert result == {"id": 5, "name": "genre", "value": "rock", "namespace": "default"}
-        mock_db.resolve_tag_identity.assert_called_once_with(5)
+        # Ordinary tags normalize to the literal "default" namespace. ``id``
+        # mirrors the listing projection (natural value), never a storage PK.
+        assert result == {"id": "rock", "name": "genre", "value": "rock", "namespace": "default"}
+        mock_db.library.get_tag.assert_called_once_with(rock)
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_returns_none_when_tag_is_not_found(self) -> None:
+    def test_returns_none_when_natural_identity_is_not_found(self) -> None:
         mock_db = MagicMock()
-        mock_db.resolve_tag_identity.return_value = None
+        rock = TagRef(name="genre", value="rock")
+        mock_db.library.get_tag.return_value = None
 
-        result = get_tag(mock_db, 99)
+        result = get_tag(mock_db, rock)
 
         assert result is None
-        mock_db.resolve_tag_identity.assert_called_once_with(99)
+        mock_db.library.get_tag.assert_called_once_with(rock)
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_does_not_parse_numeric_looking_string_value_as_pk(self) -> None:
+        """The natural value "120" is data routed by natural key, never a storage id."""
+        mock_db = MagicMock()
+        bpm = TagRef(name="bpm", value="120")
+        mock_db.library.get_tag.return_value = bpm
+
+        result = get_tag(mock_db, bpm)
+
+        assert result == {"id": "120", "name": "bpm", "value": "120", "namespace": "default"}
+        mock_db.library.get_tag.assert_called_once_with(TagRef(name="bpm", value="120"))
+
+
+class TestCountSongsForTag:
+    """Tests for count_songs_for_tag."""
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_counts_songs_via_natural_identity_lookup(self) -> None:
+        mock_db = MagicMock()
+        electronic = TagRef(name="genre", value="Electronic")
+        mock_db.library.find_songs_with_tag.return_value = (_song(song_id=1), _song(song_id=2))
+
+        result = count_songs_for_tag(mock_db, electronic)
+
+        assert result == 2
+        mock_db.library.find_songs_with_tag.assert_called_once_with(electronic, limit=None)
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_returns_zero_when_natural_identity_has_no_edges(self) -> None:
+        mock_db = MagicMock()
+        mock_db.library.find_songs_with_tag.return_value = ()
+
+        result = count_songs_for_tag(mock_db, TagRef(name="genre", value="Electronic"))
+
+        assert result == 0
+        mock_db.library.find_songs_with_tag.assert_called_once_with(
+            TagRef(name="genre", value="Electronic"), limit=None
+        )
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_string_120_value_routed_as_natural_value_not_storage_pk(self) -> None:
+        """A numeric-looking natural value "120" is forwarded verbatim as the value.
+
+        The component never converts ``120`` into a storage tag primary key; only the
+        exact natural key drives selection.
+        """
+        mock_db = MagicMock()
+        string_120 = TagRef(name="bpm", value="120")
+        int_120 = TagRef(name="bpm", value=120)
+        mock_db.library.find_songs_with_tag.return_value = (_song(song_id=7),)
+
+        result = count_songs_for_tag(mock_db, string_120)
+
+        assert result == 1
+        # The string and int natural values are DISTINCT natural identities;
+        # each is looked up only by its own exact natural key.
+        mock_db.library.find_songs_with_tag.assert_called_once_with(string_120, limit=None)
+        assert string_120 != int_120
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_preserves_namespace_separation(self) -> None:
+        """nom vs default namespaces route through distinct natural identities."""
+        mock_db = MagicMock()
+        mock_db.library.find_songs_with_tag.return_value = (_song(song_id=1),)
+        nom = TagRef(name="nom:mood-tier-1", value="calm", namespace="nom")
+        ordinary = TagRef(name="mood-tier-1", value="calm")
+
+        assert count_songs_for_tag(mock_db, nom) == 1
+        assert count_songs_for_tag(mock_db, ordinary) == 1
+
+        assert mock_db.library.find_songs_with_tag.call_args_list == [
+            ((nom,), {"limit": None}),
+            ((ordinary,), {"limit": None}),
+        ]
 
 
 class TestListSongsForTag:
@@ -254,29 +340,85 @@ class TestListSongsForTag:
     @pytest.mark.mocked
     def test_returns_song_ids_from_domain_songs(self) -> None:
         mock_db = MagicMock()
-        rock = TagRef(name="genre", value="Rock")
-        mock_db.resolve_tag_identity.return_value = rock
+        electronic = TagRef(name="genre", value="Electronic")
         mock_db.library.find_songs_with_tag.return_value = (_song(song_id=1),)
 
-        result = list_songs_for_tag(mock_db, 1, limit=5, offset=2)
+        result = list_songs_for_tag(mock_db, electronic, limit=5, offset=2)
 
         assert result == [1]
-        mock_db.resolve_tag_identity.assert_called_once_with(1)
-        mock_db.library.find_songs_with_tag.assert_called_once_with(rock, limit=5, offset=2)
+        mock_db.library.find_songs_with_tag.assert_called_once_with(electronic, limit=5, offset=2)
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_returns_empty_list_when_no_edges_exist(self) -> None:
         mock_db = MagicMock()
-        rock = TagRef(name="genre", value="Rock")
-        mock_db.resolve_tag_identity.return_value = rock
         mock_db.library.find_songs_with_tag.return_value = ()
 
-        result = list_songs_for_tag(mock_db, 1)
+        result = list_songs_for_tag(mock_db, TagRef(name="genre", value="Electronic"))
 
         assert result == []
-        mock_db.resolve_tag_identity.assert_called_once_with(1)
-        mock_db.library.find_songs_with_tag.assert_called_once_with(rock, limit=100, offset=0)
+        mock_db.library.find_songs_with_tag.assert_called_once_with(
+            TagRef(name="genre", value="Electronic"), limit=100, offset=0
+        )
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_listing_to_lookup_continuity_uses_same_natural_identity(self) -> None:
+        """A listed natural identity drives the song lookup unchanged."""
+        mock_db = MagicMock()
+        usage_identity = TagRef(name="genre", value="Electronic")
+        mock_db.library.find_songs_with_tag.return_value = (_song(song_id=1), _song(song_id=2))
+
+        result = list_songs_for_tag(mock_db, usage_identity, limit=50, offset=0)
+
+        assert result == [1, 2]
+        mock_db.library.find_songs_with_tag.assert_called_once_with(usage_identity, limit=50, offset=0)
+
+
+class TestGetTagSongsWithMetadata:
+    """Tests for get_tag_songs_with_metadata."""
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_returns_tag_song_items_with_metadata(self) -> None:
+        mock_db = MagicMock()
+        electronic = TagRef(name="genre", value="Electronic")
+        song = _song(song_id=3)
+        mock_db.library.find_songs_with_tag.return_value = (song,)
+        mock_db.library.get_song.return_value = song
+        song_identity = _song_identity(3)
+        mock_db.library.resolve_song_identity.return_value = song_identity
+        mock_db.library.list_tags_for_song.return_value = (
+            SongTagAssignment(name="title", value="Neon"),
+            SongTagAssignment(name="artist", value="Synthwave Artist"),
+            SongTagAssignment(name="album", value="Retro"),
+        )
+
+        result = get_tag_songs_with_metadata(mock_db, electronic, limit=5, offset=2)
+
+        assert len(result) == 1
+        assert result[0] == {
+            "file_id": 3,
+            "title": "Neon",
+            "artist": "Synthwave Artist",
+            "album": "Retro",
+            "path": "/music/song.mp3",
+        }
+        mock_db.library.find_songs_with_tag.assert_called_once_with(electronic, limit=5, offset=2)
+        mock_db.library.get_song.assert_called_once_with(3)
+        mock_db.library.resolve_song_identity.assert_called_once_with(3)
+        mock_db.library.list_tags_for_song.assert_called_once_with(song_identity)
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_returns_empty_when_natural_identity_has_no_songs(self) -> None:
+        mock_db = MagicMock()
+        mock_db.library.find_songs_with_tag.return_value = ()
+
+        result = get_tag_songs_with_metadata(mock_db, TagRef(name="genre", value="Electronic"))
+
+        assert result == []
+        mock_db.library.get_song.assert_not_called()
 
 
 class TestCountTagsByName:
