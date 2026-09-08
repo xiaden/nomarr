@@ -636,26 +636,15 @@ def get_artist_album_frequencies(db: Database, limit: int) -> dict[str, list[tup
 
 
 def clear_library_data(db: Database) -> None:
-    """Perform a destructive full reset, including each library's pipeline state."""
-    # Derived data
-    from nomarr.components.ml.inference.ml_output_stream_store_comp import delete_output_streams
+    """Perform a destructive full reset, including each library's pipeline state.
 
-    for collection_name in db.ml.list_vector_collection_names():
-        db.ml.clear_vector_collection(collection_name)
-    for library in db.library.list_libraries():
-        for song_id in db.library.list_library_song_ids(library, limit=None):
-            delete_output_streams(db, song_id)
-        db.library.remove_pipeline_state(library)
-    # Link/junction tables
-    db.library.admin_truncate_song_tag_assignments()
-    db.app.truncate_song_state_edges()
-    db.library.truncate_song_links()
-    db.library.truncate_folder_links()
-    # Core tables
-    db.library.admin_truncate_tags()
-    db.library.truncate_songs()
-    db.library.truncate_folders()
-    db.library.truncate_scan_records()
+    Delegates the entire reset choreography (vector-collection enumeration,
+    output-stream deletion, pipeline-state removal, and link/core table
+    truncation ordering) to the single persistence-owned maintenance intent so
+    the component no longer knows table/collection names, row IDs, or deletion
+    order.
+    """
+    db.library.maintenance.reset_library_data()
 
 
 def _numeric_match_to_file_doc(match: SongTagMatch) -> dict[str, Any]:

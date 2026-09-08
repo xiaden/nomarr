@@ -1598,3 +1598,83 @@ def test_no_raw_tag_row_above_persistence() -> None:
             "must use domain Tag/TagRef values; TagRow is persistence-private "
             "and its integer PK must not cross the boundary.\n" + report
         )
+
+
+# ── Whole-library reset: single maintenance intent, no choreography (P2-S3) ──
+# TASK-library-reset-persistence-choreography-D migrated the global reset to one
+# persistence-owned maintenance intent ``db.library.maintenance.reset_library_data()``
+# (LibraryMaintenanceDb -> LibraryResetRepo). No code above persistence may
+# reconstruct the reset choreography from retired per-piece ML collection/stream
+# methods, and the component reset delegation must route through the
+# ``maintenance.`` prefix.
+_RESET_SCAN_DIRS = [
+    Path("nomarr/components"),
+    Path("nomarr/services"),
+    Path("nomarr/workflows"),
+    Path("nomarr/interfaces"),
+    Path("nomarr/helpers"),
+]
+
+#: Retired reset-only ML collection/stream methods that must not reappear as a
+#: caller-reconstructed reset. ``delete_output_streams`` is anchored to ``(`` with a
+#: leading word boundary so the persistence-internal per-song repo helper
+#: ``delete_output_streams_for_song`` (a differently-named repository method) is
+#: never flagged.
+_RETIRED_RESET_METHOD_CALL = re.compile(
+    r"\b(?:clear_vector_collection|truncate_vectors_in_collection"
+    r"|remove_output_streams_for_song|delete_output_streams)\s*\("
+)
+
+
+@pytest.mark.code_smell
+@pytest.mark.slow
+def test_no_reset_choreography_outside_persistence() -> None:
+    """No non-persistence layer reconstructs the whole-library reset choreography.
+
+    The whole-library reset is a single persistence-owned maintenance intent:
+    ``db.library.maintenance.reset_library_data()``. The retired reset-only ML
+    collection/stream methods (``clear_vector_collection``,
+    ``truncate_vectors_in_collection``, ``remove_output_streams_for_song``, and the
+    component ``delete_output_streams``) were removed with the migration and must
+    not reappear as a caller-reconstructed reset in components/services/workflows/
+    interfaces/helpers. The component reset delegation must route through the
+    ``maintenance.`` prefix (never bare per-piece truncate/clear calls).
+    """
+    violations: list[tuple[str, int, str]] = []
+    for py_file in _iter_py_targets(list(_RESET_SCAN_DIRS)):
+        try:
+            content = py_file.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        doc_lines = _docstring_lines(content)
+        rel_path = py_file.relative_to(PROJECT_ROOT).as_posix()
+        for line_num, line in enumerate(content.splitlines(), start=1):
+            if line.lstrip().startswith("#") or line_num in doc_lines:
+                continue
+            if _RETIRED_RESET_METHOD_CALL.search(line):
+                violations.append((rel_path, line_num, line.strip()))
+
+    # The component reset delegation must be a single maintenance-intent call.
+    reset_comp = NOMARR_DIR / "components" / "library" / "library_song_query_comp.py"
+    if not reset_comp.exists():
+        violations.append(("nomarr/components/library/library_song_query_comp.py", 0, "reset component file missing"))
+    else:
+        src = reset_comp.read_text(encoding="utf-8")
+        if "maintenance.reset_library_data(" not in src:
+            violations.append(
+                (
+                    "nomarr/components/library/library_song_query_comp.py",
+                    0,
+                    "reset delegation must route through maintenance.reset_library_data(",
+                )
+            )
+
+    if violations:
+        report = "\n".join(f"  {p}:{ln}: {txt}" for p, ln, txt in sorted(set(violations))[:20])
+        if len(violations) > 20:
+            report += f"\n  ... and {len(violations) - 20} more"
+        pytest.fail(
+            "Whole-library reset choreography must live in persistence only "
+            "(db.library.maintenance.reset_library_data). Found a caller-reconstructed "
+            "reset or a retired reset-only method:\n" + report
+        )

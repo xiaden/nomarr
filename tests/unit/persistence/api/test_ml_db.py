@@ -73,14 +73,13 @@ def test_required_repositories_are_validated_without_asserts(repository: str, me
 
 @pytest.mark.unit
 def test_exposes_ml_maintenance_surface() -> None:
-    db, vector_repo, _, _, calibration_repo, _ = _make_ml_db()
+    db, _, _, _, calibration_repo, _ = _make_ml_db()
 
-    assert hasattr(db, "truncate_vectors_in_collection")
+    # The deprecated reset-only collection truncation was retired (Plan C);
+    # only the persistence aggregate owns whole-embeddings deletion.
+    assert not hasattr(db, "truncate_vectors_in_collection")
     assert not hasattr(db, "truncate_vector_collection")
     assert not hasattr(db, "truncate_vector_edges")
-
-    db.truncate_vectors_in_collection("vectors_track_hot__model__lib")
-    vector_repo.truncate_embeddings.assert_called_once_with()
 
     # Calibration whole-table resets live on db.ml.maintenance (canonical).
     assert hasattr(db, "maintenance")
@@ -599,16 +598,6 @@ def test_list_calibration_states_delegates_to_calibration_repo() -> None:
 
 
 @pytest.mark.unit
-def test_truncate_vectors_in_collection_delegates_to_vector_repo() -> None:
-    db, vector_repo, _, _, _, _ = _make_ml_db()
-    vector_repo.truncate_embeddings = MagicMock()
-
-    db.truncate_vectors_in_collection("vectors_track_hot__model__lib")
-
-    vector_repo.truncate_embeddings.assert_called_once_with()
-
-
-@pytest.mark.unit
 def test_truncate_calibration_states_delegates_to_calibration_repo() -> None:
     db, _, _, _, calibration_repo, _ = _make_ml_db()
     calibration_repo.truncate_states = MagicMock()
@@ -636,18 +625,19 @@ def test_truncate_calibration_history_delegates_to_calibration_repo() -> None:
 @pytest.mark.unit
 def test_replace_song_inference_results_delegates_to_aggregate_repo() -> None:
     db, _, _, _, _, _ = _make_ml_db()
-    vectors = [{"model_id": "model_a", "embedding_vector": [0.1, 0.2]}]
-    output_streams = [OutputStreamWrite(output_id="head_0", values=[0.9, 0.1])]
+    vectors = [_typed_backbone_write()]
+    output_streams = [_typed_stream()]
 
-    db.replace_song_inference_results(42, "openl3", vectors=vectors, output_streams=output_streams)
+    db.replace_song_inference_results(_SPEC_SONG, "openl3", vectors=vectors, output_streams=output_streams)
 
-    # The facade is a pure intent forwarder: canonical payloads (output_id/values),
-    # backbone scope, and the whole aggregate are delegated in ONE repository call.
+    # The facade is a pure intent forwarder: typed commands (never laundered to
+    # dicts), backbone scope, and the whole aggregate are delegated in ONE
+    # repository call on the semantic SongIdentity.
     db._ml_inference_repo.replace_song_inference_results.assert_called_once_with(
-        song_id=42,
+        song=_SPEC_SONG,
         backbone="openl3",
         vectors=vectors,
-        output_streams=[{"output_id": "head_0", "values": [0.9, 0.1], "output_index": None}],
+        output_streams=output_streams,
     )
 
 
@@ -655,13 +645,132 @@ def test_replace_song_inference_results_delegates_to_aggregate_repo() -> None:
 def test_replace_song_inference_results_makes_single_aggregate_call() -> None:
     db, vector_repo, _, output_repo, _, _ = _make_ml_db()
 
-    db.replace_song_inference_results(7, "openl3", vectors=[], output_streams=[])
+    db.replace_song_inference_results(_SPEC_SONG, "openl3", vectors=[], output_streams=[])
 
     # The aggregate intent must own the whole replacement: exactly ONE call to the
     # repository aggregate, and NO independent destructive repo calls from the facade.
     db._ml_inference_repo.replace_song_inference_results.assert_called_once()
     vector_repo.delete_embeddings_for_song.assert_not_called()
     output_repo.delete_output_streams_for_song.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# P1-S2 spec-first: typed aggregate boundary (TASK-ml-write-boundary-leaks-
+# storage-representation-A). The facade must accept a semantic SongIdentity and
+# typed BackboneVectorWrite/OutputStreamWrite commands and pass them through to
+# the repository WITHOUT laundering stream commands back into dictionaries. These
+# tests are the spec and fail until Phase 2 lands (they exercise the current
+# legacy integer-song_id/raw-dict signature).
+# ---------------------------------------------------------------------------
+
+_SPEC_LIBRARY = LibraryIdentity(name="music", root_path="/music")
+_SPEC_SONG = SongIdentity(library=_SPEC_LIBRARY, normalized_path="/music/a.mp3")
+
+
+def _typed_backbone_write():
+    """Resolve BackboneVectorWrite at runtime; clear failure before Phase 2 lands."""
+    from nomarr.helpers.dataclasses.vector_dataclass import BackboneVectorWrite  # type: ignore[attr-defined]
+
+    return BackboneVectorWrite(
+        vector=(0.1, 0.2, 0.3),
+        num_segments=3,
+        model_suite_hash="suite-hash",
+        genres=None,
+    )
+
+
+def _typed_stream():
+    return OutputStreamWrite(output_id="head_0", values=[0.9, 0.1], output_index=0)
+
+
+@pytest.mark.unit
+def test_aggregate_accepts_semantic_song_identity_and_typed_commands() -> None:
+    """Facade takes a SongIdentity (never an int) and passes typed commands through."""
+    db, _, _, _, _, _ = _make_ml_db()
+    vectors = [_typed_backbone_write()]
+    output_streams = [_typed_stream()]
+
+    db.replace_song_inference_results(
+        song=_SPEC_SONG,
+        backbone="openl3",
+        vectors=vectors,
+        output_streams=output_streams,
+    )
+
+    # The facade delegates the semantic identity and typed commands directly; it
+    # must NOT convert stream commands to dictionaries (no storage-shaped payloads
+    # cross the facade).
+    db._ml_inference_repo.replace_song_inference_results.assert_called_once_with(
+        song=_SPEC_SONG,
+        backbone="openl3",
+        vectors=vectors,
+        output_streams=output_streams,
+    )
+
+
+@pytest.mark.unit
+def test_aggregate_does_not_launder_stream_commands_to_dicts() -> None:
+    """R1/R2: the facade passes typed OutputStreamWrite values; no dict laundering."""
+    db, _, _, _, _, _ = _make_ml_db()
+    stream = _typed_stream()
+
+    db.replace_song_inference_results(
+        song=_SPEC_SONG,
+        backbone="openl3",
+        vectors=[_typed_backbone_write()],
+        output_streams=[stream],
+    )
+
+    call = db._ml_inference_repo.replace_song_inference_results.call_args
+    assert call is not None
+    passed_streams = call.kwargs["output_streams"]
+    assert isinstance(passed_streams, list)
+    assert passed_streams == [stream]
+    # No dict-shaped stream row may be built at the facade boundary.
+    assert not any(isinstance(s, dict) for s in passed_streams)
+
+
+@pytest.mark.unit
+def test_aggregate_rejects_integer_song_key() -> None:
+    """R1: no integer song storage key may cross the ML facade."""
+    db, _, _, _, _, _ = _make_ml_db()
+    with pytest.raises(TypeError):
+        db.replace_song_inference_results(
+            song_id=42,  # type: ignore[call-arg]
+            backbone="openl3",
+            vectors=[_typed_backbone_write()],
+            output_streams=[_typed_stream()],
+        )
+
+
+@pytest.mark.unit
+def test_aggregate_rejects_raw_vector_dictionary() -> None:
+    """R1/R2: raw vector row dicts are rejected at the typed boundary."""
+    db, _, _, _, _, _ = _make_ml_db()
+    raw_payload = {"embedding_vector": [0.1, 0.2], "model_id": "m", "backbone_id": "openl3"}
+    with pytest.raises(TypeError):
+        db.replace_song_inference_results(
+            song=_SPEC_SONG,
+            backbone="openl3",
+            vectors=[raw_payload],  # type: ignore[list-item]
+            output_streams=[_typed_stream()],
+        )
+
+
+@pytest.mark.unit
+def test_aggregate_rejects_storage_only_field_in_command() -> None:
+    """R2: storage-shaped keyword (embed_dim) is rejected on the typed command."""
+    _db, _, _, _, _, _ = _make_ml_db()
+    from nomarr.helpers.dataclasses.vector_dataclass import BackboneVectorWrite  # type: ignore[attr-defined]
+
+    with pytest.raises(TypeError):
+        BackboneVectorWrite(
+            vector=(0.1, 0.2),
+            num_segments=2,
+            model_suite_hash="h",
+            genres=None,
+            embed_dim=1280,  # persistence derives embed_dim; command must not carry it
+        )
 
 
 @pytest.mark.unit
@@ -784,16 +893,6 @@ def test_add_calibration_history_includes_optional_fields() -> None:
             "output_id": "a1b2c3d4e5f60718",
         },
     )
-
-
-@pytest.mark.unit
-def test_clear_vector_collection_delegates_to_delete_all_embeddings() -> None:
-    db, vector_repo, _, _, _, _ = _make_ml_db()
-    vector_repo.delete_all_embeddings = MagicMock()
-
-    db.clear_vector_collection("vectors_track_hot__model__lib")
-
-    vector_repo.delete_all_embeddings.assert_called_once_with()
 
 
 @pytest.mark.unit
@@ -1029,17 +1128,6 @@ def test_remove_model_outputs_for_model_delegates_to_output_repo() -> None:
 
     assert result == ["o1", "o2"]
     output_repo.delete_outputs_for_model.assert_called_once_with("model1")
-
-
-@pytest.mark.unit
-def test_remove_output_streams_for_song_delegates_to_output_repo() -> None:
-    db, _, _, output_repo, _, _ = _make_ml_db()
-    output_repo.delete_output_streams_for_song = MagicMock(return_value=3)
-
-    result = db.remove_output_streams_for_song(42)
-
-    assert result == 3
-    output_repo.delete_output_streams_for_song.assert_called_once_with(42)
 
 
 # ---------------------------------------------------------------------------

@@ -218,6 +218,49 @@ class TestAppDbHasNoLegacyClaimSurface:
 
 
 # ---------------------------------------------------------------------------
+# Test 8: db.library.maintenance is a legitimate maintenance facade, not a
+# transaction owner (library-reset persistence choreography, P2-S3)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.sabotage_check
+class TestLibraryMaintenanceFacadeBoundary:
+    """LibraryMaintenanceDb exposes only the reset intent and no transaction surface.
+
+    ``db.library.maintenance.reset_library_data()`` is the single whole-library
+    reset intent (TASK-library-reset-persistence-choreography). Like
+    ``db.app.maintenance`` / ``db.ml.maintenance`` it is a *legitimate* nested
+    maintenance facade whose destructive work delegates to a repository-owned
+    transaction; it therefore must expose no ``transaction()`` /
+    ``_require_transaction`` / ``begin`` surface (AR-SDR-4). The reset delegate
+    (``LibraryResetRepo``) owns its own repository transaction boundary.
+    """
+
+    def test_library_maintenance_exposes_only_reset_library_data(self) -> None:
+        """LibraryMaintenanceDb's only public surface is the reset intent."""
+        from nomarr.persistence.api.library import LibraryMaintenanceDb
+
+        public = {name for name in dir(LibraryMaintenanceDb) if not name.startswith("_")}
+        assert public == {"reset_library_data"}, (
+            f"LibraryMaintenanceDb must expose only reset_library_data, got: {sorted(public)}"
+        )
+
+    def test_library_maintenance_exposes_no_transaction_surface(self) -> None:
+        """LibraryMaintenanceDb has no transaction()/_require_transaction/begin."""
+        from nomarr.persistence.api.library import LibraryMaintenanceDb
+
+        assert not hasattr(LibraryMaintenanceDb, "transaction"), (
+            "LibraryMaintenanceDb must not expose a transaction() method (AR-SDR-4)."
+        )
+        assert not hasattr(LibraryMaintenanceDb, "_require_transaction"), (
+            "LibraryMaintenanceDb must not expose a _require_transaction guard (AR-SDR-4)."
+        )
+        assert not hasattr(LibraryMaintenanceDb, "begin"), (
+            "LibraryMaintenanceDb must not expose a begin/transaction surface (AR-SDR-4)."
+        )
+
+
+# ---------------------------------------------------------------------------
 # Test 6: Facade methods accept domain identifiers
 # ---------------------------------------------------------------------------
 

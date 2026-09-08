@@ -58,6 +58,7 @@ persistence/
 │   ├── song_tag_repo.py         # Song–tag relationship operations
 │   ├── folder_repo.py           # Folder CRUD
 │   ├── library_repo.py          # Library record CRUD
+│   ├── library_reset_repo.py    # LibraryResetRepo: repository-owned begin_nested()/commit() boundary of the whole-library reset aggregate
 │   ├── model_repo.py            # ML model and output labeling
 │   ├── output_repo.py           # ML output stream persistence
 │   ├── pipeline_repo.py         # Pipeline state operations
@@ -140,6 +141,14 @@ It wraps operations such as:
 
 Use `db.library` when the caller thinks in terms of libraries, songs, folders, and tags rather than specific database tables.
 
+**Whole-library reset surface** (`db.library.maintenance`, a public nested sub-facade of `LibraryDb` wired by `Database`, mirroring `db.app.maintenance` / `db.ml.maintenance`): destructive whole-library resets are an explicit maintenance act and therefore stay out of the routine library intent surface on `LibraryDb`. The single caller intent is `db.library.maintenance.reset_library_data() -> None` (`LibraryMaintenanceDb.reset_library_data`, a thin delegation to `LibraryResetRepo`). The caller names no tables, collections, song ids, row identifiers, or a deletion order, and receives no storage rows, counts, sessions, or transaction handles (the method returns `None`).
+
+Persistence owns the complete aggregate. `LibraryResetRepo.reset_library_data()` (in `database/library_reset_repo.py`) enumerates the physical reset tables and runs each table-wide delete through private, no-commit statements inside one repository-owned `begin_nested()` / `commit()` boundary — mirroring `MlInferenceRepo.replace_song_inference_results` exactly. On any failure the savepoint is rolled back and the original exception is re-raised, so a failed reset exposes no partial-success result and leaves the session usable. Delete order is child-first and set-based (table-wide deletes, no per-song N+1 output-stream loop); delete ordering, batching, foreign-key handling, and the single transaction boundary remain private to persistence. Existing independently-committing repository methods are **not** composed for this aggregate.
+
+`LibraryMaintenanceDb` exposes no facade transaction surface or session-level guard (AR-SDR-4): the reset delegate owns its own repository transaction boundary, and no facade or caller opens a transaction around the primitive.
+
+Cleared set on a successful reset (all-or-nothing): `embeddings`, `ml_output_streams`, `pipeline_states`, `song_tags`, `song_state_assignments`, `songs`, `library_folders`, `tags`, `library_scans`. Preserved/excluded (never targeted by the reset): configured `libraries` rows, `ml_models`, `ml_model_outputs`, `calibration_state` / `calibration_history`, `ml_embedding_streams` (statement-level; never enumerated), `worker_health`, `worker_claims`, `song_states`, and locks / sessions / config / migrations. Because their parent `libraries` is preserved, `pipeline_states`, `library_scans`, and `library_folders` are always deleted explicitly rather than relying on cascades.
+
 **Row → domain conversion is persistence-owned.** All row/dict → domain conversion (e.g. `song_tag_mapper.tag_identity_from_row`, `song_tag_assignment_from_row`, `tag_usage_from_row`, `song_from_row`, `song_tag_match_from_row`) lives in `persistence/mappers/` and is called *inside* the facade sub-facades. Higher layers never construct storage row shapes, edge dicts, or table/primary-key payloads.
 
 **Identity bridge.** The sanctioned int→domain conversion points for callers holding opaque legacy storage handles are the song-side adapters `db.library.resolve_song_identity(song_id: int) -> SongIdentity | None` and `db.library.resolve_song_identities(song_ids) -> Mapping[int, SongIdentity]` (with `resolve_library_identity(s)` / `resolve_library_identities(s)`). They exist for callers that hold a legacy storage id — e.g. read a `Song.song_id` and need the natural identity for a song-tag operation. The former root-`Database` tag-handle resolver was retired after the natural-facade migration; callers holding an opaque tag handle obtain the natural `TagRef` through the sealed tag facade (`db.library.get_tag`), never via an integer tag-id conversion on `Database`. `HydrateSongInput.song_id: int` is the sole documented narrow semantic handle; `FileTag` and `(file_id, tag_value)` analytics tuples are interface/physical-file projections allowed at the boundary.
@@ -206,7 +215,8 @@ It wraps operations such as:
 
 - ML output stream, vector, model, model-output, and calibration intents
 - runtime vector-collection registration/query surfaces routed through ML-domain methods
-- maintenance-only routines on `db.ml` (truncation, resets): `db.ml.truncate_vectors_in_collection(...)`, `db.ml.maintenance.truncate_calibration_states()`, `db.ml.maintenance.truncate_calibration_history()`
+- maintenance-only routines on `db.ml` (truncation, resets): `db.ml.maintenance.truncate_calibration_states()`, `db.ml.maintenance.truncate_calibration_history()`
+- runtime vector-collection query/removal for `ml_vector_registry_comp` — the **retained** collection methods `db.ml.list_vector_collection_names()`, `db.ml.list_song_vectors()`, `db.ml.remove_song_vectors()`, and `db.ml.remove_vectors_for_songs()`. The reset-only methods `db.ml.clear_vector_collection`, `db.ml.truncate_vectors_in_collection`, `db.ml.remove_output_streams_for_song`, and `components/ml/inference/ml_output_stream_store_comp.py::delete_output_streams` were **retired**: after the whole-library reset migrated to the single `db.library.maintenance.reset_library_data()` aggregate, per-collection vector/stream clearing and per-song output-stream deletion for a reset now happen inside the aggregate. Collection/stream rows cleared by the reset go through the aggregate's table-wide deletes, not through facade methods.
 
 Use `db.ml` when the caller works with embeddings, models, output streams, or calibration artifacts.
 
@@ -232,6 +242,7 @@ Examples include:
 - `OutputRepo`
 - `CalibrationRepo`
 - `EmbeddingStreamRepository`
+- `LibraryResetRepo` (owns the repository-scoped `begin_nested()`/`commit()` boundary of the whole-library reset aggregate)
 
 These classes are intentionally narrow. They are not business services; they are focused table/relationship adapters that receive a thread-local `scoped_session` proxy. Each repo's session parameter is a `scoped_session` that resolves to the current thread's `Session` at query time.
 
@@ -315,7 +326,7 @@ no longer registered at runtime:
 
 ```python
 db.ml.list_vector_collection_names()
-db.ml.search_vectors("vectors_track_hot__demo_model__main", query_vector, limit=10)
+db.ml.search_vectors("discogs_effnet", query_vector, limit=10)
 ```
 
 ``search_vectors`` returns the nearest-neighbour vectors for a query vector

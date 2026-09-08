@@ -4,7 +4,9 @@
 surface. It holds no logic of its own: every public method delegates to one
 of four domain-identity sub-facades (``songs``, ``tags``, ``scans``,
 ``regions``) per DD-persistence-intent-facade-rebuild §Phase 1 (namespaced
-forwarding). Callers keep using ``db.library.method()`` unchanged.
+forwarding), plus a public maintenance nested sub-facade,
+``db.library.maintenance``, for destructive whole-library resets. Callers
+keep using ``db.library.method()`` unchanged.
 
 """
 
@@ -53,8 +55,9 @@ class LibraryMaintenanceDb:
     :class:`LibraryDb`. It is a public nested sub-facade of ``LibraryDb``, wired
     by :class:`Database`, mirroring ``db.ml.maintenance`` and ``db.app.maintenance``.
 
-    It exposes no ``transaction()`` or ``_require_transaction`` surface
-    (AR-SDR-4): the reset delegate owns its own repository transaction boundary.
+    It exposes only ``reset_library_data`` (AR-SDR-4): the repository owns the
+    atomic transaction boundary; callers invoke the reset directly without any
+    session-level wrapper.
     """
 
     def __init__(self, library_reset_repo: LibraryResetRepo) -> None:
@@ -76,7 +79,8 @@ class LibraryDb:
 
     Delegates each public method to the matching sub-facade: ``songs``
     (song/folder domain), ``tags`` (tag/song-tag domain), ``scans`` (scan
-    lifecycle), ``regions`` (library/pipeline-state domain).
+    lifecycle), ``regions`` (library/pipeline-state domain), plus the public
+    nested ``maintenance`` sub-facade (destructive whole-library reset).
     """
 
     def __init__(

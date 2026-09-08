@@ -7,10 +7,12 @@ intent facade wired as ``db.ml``.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 
 from nomarr.helpers.dataclasses.ml_embedding_stream_dataclass import EmbeddingStream
 from nomarr.helpers.dataclasses.ml_output_stream_dataclass import OutputStream, OutputStreamWrite
+from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
+from nomarr.helpers.dataclasses.vector_dataclass import BackboneVectorWrite
 from nomarr.helpers.time_helper import now_ms
 
 # This mapper edit accompanies the concurrent ML facade migration: keeping the
@@ -29,7 +31,7 @@ from nomarr.persistence.mappers.model_mapper import (
 from nomarr.persistence.mappers.output_mapper import model_output_from_record
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
 
     from sqlalchemy.orm import Session, scoped_session
 
@@ -37,7 +39,7 @@ if TYPE_CHECKING:
     from nomarr.helpers.dataclasses.calibration_state_dataclass import CalibrationState
     from nomarr.helpers.dataclasses.ml_model_dataclass import RegisteredModel
     from nomarr.helpers.dataclasses.ml_model_output_dataclass import ModelOutput
-    from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
+    from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity
     from nomarr.helpers.dataclasses.vector_dataclass import EmbeddingCounts, SongVector, VectorMatch
     from nomarr.helpers.dto.model_repo_dto import ModelRecord
     from nomarr.helpers.dto.vector_repo_dto import EmbeddingRecord, SimilarResult
@@ -56,8 +58,6 @@ class MlMaintenanceDb:
 
     Calibration state/history truncation is an explicit maintenance act and is
     therefore kept out of the routine calibration intent surface on ``MlDb``.
-    Sibling destructive resets that predate the maintenance split
-    (``truncate_vectors_in_collection``) remain directly on ``MlDb``.
     """
 
     def __init__(self, calibration_repo: CalibrationRepo) -> None:
@@ -78,9 +78,7 @@ class MlDb:
     Routine callers use the normalized ML intent methods on this facade.
     Destructive whole-table resets for calibration state/history live under
     ``maintenance`` (``db.ml.maintenance.truncate_calibration_states``,
-    ``db.ml.maintenance.truncate_calibration_history``).  Sibling destructive
-    resets that predate the maintenance split
-    (``truncate_vectors_in_collection``) remain directly on this facade.
+    ``db.ml.maintenance.truncate_calibration_history``).
     """
 
     def __init__(
@@ -123,19 +121,6 @@ class MlDb:
         self.maintenance = MlMaintenanceDb(calibration_repo)
 
     # ------------------------------------------------------------------
-    # Maintenance methods (destructive reset/repair)
-    # ------------------------------------------------------------------
-
-    def truncate_vectors_in_collection(self, _collection_name: str) -> None:
-        """Truncate all embeddings.
-
-        ``collection_name`` is accepted for backwards compatibility but ignored —
-        PostgreSQL uses a single ``embeddings`` table.
-        """
-        assert self._vector_repo is not None, "VectorRepo not wired"
-        self._vector_repo.truncate_embeddings()
-
-    # ------------------------------------------------------------------
     # Canonical routine top-level methods aligned with the DD contract
     # ------------------------------------------------------------------
 
@@ -148,15 +133,6 @@ class MlDb:
         """
         assert self._model_repo is not None, "ModelRepo not wired"
         return sorted({model.backbone_id for model in self.list_models()})
-
-    def clear_vector_collection(self, _collection_name: str) -> None:
-        """Remove all vectors from the embeddings table.
-
-        ``collection_name`` is accepted for backwards compatibility but ignored —
-        PostgreSQL uses a single ``embeddings`` table.
-        """
-        assert self._vector_repo is not None, "VectorRepo not wired"
-        self._vector_repo.delete_all_embeddings()
 
     def list_output_streams_for_song(self, song_id: int) -> list[OutputStream]:
         """Return output streams for a song without exposing persistence row fields."""
@@ -371,7 +347,7 @@ class MlDb:
         assert self._model_repo is not None, "ModelRepo not wired"
         return [registered_model_from_record(r) for r in self._model_repo.list_models()]
 
-    def build_model_output_index_map(self) -> dict[str, dict[int, str]]:
+    def model_output_index_map(self) -> Mapping[str, Mapping[int, str]]:
         """Return ``{model_path: {output_index: output_id}}`` across registered models."""
         result: dict[str, dict[int, str]] = {}
         for model in self.list_models():
@@ -524,11 +500,11 @@ class MlDb:
 
     def replace_song_inference_results(
         self,
-        song_id: int,
+        song: SongIdentity,
         backbone: str,
         *,
-        vectors: list[dict[str, Any]],
-        output_streams: list[OutputStreamWrite],
+        vectors: Sequence[BackboneVectorWrite],
+        output_streams: Sequence[OutputStreamWrite],
     ) -> None:
         """Atomically replace a song's output streams and a backbone's vectors.
 
@@ -536,42 +512,39 @@ class MlDb:
         whole replacement to :class:`MlInferenceRepo`, which owns the transaction.
         No facade-level transaction wrapper is used (AR-SDR-4).
 
-        Output streams are domain commands; row identifiers, song foreign keys,
-        timestamps, and table names remain inside persistence. Vector replacement
-        is scoped to ``(song_id, backbone)`` so sequentially-persisted backbones
-        preserve one another's vectors.
+        The facade is the typed boundary: *song* is a natural
+        :class:`SongIdentity` (never an integer storage key), and *vectors* /
+        *output_streams* are typed commands (:class:`BackboneVectorWrite` /
+        :class:`OutputStreamWrite`). Raw vector dictionaries and integer song
+        keys are rejected here with ``TypeError`` rather than laundered. Vector
+        replacement is scoped to ``(song, backbone)`` so sequentially-persisted
+        backbones preserve one another's vectors.
 
         Args:
-            song_id: Song whose output streams are replaced and whose vectors
+            song: Song whose output streams are replaced and whose vectors
                 (scoped to *backbone*) are replaced.
             backbone: Authoritative backbone identifier scoping vector
                 deletion and insertion.
-            vectors: Canonical vector payloads
-                ``{embedding_vector | embedding, model_id, backbone_id?, genres?}``.
-                If ``backbone_id`` is present, it must match ``backbone``;
-                otherwise the repository raises ``ValueError`` before mutation.
-            output_streams: Domain commands describing the output streams to
-                replace.
+            vectors: Typed :class:`BackboneVectorWrite` commands to persist for
+                *backbone*.
+            output_streams: Typed :class:`OutputStreamWrite` commands describing
+                the output streams to replace.
         """
+        if not isinstance(song, SongIdentity):
+            raise TypeError(f"replace_song_inference_results song must be a SongIdentity, got {type(song).__name__}")
+        for cmd in vectors:
+            if not isinstance(cmd, BackboneVectorWrite):
+                raise TypeError("replace_song_inference_results vectors must be BackboneVectorWrite commands")
+        for stream in output_streams:
+            if not isinstance(stream, OutputStreamWrite):
+                raise TypeError("replace_song_inference_results output_streams must be OutputStreamWrite commands")
         assert self._ml_inference_repo is not None, "MlInferenceRepo not wired"
         self._ml_inference_repo.replace_song_inference_results(
-            song_id=song_id,
+            song=song,
             backbone=backbone,
             vectors=vectors,
-            output_streams=[
-                {
-                    "output_id": stream.output_id,
-                    "values": stream.values,
-                    "output_index": stream.output_index,
-                }
-                for stream in output_streams
-            ],
+            output_streams=output_streams,
         )
-
-    def remove_output_streams_for_song(self, song_id: int) -> int:
-        """Delete a song's output streams and return the number removed."""
-        assert self._output_repo is not None, "OutputRepo not wired"
-        return self._output_repo.delete_output_streams_for_song(song_id)
 
     def remove_song_vectors(self, collection_name: str, song_id: int) -> None:
         """Delete one song's vectors for the requested backbone."""

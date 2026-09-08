@@ -390,3 +390,23 @@ class TestDeleteLibrary:
         scan_id = library_task_id(library, "scan")
         write_id = write_tags_task_id(library)
         assert call_order == ["stop", f"quiesce:{scan_id}", f"quiesce:{write_id}", "delete"]
+
+
+class TestClearLibraryData:
+    """Tests for ``LibraryAdminMixin.clear_library_data``."""
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_clear_library_data_passes_configured_root_to_component(self) -> None:
+        """clear_library_data must forward the configured library_root to the admin component."""
+        mock_db = MagicMock()
+        mock_cfg = MagicMock()
+        mock_cfg.library_root = "/configured-music"
+        mixin = _ConcreteAdminMixin(mock_db, mock_cfg)
+
+        with patch(
+            "nomarr.services.domain.library_svc.admin.clear_library_data",
+        ) as mock_clear_component:
+            mixin.clear_library_data()
+
+        mock_clear_component.assert_called_once_with(db=mock_db, library_root="/configured-music")

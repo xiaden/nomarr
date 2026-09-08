@@ -787,58 +787,41 @@ def test_get_tracks_for_matching_scopes_to_library_and_projects_isrc() -> None:
 
 
 @pytest.mark.unit
-def test_clear_library_data_truncates_all_facades() -> None:
+def test_clear_library_data_calls_maintenance_reset_once() -> None:
 
     db = make_db()
 
-    # list_vector_collection_names is called synchronously (no await) in source,
-    # so it must be a sync mock — AsyncMock would return a coroutine by default
-    db.ml.list_vector_collection_names = MagicMock(return_value=["vectors_track__hot__effnet"])
+    clear_library_data(db)
 
-    db.library.list_libraries.return_value = [{"id": 1}, {"id": 2}, {"id": 3}]
+    # Exactly one reset call via the persistence-owned maintenance intent.
+    db.library.maintenance.reset_library_data.assert_called_once_with()
 
-    db.library.list_library_song_ids.side_effect = [[1, 2], [3], []]
+    # No lower-level persistence calls remain in the component.
+    db.ml.list_vector_collection_names.assert_not_called()
 
-    with patch(
-        "nomarr.components.ml.inference.ml_output_stream_store_comp.delete_output_streams"
-    ) as mock_delete_output_streams:
-        clear_library_data(db)
+    db.ml.clear_vector_collection.assert_not_called()
 
-    db.ml.clear_vector_collection.assert_called_once_with("vectors_track__hot__effnet")
+    db.library.list_libraries.assert_not_called()
 
-    assert db.library.list_library_song_ids.call_args_list == [
-        call({"id": 1}, limit=None),
-        call({"id": 2}, limit=None),
-        call({"id": 3}, limit=None),
-    ]
+    db.library.list_library_song_ids.assert_not_called()
 
-    assert mock_delete_output_streams.call_args_list == [
-        call(db, 1),
-        call(db, 2),
-        call(db, 3),
-    ]
+    db.library.remove_pipeline_state.assert_not_called()
 
-    assert db.library.remove_pipeline_state.call_args_list == [
-        call({"id": 1}),
-        call({"id": 2}),
-        call({"id": 3}),
-    ]
+    db.library.admin_truncate_song_tag_assignments.assert_not_called()
 
-    db.library.admin_truncate_song_tag_assignments.assert_called_once_with()
+    db.app.truncate_song_state_edges.assert_not_called()
 
-    db.app.truncate_song_state_edges.assert_called_once_with()
+    db.library.truncate_song_links.assert_not_called()
 
-    db.library.truncate_song_links.assert_called_once_with()
+    db.library.truncate_folder_links.assert_not_called()
 
-    db.library.truncate_folder_links.assert_called_once_with()
+    db.library.admin_truncate_tags.assert_not_called()
 
-    db.library.admin_truncate_tags.assert_called_once_with()
+    db.library.truncate_songs.assert_not_called()
 
-    db.library.truncate_songs.assert_called_once_with()
+    db.library.truncate_folders.assert_not_called()
 
-    db.library.truncate_folders.assert_called_once_with()
-
-    db.library.truncate_scan_records.assert_called_once_with()
+    db.library.truncate_scan_records.assert_not_called()
 
 
 @pytest.mark.unit

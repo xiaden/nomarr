@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from nomarr.components.library.library_song_state_comp import transition_song_state
 from nomarr.helpers.constants.file_states import STATE_NOT_PROCESSED, STATE_PROCESSED
-from nomarr.helpers.dataclasses.ml_output_stream_dataclass import OutputStream, OutputStreamWrite
+from nomarr.helpers.dataclasses.ml_output_stream_dataclass import OutputStream
 from nomarr.helpers.dto.ml_dto import LoadedOutputStream
 
 if TYPE_CHECKING:
@@ -16,33 +16,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Compatibility aliases keep the component vocabulary stable while the domain
-# value objects become the sole stream contract across persistence boundaries.
-StreamWrite = OutputStreamWrite
+# Compatibility alias keeps the read-side component vocabulary stable while the
+# domain value object becomes the sole stream contract across persistence
+# boundaries. Caller-side stream write normalization/deduplication was removed
+# (build_output_stream_payloads / _normalize_streams) when the discovery worker
+# stopped performing it — persistence owns last-wins stream deduplication now.
 StreamRecord = OutputStream
-
-
-def _normalize_streams(streams: list[StreamWrite]) -> list[StreamWrite]:
-    """Deduplicate writes by output id so the last stream wins within one batch."""
-    deduped: dict[str, StreamWrite] = {}
-    for stream in streams:
-        output_id = stream.output_id
-        deduped[output_id] = StreamWrite(
-            output_id=output_id,
-            values=list(stream.values),
-            output_index=stream.output_index,
-        )
-    return list(deduped.values())
-
-
-def build_output_stream_payloads(streams: list[StreamWrite]) -> list[StreamWrite]:
-    """Normalize a batch of output-stream commands by stable output identity.
-
-    The result remains domain-shaped. Persistence serialization belongs to
-    ``db.ml`` rather than this component, so callers never construct or consume
-    table-shaped stream payloads.
-    """
-    return _normalize_streams(streams)
 
 
 def fetch_output_streams(db: Database, song_id: int) -> list[StreamRecord]:
@@ -64,7 +43,7 @@ def build_output_stream_lookup(
     head_infos: list[Any],
 ) -> dict[str, tuple[str, str]]:
     """Build ``{output_id: (head_name, label)}`` from registered outputs and heads."""
-    output_index_map = db.ml.build_model_output_index_map()
+    output_index_map = db.ml.model_output_index_map()
     output_lookup: dict[str, tuple[str, str]] = {}
 
     for head_info in head_infos:
@@ -168,8 +147,3 @@ def load_output_streams_for_song(
         file_path,
     )
     return output_streams
-
-
-def delete_output_streams(db: Database, song_id: int) -> int:
-    """Delete all canonical output streams for one song and return its count."""
-    return db.ml.remove_output_streams_for_song(song_id)

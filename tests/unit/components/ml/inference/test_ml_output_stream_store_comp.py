@@ -10,74 +10,12 @@ import pytest
 from nomarr.components.ml.inference.ml_output_stream_store_comp import (
     LoadedOutputStream,
     StreamRecord,
-    StreamWrite,
     build_output_stream_lookup,
-    build_output_stream_payloads,
-    delete_output_streams,
     fetch_output_streams,
     load_output_streams_for_song,
     resolve_output_stream_lookup,
 )
 from nomarr.helpers.dataclasses.ml_output_stream_dataclass import OutputStream, OutputStreamWrite
-
-
-@pytest.mark.unit
-@pytest.mark.mocked
-class TestBuildOutputStreamPayloads:
-    """Tests for ``build_output_stream_payloads`` (canonical aggregate payloads)."""
-
-    def test_returns_empty_list_for_empty_streams(self) -> None:
-        assert build_output_stream_payloads([]) == []
-
-    def test_builds_canonical_normalized_payloads(self) -> None:
-        result = build_output_stream_payloads(
-            [
-                StreamWrite(output_id="out-1", values=[0.1, 0.2]),
-                StreamWrite(output_id="ml_model_outputs/out-2", values=[0.3, 0.4]),
-            ]
-        )
-
-        assert result == [
-            OutputStreamWrite(output_id="out-1", values=[0.1, 0.2]),
-            OutputStreamWrite(output_id="ml_model_outputs/out-2", values=[0.3, 0.4]),
-        ]
-
-    def test_last_stream_for_output_wins_within_batch(self) -> None:
-        result = build_output_stream_payloads(
-            [
-                StreamWrite(output_id="out-1", values=[0.1]),
-                StreamWrite(output_id="ml_model_outputs/out-1", values=[0.9, 1.1]),
-            ]
-        )
-
-        assert result == [
-            OutputStreamWrite(output_id="out-1", values=[0.1]),
-            OutputStreamWrite(output_id="ml_model_outputs/out-1", values=[0.9, 1.1]),
-        ]
-
-    def test_duplicate_output_id_normalized_last_wins(self) -> None:
-        result = build_output_stream_payloads(
-            [
-                StreamWrite(output_id="head_0", values=[0.1, 0.9]),
-                StreamWrite(output_id="head_0", values=[0.4, 0.6]),
-            ]
-        )
-
-        assert result == [OutputStreamWrite(output_id="head_0", values=[0.4, 0.6])]
-
-    def test_live_shape_payload_carries_output_index(self) -> None:
-        """The live write shape threads ``output_index`` through the payload."""
-        result = build_output_stream_payloads(
-            [
-                StreamWrite(output_id="ml_model_outputs/out-0", values=[0.1, 0.9], output_index=0),
-                StreamWrite(output_id="ml_model_outputs/out-1", values=[0.3, 0.7], output_index=1),
-            ]
-        )
-
-        assert result == [
-            OutputStreamWrite(output_id="ml_model_outputs/out-0", values=[0.1, 0.9], output_index=0),
-            OutputStreamWrite(output_id="ml_model_outputs/out-1", values=[0.3, 0.7], output_index=1),
-        ]
 
 
 @pytest.mark.unit
@@ -123,22 +61,22 @@ class TestFetchOutputStreams:
     def test_live_shape_write_to_fetch_round_trip_carries_output_index(self) -> None:
         """A live write-read round-trip survives with its output_index intact.
 
-        Reproduces the exact deferred/live shape: the canonical payload the
-        aggregate persists (with output_index) is what the facade read
-        returns, and fetch_output_streams must surface the index rather than
-        dropping the row (which previously forced a re-inference loop).
+        Reproduces the exact deferred/live write shape: the worker maps deferred
+        stream commands 1:1 to :class:`OutputStreamWrite` (with ``output_index``)
+        and persistence persists them; ``fetch_output_streams`` must surface the
+        index rather than dropping the row (which previously forced a
+        re-inference loop).
         """
         mock_db = MagicMock()
-        # The write side: payloads built from the live shape carry the index.
-        payloads = build_output_stream_payloads(
-            [
-                StreamWrite(output_id="ml_model_outputs/out-0", values=[0.1, 0.9], output_index=0),
-                StreamWrite(output_id="ml_model_outputs/out-1", values=[0.3, 0.7], output_index=1),
-            ]
-        )
-        assert payloads == [
-            StreamWrite(output_id="ml_model_outputs/out-0", values=[0.1, 0.9], output_index=0),
-            StreamWrite(output_id="ml_model_outputs/out-1", values=[0.3, 0.7], output_index=1),
+        # The write side: domain stream commands (as dispatched to the
+        # aggregate) carry the index.
+        stream_writes = [
+            OutputStreamWrite(output_id="ml_model_outputs/out-0", values=[0.1, 0.9], output_index=0),
+            OutputStreamWrite(output_id="ml_model_outputs/out-1", values=[0.3, 0.7], output_index=1),
+        ]
+        assert stream_writes == [
+            OutputStreamWrite(output_id="ml_model_outputs/out-0", values=[0.1, 0.9], output_index=0),
+            OutputStreamWrite(output_id="ml_model_outputs/out-1", values=[0.3, 0.7], output_index=1),
         ]
 
         # The read side: the persisted rows (as the facade returns them) must
@@ -149,7 +87,7 @@ class TestFetchOutputStreams:
                 values=payload.values,
                 output_index=payload.output_index,
             )
-            for payload in payloads
+            for payload in stream_writes
         ]
         records = fetch_output_streams(mock_db, song_id=7)
 
@@ -176,43 +114,17 @@ class TestFetchOutputStreams:
 
 @pytest.mark.unit
 @pytest.mark.mocked
-class TestDeleteOutputStreams:
-    """Tests for ``delete_output_streams``."""
-
-    def test_returns_facade_deletion_count_when_file_has_no_streams(self) -> None:
-        mock_db = MagicMock()
-        mock_db.ml.remove_output_streams_for_song.return_value = 0
-
-        result = delete_output_streams(mock_db, song_id=9)
-
-        assert result == 0
-        mock_db.ml.list_output_streams_for_song.assert_not_called()
-        mock_db.ml.remove_output_streams_for_song.assert_called_once_with(9)
-
-    def test_returns_facade_deletion_count_without_reading_storage_rows(self) -> None:
-        mock_db = MagicMock()
-        mock_db.ml.remove_output_streams_for_song.return_value = 2
-
-        result = delete_output_streams(mock_db, song_id=4)
-
-        assert result == 2
-        mock_db.ml.list_output_streams_for_song.assert_not_called()
-        mock_db.ml.remove_output_streams_for_song.assert_called_once_with(4)
-
-
-@pytest.mark.unit
-@pytest.mark.mocked
 class TestBuildOutputStreamLookup:
     """Tests for ``build_output_stream_lookup``."""
 
     def test_returns_empty_dict_when_head_infos_is_empty(self) -> None:
         mock_db = MagicMock()
-        mock_db.ml.build_model_output_index_map.return_value = {}
+        mock_db.ml.model_output_index_map.return_value = {}
 
         result = build_output_stream_lookup(mock_db, [])
 
         assert result == {}
-        mock_db.ml.build_model_output_index_map.assert_called_once_with()
+        mock_db.ml.model_output_index_map.assert_called_once_with()
 
     def test_builds_lookup_from_head_infos_with_labels(self) -> None:
         mock_db = MagicMock()
@@ -221,7 +133,7 @@ class TestBuildOutputStreamLookup:
             SimpleNamespace(name="genre", model_path="models/genre.onnx", labels=["rock"]),
         ]
 
-        mock_db.ml.build_model_output_index_map.return_value = {
+        mock_db.ml.model_output_index_map.return_value = {
             "models/mood.onnx": {0: "ml_model_outputs/out-1", 1: "ml_model_outputs/out-2"},
             "models/genre.onnx": {0: "ml_model_outputs/out-3"},
         }

@@ -52,4 +52,4 @@ paths for existing deployments.
 
 Runtime vector collection registration was removed with the ArangoDB → PostgreSQL migration. There are no `collections.py` templates, no `Builder` wiring, and no `db.register(...)`. All embeddings live in a single PostgreSQL `embeddings` table, addressed by a `backbone_id` column (e.g. `discogs_effnet`).
 
-Vector access goes through the `db.ml` intent facade (`search_vectors`, `list_song_vectors`, `clear_vector_collection`, `list_vector_collection_names`, ...) over that single table.
+Vector access goes through the `db.ml` intent facade (`search_vectors`, `list_song_vectors`, `list_vector_collection_names`, `remove_song_vectors`, ...) over that single table.
