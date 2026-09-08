@@ -27,6 +27,8 @@ if TYPE_CHECKING:
     from nomarr.helpers.dataclasses.song_command_dataclass import (
         LibraryIdentity,
         SongIdentity,
+        SongPathUpdate,
+        SongUpsertInput,
     )
     from nomarr.helpers.dataclasses.song_dataclass import Song, SongTagMatch
     from nomarr.helpers.dataclasses.song_tag_dataclass import (
@@ -40,6 +42,33 @@ if TYPE_CHECKING:
     from nomarr.persistence.api.library_scans import LibraryScansDb
     from nomarr.persistence.api.library_songs import LibrarySongsDb
     from nomarr.persistence.api.library_tags import LibraryTagsDb
+    from nomarr.persistence.database.library_reset_repo import LibraryResetRepo
+
+
+class LibraryMaintenanceDb:
+    """Maintenance reset surface for ``db.library.maintenance``.
+
+    Destructive whole-library resets are an explicit maintenance act and are
+    therefore kept out of the routine library intent surface on
+    :class:`LibraryDb`. It is a public nested sub-facade of ``LibraryDb``, wired
+    by :class:`Database`, mirroring ``db.ml.maintenance`` and ``db.app.maintenance``.
+
+    It exposes no ``transaction()`` or ``_require_transaction`` surface
+    (AR-SDR-4): the reset delegate owns its own repository transaction boundary.
+    """
+
+    def __init__(self, library_reset_repo: LibraryResetRepo) -> None:
+        self._library_reset_repo = library_reset_repo
+
+    def reset_library_data(self) -> None:
+        """Atomically clear the documented global library reset data set.
+
+        Thin delegation to :class:`LibraryResetRepo` — the caller never names
+        tables, collections, song ids, row identifiers, or a deletion order, and
+        receives no storage rows, counts, sessions, or transaction handles. Returns
+        ``None``.
+        """
+        self._library_reset_repo.reset_library_data()
 
 
 class LibraryDb:
@@ -58,12 +87,24 @@ class LibraryDb:
         tags: LibraryTagsDb,
         scans: LibraryScansDb,
         regions: LibraryRegionsDb,
+        library_reset_repo: LibraryResetRepo | None = None,
     ) -> None:
         self._session = session
         self._songs = songs
         self._tags = tags
         self._scans = scans
         self._regions = regions
+        # Destructive whole-library reset lives under ``maintenance``
+        # (``db.library.maintenance.reset_library_data``), mirroring the
+        # ``db.ml.maintenance`` / ``db.app.maintenance`` namespaces. ``Database``
+        # supplies the shared-session ``LibraryResetRepo``; when not injected (legacy
+        # unit-test construction sites), the reset repo is built from the facade's
+        # own session so the surface is always present.
+        if library_reset_repo is None:
+            from nomarr.persistence.database.library_reset_repo import LibraryResetRepo
+
+            library_reset_repo = LibraryResetRepo(self._session)
+        self.maintenance = LibraryMaintenanceDb(library_reset_repo)
 
     @property
     def songs(self) -> LibrarySongsDb:
@@ -191,8 +232,8 @@ class LibraryDb:
     ) -> Song | None:
         return self._songs.find_library_song_by_chromaprint(library, chromaprint)
 
-    def add_song_to_library(self, library: Library, payload: dict) -> int:
-        return self._songs.add_song_to_library(library, payload)
+    def add_song_to_library(self, command: SongUpsertInput) -> SongIdentity:
+        return self._songs.add_song_to_library(command)
 
     def add_songs_to_library(
         self,
@@ -212,25 +253,8 @@ class LibraryDb:
     ) -> dict[str, int]:
         return self._songs.update_songs(library, payloads, remove_missing=remove_missing)
 
-    def update_library_song_path(self, song_id: int, new_path: str) -> None:
-        return self._songs.update_library_song_path(song_id, new_path)
-
-    def update_library_song_scan_metadata(
-        self,
-        song_id: int,
-        *,
-        file_size: int,
-        modified_time: int,
-        duration_seconds: float | None = None,
-        normalized_path: str | None = None,
-    ) -> None:
-        return self._songs.update_library_song_scan_metadata(
-            song_id,
-            file_size=file_size,
-            modified_time=modified_time,
-            duration_seconds=duration_seconds,
-            normalized_path=normalized_path,
-        )
+    def move_library_song(self, command: SongPathUpdate) -> None:
+        return self._songs.move_library_song(command)
 
     def update_library_song_modified_time(self, song_id: int, modified_time_ms: int) -> None:
         return self._songs.update_library_song_modified_time(song_id, modified_time_ms)

@@ -33,6 +33,8 @@ Phase 2 adaptations (per the binding signatures in the Plan A ledger):
 
 from __future__ import annotations
 
+import dataclasses
+from dataclasses import FrozenInstanceError
 from unittest.mock import MagicMock
 
 import pytest
@@ -289,15 +291,174 @@ class TestSongCommandContracts:
             duration_seconds=120.5,
             scanned_at=1000,
         )
-        upsert = SongUpsertInput(path="/music/a.mp3", folder_id=None, scan=scan)
+        upsert = SongUpsertInput(
+            library=_TEST_LIBRARY,
+            path="/music/a.mp3",
+            scan=scan,
+            last_tagged_at=2000,
+        )
         # ASR-0015 composition: scan metadata lives in one authoritative type.
         assert isinstance(upsert.scan, SongScanUpdate)
         assert upsert.scan.file_size == 100
+        assert upsert.library == _TEST_LIBRARY
+        assert upsert.last_tagged_at == 2000
+
+    def test_song_upsert_input_carries_natural_library_identity(self) -> None:
+        # The command is scoped by natural LibraryIdentity, not a storage ID.
+        upsert = SongUpsertInput(library=_TEST_LIBRARY, path="/music/a.mp3")
+        assert upsert.library == LibraryIdentity(name="TestLib", root_path="/music")
+        # scan stays optional so command construction without scan is representable.
+        assert upsert.scan is None
+        assert upsert.last_tagged_at is None
+
+    def test_song_upsert_input_rejects_storage_shaped_fields(self) -> None:
+        upsert = SongUpsertInput(library=_TEST_LIBRARY, path="/music/a.mp3")
+        # No SQL-column key, library_id, song_id, or folder_id is part of the command.
+        assert not hasattr(upsert, "folder_id")
+        assert not hasattr(upsert, "library_id")
+        assert not hasattr(upsert, "song_id")
+
+    def test_song_upsert_input_is_frozen_value_object(self) -> None:
+        upsert = SongUpsertInput(library=_TEST_LIBRARY, path="/music/a.mp3")
+        with pytest.raises(FrozenInstanceError):
+            upsert.path = "/music/other.mp3"  # type: ignore[misc]
+
+    def test_song_upsert_input_rejects_invalid_shape(self) -> None:
+        with pytest.raises(TypeError):
+            SongUpsertInput(library="not-a-library", path="/music/a.mp3")  # type: ignore[arg-type]
+        with pytest.raises(ValueError):
+            SongUpsertInput(library=_TEST_LIBRARY, path="   ")
 
     def test_song_path_update_and_removal_carry_identity(self) -> None:
+        # SongPathUpdate is the atomic move command addressed by the stable Song
+        # application/entity identity (ADR-047 §2/§8) — NOT the natural
+        # ``(library, normalized_path)`` locator identity, which changes during
+        # the move. It carries the destination ``new_path`` plus a full
+        # ``SongScanUpdate`` scan snapshot.
+        command = SongPathUpdate(
+            song_id=7,
+            new_path="/music/b.mp3",
+            scan=SongScanUpdate(
+                normalized_path="b.mp3",
+                file_size=100,
+                modified_time=1000,
+            ),
+        )
+        assert command.song_id == 7
+        assert command.new_path == "/music/b.mp3"
+        assert command.scan.normalized_path == "b.mp3"
+        # The old natural-locator identity surface (song_identity) is gone.
+        assert not hasattr(command, "song_identity")
+
         identity = _song()
-        assert SongPathUpdate(song_identity=identity, new_path="/music/b.mp3").new_path == "/music/b.mp3"
         assert SongRemoval(song_identity=identity).song_identity == identity
+
+    def test_song_path_update_uses_stable_song_id_not_natural_locator(self) -> None:
+        # The command addresses the existing row by the stable Song identity.
+        # ``library``/``path``/``normalized_path`` are mutable locators and never
+        # form the lifetime identity; a natural SongIdentity is not part of the
+        # command shape.
+        SongPathUpdate(
+            song_id=7,
+            new_path="/music/b.mp3",
+            scan=SongScanUpdate(
+                normalized_path="b.mp3",
+                file_size=100,
+                modified_time=1000,
+            ),
+        )
+        assert {f.name for f in dataclasses.fields(SongPathUpdate)} == {"song_id", "new_path", "scan"}
+
+    def test_song_path_update_carries_full_destination_scan_data(self) -> None:
+        # The complete scan snapshot (every required atomic field) is carried so
+        # persistence can commit locators + scan metadata together.
+        scan = SongScanUpdate(
+            normalized_path="sub/b.mp3",
+            file_size=4321,
+            modified_time=8765,
+            duration_seconds=223.5,
+            is_valid=True,
+            scanned_at=5555,
+        )
+        command = SongPathUpdate(song_id=7, new_path="/music/sub/b.mp3", scan=scan)
+        assert command.scan is scan
+        assert command.scan.normalized_path == "sub/b.mp3"
+        assert command.scan.file_size == 4321
+        assert command.scan.modified_time == 8765
+        assert command.scan.duration_seconds == 223.5
+        assert command.scan.is_valid is True
+        assert command.scan.scanned_at == 5555
+
+    def test_song_path_update_scan_timestamp_defaults_to_persistence_owned(self) -> None:
+        # scanned_at None means persistence applies its own default (current
+        # time); components never fabricate a storage timestamp.
+        command = SongPathUpdate(
+            song_id=7,
+            new_path="/music/b.mp3",
+            scan=SongScanUpdate(normalized_path="b.mp3", file_size=100, modified_time=1000),
+        )
+        assert command.scan.scanned_at is None
+
+    def test_song_path_update_rejects_invalid_song_id(self) -> None:
+        # song_id must be a positive int — not a bool, not <= 0.
+        with pytest.raises(ValueError, match="song_id"):
+            SongPathUpdate(
+                song_id=True,
+                new_path="/music/b.mp3",
+                scan=SongScanUpdate(normalized_path="b.mp3", file_size=1, modified_time=1),
+            )
+        with pytest.raises(ValueError, match="song_id"):
+            SongPathUpdate(
+                song_id=0,
+                new_path="/music/b.mp3",
+                scan=SongScanUpdate(normalized_path="b.mp3", file_size=1, modified_time=1),
+            )
+        with pytest.raises(ValueError, match="song_id"):
+            SongPathUpdate(
+                song_id="7",  # type: ignore[arg-type]
+                new_path="/music/b.mp3",
+                scan=SongScanUpdate(normalized_path="b.mp3", file_size=1, modified_time=1),
+            )
+
+    def test_song_path_update_rejects_blank_destination_and_scan_shape(self) -> None:
+        with pytest.raises(ValueError, match="new_path"):
+            SongPathUpdate(
+                song_id=7,
+                new_path="   ",
+                scan=SongScanUpdate(normalized_path="b.mp3", file_size=1, modified_time=1),
+            )
+        with pytest.raises(TypeError):
+            SongPathUpdate(song_id=7, new_path="/music/b.mp3", scan="not-a-scan")  # type: ignore[arg-type]
+        # A blank normalized_path, when present, is rejected.
+        with pytest.raises(ValueError, match="normalized_path"):
+            SongPathUpdate(
+                song_id=7,
+                new_path="/music/b.mp3",
+                scan=SongScanUpdate(normalized_path="   ", file_size=1, modified_time=1),
+            )
+
+    def test_song_path_update_does_not_leak_storage_row_beyond_song_identity(self) -> None:
+        # The intentionally adopted stable Song identity (song_id) is the only
+        # id-bearing field; no repository row / library_id / folder_id / SQL
+        # payload shape is exposed.
+        command = SongPathUpdate(
+            song_id=7,
+            new_path="/music/b.mp3",
+            scan=SongScanUpdate(normalized_path="b.mp3", file_size=1, modified_time=1),
+        )
+        assert not hasattr(command, "library_id")
+        assert not hasattr(command, "folder_id")
+        assert not hasattr(command, "song_identity")
+        assert not hasattr(command.scan, "id")
+
+    def test_song_path_update_is_frozen_value_object(self) -> None:
+        command = SongPathUpdate(
+            song_id=7,
+            new_path="/music/b.mp3",
+            scan=SongScanUpdate(normalized_path="b.mp3", file_size=1, modified_time=1),
+        )
+        with pytest.raises(FrozenInstanceError):
+            command.new_path = "/music/other.mp3"  # type: ignore[misc]
 
     def test_song_sync_result_is_domain_counts(self) -> None:
         result = SongSyncResult(added=1, updated=2, removed=0)

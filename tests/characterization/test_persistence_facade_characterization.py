@@ -81,26 +81,37 @@ class TestLibraryDbFacadeCharacterization:
         assert_snapshot_matches("LibraryDb_update_library", result)
 
     def test_add_song_to_library(self, db, seed_data):
-        """Snapshot: add_song_to_library(Library, payload) → int (song id)."""
+        """Snapshot: add_song_to_library(SongUpsertInput) → SongIdentity."""
+        from nomarr.helpers.dataclasses.library_dataclass import Library
+        from nomarr.helpers.dataclasses.song_command_dataclass import (
+            LibraryIdentity,
+            SongIdentity,
+            SongScanUpdate,
+            SongUpsertInput,
+        )
         from nomarr.helpers.time_helper import now_ms
 
         now_ms_val = now_ms()
-        result = db.library.add_song_to_library(
-            _lib1(seed_data),
-            {
-                "path": "/tmp/test1/char_song.flac",
-                "normalized_path": "/tmp/test1/char_song.flac",
-                "file_size": 999999,
-                "modified_time": now_ms_val.value,
-                "duration_seconds": 123.456,
-                "needs_tagging": 0,
-                "is_valid": 1,
-                "tagged": 0,
-            },
+        library = _lib1(seed_data)
+        assert isinstance(library, Library)
+        command = SongUpsertInput(
+            library=LibraryIdentity(name=library.name, root_path=library.root_path),
+            path="/tmp/test1/char_song.flac",
+            scan=SongScanUpdate(
+                normalized_path="/tmp/test1/char_song.flac",
+                file_size=999999,
+                modified_time=now_ms_val.value,
+                duration_seconds=123.456,
+            ),
         )
+        result = db.library.add_song_to_library(command)
+        # The corrected facade returns the natural SongIdentity, never an int
+        # snapshot: no PostgreSQL song id crosses the boundary.
+        assert isinstance(result, SongIdentity)
+        assert not isinstance(result, int)
         assert_snapshot_matches("LibraryDb_add_song_to_library", result)
-        # Cleanup: remove the song
-        db.library.remove_song(result)
+        # Cleanup by natural path/library identity — never a storage key.
+        db.library.remove_song_by_path("/tmp/test1/char_song.flac", library)
 
     def test_get_song_by_path(self, db, seed_data):
         """Snapshot: get_song_by_path(path, Library) → Song | None."""

@@ -30,6 +30,9 @@ from nomarr.helpers.dataclasses.library_domain_dataclasses import (
 from nomarr.helpers.dataclasses.song_command_dataclass import (
     LibraryIdentity,
     SongIdentity,
+    SongPathUpdate,
+    SongScanUpdate,
+    SongUpsertInput,
 )
 from nomarr.helpers.dataclasses.song_dataclass import Song, SongTagMatch
 from nomarr.helpers.dataclasses.song_tag_dataclass import (
@@ -140,6 +143,7 @@ def _make_library_db() -> tuple[
         tags=tags,
         scans=scans,
         regions=regions,
+        library_reset_repo=MagicMock(),
     )
     return (
         db,
@@ -235,10 +239,19 @@ def test_exposes_library_maintenance_surface() -> None:
     db.admin_truncate_song_tag_assignments()
     song_tag_repo.truncate_song_tag_assignments.assert_called_once_with()
 
-    # LibraryMaintenanceDb no longer exists
+    # The destructive whole-library reset lives on the nested
+    # ``db.library.maintenance`` surface, not as a LibraryDb top-level method.
+    assert hasattr(db.maintenance, "reset_library_data")
+    assert not hasattr(db, "reset_library_data")
+    # LibraryMaintenanceDb is a public nested sub-facade in the module.
     import nomarr.persistence.api.library as library_module
 
-    assert not hasattr(library_module, "LibraryMaintenanceDb")
+    assert hasattr(library_module, "LibraryMaintenanceDb")
+    assert isinstance(db.maintenance, library_module.LibraryMaintenanceDb)
+    # No facade transaction context / begin-transaction helper leaks (AR-SDR-4).
+    assert not hasattr(db.maintenance, "transaction")
+    assert not hasattr(db.maintenance, "_require_transaction")
+    assert not hasattr(db.maintenance, "begin")
 
 
 # ── Library CRUD ──────────────────────────────────────────────────────────
@@ -535,15 +548,290 @@ def test_resolve_library_identity_bridge() -> None:
 
 
 @pytest.mark.unit
-def test_add_song_to_library_delegates() -> None:
+def test_add_song_to_library_delegates_typed_command() -> None:
     db, library_repo, song_repo, *_ = _make_library_db()
     song_repo.upsert_songs_for_library = MagicMock(return_value=[42])
+    scan = SongScanUpdate(
+        normalized_path="a.mp3",
+        file_size=100,
+        modified_time=1000,
+        duration_seconds=120.5,
+        scanned_at=1000,
+    )
+    command = SongUpsertInput(
+        library=_TEST_LIBRARY,
+        path="/music/a.mp3",
+        scan=scan,
+        last_tagged_at=2000,
+    )
 
-    result = db.add_song_to_library(_LIB, {"path": "/music/a.mp3"})
+    result = db.add_song_to_library(command)
 
-    assert result == 42
+    # The facade returns the natural SongIdentity, never the generated song id.
+    assert isinstance(result, SongIdentity)
+    assert result == SongIdentity(library=_TEST_LIBRARY, normalized_path="a.mp3")
+    assert not isinstance(result, int)
     library_repo.get_library_by_natural_key.assert_called_once_with("TestLib", "/music")
-    song_repo.upsert_songs_for_library.assert_called_once_with(1, [{"path": "/music/a.mp3"}])
+    song_repo.upsert_songs_for_library.assert_called_once_with(
+        1,
+        [
+            {
+                "path": "/music/a.mp3",
+                "normalized_path": "a.mp3",
+                "file_size": 100,
+                "modified_time": 1000,
+                "duration_seconds": 120.5,
+                "scanned_at": 1000,
+                "chromaprint": None,
+                "last_tagged_at": 2000,
+            }
+        ],
+    )
+
+
+@pytest.mark.unit
+def test_add_song_to_library_initializes_states_with_private_id() -> None:
+    db, _, song_repo, _, _, _, _, song_state_repo, _ = _make_library_db()
+    song_repo.upsert_songs_for_library = MagicMock(return_value=[42])
+    scan = SongScanUpdate(
+        normalized_path="a.mp3",
+        file_size=100,
+        modified_time=1000,
+    )
+    command = SongUpsertInput(library=_TEST_LIBRARY, path="/music/a.mp3", scan=scan)
+
+    result = db.add_song_to_library(command)
+
+    assert result == SongIdentity(library=_TEST_LIBRARY, normalized_path="a.mp3")
+    # State init is driven by the private returned song id and stays internal.
+    song_state_repo.initialize_song_states.assert_called_once_with([42])
+
+
+@pytest.mark.unit
+def test_add_song_to_library_defaults_scanned_at_when_scan_omits_it() -> None:
+    db, _, song_repo, *_ = _make_library_db()
+    song_repo.upsert_songs_for_library = MagicMock(return_value=[42])
+    scan = SongScanUpdate(
+        normalized_path="a.mp3",
+        file_size=100,
+        modified_time=1000,
+        scanned_at=None,
+    )
+    command = SongUpsertInput(library=_TEST_LIBRARY, path="/music/a.mp3", scan=scan)
+    from nomarr.helpers.time_helper import now_ms
+
+    before = now_ms().value
+
+    db.add_song_to_library(command)
+    after = now_ms().value
+
+    payload = song_repo.upsert_songs_for_library.call_args.args[1][0]
+    assert payload["scanned_at"] is not None
+    assert before <= int(payload["scanned_at"]) <= after
+
+
+@pytest.mark.unit
+def test_add_song_to_library_missing_library_raises_lookup_error() -> None:
+    db, library_repo, song_repo, *_ = _make_library_db()
+    library_repo.get_library_by_natural_key = MagicMock(return_value=None)
+    command = SongUpsertInput(library=_TEST_LIBRARY, path="/music/a.mp3")
+
+    with pytest.raises(LookupError, match="does not exist"):
+        db.add_song_to_library(command)
+    song_repo.upsert_songs_for_library.assert_not_called()
+
+
+@pytest.mark.unit
+def test_add_song_to_library_none_root_path_is_unresolvable() -> None:
+    db, library_repo, song_repo, *_ = _make_library_db()
+    command = SongUpsertInput(library=LibraryIdentity(name="TestLib"), path="/music/a.mp3")
+
+    with pytest.raises(LookupError, match="does not exist"):
+        db.add_song_to_library(command)
+    library_repo.get_library_by_natural_key.assert_not_called()
+    song_repo.upsert_songs_for_library.assert_not_called()
+
+
+@pytest.mark.unit
+def test_add_song_to_library_empty_repo_result_raises_runtime_error() -> None:
+    db, _, song_repo, _, _, _, _, song_state_repo, _ = _make_library_db()
+    song_repo.upsert_songs_for_library = MagicMock(return_value=[])
+    scan = SongScanUpdate(normalized_path="a.mp3", file_size=100, modified_time=1000)
+    command = SongUpsertInput(library=_TEST_LIBRARY, path="/music/a.mp3", scan=scan)
+
+    with pytest.raises(RuntimeError, match="expected one song id"):
+        db.add_song_to_library(command)
+    song_state_repo.initialize_song_states.assert_not_called()
+
+
+@pytest.mark.unit
+def test_add_song_to_library_state_init_exception_propagates_without_exposing_id() -> None:
+    """A state-initialization failure propagates through the facade without
+    exposing the generated id as a successful semantic result."""
+    db, _, song_repo, _, _, _, _, song_state_repo, _ = _make_library_db()
+    song_repo.upsert_songs_for_library = MagicMock(return_value=[42])
+    song_state_repo.initialize_song_states = MagicMock(side_effect=RuntimeError("state init failed"))
+    scan = SongScanUpdate(normalized_path="a.mp3", file_size=100, modified_time=1000)
+    command = SongUpsertInput(library=_TEST_LIBRARY, path="/music/a.mp3", scan=scan)
+
+    with pytest.raises(RuntimeError, match="state init failed"):
+        db.add_song_to_library(command)
+
+    # The generated id (42) reaches only the private state initializer; it is
+    # never returned as a semantic SongIdentity because the exception fires
+    # before the facade can return.
+    song_repo.upsert_songs_for_library.assert_called_once()
+    song_state_repo.initialize_song_states.assert_called_once_with([42])
+
+
+@pytest.mark.unit
+def test_add_song_to_library_rejects_raw_dict_payload() -> None:
+    """The old raw SQL-column dict / generated-int contract is rejected.
+
+    Passing a raw storage dict no longer satisfies the typed facade; it is
+    treated as an invalid command shape rather than a repository payload.
+    """
+    db, *_ = _make_library_db()
+    with pytest.raises(AttributeError):
+        db.add_song_to_library({"path": "/music/a.mp3", "file_size": 1})  # type: ignore[arg-type]
+
+
+# ── insert / update / recovery / negative (P4 invariants) ──────────────────
+
+
+@pytest.mark.unit
+def test_add_song_to_library_same_natural_path_inserts_then_updates() -> None:
+    """Re-upserting the same natural path + library updates the one row in place.
+
+    The facade forwards a stable unique ``(library_id, path)`` key (identical
+    ``path``/``normalized_path`` on both calls) so the repository's unique
+    ``uq_songs_library_path`` conflict upsert updates rather than duplicates, and
+    it refreshes the scan metadata on the update. A stateful repository double
+    emulates that unique-on-path behaviour to prove the facade presents the same
+    key and refreshable scan columns across insert and update. The repository
+    remains the owner of the actual one-row/no-duplicate DB guarantee (pinned by
+    ``test_song_repo.py::test_upsert_song_insert`` / ``test_upsert_song_update``).
+    """
+    db, _, song_repo, _, _, _, _, song_state_repo, _ = _make_library_db()
+
+    # In-memory rows keyed by the natural physical path; an id is assigned on
+    # first insert and kept on a same-path update (mirrors on_conflict semantics).
+    rows: dict[str, dict[str, object]] = {}
+
+    def _upsert_tracking(library_id: int, payloads: list[dict[str, object]]) -> list[int]:
+        ids: list[int] = []
+        for payload in payloads:
+            path = str(payload["path"])
+            if path in rows:
+                rows[path].update({k: v for k, v in payload.items() if k != "path"})
+            else:
+                rows[path] = {**payload, "id": len(rows) + 1}
+            ids.append(int(rows[path]["id"]))  # type: ignore[arg-type]
+        return ids
+
+    song_repo.upsert_songs_for_library = MagicMock(side_effect=_upsert_tracking)
+
+    def _command(file_size: int, modified_time: int) -> SongUpsertInput:
+        scan = SongScanUpdate(
+            normalized_path="a.mp3",
+            file_size=file_size,
+            modified_time=modified_time,
+            duration_seconds=120.5,
+        )
+        return SongUpsertInput(library=_TEST_LIBRARY, path="/music/a.mp3", scan=scan)
+
+    first = db.add_song_to_library(_command(file_size=100, modified_time=1000))
+    assert first == SongIdentity(library=_TEST_LIBRARY, normalized_path="a.mp3")
+    assert isinstance(first, SongIdentity)
+    assert not isinstance(first, int)
+
+    second = db.add_song_to_library(_command(file_size=200, modified_time=2000))
+
+    assert len(rows) == 1  # no duplicate row under the stable natural key
+    stored = rows["/music/a.mp3"]
+    assert stored["file_size"] == 200
+    assert stored["modified_time"] == 2000
+    assert second == first  # same natural identity, same underlying storage row
+
+    calls = song_repo.upsert_songs_for_library.call_args_list
+    assert len(calls) == 2
+    assert calls[0].args[1][0]["path"] == calls[1].args[1][0]["path"]
+    assert calls[0].args[1][0]["normalized_path"] == calls[1].args[1][0]["normalized_path"]
+    # initialize_song_states is idempotent (on_conflict_do_nothing), so re-running
+    # it on the update bootstraps the initial negative states exactly once — it
+    # never creates a duplicate membership set.
+    assert song_state_repo.initialize_song_states.call_count == 2
+
+
+@pytest.mark.unit
+def test_add_song_to_library_rejects_scanless_command() -> None:
+    """A scan-less ``SongUpsertInput`` cannot satisfy the songs row contract.
+
+    ``file_size``/``modified_time`` are non-null columns sourced only from scan
+    (no DB default, no other source), so the private mapper rejects a command
+    with ``scan=None`` before any half-built payload reaches the repository.
+    Scan-less commands were never a supported legacy upsert path, so no prior
+    error behaviour is displaced.
+    """
+    db, _, song_repo, *_ = _make_library_db()
+    command = SongUpsertInput(library=_TEST_LIBRARY, path="/music/a.mp3")
+
+    with pytest.raises(ValueError, match="requires scan metadata"):
+        db.add_song_to_library(command)
+    song_repo.upsert_songs_for_library.assert_not_called()
+
+
+@pytest.mark.unit
+def test_add_song_to_library_rejects_int_command() -> None:
+    """A direct integer no longer satisfies the corrected facade contract.
+
+    Only a ``SongUpsertInput`` is accepted; an int is treated as an invalid
+    command shape (accessing ``.library`` on it fails) rather than a storage id
+    the facade could ever return or accept.
+    """
+    db, *_ = _make_library_db()
+    with pytest.raises(AttributeError):
+        db.add_song_to_library(42)  # type: ignore[arg-type]
+
+
+@pytest.mark.unit
+def test_add_song_to_library_rejects_blank_identity_and_path_at_command_boundary() -> None:
+    """Invalid path/identity values are rejected by the frozen value objects
+    before any facade work runs (facade-level negative coverage)."""
+    # Blank physical path is rejected by the frozen SongUpsertInput.
+    with pytest.raises(ValueError):
+        SongUpsertInput(library=_TEST_LIBRARY, path="   ")
+    # Blank/invalid library identity values are rejected by LibraryIdentity.
+    with pytest.raises(ValueError):
+        LibraryIdentity(name="   ")
+    with pytest.raises(ValueError):
+        LibraryIdentity(name="TestLib", root_path="   ")
+
+
+@pytest.mark.unit
+def test_add_song_to_library_retry_after_state_init_failure_succeeds() -> None:
+    """Recovery is the existing caller retry: re-invoking the idempotent intent
+    after a state-init failure succeeds.
+
+    No restart protocol or rollback is invented here. The repository upsert
+    commits in its own short transaction and the state initializer commits
+    separately, so NO atomicity is claimed across the two: a state-init failure
+    leaves the row upserted but not yet initialized, and the caller's supported
+    recovery is a retry that re-runs both idempotently.
+    """
+    db, _, song_repo, _, _, _, _, song_state_repo, _ = _make_library_db()
+    song_repo.upsert_songs_for_library = MagicMock(return_value=[42])
+    song_state_repo.initialize_song_states = MagicMock(side_effect=[RuntimeError("state init failed"), None])
+    scan = SongScanUpdate(normalized_path="a.mp3", file_size=100, modified_time=1000)
+    command = SongUpsertInput(library=_TEST_LIBRARY, path="/music/a.mp3", scan=scan)
+
+    with pytest.raises(RuntimeError, match="state init failed"):
+        db.add_song_to_library(command)
+
+    result = db.add_song_to_library(command)
+    assert result == SongIdentity(library=_TEST_LIBRARY, normalized_path="a.mp3")
+    assert song_repo.upsert_songs_for_library.call_count == 2
+    assert song_state_repo.initialize_song_states.call_count == 2
 
 
 @pytest.mark.unit
@@ -1293,3 +1581,171 @@ def test_maintenance_truncate_scan_records() -> None:
     db.truncate_scan_records()
 
     scan_repo.truncate_scans.assert_called_once_with()
+
+
+@pytest.mark.unit
+def test_maintenance_reset_library_data_delegates_exactly_once() -> None:
+    """``db.library.maintenance.reset_library_data`` delegates to LibraryResetRepo
+    exactly once and returns ``None`` (no storage rows/ids/counts/handles)."""
+    db, *_ = _make_library_db()
+    reset_repo = db.maintenance._library_reset_repo
+    assert isinstance(reset_repo, MagicMock)
+
+    result = db.maintenance.reset_library_data()
+
+    assert result is None
+    reset_repo.reset_library_data.assert_called_once_with()
+
+
+@pytest.mark.unit
+def test_library_maintenance_exposes_no_transaction_surface() -> None:
+    """The library maintenance surface exposes no transaction()/begin helper
+    (AR-SDR-4 / CONTRACTS.md). The reset delegate owns its own transaction."""
+    db, *_ = _make_library_db()
+
+    for name in ("transaction", "_require_transaction", "begin", "begin_nested", "commit"):
+        assert not hasattr(db.maintenance, name), f"db.library.maintenance must not expose '{name}' (AR-SDR-4)."
+
+    # Only the reset intent is exposed on the destructive reset surface.
+    assert {n for n in dir(db.maintenance) if not n.startswith("_")} == {"reset_library_data"}
+
+
+@pytest.mark.unit
+class TestMoveLibrarySong:
+    """Atomic Song-move intent delegation and contract (ADR-047 §2/§8).
+
+    ``db.move_library_song(command)`` (LibraryDb) forwards one typed
+    ``SongPathUpdate`` to the LibrarySongsDb intent, which maps it onto exactly
+    one ``SongRepository.move_song(song_id, payload)`` call — the transaction
+    owner. The facade neither resolves locators, opens a transaction, nor
+    inserts/deletes/recreates a row, so associations stay attached.
+    """
+
+    @staticmethod
+    def _command(**scan_overrides: object) -> SongPathUpdate:
+        scan_defaults: dict = {
+            "normalized_path": "sub/b.mp3",
+            "file_size": 4321,
+            "modified_time": 8765,
+            "duration_seconds": 223.5,
+            "is_valid": True,
+            "scanned_at": 5555,
+        }
+        scan_defaults.update(scan_overrides)
+        return SongPathUpdate(
+            song_id=7,
+            new_path="/music/b.mp3",
+            scan=SongScanUpdate(**scan_defaults),  # type: ignore[arg-type]
+        )
+
+    def test_songs_intent_maps_to_single_repo_call_with_full_payload(self) -> None:
+        db, _, song_repo, *_ = _make_library_db()
+        song_repo.move_song.return_value = True
+        command = self._command()
+
+        result = db._songs.move_library_song(command)
+
+        assert result is None
+        song_repo.move_song.assert_called_once_with(
+            7,
+            {
+                "path": "/music/b.mp3",
+                "normalized_path": "sub/b.mp3",
+                "file_size": 4321,
+                "modified_time": 8765,
+                "duration_seconds": 223.5,
+                "is_valid": 1,
+                "scanned_at": 5555,
+            },
+        )
+
+    def test_is_valid_maps_bool_to_int_flag(self) -> None:
+        db, _, song_repo, *_ = _make_library_db()
+        song_repo.move_song.return_value = True
+
+        db._songs.move_library_song(self._command(is_valid=False))
+
+        payload = song_repo.move_song.call_args.args[1]
+        assert payload["is_valid"] == 0
+
+    def test_none_scanned_at_uses_persistence_now_ms_default(self) -> None:
+        from nomarr.helpers.time_helper import now_ms
+
+        db, _, song_repo, *_ = _make_library_db()
+        song_repo.move_song.return_value = True
+        before = now_ms().value
+
+        db._songs.move_library_song(self._command(scanned_at=None))
+
+        after = now_ms().value
+        payload = song_repo.move_song.call_args.args[1]
+        assert before <= payload["scanned_at"] <= after
+
+    def test_missing_song_raises_lookup_error_no_replacement(self) -> None:
+        db, _, song_repo, *_ = _make_library_db()
+        song_repo.move_song.return_value = False
+
+        with pytest.raises(LookupError, match="Song 7"):
+            db._songs.move_library_song(self._command())
+
+        # No replacement row is created by a failed move.
+        song_repo.move_song.assert_called_once()
+
+    def test_none_normalized_path_rejected_before_any_write(self) -> None:
+        db, _, song_repo, *_ = _make_library_db()
+
+        with pytest.raises(ValueError, match="normalized_path"):
+            db._songs.move_library_song(self._command(normalized_path=None))
+
+        song_repo.move_song.assert_not_called()
+
+    def test_repository_failure_propagates_and_intent_issues_single_call(self) -> None:
+        """A repository uniqueness/rollback failure propagates unchanged; the
+        facade issues exactly one repo call (no retry, no second partial write,
+        no delete/recreate fallback) — atomicity is the repo's guarantee."""
+        from nomarr.helpers.exceptions import DuplicateEntityError
+
+        db, _, song_repo, *_ = _make_library_db()
+        song_repo.move_song.side_effect = DuplicateEntityError("dup (library_id,path)")
+
+        with pytest.raises(DuplicateEntityError):
+            db._songs.move_library_song(self._command())
+
+        song_repo.move_song.assert_called_once()
+
+    def test_library_db_forwarder_delegates_one_typed_command(self) -> None:
+        db, *_ = _make_library_db()
+        db._songs.move_library_song = MagicMock()  # isolate the LibraryDb forwarder
+        command = self._command()
+
+        db.move_library_song(command)
+
+        db._songs.move_library_song.assert_called_once_with(command)
+
+    def test_no_two_call_surface_and_no_session_mechanics_exposed(self) -> None:
+        """The retired path + scan-metadata two-call choreography is gone and the
+        facade exposes no transaction/begin/commit surface (AR-SDR-4)."""
+        db, *_ = _make_library_db()
+        for facade in (db, db._songs):
+            assert not hasattr(facade, "update_library_song_path")
+            assert not hasattr(facade, "update_library_song_scan_metadata")
+            for name in ("transaction", "begin", "begin_nested", "commit"):
+                assert not hasattr(facade, name), f"move surface must not expose '{name}'"
+        assert hasattr(db, "move_library_song")
+        assert hasattr(db._songs, "move_library_song")
+
+    def test_move_intent_issues_only_the_single_update_call(self) -> None:
+        """The move intent performs a single UPDATE — it never issues a delete,
+        insert, replace-songs, or second metadata write, so associations
+        (tags/state/streams) stay attached to the stable row."""
+        db, _, song_repo, *_ = _make_library_db()
+        song_repo.move_song.return_value = True
+
+        db._songs.move_library_song(self._command())
+
+        # The repo's only recorded interaction is the single move_song update.
+        assert len(song_repo.method_calls) == 1
+        assert song_repo.method_calls[0][0] == "move_song"
+        song_repo.move_song.assert_called_once()
+        song_repo.delete_song.assert_not_called()
+        song_repo.add_song.assert_not_called()

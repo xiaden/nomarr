@@ -22,6 +22,8 @@ from typing import TYPE_CHECKING, Any
 from nomarr.helpers.dataclasses.song_command_dataclass import (
     LibraryIdentity,
     SongIdentity,
+    SongPathUpdate,
+    SongUpsertInput,
 )
 from nomarr.helpers.dataclasses.song_dataclass import Song
 from nomarr.helpers.time_helper import now_ms
@@ -77,6 +79,22 @@ class LibrarySongsDb:
         row = self._library_repo.get_library_by_natural_key(library.name, library.root_path)
         if row is None:
             raise LookupError(f"Library {library.name!r} at {library.root_path!r} does not exist")
+        return int(row["id"])
+
+    def _resolve_library_identity(self, identity: LibraryIdentity) -> int:
+        """Resolve a natural ``LibraryIdentity`` to its private storage row id.
+
+        Dedicated resolver for the typed single-song command; keeps the
+        ``Library``-typed ``_resolve_library_id`` used by unrelated methods
+        unchanged. The id is used only to reach the row and never crosses this
+        facade. A library with no ``root_path`` cannot be resolved by natural key
+        and is treated as missing (``LookupError``), never a fabricated lookup.
+        """
+        if identity.root_path is None:
+            raise LookupError(f"Library {identity.name!r} at None does not exist")
+        row = self._library_repo.get_library_by_natural_key(identity.name, identity.root_path)
+        if row is None:
+            raise LookupError(f"Library {identity.name!r} at {identity.root_path!r} does not exist")
         return int(row["id"])
 
     # ── internal folder payload translation ──────────────────────────────
@@ -244,24 +262,79 @@ class LibrarySongsDb:
     # Song mutations
     # ------------------------------------------------------------------
 
-    def add_song_to_library(self, library: Library, payload: dict) -> int:
-        """Insert or update one library-song row.
+    def _song_upsert_payload(self, command: SongUpsertInput) -> dict[str, Any]:
+        """Map a sealed single-song command to a private repository row payload.
 
-        Returns the ``id`` of the upserted row.
+        Maps only the approved persistence fields. State flags and the unused
+        ``folder_id`` assignment are intentionally omitted so update behavior is
+        unchanged. ``chromaprint`` is a persistence-owned ``None`` default
+        (matching the value the prior single-song payload stored), and
+        ``scanned_at`` defaults to the current time unless ``command.scan``
+        supplies one.
+
+        A scan-less command is rejected: the ``songs`` row contract requires the
+        scan-sourced ``file_size``/``modified_time`` columns, which are non-null
+        with no persistence default and no other source, so a command without
+        ``scan`` cannot produce an insertable row. The sole production caller
+        always supplies scan metadata; scan-less commands were never a supported
+        legacy path, so no prior error behavior is displaced.
 
         Raises:
+            ValueError: If ``command.scan`` is ``None``.
+
+        """
+        scan = command.scan
+        if scan is None:
+            raise ValueError(
+                "add_song_to_library() requires scan metadata: file_size/"
+                "modified_time are non-null songs columns with no persistence "
+                "default and no other source"
+            )
+        payload: dict[str, Any] = {
+            "path": command.path,
+            "normalized_path": scan.normalized_path,
+            "file_size": scan.file_size,
+            "modified_time": scan.modified_time,
+            "duration_seconds": scan.duration_seconds,
+            "chromaprint": None,
+            "last_tagged_at": command.last_tagged_at,
+            "scanned_at": now_ms().value,
+        }
+        if scan.scanned_at is not None:
+            payload["scanned_at"] = scan.scanned_at
+        return payload
+
+    def add_song_to_library(self, command: SongUpsertInput) -> SongIdentity:
+        """Insert or update one library-song row from a typed command.
+
+        Persistence alone resolves ``command.library`` to the private library row
+        id, maps the command to the repository's private row payload, applies
+        defaults, invokes the private upsert, and initializes states with the
+        private returned song id. The generated storage id never leaves this
+        facade.
+
+        Returns the natural ``SongIdentity`` built from ``command.library`` and the
+        normalized path selected by the same command/default mapping used for the
+        upsert.
+
+        Raises:
+            LookupError: If the command's library does not exist.
+            ValueError: If the command omits scan metadata (its row cannot
+                satisfy the non-null scan-sourced column contract).
             RuntimeError: If the upsert returns no song IDs.
 
         """
-        library_id = self._resolve_library_id(library)
+        library_id = self._resolve_library_identity(command.library)
+        payload = self._song_upsert_payload(command)
         song_ids = self._song_repo.upsert_songs_for_library(library_id, [payload])
         if not song_ids:
             msg = "add_song_to_library() expected one song id"
             raise RuntimeError(msg)
         # This overlaps the concurrent Song domain-identity migration in this
-        # facade; retain that work while using the state intent operation.
+        # facade; retain that work while using the state intent operation. The
+        # generated id is consumed only by the private state initializer.
         self._song_state_repo.initialize_song_states([song_ids[0]])
-        return song_ids[0]
+        return SongIdentity(library=command.library, normalized_path=payload["normalized_path"])
 
     def add_songs_to_library(
         self,
@@ -351,39 +424,56 @@ class LibrarySongsDb:
 
         return result
 
-    def update_library_song_path(self, song_id: int, new_path: str) -> None:
-        """Update the path of a library song."""
-        self._song_repo.update_song(song_id, {"path": new_path})
+    def move_library_song(self, command: SongPathUpdate) -> None:
+        """Atomically move/relocate an existing Song to a new locator.
 
-    def update_library_song_scan_metadata(
-        self,
-        song_id: int,
-        *,
-        file_size: int,
-        modified_time: int,
-        duration_seconds: float | None = None,
-        normalized_path: str | None = None,
-    ) -> None:
-        """Patch a song row with scan metadata and mark it valid for the current scan.
+        One persistence intent for a complete Song move keyed by the stable Song
+        application/entity identity ``command.song_id`` (ADR-047 §2, §8). The
+        destination physical ``new_path`` and the complete scan snapshot
+        (normalized path, file size, mtime, duration, validity, scan timestamp)
+        are applied to the existing Song row in place in one repository
+        transaction: path, normalized path, and scan metadata commit together or
+        not at all, so the natural locators and scan metadata can never diverge
+        after a partial failure.
 
-        Args:
-            song_id: Song row id.
-            file_size: File size recorded during scanning.
-            modified_time: File modification time recorded during scanning.
-            duration_seconds: Scan-time duration value, if available.
-            normalized_path: Normalized path to store when one was computed.
+        ``library``/``path``/``normalized_path`` are mutable locators; only the
+        Song identity is stable, so this never inserts, deletes, or recreates a
+        row and Song associations (tags, state assignments, streams, embeddings)
+        remain attached.
+
+        A destination uniqueness conflict on ``(library_id, path)`` or
+        ``(library_id, normalized_path)`` (the row keeps its owning library on a
+        move) raises ``DuplicateEntityError`` from persistence exception mapping
+        and rolls back the entire move, leaving the original row unchanged.
+
+        Raises:
+            ValueError: If ``command.scan.normalized_path`` is ``None``. The
+                ``songs.normalized_path`` column is NOT NULL (with a
+                ``(library_id, normalized_path)`` unique constraint), so an
+                unrepresentable destination (the defensive out-of-root move case)
+                is rejected atomically *before* any write rather than stored as
+                ``None`` or silently dropped from the atomic update.
+            LookupError: If no existing Song row matches ``command.song_id`` (a
+                missing/stale identity). No replacement Song is created.
 
         """
-        fields: dict[str, Any] = {
-            "file_size": file_size,
-            "modified_time": modified_time,
-            "is_valid": 1,
-            "duration_seconds": duration_seconds,
-            "scanned_at": now_ms().value,
+        scan = command.scan
+        if scan.normalized_path is None:
+            raise ValueError(
+                "move_library_song() requires a normalized_path: songs."
+                "normalized_path is NOT NULL and cannot store None"
+            )
+        payload: dict[str, Any] = {
+            "path": command.new_path,
+            "normalized_path": scan.normalized_path,
+            "file_size": scan.file_size,
+            "modified_time": scan.modified_time,
+            "duration_seconds": scan.duration_seconds,
+            "is_valid": 1 if scan.is_valid else 0,
+            "scanned_at": scan.scanned_at if scan.scanned_at is not None else now_ms().value,
         }
-        if normalized_path is not None:
-            fields["normalized_path"] = normalized_path
-        self._song_repo.update_song(song_id, fields)
+        if not self._song_repo.move_song(command.song_id, payload):
+            raise LookupError(f"Song {command.song_id} does not exist; cannot move")
 
     def update_library_song_modified_time(self, song_id: int, modified_time_ms: int) -> None:
         """Update the modification timestamp of a library song."""

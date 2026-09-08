@@ -17,6 +17,13 @@ from nomarr.components.library.library_song_mutation_comp import (
     upsert_library_song,
 )
 from nomarr.helpers.dataclasses.library_dataclass import Library
+from nomarr.helpers.dataclasses.song_command_dataclass import (
+    LibraryIdentity,
+    SongIdentity,
+    SongPathUpdate,
+    SongScanUpdate,
+    SongUpsertInput,
+)
 
 
 class TestDeleteLibraryFile:
@@ -84,43 +91,88 @@ class TestBulkDeleteFiles:
 class TestUpsertLibraryFile:
     """Tests for single-file insert/update writes."""
 
-    @pytest.mark.unit
-    def test_adds_file_to_library_with_expected_payload(self) -> None:
-        mock_db = MagicMock()
-        mock_db.library.add_song_to_library.return_value = f"{'songs'}/123"
+    @staticmethod
+    def _make_path(relative: str = "relative/song.mp3", absolute: str = "C:/music/song.mp3") -> MagicMock:
         mock_path = MagicMock()
         mock_path.is_valid.return_value = True
-        mock_path.relative = "relative/song.mp3"
-        mock_path.absolute = "C:/music/song.mp3"
+        mock_path.relative = relative
+        mock_path.absolute = absolute
+        return mock_path
 
-        with patch("nomarr.components.library.library_song_mutation_comp.now_ms") as mock_now_ms:
-            mock_now_ms.return_value.value = 1000
-            result = upsert_library_song(
-                mock_db,
-                mock_path,
-                "libraries/1",
-                file_size=1234,
-                modified_time=5678,
-            )
-
-        assert result == f"{'songs'}/123"
-        mock_db.library.add_song_to_library.assert_called_once_with(
-            "libraries/1",
-            {
-                "path": "C:/music/song.mp3",
-                "normalized_path": "relative/song.mp3",
-                "file_size": 1234,
-                "modified_time": 5678,
-                "duration_seconds": None,
-                "scanned_at": 1000,
-                "chromaprint": None,
-                "last_tagged_at": None,
-            },
+    @pytest.mark.unit
+    def test_sends_typed_command_and_returns_semantic_identity(self) -> None:
+        """The mock facade receives a typed ``SongUpsertInput`` (never a raw
+        SQL-column dict) and the semantic ``SongIdentity`` is passed through."""
+        mock_db = MagicMock()
+        library = Library(name="music", root_path="C:/music")
+        identity = SongIdentity(
+            library=LibraryIdentity(name="music", root_path="C:/music"),
+            normalized_path="relative/song.mp3",
         )
+        mock_db.library.add_song_to_library.return_value = identity
+        mock_path = self._make_path()
+
+        result = upsert_library_song(
+            mock_db,
+            mock_path,
+            library,
+            file_size=1234,
+            modified_time=5678,
+        )
+
+        assert result == identity
+        assert not isinstance(result, int)
+        mock_db.library.add_song_to_library.assert_called_once()
+        command = mock_db.library.add_song_to_library.call_args.args[0]
+        # No raw dict / column names cross the component→facade boundary.
+        assert isinstance(command, SongUpsertInput)
+        assert isinstance(command.library, LibraryIdentity)
+        assert command.library.name == "music"
+        assert command.library.root_path == "C:/music"
+        assert command.path == "C:/music/song.mp3"
+        assert command.last_tagged_at is None
+        assert isinstance(command.scan, SongScanUpdate)
+        assert command.scan.normalized_path == "relative/song.mp3"
+        assert command.scan.file_size == 1234
+        assert command.scan.modified_time == 5678
+        assert command.scan.duration_seconds is None
+        # Component does not generate a storage scan timestamp; persistence
+        # applies its own default.
+        assert command.scan.scanned_at is None
+
+    @pytest.mark.unit
+    def test_preserves_optional_duration_and_last_tagged_at_into_command(self) -> None:
+        """Optional duration and tag timestamp are forwarded unchanged."""
+        mock_db = MagicMock()
+        library = Library(name="music", root_path="C:/music")
+        identity = SongIdentity(
+            library=LibraryIdentity(name="music", root_path="C:/music"),
+            normalized_path="relative/song.mp3",
+        )
+        mock_db.library.add_song_to_library.return_value = identity
+        mock_path = self._make_path()
+
+        upsert_library_song(
+            mock_db,
+            mock_path,
+            library,
+            file_size=1234,
+            modified_time=5678,
+            duration_seconds=223.5,
+            last_tagged_at=987654,
+        )
+
+        command = mock_db.library.add_song_to_library.call_args.args[0]
+        assert isinstance(command, SongUpsertInput)
+        assert command.last_tagged_at == 987654
+        assert isinstance(command.scan, SongScanUpdate)
+        assert command.scan.duration_seconds == 223.5
 
     @pytest.mark.unit
     def test_raises_value_error_for_invalid_path(self) -> None:
+        """An invalid path short-circuits before the facade is called."""
         mock_db = MagicMock()
+        library = Library(name="music", root_path="C:/music")
         mock_path = MagicMock()
         mock_path.is_valid.return_value = False
         mock_path.status = "invalid"
@@ -130,7 +182,7 @@ class TestUpsertLibraryFile:
             upsert_library_song(
                 mock_db,
                 mock_path,
-                "libraries/1",
+                library,
                 file_size=1234,
                 modified_time=5678,
             )
@@ -139,53 +191,118 @@ class TestUpsertLibraryFile:
 
 
 class TestUpdateFilePath:
-    """Tests for moved-file path updates."""
+    """Tests for the atomic move-path adapter over the single move intent.
+
+    ``update_song_path(db, command)`` is a component-level adapter: it forwards
+    one complete ``SongPathUpdate`` (stable ``song_id`` + destination ``new_path``
+    + full scan snapshot) via exactly one ``db.library.move_library_song`` call.
+    It no longer composes the retired two-call path + scan-metadata choreography,
+    resolves locators, opens transactions, or generates a storage timestamp.
+    """
+
+    @staticmethod
+    def _command(
+        *,
+        song_id: int = 123,
+        new_path: str = "C:/music/new-song.mp3",
+        normalized_path: str = "relative/new-song.mp3",
+        file_size: int = 4321,
+        modified_time: int = 8765,
+        duration_seconds: float | None = 123.4,
+        is_valid: bool = True,
+        scanned_at: int | None = None,
+    ) -> SongPathUpdate:
+        return SongPathUpdate(
+            song_id=song_id,
+            new_path=new_path,
+            scan=SongScanUpdate(
+                normalized_path=normalized_path,
+                file_size=file_size,
+                modified_time=modified_time,
+                duration_seconds=duration_seconds,
+                is_valid=is_valid,
+                scanned_at=scanned_at,
+            ),
+        )
 
     @pytest.mark.unit
-    def test_updates_path_and_core_metadata(self) -> None:
+    def test_forwards_one_complete_move_command_via_single_intent(self) -> None:
+        """One complete typed command is forwarded via exactly one move intent."""
         mock_db = MagicMock()
+        command = self._command()
 
-        update_song_path(
-            mock_db,
-            f"{'songs'}/123",
-            "C:/music/new-song.mp3",
-            file_size=4321,
-            modified_time=8765,
-            duration_seconds=123.4,
-        )
+        update_song_path(mock_db, command)
 
-        mock_db.library.update_library_song_path.assert_called_once_with(
-            f"{'songs'}/123",
-            "C:/music/new-song.mp3",
-        )
-        mock_db.library.update_library_song_scan_metadata.assert_called_once_with(
-            f"{'songs'}/123",
-            file_size=4321,
-            modified_time=8765,
-            duration_seconds=123.4,
-            normalized_path=None,
-        )
+        # Exactly one move-intent facade call carrying the typed command.
+        mock_db.library.move_library_song.assert_called_once_with(command)
+        forwarded = mock_db.library.move_library_song.call_args.args[0]
+        assert isinstance(forwarded, SongPathUpdate)
+        # The retired two-call path + scan-metadata surface is never invoked.
+        mock_db.library.update_library_song_path.assert_not_called()
+        mock_db.library.update_library_song_scan_metadata.assert_not_called()
+        # The command carries the stable Song identity, destination and scan.
+        assert forwarded.song_id == 123
+        assert forwarded.new_path == "C:/music/new-song.mp3"
+        assert forwarded.scan.normalized_path == "relative/new-song.mp3"
 
     @pytest.mark.unit
-    def test_includes_normalized_path_when_provided(self) -> None:
+    def test_forwards_full_scan_data_unchanged(self) -> None:
+        """Optional duration and an explicit scan timestamp pass through untouched."""
         mock_db = MagicMock()
-
-        update_song_path(
-            mock_db,
-            f"{'songs'}/123",
-            "C:/music/new-song.mp3",
-            file_size=4321,
-            modified_time=8765,
-            normalized_path="relative/new-song.mp3",
+        command = self._command(
+            file_size=111,
+            modified_time=222,
+            duration_seconds=99.5,
+            scanned_at=5555,
         )
 
-        mock_db.library.update_library_song_scan_metadata.assert_called_once_with(
-            f"{'songs'}/123",
-            file_size=4321,
-            modified_time=8765,
-            duration_seconds=None,
-            normalized_path="relative/new-song.mp3",
-        )
+        update_song_path(mock_db, command)
+
+        forwarded = mock_db.library.move_library_song.call_args.args[0]
+        assert forwarded is command
+        assert forwarded.scan.file_size == 111
+        assert forwarded.scan.modified_time == 222
+        assert forwarded.scan.duration_seconds == 99.5
+        assert forwarded.scan.scanned_at == 5555
+
+    @pytest.mark.unit
+    def test_optional_duration_and_validity_are_preserved(self) -> None:
+        """Absent optional duration and a False validity are forwarded as-is."""
+        mock_db = MagicMock()
+        command = self._command(duration_seconds=None, is_valid=False)
+
+        update_song_path(mock_db, command)
+
+        forwarded = mock_db.library.move_library_song.call_args.args[0]
+        assert forwarded.scan.duration_seconds is None
+        assert forwarded.scan.is_valid is False
+
+    @pytest.mark.unit
+    def test_omitted_normalized_path_is_forwarded_for_persistence_decision(self) -> None:
+        """A defensive out-of-root destination (normalized_path=None) is not
+        silently resolved or dropped by the component; persistence owns the
+        NOT NULL rejection decision."""
+        mock_db = MagicMock()
+        command = self._command(normalized_path=None)
+
+        update_song_path(mock_db, command)
+
+        forwarded = mock_db.library.move_library_song.call_args.args[0]
+        assert forwarded.scan.normalized_path is None
+
+    @pytest.mark.unit
+    def test_leaves_scan_timestamp_to_persistence_default(self) -> None:
+        """The adapter never synthesizes a storage scan timestamp: when the
+        command's scan omits ``scanned_at`` it stays ``None`` and persistence
+        owns filling the current time (matching upsert semantics)."""
+        mock_db = MagicMock()
+        command = self._command(scanned_at=None)
+
+        update_song_path(mock_db, command)
+
+        forwarded = mock_db.library.move_library_song.call_args.args[0]
+        assert isinstance(forwarded, SongPathUpdate)
+        assert forwarded.scan.scanned_at is None
 
 
 class TestUpdateFileModifiedTime:

@@ -4,6 +4,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from nomarr.helpers.dataclasses.song_command_dataclass import (
+    LibraryIdentity,
+    SongIdentity,
+    SongPathUpdate,
+    SongScanUpdate,
+    SongUpsertInput,
+)
 from nomarr.helpers.time_helper import now_ms
 
 if TYPE_CHECKING:
@@ -20,8 +27,16 @@ def upsert_library_song(
     modified_time: int,
     duration_seconds: float | None = None,
     last_tagged_at: int | None = None,
-) -> int:
-    """Insert or update a library-song document and its ownership/state edges.
+) -> SongIdentity:
+    """Insert or update a library-song row and its ownership/state edges.
+
+    Validates the physical ``LibraryPath`` and composes a typed
+    ``SongUpsertInput`` command from the ``Library`` natural value and the
+    application metadata. No raw SQL-column row is constructed here and no
+    storage timestamp is generated as a persistence payload — scan
+    ``scanned_at`` is left to the persistence default. Persistence resolves
+    the library identity, maps the row, applies defaults, initializes states,
+    and returns the natural ``SongIdentity``.
 
     Args:
         db: Database instance.
@@ -33,27 +48,26 @@ def upsert_library_song(
         last_tagged_at: Optional wall-clock timestamp of last tag write.
 
     Raises ValueError if the path is not valid.
+
+    Returns:
+        The natural-key ``SongIdentity`` (never a generated integer song id).
     """
     if not path.is_valid():
         msg = f"Cannot upsert invalid path ({path.status}): {path.reason}"
         raise ValueError(msg)
 
-    scanned_at = now_ms().value
-    normalized_path = str(path.relative)
-    absolute_path = str(path.absolute)
-    return db.library.add_song_to_library(
-        library,
-        {
-            "path": absolute_path,
-            "normalized_path": normalized_path,
-            "file_size": file_size,
-            "modified_time": modified_time,
-            "duration_seconds": duration_seconds,
-            "scanned_at": scanned_at,
-            "chromaprint": None,
-            "last_tagged_at": last_tagged_at,
-        },
+    command = SongUpsertInput(
+        library=LibraryIdentity(name=library.name, root_path=library.root_path),
+        path=str(path.absolute),
+        scan=SongScanUpdate(
+            normalized_path=str(path.relative),
+            file_size=file_size,
+            modified_time=modified_time,
+            duration_seconds=duration_seconds,
+        ),
+        last_tagged_at=last_tagged_at,
     )
+    return db.library.add_song_to_library(command)
 
 
 def delete_library_song(db: Database, path: str, library: Library) -> None:
@@ -68,24 +82,18 @@ def delete_library_song(db: Database, path: str, library: Library) -> None:
     db.library.remove_song_by_path(path, library)
 
 
-def update_song_path(
-    db: Database,
-    song_id: int,
-    new_path: str,
-    file_size: int,
-    modified_time: int,
-    duration_seconds: float | None = None,
-    normalized_path: str | None = None,
-) -> None:
-    """Update path and metadata for a moved song."""
-    db.library.update_library_song_path(song_id, new_path)
-    db.library.update_library_song_scan_metadata(
-        song_id,
-        file_size=file_size,
-        modified_time=modified_time,
-        duration_seconds=duration_seconds,
-        normalized_path=normalized_path,
-    )
+def update_song_path(db: Database, command: SongPathUpdate) -> None:
+    """Atomically move a Song to a new path with its complete scan metadata.
+
+    Component-level adapter over the single public move intent. The caller
+    (move detection) constructs one complete ``SongPathUpdate`` addressed by the
+    stable Song application identity and carrying the destination path plus the
+    full scan data; this adapter forwards it in exactly one ``db.library``
+    move-intent call. It does not resolve locators, open transactions, call
+    repositories, or retain the old two-call path-plus-scan choreography —
+    persistence owns the single atomic update (all fields or none).
+    """
+    db.library.move_library_song(command)
 
 
 def update_song_modified_time(db: Database, file_key: int, modified_time_ms: int) -> None:
