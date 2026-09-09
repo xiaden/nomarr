@@ -23,10 +23,12 @@ from nomarr.helpers.dataclasses.song_command_dataclass import (
     LibraryIdentity,
     SongIdentity,
     SongPathUpdate,
+    SongRemoval,
     SongUpsertInput,
 )
-from nomarr.helpers.dataclasses.song_dataclass import Song
+from nomarr.helpers.dataclasses.song_state_candidate_dataclass import SongStateCandidate
 from nomarr.helpers.time_helper import now_ms
+from nomarr.persistence.mappers.song_mapper import song_row_to_domain
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -35,6 +37,7 @@ if TYPE_CHECKING:
 
     from nomarr.helpers.dataclasses.library_dataclass import Library
     from nomarr.helpers.dataclasses.library_domain_dataclasses import LibraryFolder
+    from nomarr.helpers.dataclasses.song_dataclass import Song
     from nomarr.helpers.dto.hydration_dto import HydrateSongInput
     from nomarr.persistence.database.folder_repo import FolderRepository
     from nomarr.persistence.database.library_repo import LibraryRepository
@@ -95,6 +98,21 @@ class LibrarySongsDb:
         row = self._library_repo.get_library_by_natural_key(identity.name, identity.root_path)
         if row is None:
             raise LookupError(f"Library {identity.name!r} at {identity.root_path!r} does not exist")
+        return int(row["id"])
+
+    def _try_resolve_library_identity(self, identity: LibraryIdentity) -> int | None:
+        """Resolve a natural ``LibraryIdentity`` to its private storage row id.
+
+        Unlike ``_resolve_library_identity`` this returns ``None`` (never raises)
+        when the library cannot be resolved (no ``root_path`` or no matching
+        row). It backs locator reads where an unresolvable owning library is a
+        deterministic miss, not an error. The id never crosses this facade.
+        """
+        if identity.root_path is None:
+            return None
+        row = self._library_repo.get_library_by_natural_key(identity.name, identity.root_path)
+        if row is None:
+            return None
         return int(row["id"])
 
     # ── internal folder payload translation ──────────────────────────────
@@ -184,31 +202,101 @@ class LibrarySongsDb:
     # Song lookups
     # ------------------------------------------------------------------
 
-    def get_song(self, song_id: int) -> Song | None:
-        """Get a library song by its stable song identifier."""
-        row = self._song_repo.get_song(song_id)
-        return Song.from_row(row) if row is not None else None
+    def get_song(self, identity: SongIdentity) -> Song | None:
+        """Get a song addressed by its natural locator ``SongIdentity``.
+
+        ``identity`` is the mutable, request-scoped SongLocator (ADR-048); the
+        owning library's storage id and the generated ``songs.id`` are resolved
+        privately and never cross this facade. A locator whose library or song
+        no longer resolves is a deterministic ``None`` miss, never an error and
+        never an integer fallback.
+        """
+        library_id = self._try_resolve_library_identity(identity.library)
+        if library_id is None:
+            return None
+        row = self._song_repo.get_song_by_normalized_path(library_id, identity.normalized_path)
+        return song_row_to_domain(row) if row is not None else None
 
     def get_song_by_path(self, path: str, library: Library) -> Song | None:
         """Get a library song by path within its owning library."""
         library_id = self._resolve_library_id(library)
         row = self._song_repo.get_song_by_path(path, library_id)
-        return Song.from_row(row) if row is not None else None
+        return song_row_to_domain(row) if row is not None else None
 
-    def get_song_by_normalized_path(self, normalized_path: str, library: Library) -> Song | None:
-        """Get a song by its canonical normalized path within a library."""
-        library_id = self._resolve_library_id(library)
+    def get_song_by_normalized_path(
+        self,
+        library: LibraryIdentity,
+        normalized_path: str,
+    ) -> Song | None:
+        """Get a song by its canonical normalized path within a library.
+
+        ``library`` is the natural ``LibraryIdentity`` locator; a library or
+        song that does not resolve is a deterministic ``None`` miss.
+        """
+        library_id = self._try_resolve_library_identity(library)
+        if library_id is None:
+            return None
         row = self._song_repo.get_song_by_normalized_path(library_id, normalized_path)
-        return Song.from_row(row) if row is not None else None
+        return song_row_to_domain(row) if row is not None else None
 
     def find_song_by_path_any_library(self, path: str) -> Song | None:
         """Find a song by path when the caller intentionally searches all libraries."""
         row = self._song_repo.get_song_by_path_unscoped(path)
-        return Song.from_row(row) if row is not None else None
+        return song_row_to_domain(row) if row is not None else None
 
-    def list_songs_by_ids(self, song_ids: list[int]) -> list[Song]:
-        """Return domain songs for the given song identifiers."""
-        return [Song.from_row(row) for row in self._song_repo.get_songs_by_ids(song_ids)]
+    def list_songs_by_identity(self, identities: Sequence[SongIdentity]) -> list[Song]:
+        """Return domain songs for the given natural locators (ADR-048).
+
+        Order-preserving: each returned song corresponds to its input locator in
+        the same position. Locators whose owning library or song cannot be
+        resolved are omitted deterministically; empty input yields ``[]``. No
+        generated ``songs.id`` or library row id is accepted or returned.
+        """
+        if not identities:
+            return []
+        # Resolve each distinct owning library natural key to its private id.
+        distinct_keys: list[tuple[str, str]] = []
+        seen_keys: set[tuple[str, str]] = set()
+        for ident in identities:
+            lib = ident.library
+            if lib.root_path is None:
+                continue
+            key = (lib.name, lib.root_path)
+            if key not in seen_keys:
+                seen_keys.add(key)
+                distinct_keys.append(key)
+        if not distinct_keys:
+            return []
+        library_ids = self._library_repo.get_library_ids_by_natural_keys(distinct_keys)
+        # Collect (library_id, normalized_path) targets for resolvable libraries.
+        targets: list[tuple[int, str]] = []
+        target_ids: list[tuple[int, str]] = []
+        for ident in identities:
+            lib = ident.library
+            if lib.root_path is None:
+                continue
+            lib_id = library_ids.get((lib.name, lib.root_path))
+            if lib_id is None:
+                continue
+            targets.append((lib_id, ident.normalized_path))
+            target_ids.append((lib_id, ident.normalized_path))
+        if not targets:
+            return []
+        # Resolve the target normalized paths to private song ids and fetch rows
+        # once; then map back through the input order.
+        song_id_by_loc = self._song_repo.get_song_ids_by_normalized_paths(targets)
+        found_ids = list(set(song_id_by_loc.values()))
+        rows_by_id: dict[int, Any] = {}
+        if found_ids:
+            rows_by_id = {int(r["id"]): r for r in self._song_repo.get_songs_by_ids(found_ids)}
+        result: list[Song] = []
+        for lib_id, normalized_path in target_ids:
+            song_row_id = song_id_by_loc.get((lib_id, normalized_path))
+            row = rows_by_id.get(song_row_id) if song_row_id is not None else None
+            if row is None:
+                continue
+            result.append(song_row_to_domain(row))
+        return result
 
     def get_library_ids_for_songs(self, song_ids: list[int]) -> dict[int, int]:
         """Return mapping of song_id → library_id for the given song IDs."""
@@ -230,13 +318,19 @@ class LibrarySongsDb:
 
     def list_songs(
         self,
-        library: Library,
+        library: LibraryIdentity,
         *,
         limit: int | None = None,
     ) -> list[Song]:
-        """Return domain songs belonging to a library, with optional limit."""
-        library_id = self._resolve_library_id(library)
-        return [Song.from_row(row) for row in self._song_repo.list_songs(library_id, limit=limit)]
+        """Return domain songs belonging to a library, with optional limit.
+
+        ``library`` is the required natural ``LibraryIdentity`` locator (there
+        is no cross-library listing primitive; CONTRACTS §3). An unresolvable
+        library is a deterministic ``LookupError`` (typed error), never a row or
+        integer fallback.
+        """
+        library_id = self._resolve_library_identity(library)
+        return [song_row_to_domain(row) for row in self._song_repo.list_songs(library_id, limit=limit)]
 
     def count_songs(self, library: Library) -> int:
         """Count songs in a library."""
@@ -248,6 +342,103 @@ class LibrarySongsDb:
         library_id = self._resolve_library_id(library)
         return self._song_repo.count_songs(library_id)
 
+    def list_songs_with_state(
+        self,
+        state: str,
+        *,
+        library: LibraryIdentity | None = None,
+        order_by_activity: bool = False,
+        limit: int | None = None,
+    ) -> list[SongStateCandidate]:
+        """Return typed candidates for songs currently in *state* (CONTRACTS §3/§5).
+
+        Each result carries the semantic ``SongStateCandidate`` (``SongIdentity``
+        locator + domain ``Song`` + sorted state-name membership) only. Storage
+        rows, assignment/edge rows, ``songs.id``, and ``library_id`` never cross
+        this boundary; private joins/ids are resolved internally from
+        ``song_state_repo`` / ``song_repo`` / ``library_repo`` primitives.
+
+        Deterministic behavior:
+          * no song in *state* (or an unknown/blank state) -> ``[]``;
+          * *library* given and unresolvable -> ``[]`` (a scoped miss);
+          * *library* ``None`` -> candidates across all libraries, ordered by
+            ``(library name, root_path, normalized_path)``;
+          * ``order_by_activity=True`` -> newest scan/tag activity first,
+            tie-broken by normalized path;
+          * ``limit`` applied after ordering.
+
+        *state* is a domain state *name* (never a state-table identifier); an
+        empty/blank *state* matches nothing and returns ``[]``. No caller
+        transaction/session is opened or managed.
+        """
+        if not state:
+            return []
+        song_ids = self._song_state_repo.list_songs_in_state(state)
+        if not song_ids:
+            return []
+        if library is not None:
+            library_id = self._try_resolve_library_identity(library)
+            if library_id is None:
+                return []
+            owning = self._song_repo.get_library_ids_for_songs(song_ids)
+            song_ids = [sid for sid in song_ids if owning.get(sid) == library_id]
+            if not song_ids:
+                return []
+        unique_ids = list(dict.fromkeys(song_ids))
+        rows = self._song_repo.get_songs_by_ids(unique_ids)
+        rows_by_id: dict[int, Any] = {int(r["id"]): r for r in rows}
+        if not rows_by_id:
+            return []
+        memberships = self._song_state_repo.get_song_states_for_songs(list(rows_by_id))
+        library_ids = {int(r["library_id"]) for r in rows_by_id.values()}
+        library_rows = (
+            {int(r["id"]): r for r in self._library_repo.get_libraries_by_ids(list(library_ids))} if library_ids else {}
+        )
+
+        candidates: list[SongStateCandidate] = []
+        seen: set[tuple[int, str]] = set()
+        for row in rows_by_id.values():
+            library_id = int(row["library_id"])
+            normalized_path = row["normalized_path"]
+            if (library_id, normalized_path) in seen:
+                continue
+            seen.add((library_id, normalized_path))
+            library_row = library_rows.get(library_id)
+            if library_row is None:
+                # Cannot form a natural locator without the owning library's key.
+                continue
+            identity = SongIdentity(
+                library=LibraryIdentity(name=library_row["name"], root_path=library_row["path"]),
+                normalized_path=normalized_path,
+            )
+            song = song_row_to_domain(row)
+            states = tuple(sorted(memberships.get(int(row["id"]), set())))
+            candidates.append(SongStateCandidate(identity=identity, song=song, states=states))
+
+        if order_by_activity:
+
+            def _activity(candidate: SongStateCandidate) -> int:
+                return max(candidate.song.scanned_at or 0, candidate.song.last_tagged_at or 0)
+
+            candidates.sort(
+                key=lambda c: (
+                    -_activity(c),
+                    c.identity.library.name,
+                    c.identity.normalized_path,
+                )
+            )
+        else:
+            candidates.sort(
+                key=lambda c: (
+                    c.identity.library.name,
+                    c.identity.library.root_path or "",
+                    c.identity.normalized_path,
+                )
+            )
+        if limit is not None:
+            return candidates[:limit]
+        return candidates
+
     def find_library_song_by_chromaprint(
         self,
         library: Library,
@@ -256,7 +447,7 @@ class LibrarySongsDb:
         """Find a library song by its Chromaprint fingerprint."""
         library_id = self._resolve_library_id(library)
         row = self._song_repo.find_song_by_chromaprint(library_id, chromaprint)
-        return Song.from_row(row) if row is not None else None
+        return song_row_to_domain(row) if row is not None else None
 
     # ------------------------------------------------------------------
     # Song mutations
@@ -564,26 +755,42 @@ class LibrarySongsDb:
         """
         return self._song_hydration_repo.hydrate_songs_batch(inputs, chunk_size=chunk_size)
 
-    def remove_song(self, song_id: int) -> None:
-        """Remove one song. FK CASCADE handles derived streams and vectors.
+    def remove_song(self, command: SongRemoval) -> bool:
+        """Remove one song addressed by its natural locator (ADR-048).
 
-        Args:
-            song_id: Song row id to remove.
+        ``command.song_identity`` is the mutable SongLocator ``SongIdentity``;
+        the owning library's storage id and the generated ``songs.id`` are
+        resolved privately and consumed only by the private delete. FK CASCADE
+        handles derived streams and vectors.
 
+        Returns ``True`` when the song was found and removed, ``False`` when the
+        locator no longer resolves (missing library or song) — a deterministic
+        miss, never an error and never an integer fallback.
         """
-        self._song_repo.delete_song(song_id)
+        identity = command.song_identity
+        library_id = self._try_resolve_library_identity(identity.library)
+        if library_id is None:
+            return False
+        row = self._song_repo.get_song_by_normalized_path(library_id, identity.normalized_path)
+        if row is None:
+            return False
+        self._song_repo.delete_song(int(row["id"]))
+        return True
 
     def remove_song_by_path(self, path: str, library: Library) -> None:
         """Remove a song by path within its owning library.
 
         Path is only unique together with the library; requiring the ``Library``
         here prevents an ambiguous path from selecting another library's song.
+        The song is located by resolving the library's private row id and its
+        physical ``path``; the generated song row id is consumed only by the
+        private delete and never crosses this facade (ADR-048).
         """
-        song_row = self.get_song_by_path(path, library)
-        if song_row is None:
+        library_id = self._resolve_library_id(library)
+        row = self._song_repo.get_song_by_path(path, library_id)
+        if row is None:
             return
-        song_id = song_row.song_id
-        self.remove_song(song_id)
+        self._song_repo.delete_song(int(row["id"]))
 
     def list_existing_song_paths(self, library: Library, paths: list[str]) -> list[str]:
         """Return paths that already have rows in the given library."""
@@ -668,7 +875,7 @@ class LibrarySongsDb:
     ) -> list[Song]:
         """Return domain songs within a specific folder of a library."""
         library_id = self._resolve_library_id(library)
-        return [Song.from_row(row) for row in self._song_repo.list_songs_for_folder(library_id, folder_rel_path)]
+        return [song_row_to_domain(row) for row in self._song_repo.list_songs_for_folder(library_id, folder_rel_path)]
 
     # ------------------------------------------------------------------
     # Track matching and maintenance
@@ -682,7 +889,7 @@ class LibrarySongsDb:
     ) -> list[Song]:
         """Return domain songs suitable for track matching, with optional limit."""
         library_id = self._resolve_library_id(library)
-        return [Song.from_row(row) for row in self._song_repo.list_tracks_for_matching(library_id, limit=limit)]
+        return [song_row_to_domain(row) for row in self._song_repo.list_tracks_for_matching(library_id, limit=limit)]
 
     def list_orphaned_song_ids(self) -> list[int]:
         """List song IDs that have no matching library-song row."""

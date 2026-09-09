@@ -19,13 +19,14 @@ from nomarr.helpers.dataclasses.app_dataclasses import (
     WorkerRestartPolicy,
 )
 from nomarr.helpers.dataclasses.session_dataclass import AuthSession
-from nomarr.helpers.dataclasses.song_dataclass import Song
 from nomarr.helpers.dto.health_dto import WorkerHealth
 from nomarr.helpers.time_helper import now_ms
+from nomarr.persistence.mappers.song_mapper import song_row_to_domain
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session, scoped_session
 
+    from nomarr.helpers.dataclasses.song_dataclass import Song
     from nomarr.helpers.dataclasses.worker_claim_dataclass import (
         ClaimRemovalRequest,
         WorkerClaim,
@@ -145,7 +146,7 @@ class AppDb:
         if order_by_activity:
             query_kwargs["order_by_activity"] = True
         rows = self._pipeline_repo.list_song_docs_in_state(state, **query_kwargs)
-        return [Song.from_row(row) for row in rows]
+        return [song_row_to_domain(row) for row in rows]
 
     def count_songs_with_state(self, state: str) -> int:
         """Count songs currently in the requested state."""

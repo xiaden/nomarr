@@ -81,7 +81,8 @@ class TestSongRowToDomain:
                 last_tagged_at=2000,
             )
         )
-        assert song.folder_id is None  # folder FK never surfaces
+        # folder FK is never surfaced (no folder_id attribute exists).
+        assert not hasattr(song, "folder_id")
         assert song.duration_seconds is None
         assert song.chromaprint == "fingerprint"
         assert song.needs_tagging is False
@@ -127,3 +128,181 @@ class TestSongRowToIdentity:
     def test_blank_normalized_path_raises(self) -> None:
         with pytest.raises(ValueError, match="normalized_path"):
             song_row_to_identity(_song_row(normalized_path="  ", library_name="TestLib"))
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 (P2-S2): mapper isolation
+#
+# Prove the row->domain / row->locator mappers are isolated from storage shape
+# changes and from storage identity: column changes never surface on the value,
+# null/malformed rows behave deterministically, path normalization keeps the
+# physical path distinct from the locator path, and a row lacking library
+# hydration fails without disclosing a SQL table, column, or foreign key.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestMapperIsolationColumnChanges:
+    def test_extra_storage_column_never_surfaces_on_domain(self) -> None:
+        # A songs-table column (e.g. a future audio_codec / mime_type) is a
+        # row-level detail; the mapper reads only the known semantic keys and
+        # never lets new storage columns leak onto the Song value.
+        song = song_row_to_domain(_song_row(audio_codec="aac", mime_type="audio/mpeg"))
+        assert isinstance(song, Song)
+        assert not hasattr(song, "audio_codec")
+        assert not hasattr(song, "mime_type")
+        assert not hasattr(song, "id")
+        assert not hasattr(song, "song_id")
+        assert song.path == "/music/a.mp3"
+
+    def test_removed_required_column_fails_deterministically(self) -> None:
+        # A renamed/removed required column is a real defect and must never be
+        # silently defaulted: the mapper raises a plain KeyError naming the key.
+        row = _song_row()
+        del row["normalized_path"]
+        with pytest.raises(KeyError):
+            song_row_to_domain(row)
+
+    def test_int_vs_bool_column_representation_is_normalized(self) -> None:
+        # Integer booleans (1/0) and native bools both normalize to bool, so a
+        # storage representation change cannot change the semantic contract.
+        from_int = song_row_to_domain(_song_row(needs_tagging=1, is_valid=1, tagged=1))
+        from_bool = song_row_to_domain(_song_row(needs_tagging=True, is_valid=True, tagged=True))
+        assert from_int.needs_tagging is True
+        assert from_int.is_valid is True
+        assert from_int.tagged is True
+        assert from_int.needs_tagging == from_bool.needs_tagging
+
+
+@pytest.mark.unit
+class TestMapperIsolationNullAndMalformed:
+    def test_nullable_values_preserved_as_none(self) -> None:
+        song = song_row_to_domain(
+            _song_row(
+                duration_seconds=None,
+                chromaprint=None,
+                calibration_hash=None,
+                write_claimed_by=None,
+                last_tagged_at=None,
+                scanned_at=None,
+            )
+        )
+        assert song.duration_seconds is None
+        assert song.chromaprint is None
+        assert song.calibration_hash is None
+        assert song.write_claimed_by is None
+        assert song.last_tagged_at is None
+        assert song.scanned_at is None
+
+    def test_malformed_row_missing_required_key_raises(self) -> None:
+        # A malformed row (missing a required non-nullable column) is surfaced as
+        # a deterministic KeyError, never coerced to a fabricated default.
+        row = _song_row()
+        del row["path"]
+        with pytest.raises(KeyError):
+            song_row_to_domain(row)
+
+    def test_blank_identity_path_is_rejected_not_defaulted(self) -> None:
+        # An identity cannot be hydrated from a blank normalized_path; the mapper
+        # fails loudly rather than inventing a fallback path.
+        with pytest.raises(ValueError, match="normalized_path"):
+            song_row_to_identity(_song_row(normalized_path="", library_name="TestLib"))
+
+
+@pytest.mark.unit
+class TestMapperIsolationPathNormalization:
+    def test_physical_path_and_locator_path_stay_distinct(self) -> None:
+        # absolute physical path and library-relative normalized_path are two
+        # different maintained details; neither is collapsed into the other.
+        song = song_row_to_domain(_song_row(path="/music/sub/dir/a.mp3", normalized_path="dir/a.mp3"))
+        assert song.path == "/music/sub/dir/a.mp3"
+        assert song.normalized_path == "dir/a.mp3"
+
+    def test_locator_uses_normalized_path_not_physical_path(self) -> None:
+        # Two songs at the same physical path but different library roots (hence
+        # different normalized paths) are different locators: the physical path
+        # is not global Song identity (ADR-048).
+        loc_a = song_row_to_identity(_song_row(path="/m/a.mp3", normalized_path="a.mp3", library_name="LibA"))
+        loc_b = song_row_to_identity(_song_row(path="/m/a.mp3", normalized_path="other.mp3", library_name="LibA"))
+        assert loc_a.library == loc_b.library
+        assert loc_a.normalized_path != loc_b.normalized_path
+
+    def test_same_normalized_path_in_different_libraries_is_distinct(self) -> None:
+        loc_a = song_row_to_identity(_song_row(normalized_path="a.mp3", library_name="LibA"))
+        loc_b = song_row_to_identity(_song_row(normalized_path="a.mp3", library_name="LibB"))
+        assert loc_a != loc_b
+        assert loc_a.library.name != loc_b.library.name
+
+
+@pytest.mark.unit
+class TestDeterministicFailureNoDisclosure:
+    def test_bare_row_identity_error_discloses_no_sql_table_or_fk(self) -> None:
+        # A bare SongRow (only the private library_id) cannot form a locator. The
+        # failure is deterministic and leak-free: the message names the missing
+        # enrichment key but never a table, generated column, or foreign key.
+        with pytest.raises(ValueError) as excinfo:
+            song_row_to_identity(_song_row())
+        message = str(excinfo.value)
+        assert "library_name" in message
+        for disclosure in ("songs", "library_id", "folder_id", "song_id", " SELECT ", "foreign key", "FK "):
+            assert disclosure.lower() not in message.lower()
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 (P2-S3): semantic hydration
+#
+# Prove SongLocator/domain values survive a reload (deterministic re-derivation
+# from an identical row) and that missing hydration is explicit — never a hidden
+# locator-history, alias, tombstone, or integer-ID fallback (ADR-048 §2).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestSemanticHydrationSurvivesReload:
+    def test_domain_values_and_locator_survive_reload(self) -> None:
+        row = _song_row(library_name="TestLib", root_path="/music")
+        first_domain = song_row_to_domain(row)
+        first_locator = song_row_to_identity(row)
+        # The domain Song and its locator agree on the library-relative path.
+        assert first_domain.normalized_path == first_locator.normalized_path
+        assert first_domain.path == "/music/a.mp3"
+        # A reload of an identical row deterministically re-derives equal values
+        # (no hidden state, no generated id, no mutation between reads).
+        reload_domain = song_row_to_domain(_song_row(library_name="TestLib", root_path="/music"))
+        reload_locator = song_row_to_identity(_song_row(library_name="TestLib", root_path="/music"))
+        assert reload_domain == first_domain
+        assert reload_locator == first_locator
+        assert reload_domain.needs_tagging is True
+        assert reload_locator.library == LibraryIdentity(name="TestLib", root_path="/music")
+
+    def test_domain_and_locator_pair_without_storage_id(self) -> None:
+        # The semantic read value (Song) plus the locator together fully describe
+        # a reloaded song; neither carries songs.id/library_id/folder_id.
+        row = _song_row(library_name="TestLib")
+        song = song_row_to_domain(row)
+        locator = song_row_to_identity(row)
+        assert (song.normalized_path, song.path) == (locator.normalized_path, "/music/a.mp3")
+        for value in (song, locator):
+            for leak in ("song_id", "id", "library_id", "folder_id"):
+                assert not hasattr(value, leak)
+
+    def test_missing_hydration_is_explicit_no_locator_fallback(self) -> None:
+        # A semantic Song carries no library scope, so a locator cannot be derived
+        # from it alone. Hydrating the locator requires the owning library natural
+        # identity; its absence is an explicit deterministic error — not a lookup,
+        # integer fallback, or silently-unscoped default.
+        song = song_row_to_domain(_song_row())
+        assert not hasattr(song, "library_id")
+        assert not hasattr(song, "root_path")
+        assert not hasattr(song, "from_row")
+        with pytest.raises(ValueError, match="library natural identity"):
+            song_row_to_identity(_song_row())  # bare row, no library enrichment
+
+    def test_no_locator_history_alias_tombstone_or_stable_id(self) -> None:
+        # ADR-048 §2: no alias, tombstone, locator history, or stable-id fallback
+        # exists on the locator or on the domain value.
+        locator = song_row_to_identity(_song_row(normalized_path="a.mp3", library_name="TestLib"))
+        song = song_row_to_domain(_song_row())
+        for value in (song, locator):
+            for forbidden in ("history", "alias", "tombstone", "stable_id", "previous", "song_id"):
+                assert not hasattr(value, forbidden)

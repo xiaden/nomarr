@@ -30,9 +30,11 @@ if TYPE_CHECKING:
         LibraryIdentity,
         SongIdentity,
         SongPathUpdate,
+        SongRemoval,
         SongUpsertInput,
     )
     from nomarr.helpers.dataclasses.song_dataclass import Song, SongTagMatch
+    from nomarr.helpers.dataclasses.song_state_candidate_dataclass import SongStateCandidate
     from nomarr.helpers.dataclasses.song_tag_dataclass import (
         RelinkResult,
         SongTagAssignment,
@@ -181,8 +183,8 @@ class LibraryDb:
     # Song / folder forwarding (songs)
     # ------------------------------------------------------------------
 
-    def get_song(self, song_id: int) -> Song | None:
-        return self._songs.get_song(song_id)
+    def get_song(self, identity: SongIdentity) -> Song | None:
+        return self._songs.get_song(identity)
 
     # Numeric-handle identity bridge (P3, song-tag correction) — non-tag
     # forwarders delegating to the song-side bridge on ``LibrarySongsDb``.
@@ -202,17 +204,36 @@ class LibraryDb:
     def get_song_by_path(self, path: str, library: Library) -> Song | None:
         return self._songs.get_song_by_path(path, library)
 
-    def get_song_by_normalized_path(self, normalized_path: str, library: Library) -> Song | None:
-        return self._songs.get_song_by_normalized_path(normalized_path, library)
+    def get_song_by_normalized_path(
+        self,
+        library: LibraryIdentity,
+        normalized_path: str,
+    ) -> Song | None:
+        return self._songs.get_song_by_normalized_path(library, normalized_path)
 
     def find_song_by_path_any_library(self, path: str) -> Song | None:
         return self._songs.find_song_by_path_any_library(path)
 
-    def list_songs_by_ids(self, song_ids: list[int]) -> list[Song]:
-        return self._songs.list_songs_by_ids(song_ids)
+    def list_songs_by_identity(self, identities: Sequence[SongIdentity]) -> list[Song]:
+        return self._songs.list_songs_by_identity(identities)
 
-    def list_songs(self, library: Library, *, limit: int | None = None) -> list[Song]:
+    def list_songs(self, library: LibraryIdentity, *, limit: int | None = None) -> list[Song]:
         return self._songs.list_songs(library, limit=limit)
+
+    def list_songs_with_state(
+        self,
+        state: str,
+        *,
+        library: LibraryIdentity | None = None,
+        order_by_activity: bool = False,
+        limit: int | None = None,
+    ) -> list[SongStateCandidate]:
+        return self._songs.list_songs_with_state(
+            state,
+            library=library,
+            order_by_activity=order_by_activity,
+            limit=limit,
+        )
 
     def count_songs(self, library: Library) -> int:
         return self._songs.count_songs(library)
@@ -276,8 +297,8 @@ class LibraryDb:
     def update_library_song_last_tagged_at(self, song_id: int, tagged_at_ms: int) -> None:
         return self._songs.update_library_song_last_tagged_at(song_id, tagged_at_ms)
 
-    def remove_song(self, song_id: int) -> None:
-        return self._songs.remove_song(song_id)
+    def remove_song(self, command: SongRemoval) -> bool:
+        return self._songs.remove_song(command)
 
     def remove_song_by_path(self, path: str, library: Library) -> None:
         return self._songs.remove_song_by_path(path, library)

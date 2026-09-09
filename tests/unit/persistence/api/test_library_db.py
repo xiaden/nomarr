@@ -31,10 +31,12 @@ from nomarr.helpers.dataclasses.song_command_dataclass import (
     LibraryIdentity,
     SongIdentity,
     SongPathUpdate,
+    SongRemoval,
     SongScanUpdate,
     SongUpsertInput,
 )
 from nomarr.helpers.dataclasses.song_dataclass import Song, SongTagMatch
+from nomarr.helpers.dataclasses.song_state_candidate_dataclass import SongStateCandidate
 from nomarr.helpers.dataclasses.song_tag_dataclass import (
     RelinkResult,
     SongTagAssignment,
@@ -411,16 +413,51 @@ def test_get_libraries_in_axis_state_returns_domain() -> None:
 
 
 @pytest.mark.unit
-def test_get_song_delegates() -> None:
-    db, _, song_repo, *_ = _make_library_db()
-    song_repo.get_song = MagicMock(return_value=_song_row())
+def test_get_song_by_locator_delegates() -> None:
+    db, library_repo, song_repo, *_ = _make_library_db()
+    song_repo.get_song_by_normalized_path = MagicMock(return_value=_song_row())
 
-    result = db.get_song(10)
+    result = db.get_song(_song())
 
     assert isinstance(result, Song)
-    assert result.song_id == 10
+    assert not hasattr(result, "song_id")  # generated songs.id stays persistence-private
     assert result.path == "/music/a.mp3"
-    song_repo.get_song.assert_called_once_with(10)
+    library_repo.get_library_by_natural_key.assert_called_once_with("TestLib", "/music")
+    song_repo.get_song_by_normalized_path.assert_called_once_with(1, "a.mp3")
+
+
+@pytest.mark.unit
+def test_get_song_by_locator_missing_library_is_none() -> None:
+    # A locator whose owning library cannot be resolved is a deterministic
+    # ``None`` miss (ADR-048), not an error and not an integer fallback.
+    db, library_repo, song_repo, *_ = _make_library_db()
+    library_repo.get_library_by_natural_key = MagicMock(return_value=None)
+    song_repo.get_song_by_normalized_path = MagicMock()
+
+    assert db.get_song(_song()) is None
+    song_repo.get_song_by_normalized_path.assert_not_called()
+
+
+@pytest.mark.unit
+def test_get_song_by_locator_unrooted_library_is_none() -> None:
+    db, library_repo, song_repo, *_ = _make_library_db()
+    song_repo.get_song_by_normalized_path = MagicMock()
+    identity = SongIdentity(
+        library=LibraryIdentity(name="TestLib", root_path=None),
+        normalized_path="a.mp3",
+    )
+
+    assert db.get_song(identity) is None
+    library_repo.get_library_by_natural_key.assert_not_called()
+    song_repo.get_song_by_normalized_path.assert_not_called()
+
+
+@pytest.mark.unit
+def test_get_song_by_locator_missing_song_is_none() -> None:
+    db, _, song_repo, *_ = _make_library_db()
+    song_repo.get_song_by_normalized_path = MagicMock(return_value=None)
+
+    assert db.get_song(_song()) is None
 
 
 @pytest.mark.unit
@@ -431,9 +468,32 @@ def test_get_song_by_path_delegates_with_library_scope() -> None:
     result = db.get_song_by_path("/music/song.mp3", _LIB)
 
     assert isinstance(result, Song)
-    assert result.song_id == 10
+    assert not hasattr(result, "song_id")  # generated songs.id stays persistence-private
     library_repo.get_library_by_natural_key.assert_called_once_with("TestLib", "/music")
     song_repo.get_song_by_path.assert_called_once_with("/music/song.mp3", 1)
+
+
+@pytest.mark.unit
+def test_get_song_by_normalized_path_locator_delegates() -> None:
+    db, library_repo, song_repo, *_ = _make_library_db()
+    song_repo.get_song_by_normalized_path = MagicMock(return_value=_song_row())
+
+    result = db.get_song_by_normalized_path(_TEST_LIBRARY, "a.mp3")
+
+    assert isinstance(result, Song)
+    assert not hasattr(result, "song_id")
+    library_repo.get_library_by_natural_key.assert_called_once_with("TestLib", "/music")
+    song_repo.get_song_by_normalized_path.assert_called_once_with(1, "a.mp3")
+
+
+@pytest.mark.unit
+def test_get_song_by_normalized_path_missing_library_is_none() -> None:
+    db, library_repo, song_repo, *_ = _make_library_db()
+    library_repo.get_library_by_natural_key = MagicMock(return_value=None)
+    song_repo.get_song_by_normalized_path = MagicMock()
+
+    assert db.get_song_by_normalized_path(_TEST_LIBRARY, "a.mp3") is None
+    song_repo.get_song_by_normalized_path.assert_not_called()
 
 
 @pytest.mark.unit
@@ -444,21 +504,60 @@ def test_find_song_by_path_any_library_delegates() -> None:
     result = db.find_song_by_path_any_library("/music/song.mp3")
 
     assert isinstance(result, Song)
-    assert result.song_id == 10
+    assert not hasattr(result, "song_id")  # generated songs.id stays persistence-private
     song_repo.get_song_by_path_unscoped.assert_called_once_with("/music/song.mp3")
 
 
 @pytest.mark.unit
-def test_list_songs_by_ids_delegates() -> None:
-    db, _, song_repo, *_ = _make_library_db()
-    song_repo.get_songs_by_ids = MagicMock(return_value=[_song_row()])
+def test_list_songs_by_identity_delegates_order_preserving() -> None:
+    db, library_repo, song_repo, *_ = _make_library_db()
+    song_repo.get_song_ids_by_normalized_paths = MagicMock(return_value={(1, "a.mp3"): 10, (1, "b.mp3"): 11})
+    row_a, row_b = _song_row(), _song_row()
+    row_b["id"], row_b["path"], row_b["normalized_path"] = 11, "/music/b.mp3", "b.mp3"
+    song_repo.get_songs_by_ids = MagicMock(return_value=[row_a, row_b])
 
-    result = db.list_songs_by_ids([1, 2, 3])
+    result = db.list_songs_by_identity([_song("a.mp3"), _song("b.mp3")])
 
-    assert len(result) == 1
-    assert isinstance(result[0], Song)
-    assert result[0].song_id == 10
-    song_repo.get_songs_by_ids.assert_called_once_with([1, 2, 3])
+    assert [r.path for r in result] == ["/music/a.mp3", "/music/b.mp3"]
+    for r in result:
+        assert isinstance(r, Song)
+        assert not hasattr(r, "song_id")  # generated songs.id stays persistence-private
+        assert not hasattr(r, "library_id")
+    library_repo.get_library_ids_by_natural_keys.assert_called_once_with([("TestLib", "/music")])
+    song_repo.get_song_ids_by_normalized_paths.assert_called_once_with([(1, "a.mp3"), (1, "b.mp3")])
+    song_repo.get_songs_by_ids.assert_called_once_with([10, 11])
+
+
+@pytest.mark.unit
+def test_list_songs_by_identity_empty_is_empty() -> None:
+    db, library_repo, song_repo, *_ = _make_library_db()
+
+    assert db.list_songs_by_identity([]) == []
+    library_repo.get_library_ids_by_natural_keys.assert_not_called()
+    song_repo.get_song_ids_by_normalized_paths.assert_not_called()
+    song_repo.get_songs_by_ids.assert_not_called()
+
+
+@pytest.mark.unit
+def test_list_songs_by_identity_omits_missing_library_and_song() -> None:
+    db, library_repo, song_repo, *_ = _make_library_db()
+    # Library natural keys resolve only for TestLib; the "ghost" library is
+    # unresolvable and omitted. Only a.mp3 exists as a song row.
+    library_repo.get_library_ids_by_natural_keys = MagicMock(return_value={("TestLib", "/music"): 1})
+    song_repo.get_song_ids_by_normalized_paths = MagicMock(return_value={(1, "a.mp3"): 10})
+    row_a = _song_row()
+    song_repo.get_songs_by_ids = MagicMock(return_value=[row_a])
+    ghost = SongIdentity(
+        library=LibraryIdentity(name="Ghost", root_path="/ghost"),
+        normalized_path="c.mp3",
+    )
+
+    result = db.list_songs_by_identity([_song("a.mp3"), ghost, _song("missing.mp3")])
+
+    assert [r.path for r in result] == ["/music/a.mp3"]
+    # Both TestLib locators are resolved as targets (missing.mp3 just has no
+    # row); the unresolvable Ghost library is never queried.
+    song_repo.get_song_ids_by_normalized_paths.assert_called_once_with([(1, "a.mp3"), (1, "missing.mp3")])
 
 
 @pytest.mark.unit
@@ -466,12 +565,24 @@ def test_list_songs_delegates_with_library_scope() -> None:
     db, library_repo, song_repo, *_ = _make_library_db()
     song_repo.list_songs = MagicMock(return_value=[_song_row()])
 
-    result = db.list_songs(_LIB)
+    result = db.list_songs(_TEST_LIBRARY)
 
     assert len(result) == 1
     assert isinstance(result[0], Song)
+    assert not hasattr(result[0], "song_id")
     library_repo.get_library_by_natural_key.assert_called_once_with("TestLib", "/music")
     song_repo.list_songs.assert_called_once_with(1, limit=None)
+
+
+@pytest.mark.unit
+def test_list_songs_unknown_library_raises() -> None:
+    db, library_repo, song_repo, *_ = _make_library_db()
+    library_repo.get_library_by_natural_key = MagicMock(return_value=None)
+    song_repo.list_songs = MagicMock()
+
+    with pytest.raises(LookupError):
+        db.list_songs(_TEST_LIBRARY)
+    song_repo.list_songs.assert_not_called()
 
 
 @pytest.mark.unit
@@ -877,13 +988,39 @@ def test_update_songs_resolves_ids_by_path_not_returning_order() -> None:
 
 
 @pytest.mark.unit
-def test_remove_song_delegates() -> None:
-    db, _, song_repo, *_ = _make_library_db()
+def test_remove_song_by_command_deletes_privately() -> None:
+    db, library_repo, song_repo, *_ = _make_library_db()
+    song_repo.get_song_by_normalized_path = MagicMock(return_value=_song_row())
     song_repo.delete_song = MagicMock()
 
-    db.remove_song(77)
+    removed = db.remove_song(SongRemoval(song_identity=_song()))
 
-    song_repo.delete_song.assert_called_once_with(77)
+    assert removed is True
+    library_repo.get_library_by_natural_key.assert_called_once_with("TestLib", "/music")
+    song_repo.get_song_by_normalized_path.assert_called_once_with(1, "a.mp3")
+    song_repo.delete_song.assert_called_once_with(10)
+
+
+@pytest.mark.unit
+def test_remove_song_missing_is_false() -> None:
+    # A removal whose locator no longer resolves returns a deterministic
+    # ``False`` (ADR-048) — not an error, not an integer fallback.
+    db, _, song_repo, *_ = _make_library_db()
+    song_repo.get_song_by_normalized_path = MagicMock(return_value=None)
+    song_repo.delete_song = MagicMock()
+
+    assert db.remove_song(SongRemoval(song_identity=_song())) is False
+    song_repo.delete_song.assert_not_called()
+
+
+@pytest.mark.unit
+def test_remove_song_missing_library_is_false() -> None:
+    db, library_repo, song_repo, *_ = _make_library_db()
+    library_repo.get_library_by_natural_key = MagicMock(return_value=None)
+    song_repo.delete_song = MagicMock()
+
+    assert db.remove_song(SongRemoval(song_identity=_song())) is False
+    song_repo.delete_song.assert_not_called()
 
 
 @pytest.mark.unit
@@ -895,6 +1032,20 @@ def test_remove_song_by_path_returns_silently_when_not_found() -> None:
     db.remove_song_by_path("/nonexistent.mp3", _LIB)
 
     song_repo.delete_song.assert_not_called()
+
+
+@pytest.mark.unit
+def test_remove_song_by_path_resolves_row_and_deletes_privately() -> None:
+    # The facade locates the song by (library, path) and consumes the generated
+    # row id only inside the private delete (ADR-048); no storage id surfaces.
+    db, _, song_repo, *_ = _make_library_db()
+    song_repo.get_song_by_path = MagicMock(return_value=_song_row())
+    song_repo.delete_song = MagicMock()
+
+    db.remove_song_by_path("/music/a.mp3", _LIB)
+
+    song_repo.get_song_by_path.assert_called_once_with("/music/a.mp3", 1)
+    song_repo.delete_song.assert_called_once_with(10)
 
 
 # ── Tag operations (domain contract) ──────────────────────────────────────
@@ -960,7 +1111,7 @@ def test_find_songs_with_tag_returns_domain_songs() -> None:
 
     assert len(result) == 1
     assert isinstance(result[0], Song)
-    assert result[0].song_id == 10
+    assert not hasattr(result[0], "song_id")  # generated songs.id stays persistence-private
     song_tag_repo.search_songs_by_tag.assert_called_once_with("genre", "Rock", namespace="default", limit=10, offset=0)
 
 
@@ -1793,3 +1944,100 @@ class TestMoveLibrarySong:
         song_repo.move_song.assert_called_once()
         song_repo.delete_song.assert_not_called()
         song_repo.add_song.assert_not_called()
+
+
+# ── list_songs_with_state (typed state-read owner, Plan C P2) ────────────
+
+
+def _row(song_id: int = 10, normalized_path: str = "a.mp3", *, scanned_at: int = 1000) -> dict:
+    row = dict(_SONG_ROW)
+    row.update(id=song_id, normalized_path=normalized_path, scanned_at=scanned_at)
+    return row
+
+
+@pytest.mark.unit
+def test_list_songs_with_state_returns_typed_candidates() -> None:
+    db, library_repo, song_repo, _, _, _, _, song_state_repo, _ = _make_library_db()
+    song_state_repo.list_songs_in_state = MagicMock(return_value=[10, 11])
+    song_repo.get_songs_by_ids = MagicMock(return_value=[_row(), _row(11, "b.mp3", scanned_at=2000)])
+    song_state_repo.get_song_states_for_songs = MagicMock(
+        return_value={10: {"processed", "hydrated"}, 11: {"processed"}}
+    )
+    library_repo.get_libraries_by_ids = MagicMock(return_value=[dict(_LIBRARY_ROW)])
+
+    result = db.list_songs_with_state("processed")
+
+    assert len(result) == 2
+    # Default ordering: (library name, root_path, normalized_path).
+    assert [c.identity.normalized_path for c in result] == ["a.mp3", "b.mp3"]
+    a, _b = result
+    assert isinstance(a, SongStateCandidate)
+    assert a.identity == SongIdentity(library=_TEST_LIBRARY, normalized_path="a.mp3")
+    assert a.identity.library == _TEST_LIBRARY
+    assert isinstance(a.song, Song)
+    assert a.song.normalized_path == "a.mp3"
+    assert a.song.path == "/music/a.mp3"
+    assert a.states == ("hydrated", "processed")  # sorted state names, never ids
+    # No generated key / storage identity crosses the boundary.
+    assert not hasattr(a.song, "song_id")
+    assert not hasattr(a.song, "library_id")
+    assert not hasattr(a.identity, "song_id")
+    song_state_repo.list_songs_in_state.assert_called_once_with("processed")
+    song_repo.get_songs_by_ids.assert_called_once_with([10, 11])
+    song_state_repo.get_song_states_for_songs.assert_called_once_with([10, 11])
+
+
+@pytest.mark.unit
+def test_list_songs_with_state_library_scoped_filters_owners() -> None:
+    db, library_repo, song_repo, _, _, _, _, song_state_repo, _ = _make_library_db()
+    song_state_repo.list_songs_in_state = MagicMock(return_value=[10, 11, 12])
+    song_repo.get_library_ids_for_songs = MagicMock(return_value={10: 1, 11: 1, 12: 2})
+    song_repo.get_songs_by_ids = MagicMock(return_value=[_row(), _row(11, "b.mp3")])
+    song_state_repo.get_song_states_for_songs = MagicMock(return_value={10: {"processed"}, 11: {"processed"}})
+    library_repo.get_libraries_by_ids = MagicMock(return_value=[dict(_LIBRARY_ROW)])
+
+    result = db.list_songs_with_state("processed", library=_TEST_LIBRARY)
+
+    assert [c.identity.normalized_path for c in result] == ["a.mp3", "b.mp3"]
+    # The library-3 song (id 12) is filtered out by its owning storage library.
+    song_repo.get_library_ids_for_songs.assert_called_once_with([10, 11, 12])
+    song_repo.get_songs_by_ids.assert_called_once_with([10, 11])
+
+
+@pytest.mark.unit
+def test_list_songs_with_state_unknown_library_is_empty() -> None:
+    db, library_repo, song_repo, _, _, _, _, song_state_repo, _ = _make_library_db()
+    song_state_repo.list_songs_in_state = MagicMock(return_value=[10])
+    library_repo.get_library_by_natural_key = MagicMock(return_value=None)
+
+    result = db.list_songs_with_state("processed", library=_TEST_LIBRARY)
+
+    assert result == []
+    song_repo.get_songs_by_ids.assert_not_called()
+
+
+@pytest.mark.unit
+def test_list_songs_with_state_empty_and_blank_are_deterministic() -> None:
+    db, _, song_repo, _, _, _, _, song_state_repo, _ = _make_library_db()
+    # A song that is in no state (or the state does not exist) is a [] miss.
+    song_state_repo.list_songs_in_state = MagicMock(return_value=[])
+
+    assert db.list_songs_with_state("") == []
+    assert db.list_songs_with_state("no_such_state") == []
+    song_state_repo.list_songs_in_state.assert_called_once_with("no_such_state")
+    song_repo.get_songs_by_ids.assert_not_called()
+
+
+@pytest.mark.unit
+def test_list_songs_with_state_order_by_activity_and_limit() -> None:
+    db, library_repo, song_repo, _, _, _, _, song_state_repo, _ = _make_library_db()
+    song_state_repo.list_songs_in_state = MagicMock(return_value=[10, 11])
+    # id 11 has the newest scan/tag activity.
+    song_repo.get_songs_by_ids = MagicMock(return_value=[_row(), _row(11, "b.mp3", scanned_at=5000)])
+    song_state_repo.get_song_states_for_songs = MagicMock(return_value={10: {"processed"}, 11: {"processed"}})
+    library_repo.get_libraries_by_ids = MagicMock(return_value=[dict(_LIBRARY_ROW)])
+
+    result = db.list_songs_with_state("processed", order_by_activity=True, limit=1)
+
+    assert [c.identity.normalized_path for c in result] == ["b.mp3"]
+    song_repo.get_songs_by_ids.assert_called_once_with([10, 11])

@@ -276,3 +276,73 @@ class TestTagUsageFromRow:
         usage = tag_usage_from_row({"id": 5, "name": "artist", "value": "X", "namespace": "default", "song_count": 3})
         assert not isinstance(usage, dict)
         assert not hasattr(usage, "id")
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 (P2-S2): association hydration isolation
+#
+# Prove that hydrating a song-tag association attaches the semantic owning
+# SongLocator (never a storage song_id / FK) and that an association absent from
+# the row is explicit (None), not fabricated from a bare row's integer song_id.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestAssociationHydrationIsolation:
+    def test_batch_assignment_hydrates_owning_locator_not_storage_id(self) -> None:
+        # The batch row carries only a storage song_id; the mapper hydrates the
+        # owning SongLocator onto the domain assignment and never lets song_id
+        # (or tag_id / FK) cross.
+        assignment = song_tag_assignment_from_batch_row(
+            {"song_id": 7, "tag_id": 3, "tag_name": "artist", "tag_value": "X", "namespace": "nom"},
+            _SONG,
+        )
+        assert assignment.song == _SONG
+        assert isinstance(assignment.song, SongIdentity)
+        assert not hasattr(assignment, "song_id")
+        assert not hasattr(assignment.song, "song_id")
+
+    def test_association_locator_is_stable_across_reload(self) -> None:
+        # Re-hydrating the same owning locator from an identical song yields an
+        # equal association: the semantic song association survives reload.
+        first = song_tag_assignment_from_batch_row(
+            {"song_id": 7, "tag_id": 3, "tag_name": "artist", "tag_value": "X", "namespace": "nom"},
+            _SONG,
+        )
+        again = song_tag_assignment_from_batch_row(
+            {"song_id": 7, "tag_id": 3, "tag_name": "artist", "tag_value": "X", "namespace": "nom"},
+            _SONG,
+        )
+        assert again.song == first.song
+        assert again.song == SongIdentity(library=_LIBRARY, normalized_path="a.mp3")
+
+    def test_flat_assignment_without_song_is_explicit_not_fabricated(self) -> None:
+        # A flat per-tag read does not know the owning song; the mapper leaves the
+        # association unset rather than fabricating a locator from a bare row's
+        # integer song_id. The storage song_id never becomes identity.
+        assignment = song_tag_assignment_from_row({"song_id": 7, "name": "artist", "value": "X", "namespace": "nom"})
+        assert assignment.song is None
+        assert not hasattr(assignment, "song_id")
+
+    def test_bare_row_storage_id_never_becomes_locator(self) -> None:
+        # Even when a row carries integer FK columns, the mappers require the
+        # semantic owning locator to be supplied by the caller; they never derive
+        # identity from song_id/library_id.
+        assignment = song_tag_assignment_from_batch_row(
+            {
+                "song_id": 7,
+                "tag_id": 3,
+                "library_id": 1,
+                "tag_name": "artist",
+                "tag_value": "X",
+                "namespace": "nom",
+            },
+            _SONG,
+        )
+        assert assignment.song == _SONG
+        assert assignment.song.library == _LIBRARY
+        assert assignment.song.normalized_path == "a.mp3"
+        # No row key leaks onto the value or its locator.
+        assert not hasattr(assignment, "song_id")
+        assert not hasattr(assignment.song, "song_id")
+        assert not hasattr(assignment.song, "library_id")

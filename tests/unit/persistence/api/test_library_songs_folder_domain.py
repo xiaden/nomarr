@@ -300,7 +300,7 @@ def test_list_songs_resolves_library_and_returns_domain_songs() -> None:
     song_repo.list_songs.assert_called_once_with(7, limit=100)
     assert len(result) == 1
     assert result[0].path == "Album/track.mp3"
-    assert result[0].song_id == 11
+    assert not hasattr(result[0], "song_id")  # generated songs.id stays persistence-private
     library_repo.get_library_by_natural_key.assert_called_once_with("main", "/music")
 
 
