@@ -1600,6 +1600,62 @@ def test_no_raw_tag_row_above_persistence() -> None:
         )
 
 
+# ── Retired TagIdentity type name (TagRef-D P1-S4) ────────────────────────────
+# The ``TagIdentity`` domain type name was retired with the tag-identity
+# migration; caller code now addresses tags by natural ``TagRef`` via db.library.
+# The type name must not resurface as an imported/constructed symbol in
+# caller-facing layers above persistence. This scans the retired TYPE literal;
+# the root resolver *method* names (``resolve_tag_identity`` /
+# ``resolve_tag_identities``) are separately guarded by
+# ``test_no_tag_pk_resolver_or_int_conversion_above_persistence``.
+# TagRef-D P1-S4: test_no_retired_tag_identity_type_above_persistence
+_TAG_IDENTITY_TYPE_SCAN_DIRS = [
+    Path("nomarr/components"),
+    Path("nomarr/services"),
+    Path("nomarr/workflows"),
+    Path("nomarr/interfaces"),
+]
+_RETIRED_TAG_IDENTITY_TYPE_PATTERN = re.compile(r"\bTagIdentity\b")
+
+
+@pytest.mark.code_smell
+@pytest.mark.slow
+# TagRef-D P1-S4
+def test_no_retired_tag_identity_type_above_persistence() -> None:
+    """The retired ``TagIdentity`` type name never resurfaces in caller code.
+
+    ``TagIdentity`` was the pre-migration integer tag-identity domain type,
+    retired in favor of natural ``TagRef`` (via db.library). No caller-facing
+    layer above persistence may import, reference, or construct a symbol of that
+    retired type name again. Persistence internals are not scanned (they may
+    keep private integer storage keys).
+    """
+    violations: list[tuple[str, int, str]] = []
+    for py_file in _iter_py_targets(list(_TAG_IDENTITY_TYPE_SCAN_DIRS)):
+        try:
+            file_content = py_file.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        doc_lines = _docstring_lines(file_content)
+        rel_path = py_file.relative_to(PROJECT_ROOT).as_posix()
+        for line_num, line in enumerate(file_content.splitlines(), start=1):
+            if line.lstrip().startswith("#") or line_num in doc_lines:
+                continue
+            if _RETIRED_TAG_IDENTITY_TYPE_PATTERN.search(line):
+                violations.append((rel_path, line_num, line.strip()))
+
+    if violations:
+        report = "\n".join(f"  {p}:{ln}: {txt}" for p, ln, txt in sorted(set(violations))[:20])
+        if len(violations) > 20:
+            report += f"\n  ... and {len(violations) - 20} more"
+        pytest.fail(
+            "The retired TagIdentity type name resurfaced above persistence. "
+            "Higher layers must use natural TagRef (via db.library); the "
+            "TagIdentity identity type is retired and must not be imported or "
+            "constructed in caller code.\n" + report
+        )
+
+
 # ── Whole-library reset: single maintenance intent, no choreography (P2-S3) ──
 # TASK-library-reset-persistence-choreography-D migrated the global reset to one
 # persistence-owned maintenance intent ``db.library.maintenance.reset_library_data()``

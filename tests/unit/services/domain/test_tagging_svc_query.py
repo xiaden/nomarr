@@ -35,9 +35,6 @@ def _make_service(*, db: MagicMock | None = None) -> TaggingService:
 def _song(song_id: int) -> Song:
     """Build a minimal domain ``Song`` for facade song-read mocks."""
     return Song(
-        song_id=song_id,
-        library_id=1,
-        folder_id=None,
         path=f"/music/{song_id}.flac",
         normalized_path=f"music/{song_id}.flac",
         file_size=0,
