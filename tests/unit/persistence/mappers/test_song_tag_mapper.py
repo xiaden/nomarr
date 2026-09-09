@@ -166,7 +166,7 @@ class TestSongTagAssignmentFromBatchRow:
 
 @pytest.mark.unit
 class TestSongFromRow:
-    def test_delegates_to_domain_song_projection(self) -> None:
+    def test_maps_semantic_fields_and_drops_generated_ids(self) -> None:
         song = song_from_row(
             {
                 "id": 10,
@@ -189,9 +189,43 @@ class TestSongFromRow:
             }
         )
         assert isinstance(song, Song)
-        assert song.song_id == 10
-        assert song.normalized_path == "a.mp3"
         assert not isinstance(song, dict)
+        # Generated row ids / FK ints are persistence-private and never cross.
+        assert not hasattr(song, "song_id")
+        assert not hasattr(song, "library_id")
+        assert not hasattr(song, "folder_id")
+        assert not hasattr(song, "id")
+        # Semantic fields are preserved (integer booleans coerced to bool).
+        assert song.normalized_path == "a.mp3"
+        assert song.path == "/music/a.mp3"
+        assert song.needs_tagging is True
+        assert song.duration_seconds == 120.5
+
+    def test_no_storage_serializer_on_value(self) -> None:
+        song = song_from_row(
+            {
+                "id": 10,
+                "library_id": 1,
+                "folder_id": None,
+                "path": "/music/a.mp3",
+                "normalized_path": "a.mp3",
+                "file_size": 100,
+                "modified_time": 1000,
+                "duration_seconds": None,
+                "chromaprint": None,
+                "needs_tagging": 0,
+                "is_valid": 1,
+                "tagged": 0,
+                "calibration_hash": None,
+                "write_claimed_by": None,
+                "last_tagged_at": None,
+                "scanned_at": 1000,
+                "created_at": 1000,
+            }
+        )
+        assert isinstance(song, Song)
+        assert not hasattr(song, "from_row")
+        assert not hasattr(song, "to_dict")
 
 
 @pytest.mark.unit

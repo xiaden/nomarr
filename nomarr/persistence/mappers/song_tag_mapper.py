@@ -24,6 +24,7 @@ from nomarr.helpers.dataclasses.song_tag_dataclass import (
     TagRef,
     TagUsage,
 )
+from nomarr.persistence.mappers.song_mapper import song_row_to_domain
 
 _DEFAULT_NAMESPACE = "default"
 
@@ -105,16 +106,19 @@ def song_tag_assignment_from_batch_row(
 def song_from_row(row: Mapping[str, Any]) -> Song:
     """Map a ``SongRow`` mapping to a domain ``Song``.
 
-    Delegates to ``Song.from_row`` (the domain class' own storage-agnostic
-    projection) so facades never reach into song row shapes directly.
+    Delegates to the persistence-private :func:`song_row_to_domain` mapper so
+    facades never reach into song row shapes and the domain ``Song`` never
+    exposes a ``from_row`` constructor. The generated row ``id`` and the
+    ``library_id``/``folder_id`` foreign keys are dropped before the value
+    object crosses this boundary.
     """
-    return Song.from_row(row)
+    return song_row_to_domain(row)
 
 
 def song_tag_match_from_row(row: Mapping[str, Any]) -> SongTagMatch:
     """Map a numeric tag-search result row to a domain ``SongTagMatch``."""
     return SongTagMatch(
-        song=Song.from_row(row),
+        song=song_row_to_domain(row),
         matched_tag=str(row["matched_tag"]),
         distance=float(row["distance"]),
     )

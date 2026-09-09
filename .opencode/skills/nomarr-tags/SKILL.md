@@ -56,6 +56,49 @@ Two-tier architecture: PostgreSQL is the source of truth (relational tables); au
 
 ---
 
+## Curated-Tag Identity: Natural Value vs Storage PK (active issue, 2026-09)
+
+**Doc drift note:** the Key Files table row "Tag curation (rename/merge/split) → `tagging_writer_comp.py`" is WRONG — the live curation engine is the mixin in `nomarr/services/domain/tagging_svc/curation.py` (uses `tag_write_comp.relink_tag_edges`); `tagging_writer_comp.py` writes tags to audio files. `tag_curation_if.py` is the web surface.
+
+**Core defect:** browse listing already exposes the NATURAL tag value as the public `id`
+(`tag_query_comp.list_tags_by_name` → `TagValueItem.id`; pinned in
+`tests/unit/components/tagging/test_tag_query_comp.py::TestListTagsByName`), while curation and
+song lookup still interpret that same string as a storage PK:
+`curation.TaggingCurationMixin._get_tag_or_error` → `int(tag_id)` →
+`Database.resolve_tag_identity` (`nomarr/persistence/db.py` L203-223, a set-based `tags.id`
+read via `tag_repo.get_tags_by_ids`). Consequences: non-numeric value ("Electronic") →
+`ValueError` (HTTP 400/404); numeric value ("120") → resolves to whichever tag happens to have
+PK 120 → **renames/merges/splits/lists the wrong tag**. Same int() path in
+`tagging_svc/query.py::get_tag_songs` (L104-105) and `tag_query_comp.get_tag_songs_with_metadata`.
+
+**Round-trip is the problem:** the wire API carries ONLY the value as `tag_id` (no `name`, no
+`namespace` — rename/merge/split/get-song requests in `tag_curation_if.py` + `tagCuration.ts`),
+so the backend cannot reconstruct a natural `TagRef(name,value)` from it. Fixing the int() calls
+is insufficient; the API shape must add name (or a composite id). `metadata_svc.py` is the
+correct reference pattern: `get_entity` rebuilds `TagRef(name=..., value=entity_id)` and calls
+`db.library.get_tag(identity)` — no PK anywhere.
+
+**Adjacent facts for a fix:**
+- `relink_song_tags` (`nomarr/persistence/database/song_tag_repo.py` L545-611) never deletes the
+  orphaned source tag row (only reports `source_orphaned`); curation never calls
+  `cleanup_orphaned_tags` (nor ever did — git `-S` empty), so source tags persist with
+  `song_count=0` until an explicit cleanup workflow/endpoint runs. `sources_removed` semantics
+  overstate deletion.
+- Curation takes no worker claims and is not a saga: relink commits per source tag, then per-song
+  state transitions (`WRITTEN→NOT_WRITTEN`, `TAGS_CURRENT→TAGS_NOT_FRESH`) commit after — a crash
+  mid-way leaves DB tags changed but songs still `WRITTEN`/`TAGS_CURRENT` → audio never rewritten.
+- Legacy int helpers with no production callers (removal candidates when the bridge retires):
+  `tag_query_comp.get_tag`, `count_songs_for_tag`, `list_songs_for_tag` (kept alive only by unit
+  tests), `tag_stats_comp._tag_file_ids`/`_song_count_for_tag` (fully dead, not allowlisted).
+- Authorization to remove the bridge: `persistence/CONTRACTS.md` L517-537 treats
+  `Database.resolve_tag_identity` as a boundary-only transitional crutch for opaque legacy ids;
+  `LibraryTagsDb`/`LibraryDb` tag methods are natural-only (sealed by sabotage tests
+  `test_song_tag_facade_boundary.py`, `test_sealed_tag_facade_boundary.py`).
+- No e2e tag-curation tests exist; characterization snapshot `TaggingService_list_tag_values`
+  (tests/characterization/test_service_method_inventory.py L191-211) pins the listing shape.
+
+---
+
 ## Critical Invariants
 
 - `nom:` prefix is applied once in `_execute_deferred_writes` before `save_file_tags`. Do not double-prefix.

@@ -82,18 +82,24 @@ def delete_library_song(db: Database, path: str, library: Library) -> None:
     db.library.remove_song_by_path(path, library)
 
 
-def update_song_path(db: Database, command: SongPathUpdate) -> None:
+def update_song_path(db: Database, command: SongPathUpdate) -> SongIdentity | None:
     """Atomically move a Song to a new path with its complete scan metadata.
 
     Component-level adapter over the single public move intent. The caller
     (move detection) constructs one complete ``SongPathUpdate`` addressed by the
-    stable Song application identity and carrying the destination path plus the
-    full scan data; this adapter forwards it in exactly one ``db.library``
-    move-intent call. It does not resolve locators, open transactions, call
-    repositories, or retain the old two-call path-plus-scan choreography —
-    persistence owns the single atomic update (all fields or none).
+    **source locator** ``SongIdentity(library, normalized_path)`` (ADR-048) and
+    carrying the destination path plus the full scan data; this adapter forwards
+    it in exactly one ``db.library`` move-intent call. It does not resolve
+    locators, open transactions, call repositories, or retain the old two-call
+    path-plus-scan choreography — persistence owns the single atomic update (all
+    fields or none).
+
+    Returns the destination ``SongIdentity`` when the move commits, or ``None``
+    when the source locator is stale/missing (a safe no-op miss). After a
+    successful move the source locator no longer resolves; callers that reseed
+    tags must use the returned destination locator, not the source.
     """
-    db.library.move_library_song(command)
+    return db.library.move_library_song(command)
 
 
 def update_song_modified_time(db: Database, file_key: int, modified_time_ms: int) -> None:

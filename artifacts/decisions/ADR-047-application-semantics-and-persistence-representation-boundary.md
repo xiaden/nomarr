@@ -1,10 +1,11 @@
 # ADR-047: Application Semantics and Persistence Representation Boundary
 
-**Status:** Accepted  
+**Status:** Superseded (scoped to Song identity adoption)  
 **Date:** 2026-08-31  
-**Tags:** architecture, persistence, domain-model, identity, intent-facade, embedding, song-move
+**Tags:** architecture, persistence, domain-model, identity, intent-facade, embedding, song-move  
 **Source Log:** rnd-manager#L156  
 **Supersedes:** ADR-032  
+**Superseded by:** ADR-048 — Song-identity adoption only; ADR-047's general generated-ID principle, non-Song/ML clauses, and persistence-boundary rules remain in force and are reasserted by ADR-048.
 
 ## Context
 
@@ -18,7 +19,7 @@ The current embedding persistence migration is a concrete stress case. It must d
 
 ADR-046 is adjacent and remains in force: services, workflows, and service-classified workers may make thin calls to injected public persistence intent facades, while persistence internals and reconstructed choreography remain prohibited.
 
-This ADR determines the canonical lifecycle identity of Song for move and rename semantics. A persisted Song's stable `song_id` is its application/entity identity for the lifetime of that Song, including filesystem moves and renames. `library`, `path`, and `normalized_path` are mutable locators. They identify where the current physical file is located, but do not determine whether it is the same Song. This scoped decision does not authorize raw storage IDs to leak through persistence boundaries generally; it intentionally adopts Song `song_id` as application identity for the Song lifecycle and requires persistence to retain storage translation and transaction ownership.
+This ADR historically recorded the stable Song identity decision for move and rename semantics. That Song-specific decision is superseded by ADR-048: `SongIdentity(library, normalized_path)` is the application-facing mutable, request-scoped locator, while generated `songs.id` remains persistence-private. This scoped historical record does not authorize raw storage IDs to leak through persistence boundaries generally; ADR-048 now governs Song move addressing and requires persistence to retain storage translation and transaction ownership.
 
 ## Decision
 
@@ -26,7 +27,7 @@ Nomarr application-facing APIs use identities and values defined by application 
 
 1. **Semantic identity is distinct from persistence identity.** A domain identity is part of an application-facing contract and is defined by the owning domain/application decision. A database primary key, generated row ID, foreign key, surrogate key, or storage identifier is persistence-internal by default. Persistence owns all translation between application identity and persistence identity. Domain and database identity may coincide as an implementation choice, but architecture must not require that they coincide or forbid the coincidence.
 
-2. **Generated IDs require intentional adoption.** A generated identifier may become application/domain identity only through an explicit domain decision that names its semantic referent, scope, stability guarantee, lifecycle, and application or external contract. For Songs, this ADR intentionally adopts the stable `song_id` as the entity identity for the lifetime of a persisted Song, including filesystem moves and renames. The identity remains stable while the Song row is updated in place and ends when the Song is deleted. A later delete/recreate is a new Song identity, even if a locator is reused. No unrelated generated IDs become application identities by implication.
+2. **Generated IDs require intentional adoption.** A generated identifier may become application/domain identity only through an explicit domain decision that names its semantic referent, scope, stability guarantee, lifecycle, and application or external contract. The former Song-specific stable-`song_id` adoption is superseded by ADR-048; no current Song move operation adopts or exposes `song_id` as application identity. No unrelated generated IDs become application identities by implication.
 
 3. **Persistence owns representation and mechanics.** Persistence owns rows, tables, columns, storage layouts, internal IDs, foreign keys, joins, indexes, serialized payloads, row/document mapping, identity resolution, storage-specific deduplication, delete ordering, session/transaction boundaries, and persistence choreography. This ownership includes implementing an intent-complete atomic operation when a persistence intent spans multiple tables or representations. Callers must not construct row payloads, resolve foreign keys, enumerate storage partitions, reproduce delete/insert sequences, manage transactions, or otherwise reconstruct persistence mechanics.
 
@@ -38,7 +39,7 @@ Nomarr application-facing APIs use identities and values defined by application 
 
 7. **Preserve the public intent-facade boundary.** ADR-046 remains in force without expansion or narrowing of its caller-scope decision. Components, services, workflows, and service-classified workers may call injected public `Database` intent facades for thin calls representing one atomic persistence intent or thin recipe step. Interfaces and helpers remain persistence-free. No caller may import or receive Tier-1 SQL primitives, Tier-2 repositories, ORM/database models, persistence mappers, sessions, transactions, collection/table internals, storage identifiers, raw storage shapes, or persistence-owned fields. Application orchestration remains legitimate when it sequences application intents; it must not reconstruct persistence choreography.
 
-8. **Song identity and move/rename lifecycle.** A persisted Song's stable `song_id` is the application/entity identity for the lifetime of that Song. `library`, `path`, and `normalized_path` are mutable locators and may change when the physical file is moved or renamed. A move/rename MUST update the existing Song row in place rather than delete and recreate it merely because its locator changed. The persistence intent for a move owns one atomic transaction covering the path, normalized path, and related scan metadata; it either updates all required fields or none. Locator uniqueness constraints remain authoritative: a destination conflict fails without changing the source locator or scan metadata. Existing references keyed to the Song, including tags, state assignments, embeddings, claims, playlists, and other associations, remain attached because the Song identity is unchanged. A delete followed by a later create is a new Song identity and is not a move/rename.
+8. **Song identity and move/rename lifecycle (historical wording superseded by ADR-048).** The former stable-`song_id` Song identity and move/rename wording is retained in the amendment history below, but is no longer the current application move contract. ADR-048 governs current Song moves: the source `SongIdentity(library, normalized_path)` locator is resolved privately, the existing row is updated in place in one atomic persistence intent covering path, normalized path, and related scan metadata, and generated row IDs remain persistence-private. Locator uniqueness conflicts leave the old state unchanged; associations remain attached; stale or missing source locators fail safely without integer fallback or replacement.
 
 9. **Embedding persistence execution boundary.** For the approved embedding-persistence migration, `Database.ml` / `MlDb` remains the sole public persistence boundary; no second facade, compatibility facade, aggregate root, or broad unrelated `MlDb` refactor is introduced. The application contracts include `SongIdentity`, vector values and typed vector-write commands, `backbone`, `VectorMatch`, `EmbeddingCounts`, and stable output identity/index where semantically required. Table names, row IDs, foreign keys, raw rows, storage tiers or predicates when not semantically required, SQL, sessions, storage timestamps/metadata, transaction handles, and persistence-generated IDs remain internal. `MlDb` accepts and returns application concepts and persistence resolves `SongIdentity` internally.
 
@@ -68,7 +69,7 @@ Nomarr application-facing APIs use identities and values defined by application 
 - Avoiding accidental generated-ID adoption for concepts other than Song requires explicit identity decisions and review of new contracts.
 - Richer intent-complete facade methods may be needed instead of convenient row queries, increasing persistence implementation responsibility.
 - Persistence and application orchestration can be confused. Review must distinguish application-level sequencing from storage choreography.
-- Existing `SongIdentity(library, normalized_path)` usages may need clarification or revision where they describe a mutable locator rather than stable Song identity.
+  - Existing `SongIdentity(library, normalized_path)` usages must be clarified as mutable, request-scoped locators rather than stable Song identity where they address Song moves.
 - The embedding migration has wide required caller churn; excluding required callers would leave the boundary incoherent, while including unrelated `MlDb` concerns would violate the trimmed scope.
 
 **Mitigations**
@@ -121,4 +122,10 @@ Nomarr application-facing APIs use identities and values defined by application 
 
 ## Amendment Note
 
-Amended after explicit user approval on 2026-09-08. This amendment resolves the former non-decision in the Context and Decision §8: stable `song_id` is Song entity identity; `library`, `path`, and `normalized_path` are mutable locators; moves and renames update the existing row in place through one atomic persistence intent. The remainder of this ADR is preserved in substance.
+Amended after explicit user approval on 2026-09-08. This historical amendment resolved the former non-decision by adopting stable `song_id` as Song entity identity. ADR-048 supersedes that Song-specific adoption; the remainder of this ADR is preserved in substance.
+
+## Scoped Supersession Note
+
+ADR-048, committed after an explicit user authorization on 2026-09-09, supersedes this ADR only for the Song-specific stable-identity adoption recorded in the Context, Decision §2's Song-specific adoption clause, Decision §8's stable Song identity language, and this Amendment Note's operative Song decision. The prior amendment commit `adbb053f` and its explicit approval remain historical facts and are not erased.
+
+ADR-047's general generated-ID principle in Decision §2 remains operative: generated identifiers require an explicit decision naming their semantic referent, scope, stability, lifecycle, and application or external contract; unrelated generated IDs do not become application identities by implication. Decision §§1, 3–7, and 9–12, including the non-Song, ML, record-preservation, and persistence-boundary clauses, remain in force. ADR-048 reasserts those clauses and is authoritative for the SongLocator decision.

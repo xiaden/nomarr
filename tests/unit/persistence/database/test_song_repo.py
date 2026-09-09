@@ -543,12 +543,14 @@ def _move_payload(
 class TestMoveSongAtomic:
     """``SongRepository.move_song`` single-statement atomicity on SQLite.
 
-    SQLite enforces the same unique constraints (``uq_songs_library_path``,
-    ``uq_songs_library_norm_path``) declared on the ORM model and the same
-    single-``UPDATE`` semantics, so in-place all-field success, uniqueness
+    The row is addressed by its source locator ``(library_id,
+    source_normalized_path)`` (ADR-048); SQLite enforces the same unique
+    constraints (``uq_songs_library_path``, ``uq_songs_library_norm_path``)
+    declared on the ORM model and the same single-``UPDATE`` semantics, so
+    in-place all-field success, stale/missing source no-ops, uniqueness
     rollback, and no-partial-row-state are deterministically provable here.
-    PostgreSQL/DuplicateEntityError translation is covered by the facade-boundary
-    mocks and the real-DB characterization suite.
+    PostgreSQL/DuplicateEntityError translation is covered by the
+    facade-boundary mocks and the real-DB characterization suite.
     """
 
     def test_move_updates_all_fields_in_place_preserving_identity(self, pg_session) -> None:
@@ -556,12 +558,12 @@ class TestMoveSongAtomic:
         song_id = _create_song(pg_session, lib_id, "/music/a.mp3")
         repo = SongRepository(pg_session)
 
-        ok = repo.move_song(song_id, _move_payload(path="/music/z.mp3", normalized_path="z.mp3"))
+        ok = repo.move_song(lib_id, "/music/a.mp3", _move_payload(path="/music/z.mp3", normalized_path="z.mp3"))
 
         assert ok is True
         row = repo.get_song(song_id)
         assert row is not None
-        # Same row (stable Song identity), same owning library — updated in place.
+        # Same private row and owning library — updated in place by source locator.
         assert row["id"] == song_id
         assert row["library_id"] == lib_id
         assert row["path"] == "/music/z.mp3"
@@ -572,14 +574,17 @@ class TestMoveSongAtomic:
         assert row["is_valid"] == 1
         assert row["scanned_at"] == 5555
 
-    def test_move_returns_false_and_writes_nothing_when_identity_missing(self, pg_session) -> None:
+    def test_move_returns_false_and_writes_nothing_when_source_stale(self, pg_session) -> None:
         lib_id = _create_library(pg_session)
         repo = SongRepository(pg_session)
 
-        ok = repo.move_song(999999, _move_payload(path="/music/ghost.mp3", normalized_path="ghost.mp3"))
+        # No row has this (library_id, source normalized_path) — a stale source.
+        ok = repo.move_song(
+            lib_id, "/music/ghost.mp3", _move_payload(path="/music/ghost.mp3", normalized_path="ghost.mp3")
+        )
 
         assert ok is False
-        # No replacement row is fabricated for a missing/stale identity.
+        # No replacement row is fabricated for a stale/missing source locator.
         assert repo.get_song_by_path("/music/ghost.mp3", lib_id) is None
 
     def test_move_does_not_touch_unrelated_columns(self, pg_session) -> None:
@@ -593,7 +598,7 @@ class TestMoveSongAtomic:
         baseline = repo.get_song(song_id)
         assert baseline is not None
 
-        repo.move_song(song_id, _move_payload(path="/music/z.mp3", normalized_path="z.mp3"))
+        repo.move_song(lib_id, "/music/a.mp3", _move_payload(path="/music/z.mp3", normalized_path="z.mp3"))
 
         row = repo.get_song(song_id)
         assert row is not None
@@ -619,7 +624,7 @@ class TestMoveSongAtomic:
         assert before is not None
 
         with pytest.raises(DatabaseStateError):
-            repo.move_song(song_a, _move_payload(path="/music/b.mp3", normalized_path="b.mp3"))
+            repo.move_song(lib_id, "/music/a.mp3", _move_payload(path="/music/b.mp3", normalized_path="b.mp3"))
 
         # The move rolled back completely — no partial row state.
         after = repo.get_song(song_a)
@@ -646,7 +651,8 @@ class TestMoveSongAtomic:
         # Distinct physical path but colliding normalized_path → norm-path conflict.
         with pytest.raises(DatabaseStateError):
             repo.move_song(
-                song_a,
+                lib_id,
+                "/music/a.mp3",
                 _move_payload(path="/music/c.mp3", normalized_path="/music/b.mp3"),
             )
 
@@ -662,12 +668,43 @@ class TestMoveSongAtomic:
         library only conflicts with a sibling in THAT library."""
         lib1 = _create_library(pg_session)
         lib2 = _create_library(pg_session)
-        song_a = _create_song(pg_session, lib1, "/music/a.mp3")
+        _create_song(pg_session, lib1, "/music/a.mp3")
         # A same-path song in a different library does NOT block the move.
         _create_song(pg_session, lib2, "/music/b.mp3")
 
         repo = SongRepository(pg_session)
-        assert repo.move_song(song_a, _move_payload(path="/music/b.mp3", normalized_path="b.mp3")) is True
+        assert repo.move_song(lib1, "/music/a.mp3", _move_payload(path="/music/b.mp3", normalized_path="b.mp3")) is True
+
+    def test_reload_retry_old_source_stops_resolving_after_success(self, pg_session) -> None:
+        """ADR-048 reload/retry + residual-reoccupation oracle on SQLite.
+
+        After a successful source-locator move the OLD source locator no longer
+        resolves: a retry addressed by the stale old source is a ``False`` no-op
+        (never double-moves or fabricates), and only the destination locator
+        matches the moved row. This is the documented behavior that protects a
+        replay unless the old locator was independently re-occupied (a residual
+        race ADR-048 accepts and does not hide by exposing row ids)."""
+        lib_id = _create_library(pg_session)
+        song_id = _create_song(pg_session, lib_id, "/music/a.mp3")
+        repo = SongRepository(pg_session)
+
+        assert (
+            repo.move_song(lib_id, "/music/a.mp3", _move_payload(path="/music/z.mp3", normalized_path="z.mp3")) is True
+        )
+
+        # Retry addressed by the now-stale OLD source locator → no-op miss.
+        assert (
+            repo.move_song(lib_id, "/music/a.mp3", _move_payload(path="/music/y.mp3", normalized_path="y.mp3")) is False
+        )
+        # The row is still at its committed destination (complete-old-or-new).
+        row = repo.get_song(song_id)
+        assert row is not None
+        assert row["path"] == "/music/z.mp3"
+        assert row["normalized_path"] == "z.mp3"
+        assert repo.get_song_by_path("/music/y.mp3", lib_id) is None
+
+        # The destination locator now resolves and can itself be moved again.
+        assert repo.move_song(lib_id, "z.mp3", _move_payload(path="/music/w.mp3", normalized_path="w.mp3")) is True
 
 
 @pytest.mark.unit
@@ -687,7 +724,7 @@ class TestMoveSongPersistenceBoundary:
         repo = self._repo(session)
 
         with pytest.raises(RuntimeError, match="commit failed"):
-            repo.move_song(7, _move_payload(path="/music/z.mp3", normalized_path="z.mp3"))
+            repo.move_song(7, "/music/a.mp3", _move_payload(path="/music/z.mp3", normalized_path="z.mp3"))
 
         session.execute.assert_called_once()
 
@@ -697,6 +734,6 @@ class TestMoveSongPersistenceBoundary:
         repo = self._repo(session)
 
         with pytest.raises(DatabaseStateError):
-            repo.move_song(7, _move_payload(path="/music/z.mp3", normalized_path="z.mp3"))
+            repo.move_song(7, "/music/a.mp3", _move_payload(path="/music/z.mp3", normalized_path="z.mp3"))
 
         session.commit.assert_not_called()

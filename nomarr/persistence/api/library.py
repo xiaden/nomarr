@@ -257,7 +257,14 @@ class LibraryDb:
     ) -> dict[str, int]:
         return self._songs.update_songs(library, payloads, remove_missing=remove_missing)
 
-    def move_library_song(self, command: SongPathUpdate) -> None:
+    def move_library_song(self, command: SongPathUpdate) -> SongIdentity | None:
+        """Forward one atomic Song move to the songs intent facade (ADR-048).
+
+        Thin root-facade forwarder: one persistence intent addressed by the source
+        locator ``command.song_identity``. Returns the destination
+        ``SongIdentity`` on success, or ``None`` when the source locator is
+        stale/missing. No id, row, repository, session, or transaction is exposed.
+        """
         return self._songs.move_library_song(command)
 
     def update_library_song_modified_time(self, song_id: int, modified_time_ms: int) -> None:

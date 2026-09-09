@@ -1612,17 +1612,24 @@ def test_library_maintenance_exposes_no_transaction_surface() -> None:
 
 @pytest.mark.unit
 class TestMoveLibrarySong:
-    """Atomic Song-move intent delegation and contract (ADR-047 §2/§8).
+    """Atomic Song-move intent delegation and contract (ADR-048).
 
     ``db.move_library_song(command)`` (LibraryDb) forwards one typed
-    ``SongPathUpdate`` to the LibrarySongsDb intent, which maps it onto exactly
-    one ``SongRepository.move_song(song_id, payload)`` call — the transaction
-    owner. The facade neither resolves locators, opens a transaction, nor
-    inserts/deletes/recreates a row, so associations stay attached.
+    ``SongPathUpdate`` to the LibrarySongsDb intent, which resolves the source
+    locator's natural library privately and maps it onto exactly one
+    ``SongRepository.move_song(library_id, source_normalized_path, payload)``
+    call — the transaction owner. The facade neither opens a transaction, nor
+    inserts/deletes/recreates a row, so associations stay attached. A stale/
+    missing source locator is a ``None`` miss (superseding the historical
+    ``LookupError``); the destination ``SongIdentity`` is returned on success.
     """
 
     @staticmethod
-    def _command(**scan_overrides: object) -> SongPathUpdate:
+    def _source(normalized_path: str = "a.mp3") -> SongIdentity:
+        return SongIdentity(library=_TEST_LIBRARY, normalized_path=normalized_path)
+
+    @staticmethod
+    def _command(source_identity: SongIdentity | None = None, **scan_overrides: object) -> SongPathUpdate:
         scan_defaults: dict = {
             "normalized_path": "sub/b.mp3",
             "file_size": 4321,
@@ -1633,21 +1640,24 @@ class TestMoveLibrarySong:
         }
         scan_defaults.update(scan_overrides)
         return SongPathUpdate(
-            song_id=7,
+            song_identity=source_identity if source_identity is not None else TestMoveLibrarySong._source("a.mp3"),
             new_path="/music/b.mp3",
             scan=SongScanUpdate(**scan_defaults),  # type: ignore[arg-type]
         )
 
-    def test_songs_intent_maps_to_single_repo_call_with_full_payload(self) -> None:
-        db, _, song_repo, *_ = _make_library_db()
+    def test_songs_intent_resolves_source_privately_and_maps_to_single_repo_call(self) -> None:
+        db, library_repo, song_repo, *_ = _make_library_db()
         song_repo.move_song.return_value = True
         command = self._command()
 
         result = db._songs.move_library_song(command)
 
-        assert result is None
+        # The source locator's natural library is resolved privately to id 1;
+        # neither it nor any generated song id crosses the facade.
+        library_repo.get_library_by_natural_key.assert_called_once_with("TestLib", "/music")
         song_repo.move_song.assert_called_once_with(
-            7,
+            1,
+            "a.mp3",  # source normalized path (source-locator predicate)
             {
                 "path": "/music/b.mp3",
                 "normalized_path": "sub/b.mp3",
@@ -1658,6 +1668,8 @@ class TestMoveLibrarySong:
                 "scanned_at": 5555,
             },
         )
+        # The intent returns the destination SongIdentity locator on success.
+        assert result == SongIdentity(library=_TEST_LIBRARY, normalized_path="sub/b.mp3")
 
     def test_is_valid_maps_bool_to_int_flag(self) -> None:
         db, _, song_repo, *_ = _make_library_db()
@@ -1665,7 +1677,7 @@ class TestMoveLibrarySong:
 
         db._songs.move_library_song(self._command(is_valid=False))
 
-        payload = song_repo.move_song.call_args.args[1]
+        payload = song_repo.move_song.call_args.args[2]
         assert payload["is_valid"] == 0
 
     def test_none_scanned_at_uses_persistence_now_ms_default(self) -> None:
@@ -1678,18 +1690,50 @@ class TestMoveLibrarySong:
         db._songs.move_library_song(self._command(scanned_at=None))
 
         after = now_ms().value
-        payload = song_repo.move_song.call_args.args[1]
+        payload = song_repo.move_song.call_args.args[2]
         assert before <= payload["scanned_at"] <= after
 
-    def test_missing_song_raises_lookup_error_no_replacement(self) -> None:
+    def test_stale_source_returns_none_without_replacement(self) -> None:
+        """A missing/stale source row is a None miss (ADR-048) — not a
+        LookupError, and never an integer fallback or fabricated replacement."""
         db, _, song_repo, *_ = _make_library_db()
         song_repo.move_song.return_value = False
 
-        with pytest.raises(LookupError, match="Song 7"):
-            db._songs.move_library_song(self._command())
+        result = db._songs.move_library_song(self._command())
 
-        # No replacement row is created by a failed move.
+        assert result is None
         song_repo.move_song.assert_called_once()
+        # No replacement row is created by a stale-source miss.
+        song_repo.add_song.assert_not_called()
+
+    def test_missing_owning_library_is_a_none_miss(self) -> None:
+        """A source locator whose library cannot be resolved is a stale source ->
+        None miss; no repo write occurs and nothing is fabricated."""
+        db, library_repo, song_repo, *_ = _make_library_db()
+        library_repo.get_library_by_natural_key.return_value = None
+
+        result = db._songs.move_library_song(self._command())
+
+        assert result is None
+        song_repo.move_song.assert_not_called()
+
+    def test_root_path_none_source_is_a_none_miss_without_repo_call(self) -> None:
+        """A source locator whose library owns no root_path is a stale source ->
+        None miss (ADR-048) resolved BEFORE any natural-key lookup: no
+        get_library_by_natural_key call and no repo write occurs."""
+        db, library_repo, song_repo, *_ = _make_library_db()
+        command = self._command(
+            source_identity=SongIdentity(
+                library=LibraryIdentity(name="main", root_path=None),
+                normalized_path="a.mp3",
+            ),
+        )
+
+        result = db._songs.move_library_song(command)
+
+        assert result is None
+        library_repo.get_library_by_natural_key.assert_not_called()
+        song_repo.move_song.assert_not_called()
 
     def test_none_normalized_path_rejected_before_any_write(self) -> None:
         db, _, song_repo, *_ = _make_library_db()

@@ -35,31 +35,39 @@ class SongIdentity:
 
 @dataclass(frozen=True, slots=True)
 class SongPathUpdate:
-    """Complete atomic move command for a single Song.
+    """Complete atomic move command for a single Song (ADR-048).
 
-    Addressed by the intentionally adopted stable Song application identity
-    ``song_id`` (ADR-047 §2, §8): the Song row's stable entity identity for
-    its lifetime, which persistence validates and resolves to the existing row.
-    It is *not* a natural ``(library, normalized_path)`` locator identity,
-    because the locators change during the move.
+    Addressed by the **source locator**: ``song_identity`` is a
+    ``SongIdentity(library, normalized_path)`` naming the row to relocate at its
+    current library-relative ``normalized_path``. ``song_identity`` is the mutable,
+    request-scoped source locator — it is *not* a stable application identity and
+    it does *not* name a generated row id. After a successful move the old source
+    locator no longer resolves and the returned destination locator becomes
+    current; no alias, tombstone, or history mechanism exists (ADR-048 §2).
 
-    ``new_path`` is the mutable destination physical locator and ``scan``
-    carries the complete destination scan data (normalized path, file size,
-    mtime, duration, validity, scan timestamp). ``library``, ``path`` and
-    ``normalized_path`` are mutable locators; only the Song identity is stable.
-    Persistence applies every atomic field in one transaction or none, so a
-    move can never leave path/normalized-path/scan metadata out of sync.
+    ``new_path`` is the mutable destination physical locator and ``scan`` carries
+    the complete destination scan data (destination normalized path, file size,
+    mtime, duration, validity, scan timestamp). The destination normalized path
+    lives in ``scan.normalized_path``; ``song_identity.normalized_path`` is the
+    *source* normalized path the locator resolves by. Persistence resolves
+    ``(library, source_normalized_path)`` privately and applies every atomic field
+    in one in-place transaction or none, so a move can never leave
+    path/normalized-path/scan metadata out of sync and never exposes a row id.
 
-    No repository row, session, transaction, or SQL payload is exposed.
+    A missing/stale source locator is a miss (``None``); a destination uniqueness
+    conflict or injected failure leaves the complete old row unchanged.
+
+    No repository row, generated id, session, transaction, or SQL payload is
+    exposed.
     """
 
-    song_id: int
+    song_identity: SongIdentity
     new_path: str
     scan: SongScanUpdate
 
     def __post_init__(self) -> None:
-        if isinstance(self.song_id, bool) or not isinstance(self.song_id, int) or self.song_id <= 0:
-            raise ValueError("SongPathUpdate.song_id must be a positive stable Song identity")
+        if not isinstance(self.song_identity, SongIdentity):
+            raise TypeError("SongPathUpdate.song_identity must be a source SongIdentity (library, normalized_path)")
         if not self.new_path.strip():
             raise ValueError("SongPathUpdate.new_path must not be blank")
         if not isinstance(self.scan, SongScanUpdate):

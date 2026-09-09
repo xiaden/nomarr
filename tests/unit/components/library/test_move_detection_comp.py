@@ -1,10 +1,13 @@
 """Tests for ``nomarr.components.library.move_detection_comp``.
 
-Covers the identity-bridge None-safe paths in ``detect_file_move_via_db``:
-the numeric ``library_id`` is resolved to a domain ``LibraryIdentity`` and then
-to a ``Library`` before the chromaprint lookup — so the lookup must receive a
-``Library`` domain object, never a raw int, and every missing-link step must
-short-circuit to ``None`` without touching the next lookup.
+Move detection now addresses detected moves by their **source locator**
+``SongIdentity(library, normalized_path)`` (ADR-048) instead of a stable
+``song_id``: ``detect_file_move_via_db`` takes the natural ``Library`` domain
+value (never a numeric ``library_id``) and builds each ``FileMove`` source
+identity from the library's natural key and the candidate row's
+``normalized_path``. ``apply_detected_moves`` forwards that source locator,
+reseed tags under the destination identity returned by the move intent, and
+treats a stale/missing source (``None`` return) as a skip-and-continue miss.
 """
 
 from __future__ import annotations
@@ -53,8 +56,12 @@ def _mock_valid_library_path(mock_build: MagicMock) -> None:
     mock_build.return_value.is_valid.return_value = True
 
 
+_LIBRARY = Library(name="main", root_path="/music")
+_LIBRARY_IDENTITY = LibraryIdentity(name="main", root_path="/music")
+
+
 @pytest.mark.unit
-def test_detect_file_move_via_db_returns_none_when_library_identity_missing() -> None:
+def test_detect_file_move_via_db_returns_none_when_no_candidate() -> None:
     db = make_db()
     entry = _new_file_entry()
 
@@ -65,18 +72,18 @@ def test_detect_file_move_via_db_returns_none_when_library_identity_missing() ->
     ):
         _mock_valid_library_path(mock_build)
         mock_chromaprint.return_value = "abc123"
-        db.library.resolve_library_identity.return_value = None
+        mock_candidate.return_value = None
 
-        result = detect_file_move_via_db(entry, 9, db)
+        result = detect_file_move_via_db(entry, _LIBRARY, db)
 
     assert result is None
-    db.library.resolve_library_identity.assert_called_once_with(9)
-    db.library.get_library_by_name.assert_not_called()
-    mock_candidate.assert_not_called()
+    mock_candidate.assert_called_once()
 
 
 @pytest.mark.unit
-def test_detect_file_move_via_db_returns_none_when_library_missing() -> None:
+def test_detect_file_move_via_db_skips_self_match() -> None:
+    """A candidate whose physical path equals the new path is a re-scan self
+    match, not a move."""
     db = make_db()
     entry = _new_file_entry()
 
@@ -87,26 +94,24 @@ def test_detect_file_move_via_db_returns_none_when_library_missing() -> None:
     ):
         _mock_valid_library_path(mock_build)
         mock_chromaprint.return_value = "abc123"
-        db.library.resolve_library_identity.return_value = LibraryIdentity(name="main", root_path="/music")
-        db.library.get_library_by_name.return_value = None
+        mock_candidate.return_value = {
+            "path": entry["path"],  # same path → self-match
+            "normalized_path": "new/song.flac",
+            "duration_seconds": 180.0,
+        }
 
-        result = detect_file_move_via_db(entry, 9, db)
+        result = detect_file_move_via_db(entry, _LIBRARY, db)
 
     assert result is None
-    db.library.resolve_library_identity.assert_called_once_with(9)
-    db.library.get_library_by_name.assert_called_once_with("main")
-    mock_candidate.assert_not_called()
 
 
 @pytest.mark.unit
-def test_detect_file_move_via_db_passes_library_domain_object_to_chromaprint_lookup() -> None:
+def test_detect_file_move_via_db_passes_library_domain_object_and_builds_source_locator() -> None:
     db = make_db()
     entry = _new_file_entry()
-
-    resolved_library = Library(name="main", root_path="/music")
     candidate = {
-        "id": 9,
         "path": "D:/Music/old/song.flac",
+        "normalized_path": "old/song.flac",
         "duration_seconds": 180.0,
     }
 
@@ -117,14 +122,11 @@ def test_detect_file_move_via_db_passes_library_domain_object_to_chromaprint_loo
     ):
         _mock_valid_library_path(mock_build)
         mock_chromaprint.return_value = "abc123"
-        db.library.resolve_library_identity.return_value = LibraryIdentity(name="main", root_path="/music")
-        db.library.get_library_by_name.return_value = resolved_library
         mock_candidate_fn.return_value = candidate
 
-        result = detect_file_move_via_db(entry, 9, db)
+        result = detect_file_move_via_db(entry, _LIBRARY, db)
 
-    # The chromaprint lookup must receive the Library domain object (natural
-    # identity), never the raw int library_id.
+    # The chromaprint lookup receives the passed natural Library domain object.
     mock_candidate_fn.assert_called_once()
     args = mock_candidate_fn.call_args.args
     passed_library = args[1]
@@ -136,16 +138,17 @@ def test_detect_file_move_via_db_passes_library_domain_object_to_chromaprint_loo
     assert isinstance(result, FileMove)
     assert result.old_path == "D:/Music/old/song.flac"
     assert result.new_path == "D:/Music/new/song.flac"
-    # The detected-move handle is the stable Song application identity (ADR-047
-    # §8), populated from the candidate row's "id" — not an opaque file_id.
-    assert result.song_id == 9
+    # The move is addressed by its source SongIdentity locator (library + source
+    # normalized_path), NOT a stable song_id / row id.
+    assert result.song_identity == SongIdentity(library=_LIBRARY_IDENTITY, normalized_path="old/song.flac")
+    assert not hasattr(result, "song_id")
     assert result.chromaprint == "abc123"
 
 
 def _move(**overrides: object) -> FileMove:
-    """Build a canonical detected ``FileMove`` (stable ``song_id`` handle)."""
+    """Build a canonical detected ``FileMove`` (source-locator addressing)."""
     base: dict = {
-        "song_id": 7,
+        "song_identity": SongIdentity(library=_LIBRARY_IDENTITY, normalized_path="old/a.flac"),
         "old_path": "/music/old/a.flac",
         "new_path": "/music/new/a.flac",
         "chromaprint": "cp-a-flac",
@@ -161,21 +164,23 @@ def _move(**overrides: object) -> FileMove:
 @pytest.mark.unit
 class TestApplyDetectedMoves:
     """``apply_detected_moves`` (the actual owner of a bulk move) drives one
-    atomic move intent per move with the stable Song identity."""
+    atomic move intent per move addressed by the source SongIdentity locator."""
 
     def _make_db(self) -> MagicMock:
         db = make_db()
-        db.library.resolve_song_identity.return_value = SongIdentity(
-            library=LibraryIdentity(name="main", root_path="/music"),
-            normalized_path="new/a.flac",
-        )
+
+        def _destination(command: SongPathUpdate) -> SongIdentity:
+            return SongIdentity(library=command.song_identity.library, normalized_path=command.scan.normalized_path)
+
+        # On a successful move the intent returns the DESTINATION locator.
+        db.library.move_library_song.side_effect = _destination
         return db
 
     def _patch_entity_tags(self, mock_build: MagicMock) -> None:
         """Return a truthy assignment list so reseeding runs."""
         mock_build.return_value = [MagicMock()]
 
-    def test_persists_one_move_intent_with_stable_song_identity(self) -> None:
+    def test_persists_one_move_intent_with_source_locator(self) -> None:
         db = self._make_db()
         move = _move()
 
@@ -187,12 +192,15 @@ class TestApplyDetectedMoves:
             applied = apply_detected_moves([move], {move.new_path: {"title": "A"}}, db, Path("/music"))
 
         assert applied == 1
-        # Exactly ONE move-intent facade call per move, carrying the stable
-        # Song identity (never a natural (library, path) locator).
+        # Exactly ONE move-intent facade call per move carrying the source
+        # SongIdentity locator (never a song_id / natural path separately).
         db.library.move_library_song.assert_called_once()
         command = db.library.move_library_song.call_args.args[0]
         assert isinstance(command, SongPathUpdate)
-        assert command.song_id == 7
+        assert command.song_identity == move.song_identity
+        assert command.song_identity.library == _LIBRARY_IDENTITY
+        assert command.song_identity.normalized_path == "old/a.flac"
+        assert not hasattr(command, "song_id")
         assert command.new_path == "/music/new/a.flac"
         assert isinstance(command.scan, SongScanUpdate)
         assert command.scan.file_size == 2048
@@ -214,28 +222,36 @@ class TestApplyDetectedMoves:
         command = db.library.move_library_song.call_args.args[0]
         assert command.scan.normalized_path == "new/a.flac"
 
-    def test_out_of_root_destination_uses_none_normalized_path(self) -> None:
+    def test_out_of_root_destination_aborts_before_any_write(self) -> None:
         """A destination outside the library root keeps the defensive None
-        normalized-path fallback; persistence owns the atomic rejection."""
+        normalized-path fallback. The real facade raises ValueError BEFORE any
+        write for a None normalized_path (songs.normalized_path is NOT NULL) and
+        never returns a destination, so the abort contract must hold: the move is
+        never applied (no destination locator, no reseed) and the ValueError
+        propagates out of apply_detected_moves."""
         db = self._make_db()
         move = _move(new_path="/elsewhere/b.flac")
+        db.library.move_library_song.side_effect = ValueError("move_library_song() requires a normalized_path")
 
         with (
-            patch("nomarr.components.library.move_detection_comp._extract_entity_tags") as mock_extract,
-            patch("nomarr.components.library.move_detection_comp.build_song_tag_assignments") as mock_build,
+            patch("nomarr.components.library.move_detection_comp._extract_entity_tags"),
+            patch("nomarr.components.library.move_detection_comp.build_song_tag_assignments"),
+            pytest.raises(ValueError, match="normalized_path"),
         ):
-            mock_extract.return_value = []
-            mock_build.return_value = []
             apply_detected_moves([move], {}, db, Path("/music"))
 
+        # The None-normalized-path command is what persistence rejects; exactly
+        # one move-intent call is issued and no reseed (destination) is resolved.
         command = db.library.move_library_song.call_args.args[0]
         assert command.scan.normalized_path is None
+        db.library.move_library_song.assert_called_once()
+        db.library.resolve_song_identity.assert_not_called()
 
-    def test_reseeds_entity_tags_under_stable_identity(self) -> None:
+    def test_reseeds_entity_tags_under_destination_identity(self) -> None:
         db = self._make_db()
         move = _move()
         assignments = [MagicMock()]
-        identity = db.library.resolve_song_identity.return_value
+        destination = SongIdentity(library=_LIBRARY_IDENTITY, normalized_path="new/a.flac")
 
         with (
             patch("nomarr.components.library.move_detection_comp._extract_entity_tags") as mock_extract,
@@ -243,18 +259,26 @@ class TestApplyDetectedMoves:
         ):
             mock_extract.return_value = [{"name": "artist", "value": "X"}]
             mock_build.return_value = assignments
-            apply_detected_moves([move], {move.new_path: {"artist": "X"}}, db, Path("/music"))
+            applied = apply_detected_moves([move], {move.new_path: {"artist": "X"}}, db, Path("/music"))
 
+        assert applied == 1
         mock_extract.assert_called_once_with({"artist": "X"})
-        mock_build.assert_called_once_with(7, [{"name": "artist", "value": "X"}])
-        # Entity tags are re-seeded under the SAME stable Song identity.
-        db.library.resolve_song_identity.assert_called_once_with(7)
-        db.library.replace_song_tags.assert_called_once_with(identity, assignments)
+        # build_song_tag_assignments keeps its compute-only int API; the caller
+        # passes the existing 0 sentinel — no numeric identity migration.
+        mock_build.assert_called_once_with(0, [{"name": "artist", "value": "X"}])
+        # Tags are re-seeded under the DESTINATION locator returned by the move
+        # intent (after a successful move the source locator no longer resolves);
+        # the retired numeric resolve_song_identity(source song_id) bridge is gone.
+        db.library.resolve_song_identity.assert_not_called()
+        db.library.replace_song_tags.assert_called_once_with(destination, assignments)
 
     def test_counts_applied_and_reseeds_per_move(self) -> None:
         db = self._make_db()
-        move_a = _move(song_id=7, new_path="/music/new/a.flac")
-        move_b = _move(song_id=8, new_path="/music/new/b.flac")
+        move_a = _move(new_path="/music/new/a.flac")
+        move_b = _move(
+            song_identity=SongIdentity(library=_LIBRARY_IDENTITY, normalized_path="old/b.flac"),
+            new_path="/music/new/b.flac",
+        )
         metadata = {
             move_a.new_path: {"artist": "A"},
             move_b.new_path: {"artist": "B"},
@@ -270,9 +294,9 @@ class TestApplyDetectedMoves:
 
         assert applied == 2
         assert db.library.move_library_song.call_count == 2
-        # One reseed per moved song under its own stable identity.
-        assert db.library.resolve_song_identity.call_count == 2
+        # One reseed per moved song under its own destination identity.
         assert db.library.replace_song_tags.call_count == 2
+        db.library.resolve_song_identity.assert_not_called()
 
     def test_skips_reseed_when_no_metadata_but_still_applies(self) -> None:
         db = self._make_db()
@@ -304,26 +328,44 @@ class TestApplyDetectedMoves:
         mock_warn.assert_called_once()
         db.library.move_library_song.assert_called_once()
 
-    def test_skips_reseed_when_song_missing_after_move(self) -> None:
+    def test_stale_source_skips_and_continues(self) -> None:
+        """A stale/missing source locator (move intent returns None) is a safe
+        no-op miss (ADR-048 §5): the move is not applied, no reseed runs, and
+        processing continues to the next move."""
         db = self._make_db()
-        move = _move()
-        db.library.resolve_song_identity.return_value = None
+        move_a = _move()
+        move_b = _move(
+            song_identity=SongIdentity(library=_LIBRARY_IDENTITY, normalized_path="old/b.flac"),
+            new_path="/music/new/b.flac",
+        )
+
+        def _dest_or_none(command: SongPathUpdate) -> SongIdentity | None:
+            if command.song_identity.normalized_path == "old/a.flac":
+                return None  # stale source for the first move
+            return SongIdentity(library=command.song_identity.library, normalized_path=command.scan.normalized_path)
+
+        db.library.move_library_song.side_effect = _dest_or_none
+        db.library.replace_song_tags.reset_mock()
 
         with (
             patch("nomarr.components.library.move_detection_comp._extract_entity_tags") as mock_extract,
             patch("nomarr.components.library.move_detection_comp.build_song_tag_assignments") as mock_build,
+            patch("nomarr.components.library.move_detection_comp.logger.warning") as mock_warn,
         ):
-            mock_extract.return_value = [{"artist": "X"}]
+            mock_extract.side_effect = lambda meta: [meta]
             mock_build.return_value = [MagicMock()]
-            applied = apply_detected_moves([move], {move.new_path: {"artist": "X"}}, db, Path("/music"))
+            applied = apply_detected_moves([move_a, move_b], {move_b.new_path: {"artist": "B"}}, db, Path("/music"))
 
+        # move_a skipped (stale), move_b applied.
         assert applied == 1
-        db.library.resolve_song_identity.assert_called_once_with(7)
-        db.library.replace_song_tags.assert_not_called()
+        assert db.library.move_library_song.call_count == 2
+        # No reseed ran for the stale move; one reseed for move_b.
+        assert db.library.replace_song_tags.call_count == 1
+        mock_warn.assert_called_once()
 
     def test_persistence_failure_propagates_and_is_not_reported_applied(self) -> None:
         """A persistence failure in the move intent propagates to the caller (the
-        current error-handling contract); the failed move is never reported
+        historical abort-on-first contract); the failed move is never reported
         applied and its reseed never runs."""
         db = self._make_db()
         move = _move()

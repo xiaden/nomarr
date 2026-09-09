@@ -424,27 +424,33 @@ class LibrarySongsDb:
 
         return result
 
-    def move_library_song(self, command: SongPathUpdate) -> None:
-        """Atomically move/relocate an existing Song to a new locator.
+    def move_library_song(self, command: SongPathUpdate) -> SongIdentity | None:
+        """Atomically relocate one existing Song from its source locator.
 
-        One persistence intent for a complete Song move keyed by the stable Song
-        application/entity identity ``command.song_id`` (ADR-047 §2, §8). The
-        destination physical ``new_path`` and the complete scan snapshot
-        (normalized path, file size, mtime, duration, validity, scan timestamp)
-        are applied to the existing Song row in place in one repository
-        transaction: path, normalized path, and scan metadata commit together or
-        not at all, so the natural locators and scan metadata can never diverge
-        after a partial failure.
+        One persistence intent for a complete Song move addressed by the **source
+        locator** ``command.song_identity`` (``SongIdentity(library,
+        normalized_path)``; ADR-048). Persistence alone resolves ``(library,
+        source_normalized_path)`` to the private library row id and song row, then
+        applies the destination physical ``new_path`` and the complete scan
+        snapshot (destination normalized path, file size, mtime, duration,
+        validity, scan timestamp) to the existing song row *in place* in one
+        repository transaction: path, normalized path, and scan metadata commit
+        together or not at all, so the natural locators and scan metadata can never
+        diverge after a partial failure. The source-locator predicates participate
+        in the same statement/transaction; no separate lookup race.
 
-        ``library``/``path``/``normalized_path`` are mutable locators; only the
-        Song identity is stable, so this never inserts, deletes, or recreates a
-        row and Song associations (tags, state assignments, streams, embeddings)
-        remain attached.
+        ``song_identity`` is a mutable, request-scoped locator, not a stable
+        identity. This never inserts, deletes, or recreates a row, and Song
+        associations (tags, state assignments, streams, embeddings) remain
+        attached. No generated row id, library id, repository, session, or raw row
+        crosses this facade.
 
-        A destination uniqueness conflict on ``(library_id, path)`` or
-        ``(library_id, normalized_path)`` (the row keeps its owning library on a
-        move) raises ``DuplicateEntityError`` from persistence exception mapping
-        and rolls back the entire move, leaving the original row unchanged.
+        Returns the destination ``SongIdentity`` (``command.song_identity.library``
+        with the destination normalized path) when the move commits, or ``None``
+        when the source locator is stale/missing (its library or song no longer
+        resolves). ``None`` is a safe no-op miss — no replacement row is fabricated
+        and no other row is relocated (ADR-048 §5). This supersedes the historical
+        ``LookupError`` taxonomy for move addressing.
 
         Raises:
             ValueError: If ``command.scan.normalized_path`` is ``None``. The
@@ -453,16 +459,28 @@ class LibrarySongsDb:
                 unrepresentable destination (the defensive out-of-root move case)
                 is rejected atomically *before* any write rather than stored as
                 ``None`` or silently dropped from the atomic update.
-            LookupError: If no existing Song row matches ``command.song_id`` (a
-                missing/stale identity). No replacement Song is created.
+            DuplicateEntityError: If the destination collides on
+                ``(library_id, path)`` or ``(library_id, normalized_path)`` (the
+                row keeps its owning library on a move), mapped from persistence;
+                the whole move rolls back leaving the original row unchanged.
 
         """
+        source = command.song_identity
         scan = command.scan
         if scan.normalized_path is None:
             raise ValueError(
                 "move_library_song() requires a normalized_path: songs."
                 "normalized_path is NOT NULL and cannot store None"
             )
+        # Resolve the source library's private id privately. A source locator whose
+        # owning library cannot be resolved is a stale/missing source -> None miss
+        # (ADR-048), never a fabricated integer fallback.
+        if source.library.root_path is None:
+            return None
+        library_row = self._library_repo.get_library_by_natural_key(source.library.name, source.library.root_path)
+        if library_row is None:
+            return None
+        library_id = int(library_row["id"])
         payload: dict[str, Any] = {
             "path": command.new_path,
             "normalized_path": scan.normalized_path,
@@ -472,8 +490,11 @@ class LibrarySongsDb:
             "is_valid": 1 if scan.is_valid else 0,
             "scanned_at": scan.scanned_at if scan.scanned_at is not None else now_ms().value,
         }
-        if not self._song_repo.move_song(command.song_id, payload):
-            raise LookupError(f"Song {command.song_id} does not exist; cannot move")
+        # One statement/transaction matching the source locator, never an integer
+        # id lookup. Source predicates live in the same UPDATE.
+        if not self._song_repo.move_song(library_id, source.normalized_path, payload):
+            return None
+        return SongIdentity(library=source.library, normalized_path=scan.normalized_path)
 
     def update_library_song_modified_time(self, song_id: int, modified_time_ms: int) -> None:
         """Update the modification timestamp of a library song."""

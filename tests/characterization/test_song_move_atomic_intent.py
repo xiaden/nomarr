@@ -1,23 +1,26 @@
 """Atomic Song-move intent characterization on real PostgreSQL.
 
-Real-DB proof of the ADR-047 §2/§8 move contract exercised end-to-end through
+Real-DB proof of the ADR-048 move contract exercised end-to-end through
 ``db.library.move_library_song(SongPathUpdate)``:
 
-- One atomic intent updates the existing row in place (stable ``song_id`` /
-  unchanged owning library) with every locator + scan field committing together.
+- One atomic intent, addressed by the **source locator**
+  ``SongIdentity(library, normalized_path)``, updates the existing row in place
+  with every locator + scan field committing together, and returns the
+  destination ``SongIdentity``.
 - Song associations (the seed tag assignments) stay attached across a move —
   the move never inserts/deletes/recreates a row.
 - A destination uniqueness conflict on ``(library_id, path)`` or
   ``(library_id, normalized_path)`` raises ``DuplicateEntityError`` (Postgres
   pgcode 23505) and rolls back the entire move, leaving the original row AND its
   associations unchanged (no partial row state).
-- A missing/stale identity raises ``LookupError`` and fabricates no replacement.
+- A missing/stale source locator returns ``None`` (a safe no-op miss) and
+  fabricates no replacement.
 
 Uses the real pgvector:pg17 container (PostgreSQL-only pgcode 23505 →
 ``DuplicateEntityError`` translation that SQLite cannot reproduce), so this
 module is marked ``characterization`` + ``requires_database`` and runs only in
 the CI ``database-tests`` job. It is NOT runnable in this workspace (no Docker);
-it is authored as the P3-S7 concurrency/atomicity oracle the persistence layer
+it is authored as the concurrency/atomicity oracle the persistence layer
 promises. Atomicity here is the single-``UPDATE``/single-commit guarantee — with
 the container available this file documents and locks that property on a real
 PostgreSQL engine.
@@ -30,7 +33,12 @@ from typing import TYPE_CHECKING, cast
 import pytest
 from sqlalchemy import func, select
 
-from nomarr.helpers.dataclasses.song_command_dataclass import SongPathUpdate, SongScanUpdate
+from nomarr.helpers.dataclasses.song_command_dataclass import (
+    LibraryIdentity,
+    SongIdentity,
+    SongPathUpdate,
+    SongScanUpdate,
+)
 from nomarr.helpers.exceptions import DuplicateEntityError
 from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence.models.song import Song
@@ -39,6 +47,7 @@ from nomarr.persistence.models.song_tag import SongTag
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
+    from nomarr.helpers.dataclasses.library_dataclass import Library
     from nomarr.persistence.db import Database
 
 _SONG_TABLE = Song.__table__
@@ -57,12 +66,26 @@ def _tag_assignment_count(session: Session, song_id: int) -> int:
     return int(session.execute(stmt).scalar_one())
 
 
-def _move_command(song_id: int, path: str, *, scanned_at: int | None = None) -> SongPathUpdate:
+def _source_identity(library: Library, normalized_path: str) -> SongIdentity:
+    """Build a source-locator ``SongIdentity`` from a domain ``Library`` value."""
+    return SongIdentity(
+        library=LibraryIdentity(name=library.name, root_path=library.root_path),
+        normalized_path=normalized_path,
+    )
+
+
+def _move_command(
+    source: SongIdentity,
+    path: str,
+    *,
+    normalized_path: str | None = None,
+    scanned_at: int | None = None,
+) -> SongPathUpdate:
     return SongPathUpdate(
-        song_id=song_id,
+        song_identity=source,
         new_path=path,
         scan=SongScanUpdate(
-            normalized_path=path,
+            normalized_path=normalized_path if normalized_path is not None else path,
             file_size=1024000,
             modified_time=now_ms().value,
             duration_seconds=180.5,
@@ -77,20 +100,37 @@ def _move_command(song_id: int, path: str, *, scanned_at: int | None = None) -> 
 class TestSongMoveAtomicIntent:
     """End-to-end atomic move intent on real PostgreSQL."""
 
+    def _seed_target(self, db: Database, inference_session: Session, seed_data: dict) -> tuple[int, SongIdentity]:
+        """Return (private row id, source SongIdentity) for the first seed song.
+
+        The private storage id is used here only to prove the row is updated in
+        place; the move itself is addressed by the source locator.
+        """
+        target_id = cast("int", seed_data["songs"][0])
+        lib1 = cast("Library", seed_data["libraries"][0])
+        row = _row(inference_session, target_id)
+        return target_id, _source_identity(lib1, row["normalized_path"])
+
     def test_move_updates_in_place_and_keeps_associations(
         self, db: Database, inference_session: Session, seed_data: dict
     ) -> None:
         """The move commits locator + scan together on the SAME row; the seed
         tag associations stay attached (no delete/recreate)."""
-        target = cast("int", seed_data["songs"][0])
+        target, source = self._seed_target(db, inference_session, seed_data)
         before = _row(inference_session, target)
         association_before = _tag_assignment_count(inference_session, target)
         assert association_before > 0, "seed song must carry tag associations to prove retention"
 
-        db.library.move_library_song(_move_command(target, "/tmp/test1/song1-moved.flac", scanned_at=9000))
+        destination = db.library.move_library_song(
+            _move_command(source, "/tmp/test1/song1-moved.flac", scanned_at=9000)
+        )
 
+        # Success returns the destination locator; the source no longer resolves.
+        assert destination is not None
+        assert destination.library.name == "TestLib1"
+        assert destination.normalized_path == "/tmp/test1/song1-moved.flac"
         after = _row(inference_session, target)
-        # Same stable identity and owning library → updated in place.
+        # Same private row and owning library → updated in place.
         assert after["id"] == target
         assert after["library_id"] == before["library_id"]
         assert after["path"] == "/tmp/test1/song1-moved.flac"
@@ -104,13 +144,13 @@ class TestSongMoveAtomicIntent:
     ) -> None:
         """Moving onto a sibling's path raises DuplicateEntityError and rolls back
         the whole move — locator and scan fields stay at their original values."""
-        target = cast("int", seed_data["songs"][0])
+        target, source = self._seed_target(db, inference_session, seed_data)
         sibling_path = _row(inference_session, cast("int", seed_data["songs"][1]))["path"]
         before = _row(inference_session, target)
         association_before = _tag_assignment_count(inference_session, target)
 
         with pytest.raises(DuplicateEntityError):
-            db.library.move_library_song(_move_command(target, sibling_path, scanned_at=7777))
+            db.library.move_library_song(_move_command(source, sibling_path, scanned_at=7777))
 
         after = _row(inference_session, target)
         for col in (
@@ -130,23 +170,32 @@ class TestSongMoveAtomicIntent:
     ) -> None:
         """A collision on (library_id, normalized_path) — even with a distinct
         physical path — rolls back the whole move atomically."""
-        target = cast("int", seed_data["songs"][0])
-        _row(inference_session, cast("int", seed_data["songs"][1]))["normalized_path"]
+        target, source = self._seed_target(db, inference_session, seed_data)
+        sibling_normalized = _row(inference_session, cast("int", seed_data["songs"][1]))["normalized_path"]
         before = _row(inference_session, target)
 
         with pytest.raises(DuplicateEntityError):
-            db.library.move_library_song(_move_command(target, "/tmp/test1/physically-distinct.mp3"))
+            # Physically distinct destination but a normalized_path equal to a
+            # same-library sibling's → (library_id, normalized_path) collision.
+            db.library.move_library_song(
+                _move_command(source, "/tmp/test1/physically-distinct.mp3", normalized_path=sibling_normalized)
+            )
 
         after = _row(inference_session, target)
         assert after["normalized_path"] == before["normalized_path"]
         assert after["path"] == before["path"]
 
-    def test_missing_identity_raises_lookup_error_without_replacement(
+    def test_stale_source_returns_none_without_replacement(
         self, db: Database, inference_session: Session, seed_data: dict
     ) -> None:
-        with pytest.raises(LookupError):
-            db.library.move_library_song(_move_command(99999999, "/tmp/test1/ghost.mp3"))
+        """A missing/stale source locator is a None miss (ADR-048), not a
+        LookupError; no replacement row is fabricated."""
+        lib1 = cast("Library", seed_data["libraries"][0])
+        stale_source = _source_identity(lib1, "never/existed.flac")
 
-        # No replacement row is fabricated for a stale/missing identity.
+        result = db.library.move_library_song(_move_command(stale_source, "/tmp/test1/ghost.mp3"))
+
+        assert result is None
+        # No replacement row is fabricated for a stale/missing source locator.
         stmt = select(_SONG_TABLE).where(_SONG_TABLE.c.path == "/tmp/test1/ghost.mp3")
         assert inference_session.execute(stmt).first() is None

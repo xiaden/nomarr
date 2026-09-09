@@ -194,16 +194,25 @@ class TestUpdateFilePath:
     """Tests for the atomic move-path adapter over the single move intent.
 
     ``update_song_path(db, command)`` is a component-level adapter: it forwards
-    one complete ``SongPathUpdate`` (stable ``song_id`` + destination ``new_path``
-    + full scan snapshot) via exactly one ``db.library.move_library_song`` call.
-    It no longer composes the retired two-call path + scan-metadata choreography,
+    one complete ``SongPathUpdate`` (source ``SongIdentity`` locator +
+    destination ``new_path`` + full scan snapshot, ADR-048) via exactly one
+    ``db.library.move_library_song`` call, and propagates the move intent's
+    destination ``SongIdentity`` (or ``None`` on a stale/missing source). It no
+    longer composes the retired two-call path + scan-metadata choreography,
     resolves locators, opens transactions, or generates a storage timestamp.
     """
 
     @staticmethod
+    def _source(normalized_path: str = "old/a.mp3") -> SongIdentity:
+        return SongIdentity(
+            library=LibraryIdentity(name="TestLib", root_path="C:/music"),
+            normalized_path=normalized_path,
+        )
+
+    @staticmethod
     def _command(
         *,
-        song_id: int = 123,
+        song_identity: SongIdentity | None = None,
         new_path: str = "C:/music/new-song.mp3",
         normalized_path: str = "relative/new-song.mp3",
         file_size: int = 4321,
@@ -213,7 +222,7 @@ class TestUpdateFilePath:
         scanned_at: int | None = None,
     ) -> SongPathUpdate:
         return SongPathUpdate(
-            song_id=song_id,
+            song_identity=song_identity or TestUpdateFilePath._source(),
             new_path=new_path,
             scan=SongScanUpdate(
                 normalized_path=normalized_path,
@@ -229,7 +238,8 @@ class TestUpdateFilePath:
     def test_forwards_one_complete_move_command_via_single_intent(self) -> None:
         """One complete typed command is forwarded via exactly one move intent."""
         mock_db = MagicMock()
-        command = self._command()
+        source = self._source("old/a.mp3")
+        command = self._command(song_identity=source)
 
         update_song_path(mock_db, command)
 
@@ -240,10 +250,36 @@ class TestUpdateFilePath:
         # The retired two-call path + scan-metadata surface is never invoked.
         mock_db.library.update_library_song_path.assert_not_called()
         mock_db.library.update_library_song_scan_metadata.assert_not_called()
-        # The command carries the stable Song identity, destination and scan.
-        assert forwarded.song_id == 123
+        # The command carries the source SongIdentity locator, destination, scan.
+        assert forwarded.song_identity is source
+        assert forwarded.song_identity.normalized_path == "old/a.mp3"
+        assert not hasattr(forwarded, "song_id")
         assert forwarded.new_path == "C:/music/new-song.mp3"
         assert forwarded.scan.normalized_path == "relative/new-song.mp3"
+
+    @pytest.mark.unit
+    def test_propagates_destination_identity_on_success(self) -> None:
+        """The adapter returns the move intent's destination SongIdentity."""
+        mock_db = MagicMock()
+        destination = SongIdentity(
+            library=LibraryIdentity(name="TestLib", root_path="C:/music"),
+            normalized_path="relative/new-song.mp3",
+        )
+        mock_db.library.move_library_song.return_value = destination
+
+        result = update_song_path(mock_db, self._command())
+
+        assert result is destination
+
+    @pytest.mark.unit
+    def test_propagates_none_when_source_locator_stale(self) -> None:
+        """A stale/missing source locator returns None (ADR-048 miss)."""
+        mock_db = MagicMock()
+        mock_db.library.move_library_song.return_value = None
+
+        result = update_song_path(mock_db, self._command())
+
+        assert result is None
 
     @pytest.mark.unit
     def test_forwards_full_scan_data_unchanged(self) -> None:

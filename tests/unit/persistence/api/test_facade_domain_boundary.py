@@ -330,44 +330,40 @@ class TestSongCommandContracts:
             SongUpsertInput(library=_TEST_LIBRARY, path="   ")
 
     def test_song_path_update_and_removal_carry_identity(self) -> None:
-        # SongPathUpdate is the atomic move command addressed by the stable Song
-        # application/entity identity (ADR-047 §2/§8) — NOT the natural
-        # ``(library, normalized_path)`` locator identity, which changes during
-        # the move. It carries the destination ``new_path`` plus a full
-        # ``SongScanUpdate`` scan snapshot.
+        # SongPathUpdate is the atomic move command addressed by the SOURCE
+        # locator ``SongIdentity(library, normalized_path)`` (ADR-048) — a
+        # mutable, request-scoped locator, NOT a stable application identity and
+        # never a generated row id. It carries the destination ``new_path`` plus
+        # a full ``SongScanUpdate`` snapshot (whose ``normalized_path`` is the
+        # DESTINATION normalized path, distinct from the source locator's).
+        source = SongIdentity(library=_TEST_LIBRARY, normalized_path="old/a.mp3")
         command = SongPathUpdate(
-            song_id=7,
-            new_path="/music/b.mp3",
-            scan=SongScanUpdate(
-                normalized_path="b.mp3",
-                file_size=100,
-                modified_time=1000,
-            ),
+            song_identity=source,
+            new_path="/music/new/b.mp3",
+            scan=SongScanUpdate(normalized_path="new/b.mp3", file_size=100, modified_time=1000),
         )
-        assert command.song_id == 7
-        assert command.new_path == "/music/b.mp3"
-        assert command.scan.normalized_path == "b.mp3"
-        # The old natural-locator identity surface (song_identity) is gone.
-        assert not hasattr(command, "song_identity")
+        assert command.song_identity is source
+        assert command.song_identity.normalized_path == "old/a.mp3"  # source normalized path
+        assert command.new_path == "/music/new/b.mp3"
+        assert command.scan.normalized_path == "new/b.mp3"  # destination normalized path
+        # The stable-song-id surface is gone.
+        assert not hasattr(command, "song_id")
 
         identity = _song()
         assert SongRemoval(song_identity=identity).song_identity == identity
 
-    def test_song_path_update_uses_stable_song_id_not_natural_locator(self) -> None:
-        # The command addresses the existing row by the stable Song identity.
-        # ``library``/``path``/``normalized_path`` are mutable locators and never
-        # form the lifetime identity; a natural SongIdentity is not part of the
-        # command shape.
+    def test_song_path_update_addresses_by_source_locator_not_stable_id(self) -> None:
+        # The command addresses the existing row by its current source locator
+        # (library + source normalized_path). No generated id / row / library_id
+        # / integer fallback is part of the command shape.
         SongPathUpdate(
-            song_id=7,
+            song_identity=_song("old/a.mp3"),
             new_path="/music/b.mp3",
-            scan=SongScanUpdate(
-                normalized_path="b.mp3",
-                file_size=100,
-                modified_time=1000,
-            ),
+            scan=SongScanUpdate(normalized_path="b.mp3", file_size=100, modified_time=1000),
         )
-        assert {f.name for f in dataclasses.fields(SongPathUpdate)} == {"song_id", "new_path", "scan"}
+        field_names = {f.name for f in dataclasses.fields(SongPathUpdate)}
+        assert field_names == {"song_identity", "new_path", "scan"}
+        assert not (field_names & {"song_id", "library_id", "folder_id"})
 
     def test_song_path_update_carries_full_destination_scan_data(self) -> None:
         # The complete scan snapshot (every required atomic field) is carried so
@@ -380,7 +376,7 @@ class TestSongCommandContracts:
             is_valid=True,
             scanned_at=5555,
         )
-        command = SongPathUpdate(song_id=7, new_path="/music/sub/b.mp3", scan=scan)
+        command = SongPathUpdate(song_identity=_song("a.mp3"), new_path="/music/sub/b.mp3", scan=scan)
         assert command.scan is scan
         assert command.scan.normalized_path == "sub/b.mp3"
         assert command.scan.file_size == 4321
@@ -393,29 +389,18 @@ class TestSongCommandContracts:
         # scanned_at None means persistence applies its own default (current
         # time); components never fabricate a storage timestamp.
         command = SongPathUpdate(
-            song_id=7,
+            song_identity=_song("a.mp3"),
             new_path="/music/b.mp3",
             scan=SongScanUpdate(normalized_path="b.mp3", file_size=100, modified_time=1000),
         )
         assert command.scan.scanned_at is None
 
-    def test_song_path_update_rejects_invalid_song_id(self) -> None:
-        # song_id must be a positive int — not a bool, not <= 0.
-        with pytest.raises(ValueError, match="song_id"):
+    def test_song_path_update_rejects_non_source_song_identity(self) -> None:
+        # The source field must be a SongIdentity locator — not an int/bool/str
+        # row-id stand-in (a regression back to stable song_id addressing).
+        with pytest.raises(TypeError, match="SongIdentity"):
             SongPathUpdate(
-                song_id=True,
-                new_path="/music/b.mp3",
-                scan=SongScanUpdate(normalized_path="b.mp3", file_size=1, modified_time=1),
-            )
-        with pytest.raises(ValueError, match="song_id"):
-            SongPathUpdate(
-                song_id=0,
-                new_path="/music/b.mp3",
-                scan=SongScanUpdate(normalized_path="b.mp3", file_size=1, modified_time=1),
-            )
-        with pytest.raises(ValueError, match="song_id"):
-            SongPathUpdate(
-                song_id="7",  # type: ignore[arg-type]
+                song_identity=7,  # type: ignore[arg-type]
                 new_path="/music/b.mp3",
                 scan=SongScanUpdate(normalized_path="b.mp3", file_size=1, modified_time=1),
             )
@@ -423,37 +408,37 @@ class TestSongCommandContracts:
     def test_song_path_update_rejects_blank_destination_and_scan_shape(self) -> None:
         with pytest.raises(ValueError, match="new_path"):
             SongPathUpdate(
-                song_id=7,
+                song_identity=_song("a.mp3"),
                 new_path="   ",
                 scan=SongScanUpdate(normalized_path="b.mp3", file_size=1, modified_time=1),
             )
         with pytest.raises(TypeError):
-            SongPathUpdate(song_id=7, new_path="/music/b.mp3", scan="not-a-scan")  # type: ignore[arg-type]
-        # A blank normalized_path, when present, is rejected.
+            SongPathUpdate(song_identity=_song("a.mp3"), new_path="/music/b.mp3", scan="not-a-scan")  # type: ignore[arg-type]
+        # A blank destination normalized_path, when present, is rejected.
         with pytest.raises(ValueError, match="normalized_path"):
             SongPathUpdate(
-                song_id=7,
+                song_identity=_song("a.mp3"),
                 new_path="/music/b.mp3",
                 scan=SongScanUpdate(normalized_path="   ", file_size=1, modified_time=1),
             )
 
-    def test_song_path_update_does_not_leak_storage_row_beyond_song_identity(self) -> None:
-        # The intentionally adopted stable Song identity (song_id) is the only
-        # id-bearing field; no repository row / library_id / folder_id / SQL
-        # payload shape is exposed.
+    def test_song_path_update_does_not_leak_storage_row_beyond_source_locator(self) -> None:
+        # The command carries only the natural source locator identity; no
+        # repository row, library_id, folder_id, song_id, or SQL payload shape is
+        # exposed.
         command = SongPathUpdate(
-            song_id=7,
+            song_identity=_song("a.mp3"),
             new_path="/music/b.mp3",
             scan=SongScanUpdate(normalized_path="b.mp3", file_size=1, modified_time=1),
         )
+        assert not hasattr(command, "song_id")
         assert not hasattr(command, "library_id")
         assert not hasattr(command, "folder_id")
-        assert not hasattr(command, "song_identity")
         assert not hasattr(command.scan, "id")
 
     def test_song_path_update_is_frozen_value_object(self) -> None:
         command = SongPathUpdate(
-            song_id=7,
+            song_identity=_song("a.mp3"),
             new_path="/music/b.mp3",
             scan=SongScanUpdate(normalized_path="b.mp3", file_size=1, modified_time=1),
         )

@@ -3,18 +3,28 @@
 Detects file moves by comparing chromaprints between removed and new files.
 """
 
+from __future__ import annotations
+
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from nomarr.components.infrastructure.path_comp import build_library_path_from_input
 from nomarr.components.library.library_song_mutation_comp import update_song_path
 from nomarr.components.library.library_song_query_comp import find_move_candidate_by_chromaprint
 from nomarr.components.library.metadata_extraction_comp import compute_chromaprint_for_file
 from nomarr.components.metadata.entity_seeding_comp import _extract_entity_tags, build_song_tag_assignments
-from nomarr.helpers.dataclasses.song_command_dataclass import SongPathUpdate, SongScanUpdate
-from nomarr.persistence import Database
+from nomarr.helpers.dataclasses.song_command_dataclass import (
+    LibraryIdentity,
+    SongIdentity,
+    SongPathUpdate,
+    SongScanUpdate,
+)
+
+if TYPE_CHECKING:
+    from nomarr.helpers.dataclasses.library_dataclass import Library
+    from nomarr.persistence import Database
 
 logger = logging.getLogger(__name__)
 
@@ -22,11 +32,18 @@ logger = logging.getLogger(__name__)
 # Component-local DTOs (not promoted to helpers/dto)
 @dataclass
 class FileMove:
-    """Represents a detected file move."""
+    """Represents a detected file move.
+
+    ``song_identity`` is the **source locator** of the moved row
+    (``SongIdentity(library, normalized_path)``; ADR-048) — the mutable,
+    request-scoped identity the move is addressed by. It is *not* a stable
+    application id and names no generated row id; detection builds it from the
+    owning library's natural key and the source row's canonical normalized path.
+    """
 
     old_path: str
     new_path: str
-    song_id: int  # stable Song application identity of the moved row (ADR-047 §8)
+    song_identity: SongIdentity
     chromaprint: str
     old_duration: float | None
     new_duration: float | None
@@ -55,6 +72,7 @@ _EMPTY_MOVE_RESULT = MoveDetectionResult(
 def detect_file_moves(
     files_to_remove: list[dict[str, Any]],
     new_file_entries: list[dict[str, Any]],
+    library: Library,
     db: Database,
 ) -> MoveDetectionResult:
     """Detect file moves by comparing chromaprints.
@@ -69,9 +87,18 @@ def detect_file_moves(
     - **Early termination:** Once every removed file has been matched, the
       loop stops immediately instead of fingerprinting remaining new files.
 
+    Each detected move is addressed by its **source locator** (ADR-048): the
+    owning natural ``library`` and the removed row's canonical
+    ``normalized_path``. Rows in ``files_to_remove`` must therefore carry the
+    natural source ``normalized_path`` (removed rows sourced from a library
+    scan carry it) so a :class:`FileMove` can be built without any row id.
+
     Args:
-        files_to_remove: Files marked for removal (with chromaprint if available)
-        new_file_entries: Newly discovered file entries from scan
+        files_to_remove: Files marked for removal (with chromaprint if
+            available and their natural ``normalized_path``).
+        new_file_entries: Newly discovered file entries from scan.
+        library: The natural ``Library`` owning the moved rows (the library
+            being scanned).
         db: Database instance for chromaprint computation
 
     Returns:
@@ -91,8 +118,9 @@ def detect_file_moves(
     # Full move detection
     logger.info(f"Checking {len(new_file_entries)} new files for moves against {len(files_to_remove)} removed files...")
 
-    # Sort removed files by ID for deterministic matching when duplicates exist
-    files_to_remove.sort(key=lambda f: f["id"])
+    # Sort removed files by source path for deterministic matching when
+    # duplicates exist (no row ids are available for sorting).
+    files_to_remove.sort(key=lambda f: f.get("path") or "")
 
     # Build set of removed-file durations for fast pre-filtering.
     # A new file can only be a move if its duration is within 1 s of some
@@ -109,6 +137,7 @@ def detect_file_moves(
             return True
         return any(abs(new_dur - rd) <= duration_tolerance for rd in removed_durations)
 
+    library_identity = LibraryIdentity(name=library.name, root_path=library.root_path)
     moves: list[FileMove] = []
     matched_indices: set[int] = set()
     chromaprints_computed = 0
@@ -165,7 +194,10 @@ def detect_file_moves(
                         move = FileMove(
                             old_path=removed_file["path"],
                             new_path=new_path,
-                            song_id=removed_file["id"],
+                            song_identity=SongIdentity(
+                                library=library_identity,
+                                normalized_path=removed_file["normalized_path"],
+                            ),
                             chromaprint=new_chromaprint,
                             old_duration=removed_duration,
                             new_duration=new_duration,
@@ -212,9 +244,20 @@ def apply_detected_moves(
 
     For each move:
     1. Persists the move atomically via one complete ``SongPathUpdate`` command
-       (stable Song identity + destination path + full scan data) through the
-       mutation-component adapter, which makes exactly one move-intent call.
-    2. Re-seeds entity tags from the new file's metadata
+       (source ``SongIdentity`` locator + destination path + full scan data)
+       through the mutation-component adapter, which makes exactly one
+       move-intent call.
+    2. On a successful move, re-seeds entity tags under the *destination*
+       ``SongIdentity`` returned by the move intent (after a successful move the
+       source locator no longer resolves, so tags cannot be reseeded by the old
+       source identity).
+
+    Stale/missing source locators (the move intent returns ``None``) are a
+    safe no-op miss: the move is skipped and processing continues to the next
+    move (ADR-048 §5). Real persistence errors still propagate and abort on the
+    first failure, preserving the historical abort-on-first-persistence-error
+    behavior — only the *None* stale-source miss is a skip-and-continue, never a
+    raised exception.
 
     Args:
         moves: Detected moves from :func:`detect_file_moves`
@@ -239,7 +282,7 @@ def apply_detected_moves(
             computed_normalized_path = None
 
         command = SongPathUpdate(
-            song_id=move.song_id,
+            song_identity=move.song_identity,
             new_path=move.new_path,
             scan=SongScanUpdate(
                 normalized_path=computed_normalized_path,
@@ -248,17 +291,28 @@ def apply_detected_moves(
                 duration_seconds=move.new_duration,
             ),
         )
-        update_song_path(db, command)
+        destination = update_song_path(db, command)
+        if destination is None:
+            # Stale/missing source locator: safe no-op miss (ADR-048 §5).
+            # Skip-and-continue; the row was not moved and no replacement was
+            # fabricated.
+            logger.warning(
+                "Skipping stale move %s → %s: source locator no longer resolves",
+                move.old_path,
+                move.new_path,
+            )
+            continue
 
         new_metadata = metadata_map.get(move.new_path)
         if new_metadata:
             try:
                 entity_tags = _extract_entity_tags(new_metadata)
-                assignments = build_song_tag_assignments(move.song_id, entity_tags)
+                # build_song_tag_assignments' int argument is compute-only and is
+                # dropped by its flat mapping; pass the existing sentinel (0) as
+                # extract_entity_tag_mapping does — no identity migration.
+                assignments = build_song_tag_assignments(0, entity_tags)
                 if assignments:
-                    song_identity = db.library.resolve_song_identity(move.song_id)
-                    if song_identity is not None:
-                        db.library.replace_song_tags(song_identity, assignments)
+                    db.library.replace_song_tags(destination, assignments)
             except RuntimeError as e:
                 logger.warning(
                     "Failed to update entities for moved file %s: %s",
@@ -273,15 +327,21 @@ def apply_detected_moves(
 
 def detect_file_move_via_db(
     new_file_entry: dict[str, Any],
-    library_id: int,
+    library: Library,
     db: Database,
 ) -> FileMove | None:
     """Check whether ``new_file_entry`` is a moved version of an existing DB file.
 
     Computes the chromaprint for the new file, then queries the DB for a file
-    with the same fingerprint belonging to ``library_id``.  Used during the
-    final scan pass when there are no in-memory ``missing_docs_map`` candidates
-    (e.g. files moved from a folder that vanished entirely from disk).
+    with the same fingerprint belonging to ``library`` (the natural ``Library``
+    domain value).  Used during the final scan pass when there are no in-memory
+    ``missing_docs_map`` candidates (e.g. files moved from a folder that
+    vanished entirely from disk).
+
+    The detected move carries its **source locator** (ADR-048): a
+    ``SongIdentity`` built from ``library``'s natural key and the candidate
+    row's canonical ``normalized_path``. No row id or numeric library handle
+    crosses this boundary.
 
     Returns a :class:`FileMove` when a match is found, ``None`` otherwise.
     """
@@ -297,16 +357,6 @@ def detect_file_move_via_db(
         return None
 
     if not chromaprint:
-        return None
-
-    # Resolve the numeric library handle to the Library domain object via the
-    # identity bridge before the chromaprint lookup (find_move_candidate_by_chromaprint
-    # now requires a Library, not an int library_id).
-    library_identity = db.library.resolve_library_identity(library_id)
-    if library_identity is None:
-        return None
-    library = db.library.get_library_by_name(library_identity.name)
-    if library is None:
         return None
 
     candidate = find_move_candidate_by_chromaprint(db, library, chromaprint)
@@ -334,7 +384,10 @@ def detect_file_move_via_db(
     return FileMove(
         old_path=candidate["path"],
         new_path=new_path,
-        song_id=candidate["id"],
+        song_identity=SongIdentity(
+            library=LibraryIdentity(name=library.name, root_path=library.root_path),
+            normalized_path=candidate["normalized_path"],
+        ),
         chromaprint=chromaprint,
         old_duration=removed_duration,
         new_duration=new_duration,
