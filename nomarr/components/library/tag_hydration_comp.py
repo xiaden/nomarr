@@ -1,23 +1,38 @@
 """Tag hydration component.
 
-Derives canonical song metadata (artist, album, title, etc.) from a song's tags.
-Part of the tag-first architecture: tags are the authoritative source, and
-display metadata is derived on read rather than stored redundantly.
+Derives canonical song metadata (artist, album, title, etc.) from a song's tags
+and returns it as the typed ``HydratedSong`` carrier. Part of the tag-first
+architecture: tags are the authoritative source, and display metadata is derived
+on read rather than stored redundantly (ADR-045).
+
+The hydration boundary is fully semantic: it consumes domain ``Song`` values plus
+their mutable ``SongIdentity`` locators (ADR-048) and returns ``HydratedSong``
+carriers. It never reads ``songs.id``, storage rows, or raw payloads and never
+merges metadata into a song document.
 """
 
 from __future__ import annotations
 
-import contextlib
 import logging
 from typing import TYPE_CHECKING, Any
 
-if TYPE_CHECKING:
-    from collections.abc import Sequence
+from nomarr.components.library.song_query_types import HydratedSong
 
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+
+    from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
+    from nomarr.helpers.dataclasses.song_dataclass import Song
     from nomarr.helpers.dataclasses.song_tag_dataclass import SongTagAssignment
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
+
+
+def _derive_metadata(song_tags: Sequence[SongTagAssignment]) -> Mapping[str, object]:
+    """Derive the ADR-045 metadata mapping, omitting absent (None) values."""
+    raw = extract_canonical_metadata(song_tags)
+    return {key: value for key, value in raw.items() if value is not None}
 
 
 def extract_canonical_metadata(song_tags: Sequence[SongTagAssignment]) -> dict[str, Any]:
@@ -69,82 +84,64 @@ def extract_canonical_metadata(song_tags: Sequence[SongTagAssignment]) -> dict[s
     }
 
 
-def hydrate_songs_with_metadata(db: Database, songs: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Enrich songs with canonical metadata derived from their tags.
+def hydrate_songs_with_metadata(
+    db: Database,
+    songs: Sequence[Song],
+    identities: Sequence[SongIdentity],
+) -> list[HydratedSong]:
+    """Derive ADR-045 metadata for many semantic songs and return typed carriers.
 
-    Batch-reads tags for all songs and merges derived metadata into each.
-    Returns new dicts (does not mutate input). Metadata fields are merged on top
-    of original song fields, so song["artist"], song["album"], etc. resolve to
-    tag-derived values.
+    ``songs`` and ``identities`` are parallel sequences: each ``identities[i]`` is
+    the mutable locator (ADR-048) for ``songs[i]``. The owning library is never a
+    row or generated id — callers hold the ``LibraryIdentity`` and pair it with the
+    song's ``normalized_path``.
+
+    Batch-reads tags for all supplied identities in one facade call. A song whose
+    locator does not resolve (or which has no tags) is returned as a pass-through
+    ``HydratedSong`` with an empty metadata mapping — never an error, never a
+    ``None``-valued metadata injection (ADR-045), never a row leak.
 
     Args:
-        db: Database instance
-        songs: List of song dicts to hydrate
+        db: Database instance.
+        songs: Semantic songs to hydrate.
+        identities: One ``SongIdentity`` locator per song (parallel to ``songs``).
 
     Returns:
-        List of new dicts with metadata fields merged in. Songs without a
-        string/int id are returned as shallow copies. Songs that do not resolve
-        to a domain song identity (or have no tags) are returned as-is (no
-        ``None``-valued metadata keys are injected) — ADR-045.
+        One ``HydratedSong`` per input song, in the same order. Input is never
+        mutated.
 
     """
-    song_ids: list[int] = []
-    for song in songs:
-        raw_id = song.get("id")
-        if isinstance(raw_id, (str, int)):
-            with contextlib.suppress(ValueError, TypeError):
-                song_ids.append(int(raw_id))
+    if not songs:
+        return []
 
-    if not song_ids:
-        return [{**song} for song in songs]
+    # Batch tag read across all locators; unresolvable/no-tag locators are absent
+    # from the returned mapping and fall through to empty metadata below.
+    tags_by_identity = db.library.list_song_tags_for_songs(list(identities))
 
-    # Batch-resolve the numeric song handles to domain identities before the
-    # sealed tag call (never pass ints to the tag facade).
-    identity_map = db.library.resolve_song_identities(song_ids)
-    if not identity_map:
-        return [{**song} for song in songs]
-    id_to_identity = {identity: song_id for song_id, identity in identity_map.items()}
-    tags_by_identity = db.library.list_song_tags_for_songs(list(identity_map.values()))
-    tags_by_song = {song_id: tags_by_identity.get(identity, ()) for identity, song_id in id_to_identity.items()}
-
-    result: list[dict[str, Any]] = []
-    for song in songs:
-        raw_id = song.get("id")
-        lookup_id: int | None = None
-        if isinstance(raw_id, (str, int)):
-            with contextlib.suppress(ValueError, TypeError):
-                lookup_id = int(raw_id)
-
-        if lookup_id is None:
-            result.append({**song})
-            continue
-
-        song_tags = tags_by_song.get(lookup_id, ())
-        metadata = extract_canonical_metadata(song_tags)
-        # Strip None values so they don't override tag-derived metadata
-        # (ADR-045: metadata is derived from source tags, no cache columns)
-        metadata = {k: v for k, v in metadata.items() if v is not None}
-        result.append({**song, **metadata})
-
+    result: list[HydratedSong] = []
+    for song, identity in zip(songs, identities, strict=True):
+        assignments = tags_by_identity.get(identity, ())
+        result.append(HydratedSong(song=song, metadata=_derive_metadata(assignments)))
     return result
 
 
-def hydrate_song_with_metadata(db: Database, song: dict[str, Any]) -> dict[str, Any]:
-    """Enrich a single song with canonical metadata derived from its tags.
+def hydrate_song_with_metadata(db: Database, song: Song, identity: SongIdentity) -> HydratedSong:
+    """Derive ADR-045 metadata for a single semantic song.
 
-    Convenience wrapper around hydrate_songs_with_metadata() for call sites
-    that have exactly one song.
+    Convenience wrapper around :func:`hydrate_songs_with_metadata` for call sites
+    that have exactly one song and its locator.
 
     Args:
-        db: Database instance
-        song: Single song dict to hydrate
+        db: Database instance.
+        song: Semantic song to hydrate.
+        identity: The song's mutable ``SongIdentity`` locator.
 
     Returns:
-        New dict with metadata fields merged in. If the song has no string/int
-        id, returns a shallow copy unchanged.
+        A ``HydratedSong`` carrier. An unresolvable/no-tag song carries an empty
+        metadata mapping (pass-through, never error, never ``None`` injection).
 
     """
-    result = hydrate_songs_with_metadata(db, [song])
+    result = hydrate_songs_with_metadata(db, [song], [identity])
     return result[0]
 
 

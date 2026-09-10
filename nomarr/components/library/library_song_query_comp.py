@@ -1,47 +1,170 @@
-"""Library song query helpers.
+"""Library song query helpers (semantic boundary).
 
-Multi-hop reads routed through the intent-level persistence facades.
+Multi-hop reads routed through the intent-level persistence facades. The public
+surface returns only typed semantic values (``Song``, ``SongStateCandidate``),
+scalar/aggregate values, or the typed metadata/tag carriers from
+:mod:`nomarr.components.library.song_query_types`. No function here reconstructs a
+row-shaped song document, reads ``doc[\"id\"]``/``doc[\"path\"]``, calls
+``Song.to_dict()``/``Song.from_row``, or imports a persistence mapper — see
+CONTRACTS §1/§3/§7 and plan F (binding per-function output table).
 """
 
 from __future__ import annotations
 
-import random
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from nomarr.components.library.library_song_state_comp import count_untagged_files
-from nomarr.components.library.tag_hydration_comp import hydrate_songs_with_metadata
-from nomarr.components.library.tag_mapping_comp import file_tag_from_tag_row, is_numeric_tag_value
+from nomarr.components.library.song_query_types import (
+    HydratedSong,
+    RecentSong,
+    StateTaggedSong,
+    TaggedSong,
+    TagMatchedSong,
+    TrackSong,
+)
+from nomarr.components.library.tag_hydration_comp import (
+    extract_canonical_metadata,
+    hydrate_songs_with_metadata,
+)
+from nomarr.components.library.tag_mapping_comp import is_numeric_tag_value
 from nomarr.helpers.constants.file_states import STATE_PROCESSED
+from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
+from nomarr.helpers.dataclasses.song_state_candidate_dataclass import SongStateCandidate
 from nomarr.helpers.dataclasses.song_tag_dataclass import TagRef
+from nomarr.helpers.dto.library_dto import FileTag
 from nomarr.helpers.time_helper import now_ms
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+
     from nomarr.helpers.dataclasses.library_dataclass import Library
-    from nomarr.helpers.dataclasses.song_dataclass import SongTagMatch
-    from nomarr.helpers.dto.library_dto import FileTag
+    from nomarr.helpers.dataclasses.song_dataclass import Song
+    from nomarr.helpers.dataclasses.song_tag_dataclass import SongTagAssignment
     from nomarr.persistence.db import Database
 
 DEFAULT_LIMIT = 1000
 
-
-def get_song_by_id(db: Database, song_id: int) -> dict[str, Any] | None:
-    """Get one library-song document by ``song_id``."""
-    song = db.library.get_song(song_id)
-    return song.to_dict() if song is not None else None
+_ACTIVITY_EVENT = Literal["scanned", "tagged"]
 
 
-def count_recently_tagged(db: Database, window_seconds: int = 300) -> int:
-    """Count songs tagged within the recent window (default 5 minutes)."""
-    cutoff_ms = now_ms().value - window_seconds * 1000
-    return db.library.count_recently_tagged(cutoff_ms)
+# ─────────────────────────────────────────────────────────────────────────
+# Identity / locator helpers
+# ─────────────────────────────────────────────────────────────────────────
 
 
-def get_existing_file_paths(db: Database, library: Library, paths: list[str]) -> set[str]:
-    """Return paths that already exist in the target library's songs table."""
-    if not paths:
-        return set()
-    return set(db.library.list_existing_song_paths(library, paths))
+def _library_identity(library: Library) -> LibraryIdentity:
+    """Resolve a domain ``Library`` value to its natural ``LibraryIdentity`` locator."""
+    return LibraryIdentity(name=library.name, root_path=library.root_path)
+
+
+def _song_identity(song: Song, library_identity: LibraryIdentity) -> SongIdentity:
+    """Pair a semantic song with its mutable ``SongIdentity`` locator (ADR-048)."""
+    return SongIdentity(library=library_identity, normalized_path=song.normalized_path)
+
+
+def _all_songs_with_libraries(db: Database) -> list[tuple[Song, LibraryIdentity]]:
+    """Return every semantic song paired with its owning library locator.
+
+    Cross-library aggregation is the approved iteration pattern: there is no
+    global listing primitive, so the full set is materialized by iterating
+    ``list_libraries()`` and collecting each library-scoped listing with
+    ``limit=None`` (no per-library default cap) before any caller-side
+    filter/sort/page.
+    """
+    result: list[tuple[Song, LibraryIdentity]] = []
+    for library in db.library.list_libraries():
+        library_identity = _library_identity(library)
+        result.extend((song, library_identity) for song in db.library.list_songs(library_identity, limit=None))
+    return result
+
+
+def _locators_for_songs(db: Database, songs: Sequence[Song]) -> list[SongIdentity | None]:
+    """Resolve the owning ``SongIdentity`` locator for each semantic song.
+
+    ``find_songs_with_*`` tag reads return bare ``Song`` values without their
+    owning library, so the library must be recovered to re-address each song for
+    hydration. For each library this issues one order-preserving batch
+    ``list_songs_by_identity`` over the still-unresolved songs and accepts a
+    locator only when the resolved value equals the candidate ``Song`` (never a
+    physical-path-prefix heuristic). Returns one locator per input song in the
+    same order; ``None`` when no owning library resolves.
+    """
+    locators: list[SongIdentity | None] = [None] * len(songs)
+    remaining = set(range(len(songs)))
+    for library in db.library.list_libraries():
+        if not remaining:
+            break
+        library_identity = _library_identity(library)
+        indices = sorted(remaining)
+        unresolved = [songs[i] for i in indices]
+        resolved = db.library.list_songs_by_identity([_song_identity(song, library_identity) for song in unresolved])
+        # list_songs_by_identity omits unresolvable locators but each returned
+        # value is the owning song at its own normalized_path within this
+        # library, so keying by normalized_path is robust regardless of order.
+        song_by_normalized = {song.normalized_path: song for song in resolved}
+        for i in indices:
+            candidate = songs[i]
+            if song_by_normalized.get(candidate.normalized_path) == candidate:
+                locators[i] = SongIdentity(library=library_identity, normalized_path=candidate.normalized_path)
+                remaining.discard(i)
+    return locators
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Tag → FileTag / metadata helpers
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def _file_tag_from_assignment(assignment: SongTagAssignment) -> FileTag:
+    value = assignment.value
+    return FileTag(
+        key=assignment.name,
+        value=str(value),
+        tag_type="float" if is_numeric_tag_value(value) else "string",
+        is_nomarr=assignment.namespace == "nom",
+    )
+
+
+def _file_tags(assignments: Sequence[SongTagAssignment]) -> tuple[FileTag, ...]:
+    """Project sealed tag assignments into ``FileTag`` values sorted by key."""
+    return tuple(sorted((_file_tag_from_assignment(a) for a in assignments), key=lambda tag: _sort_key(tag.key)))
+
+
+def _derive_metadata(assignments: Sequence[SongTagAssignment]) -> Mapping[str, object]:
+    """Derive the ADR-045 metadata mapping, omitting absent (None) values."""
+    raw = extract_canonical_metadata(assignments)
+    return {key: value for key, value in raw.items() if value is not None}
+
+
+def _tag_assignments(
+    db: Database,
+    identities: Sequence[SongIdentity],
+) -> dict[SongIdentity, tuple[SongTagAssignment, ...]]:
+    """Batch-read tag assignments for many locators (single facade call)."""
+    if not identities:
+        return {}
+    return dict(db.library.list_song_tags_for_songs(list(identities)))
+
+
+def _hydrate_metadata(
+    db: Database,
+    songs: Sequence[Song],
+    locators: Sequence[SongIdentity | None],
+) -> list[Mapping[str, object]]:
+    """Derive ADR-045 metadata for songs, preserving order and pass-through empties."""
+    resolvable = [(song, locator) for song, locator in zip(songs, locators, strict=True) if locator is not None]
+    metadata_by_song: dict[Song, Mapping[str, object]] = {}
+    if resolvable:
+        hydrated = hydrate_songs_with_metadata(db, [s for s, _ in resolvable], [locator for _, locator in resolvable])
+        for hyd in hydrated:
+            metadata_by_song[hyd.song] = hyd.metadata
+    return [metadata_by_song.get(song, {}) for song in songs]
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Path / numeric / sort / pagination helpers
+# ─────────────────────────────────────────────────────────────────────────
 
 
 def _normalize_path(path: str) -> str:
@@ -49,42 +172,13 @@ def _normalize_path(path: str) -> str:
     return Path(path).as_posix().lstrip("./")
 
 
-def _matches_requested_path(file_doc: dict[str, Any], path: str) -> bool:
-    return file_doc.get("normalized_path") == path or file_doc.get("path") == path
-
-
-def _matches_folder_rel_path(normalized_path: Any, folder_rel_path: str) -> bool:
-    if not isinstance(normalized_path, str):
-        return False
+def _matches_folder_rel_path(normalized_path: str, folder_rel_path: str) -> bool:
     if folder_rel_path == "":
         return "/" not in normalized_path
     return normalized_path.startswith(f"{folder_rel_path}/")
 
 
-def _project_recently_processed_row(file_doc: dict[str, Any]) -> dict[str, Any]:
-    scanned_at: int | None = file_doc.get("scanned_at")
-    last_tagged_at: int | None = file_doc.get("last_tagged_at")
-    candidates: list[tuple[int, str]] = []
-    if isinstance(scanned_at, int):
-        candidates.append((scanned_at, "scanned"))
-    if isinstance(last_tagged_at, int):
-        candidates.append((last_tagged_at, "tagged"))
-    if candidates:
-        activity_at, activity_event = max(candidates, key=lambda t: t[0])
-    else:
-        activity_at, activity_event = 0, "scanned"
-    return {
-        "file_id": file_doc.get("id"),
-        "path": file_doc.get("normalized_path"),
-        "title": file_doc.get("title"),
-        "artist": file_doc.get("artist"),
-        "album": file_doc.get("album"),
-        "activity_at": activity_at,
-        "activity_event": activity_event,
-    }
-
-
-def _sort_key(value: Any) -> tuple[int, Any]:
+def _sort_key(value: object) -> tuple[int, Any]:
     if value is None:
         return (1, "")
     if isinstance(value, str):
@@ -92,25 +186,16 @@ def _sort_key(value: Any) -> tuple[int, Any]:
     return (0, value)
 
 
-def _library_song_sort_key(file_doc: dict[str, Any]) -> tuple[tuple[int, Any], tuple[int, Any], tuple[int, Any]]:
+def _metadata_sort_key(metadata: Mapping[str, object]) -> tuple[tuple[int, Any], tuple[int, Any], tuple[int, Any]]:
+    """Casefolded ``(artist, album, title)`` ordering with missing values last."""
     return (
-        _sort_key(file_doc.get("artist")),
-        _sort_key(file_doc.get("album")),
-        _sort_key(file_doc.get("title")),
+        _sort_key(metadata.get("artist")),
+        _sort_key(metadata.get("album")),
+        _sort_key(metadata.get("title")),
     )
 
 
-def _project_track_row(file_doc: dict[str, Any]) -> dict[str, Any]:
-    path = str(file_doc.get("path") or "")
-    return {
-        "path": path,
-        "title": file_doc.get("title") or Path(path).stem,
-        "artist": file_doc.get("artist") or "Unknown Artist",
-        "album": file_doc.get("album") or "Unknown Album",
-    }
-
-
-def _numeric_value(value: Any) -> float:
+def _numeric_value(value: object) -> float:
     if isinstance(value, bool):
         return 0.0
     if isinstance(value, (int, float)):
@@ -118,51 +203,8 @@ def _numeric_value(value: Any) -> float:
     return 0.0
 
 
-def _path_parent(path_value: Any) -> str | None:
-    if not isinstance(path_value, str):
-        return None
+def _path_parent(path_value: str) -> str | None:
     return path_value.rsplit("/", 1)[0] if "/" in path_value else ""
-
-
-def _get_songs_by_ids(db: Database, song_ids: list[int]) -> list[dict[str, Any]]:
-    if not song_ids:
-        return []
-    return [song.to_dict() for song in db.library.list_songs_by_ids(song_ids)]
-
-
-def _get_all_library_songs(db: Database, limit: int | None = None) -> list[dict[str, Any]]:
-    """Return songs across all libraries, optionally capped after aggregation.
-
-    The intent-level facade has no global ``list_songs`` (song listing requires a
-    ``library_id``), so the full listing is assembled by iterating the known
-    libraries and collecting every song before applying an optional cap.
-    """
-    songs: list[dict[str, Any]] = []
-    for library in db.library.list_libraries():
-        songs.extend(song.to_dict() for song in db.library.list_songs(library, limit=None))
-    if limit is not None:
-        songs = songs[:limit]
-    return songs
-
-
-def _hydrate_files_with_tagged_state(db: Database, file_docs: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Annotate song docs with ``has_tagged_state`` derived from the processed state membership."""
-    song_ids = [song_id for file_doc in file_docs if isinstance((song_id := file_doc.get("id")), int)]
-    if not song_ids:
-        return list(file_docs)
-
-    tagged_song_ids = set(db.app.song_ids_with_state(STATE_PROCESSED, limit=None))
-
-    return [
-        {**file_doc, "has_tagged_state": song_id in tagged_song_ids}
-        if isinstance((song_id := file_doc.get("id")), int)
-        else dict(file_doc)
-        for file_doc in file_docs
-    ]
-
-
-def _matches_file_filters(file_doc: dict[str, Any], filter_dict: dict[str, Any]) -> bool:
-    return all(file_doc.get(field_name) == expected_value for field_name, expected_value in filter_dict.items())
 
 
 def _is_numeric_target_value(value: float | str) -> bool:
@@ -180,17 +222,6 @@ def _tag_key_namespace(tag_key: str) -> str:
     return "nom" if tag_key.startswith("nom:") else "default"
 
 
-def _tags_for_song(db: Database, song_id: int) -> list[FileTag]:
-    song_identity = db.library.resolve_song_identity(song_id)
-    if song_identity is None:
-        return []
-    assignments = db.library.list_tags_for_song(song_identity)
-    return [
-        file_tag_from_tag_row({"name": assignment.name, "value": assignment.value, "namespace": assignment.namespace})
-        for assignment in sorted(assignments, key=lambda assignment: _sort_key(assignment.name))
-    ]
-
-
 def _tags_by_name(db: Database, name: str) -> list[TagRef]:
     return list(db.library.list_tags(name=name, limit=None))
 
@@ -199,122 +230,74 @@ def _tags_by_name_value(db: Database, name: str, value: str) -> list[TagRef]:
     return [identity for identity in _tags_by_name(db, name) if identity.value == value]
 
 
-def _hydrate_files_with_tags(db: Database, file_docs: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Hydrate many song docs with tags and owning library ids in batched lookups."""
-    song_ids = [song_id for file_doc in file_docs if isinstance(song_id := file_doc.get("id"), int)]
-    if not song_ids:
-        return [{**file_doc, "tags": [], "library_id": None} for file_doc in file_docs]
-
-    identity_map = db.library.resolve_song_identities(song_ids)
-    if not identity_map:
-        return [{**file_doc, "tags": [], "library_id": None} for file_doc in file_docs]
-
-    id_to_identity = {identity: song_id for song_id, identity in identity_map.items()}
-    raw_tags_by_identity = db.library.list_song_tags_for_songs(list(identity_map.values()))
-    tags_by_file = {
-        song_id: sorted(
-            [
-                file_tag_from_tag_row(
-                    {"name": assignment.name, "value": assignment.value, "namespace": assignment.namespace}
-                )
-                for assignment in assignments
-            ],
-            key=lambda tag_row: _sort_key(tag_row.key),
-        )
-        for identity, assignments in raw_tags_by_identity.items()
-        if (song_id := id_to_identity.get(identity)) is not None
-    }
-
-    library_ids_by_file = db.library.get_library_ids_for_songs(song_ids)
-
-    return [
-        {
-            **file_doc,
-            "tags": tags_by_file.get(song_id, []),
-            "library_id": library_ids_by_file.get(song_id),
-        }
-        if isinstance((song_id := file_doc.get("id")), int)
-        else {**file_doc, "tags": [], "library_id": None}
-        for file_doc in file_docs
-    ]
+def _activity_event(song: Song) -> tuple[int, _ACTIVITY_EVENT]:
+    """Derive the most-recent activity timestamp and its event for a song."""
+    scanned_at = song.scanned_at or 0
+    last_tagged_at = song.last_tagged_at or 0
+    if scanned_at == 0 and last_tagged_at == 0:
+        return 0, "scanned"
+    if scanned_at >= last_tagged_at:
+        return scanned_at, "scanned"
+    return last_tagged_at, "tagged"
 
 
-def _hydrate_file_with_tags(db: Database, file_doc: dict[str, Any]) -> dict[str, Any]:
-    song_id = file_doc.get("id")
-    if not isinstance(song_id, int):
-        return {**file_doc, "tags": [], "library_id": None}
-    hydrated = _hydrate_files_with_tags(db, [file_doc])
-    return hydrated[0]
+# ─────────────────────────────────────────────────────────────────────────
+# Scalar / aggregate helpers (unchanged contracts)
+# ─────────────────────────────────────────────────────────────────────────
 
 
-def _paginate_rows(rows: list[dict[str, Any]], limit: int, offset: int) -> list[dict[str, Any]]:
-    return rows[offset : offset + limit]
+def count_recently_tagged(db: Database, window_seconds: int = 300) -> int:
+    """Count songs tagged within the recent window (default 5 minutes)."""
+    cutoff_ms = now_ms().value - window_seconds * 1000
+    return db.library.count_recently_tagged(cutoff_ms)
 
 
-def get_songs_by_ids_with_tags(db: Database, song_ids: list[int]) -> list[dict[str, Any]]:
-    """Get songs by ids with hydrated tags and owning library id."""
-    if not song_ids:
-        return []
-
-    file_docs = _get_songs_by_ids(db, song_ids)
-    docs_by_id = {song_id: file_doc for file_doc in file_docs if isinstance((song_id := file_doc.get("id")), int)}
-    ordered_docs = [docs_by_id[song_id] for song_id in song_ids if song_id in docs_by_id]
-    return _hydrate_files_with_tags(db, ordered_docs)
-
-
-def get_library_song(
-    db: Database,
-    path: str,
-    library: Library | None = None,
-) -> dict[str, Any] | None:
-    """Get a library-song document by normalized or absolute path.
-
-    Scoped lookups use the canonical normalized-path identity in the facade.
-    """
-    if library is not None:
-        normalized_path = _normalize_path(path)
-        song = db.library.get_song_by_normalized_path(normalized_path, library)
-        return song.to_dict() if song is not None else None
-
-    song = db.library.find_song_by_path_any_library(path)
-    return song.to_dict() if song is not None else None
-
-
-def require_library_song_id(
-    db: Database,
-    path: str,
-    library: Library | None = None,
-) -> int:
-    """Return the library-song ``id`` for a path or raise ``FileNotFoundError``."""
-    library_file = get_library_song(db, path, library=library)
-    if not library_file:
-        msg = f"File not in library: {path}"
-        raise FileNotFoundError(msg)
-    return library_file["id"]  # type: ignore[no-any-return]
-
-
-def get_songs_by_paths_bulk(db: Database, paths: list[str]) -> dict[str, dict[str, Any]]:
-    """Get multiple library-song records keyed by the original input path."""
+def get_existing_file_paths(db: Database, library: Library, paths: list[str]) -> set[str]:
+    """Return paths that already exist in the target library's songs table."""
     if not paths:
-        return {}
+        return set()
+    return set(db.library.list_existing_song_paths(library, paths))
 
-    result: dict[str, dict[str, Any]] = {}
-    for path in paths:
-        file_doc = get_library_song(db, path)
-        if file_doc is not None:
-            result[path] = file_doc
-    return result
+
+def get_song_modified_times(db: Database) -> dict[str, int]:
+    """Return absolute path to modified-time mapping for all files."""
+    pairs = _all_songs_with_libraries(db)
+    return {song.path: song.modified_time for song, _library_identity in pairs if isinstance(song.path, str)}
+
+
+def get_all_library_paths(db: Database) -> list[str]:
+    """Return all absolute library-file paths."""
+    paths: list[str] = []
+    for library in db.library.list_libraries():
+        library_identity = _library_identity(library)
+        paths.extend(
+            song.path
+            for song in db.library.list_songs(library_identity, limit=DEFAULT_LIMIT)
+            if isinstance(song.path, str)
+        )
+    return paths
+
+
+def get_sample_normalized_path(db: Database) -> str | None:
+    """Return one normalized_path from the library for diagnostic purposes."""
+    for library in db.library.list_libraries():
+        library_identity = _library_identity(library)
+        for song in db.library.list_songs(library_identity, limit=1):
+            if isinstance(song.normalized_path, str) and song.normalized_path:
+                return song.normalized_path
+    return None
 
 
 def detect_nd_path_prefix(db: Database, nd_path: str) -> str | None:
     """Detect the Navidrome prefix that should be stripped from absolute paths."""
     normalized_paths: list[str] = []
-    normalized_paths.extend(
-        str(file_doc["normalized_path"])
-        for library in db.library.list_libraries()
-        for file_doc in (song.to_dict() for song in db.library.list_songs(library, limit=DEFAULT_LIMIT))
-        if isinstance(file_doc.get("normalized_path"), str) and file_doc.get("normalized_path")
-    )
+    for library in db.library.list_libraries():
+        library_identity = _library_identity(library)
+        normalized_paths.extend(
+            song.normalized_path
+            for song in db.library.list_songs(library_identity, limit=DEFAULT_LIMIT)
+            if isinstance(song.normalized_path, str) and song.normalized_path
+        )
     best_match = next(
         (
             normalized_path
@@ -328,6 +311,51 @@ def detect_nd_path_prefix(db: Database, nd_path: str) -> str | None:
     return nd_path[: len(nd_path) - len(best_match)]
 
 
+def get_folder_rel_paths(db: Database, library: Library) -> set[str]:
+    """Get cached folder relative paths for one library."""
+    return {folder.path for folder in db.library.list_folders_for_library(library) if isinstance(folder.path, str)}
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Single-song semantic lookups
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def get_library_song(db: Database, path: str, library: Library | None = None) -> Song | None:
+    """Get a semantic song by normalized or absolute path within an optional scope.
+
+    Scoped lookups use the canonical normalized-path identity in the facade
+    (``get_song_by_normalized_path``); unscoped lookups search all libraries by
+    physical path. Returns a semantic ``Song`` or ``None`` — never a row.
+    """
+    if library is not None:
+        normalized_path = _normalize_path(path)
+        return db.library.get_song_by_normalized_path(_library_identity(library), normalized_path)
+    return db.library.find_song_by_path_any_library(path)
+
+
+def get_songs_by_paths_bulk(db: Database, paths: list[str]) -> dict[str, Song]:
+    """Get multiple semantic songs keyed only by the original input path."""
+    if not paths:
+        return {}
+    result: dict[str, Song] = {}
+    for path in paths:
+        song = get_library_song(db, path)
+        if song is not None:
+            result[path] = song
+    return result
+
+
+def find_move_candidate_by_chromaprint(db: Database, library: Library, chromaprint: str) -> Song | None:
+    """Return the semantic song matching ``chromaprint``, or ``None`` (DB move detection)."""
+    return db.library.find_library_song_by_chromaprint(library, chromaprint)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Listing / filtering / paging (metadata-bearing carriers)
+# ─────────────────────────────────────────────────────────────────────────
+
+
 def list_songs(
     db: Database,
     limit: int = 100,
@@ -335,35 +363,36 @@ def list_songs(
     artist: str | None = None,
     album: str | None = None,
     library: Library | None = None,
-) -> tuple[list[dict[str, Any]], int]:
-    """List library songs with optional filters; returns (rows, total_count)."""
+) -> tuple[list[HydratedSong], int]:
+    """List library songs with optional derived-metadata filters; returns (rows, total)."""
     if library is not None:
-        file_docs = [song.to_dict() for song in db.library.list_songs(library, limit=None)]
+        library_identity = _library_identity(library)
+        songs = db.library.list_songs(library_identity, limit=None)
+        identities = [_song_identity(song, library_identity) for song in songs]
     else:
-        # Collect the complete global result before filtering and pagination.
-        # Applying the helper's default cap here drops songs before an offset
-        # can be applied, making pages after the first 1,000 rows incorrect.
-        file_docs = _get_all_library_songs(db, limit=None)
+        # Materialize the complete cross-library set before filtering/paging.
+        pairs = _all_songs_with_libraries(db)
+        songs = [song for song, _ in pairs]
+        identities = [_song_identity(song, library_identity) for song, library_identity in pairs]
 
-    file_docs = hydrate_songs_with_metadata(db, file_docs)
+    hydrated = hydrate_songs_with_metadata(db, songs, identities)
 
-    filter_dict: dict[str, Any] = {}
-    if artist:
-        filter_dict["artist"] = artist
-    if album:
-        filter_dict["album"] = album
-    if filter_dict:
-        file_docs = [doc for doc in file_docs if _matches_file_filters(doc, filter_dict)]
+    def _matches(hydrated_song: HydratedSong) -> bool:
+        if artist is not None and hydrated_song.metadata.get("artist") != artist:
+            return False
+        return not (album is not None and hydrated_song.metadata.get("album") != album)
 
-    file_docs.sort(key=_library_song_sort_key)
-    total = len(file_docs)
-    return _paginate_rows(file_docs, limit=limit, offset=offset), total
+    hydrated = [row for row in hydrated if _matches(row)]
+    hydrated.sort(key=lambda row: _metadata_sort_key(row.metadata))
+    total = len(hydrated)
+    page = hydrated[offset : offset + limit]
+    return page, total
 
 
 def get_tagged_file_paths(db: Database) -> list[str]:
-    """Return absolute paths for songs currently in the processed state."""
-    tagged_songs = db.app.songs_with_state(STATE_PROCESSED, limit=None)
-    return [song.path for song in tagged_songs if isinstance(song.path, str)]
+    """Return absolute physical paths for songs currently in the processed state."""
+    candidates = db.library.list_songs_with_state(STATE_PROCESSED)
+    return [candidate.song.path for candidate in candidates]
 
 
 def search_songs_with_tags(
@@ -376,220 +405,304 @@ def search_songs_with_tags(
     tagged_only: bool = False,
     limit: int = 100,
     offset: int = 0,
-) -> tuple[list[dict[str, Any]], int]:
+) -> tuple[list[TaggedSong], int]:
     """Search songs with tag/text filters; returns (songs, total_count).
 
-    All filtering is pushed to PostgreSQL via set-intersection of candidate ids.
+    Candidate narrowing reproduces the previous set-intersection semantics over
+    semantic ``Song`` values (equal ``Song`` dataclass values denote the same
+    underlying row, so intersection is exact — no generated id is used).
     """
-    # candidate_ids: None = universe (no constraint yet); set = narrowed result.
-    # Each active filter fetches only matching rows from PostgreSQL via the namespace
-    # API and intersects into this set. Python only does set math; all I/O is
-    # pushed to PostgreSQL via the constructed accessor methods.
-    #
-    # Routing mirrors the frontend prefix syntax:
-    #   a:value   → artist LIKE %value%  (artist param)
-    #   al:value  → album  LIKE %value%  (album param)
-    #   t:value   → title  LIKE %value%  (query_text with artist/album also set)
-    #   value     → artist OR album OR title LIKE %value% (query_text alone)
-    candidate_ids: set[int] | None = None
+    candidate_songs: set[Song] | None = None
 
-    def _intersect(new_ids: set[int]) -> None:
-        nonlocal candidate_ids
-        candidate_ids = new_ids if candidate_ids is None else candidate_ids & new_ids
+    def _intersect(new_songs: set[Song]) -> None:
+        nonlocal candidate_songs
+        candidate_songs = new_songs if candidate_songs is None else candidate_songs & new_songs
 
     if artist:
-        # a: prefix → substring match in artist tag
-        _intersect({song.song_id for song in db.library.find_songs_with_tag_pattern("artist", f"%{artist}%")})
-
+        _intersect(set(db.library.find_songs_with_tag_pattern("artist", f"%{artist}%")))
     if album:
-        # al: prefix → substring match in album tag
-        _intersect({song.song_id for song in db.library.find_songs_with_tag_pattern("album", f"%{album}%")})
-
+        _intersect(set(db.library.find_songs_with_tag_pattern("album", f"%{album}%")))
     if query_text:
         q_pattern = f"%{query_text}%"
         if artist or album:
-            # t: prefix (query_text alongside a:/al:) → narrow to title only
-            _intersect({song.song_id for song in db.library.find_songs_with_tag_pattern("title", q_pattern)})
+            _intersect(set(db.library.find_songs_with_tag_pattern("title", q_pattern)))
         else:
-            # Unprefixed → OR across title (tag) and artist/album (tags)
-            matched: set[int] = set()
-            matched |= {song.song_id for song in db.library.find_songs_with_tag_pattern("title", q_pattern)}
+            matched: set[Song] = set()
+            matched.update(db.library.find_songs_with_tag_pattern("title", q_pattern))
             for tag_name in ("artist", "album"):
-                matched |= {song.song_id for song in db.library.find_songs_with_tag_pattern(tag_name, q_pattern)}
+                matched.update(db.library.find_songs_with_tag_pattern(tag_name, q_pattern))
             _intersect(matched)
-
     if tag_key:
         matching_tags = (
             _tags_by_name_value(db, tag_key, str(tag_value)) if tag_value is not None else _tags_by_name(db, tag_key)
         )
-        tag_matched: set[int] = set()
+        tag_matched: set[Song] = set()
         for identity in matching_tags:
-            for song in db.library.find_songs_with_tag(identity, limit=None):
-                tag_matched.add(song.song_id)
+            tag_matched.update(db.library.find_songs_with_tag(identity, limit=None))
         _intersect(tag_matched)
-
     if tagged_only:
-        tagged_ids = set(db.app.song_ids_with_state(STATE_PROCESSED, limit=None))
-        _intersect(tagged_ids)
+        processed = {candidate.song for candidate in db.library.list_songs_with_state(STATE_PROCESSED)}
+        _intersect(processed)
 
-    if candidate_ids is None:
+    locators: list[SongIdentity | None]
+    if candidate_songs is None:
         # No filters active — load the complete universe before pagination.
-        file_docs = _get_all_library_songs(db, limit=None)
-    elif not candidate_ids:
+        songs = [song for song, _ in _all_songs_with_libraries(db)]
+        locators = [_song_identity(song, library_identity) for song, library_identity in _all_songs_with_libraries(db)]
+    elif not candidate_songs:
         return [], 0
     else:
-        file_docs = _get_songs_by_ids(db, sorted(candidate_ids))
+        songs = list(candidate_songs)
+        locators = _locators_for_songs(db, songs)
 
-    file_docs = hydrate_songs_with_metadata(db, file_docs)
-    file_docs.sort(key=_library_song_sort_key)
-    total = len(file_docs)
-    page_files = _paginate_rows(file_docs, limit=limit, offset=offset)
-    return (_hydrate_files_with_tags(db, page_files), total)
+    metadata_by_song = dict(zip(songs, _hydrate_metadata(db, songs, locators), strict=True))
+    ordered = sorted(songs, key=lambda song: _metadata_sort_key(metadata_by_song[song]))
+    total = len(ordered)
+    page_songs = ordered[offset : offset + limit]
+
+    page_locators = [locators[songs.index(song)] for song in page_songs]
+    assignments = _tag_assignments(db, [locator for locator in page_locators if locator is not None])
+    page: list[TaggedSong] = []
+    for song in page_songs:
+        locator = page_locators[songs.index(song)]
+        song_assignments = assignments.get(locator, ()) if locator is not None else ()
+        page.append(
+            TaggedSong(
+                song=song,
+                metadata=metadata_by_song[song],
+                tags=_file_tags(song_assignments),
+            )
+        )
+    return page, total
 
 
 def get_recently_processed(
     db: Database,
     limit: int = 20,
     library: Library | None = None,
-) -> list[dict[str, Any]]:
-    """Return recently processed songs ordered by activity descending.
-
-    The query is capped at 1,000 rows; we do not support more than 1k recent
-    processed songs in one update.
-
-    Scoping is by the natural ``Library`` identity (mechanism A); the backing
-    activity query no longer accepts an int library filter, so a library scope
-    is applied by filtering against the library's song-id set.
-    """
-    # overlap: mechanism-A natural-name threading (P4-S8) - sibling song-plan
-    # files are under concurrent edit; preserve adjacent hunks.
-    query_kwargs: dict[str, Any] = {
-        "limit": DEFAULT_LIMIT,
-        "order_by_activity": True,
-    }
-    tagged_file_docs: list[dict[str, Any]] = [
-        song.to_dict() for song in db.app.songs_with_state(STATE_PROCESSED, **query_kwargs)
-    ]
-    if library is not None:
-        library_song_ids = {song.song_id for song in db.library.list_songs(library, limit=None)}
-        tagged_file_docs = [doc for doc in tagged_file_docs if doc.get("id") in library_song_ids]
-    tagged_file_docs = hydrate_songs_with_metadata(db, tagged_file_docs)
-    return [_project_recently_processed_row(file_doc) for file_doc in tagged_file_docs[:limit]]
-
-
-def get_song_modified_times(db: Database) -> dict[str, int]:
-    """Return absolute path to modified-time mapping for all files."""
-    file_docs = _get_all_library_songs(db, DEFAULT_LIMIT)
-    return {
-        str(file_doc["path"]): int(file_doc["modified_time"])
-        for file_doc in file_docs
-        if isinstance(file_doc.get("path"), str) and isinstance(file_doc.get("modified_time"), int)
-    }
-
-
-def get_all_library_paths(db: Database) -> list[str]:
-    """Return all absolute library-file paths."""
-    paths: list[str] = []
-    paths.extend(
-        str(file_doc["path"])
-        for library in db.library.list_libraries()
-        for file_doc in (song.to_dict() for song in db.library.list_songs(library, limit=DEFAULT_LIMIT))
-        if isinstance(file_doc.get("path"), str)
+) -> list[RecentSong]:
+    """Return recently processed songs ordered by activity descending as typed carriers."""
+    library_identity = _library_identity(library) if library is not None else None
+    candidates = db.library.list_songs_with_state(
+        STATE_PROCESSED,
+        library=library_identity,
+        order_by_activity=True,
+        limit=DEFAULT_LIMIT,
     )
-    return paths
+    if not candidates:
+        return []
+    songs = [candidate.song for candidate in candidates]
+    identities = [candidate.identity for candidate in candidates]
+    metadata = [hyd.metadata for hyd in hydrate_songs_with_metadata(db, songs, identities)]
+    result: list[RecentSong] = []
+    for candidate, song_metadata in zip(candidates, metadata, strict=True):
+        activity_at, activity_event = _activity_event(candidate.song)
+        result.append(
+            RecentSong(
+                candidate=candidate,
+                metadata=song_metadata,
+                activity_at=activity_at,
+                activity_event=activity_event,
+            )
+        )
+    return result[:limit]
 
 
-def get_sample_normalized_path(db: Database) -> str | None:
-    """Return one normalized_path from the library for diagnostic purposes."""
-    for library in db.library.list_libraries():
-        file_docs = [song.to_dict() for song in db.library.list_songs(library, limit=1)]
-        for file_doc in file_docs:
-            if isinstance(file_doc.get("normalized_path"), str) and file_doc.get("normalized_path"):
-                return str(file_doc["normalized_path"])
-    return None
+# ─────────────────────────────────────────────────────────────────────────
+# Tag search / match carriers
+# ─────────────────────────────────────────────────────────────────────────
 
 
-def list_all_song_ids(db: Database, limit: int | None = None) -> list[int]:
-    """Return all library song ids."""
-    collect_limit = limit or DEFAULT_LIMIT
-    song_ids: list[int] = []
-    for library in db.library.list_libraries():
-        song_ids.extend(db.library.list_library_song_ids(library, limit=collect_limit))
-    return song_ids
-
-
-def get_folder_rel_paths(db: Database, library: Library) -> set[str]:
-    """Get cached folder relative paths for one library."""
-    return {folder.path for folder in db.library.list_folders_for_library(library) if isinstance(folder.path, str)}
-
-
-def get_songs_for_folder(
+def search_songs_by_tag(
     db: Database,
-    library: Library,
-    folder_rel_path: str,
-) -> dict[str, dict[str, Any]]:
-    """Get song documents for a single folder."""
-    file_docs = [song.to_dict() for song in db.library.list_songs_for_folder(library, folder_rel_path)]
-    return {file_doc["path"]: file_doc for file_doc in file_docs if isinstance(file_doc.get("path"), str)}
+    tag_key: str,
+    target_value: float | str,
+    limit: int = 100,
+    offset: int = 0,
+) -> list[TagMatchedSong]:
+    """Search songs by tag value with numeric-distance or exact-match semantics."""
+    namespace = _tag_key_namespace(tag_key)
+    if _is_numeric_target_value(target_value):
+        identity = TagRef(name=tag_key, value=float(target_value), namespace=namespace)
+        rows = db.library.find_songs_with_numeric_tag(identity, limit=limit, offset=offset)
+        if not rows:
+            return []
+        songs = [match.song for match in rows]
+        metadata = _hydrate_metadata(db, songs, _locators_for_songs(db, songs))
+        result: list[TagMatchedSong] = []
+        for match, song_metadata in zip(rows, metadata, strict=True):
+            result.append(
+                TagMatchedSong(
+                    song=match.song,
+                    metadata=song_metadata,
+                    matched_tag=TagRef(name=tag_key, value=float(match.matched_tag), namespace=namespace),
+                    distance=match.distance,
+                )
+            )
+        return result
+
+    identity = TagRef(name=tag_key, value=str(target_value), namespace=namespace)
+    songs = list(db.library.find_songs_with_tag(identity, limit=None))
+    if not songs:
+        return []
+    metadata = _hydrate_metadata(db, songs, _locators_for_songs(db, songs))
+    ordered = sorted(range(len(songs)), key=lambda i: _metadata_sort_key(metadata[i]))
+    page = ordered[offset : offset + limit]
+    return [
+        TagMatchedSong(
+            song=songs[i],
+            metadata=metadata[i],
+            matched_tag=TagRef(name=tag_key, value=str(target_value), namespace=namespace),
+            distance=0.0,
+        )
+        for i in page
+    ]
+
+
+def count_songs_by_tag(db: Database, tag_key: str, target_value: float | str) -> int:
+    """Count songs matching a tag-value filter, scoped to the key's namespace."""
+    namespace = _tag_key_namespace(tag_key)
+    if _is_numeric_target_value(target_value):
+        return db.library.count_songs_by_numeric_tag(tag_key, float(target_value), namespace=namespace)
+    return db.library.count_songs_by_tag(tag_key, str(target_value), namespace=namespace)
+
+
+def get_songs_by_chromaprint(db: Database, chromaprint: str, library: Library | None = None) -> list[Song]:
+    """Return semantic songs matching a chromaprint fingerprint."""
+    if library is not None:
+        library_identity = _library_identity(library)
+        return [song for song in db.library.list_songs(library_identity, limit=None) if song.chromaprint == chromaprint]
+    matches: list[Song] = []
+    for library in db.library.list_libraries():
+        match = db.library.find_library_song_by_chromaprint(library, chromaprint)
+        if match is not None:
+            matches.append(match)
+    return matches
+
+
+def get_tracks_for_matching(db: Database, library: Library | None = None) -> list[TrackSong]:
+    """Get typed track carriers for fuzzy playlist matching, optionally scoped."""
+    pairs: list[tuple[Song, LibraryIdentity]] = []
+    if library is not None:
+        library_identity = _library_identity(library)
+        pairs.extend(
+            (song, library_identity) for song in db.library.list_tracks_for_matching(library, limit=DEFAULT_LIMIT)
+        )
+    else:
+        for library in db.library.list_libraries():
+            library_identity = _library_identity(library)
+            pairs.extend(
+                (song, library_identity) for song in db.library.list_tracks_for_matching(library, limit=DEFAULT_LIMIT)
+            )
+    if not pairs:
+        return []
+    songs = [song for song, _ in pairs]
+    identities = [_song_identity(song, library_identity) for song, library_identity in pairs]
+    metadata = [hyd.metadata for hyd in hydrate_songs_with_metadata(db, songs, identities)]
+    assignments = _tag_assignments(db, identities)
+    result: list[TrackSong] = []
+    for (song, library_identity), song_metadata in zip(pairs, metadata, strict=True):
+        identity = _song_identity(song, library_identity)
+        song_assignments = assignments.get(identity, ())
+        isrc = next((str(a.value) for a in song_assignments if a.name == "nom:isrc"), None)
+        result.append(TrackSong(song=song, metadata=song_metadata, isrc=isrc))
+    return result
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Folder / state-annotation helpers
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def _state_tagged_songs(
+    db: Database,
+    songs: Sequence[Song],
+    library_identity: LibraryIdentity,
+) -> list[StateTaggedSong]:
+    """Annotate semantic songs with their processed-state candidate membership."""
+    if not songs:
+        return []
+    processed_candidates = {
+        candidate.song.normalized_path: candidate
+        for candidate in db.library.list_songs_with_state(STATE_PROCESSED, library=library_identity)
+    }
+    result: list[StateTaggedSong] = []
+    for song in songs:
+        candidate = processed_candidates.get(song.normalized_path)
+        if candidate is not None:
+            result.append(StateTaggedSong(candidate=candidate, has_tagged_state=True))
+        else:
+            identity = _song_identity(song, library_identity)
+            result.append(
+                StateTaggedSong(
+                    candidate=SongStateCandidate(
+                        identity=identity,
+                        song=song,
+                        states=(),
+                    ),
+                    has_tagged_state=False,
+                )
+            )
+    return result
+
+
+def get_songs_for_folder(db: Database, library: Library, folder_rel_path: str) -> dict[str, StateTaggedSong]:
+    """Get ``StateTaggedSong`` values for a single folder, keyed by physical path."""
+    library_identity = _library_identity(library)
+    songs = db.library.list_songs_for_folder(library, folder_rel_path)
+    return {
+        state_tagged.candidate.song.path: state_tagged
+        for state_tagged in _state_tagged_songs(db, songs, library_identity)
+        if isinstance(state_tagged.candidate.song.path, str)
+    }
 
 
 def get_songs_for_folders(
     db: Database,
     library: Library,
     folder_rel_paths: list[str],
-) -> dict[str, dict[str, Any]]:
-    """Batch-fetch song documents for multiple folders.
-
-    TODO(migrate): fetches all files for the library then filters by
-    normalized_path prefix in Python. Persistence needs a multi-folder SQL
-    query so this doesn't load the entire library into memory.
-    """
+) -> dict[str, StateTaggedSong]:
+    """Batch-fetch ``StateTaggedSong`` values for multiple folders keyed by physical path."""
     if not folder_rel_paths:
         return {}
-    file_docs = _hydrate_files_with_tagged_state(
-        db,
-        [song.to_dict() for song in db.library.list_songs(library, limit=None)],
-    )
+    library_identity = _library_identity(library)
+    songs = db.library.list_songs(library_identity, limit=None)
+    folder_songs = [
+        song
+        for song in songs
+        if any(_matches_folder_rel_path(song.normalized_path, folder_rel_path) for folder_rel_path in folder_rel_paths)
+    ]
     return {
-        file_doc["path"]: file_doc
-        for file_doc in file_docs
-        if isinstance(file_doc.get("path"), str)
-        and any(
-            _matches_folder_rel_path(file_doc.get("normalized_path"), folder_rel_path)
-            for folder_rel_path in folder_rel_paths
-        )
+        state_tagged.candidate.song.path: state_tagged
+        for state_tagged in _state_tagged_songs(db, folder_songs, library_identity)
+        if isinstance(state_tagged.candidate.song.path, str)
     }
 
 
-def find_move_candidate_by_chromaprint(
-    db: Database,
-    library: Library,
-    chromaprint: str,
-) -> dict[str, Any] | None:
-    """Return the library file matching ``chromaprint``, or ``None``. Used for DB-lookup move detection."""
-    song = db.library.find_library_song_by_chromaprint(library, chromaprint)
-    return song.to_dict() if song is not None else None
+# ─────────────────────────────────────────────────────────────────────────
+# Aggregate statistics / maintenance
+# ─────────────────────────────────────────────────────────────────────────
 
 
 def get_library_stats(db: Database, library: Library | None = None) -> dict[str, Any]:
-    """Get aggregate library-song statistics (songs, artists, albums, duration, size)."""
+    """Get aggregate library-song statistics (not a song document)."""
     if library is not None:
-        file_docs = [song.to_dict() for song in db.library.list_songs(library, limit=None)]
+        library_identity = _library_identity(library)
+        songs = db.library.list_songs(library_identity, limit=None)
         total_files = db.library.count_songs_for_library(library)
-        song_ids = [doc["id"] for doc in file_docs if isinstance(doc.get("id"), int)]
-        identity_map = db.library.resolve_song_identities(song_ids) if song_ids else {}
-        artist_values: set[Any] = set()
-        album_values: set[Any] = set()
-        if identity_map:
-            tags_by_identity = db.library.list_song_tags_for_songs(list(identity_map.values()))
-            for assignments in tags_by_identity.values():
-                artist_values.update(assignment.value for assignment in assignments if assignment.name == "artist")
-                album_values.update(assignment.value for assignment in assignments if assignment.name == "album")
+        identities = [_song_identity(song, library_identity) for song in songs]
+        assignments = _tag_assignments(db, identities) if identities else {}
+        artist_values: set[object] = set()
+        album_values: set[object] = set()
+        for song_assignments in assignments.values():
+            artist_values.update(a.value for a in song_assignments if a.name == "artist")
+            album_values.update(a.value for a in song_assignments if a.name == "album")
         total_artists = len(artist_values)
         total_albums = len(album_values)
     else:
-        file_docs = _get_all_library_songs(db, None)
-        total_files = len(file_docs)
+        pairs = _all_songs_with_libraries(db)
+        songs = [song for song, _ in pairs]
+        total_files = len(songs)
         total_artists = len(_tags_by_name(db, "artist"))
         total_albums = len(_tags_by_name(db, "album"))
 
@@ -597,30 +710,22 @@ def get_library_stats(db: Database, library: Library | None = None) -> dict[str,
         "total_files": total_files,
         "total_artists": total_artists,
         "total_albums": total_albums,
-        "total_duration": sum(_numeric_value(file_doc.get("duration_seconds")) for file_doc in file_docs),
-        "total_size": int(sum(_numeric_value(file_doc.get("file_size")) for file_doc in file_docs)),
+        "total_duration": sum(_numeric_value(song.duration_seconds) for song in songs),
+        "total_size": int(sum(_numeric_value(song.file_size) for song in songs)),
     }
-
     result["needs_tagging_count"] = count_untagged_files(db, library)
     return result
 
 
 def get_library_counts(db: Database) -> dict[str, dict[str, int]]:
-    """Return song and folder counts for all libraries, keyed by library name.
-
-    Overlap note (P2-S4): the library facade no longer exposes
-    ``list_library_keys`` / generated library ids, so the counts are keyed by
-    the library's natural ``name``. ``list_songs`` accepts the ``Library`` key
-    directly (P3-S5), so no generated id is needed here.
-    """
+    """Return song and folder counts for all libraries, keyed by natural library name."""
     result: dict[str, dict[str, int]] = {}
     for library in db.library.list_libraries():
-        # P3 song-facade handoff resolved: ``list_songs`` now accepts the
-        # natural ``Library`` key, so the per-library listing needs no id.
-        file_docs = [song.to_dict() for song in db.library.list_songs(library, limit=None)]
-        folder_paths = {parent for file_doc in file_docs if (parent := _path_parent(file_doc.get("path"))) is not None}
+        library_identity = _library_identity(library)
+        songs = db.library.list_songs(library_identity, limit=None)
+        folder_paths = {parent for song in songs if (parent := _path_parent(song.path)) is not None}
         result[library.name] = {
-            "file_count": len(file_docs),
+            "file_count": len(songs),
             "folder_count": len(folder_paths),
         }
     return result
@@ -636,163 +741,5 @@ def get_artist_album_frequencies(db: Database, limit: int) -> dict[str, list[tup
 
 
 def clear_library_data(db: Database) -> None:
-    """Perform a destructive full reset, including each library's pipeline state.
-
-    Delegates the entire reset choreography (vector-collection enumeration,
-    output-stream deletion, pipeline-state removal, and link/core table
-    truncation ordering) to the single persistence-owned maintenance intent so
-    the component no longer knows table/collection names, row IDs, or deletion
-    order.
-    """
+    """Perform a destructive full reset, delegated to the single maintenance intent."""
     db.library.maintenance.reset_library_data()
-
-
-def _numeric_match_to_file_doc(match: SongTagMatch) -> dict[str, Any]:
-    """Project a domain tag match for downstream response enrichment."""
-    return match.song.to_dict()
-
-
-def search_songs_by_tag(
-    db: Database,
-    tag_key: str,
-    target_value: float | str,
-    limit: int = 100,
-    offset: int = 0,
-) -> list[dict[str, Any]]:
-    """Search songs by tag value with numeric-distance or exact-match semantics."""
-    if _is_numeric_target_value(target_value):
-        # Numeric search is SQL-paginated (ADR-045: artist/album/title are
-        # tag-derived, not song columns, so the complete-result metadata sort no
-        # longer applies). PostgreSQL selects one closest numeric tag per song,
-        # orders by ``distance ASC`` then unique ``song id ASC`` (per-tag
-        # tie-break by tag id), and applies offset/limit before any rows reach
-        # Python. Only the SQL-returned page is hydrated.
-        numeric_target = float(target_value)
-        identity = TagRef(name=tag_key, value=numeric_target, namespace=_tag_key_namespace(tag_key))
-        rows = db.library.find_songs_with_numeric_tag(identity, limit=limit, offset=offset)
-        if not rows:
-            return []
-        file_docs = [_numeric_match_to_file_doc(match) for match in rows]
-        file_docs = hydrate_songs_with_metadata(db, file_docs)
-        hydrated_files = _hydrate_files_with_tags(db, file_docs)
-        results: list[dict[str, Any]] = []
-        for hydrated_file, match in zip(hydrated_files, rows, strict=False):
-            # Row's ``matched_tag`` is the matched tag's string value; convert to
-            # float to keep the exact public shape (old numeric branch emitted a
-            # float ``value``).
-            hydrated_file["matched_tag"] = {"key": tag_key, "value": float(match.matched_tag)}
-            hydrated_file["distance"] = match.distance
-            results.append(hydrated_file)
-        return results
-
-    identity = TagRef(name=tag_key, value=str(target_value), namespace=_tag_key_namespace(tag_key))
-    file_docs = [song.to_dict() for song in db.library.find_songs_with_tag(identity, limit=None)]
-    file_docs = hydrate_songs_with_metadata(db, file_docs)
-    file_docs.sort(key=_library_song_sort_key)
-
-    results = []
-    hydrated_page = _hydrate_files_with_tags(db, _paginate_rows(file_docs, limit=limit, offset=offset))
-    for hydrated_file in hydrated_page:
-        hydrated_file["matched_tag"] = {"key": tag_key, "value": str(target_value)}
-        results.append(hydrated_file)
-    return results
-
-
-def count_songs_by_tag(db: Database, tag_key: str, target_value: float | str) -> int:
-    """Count songs matching a tag-value filter, scoped to the key's namespace."""
-    namespace = _tag_key_namespace(tag_key)
-    if _is_numeric_target_value(target_value):
-        # Numeric count is a separate uncapped ``COUNT(DISTINCT song_id)`` SQL
-        # intent sharing the numeric search predicate (ADR-045); it must agree
-        # with the searchable result universe even beyond the legacy 1000-edge
-        # cap, so it never materializes tags/edges in Python.
-        return db.library.count_songs_by_numeric_tag(tag_key, float(target_value), namespace=namespace)
-
-    return db.library.count_songs_by_tag(tag_key, str(target_value), namespace=namespace)
-
-
-def get_songs_by_chromaprint(
-    db: Database,
-    chromaprint: str,
-    library: Library | None = None,
-) -> list[dict[str, Any]]:
-    """Return files matching a chromaprint fingerprint."""
-    if library is not None:
-        return [
-            file_doc
-            for file_doc in (song.to_dict() for song in db.library.list_songs(library, limit=None))
-            if file_doc.get("chromaprint") == chromaprint
-        ]
-
-    matches: list[dict[str, Any]] = []
-    for library in db.library.list_libraries():
-        match = db.library.find_library_song_by_chromaprint(library, chromaprint)
-        if match is not None:
-            matches.append(match.to_dict())
-    return matches
-
-
-def get_tracks_by_song_ids(
-    db: Database,
-    song_ids: set[int],
-    order_by: list[tuple[str, Literal["asc", "desc"]]] | None = None,
-    limit: int | None = None,
-) -> list[dict[str, Any]]:
-    """Fetch track metadata for the supplied song ids."""
-    if not song_ids:
-        return []
-
-    file_docs = _get_songs_by_ids(db, list(song_ids))
-    file_docs = hydrate_songs_with_metadata(db, file_docs)
-    if order_by:
-        for column, direction in reversed(order_by):
-            file_docs.sort(key=lambda file_doc: _sort_key(file_doc.get(column)), reverse=direction == "desc")
-    else:
-        random.shuffle(file_docs)
-    if limit is not None:
-        file_docs = file_docs[:limit]
-    return [_project_track_row(file_doc) for file_doc in file_docs]
-
-
-def get_tracks_for_matching(db: Database, library: Library | None = None) -> list[dict[str, Any]]:
-    """Get track rows for fuzzy playlist matching, optionally scoped to a library."""
-    if library is not None:
-        file_docs = [song.to_dict() for song in db.library.list_tracks_for_matching(library, limit=DEFAULT_LIMIT)]
-    else:
-        file_docs = [
-            file_doc
-            for lib in db.library.list_libraries()
-            for file_doc in (song.to_dict() for song in db.library.list_tracks_for_matching(lib, limit=DEFAULT_LIMIT))
-        ]
-
-    file_docs = hydrate_songs_with_metadata(db, file_docs)
-
-    song_ids = [song_id for file_doc in file_docs if isinstance(song_id := file_doc.get("id"), int)]
-    identity_map = db.library.resolve_song_identities(song_ids) if song_ids else {}
-    id_to_identity = {identity: song_id for song_id, identity in identity_map.items()}
-    tags_by_identity = db.library.list_song_tags_for_songs(list(identity_map.values())) if identity_map else {}
-    isrc_by_file = {
-        song_id: next(
-            (assignment.value for assignment in assignments if assignment.name == "nom:isrc"),
-            None,
-        )
-        for identity, assignments in tags_by_identity.items()
-        if (song_id := id_to_identity.get(identity)) is not None
-    }
-
-    results: list[dict[str, Any]] = []
-    for file_doc in file_docs:
-        song_id = file_doc.get("id")
-        if not isinstance(song_id, int):
-            continue
-        results.append(
-            {
-                "id": song_id,
-                "path": file_doc.get("path"),
-                "title": file_doc.get("title"),
-                "artist": file_doc.get("artist"),
-                "album": file_doc.get("album"),
-                "isrc": isrc_by_file.get(song_id),
-            }
-        )
-    return results
