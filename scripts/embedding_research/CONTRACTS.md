@@ -522,8 +522,9 @@ resolve_evaluation_corpus(catalog, stream_store, requested_song_ids, *, backbone
   Plan C landed addendum in the apparatus-v1.0 section for the gate semantics.
 
 * **Eligibility is exactly** ``valid committed stream+mask (load_committed_observation succeeds) AND
-  at least one non-silent whole-song patch`` (patches at/beyond a shorter mask's length are
-  searchable).  A requested song with no committed observation group, or a fully-silent committed
+  at least one non-silent whole-song patch``. A committed mask must be an exact ``uint8[patch_count]``
+  array; short or long masks are corrupt and refused, never padded, truncated, or interpreted with
+  trailing patches searchable. A requested song with no committed observation group, or a fully-silent committed
   song, is EXCLUDED into ``missing_song_ids`` with a deterministic ``missing_digest`` — never
   silently pooled searchable.
 * **Determinism.** ``song_ids`` is the canonical sorted eligible population and ``corpus_hash`` a

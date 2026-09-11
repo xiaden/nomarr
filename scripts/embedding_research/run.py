@@ -69,7 +69,6 @@ if str(_pkg_root) not in sys.path:
     sys.path.insert(0, str(_pkg_root))
 
 from scripts.embedding_research.config import DB_PATH, OUTPUT_ROOT
-from scripts.embedding_research.helpers.binning import BIN_MODES
 from scripts.embedding_research.helpers.binning import DIST_THRESHOLDS as STD_THRESHOLDS
 from scripts.embedding_research.helpers.toml import load_research_config as _load_research_config
 from scripts.embedding_research.helpers.toml import load_research_config_bytes as _load_raw_cfg
@@ -250,8 +249,11 @@ def _catalog_seg_configs(cfg: dict) -> list:
     from scripts.embedding_research.catalog import SegConfigInput
 
     backbones = cfg.get("backbones") or ["effnet"]
+    # Experiment One is the temporal-global/L2 sweep.  Secondary Chebyshev
+    # experiments remain possible only through an explicit caller override;
+    # they are never mixed into the default primary catalog.
     bin_modes = cfg.get("catalog_bin_modes") or ["temporal_global"]
-    thresholds = [float(t) for t in (cfg.get("catalog_thresholds") or [0.7])]
+    thresholds = [float(t) for t in (cfg.get("catalog_thresholds") or STD_THRESHOLDS)]
     return [
         SegConfigInput(
             backbone=backbone,
@@ -1503,9 +1505,10 @@ def _build_run_config(args) -> dict:
         "k": _analysis.k,
         "workers": _analysis.workers,
         "blas_threads": _analysis.blas_threads or None,
-        # catalog input generation: the removed [binning] grid is replaced by these
-        # frozen literals from helpers.binning (the strict schema has no binning sweep).
-        "catalog_bin_modes": list(BIN_MODES),
+        # Experiment One is the frozen temporal-global/L2 threshold sweep.  The
+        # retained temporal-perdim/Chebyshev mode is secondary and must be selected
+        # explicitly by a non-default caller; equal thresholds remain distinct by mode.
+        "catalog_bin_modes": ["temporal_global"],
         "catalog_thresholds": [float(t) for t in STD_THRESHOLDS],
         # derived phases read/write frozen artifacts under the configured output root.
         "output_root": OUTPUT_ROOT,

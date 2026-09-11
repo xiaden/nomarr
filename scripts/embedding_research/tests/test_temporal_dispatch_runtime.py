@@ -64,7 +64,7 @@ def _seg_counts(con) -> dict[str, int]:
 
 
 def test_run_config_generator_selects_only_the_two_retained_modes():
-    """``run._catalog_seg_configs`` advertises exactly the DIST_FNS temporal modes."""
+    """Explicit callers may select both retained temporal modes."""
     from scripts.embedding_research import run
 
     cfg = {
@@ -76,6 +76,45 @@ def test_run_config_generator_selects_only_the_two_retained_modes():
     assert {c.bin_mode for c in configs} == {"temporal_global", "temporal_perdim"}
     # The generator's accepted modes are exactly the runner's advertised modes.
     assert {c.bin_mode for c in configs} == set(DIST_FNS)
+
+
+def test_default_run_config_freezes_experiment_one_to_global_l2(monkeypatch):
+    """The default CLI catalog is the temporal-global/L2 experiment only."""
+    from scripts.embedding_research import run
+
+    class _Pipeline:
+        backbones = ("effnet",)
+        heads = None
+        device = "cpu"
+        limit = 0
+        force = False
+
+    class _Analysis:
+        k = 10
+        workers = 1
+        blas_threads = 1
+
+    class _Config:
+        pipeline = _Pipeline()
+        analysis = _Analysis()
+
+    monkeypatch.setattr(run, "_load_research_config", lambda: _Config())
+    monkeypatch.setattr(run, "_load_raw_cfg", lambda: b"fixture")
+    args = type(
+        "Args",
+        (),
+        {
+            "device": None,
+            "force": False,
+            "regenerate_masks": False,
+            "retained": False,
+            "verify": False,
+            "strict": False,
+        },
+    )()
+    cfg = run._build_run_config(args)
+    assert cfg["catalog_bin_modes"] == ["temporal_global"]
+    assert cfg["catalog_thresholds"] == [float(t) for t in run.STD_THRESHOLDS]
 
 
 # --------------------------------------------------------------------------- #

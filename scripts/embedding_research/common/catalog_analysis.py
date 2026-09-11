@@ -1511,6 +1511,7 @@ def resolve_head_ruler_labels(store, out_root, song_ids, backbone: str = "effnet
     import numpy as _np
 
     from scripts.embedding_research import config as _config
+    from scripts.embedding_research.helpers.segmentation import require_exact_whole_song_mask
     from scripts.embedding_research.streams.heads_current import (
         HeadSuiteCurrentError,
         resolve_current_head_suite,
@@ -1536,8 +1537,11 @@ def resolve_head_ruler_labels(store, out_root, song_ids, backbone: str = "effnet
         mask = observation.mask
         if mask is None or identity is None:
             continue
-        mask = _np.asarray(mask)
-        if mask.ndim != 1 or mask.dtype not in ("uint8", "int8"):
+        try:
+            mask = require_exact_whole_song_mask(mask, int(identity.patch_count))
+        except ValueError:
+            # Direct callers must fail closed even if an injected observation bypasses
+            # the normal committed-observation validation boundary.
             continue
         # Only committed whole-song searchable rows where the exact mask == 1.
         idx = _np.flatnonzero(mask == 1)
