@@ -5,8 +5,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, NoReturn
 
-from nomarr.helpers.dataclasses.library_dataclass import Library
-
 if TYPE_CHECKING:
     from nomarr.helpers.dataclasses.vector_dataclass import SongVector, VectorMatch
     from nomarr.persistence.db import Database
@@ -33,8 +31,8 @@ def _resolve_match_file_id(db: Database, match: VectorMatch) -> int | None:
     ever enters ``MlDb``; identities are converted back to transport ids here.
     """
     song_obj = db.library.get_song_by_normalized_path(
+        match.song.library,
         match.song.normalized_path,
-        Library(name=match.song.library.name, root_path=match.song.library.root_path or ""),
     )
     return song_obj.song_id if song_obj is not None else None
 

@@ -27,18 +27,17 @@ logger = logging.getLogger(__name__)
 def prune_orphaned_files_workflow(db: Database) -> dict[str, int]:
     """Delete all tracks that have no owning library.
 
-    Cleans all derived data for each orphan in the same order used by
-    remove_library: output streams → vectors → tag edges → claim →
-    state edges → file document.
+    Delegates the locator-free maintenance removal to the single facade intent
+    ``LibrarySongsDb.prune_orphaned_songs``: persistence resolves the orphan row
+    handles privately and deletes each orphan's full derived set (FK CASCADE). No
+    generated ``songs.id`` or ``library_id`` crosses this boundary — only the
+    removed count is returned.
 
     Returns a stats dict with ``files_pruned``.
     """
-    orphan_ids = db.library.list_orphaned_song_ids()
-    if not orphan_ids:
+    removed = db.library.prune_orphaned_songs()
+    if removed == 0:
         logger.debug("[PruneOrphanedFiles] No orphaned files found")
-        return {"files_pruned": 0}
-
-    logger.warning("[PruneOrphanedFiles] Found %d orphaned file(s) — pruning", len(orphan_ids))
-    for file_id in orphan_ids:
-        db.library.remove_song(file_id)
-    return {"files_pruned": len(orphan_ids)}
+    else:
+        logger.warning("[PruneOrphanedFiles] Pruned %d orphaned file(s)", removed)
+    return {"files_pruned": removed}

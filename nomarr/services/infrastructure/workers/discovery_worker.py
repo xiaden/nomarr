@@ -407,18 +407,11 @@ class DiscoveryWorker(multiprocessing.Process):
         """Process a claimed file and schedule any deferred database writes."""
         import sys
 
-        from nomarr.components.library.library_song_query_comp import get_song_by_id
         from nomarr.components.library.library_song_state_comp import transition_song_state
         from nomarr.components.workers.worker_discovery_comp import release_claim
         from nomarr.workflows.processing.process_file_wf import process_file_workflow
 
-        logger.debug("[%s] Fetching file doc for %s", self.worker_id, song_id)
-        file_doc = get_song_by_id(db, song_id)
-        if not file_doc:
-            logger.warning("[%s] Claimed file %s not found in database", self.worker_id, song_id)
-            release_claim(db, song_id, self.worker_id)
-            return pending_write, False
-        file_path = file_doc["path"]
+        logger.debug("[%s] Fetching file for %s", self.worker_id, song_id)
         # Resolve the claimed integer handle to its semantic SongIdentity through
         # the authoritative library facade BEFORE any deferred ML write is
         # constructed. The integer handle is used only for the unrelated
@@ -437,6 +430,12 @@ class DiscoveryWorker(multiprocessing.Process):
                 logger.warning("[%s] Failed to set errored state for %s", self.worker_id, song_id, exc_info=True)
             release_claim(db, song_id, self.worker_id)
             return pending_write, False
+        song = db.library.get_song(song_identity)
+        if song is None:
+            logger.warning("[%s] Claimed song %s not found in database", self.worker_id, song_id)
+            release_claim(db, song_id, self.worker_id)
+            return pending_write, False
+        file_path = song.path
         try:
             file_size = os.path.getsize(file_path)
         except OSError:

@@ -12,7 +12,7 @@ from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, S
 from nomarr.helpers.dataclasses.vector_dataclass import EmbeddingCounts, SongVector, VectorMatch
 from nomarr.workflows.navidrome.generate_playlists_wf import generate_playlists
 
-_LIB = LibraryIdentity(name="test-library", root_path="/music")
+_LIB = LibraryIdentity(library_uuid="fe2223d4-9b05-57af-9714-e3f08a868b99", name="test-library", root_path="/music")
 
 
 def _song_identity(file_id: int) -> SongIdentity:

@@ -37,6 +37,8 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
+
 
 def compute_tag_frequencies(params: ComputeTagFrequenciesParams) -> ComputeTagFrequenciesResult:
     """Compute frequency counts from raw tag data.
@@ -76,7 +78,7 @@ def compute_tag_correlation_matrix(params: ComputeTagCorrelationMatrixParams) ->
     """
     logger.info("[analytics] Computing VALUE-based correlation matrix (top %d moods)", params.top_n)
     mood_counter: Counter = Counter()
-    for _file_id, tag_value in params.mood_tag_rows:
+    for _locator, tag_value in params.mood_tag_rows:
         try:
             moods = json.loads(tag_value)
             if isinstance(moods, list):
@@ -87,15 +89,15 @@ def compute_tag_correlation_matrix(params: ComputeTagCorrelationMatrixParams) ->
     top_moods = [mood for mood, _ in mood_counter.most_common(params.top_n)]
     if not top_moods:
         return TagCorrelationData(mood_correlations={}, mood_tier_correlations={})
-    mood_file_sets: dict[str, set[int]] = {mood: set() for mood in top_moods}
-    for file_id, tag_value in params.mood_tag_rows:
+    mood_file_sets: dict[str, set[SongIdentity]] = {mood: set() for mood in top_moods}
+    for locator, tag_value in params.mood_tag_rows:
         try:
             moods = json.loads(tag_value)
             if isinstance(moods, list):
                 for mood in moods:
                     mood_str = str(mood).strip()
                     if mood_str in mood_file_sets:
-                        mood_file_sets[mood_str].add(file_id)
+                        mood_file_sets[mood_str].add(locator)
         except json.JSONDecodeError:
             pass
     mood_correlations: dict[str, dict[str, float]] = {}
@@ -121,10 +123,10 @@ def compute_tag_correlation_matrix(params: ComputeTagCorrelationMatrixParams) ->
         tier_correlations: dict[str, float] = {}
         for tier_tag_key in params.tier_tag_keys:
             tier_name = tier_tag_key.replace(f"{params.namespace}:", "").replace("_tier", "").split("_")[-1]
-            tier_value_counts: Counter = Counter()
-            for file_id, tier_value in params.tier_tag_rows.get(tier_tag_key, []):
-                if file_id in mood_files:
-                    tier_value_counts[tier_value] += 1
+            tier_value_counts: Counter[str] = Counter()
+            for locator, tier_value in params.tier_tag_rows.get(tier_tag_key, []):
+                if locator in mood_files:
+                    tier_value_counts[str(tier_value)] += 1
             for tier_value, count in tier_value_counts.items():
                 correlation_key = f"{tier_value}_{tier_name}"
                 tier_correlations[correlation_key] = round(count / len(mood_files), 3)

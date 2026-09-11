@@ -55,7 +55,7 @@ from nomarr.persistence.api.library_tags import LibraryTagsDb
 
 # ── constructors ────────────────────────────────────────────────────────────
 
-_TEST_LIBRARY = LibraryIdentity(name="TestLib", root_path="/music")
+_TEST_LIBRARY = LibraryIdentity(library_uuid="de131b32-af5c-5a84-8874-58e3dc0e2dcd", name="TestLib", root_path="/music")
 
 
 def _song(normalized_path: str = "a.mp3") -> SongIdentity:
@@ -306,7 +306,9 @@ class TestSongCommandContracts:
     def test_song_upsert_input_carries_natural_library_identity(self) -> None:
         # The command is scoped by natural LibraryIdentity, not a storage ID.
         upsert = SongUpsertInput(library=_TEST_LIBRARY, path="/music/a.mp3")
-        assert upsert.library == LibraryIdentity(name="TestLib", root_path="/music")
+        assert upsert.library == LibraryIdentity(
+            library_uuid="de131b32-af5c-5a84-8874-58e3dc0e2dcd", name="TestLib", root_path="/music"
+        )
         # scan stays optional so command construction without scan is representable.
         assert upsert.scan is None
         assert upsert.last_tagged_at is None
@@ -463,7 +465,12 @@ class TestRootPathNoneGuard:
 
     def test_scalar_resolution_omits_none_root_path(self) -> None:
         tags, tag_repo, song_tag_repo = _make_tags_db()
-        song = SongIdentity(library=LibraryIdentity(name="TestLib", root_path=None), normalized_path="a.mp3")
+        song = SongIdentity(
+            library=LibraryIdentity(
+                library_uuid="08042357-9a97-5066-a9bf-bcab3b77ec8b", name="TestLib", root_path=None
+            ),
+            normalized_path="a.mp3",
+        )
 
         result = tags.list_tags_for_song(song)
 
@@ -476,7 +483,9 @@ class TestRootPathNoneGuard:
         tags, _, song_tag_repo = _make_tags_db()
         with_path = _song("a.mp3")
         without_path = SongIdentity(
-            library=LibraryIdentity(name="TestLib", root_path=None),
+            library=LibraryIdentity(
+                library_uuid="08042357-9a97-5066-a9bf-bcab3b77ec8b", name="TestLib", root_path=None
+            ),
             normalized_path="b.mp3",
         )
         song_tag_repo.get_genre_tags_for_songs.return_value = [{"name": "genre", "value": "Jazz", "namespace": ""}]
@@ -493,7 +502,9 @@ class TestRootPathNoneGuard:
         tags, _, _ = _make_tags_db()
         with_path = _song("a.mp3")
         without_path = SongIdentity(
-            library=LibraryIdentity(name="TestLib", root_path=None),
+            library=LibraryIdentity(
+                library_uuid="08042357-9a97-5066-a9bf-bcab3b77ec8b", name="TestLib", root_path=None
+            ),
             normalized_path="b.mp3",
         )
 

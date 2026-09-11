@@ -31,7 +31,7 @@ from nomarr.helpers.dataclasses.song_tag_dataclass import (
     TagUsage,
 )
 
-_LIBRARY = LibraryIdentity(name="TestLib", root_path="/music")
+_LIBRARY = LibraryIdentity(library_uuid="de131b32-af5c-5a84-8874-58e3dc0e2dcd", name="TestLib", root_path="/music")
 
 
 def _song(path: str = "a.mp3") -> SongIdentity:
@@ -206,9 +206,9 @@ class TestSongNaturalIdentity:
 
     def test_library_identity_validation(self) -> None:
         with pytest.raises(ValueError):
-            LibraryIdentity(name="", root_path="/music")
+            LibraryIdentity(library_uuid="adcb0529-a522-5cb3-8fc7-0a4b6925a8e2", name="", root_path="/music")
         with pytest.raises(ValueError):
-            LibraryIdentity(name="TestLib", root_path="")
+            LibraryIdentity(library_uuid="08042357-9a97-5066-a9bf-bcab3b77ec8b", name="TestLib", root_path="")
 
 
 # ── TagUsage ─────────────────────────────────────────────────────────────────

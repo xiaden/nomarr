@@ -12,6 +12,7 @@ from nomarr.components.library.library_song_state_comp import discover_next_file
 from nomarr.components.workers.worker_discovery_comp import claim_file, release_claim
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
@@ -22,7 +23,7 @@ __all__ = [
 ]
 
 
-def discover_and_claim_file_for_tags(db: Database, worker_id: str) -> str | None:
+def discover_and_claim_file_for_tags(db: Database, worker_id: str) -> SongIdentity | None:
     """Discover and atomically claim the next file needing tag extraction.
 
     Args:
@@ -30,13 +31,13 @@ def discover_and_claim_file_for_tags(db: Database, worker_id: str) -> str | None
         worker_id: Worker identifier for claim ownership
 
     Returns:
-        File ``id`` string if a file was claimed, ``None`` if no work available
+        Semantic song identity if a file was claimed, ``None`` if no work is available
 
     """
     file_doc = discover_next_file_needing_tags(db, exclude_claimed=True)
     if file_doc is None:
         return None
-    file_id = str(file_doc["id"])
-    if claim_file(db, file_id, worker_id):
-        return file_id
+    song = file_doc.identity
+    if claim_file(db, song, worker_id):
+        return song
     return None

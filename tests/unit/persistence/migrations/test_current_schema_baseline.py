@@ -64,13 +64,23 @@ def _created_tables() -> set[str]:
 class TestCurrentSchemaBaseline:
     """Validate that Alembic has one complete, current baseline."""
 
-    def test_is_the_only_revision_with_no_parent(self) -> None:
+    def test_baseline_is_the_single_root_revision(self) -> None:
         assert _BASELINE_PATH.exists()
         revision_files = sorted(_VERSIONS_DIR.glob("*.py"))
-        assert [path.name for path in revision_files] == [_BASELINE_PATH.name]
+        # The amended baseline remains the only root; the immutable-UUID hard
+        # cut chains from it as one linear revision (no branching/dual path).
+        names = [path.name for path in revision_files]
+        assert _BASELINE_PATH.name in names
+        assert names == [
+            "001_current_schema_baseline.py",
+            "002_add_libraries_library_uuid.py",
+        ]
         source = _baseline_source()
         assert 'revision: str = "baseline_20260830"' in source
         assert "down_revision: str | None = None" in source
+        child = (_VERSIONS_DIR / "002_add_libraries_library_uuid.py").read_text(encoding="utf-8")
+        assert 'revision: str = "002_libraries_library_uuid"' in child
+        assert 'down_revision: str | None = "baseline_20260830"' in child
 
     def test_creates_expected_tables_without_historical_navidrome_tables(self) -> None:
         assert _created_tables() == _EXPECTED_TABLES
@@ -82,6 +92,7 @@ class TestCurrentSchemaBaseline:
         assert "uq_library_scans_one_in_progress" in source
         assert "uq_ml_embedding_streams_song_backbone" in source
         assert "uq_libraries_name" in source
+        assert "uq_libraries_library_uuid" in source
         assert "uq_ml_model_outputs_output_id" in source
         assert "uq_worker_restart_policies_component_id" in source
         assert 'sa.Column("heartbeat_at", sa.BigInteger(), nullable=True)' in source

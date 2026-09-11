@@ -25,7 +25,7 @@ STORAGE_NAMES = ("WorkerClaimRow",)
 
 def _song() -> SongIdentity:
     return SongIdentity(
-        library=LibraryIdentity(name="lib", root_path="/music"),
+        library=LibraryIdentity(library_uuid="6b13a1b6-f86d-501e-aa19-30e3751e1211", name="lib", root_path="/music"),
         normalized_path="artist/album/track.flac",
     )
 
@@ -52,7 +52,9 @@ class TestWorkerClaimIdentity:
 
     def test_equality_by_value(self) -> None:
         other_song = SongIdentity(
-            library=LibraryIdentity(name="lib2", root_path="/other"),
+            library=LibraryIdentity(
+                library_uuid="290eb898-9d1a-5277-8580-75ec5d8291c8", name="lib2", root_path="/other"
+            ),
             normalized_path="other.flac",
         )
         assert _identity() == _identity()

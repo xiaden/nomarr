@@ -158,6 +158,30 @@ class SongRepository:
             self._session.commit()
             return ids
 
+    def update_song_calibration_hash(self, song_id: int, calibration_hash: str) -> bool:
+        """Set a song calibration hash in one repository-owned transaction."""
+        with map_persistence_exceptions():
+            with self._session.begin_nested():
+                stmt = update(_T).where(_T.c.id == song_id).values(calibration_hash=calibration_hash)
+                result = self._session.execute(stmt)
+            self._session.commit()
+            return bool(result.rowcount)  # type: ignore[attr-defined]
+
+    def update_song_calibration_hashes(self, hashes_by_song: dict[int, str]) -> int:
+        """Set calibration hashes for resolved songs in one repository transaction."""
+        if not hashes_by_song:
+            return 0
+        stmt = (
+            update(_T)
+            .where(_T.c.id.in_(list(hashes_by_song)))
+            .values(calibration_hash=case(hashes_by_song, value=_T.c.id))
+        )
+        with map_persistence_exceptions():
+            with self._session.begin_nested():
+                result = self._session.execute(stmt)
+            self._session.commit()
+            return int(result.rowcount)  # type: ignore[attr-defined]
+
     def update_song(self, song_id: int, fields: dict[str, Any]) -> None:
         """Update arbitrary fields on a song row."""
         with map_persistence_exceptions():

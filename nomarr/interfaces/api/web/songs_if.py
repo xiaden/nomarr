@@ -11,7 +11,7 @@ from nomarr.helpers.dataclasses.library_dataclass import Library
 from nomarr.helpers.dto.library_dto import SearchFilesQuery
 from nomarr.helpers.logging_helper import sanitize_exception_message
 from nomarr.interfaces.api.auth import verify_session
-from nomarr.interfaces.api.id_codec import decode_library_name, decode_path_id, encode_id
+from nomarr.interfaces.api.id_codec import decode_library_name, encode_song_locator
 from nomarr.interfaces.api.types.library_types import (
     ErroredFileItemResponse,
     ErroredFilesResponse,
@@ -22,7 +22,7 @@ from nomarr.interfaces.api.types.library_types import (
     TagCleanupResponse,
     UniqueTagKeysResponse,
 )
-from nomarr.interfaces.api.web.dependencies import get_library_service, get_tagging_service
+from nomarr.interfaces.api.web.dependencies import get_library_service, get_tagging_service, resolve_song_locator
 
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
@@ -100,12 +100,12 @@ async def get_files_by_ids(
     Used for batch lookup (e.g., when browsing songs for an entity).
     Returns files in same order as input IDs where possible.
 
-    Note: file_ids should be encoded (colon-separated), they will be decoded
-    before querying the database.
+    Each inbound id is an opaque ``nom1`` SongLocator token; malformed tokens are
+    rejected with 400 and unknown library/song locators with 404.
     """
     try:
-        decoded_ids = [decode_path_id(fid) for fid in request.file_ids]
-        result = await asyncio.to_thread(library_service.get_files_by_ids, decoded_ids)
+        locators = await asyncio.gather(*(resolve_song_locator(library_service, fid) for fid in request.file_ids))
+        result = await asyncio.to_thread(library_service.get_files_by_ids, list(locators))
         return SearchFilesResponse.from_dto(result)
     except Exception as e:
         logger.exception("[Web API] Error getting files by IDs")
@@ -220,18 +220,17 @@ async def get_file_tags(
     file_id: str,
     nomarr_only: Annotated[bool, Query(description="Only return Nomarr-generated tags")] = False,
     tagging_service: "TaggingService" = Depends(get_tagging_service),
+    library_service: "LibraryService" = Depends(get_library_service),
 ) -> FileTagsResponse:
     """Get all tags for a specific file."""
-    decoded_file_id: int = decode_path_id(file_id)
+    locator = await resolve_song_locator(library_service, file_id)
     try:
-        result = await asyncio.to_thread(
-            tagging_service.get_song_tags, song_id=decoded_file_id, nomarr_only=nomarr_only
-        )
+        result = await asyncio.to_thread(lambda: tagging_service.get_song_tags(song=locator, nomarr_only=nomarr_only))
         return FileTagsResponse.from_dto(result)
     except ValueError:
         raise HTTPException(status_code=404, detail="File not found") from None
     except Exception as e:
-        logger.exception(f"[Web API] Error getting tags for file {decoded_file_id}")
+        logger.exception(f"[Web API] Error getting tags for file {encode_song_locator(locator)}")
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get file tags")) from e
 
 
@@ -247,7 +246,7 @@ async def get_errored_files(
         return ErroredFilesResponse(
             files=[
                 ErroredFileItemResponse(
-                    file_id=encode_id(f["id"]),
+                    file_id=f["file_id"],
                     path=f["path"],
                     duration_seconds=f["duration_seconds"],
                     artist=f["artist"],
@@ -271,10 +270,14 @@ async def retry_errored_files(
     library_service: "LibraryService" = Depends(get_library_service),
 ) -> RetryErroredResponse:
     """Retry errored songs by clearing their errored state and re-queuing for tagging."""
-    song_ids = [decode_path_id(fid) for fid in request.file_ids] if request and request.file_ids else None
     try:
         library = await _resolve_library(library_service, library_name)
-        result = await asyncio.to_thread(library_service.retry_errored_songs, library, song_ids=song_ids)
+        song_locators = (
+            await asyncio.gather(*(resolve_song_locator(library_service, fid) for fid in request.file_ids))
+            if request and request.file_ids
+            else None
+        )
+        result = await asyncio.to_thread(library_service.retry_errored_songs, library, song_ids=song_locators)
         return RetryErroredResponse(**result)
     except HTTPException:
         raise

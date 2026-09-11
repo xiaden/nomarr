@@ -9,20 +9,18 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, TypedDict
 
-from nomarr.components.library.library_song_query_comp import get_songs_by_ids_with_tags
 from nomarr.components.ml.vectors.ml_vector_retrieve_comp import (
-    get_cold_track_vector,
     search_similar_cold_track_vectors,
 )
 from nomarr.components.navidrome.descriptor_match_comp import (
     TrackDescriptor,
-    build_track_descriptor,
+    descriptor_for_locator,
     resolve_seed_descriptor_to_file,
 )
-from nomarr.helpers.dataclasses.library_dataclass import Library
+from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
+from nomarr.helpers.song_locator_codec import SongLocatorFormatError, decode_song_locator
 
 if TYPE_CHECKING:
-    from nomarr.helpers.dataclasses.vector_dataclass import VectorMatch
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
@@ -41,21 +39,6 @@ class SimilarTrackResult(TypedDict):
     year: int | None
     nomarr_file_key: str | None
     score: float
-
-
-def _reverse_file_id(db: Database, match: VectorMatch) -> int | None:
-    """Adapt a result's natural ``SongIdentity`` back to its transport file id.
-
-    Authoritative reverse lookup through ``db.library`` (same pattern as the
-    vector search service): locate the song by its owning library's natural
-    ``(name, root_path)`` key plus ``normalized_path``. No integer storage id
-    enters ``MlDb``.
-    """
-    song_obj = db.library.get_song_by_normalized_path(
-        match.song.normalized_path,
-        Library(name=match.song.library.name, root_path=match.song.library.root_path or ""),
-    )
-    return song_obj.song_id if song_obj is not None else None
 
 
 def find_similar_tracks(
@@ -88,28 +71,36 @@ def find_similar_tracks(
         ValueError: If seed descriptor cannot be resolved or has no vector.
 
     """
-    # 1. Resolve seed descriptor to Nomarr file_id
-    seed_file_id_str, seed_resolution_status = resolve_seed_descriptor_to_file(db, seed_descriptor)
-    if seed_file_id_str is None:
+    # 1. Resolve seed descriptor to an opaque SongLocator token, then to a
+    # mutable SongIdentity locator. No generated integer id is introduced.
+    seed_token, seed_resolution_status = resolve_seed_descriptor_to_file(db, seed_descriptor)
+    if seed_token is None:
         if seed_resolution_status == "descriptor_ambiguous":
             msg = "Seed descriptor matched multiple tracks in Nomarr and is ambiguous."
             raise ValueError(msg)
         msg = "Seed descriptor could not be resolved to an analyzed Nomarr track."
         raise ValueError(msg)
-    seed_file_id = int(seed_file_id_str)
+    try:
+        seed_payload = decode_song_locator(seed_token)
+    except SongLocatorFormatError:
+        msg = "Seed descriptor resolved to a malformed SongLocator token."
+        raise ValueError(msg) from None
+    seed_identity = SongIdentity(
+        library=LibraryIdentity(library_uuid=seed_payload.library_uuid),
+        normalized_path=seed_payload.path,
+    )
 
-    logger.debug("Seed descriptor resolved to file_id %s", seed_file_id)
+    logger.debug("Seed descriptor resolved to locator %s", seed_identity.normalized_path)
 
-    # 2. Get seed vector from the per-backbone cold tier.
-    seed_song_vector = get_cold_track_vector(db, seed_file_id, backbone_id)
+    # 2. Get seed vector from the per-backbone cold tier via the typed ML boundary.
+    seed_song_vector = db.ml.get_song_vector(backbone_id, seed_identity)
     if seed_song_vector is None:
         msg = (
-            f"No vector embedding found for file '{seed_file_id}' "
+            f"No vector embedding found for file '{seed_identity.normalized_path}' "
             f"with backbone '{backbone_id}'. Ensure ML processing has completed."
         )
         raise ValueError(msg)
 
-    seed_identity = seed_song_vector.song
     seed_vector = seed_song_vector.vector
     logger.debug("Seed vector retrieved, dim=%d", len(seed_vector))
 
@@ -129,27 +120,13 @@ def find_similar_tracks(
     if not retained:
         return []
 
-    # 4. Enrich with metadata (adapt identity -> file id at this boundary).
-    retained = retained[:count]
-    enriched: list[tuple[VectorMatch, int]] = []
-    for match in retained:
-        file_id = _reverse_file_id(db, match)
-        if file_id is not None:
-            enriched.append((match, file_id))
-
-    if not enriched:
-        return []
-
-    enrichment_song_ids = [file_id for _, file_id in enriched]
-    file_docs = get_songs_by_ids_with_tags(db, enrichment_song_ids)
-    file_docs_by_id: dict[int, dict] = {doc["id"]: doc for doc in file_docs}
-
-    # 5. Build result list (direct clamped score from the typed match).
+    # 4. Enrich with metadata by resolving each match's natural SongIdentity
+    # through the shared descriptor builder. No integer file id is introduced.
     output: list[SimilarTrackResult] = []
-    for match, file_id in enriched:
-        doc = file_docs_by_id.get(file_id, {})
-        descriptor = build_track_descriptor(doc)
-
+    for match in retained[:count]:
+        descriptor = descriptor_for_locator(db, match.song)
+        if descriptor is None:
+            continue
         output.append(
             SimilarTrackResult(
                 title=descriptor["title"],
@@ -169,7 +146,7 @@ def find_similar_tracks(
 
     logger.info(
         "find_similar_tracks: seed=%s, requested=%d, returned=%d",
-        seed_file_id,
+        seed_identity.normalized_path,
         count,
         len(output),
     )

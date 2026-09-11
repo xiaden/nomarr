@@ -11,7 +11,7 @@ from nomarr.helpers.dataclasses.song_tag_dataclass import TagRef
 from nomarr.helpers.logging_helper import sanitize_exception_message
 from nomarr.helpers.tag_handle_codec import TagHandleError, decode_tag_handle, encode_tag_handle
 from nomarr.interfaces.api.auth import verify_session
-from nomarr.interfaces.api.id_codec import decode_library_name, decode_path_id
+from nomarr.interfaces.api.id_codec import decode_library_name, decode_song_locator_or_400
 from nomarr.interfaces.api.web.dependencies import get_library_service, get_tagging_service
 from nomarr.services.domain.library_svc import LibraryService
 from nomarr.services.domain.tagging_svc import (
@@ -348,10 +348,10 @@ async def update_file_tags(
 ) -> UpdateFileTagsResponse:
     """Replace all tags for a file+name with new values."""
     # Boundary validation gate mirroring songs_if GET /file/{file_id}/tag: reject
-    # non-numeric IDs with 400 before reaching the service. The response model's
-    # ``file_id`` is a string, so the validated (digit-string) ID is forwarded to the
-    # service, which echoes it verbatim into the response.
-    decode_path_id(file_id)
+    # malformed/non-canonical SongLocator tokens with 400 before reaching the
+    # service. The opaque token is forwarded to the service, which echoes it
+    # verbatim into the response.
+    decode_song_locator_or_400(file_id)
     try:
         result = await asyncio.to_thread(
             tagging_service.update_song_tags,

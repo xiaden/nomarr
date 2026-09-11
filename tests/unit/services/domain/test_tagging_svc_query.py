@@ -54,7 +54,7 @@ def _song(song_id: int) -> Song:
 
 def _song_identity(song_id: int) -> SongIdentity:
     return SongIdentity(
-        library=LibraryIdentity(name="Music", root_path="/music"),
+        library=LibraryIdentity(library_uuid="6313b0d3-d270-57a8-9e0d-21e8255107e3", name="Music", root_path="/music"),
         normalized_path=f"music/{song_id}.flac",
     )
 

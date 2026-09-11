@@ -7,28 +7,22 @@ from typing import TYPE_CHECKING, Any
 
 from nomarr.components.library.library_song_state_comp import transition_song_state
 from nomarr.helpers.constants.file_states import STATE_NOT_PROCESSED, STATE_PROCESSED
-from nomarr.helpers.dataclasses.ml_output_stream_dataclass import OutputStream
 from nomarr.helpers.dto.ml_dto import LoadedOutputStream
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dataclasses.ml_output_stream_dataclass import OutputStream
+    from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
     from nomarr.persistence.db import Database
 
 
 logger = logging.getLogger(__name__)
 
-# Compatibility alias keeps the read-side component vocabulary stable while the
-# domain value object becomes the sole stream contract across persistence
-# boundaries. Caller-side stream write normalization/deduplication was removed
-# (build_output_stream_payloads / _normalize_streams) when the discovery worker
-# stopped performing it — persistence owns last-wins stream deduplication now.
-StreamRecord = OutputStream
 
-
-def fetch_output_streams(db: Database, song_id: int) -> list[StreamRecord]:
+def fetch_output_streams(db: Database, song: SongIdentity) -> list[OutputStream]:
     """Fetch all canonical output streams linked to one song."""
     # Concurrent persistence-facade work owns row-to-domain mapping; this
     # component consumes only the resulting domain objects.
-    records = db.ml.list_output_streams_for_song(song_id)
+    records = db.ml.list_output_streams_for_song(song)
     return sorted(
         records,
         key=lambda record: (
@@ -89,20 +83,20 @@ def resolve_output_stream_lookup(
 
 def load_output_streams_for_song(
     db: Database,
-    song_id: int,
+    song: SongIdentity,
     file_path: str,
     head_infos: list[Any],
     *,
     output_lookup: dict[str, tuple[str, str]] | None = None,
 ) -> list[LoadedOutputStream]:
     """Load canonical streams for one song and enrich them with discovered head metadata."""
-    stream_records = fetch_output_streams(db, song_id)
+    stream_records = fetch_output_streams(db, song)
     if not stream_records:
         logger.warning(
             "[output_stream_store] No canonical output streams found for %s, transitioning to not_processed for re-inference",
             file_path,
         )
-        transition_song_state(db, [song_id], STATE_PROCESSED, STATE_NOT_PROCESSED)
+        transition_song_state(db, [song], STATE_PROCESSED, STATE_NOT_PROCESSED)
         return []
 
     lookup = resolve_output_stream_lookup(db, head_infos, cached_lookup=output_lookup)
@@ -138,7 +132,7 @@ def load_output_streams_for_song(
             file_path,
             unmatched_output_ids,
         )
-        transition_song_state(db, [song_id], STATE_PROCESSED, STATE_NOT_PROCESSED)
+        transition_song_state(db, [song], STATE_PROCESSED, STATE_NOT_PROCESSED)
         return []
 
     logger.debug(

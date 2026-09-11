@@ -69,7 +69,11 @@ def _tag_assignment_count(session: Session, song_id: int) -> int:
 def _source_identity(library: Library, normalized_path: str) -> SongIdentity:
     """Build a source-locator ``SongIdentity`` from a domain ``Library`` value."""
     return SongIdentity(
-        library=LibraryIdentity(name=library.name, root_path=library.root_path),
+        library=LibraryIdentity(
+            library_uuid=library.library_uuid or "00000000-0000-0000-0000-000000000000",
+            name=library.name,
+            root_path=library.root_path,
+        ),
         normalized_path=normalized_path,
     )
 

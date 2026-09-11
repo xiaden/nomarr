@@ -521,16 +521,10 @@ class AppRepository:
     # higher layers.
 
     def _resolve_song_id(self, song: SongIdentity) -> int | None:
-        """Resolve a natural ``SongIdentity`` to its storage song id."""
+        """Resolve a UUID ``SongIdentity`` locator to its storage song id."""
         if self._library_repo is None or self._song_repo is None:
             return None
-        root_path = song.library.root_path
-        if root_path is None:
-            return None
-        library_row = self._library_repo.get_library_by_natural_key(
-            song.library.name,
-            root_path,
-        )
+        library_row = self._library_repo.get_library_by_uuid(song.library.library_uuid)
         if library_row is None:
             return None
         row = self._song_repo.get_song_by_normalized_path(library_row["id"], song.normalized_path)
@@ -554,7 +548,11 @@ class AppRepository:
         if library_row is None:
             return None
         return SongIdentity(
-            library=LibraryIdentity(name=library_row["name"], root_path=library_row["path"]),
+            library=LibraryIdentity(
+                library_uuid=library_row["library_uuid"],
+                name=library_row["name"],
+                root_path=library_row["path"],
+            ),
             normalized_path=row["normalized_path"],
         )
 

@@ -29,7 +29,7 @@ PERSISTENCE_FIELDS = (
 )
 FACTORIES = ("from_db_doc", "from_row", "from_record", "to_dict")
 
-_LIBRARY = LibraryIdentity(name="music")
+_LIBRARY = LibraryIdentity(library_uuid="7f836c35-bd4c-59fd-9444-eac8e507434c", name="music")
 _SONG = SongIdentity(library=_LIBRARY, normalized_path="/music/a.mp3")
 
 

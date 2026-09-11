@@ -14,6 +14,7 @@ class LibraryRow(TypedDict):
     """Single row from the ``libraries`` table."""
 
     id: int
+    library_uuid: str
     name: str
     path: str
     library_type: str

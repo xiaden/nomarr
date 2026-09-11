@@ -1,13 +1,12 @@
 """Personal playlist builders from taste profiles and play history.
 
-Each public function builds one playlist type via ANN search against the
-cold vector collection.  Search results arrive as typed
-:class:`~nomarr.helpers.dataclasses.vector_dataclass.VectorMatch` values
-carrying a natural
-:class:`~nomarr.helpers.dataclasses.song_command_dataclass.SongIdentity`;
-each match is adapted back to its transport file handle through authoritative
-``db.library`` at this component boundary.  Builders return ``file_id`` strings;
-nd_id resolution is the interface layer's responsibility.
+Each public function builds one playlist type via ANN search against the cold
+vector collection. Search results arrive as typed
+:class:`~nomarr.helpers.dataclasses.vector_dataclass.VectorMatch` values carrying a
+UUID-bearing :class:`~nomarr.helpers.dataclasses.song_command_dataclass.SongIdentity`
+locator. Builders emit the opaque ``nom1`` SongLocator token for each selected
+track (never a generated integer ``songs.id``/``file_id``); nd_id resolution is the
+interface layer's responsibility.
 """
 
 from __future__ import annotations
@@ -19,19 +18,17 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from nomarr.components.tagging.tag_query_comp import (
-    get_distinct_tag_values_for_files,
-    get_tag_values_grouped_by_file,
-)
-from nomarr.helpers.dataclasses.library_dataclass import Library
+from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
 from nomarr.helpers.dto.navidrome_dto import (
     NavidromePersonalPlaylistContext,
     NavidromePersonalPlaylistEntry,
 )
+from nomarr.helpers.song_locator_codec import SongLocatorFormatError, decode_song_locator, encode_song_locator
 from nomarr.helpers.time_helper import now_ms
 
 if TYPE_CHECKING:
-    from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
+    from collections.abc import Sequence
+
     from nomarr.helpers.dataclasses.vector_dataclass import VectorMatch
     from nomarr.persistence.db import Database
 
@@ -42,24 +39,43 @@ _MAX_GENRE_PLAYLISTS_CAP: int = 25
 _MS_PER_DAY: float = 86_400_000.0
 
 
-# ------------------------------------------------------------------
-# Shared ANN search helper
-# ------------------------------------------------------------------
-
-
-def _match_to_file_id(db: Database, match: VectorMatch) -> int | None:
-    """Adapt a result's natural ``SongIdentity`` back to its transport file id.
-
-    Authoritative reverse lookup through ``db.library`` (same pattern as the
-    vector search service and similar-track workflow): locate the song by its
-    owning library's natural ``(name, root_path)`` key plus ``normalized_path``.
-    No integer storage id enters ``MlDb``.
-    """
-    song_obj = db.library.get_song_by_normalized_path(
-        match.song.normalized_path,
-        Library(name=match.song.library.name, root_path=match.song.library.root_path or ""),
+def _resolve_token(db: Database, token: str) -> SongIdentity | None:
+    """Resolve an opaque locator token to its UUID-bearing ``SongIdentity``."""
+    try:
+        payload = decode_song_locator(token)
+    except SongLocatorFormatError:
+        return None
+    library = db.library.get_library_by_uuid(payload.library_uuid)
+    if library is None:
+        return None
+    identity = LibraryIdentity(
+        library_uuid=library.library_uuid or payload.library_uuid,
+        name=library.name,
+        root_path=library.root_path,
     )
-    return song_obj.song_id if song_obj is not None else None
+    return SongIdentity(library=identity, normalized_path=payload.path)
+
+
+def _match_to_token(db: Database, match: VectorMatch) -> str | None:
+    """Validate an ANN match's locator and return its opaque token, else ``None``."""
+    if db.library.get_song(match.song) is None:
+        return None
+    return encode_song_locator(match.song)
+
+
+def _tag_values_for_locators(
+    db: Database,
+    locators: Sequence[SongIdentity],
+    name: str,
+) -> dict[SongIdentity, set[str]]:
+    """Batch-read one tag's values per locator through the authoritative facade."""
+    if not locators:
+        return {}
+    assignments = db.library.list_song_tags_for_songs(list(locators))
+    return {
+        locator: {str(assignment.value) for assignment in assigns if assignment.name == name}
+        for locator, assigns in assignments.items()
+    }
 
 
 def _ann_search_cold(
@@ -87,10 +103,7 @@ def _search_all_clusters(
     ctx: NavidromePersonalPlaylistContext,
     fetch_multiplier: int,
 ) -> list[VectorMatch] | None:
-    """Run ANN search across every taste cluster and combine results deduplicated.
-    Returns ``None`` only when every cluster search returned ``None`` (empty collection).
-    Returns ``[]`` when searches ran but produced zero results.
-    """
+    """Run ANN search across every taste cluster and combine results deduplicated."""
     seen: set[SongIdentity] = set()
     all_results: list[VectorMatch] = []
     any_searched = False
@@ -118,12 +131,8 @@ def build_familiar_playlist(
     db: Database,
     ctx: NavidromePersonalPlaylistContext,
 ) -> list[NavidromePersonalPlaylistEntry]:
-    """Build a Familiar playlist: ANN search biased toward played tracks.
-
-    Only tracks the user has already played that appear in ANN results
-    are included, preserving ANN ranking order.
-    """
-    played = {int(fid) for fid in ctx["played_file_ids"]}
+    """Build a Familiar playlist: ANN search biased toward played tracks."""
+    played = set(ctx["played_file_ids"])
     if not played:
         return []
 
@@ -135,9 +144,9 @@ def build_familiar_playlist(
     for match in raw_results:
         if len(file_ids) >= ctx["max_songs"]:
             break
-        fid = _match_to_file_id(db, match)
-        if fid is not None and fid in played:
-            file_ids.append(str(fid))
+        token = _match_to_token(db, match)
+        if token is not None and token in played:
+            file_ids.append(token)
 
     return [
         NavidromePersonalPlaylistEntry(
@@ -153,7 +162,7 @@ def build_discovery_playlist(
     ctx: NavidromePersonalPlaylistContext,
 ) -> list[NavidromePersonalPlaylistEntry]:
     """Build a Discovery playlist: ANN search excluding played tracks."""
-    played = {int(fid) for fid in ctx["played_file_ids"]}
+    played = set(ctx["played_file_ids"])
 
     raw_results = _search_all_clusters(db, ctx, fetch_multiplier=2)
     if raw_results is None:
@@ -163,9 +172,9 @@ def build_discovery_playlist(
     for match in raw_results:
         if len(file_ids) >= ctx["max_songs"]:
             break
-        fid = _match_to_file_id(db, match)
-        if fid is not None and fid not in played:
-            file_ids.append(str(fid))
+        token = _match_to_token(db, match)
+        if token is not None and token not in played:
+            file_ids.append(token)
 
     return [
         NavidromePersonalPlaylistEntry(
@@ -180,16 +189,13 @@ def build_hidden_gems_playlist(
     db: Database,
     ctx: NavidromePersonalPlaylistContext,
 ) -> list[NavidromePersonalPlaylistEntry]:
-    """Build a Hidden Gems playlist: ANN search excluding known-artist tracks.
-
-    Filters out tracks by artists the user has already listened to,
-    surfacing music from unfamiliar artists near the taste centroid.
-    """
-    played = {int(fid) for fid in ctx["played_file_ids"]}
-
-    known_artists: set[str] = set(
-        get_distinct_tag_values_for_files(db, [int(fid) for fid in ctx["played_file_ids"]], "artist")
-    )
+    """Build a Hidden Gems playlist: ANN search excluding known-artist tracks."""
+    played_locators = [
+        loc for loc in (_resolve_token(db, token) for token in ctx["played_file_ids"]) if loc is not None
+    ]
+    known_artists: set[str] = set()
+    for values in _tag_values_for_locators(db, played_locators, "artist").values():
+        known_artists |= values
     if not known_artists:
         logger.debug("[navidrome] No known artists for hidden gems, falling back to discovery-style")
 
@@ -197,21 +203,21 @@ def build_hidden_gems_playlist(
     if raw_results is None:
         return []
 
-    # Adapt results to file handles and exclude played tracks.
-    candidates: list[tuple[VectorMatch, int]] = []
+    candidates: list[tuple[VectorMatch, str]] = []
     for match in raw_results:
-        fid = _match_to_file_id(db, match)
-        if fid is not None and fid not in played:
-            candidates.append((match, fid))
+        token = _match_to_token(db, match)
+        if token is not None:
+            candidates.append((match, token))
 
     if known_artists:
-        candidate_file_ids = [fid for _, fid in candidates]
-        candidate_artists = get_tag_values_grouped_by_file(db, candidate_file_ids, "artist")
+        candidate_artists = _tag_values_for_locators(db, [match.song for match, _ in candidates], "artist")
         candidates = [
-            (match, fid) for match, fid in candidates if not (candidate_artists.get(fid, set()) & known_artists)
+            (match, token)
+            for match, token in candidates
+            if not (candidate_artists.get(match.song, set()) & known_artists)
         ]
 
-    file_ids = [str(fid) for _, fid in candidates][: ctx["max_songs"]]
+    file_ids = [token for _, token in candidates][: ctx["max_songs"]]
 
     return [
         NavidromePersonalPlaylistEntry(
@@ -226,21 +232,16 @@ def build_universal_playlist(
     db: Database,
     ctx: NavidromePersonalPlaylistContext,
 ) -> list[NavidromePersonalPlaylistEntry]:
-    """Build a diversified playlist via ANN search with stride sampling.
-
-    Spreads selections across the result set for variety instead of
-    taking the top-N results.
-    """
+    """Build a diversified playlist via ANN search with stride sampling."""
     raw_results = _search_all_clusters(db, ctx, fetch_multiplier=3)
     if raw_results is None:
         return []
 
-    # Adapt matches to transport file ids (un-mappable matches are dropped).
     adapted_file_ids: list[str] = []
     for match in raw_results:
-        fid = _match_to_file_id(db, match)
-        if fid is not None:
-            adapted_file_ids.append(str(fid))
+        token = _match_to_token(db, match)
+        if token is not None:
+            adapted_file_ids.append(token)
 
     file_ids: list[str] = []
     if adapted_file_ids:
@@ -262,14 +263,7 @@ def build_genre_playlists(
     db: Database,
     ctx: NavidromePersonalPlaylistContext,
 ) -> list[NavidromePersonalPlaylistEntry]:
-    """Build per-genre playlists using per-genre recency-weighted centroids.
-
-    For each genre in the user's play history, computes a genre-specific
-    centroid from played tracks weighted by recency, then runs an ANN
-    search.  Genre filtering is not supported in PostgreSQL yet, so the
-    search is performed without it.  Genres with fewer than
-    :data:`_GENRE_MIN_SONGS` results are skipped.
-    """
+    """Build per-genre playlists using per-genre recency-weighted centroids."""
     played_tracks = ctx["played_tracks"]
     if not played_tracks:
         return []
@@ -280,26 +274,25 @@ def build_genre_playlists(
     if counts.cold_count == 0:
         return []
 
-    # Resolve each played file handle to its natural SongIdentity via
-    # db.library and read the cold-tier stored vector as a SongVector via
-    # db.ml. Only authoritative domain values are consumed; no raw song_id /
-    # embedding row access remains.
-    vector_map: dict[int, list[float]] = {}
-    for fid_str in played_file_ids:
-        fid = int(fid_str)
-        if fid in vector_map:
+    # Resolve each opaque played token to its authoritative SongIdentity and read
+    # the cold-tier stored vector via db.ml. No raw song_id / embedding row access.
+    token_to_song: dict[str, SongIdentity] = {}
+    vector_map: dict[str, list[float]] = {}
+    for token in played_file_ids:
+        if token in vector_map:
             continue
-        song = db.library.resolve_song_identity(fid)
-        if song is not None:
-            song_vector = db.ml.get_song_vector(ctx["backbone_id"], song)
-            if song_vector is not None:
-                vector_map[fid] = list(song_vector.vector)
+        song = _resolve_token(db, token)
+        if song is None:
+            continue
+        song_vector = db.ml.get_song_vector(ctx["backbone_id"], song)
+        if song_vector is not None:
+            token_to_song[token] = song
+            vector_map[token] = list(song_vector.vector)
 
     if not vector_map:
         return []
 
-    # Fetch genre tags for played tracks in one batch
-    file_genres = get_tag_values_grouped_by_file(db, [int(fid) for fid in played_file_ids], "genre")
+    file_genres = _tag_values_for_locators(db, list(token_to_song.values()), "genre")
 
     now_ms_val = now_ms().value
     half_life = ctx["half_life_days"]
@@ -312,24 +305,23 @@ def build_genre_playlists(
         if pid is None or pid not in vector_map:
             continue
         vec = vector_map[pid]
+        song = token_to_song[pid]
 
         last_ms = play["last_played"]
         days_since = (now_ms_val - last_ms) / _MS_PER_DAY if last_ms is not None else fallback_days
         weight = math.log(1 + play["playcount"]) * math.exp(-decay_lambda * days_since)
 
-        for genre in file_genres.get(pid, set()):
+        for genre in file_genres.get(song, set()):
             genre_data.setdefault(genre, []).append((weight, vec))
 
     if not genre_data:
         logger.debug("[navidrome] No genre affinities found for user; skipping genre playlists")
         return []
 
-    # Sort genres by total affinity weight, take top N
     effective_max = min(ctx["max_genre_playlists"], _MAX_GENRE_PLAYLISTS_CAP)
     genre_affinity = {g: sum(w for w, _ in wv) for g, wv in genre_data.items()}
     top_genres = sorted(genre_affinity, key=lambda g: genre_affinity[g], reverse=True)[:effective_max]
 
-    # Compute L2-normalized per-genre centroid for each top genre
     genre_centroids: dict[str, list[float]] = {}
     for genre in top_genres:
         wv_pairs = genre_data[genre]
@@ -347,7 +339,6 @@ def build_genre_playlists(
     for genre in top_genres:
         genre_centroid = genre_centroids[genre]
 
-        # Genre filtering is not supported in PostgreSQL yet; search without it.
         raw_results = db.ml.search_similar_vectors(
             ctx["backbone_id"],
             genre_centroid,
@@ -363,14 +354,13 @@ def build_genre_playlists(
             )
             continue
 
-        # Adapt typed matches back to transport file handles (un-mappable dropped).
         file_ids: list[str] = []
         for match in raw_results:
             if len(file_ids) >= ctx["max_songs"]:
                 break
-            match_fid = _match_to_file_id(db, match)
-            if match_fid is not None:
-                file_ids.append(str(match_fid))
+            match_token = _match_to_token(db, match)
+            if match_token is not None:
+                file_ids.append(match_token)
 
         playlists.append(
             NavidromePersonalPlaylistEntry(
@@ -390,17 +380,14 @@ def _interleave_per_cluster(
 ) -> list[str]:
     """Interleave items from clusters proportionally by weight.
 
-    Uses largest-remainder (Hamilton) allocation for proportional quotas,
-    then round-robins in descending weight order up to each cluster's quota.
-
     Args:
         results: Mapping from cluster key to list of result dicts (each
-            containing a ``"file_id"`` or ``"id"`` key).
+            containing a ``"file_id"`` or ``"id"`` key carrying an opaque token).
         weights: Mapping from cluster key to relative weight.
         target_size: Maximum number of items to return.
 
     Returns:
-        Flat list of ``file_id`` strings interleaved from each cluster.
+        Flat list of opaque locator-token strings interleaved from each cluster.
 
     """
     if target_size <= 0:
@@ -410,7 +397,6 @@ def _interleave_per_cluster(
 
     total_weight = sum(weights.values())
     if total_weight <= 0:
-        # Even split across all keys (sorted alphabetically for determinism)
         even_keys = sorted(results)
         if not even_keys:
             return []
@@ -418,13 +404,11 @@ def _interleave_per_cluster(
         remainder = target_size % len(even_keys)
         quotas = {k: base + (1 if i < remainder else 0) for i, k in enumerate(even_keys)}
     else:
-        # Largest remainder (Hamilton) proportional allocation
         exact_quotas = {key: target_size * weights.get(key, 0) / total_weight for key in results}
         quotas = {key: int(exact) for key, exact in exact_quotas.items()}
         allocated = sum(quotas.values())
         remaining = target_size - allocated
         if remaining > 0:
-            # Sort by fractional part descending, give leftover slots
             keys_by_frac = sorted(
                 quotas,
                 key=lambda k: exact_quotas[k] - int(exact_quotas[k]),
@@ -433,7 +417,6 @@ def _interleave_per_cluster(
             for i in range(remaining):
                 quotas[keys_by_frac[i]] += 1
 
-    # Extract file IDs and build ready queues
     clusters: dict[str, list[str]] = {}
     for key, items in results.items():
         if not items:
@@ -449,7 +432,6 @@ def _interleave_per_cluster(
     if all(len(v) == 0 for v in clusters.values()):
         return []
 
-    # Proportional round-robin — each cluster yields at most its quota
     output: list[str] = []
     taken: dict[str, int] = dict.fromkeys(clusters, 0)
     indices: dict[str, int] = dict.fromkeys(clusters, 0)

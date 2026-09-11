@@ -30,6 +30,7 @@ class TestLibraryRow:
         """LibraryRow should be creatable with all required fields."""
         row = LibraryRow(
             id=1,
+            library_uuid="00000000-0000-0000-0000-000000000001",
             name="Test Library",
             path="/music/test",
             library_type="music",

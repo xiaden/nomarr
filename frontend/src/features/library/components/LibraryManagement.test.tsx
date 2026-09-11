@@ -69,6 +69,7 @@ vi.mock("@mui/x-charts/PieChart", () => ({
 
 const libraryFixture: Library = {
   library_id: "library name",
+  libraryUuid: "library-uuid-1",
   name: "library name",
   rootPath: "/music/library-name",
   isEnabled: true,

@@ -26,6 +26,7 @@ from nomarr.components.library.library_records_comp import (
     update_library_record,
 )
 from nomarr.components.library.update_library_metadata_comp import UpdateLibraryMetadataComp
+from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
 from nomarr.helpers.exceptions import DuplicateEntityError
 
 from .task_ids import library_task_id, write_tags_task_id
@@ -70,6 +71,59 @@ class LibraryAdminMixin:
 
         """
         return component_get_library_by_name(self.db, name)
+
+    def get_library_by_uuid(self, library_uuid: str) -> Library | None:
+        """Resolve a library by its immutable ``library_uuid`` identity (ADR-049).
+
+        This is the owning-service helper the interface layer uses to resolve a
+        decoded SongLocator ``library_uuid`` to its complete ``Library`` (current
+        name/root_path metadata). It never interprets the UUID as an integer
+        ``libraries.id``.
+
+        Args:
+            library_uuid: Concrete ``libraries.library_uuid`` value.
+
+        Returns:
+            The matching domain ``Library``, or ``None`` when absent.
+
+        """
+        return self.db.library.get_library_by_uuid(library_uuid)
+
+    def resolve_song_identity(self, library_uuid: str, normalized_path: str) -> SongIdentity:
+        """Build a UUID-bearing ``SongIdentity`` locator from a decoded token.
+
+        Reconstructs the complete ``LibraryIdentity`` from the current persisted
+        library row (name/root_path are compare=False/hash=False metadata) and
+        returns the request-scoped locator. Interface routes call this once after
+        :func:`decode_song_locator_or_400`; a missing library is a 404 at the
+        route, not a format error.
+
+        Args:
+            library_uuid: Concrete ``libraries.library_uuid`` value.
+            normalized_path: Canonical library-relative normalized path.
+
+        Returns:
+            The UUID-bearing ``SongIdentity`` locator.
+
+        Raises:
+            ValueError: If no library exists with ``library_uuid`` or no song
+                exists at ``normalized_path`` within it.
+
+        """
+        library = self.db.library.get_library_by_uuid(library_uuid)
+        if library is None:
+            msg = f"Unknown library_uuid: {library_uuid}"
+            raise ValueError(msg)
+        identity = LibraryIdentity(
+            library_uuid=library.library_uuid or library_uuid,
+            name=library.name,
+            root_path=library.root_path,
+        )
+        locator = SongIdentity(library=identity, normalized_path=normalized_path)
+        if self.db.library.get_song(locator) is None:
+            msg = f"Unknown song path for library_uuid: {library_uuid}"
+            raise ValueError(msg)
+        return locator
 
     def _get_library_or_error(self, library: Library) -> Library:
         """Re-fetch a library by its natural identity or raise an error.

@@ -151,6 +151,14 @@ class LibraryDb:
         """Get a library by its name."""
         return self._regions.get_library_by_name(name)
 
+    def get_library_by_uuid(self, library_uuid: str) -> Library | None:
+        """Get a library by its immutable ``library_uuid`` identity (ADR-049).
+
+        The persistence-side anchor for SongLocator library resolution; integer
+        ``libraries.id`` stays private to this layer.
+        """
+        return self._regions.get_library_by_uuid(library_uuid)
+
     def list_libraries(self, *, enabled_only: bool = False) -> list[Library]:
         """List all libraries, optionally filtering to enabled only."""
         return self._regions.list_libraries(enabled_only=enabled_only)
@@ -288,6 +296,12 @@ class LibraryDb:
         """
         return self._songs.move_library_song(command)
 
+    def update_song_calibration_hash(self, song: SongIdentity, calibration_hash: str) -> bool:
+        return self._songs.update_song_calibration_hash(song, calibration_hash)
+
+    def update_song_calibration_hashes(self, updates: Sequence[tuple[SongIdentity, str]]) -> int:
+        return self._songs.update_song_calibration_hashes(updates)
+
     def update_library_song_modified_time(self, song_id: int, modified_time_ms: int) -> None:
         return self._songs.update_library_song_modified_time(song_id, modified_time_ms)
 
@@ -345,6 +359,10 @@ class LibraryDb:
 
     def list_orphaned_song_ids(self) -> list[int]:
         return self._songs.list_orphaned_song_ids()
+
+    def prune_orphaned_songs(self) -> int:
+        """Delete all songs whose owning library no longer exists; return count."""
+        return self._songs.prune_orphaned_songs()
 
     def truncate_songs(self) -> None:
         return self._songs.truncate_songs()

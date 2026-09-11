@@ -23,6 +23,10 @@ if TYPE_CHECKING:
     from sqlalchemy.engine import Row
     from sqlalchemy.orm import Session, scoped_session
 
+    from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
+    from nomarr.persistence.database.library_repo import LibraryRepository
+    from nomarr.persistence.database.song_repo import SongRepository
+
 _T_OUTPUT = cast("Table", MlModelOutput.__table__)
 _T_STREAM = cast("Table", MlOutputStream.__table__)
 
@@ -59,8 +63,26 @@ def _row_to_stream_record(row: Row[Any]) -> OutputStreamRecord:
 class OutputRepo:
     """Repository for the ``ml_model_outputs`` and ``ml_output_streams`` tables."""
 
-    def __init__(self, session: scoped_session[Session]) -> None:
+    def __init__(
+        self,
+        session: scoped_session[Session],
+        *,
+        library_repo: LibraryRepository | None = None,
+        song_repo: SongRepository | None = None,
+    ) -> None:
         self._session = session
+        self._library_repo = library_repo
+        self._song_repo = song_repo
+
+    def _resolve_song_id(self, song: SongIdentity) -> int | None:
+        """Resolve a semantic song locator to its private storage key."""
+        if self._library_repo is None or self._song_repo is None:
+            raise RuntimeError("OutputRepo identity resolvers are not wired")
+        library = self._library_repo.get_library_by_uuid(song.library.library_uuid)
+        if library is None:
+            return None
+        row = self._song_repo.get_song_by_normalized_path(int(library["id"]), song.normalized_path)
+        return int(row["id"]) if row is not None else None
 
     # ── model outputs ───────────────────────────────────────────
 
@@ -168,13 +190,20 @@ class OutputRepo:
             self._session.commit()
             return _row_to_stream_record(row)
 
-    def list_output_streams_for_song(self, song_id: int) -> list[OutputStreamRecord]:
-        """Return all canonical output streams for a given song."""
+    def list_output_streams_for_song(self, song: SongIdentity) -> list[OutputStreamRecord]:
+        """Return canonical streams for a semantic song locator.
+
+        Missing or stale locators are deterministic empty results. Ordering is
+        stable even when legacy rows have no output index.
+        """
+        song_id = self._resolve_song_id(song)
+        if song_id is None:
+            return []
         with map_persistence_exceptions():
             stmt = (
                 select(_T_STREAM)
                 .where(_T_STREAM.c.song_id == song_id)
-                .order_by(_T_STREAM.c.output_index, _T_STREAM.c.output_id)
+                .order_by(_T_STREAM.c.output_index.asc().nulls_last(), _T_STREAM.c.output_id)
             )
             result = self._session.execute(stmt)
             return [_row_to_stream_record(r) for r in result.all()]

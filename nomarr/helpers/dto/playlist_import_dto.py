@@ -34,7 +34,7 @@ class MatchedFileInfo:
     """
 
     path: str
-    file_id: int
+    file_id: str  # Opaque SongLocator token (never a generated integer id)
     title: str
     artist: str
     album: str | None = None

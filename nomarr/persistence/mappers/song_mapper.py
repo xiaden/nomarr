@@ -26,10 +26,11 @@ if TYPE_CHECKING:
 
     from nomarr.helpers.dto.repo_dto import SongRow
 
-# Keys on an identity-enriched song row that carry the owning library's natural
+# Keys on an identity-enriched song row that carry the owning library's
 # identity. A raw ``SongRow`` (which has only ``library_id``) cannot form a
-# :class:`SongIdentity` on its own; the owning library natural key is supplied
-# by library-scoped facade reads that already resolved it (persistence-internal).
+# :class:`SongIdentity` on its own; the owning library UUID is supplied by
+# library-scoped facade reads that already resolved it (persistence-internal).
+_LIBRARY_UUID_KEY = "library_uuid"
 _LIBRARY_NAME_KEY = "library_name"
 _ROOT_PATH_KEY = "root_path"
 
@@ -66,32 +67,34 @@ def song_row_to_domain(row: SongRow | Mapping[str, Any]) -> Song:
 
 
 def song_row_to_identity(row: SongRow | Mapping[str, Any]) -> SongIdentity:
-    """Map a library-scoped song row to its natural ``SongIdentity`` locator.
+    """Map a library-scoped song row to its UUID ``SongIdentity`` locator.
 
     A raw ``SongRow`` carries only the private ``library_id`` and its own
     ``normalized_path``; a :class:`SongIdentity` requires the owning library's
-    natural identity (name, optional root path). Library-scoped facade reads
-    resolve that library and pass an identity-enriched row carrying
-    ``library_name`` (and optionally ``root_path``); this mapper reads those
-    keys. When the library natural identity is absent the mapping fails
+    immutable ``library_uuid`` (ADR-049). Library-scoped facade reads resolve
+    that library and pass an identity-enriched row carrying ``library_uuid``
+    (plus optional ``library_name``/``root_path`` display metadata); this mapper
+    reads those keys. When the library UUID is absent the mapping fails
     deterministically with a clear ``ValueError`` — never a fabricated lookup,
     never a fallback, and never an exposed storage id. The locator returned is
     the mutable, request-scoped ``SongIdentity`` (ADR-048), not a stable id.
     """
-    library_name = row.get(_LIBRARY_NAME_KEY)
-    if not library_name or not str(library_name).strip():
+    library_uuid = row.get(_LIBRARY_UUID_KEY)
+    if not library_uuid or not str(library_uuid).strip():
         raise ValueError(
             "song_row_to_identity requires a library-scoped row carrying the owning "
-            f"library natural identity ({_LIBRARY_NAME_KEY!r}); a bare SongRow has no "
-            "library natural key and cannot form a SongIdentity"
+            f"library UUID ({_LIBRARY_UUID_KEY!r}); a bare SongRow has no "
+            "library identity and cannot form a SongIdentity"
         )
     normalized_path = row.get("normalized_path")
     if not normalized_path or not str(normalized_path).strip():
         raise ValueError("song_row_to_identity requires a non-blank normalized_path")
+    library_name = row.get(_LIBRARY_NAME_KEY)
     root_path = row.get(_ROOT_PATH_KEY)
     return SongIdentity(
         library=LibraryIdentity(
-            name=str(library_name),
+            library_uuid=str(library_uuid),
+            name=str(library_name) if library_name is not None else None,
             root_path=str(root_path) if root_path is not None else None,
         ),
         normalized_path=str(normalized_path),

@@ -32,7 +32,10 @@ from nomarr.persistence.database.ml_inference_repo import MlInferenceRepo
 
 pytestmark = pytest.mark.unit
 
-_SONG = SongIdentity(library=LibraryIdentity(name="lib", root_path="/lib"), normalized_path="a.mp3")
+_SONG = SongIdentity(
+    library=LibraryIdentity(library_uuid="2b202d70-24f8-5ecc-8ec9-be6a83da5fd7", name="lib", root_path="/lib"),
+    normalized_path="a.mp3",
+)
 
 
 def _repo() -> tuple[MlInferenceRepo, MagicMock]:
@@ -83,8 +86,6 @@ def test_typed_vector_commands_carry_no_per_command_backbone() -> None:
 # DatabaseStateError (never propagate raw to callers).
 # ---------------------------------------------------------------------------
 
-_SONG_NO_ROOT = SongIdentity(library=LibraryIdentity(name="lib"), normalized_path="a.mp3")
-
 
 def _real_resolve_repo() -> tuple[MlInferenceRepo, MagicMock]:
     """Build MlInferenceRepo over a fake session WITHOUT stubbing _resolve_song_id."""
@@ -109,17 +110,18 @@ def _replace(repo: MlInferenceRepo, song: SongIdentity) -> None:
 class TestResolveSongIdNegativeBranches:
     """Real _resolve_song_id branch coverage (QA Round-2 Finding 4)."""
 
-    def test_root_path_none_raises_entity_not_found_without_any_select(self) -> None:
+    def test_unknown_library_uuid_raises_entity_not_found(self) -> None:
         repo, session = _real_resolve_repo()
-        with pytest.raises(EntityNotFoundError, match="no root_path"):
-            _replace(repo, _SONG_NO_ROOT)
-        session.execute.assert_not_called()
+        # The library UUID does not resolve: SELECT libraries.id returns no row.
+        session.execute.side_effect = [_scalar(None)]
+        with pytest.raises(EntityNotFoundError, match=r"Library .* not found"):
+            _replace(repo, _SONG)
 
     def test_absent_library_raises_entity_not_found(self) -> None:
         repo, session = _real_resolve_repo()
         # First execute (SELECT libraries.id) returns no library row.
         session.execute.side_effect = [_scalar(None)]
-        with pytest.raises(EntityNotFoundError, match=r"Library 'lib' not found"):
+        with pytest.raises(EntityNotFoundError, match=r"Library .* not found"):
             _replace(repo, _SONG)
 
     def test_absent_song_raises_entity_not_found(self) -> None:

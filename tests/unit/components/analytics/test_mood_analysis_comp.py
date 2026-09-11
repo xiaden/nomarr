@@ -14,15 +14,15 @@ from nomarr.components.analytics.mood_analysis_comp import (
     get_mood_distribution_data,
 )
 from nomarr.helpers.dataclasses.library_dataclass import Library
+from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
 from nomarr.helpers.dataclasses.song_dataclass import Song
 from nomarr.helpers.dataclasses.song_tag_dataclass import TagRef
+
+_UUID = "123e4567-e89b-42d3-a456-426614174000"
 
 
 def _song(song_id: int, **overrides: object) -> Song:
     base: dict = {
-        "song_id": song_id,
-        "library_id": 1,
-        "folder_id": None,
         "path": f"/music/{song_id}.mp3",
         "normalized_path": f"{song_id}.mp3",
         "file_size": 100,
@@ -254,6 +254,8 @@ class TestGetTagEdgeRows:
     @pytest.mark.mocked
     def test_resolves_identities_and_searches_songs_per_value(self) -> None:
         mock_db = MagicMock()
+        library = Library(name="main", root_path="/music", library_uuid=_UUID)
+        songs_by_path = {"1.mp3": _song(1), "2.mp3": _song(2)}
         mock_db.library.list_tags.side_effect = [
             [
                 _identity("nom:mood-strict", "happy"),
@@ -267,12 +269,17 @@ class TestGetTagEdgeRows:
             return {"happy": (_song(1),), "calm": (_song(2),)}[str(identity.value)]
 
         mock_db.library.find_songs_with_tag.side_effect = find_songs_side_effect
+        mock_db.library.list_libraries.return_value = [library]
+        mock_db.library.list_songs_by_identity.side_effect = lambda locators: [
+            songs_by_path[locator.normalized_path] for locator in locators if locator.normalized_path in songs_by_path
+        ]
 
         result = _get_tag_edge_rows(mock_db, "nom:mood-strict")
 
+        identity = LibraryIdentity(library_uuid=_UUID)
         assert result == [
-            (1, "happy"),
-            (2, "calm"),
+            (SongIdentity(library=identity, normalized_path="1.mp3"), "happy"),
+            (SongIdentity(library=identity, normalized_path="2.mp3"), "calm"),
         ]
         mock_db.library.list_tags.assert_any_call(name="nom:mood-strict", limit=1000, offset=0)
         mock_db.library.find_songs_with_tag.assert_any_call(_identity("nom:mood-strict", "happy"), limit=None)

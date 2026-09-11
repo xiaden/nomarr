@@ -23,13 +23,14 @@ class TrackPlayData(TypedDict):
     Provided by the Navidrome plugin / API request boundary only — Nomarr
     never persists play data locally. ``nd_id`` is the Navidrome track
     identifier (optional when data comes from the plugin, which resolves
-    tracks to Nomarr ``file_id`` upstream).
+    tracks to an opaque SongLocator upstream).
 
-    ``file_id`` is None when no Nomarr library file link exists.
+    ``file_id`` is the opaque ``nom1`` SongLocator token, or None when no
+    Nomarr library track link exists. It never carries a generated integer ID.
     """
 
     nd_id: NotRequired[str]
-    file_id: int | None
+    file_id: str | None
     playcount: int
     last_played: int | None
 

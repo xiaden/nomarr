@@ -1,26 +1,44 @@
-"""Typed song-state-read candidate (typed state-read owner, Plan C P2).
+"""Semantic candidate returned by the typed song-state read (Plan H).
 
-``SongStateCandidate`` is the semantic value returned by the persistence
-``list_songs_with_state`` seam. It carries only semantic application values:
-the mutable request-scoped ``SongLocator`` (``SongIdentity``), the domain
-``Song``, and the set of state names the song is currently in. It never carries
-``SongRow``, raw joined dictionaries, assignment/edge rows, the generated
-``songs.id``, or an integer ``library_id`` (ADR-047/048; CONTRACTS §3/§5).
+``SongStateCandidate`` is the contract-owned value returned by the persistence
+``list_songs_with_state`` seam. It carries only the mutable, request-scoped
+``SongLocator`` (the existing ``SongIdentity``), semantic ``Song`` values, and
+state names. Persistence rows, raw joins, assignment rows, generated keys, and
+integer fallbacks are intentionally not representable here (ADR-048;
+CONTRACTS §3/§5).
 
-This is the minimal shape produced by the Plan C facade seam. The candidate
-*contract* (exact fields/consumers/invariants) is owned by Plan J, which ratifies
-or ratify-then-adjusts this shape after C; Plan K migrates integer state-read
-callers onto it only after C/J are green.
+Plan C owns the persistence implementation; Plan H owns this shape and its
+consumer/invariant contract; Plan I migrates state-read callers after this seam
+is green.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
-    from nomarr.helpers.dataclasses.song_dataclass import Song
+from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
+from nomarr.helpers.dataclasses.song_dataclass import Song
+
+
+@dataclass(frozen=True, slots=True)
+class IncompleteTagCandidate:
+    """Semantic written-song result missing expected ML tag heads."""
+
+    identity: SongIdentity
+    song: Song
+    matched_count: int
+    missing_count: int
+    missing_heads: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.identity, SongIdentity) or not isinstance(self.song, Song):
+            raise TypeError("IncompleteTagCandidate requires semantic song values")
+        if self.song.normalized_path != self.identity.normalized_path:
+            raise ValueError("IncompleteTagCandidate locator and song paths must agree")
+        if self.matched_count < 0 or self.missing_count < 1:
+            raise ValueError("IncompleteTagCandidate counts are invalid")
+        if not self.missing_heads or any(not head.strip() for head in self.missing_heads):
+            raise ValueError("IncompleteTagCandidate.missing_heads must be non-empty")
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,3 +57,18 @@ class SongStateCandidate:
     identity: SongIdentity
     song: Song
     states: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        """Reject malformed candidates at the semantic boundary."""
+        if not isinstance(self.identity, SongIdentity):
+            raise TypeError("SongStateCandidate.identity must be a SongIdentity")
+        if not isinstance(self.song, Song):
+            raise TypeError("SongStateCandidate.song must be a Song")
+        if self.song.normalized_path != self.identity.normalized_path:
+            raise ValueError("SongStateCandidate locator and song paths must agree")
+        if not isinstance(self.states, tuple):
+            raise TypeError("SongStateCandidate.states must be a tuple of state names")
+        if any(not isinstance(state, str) or not state.strip() for state in self.states):
+            raise ValueError("SongStateCandidate.states must contain non-blank state names")
+        if self.states != tuple(sorted(set(self.states))):
+            raise ValueError("SongStateCandidate.states must be sorted and unique")

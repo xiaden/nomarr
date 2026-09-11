@@ -120,7 +120,9 @@ class TestAddSongToLibraryRecordedRecoverableBoundary:
         lib = db.library.create_library(Library(name="FSLib", root_path="/tmp/fslib"))
         library_id = _library_storage_id(inference_session, "FSLib")
         try:
-            library_identity = LibraryIdentity(name="FSLib", root_path="/tmp/fslib")
+            library_identity = LibraryIdentity(
+                library_uuid="c06873e2-1470-5747-9f76-0dd31225ca66", name="FSLib", root_path="/tmp/fslib"
+            )
 
             def _cmd(path: str, normalized_path: str) -> SongUpsertInput:
                 return SongUpsertInput(
@@ -184,7 +186,9 @@ class TestRetryIdempotentAndNoResurrection:
         lib = db.library.create_library(Library(name="FSRetry", root_path="/tmp/fsretry"))
         library_id = _library_storage_id(inference_session, "FSRetry")
         try:
-            library_identity = LibraryIdentity(name="FSRetry", root_path="/tmp/fsretry")
+            library_identity = LibraryIdentity(
+                library_uuid="988e2d21-efc7-5a2f-9592-b994a2f6f725", name="FSRetry", root_path="/tmp/fsretry"
+            )
 
             def _cmd() -> SongUpsertInput:
                 return SongUpsertInput(
@@ -223,7 +227,9 @@ class TestRetryIdempotentAndNoResurrection:
         lib = db.library.create_library(Library(name="FSRemoval", root_path="/tmp/fsremoval"))
         library_id = _library_storage_id(inference_session, "FSRemoval")
         try:
-            library_identity = LibraryIdentity(name="FSRemoval", root_path="/tmp/fsremoval")
+            library_identity = LibraryIdentity(
+                library_uuid="d44d6b2c-691c-57df-92f5-d9a662d13b16", name="FSRemoval", root_path="/tmp/fsremoval"
+            )
 
             def _cmd() -> SongUpsertInput:
                 return SongUpsertInput(

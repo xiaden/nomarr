@@ -2,18 +2,29 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True, slots=True)
 class LibraryIdentity:
-    """Natural identity of a library used to scope an operation."""
+    """Immutable Nomarr-owned identity of a library used to scope an operation.
 
-    name: str
-    root_path: str | None = None
+    ``library_uuid`` is the sole equality/hash identity (ADR-049); it is the
+    concrete ``libraries.library_uuid`` value and is never the integer
+    ``libraries.id``. ``name`` and ``root_path`` are optional current
+    display/location metadata and are deliberately excluded from equality and
+    hashing, so a library rename or root-path change does not destabilize a
+    ``SongLocator``.
+    """
+
+    library_uuid: str
+    name: str | None = field(default=None, compare=False, hash=False)
+    root_path: str | None = field(default=None, compare=False, hash=False)
 
     def __post_init__(self) -> None:
-        if not self.name.strip():
+        if not self.library_uuid.strip():
+            raise ValueError("LibraryIdentity.library_uuid must not be blank")
+        if self.name is not None and not self.name.strip():
             raise ValueError("LibraryIdentity.name must not be blank")
         if self.root_path is not None and not self.root_path.strip():
             raise ValueError("LibraryIdentity.root_path must not be blank")

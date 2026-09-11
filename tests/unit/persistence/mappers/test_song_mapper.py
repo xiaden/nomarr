@@ -106,28 +106,32 @@ class TestSongRowToDomain:
 
 @pytest.mark.unit
 class TestSongRowToIdentity:
-    _LIBRARY = LibraryIdentity(name="TestLib", root_path="/music")
+    _LIBRARY = LibraryIdentity(library_uuid="de131b32-af5c-5a84-8874-58e3dc0e2dcd", name="TestLib", root_path="/music")
 
     def test_builds_locator_from_library_scoped_row(self) -> None:
-        identity = song_row_to_identity(_song_row(library_name="TestLib", root_path="/music"))
+        identity = song_row_to_identity(
+            _song_row(library_uuid="de131b32-af5c-5a84-8874-58e3dc0e2dcd", library_name="TestLib", root_path="/music")
+        )
         assert isinstance(identity, SongIdentity)
         assert identity.library == self._LIBRARY
         assert identity.normalized_path == "a.mp3"
 
     def test_root_path_optional(self) -> None:
-        identity = song_row_to_identity(_song_row(library_name="TestLib"))
-        assert identity.library == LibraryIdentity(name="TestLib")
+        identity = song_row_to_identity(
+            _song_row(library_uuid="08042357-9a97-5066-a9bf-bcab3b77ec8b", library_name="TestLib")
+        )
+        assert identity.library == LibraryIdentity(library_uuid="08042357-9a97-5066-a9bf-bcab3b77ec8b", name="TestLib")
         assert identity.normalized_path == "a.mp3"
 
-    def test_bare_song_row_without_library_natural_key_raises(self) -> None:
+    def test_bare_song_row_without_library_uuid_raises(self) -> None:
         # A raw SongRow carries only the private library_id; it cannot form a
         # SongIdentity. Failure is deterministic and leak-free.
-        with pytest.raises(ValueError, match="library natural identity"):
+        with pytest.raises(ValueError, match="library UUID"):
             song_row_to_identity(_song_row())
 
     def test_blank_normalized_path_raises(self) -> None:
         with pytest.raises(ValueError, match="normalized_path"):
-            song_row_to_identity(_song_row(normalized_path="  ", library_name="TestLib"))
+            song_row_to_identity(_song_row(normalized_path="  ", library_uuid="de131b32-af5c-5a84-8874-58e3dc0e2dcd"))
 
 
 # ---------------------------------------------------------------------------
@@ -206,7 +210,7 @@ class TestMapperIsolationNullAndMalformed:
         # An identity cannot be hydrated from a blank normalized_path; the mapper
         # fails loudly rather than inventing a fallback path.
         with pytest.raises(ValueError, match="normalized_path"):
-            song_row_to_identity(_song_row(normalized_path="", library_name="TestLib"))
+            song_row_to_identity(_song_row(normalized_path="", library_uuid="de131b32-af5c-5a84-8874-58e3dc0e2dcd"))
 
 
 @pytest.mark.unit
@@ -222,16 +226,24 @@ class TestMapperIsolationPathNormalization:
         # Two songs at the same physical path but different library roots (hence
         # different normalized paths) are different locators: the physical path
         # is not global Song identity (ADR-048).
-        loc_a = song_row_to_identity(_song_row(path="/m/a.mp3", normalized_path="a.mp3", library_name="LibA"))
-        loc_b = song_row_to_identity(_song_row(path="/m/a.mp3", normalized_path="other.mp3", library_name="LibA"))
+        loc_a = song_row_to_identity(
+            _song_row(path="/m/a.mp3", normalized_path="a.mp3", library_uuid="de131b32-af5c-5a84-8874-58e3dc0e2dcd")
+        )
+        loc_b = song_row_to_identity(
+            _song_row(path="/m/a.mp3", normalized_path="other.mp3", library_uuid="de131b32-af5c-5a84-8874-58e3dc0e2dcd")
+        )
         assert loc_a.library == loc_b.library
         assert loc_a.normalized_path != loc_b.normalized_path
 
     def test_same_normalized_path_in_different_libraries_is_distinct(self) -> None:
-        loc_a = song_row_to_identity(_song_row(normalized_path="a.mp3", library_name="LibA"))
-        loc_b = song_row_to_identity(_song_row(normalized_path="a.mp3", library_name="LibB"))
+        loc_a = song_row_to_identity(
+            _song_row(normalized_path="a.mp3", library_uuid="de131b32-af5c-5a84-8874-58e3dc0e2dcd")
+        )
+        loc_b = song_row_to_identity(
+            _song_row(normalized_path="a.mp3", library_uuid="b0da3722-b47b-50ca-abb5-21927059a411")
+        )
         assert loc_a != loc_b
-        assert loc_a.library.name != loc_b.library.name
+        assert loc_a.library.library_uuid != loc_b.library.library_uuid
 
 
 @pytest.mark.unit
@@ -243,7 +255,7 @@ class TestDeterministicFailureNoDisclosure:
         with pytest.raises(ValueError) as excinfo:
             song_row_to_identity(_song_row())
         message = str(excinfo.value)
-        assert "library_name" in message
+        assert "library_uuid" in message
         for disclosure in ("songs", "library_id", "folder_id", "song_id", " SELECT ", "foreign key", "FK "):
             assert disclosure.lower() not in message.lower()
 
@@ -260,7 +272,7 @@ class TestDeterministicFailureNoDisclosure:
 @pytest.mark.unit
 class TestSemanticHydrationSurvivesReload:
     def test_domain_values_and_locator_survive_reload(self) -> None:
-        row = _song_row(library_name="TestLib", root_path="/music")
+        row = _song_row(library_uuid="de131b32-af5c-5a84-8874-58e3dc0e2dcd", library_name="TestLib", root_path="/music")
         first_domain = song_row_to_domain(row)
         first_locator = song_row_to_identity(row)
         # The domain Song and its locator agree on the library-relative path.
@@ -268,17 +280,23 @@ class TestSemanticHydrationSurvivesReload:
         assert first_domain.path == "/music/a.mp3"
         # A reload of an identical row deterministically re-derives equal values
         # (no hidden state, no generated id, no mutation between reads).
-        reload_domain = song_row_to_domain(_song_row(library_name="TestLib", root_path="/music"))
-        reload_locator = song_row_to_identity(_song_row(library_name="TestLib", root_path="/music"))
+        reload_domain = song_row_to_domain(
+            _song_row(library_uuid="de131b32-af5c-5a84-8874-58e3dc0e2dcd", library_name="TestLib", root_path="/music")
+        )
+        reload_locator = song_row_to_identity(
+            _song_row(library_uuid="de131b32-af5c-5a84-8874-58e3dc0e2dcd", library_name="TestLib", root_path="/music")
+        )
         assert reload_domain == first_domain
         assert reload_locator == first_locator
         assert reload_domain.needs_tagging is True
-        assert reload_locator.library == LibraryIdentity(name="TestLib", root_path="/music")
+        assert reload_locator.library == LibraryIdentity(
+            library_uuid="de131b32-af5c-5a84-8874-58e3dc0e2dcd", name="TestLib", root_path="/music"
+        )
 
     def test_domain_and_locator_pair_without_storage_id(self) -> None:
         # The semantic read value (Song) plus the locator together fully describe
         # a reloaded song; neither carries songs.id/library_id/folder_id.
-        row = _song_row(library_name="TestLib")
+        row = _song_row(library_uuid="de131b32-af5c-5a84-8874-58e3dc0e2dcd", library_name="TestLib")
         song = song_row_to_domain(row)
         locator = song_row_to_identity(row)
         assert (song.normalized_path, song.path) == (locator.normalized_path, "/music/a.mp3")
@@ -288,20 +306,22 @@ class TestSemanticHydrationSurvivesReload:
 
     def test_missing_hydration_is_explicit_no_locator_fallback(self) -> None:
         # A semantic Song carries no library scope, so a locator cannot be derived
-        # from it alone. Hydrating the locator requires the owning library natural
-        # identity; its absence is an explicit deterministic error — not a lookup,
-        # integer fallback, or silently-unscoped default.
+        # from it alone. Hydrating the locator requires the owning library UUID;
+        # its absence is an explicit deterministic error — not a lookup, integer
+        # fallback, or silently-unscoped default.
         song = song_row_to_domain(_song_row())
         assert not hasattr(song, "library_id")
         assert not hasattr(song, "root_path")
         assert not hasattr(song, "from_row")
-        with pytest.raises(ValueError, match="library natural identity"):
+        with pytest.raises(ValueError, match="library UUID"):
             song_row_to_identity(_song_row())  # bare row, no library enrichment
 
     def test_no_locator_history_alias_tombstone_or_stable_id(self) -> None:
         # ADR-048 §2: no alias, tombstone, locator history, or stable-id fallback
         # exists on the locator or on the domain value.
-        locator = song_row_to_identity(_song_row(normalized_path="a.mp3", library_name="TestLib"))
+        locator = song_row_to_identity(
+            _song_row(normalized_path="a.mp3", library_uuid="de131b32-af5c-5a84-8874-58e3dc0e2dcd")
+        )
         song = song_row_to_domain(_song_row())
         for value in (song, locator):
             for forbidden in ("history", "alias", "tombstone", "stable_id", "previous", "song_id"):

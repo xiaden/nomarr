@@ -11,6 +11,7 @@ here.
 
 from __future__ import annotations
 
+import uuid
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -33,6 +34,7 @@ from nomarr.components.library.library_song_query_comp import (
     get_sample_normalized_path,
     get_song_modified_times,
     get_songs_by_chromaprint,
+    locators_for_carriers,
     get_songs_by_paths_bulk,
     get_songs_for_folder,
     get_songs_for_folders,
@@ -57,10 +59,10 @@ from nomarr.helpers.dataclasses.song_dataclass import Song
 from nomarr.helpers.dataclasses.song_state_candidate_dataclass import SongStateCandidate
 from nomarr.helpers.dataclasses.song_tag_dataclass import SongTagAssignment
 
-MUSIC = LibraryIdentity(name="music", root_path="/music")
-VAULT = LibraryIdentity(name="vault", root_path="/vault")
-MUSIC_LIB = Library(name="music", root_path="/music")
-VAULT_LIB = Library(name="vault", root_path="/vault")
+MUSIC = LibraryIdentity(library_uuid="2621ebfb-71ff-5168-a812-5342ca310e8c", name="music", root_path="/music")
+VAULT = LibraryIdentity(library_uuid="eb6bc02b-f253-5146-ae58-ece0bb02e9ee", name="vault", root_path="/vault")
+MUSIC_LIB = Library(library_uuid="2621ebfb-71ff-5168-a812-5342ca310e8c", name="music", root_path="/music")
+VAULT_LIB = Library(library_uuid="eb6bc02b-f253-5146-ae58-ece0bb02e9ee", name="vault", root_path="/vault")
 
 
 def _db() -> MagicMock:
@@ -109,8 +111,12 @@ def _tags_by_name(songs: list[Song]) -> dict[SongIdentity, tuple[SongTagAssignme
 
 
 def _candidate(song: Song, *, states: tuple[str, ...] = ("processed",)) -> SongStateCandidate:
+    name = song.path.split("/")[1] if len(song.path) > 1 else "music"
+    root_path = song.path.rsplit("/", 1)[0]
     lib = LibraryIdentity(
-        name=song.path.split("/")[1] if len(song.path) > 1 else "music", root_path=song.path.rsplit("/", 1)[0]
+        library_uuid=str(uuid.uuid5(uuid.NAMESPACE_URL, f"{name}\x00{root_path}")),
+        name=name,
+        root_path=root_path,
     )
     identity = SongIdentity(library=lib, normalized_path=song.normalized_path)
     return SongStateCandidate(identity=identity, song=song, states=states)

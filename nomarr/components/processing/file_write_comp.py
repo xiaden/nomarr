@@ -8,16 +8,16 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from nomarr.components.library.library_records_comp import get_library_record
-from nomarr.components.library.library_song_query_comp import get_song_by_id
 from nomarr.components.library.reconciliation_comp import release_claim
 from nomarr.components.tagging.tag_query_comp import get_song_tags
 from nomarr.components.tagging.tag_write_comp import set_song_tags, set_song_tags_batch
 
 if TYPE_CHECKING:
     from nomarr.helpers.dataclasses.library_dataclass import Library
+    from nomarr.helpers.dataclasses.song_dataclass import Song
     from nomarr.helpers.dataclasses.tags_dataclass import Tags
     from nomarr.persistence.db import Database
 
@@ -33,18 +33,21 @@ logger = logging.getLogger(__name__)
 def get_file_for_writing(
     db: Database,
     file_key: str,
-) -> tuple[int, str, dict[str, Any] | None]:
-    """Normalise *file_key* and fetch the library-file document.
+) -> tuple[int, str, Song | None]:
+    """Resolve a claimed file handle to its semantic ``Song`` via the facade.
 
-    Returns:
-        (file_id, file_key, file_doc) — *file_doc* is ``None`` when the
-        document does not exist.
-
+    The claim handle is an integer-keyed string produced by the reconciliation
+    queue. Persistence's narrow ``resolve_song_identity`` adapter maps the private
+    handle to the mutable ``SongIdentity`` locator, and ``db.library.get_song``
+    returns the semantic ``Song`` value — never a raw row, dict, or generated id
+    projection. Returns ``(file_id, file_key, song)`` with ``song`` ``None`` when
+    the handle no longer resolves.
     """
-    # PostgreSQL uses integer IDs; convert file_key to int
     file_id = int(file_key)
-    file_doc = get_song_by_id(db, file_id)
-    return file_id, file_key, file_doc
+    identity = db.library.resolve_song_identity(file_id)
+    if identity is None:
+        return file_id, file_key, None
+    return file_id, file_key, db.library.get_song(identity)
 
 
 # ---------------------------------------------------------------------------

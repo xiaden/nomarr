@@ -270,7 +270,7 @@ class SyncSongsResponse(BaseModel):
 class TrackPlayRequestItem(BaseModel):
     """Play history entry provided by the Navidrome plugin for playlist generation.
 
-    ``file_id`` is the integer primary key of the library file
+     * `file_id` is the opaque `nom1` SongLocator token (never a generated integer id).
     that the plugin resolves from a ``nomarr_file_key`` received in prior
     descriptor responses.
     """

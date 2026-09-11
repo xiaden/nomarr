@@ -50,7 +50,11 @@ class TestSyncFileToLibrarySlowPath:
         mock_db = MagicMock()
         library = _library()
         identity = SongIdentity(
-            library=LibraryIdentity(name=library.name, root_path=library.root_path),
+            library=LibraryIdentity(
+                library_uuid=library.library_uuid or "00000000-0000-0000-0000-000000000000",
+                name=library.name,
+                root_path=library.root_path,
+            ),
             normalized_path="song.mp3",
         )
         stat = SimpleNamespace(st_size=1234, st_mtime=5.678)

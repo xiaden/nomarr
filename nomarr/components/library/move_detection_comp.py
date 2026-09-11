@@ -29,6 +29,17 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _library_identity(library: Library) -> LibraryIdentity:
+    """Resolve a domain ``Library`` value to its immutable ``LibraryIdentity`` locator."""
+    if library.library_uuid is None:
+        raise ValueError(f"Library {library.name!r} has no library_uuid")
+    return LibraryIdentity(
+        library_uuid=library.library_uuid,
+        name=library.name,
+        root_path=library.root_path,
+    )
+
+
 # Component-local DTOs (not promoted to helpers/dto)
 @dataclass
 class FileMove:
@@ -137,7 +148,7 @@ def detect_file_moves(
             return True
         return any(abs(new_dur - rd) <= duration_tolerance for rd in removed_durations)
 
-    library_identity = LibraryIdentity(name=library.name, root_path=library.root_path)
+    library_identity = _library_identity(library)
     moves: list[FileMove] = []
     matched_indices: set[int] = set()
     chromaprints_computed = 0
@@ -364,29 +375,29 @@ def detect_file_move_via_db(
         return None
 
     # Verify path actually changed (guard against self-match on re-scan)
-    if candidate.get("path") == new_path:
+    if candidate.path == new_path:
         return None
 
     # Duration tolerance check
-    removed_duration = candidate.get("duration_seconds")
+    removed_duration = candidate.duration_seconds
     new_duration = new_file_entry.get("duration_seconds")
     if removed_duration is not None and new_duration is not None and abs(removed_duration - new_duration) > 1.0:
         logger.warning(
             "Chromaprint collision: %s vs %s (duration %ss vs %ss)",
-            candidate.get("path"),
+            candidate.path,
             new_path,
             removed_duration,
             new_duration,
         )
         return None
 
-    logger.info("File moved (DB lookup): %s → %s", candidate.get("path"), new_path)
+    logger.info("File moved (DB lookup): %s → %s", candidate.path, new_path)
     return FileMove(
-        old_path=candidate["path"],
+        old_path=candidate.path,
         new_path=new_path,
         song_identity=SongIdentity(
-            library=LibraryIdentity(name=library.name, root_path=library.root_path),
-            normalized_path=candidate["normalized_path"],
+            library=_library_identity(library),
+            normalized_path=candidate.normalized_path,
         ),
         chromaprint=chromaprint,
         old_duration=removed_duration,

@@ -75,6 +75,7 @@ _SONG_ROW: dict = {
 
 _LIBRARY_ROW: dict = {
     "id": 1,
+    "library_uuid": "de131b32-af5c-5a84-8874-58e3dc0e2dcd",
     "name": "TestLib",
     "path": "/music",
     "library_type": "music",
@@ -116,7 +117,8 @@ def _make_library_db() -> tuple[
     pipeline_repo = MagicMock()
     # Default natural-key resolution for the canonical _LIB: library -> id 1.
     library_repo.get_library_by_natural_key.return_value = {"id": 1}
-    library_repo.get_library_ids_by_natural_keys.return_value = {("TestLib", "/music"): 1}
+    library_repo.get_library_by_uuid.return_value = {"id": 1, "library_uuid": "de131b32-af5c-5a84-8874-58e3dc0e2dcd"}
+    library_repo.get_library_ids_by_uuids.return_value = {"de131b32-af5c-5a84-8874-58e3dc0e2dcd": 1}
     songs = LibrarySongsDb(
         session=MagicMock(),
         song_repo=song_repo,
@@ -160,8 +162,8 @@ def _make_library_db() -> tuple[
     )
 
 
-_TEST_LIBRARY = LibraryIdentity(name="TestLib", root_path="/music")
-_LIB = Library(name="TestLib", root_path="/music")
+_TEST_LIBRARY = LibraryIdentity(library_uuid="de131b32-af5c-5a84-8874-58e3dc0e2dcd", name="TestLib", root_path="/music")
+_LIB = Library(library_uuid="de131b32-af5c-5a84-8874-58e3dc0e2dcd", name="TestLib", root_path="/music")
 
 
 def _song(normalized_path: str = "a.mp3") -> SongIdentity:
@@ -422,7 +424,7 @@ def test_get_song_by_locator_delegates() -> None:
     assert isinstance(result, Song)
     assert not hasattr(result, "song_id")  # generated songs.id stays persistence-private
     assert result.path == "/music/a.mp3"
-    library_repo.get_library_by_natural_key.assert_called_once_with("TestLib", "/music")
+    library_repo.get_library_by_uuid.assert_called_once_with("de131b32-af5c-5a84-8874-58e3dc0e2dcd")
     song_repo.get_song_by_normalized_path.assert_called_once_with(1, "a.mp3")
 
 
@@ -431,7 +433,7 @@ def test_get_song_by_locator_missing_library_is_none() -> None:
     # A locator whose owning library cannot be resolved is a deterministic
     # ``None`` miss (ADR-048), not an error and not an integer fallback.
     db, library_repo, song_repo, *_ = _make_library_db()
-    library_repo.get_library_by_natural_key = MagicMock(return_value=None)
+    library_repo.get_library_by_uuid = MagicMock(return_value=None)
     song_repo.get_song_by_normalized_path = MagicMock()
 
     assert db.get_song(_song()) is None
@@ -439,16 +441,19 @@ def test_get_song_by_locator_missing_library_is_none() -> None:
 
 
 @pytest.mark.unit
-def test_get_song_by_locator_unrooted_library_is_none() -> None:
+def test_get_song_by_locator_unknown_uuid_is_none() -> None:
+    # A locator whose UUID is not registered is a deterministic ``None`` miss;
+    # root_path is mutable metadata and no longer gates resolution.
     db, library_repo, song_repo, *_ = _make_library_db()
+    library_repo.get_library_by_uuid = MagicMock(return_value=None)
     song_repo.get_song_by_normalized_path = MagicMock()
     identity = SongIdentity(
-        library=LibraryIdentity(name="TestLib", root_path=None),
+        library=LibraryIdentity(library_uuid="08042357-9a97-5066-a9bf-bcab3b77ec8b", name="TestLib", root_path=None),
         normalized_path="a.mp3",
     )
 
     assert db.get_song(identity) is None
-    library_repo.get_library_by_natural_key.assert_not_called()
+    library_repo.get_library_by_uuid.assert_called_once_with("08042357-9a97-5066-a9bf-bcab3b77ec8b")
     song_repo.get_song_by_normalized_path.assert_not_called()
 
 
@@ -469,7 +474,7 @@ def test_get_song_by_path_delegates_with_library_scope() -> None:
 
     assert isinstance(result, Song)
     assert not hasattr(result, "song_id")  # generated songs.id stays persistence-private
-    library_repo.get_library_by_natural_key.assert_called_once_with("TestLib", "/music")
+    library_repo.get_library_by_uuid.assert_called_once_with("de131b32-af5c-5a84-8874-58e3dc0e2dcd")
     song_repo.get_song_by_path.assert_called_once_with("/music/song.mp3", 1)
 
 
@@ -482,14 +487,14 @@ def test_get_song_by_normalized_path_locator_delegates() -> None:
 
     assert isinstance(result, Song)
     assert not hasattr(result, "song_id")
-    library_repo.get_library_by_natural_key.assert_called_once_with("TestLib", "/music")
+    library_repo.get_library_by_uuid.assert_called_once_with("de131b32-af5c-5a84-8874-58e3dc0e2dcd")
     song_repo.get_song_by_normalized_path.assert_called_once_with(1, "a.mp3")
 
 
 @pytest.mark.unit
 def test_get_song_by_normalized_path_missing_library_is_none() -> None:
     db, library_repo, song_repo, *_ = _make_library_db()
-    library_repo.get_library_by_natural_key = MagicMock(return_value=None)
+    library_repo.get_library_by_uuid = MagicMock(return_value=None)
     song_repo.get_song_by_normalized_path = MagicMock()
 
     assert db.get_song_by_normalized_path(_TEST_LIBRARY, "a.mp3") is None
@@ -523,7 +528,7 @@ def test_list_songs_by_identity_delegates_order_preserving() -> None:
         assert isinstance(r, Song)
         assert not hasattr(r, "song_id")  # generated songs.id stays persistence-private
         assert not hasattr(r, "library_id")
-    library_repo.get_library_ids_by_natural_keys.assert_called_once_with([("TestLib", "/music")])
+    library_repo.get_library_ids_by_uuids.assert_called_once_with(["de131b32-af5c-5a84-8874-58e3dc0e2dcd"])
     song_repo.get_song_ids_by_normalized_paths.assert_called_once_with([(1, "a.mp3"), (1, "b.mp3")])
     song_repo.get_songs_by_ids.assert_called_once_with([10, 11])
 
@@ -533,7 +538,7 @@ def test_list_songs_by_identity_empty_is_empty() -> None:
     db, library_repo, song_repo, *_ = _make_library_db()
 
     assert db.list_songs_by_identity([]) == []
-    library_repo.get_library_ids_by_natural_keys.assert_not_called()
+    library_repo.get_library_ids_by_uuids.assert_not_called()
     song_repo.get_song_ids_by_normalized_paths.assert_not_called()
     song_repo.get_songs_by_ids.assert_not_called()
 
@@ -543,12 +548,12 @@ def test_list_songs_by_identity_omits_missing_library_and_song() -> None:
     db, library_repo, song_repo, *_ = _make_library_db()
     # Library natural keys resolve only for TestLib; the "ghost" library is
     # unresolvable and omitted. Only a.mp3 exists as a song row.
-    library_repo.get_library_ids_by_natural_keys = MagicMock(return_value={("TestLib", "/music"): 1})
+    library_repo.get_library_ids_by_uuids = MagicMock(return_value={"de131b32-af5c-5a84-8874-58e3dc0e2dcd": 1})
     song_repo.get_song_ids_by_normalized_paths = MagicMock(return_value={(1, "a.mp3"): 10})
     row_a = _song_row()
     song_repo.get_songs_by_ids = MagicMock(return_value=[row_a])
     ghost = SongIdentity(
-        library=LibraryIdentity(name="Ghost", root_path="/ghost"),
+        library=LibraryIdentity(library_uuid="7c44ca4f-53b3-5fbc-8297-59907f30eede", name="Ghost", root_path="/ghost"),
         normalized_path="c.mp3",
     )
 
@@ -570,14 +575,14 @@ def test_list_songs_delegates_with_library_scope() -> None:
     assert len(result) == 1
     assert isinstance(result[0], Song)
     assert not hasattr(result[0], "song_id")
-    library_repo.get_library_by_natural_key.assert_called_once_with("TestLib", "/music")
+    library_repo.get_library_by_uuid.assert_called_once_with("de131b32-af5c-5a84-8874-58e3dc0e2dcd")
     song_repo.list_songs.assert_called_once_with(1, limit=None)
 
 
 @pytest.mark.unit
 def test_list_songs_unknown_library_raises() -> None:
     db, library_repo, song_repo, *_ = _make_library_db()
-    library_repo.get_library_by_natural_key = MagicMock(return_value=None)
+    library_repo.get_library_by_uuid = MagicMock(return_value=None)
     song_repo.list_songs = MagicMock()
 
     with pytest.raises(LookupError):
@@ -682,7 +687,7 @@ def test_add_song_to_library_delegates_typed_command() -> None:
     assert isinstance(result, SongIdentity)
     assert result == SongIdentity(library=_TEST_LIBRARY, normalized_path="a.mp3")
     assert not isinstance(result, int)
-    library_repo.get_library_by_natural_key.assert_called_once_with("TestLib", "/music")
+    library_repo.get_library_by_uuid.assert_called_once_with("de131b32-af5c-5a84-8874-58e3dc0e2dcd")
     song_repo.upsert_songs_for_library.assert_called_once_with(
         1,
         [
@@ -744,7 +749,7 @@ def test_add_song_to_library_defaults_scanned_at_when_scan_omits_it() -> None:
 @pytest.mark.unit
 def test_add_song_to_library_missing_library_raises_lookup_error() -> None:
     db, library_repo, song_repo, *_ = _make_library_db()
-    library_repo.get_library_by_natural_key = MagicMock(return_value=None)
+    library_repo.get_library_by_uuid = MagicMock(return_value=None)
     command = SongUpsertInput(library=_TEST_LIBRARY, path="/music/a.mp3")
 
     with pytest.raises(LookupError, match="does not exist"):
@@ -753,13 +758,17 @@ def test_add_song_to_library_missing_library_raises_lookup_error() -> None:
 
 
 @pytest.mark.unit
-def test_add_song_to_library_none_root_path_is_unresolvable() -> None:
+def test_add_song_to_library_unknown_uuid_is_unresolvable() -> None:
     db, library_repo, song_repo, *_ = _make_library_db()
-    command = SongUpsertInput(library=LibraryIdentity(name="TestLib"), path="/music/a.mp3")
+    library_repo.get_library_by_uuid = MagicMock(return_value=None)
+    command = SongUpsertInput(
+        library=LibraryIdentity(library_uuid="08042357-9a97-5066-a9bf-bcab3b77ec8b", name="TestLib"),
+        path="/music/a.mp3",
+    )
 
     with pytest.raises(LookupError, match="does not exist"):
         db.add_song_to_library(command)
-    library_repo.get_library_by_natural_key.assert_not_called()
+    library_repo.get_library_by_uuid.assert_called_once_with("08042357-9a97-5066-a9bf-bcab3b77ec8b")
     song_repo.upsert_songs_for_library.assert_not_called()
 
 
@@ -914,9 +923,9 @@ def test_add_song_to_library_rejects_blank_identity_and_path_at_command_boundary
         SongUpsertInput(library=_TEST_LIBRARY, path="   ")
     # Blank/invalid library identity values are rejected by LibraryIdentity.
     with pytest.raises(ValueError):
-        LibraryIdentity(name="   ")
+        LibraryIdentity(library_uuid="0e5c96e9-bd42-5132-82a4-2d4673000713", name="   ")
     with pytest.raises(ValueError):
-        LibraryIdentity(name="TestLib", root_path="   ")
+        LibraryIdentity(library_uuid="ed81e8bd-4e83-5d31-b3a4-6fed62da4eeb", name="TestLib", root_path="   ")
 
 
 @pytest.mark.unit
@@ -996,7 +1005,7 @@ def test_remove_song_by_command_deletes_privately() -> None:
     removed = db.remove_song(SongRemoval(song_identity=_song()))
 
     assert removed is True
-    library_repo.get_library_by_natural_key.assert_called_once_with("TestLib", "/music")
+    library_repo.get_library_by_uuid.assert_called_once_with("de131b32-af5c-5a84-8874-58e3dc0e2dcd")
     song_repo.get_song_by_normalized_path.assert_called_once_with(1, "a.mp3")
     song_repo.delete_song.assert_called_once_with(10)
 
@@ -1016,7 +1025,7 @@ def test_remove_song_missing_is_false() -> None:
 @pytest.mark.unit
 def test_remove_song_missing_library_is_false() -> None:
     db, library_repo, song_repo, *_ = _make_library_db()
-    library_repo.get_library_by_natural_key = MagicMock(return_value=None)
+    library_repo.get_library_by_uuid = MagicMock(return_value=None)
     song_repo.delete_song = MagicMock()
 
     assert db.remove_song(SongRemoval(song_identity=_song())) is False
@@ -1803,9 +1812,9 @@ class TestMoveLibrarySong:
 
         result = db._songs.move_library_song(command)
 
-        # The source locator's natural library is resolved privately to id 1;
-        # neither it nor any generated song id crosses the facade.
-        library_repo.get_library_by_natural_key.assert_called_once_with("TestLib", "/music")
+        # The source locator's UUID is resolved privately to id 1; neither it
+        # nor any generated song id crosses the facade.
+        library_repo.get_library_by_uuid.assert_called_once_with("de131b32-af5c-5a84-8874-58e3dc0e2dcd")
         song_repo.move_song.assert_called_once_with(
             1,
             "a.mp3",  # source normalized path (source-locator predicate)
@@ -1861,21 +1870,23 @@ class TestMoveLibrarySong:
         """A source locator whose library cannot be resolved is a stale source ->
         None miss; no repo write occurs and nothing is fabricated."""
         db, library_repo, song_repo, *_ = _make_library_db()
-        library_repo.get_library_by_natural_key.return_value = None
+        library_repo.get_library_by_uuid.return_value = None
 
         result = db._songs.move_library_song(self._command())
 
         assert result is None
         song_repo.move_song.assert_not_called()
 
-    def test_root_path_none_source_is_a_none_miss_without_repo_call(self) -> None:
-        """A source locator whose library owns no root_path is a stale source ->
-        None miss (ADR-048) resolved BEFORE any natural-key lookup: no
-        get_library_by_natural_key call and no repo write occurs."""
+    def test_unknown_uuid_source_is_a_none_miss_without_repo_call(self) -> None:
+        """A source locator whose UUID is not registered is a stale source ->
+        None miss; the uuid is looked up once and no repo write occurs."""
         db, library_repo, song_repo, *_ = _make_library_db()
+        library_repo.get_library_by_uuid.return_value = None
         command = self._command(
             source_identity=SongIdentity(
-                library=LibraryIdentity(name="main", root_path=None),
+                library=LibraryIdentity(
+                    library_uuid="f517e48b-30ab-5e01-8094-623b0fb245b7", name="main", root_path=None
+                ),
                 normalized_path="a.mp3",
             ),
         )
@@ -1883,7 +1894,7 @@ class TestMoveLibrarySong:
         result = db._songs.move_library_song(command)
 
         assert result is None
-        library_repo.get_library_by_natural_key.assert_not_called()
+        library_repo.get_library_by_uuid.assert_called_once_with("f517e48b-30ab-5e01-8094-623b0fb245b7")
         song_repo.move_song.assert_not_called()
 
     def test_none_normalized_path_rejected_before_any_write(self) -> None:
@@ -2008,7 +2019,7 @@ def test_list_songs_with_state_library_scoped_filters_owners() -> None:
 def test_list_songs_with_state_unknown_library_is_empty() -> None:
     db, library_repo, song_repo, _, _, _, _, song_state_repo, _ = _make_library_db()
     song_state_repo.list_songs_in_state = MagicMock(return_value=[10])
-    library_repo.get_library_by_natural_key = MagicMock(return_value=None)
+    library_repo.get_library_by_uuid = MagicMock(return_value=None)
 
     result = db.list_songs_with_state("processed", library=_TEST_LIBRARY)
 
@@ -2029,6 +2040,31 @@ def test_list_songs_with_state_empty_and_blank_are_deterministic() -> None:
 
 
 @pytest.mark.unit
+def test_list_songs_with_state_duplicate_handles_are_deterministic() -> None:
+    db, library_repo, song_repo, _, _, _, _, song_state_repo, _ = _make_library_db()
+    song_state_repo.list_songs_in_state = MagicMock(return_value=[11, 10, 11, 10])
+    song_repo.get_songs_by_ids = MagicMock(return_value=[_row(), _row(11, "b.mp3")])
+    song_state_repo.get_song_states_for_songs = MagicMock(return_value={10: {"processed"}, 11: {"processed"}})
+    library_repo.get_libraries_by_ids = MagicMock(return_value=[dict(_LIBRARY_ROW)])
+
+    result = db.list_songs_with_state("processed")
+
+    assert [candidate.identity.normalized_path for candidate in result] == ["a.mp3", "b.mp3"]
+    song_repo.get_songs_by_ids.assert_called_once_with([11, 10])
+
+
+@pytest.mark.unit
+def test_list_songs_with_state_missing_owner_is_stale_locator_miss() -> None:
+    db, library_repo, song_repo, _, _, _, _, song_state_repo, _ = _make_library_db()
+    song_state_repo.list_songs_in_state = MagicMock(return_value=[10])
+    song_repo.get_songs_by_ids = MagicMock(return_value=[_row()])
+    song_state_repo.get_song_states_for_songs = MagicMock(return_value={10: {"processed"}})
+    library_repo.get_libraries_by_ids = MagicMock(return_value=[])
+
+    assert db.list_songs_with_state("processed") == []
+
+
+@pytest.mark.unit
 def test_list_songs_with_state_order_by_activity_and_limit() -> None:
     db, library_repo, song_repo, _, _, _, _, song_state_repo, _ = _make_library_db()
     song_state_repo.list_songs_in_state = MagicMock(return_value=[10, 11])
@@ -2041,3 +2077,46 @@ def test_list_songs_with_state_order_by_activity_and_limit() -> None:
 
     assert [c.identity.normalized_path for c in result] == ["b.mp3"]
     song_repo.get_songs_by_ids.assert_called_once_with([10, 11])
+
+
+_MALFORMED_LIBRARY = LibraryIdentity(library_uuid="not-a-uuid", name="Malformed", root_path="/malformed")
+
+
+@pytest.mark.unit
+class TestUnknownAndMalformedLibraryUuidRejection:
+    """ADR-049/CONTRACTS §7: unknown or malformed library UUIDs fail closed.
+
+    There is no name or integer fallback: single-locator reads miss with
+    ``None``, single-locator writes raise ``LookupError``, and set-based reads
+    resolve to an empty result.
+    """
+
+    def test_get_song_unknown_uuid_is_none_and_queries_the_uuid(self) -> None:
+        db, library_repo, song_repo, _, _, _, _, _, _ = _make_library_db()
+        library_repo.get_library_by_uuid.return_value = None
+
+        result = db.get_song(SongIdentity(library=_MALFORMED_LIBRARY, normalized_path="a.mp3"))
+
+        assert result is None
+        library_repo.get_library_by_uuid.assert_called_once_with("not-a-uuid")
+        song_repo.get_song_by_normalized_path.assert_not_called()
+
+    def test_list_songs_unknown_uuid_raises_without_integer_fallback(self) -> None:
+        db, library_repo, song_repo, _, _, _, _, _, _ = _make_library_db()
+        library_repo.get_library_by_uuid.return_value = None
+
+        with pytest.raises(LookupError):
+            db.list_songs(_MALFORMED_LIBRARY)
+
+        library_repo.get_library_by_uuid.assert_called_once_with("not-a-uuid")
+        library_repo.get_library_by_natural_key.assert_not_called()
+        song_repo.get_songs_by_ids.assert_not_called()
+
+    def test_list_songs_by_identity_unresolved_uuid_is_empty(self) -> None:
+        db, library_repo, song_repo, _, _, _, _, _, _ = _make_library_db()
+        library_repo.get_library_ids_by_uuids.return_value = {}
+        locator = SongIdentity(library=_MALFORMED_LIBRARY, normalized_path="a.mp3")
+
+        assert db.list_songs_by_identity([locator]) == []
+        library_repo.get_library_ids_by_uuids.assert_called_once_with(["not-a-uuid"])
+        song_repo.get_song_ids_by_normalized_paths.assert_not_called()

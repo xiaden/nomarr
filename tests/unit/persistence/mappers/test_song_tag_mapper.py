@@ -31,7 +31,7 @@ from nomarr.persistence.mappers.song_tag_mapper import (
     tag_usage_from_row,
 )
 
-_LIBRARY = LibraryIdentity(name="TestLib", root_path="/music")
+_LIBRARY = LibraryIdentity(library_uuid="de131b32-af5c-5a84-8874-58e3dc0e2dcd", name="TestLib", root_path="/music")
 _SONG = SongIdentity(library=_LIBRARY, normalized_path="a.mp3")
 
 

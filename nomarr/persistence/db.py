@@ -95,7 +95,11 @@ class Database:
         )
         self._vector_repo = VectorRepo(self._scoped)
         self._model_repo = ModelRepo(self._scoped)
-        self._output_repo = OutputRepo(self._scoped)
+        self._output_repo = OutputRepo(
+            self._scoped,
+            library_repo=self._library_repo,
+            song_repo=self._song_repo,
+        )
         self._calibration_repo = CalibrationRepo(self._scoped)
         self._embedding_stream_repo = EmbeddingStreamRepository(self._scoped)
         self._ml_inference_repo = MlInferenceRepo(self._scoped)

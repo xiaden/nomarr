@@ -104,15 +104,19 @@ def _row_to_vector_match(
 ) -> VectorMatch:
     """Convert a joined ANN-search row to a domain :class:`VectorMatch`.
 
-    The row carries the song-identity columns (library name, library path,
-    song normalized path) resolved through the persistence-owned song/library
-    join.  The embedding column is present only when *include_vector* is true;
-    otherwise the payload ``vector`` is ``None``.
+    The row carries the song-identity columns (library UUID, library name,
+    library path, song normalized path) resolved through the persistence-owned
+    song/library join.  The embedding column is present only when *include_vector*
+    is true; otherwise the payload ``vector`` is ``None``.
     """
     m = row._mapping
     return VectorMatch(
         song=SongIdentity(
-            library=LibraryIdentity(name=m["library_name"], root_path=m["library_path"]),
+            library=LibraryIdentity(
+                library_uuid=m["library_uuid"],
+                name=m["library_name"],
+                root_path=m["library_path"],
+            ),
             normalized_path=m["normalized_path"],
         ),
         backbone=backbone,
@@ -270,30 +274,25 @@ class VectorRepo:
     # ── typed domain reads ──────────────────────────────────────
     #
     # These read paths are the corrected caller-facing vector contract: they
-    # take natural ``SongIdentity`` values, return domain ``SongVector`` /
+    # take UUID ``SongIdentity`` values, return domain ``SongVector`` /
     # ``VectorMatch`` objects, and never expose a storage id, row, table name,
     # timestamp, or storage DTO to callers.  Mapping and identity resolution
     # stay entirely inside this repository.
 
     def _resolve_song_storage_id(self, song: SongIdentity) -> int | None:
-        """Resolve a natural ``SongIdentity`` to its storage ``songs.id``.
+        """Resolve a UUID ``SongIdentity`` to its storage ``songs.id``.
 
-        Mirrors the established library_tags/app_repo resolution pattern by
-        joining the ``libraries``/``songs`` tables directly (never importing
-        those modules' privates).  ``LibraryIdentity.root_path`` maps to
-        ``libraries.path``; a ``None`` root path (a name-only identity) cannot
-        be resolved and returns ``None``, matching the canonical resolver.
-        A missing library or missing normalized path also resolves to ``None``.
+        Mirrors the established library_tags/app_repo resolution pattern: the
+        owning library is resolved by ``libraries.library_uuid`` (ADR-049), then
+        the song's normalized path within it.  A missing library or missing
+        normalized path resolves to ``None``.  The id is used only to reach the
+        row inside this repository and never crosses the boundary.
         """
-        root_path = song.library.root_path
-        if root_path is None:
-            return None
         stmt = (
             select(Song.__table__.c.id)
             .select_from(Song.__table__.join(Library.__table__, Song.__table__.c.library_id == Library.__table__.c.id))
             .where(
-                Library.__table__.c.name == song.library.name,
-                Library.__table__.c.path == root_path,
+                Library.__table__.c.library_uuid == song.library.library_uuid,
                 Song.__table__.c.normalized_path == song.normalized_path,
             )
         )
@@ -301,19 +300,13 @@ class VectorRepo:
         return row[0] if row is not None else None
 
     def _resolve_library_storage_id(self, library: LibraryIdentity) -> int | None:
-        """Resolve a natural :class:`LibraryIdentity` to its storage ``libraries.id``.
+        """Resolve a UUID :class:`LibraryIdentity` to its storage ``libraries.id``.
 
-        Mirrors :meth:`_resolve_song_storage_id` semantics: a ``None``
-        ``root_path`` (name-only identity), a missing library, or a missing path
-        resolves to ``None``.  The id is used only to reach the row inside this
-        repository and never crosses the boundary.
+        A missing ``library_uuid`` resolves to ``None``.  The id is used only to
+        reach the row inside this repository and never crosses the boundary.
         """
-        root_path = library.root_path
-        if root_path is None:
-            return None
         stmt = select(Library.__table__.c.id).where(
-            Library.__table__.c.name == library.name,
-            Library.__table__.c.path == root_path,
+            Library.__table__.c.library_uuid == library.library_uuid,
         )
         row = self._session.execute(stmt).fetchone()
         return row[0] if row is not None else None
@@ -380,6 +373,7 @@ class VectorRepo:
 
             distance_expr = _T.c.embedding.op("<=>")(query_vector)
             columns: list[Any] = [
+                Library.__table__.c.library_uuid.label("library_uuid"),
                 Library.__table__.c.name.label("library_name"),
                 Library.__table__.c.path.label("library_path"),
                 Song.__table__.c.normalized_path,
@@ -416,12 +410,11 @@ class VectorRepo:
 
         Typed companion to the legacy dict-returning :meth:`get_embedding_stats`.
         Mirrors its ``GROUP BY tier`` SQL and join-``songs``-for-library scope, but
-        takes a natural :class:`LibraryIdentity` (never a storage id) and returns
+        takes a UUID :class:`LibraryIdentity` (never a storage id) and returns
         a domain :class:`EmbeddingCounts`.  *library* resolution mirrors
-        :meth:`_resolve_library_storage_id`: a name-only (``root_path=None``) or
-        otherwise unresolved library yields zero counts in that library (counts
-        of ``0``), never a raise.  Unscoped (``library is None``) counts span all
-        libraries for the backbone.
+        :meth:`_resolve_library_storage_id`: an unresolved library yields zero
+        counts in that library (counts of ``0``), never a raise.  Unscoped
+        (``library is None``) counts span all libraries for the backbone.
         """
         with map_persistence_exceptions():
             library_id: int | None = None

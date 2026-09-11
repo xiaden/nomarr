@@ -10,11 +10,11 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
-from nomarr.components.library.library_song_query_comp import get_songs_by_ids_with_tags
-from nomarr.components.navidrome.descriptor_match_comp import build_track_descriptor
+from nomarr.components.navidrome.descriptor_match_comp import descriptor_for_locator
 from nomarr.components.navidrome.subsonic_client_comp import SubsonicClient
 from nomarr.components.navidrome.templates_comp import generate_template_files, get_template_summary
 from nomarr.components.tagging.tag_stats_comp import get_tag_value_counts
+from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
 from nomarr.helpers.dto import NavidromeGeneratePlaylistsResult
 from nomarr.helpers.dto.navidrome_dto import (
     GeneratePlaylistResult,
@@ -26,6 +26,7 @@ from nomarr.helpers.dto.navidrome_dto import (
     TrackPlayData,
 )
 from nomarr.helpers.exceptions import MisconfiguredError
+from nomarr.helpers.song_locator_codec import SongLocatorFormatError, decode_song_locator
 from nomarr.workflows.navidrome import (
     generate_navidrome_config_workflow,
     generate_smart_playlist_workflow,
@@ -204,21 +205,17 @@ class NavidromeService:
         file_ids: list[str],
         playlist_name: str = "Vector Search Playlist",
     ) -> StaticPlaylistResult:
-        """Generate a static M3U playlist from file IDs.
+        """Generate a static M3U playlist from opaque SongLocator tokens.
 
-        Produces M3U content with relative paths (relative to the library
-        root, resolved from the file records).  When the ``m3u_output_path``
-        config key is set, the M3U file is also saved server-side.
-
-        Does **not** push to Navidrome — the backend push path was removed;
-        playlist delivery is plugin-mediated.
+        ``file_ids`` are ``nom1`` locator tokens (never generated integer IDs);
+        the workflow resolves each token to its library-relative path.
 
         Args:
-            file_ids: List of library file document IDs (max 200).
+            file_ids: Opaque SongLocator tokens (max 200).
             playlist_name: Name for the playlist header.
 
         Returns:
-            StaticPlaylistResult with M3U content, track count, missing IDs,
+            StaticPlaylistResult with M3U content, track count, missing tokens,
             and optionally the server-side save path.
 
         """
@@ -226,7 +223,7 @@ class NavidromeService:
 
         return generate_static_playlist_workflow(
             db=self._db,
-            file_ids=[int(fid) for fid in file_ids],
+            file_ids=file_ids,  # type: ignore[arg-type]  # H-owned workflow migrates to locator tokens
             playlist_name=playlist_name,
             m3u_output_path=m3u_output_path,
         )
@@ -452,22 +449,46 @@ class NavidromeService:
         return result
 
     def resolve_files_to_descriptors(self, file_ids: list[str]) -> dict[str, TrackDescriptor]:
-        """Resolve track references to portable track descriptors.
+        """Resolve opaque SongLocator tokens to portable track descriptors.
 
-        Used by plugin-backed playlist/recommendation API flows so Nomarr returns
-        portable descriptors and the plugin resolves Navidrome mediafile IDs locally.
+        Each token is strictly decoded to a UUID-bearing ``SongIdentity`` through
+        the canonical codec and the library UUID is resolved against the owning
+        facade. Malformed tokens and unknown libraries are skipped; each returned
+        descriptor is keyed by its original token. Generated integer IDs are
+        never produced or accepted.
         """
         if not file_ids:
             return {}
 
-        file_docs = get_songs_by_ids_with_tags(self._db, [int(fid) for fid in file_ids])
-        descriptors_by_file_id: dict[str, TrackDescriptor] = {}
-        for file_doc in file_docs:
-            file_id = file_doc.get("id")
-            if not isinstance(file_id, int):
+        token_by_locator: dict[SongIdentity, str] = {}
+        for token in file_ids:
+            locator = self._locator_for_token(token)
+            if locator is None or locator in token_by_locator:
                 continue
-            descriptors_by_file_id[str(file_id)] = build_track_descriptor(file_doc)
-        return descriptors_by_file_id
+            token_by_locator[locator] = token
+
+        descriptors: dict[str, TrackDescriptor] = {}
+        for locator, token in token_by_locator.items():
+            descriptor = descriptor_for_locator(self._db, locator)
+            if descriptor is not None:
+                descriptors[token] = descriptor
+        return descriptors
+
+    def _locator_for_token(self, token: str) -> SongIdentity | None:
+        """Strictly decode a locator token and resolve its owning library."""
+        try:
+            payload = decode_song_locator(token)
+        except SongLocatorFormatError:
+            return None
+        library = self._db.library.get_library_by_uuid(payload.library_uuid)
+        if library is None:
+            return None
+        identity = LibraryIdentity(
+            library_uuid=library.library_uuid or payload.library_uuid,
+            name=library.name,
+            root_path=library.root_path,
+        )
+        return SongIdentity(library=identity, normalized_path=payload.path)
 
     def generate_personal_playlists(
         self,

@@ -134,19 +134,23 @@ class MlDb:
         assert self._model_repo is not None, "ModelRepo not wired"
         return sorted({model.backbone_id for model in self.list_models()})
 
-    def list_output_streams_for_song(self, song_id: int) -> list[OutputStream]:
-        """Return output streams for a song without exposing persistence row fields."""
+    def list_output_streams_for_song(self, song: SongIdentity) -> tuple[OutputStream, ...]:
+        """Return canonical streams for a semantic song locator.
+
+        Missing or stale locators return an empty tuple. Persistence resolves
+        storage identifiers privately and owns deterministic ordering.
+        """
         assert self._output_repo is not None, "OutputRepo not wired"
         # Concurrent ML output-stream work also touches this boundary; this mapper
         # is intentionally kept here so callers never depend on repository rows.
-        return [
+        return tuple(
             OutputStream(
                 output_id=record["output_id"],
                 output_index=record["output_index"],
                 values=record["values"],
             )
-            for record in self._output_repo.list_output_streams_for_song(song_id)
-        ]
+            for record in self._output_repo.list_output_streams_for_song(song)
+        )
 
     # Legacy dependency gate (RETAINED — NOT the corrected read surface):
     # ``list_song_vectors`` is kept only as a dependency gate for the

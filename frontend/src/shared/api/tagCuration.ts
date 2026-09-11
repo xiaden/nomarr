@@ -86,7 +86,8 @@ export interface CleanupTagsResult {
 }
 
 export interface FileTagsResult {
-  file_id: number;
+  /** Opaque `nom1` SongLocator token */
+  file_id: string;
   path: string;
   tags: FileTag[];
 }

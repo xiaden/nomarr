@@ -21,7 +21,10 @@ from nomarr.helpers.dataclasses.worker_claim_dataclass import ClaimRemovalReques
 
 
 def _identity(song_id: int) -> SongIdentity:
-    return SongIdentity(library=LibraryIdentity(name="Test Library"), normalized_path=f"song-{song_id}.mp3")
+    return SongIdentity(
+        library=LibraryIdentity(library_uuid="691ebf37-b1e4-5244-a9c0-4758c39eaab6", name="Test Library"),
+        normalized_path=f"song-{song_id}.mp3",
+    )
 
 
 def _untyped_claim(song_id: int, worker_id: str, claimed_at_ms: int) -> WorkerClaim:
@@ -39,11 +42,11 @@ class TestDiscoverNextFile:
         mock_db = MagicMock()
         with patch(
             "nomarr.components.workers.worker_discovery_comp.discover_next_untagged_file",
-            return_value={"id": 123},
+            return_value=SimpleNamespace(identity=_identity(123)),
         ) as mock_discover_next:
             result = discover_next_file(mock_db)
 
-        assert result == "123"
+        assert result == _identity(123)
         mock_discover_next.assert_called_once_with(
             mock_db,
             exclude_claimed=True,
@@ -66,34 +69,31 @@ class TestClaimFile:
     @pytest.mark.unit
     def test_returns_true_on_success(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.resolve_song_identity.return_value = _identity(123)
         mock_db.app.add_claim.return_value = True
         with patch(
             "nomarr.components.workers.worker_discovery_comp.now_ms",
             return_value=SimpleNamespace(value=999),
         ):
-            result = claim_file(mock_db, "123", "worker:tag:0")
+            result = claim_file(mock_db, _identity(123), "worker:tag:0")
         assert result is True
         mock_db.app.add_claim.assert_called_once_with(_untyped_claim(123, "worker:tag:0", 999))
 
     @pytest.mark.unit
     def test_returns_false_when_song_unresolvable(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.resolve_song_identity.return_value = None
-        result = claim_file(mock_db, "123", "worker:tag:0")
+        result = claim_file(mock_db, _identity(123), "worker:tag:0")
         assert result is False
         mock_db.app.add_claim.assert_not_called()
 
     @pytest.mark.unit
     def test_returns_false_when_claim_conflicts(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.resolve_song_identity.return_value = _identity(123)
         mock_db.app.add_claim.return_value = False
         with patch(
             "nomarr.components.workers.worker_discovery_comp.now_ms",
             return_value=SimpleNamespace(value=999),
         ):
-            result = claim_file(mock_db, "123", "worker:tag:0")
+            result = claim_file(mock_db, _identity(123), "worker:tag:0")
         assert result is False
 
 
@@ -103,8 +103,7 @@ class TestReleaseClaim:
     @pytest.mark.unit
     def test_releases_untyped_claim_via_domain_identity(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.resolve_song_identity.return_value = _identity(123)
-        release_claim(mock_db, 123, "worker:tag:0")
+        release_claim(mock_db, _identity(123), "worker:tag:0")
         mock_db.app.remove_claim.assert_called_once_with(
             WorkerClaimIdentity(song=_identity(123), worker_id="worker:tag:0", claim_type=None)
         )
@@ -112,8 +111,7 @@ class TestReleaseClaim:
     @pytest.mark.unit
     def test_noop_when_song_unresolvable(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.resolve_song_identity.return_value = None
-        release_claim(mock_db, 123, "worker:tag:0")
+        release_claim(mock_db, _identity(123), "worker:tag:0")
         mock_db.app.remove_claim.assert_not_called()
 
 
@@ -191,7 +189,7 @@ class TestDiscoverAndClaimFile:
         with (
             patch(
                 "nomarr.components.workers.worker_discovery_comp.discover_next_file",
-                return_value="123",
+                return_value=SimpleNamespace(identity=_identity(123)),
             ) as mock_discover,
             patch(
                 "nomarr.components.workers.worker_discovery_comp.claim_file",
@@ -200,9 +198,9 @@ class TestDiscoverAndClaimFile:
         ):
             result = discover_and_claim_file(mock_db, "worker:tag:0")
 
-        assert result == "123"
+        assert result == _identity(123)
         mock_discover.assert_called_once_with(mock_db)
-        mock_claim.assert_called_once_with(mock_db, "123", "worker:tag:0")
+        mock_claim.assert_called_once_with(mock_db, _identity(123), "worker:tag:0")
 
     @pytest.mark.unit
     def test_returns_none_when_claim_conflicts(self) -> None:
@@ -210,7 +208,7 @@ class TestDiscoverAndClaimFile:
         with (
             patch(
                 "nomarr.components.workers.worker_discovery_comp.discover_next_file",
-                return_value="123",
+                return_value=SimpleNamespace(identity=_identity(123)),
             ) as mock_discover,
             patch(
                 "nomarr.components.workers.worker_discovery_comp.claim_file",
@@ -221,7 +219,7 @@ class TestDiscoverAndClaimFile:
 
         assert result is None
         mock_discover.assert_called_once_with(mock_db)
-        mock_claim.assert_called_once_with(mock_db, "123", "worker:tag:0")
+        mock_claim.assert_called_once_with(mock_db, _identity(123), "worker:tag:0")
 
     @pytest.mark.unit
     def test_returns_none_without_claiming_when_no_file_discovered(self) -> None:

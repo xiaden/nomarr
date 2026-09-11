@@ -227,10 +227,11 @@ def test_list_output_streams_for_song_maps_repository_rows_to_domain() -> None:
         ]
     )
 
-    result = db.list_output_streams_for_song(1)
+    song = SongIdentity(library=LibraryIdentity(library_uuid="lib"), normalized_path="song.mp3")
+    result = db.list_output_streams_for_song(song)
 
-    assert result == [OutputStream(output_id="out-1", output_index=2, values=[0.1, 0.2])]
-    output_repo.list_output_streams_for_song.assert_called_once_with(1)
+    assert result == (OutputStream(output_id="out-1", output_index=2, values=[0.1, 0.2]),)
+    output_repo.list_output_streams_for_song.assert_called_once_with(song)
 
 
 @pytest.mark.unit
@@ -664,7 +665,7 @@ def test_replace_song_inference_results_makes_single_aggregate_call() -> None:
 # (never laundered), so no storage representation leaks across the boundary.
 # ---------------------------------------------------------------------------
 
-_SPEC_LIBRARY = LibraryIdentity(name="music", root_path="/music")
+_SPEC_LIBRARY = LibraryIdentity(library_uuid="2621ebfb-71ff-5168-a812-5342ca310e8c", name="music", root_path="/music")
 _SPEC_SONG = SongIdentity(library=_SPEC_LIBRARY, normalized_path="/music/a.mp3")
 
 
@@ -1422,8 +1423,11 @@ def test_get_embedding_stats_delegates_library_scope_to_vector_repo() -> None:
 
 @pytest.mark.unit
 class TestTypedVectorReadFacadeSpecFirst:
-    _SONG = SongIdentity(library=LibraryIdentity(name="lib"), normalized_path="/lib/a.mp3")
-    _LIBRARY = LibraryIdentity(name="lib")
+    _SONG = SongIdentity(
+        library=LibraryIdentity(library_uuid="6d87922c-e577-5da8-8220-d7f3426b8c06", name="lib"),
+        normalized_path="/lib/a.mp3",
+    )
+    _LIBRARY = LibraryIdentity(library_uuid="6d87922c-e577-5da8-8220-d7f3426b8c06", name="lib")
 
     def test_exposes_typed_get_song_vector(self) -> None:
         db, vector_repo, _, _, _, _ = _make_ml_db()
@@ -1533,7 +1537,10 @@ def test_typed_read_takes_song_identity_never_integer_song_id() -> None:
     # it untouched (no int coercion / no int storage song_id on this surface).
     db, vector_repo, _, _, _, _ = _make_ml_db()
     vector_repo.get_song_vector = MagicMock(return_value=None)
-    song = SongIdentity(library=LibraryIdentity(name="lib", root_path="/lib"), normalized_path="a.mp3")
+    song = SongIdentity(
+        library=LibraryIdentity(library_uuid="2b202d70-24f8-5ecc-8ec9-be6a83da5fd7", name="lib", root_path="/lib"),
+        normalized_path="a.mp3",
+    )
 
     db.get_song_vector("effnet", song)
 

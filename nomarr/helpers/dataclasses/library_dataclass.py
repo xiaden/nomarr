@@ -8,16 +8,21 @@ from typing import Literal
 
 @dataclass(frozen=True, slots=True)
 class Library:
-    """A music library identified by its natural ``(name, root_path)`` key.
+    """A configured music library.
 
-    The object deliberately contains no database-generated identifier or
-    storage vocabulary.  ``created_at`` and ``updated_at`` are optional only
-    while constructing a new library; persistence supplies them when absent.
-    Returned objects always contain the persisted timestamp values.
+    ``library_uuid`` is the immutable Nomarr-owned application identity used by
+    the ``SongLocator`` (ADR-049); it is minted by persistence on creation and
+    never changes across rename or root-path updates. ``name`` and ``root_path``
+    are mutable configuration metadata, not Song identity. The object
+    deliberately contains no database-generated integer identifier or storage
+    vocabulary. ``library_uuid``, ``created_at`` and ``updated_at`` are optional
+    only while constructing a new library; persistence supplies/mints them when
+    absent. Returned objects always contain the persisted values.
     """
 
     name: str
     root_path: str
+    library_uuid: str | None = None
     is_enabled: bool = True
     watch_mode: Literal["off", "event", "poll"] = "off"
     file_write_mode: Literal["none", "minimal", "full"] = "full"

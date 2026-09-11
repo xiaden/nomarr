@@ -58,9 +58,10 @@ describe("useLibrarySearch", () => {
       ...emptyResponse,
       files: [
         {
-          file_id: 1,
+          file_id:
+            "nom1eyJsaWJyYXJ5X3V1aWQiOiIxMjNlNDU2Ny1lODliLTQyZDMtYTQ1Ni00MjY2MTQxNzQwMDAiLCJwYXRoIjoibmV3Lm1wMyJ9",
           path: "/new.mp3",
-          library_id: 2,
+          library_uuid: "123e4567-e89b-42d3-a456-426614174000",
           tagged: true,
           skip_auto_tag: false,
           tags: [],
@@ -86,6 +87,9 @@ describe("useLibrarySearch", () => {
       vi.advanceTimersByTime(500);
       await Promise.resolve();
     });
-    expect(result.current.results?.tracks[0].file_id).toBe(1);
+    expect(result.current.results?.tracks[0].file_id).toBe(
+      "nom1eyJsaWJyYXJ5X3V1aWQiOiIxMjNlNDU2Ny1lODliLTQyZDMtYTQ1Ni00MjY2MTQxNzQwMDAiLCJwYXRoIjoibmV3Lm1wMyJ9",
+    );
+    expect(result.current.results?.tracks[0].library_uuid).toBe("123e4567-e89b-42d3-a456-426614174000");
   });
 });

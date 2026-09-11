@@ -29,7 +29,7 @@ from nomarr.persistence.models.worker_restart_policy import WorkerRestartPolicy
 
 def _make_identity(song_id: int) -> SongIdentity:
     return SongIdentity(
-        library=LibraryIdentity(name="lib", root_path="/music"),
+        library=LibraryIdentity(library_uuid="6b13a1b6-f86d-501e-aa19-30e3751e1211", name="lib", root_path="/music"),
         normalized_path=f"artist/song{song_id}.flac",
     )
 
@@ -51,7 +51,12 @@ def _claim_env(pg_session):
     song_repo = cast("MagicMock", repo._song_repo)
     library_repo = cast("MagicMock", repo._library_repo)
     lib_id = 100
-    library_row = {"id": lib_id, "name": "lib", "path": "/music"}
+    library_row = {
+        "id": lib_id,
+        "library_uuid": "6b13a1b6-f86d-501e-aa19-30e3751e1211",
+        "name": "lib",
+        "path": "/music",
+    }
     songs: dict[int, str] = {}
 
     def get_song_by_normalized_path(library_id: int, normalized_path: str) -> dict | None:
@@ -65,7 +70,7 @@ def _claim_env(pg_session):
             return None
         return {"id": song_id, "library_id": lib_id, "normalized_path": songs[song_id]}
 
-    library_repo.get_library_by_natural_key.return_value = library_row
+    library_repo.get_library_by_uuid.return_value = library_row
     library_repo.get_library.return_value = library_row
     song_repo.get_song_by_normalized_path.side_effect = get_song_by_normalized_path
     song_repo.get_song.side_effect = get_song

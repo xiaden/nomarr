@@ -129,7 +129,9 @@ class TestGetTrackVectorContract:
 
     def _song_vector(self, vector: tuple[float, ...]) -> SongVector:
         song = SongIdentity(
-            library=LibraryIdentity(name="Music", root_path="/music"),
+            library=LibraryIdentity(
+                library_uuid="6313b0d3-d270-57a8-9e0d-21e8255107e3", name="Music", root_path="/music"
+            ),
             normalized_path="songs/1.mp3",
         )
         return SongVector(

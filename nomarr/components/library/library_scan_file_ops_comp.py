@@ -26,6 +26,7 @@ from nomarr.components.library.library_song_state_comp import (
 )
 from nomarr.helpers.constants.file_states import STATE_NOT_PROCESSED, STATE_PROCESSED
 from nomarr.helpers.dataclasses.library_domain_dataclasses import LibraryFolder
+from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity, SongRemoval
 from nomarr.helpers.exceptions import DatabaseStateError
 from nomarr.helpers.time_helper import now_ms
 
@@ -169,11 +170,25 @@ def remove_deleted_files(db: Database, library: Library, paths: list[str]) -> in
 
     Returns the number of files deleted.
     """
-    file_ids = [song.song_id for path in paths if (song := db.library.get_song_by_path(path, library)) is not None]
-    for file_id in file_ids:
-        db.library.remove_song(file_id)
-
-    return len(file_ids)
+    if library.library_uuid is None:
+        msg = f"Library {library.name!r} has no library_uuid"
+        raise ValueError(msg)
+    library_identity = LibraryIdentity(
+        library_uuid=library.library_uuid,
+        name=library.name,
+        root_path=library.root_path,
+    )
+    removed = 0
+    for path in paths:
+        song = db.library.get_song_by_path(path, library)
+        if song is None:
+            continue
+        command = SongRemoval(
+            song_identity=SongIdentity(library=library_identity, normalized_path=song.normalized_path),
+        )
+        if db.library.remove_song(command):
+            removed += 1
+    return removed
 
 
 def get_cached_folders(

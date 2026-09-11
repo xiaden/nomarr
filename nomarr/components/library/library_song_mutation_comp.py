@@ -56,8 +56,14 @@ def upsert_library_song(
         msg = f"Cannot upsert invalid path ({path.status}): {path.reason}"
         raise ValueError(msg)
 
+    if library.library_uuid is None:
+        raise ValueError(f"Library {library.name!r} has no library_uuid")
     command = SongUpsertInput(
-        library=LibraryIdentity(name=library.name, root_path=library.root_path),
+        library=LibraryIdentity(
+            library_uuid=library.library_uuid,
+            name=library.name,
+            root_path=library.root_path,
+        ),
         path=str(path.absolute),
         scan=SongScanUpdate(
             normalized_path=str(path.relative),

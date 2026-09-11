@@ -5,12 +5,13 @@ Provides search functionality for library files with tag filtering.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from nomarr.components.library.library_song_query_comp import search_songs_with_tags
 from nomarr.components.tagging.tag_query_comp import list_tags_by_name
 
 if TYPE_CHECKING:
+    from nomarr.components.library.song_query_types import TaggedSong
     from nomarr.helpers.dto.library_dto import SearchFilesQuery
     from nomarr.persistence.db import Database
 
@@ -18,15 +19,19 @@ if TYPE_CHECKING:
 def search_songs(
     db: Database,
     query: SearchFilesQuery,
-) -> tuple[list[dict[str, Any]], int]:
+) -> tuple[list[TaggedSong], int]:
     """Search library files with optional filtering.
+
+    Consumes F's ID-free typed ``TaggedSong`` carriers (semantic ``Song`` +
+    canonical metadata + file tags). No generated integer ``songs.id``/``file_id``
+    is produced; callers derive the opaque locator at the projection boundary.
 
     Args:
         db: Database instance
         query: Search/filter parameters
 
     Returns:
-        Tuple of (files list with tags, total count)
+        Tuple of (typed carrier list with tags, total count)
 
     """
     # Use joined queries for efficient file+tag retrieval

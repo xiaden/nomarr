@@ -22,6 +22,7 @@ export async function getStats(): Promise<LibraryStats> {
 
 interface LibraryResponse {
   library_id: string;
+  library_uuid: string;
   name: string;
   root_path: string;
   is_enabled: boolean;
@@ -42,6 +43,7 @@ interface LibraryResponse {
 function mapLibraryResponse(lib: LibraryResponse): Library {
   return {
     library_id: lib.library_id,
+    libraryUuid: lib.library_uuid,
     name: lib.name,
     rootPath: lib.root_path,
     isEnabled: lib.is_enabled,
@@ -295,7 +297,8 @@ export async function getLibraryVectorStats(libraryId: string): Promise<LibraryV
 // ────────────────────────────────────────────────────────────────────────────────
 
 export interface ErroredFileItem {
-  file_id: number;
+  /** Opaque `nom1` SongLocator token */
+  file_id: string;
   path: string;
   duration_seconds: number | null;
   artist: string | null;

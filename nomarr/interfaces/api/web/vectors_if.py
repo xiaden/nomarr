@@ -7,11 +7,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, HTTPException
 
 from nomarr.interfaces.api.auth import verify_session
-from nomarr.interfaces.api.id_codec import decode_id, decode_path_id, encode_id
+from nomarr.interfaces.api.id_codec import encode_song_locator
 from nomarr.interfaces.api.types.vector_types import (
     VectorGetResponse,
     VectorHotColdStats,
@@ -25,9 +26,11 @@ from nomarr.interfaces.api.types.vector_types import (
     VectorStatsResponse,
 )
 from nomarr.interfaces.api.web.dependencies import (
+    get_library_service,
     get_ml_service,
     get_vector_maintenance_service,
     get_vector_search_service,
+    resolve_song_locator,
 )
 from nomarr.services.domain.vector_maintenance_svc import (
     VectorMaintenanceService,  # noqa: TC001  # FastAPI resolves Annotated[...] at route registration
@@ -40,6 +43,9 @@ from nomarr.services.domain.vector_search_svc import (
 from nomarr.services.infrastructure.ml_svc import (
     MLService,  # noqa: TC001  # FastAPI resolves Annotated[...] at route registration
 )
+
+if TYPE_CHECKING:
+    from nomarr.services.domain.library_svc import LibraryService
 
 logger = logging.getLogger(__name__)
 
@@ -58,20 +64,23 @@ async def list_backbones(
 async def search_vectors(
     request: VectorSearchRequest,
     vector_search_service: VectorSearchService = Depends(get_vector_search_service),
+    library_service: LibraryService = Depends(get_library_service),
 ) -> VectorSearchResponse:
     """Search for similar vectors using ANN similarity."""
+    seed = await resolve_song_locator(library_service, request.file_id)
     try:
         results = await asyncio.to_thread(
-            vector_search_service.search_similar_tracks,
-            file_id=decode_id(request.file_id),
-            backbone_id=request.backbone_id,
-            limit=request.limit,
-            min_score=request.min_score,
+            lambda: vector_search_service.search_similar_tracks(
+                song=seed,
+                backbone_id=request.backbone_id,
+                limit=request.limit,
+                min_score=request.min_score,
+            )
         )
 
         result_items = [
             VectorSearchResultItem(
-                file_id=encode_id(result["file_id"]),
+                file_id=encode_song_locator(result["song"]),
                 score=result["score"],
                 vector=result["vector"],
             )
@@ -106,21 +115,22 @@ async def get_track_vector(
     backbone_id: str,
     file_id: str,
     vector_search_service: VectorSearchService = Depends(get_vector_search_service),
+    library_service: LibraryService = Depends(get_library_service),
 ) -> VectorGetResponse:
     """Get embedding vector for a specific track."""
-    decoded_file_id: int = decode_path_id(file_id)
-    result = await asyncio.to_thread(vector_search_service.get_track_vector, backbone_id, decoded_file_id)
+    locator = await resolve_song_locator(library_service, file_id)
+    result = await asyncio.to_thread(vector_search_service.get_track_vector, backbone_id, locator)
 
     if result is None:
         raise HTTPException(
             status_code=404,
-            detail=f"No vector found for file '{decoded_file_id}' with backbone '{backbone_id}'",
+            detail=f"No vector found for file '{encode_song_locator(locator)}' with backbone '{backbone_id}'",
         )
 
     # ``result`` is a domain ``SongVector``; transport-adapt its stored vector
-    # (echoing the requested file/backbone ids). No persistence key is exposed.
+    # (echoing the resolved opaque locator). No persistence key is exposed.
     return VectorGetResponse(
-        file_id=encode_id(file_id),
+        file_id=encode_song_locator(locator),
         backbone_id=backbone_id,
         vector=list(result.vector),
     )

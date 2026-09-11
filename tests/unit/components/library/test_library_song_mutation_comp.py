@@ -106,7 +106,9 @@ class TestUpsertLibraryFile:
         mock_db = MagicMock()
         library = Library(name="music", root_path="C:/music")
         identity = SongIdentity(
-            library=LibraryIdentity(name="music", root_path="C:/music"),
+            library=LibraryIdentity(
+                library_uuid="d385dfdd-5f4d-5bdc-a60e-00ca1994ba7d", name="music", root_path="C:/music"
+            ),
             normalized_path="relative/song.mp3",
         )
         mock_db.library.add_song_to_library.return_value = identity
@@ -146,7 +148,9 @@ class TestUpsertLibraryFile:
         mock_db = MagicMock()
         library = Library(name="music", root_path="C:/music")
         identity = SongIdentity(
-            library=LibraryIdentity(name="music", root_path="C:/music"),
+            library=LibraryIdentity(
+                library_uuid="d385dfdd-5f4d-5bdc-a60e-00ca1994ba7d", name="music", root_path="C:/music"
+            ),
             normalized_path="relative/song.mp3",
         )
         mock_db.library.add_song_to_library.return_value = identity
@@ -205,7 +209,9 @@ class TestUpdateFilePath:
     @staticmethod
     def _source(normalized_path: str = "old/a.mp3") -> SongIdentity:
         return SongIdentity(
-            library=LibraryIdentity(name="TestLib", root_path="C:/music"),
+            library=LibraryIdentity(
+                library_uuid="d2dca899-f052-586f-a264-c56672503a30", name="TestLib", root_path="C:/music"
+            ),
             normalized_path=normalized_path,
         )
 
@@ -262,7 +268,9 @@ class TestUpdateFilePath:
         """The adapter returns the move intent's destination SongIdentity."""
         mock_db = MagicMock()
         destination = SongIdentity(
-            library=LibraryIdentity(name="TestLib", root_path="C:/music"),
+            library=LibraryIdentity(
+                library_uuid="d2dca899-f052-586f-a264-c56672503a30", name="TestLib", root_path="C:/music"
+            ),
             normalized_path="relative/new-song.mp3",
         )
         mock_db.library.move_library_song.return_value = destination

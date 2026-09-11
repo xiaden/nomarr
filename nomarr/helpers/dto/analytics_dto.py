@@ -16,6 +16,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
+
 
 @dataclass
 class TagCorrelationData:
@@ -74,9 +76,9 @@ class ComputeTagCorrelationMatrixParams:
 
     namespace: str
     top_n: int
-    mood_tag_rows: Sequence[tuple[int, str]]  # (file_id, tag_value) - tag_value is JSON array string
+    mood_tag_rows: Sequence[tuple[SongIdentity, str]]  # (SongLocator, tag_value) - tag_value is JSON array string
     tier_tag_keys: Sequence[str]
-    tier_tag_rows: dict[str, Sequence[tuple[int, str]]]
+    tier_tag_rows: dict[str, Sequence[tuple[SongIdentity, str]]]
 
 
 @dataclass

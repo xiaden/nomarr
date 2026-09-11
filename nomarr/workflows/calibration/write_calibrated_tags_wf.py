@@ -211,7 +211,6 @@ def write_calibrated_tags_wf(
         save_mood_tags(db, song_id, mood_tags)
         global_version = get_calibration_version(db)
         if global_version:
-            update_file_calibration_hash(db, song_id)
-            logger.debug("[calibrated_tags] Updated calibration_hash for %s", file_path)
+            update_file_calibration_hash(db, song_id, global_version)
         logger.debug("[calibrated_tags] Updated mood tags in DB for %s", file_path)
     return True

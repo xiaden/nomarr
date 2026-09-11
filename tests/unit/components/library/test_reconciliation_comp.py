@@ -57,7 +57,7 @@ def _library() -> Library:
 def _identity(song_id: int) -> SongIdentity:
     """Construct a natural song identity for a numeric song handle."""
     return SongIdentity(
-        library=LibraryIdentity(name="Test Library"),
+        library=LibraryIdentity(library_uuid="691ebf37-b1e4-5244-a9c0-4758c39eaab6", name="Test Library"),
         normalized_path=f"song-{song_id}.mp3",
     )
 

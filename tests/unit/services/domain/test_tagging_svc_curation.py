@@ -437,7 +437,7 @@ class TestSplitTag:
     """Tests for ``TaggingCurationMixin.split_tag``."""
 
     def _lib(self) -> LibraryIdentity:
-        return LibraryIdentity(name="music", root_path="/music")
+        return LibraryIdentity(library_uuid="2621ebfb-71ff-5168-a812-5342ca310e8c", name="music", root_path="/music")
 
     @pytest.mark.unit
     @pytest.mark.mocked

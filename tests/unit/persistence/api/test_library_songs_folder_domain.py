@@ -27,6 +27,7 @@ from nomarr.persistence.api.library_songs import LibrarySongsDb
 def _library_row(**overrides: object) -> LibraryRow:
     base = {
         "id": 7,
+        "library_uuid": "00000000-0000-0000-0000-000000000007",
         "name": "main",
         "path": "/music",
         "library_type": "music",
@@ -99,6 +100,7 @@ def _make_songs(
 
 def _main_library() -> Library:
     return Library(
+        library_uuid="00000000-0000-0000-0000-000000000007",
         name="main",
         root_path="/music",
         is_enabled=True,
@@ -128,7 +130,7 @@ def _folder(**overrides: object) -> LibraryFolder:
 @pytest.mark.unit
 def test_get_folder_uses_library_relative_natural_identity() -> None:
     songs, _, folder_repo, library_repo = _make_songs()
-    library_repo.get_library_by_natural_key = MagicMock(return_value=_library_row())
+    library_repo.get_library_by_uuid = MagicMock(return_value=_library_row())
     folder_repo.get_folder_by_path = MagicMock(return_value=_folder())
 
     result = songs.get_folder(_main_library(), "Album")
@@ -144,7 +146,7 @@ def test_list_folders_forwards_domain_values_without_ids() -> None:
     # unchanged and resolves the natural key. Raw ``LibraryFolderRow`` values
     # never reach the caller.
     songs, _, folder_repo, library_repo = _make_songs()
-    library_repo.get_library_by_natural_key = MagicMock(return_value=_library_row())
+    library_repo.get_library_by_uuid = MagicMock(return_value=_library_row())
     folder_repo.list_folders_for_library = MagicMock(return_value=[_folder()])
 
     result = songs.list_folders_for_library(_main_library())
@@ -161,7 +163,7 @@ def test_list_folders_forwards_domain_values_without_ids() -> None:
     assert not hasattr(folder, "id")
     assert not hasattr(folder, "parent_id")
     assert not hasattr(folder, "library_id")
-    library_repo.get_library_by_natural_key.assert_called_once_with("main", "/music")
+    library_repo.get_library_by_uuid.assert_called_once_with("00000000-0000-0000-0000-000000000007")
     folder_repo.list_folders_for_library.assert_called_once_with(7)
 
 
@@ -171,7 +173,7 @@ def test_list_folders_forwards_domain_values_without_ids() -> None:
 @pytest.mark.unit
 def test_add_library_folder_builds_payload_and_returns_domain() -> None:
     songs, _, folder_repo, library_repo = _make_songs()
-    library_repo.get_library_by_natural_key = MagicMock(return_value=_library_row())
+    library_repo.get_library_by_uuid = MagicMock(return_value=_library_row())
     folder_repo.get_folder_by_path = MagicMock(return_value=_folder())
 
     result = songs.add_library_folder(_main_library(), _folder())
@@ -193,7 +195,7 @@ def test_add_library_folder_builds_payload_and_returns_domain() -> None:
 @pytest.mark.unit
 def test_add_library_folder_resolves_parent_path_to_parent_id_internally() -> None:
     songs, _, folder_repo, library_repo = _make_songs()
-    library_repo.get_library_by_natural_key = MagicMock(return_value=_library_row())
+    library_repo.get_library_by_uuid = MagicMock(return_value=_library_row())
     folder_repo.get_folder_id_by_path = MagicMock(return_value=55)
 
     songs.add_library_folder(_main_library(), _folder(parent_path="Boxset"))
@@ -206,7 +208,7 @@ def test_add_library_folder_resolves_parent_path_to_parent_id_internally() -> No
 @pytest.mark.unit
 def test_replace_library_folder_resolves_path_and_updates() -> None:
     songs, _, folder_repo, library_repo = _make_songs()
-    library_repo.get_library_by_natural_key = MagicMock(return_value=_library_row())
+    library_repo.get_library_by_uuid = MagicMock(return_value=_library_row())
     folder_repo.get_folder_id_by_path = MagicMock(return_value=41)
     folder_repo.get_folder_by_path = MagicMock(return_value=_folder(name="Album V2"))
 
@@ -223,7 +225,7 @@ def test_replace_library_folder_resolves_path_and_updates() -> None:
 @pytest.mark.unit
 def test_replace_library_folder_rejects_path_mismatch() -> None:
     songs, _, folder_repo, library_repo = _make_songs()
-    library_repo.get_library_by_natural_key = MagicMock(return_value=_library_row())
+    library_repo.get_library_by_uuid = MagicMock(return_value=_library_row())
 
     with pytest.raises(ValueError, match=r"folder_path must match folder\.path"):
         songs.replace_library_folder(_main_library(), "Missing", _folder())
@@ -234,7 +236,7 @@ def test_replace_library_folder_rejects_path_mismatch() -> None:
 @pytest.mark.unit
 def test_replace_library_folder_raises_when_path_missing() -> None:
     songs, _, folder_repo, library_repo = _make_songs()
-    library_repo.get_library_by_natural_key = MagicMock(return_value=_library_row())
+    library_repo.get_library_by_uuid = MagicMock(return_value=_library_row())
     folder_repo.get_folder_id_by_path = MagicMock(return_value=None)
 
     with pytest.raises(LookupError):
@@ -244,7 +246,7 @@ def test_replace_library_folder_raises_when_path_missing() -> None:
 @pytest.mark.unit
 def test_remove_library_folder_resolves_path() -> None:
     songs, _, folder_repo, library_repo = _make_songs()
-    library_repo.get_library_by_natural_key = MagicMock(return_value=_library_row())
+    library_repo.get_library_by_uuid = MagicMock(return_value=_library_row())
     folder_repo.get_folder_id_by_path = MagicMock(return_value=41)
 
     songs.remove_library_folder(_main_library(), "Album")
@@ -256,7 +258,7 @@ def test_remove_library_folder_resolves_path() -> None:
 @pytest.mark.unit
 def test_remove_library_folder_is_noop_when_missing() -> None:
     songs, _, folder_repo, library_repo = _make_songs()
-    library_repo.get_library_by_natural_key = MagicMock(return_value=_library_row())
+    library_repo.get_library_by_uuid = MagicMock(return_value=_library_row())
     folder_repo.get_folder_id_by_path = MagicMock(return_value=None)
 
     songs.remove_library_folder(_main_library(), "Missing")
@@ -267,7 +269,7 @@ def test_remove_library_folder_is_noop_when_missing() -> None:
 @pytest.mark.unit
 def test_replace_library_folders_is_path_stable() -> None:
     songs, _, folder_repo, library_repo = _make_songs()
-    library_repo.get_library_by_natural_key = MagicMock(return_value=_library_row())
+    library_repo.get_library_by_uuid = MagicMock(return_value=_library_row())
     folder_repo.get_folder_id_by_path = MagicMock(return_value=55)
 
     songs.replace_library_folders(
@@ -292,7 +294,7 @@ def test_replace_library_folders_is_path_stable() -> None:
 @pytest.mark.unit
 def test_list_songs_resolves_library_and_returns_domain_songs() -> None:
     songs, song_repo, _, library_repo = _make_songs()
-    library_repo.get_library_by_natural_key = MagicMock(return_value=_library_row())
+    library_repo.get_library_by_uuid = MagicMock(return_value=_library_row())
     song_repo.list_songs = MagicMock(return_value=[_song_row()])
 
     result = songs.list_songs(_main_library(), limit=100)
@@ -301,13 +303,13 @@ def test_list_songs_resolves_library_and_returns_domain_songs() -> None:
     assert len(result) == 1
     assert result[0].path == "Album/track.mp3"
     assert not hasattr(result[0], "song_id")  # generated songs.id stays persistence-private
-    library_repo.get_library_by_natural_key.assert_called_once_with("main", "/music")
+    library_repo.get_library_by_uuid.assert_called_once_with("00000000-0000-0000-0000-000000000007")
 
 
 @pytest.mark.unit
 def test_list_songs_for_folder_resolves_library_and_maps() -> None:
     songs, song_repo, _, library_repo = _make_songs()
-    library_repo.get_library_by_natural_key = MagicMock(return_value=_library_row())
+    library_repo.get_library_by_uuid = MagicMock(return_value=_library_row())
     song_repo.list_songs_for_folder = MagicMock(return_value=[_song_row()])
 
     result = songs.list_songs_for_folder(_main_library(), "Album")
@@ -319,7 +321,7 @@ def test_list_songs_for_folder_resolves_library_and_maps() -> None:
 @pytest.mark.unit
 def test_count_songs_for_library_resolves_library() -> None:
     songs, song_repo, _, library_repo = _make_songs()
-    library_repo.get_library_by_natural_key = MagicMock(return_value=_library_row())
+    library_repo.get_library_by_uuid = MagicMock(return_value=_library_row())
     song_repo.count_songs = MagicMock(return_value=5)
 
     assert songs.count_songs_for_library(_main_library()) == 5
@@ -329,7 +331,7 @@ def test_count_songs_for_library_resolves_library() -> None:
 @pytest.mark.unit
 def test_find_library_song_by_chromaprint_resolves_and_maps() -> None:
     songs, song_repo, _, library_repo = _make_songs()
-    library_repo.get_library_by_natural_key = MagicMock(return_value=_library_row())
+    library_repo.get_library_by_uuid = MagicMock(return_value=_library_row())
     song_repo.find_song_by_chromaprint = MagicMock(return_value=_song_row(chromaprint="abc"))
 
     result = songs.find_library_song_by_chromaprint(_main_library(), "abc")
@@ -342,7 +344,7 @@ def test_find_library_song_by_chromaprint_resolves_and_maps() -> None:
 @pytest.mark.unit
 def test_list_existing_song_paths_resolves_library() -> None:
     songs, song_repo, _, library_repo = _make_songs()
-    library_repo.get_library_by_natural_key = MagicMock(return_value=_library_row())
+    library_repo.get_library_by_uuid = MagicMock(return_value=_library_row())
     song_repo.list_existing_song_paths = MagicMock(return_value=["Album/track.mp3"])
 
     result = songs.list_existing_song_paths(_main_library(), ["Album/track.mp3"])
@@ -354,7 +356,7 @@ def test_list_existing_song_paths_resolves_library() -> None:
 @pytest.mark.unit
 def test_library_scoped_song_raises_when_library_unknown() -> None:
     songs, _, _, library_repo = _make_songs()
-    library_repo.get_library_by_natural_key = MagicMock(return_value=None)
+    library_repo.get_library_by_uuid = MagicMock(return_value=None)
 
     with pytest.raises(LookupError):
         songs.list_songs(_main_library())

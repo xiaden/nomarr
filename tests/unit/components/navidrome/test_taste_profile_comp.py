@@ -36,7 +36,7 @@ from nomarr.helpers.dataclasses.vector_dataclass import SongVector
 
 TAGS_PATH = "nomarr.components.navidrome.taste_profile_comp"
 
-_LIB_ID = LibraryIdentity(name="test-lib", root_path="/test-lib")
+_LIB_ID = LibraryIdentity(library_uuid="731904c6-da85-539e-8e0c-a37c8d156b7e", name="test-lib", root_path="/test-lib")
 
 
 def _make_play(

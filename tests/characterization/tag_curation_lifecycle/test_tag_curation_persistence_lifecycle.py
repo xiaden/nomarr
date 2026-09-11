@@ -78,7 +78,11 @@ def _seed(db: Database, root: str = "/repo/curation", n: int = 3) -> tuple[Libra
     """
     name = f"cur_{root.strip('/').replace('/', '_')}"
     lib = db.library.create_library(Library(name=name, root_path=root))
-    lib_ident = LibraryIdentity(name=lib.name, root_path=lib.root_path)
+    lib_ident = LibraryIdentity(
+        library_uuid=lib.library_uuid or "00000000-0000-0000-0000-000000000000",
+        name=lib.name,
+        root_path=lib.root_path,
+    )
     now = now_ms().value
     identities: list[Any] = []
     paths: list[str] = []

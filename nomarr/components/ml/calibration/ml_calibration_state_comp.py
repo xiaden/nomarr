@@ -22,6 +22,7 @@ from nomarr.helpers.dataclasses.calibration_state_dataclass import CalibrationSt
 from nomarr.helpers.time_helper import now_ms
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
@@ -239,16 +240,21 @@ def set_calibration_last_run(db: Database, timestamp: str) -> None:
 
 def update_file_calibration_hash(
     db: Database,
-    file_id: int,
-) -> None:
-    """Mark a single library file as calibrated."""
-    transition_song_state(db, [file_id], STATE_NOT_CALIBRATED, STATE_CALIBRATED)
+    song: SongIdentity,
+    calibration_hash: str,
+) -> bool:
+    """Persist a hash and mark one located song calibrated."""
+    updated = db.library.update_song_calibration_hash(song, calibration_hash)
+    if not updated:
+        return False
+    transition_song_state(db, [song], STATE_NOT_CALIBRATED, STATE_CALIBRATED)
+    return True
 
 
 def update_file_calibration_hashes_batch(
     db: Database,
-    file_ids: list[int],
-) -> None:
+    updates: list[tuple[SongIdentity, str]],
+) -> int:
     """Mark multiple library files as calibrated.
 
     Args:
@@ -256,8 +262,10 @@ def update_file_calibration_hashes_batch(
         file_ids: List of file id values (e.g. ``123``).
 
     """
-    for file_id in file_ids:
-        transition_song_state(db, [file_id], STATE_NOT_CALIBRATED, STATE_CALIBRATED)
+    updated = db.library.update_song_calibration_hashes(updates)
+    if updated:
+        transition_song_state(db, [song for song, _ in updates], STATE_NOT_CALIBRATED, STATE_CALIBRATED)
+    return updated
 
 
 def compute_reconciliation_info(

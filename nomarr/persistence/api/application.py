@@ -24,8 +24,11 @@ from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence.mappers.song_mapper import song_row_to_domain
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+
     from sqlalchemy.orm import Session, scoped_session
 
+    from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
     from nomarr.helpers.dataclasses.song_dataclass import Song
     from nomarr.helpers.dataclasses.worker_claim_dataclass import (
         ClaimRemovalRequest,
@@ -113,19 +116,39 @@ class AppDb:
     # Routine top-level methods already aligned with the DD contract
     # ------------------------------------------------------------------
 
-    def song_state_membership(self, song_id: int) -> set[str]:
-        """Return every processing-state membership for one song.
+    def _resolve_state_song_ids(self, songs: Sequence[SongIdentity]) -> list[int]:
+        """Resolve locator values to private song handles for one intent.
 
-        The empty set means that no state has been assigned.  State names are
-        the domain vocabulary; callers never handle state-table identifiers.
+        Resolution is deliberately kept inside the persistence facade.  Missing
+        or stale locators are omitted; callers never receive the generated
+        handles and never need to coordinate a second transaction.
         """
+        unique_songs = list(dict.fromkeys(songs))
+        return [
+            song_id
+            for song_id in (self._app_repo._resolve_song_id(song) for song in unique_songs)
+            if song_id is not None
+        ]
+
+    def song_state_membership(self, song: SongIdentity) -> set[str]:
+        """Return every processing-state membership for one SongLocator."""
+        song_id = self._app_repo._resolve_song_id(song)
+        if song_id is None:
+            return set()
         return set(self._song_state_repo.get_song_states(song_id))
 
-    def song_state_memberships(self, song_ids: list[int]) -> dict[int, set[str]]:
-        """Return state memberships, including empty sets for unknown songs."""
-        unique_song_ids = list(dict.fromkeys(song_ids))
-        memberships = self._song_state_repo.get_song_states_for_songs(unique_song_ids)
-        return {song_id: set(memberships.get(song_id, set())) for song_id in unique_song_ids}
+    def song_state_memberships(self, songs: Sequence[SongIdentity]) -> Mapping[SongIdentity, set[str]]:
+        """Return memberships keyed by unique input locators, including misses."""
+        unique_songs = list(dict.fromkeys(songs))
+        resolved = {
+            song: song_id for song in unique_songs if (song_id := self._app_repo._resolve_song_id(song)) is not None
+        }
+        memberships = self._song_state_repo.get_song_states_for_songs(list(resolved.values()))
+        return {
+            song: set(memberships.get(song_id, set())) if song_id is not None else set()
+            for song in unique_songs
+            for song_id in [resolved.get(song)]
+        }
 
     def song_ids_with_state(self, state: str, *, limit: int | None = None) -> list[int]:
         """Return song identifiers currently in the requested state."""
@@ -152,30 +175,25 @@ class AppDb:
         """Count songs currently in the requested state."""
         return self._song_state_repo.count_songs_in_state(state)
 
-    def transition_song_states(self, song_ids: list[int], from_state: str, to_state: str) -> None:
-        """Move songs between two poles while preserving all other axes."""
-        self._song_state_repo.transition_state_for_songs(song_ids, from_state, to_state)
+    def transition_song_states(self, songs: Sequence[SongIdentity], from_state: str, to_state: str) -> None:
+        """Move located songs between two poles while preserving other axes."""
+        self._song_state_repo.transition_state_for_songs(self._resolve_state_song_ids(songs), from_state, to_state)
 
-    def initialize_song_states(self, song_ids: list[int]) -> None:
-        """Ensure new songs have the canonical initial state membership."""
-        self._song_state_repo.initialize_song_states(song_ids)
+    def initialize_song_states(self, songs: Sequence[SongIdentity]) -> None:
+        """Ensure located songs have canonical initial state membership."""
+        self._song_state_repo.initialize_song_states(self._resolve_state_song_ids(songs))
 
-    def clear_song_states(self, song_ids: list[int]) -> int:
-        """Remove all memberships for explicitly requested songs.
+    def clear_song_states(self, songs: Sequence[SongIdentity]) -> int:
+        """Remove all memberships for explicitly located songs."""
+        return self._song_state_repo.remove_states_for_songs(self._resolve_state_song_ids(list(dict.fromkeys(songs))))
 
-        This is an explicit cleanup intent, not a routine state transition.
-        The returned count is useful to maintenance callers and hides the
-        assignment-row representation.
-        """
-        return self._song_state_repo.remove_states_for_songs(list(dict.fromkeys(song_ids)))
+    def set_song_state(self, songs: Sequence[SongIdentity], state: str) -> None:
+        """Set one state axis for located songs without exposing row handles."""
+        self._song_state_repo.set_state_for_songs(self._resolve_state_song_ids(songs), state)
 
-    def set_song_state(self, song_ids: list[int], state: str) -> None:
-        """Set one state axis without exposing assignment primitives."""
-        self._song_state_repo.set_state_for_songs(song_ids, state)
-
-    def remove_song_state(self, song_ids: list[int], state: str) -> None:
-        """Remove one named state without disturbing the other axes."""
-        self._song_state_repo.remove_state_for_songs(list(dict.fromkeys(song_ids)), state)
+    def remove_song_state(self, songs: Sequence[SongIdentity], state: str) -> None:
+        """Remove one named state for located songs without disturbing other axes."""
+        self._song_state_repo.remove_state_for_songs(self._resolve_state_song_ids(songs), state)
 
     @staticmethod
     def _lock_key(lock_type: str, resource_id: str) -> str:

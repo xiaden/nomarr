@@ -34,7 +34,7 @@ from nomarr.helpers.dataclasses.song_tag_dataclass import (
 )
 from nomarr.persistence.api.library_tags import LibraryTagsDb
 
-_TEST_LIBRARY = LibraryIdentity(name="TestLib", root_path="/music")
+_TEST_LIBRARY = LibraryIdentity(library_uuid="de131b32-af5c-5a84-8874-58e3dc0e2dcd", name="TestLib", root_path="/music")
 
 
 def _song(normalized_path: str = "a.mp3") -> SongIdentity:

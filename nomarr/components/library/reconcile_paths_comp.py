@@ -69,7 +69,7 @@ def reconcile_library_paths(
         deleted_before_batch = result["deleted_files"]
         for file_record in files:
             result["total_files"] += 1
-            file_path = file_record["path"]
+            file_path = file_record.song.path
             try:
                 library_path = build_library_path_from_db(
                     stored_path=file_path, db=db, library_id=library.name, check_disk=True

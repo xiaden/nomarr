@@ -119,12 +119,11 @@ async def navidrome_similar_tracks(
 class TrackPlayInput(BaseModel):
     """Play history entry provided by the Navidrome plugin.
 
-    ``file_id`` is the integer primary key of the library file
-    that the plugin resolves from a ``nomarr_file_key`` received in prior
-    descriptor responses.
+    ``file_id`` is the opaque ``nom1`` SongLocator token the plugin received as
+    ``nomarr_file_key`` in prior descriptor responses.
     """
 
-    file_id: int
+    file_id: str
     playcount: int = Field(ge=0)
     last_played: int | None = None
 
@@ -170,7 +169,7 @@ async def navidrome_generate_playlists(
     # Convert Pydantic models to TrackPlayData TypedDicts
     top_plays: list[TrackPlayData] = [
         TrackPlayData(
-            file_id=int(p.file_id),
+            file_id=p.file_id,
             playcount=p.playcount,
             last_played=p.last_played,
         )

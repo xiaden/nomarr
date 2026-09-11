@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from itertools import count
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -682,7 +683,10 @@ class TestGetEmbeddingCounts:
         _resolve = MagicMock(return_value=7)
         repo._resolve_library_storage_id = _resolve  # type: ignore[method-assign]
 
-        repo.get_embedding_counts(_BACKBONE, library=LibraryIdentity(name="lib", root_path="/lib"))
+        repo.get_embedding_counts(
+            _BACKBONE,
+            library=LibraryIdentity(library_uuid="2b202d70-24f8-5ecc-8ec9-be6a83da5fd7", name="lib", root_path="/lib"),
+        )
         stmt = session.execute.call_args_list[-1][0][0]
         sql = str(stmt.compile(dialect=postgresql.dialect()))
 
@@ -697,7 +701,10 @@ class TestGetEmbeddingCounts:
         repo = VectorRepo(session)
         repo._resolve_library_storage_id = MagicMock(return_value=7)  # type: ignore[method-assign]
 
-        counts = repo.get_embedding_counts(_BACKBONE, library=LibraryIdentity(name="lib", root_path="/lib"))
+        counts = repo.get_embedding_counts(
+            _BACKBONE,
+            library=LibraryIdentity(library_uuid="2b202d70-24f8-5ecc-8ec9-be6a83da5fd7", name="lib", root_path="/lib"),
+        )
 
         assert counts == EmbeddingCounts(hot_count=1, cold_count=2)
 
@@ -709,7 +716,9 @@ class TestGetEmbeddingCounts:
         session = self._mock_rows()
         repo = VectorRepo(session)
 
-        counts = repo.get_embedding_counts(_BACKBONE, library=LibraryIdentity(name="lib"))
+        counts = repo.get_embedding_counts(
+            _BACKBONE, library=LibraryIdentity(library_uuid="6d87922c-e577-5da8-8220-d7f3426b8c06", name="lib")
+        )
 
         assert counts == EmbeddingCounts(hot_count=0, cold_count=0)
         assert session.execute.call_count == 0
@@ -725,7 +734,12 @@ class TestGetEmbeddingCounts:
         resolution_result.fetchone.return_value = None
         session.execute.return_value = resolution_result
 
-        counts = repo.get_embedding_counts(_BACKBONE, library=LibraryIdentity(name="NoLib", root_path="/nowhere"))
+        counts = repo.get_embedding_counts(
+            _BACKBONE,
+            library=LibraryIdentity(
+                library_uuid="520df5ef-13dd-5c03-8c67-0c699b3fca97", name="NoLib", root_path="/nowhere"
+            ),
+        )
 
         assert counts == EmbeddingCounts(hot_count=0, cold_count=0)
         assert session.execute.call_count == 1
@@ -742,7 +756,10 @@ class TestRowToSongVector:
     empty persisted ``model_suite_hash`` column is caught.
     """
 
-    _SONG = SongIdentity(library=LibraryIdentity(name="lib", root_path="/lib"), normalized_path="a.mp3")
+    _SONG = SongIdentity(
+        library=LibraryIdentity(library_uuid="2b202d70-24f8-5ecc-8ec9-be6a83da5fd7", name="lib", root_path="/lib"),
+        normalized_path="a.mp3",
+    )
 
     @staticmethod
     def _row(**mapping) -> SimpleNamespace:
@@ -825,7 +842,7 @@ class TestRowToVectorMatch:
         result = _row_to_vector_match(self._row(), "effnet", 0.8, include_vector=False)
 
         assert result.song == SongIdentity(
-            library=LibraryIdentity(name="lib", root_path="/lib"),
+            library=LibraryIdentity(library_uuid="2b202d70-24f8-5ecc-8ec9-be6a83da5fd7", name="lib", root_path="/lib"),
             normalized_path="a.mp3",
         )
         assert result.backbone == "effnet"
@@ -1001,11 +1018,13 @@ class TestVectorRepoTypedReads:
         n = next(_LIBRARY_NAMES)
         name = f"Vector Lib {n}"
         path = f"/vector/lib/{n}"
+        library_uuid = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{name}\x00{path}"))
         normalized_path = f"{path}/track.mp3"
         lib_r = session.execute(
             insert(Library).values(
                 name=name,
                 path=path,
+                library_uuid=library_uuid,
                 library_type="music",
                 auto_tag=0,
                 auto_curate=0,
@@ -1030,7 +1049,11 @@ class TestVectorRepoTypedReads:
         )
         song_id = song_r.inserted_primary_key[0]
         identity = SongIdentity(
-            library=LibraryIdentity(name=name, root_path=path),
+            library=LibraryIdentity(
+                library_uuid=str(uuid.uuid5(uuid.NAMESPACE_URL, f"{name}\x00{path}")),
+                name=name,
+                root_path=path,
+            ),
             normalized_path=normalized_path,
         )
         return identity, song_id, lib_id
@@ -1053,7 +1076,11 @@ class TestVectorRepoTypedReads:
             )
         )
         identity = SongIdentity(
-            library=LibraryIdentity(name=lib_name, root_path=lib_path),
+            library=LibraryIdentity(
+                library_uuid=str(uuid.uuid5(uuid.NAMESPACE_URL, f"{lib_name}\x00{lib_path}")),
+                name=lib_name,
+                root_path=lib_path,
+            ),
             normalized_path=normalized_path,
         )
         return identity, song_r.inserted_primary_key[0]
@@ -1136,7 +1163,9 @@ class TestVectorRepoTypedReads:
     def test_get_song_vector_unresolved_identity_returns_none(self, pg_session) -> None:
         # A natural identity whose library does not exist resolves to None.
         unknown = SongIdentity(
-            library=LibraryIdentity(name="No Such Library", root_path="/nowhere"),
+            library=LibraryIdentity(
+                library_uuid="5bc95cb9-db8f-54e6-b746-39a65baca692", name="No Such Library", root_path="/nowhere"
+            ),
             normalized_path="x.mp3",
         )
         repo = VectorRepo(pg_session)

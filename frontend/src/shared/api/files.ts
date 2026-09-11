@@ -12,9 +12,11 @@ export interface FileTag {
 }
 
 export interface LibraryFile {
-  file_id: number;
+  /** Opaque `nom1` SongLocator token (never a generated integer id) */
+  file_id: string;
   path: string;
-  library_id: number | null;
+  /** Owning library UUID (library_uuid), not the generated libraries.id */
+  library_uuid: string | null;
   file_size?: number;
   modified_time?: number;
   duration_seconds?: number;

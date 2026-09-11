@@ -20,7 +20,7 @@ from nomarr.components.ml.vectors.ml_vector_retrieve_comp import (
 from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
 from nomarr.helpers.dataclasses.vector_dataclass import EmbeddingCounts, SongVector, VectorMatch
 
-_LIB_ID = LibraryIdentity(name="Music", root_path="/music")
+_LIB_ID = LibraryIdentity(library_uuid="6313b0d3-d270-57a8-9e0d-21e8255107e3", name="Music", root_path="/music")
 _SEED_SONG = SongIdentity(library=_LIB_ID, normalized_path="songs/seed.mp3")
 
 

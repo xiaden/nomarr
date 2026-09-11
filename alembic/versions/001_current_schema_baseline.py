@@ -33,6 +33,7 @@ def upgrade() -> None:
     op.create_table(
         "libraries",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
+        sa.Column("library_uuid", sa.String(length=36), nullable=False),
         sa.Column("name", sa.String(length=255), nullable=False),
         sa.Column("path", sa.Text(), nullable=False),
         sa.Column("library_type", sa.String(length=50), nullable=False),
@@ -44,6 +45,7 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.BigInteger(), nullable=False),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("name", name="uq_libraries_name"),
+        sa.UniqueConstraint("library_uuid", name="uq_libraries_library_uuid"),
     )
 
     # library_folders

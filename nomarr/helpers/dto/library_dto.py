@@ -60,6 +60,7 @@ class LibraryDict:
     root_path: str
     is_enabled: bool
     id: int | None = None  # storage PK (None post hard-cut)
+    library_uuid: str | None = None  # immutable SongLocator library identity (ADR-049)
     watch_mode: Literal["off", "event", "poll"] = "off"  # File watching mode (default: off)
     file_write_mode: Literal["none", "minimal", "full"] = "full"  # Tag write mode (default: full)
     library_auto_write: bool = False
@@ -126,9 +127,9 @@ class FileTag:
 class LibrarySongWithTags:
     """Library song with its tags."""
 
-    id: int  # PostgreSQL primary key
+    file_id: str  # Opaque SongLocator token
     path: str
-    library_id: int | None  # PostgreSQL foreign key (None for orphaned files)
+    library_uuid: str | None  # Owning library_uuid (None for orphaned files)
     file_size: int | None
     modified_time: int | None
     duration_seconds: float | None
@@ -182,9 +183,9 @@ def map_song_with_tags_to_dto(file_dict: dict[str, Any]) -> LibrarySongWithTags:
     unchanged rather than built from raw dict rows here.
     """
     return LibrarySongWithTags(
-        id=file_dict["id"],
+        file_id=file_dict["file_id"],
         path=file_dict["path"],
-        library_id=file_dict["library_id"],
+        library_uuid=file_dict.get("library_uuid"),
         file_size=file_dict.get("file_size"),
         modified_time=file_dict.get("modified_time"),
         duration_seconds=file_dict.get("duration_seconds"),
@@ -225,7 +226,7 @@ class TagCleanupResult:
 class FileTagsResult:
     """Result from the song-tag lookup (``get_song_tags``)."""
 
-    file_id: int  # PostgreSQL primary key
+    file_id: str  # Opaque SongLocator token (never a generated integer id)
     path: str
     tags: list[FileTag]
 
@@ -258,7 +259,7 @@ class LibraryPipelineStatusDTO:
 class ErroredFileItem(TypedDict):
     """Single errored file with basic metadata."""
 
-    id: int  # PostgreSQL primary key
+    file_id: str  # Opaque SongLocator token (never a generated integer id)
     path: str
     duration_seconds: float | None
     artist: str | None

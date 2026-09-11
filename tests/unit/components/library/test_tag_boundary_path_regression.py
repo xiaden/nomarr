@@ -47,7 +47,7 @@ def _song(**overrides: object) -> Song:
 
 def _identity() -> SongIdentity:
     return SongIdentity(
-        library=LibraryIdentity(name="main", root_path="/music"),
+        library=LibraryIdentity(library_uuid="45064f6d-d92e-5179-ad4d-6a15c1354737", name="main", root_path="/music"),
         normalized_path="song.flac",
     )
 

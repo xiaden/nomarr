@@ -36,6 +36,7 @@ def _row_to_dto(row: Row) -> LibraryRow:
     m = row._mapping
     return LibraryRow(
         id=m["id"],
+        library_uuid=m["library_uuid"],
         name=m["name"],
         path=m["path"],
         library_type=m["library_type"],
@@ -99,13 +100,42 @@ class LibraryRepository:
             row = result.fetchone()
             return _row_to_dto(row) if row else None
 
+    def get_library_by_uuid(self, library_uuid: str) -> LibraryRow | None:
+        """Fetch a single library by its immutable ``library_uuid`` identity.
+
+        ``libraries.library_uuid`` carries the ``uq_libraries_library_uuid``
+        UNIQUE constraint, so this lookup is singular by construction. It is the
+        persistence-side anchor for every SongLocator/library-identity resolution
+        (ADR-049); integer ids remain translation details internal to this layer.
+        """
+        with map_persistence_exceptions():
+            stmt = select(_T).where(_T.c.library_uuid == library_uuid)
+            result = self._session.execute(stmt)
+            row = result.fetchone()
+            return _row_to_dto(row) if row else None
+
+    def get_library_ids_by_uuids(self, uuids: list[str]) -> dict[str, int]:
+        """Resolve a batch of ``library_uuid`` values to library IDs in one query.
+
+        Set-based: a single query for the whole batch, so intent facades can
+        translate a batch of ``LibraryIdentity`` locators without opening N
+        queries. Returns ``{library_uuid: id}``; uuids absent from the table are
+        omitted. IDs never cross the facade boundary.
+        """
+        if not uuids:
+            return {}
+        with map_persistence_exceptions():
+            stmt = select(_T.c.library_uuid, _T.c.id).where(_T.c.library_uuid.in_(uuids))
+            result = self._session.execute(stmt)
+            return {row[0]: row[1] for row in result.all()}
+
     def get_library_ids_by_natural_keys(self, rows: list[tuple[str, str]]) -> dict[tuple[str, str], int]:
         """Resolve ``(name, root_path)`` natural keys to library IDs in one query.
 
-        Set-based: a single query for the whole batch (no per-library lookup
-        loop), so intent facades can translate a batch of ``LibraryIdentity``
-        values without opening N queries. Returns ``{(name, root_path): id}``;
-        keys absent from the table are omitted.
+        Retained for library CRUD/non-Song routes only; SongLocator resolution now
+        goes through :meth:`get_library_ids_by_uuids`. Set-based: a single query
+        for the whole batch. Returns ``{(name, root_path): id}``; keys absent from
+        the table are omitted.
         """
         if not rows:
             return {}

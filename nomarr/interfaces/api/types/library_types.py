@@ -26,7 +26,6 @@ from nomarr.helpers.dto.library_dto import (
     UniqueTagKeysResult,
     WriteTagsResult,
 )
-from nomarr.interfaces.api.id_codec import encode_id
 
 if TYPE_CHECKING:
     from nomarr.helpers.dataclasses.library_dataclass import Library
@@ -58,6 +57,7 @@ class LibraryResponse(BaseModel):
     """
 
     library_id: str  # natural library name (mechanism A)
+    library_uuid: str  # immutable Nomarr-owned SongLocator library identity (ADR-049)
     name: str
     root_path: str
     is_enabled: bool
@@ -98,6 +98,7 @@ class LibraryResponse(BaseModel):
         """
         return cls(
             library_id=library.name,
+            library_uuid=library.library_uuid or "",
             name=library.name,
             root_path=library.root_path,
             is_enabled=library.is_enabled,
@@ -295,9 +296,9 @@ class FileTagResponse(BaseModel):
 class LibraryFileWithTagsResponse(BaseModel):
     """Single library file with its tags."""
 
-    file_id: int  # Primary key
+    file_id: str  # Opaque SongLocator token
     path: str
-    library_id: int | None  # Primary key (None for orphaned files)
+    library_uuid: str | None  # Owning library_uuid (None for orphaned files)
     file_size: int | None
     modified_time: int | None
     duration_seconds: float | None
@@ -331,9 +332,9 @@ class SearchFilesResponse(BaseModel):
         return cls(
             files=[
                 LibraryFileWithTagsResponse(
-                    file_id=encode_id(f.id),
+                    file_id=f.file_id,
                     path=f.path,
-                    library_id=encode_id(f.library_id) if f.library_id else None,
+                    library_uuid=f.library_uuid,
                     file_size=f.file_size,
                     modified_time=f.modified_time,
                     duration_seconds=f.duration_seconds,
@@ -417,7 +418,7 @@ class ReconcilePathsResponse(BaseModel):
 class FileTagsResponse(BaseModel):
     """Response for file tags endpoint."""
 
-    file_id: int
+    file_id: str  # Opaque SongLocator token
     path: str
     tags: list[FileTagResponse]
 
@@ -519,7 +520,7 @@ class ValidateLibraryTagsResponse(BaseModel):
 class ErroredFileItemResponse(BaseModel):
     """Single errored file in the response."""
 
-    file_id: int
+    file_id: str  # Opaque SongLocator token
     path: str
     duration_seconds: float | None
     artist: str | None

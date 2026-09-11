@@ -21,7 +21,10 @@ from nomarr.workflows.processing.process_file_wf import process_file_workflow
 
 
 def _song() -> SongIdentity:
-    return SongIdentity(library=LibraryIdentity(name="music", root_path="/music"), normalized_path="song.flac")
+    return SongIdentity(
+        library=LibraryIdentity(library_uuid="2621ebfb-71ff-5168-a812-5342ca310e8c", name="music", root_path="/music"),
+        normalized_path="song.flac",
+    )
 
 
 @pytest.mark.unit

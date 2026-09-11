@@ -44,7 +44,7 @@ def _make_worker_self(worker_id: str = "worker:tag:0") -> MagicMock:
 def _song(normalized_path: str = "song.flac") -> SongIdentity:
     """Semantic identity the worker resolves a claimed handle to before ML writes."""
     return SongIdentity(
-        library=LibraryIdentity(name="music", root_path="/music"),
+        library=LibraryIdentity(library_uuid="2621ebfb-71ff-5168-a812-5342ca310e8c", name="music", root_path="/music"),
         normalized_path=normalized_path,
     )
 

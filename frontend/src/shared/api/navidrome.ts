@@ -279,7 +279,7 @@ export interface TriggerPersonalPlaylistsResponse {
 
 /**
  * One play-history entry supplied by the Navidrome plugin (PersonalPlaylistsRequest.top_plays).
- * `file_id` is the integer primary key of the library file.
+ * `file_id` is the opaque `nom1` SongLocator token (never a generated integer id).
  */
 export interface TrackPlayRequestItem {
   file_id: string;

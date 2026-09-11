@@ -118,32 +118,29 @@ class MlInferenceRepo:
     # ── no-commit internal SQL helpers ─────────────────────────
 
     def _resolve_song_id(self, song: SongIdentity) -> int:
-        """Resolve a semantic SongIdentity to its storage song id.
+        """Resolve a UUID ``SongIdentity`` to its storage song id.
 
-        Matches the library natural ``(name, root_path)`` key and the song's
+        Matches ``libraries.library_uuid`` (ADR-049) and the song's
         ``normalized_path`` against the storage tables. Persistence-internal:
         never calls the ``db.library`` facade and never exposes the integer id
         upward. Raises :class:`EntityNotFoundError` when the library or song is
-        absent, or when the identity carries no library ``root_path``
-        (unresolvable).
+        absent.
         """
-        root_path = song.library.root_path
-        if root_path is None:
-            raise EntityNotFoundError(f"Library {song.library.name!r} has no root_path; cannot resolve song")
         library_stmt = select(_T_LIBRARY.c.id).where(
-            _T_LIBRARY.c.name == song.library.name,
-            _T_LIBRARY.c.path == root_path,
+            _T_LIBRARY.c.library_uuid == song.library.library_uuid,
         )
         library_id = self._session.execute(library_stmt).scalar_one_or_none()
         if library_id is None:
-            raise EntityNotFoundError(f"Library {song.library.name!r} not found")
+            raise EntityNotFoundError(f"Library {song.library.library_uuid!r} not found")
         song_stmt = select(_T_SONG.c.id).where(
             _T_SONG.c.library_id == library_id,
             _T_SONG.c.normalized_path == song.normalized_path,
         )
         song_id = self._session.execute(song_stmt).scalar_one_or_none()
         if song_id is None:
-            raise EntityNotFoundError(f"Song {song.normalized_path!r} not found in library {song.library.name!r}")
+            raise EntityNotFoundError(
+                f"Song {song.normalized_path!r} not found in library {song.library.library_uuid!r}"
+            )
         return int(song_id)
 
     def _delete_vectors_for_song_backbone(self, song_id: int, backbone: str) -> None:

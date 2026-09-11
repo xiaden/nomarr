@@ -8,7 +8,7 @@ This module handles:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.components.library.library_records_comp import (
     get_library_record,
@@ -23,8 +23,8 @@ from nomarr.components.library.library_song_query_comp import (
     get_library_counts,
     get_library_stats,
     get_recently_processed,
-    get_songs_by_ids_with_tags,
     get_tagged_file_paths,
+    locators_for_carriers,
     search_songs_by_tag,
 )
 from nomarr.components.library.library_song_state_comp import (
@@ -36,6 +36,7 @@ from nomarr.components.library.search_files_comp import (
     get_unique_tag_values,
     search_songs,
 )
+from nomarr.components.library.song_query_types import TaggedSong, TagMatchedSong
 from nomarr.components.library.work_status_comp import compute_work_status
 from nomarr.components.tagging.tag_query_comp import get_unique_mood_values
 from nomarr.components.tagging.tag_stats_comp import get_unique_names
@@ -60,12 +61,13 @@ from nomarr.helpers.constants.pipeline_states import (
 from nomarr.helpers.dto.library_dto import (
     ErroredFileItem,
     ErroredFilesResult,
+    LibrarySongWithTags,
     LibraryStatsResult,
     SearchFilesQuery,
     SearchFilesResult,
     UniqueTagKeysResult,
-    map_song_with_tags_to_dto,
 )
+from nomarr.helpers.song_locator_codec import encode_song_locator
 
 if TYPE_CHECKING:
     from nomarr.helpers.dataclasses.library_dataclass import Library
@@ -175,20 +177,60 @@ class LibraryQueryMixin:
         """Get tagged file paths that are not yet calibrated.
 
         Iterates all enabled libraries and collects uncalibrated-but-tagged
-        file IDs, then resolves them to absolute paths.
+        SongLocators, then resolves each locator to its semantic song path.
 
         Returns:
             List of absolute file paths needing calibration.
 
         """
         libraries = [lib for lib in list_all_libraries(self.db) if lib.is_enabled]
-        all_file_ids: list[int] = []
-        for lib in libraries:
-            all_file_ids.extend(get_uncalibrated_tagged_song_ids(self.db, lib))
-        if not all_file_ids:
+        locators = [locator for library in libraries for locator in get_uncalibrated_tagged_song_ids(self.db, library)]
+        paths: list[str] = []
+        for locator in locators:
+            song = self.db.library.get_song(locator)
+            if song is not None and song.path:
+                paths.append(song.path)
+        return paths
+
+    def _tagged_song_dto(self, carrier: TaggedSong | TagMatchedSong) -> LibrarySongWithTags:
+        locator = locators_for_carriers(self.db, [carrier])[0]
+        if locator is None:
+            raise ValueError("Unable to resolve song locator for library projection")
+        song = carrier.song
+        return LibrarySongWithTags(
+            file_id=encode_song_locator(locator),
+            path=song.path,
+            library_uuid=locator.library.library_uuid,
+            file_size=song.file_size,
+            modified_time=song.modified_time,
+            duration_seconds=song.duration_seconds,
+            artist=cast("str | None", carrier.metadata.get("artist")),
+            album=cast("str | None", carrier.metadata.get("album")),
+            title=cast("str | None", carrier.metadata.get("title")),
+            calibration_version=song.calibration_hash,
+            scanned_at=song.scanned_at,
+            last_tagged_at=song.last_tagged_at,
+            tagged=song.tagged,
+            tagged_version=None,
+            skip_auto_tag=False,
+            created_at=str(song.created_at),
+            updated_at=None,
+            tags=list(carrier.tags) if isinstance(carrier, TaggedSong) else [],
+        )
+
+    def _songs_for_locators(self, locators: list[Any]) -> list[TaggedSong]:
+        if not locators:
             return []
-        files = get_songs_by_ids_with_tags(self.db, all_file_ids)
-        return [f["path"] for f in files if f.get("path")]
+        from nomarr.components.library.library_song_query_comp import _file_tags, _tag_assignments
+        from nomarr.components.library.tag_hydration_comp import hydrate_songs_with_metadata
+
+        songs = self.db.library.list_songs_by_identity(locators)
+        metadata = hydrate_songs_with_metadata(self.db, songs, locators)
+        assignments = _tag_assignments(self.db, locators)
+        return [
+            TaggedSong(song=song, metadata=hydrated.metadata, tags=_file_tags(assignments.get(locator, ())))
+            for song, hydrated, locator in zip(songs, metadata, locators, strict=True)
+        ]
 
     def search_files(self, query: SearchFilesQuery) -> SearchFilesResult:
         """Search library files with optional filters.
@@ -203,7 +245,7 @@ class LibraryQueryMixin:
 
         """
         files, total = search_songs(self.db, query)
-        files_with_tags = [map_song_with_tags_to_dto(f) for f in files]
+        files_with_tags = [self._tagged_song_dto(f) for f in files]
         return SearchFilesResult(songs=files_with_tags, total=total, limit=query.limit, offset=query.offset)
 
     def get_files_by_ids(self, file_ids: list[int]) -> SearchFilesResult:
@@ -218,8 +260,8 @@ class LibraryQueryMixin:
             SearchFilesResult with files matching the IDs
 
         """
-        files = get_songs_by_ids_with_tags(self.db, [int(fid) for fid in file_ids])
-        files_with_tags = [map_song_with_tags_to_dto(f) for f in files]
+        files = self._songs_for_locators(file_ids)
+        files_with_tags = [self._tagged_song_dto(f) for f in files]
         return SearchFilesResult(songs=files_with_tags, total=len(files), limit=len(file_ids), offset=0)
 
     def search_songs_by_tag(
@@ -246,7 +288,7 @@ class LibraryQueryMixin:
         """
         files = search_songs_by_tag(self.db, tag_key, target_value, limit, offset)
         total = count_songs_by_tag(self.db, tag_key, target_value)
-        files_with_tags = [map_song_with_tags_to_dto(f) for f in files]
+        files_with_tags = [self._tagged_song_dto(f) for f in files]
         return SearchFilesResult(songs=files_with_tags, total=total, limit=limit, offset=offset)
 
     def get_unique_tag_keys(self, nomarr_only: bool = False) -> UniqueTagKeysResult:
@@ -390,7 +432,19 @@ class LibraryQueryMixin:
             sorted by scanned_at DESC.
 
         """
-        return get_recently_processed(self.db, limit=limit, library=library)
+        carriers = get_recently_processed(self.db, limit=limit, library=library)
+        return [
+            {
+                "file_id": encode_song_locator(carrier.candidate.identity),
+                "path": carrier.candidate.song.path,
+                "title": carrier.metadata.get("title"),
+                "artist": carrier.metadata.get("artist"),
+                "album": carrier.metadata.get("album"),
+                "activity_at": carrier.activity_at,
+                "activity_event": carrier.activity_event,
+            }
+            for carrier in carriers
+        ]
 
     def get_errored_files(self, library: Library) -> ErroredFilesResult:
         """Get errored files for a library with basic metadata.
@@ -408,15 +462,18 @@ class LibraryQueryMixin:
         self._get_library_or_error(library)
         total = count_errored_songs(self.db, library)
         errored_ids = get_errored_song_ids(self.db, library)
-        files_raw = get_songs_by_ids_with_tags(self.db, errored_ids)
+        carriers = self._songs_for_locators(errored_ids)
         files: list[ErroredFileItem] = [
-            ErroredFileItem(
-                id=f["id"],
-                path=f["path"],
-                duration_seconds=f.get("duration_seconds"),
-                artist=f.get("artist"),
-                title=f.get("title"),
+            cast(
+                "ErroredFileItem",
+                {
+                    "file_id": encode_song_locator(carrier_locator),
+                    "path": carrier.song.path,
+                    "duration_seconds": carrier.song.duration_seconds,
+                    "artist": carrier.metadata.get("artist"),
+                    "title": carrier.metadata.get("title"),
+                },
             )
-            for f in files_raw
+            for carrier, carrier_locator in zip(carriers, errored_ids, strict=True)
         ]
         return ErroredFilesResult(files=files, total=total)

@@ -360,7 +360,9 @@ class TestAppDbLockMethods:
 def _claim_identity() -> WorkerClaimIdentity:
     return WorkerClaimIdentity(
         song=SongIdentity(
-            library=LibraryIdentity(name="lib", root_path="/music"),
+            library=LibraryIdentity(
+                library_uuid="6b13a1b6-f86d-501e-aa19-30e3751e1211", name="lib", root_path="/music"
+            ),
             normalized_path="artist/track.flac",
         ),
         worker_id="w1",

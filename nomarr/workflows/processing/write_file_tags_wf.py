@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from nomarr.components.infrastructure.path_comp import build_library_path_from_db
 from nomarr.components.library.library_records_comp import find_library_containing_path
@@ -37,6 +37,7 @@ from nomarr.helpers.dataclasses.tags_dataclass import Tags
 
 if TYPE_CHECKING:
     from nomarr.helpers.dataclasses.library_dataclass import Library
+    from nomarr.helpers.dataclasses.song_dataclass import Song
     from nomarr.helpers.dto.path_dto import LibraryPath
     from nomarr.persistence.db import Database
 
@@ -100,10 +101,10 @@ def _filter_tags_for_mode(
 
 
 def _resolve_library_path(
-    file_doc: dict[str, Any],
+    song: Song,
     db: Database,
 ) -> tuple[LibraryPath | None, Library | None]:
-    """Resolve ``file_doc`` to a validated ``LibraryPath`` and its domain ``Library``.
+    """Resolve ``song`` to a validated ``LibraryPath`` and its domain ``Library``.
 
     Both the library path and the owning library root are derived from the
     file's physical ``path`` using ``find_library_containing_path`` (path-based
@@ -112,7 +113,7 @@ def _resolve_library_path(
     when the library is known but the path is otherwise invalid (e.g. missing
     on disk).
     """
-    stored_path = file_doc.get("path", "")
+    stored_path = song.path
     if not stored_path:
         return None, None
 
@@ -175,9 +176,9 @@ def write_file_tags_workflow(
     """
     try:
         # Get file document via component
-        file_id, file_key, file_doc = get_file_for_writing(db, file_key)
+        file_id, file_key, song = get_file_for_writing(db, file_key)
 
-        if not file_doc:
+        if song is None:
             _release_failed_write(db, file_key, worker_id)
             return WriteResult(
                 file_key=file_key,
@@ -188,7 +189,7 @@ def write_file_tags_workflow(
             )
 
         # Resolve library path + owning domain Library from the file's path.
-        library_path, library = _resolve_library_path(file_doc, db)
+        library_path, library = _resolve_library_path(song, db)
         if not library_path:
             _release_failed_write(db, file_key, worker_id)
             return WriteResult(
@@ -196,7 +197,7 @@ def write_file_tags_workflow(
                 tags_written=0,
                 tags_filtered=0,
                 success=False,
-                error=f"Invalid path: {file_doc.get('path')}",
+                error=f"Invalid path: {song.path}",
             )
 
         # Get library root for safe write (domain Library, path-derived).
@@ -207,7 +208,7 @@ def write_file_tags_workflow(
                 tags_written=0,
                 tags_filtered=0,
                 success=False,
-                error=f"Invalid library for path: {file_doc.get('path')}",
+                error=f"Invalid library for path: {song.path}",
             )
         library_root = resolve_library_root(db, library)
         if not library_root:
@@ -220,17 +221,9 @@ def write_file_tags_workflow(
                 error=f"Library not found: {library.name}",
             )
 
-        # Require known mtime to prevent writing to externally-modified files
-        expected_mtime_ms = file_doc.get("modified_time")
-        if not isinstance(expected_mtime_ms, int):
-            _release_failed_write(db, file_key, worker_id)
-            return WriteResult(
-                file_key=file_key,
-                tags_written=0,
-                tags_filtered=0,
-                success=False,
-                error=f"No valid modified_time in file_doc: {expected_mtime_ms}",
-            )
+        # Require known mtime to prevent writing to externally-modified files.
+        # ``Song.modified_time`` is a non-optional int, so it is always present.
+        expected_mtime_ms = song.modified_time
 
         # Get tags from database (nomarr tags only) - returns Tags | None
         db_tags = get_nomarr_tags(db, file_id)

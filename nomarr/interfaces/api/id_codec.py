@@ -1,141 +1,78 @@
-"""HTTP-safe encoding/decoding for database primary key IDs.
+"""HTTP-facing codec adapters for the opaque SongLocator token.
 
-PostgreSQL uses integer primary keys which are natively URL-safe, so
-encoding is a pass-through that ensures integer type.
+The pre-production hard cut removed ordinary integer ``file_id``/``song_id`` wire
+values. A song/file is addressed on the wire only by the opaque ``nom1``
+SongLocator token defined in :mod:`nomarr.helpers.song_locator_codec`:
 
-Usage:
-- Interfaces decode incoming IDs immediately after parsing.
-- Interfaces encode outgoing IDs before returning JSON.
-- Services, workflows, and persistence never see encoded IDs.
+    ``nom1`` + unpadded URL-safe base64 of canonical compact JSON
+    ``{"library_uuid": <concrete libraries.library_uuid>, "path": <relative>}``
 
-Architecture:
-- EncodedId: Pydantic-compatible type for automatic decoding in request models
-- DecodedPathId: FastAPI Path parameter with automatic decoding
-- encode_id(): For encoding single IDs in responses (pass-through for integers)
-- encode_ids(): For recursively encoding all id fields in response data (pass-through)
+This module re-exports those pure primitives (so interfaces, services, and
+components all share one canonical implementation) and adds the FastAPI-route
+adapter :func:`decode_song_locator_or_400`, which maps a malformed/non-canonical
+token to HTTP 400. Route layers then resolve the decoded ``library_uuid`` to a
+complete ``LibraryIdentity`` through the owning service/facade (a valid token
+whose library/song does not exist is HTTP 404, not 400).
 
-Library natural-name identity (mechanism A, TASK-library-domain-facades-A):
-- The sole wire identity for a library is the URL-encoded natural ``Library.name``.
-- ``encode_library_name`` / ``decode_library_name`` quote/unquote the natural name
-  with no safe characters so names containing spaces, slashes, Unicode, percent
-  signs, and reserved characters round-trip unambiguously. They are independent of
-  the integer codec above and do not change song/file/tag ID encoding.
+Library natural-name identity (mechanism A): the sole wire identity for a
+library *entity route* is the URL-encoded natural ``Library.name``.
+``encode_library_name``/``decode_library_name`` quote/unquote it with no safe
+characters. This deliberate library-route split is independent of the SongLocator
+token, which always carries ``library_uuid``; a natural name is never a Song
+identity.
 """
 
-from typing import Annotated, Any
+from __future__ import annotations
+
 from urllib.parse import quote, unquote
 
 from fastapi import HTTPException
-from pydantic import BeforeValidator
+
+from nomarr.helpers.song_locator_codec import (
+    CANONICAL_UUID4_RE,
+    SONG_LOCATOR_MAX_LENGTH,
+    SONG_LOCATOR_PREFIX,
+    SongLocatorFormatError,
+    SongLocatorPayload,
+    decode_song_locator,
+    encode_song_locator,
+)
+
+# Backwards-compatible alias for callers/tests that imported the old error name.
+InvalidIdFormatError = SongLocatorFormatError
+
+__all__ = [
+    "CANONICAL_UUID4_RE",
+    "SONG_LOCATOR_MAX_LENGTH",
+    "SONG_LOCATOR_PREFIX",
+    "InvalidIdFormatError",
+    "SongLocatorFormatError",
+    "SongLocatorPayload",
+    "decode_library_name",
+    "decode_song_locator",
+    "decode_song_locator_or_400",
+    "encode_library_name",
+    "encode_song_locator",
+]
 
 
-class InvalidIdFormatError(ValueError):
-    """Raised when an ID has an invalid format for encoding/decoding."""
-
-
-def encode_id(id_value: int | str) -> int:
-    """Encode a database primary key for HTTP transport.
-
-    PostgreSQL integer IDs are natively URL-safe, so this is a pass-through
-    that ensures the result is an integer.
-
-    Args:
-        id_value: Primary key value (integer or string representation)
-
-    Returns:
-        Integer primary key
-
-    Raises:
-        InvalidIdFormatError: If value cannot be converted to int
-
-    """
-    if isinstance(id_value, int):
-        return id_value
+def decode_song_locator_or_400(token: str | int) -> SongLocatorPayload:
+    """Decode a token, mapping :class:`SongLocatorFormatError` to HTTP 400."""
     try:
-        return int(id_value)
-    except (ValueError, TypeError):
-        msg = f"Invalid ID format (not an integer): {id_value}"
-        raise InvalidIdFormatError(msg) from None
-
-
-def decode_id(id_value: int | str) -> int:
-    """Decode an HTTP-provided ID to a database primary key.
-
-    PostgreSQL integer IDs are natively URL-safe, so this is a pass-through
-    that ensures the result is an integer.
-
-    Args:
-        id_value: ID from HTTP request (integer or string representation)
-
-    Returns:
-        Integer primary key
-
-    Raises:
-        InvalidIdFormatError: If value cannot be converted to int
-
-    """
-    if isinstance(id_value, int):
-        return id_value
-    try:
-        return int(id_value)
-    except (ValueError, TypeError):
-        msg = f"Invalid ID format (not an integer): {id_value}"
-        raise InvalidIdFormatError(msg) from None
-
-
-def _validate_and_decode_id(value: Any) -> int:
-    """Pydantic validator that decodes an ID to an integer.
-
-    Used with Annotated to create the EncodedId type.
-    """
-    return decode_id(value)
-
-
-# Pydantic-compatible type for request body models.
-# Automatically converts to integer during validation.
-EncodedId = Annotated[int, BeforeValidator(_validate_and_decode_id)]
-
-
-def decode_path_id(path_id: str | int) -> int:
-    """Decode a path parameter ID, raising HTTPException on invalid format.
-
-    Use this at the start of route handlers for **non-library** path parameters
-    that carry an integer storage id (e.g. a song/file id):
-
-        @router.get("/{file_id}")
-        async def get_file(file_id: str):
-            file_id = decode_path_id(file_id)
-            ...
-
-    Do **not** use this for library identity. Library routes must use the
-    mechanism-A natural-name wire adapter (:func:`decode_library_name`) and a
-    ``/{library_name}`` path segment — never an integer ``{library_id}`` route.
-
-    Args:
-        path_id: ID from path parameter
-
-    Returns:
-        Integer primary key
-
-    Raises:
-        HTTPException: 400 if ID format is invalid
-
-    """
-    try:
-        return decode_id(path_id)
-    except InvalidIdFormatError:
-        raise HTTPException(status_code=400, detail="Invalid ID format") from None
+        return decode_song_locator(token)
+    except SongLocatorFormatError as exc:
+        raise HTTPException(status_code=400, detail="Invalid SongLocator token") from exc
 
 
 def encode_library_name(name: str) -> str:
     """Encode a natural library name for HTTP transport (URL path/query segment).
 
-    Mechanism A (CONTRACTS.md): the sole library wire identity is the URL-encoded
-    natural ``Library.name``. The name is percent-quoted with no safe characters
-    (``quote(name, safe="")``) so spaces, slashes, Unicode, percent signs, and
-    reserved characters round-trip unambiguously and cannot collide with a route
-    separator. This mirrors ``library_task_id`` in the service layer so an encoded
-    name used in a URL and a task key agree on the same quoting.
+    Mechanism A (CONTRACTS.md): the sole *library-route* wire identity is the
+    URL-encoded natural ``Library.name``. The name is percent-quoted with no safe
+    characters (``quote(name, safe="")``) so spaces, slashes, Unicode, percent
+    signs, and reserved characters round-trip unambiguously and cannot collide with
+    a route separator. This is independent of the SongLocator token, which carries
+    ``library_uuid`` and never a natural name.
 
     Args:
         name: Natural library name.
@@ -161,53 +98,3 @@ def decode_library_name(value: str) -> str:
         The decoded natural library name.
     """
     return unquote(value)
-
-
-# Fields that should be encoded when found in response data
-_ID_FIELD_NAMES = frozenset({"id", "library_id", "file_id", "job_id", "task_id"})
-
-
-def encode_ids(data: Any) -> Any:
-    """Recursively process all ID fields in response data.
-
-    Walks through dicts, lists, and Pydantic models.  Integer ID values
-    pass through unchanged (PostgreSQL IDs are natively URL-safe).
-
-    Args:
-        data: Response data (dict, list, Pydantic model, or primitive)
-
-    Returns:
-        Data with all ID fields as integers
-
-    Note:
-        String values in ID fields are converted to int when possible.
-        Silently skips values that cannot be converted.
-
-    """
-    if data is None:
-        return None
-
-    # Handle Pydantic models by converting to dict first
-    if hasattr(data, "model_dump"):
-        data = data.model_dump()
-
-    if isinstance(data, dict):
-        result: dict[str, Any] = {}
-        for key, value in data.items():
-            if key in _ID_FIELD_NAMES and isinstance(value, str):
-                try:
-                    result[key] = int(value)
-                except (ValueError, TypeError):
-                    result[key] = value
-            elif isinstance(value, list | dict):
-                # Recurse into nested structures
-                result[key] = encode_ids(value)
-            else:
-                result[key] = value
-        return result
-
-    if isinstance(data, list):
-        return [encode_ids(item) for item in data]
-
-    # Primitives pass through unchanged
-    return data

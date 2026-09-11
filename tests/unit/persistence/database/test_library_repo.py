@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import uuid
+
 import pytest
 
 from nomarr.helpers.exceptions import DatabaseStateError, DuplicateEntityError
@@ -332,3 +334,96 @@ class TestLibraryRepository:
         repo.remove_library(lib_id)
         result = repo.get_library(lib_id)
         assert result is None
+
+
+def _add_library(repo: LibraryRepository, name: str, path: str, *, seed: int = 20000) -> int:
+    return repo.add_library(
+        {
+            "name": name,
+            "path": path,
+            "library_type": "music",
+            "auto_tag": 0,
+            "auto_curate": 0,
+            "created_at": seed,
+            "updated_at": seed,
+        }
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.integration
+class TestLibraryUuidIdentity:
+    """ADR-049: the repository round-trips an immutable minted library UUID."""
+
+    def test_add_library_mints_a_uuid(self, pg_session) -> None:
+        repo = LibraryRepository(pg_session)
+        lib_id = _add_library(repo, "Uuid Mint", "/music/uuid-mint")
+        row = repo.get_library(lib_id)
+        assert row is not None
+        minted = row["library_uuid"]
+        assert isinstance(minted, str) and minted
+        uuid.UUID(minted)
+
+    def test_distinct_libraries_receive_distinct_uuids(self, pg_session) -> None:
+        repo = LibraryRepository(pg_session)
+        first = repo.get_library(_add_library(repo, "Uuid A", "/music/uuid-a", seed=20001))
+        second = repo.get_library(_add_library(repo, "Uuid B", "/music/uuid-b", seed=20002))
+        assert first is not None and second is not None
+        assert first["library_uuid"] != second["library_uuid"]
+
+    def test_uuid_is_immutable_across_rename_and_root_path_update(self, pg_session) -> None:
+        repo = LibraryRepository(pg_session)
+        lib_id = _add_library(repo, "Immutable", "/music/immutable", seed=20003)
+        before = repo.get_library(lib_id)
+        assert before is not None
+        repo.update_library(lib_id, {"name": "Renamed", "path": "/music/moved"})
+        after = repo.get_library(lib_id)
+        assert after is not None
+        assert after["name"] == "Renamed"
+        assert after["path"] == "/music/moved"
+        assert after["library_uuid"] == before["library_uuid"]
+
+    def test_delete_recreate_mints_a_new_uuid(self, pg_session) -> None:
+        repo = LibraryRepository(pg_session)
+        first_id = _add_library(repo, "Recreate", "/music/recreate", seed=20004)
+        first = repo.get_library(first_id)
+        assert first is not None
+        repo.delete_library(first_id)
+        second_id = _add_library(repo, "Recreate", "/music/recreate", seed=20005)
+        second = repo.get_library(second_id)
+        assert second is not None
+        assert second["library_uuid"] != first["library_uuid"]
+
+    def test_get_library_by_uuid_round_trips_and_rejects_unknown(self, pg_session) -> None:
+        repo = LibraryRepository(pg_session)
+        lib_id = _add_library(repo, "By Uuid", "/music/by-uuid", seed=20006)
+        row = repo.get_library(lib_id)
+        assert row is not None
+        assert repo.get_library_by_uuid(row["library_uuid"]) is not None
+        assert repo.get_library_by_uuid("00000000-0000-0000-0000-000000000000") is None
+        # A malformed UUID fails the lookup deterministically; it never falls
+        # back to name or integer identity.
+        assert repo.get_library_by_uuid("not-a-uuid") is None
+
+    def test_get_library_ids_by_uuids_batch_resolution(self, pg_session) -> None:
+        repo = LibraryRepository(pg_session)
+        first = repo.get_library(_add_library(repo, "Batch A", "/music/batch-a", seed=20007))
+        second = repo.get_library(_add_library(repo, "Batch B", "/music/batch-b", seed=20008))
+        assert first is not None and second is not None
+        resolved = repo.get_library_ids_by_uuids([first["library_uuid"], second["library_uuid"]])
+        assert resolved == {
+            first["library_uuid"]: first["id"],
+            second["library_uuid"]: second["id"],
+        }
+
+    def test_get_library_ids_by_uuids_empty_returns_empty(self, pg_session) -> None:
+        assert LibraryRepository(pg_session).get_library_ids_by_uuids([]) == {}
+
+    def test_get_library_ids_by_uuids_omits_unknown_and_malformed(self, pg_session) -> None:
+        repo = LibraryRepository(pg_session)
+        row = repo.get_library(_add_library(repo, "Batch C", "/music/batch-c", seed=20009))
+        assert row is not None
+        resolved = repo.get_library_ids_by_uuids(
+            [row["library_uuid"], "00000000-0000-0000-0000-000000000000", "not-a-uuid"]
+        )
+        assert resolved == {row["library_uuid"]: row["id"]}

@@ -23,6 +23,7 @@ taking only ``TagRef``/``SongIdentity`` and never an integer tag PK.
 from __future__ import annotations
 
 import inspect
+import uuid
 from unittest.mock import MagicMock
 
 import pytest
@@ -36,7 +37,7 @@ from nomarr.persistence.api.library_songs import LibrarySongsDb
 from nomarr.persistence.api.library_tags import LibraryTagsDb
 from nomarr.persistence.db import Database
 
-_TEST_LIBRARY = LibraryIdentity(name="TestLib", root_path="/music")
+_TEST_LIBRARY = LibraryIdentity(library_uuid="de131b32-af5c-5a84-8874-58e3dc0e2dcd", name="TestLib", root_path="/music")
 
 
 def _make_songs_db() -> tuple[LibrarySongsDb, MagicMock, MagicMock]:
@@ -58,7 +59,12 @@ def _song_row(song_id: int, library_id: int, normalized_path: str) -> dict:
 
 
 def _library_row(library_id: int, name: str, root_path: str) -> dict:
-    return {"id": library_id, "name": name, "path": root_path}
+    return {
+        "id": library_id,
+        "library_uuid": str(uuid.uuid5(uuid.NAMESPACE_URL, f"{name}\x00{root_path}")),
+        "name": name,
+        "path": root_path,
+    }
 
 
 @pytest.mark.unit
@@ -89,7 +95,12 @@ class TestSongIdentityBridge:
         result = songs.resolve_song_identities([5, 6, 7])
         assert result[5] == SongIdentity(library=_TEST_LIBRARY, normalized_path="a.mp3")
         assert result[6] == SongIdentity(library=_TEST_LIBRARY, normalized_path="b.mp3")
-        assert result[7] == SongIdentity(library=LibraryIdentity("Other", "/other"), normalized_path="c.mp3")
+        assert result[7] == SongIdentity(
+            library=LibraryIdentity(
+                library_uuid="608fcf8c-1580-5fcd-84ad-d594717ad011", name="Other", root_path="/other"
+            ),
+            normalized_path="c.mp3",
+        )
         # One song query + one distinct-library query for the whole batch.
         song_repo.get_songs_by_ids.assert_called_once_with([5, 6, 7])
         library_repo.get_libraries_by_ids.assert_called_once_with([2, 3])
@@ -159,7 +170,7 @@ class TestLibraryIdentityBridge:
         result = songs.resolve_library_identities([2, 3, 4])
         assert result == {
             2: _TEST_LIBRARY,
-            4: LibraryIdentity("Three", "/three"),
+            4: LibraryIdentity(library_uuid="b0da3722-b47b-50ca-abb5-21927059a411", name="Three", root_path="/three"),
         }
         library_repo.get_libraries_by_ids.assert_called_once_with([2, 3, 4])
 

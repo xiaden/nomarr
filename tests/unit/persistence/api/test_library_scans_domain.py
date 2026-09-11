@@ -29,6 +29,7 @@ from nomarr.persistence.api.library_scans import LibraryScansDb
 def _library_row(**overrides: object) -> LibraryRow:
     base = {
         "id": 7,
+        "library_uuid": "00000000-0000-0000-0000-000000000007",
         "name": "main",
         "path": "/music",
         "library_type": "music",

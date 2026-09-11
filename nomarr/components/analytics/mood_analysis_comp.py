@@ -5,10 +5,15 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, TypedDict
 
 from nomarr.components.analytics.analytics_comp import DominantVibeResult, compute_dominant_vibes
-from nomarr.components.library.library_song_query_comp import get_library_stats
+from nomarr.components.library.library_song_query_comp import (
+    _library_identity,
+    _locators_for_songs,
+    get_library_stats,
+)
 
 if TYPE_CHECKING:
     from nomarr.helpers.dataclasses.library_dataclass import Library
+    from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
     from nomarr.helpers.dataclasses.song_tag_dataclass import TagRef
     from nomarr.persistence.db import Database
 
@@ -31,13 +36,6 @@ class MoodAnalysisResult(TypedDict):
 # ---------------------------------------------------------------------------
 
 
-def _get_library_song_ids(db: Database, library: Library | None) -> set[int] | None:
-    """Return the allowed file-id set for a library scope when requested."""
-    if library is None:
-        return None
-    return {song.song_id for song in db.library.list_songs(library, limit=None)}
-
-
 def _get_tag_docs_for_name(db: Database, name: str) -> list[TagRef]:
     """Return all tag identities for one tag name."""
     tags: list[TagRef] = []
@@ -58,25 +56,27 @@ def _get_tag_edge_rows(
     db: Database,
     name: str,
     library: Library | None = None,
-) -> list[tuple[int, str]]:
-    """Return ``(file_id, tag_value)`` rows for one tag name.
+) -> list[tuple[SongIdentity, str]]:
+    """Return ``(SongLocator, tag_value)`` rows for one tag name.
 
-    ``file_id`` is the storage ``song_id`` used only as the analytics projection
-    key (the approved ``(file_id, tag_value)`` surface for correlation views).
+    The projection key is the UUID-bearing ``SongIdentity`` locator (never a
+    generated integer ``songs.id``/``file_id``). When ``library`` is supplied,
+    rows are scoped to that library by ``library_uuid``.
     """
-    library_song_ids = _get_library_song_ids(db, library)
+    scope_uuid = _library_identity(library).library_uuid if library is not None else None
 
     tag_docs = _get_tag_docs_for_name(db, name)
 
-    rows: list[tuple[int, str]] = []
+    rows: list[tuple[SongIdentity, str]] = []
     for identity in tag_docs:
         tag_value = str(identity.value)
         songs = db.library.find_songs_with_tag(identity, limit=None)
-        for song in songs:
-            file_id = song.song_id
-            if library_song_ids is not None and file_id not in library_song_ids:
+        for locator in _locators_for_songs(db, songs):
+            if locator is None:
                 continue
-            rows.append((file_id, tag_value))
+            if scope_uuid is not None and locator.library.library_uuid != scope_uuid:
+                continue
+            rows.append((locator, tag_value))
 
     return rows
 
@@ -120,12 +120,12 @@ def get_mood_and_tier_tags_for_correlation(db: Database) -> dict[str, Any]:
         tag_value)`` tuples.
 
     """
-    mood_tag_rows: list[tuple[int, str]] = []
+    mood_tag_rows: list[tuple[SongIdentity, str]] = []
     for name in _MOOD_TAG_NAMES:
         mood_tag_rows.extend(_get_tag_edge_rows(db, name))
 
     tier_tag_keys = _get_tier_tag_keys(db)
-    tier_tag_rows: dict[str, list[tuple[int, str]]] = {}
+    tier_tag_rows: dict[str, list[tuple[SongIdentity, str]]] = {}
     for tier_name in tier_tag_keys:
         tier_tag_rows[tier_name] = _get_tag_edge_rows(db, tier_name)
 
@@ -146,7 +146,7 @@ def get_mood_distribution_data(db: Database, library: Library | None = None) -> 
     rows: list[tuple[str, str]] = []
     for name in _MOOD_TAG_NAMES:
         tier_rows = _get_tag_edge_rows(db, name, library)
-        for _file_id, tag_value in tier_rows:
+        for _locator, tag_value in tier_rows:
             rows.append((name, tag_value))
     return rows
 
@@ -175,9 +175,9 @@ def get_mood_coverage(db: Database, library: Library | None = None) -> dict[str,
     for tier in ("strict", "regular", "loose"):
         name = f"nom:mood-{tier}"
         rows = _get_tag_edge_rows(db, name, library=library)
-        unique_files: set[int] = set()
-        for file_id, _tag_value in rows:
-            unique_files.add(file_id)
+        unique_files: set[SongIdentity] = set()
+        for locator, _tag_value in rows:
+            unique_files.add(locator)
         tagged = len(unique_files)
         percentage = round(tagged / total_files * 100, 1)
         result["tiers"][tier] = {"tagged": tagged, "percentage": percentage}
@@ -205,7 +205,7 @@ def get_mood_balance(db: Database, library: Library | None = None) -> dict[str, 
         name = f"nom:mood-{tier}"
         rows = _get_tag_edge_rows(db, name, library=library)
         counter: Counter[str] = Counter()
-        for _file_id, tag_value in rows:
+        for _locator, tag_value in rows:
             # Split compound moods like "(happy,sad)"
             if tag_value.startswith("(") and tag_value.endswith(")"):
                 inner = tag_value[1:-1]
@@ -242,17 +242,17 @@ def _get_top_mood_pairs(
     }
     names = tier_hierarchy.get(mood_tier, ["nom:mood-strict"])
 
-    # Fetch (file_id, tag_value) pairs for all requested mood names
-    tag_value_rows: list[tuple[int, str]] = []
+    # Fetch (SongLocator, tag_value) pairs for all requested mood names
+    tag_value_rows: list[tuple[SongIdentity, str]] = []
     for name in names:
         tag_value_rows.extend(_get_tag_edge_rows(db, name, library))
 
-    # Build mood-per-song map
-    moods_by_song: dict[int, set[str]] = {}
-    for fid, mood_value in tag_value_rows:
+    # Build mood-per-song map keyed by the UUID-bearing locator
+    moods_by_song: dict[SongIdentity, set[str]] = {}
+    for locator, mood_value in tag_value_rows:
         if not mood_value:
             continue
-        moods_by_song.setdefault(fid, set()).add(mood_value)
+        moods_by_song.setdefault(locator, set()).add(mood_value)
 
     # Compute pair co-occurrences
     pair_counts: Counter[tuple[str, str]] = Counter()

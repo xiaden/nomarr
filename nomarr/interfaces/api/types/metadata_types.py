@@ -3,7 +3,6 @@
 from pydantic import BaseModel, Field
 
 from nomarr.helpers.dto.metadata_dto import EntityDict, EntityListResult, SongListForEntityResult
-from nomarr.interfaces.api.id_codec import encode_id
 
 
 class EntityResponse(BaseModel):
@@ -43,7 +42,7 @@ class EntityListResponse(BaseModel):
 class SongListResponse(BaseModel):
     """List of songs for an entity."""
 
-    song_ids: list[int] = Field(description="Song IDs (encoded)")
+    song_ids: list[str] = Field(description="Opaque SongLocator tokens")
     total: int = Field(description="Total count (before pagination)")
     limit: int
     offset: int
@@ -51,7 +50,7 @@ class SongListResponse(BaseModel):
     @classmethod
     def from_dto(cls, dto: SongListForEntityResult) -> "SongListResponse":
         return cls(
-            song_ids=[encode_id(sid) for sid in dto["song_ids"]],
+            song_ids=list(dto["song_ids"]),
             total=dto["total"],
             limit=dto["limit"],
             offset=dto["offset"],

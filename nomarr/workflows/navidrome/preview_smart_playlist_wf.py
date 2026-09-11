@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from nomarr.components.library.library_song_query_comp import get_tracks_by_song_ids
+from nomarr.components.library.tag_hydration_comp import hydrate_songs_with_metadata
 from nomarr.helpers.dto.navidrome_dto import PlaylistPreviewResult
 from nomarr.helpers.exceptions import PlaylistQueryError
 
@@ -57,18 +57,36 @@ def preview_smart_playlist_workflow(
     # Parse query into filter tree
     playlist_filter = parse_smart_playlist_query(query, namespace)
 
-    # Execute filter to get matching song IDs
+    # Execute filter to get matching song storage handles. The smart-playlist
+    # tag engine still returns private handles; resolve them once to mutable
+    # locators at this boundary and never carry the integers further.
     song_ids = execute_smart_playlist_filter(db, playlist_filter)
 
     # Count total matches
     total_count = len(song_ids)
 
+    identities_by_id = db.library.resolve_song_identities(list(song_ids))
+    sample_identities = list(identities_by_id.values())[:preview_limit]
+
     # Fetch sample tracks (limit already validated at API layer: 1-100)
-    sample_tracks = get_tracks_by_song_ids(
+    sample_pairs = []
+    for identity in sample_identities:
+        song = db.library.get_song(identity)
+        if song is not None:
+            sample_pairs.append((identity, song))
+    hydrated = hydrate_songs_with_metadata(
         db,
-        song_ids=song_ids,
-        order_by=None,  # Random order for preview
-        limit=preview_limit,
+        [song for _, song in sample_pairs],
+        [identity for identity, _ in sample_pairs],
     )
+    sample_tracks = [
+        {
+            "path": hydrated_song.song.path,
+            "title": str(hydrated_song.metadata.get("title", "")),
+            "artist": str(hydrated_song.metadata.get("artist", "")),
+            "album": str(hydrated_song.metadata.get("album", "")),
+        }
+        for hydrated_song in hydrated
+    ]
 
     return PlaylistPreviewResult(total_count=total_count, sample_tracks=sample_tracks, query=query)

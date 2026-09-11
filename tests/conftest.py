@@ -37,6 +37,7 @@ good_library_paths) were removed earlier as they were unused by any test.
 
 from __future__ import annotations
 
+import uuid
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
@@ -55,7 +56,11 @@ if TYPE_CHECKING:
 
 def _make_library(name: str = "Music", root_path: str = "/music") -> LibraryIdentity:
     """Return a ``LibraryIdentity`` for a canonical test library."""
-    return LibraryIdentity(name=name, root_path=root_path)
+    return LibraryIdentity(
+        library_uuid=str(uuid.uuid5(uuid.NAMESPACE_URL, f"{name}\x00{root_path}")),
+        name=name,
+        root_path=root_path,
+    )
 
 
 def _make_song(

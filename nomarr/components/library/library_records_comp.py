@@ -247,6 +247,7 @@ def _project_library_dict(
     """
     base: dict[str, Any] = {
         "id": None,
+        "library_uuid": library.library_uuid,
         "name": library.name,
         "root_path": library.root_path,
         "is_enabled": library.is_enabled,

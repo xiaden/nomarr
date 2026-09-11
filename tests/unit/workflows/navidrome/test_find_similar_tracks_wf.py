@@ -35,7 +35,7 @@ SEED: TrackDescriptor = {
     "nomarr_file_key": None,
 }
 
-_LIB_ID = LibraryIdentity(name="Music", root_path="/music")
+_LIB_ID = LibraryIdentity(library_uuid="6313b0d3-d270-57a8-9e0d-21e8255107e3", name="Music", root_path="/music")
 _IDS_BY_PATH = {
     "songs/seed.mp3": 1,
     "songs/a.mp3": 2,

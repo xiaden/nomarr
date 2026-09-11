@@ -15,7 +15,7 @@ class VectorSearchRequest(BaseModel):
     not per-library, so library_scope is no longer applicable.
     """
 
-    file_id: str = Field(..., description="Library file document ID to find similar tracks for")
+    file_id: str = Field(..., description="Opaque SongLocator token for the seed track")
     backbone_id: str = Field(..., description="Backbone identifier (e.g., 'effnet', 'yamnet')")
     limit: int = Field(10, description="Maximum number of results", ge=1, le=100)
     min_score: float = Field(
@@ -29,7 +29,7 @@ class VectorSearchRequest(BaseModel):
 class VectorSearchResultItem(BaseModel):
     """Single vector search result."""
 
-    file_id: int = Field(..., description="Library file document ID")
+    file_id: str = Field(..., description="Opaque SongLocator token")
     score: float = Field(..., description="Cosine similarity score in [-1, 1]", ge=-1.0, le=1.0)
     vector: list[float] = Field(..., description="Stored embedding vector")
 
@@ -86,7 +86,7 @@ class VectorPromoteResponse(BaseModel):
 class VectorGetResponse(BaseModel):
     """Response model for get track vector endpoint."""
 
-    file_id: int = Field(..., description="Library file document ID")
+    file_id: str = Field(..., description="Opaque SongLocator token")
     backbone_id: str = Field(..., description="Backbone identifier")
     vector: list[float] = Field(..., description="Embedding vector")
 

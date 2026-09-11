@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING, Any, cast
 
 from fastapi import HTTPException
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
     from nomarr.services.domain.analytics_svc import AnalyticsService
     from nomarr.services.domain.calibration_svc import CalibrationService
     from nomarr.services.domain.library_svc import LibraryService
@@ -179,3 +181,25 @@ def get_vector_maintenance_service() -> VectorMaintenanceService:
     if not service:
         raise HTTPException(status_code=503, detail="Vector maintenance service not available")
     return cast("VectorMaintenanceService", service)
+
+
+async def resolve_song_locator(library_service: LibraryService, token: str) -> SongIdentity:
+    """Resolve an opaque ``nom1`` SongLocator token to a UUID-bearing locator.
+
+    Routes call this exactly once per inbound token. A malformed/non-canonical
+    token is HTTP 400 (via ``decode_song_locator_or_400``); a syntactically valid
+    token whose library or song does not exist is HTTP 404. The returned
+    ``SongIdentity`` is the request-scoped typed command handed to services; the
+    owning boundary never re-exposes a generated integer.
+    """
+    from nomarr.interfaces.api.id_codec import decode_song_locator_or_400
+
+    payload = decode_song_locator_or_400(token)
+    try:
+        return await asyncio.to_thread(
+            library_service.resolve_song_identity,
+            payload.library_uuid,
+            payload.path,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="Song not found") from exc

@@ -807,8 +807,8 @@ class TestGetPendingCommitCount:
 class TestUpdateFileTags:
     """Tests for PATCH /tag-curation/file/{file_id}/tag endpoint.
 
-    ``file_id`` is the separate song/file boundary and is untouched by the
-    tag-handle change (it stays a numeric path id, decoded via ``decode_path_id``).
+    ``file_id`` is the opaque ``nom1`` SongLocator token (decoded via
+    ``decode_song_locator_or_400``) after the pre-production hard cut.
     """
 
     def test_update_file_tags_success(

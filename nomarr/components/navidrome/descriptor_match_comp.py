@@ -1,14 +1,30 @@
-"""Resolve portable track descriptors against Nomarr library metadata."""
+"""Resolve portable track descriptors against Nomarr library metadata.
+
+Descriptors are built from F's ID-free typed carriers (``TaggedSong``) and a
+UUID-bearing ``SongIdentity`` locator. The ``nomarr_file_key`` field is the opaque
+``nom1`` SongLocator token — never a generated ``songs.id``/``file_id``.
+"""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, TypedDict, cast
+from typing import TYPE_CHECKING, TypedDict
 
-from nomarr.components.library.library_song_query_comp import get_songs_by_ids_with_tags
+from nomarr.components.library.library_song_query_comp import (
+    _derive_metadata,
+    _file_tags,
+    _locators_for_songs,
+    _tag_assignments,
+)
+from nomarr.components.library.song_query_types import TaggedSong
 from nomarr.components.playlist_import.metadata_normalizer_comp import normalize_artist, normalize_title
 from nomarr.helpers.dataclasses.song_tag_dataclass import TagRef
+from nomarr.helpers.song_locator_codec import encode_song_locator
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
+    from nomarr.helpers.dto.library_dto import FileTag
     from nomarr.persistence.db import Database
 
 
@@ -26,31 +42,23 @@ class TrackDescriptor(TypedDict):
     nomarr_file_key: str | None
 
 
-def _tag_value(file_doc: dict[str, Any], *keys: str) -> str | None:
-    key_set = {key.casefold() for key in keys}
-    for tag in cast("list[dict[str, Any]]", file_doc.get("tags", [])):
-        key = tag.get("key")
-        value = tag.get("value")
-        if isinstance(key, str) and isinstance(value, str) and key.casefold() in key_set:
-            return value
+def _tag_map(tags: Sequence[FileTag]) -> dict[str, str]:
+    return {tag.key.casefold(): tag.value for tag in tags}
+
+
+def _int_from(value: object) -> int | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    digits = "".join(ch for ch in str(value) if ch.isdigit())
+    return int(digits) if digits else None
+
+
+def _duration_ms(duration_seconds: object) -> int | None:
+    if isinstance(duration_seconds, (int, float)) and not isinstance(duration_seconds, bool):
+        return int(float(duration_seconds) * 1000.0)
     return None
-
-
-def _tag_int(file_doc: dict[str, Any], *keys: str) -> int | None:
-    value = _tag_value(file_doc, *keys)
-    if value is None:
-        return None
-    digits = "".join(ch for ch in value if ch.isdigit())
-    if not digits:
-        return None
-    return int(digits)
-
-
-def _duration_ms(file_doc: dict[str, Any]) -> int | None:
-    duration_seconds = file_doc.get("duration_seconds")
-    if not isinstance(duration_seconds, (int, float)):
-        return None
-    return int(float(duration_seconds) * 1000.0)
 
 
 def _duration_close(lhs_ms: int | None, rhs_ms: int | None, tolerance_ms: int = 2000) -> bool:
@@ -59,55 +67,87 @@ def _duration_close(lhs_ms: int | None, rhs_ms: int | None, tolerance_ms: int = 
     return abs(lhs_ms - rhs_ms) <= tolerance_ms
 
 
-def _descriptor_from_doc(file_doc: dict[str, Any]) -> TrackDescriptor:
-    return TrackDescriptor(
-        title=str(_tag_value(file_doc, "title") or ""),
-        artist=str(_tag_value(file_doc, "artist") or ""),
-        album=str(_tag_value(file_doc, "album") or ""),
-        album_artist=str(_tag_value(file_doc, "album_artist", "albumartist") or ""),
-        duration_ms=_duration_ms(file_doc),
-        track_number=_tag_int(file_doc, "track_number", "tracknumber"),
-        disc_number=_tag_int(file_doc, "disc_number", "discnumber"),
-        year=_tag_int(file_doc, "year"),
-        nomarr_file_key=str(file_doc.get("id") or "") or None,
-    )
-
-
 def _normalize_title(value: str) -> str:
     return normalize_title(value) if value else ""
 
 
-def build_track_descriptor(file_doc: dict[str, Any]) -> TrackDescriptor:
-    """Build a portable descriptor from hydrated song metadata."""
-    return _descriptor_from_doc(file_doc)
+def _descriptor_from_carrier(carrier: TaggedSong, locator: SongIdentity) -> TrackDescriptor:
+    """Project an ID-free typed carrier + locator into a portable descriptor."""
+    tags = _tag_map(carrier.tags)
+    metadata = carrier.metadata
+
+    def meta_str(key: str) -> str:
+        value = metadata.get(key)
+        return str(value) if value is not None else ""
+
+    return TrackDescriptor(
+        title=tags.get("title") or meta_str("title"),
+        artist=tags.get("artist") or meta_str("artist"),
+        album=tags.get("album") or meta_str("album"),
+        album_artist=tags.get("album_artist") or tags.get("albumartist") or meta_str("artist"),
+        duration_ms=_duration_ms(carrier.song.duration_seconds),
+        track_number=_int_from(tags.get("track_number") or tags.get("tracknumber")),
+        disc_number=_int_from(tags.get("disc_number") or tags.get("discnumber")),
+        year=_int_from(tags.get("year") or metadata.get("year")),
+        nomarr_file_key=encode_song_locator(locator),
+    )
 
 
-def _candidate_file_ids(db: Database, seed: TrackDescriptor) -> set[str]:
+def build_track_descriptor(carrier: TaggedSong, locator: SongIdentity) -> TrackDescriptor:
+    """Build a portable descriptor from an ID-free typed carrier and its locator."""
+    return _descriptor_from_carrier(carrier, locator)
+
+
+def _candidate_locators(db: Database, seed: TrackDescriptor) -> list[SongIdentity]:
+    """Locate candidate songs by title pattern or artist tag and resolve locators."""
     title = seed.get("title", "")
     if title:
-        title_songs = db.library.find_songs_with_tag_pattern("title", title, limit=None)
-        return {str(song.song_id) for song in title_songs}
+        songs = list(db.library.find_songs_with_tag_pattern("title", title, limit=None))
+    elif seed.get("artist", ""):
+        songs = list(db.library.find_songs_with_tag(TagRef(name="artist", value=seed["artist"]), limit=None))
+    else:
+        return []
+    return [locator for locator in _locators_for_songs(db, songs) if locator is not None]
 
-    artist = seed.get("artist", "")
-    if artist:
-        artist_songs = db.library.find_songs_with_tag(TagRef(name="artist", value=artist), limit=None)
-        return {str(song.song_id) for song in artist_songs}
 
-    return set()
+def _carrier_for_locator(db: Database, locator: SongIdentity) -> TaggedSong | None:
+    """Build an ID-free typed carrier for one locator via the authoritative facade."""
+    song = db.library.get_song(locator)
+    if song is None:
+        return None
+    assignments = db.library.list_song_tags_for_songs([locator]).get(locator, ())
+    return TaggedSong(song=song, metadata=_derive_metadata(assignments), tags=_file_tags(assignments))
+
+
+def descriptor_for_locator(db: Database, locator: SongIdentity) -> TrackDescriptor | None:
+    """Build a portable descriptor for one locator, or ``None`` when absent."""
+    carrier = _carrier_for_locator(db, locator)
+    if carrier is None:
+        return None
+    return _descriptor_from_carrier(carrier, locator)
+
+
+def _descriptors_by_key(db: Database, locators: Sequence[SongIdentity]) -> dict[str, TrackDescriptor]:
+    """Build descriptors keyed by the opaque locator token for each candidate."""
+    assignments = _tag_assignments(db, locators)
+    descriptors: dict[str, TrackDescriptor] = {}
+    for locator in locators:
+        song = db.library.get_song(locator)
+        if song is None:
+            continue
+        tags = assignments.get(locator, ())
+        carrier = TaggedSong(song=song, metadata=_derive_metadata(tags), tags=_file_tags(tags))
+        descriptors[encode_song_locator(locator)] = _descriptor_from_carrier(carrier, locator)
+    return descriptors
 
 
 def resolve_seed_descriptor_to_file(db: Database, seed: TrackDescriptor) -> tuple[str | None, str]:
-    """Resolve a portable seed descriptor to one Nomarr track record."""
-    candidate_ids = _candidate_file_ids(db, seed)
-    if not candidate_ids:
+    """Resolve a portable seed descriptor to one opaque Nomarr locator token."""
+    candidate_locators = _candidate_locators(db, seed)
+    if not candidate_locators:
         return None, "descriptor_unresolved"
 
-    docs = get_songs_by_ids_with_tags(db, [int(cid) for cid in sorted(candidate_ids)])
-    descriptors_by_id = {
-        str(file_id): _descriptor_from_doc(file_doc)
-        for file_doc in docs
-        if isinstance((file_id := file_doc.get("id")), int)
-    }
+    descriptors_by_key = _descriptors_by_key(db, candidate_locators)
 
     title = _normalize_title(seed.get("title", ""))
     artist = normalize_artist(seed.get("artist", "")) if seed.get("artist") else ""
@@ -115,8 +155,8 @@ def resolve_seed_descriptor_to_file(db: Database, seed: TrackDescriptor) -> tupl
     album_artist = normalize_artist(seed.get("album_artist", "")) if seed.get("album_artist") else ""
 
     step2_matches = [
-        file_id
-        for file_id, descriptor in descriptors_by_id.items()
+        key
+        for key, descriptor in descriptors_by_key.items()
         if _normalize_title(descriptor["title"]) == title
         and normalize_artist(descriptor["artist"]) == artist
         and _normalize_title(descriptor["album"]) == album
@@ -128,8 +168,8 @@ def resolve_seed_descriptor_to_file(db: Database, seed: TrackDescriptor) -> tupl
         return None, "descriptor_ambiguous"
 
     step3_matches = [
-        file_id
-        for file_id, descriptor in descriptors_by_id.items()
+        key
+        for key, descriptor in descriptors_by_key.items()
         if _normalize_title(descriptor["title"]) == title
         and _normalize_title(descriptor["album"]) == album
         and normalize_artist(descriptor.get("album_artist", "")) == album_artist
@@ -142,8 +182,8 @@ def resolve_seed_descriptor_to_file(db: Database, seed: TrackDescriptor) -> tupl
         return None, "descriptor_ambiguous"
 
     step4_matches = [
-        file_id
-        for file_id, descriptor in descriptors_by_id.items()
+        key
+        for key, descriptor in descriptors_by_key.items()
         if _normalize_title(descriptor["title"]) == title
         and normalize_artist(descriptor["artist"]) == artist
         and _duration_close(descriptor.get("duration_ms"), seed.get("duration_ms"))
@@ -154,8 +194,8 @@ def resolve_seed_descriptor_to_file(db: Database, seed: TrackDescriptor) -> tupl
         return None, "descriptor_ambiguous"
 
     fallback_matches = [
-        file_id
-        for file_id, descriptor in descriptors_by_id.items()
+        key
+        for key, descriptor in descriptors_by_key.items()
         if _normalize_title(descriptor["title"]) == title and normalize_artist(descriptor["artist"]) == artist
     ]
     if len(fallback_matches) == 1:

@@ -22,8 +22,8 @@ export interface VectorSearchRequest {
 }
 
 export interface VectorSearchResultItem {
-  /** Library file document ID */
-  file_id: number;
+  /** Opaque `nom1` SongLocator token */
+  file_id: string;
   /** Cosine similarity score in [-1, 1]; higher values are better matches */
   score: number;
   /** Stored embedding vector */
@@ -72,8 +72,8 @@ export interface VectorBackbonesResponse {
   backbones: string[];
 }
 export interface VectorGetResponse {
-  /** Library file document ID */
-  file_id: number;
+  /** Opaque `nom1` SongLocator token */
+  file_id: string;
   /** Backbone identifier */
   backbone_id: string;
   /** Embedding vector */

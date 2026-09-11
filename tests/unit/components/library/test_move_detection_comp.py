@@ -56,8 +56,10 @@ def _mock_valid_library_path(mock_build: MagicMock) -> None:
     mock_build.return_value.is_valid.return_value = True
 
 
-_LIBRARY = Library(name="main", root_path="/music")
-_LIBRARY_IDENTITY = LibraryIdentity(name="main", root_path="/music")
+_LIBRARY = Library(library_uuid="45064f6d-d92e-5179-ad4d-6a15c1354737", name="main", root_path="/music")
+_LIBRARY_IDENTITY = LibraryIdentity(
+    library_uuid="45064f6d-d92e-5179-ad4d-6a15c1354737", name="main", root_path="/music"
+)
 
 
 @pytest.mark.unit

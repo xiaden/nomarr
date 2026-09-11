@@ -10,7 +10,8 @@
 // ──────────────────────────────────────────────────────────────────────
 
 export interface Library {
-  library_id: string; // Natural library name (wire identity)
+  library_id: string; // Natural library name (library-CRUD wire identity, ADR-043/049)
+  libraryUuid: string; // Immutable Nomarr-owned SongLocator library identity (ADR-049)
   name: string;
   rootPath: string; // maps to backend root_path
   isEnabled: boolean;
@@ -66,7 +67,7 @@ export interface EntityListResult {
 }
 
 export interface SongListResult {
-  song_ids: number[];
+  song_ids: string[]; // Opaque `nom1` SongLocator tokens
   total: number;
   limit: number;
   offset: number;

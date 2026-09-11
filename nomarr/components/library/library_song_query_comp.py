@@ -47,6 +47,45 @@ DEFAULT_LIMIT = 1000
 
 _ACTIVITY_EVENT = Literal["scanned", "tagged"]
 
+type Carrier = HydratedSong | TaggedSong | StateTaggedSong | RecentSong | TagMatchedSong | TrackSong
+
+
+def locators_for_carriers(db: Database, carriers: Sequence[Carrier]) -> list[SongIdentity | None]:
+    """Project typed song carriers to UUID-addressed locators in input order.
+
+    A carrier is resolved only when the persistence facade returns a semantically
+    equal ``Song`` for a locator built from a UUID-bearing ``LibraryIdentity``.
+    Missing carriers remain ``None``; no row, generated ID, physical-path
+    heuristic, or caller-managed transaction participates in this projection.
+    """
+    songs: list[Song] = []
+    for carrier in carriers:
+        if isinstance(carrier, (HydratedSong, TaggedSong, TagMatchedSong, TrackSong)):
+            songs.append(carrier.song)
+        elif isinstance(carrier, (StateTaggedSong, RecentSong)):
+            songs.append(carrier.candidate.song)
+        else:
+            raise TypeError("locators_for_carriers accepts only typed song carriers")
+
+    locators: list[SongIdentity | None] = [None] * len(songs)
+    remaining = set(range(len(songs)))
+    for library in db.library.list_libraries():
+        if not remaining:
+            break
+        if library.library_uuid is None:
+            continue
+        library_identity = _library_identity(library)
+        indices = sorted(remaining)
+        requested = [_song_identity(songs[i], library_identity) for i in indices]
+        resolved = db.library.list_songs_by_identity(requested)
+        resolved_by_path = {candidate.normalized_path: candidate for candidate in resolved}
+        for index in indices:
+            candidate = resolved_by_path.get(songs[index].normalized_path)
+            if candidate is not None and candidate == songs[index]:
+                locators[index] = _song_identity(candidate, library_identity)
+                remaining.discard(index)
+    return locators
+
 
 # ─────────────────────────────────────────────────────────────────────────
 # Identity / locator helpers
@@ -54,8 +93,14 @@ _ACTIVITY_EVENT = Literal["scanned", "tagged"]
 
 
 def _library_identity(library: Library) -> LibraryIdentity:
-    """Resolve a domain ``Library`` value to its natural ``LibraryIdentity`` locator."""
-    return LibraryIdentity(name=library.name, root_path=library.root_path)
+    """Resolve a domain ``Library`` value to its immutable ``LibraryIdentity`` locator."""
+    if library.library_uuid is None:
+        raise ValueError(f"Library {library.name!r} has no library_uuid")
+    return LibraryIdentity(
+        library_uuid=library.library_uuid,
+        name=library.name,
+        root_path=library.root_path,
+    )
 
 
 def _song_identity(song: Song, library_identity: LibraryIdentity) -> SongIdentity:

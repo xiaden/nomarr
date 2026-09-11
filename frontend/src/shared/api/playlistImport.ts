@@ -22,7 +22,8 @@ export interface PlaylistTrackInputResponse {
 
 export interface MatchedFileInfoResponse {
   path: string;
-  file_id: number;
+  /** Opaque `nom1` SongLocator token */
+  file_id: string;
   title: string;
   artist: string;
   album: string | null;

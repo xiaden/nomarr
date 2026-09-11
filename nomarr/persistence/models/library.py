@@ -1,5 +1,7 @@
 """Library ORM model."""
 
+import uuid
+
 from sqlalchemy import BigInteger, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -10,9 +12,13 @@ class Library(Base):
     """Represents a music library directory."""
 
     __tablename__ = "libraries"
-    __table_args__ = (UniqueConstraint("name", name="uq_libraries_name"),)
+    __table_args__ = (
+        UniqueConstraint("name", name="uq_libraries_name"),
+        UniqueConstraint("library_uuid", name="uq_libraries_library_uuid"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    library_uuid: Mapped[str] = mapped_column(String(36), nullable=False, default=lambda: str(uuid.uuid4()))
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     path: Mapped[str] = mapped_column(Text, nullable=False)
     library_type: Mapped[str] = mapped_column(String(50), nullable=False)

@@ -1,19 +1,22 @@
 """Tests for nomarr.components.navidrome.playlist_builder_comp module.
 
-The builders now consume the typed vector domain contract: cold embeddings are
-read via ``db.ml.embedding_counts``/``search_similar_vectors`` returning domain
-values, ANN results are typed :class:`VectorMatch` values carrying a natural
-:class:`SongIdentity`, and each match is adapted back to its transport file
-handle through ``db.library.get_song_by_normalized_path``.  Tests mock those
-authoritative methods with domain fixtures — no raw ``song_id`` rows or
-``stats`` dict access.
+The builders consume the G hard-cut contract: ANN results are typed
+:class:`VectorMatch` values carrying a UUID-bearing :class:`SongIdentity`
+locator, played-track context and playlist entries carry opaque ``nom1``
+SongLocator tokens (never generated integer ``songs.id``/``file_id``), and the
+cold vector read goes through ``db.ml.embedding_counts`` /
+``db.ml.search_similar_vectors`` / ``db.ml.get_song_vector``. Tests mock those
+authoritative facades with domain fixtures — no raw ``song_id`` rows.
+
+Tokens are produced by the canonical codec so every builder assertion is
+against the real wire format rather than a shape-only stand-in.
 """
 
 from __future__ import annotations
 
 from copy import deepcopy
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -28,13 +31,17 @@ from nomarr.components.navidrome.playlist_builder_comp import (
     build_universal_playlist,
 )
 from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
+from nomarr.helpers.dataclasses.song_tag_dataclass import SongTagAssignment
 from nomarr.helpers.dataclasses.vector_dataclass import EmbeddingCounts, SongVector, VectorMatch
+from nomarr.helpers.song_locator_codec import decode_song_locator, encode_song_locator
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-_LIB_ID = LibraryIdentity(name="test-lib", root_path="/test-lib")
+# Canonical lowercase hyphenated version-4 UUID (the only accepted spelling).
+_LIB_UUID = "123e4567-e89b-42d3-a456-426614174000"
+_LIB_ID = LibraryIdentity(library_uuid=_LIB_UUID, name="test-lib", root_path="/test-lib")
 
 
 def _make_ctx(**overrides: object) -> dict:
@@ -56,7 +63,7 @@ def _make_ctx(**overrides: object) -> dict:
             },
         ],
         "max_songs": 50,
-        "played_file_ids": [1, 2, 3],
+        "played_file_ids": [],
         "played_tracks": [],
         "max_genre_playlists": 10,
         "half_life_days": 30.0,
@@ -66,8 +73,13 @@ def _make_ctx(**overrides: object) -> dict:
 
 
 def _song_identity(song_id: int) -> SongIdentity:
-    """Build a deterministic natural identity encoding ``song_id`` in its path."""
+    """Build a deterministic UUID-bearing locator encoding ``song_id`` in its path."""
     return SongIdentity(library=_LIB_ID, normalized_path=f"rel/{song_id}.mp3")
+
+
+def _token_for(song_id: int) -> str:
+    """Return the canonical opaque ``nom1`` token for a fixture song handle."""
+    return encode_song_locator(_song_identity(song_id))
 
 
 def _fid_from_path(normalized_path: str) -> int:
@@ -97,18 +109,26 @@ def _make_wire_item(key: str) -> dict:
     return {"file_id": key}
 
 
+def _assignments_for(song_id: int, tags_by_song_id: dict[int, dict[str, str]]) -> tuple[SongTagAssignment, ...]:
+    values = tags_by_song_id.get(song_id, {})
+    return tuple(SongTagAssignment(name=name, value=value) for name, value in values.items())
+
+
 def _make_db(
     cold_count: int = 1000,
     search_results: list[list[VectorMatch]] | None = None,
     vectors: dict[int, SongVector] | None = None,
+    tags_by_song_id: dict[int, dict[str, str]] | None = None,
+    known_songs: bool = True,
 ) -> MagicMock:
     """Build a mock Database with pre-configured ml/library namespaces.
 
     ``db.ml.embedding_counts`` returns typed :class:`EmbeddingCounts`; each call
     to ``db.ml.search_similar_vectors`` returns the next list (converted to a
-    tuple) from ``search_results``, else an empty tuple.  Every result's natural
-    ``SongIdentity`` reverses to its file handle through ``db.library``.
-    Optional ``vectors`` seed ``db.ml.get_song_vector`` for the genre builder.
+    tuple) from ``search_results``, else an empty tuple. ``db.library`` resolves
+    opaque tokens through ``get_library_by_uuid`` and locators through
+    ``get_song``; ``list_song_tags_for_songs`` returns the configured sealed tag
+    assignments keyed by the requested locator.
     """
     db = MagicMock()
     db.ml.embedding_counts = MagicMock(return_value=EmbeddingCounts(hot_count=0, cold_count=cold_count))
@@ -118,15 +138,26 @@ def _make_db(
     else:
         db.ml.search_similar_vectors.return_value = ()
 
-    def _reverse(normalized_path: str, _library: object) -> SimpleNamespace | None:
-        return SimpleNamespace(song_id=_fid_from_path(normalized_path))
+    db.library.get_library_by_uuid = MagicMock(
+        return_value=SimpleNamespace(library_uuid=_LIB_UUID, name="test-lib", root_path="/test-lib")
+    )
 
-    db.library.get_song_by_normalized_path = MagicMock(side_effect=_reverse)
-    db.library.resolve_song_identity = MagicMock(side_effect=lambda song_id: _song_identity(song_id))
-    vectors = vectors or {}
+    if known_songs:
+        db.library.get_song = MagicMock(return_value=SimpleNamespace(normalized_path="rel/0.mp3"))
+    else:
+        db.library.get_song = MagicMock(return_value=None)
+
+    configured_tags = tags_by_song_id or {}
+    db.library.list_song_tags_for_songs = MagicMock(
+        side_effect=lambda locators: {
+            locator: _assignments_for(_fid_from_path(locator.normalized_path), configured_tags) for locator in locators
+        }
+    )
+
+    configured_vectors = vectors or {}
 
     def _get_song_vector(_backbone: str, song: SongIdentity) -> SongVector | None:
-        return vectors.get(_fid_from_path(song.normalized_path))
+        return configured_vectors.get(_fid_from_path(song.normalized_path))
 
     db.ml.get_song_vector = MagicMock(side_effect=_get_song_vector)
     return db
@@ -147,7 +178,7 @@ def test_interleave_empty_results_returns_empty() -> None:
 @pytest.mark.unit
 @pytest.mark.mocked
 def test_interleave_target_size_zero_returns_empty() -> None:
-    results = {"A": [_make_wire_item(1)]}
+    results = {"A": [_make_wire_item("1")]}
     result = _interleave_per_cluster(results, {"A": 1.0}, target_size=0)
     assert result == []
 
@@ -265,8 +296,8 @@ def test_interleave_clusters_exhausted_returns_partial() -> None:
 @pytest.mark.mocked
 def test_interleave_no_mutation_of_input_lists() -> None:
     """Original result lists must not be modified."""
-    original_a = [_make_wire_item(1), _make_wire_item(2)]
-    original_b = [_make_wire_item(1), _make_wire_item(2)]
+    original_a = [_make_wire_item("1"), _make_wire_item("2")]
+    original_b = [_make_wire_item("1"), _make_wire_item("2")]
     results = {"A": deepcopy(original_a), "B": deepcopy(original_b)}
     weights = {"A": 0.5, "B": 0.5}
 
@@ -302,8 +333,8 @@ def test_familiar_empty_cold_collection_returns_empty() -> None:
 @pytest.mark.unit
 @pytest.mark.mocked
 def test_familiar_normal_case_filters_to_played() -> None:
-    """ANN results are filtered to only include played file_ids."""
-    played = [1, 2, 3]
+    """ANN results are filtered to only include played locator tokens."""
+    played = [_token_for(i) for i in (1, 2, 3)]
     ctx = _make_ctx(played_file_ids=played, max_songs=10)
 
     ann_c1 = [_make_result(1), _make_result(99), _make_result(2)]
@@ -316,15 +347,18 @@ def test_familiar_normal_case_filters_to_played() -> None:
     entry = result[0]
     assert entry["playlist_type"] == "familiar"
     assert entry["playlist_name"] == "Your Favorites"
-    assert set(entry["file_ids"]).issubset({str(p) for p in played})
+    assert set(entry["file_ids"]).issubset(set(played))
     assert len(entry["file_ids"]) > 0
+    for token in entry["file_ids"]:
+        assert token.startswith("nom1")
+        assert decode_song_locator(token).library_uuid == _LIB_UUID
 
 
 @pytest.mark.unit
 @pytest.mark.mocked
 def test_familiar_no_played_in_ann_results_returns_empty_file_ids() -> None:
     """When no ANN results match played tracks, file_ids is empty but entry still returned."""
-    ctx = _make_ctx(played_file_ids=[1], max_songs=10)
+    ctx = _make_ctx(played_file_ids=[_token_for(1)], max_songs=10)
 
     ann_c1 = [_make_result(99), _make_result(98)]
     ann_c2 = [_make_result(97)]
@@ -340,7 +374,7 @@ def test_familiar_no_played_in_ann_results_returns_empty_file_ids() -> None:
 @pytest.mark.mocked
 def test_familiar_multiple_clusters_proportional_mix() -> None:
     """Multiple clusters produce interleaved results proportional to weight."""
-    played = list(range(100))
+    played = [_token_for(i) for i in range(100)]
     ctx = _make_ctx(played_file_ids=played, max_songs=10)
 
     ann_c1 = [_make_result(i) for i in range(10)]
@@ -352,6 +386,7 @@ def test_familiar_multiple_clusters_proportional_mix() -> None:
     assert len(result) == 1
     entry = result[0]
     assert len(entry["file_ids"]) == 10
+    assert set(entry["file_ids"]).issubset(set(played))
 
 
 # ===================================================================
@@ -371,8 +406,8 @@ def test_discovery_empty_cold_collection_returns_empty() -> None:
 @pytest.mark.unit
 @pytest.mark.mocked
 def test_discovery_normal_case_excludes_played() -> None:
-    """ANN results exclude played file_ids."""
-    played = [1, 2]
+    """ANN results exclude played locator tokens."""
+    played = [_token_for(1), _token_for(2)]
     ctx = _make_ctx(played_file_ids=played, max_songs=10)
 
     ann_c1 = [_make_result(1), _make_result(10), _make_result(11)]
@@ -385,16 +420,17 @@ def test_discovery_normal_case_excludes_played() -> None:
     entry = result[0]
     assert entry["playlist_type"] == "discovery"
     assert entry["playlist_name"] == "Discover Weekly"
-    assert 1 not in entry["file_ids"]
-    assert 2 not in entry["file_ids"]
-    assert len(entry["file_ids"]) > 0
+    assert _token_for(1) not in entry["file_ids"]
+    assert _token_for(2) not in entry["file_ids"]
+    assert entry["file_ids"]
+    assert all(token.startswith("nom1") for token in entry["file_ids"])
 
 
 @pytest.mark.unit
 @pytest.mark.mocked
 def test_discovery_all_results_are_played_returns_empty_file_ids() -> None:
     """When all ANN results are played tracks, file_ids is empty."""
-    played = [1, 2, 3]
+    played = [_token_for(i) for i in (1, 2, 3)]
     ctx = _make_ctx(played_file_ids=played, max_songs=10)
 
     ann_c1 = [_make_result(1), _make_result(2)]
@@ -411,20 +447,15 @@ def test_discovery_all_results_are_played_returns_empty_file_ids() -> None:
 # Tests for build_hidden_gems_playlist()
 # ===================================================================
 
-TAGS_ARTIST_PATH = "nomarr.components.navidrome.playlist_builder_comp"
-
 
 @pytest.mark.unit
 @pytest.mark.mocked
 def test_hidden_gems_empty_cold_collection_returns_empty() -> None:
-    ctx = _make_ctx()
+    ctx = _make_ctx(played_file_ids=[_token_for(1)])
     db = _make_db(cold_count=0)
 
-    with patch(
-        f"{TAGS_ARTIST_PATH}.get_distinct_tag_values_for_files",
-        new=MagicMock(return_value=["Artist A"]),
-    ):
-        result = build_hidden_gems_playlist(db, ctx)
+    result = build_hidden_gems_playlist(db, ctx)
+
     assert result == []
 
 
@@ -432,97 +463,78 @@ def test_hidden_gems_empty_cold_collection_returns_empty() -> None:
 @pytest.mark.mocked
 def test_hidden_gems_no_known_artists_skips_artist_filter() -> None:
     """When no known artists, behaves like discovery (no artist exclusion)."""
-    ctx = _make_ctx(played_file_ids=[1], max_songs=10)
+    ctx = _make_ctx(played_file_ids=[_token_for(1)], max_songs=10)
 
     db = _make_db(cold_count=1000, search_results=[[_make_result(10), _make_result(11)], [_make_result(12)]])
 
-    with (
-        patch(f"{TAGS_ARTIST_PATH}.get_distinct_tag_values_for_files", new=MagicMock(return_value=[])),
-        patch(f"{TAGS_ARTIST_PATH}.get_tag_values_grouped_by_file", new=MagicMock(return_value={})) as mock_grouped,
-    ):
-        result = build_hidden_gems_playlist(db, ctx)
+    result = build_hidden_gems_playlist(db, ctx)
 
     assert len(result) == 1
     entry = result[0]
     assert entry["playlist_type"] == "hidden_gems"
     assert entry["playlist_name"] == "Hidden Gems"
-    mock_grouped.assert_not_called()
-    assert "1" not in entry["file_ids"]
-    assert len(entry["file_ids"]) > 0
+    assert set(entry["file_ids"]) == {_token_for(10), _token_for(11), _token_for(12)}
 
 
 @pytest.mark.unit
 @pytest.mark.mocked
 def test_hidden_gems_known_artists_excludes_artist_tracks() -> None:
     """Tracks by known artists are excluded from results."""
-    ctx = _make_ctx(played_file_ids=[1], max_songs=10)
+    ctx = _make_ctx(played_file_ids=[_token_for(1)], max_songs=10)
 
     ann_c1 = [_make_result(10), _make_result(11), _make_result(12)]
     ann_c2 = [_make_result(13)]
-    db = _make_db(cold_count=1000, search_results=[ann_c1, ann_c2])
+    db = _make_db(
+        cold_count=1000,
+        search_results=[ann_c1, ann_c2],
+        tags_by_song_id={
+            1: {"artist": "Known Artist"},
+            10: {"artist": "Unknown Artist"},
+            11: {"artist": "Known Artist"},
+            12: {"artist": "Another Unknown"},
+            13: {"artist": "Yet Another"},
+        },
+    )
 
-    with (
-        patch(
-            f"{TAGS_ARTIST_PATH}.get_distinct_tag_values_for_files",
-            new=MagicMock(return_value=["Known Artist"]),
-        ),
-        patch(
-            f"{TAGS_ARTIST_PATH}.get_tag_values_grouped_by_file",
-            new=MagicMock(
-                return_value={
-                    10: {"Unknown Artist"},
-                    11: {"Known Artist"},
-                    12: {"Another Unknown"},
-                    13: {"Yet Another"},
-                }
-            ),
-        ),
-    ):
-        result = build_hidden_gems_playlist(db, ctx)
+    result = build_hidden_gems_playlist(db, ctx)
 
     assert len(result) == 1
     entry = result[0]
-    assert "11" not in entry["file_ids"]
-    assert "10" in entry["file_ids"]
-    assert "12" in entry["file_ids"]
-    assert "13" in entry["file_ids"]
+    assert _token_for(11) not in entry["file_ids"]
+    assert _token_for(10) in entry["file_ids"]
+    assert _token_for(12) in entry["file_ids"]
+    assert _token_for(13) in entry["file_ids"]
 
 
 @pytest.mark.unit
 @pytest.mark.mocked
 def test_hidden_gems_both_played_and_artist_exclusion() -> None:
     """Both played tracks and known-artist tracks are excluded."""
-    ctx = _make_ctx(played_file_ids=[1, 2], max_songs=10)
+    ctx = _make_ctx(played_file_ids=[_token_for(1), _token_for(2)], max_songs=10)
 
     ann_c1 = [_make_result(1), _make_result(10), _make_result(11)]
     ann_c2 = [_make_result(2), _make_result(12)]
-    db = _make_db(cold_count=1000, search_results=[ann_c1, ann_c2])
+    db = _make_db(
+        cold_count=1000,
+        search_results=[ann_c1, ann_c2],
+        tags_by_song_id={
+            1: {"artist": "Known Artist"},
+            2: {"artist": "Known Artist"},
+            10: {"artist": "Known Artist"},
+            11: {"artist": "Unknown"},
+            12: {"artist": "Other Unknown"},
+        },
+    )
 
-    with (
-        patch(
-            f"{TAGS_ARTIST_PATH}.get_distinct_tag_values_for_files",
-            new=MagicMock(return_value=["Known Artist"]),
-        ),
-        patch(
-            f"{TAGS_ARTIST_PATH}.get_tag_values_grouped_by_file",
-            new=MagicMock(
-                return_value={
-                    10: {"Known Artist"},
-                    11: {"Unknown"},
-                    12: {"Other Unknown"},
-                }
-            ),
-        ),
-    ):
-        result = build_hidden_gems_playlist(db, ctx)
+    result = build_hidden_gems_playlist(db, ctx)
 
     assert len(result) == 1
     entry = result[0]
-    assert "1" not in entry["file_ids"]
-    assert "2" not in entry["file_ids"]
-    assert "10" not in entry["file_ids"]
-    assert "11" in entry["file_ids"]
-    assert "12" in entry["file_ids"]
+    assert _token_for(1) not in entry["file_ids"]
+    assert _token_for(2) not in entry["file_ids"]
+    assert _token_for(10) not in entry["file_ids"]
+    assert _token_for(11) in entry["file_ids"]
+    assert _token_for(12) in entry["file_ids"]
 
 
 # ===================================================================
@@ -555,7 +567,8 @@ def test_universal_normal_case_stride_sampling() -> None:
     entry = result[0]
     assert entry["playlist_type"] == "universal"
     assert entry["playlist_name"] == "Your Mix"
-    assert len(entry["file_ids"]) > 0
+    assert entry["file_ids"]
+    assert all(token.startswith("nom1") for token in entry["file_ids"])
 
 
 @pytest.mark.unit
@@ -652,36 +665,29 @@ def test_genre_empty_no_tracks_returns_empty() -> None:
 @pytest.mark.unit
 @pytest.mark.mocked
 def test_genre_builds_playlist_from_played_tracks() -> None:
-    """Genre builder resolves played vectors, builds centroid, searches, adapts results.
-
-    Three played tracks tagged ``Rock`` seed the genre centroid; the cold
-    search returns ≥ ``_GENRE_MIN_SONGS`` matches; results are adapted to file
-    handles and capped at ``max_songs``.
-    """
+    """Genre builder resolves played vectors, builds centroid, searches, adapts results."""
     played = [1, 2, 3]
+    played_tokens = [_token_for(fid) for fid in played]
     ctx = _make_ctx(
-        played_file_ids=played,
+        played_file_ids=played_tokens,
         max_songs=50,
-        played_tracks=[{"file_id": fid, "playcount": 5, "last_played": 100_000_000} for fid in played],
+        played_tracks=[{"file_id": token, "playcount": 5, "last_played": 100_000_000} for token in played_tokens],
     )
     vectors = {fid: _make_song_vector(fid, seed=fid) for fid in played}
-    genre_map = {fid: {"Rock"} for fid in played}
+    tags_by_song_id = {fid: {"genre": "Rock"} for fid in played}
     # > _GENRE_MIN_SONGS matches from the cold search.
     search = [_make_result(i) for i in range(1000, 1000 + _GENRE_MIN_SONGS + 20)]
-    db = _make_db(cold_count=1000, search_results=[search], vectors=vectors)
+    db = _make_db(cold_count=1000, search_results=[search], vectors=vectors, tags_by_song_id=tags_by_song_id)
 
-    with patch(
-        f"{TAGS_ARTIST_PATH}.get_tag_values_grouped_by_file",
-        new=MagicMock(return_value=genre_map),
-    ):
-        result = build_genre_playlists(db, ctx)
+    result = build_genre_playlists(db, ctx)
 
     assert len(result) == 1
     entry = result[0]
     assert entry["playlist_type"] == "genre_rock"
     assert entry["playlist_name"] == "Your Rock Mix"
     assert len(entry["file_ids"]) == ctx["max_songs"]
-    assert all(pid in entry["file_ids"] for pid in map(str, range(1000, 1050)))
+    expected = {_token_for(i) for i in range(1000, 1050)}
+    assert set(entry["file_ids"]) == expected
 
 
 @pytest.mark.unit
@@ -689,21 +695,18 @@ def test_genre_builds_playlist_from_played_tracks() -> None:
 def test_genre_below_min_songs_is_skipped() -> None:
     """A genre whose search returns fewer than _GENRE_MIN_SONGS is skipped."""
     played = [1, 2, 3]
+    played_tokens = [_token_for(fid) for fid in played]
     ctx = _make_ctx(
-        played_file_ids=played,
+        played_file_ids=played_tokens,
         max_songs=50,
-        played_tracks=[{"file_id": fid, "playcount": 5, "last_played": 100_000_000} for fid in played],
+        played_tracks=[{"file_id": token, "playcount": 5, "last_played": 100_000_000} for token in played_tokens],
     )
     vectors = {fid: _make_song_vector(fid, seed=fid) for fid in played}
-    genre_map = {fid: {"Rock"} for fid in played}
+    tags_by_song_id = {fid: {"genre": "Rock"} for fid in played}
     # Far fewer than _GENRE_MIN_SONGS matches.
     search = [_make_result(i) for i in range(1000, 1005)]
-    db = _make_db(cold_count=1000, search_results=[search], vectors=vectors)
+    db = _make_db(cold_count=1000, search_results=[search], vectors=vectors, tags_by_song_id=tags_by_song_id)
 
-    with patch(
-        f"{TAGS_ARTIST_PATH}.get_tag_values_grouped_by_file",
-        new=MagicMock(return_value=genre_map),
-    ):
-        result = build_genre_playlists(db, ctx)
+    result = build_genre_playlists(db, ctx)
 
     assert result == []

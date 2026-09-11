@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from nomarr.helpers.exceptions import MisconfiguredError, PlaylistQueryError
 from nomarr.helpers.logging_helper import sanitize_exception_message
 from nomarr.interfaces.api.auth import verify_session
-from nomarr.interfaces.api.id_codec import decode_id
+from nomarr.interfaces.api.id_codec import decode_song_locator_or_400
 from nomarr.interfaces.api.types.navidrome_types import (
     GeneratePlaylistResponse,
     GenerateTemplateFilesRequest,
@@ -159,11 +159,13 @@ async def web_navidrome_templates_generate(
 async def web_navidrome_static_playlist(
     request: StaticPlaylistRequest, navidrome_service: Annotated["NavidromeService", Depends(get_navidrome_service)]
 ) -> StaticPlaylistResponse:
-    """Generate a static M3U playlist from a list of file IDs."""
+    """Generate a static M3U playlist from a list of SongLocator tokens."""
     try:
+        for fid in request.file_ids:
+            decode_song_locator_or_400(fid)
         result_dto = await asyncio.to_thread(
             navidrome_service.generate_static_playlist,
-            file_ids=[str(decode_id(fid)) for fid in request.file_ids],
+            file_ids=list(request.file_ids),
             playlist_name=request.playlist_name,
         )
         return StaticPlaylistResponse.from_dto(result_dto)
@@ -187,7 +189,9 @@ async def web_navidrome_push_playlist(
     to Navidrome mediafile IDs and push as a playlist on its side.
     """
     try:
-        file_ids = [str(decode_id(fid)) for fid in request.file_ids]
+        for fid in request.file_ids:
+            decode_song_locator_or_400(fid)
+        file_ids = list(request.file_ids)
         descriptor_map = await asyncio.to_thread(
             navidrome_service.resolve_files_to_descriptors,
             file_ids,
@@ -235,7 +239,7 @@ async def web_generate_personal_playlists(
 
     top_plays: list[TrackPlayData] = [
         TrackPlayData(
-            file_id=int(p.file_id) if p.file_id else None,
+            file_id=p.file_id,
             playcount=p.playcount,
             last_played=p.last_played,
         )

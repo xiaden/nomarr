@@ -26,7 +26,7 @@ from nomarr.services.domain.vector_search_svc import (
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
-_LIB_ID = LibraryIdentity(name="Music", root_path="/music")
+_LIB_ID = LibraryIdentity(library_uuid="6313b0d3-d270-57a8-9e0d-21e8255107e3", name="Music", root_path="/music")
 _SEED_ID = 1
 _SEED_SONG = SongIdentity(library=_LIB_ID, normalized_path="songs/seed.mp3")
 _FILE_BY_PATH = {

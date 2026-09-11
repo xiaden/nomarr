@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from typing import TYPE_CHECKING, Any
 
 from nomarr.helpers.dataclasses.library_dataclass import Library
@@ -16,6 +17,7 @@ def library_from_row(row: Mapping[str, Any]) -> Library:
     return Library(
         name=row["name"],
         root_path=row["path"],
+        library_uuid=row.get("library_uuid"),
         is_enabled=row["library_type"] != "disabled",
         watch_mode=row.get("watch_mode") or ("event" if row.get("auto_tag") else "off"),
         file_write_mode=row.get("file_write_mode") or "full",
@@ -26,8 +28,15 @@ def library_from_row(row: Mapping[str, Any]) -> Library:
 
 
 def library_insert_payload(library: Library) -> dict[str, Any]:
-    """Map a domain library to repository insert fields."""
+    """Map a domain library to repository insert fields.
+
+    The immutable ``library_uuid`` application identity (ADR-049) is minted here
+    when the input does not already carry one, so every created library row has a
+    UUID and a delete/recreate cycle issues a fresh value. ``library_update_payload``
+    never includes it, preserving immutability across rename/root-path updates.
+    """
     return {
+        "library_uuid": library.library_uuid or str(uuid.uuid4()),
         "name": library.name,
         "path": library.root_path,
         "library_type": "music" if library.is_enabled else "disabled",

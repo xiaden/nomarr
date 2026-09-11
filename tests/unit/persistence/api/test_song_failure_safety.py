@@ -67,7 +67,7 @@ from nomarr.helpers.dataclasses.song_command_dataclass import (
 from nomarr.helpers.exceptions import DatabaseStateError, DuplicateEntityError, ReferentialIntegrityError
 from nomarr.persistence.api.library_songs import LibrarySongsDb
 
-_LIB = LibraryIdentity(name="TestLib", root_path="/music")
+_LIB = LibraryIdentity(library_uuid="de131b32-af5c-5a84-8874-58e3dc0e2dcd", name="TestLib", root_path="/music")
 
 
 def _identity(normalized_path: str = "a.mp3") -> SongIdentity:
@@ -118,7 +118,7 @@ def _make_songs() -> tuple[LibrarySongsDb, MagicMock, MagicMock, MagicMock]:
     song_repo = MagicMock()
     song_state_repo = MagicMock()
     library_repo = MagicMock()
-    library_repo.get_library_by_natural_key.return_value = {"id": 1}
+    library_repo.get_library_by_uuid.return_value = {"id": 1}
     songs = LibrarySongsDb(
         session=MagicMock(),
         song_repo=song_repo,
@@ -280,7 +280,7 @@ class TestMoveLibrarySongNoDeleteRecreate:
     def test_unresolvable_source_library_returns_none_without_write(self) -> None:
         songs, _, song_repo_unused, library_repo = _make_songs()
         _ = song_repo_unused
-        library_repo.get_library_by_natural_key.return_value = None
+        library_repo.get_library_by_uuid.return_value = None
 
         assert songs.move_library_song(_move_command()) is None
         # No repo write is reached when the owning library cannot be resolved.
@@ -374,7 +374,7 @@ class TestRemoveSongBoundary:
 
     def test_missing_library_returns_false_without_write(self) -> None:
         songs, _, _, library_repo = _make_songs()
-        library_repo.get_library_by_natural_key.return_value = None
+        library_repo.get_library_by_uuid.return_value = None
 
         assert songs.remove_song(_remove_command()) is False
 
@@ -423,7 +423,7 @@ class TestStateReadFaultInjection:
     def test_scoped_miss_is_an_empty_result_not_an_error(self) -> None:
         songs, _, state_repo, library_repo = _make_songs()
         state_repo.list_songs_in_state.return_value = [1]
-        library_repo.get_library_by_natural_key.return_value = None
+        library_repo.get_library_by_uuid.return_value = None
 
         assert songs.list_songs_with_state("not_processed", library=_LIB) == []
         # No row write behind the scoped miss.
@@ -661,7 +661,7 @@ class TestRestartSafeReDerivation:
         song_repo.delete_song.assert_not_called()
         song_repo.upsert_songs_for_library.assert_not_called()
         song_repo.move_song.assert_called_once()
-        library_repo.get_library_by_natural_key.assert_called()  # used for resolve only
+        library_repo.get_library_by_uuid.assert_called()  # used for resolve only
 
 
 @pytest.mark.unit

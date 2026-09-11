@@ -110,6 +110,11 @@ class LibraryRegionsDb:
         row = self._library_repo.get_library_by_name(name)
         return None if row is None else library_from_row(row)
 
+    def get_library_by_uuid(self, library_uuid: str) -> Library | None:
+        """Get a library by its immutable ``library_uuid`` identity (ADR-049)."""
+        row = self._library_repo.get_library_by_uuid(library_uuid)
+        return None if row is None else library_from_row(row)
+
     def list_libraries(self, *, enabled_only: bool = False) -> list[Library]:
         """List all libraries, optionally filtering to enabled only."""
         return [library_from_row(row) for row in self._library_repo.list_libraries(enabled_only=enabled_only)]

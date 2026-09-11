@@ -49,7 +49,7 @@ from nomarr.helpers.dataclasses.worker_claim_dataclass import WorkerClaim, Worke
 def _claim_identity(song_id: int) -> SongIdentity:
     """Build a natural song identity matching ``_song(song_id)``."""
     return SongIdentity(
-        library=LibraryIdentity(name="Music", root_path="/music"),
+        library=LibraryIdentity(library_uuid="6313b0d3-d270-57a8-9e0d-21e8255107e3", name="Music", root_path="/music"),
         normalized_path=f"song{song_id}.mp3",
     )
 
@@ -403,7 +403,9 @@ class TestIncompleteTags:
     @staticmethod
     def _identity(song_id: int) -> SongIdentity:
         return SongIdentity(
-            library=LibraryIdentity(name="Music", root_path="/music"),
+            library=LibraryIdentity(
+                library_uuid="6313b0d3-d270-57a8-9e0d-21e8255107e3", name="Music", root_path="/music"
+            ),
             normalized_path=f"song{song_id}.mp3",
         )
 

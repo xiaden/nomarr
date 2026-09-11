@@ -18,6 +18,8 @@ from nomarr.helpers.dataclasses.worker_claim_dataclass import (
 from nomarr.helpers.time_helper import now_ms
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
+    from nomarr.helpers.dataclasses.song_state_candidate_dataclass import SongStateCandidate
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
@@ -25,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 def discover_next_file(
     db: Database,
-) -> str | None:
+) -> SongStateCandidate | None:
     """Discover the next untagged song.
 
     Uses the song state graph to find songs in the ``not_processed`` state,
@@ -35,58 +37,24 @@ def discover_next_file(
         db: Database instance
 
     Returns:
-        Song id or None if no work available
+        Typed state candidate or None if no work available
 
     """
-    file_doc = discover_next_untagged_file(db, exclude_claimed=True)
-    if file_doc:
-        return str(file_doc["id"])
-    return None
+    return discover_next_untagged_file(db, exclude_claimed=True)
 
 
-def claim_file(db: Database, file_id: str, worker_id: str) -> bool:
-    """Attempt to claim a song for processing.
-
-    Resolves the numeric song handle to its natural domain identity through the
-    sanctioned ``db.library`` identity bridge and acquires an untyped worker
-    claim via the ``db.app.add_claim`` intent.  The caller never constructs or
-    parses a claim key, reads a raw payload, or queries state tables.
-
-    Args:
-        db: Database instance
-        file_id: Song id (e.g., ``12345``)
-        worker_id: Worker identifier (e.g., "worker:tag:0")
-
-    Returns:
-        True if the claim was acquired; False if the song cannot be resolved
-        or an active claim already exists.
-
-    """
-    identity = db.library.resolve_song_identity(int(file_id))
-    if identity is None:
-        return False
+def claim_file(db: Database, song: SongIdentity, worker_id: str) -> bool:
+    """Attempt to claim a song addressed by its semantic locator."""
     claim = WorkerClaim(
-        identity=WorkerClaimIdentity(song=identity, worker_id=worker_id, claim_type=None),
+        identity=WorkerClaimIdentity(song=song, worker_id=worker_id, claim_type=None),
         claimed_at_ms=now_ms().value,
     )
     return db.app.add_claim(claim)
 
 
-def release_claim(db: Database, file_id: int, worker_id: str) -> None:
-    """Release an untyped claim on a song (after processing or error).
-
-    The claim identity is resolved through the sanctioned library bridge; a
-    song that can no longer be resolved has no claim to release.
-
-    Args:
-        db: Database instance
-        file_id: Song id
-
-    """
-    identity = db.library.resolve_song_identity(int(file_id))
-    if identity is None:
-        return
-    db.app.remove_claim(WorkerClaimIdentity(song=identity, worker_id=worker_id, claim_type=None))
+def release_claim(db: Database, song: SongIdentity, worker_id: str) -> None:
+    """Release an untyped claim addressed by its semantic locator."""
+    db.app.remove_claim(WorkerClaimIdentity(song=song, worker_id=worker_id, claim_type=None))
 
 
 def cleanup_stale_claims(db: Database, heartbeat_timeout_ms: int) -> int:
@@ -120,13 +88,13 @@ def cleanup_stale_claims(db: Database, heartbeat_timeout_ms: int) -> int:
 def discover_and_claim_file(
     db: Database,
     worker_id: str,
-) -> str | None:
+) -> SongIdentity | None:
     """Discover and claim the next available file for processing.
 
     Combined operation that:
     1. Discovers next untagged song (excludes errored and claimed)
     2. Attempts to claim it
-    3. Returns file_id if successful, None otherwise
+    3. Returns the semantic song identity if successful, None otherwise
 
     On claim conflict, returns None - caller should retry immediately.
 
@@ -135,19 +103,20 @@ def discover_and_claim_file(
         worker_id: Worker identifier (e.g., "worker:tag:0")
 
     Returns:
-        Claimed file id or None if no work available or claim failed
+        Semantic song identity or None if no work is available or the claim fails
 
     """
-    file_id = discover_next_file(db)
-    if not file_id:
+    candidate = discover_next_file(db)
+    if candidate is None:
         logger.debug("[discovery] No files found needing processing (worker=%s)", worker_id)
         return None
 
-    if claim_file(db, file_id, worker_id):
-        logger.debug("[discovery] Claimed %s for %s", file_id, worker_id)
-        return file_id
+    song = candidate.identity
+    if claim_file(db, song, worker_id):
+        logger.debug("[discovery] Claimed %s for %s", song.normalized_path, worker_id)
+        return song
     # Another worker claimed this file - caller should retry
-    logger.debug("[discovery] File %s already claimed, retrying discovery", file_id)
+    logger.debug("[discovery] File %s already claimed, retrying discovery", song.normalized_path)
     return None
 
 

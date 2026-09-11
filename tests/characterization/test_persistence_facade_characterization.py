@@ -95,7 +95,11 @@ class TestLibraryDbFacadeCharacterization:
         library = _lib1(seed_data)
         assert isinstance(library, Library)
         command = SongUpsertInput(
-            library=LibraryIdentity(name=library.name, root_path=library.root_path),
+            library=LibraryIdentity(
+                library_uuid=library.library_uuid or "00000000-0000-0000-0000-000000000000",
+                name=library.name,
+                root_path=library.root_path,
+            ),
             path="/tmp/test1/char_song.flac",
             scan=SongScanUpdate(
                 normalized_path="/tmp/test1/char_song.flac",
