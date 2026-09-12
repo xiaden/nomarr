@@ -9,6 +9,7 @@ Provides:
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -65,12 +66,21 @@ def postgres_container():
 
 
 @pytest.fixture(scope="session")
-def test_db_url(postgres_container) -> str:
+def test_db_url(request) -> str:
     """Build the SQLAlchemy URL for the test database.
 
     Uses psycopg2 (sync driver) for Alembic migrations and Database facade.
+
+    When ``NOMARR_TEST_DATABASE_URL`` is set, that already-running native
+    PostgreSQL/pgvector database is used instead of starting a testcontainer.
+    This additive fast path lets a workspace with a local pgvector cluster run
+    the ``requires_database`` evidence without Docker; CI (no override set)
+    still uses the ``pgvector/pgvector:pg17`` testcontainer unchanged.
     """
-    pg = postgres_container
+    override = os.environ.get("NOMARR_TEST_DATABASE_URL")
+    if override:
+        return override
+    pg = request.getfixturevalue("postgres_container")
     return (
         f"postgresql+psycopg2://{pg.username}:{pg.password}"
         f"@{pg.get_container_host_ip()}:{pg.get_exposed_port(pg.port)}/{pg.dbname}"

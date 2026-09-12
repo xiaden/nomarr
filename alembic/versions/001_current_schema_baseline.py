@@ -114,6 +114,15 @@ def upgrade() -> None:
     # GIN trigram index for fuzzy search
     op.execute("CREATE INDEX ix_songs_normalized_path_trgm ON songs USING gin (normalized_path gin_trgm_ops)")
 
+    op.create_table(
+        "song_mood_calibration_markers",
+        sa.Column("song_id", sa.Integer(), nullable=False),
+        sa.Column("calibration_version", sa.String(length=255), nullable=False),
+        sa.CheckConstraint("calibration_version ~ '^[0-9a-f]{32}$'"),
+        sa.ForeignKeyConstraint(["song_id"], ["songs.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("song_id"),
+    )
+
     # song_tags
     op.create_table(
         "song_tags",
@@ -482,6 +491,7 @@ def downgrade() -> None:
     op.drop_index("ix_song_state_assignments_song_id", table_name="song_state_assignments")
     op.drop_table("song_state_assignments")
     op.drop_table("song_states")
+    op.drop_table("song_mood_calibration_markers")
     op.drop_index("ix_song_tags_tag_id", table_name="song_tags")
     op.drop_index("ix_song_tags_song_id", table_name="song_tags")
     op.drop_table("song_tags")

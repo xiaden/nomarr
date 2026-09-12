@@ -70,6 +70,7 @@ The sole exception is the CodeQL matrix: `analyze` matches real runs prefixed
 | `deptry` | `backend-quality.yml` | push, pr, manual |
 | `test` | `backend-tests.yml` | push, pr, manual |
 | `architecture-qc` | `backend-tests.yml` | push, pr, manual |
+| `database-tests` | `backend-tests.yml` | push, pr, manual |
 | `frontend-checks` | `frontend-checks.yml` | push, pr, manual |
 | `build-and-push` | `docker-publish.yml` | push, manual |
 | `promote` | `docker-publish.yml` | push, manual |
@@ -85,11 +86,13 @@ cancelled, or failed is a **failure** (non-zero exit). A not-applicable check is
 explicitly listed as N/A in the report — it is never silently counted as success
 and never silently ignored.
 
-* **`push`** (default): requires backend quality, backend tests, frontend
-  checks, and Docker publish. `e2e` (manual-only), `docs-check` (PR-only), and
+* **`push`** (default): requires backend quality, backend tests (`test`,
+  `architecture-qc`, `database-tests`), frontend checks, and Docker publish.
+  `e2e` (manual-only), `docs-check` (PR-only), and
   `analyze` (main-target) are NOT-APPLICABLE.
-* **`pr`**: requires backend quality, backend tests, frontend checks, and
-  `docs-check`. Docker publish is NOT-APPLICABLE because `docker-publish.yml`
+* **`pr`**: requires backend quality, backend tests (`test`, `architecture-qc`,
+  `database-tests`), frontend checks, and `docs-check`. Docker publish is
+  NOT-APPLICABLE because `docker-publish.yml`
   has no `pull_request` trigger — no image is published on a PR, so a skipped
   publish is treated as not-applicable, never as success. `e2e` is
   NOT-APPLICABLE (manual-only).
@@ -152,6 +155,7 @@ Required checks:
         (CodeQL security gate (job 'analyze'); main-target only — use --require analyze)
   [PASS ] architecture-qc    completed + success
   [PASS ] build-and-push     completed + success
+  [PASS ] database-tests     completed + success
   [PASS ] deptry             completed + success
   [N/A  ] docs-check         PR-only; NOT-APPLICABLE on push/manual
         (PR-only; NOT-APPLICABLE on push/manual)

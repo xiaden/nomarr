@@ -28,6 +28,8 @@ from nomarr.helpers.dataclasses.library_domain_dataclasses import (
     LibraryUpdate,
 )
 from nomarr.helpers.dataclasses.song_command_dataclass import (
+    ChromaprintValue,
+    FieldWriteResult,
     LibraryIdentity,
     SongIdentity,
     SongPathUpdate,
@@ -90,6 +92,42 @@ _LIBRARY_ROW: dict = {
 
 def _song_row() -> dict:
     return dict(_SONG_ROW)
+
+
+def test_scalar_locator_intents_validate_and_delegate_typed_results() -> None:
+    db, _library_repo, song_repo, *_ = _make_library_db()
+    identity = SongIdentity(LibraryIdentity("de131b32-af5c-5a84-8874-58e3dc0e2dcd"), "a.mp3")
+    song_repo.set_modified_time_by_locator.return_value = "UPDATED"
+    song_repo.set_last_tagged_by_locator.return_value = "UNCHANGED"
+    song_repo.set_chromaprint_by_locator.return_value = "STALE_VALUE"
+
+    modified = db.set_modified_time(identity, 1000)
+    tagged = db.set_last_tagged(identity, 1000)
+    chromaprint = db.set_chromaprint(identity, ChromaprintValue("AQID", "decoder-v1"))
+
+    assert modified == FieldWriteResult("UPDATED")
+    assert tagged == FieldWriteResult("UNCHANGED")
+    assert chromaprint == FieldWriteResult("STALE_VALUE")
+    assert db.set_modified_time(identity, -1) == FieldWriteResult("INVALID_VALUE")
+    assert db.set_last_tagged(identity, True) == FieldWriteResult("INVALID_VALUE")
+    song_repo.set_modified_time_by_locator.assert_called_once_with(1, "a.mp3", 1000)
+    song_repo.set_last_tagged_by_locator.assert_called_once_with(1, "a.mp3", 1000)
+    song_repo.set_chromaprint_by_locator.assert_called_once_with(
+        1, "a.mp3", "AQID", expected_value=None, expected_absent=True
+    )
+
+
+def test_scalar_locator_intents_missing_locator_do_not_write() -> None:
+    db, library_repo, song_repo, *_ = _make_library_db()
+    library_repo.get_library_by_uuid.return_value = None
+    identity = SongIdentity(LibraryIdentity("missing"), "a.mp3")
+
+    assert db.set_modified_time(identity, 1) == FieldWriteResult("MISSING_LOCATOR")
+    assert db.set_last_tagged(identity, 1) == FieldWriteResult("MISSING_LOCATOR")
+    assert db.set_chromaprint(identity, ChromaprintValue("AQID", "decoder-v1")) == FieldWriteResult("MISSING_LOCATOR")
+    song_repo.set_modified_time_by_locator.assert_not_called()
+    song_repo.set_last_tagged_by_locator.assert_not_called()
+    song_repo.set_chromaprint_by_locator.assert_not_called()
 
 
 def _library_row() -> dict:
@@ -666,7 +704,9 @@ def test_resolve_library_identity_bridge() -> None:
 @pytest.mark.unit
 def test_add_song_to_library_delegates_typed_command() -> None:
     db, library_repo, song_repo, *_ = _make_library_db()
+    song_repo.list_existing_song_paths = MagicMock(return_value=[])
     song_repo.upsert_songs_for_library = MagicMock(return_value=[42])
+    song_repo.get_song_ids_by_paths = MagicMock(return_value={"/music/a.mp3": 42})
     scan = SongScanUpdate(
         normalized_path="a.mp3",
         file_size=100,
@@ -702,13 +742,16 @@ def test_add_song_to_library_delegates_typed_command() -> None:
                 "last_tagged_at": 2000,
             }
         ],
+        commit=False,
     )
 
 
 @pytest.mark.unit
 def test_add_song_to_library_initializes_states_with_private_id() -> None:
     db, _, song_repo, _, _, _, _, song_state_repo, _ = _make_library_db()
+    song_repo.list_existing_song_paths = MagicMock(return_value=[])
     song_repo.upsert_songs_for_library = MagicMock(return_value=[42])
+    song_repo.get_song_ids_by_paths = MagicMock(return_value={"/music/a.mp3": 42})
     scan = SongScanUpdate(
         normalized_path="a.mp3",
         file_size=100,
@@ -719,14 +762,16 @@ def test_add_song_to_library_initializes_states_with_private_id() -> None:
     result = db.add_song_to_library(command)
 
     assert result == SongIdentity(library=_TEST_LIBRARY, normalized_path="a.mp3")
-    # State init is driven by the private returned song id and stays internal.
-    song_state_repo.initialize_song_states.assert_called_once_with([42])
+    # State init is driven by the path-resolved private song id and stays internal.
+    song_state_repo.initialize_song_states.assert_called_once_with([42], commit=False)
 
 
 @pytest.mark.unit
 def test_add_song_to_library_defaults_scanned_at_when_scan_omits_it() -> None:
     db, _, song_repo, *_ = _make_library_db()
+    song_repo.list_existing_song_paths = MagicMock(return_value=[])
     song_repo.upsert_songs_for_library = MagicMock(return_value=[42])
+    song_repo.get_song_ids_by_paths = MagicMock(return_value={"/music/a.mp3": 42})
     scan = SongScanUpdate(
         normalized_path="a.mp3",
         file_size=100,
@@ -775,11 +820,12 @@ def test_add_song_to_library_unknown_uuid_is_unresolvable() -> None:
 @pytest.mark.unit
 def test_add_song_to_library_empty_repo_result_raises_runtime_error() -> None:
     db, _, song_repo, _, _, _, _, song_state_repo, _ = _make_library_db()
+    song_repo.list_existing_song_paths = MagicMock(return_value=[])
     song_repo.upsert_songs_for_library = MagicMock(return_value=[])
     scan = SongScanUpdate(normalized_path="a.mp3", file_size=100, modified_time=1000)
     command = SongUpsertInput(library=_TEST_LIBRARY, path="/music/a.mp3", scan=scan)
 
-    with pytest.raises(RuntimeError, match="expected one song id"):
+    with pytest.raises(RuntimeError, match="unexpected row count"):
         db.add_song_to_library(command)
     song_state_repo.initialize_song_states.assert_not_called()
 
@@ -789,7 +835,9 @@ def test_add_song_to_library_state_init_exception_propagates_without_exposing_id
     """A state-initialization failure propagates through the facade without
     exposing the generated id as a successful semantic result."""
     db, _, song_repo, _, _, _, _, song_state_repo, _ = _make_library_db()
+    song_repo.list_existing_song_paths = MagicMock(return_value=[])
     song_repo.upsert_songs_for_library = MagicMock(return_value=[42])
+    song_repo.get_song_ids_by_paths = MagicMock(return_value={"/music/a.mp3": 42})
     song_state_repo.initialize_song_states = MagicMock(side_effect=RuntimeError("state init failed"))
     scan = SongScanUpdate(normalized_path="a.mp3", file_size=100, modified_time=1000)
     command = SongUpsertInput(library=_TEST_LIBRARY, path="/music/a.mp3", scan=scan)
@@ -801,7 +849,7 @@ def test_add_song_to_library_state_init_exception_propagates_without_exposing_id
     # never returned as a semantic SongIdentity because the exception fires
     # before the facade can return.
     song_repo.upsert_songs_for_library.assert_called_once()
-    song_state_repo.initialize_song_states.assert_called_once_with([42])
+    song_state_repo.initialize_song_states.assert_called_once_with([42], commit=False)
 
 
 @pytest.mark.unit
@@ -838,7 +886,7 @@ def test_add_song_to_library_same_natural_path_inserts_then_updates() -> None:
     # first insert and kept on a same-path update (mirrors on_conflict semantics).
     rows: dict[str, dict[str, object]] = {}
 
-    def _upsert_tracking(library_id: int, payloads: list[dict[str, object]]) -> list[int]:
+    def _upsert_tracking(library_id: int, payloads: list[dict[str, object]], *, commit: bool = True) -> list[int]:
         ids: list[int] = []
         for payload in payloads:
             path = str(payload["path"])
@@ -850,6 +898,12 @@ def test_add_song_to_library_same_natural_path_inserts_then_updates() -> None:
         return ids
 
     song_repo.upsert_songs_for_library = MagicMock(side_effect=_upsert_tracking)
+    song_repo.list_existing_song_paths = MagicMock(
+        side_effect=lambda _library_id, paths: [p for p in paths if p in rows]
+    )
+    song_repo.get_song_ids_by_paths = MagicMock(
+        side_effect=lambda _library_id, paths: {p: int(rows[p]["id"]) for p in paths}  # type: ignore[arg-type]
+    )
 
     def _command(file_size: int, modified_time: int) -> SongUpsertInput:
         scan = SongScanUpdate(
@@ -877,10 +931,9 @@ def test_add_song_to_library_same_natural_path_inserts_then_updates() -> None:
     assert len(calls) == 2
     assert calls[0].args[1][0]["path"] == calls[1].args[1][0]["path"]
     assert calls[0].args[1][0]["normalized_path"] == calls[1].args[1][0]["normalized_path"]
-    # initialize_song_states is idempotent (on_conflict_do_nothing), so re-running
-    # it on the update bootstraps the initial negative states exactly once — it
-    # never creates a duplicate membership set.
-    assert song_state_repo.initialize_song_states.call_count == 2
+    # Create-only initialization: the first upsert inserts and initializes,
+    # the same-path re-upsert preserves the existing states (no re-init).
+    assert song_state_repo.initialize_song_states.call_count == 1
 
 
 @pytest.mark.unit
@@ -933,14 +986,15 @@ def test_add_song_to_library_retry_after_state_init_failure_succeeds() -> None:
     """Recovery is the existing caller retry: re-invoking the idempotent intent
     after a state-init failure succeeds.
 
-    No restart protocol or rollback is invented here. The repository upsert
-    commits in its own short transaction and the state initializer commits
-    separately, so NO atomicity is claimed across the two: a state-init failure
-    leaves the row upserted but not yet initialized, and the caller's supported
-    recovery is a retry that re-runs both idempotently.
+    The repository upsert and the state initializer share one facade-owned
+    transaction (``commit=False``), so a state-init failure rolls the row back
+    and the caller's supported recovery is a retry that re-runs both; the row
+    is still treated as new on the retry. No restart protocol is invented here.
     """
     db, _, song_repo, _, _, _, _, song_state_repo, _ = _make_library_db()
+    song_repo.list_existing_song_paths = MagicMock(return_value=[])
     song_repo.upsert_songs_for_library = MagicMock(return_value=[42])
+    song_repo.get_song_ids_by_paths = MagicMock(return_value={"/music/a.mp3": 42})
     song_state_repo.initialize_song_states = MagicMock(side_effect=[RuntimeError("state init failed"), None])
     scan = SongScanUpdate(normalized_path="a.mp3", file_size=100, modified_time=1000)
     command = SongUpsertInput(library=_TEST_LIBRARY, path="/music/a.mp3", scan=scan)
@@ -1590,9 +1644,9 @@ def test_remove_scan_noop_when_not_exists() -> None:
 def test_hydrate_song_delegates_to_song_hydration_repo() -> None:
     db, hydration_repo = _make_songs_db_with_hydration()
 
-    db.hydrate_song(sentinel.input)
+    db.hydrate_song(sentinel.locator, sentinel.input)
 
-    hydration_repo.hydrate_song.assert_called_once_with(sentinel.input)
+    hydration_repo.hydrate_song.assert_called_once_with(sentinel.locator, sentinel.input)
 
 
 @pytest.mark.unit
@@ -2120,3 +2174,110 @@ class TestUnknownAndMalformedLibraryUuidRejection:
         assert db.list_songs_by_identity([locator]) == []
         library_repo.get_library_ids_by_uuids.assert_called_once_with(["not-a-uuid"])
         song_repo.get_song_ids_by_normalized_paths.assert_not_called()
+
+
+# ── Atomic batch upsert (Q3-A create-only / single transaction) ────────────
+
+
+@pytest.mark.unit
+def test_add_songs_to_library_batch_commits_once_and_preserves_order() -> None:
+    """The batch intent seeds only new paths, commits once, returns input order."""
+    db, _library_repo, song_repo, _, _, _, _, song_state_repo, _ = _make_library_db()
+    song_repo.list_existing_song_paths = MagicMock(return_value=["/music/existing.mp3"])
+    # The repository's RETURNING rows are intentionally in the wrong order; the
+    # batch must resolve new ids by path, not positionally.
+    song_repo.upsert_songs_for_library = MagicMock(return_value=[11, 10])
+    song_repo.get_song_ids_by_paths = MagicMock(return_value={"/music/new.mp3": 10})
+    commands = [
+        SongUpsertInput(
+            library=_TEST_LIBRARY,
+            path="/music/new.mp3",
+            scan=SongScanUpdate(normalized_path="new.mp3", file_size=1, modified_time=2),
+        ),
+        SongUpsertInput(
+            library=_TEST_LIBRARY,
+            path="/music/existing.mp3",
+            scan=SongScanUpdate(normalized_path="existing.mp3", file_size=3, modified_time=4),
+        ),
+    ]
+
+    result = db.add_songs_to_library_batch(commands)
+
+    assert result == [
+        SongIdentity(library=_TEST_LIBRARY, normalized_path="new.mp3"),
+        SongIdentity(library=_TEST_LIBRARY, normalized_path="existing.mp3"),
+    ]
+    # One upsert for the whole batch, explicitly not committing (the facade owns
+    # the single transaction).
+    upsert_args, upsert_kwargs = song_repo.upsert_songs_for_library.call_args
+    assert upsert_kwargs == {"commit": False}
+    assert [payload["path"] for payload in upsert_args[1]] == ["/music/new.mp3", "/music/existing.mp3"]
+    # New ids are resolved by path (never by RETURNING position); only the genuinely
+    # new path (id 10) is initialized, not the existing one (id 11 in RETURNING).
+    song_repo.get_song_ids_by_paths.assert_called_once_with(1, ["/music/new.mp3"])
+    song_state_repo.initialize_song_states.assert_called_once_with([10], commit=False)
+    # Exactly one commit; no rollback on the success path.
+    db.songs._session.commit.assert_called_once_with()
+    db.songs._session.rollback.assert_not_called()
+
+
+@pytest.mark.unit
+def test_add_songs_to_library_batch_rolls_back_on_state_init_failure() -> None:
+    """An injected state-init failure rolls back the whole batch and propagates."""
+    db, _, song_repo, _, _, _, _, song_state_repo, _ = _make_library_db()
+    song_repo.list_existing_song_paths = MagicMock(return_value=[])
+    song_repo.upsert_songs_for_library = MagicMock(return_value=[42])
+    song_repo.get_song_ids_by_paths = MagicMock(return_value={"/music/a.mp3": 42})
+    song_state_repo.initialize_song_states = MagicMock(side_effect=RuntimeError("state init failed"))
+    command = SongUpsertInput(
+        library=_TEST_LIBRARY,
+        path="/music/a.mp3",
+        scan=SongScanUpdate(normalized_path="a.mp3", file_size=1, modified_time=2),
+    )
+
+    with pytest.raises(RuntimeError, match="state init failed"):
+        db.add_songs_to_library_batch([command])
+
+    db.songs._session.rollback.assert_called_once_with()
+    db.songs._session.commit.assert_not_called()
+
+
+@pytest.mark.unit
+def test_add_songs_to_library_batch_rejects_mixed_libraries() -> None:
+    """A batch spanning more than one LibraryIdentity is rejected before any write."""
+    db, _library_repo, song_repo, *_ = _make_library_db()
+    other = LibraryIdentity(library_uuid="08042357-9a97-5066-a9bf-bcab3b77ec8b", name="Other")
+    commands = [
+        SongUpsertInput(
+            library=_TEST_LIBRARY,
+            path="/music/a.mp3",
+            scan=SongScanUpdate(normalized_path="a.mp3", file_size=1, modified_time=2),
+        ),
+        SongUpsertInput(
+            library=other,
+            path="/music/b.mp3",
+            scan=SongScanUpdate(normalized_path="b.mp3", file_size=1, modified_time=2),
+        ),
+    ]
+
+    with pytest.raises(ValueError, match="song batch must target one library"):
+        db.add_songs_to_library_batch(commands)
+
+    song_repo.upsert_songs_for_library.assert_not_called()
+    song_repo.list_existing_song_paths.assert_not_called()
+
+
+@pytest.mark.unit
+def test_add_songs_to_library_batch_empty_is_noop() -> None:
+    """An empty batch returns ``[]`` and performs no repo or session work."""
+    db, library_repo, song_repo, _, _, _, _, song_state_repo, _ = _make_library_db()
+
+    assert db.add_songs_to_library_batch([]) == []
+
+    # The empty short-circuit happens before any repository or transaction work.
+    song_repo.upsert_songs_for_library.assert_not_called()
+    song_repo.list_existing_song_paths.assert_not_called()
+    song_state_repo.initialize_song_states.assert_not_called()
+    library_repo.get_library_by_uuid.assert_not_called()
+    db.songs._session.commit.assert_not_called()
+    db.songs._session.rollback.assert_not_called()

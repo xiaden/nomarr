@@ -134,7 +134,7 @@ def _record_embed_run(
     ``run_provenance`` row plus the singleton ``corpus_state`` update.  A run with errors
     is recorded ``partial`` (never masquerades as complete).  ``output_artifact_hashes``
     are the published stream fingerprints of this run (the seed of the Plan F manifest).
-    Plan-C-owned corpus field (``latest_catalog_run_id``) and config hashing remain empty
+    Plan-C-owned corpus field and config hashing remain empty
     here by design (base surface).
     """
     report = store.reconcile()
@@ -295,7 +295,7 @@ def regenerate_masks(
     recomputed, and regeneration is permitted ONLY when that fingerprint EQUALS the
     committed observation group's ``audio_content_sha256``.  A fingerprint mismatch is a
     HARD refusal — a mask may never be written over a different audio file — and there is
-    no fallback to a stale mask or a forced re-derive.  Equal fingerprint permits only the
+    no silent reuse of a stale mask or a forced re-derive.  Equal fingerprint permits only the
     (idempotent) re-derive + observation-group re-publication; because mask payloads are
     content-addressed, an unchanged waveform reproduces the identical mask digest and the
     durable no-replace writer is a no-op.

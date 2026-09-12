@@ -30,6 +30,7 @@ from nomarr.components.library.tag_hydration_comp import (
 from nomarr.components.library.tag_mapping_comp import is_numeric_tag_value
 from nomarr.helpers.constants.file_states import STATE_PROCESSED
 from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
+from nomarr.helpers.dataclasses.song_dataclass import Song
 from nomarr.helpers.dataclasses.song_state_candidate_dataclass import SongStateCandidate
 from nomarr.helpers.dataclasses.song_tag_dataclass import TagRef
 from nomarr.helpers.dto.library_dto import FileTag
@@ -39,7 +40,6 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
     from nomarr.helpers.dataclasses.library_dataclass import Library
-    from nomarr.helpers.dataclasses.song_dataclass import Song
     from nomarr.helpers.dataclasses.song_tag_dataclass import SongTagAssignment
     from nomarr.persistence.db import Database
 
@@ -57,15 +57,23 @@ def locators_for_carriers(db: Database, carriers: Sequence[Carrier]) -> list[Son
     equal ``Song`` for a locator built from a UUID-bearing ``LibraryIdentity``.
     Missing carriers remain ``None``; no row, generated ID, physical-path
     heuristic, or caller-managed transaction participates in this projection.
+    Empty input is an empty result without touching the library facade, and any
+    non-carrier or malformed carrier is rejected deterministically before facade
+    work.
     """
+    if not carriers:
+        return []
     songs: list[Song] = []
     for carrier in carriers:
         if isinstance(carrier, (HydratedSong, TaggedSong, TagMatchedSong, TrackSong)):
-            songs.append(carrier.song)
-        elif isinstance(carrier, (StateTaggedSong, RecentSong)):
-            songs.append(carrier.candidate.song)
+            song = carrier.song
+        elif isinstance(carrier, (StateTaggedSong, RecentSong)) and isinstance(carrier.candidate, SongStateCandidate):
+            song = carrier.candidate.song
         else:
             raise TypeError("locators_for_carriers accepts only typed song carriers")
+        if not isinstance(song, Song):
+            raise TypeError("locators_for_carriers accepts only typed song carriers")
+        songs.append(song)
 
     locators: list[SongIdentity | None] = [None] * len(songs)
     remaining = set(range(len(songs)))
@@ -133,8 +141,11 @@ def _locators_for_songs(db: Database, songs: Sequence[Song]) -> list[SongIdentit
     ``list_songs_by_identity`` over the still-unresolved songs and accepts a
     locator only when the resolved value equals the candidate ``Song`` (never a
     physical-path-prefix heuristic). Returns one locator per input song in the
-    same order; ``None`` when no owning library resolves.
+    same order; ``None`` when no owning library resolves. An empty input is an
+    empty result without touching the library facade.
     """
+    if not songs:
+        return []
     locators: list[SongIdentity | None] = [None] * len(songs)
     remaining = set(range(len(songs)))
     for library in db.library.list_libraries():

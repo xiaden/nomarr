@@ -8,7 +8,7 @@ honouring ONLY the marker and NEVER guessing currency by mtime or lexical order.
 This module owns that marker (the exact documented marker owner selected by the Plan C
 implementation): one **fixed-path** marker per observation identity at
 ``heads/current/<song_id>.<backbone>.json`` — the head-suite analogue of the per-identity
-observation-commit markers and of ``catalogs/current.json`` (a fixed path that is
+observation-commit markers and of the committed head-suite marker (a fixed path that is
 atomically replaced on supersession rather than appended).  Each marker:
 
 * is an immutable, self-validating :class:`~.records.HeadSuiteCurrentMarker` binding the

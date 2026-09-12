@@ -4,7 +4,7 @@ Pins the post-migration invariants that make stream/head artifacts self-describi
 content-addressed filesystem objects while the registry stays a rebuildable cache:
 
 * the ONLY accepted artifact grammar is ``<sid>.<backbone>.<64-lowercase-hex><suffix>``
-  (``parse_artifact_name`` returns a typed identity; bare ``<sid>.<bb>.npy`` and legacy
+  (``parse_artifact_name`` returns a typed identity; bare ``<sid>.<bb>.npy`` and earlier
   ``.vN`` names are REJECTED);
 * ``publish`` writes a digest-named payload whose SHA-256 equals ``fingerprint_sha256``
   and a self-describing ``.json`` manifest sibling (kind / schema_version / payload_sha256 /

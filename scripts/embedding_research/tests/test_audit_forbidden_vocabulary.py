@@ -1,509 +1,649 @@
-"""Plan A whole-tree forbidden-vocabulary audit (P1-S1).
+"""Focused executable-reference deletion proof for the geometry hard cut.
 
-Posture
--------
-Git is the source archive and the corrective passes are complete (the Plan A
-threshold/config foundation cut, the Plan E P1-S5 whole-tree hard cut, the Plan B
-identity/reader cuts, and the Plan C P1-S1..S7 temporal-dispatch / head-marker /
-CLI-vocabulary cuts).  The retained (current) runtime and configuration foundation must
-contain ZERO executable scaled / calibration / p50 / CTP-config / CTP / ANN-FAISS /
-alias / compatibility / dual-write / old-parser / retired-command-aliasing vocabulary.
-No later "deletion inventory" surface remains: every surface this file once
-inventoried for a later plan was deleted (or retained-stripped) by its owner plan, so
-the per-token allowlist below is empty except for two retained prose-only mentions.
-Historical prose (docstrings / comments) may mention superseded terms for traceability
-but must never be executable.
+This module is the machine-readable deletion boundary from Plan R. It builds the
+deletion map of retired modules, symbols, tables, columns, vocabulary roots, and
+filesystem artifacts, then scans the executable surfaces -- package Python,
+configuration, the CLI registries, generated report/fixture output, and dynamic
+``getattr`` / ``importlib`` string arguments -- and proves ZERO runtime edges
+remain to the old ownership/segmentation runtime.
 
-The audit is a single whole-tree regression guard: every executable occurrence of a
-forbidden token (identifier or configuration key; docstring/comment prose excluded) in
-any *non-test* source/config file must be recorded in the per-token allowlist below.  A
-new executable occurrence in a file that is NOT allowlisted fails the audit — so a
-reintroduced CTP/ANN/FAISS/fallback/dual-write/old-parser/alias/retired-command surface
-fails immediately.  ``legacy_phase_aliases`` is forbidden to pin the removed
-``LEGACY_PHASE_ALIASES`` constant: the retired command names ``stratify``/``segment``/
-``classify``/``head`` are ordinary unknown commands (proved structurally in
-``tests/test_phase4_dispatch_boundaries.py`` and textually below), and no named
-retired-command compatibility path or 'retired/legacy phase name' special message may
-return.  Test files are governed by import/collection and by their own negative tests;
-they are intentionally outside this runtime/config scan (this file lives under
-``tests/`` and is therefore already excluded by the guard below).
+Retired names are assembled from fragments at runtime so this module never itself
+carries a substring it forbids. Historical design/plan/log prose is traceability
+only and is excluded from the executable scans.
 """
 
 from __future__ import annotations
 
-import io
-import pathlib
-import tokenize
+import ast
+import hashlib
+import importlib
+import importlib.util
+import json
+import subprocess
+import time
+from pathlib import Path
+from typing import Any
 
-_ROOT = pathlib.Path(__file__).parents[1]  # scripts/embedding_research
+import pytest
 
-#: Threshold/config/alias/compatibility/old-parser/retired-command tokens that the retained
-#: runtime must not use executably.  Every inventoried surface is deleted, so ANY residual
-#: executable reference now fails: ``search_view_hash`` (removed P1-S2), the ANN/FAISS backends
-#: (``ANNIndex``/``ann_recall_sweep``/``faiss``/``hnsw``/``_faiss`` — removed P1-S6), the
-#: per-patch membership / alias / calibration fields (removed P1-S12), and the legacy
-#: adoption/old-parser branches (``register_legacy``/``_classify_rowless``/``_family_versions``/
-#: ``_next_artifact_ref`` — removed Plan B).  ``legacy_phase_aliases`` (removed Plan C P1-S7)
-#: pins the retired-command alias set so it cannot return.
-_FORBIDDEN_TOKENS: tuple[str, ...] = (
-    "search_view_hash",
-    "std_scaled",
-    "thresholdsemantics",  # ThresholdSemantics
-    "validatesemantics",  # validate_semantics
-    "canonical_semantics",
-    "canonical_calibration_record",
-    "canonical_alias",
-    "canonical_threshold",
-    "canonical_threshold_of",
-    "archival_ctp",
-    "rep_a",
-    "rep_b",
-    "register_legacy",
-    "_classify_rowless",
-    "_family_versions",
-    "_next_artifact_ref",
-    "annindex",  # ANNIndex
-    "ann_recall_sweep",
-    "faiss",  # optional ANN backend / dependency (removed under Plan D P1-S6)
-    "hnsw",  # faiss HNSW ANN index flavour (removed with the FAISS backend)
-    "_faiss",  # lazy FAISS-availability flag removed with the backend
-    "legacy_phase_aliases",  # removed alias set (run.py P1-S7); retired names are ordinary unknown commands
-    # C-owned membership surfaces retired at P1-S12 (research seg_membership relation and
-    # its read helpers / column names; compact alias_of_config_id + calibration_record).
-    # ``is_absorbed_outlier`` is intentionally NOT here: it is a legitimate E-owned
-    # head-analysis field name for the compact reconstructed-membership flags, not the
-    # retired research ``seg_membership`` column.
-    "seg_membership",
-    "membership_by_config_song_seg",
-    "alias_of_config_id",
-    "calibration_record",
-    "SegMembershipRecord",
-    "member_patch_idx",
-    "membership_version",
-    # Plan B corrective hard-cut: the analyze-scope v1 machine is REMOVED from the runtime
-    # (sole schema is analyze_scope_v2).  These pin the retired v1 prefix constant and the
-    # bare (un-versioned) v1 encoder/decoder names so a v1 encoder/parser/compat reader cannot
-    # be reintroduced.  ``parse_analyze_scope`` is deliberately NOT here: it is the legal v2
-    # parser in db/analyze_scope.py, and exact-NAME matching means the v2 ``encode/decode
-    # _analyze_scope_v2`` and ``_SCOPE_V2_PREFIX`` identifiers are NOT hits for these tokens.
-    "analyze_scope_v1",
-    "_scope_prefix",  # retired v1 prefix constant (not the current _SCOPE_V2_PREFIX)
-    "encode_analyze_scope",  # bare name; encode_analyze_scope_v2 is a distinct exact token
-    "decode_analyze_scope",  # bare name; decode_analyze_scope_v2 is a distinct exact token
-    # Plan C P3-S1/S2 hard cut: the removed analyze opt-in, pre-cut migration machinery, and
-    # transitional back-compat paths must not reappear as executable identifiers.  These pin the
-    # removed ``emit_medoid_baseline`` opt-in, the ``LEGACY_RUN_ID`` constant,
-    # ``migrate_analyze_metrics_provenance()``, and the ``analyze_metrics_backup`` backup table at
-    # the identifier level; reintroduction as a config key / argparse flag / string literal is
-    # caught by the raw-substring tests at the bottom of this module.  ``compatibility`` and
-    # ``deprecated`` are pinned so a reintroduced compatibility reader/alias path or deprecated
-    # transitional runtime path cannot be NAMED as an identifier.  Current-state PROSE (e.g. ``no
-    # compatibility DDL is introduced``) is never a NAME token and stays allowed.
-    "emit_medoid_baseline",
-    "legacy_run_id",
-    "migrate_analyze_metrics_provenance",
-    "analyze_metrics_backup",
-    "compatibility",
-    "deprecated",
-)
+_PACKAGE_ROOT = Path(__file__).resolve().parents[1]
+_REPO_ROOT = _PACKAGE_ROOT.parents[1]
+_SELF = Path(__file__).resolve()
 
-#: Per-token allowlist of non-test files (relative to scripts/embedding_research)
-#: that are inventoried deletion surfaces (CONTRACTS.md § Plan A deletion
-#: inventory) and therefore may still contain the token executably until their
-#: owning plan deletes them.  Tokens lower-cased.
-_ALLOWLIST: dict[str, frozenset[str]] = {
-    # Plan E P1-S5 audit census (2026-09-05): entries whose referenced module was
-    # deleted (classify.py, strategy_ptc/segment_fn.py, strategy_binned/_optimize.py,
-    # strategy_binned/_process.py, bounded_scoring.py, cache/binned_ptc.py,
-    # cache_identity.py, common/analyze.py, db/binned.py, report/_binned.py) were
-    # REMOVED (a deleted file can never produce a scanner hit). Entries whose retained
-    # file no longer contains the token (db/_schema.py, db/head_phase.py no longer
-    # carry std_scaled; db/canary.py / report/_heads.py / report/_winners.py no longer
-    # carry archival_ctp; helpers/binning.py no longer carries canonical_threshold)
-    # were REMOVED. Only surviving references are kept (below).
-    "std_scaled": frozenset(
-        {
-            "common/head_analysis.py",  # prose-comment mention only (PTC_SEMANTICS note)
-        }
-    ),
-    "rep_a": frozenset(
-        {
-            # retained validator names rep_a in its emitted forbidden-vocabulary
-            # string list (non-executable token, intentional retention).
-            "validate_fixture_report.py",
-        }
-    ),
-    "rep_b": frozenset(
-        {
-            # retained validator names rep_b in its emitted forbidden-vocabulary
-            # string list (non-executable token, intentional retention).
-            "validate_fixture_report.py",
-        }
-    ),
-}
-
-#: The threshold/config foundation that must be completely executable-clean.
-_FOUNDATION: tuple[str, ...] = (
-    "helpers/thresholds.py",
-    "helpers/toml.py",
-    "research_config.toml",
-)
-
-_EMPTY_ALLOWLISTED: frozenset[str] = frozenset(
+_SKIP_DIRS = frozenset({"__pycache__", ".mypy_cache", ".pytest_cache", ".ruff_cache"})
+_SKIP_SUFFIXES = frozenset(
     {
-        "canonical_semantics",
-        "canonical_calibration_record",
-        "canonical_alias",
-        "canonical_threshold_of",
-        "thresholdsemantics",
-        "validatesemantics",
+        ".pyc",
+        ".pyo",
+        ".db",
+        ".duckdb",
+        ".npy",
+        ".npz",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".pdf",
+        ".whl",
+        ".so",
+        ".dylib",
+        ".dll",
+        ".bin",
     }
 )
+_DYNAMIC_NAMES = frozenset({"getattr", "import_module", "__import__", "attrgetter"})
 
 
-def _executable_names(path: pathlib.Path) -> list[str]:
-    """Return the lower-cased identifiers / names in Python source, excluding
-    strings and comments (so docstring/comment historical prose is not counted as
-    executable)."""
-    text = path.read_text(encoding="utf-8")
-    names: list[str] = []
-    try:
-        tokens = tokenize.generate_tokens(io.StringIO(text).readline)
-        names = [tok.string.lower() for tok in tokens if tok.type == tokenize.NAME]
-    except tokenize.TokenError:  # pragma: no cover - malformed source must fail loudly
-        # A file that cannot be tokenized must never scan clean: that would silently
-        # downgrade the audit's guarantee that executable hits fail.
-        raise
+def _j(*parts: str) -> str:
+    """Join fragments so this module never stores a forbidden substring literally."""
+    return "".join(parts)
+
+
+_OWN = _j("cat", "alog")
+_SV = _j("search", "_", "view")
+_SV_COMMAND = _j("search", "-", "view")
+_ALT = _j("ali", "ases")
+
+#: The two retired CLI verbs, which must reject exactly like any unknown command.
+RETIRED_COMMANDS: tuple[str, ...] = (_OWN, _OWN + "-report")
+
+#: Retired module -> replacement module paths (relative to the package root).
+RETIRED_MODULES: dict[str, tuple[str, ...]] = {
+    _OWN + ".py": ("common/geometry_analysis.py", "db/geometry.py"),
+    _OWN + "_storage.py": ("db/geometry.py", "streams/store.py"),
+    _OWN + "_identity.py": ("db/identity_persistence.py", "db/geometry.py"),
+    _OWN + "_binding.py": ("db/geometry.py",),
+    _OWN + "_report.py": ("report/_retrieval.py", "report/_winners.py"),
+    "common/" + _OWN + "_analysis.py": ("common/geometry_analysis.py",),
+    "db/" + _OWN + "_metadata.py": ("db/analyze_scope.py", "db/provenance.py"),
+    "db/segmentation.py": ("helpers/gram_segmentation.py",),
+    _SV + "s.py": (),
+    "helpers/segmentation.py": ("helpers/gram_segmentation.py",),
+    "helpers/binning.py": ("helpers/gram_segmentation.py",),
+}
+
+#: Retired symbol -> replacement symbol (``None`` means deleted with no successor).
+RETIRED_SYMBOLS: dict[str, str | None] = {
+    "run_spherical_segmentation": "derive_temporal_global_from_gram",
+    "global_dist": None,
+    "perdim_dist": None,
+    "DIST_FNS": None,
+    "distance_metric_label": None,
+    "temporal_segment": None,
+    "temporal_segment_with_diagnostics": None,
+    "observed_global_medoid_from_observation": "observed_global_medoid_from_gram",
+    "observed_global_medoid_unit_vector": "observed_global_medoid_from_gram",
+    "select_observed_medoid_source_index": "select_observed_medoid_from_gram",
+    "observed_global_medoid": "observed_global_medoid_from_gram",
+    "_to_unit_rows": None,
+    "_sorted_" + _ALT: None,
+    "run_shared_" + _OWN + "_head_analysis": "run_shared_geometry_head_analysis",
+    "_collect_segment_membership": None,
+    "_pool_segment_heads": None,
+    "SearchViewRecord": None,
+    "materialize_" + _SV: None,
+    "record_" + _SV: None,
+}
+
+RETIRED_TABLES: tuple[str, ...] = (
+    _OWN + "_metadata",
+    _OWN + "_song",
+    "seg_config",
+    "seg_meta",
+    "observation_evidence",
+)
+
+RETIRED_COLUMNS: tuple[str, ...] = (
+    _OWN + "_id",
+    _OWN + "_fingerprint",
+    "view_refs",
+)
+
+#: Retired runtime concepts that have no single file/symbol owner.
+RETIRED_CONCEPTS: tuple[dict[str, str], ...] = (
+    {
+        "kind": "engine",
+        "identifier": "vector-centroid temporal-global segmentation runtime",
+        "replacement": "helpers/gram_segmentation.py",
+    },
+    {
+        "kind": "adapter",
+        "identifier": "stream-to-unit-vector observed baseline adapter",
+        "replacement": "observed_global_medoid_from_gram",
+    },
+    {
+        "kind": "vocabulary",
+        "identifier": _OWN + " identity fields",
+        "replacement": (
+            "observation_id/geometry_id/geometry_semantics_version/numerical_profile_digest/"
+            "threshold_id/structural_identity/search_representation_id/evaluation_id/"
+            "scoring_semantics_version/execution_id"
+        ),
+    },
+    {
+        "kind": "compatibility",
+        "identifier": _j("ali", "as") + "/" + _j("fall", "back") + "/dual-schema",
+        "replacement": "none (refused)",
+    },
+    {
+        "kind": "filesystem_artifact",
+        "identifier": "filesystem snapshot/current/view runtime",
+        "replacement": "primary DuckDB song_patch_geometry",
+    },
+)
+
+#: Retired symbol name -> the module that now provides the replacement.
+REPLACEMENTS: dict[str, str] = {
+    "derive_temporal_global_from_gram": "scripts.embedding_research.helpers.gram_segmentation",
+    "derive_all_temporal_global": "scripts.embedding_research.helpers.gram_segmentation",
+    "gram_from_stream": "scripts.embedding_research.helpers.gram_segmentation",
+    "observed_global_medoid_from_gram": "scripts.embedding_research.helpers.gram_segmentation",
+    "select_observed_medoid_from_gram": "scripts.embedding_research.helpers.gram_segmentation",
+    "write_geometry": "scripts.embedding_research.db.geometry",
+    "read_geometry": "scripts.embedding_research.db.geometry",
+    "read_geometry_matrix": "scripts.embedding_research.db.geometry",
+    "verify_geometry_binding": "scripts.embedding_research.db.geometry",
+    "analyze_all_thresholds": "scripts.embedding_research.common.threshold_analysis",
+    "analyze_geometry_corpus": "scripts.embedding_research.common.geometry_analysis",
+    "build_geometry_corpus_request": "scripts.embedding_research.common.geometry_analysis",
+    "write_geometries_for_current_songs": "scripts.embedding_research.common.geometry_analysis",
+    "run_shared_geometry_head_analysis": "scripts.embedding_research.common.head_analysis",
+    "medoid_strategy_key_for": "scripts.embedding_research.baseline",
+}
+
+
+def retired_vocabulary() -> tuple[str, ...]:
+    """Retired vocabulary roots, assembled from fragments."""
+    return (
+        _OWN,
+        _SV,
+        _j("search", " view"),
+        _SV_COMMAND,
+        _j("current", " selector"),
+        _j("current", "_selector"),
+        _j("current", "-selector"),
+        _j("latest", " selector"),
+        _j("latest", "_selector"),
+        _j("latest", "-selector"),
+        _j("leg", "acy"),
+        _j("ali", "as"),
+        _j("fall", "back"),
+    )
+
+
+def retired_filesystem_artifacts() -> tuple[str, ...]:
+    """Retired on-disk artifact names/paths."""
+    return (
+        _OWN + "s",
+        "current.json",
+        "views/",
+        "vectors.npy",
+        "keys.json",
+    )
+
+
+def _sha256_file(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _iter_python_files() -> list[Path]:
+    files: list[Path] = []
+    for path in _PACKAGE_ROOT.rglob("*.py"):
+        if any(part in _SKIP_DIRS for part in path.parts):
+            continue
+        if path.suffix.lower() in _SKIP_SUFFIXES:
+            continue
+        files.append(path)
+    return sorted(files)
+
+
+def _module_stem(relative: str) -> str:
+    return relative[:-3].replace("/", ".")
+
+
+def _retired_module_stems() -> frozenset[str]:
+    return frozenset(_module_stem(relative) for relative in RETIRED_MODULES)
+
+
+def _import_is_retired(module: str, stems: frozenset[str]) -> bool:
+    if not module:
+        return False
+    normalized = module.replace("scripts.embedding_research.", "", 1).lstrip(".")
+    return any(normalized == stem or normalized.endswith("." + stem) for stem in stems)
+
+
+def _dotted(node: ast.AST) -> str:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        base = _dotted(node.value)
+        return f"{base}.{node.attr}" if base else node.attr
+    return ""
+
+
+def _terminal(dotted: str) -> str:
+    return dotted.rsplit(".", 1)[-1] if dotted else ""
+
+
+def _string_constants(tree: ast.AST) -> set[str]:
+    return {node.value for node in ast.walk(tree) if isinstance(node, ast.Constant) and isinstance(node.value, str)}
+
+
+def _defined_symbol_names() -> set[str]:
+    names: set[str] = set()
+    for path in _iter_python_files():
+        if path == _SELF:
+            continue
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except (OSError, SyntaxError, UnicodeDecodeError):
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                names.add(node.name)
     return names
 
 
-def _config_keys(path: pathlib.Path) -> list[str]:
-    """Return lower-cased non-comment content of a TOML config (keys/values)."""
-    lines: list[str] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
+def scan_executable_sources() -> dict[str, Any]:
+    """AST scan of package Python for retired imports, calls, and dynamic strings."""
+    stems = _retired_module_stems()
+    symbols = set(RETIRED_SYMBOLS)
+    commands = set(RETIRED_COMMANDS)
+    scanned: list[dict[str, Any]] = []
+    matches: list[dict[str, Any]] = []
+    for path in _iter_python_files():
+        relative = path.relative_to(_PACKAGE_ROOT).as_posix()
+        if path == _SELF:
+            scanned.append(
+                {
+                    "path": relative,
+                    "sha256": _sha256_file(path),
+                    "note": "scanner_self_excluded_from_literal_and_call_scan",
+                }
+            )
             continue
-        lines.append(line.lower())
-    return " ".join(lines).split()
-
-
-def _scan_file(rel: str) -> dict[str, list[str]]:
-    """Map forbidden token (lower) -> list of executable names found in `rel`."""
-    path = _ROOT / rel
-    if rel.endswith(".toml"):
-        names = _config_keys(path)
-    else:
-        names = _executable_names(path)
-    hits: dict[str, list[str]] = {}
-    for token in _FORBIDDEN_TOKENS:
-        if token in names:
-            hits[token] = [n for n in names if n == token]
-    return hits
-
-
-def _iter_source_files() -> list[str]:
-    rels: list[str] = []
-    for p in _ROOT.rglob("*"):
-        if "__pycache__" in p.parts:
+        try:
+            source = path.read_text(encoding="utf-8")
+            tree = ast.parse(source)
+        except (OSError, SyntaxError, UnicodeDecodeError) as exc:
+            matches.append({"path": relative, "kind": "parse_error", "detail": str(exc)})
             continue
-        if p.suffix in (".py", ".toml"):
-            rel = p.relative_to(_ROOT).as_posix()
-            if rel.startswith("tests/"):
-                continue
-            # NOTE: no separate self-exclusion is needed here — this audit file lives
-            # at tests/test_audit_forbidden_vocabulary.py and is therefore already
-            # excluded by the tests/ prefix guard above.
-            rels.append(rel)
-    return rels
+        scanned.append({"path": relative, "sha256": _sha256_file(path)})
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                module = node.module or ""
+                if _import_is_retired(module, stems):
+                    matches.append({"path": relative, "line": node.lineno, "kind": "import", "module": module})
+                matches.extend(
+                    {"path": relative, "line": node.lineno, "kind": "import", "symbol": binding.name}
+                    for binding in node.names
+                    if binding.name in symbols
+                )
+            elif isinstance(node, ast.Import):
+                matches.extend(
+                    {"path": relative, "line": node.lineno, "kind": "import", "module": binding.name}
+                    for binding in node.names
+                    if _import_is_retired(binding.name, stems)
+                )
+            elif isinstance(node, ast.Call):
+                dotted = _dotted(node.func)
+                terminal = _terminal(dotted)
+                if terminal in symbols:
+                    matches.append({"path": relative, "line": node.lineno, "kind": "call", "symbol": terminal})
+                if terminal in _DYNAMIC_NAMES:
+                    for argument in node.args:
+                        if isinstance(argument, ast.Constant) and isinstance(argument.value, str):
+                            literal = argument.value
+                            if literal in symbols or literal in commands or _import_is_retired(literal, stems):
+                                matches.append(
+                                    {"path": relative, "line": node.lineno, "kind": "dynamic", "literal": literal}
+                                )
+            elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+                literal = node.value
+                if literal in symbols or literal in commands or _import_is_retired(literal, stems):
+                    matches.append(
+                        {"path": relative, "line": node.lineno, "kind": "string_literal", "literal": literal}
+                    )
+    return {"files": scanned, "matches": matches, "file_count": len(scanned)}
 
 
-def test_foundation_has_no_executable_forbidden_vocabulary() -> None:
-    """Layer 1: the threshold/config foundation is executable-clean (no allowlist)."""
-    for rel in _FOUNDATION:
-        hits = _scan_file(rel)
-        assert not hits, f"{rel} contains executable forbidden vocabulary: {hits}"
+def scan_cli_registries() -> dict[str, Any]:
+    """Check every CLI phase/command registry for retired command entries."""
+    from scripts.embedding_research import run as run_mod
 
-
-def test_every_executable_forbidden_hit_is_inventoried() -> None:
-    """Layer 2: any executable forbidden token in the whole non-test tree must be
-    recorded in the per-token allowlist (deletion inventory)."""
-    uncovered = [
-        (rel, token)
-        for rel in sorted(_iter_source_files())
-        for token in _scan_file(rel)
-        if rel not in _ALLOWLIST.get(token, frozenset())
-    ]
-    assert not uncovered, "executable forbidden vocabulary outside the recorded deletion inventory:\n" + "\n".join(
-        f"  {rel}: {tok}" for rel, tok in uncovered
-    )
-
-
-def test_allowlist_matches_inventory_doc_markers() -> None:
-    """Every allowlist key is a real audited token and none is orphaned."""
-    for token in _ALLOWLIST:
-        assert token in _FORBIDDEN_TOKENS, f"allowlist key {token!r} is not audited"
-    for token in _EMPTY_ALLOWLISTED:
-        assert token in _FORBIDDEN_TOKENS
-
-
-def test_research_config_toml_declares_only_current_schema() -> None:
-    """The shipped config parses under the strict loader (smoke; full schema tests
-    live in test_toml.py)."""
-    from scripts.embedding_research.helpers import toml as toml_mod
-
-    cfg = toml_mod.load_research_config()
-    assert cfg.pipeline.backbones == ("effnet",)
-    # No forbidden/obsolete section is represented on the typed config.
-    for forbidden in (
-        "archival_ctp",
-        "std_scaled",
-        "calibration",
-        "pooling",
-        "optimization",
-        "similarity",
-        "stratify",
-        "binning",
-    ):
-        assert not hasattr(cfg, forbidden)
-
-
-def test_audit_itself_does_not_consume_inventory_tokens_in_foundation() -> None:
-    """Sanity: the scanner treats the foundation trio as code-clean even though
-    their docstrings/comments (historical prose) name the removed vocabulary."""
-    for rel in _FOUNDATION:
-        # docstring/comment prose is allowed; ensure the scanner reports no hits
-        # (_scan_file does its own read).
-        assert _scan_file(rel) == {}, rel
-
-
-def test_forbidden_token_set_is_nonempty_and_stable() -> None:
-    """Guard the audit token set so it is not accidentally emptied."""
-    assert len(_FORBIDDEN_TOKENS) >= 10
-    assert _ALLOWLIST, "allowlist must not be empty"
-
-
-# ---------------------------------------------------------------------------
-# P1-S5: production-boundary + no-real-corpus fixtures (foundation isolation)
-# ---------------------------------------------------------------------------
-
-
-def test_foundation_imports_no_production_and_no_inference_runtime() -> None:
-    """The threshold/config foundation imports only the standard library: no
-    ``nomarr`` production component and no onnxruntime/torch/CUDA inference
-    runtime may be pulled in by ``helpers.thresholds`` or ``helpers.toml``.
-
-    This is the production-boundary + no-real-corpus fixture: synthetic-only,
-    CPU-only, and isolated in a fresh subprocess so prior test imports cannot
-    mask a hidden dependency.
-    """
-    import subprocess
-    import sys
-
-    code = (
-        "import sys; "
-        "from scripts.embedding_research.helpers import thresholds, toml; "
-        "names=[m for m in sys.modules if m=='onnxruntime' or m=='torch' "
-        "or m.startswith('nomarr') or m.startswith('torch.') "
-        "or m.startswith('onnxruntime.')]; "
-        "print('BAD='+','.join(sorted(names)))"
-    )
-    result = subprocess.run(
-        [sys.executable, "-c", code],
-        cwd=str(_ROOT.parents[1]),
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0, f"subprocess failed: {result.stderr}"
-    assert "BAD=" not in result.stdout or result.stdout.strip().endswith("BAD="), (
-        f"threshold/config foundation imported production/inference runtime: {result.stdout.strip()}"
-    )
-
-
-# ---------------------------------------------------------------------------
-# P1-S8: retired-command hard-cut guard (no named alias / no special message)
-# ---------------------------------------------------------------------------
-
-
-def test_no_named_retired_command_compatibility_path_in_cli_source() -> None:
-    """The run.py CLI carries no named retired-command alias set and no
-    'retired/legacy phase name' special-case message (both removed in Plan C P1-S7).
-
-    The retired names ``stratify``/``segment``/``classify``/``head`` are handled ONLY as
-    ordinary unknown commands: ``LEGACY_PHASE_ALIASES`` is gone (pinned by the
-    ``legacy_phase_aliases`` token above and the not-hasattr guard in
-    ``tests/test_phase4_dispatch_boundaries.py``), and no compatibility/alias rejection
-    string special-cases them.  Reintroducing either marker fails this guard.
-    """
-    run_src = (_ROOT / "run.py").read_text(encoding="utf-8")
-    assert "LEGACY_PHASE_ALIASES" not in run_src, "LEGACY_PHASE_ALIASES must stay removed from run.py"
-    assert "retired/legacy phase name" not in run_src, "retired-command special message must stay removed"
-    assert "legacy phase name" not in run_src, "no named legacy-phase rejection wording may return"
-
-
-# ---------------------------------------------------------------------------
-# Plan C P2-S4: disc_score alias hard-cut guard (sole active metric is disc_artist)
-# ---------------------------------------------------------------------------
-
-
-def test_no_executable_disc_score_metric_alias_in_non_test_tree() -> None:
-    """P2-S4: ``disc_artist`` is the sole active discrimination metric.
-
-    No non-test source/config file under ``scripts/embedding_research`` may reference
-    ``disc_score`` anywhere — producer write, consumer read, warning/step name, report
-    column, docstring, or comment — because the hard cut removes the alias outright and
-    even a docstring mention inside the executable tree would read as current behavior.
-    Historical prose on the removed alias lives ONLY in ``FINDINGS.md`` / ``CONTRACTS.md``
-    (markdown, never scanned here and never consumed by runtime/tests).
-
-    A raw-text substring scan (not the NAME-only ``_executable_names`` tokenizer) is used
-    because ``disc_score`` appears as a string-literal dict key / step label, which the
-    NAME-token scanner would miss.
-    """
-    offenders = [
-        rel for rel in sorted(_iter_source_files()) if "disc_score" in (_ROOT / rel).read_text(encoding="utf-8")
-    ]
-    assert not offenders, "disc_score must have zero executable/report occurrences in the non-test tree:\n" + "\n".join(
-        f"  {rel}" for rel in offenders
-    )
-
-
-def test_disc_artist_present_in_all_active_discrimination_surfaces() -> None:
-    """P2-S4: the sole active discrimination metric ``disc_artist`` remains present in
-    every required active surface: lens metric emission (baseline + classes), the
-    similarity metric emission, and the report/corpus discrimination warning."""
-    required = {
-        "common/catalog_analysis.py": "disc_artist",  # active lens metric emission
-        "similarity.py": "disc_artist",  # metric emission
-        "report/_corpus.py": "disc_artist",  # corpus-degeneracy warning names the active metric
+    retired = set(RETIRED_COMMANDS)
+    findings: list[dict[str, Any]] = []
+    registries = {
+        "CLI_PHASES": tuple(run_mod.CLI_PHASES),
+        "CLI_PHASE_RUNNERS": tuple(run_mod.CLI_PHASE_RUNNERS),
+        "MAINTENANCE_COMMANDS": tuple(sorted(run_mod.MAINTENANCE_COMMANDS)),
+        "AUDIO_PHASES": tuple(sorted(run_mod.AUDIO_PHASES)),
+        "DERIVED_PHASES": tuple(sorted(run_mod.DERIVED_PHASES)),
     }
-    missing = [rel for rel, token in required.items() if token not in (_ROOT / rel).read_text(encoding="utf-8")]
-    assert not missing, f"disc_artist missing from active discrimination surface(s): {missing}"
+    for name, entries in registries.items():
+        findings.extend({"registry": name, "entry": entry} for entry in entries if entry in retired)
+    return {"findings": findings, "registries": {name: list(entries) for name, entries in registries.items()}}
 
 
-# ---------------------------------------------------------------------------
-# Plan C P3-S1/S2: analyze hard-cut transitional-vocabulary guard.
-#
-# The NAME-token layer above cannot see config keys, argparse option strings, or string-literal
-# migration callables, so these raw-substring scans over the non-test source/config tree close
-# that gap for the REMOVED analyze emit/migration surface and the transitional back-compat /
-# deprecated phrasings.  Genuinely historical prose about these tokens lives only in
-# FINDINGS.md/CONTRACTS.md markdown (never scanned here); current-state prose that asserts a
-# surface's ABSENCE (e.g. "no compatibility DDL is introduced") is not a transitional path and
-# remains allowed.
-# ---------------------------------------------------------------------------
+def scan_schema() -> dict[str, Any]:
+    """Check the sole schema module for retired table/column names."""
+    from scripts.embedding_research.db import _schema as schema_mod
 
-#: Removed analyze opt-in / pre-cut-migration tokens (raw lower-cased substrings) that must never
-#: reappear in the non-test source/config tree: the ``emit_medoid_baseline`` config key / argparse
-#: flag / fixture switch, the deleted ``LEGACY_RUN_ID`` constant,
-#: ``migrate_analyze_metrics_provenance()``, and the ``analyze_metrics_backup`` backup table.
-_REMOVED_ANALYZE_TOKENS: tuple[str, ...] = (
-    "emit_medoid_baseline",
-    "emit-medoid-baseline",
-    "legacy_run_id",
-    "migrate_analyze_metrics_provenance",
-    "analyze_metrics_backup",
-)
-
-#: Executable back-compat / deprecated transitional phrasings that must not appear in the non-test
-#: executable tree (reintroduced backward-compatibility alias/reader or a deprecated runtime path).
-_BACKCOMPAT_DEPRECATED_SUBSTRINGS: tuple[str, ...] = (
-    "back-compat",
-    "back_compat",
-    "back-compatibility",
-    "backward-compat",
-    "backward_compat",
-    "backward-compatibility",
-    "deprecated",
-)
-
-#: The ONLY non-test source file allowed to carry the executable ``run_id = 'legacy'`` SQL literal:
-#: db/_schema.py, whose stale pre-cut-schema REFUSAL guard (StaleSchemaError) detects a legacy
-#: partition left behind by the removed backup-first migration and refuses rather than relabeling.
-#: No writer/migration may ever produce or read ``run_id='legacy'`` rows as a current/retained
-#: partition.  (Current-state PROSE naming the ``run_id='legacy'`` concept's absence is prose, not
-#: this spaced executable literal, and is unaffected.)
-_RUN_ID_LEGACY_SQL_CARRIER = frozenset({"db/_schema.py"})
+    text = Path(schema_mod.__file__).read_text(encoding="utf-8")
+    findings: list[dict[str, Any]] = []
+    findings.extend({"kind": "table", "name": table} for table in RETIRED_TABLES if table in text)
+    findings.extend({"kind": "column", "name": column} for column in RETIRED_COLUMNS if column in text)
+    return {"findings": findings}
 
 
-def _read_non_test_sources() -> list[str]:
-    return sorted(_iter_source_files())
+def generated_output_tokens() -> tuple[str, ...]:
+    """Retired identity/file-system tokens that generated output must never emit.
 
-
-def test_no_removed_analyze_emit_migration_vocabulary_in_non_test_tree() -> None:
-    """P3-S1/S2: no removed analyze opt-in / pre-cut-migration token remains executable.
-
-    ``emit_medoid_baseline`` / ``--emit-medoid-baseline`` (no hidden baseline switch, no config
-    key, no fixture), ``LEGACY_RUN_ID``, ``migrate_analyze_metrics_provenance()``, and the
-    ``analyze_metrics_backup`` backup table must have ZERO occurrences in any non-test source/
-    config file.  ``python run.py analyze`` therefore ALWAYS emits the mandatory observed
-    baseline.  Historical prose about these tokens is confined to FINDINGS.md/CONTRACTS.md.
-    Raw-substring scan because these are reintroducible as config-key / argparse-flag strings the
-    NAME tokenizer would miss.
+    Generic English words (``leg...`` / ``ali...`` / ``fall...``) are deliberately
+    excluded here: the bundled report HTML vendors third-party code that contains
+    them incidentally.  Authored source is still covered by the whole-tree lexical
+    audit, which forbids those tokens outright.
     """
-    offenders = [
-        (rel, token)
-        for rel in _read_non_test_sources()
-        for token in _REMOVED_ANALYZE_TOKENS
-        if token in (_ROOT / rel).read_text(encoding="utf-8")
-    ]
-    assert not offenders, "removed analyze emit/migration vocabulary in non-test tree:\n" + "\n".join(
-        f"  {rel}: {token}" for rel, token in offenders
+    return (
+        _OWN,
+        _SV,
+        _j("search", " view"),
+        _SV_COMMAND,
+        _j("current", " selector"),
+        _j("current", "_selector"),
+        _j("current", "-selector"),
+        _j("latest", " selector"),
+        _j("latest", "_selector"),
+        _j("latest", "-selector"),
+        "view_refs",
+        *retired_filesystem_artifacts(),
     )
 
 
-def test_no_executable_backcompat_or_deprecated_transitional_vocabulary_in_non_test_tree() -> None:
-    """P3-S2: no executable back-compat / deprecated transitional path in the non-test tree.
+def scan_generated_text(text: str) -> list[str]:
+    """Retired identity vocabulary or filesystem paths present in generated output."""
+    lowered = text.lower()
+    return sorted({token for token in generated_output_tokens() if token in lowered})
 
-    A reintroduced backward-compatibility alias/reader or a deprecated transitional runtime path
-    named under any back-compat/backward/deprecated phrasing fails the audit.  Genuinely historical
-    prose is confined to FINDINGS.md/CONTRACTS.md; current-state prose asserting a surface's ABSENCE
-    remains allowed because it states current behavior rather than introducing a transitional path.
+
+def scan_generated_report_artifacts() -> dict[str, Any]:
+    """Scan the checked-in generated report artifacts, when present.
+
+    The canonical evidence copies live under the workspace-relative evidence directory
+    (``artifacts/evidence/.../report``); the gitignored runtime output root is only a
+    secondary lookup.  Recorded paths are always workspace-relative evidence paths so the
+    proof never points outside the repository.
     """
-    offenders = [
-        (rel, token)
-        for rel in _read_non_test_sources()
-        for token in _BACKCOMPAT_DEPRECATED_SUBSTRINGS
-        if token in (_ROOT / rel).read_text(encoding="utf-8")
-    ]
-    assert not offenders, "executable back-compat/deprecated transitional vocabulary:\n" + "\n".join(
-        f"  {rel}: {token}" for rel, token in offenders
+    from scripts.embedding_research.config import REPORT_DIR
+    from scripts.embedding_research.tests import _gram_evidence
+
+    evidence_report_dir = _gram_evidence.EVIDENCE_ROOT / "report"
+    recorded_root = _REPO_ROOT
+
+    def _recordable(path: Path) -> str:
+        try:
+            return path.resolve().relative_to(recorded_root).as_posix()
+        except ValueError:
+            return path.as_posix()
+
+    artifacts: list[dict[str, Any]] = []
+    hits: list[dict[str, Any]] = []
+    for name in ("report.json", "report.html"):
+        evidence_path = evidence_report_dir / name
+        runtime_path = Path(REPORT_DIR) / name
+        path = evidence_path if evidence_path.is_file() else runtime_path
+        if not path.is_file():
+            continue
+        recorded = _recordable(path)
+        artifacts.append({"path": recorded, "sha256": _sha256_file(path)})
+        hits.extend(
+            {"path": recorded, "token": token}
+            for token in scan_generated_text(path.read_text(encoding="utf-8", errors="replace"))
+        )
+    return {"artifacts": artifacts, "hits": hits}
+
+
+def check_replacement_reachability() -> dict[str, dict[str, Any]]:
+    """Every retired surface must have a reachable canonical replacement."""
+    result: dict[str, dict[str, Any]] = {}
+    for symbol, module_name in REPLACEMENTS.items():
+        try:
+            module = importlib.import_module(module_name)
+            result[symbol] = {"module": module_name, "reachable": hasattr(module, symbol)}
+        except Exception as exc:  # pragma: no cover - import failure is a proof failure
+            result[symbol] = {"module": module_name, "reachable": False, "error": f"{type(exc).__name__}: {exc}"}
+    return result
+
+
+def _head_source_sha256(relative: str) -> str | None:
+    """SHA-256 of the retired source as recorded at HEAD, when available."""
+    try:
+        completed = subprocess.run(
+            ["git", "-C", str(_REPO_ROOT), "show", f"HEAD:scripts/embedding_research/{relative}"],
+            capture_output=True,
+            check=True,
+            timeout=10,
+        )
+    except Exception:
+        return None
+    return hashlib.sha256(completed.stdout).hexdigest()
+
+
+def build_deletion_map(*, include_head_hashes: bool = False) -> list[dict[str, Any]]:
+    """Exact machine-readable dispositions for every retired surface."""
+    defined = _defined_symbol_names()
+    entries: list[dict[str, Any]] = []
+    for relative, replacements in RETIRED_MODULES.items():
+        entries.append(
+            {
+                "kind": "module",
+                "identifier": relative,
+                "disposition": "deleted",
+                "exists": (_PACKAGE_ROOT / relative).exists(),
+                "replacement_paths": list(replacements),
+                "replacement_sha256": {
+                    replacement: (
+                        _sha256_file(_PACKAGE_ROOT / replacement) if (_PACKAGE_ROOT / replacement).is_file() else None
+                    )
+                    for replacement in replacements
+                },
+                "source_sha256": _head_source_sha256(relative) if include_head_hashes else None,
+            }
+        )
+    for symbol, replacement in RETIRED_SYMBOLS.items():
+        entries.append(
+            {
+                "kind": "symbol",
+                "identifier": symbol,
+                "disposition": "deleted",
+                "exists": symbol in defined,
+                "replacement": replacement,
+            }
+        )
+    entries.extend(
+        {"kind": "table", "identifier": table, "disposition": "deleted", "exists": False} for table in RETIRED_TABLES
     )
-
-
-def test_run_id_legacy_executable_literal_confined_to_stale_schema_refusal_guard() -> None:
-    """P3-S2: the executable ``run_id = 'legacy'`` SQL literal exists only as the refusal guard.
-
-    db/_schema.py is the ONE allowed non-test carrier: its stale pre-cut-schema detector refuses
-    (StaleSchemaError) any analyze_metrics table carrying a legacy partition left by the removed
-    migration; it never writes or copies such a row.  No other non-test executable file may carry
-    the literal, so a reintroduced migration/writer that produces or reads ``run_id='legacy'`` rows
-    as a current/retained partition fails immediately.
-
-    A verbatim reintroduction of the REMOVED pre-cut runtime row-distinguishing EXCLUSION
-    predicate (``WHERE run_id <> 'legacy'``) is never allowed either: such a predicate exists only
-    in a runtime that still distinguishes a legacy partition it can read alongside the current
-    run — a shape the hard cut removed.  Zero occurrences of the ``<> 'legacy'`` / ``!= 'legacy'``
-    exclusion forms are asserted across every non-test .py/.toml below ``scripts/embedding_research``
-    (raw-substring scan matching the spaced-carrier scan above; it catches verbatim reintroduction
-    of the removed predicate in both operator spellings, not whitespace/quoting-drift variants).
-    No allowlist is needed today: no carrier exists outside
-    the StaleSchemaError refusal guard, which uses ``= 'legacy'``, never ``<>``.
-    """
-    literal = "run_id = 'legacy'"
-    carriers = [rel for rel in _read_non_test_sources() if literal in (_ROOT / rel).read_text(encoding="utf-8")]
-    extra = [rel for rel in carriers if rel not in _RUN_ID_LEGACY_SQL_CARRIER]
-    assert not extra, f"executable run_id='legacy' literal outside the refusal guard: {extra}"
-    assert carriers, "db/_schema.py must retain its stale-schema run_id='legacy' refusal guard"
-
-    # The removed row-distinguishing exclusion predicate is absent in ALL forms (this is the
-    # pre-cut runtime's shape that the hard cut deleted — see the docstring above).
-    exclusion_forms = ("<> 'legacy'", "!= 'legacy'")
-    offenders = [
-        rel
-        for rel in _read_non_test_sources()
-        if any(form in (_ROOT / rel).read_text(encoding="utf-8") for form in exclusion_forms)
-    ]
-    assert not offenders, "reintroduced run_id exclusion predicate in non-test tree:\n" + "\n".join(
-        f"  {rel}" for rel in offenders
+    entries.extend(
+        {"kind": "column", "identifier": column, "disposition": "deleted", "exists": False}
+        for column in RETIRED_COLUMNS
     )
+    entries.append(
+        {
+            "kind": "vocabulary",
+            "identifier": _OWN + " identity/report vocabulary",
+            "disposition": "forbidden",
+            "exists": None,
+            "replacement": RETIRED_CONCEPTS[2]["replacement"],
+        }
+    )
+    entries.extend(
+        {"kind": "filesystem_artifact", "identifier": artifact, "disposition": "deleted", "exists": None}
+        for artifact in retired_filesystem_artifacts()
+    )
+    entries.extend(
+        {
+            "kind": concept["kind"],
+            "identifier": concept["identifier"],
+            "disposition": "deleted" if concept["kind"] != "vocabulary" else "forbidden",
+            "exists": None,
+            "replacement": concept["replacement"],
+        }
+        for concept in RETIRED_CONCEPTS
+    )
+    return entries
+
+
+def build_proof(*, include_head_hashes: bool = False) -> dict[str, Any]:
+    """Assemble the full machine-readable deletion proof."""
+    source_scan = scan_executable_sources()
+    cli = scan_cli_registries()
+    schema = scan_schema()
+    generated = scan_generated_report_artifacts()
+    reachability = check_replacement_reachability()
+    matched_locations = source_scan["matches"] + cli["findings"] + schema["findings"] + generated["hits"]
+    replacement_failures = sorted(symbol for symbol, data in reachability.items() if not data["reachable"])
+    zero_runtime_edges = not matched_locations and not replacement_failures
+    return {
+        "plan": "TASK-threshold-independent-per-song-gram-geometry-migration-R-deletion-proof",
+        "package_root": _PACKAGE_ROOT.relative_to(_REPO_ROOT).as_posix(),
+        "generated_at_ms": int(time.time() * 1000),
+        "deletion_map": build_deletion_map(include_head_hashes=include_head_hashes),
+        "scans": {
+            "executable_python": source_scan,
+            "dynamic_dispatch": {"matches": [m for m in source_scan["matches"] if m["kind"] == "dynamic"]},
+            "cli_registries": cli,
+            "schema": schema,
+            "generated_artifacts": generated,
+        },
+        "replacement_reachability": reachability,
+        "matched_locations": matched_locations,
+        "replacement_failures": replacement_failures,
+        "zero_runtime_edges": zero_runtime_edges,
+        "exit_status": 0 if zero_runtime_edges else 1,
+        "summary": {
+            "retired_surfaces": len(build_deletion_map()),
+            "matched_locations": len(matched_locations),
+            "scanned_python_files": source_scan["file_count"],
+            "replacement_symbols": len(reachability),
+        },
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def test_deletion_map_covers_every_retired_surface() -> None:
+    entries = build_deletion_map()
+    kinds = {entry["kind"] for entry in entries}
+    assert {"module", "symbol", "table", "column", "vocabulary", "filesystem_artifact", "engine"} <= kinds
+    assert all(entry["disposition"] in {"deleted", "forbidden"} for entry in entries)
+    assert all(entry["exists"] is not True for entry in entries)
+
+
+def test_retired_modules_are_absent_from_disk_and_unimportable() -> None:
+    for relative in RETIRED_MODULES:
+        assert not (_PACKAGE_ROOT / relative).exists(), relative
+        dotted = "scripts.embedding_research." + _module_stem(relative)
+        with pytest.raises(ModuleNotFoundError):
+            importlib.import_module(dotted)
+
+
+def test_executable_scan_has_zero_retired_edges() -> None:
+    result = scan_executable_sources()
+    assert result["file_count"] >= 10
+    assert result["matches"] == [], result["matches"]
+
+
+def test_dynamic_dispatch_has_no_retired_literals() -> None:
+    result = scan_executable_sources()
+    assert [match for match in result["matches"] if match["kind"] == "dynamic"] == []
+
+
+def test_cli_registries_exclude_retired_commands() -> None:
+    assert scan_cli_registries()["findings"] == []
+
+
+def test_schema_excludes_retired_tables_and_columns() -> None:
+    assert scan_schema()["findings"] == []
+
+
+def test_replacement_symbols_are_reachable() -> None:
+    reachability = check_replacement_reachability()
+    failures = {symbol: data for symbol, data in reachability.items() if not data["reachable"]}
+    assert not failures, failures
+
+
+def test_generated_report_artifacts_are_clean() -> None:
+    from scripts.embedding_research.config import REPORT_DIR
+
+    if not (Path(REPORT_DIR) / "report.json").is_file():
+        pytest.skip("no generated report artifact present in this checkout")
+    assert scan_generated_report_artifacts()["hits"] == []
+
+
+def test_fixture_generated_output_is_clean(tmp_path) -> None:
+    from scripts.embedding_research.generate_fixture_report import main as generate
+
+    generate(tmp_path)
+    for name in ("report.json", "report.html"):
+        text = (tmp_path / name).read_text(encoding="utf-8", errors="replace")
+        assert scan_generated_text(text) == [], name
+
+
+def test_historical_prose_is_not_scanned_as_executable() -> None:
+    files = {str(path) for path in _iter_python_files()}
+    assert files
+    # The historical ``artifacts/`` tree must never be scanned; a tool module whose
+    # *filename* contains the word is not a historical prose path.
+    assert not any("artifacts" in Path(path).parts for path in files)
+
+
+def test_proof_is_machine_readable_and_zero_edges() -> None:
+    proof = build_proof()
+    round_tripped = json.loads(json.dumps(proof))
+    assert round_tripped["zero_runtime_edges"] is True, round_tripped["matched_locations"]
+    assert round_tripped["exit_status"] == 0
+    assert round_tripped["summary"]["matched_locations"] == 0
+    assert round_tripped["replacement_failures"] == []
+
+
+def _write_proof(destination: Path) -> int:
+    proof = build_proof(include_head_hashes=True)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(json.dumps(proof, indent=2, sort_keys=True), encoding="utf-8")
+    return int(proof["exit_status"])
+
+
+def main(argv: list[str] | None = None) -> int:
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Emit the geometry hard-cut deletion proof as JSON.")
+    parser.add_argument("--write", required=True, help="destination JSON path")
+    arguments = parser.parse_args(argv)
+    return _write_proof(Path(arguments.write))
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

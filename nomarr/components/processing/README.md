@@ -5,8 +5,8 @@ File-level write operations for persisting ML results to the database.
 ## Responsibilities
 
 - Fetch file documents and resolve library roots for tag writing
-- Read and write Nomarr-namespaced mood tags (strict, regular, loose tiers)
-- Batch-write mood tags across multiple files in minimal database round-trips
+- **Legacy/non-authoritative:** `save_mood_tags*` remains historical processing code and is not the mood persistence contract; the external prerequisite is the `LibraryTagsDb` owner API (`replace_mood_tags*`) with locator-addressed marker publication.
+- Read and write Nomarr-namespaced mood tags (strict, regular, loose tiers) only through the approved owner boundary
 - Track file write claims and projection state for concurrency control
 
 ## Key Modules
@@ -17,8 +17,8 @@ File-level write operations for persisting ML results to the database.
 
 ## Patterns
 
-- **Tier-complete writes:** `save_mood_tags` always writes all three mood tiers (strict, regular, loose). Missing tiers are explicitly cleared to prevent stale data from previous calibrations.
-- **Batch optimization:** `save_mood_tags_batch` collapses N files × 3 tiers into 3 SQL queries total via `set_song_tags_batch`.
+- **Legacy/non-authoritative:** `save_mood_tags` and `save_mood_tags_batch` are retained as historical names only; D1 does not claim their migration or authorize generic `set_song_tags_batch` as a mood owner.
+- **Owner prerequisite:** `LibraryTagsDb.replace_mood_tags*` must provide tier-complete replacement and marker ownership before caller migration; that migration belongs downstream.
 - **Claim lifecycle:** `release_file_claim` swallows exceptions so error-path callers don't need try/except. `mark_file_written` records successful writes with mode and calibration hash.
 
 ## Dependencies

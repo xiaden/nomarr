@@ -19,6 +19,7 @@ _EXPECTED_TABLES = {
     "library_folders",
     "songs",
     "tags",
+    "song_mood_calibration_markers",
     "song_tags",
     "song_states",
     "song_state_assignments",
@@ -170,13 +171,13 @@ def _tags_table_has_foreign_key() -> bool:
 
 @pytest.mark.unit
 class TestTagSchemaIdentityContract:
-    """Spec-first: the fresh-start ``tags`` table carries only reusable identity.
+    """D1A canonical migration characterization: the baseline ``tags`` table carries only reusable identity.
 
-    These assertions pin the immutable user ledger: exactly the columns ``id``,
-    ``namespace``, ``name``, ``value``; ``namespace`` NOT NULL; uniqueness on
-    the complete ``(namespace, name, value)`` tuple; and no metadata, FK, or
-    index columns. The fresh-start baseline implements this contract exactly
-    (Phase 2); all assertions pass.
+    These assertions characterize the D1A canonical ``001_current_schema_baseline``
+    migration source: exactly the columns ``id``, ``namespace``, ``name``, ``value``;
+    ``namespace`` NOT NULL; uniqueness on the complete ``(namespace, name, value)``
+    tuple; and no metadata, FK, or extra index columns. This is D1A source-level
+    migration characterization only; it makes no D1B/D2/D3 runtime claim.
     """
 
     def test_tags_columns_are_exactly_identity_ordered(self) -> None:
@@ -191,7 +192,7 @@ class TestTagSchemaIdentityContract:
         named = [(cols, n) for cols, n in _tags_table_unique_constraints() if n == "uq_tags_name_value_ns"]
         assert named, "tags must declare the canonical uq_tags_name_value_ns unique constraint"
         cols, _ = named[0]
-        assert set(cols) == {"namespace", "name", "value"}
+        assert cols == ["namespace", "name", "value"]
 
     def test_tags_has_no_metadata_columns(self) -> None:
         names = [name for name, _ in _tags_table_columns()]
@@ -208,13 +209,120 @@ class TestTagSchemaIdentityContract:
 
 
 @pytest.mark.unit
+class TestMoodMarkerMigrationContract:
+    """Characterize the approved marker table from the canonical migration AST."""
+
+    def test_marker_table_columns_and_types_are_exact(self) -> None:
+        source = _baseline_source()
+        tree = ast.parse(source)
+        calls = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "create_table"
+            and node.args
+            and isinstance(node.args[0], ast.Constant)
+            and node.args[0].value == "song_mood_calibration_markers"
+        ]
+        assert len(calls) == 1
+        call = calls[0]
+        columns = []
+        for arg in call.args[1:]:
+            if not isinstance(arg, ast.Call) or not isinstance(arg.func, ast.Attribute) or arg.func.attr != "Column":
+                continue
+            name = ast.literal_eval(arg.args[0])
+            type_node = arg.args[1]
+            type_name = (
+                type_node.func.attr
+                if isinstance(type_node, ast.Call) and isinstance(type_node.func, ast.Attribute)
+                else None
+            )
+            type_length = None
+            if isinstance(type_node, ast.Call):
+                if type_node.args:
+                    type_length = ast.literal_eval(type_node.args[0])
+                else:
+                    length_keyword = next((keyword for keyword in type_node.keywords if keyword.arg == "length"), None)
+                    if length_keyword is not None:
+                        type_length = ast.literal_eval(length_keyword.value)
+            nullable = next(
+                (ast.literal_eval(keyword.value) for keyword in arg.keywords if keyword.arg == "nullable"), True
+            )
+            columns.append((name, type_name, type_length, nullable))
+        assert columns == [
+            ("song_id", "Integer", None, False),
+            ("calibration_version", "String", 255, False),
+        ]
+
+    def test_marker_constraints_and_forbidden_storage_are_exact(self) -> None:
+        source = _baseline_source()
+        tree = ast.parse(source)
+        marker = next(
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "create_table"
+            and node.args
+            and isinstance(node.args[0], ast.Constant)
+            and node.args[0].value == "song_mood_calibration_markers"
+        )
+        primary_keys = [
+            arg
+            for arg in marker.args[1:]
+            if isinstance(arg, ast.Call)
+            and isinstance(arg.func, ast.Attribute)
+            and arg.func.attr == "PrimaryKeyConstraint"
+        ]
+        assert len(primary_keys) == 1
+        assert [ast.literal_eval(arg) for arg in primary_keys[0].args] == ["song_id"]
+        foreign_keys = [
+            arg
+            for arg in marker.args[1:]
+            if isinstance(arg, ast.Call)
+            and isinstance(arg.func, ast.Attribute)
+            and arg.func.attr == "ForeignKeyConstraint"
+        ]
+        assert len(foreign_keys) == 1
+        assert ast.literal_eval(foreign_keys[0].args[0]) == ["song_id"]
+        assert ast.literal_eval(foreign_keys[0].args[1]) == ["songs.id"]
+        ondelete = next(keyword.value for keyword in foreign_keys[0].keywords if keyword.arg == "ondelete")
+        assert ast.literal_eval(ondelete) == "CASCADE"
+        checks = [
+            arg
+            for arg in marker.args[1:]
+            if isinstance(arg, ast.Call) and isinstance(arg.func, ast.Attribute) and arg.func.attr == "CheckConstraint"
+        ]
+        assert len(checks) == 1
+        assert ast.literal_eval(checks[0].args[0]) == "calibration_version ~ '^[0-9a-f]{32}$'"
+        assert "song_mood_calibration_markers" in source
+        assert "mood_marker_history" not in source
+        assert "mood_marker_registry" not in source
+        assert "COLLATE" not in source
+
+    def test_marker_has_no_lookup_index_beyond_primary_key(self) -> None:
+        tree = ast.parse(_baseline_source())
+        marker_indexes = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+                continue
+            if node.func.attr != "create_index" or len(node.args) < 2:
+                continue
+            table = node.args[1]
+            if isinstance(table, ast.Constant) and table.value == "song_mood_calibration_markers":
+                marker_indexes.append(node)
+        assert marker_indexes == []
+
+
+@pytest.mark.unit
 class TestTagAndSongTagModelContract:
-    """Spec-first: the ORM models mirror the identity-only ``tags`` and edge-owned ``song_tags``.
+    """D1A canonical model characterization: the ORM models mirror the identity-only ``tags`` and edge-owned ``song_tags``.
 
     ``Tag`` exposes only identity fields; ``SongTag`` retains only the
-    relationship metadata owned by the ``song_tags`` edge. The ``Tag`` model
-    mirrors the identity-only baseline and ``SongTag`` retains the edge
-    metadata (P2-S2/P2-S4); all assertions pass.
+    relationship metadata owned by the ``song_tags`` edge. These assertions
+    characterize the D1A canonical model/schema source; they are D1A
+    source-level characterization only and make no D1B/D2/D3 runtime claim.
     """
 
     def test_tag_model_columns_are_identity_only(self) -> None:

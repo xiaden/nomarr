@@ -93,7 +93,7 @@ def test_hypothetical_2x_storage_version_is_treated_as_label() -> None:
 def test_storage_version_label_does_not_raise_for_unknown_shape() -> None:
     """Non-numeric / opaque storage-version values are still just labelled."""
     assert schema_mod.storage_version_label(None) == "None"
-    assert schema_mod.storage_version_label("legacy-era") == "legacy-era"
+    assert schema_mod.storage_version_label("earlier-era") == "earlier-era"
 
 
 def test_storage_label_is_distinct_from_library_gate(monkeypatch: pytest.MonkeyPatch) -> None:

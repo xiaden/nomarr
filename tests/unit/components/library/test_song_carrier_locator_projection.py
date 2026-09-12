@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import inspect
+import re
+from dataclasses import replace
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -89,7 +92,84 @@ def test_rejects_rows_and_integer_inputs_without_compatibility_shim() -> None:
     db = MagicMock()
     invalid_rows: list[Any] = [{"id": 1}]
     invalid_ids: list[Any] = [42]
-    with pytest.raises(TypeError, match="typed song carriers"):
-        locators_for_carriers(db, invalid_rows)  # type: ignore[arg-type]
-    with pytest.raises(TypeError, match="typed song carriers"):
-        locators_for_carriers(db, invalid_ids)  # type: ignore[arg-type]
+    invalid_objects: list[Any] = [None, object()]
+    for invalid in (invalid_rows, invalid_ids, invalid_objects):
+        with pytest.raises(TypeError, match="typed song carriers"):
+            locators_for_carriers(db, invalid)
+    db.library.list_libraries.assert_not_called()
+    db.library.list_songs_by_identity.assert_not_called()
+
+
+@pytest.mark.unit
+def test_empty_input_is_empty_without_touching_the_facade() -> None:
+    db = MagicMock()
+    assert locators_for_carriers(db, []) == []
+    db.library.list_libraries.assert_not_called()
+    db.library.list_songs_by_identity.assert_not_called()
+
+
+@pytest.mark.unit
+def test_all_uuidless_libraries_yield_none_without_facade_lookup() -> None:
+    value = song("x.flac")
+    db = MagicMock()
+    db.library.list_libraries.return_value = [Library(library_uuid=None, name="legacy", root_path="/legacy")]
+    assert locators_for_carriers(db, [HydratedSong(value, {})]) == [None]
+    db.library.list_songs_by_identity.assert_not_called()
+
+
+@pytest.mark.unit
+def test_malformed_carrier_payloads_are_rejected_before_facade_work() -> None:
+    db = MagicMock()
+    malformed: list[Any] = [
+        HydratedSong(song={"id": 1}, metadata={}),  # type: ignore[arg-type]
+        StateTaggedSong(candidate={"song": song("x.flac")}, has_tagged_state=True),  # type: ignore[arg-type]
+    ]
+    for carrier in malformed:
+        with pytest.raises(TypeError, match="typed song carriers") as excinfo:
+            locators_for_carriers(db, [carrier])
+        assert "id" not in str(excinfo.value)
+    db.library.list_libraries.assert_not_called()
+    db.library.list_songs_by_identity.assert_not_called()
+
+
+@pytest.mark.unit
+def test_same_normalized_path_but_non_equal_song_is_unresolved() -> None:
+    value = song("x.flac")
+    impostor = replace(value, path="/music/impostor/x.flac")
+    db = MagicMock()
+    db.library.list_libraries.return_value = [LIBRARY_RECORD]
+    db.library.list_songs_by_identity.return_value = [impostor]
+    assert locators_for_carriers(db, [HydratedSong(value, {})]) == [None]
+
+
+@pytest.mark.unit
+def test_resolves_against_uuid_bearing_library_not_path_prefix() -> None:
+    other_record = Library(library_uuid="other-uuid", name="other", root_path="/other")
+    other_identity = LibraryIdentity("other-uuid", name="other", root_path="/other")
+    value = song("shared.flac")
+    decoy = replace(value, path="/other/shared.flac")
+
+    db = MagicMock()
+    db.library.list_libraries.return_value = [LIBRARY_RECORD, other_record]
+
+    def resolve(locators: list[SongIdentity]) -> list[Song]:
+        return [value] if locators[0].library.library_uuid == "other-uuid" else [decoy]
+
+    db.library.list_songs_by_identity.side_effect = resolve
+    assert locators_for_carriers(db, [TrackSong(value, {}, None)]) == [SongIdentity(other_identity, "shared.flac")]
+
+
+@pytest.mark.unit
+def test_projection_source_has_no_private_helper_or_transaction_tokens() -> None:
+    source = inspect.getsource(locators_for_carriers)
+    for forbidden in (
+        "_locators_for_songs",
+        "resolve_song_identity",
+        ".transaction",
+        ".session",
+        ".to_dict",
+        "from_row",
+        "require_library_song_id",
+    ):
+        assert forbidden not in source
+    assert re.search(r"\bsong_id\b", source) is None

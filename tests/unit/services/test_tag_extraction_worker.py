@@ -13,6 +13,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
 from nomarr.helpers.dataclasses.song_dataclass import Song
 from nomarr.helpers.dto.hydration_dto import HydrateSongInput
 from nomarr.services.infrastructure.workers.tag_extraction_worker import _process_file
@@ -20,11 +21,15 @@ from nomarr.services.infrastructure.workers.tag_extraction_worker import _proces
 pytestmark = [pytest.mark.unit, pytest.mark.mocked]
 
 
-def _song_doc(song_id: int = 1) -> Song:
+def _locator(normalized_path: str = "track.flac") -> SongIdentity:
+    return SongIdentity(
+        library=LibraryIdentity(library_uuid="11111111-1111-1111-1111-111111111111"),
+        normalized_path=normalized_path,
+    )
+
+
+def _song_doc() -> Song:
     return Song(
-        song_id=song_id,
-        library_id=1,
-        folder_id=None,
         path="/music/lib/track.flac",
         normalized_path="track.flac",
         file_size=100,
@@ -42,9 +47,9 @@ def _song_doc(song_id: int = 1) -> Song:
     )
 
 
-def _make_db(song_id: int = 1) -> MagicMock:
+def _make_db() -> MagicMock:
     db = MagicMock()
-    db.library.get_song.return_value = _song_doc(song_id)
+    db.library.get_song.return_value = _song_doc()
     return db
 
 
@@ -81,13 +86,13 @@ class TestProcessFile:
                 return_value={"artist": "The Test"},
             ),
         ):
-            _process_file(db, 1)
+            _process_file(db, _locator())
 
-        # Exactly one atomic hydration intent is issued.
+        # Exactly one atomic hydration intent is issued, addressed by locator.
         db.library.songs.hydrate_song.assert_called_once()
-        input_arg = db.library.songs.hydrate_song.call_args[0][0]
+        locator_arg, input_arg = db.library.songs.hydrate_song.call_args[0]
+        assert locator_arg == _locator()
         assert isinstance(input_arg, HydrateSongInput)
-        assert input_arg.song_id == 1
         # parsed_nom_tags are namespace-prefixed.
         assert input_arg.parsed_nom_tags == {"nom:mood": ["chill"]}
         assert input_arg.entity_tags == {"genre": ["rock"], "title": ["Xtal"]}
@@ -102,7 +107,7 @@ class TestProcessFile:
 
     def test_uses_default_namespace_when_absent(self) -> None:
         db = _make_db()
-        db.library.get_song.return_value = _song_doc(1)
+        db.library.get_song.return_value = _song_doc()
         metadata = {"duration": 100.0, "nom_tags": {"mood": "chill"}}
         path_mock = _valid_path_mock()
 
@@ -113,9 +118,9 @@ class TestProcessFile:
             patch("nomarr.components.metadata.entity_seeding_comp.extract_entity_tag_mapping", return_value={}),
             patch("nomarr.components.metadata.metadata_cache_comp.compute_metadata_cache_fields", return_value={}),
         ):
-            _process_file(db, 1)
+            _process_file(db, _locator())
 
-        input_arg = db.library.songs.hydrate_song.call_args[0][0]
+        _, input_arg = db.library.songs.hydrate_song.call_args[0]
         assert input_arg.parsed_nom_tags == {"nom:mood": ["chill"]}
 
     def test_duration_none_when_metadata_has_no_duration(self) -> None:
@@ -130,9 +135,9 @@ class TestProcessFile:
             patch("nomarr.components.metadata.entity_seeding_comp.extract_entity_tag_mapping", return_value={}),
             patch("nomarr.components.metadata.metadata_cache_comp.compute_metadata_cache_fields", return_value={}),
         ):
-            _process_file(db, 1)
+            _process_file(db, _locator())
 
-        input_arg = db.library.songs.hydrate_song.call_args[0][0]
+        _, input_arg = db.library.songs.hydrate_song.call_args[0]
         assert input_arg.duration_seconds is None
 
     def test_missing_song_raises_value_error(self) -> None:
@@ -140,7 +145,7 @@ class TestProcessFile:
         db.library.get_song.return_value = None
 
         with pytest.raises(ValueError):
-            _process_file(db, 999)
+            _process_file(db, _locator("missing.flac"))
 
         db.library.songs.hydrate_song.assert_not_called()
 
@@ -155,6 +160,6 @@ class TestProcessFile:
             patch("nomarr.components.library.metadata_extraction_comp.extract_metadata"),
             pytest.raises(ValueError, match="outside library root"),
         ):
-            _process_file(db, 1)
+            _process_file(db, _locator())
 
         db.library.songs.hydrate_song.assert_not_called()

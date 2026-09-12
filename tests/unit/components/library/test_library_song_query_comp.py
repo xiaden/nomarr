@@ -34,7 +34,6 @@ from nomarr.components.library.library_song_query_comp import (
     get_sample_normalized_path,
     get_song_modified_times,
     get_songs_by_chromaprint,
-    locators_for_carriers,
     get_songs_by_paths_bulk,
     get_songs_for_folder,
     get_songs_for_folders,

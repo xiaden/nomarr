@@ -136,8 +136,38 @@ jobs:
   # `not requires_database` expression in the `test` job above. Run them explicitly
   # against a real PostgreSQL/pgvector database so they stay a live, required gate.
   #
-  # Scope: the characterization suite (tests/characterization/) and the DB-backed
-  # sabotage contract tests (tests/sabotage/test_no_facades_begin_transactions.py).
+  # Required-check status: `database-tests` IS a required gate. It is registered
+  # in scripts/validate_commit.py::REQUIRED_CHECKS (triggers {push, pr, manual}),
+  # because its check-run name is stable (no matrix, no `name:` override), its
+  # trigger/path-filter coverage matches its sibling required jobs `test` and
+  # `architecture-qc` in this same workflow, and it has no hidden exclusion, so
+  # failures propagate reliably.
+  #
+  # Applicability fact: this workflow (and therefore database-tests) is NOT
+  # triggered by changes limited to `docs/**`, `scripts/**`, `artifacts/**`, or
+  # other paths absent from the `paths:` filters below. That is identical to the
+  # existing `test`/`architecture-qc` applicability and is recorded here honestly;
+  # it is not a database-tests-specific gap.
+  #
+  # Scope: the characterization suite (including the D3 mood-owner/marker suite
+  # `tests/characterization/test_mood_owner_pg.py` and the D3D-B real-driver
+  # fault-evidence module `tests/characterization/test_mood_owner_pg_faults.py`),
+  # the UUID locator integration matrix, and the DB-backed sabotage contract
+  # tests. The explicit command below is the discoverable CI home for PostgreSQL,
+  # transaction, rollback, concurrency, SQLSTATE, UUID-locator, and the D3
+  # mood-marker/mood-batch/ambiguous-commit evidence. It now also covers the
+  # previously-blocked pgcode-less commit-ack-drop (D3A-D2) and connection-loss
+  # (D3A-D3) classes through the deterministic D3D-A TCP fault harness
+  # (`tests/characterization/pg_fault_proxy.py`, DROP_ACK + SEVER, LOCAL_PASS);
+  # both are collected via the `tests/characterization/` path with no hidden
+  # exclusion and no failure-suppression keyword. It also collects the Q3-A
+  # create-only / single-transaction boundary suite
+  # `tests/integration/test_song_upsert_state_boundary_pg.py`; because this job
+  # does not provide `NOMARR_TEST_DATABASE_URL`, that module is skip-only in CI
+  # today (wired-not-run = CI_DEFERRED, never CI_PASS). (No approved-decoder suite is wired; the
+  # previous approved-decoder
+  # claim was removed by D3A P1-S5 as unsupported — do not re-add without an
+  # independently wired and executed decoder suite.)
   #
   # Setup note: the fixtures (tests/characterization/conftest.py and
   # tests/sabotage/conftest.py) use testcontainers' PostgresContainer, which
@@ -181,7 +211,7 @@ jobs:
       - name: Verify Docker daemon is available for testcontainers
         run: docker version --format '{{.Server.Version}}'
 
-      - name: Run PostgreSQL-backed characterization and sabotage contract tests
+      - name: Run PostgreSQL-backed characterization, mood-owner, and sabotage contract tests
         run: |
           source .venv/bin/activate
-          pytest tests/characterization/ tests/sabotage/test_no_facades_begin_transactions.py -v -m requires_database
+          pytest tests/characterization/ tests/characterization/test_mood_owner_pg.py tests/integration/test_library_uuid_locator_identity_pg.py tests/integration/test_song_upsert_state_boundary_pg.py tests/sabotage/test_no_facades_begin_transactions.py -v -m requires_database

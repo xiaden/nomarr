@@ -4,7 +4,7 @@ Covers the writer publishing ONE complete per-song/backbone head-suite ``.npz`` 
 with finite per-head ``[T, C]`` arrays where ``T == backbone patch_count``, the P3-S2
 refusal modes (missing configured head / wrong temporal length / backbone patch-count
 mismatch — none truncated, padded, or silently recovered), immutable supersession on a
-``force`` re-run, exact-index ``HeadStreamStore.batch_gather``, and that legacy flat/PTC/
+``force`` re-run, exact-index ``HeadStreamStore.batch_gather``, and that earlier flat/PTC/
 CTP head caches stay read-only.  Head ONNX sessions and the batch runner are injected, so
 no real models or audio are used.
 """
@@ -253,7 +253,7 @@ def test_force_republish_publishes_new_digest_and_reuses_identical_bytes(con, tm
 
 
 @pytest.mark.unit
-def test_writer_never_touches_legacy_head_caches(con, tmp_path):
+def test_writer_never_touches_earlier_head_caches(con, tmp_path):
     """The infer-heads writer emits exactly one digest-named head-suite artifact per song."""
     kwargs = _worker_args(out=tmp_path, con=con)
     assert infer_heads_mod.infer_heads_for_song(**kwargs) is True

@@ -13,7 +13,7 @@ patch_hop)``) purely to recover the exact start indices / frame slices that the 
 production patch grid represents.  The replay is source-level/golden-equivalent to
 production and is always checked against the actually-returned ``log_mel`` frame count
 and ``patches`` grid.  It NEVER infers starts from ``patch_index * patch_hop``, adds
-geometry/Foley detection, or uses a fallback reader.
+geometry/Foley detection, or uses an alternate reader.
 
 The pinned v1 decision (DD § silence-mask semantics) is an Essentia RMS loudness gate:
 
@@ -163,7 +163,7 @@ def _drop_short_silent_runs(flags: np.ndarray, min_run: int) -> np.ndarray:
 
 @runtime_checkable
 class CurrentMaskResolver(Protocol):
-    """The committed current-mask read seam for catalog/head consumers (P1-S2).
+    """The committed current-mask read seam for geometry/head consumers (P1-S2).
 
     ``load(song_id, backbone)`` returns the committed silence mask for one logical
     ``(song_id, backbone)`` group as ``uint8[patch_count]`` (``1`` = searchable,

@@ -1,6 +1,6 @@
 """Plan E P4-S4 — post-crash rollback-only canary over surviving PK/UNIQUE tables.
 
-DD "Post-crash verification canary": before any ``catalog`` / ``analyze`` /
+DD "Post-crash verification canary": before any ``analyze`` /
 ``report`` read — after a detected post-crash condition, or when ``--verify``
 requests it — a rollback-only canary probes EVERY surviving table with a
 ``PRIMARY KEY`` or ``UNIQUE`` constraint.  The inventory is enumerated from
@@ -48,7 +48,6 @@ _EXPECTED_NO_PK_TABLES = {
     "corpus_state",
     "head_phase_provenance",
     "analyze_metrics",
-    "catalog_metadata",
 }
 
 
@@ -105,7 +104,7 @@ def test_canary_probe_rolls_back_and_leaves_rows_unchanged(con):
         con,
         "song_retrieval_metrics",
         ["strategy_key", "sim_metric", "k", "song_id", "ap_k"],
-        ["catalog:effnet:max_per_candidate_segment:v1:abc", "cosine", 10, "sX", 0.42],
+        ["geometry:effnet:max_per_candidate_segment:v1:abc", "cosine", 10, "sX", 0.42],
     )
     before = {
         t: con.execute(f"SELECT * FROM {t}").fetchall() for t in ("songs", "phase_timings", "song_retrieval_metrics")
@@ -219,12 +218,12 @@ def test_canary_failure_blocks_a_verify_phase(con, tmp_path, monkeypatch):
         "config_hash": "testcfg",
     }
     with pytest.raises(canary.CanaryCorruptionError) as exc:
-        run_mod._run_single_phase(con, "catalog-report", cfg, db_path=None)
+        run_mod._run_single_phase(con, "report", cfg, db_path=None)
 
     assert "EXPORT DATABASE" in str(exc.value) and "IMPORT DATABASE" in str(exc.value)
     # the blocked phase was recorded as failed provenance.
     row = con.execute(
-        "SELECT phase, status FROM run_provenance WHERE phase='catalog-report' ORDER BY started_at DESC LIMIT 1"
+        "SELECT phase, status FROM run_provenance WHERE phase='report' ORDER BY started_at DESC LIMIT 1"
     ).fetchone()
     assert row is not None and row[1] == "failed"
 
@@ -262,7 +261,7 @@ def test_clean_run_without_verify_does_not_invoke_probes(con, monkeypatch):
     monkeypatch.setattr(canary, "run_rollback_canary", _spy_run_rollback_canary)
     cfg = {"verify": False, "strict": False}
 
-    notes = run_mod._preflight_derived_phase(con, "catalog-report", cfg, db_path=None)
+    notes = run_mod._preflight_derived_phase(con, "report", cfg, db_path=None)
 
     assert notes == []  # thin gate: nothing to verify, no probe cost
     assert calls == []
@@ -288,7 +287,7 @@ def test_post_crash_signal_triggers_canary_even_without_verify(con, tmp_path, mo
     # Scenario A: a surviving .wal next to the db file signals a post-crash state.
     db_path = tmp_path / "research.db"
     Path(str(db_path) + ".wal").touch()
-    run_mod._preflight_derived_phase(con, "catalog-report", cfg, db_path=db_path)
+    run_mod._preflight_derived_phase(con, "report", cfg, db_path=db_path)
     assert calls == ["run_rollback_canary"]  # wal alone triggered the probe
 
     # Scenario B: a non-completed run_provenance row also signals post-crash and
@@ -297,7 +296,7 @@ def test_post_crash_signal_triggers_canary_even_without_verify(con, tmp_path, mo
         "INSERT INTO run_provenance (run_id, phase, status, started_at, song_count, warning_count) "
         "VALUES ('r1', 'analyze', 'failed', 1, 0, 0)"
     )
-    run_mod._preflight_derived_phase(con, "catalog-report", cfg, db_path=None)
+    run_mod._preflight_derived_phase(con, "report", cfg, db_path=None)
     assert calls == ["run_rollback_canary", "run_rollback_canary"]
 
 
@@ -314,7 +313,7 @@ def test_verify_invokes_canary_and_blocks_are_distinct_from_post_crash(con, monk
     monkeypatch.setattr(canary, "run_rollback_canary", _spy)
     cfg = {"verify": True, "strict": False}
 
-    notes = run_mod._preflight_derived_phase(con, "catalog-report", cfg, db_path=None)
+    notes = run_mod._preflight_derived_phase(con, "report", cfg, db_path=None)
 
     assert calls == ["run_rollback_canary"]  # verify forced the probe
     assert any("canary ok:" in n for n in notes)

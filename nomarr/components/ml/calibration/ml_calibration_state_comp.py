@@ -255,13 +255,7 @@ def update_file_calibration_hashes_batch(
     db: Database,
     updates: list[tuple[SongIdentity, str]],
 ) -> int:
-    """Mark multiple library files as calibrated.
-
-    Args:
-        db: Database instance
-        file_ids: List of file id values (e.g. ``123``).
-
-    """
+    """Mark multiple naturally addressed songs as calibrated after updating hashes."""
     updated = db.library.update_song_calibration_hashes(updates)
     if updated:
         transition_song_state(db, [song for song, _ in updates], STATE_NOT_CALIBRATED, STATE_CALIBRATED)

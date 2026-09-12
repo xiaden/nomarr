@@ -9,7 +9,6 @@ import pytest
 from nomarr.components.library.library_song_mutation_comp import (
     bulk_delete_songs,
     delete_library_song,
-    get_song_library_key,
     set_chromaprint,
     update_last_tagged_at,
     update_song_modified_time,
@@ -18,6 +17,8 @@ from nomarr.components.library.library_song_mutation_comp import (
 )
 from nomarr.helpers.dataclasses.library_dataclass import Library
 from nomarr.helpers.dataclasses.song_command_dataclass import (
+    ChromaprintValue,
+    FieldWriteResult,
     LibraryIdentity,
     SongIdentity,
     SongPathUpdate,
@@ -32,7 +33,7 @@ class TestDeleteLibraryFile:
     @pytest.mark.unit
     def test_deletes_song_by_natural_path_and_library_identity(self) -> None:
         mock_db = MagicMock()
-        library = Library(name="music", root_path="C:/music")
+        library = Library(name="music", root_path="C:/music", library_uuid="d385dfdd-5f4d-5bdc-a60e-00ca1994ba7d")
 
         delete_library_song(mock_db, "C:/music/song.mp3", library)
 
@@ -42,7 +43,7 @@ class TestDeleteLibraryFile:
     @pytest.mark.unit
     def test_numeric_looking_path_is_treated_as_path_not_id(self) -> None:
         mock_db = MagicMock()
-        library = Library(name="music", root_path="C:/music")
+        library = Library(name="music", root_path="C:/music", library_uuid="d385dfdd-5f4d-5bdc-a60e-00ca1994ba7d")
 
         delete_library_song(mock_db, "12345", library)
 
@@ -56,7 +57,7 @@ class TestBulkDeleteFiles:
     @pytest.mark.unit
     def test_bulk_delete_resolves_paths_and_removes_each_found_file_once(self) -> None:
         mock_db = MagicMock()
-        library = Library(name="music", root_path="C:/music")
+        library = Library(name="music", root_path="C:/music", library_uuid="d385dfdd-5f4d-5bdc-a60e-00ca1994ba7d")
         mock_db.library.get_song_by_path.side_effect = [object(), None, object()]
 
         result = bulk_delete_songs(
@@ -79,7 +80,7 @@ class TestBulkDeleteFiles:
     @pytest.mark.unit
     def test_bulk_delete_returns_zero_when_no_paths_match(self) -> None:
         mock_db = MagicMock()
-        library = Library(name="music", root_path="C:/music")
+        library = Library(name="music", root_path="C:/music", library_uuid="d385dfdd-5f4d-5bdc-a60e-00ca1994ba7d")
         mock_db.library.get_song_by_path.return_value = None
 
         result = bulk_delete_songs(mock_db, ["C:/music/missing.mp3"], library)
@@ -104,7 +105,7 @@ class TestUpsertLibraryFile:
         """The mock facade receives a typed ``SongUpsertInput`` (never a raw
         SQL-column dict) and the semantic ``SongIdentity`` is passed through."""
         mock_db = MagicMock()
-        library = Library(name="music", root_path="C:/music")
+        library = Library(name="music", root_path="C:/music", library_uuid="d385dfdd-5f4d-5bdc-a60e-00ca1994ba7d")
         identity = SongIdentity(
             library=LibraryIdentity(
                 library_uuid="d385dfdd-5f4d-5bdc-a60e-00ca1994ba7d", name="music", root_path="C:/music"
@@ -146,7 +147,7 @@ class TestUpsertLibraryFile:
     def test_preserves_optional_duration_and_last_tagged_at_into_command(self) -> None:
         """Optional duration and tag timestamp are forwarded unchanged."""
         mock_db = MagicMock()
-        library = Library(name="music", root_path="C:/music")
+        library = Library(name="music", root_path="C:/music", library_uuid="d385dfdd-5f4d-5bdc-a60e-00ca1994ba7d")
         identity = SongIdentity(
             library=LibraryIdentity(
                 library_uuid="d385dfdd-5f4d-5bdc-a60e-00ca1994ba7d", name="music", root_path="C:/music"
@@ -176,7 +177,7 @@ class TestUpsertLibraryFile:
     def test_raises_value_error_for_invalid_path(self) -> None:
         """An invalid path short-circuits before the facade is called."""
         mock_db = MagicMock()
-        library = Library(name="music", root_path="C:/music")
+        library = Library(name="music", root_path="C:/music", library_uuid="d385dfdd-5f4d-5bdc-a60e-00ca1994ba7d")
         mock_path = MagicMock()
         mock_path.is_valid.return_value = False
         mock_path.status = "invalid"
@@ -353,68 +354,84 @@ class TestUpdateFileModifiedTime:
     """Tests for modified-time updates after file writes."""
 
     @pytest.mark.unit
-    def test_updates_modified_time_on_normalized_file_id(self) -> None:
+    def test_resolves_handle_and_delegates_to_typed_intent(self) -> None:
         mock_db = MagicMock()
+        identity = SongIdentity(LibraryIdentity("library-1", "Music", "/music"), "song.flac")
+        mock_db.library.resolve_song_identity.return_value = identity
 
         update_song_modified_time(mock_db, "abc123", 7777)
 
-        mock_db.library.update_library_song_modified_time.assert_called_once_with(
-            "abc123",
-            7777,
-        )
-
-
-class TestGetFileLibraryKey:
-    """Tests for resolving a file's owning library key."""
+        mock_db.library.resolve_song_identity.assert_called_once_with("abc123")
+        mock_db.library.set_modified_time.assert_called_once_with(identity, 7777)
 
     @pytest.mark.unit
-    def test_returns_library_key_when_file_exists(self) -> None:
+    def test_missing_handle_writes_nothing(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.get_library_ids_for_songs.return_value = {123: 456}
+        mock_db.library.resolve_song_identity.return_value = None
 
-        result = get_song_library_key(mock_db, 123)
+        update_song_modified_time(mock_db, 999, 7777)
 
-        assert result == 456
-        mock_db.library.get_library_ids_for_songs.assert_called_once_with([123])
-
-    @pytest.mark.unit
-    def test_returns_none_when_file_is_missing(self) -> None:
-        mock_db = MagicMock()
-        mock_db.library.get_library_ids_for_songs.return_value = {}
-
-        result = get_song_library_key(mock_db, 123)
-
-        assert result is None
-        mock_db.library.get_library_ids_for_songs.assert_called_once_with([123])
+        mock_db.library.set_modified_time.assert_not_called()
 
 
 class TestSetChromaprint:
-    """Tests for chromaprint persistence."""
+    """Tests for chromaprint persistence (locator-addressed intent)."""
 
     @pytest.mark.unit
-    def test_updates_chromaprint_on_normalized_file_id(self) -> None:
+    def test_forwards_locator_and_guarded_value_to_intent(self) -> None:
         mock_db = MagicMock()
+        identity = SongIdentity(LibraryIdentity("library-1", "Music", "/music"), "song.flac")
 
-        set_chromaprint(mock_db, "abc123", "chromaprint-value")
+        set_chromaprint(mock_db, identity, "chromaprint-value")
 
-        mock_db.library.set_library_song_chromaprint.assert_called_once_with(
-            "abc123",
-            "chromaprint-value",
+        mock_db.library.set_chromaprint.assert_called_once_with(
+            identity, ChromaprintValue("chromaprint-value", "decoder:v1", expected_absent=False)
         )
+        # Locator-addressed: no integer handle and no resolver at this boundary.
+        mock_db.library.resolve_song_identity.assert_not_called()
+
+    @pytest.mark.unit
+    def test_missing_locator_result_writes_nothing_further(self) -> None:
+        """A facade ``MISSING_LOCATOR`` business result is tolerated as a no-op:
+        no resolver, no integer handle, and no fallback write is attempted."""
+        mock_db = MagicMock()
+        identity = SongIdentity(LibraryIdentity("library-1", "Music", "/music"), "song.flac")
+        mock_db.library.set_chromaprint.return_value = FieldWriteResult("MISSING_LOCATOR")
+
+        set_chromaprint(mock_db, identity, "chromaprint-value")
+
+        mock_db.library.set_chromaprint.assert_called_once_with(
+            identity, ChromaprintValue("chromaprint-value", "decoder:v1", expected_absent=False)
+        )
+        mock_db.library.resolve_song_identity.assert_not_called()
 
 
 class TestUpdateLastTaggedAt:
-    """Tests for tag-timestamp updates."""
+    """Tests for tag-timestamp updates (locator-addressed intent)."""
 
     @pytest.mark.unit
-    def test_updates_last_tagged_at_with_current_timestamp(self) -> None:
+    def test_delegates_locator_with_current_timestamp(self) -> None:
         mock_db = MagicMock()
+        identity = SongIdentity(LibraryIdentity("library-1", "Music", "/music"), "song.flac")
 
         with patch("nomarr.components.library.library_song_mutation_comp.now_ms") as mock_now_ms:
             mock_now_ms.return_value.value = 9999
-            update_last_tagged_at(mock_db, f"{'songs'}/123")
+            update_last_tagged_at(mock_db, identity)
 
-        mock_db.library.update_library_song_last_tagged_at.assert_called_once_with(
-            f"{'songs'}/123",
-            9999,
-        )
+        mock_db.library.set_last_tagged.assert_called_once_with(identity, 9999)
+        mock_db.library.resolve_song_identity.assert_not_called()
+
+    @pytest.mark.unit
+    def test_missing_locator_result_writes_nothing_further(self) -> None:
+        """A facade ``MISSING_LOCATOR`` business result is tolerated as a no-op:
+        no resolver, no integer handle, and no fallback write is attempted."""
+        mock_db = MagicMock()
+        identity = SongIdentity(LibraryIdentity("library-1", "Music", "/music"), "song.flac")
+        mock_db.library.set_last_tagged.return_value = FieldWriteResult("MISSING_LOCATOR")
+
+        with patch("nomarr.components.library.library_song_mutation_comp.now_ms") as mock_now_ms:
+            mock_now_ms.return_value.value = 9999
+            update_last_tagged_at(mock_db, identity)
+
+        mock_db.library.set_last_tagged.assert_called_once_with(identity, 9999)
+        mock_db.library.resolve_song_identity.assert_not_called()

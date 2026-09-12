@@ -25,8 +25,9 @@ Multi-step workflows for generating, applying, importing, and exporting histogra
 
 - **Batch context**: `BatchContext` carries shared invariants plus deferred writes; DB reads stay live per file
 - **Chunked batching**: `apply_calibration_wf` processes files in chunks (default 1000) to bound peak RAM and flush sizes
-- **Deferred flush**: Mood tags and calibration hashes accumulate in `BatchContext` then flush in bulk
-- **Idempotent**: Generation always computes from current state; apply skips files whose `calibration_hash` matches
+- **Pending owner sequence:** computation → tag-owner mood publication including the private marker → separate locator hash/state update → filesystem reconciliation; this is a handoff contract, not D1 caller migration
+- **Deferred flush (historical):** Existing mood-tag/calibration-hash accumulation remains pending cleanup; old contract removal belongs to O
+- **Idempotent:** Generation always computes from current state; apply skips files whose `calibration_hash` matches, subject to separate locator hash/state
 
 ## Architecture Rules
 

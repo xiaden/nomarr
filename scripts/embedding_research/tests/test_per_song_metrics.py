@@ -92,7 +92,7 @@ def test_per_song_singleton_artist_is_none():
     assert result["per_song"]["disc_artist_contrib"] == [None, None, None]
 
 
-def test_per_song_song_ids_fallback_to_indices_when_sids_missing():
+def test_per_song_song_ids_default_to_indices_when_sids_missing():
     result = compute_retrieval_metrics(
         np.array(
             [

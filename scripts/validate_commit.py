@@ -64,7 +64,8 @@ reflect real completion, and each carries its own ``head_sha``, which makes the
 exact-commit guarantee verifiable per run. The job-name→workflow mapping:
 
 * ``.github/workflows/backend-quality.yml``  → jobs ``lint``, ``deptry``
-* ``.github/workflows/backend-tests.yml``    → jobs ``test``, ``architecture-qc``
+* ``.github/workflows/backend-tests.yml``    → jobs ``test``, ``architecture-qc``,
+  ``database-tests``
 * ``.github/workflows/frontend-checks.yml``  → job  ``frontend-checks``
 * ``.github/workflows/docker-publish.yml``   → jobs ``build-and-push``, ``promote``
 * ``.github/workflows/e2e.yml``              → job  ``e2e``
@@ -80,11 +81,13 @@ explicitly listed in the report). Current applicability:
 
 * ``push`` (default) — the commit was pushed to ``main``/``develop``/``feat/*``.
   Required: backend quality (``lint``, ``deptry``), backend tests (``test``,
-  ``architecture-qc``), frontend checks (``frontend-checks``), and Docker publish
-  (``build-and-push``, ``promote``). ``e2e`` (manual-only), ``docs-check``
-  (PR-only), and ``analyze`` (CodeQL, main-target only) are NOT-APPLICABLE.
-* ``pr`` — the commit is a PR head. Required: backend quality, backend tests,
-  frontend checks, and ``docs-check``. ``build-and-push``/``promote`` are
+  ``architecture-qc``, ``database-tests``), frontend checks (``frontend-checks``),
+  and Docker publish (``build-and-push``, ``promote``). ``e2e`` (manual-only),
+  ``docs-check`` (PR-only), and ``analyze`` (CodeQL, main-target only) are
+  NOT-APPLICABLE.
+* ``pr`` — the commit is a PR head. Required: backend quality, backend tests
+  (including ``database-tests``), frontend checks, and ``docs-check``.
+  ``build-and-push``/``promote`` are
   NOT-APPLICABLE (docker-publish.yml has no PR trigger, so no image is published
   on a PR — the earlier open question is resolved here by documenting it as
   not-applicable rather than treating a skipped publish as success). ``e2e`` is
@@ -210,6 +213,12 @@ REQUIRED_CHECKS: dict[str, CheckSpec] = {
         workflow="backend-tests.yml",
         triggers=frozenset({"push", "pr", "manual"}),
         note="ADR-042 architecture/quality enforcement (tests/test_architecture_qc.py)",
+    ),
+    "database-tests": CheckSpec(
+        name="database-tests",
+        workflow="backend-tests.yml",
+        triggers=frozenset({"push", "pr", "manual"}),
+        note="PostgreSQL/pgvector characterization + mood-owner + sabotage contract tests (-m requires_database)",
     ),
     # Frontend checks (.github/workflows/frontend-checks.yml) — push + PR.
     "frontend-checks": CheckSpec(

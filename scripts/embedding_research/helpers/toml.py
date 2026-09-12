@@ -3,13 +3,13 @@
 ``load_research_config`` validates the *current executable* research
 configuration against an exact schema and returns a typed
 :class:`CurrentResearchConfig`.  There is no permissive warn-and-default path:
-a missing file, unparsable TOML, unavailable parser, unknown key, alias,
-forbidden key family, or invalid type is a distinct named error surfaced as a
+a missing file, unparsable TOML, unavailable parser, unknown key,
+unrecognized key family, or invalid type is a distinct named error surfaced as a
 nonzero exit — never silently ``{}``.
 
 Current executable configuration
 --------------------------------
-The schema accepts ONLY the sections the current eight-phase and maintenance
+The schema accepts ONLY the sections the current seven-phase and maintenance
 code actually executes:
 
 * ``[pipeline]`` — EffNet default backbone with an explicit MusicNN opt-in
@@ -38,7 +38,7 @@ from typing import Any, Final
 
 try:  # Python >= 3.11
     import tomllib as _toml_mod  # type: ignore[attr-defined]
-except ImportError:  # pragma: no cover - py<3.11 fallback
+except ImportError:  # pragma: no cover - py<3.11 shim
     try:
         import tomli as _toml_mod  # type: ignore[no-redef]
     except ImportError:  # pragma: no cover - both parsers absent
@@ -86,7 +86,7 @@ class ResearchConfigParserUnavailableError(ResearchConfigError):
 
 class ResearchConfigValidationError(ResearchConfigError):
     """The research configuration violates the strict current schema (unknown
-    key, forbidden key family, alias, or invalid type)."""
+    key, unrecognized key family, or invalid type)."""
 
 
 @dataclass(frozen=True)
@@ -113,7 +113,7 @@ class AnalysisConfig:
 class CurrentResearchConfig:
     """Typed current executable research configuration (Plan A P1-S3).
 
-    Only executable eight-phase / maintenance vocabulary is represented.  EffNet
+    Only executable seven-phase / maintenance vocabulary is represented.  EffNet
     is the default backbone; MusicNN appears only as an explicit opt-in.
     """
 
@@ -215,7 +215,7 @@ def _validate_doc(doc: dict[str, Any]) -> CurrentResearchConfig:
     if unknown_top:
         raise ResearchConfigValidationError(
             f"unknown research config section(s): {unknown_top}; the current schema allows only "
-            f"{sorted(_ALLOWED_TOP_LEVEL)} (executable eight-phase/maintenance settings)"
+            f"{sorted(_ALLOWED_TOP_LEVEL)} (executable seven-phase/maintenance settings)"
         )
     pipeline = _validate_pipeline(doc.get("pipeline", {}))
     analysis = _validate_analysis(doc.get("analysis", {}))
@@ -260,7 +260,7 @@ def load_research_config(path: Path | None = None) -> CurrentResearchConfig:
         No TOML parser is importable.
     ResearchConfigValidationError
         The parsed document violates the strict current schema (unknown key,
-        forbidden key family, alias, or invalid type).
+        unrecognized key family, or invalid type).
     """
     config_path = Path(path) if path is not None else _CONFIG_PATH
     if not config_path.exists():
@@ -276,7 +276,7 @@ def load_research_config(path: Path | None = None) -> CurrentResearchConfig:
 def load_research_config_bytes(path: Path | None = None) -> bytes:
     """Return the raw bytes of the research configuration file.
 
-    Used only where a caller needs the exact on-disk bytes (e.g. a legacy
+    Used only where a caller needs the exact on-disk bytes (e.g. an earlier
     run-config digest).  A missing file raises :class:`ResearchConfigMissingError`
     rather than returning empty bytes.
     """

@@ -7,10 +7,10 @@ pending-registration -> reconcile lifecycle, immutable content-addressed digest 
 and the staging ``.tmp`` file-level condition.  Uses the ``con`` fixture (schema applied)
 plus pytest ``tmp_path`` for isolated artifact output under ``<root>/out/streams``.
 
-Legacy/supersession concepts are deleted post-migration: a re-published identity points
+Supersession concepts are deleted post-migration: a re-published identity points
 at a NEW digest-named artifact while the OLD digest bytes survive untouched (both are
 immutable, content-addressed) and the registry row simply moves.  Rowless-orphan
-classification (legacy/superseded/stray) is NOT a reconcile concern here.
+classification (superseded/stray) is NOT a reconcile concern here.
 """
 
 from __future__ import annotations

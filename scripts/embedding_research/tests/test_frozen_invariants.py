@@ -8,7 +8,7 @@ hard cut so they cannot silently regress:
 * no ``disc_album`` key / SELECT / upsert / schema field exists anywhere in the
   research codebase (docstring/comment mentions are tolerated, code is not).
 
-(The former ``act[1]``/bin-index invariants live under the retained catalog
+(The former ``act[1]``/bin-index invariants live under the retained
 head-analysis surface; the deleted ``db/stratify.py`` decile formula is
 historical-only and is no longer pinned here.)
 """
@@ -77,7 +77,7 @@ def test_disc_general_all_zero_is_zero() -> None:
 def _real_code_references_disc_album(path: Path) -> list[tuple[int, str]]:
     """Return (line_no, line) where ``disc_album`` appears outside comments/docstrings.
 
-    Docstring and comment mentions are tolerated (they describe a legacy metric
+    Docstring and comment mentions are tolerated (they describe an earlier metric
     that must NOT be added); any real key/column/SELECT/upsert reference is a
     violation.
     """

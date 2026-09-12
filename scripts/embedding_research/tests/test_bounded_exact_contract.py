@@ -15,7 +15,7 @@ semantics delivered in ``bounded_scoring.py`` and ``scoring_harness.py``:
 7. oracle equivalence: ``score_bounded_exact`` matches ``score_exact_oracle`` within the declared
    tolerance; winner/retention/collision metadata is identical;
 8. scorer chunk-size parameters stay aligned with ``working_memory`` and the emitted
-   ``scoring_semantics_version`` stays pinned to the search-view semantics constant.
+   ``scoring_semantics_version`` stays pinned to the local scoring-semantics constant.
 
 Every fixture is synthetic numpy (no corpus, no DB); small ``working_memory`` values are used to
 force chunk boundaries.  Keep every other P1-S5-adjacent bounded test green — this file adds the
@@ -351,11 +351,11 @@ def test_oracle_equivalence_on_production_float32_payloads() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_scoring_semantics_version_stays_pinned_to_search_view_constant() -> None:
-    """The scorer's emitted semantics version equals the search-view/semantics constant (== 1)."""
-    from scripts.embedding_research import search_views
+def test_scoring_semantics_version_stays_pinned_to_current_constant() -> None:
+    """The scorer's emitted semantics version equals the current semantics constant (== 1)."""
+    from scripts.embedding_research.common import head_analysis
 
     r = score_bounded_exact(_Q, _QW, _view(_C, _CW), working_memory=_WM_TINY)
     assert r.scoring_semantics_version == bounded_scoring.SCORING_SEMANTICS_VERSION
-    assert r.scoring_semantics_version == search_views.SCORING_SEMANTICS_VERSION
+    assert r.scoring_semantics_version == head_analysis.SCORING_SEMANTICS_VERSION
     assert r.scoring_semantics_version == 1

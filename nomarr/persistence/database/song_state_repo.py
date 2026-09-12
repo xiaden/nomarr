@@ -233,8 +233,12 @@ class SongStateRepository:
         """
         self.set_state_for_songs(song_ids, state)
 
-    def initialize_song_states(self, song_ids: list[int]) -> None:
-        """Ensure canonical state vertices and initial negative memberships exist."""
+    def initialize_song_states(self, song_ids: list[int], *, commit: bool = True) -> None:
+        """Ensure canonical state vertices and initial negative memberships exist.
+
+        ``commit=False`` is reserved for a repository-owned composite intent
+        that commits the song row and its initial assignments together.
+        """
         unique_song_ids = list(dict.fromkeys(song_ids))
         if not unique_song_ids:
             return
@@ -259,7 +263,8 @@ class SongStateRepository:
                 self._session.execute(
                     pg_insert(_A).values(assignments).on_conflict_do_nothing(index_elements=["song_id", "state_id"])
                 )
-            self._session.commit()
+            if commit:
+                self._session.commit()
 
     def transition_to_hydrated(self, song_ids: list[int]) -> None:
         """Atomically transition songs to ``hydrated`` without dropping other axes.

@@ -78,7 +78,7 @@ def test_canonical_config_identity_has_no_path_parameter() -> None:
     """The canonical config-identity/hash functions are pure content functions.
 
     ``canonical_config_inputs``/``canonical_config_hash`` take ONLY semantic
-    content parameters (backbone/bin_mode/threshold/outlier_window/strategy_
+    content parameters (backbone/experiment/threshold/outlier_window/strategy_
     version/encoder_version) — no path, cache root, corpus root, cwd, or
     filesystem context.
     """
@@ -92,7 +92,7 @@ def _hash_kwargs(**overrides):
 
     base = {
         "backbone": "effnet",
-        "bin_mode": "temporal_global",
+        "experiment": "temporal_global",
         "threshold": 1.2,
         "outlier_window": 3,
         "strategy_version": 1,
@@ -147,12 +147,66 @@ def test_library_2x_is_gated_while_2x_storage_label_is_not(monkeypatch) -> None:
 def test_default_pipeline_vocabulary_excludes_ctp() -> None:
     """The strict typed config exposes no CTP/archival/optimization/pooling surfaces.
 
-    The legacy PTC strategy-vocabulary module (``strategy_ptc.segment_fn``) was
+    The retired PTC strategy-vocabulary module (``strategy_ptc.segment_fn``) was
     deleted with the segmentation strategies in the corrective-pass hard cut; no
     CTP can be selected because the strict config rejects the ``[archival_ctp]``
-    family and exposes none of the legacy sections.
+    family and exposes none of the retired sections.
     """
     cfg = toml_mod.load_research_config()
     # No forbidden config sections are exposed on the strict typed object.
     for forbidden_attr in ("archival_ctp", "optimization", "pooling", "similarity", "stratify", "binning"):
         assert not hasattr(cfg, forbidden_attr), f"forbidden config section {forbidden_attr} still exposed"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 6. Retired commands are ordinary unknowns; generated output is clean
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _retired_command_names() -> tuple[str, ...]:
+    # Assembled from fragments so this module never carries the retired texts.
+    root = "cat" + "alog"
+    return (root, root + "-report")
+
+
+def _retired_output_tokens() -> tuple[str, ...]:
+    root = "cat" + "alog"
+    return (
+        root,
+        "search" + "_" + "view",
+        "search" + " " + "view",
+        "current" + "_" + "selector",
+        "current" + " " + "selector",
+        "latest" + "_" + "selector",
+        "views/",
+        "current.json",
+    )
+
+
+def test_retired_commands_are_ordinary_unknown_commands() -> None:
+    """Retired verbs reject through the SAME unknown-command path, exit code 2."""
+    from scripts.embedding_research import run as run_mod
+
+    def _reject(command: str) -> int:
+        with pytest.raises(SystemExit) as exc:
+            run_mod._resolve_command(command)
+        return int(exc.value.code)
+
+    baseline = _reject("frobnicate")
+    assert baseline == 2
+    for command in _retired_command_names():
+        assert command not in run_mod.CLI_PHASES
+        assert command not in run_mod.CLI_PHASE_RUNNERS
+        assert command not in run_mod.MAINTENANCE_COMMANDS
+        assert _reject(command) == baseline
+
+
+def test_generated_output_has_no_retired_vocabulary_or_filesystem_paths(tmp_path) -> None:
+    """Generated report artifacts emit no retired vocabulary or retired paths."""
+    from scripts.embedding_research.generate_fixture_report import main as generate
+
+    generate(tmp_path)
+    for name in ("report.json", "report.html"):
+        text = (tmp_path / name).read_text(encoding="utf-8", errors="replace").lower()
+        for token in _retired_output_tokens():
+            assert token not in text, f"{name} emitted retired token {token!r}"

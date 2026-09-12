@@ -10,6 +10,8 @@ only in persistence mapper tests (CONTRACTS §2).
 
 from __future__ import annotations
 
+import ast
+import inspect
 from typing import Any
 
 import pytest
@@ -47,6 +49,24 @@ def _song_row(**overrides: Any) -> dict[str, Any]:
     }
     row.update(overrides)
     return row
+
+
+@pytest.mark.unit
+@pytest.mark.unit
+class TestMapperBoundaryStructure:
+    def test_song_is_semantic_only_by_ast(self) -> None:
+        source = inspect.getsource(Song)
+        tree = ast.parse(source)
+        forbidden = {"from_row", "to_dict", "song_id", "library_id", "folder_id"}
+        names = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
+        attributes = {node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)}
+        assert not (names | attributes) & forbidden
+
+    def test_mapper_exports_only_typed_domain_bridges(self) -> None:
+        import nomarr.persistence.mappers.song_mapper as mapper
+
+        assert set(mapper.__all__) == {"song_row_to_domain", "song_row_to_identity"}
+        assert "SongRow" not in mapper.__all__
 
 
 @pytest.mark.unit
@@ -326,3 +346,41 @@ class TestSemanticHydrationSurvivesReload:
         for value in (song, locator):
             for forbidden in ("history", "alias", "tombstone", "stable_id", "previous", "song_id"):
                 assert not hasattr(value, forbidden)
+
+
+@pytest.mark.unit
+class TestPhase3BoundaryEvidence:
+    def test_mapper_has_no_public_resolver_or_integer_adapter(self) -> None:
+        """The B-owned mapper cannot become an integer identity crossing."""
+        import nomarr.persistence.mappers.song_mapper as mapper
+
+        tree = ast.parse(inspect.getsource(mapper))
+        public_functions = {
+            node.name
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and not node.name.startswith("_")
+        }
+        assert public_functions == {"song_row_to_domain", "song_row_to_identity"}
+        assert not any(
+            isinstance(node, ast.Name)
+            and node.id in {"resolve_song_identity", "resolve_song_identities", "HydrateSongInput"}
+            for node in ast.walk(tree)
+        )
+
+    def test_hydration_payload_is_not_a_song_value(self) -> None:
+        """Hydration payload identity remains separate from semantic Song."""
+        from nomarr.helpers.dto.hydration_dto import HydrateSongInput
+
+        assert "song_id" not in HydrateSongInput.__dataclass_fields__
+        assert not hasattr(Song, "song_id")
+        assert "song_id" not in Song.__slots__
+
+    def test_mapper_source_does_not_import_facades_or_storage_repositories(self) -> None:
+        """Row conversion remains below the facade and repository handoff."""
+        import nomarr.persistence.mappers.song_mapper as mapper
+
+        tree = ast.parse(inspect.getsource(mapper))
+        imported_modules = {node.module or "" for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)}
+        assert not any(
+            module.startswith(("nomarr.persistence.api", "nomarr.persistence.database")) for module in imported_modules
+        )

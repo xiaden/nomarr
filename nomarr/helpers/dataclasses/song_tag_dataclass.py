@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from numbers import Real
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
@@ -59,6 +59,139 @@ class SongTagAssignment:
     @property
     def identity(self) -> TagRef:
         return TagRef(self.name, self.value, self.namespace)
+
+
+MoodTier = Literal["nom:mood-strict", "nom:mood-regular", "nom:mood-loose"]
+MoodMarkerStatus = Literal["calibrated", "uncalibrated", "UNPROVEN"]
+MoodWriteStatus = Literal[
+    "UPDATED",
+    "UNCHANGED",
+    "MISSING_LOCATOR",
+    "INVALID_VALUE",
+    "INFRA_FAILURE",
+    "AMBIGUOUS_COMMIT",
+]
+
+
+@dataclass(frozen=True, slots=True)
+class MoodAssignments:
+    """Canonical semantic values for the three mood tiers.
+
+    Values are stored as immutable, de-duplicated tuples.  The tier names are
+    the complete tag names used by the mood owner; persistence assigns the
+    ``nom`` namespace privately and never receives rows or generated IDs.
+    """
+
+    strict: tuple[str, ...] = ()
+    regular: tuple[str, ...] = ()
+    loose: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        for field_name in ("strict", "regular", "loose"):
+            values = getattr(self, field_name)
+            if isinstance(values, (str, bytes)):
+                raise TypeError(f"MoodAssignments.{field_name} must be a sequence")
+            canonical: list[str] = []
+            for value in values:
+                if not isinstance(value, str) or not value.strip():
+                    raise ValueError("mood values must be non-blank strings")
+                value = value.strip()
+                if value not in canonical:
+                    canonical.append(value)
+            object.__setattr__(self, field_name, tuple(canonical))
+
+    @property
+    def tiers(self) -> tuple[tuple[MoodTier, tuple[str, ...]], ...]:
+        """Return the complete canonical tier/value representation."""
+        return (
+            ("nom:mood-strict", self.strict),
+            ("nom:mood-regular", self.regular),
+            ("nom:mood-loose", self.loose),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class CalibrationMoodMarker:
+    """Semantic publication marker owned by the mood tag boundary."""
+
+    status: Literal["calibrated", "uncalibrated"]
+    version: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.status not in {"calibrated", "uncalibrated"}:
+            raise ValueError("unsupported calibration marker status")
+        if self.status == "calibrated":
+            if (
+                self.version is None
+                or len(self.version) != 32
+                or any(c not in "0123456789abcdef" for c in self.version)
+            ):
+                raise ValueError("calibration version must be lowercase 32-hex")
+        elif self.version is not None:
+            raise ValueError("uncalibrated marker cannot carry a version")
+
+    @classmethod
+    def calibrated(cls, version: str) -> CalibrationMoodMarker:
+        return cls("calibrated", version)
+
+    @classmethod
+    def uncalibrated(cls) -> CalibrationMoodMarker:
+        return cls("uncalibrated")
+
+
+@dataclass(frozen=True, slots=True)
+class MoodReplacementCommand:
+    """One locator-addressed mood replacement command."""
+
+    song: SongIdentity
+    assignments: MoodAssignments | None
+    marker: CalibrationMoodMarker
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.marker, CalibrationMoodMarker):
+            raise TypeError("marker must be a CalibrationMoodMarker")
+
+
+@dataclass(frozen=True, slots=True)
+class MoodWriteResult:
+    """Coarse redacted outcome of one mood replacement."""
+
+    status: MoodWriteStatus
+    assignment_count: int = 0
+
+    def __post_init__(self) -> None:
+        _validate_count(self.assignment_count, "assignment_count")
+        if self.status not in {
+            "UPDATED",
+            "UNCHANGED",
+            "MISSING_LOCATOR",
+            "INVALID_VALUE",
+            "INFRA_FAILURE",
+            "AMBIGUOUS_COMMIT",
+        }:
+            raise ValueError("unsupported mood-write status")
+
+
+@dataclass(frozen=True, slots=True)
+class MoodBatchResult:
+    """Coarse redacted outcome of a bounded mood batch."""
+
+    status: MoodWriteStatus
+    command_count: int = 0
+    changed_count: int = 0
+
+    def __post_init__(self) -> None:
+        _validate_count(self.command_count, "command_count")
+        _validate_count(self.changed_count, "changed_count")
+        if self.status not in {
+            "UPDATED",
+            "UNCHANGED",
+            "MISSING_LOCATOR",
+            "INVALID_VALUE",
+            "INFRA_FAILURE",
+            "AMBIGUOUS_COMMIT",
+        }:
+            raise ValueError("unsupported mood-batch status")
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,4 +253,15 @@ def _validate_count(value: int, field: str) -> None:
         raise TypeError(f"{field} must be non-negative")
 
 
-__all__ = ["RelinkResult", "SongTagAssignment", "TagCleanupResult", "TagRef", "TagUsage"]
+__all__ = [
+    "CalibrationMoodMarker",
+    "MoodAssignments",
+    "MoodBatchResult",
+    "MoodReplacementCommand",
+    "MoodWriteResult",
+    "RelinkResult",
+    "SongTagAssignment",
+    "TagCleanupResult",
+    "TagRef",
+    "TagUsage",
+]

@@ -163,7 +163,10 @@ Each domain maps to a subfolder under `components/` and owns specific PostgreSQL
 
 **Owns:**
 
-- `tags` — Table linking files to tag labels with scores
+- `tags` — Identity-only rows (`id`, `namespace`, `name`, `value`); no assignment metadata or integer application identity
+- `song_tags` — Edge-owned song/tag assignments and their `confidence`, `source`, and `created_at` metadata
+- `song_mood_calibration_markers` — Private additive current marker owned by `LibraryTagsDb`; it is publication metadata, not a synthetic tag or history/registry
+- `LibraryTagsDb` — Exact `SongIdentity`-only mood owner and same-transaction assignment/marker boundary; broader historical examples and residual documentation are deferred to O
 
 
 **Invariants:**
@@ -327,6 +330,9 @@ Each domain maps to a subfolder under `components/` and owns specific PostgreSQL
 **Components:** `components/processing/`
 
 **Owns:**
+
+- No tag persistence ownership; `save_mood_tags*` is historical/non-authoritative and must not be treated as a generic mood replacement path
+
 
 - No persistent tables (coordinates file writing)
 

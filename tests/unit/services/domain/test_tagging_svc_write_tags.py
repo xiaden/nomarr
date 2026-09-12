@@ -11,6 +11,7 @@ import pytest
 
 from nomarr.helpers import ManagedTask
 from nomarr.helpers.dataclasses.library_dataclass import Library
+from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
 from nomarr.helpers.dataclasses.song_dataclass import Song
 from nomarr.helpers.dto.library_dto import WriteTagsResult
 from nomarr.helpers.exceptions import TaskCancelledError
@@ -19,32 +20,40 @@ from nomarr.services.domain.tagging_svc import TaggingService, TaggingServiceCon
 
 def _make_library(name: str = "lib1", file_write_mode: Literal["none", "minimal", "full"] = "full") -> Library:
     """Build a domain ``Library`` (natural identity) for write-tags tests."""
-    return Library(name=name, root_path="/music", file_write_mode=file_write_mode)
+    return Library(
+        name=name,
+        root_path="/music",
+        library_uuid=f"uuid-{name}",
+        file_write_mode=file_write_mode,
+    )
 
 
-def _song(**overrides: object) -> Song:
-    """Build a domain ``Song`` (natural identity) for write-tags tests."""
-    base: dict = {
-        "song_id": 1,
-        "library_id": 1,
-        "folder_id": None,
-        "path": "/music/song.mp3",
-        "normalized_path": "song.mp3",
-        "file_size": 100,
-        "modified_time": 1000,
-        "duration_seconds": None,
-        "chromaprint": None,
-        "needs_tagging": False,
-        "is_valid": True,
-        "tagged": False,
-        "calibration_hash": None,
-        "write_claimed_by": None,
-        "last_tagged_at": None,
-        "scanned_at": None,
-        "created_at": 1000,
-    }
-    base.update(overrides)
-    return Song(**base)  # type: ignore[arg-type]
+def _song(*, normalized_path: str = "song.mp3") -> Song:
+    """Build a semantic ``Song`` (natural identity) for write-tags tests."""
+    return Song(
+        path=f"/music/{normalized_path}",
+        normalized_path=normalized_path,
+        file_size=100,
+        modified_time=1000,
+        duration_seconds=None,
+        chromaprint=None,
+        needs_tagging=False,
+        is_valid=True,
+        tagged=False,
+        calibration_hash=None,
+        write_claimed_by=None,
+        last_tagged_at=None,
+        scanned_at=None,
+        created_at=1000,
+    )
+
+
+def _identity(normalized_path: str = "song.mp3") -> SongIdentity:
+    """Build the semantic locator matching ``_song``/``_make_library``."""
+    return SongIdentity(
+        library=LibraryIdentity(library_uuid="uuid-lib1", name="lib1", root_path="/music"),
+        normalized_path=normalized_path,
+    )
 
 
 def _make_service(*, db: MagicMock | None = None, bts: MagicMock | None = None) -> TaggingService:
@@ -245,7 +254,7 @@ class TestWriteTagsToFiles:
         with (
             patch(
                 "nomarr.services.domain.tagging_svc.write.claim_files_for_reconciliation",
-                return_value=[_song(song_id=1), _song(song_id=2)],
+                return_value=[_song(), _song(normalized_path="song2.mp3")],
             ),
             patch(
                 "nomarr.services.domain.tagging_svc.write.count_files_needing_reconciliation",
@@ -280,7 +289,7 @@ class TestWriteTagsToFiles:
         with (
             patch(
                 "nomarr.services.domain.tagging_svc.write.claim_files_for_reconciliation",
-                return_value=[_song(song_id=1), _song(song_id=2)],
+                return_value=[_song(), _song(normalized_path="song2.mp3")],
             ),
             patch(
                 "nomarr.services.domain.tagging_svc.write.count_files_needing_reconciliation",
@@ -300,7 +309,7 @@ class TestWriteTagsToFiles:
             result = service.write_tags_to_files(library)
 
         assert result == WriteTagsResult(processed=1, remaining=0, failed=1)
-        mock_release_claim.assert_called_once_with(mock_db, "2", "reconcile:lib1")
+        mock_release_claim.assert_called_once_with(mock_db, _identity("song2.mp3"), "reconcile:lib1")
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -314,7 +323,7 @@ class TestWriteTagsToFiles:
         with (
             patch(
                 "nomarr.services.domain.tagging_svc.write.claim_files_for_reconciliation",
-                return_value=[_song(song_id=1)],
+                return_value=[_song()],
             ),
             patch(
                 "nomarr.services.domain.tagging_svc.write.count_files_needing_reconciliation",
@@ -331,7 +340,7 @@ class TestWriteTagsToFiles:
             result = service.write_tags_to_files(library)
 
         assert result == WriteTagsResult(processed=0, remaining=0, failed=0)
-        mock_release_claim.assert_called_once_with(mock_db, "1", "reconcile:lib1")
+        mock_release_claim.assert_called_once_with(mock_db, _identity(), "reconcile:lib1")
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -345,7 +354,7 @@ class TestWriteTagsToFiles:
         with (
             patch(
                 "nomarr.services.domain.tagging_svc.write.claim_files_for_reconciliation",
-                return_value=[_song(song_id=1)],
+                return_value=[_song()],
             ),
             patch(
                 "nomarr.services.domain.tagging_svc.write.count_files_needing_reconciliation",
@@ -362,4 +371,64 @@ class TestWriteTagsToFiles:
             result = service.write_tags_to_files(library)
 
         assert result == WriteTagsResult(processed=0, remaining=0, failed=1)
-        mock_release_claim.assert_called_once_with(mock_db, "1", "reconcile:lib1")
+        mock_release_claim.assert_called_once_with(mock_db, _identity(), "reconcile:lib1")
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_write_tags_to_files_missing_library_uuid_is_zero_work(self) -> None:
+        """A library without a ``library_uuid`` cannot address songs and writes nothing."""
+        mock_db = MagicMock()
+        mock_db.app.get_calibration_version = MagicMock(return_value=None)
+        service = _make_service(db=mock_db)
+        library = Library(name="lib1", root_path="/music", library_uuid=None, file_write_mode="full")
+
+        with (
+            patch(
+                "nomarr.services.domain.tagging_svc.write.claim_files_for_reconciliation",
+                return_value=[_song()],
+            ) as mock_claim,
+            patch(
+                "nomarr.services.domain.tagging_svc.write.count_files_needing_reconciliation",
+                return_value=0,
+            ),
+            patch(
+                "nomarr.services.domain.tagging_svc.write.write_file_tags_workflow",
+            ) as mock_workflow,
+        ):
+            result = service.write_tags_to_files(library)
+
+        assert result == WriteTagsResult(processed=0, remaining=0, failed=0)
+        mock_claim.assert_called_once()
+        mock_workflow.assert_not_called()
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_write_tags_to_files_nested_release_failure_is_tolerated(self) -> None:
+        """A release failure while handling a workflow exception must not abort the batch."""
+        mock_db = MagicMock()
+        mock_db.app.get_calibration_version = MagicMock(return_value="calibration-v1")
+        service = _make_service(db=mock_db)
+        library = _make_library(file_write_mode="full")
+
+        with (
+            patch(
+                "nomarr.services.domain.tagging_svc.write.claim_files_for_reconciliation",
+                return_value=[_song()],
+            ),
+            patch(
+                "nomarr.services.domain.tagging_svc.write.count_files_needing_reconciliation",
+                return_value=0,
+            ),
+            patch(
+                "nomarr.services.domain.tagging_svc.write.release_claim",
+                side_effect=RuntimeError("release boom"),
+            ) as mock_release_claim,
+            patch(
+                "nomarr.services.domain.tagging_svc.write.write_file_tags_workflow",
+                side_effect=RuntimeError("boom"),
+            ),
+        ):
+            result = service.write_tags_to_files(library)
+
+        assert result == WriteTagsResult(processed=0, remaining=0, failed=1)
+        mock_release_claim.assert_called_once_with(mock_db, _identity(), "reconcile:lib1")

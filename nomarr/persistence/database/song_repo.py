@@ -131,11 +131,19 @@ class SongRepository:
             self._session.commit()
             return int(row._mapping["id"])
 
-    def upsert_songs_for_library(self, library_id: int, payloads: list[dict[str, Any]]) -> list[int]:
+    def upsert_songs_for_library(
+        self,
+        library_id: int,
+        payloads: list[dict[str, Any]],
+        *,
+        commit: bool = True,
+    ) -> list[int]:
         """Batch upsert songs for a single library.
 
-        Each payload must contain at least ``path``.  The ``library_id``
-        is forced to the supplied value.
+        Each payload must contain at least ``path``. The ``library_id`` is
+        forced to the supplied value. ``commit=False`` is used only by the
+        repository-owned typed batch intent so the song row and its initial
+        state assignments share one transaction.
         """
         with map_persistence_exceptions():
             if not payloads:
@@ -154,8 +162,9 @@ class SongRepository:
                     set_=set_clause,
                 ).returning(_T.c.id)
                 result = self._session.execute(stmt)
-                ids = [row[0] for row in result.all()]
-            self._session.commit()
+                ids = [int(row[0]) for row in result.all()]
+            if commit:
+                self._session.commit()
             return ids
 
     def update_song_calibration_hash(self, song_id: int, calibration_hash: str) -> bool:
@@ -181,6 +190,101 @@ class SongRepository:
                 result = self._session.execute(stmt)
             self._session.commit()
             return int(result.rowcount)  # type: ignore[attr-defined]
+
+    def set_modified_time_by_locator(self, library_id: int, normalized_path: str, value: int) -> str:
+        """Monotonically write modified time for one private locator."""
+        return self._set_monotonic_scalar(library_id, normalized_path, "modified_time", value)
+
+    def set_last_tagged_by_locator(self, library_id: int, normalized_path: str, value: int) -> str:
+        """Monotonically write last-tagged time for one private locator."""
+        return self._set_monotonic_scalar(library_id, normalized_path, "last_tagged_at", value)
+
+    def _set_monotonic_scalar(self, library_id: int, normalized_path: str, field: str, value: int) -> str:
+        """Apply one monotonic scalar update in a repository-owned transaction.
+
+        The locator read and conditional update share one savepoint and one commit.
+        In particular, no early commit is performed for a missing, stale, or
+        unchanged value: the transaction is closed uniformly, and any failure
+        invalidates the scoped session before the error reaches the facade.
+        """
+        try:
+            with map_persistence_exceptions():
+                with self._session.begin_nested():
+                    column = getattr(_T.c, field)
+                    row = self._session.execute(
+                        select(column).where(_T.c.library_id == library_id, _T.c.normalized_path == normalized_path)
+                    ).first()
+                    if row is None:
+                        outcome = "MISSING_LOCATOR"
+                    else:
+                        current = row[0]
+                        if current is not None and value < current:
+                            outcome = "STALE_VALUE"
+                        elif current == value:
+                            outcome = "UNCHANGED"
+                        else:
+                            result = self._session.execute(
+                                update(_T)
+                                .where(
+                                    _T.c.library_id == library_id,
+                                    _T.c.normalized_path == normalized_path,
+                                    column == current,
+                                )
+                                .values(**{field: value})
+                            )
+                            outcome = "UPDATED" if result.rowcount else "STALE_VALUE"  # type: ignore[attr-defined]
+                self._session.commit()
+                return outcome
+        except BaseException:
+            self._session.rollback()
+            self._session.remove()
+            raise
+
+    def set_chromaprint_by_locator(
+        self,
+        library_id: int,
+        normalized_path: str,
+        value: str,
+        *,
+        expected_value: str | None,
+        expected_absent: bool,
+    ) -> str:
+        """Guardedly replace a Chromaprint for one private locator."""
+        try:
+            with map_persistence_exceptions():
+                with self._session.begin_nested():
+                    current = self._session.execute(
+                        select(_T.c.chromaprint).where(
+                            _T.c.library_id == library_id, _T.c.normalized_path == normalized_path
+                        )
+                    ).first()
+                    if current is None:
+                        outcome = "MISSING_LOCATOR"
+                    else:
+                        old = current[0]
+                        if (expected_absent and old is not None) or (
+                            expected_value is not None and old != expected_value
+                        ):
+                            outcome = "STALE_VALUE"
+                        elif old == value:
+                            outcome = "UNCHANGED"
+                        else:
+                            result = self._session.execute(
+                                update(_T)
+                                .where(
+                                    _T.c.library_id == library_id,
+                                    _T.c.normalized_path == normalized_path,
+                                    _T.c.chromaprint == old if old is not None else _T.c.chromaprint.is_(None),
+                                )
+                                .values(chromaprint=value)
+                            )
+                            outcome = "UPDATED" if result.rowcount else "STALE_VALUE"  # type: ignore[attr-defined]
+                self._session.commit()
+                return outcome
+        except BaseException:
+            self._session.rollback()
+            self._session.remove()
+            raise
 
     def update_song(self, song_id: int, fields: dict[str, Any]) -> None:
         """Update arbitrary fields on a song row."""

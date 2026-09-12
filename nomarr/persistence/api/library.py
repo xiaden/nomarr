@@ -27,6 +27,8 @@ if TYPE_CHECKING:
         LibraryUpdate,
     )
     from nomarr.helpers.dataclasses.song_command_dataclass import (
+        ChromaprintValue,
+        FieldWriteResult,
         LibraryIdentity,
         SongIdentity,
         SongPathUpdate,
@@ -268,13 +270,16 @@ class LibraryDb:
     def add_song_to_library(self, command: SongUpsertInput) -> SongIdentity:
         return self._songs.add_song_to_library(command)
 
+    def add_songs_to_library_batch(self, commands: Sequence[SongUpsertInput]) -> list[SongIdentity]:
+        """Forward the create-only, single-transaction atomic song batch upsert."""
+        return self._songs.add_songs_to_library_batch(commands)
+
     def add_songs_to_library(
         self,
         library: Library,
         payloads: list[dict[str, Any]],
     ) -> list[int]:
-        # Preserve the concurrent Song-domain facade migration; state
-        # initialization is now an internal persistence intent.
+        # Preserve the concurrent Song-domain facade migration.
         return self._songs.add_songs_to_library(library, payloads)
 
     def update_songs(
@@ -302,14 +307,14 @@ class LibraryDb:
     def update_song_calibration_hashes(self, updates: Sequence[tuple[SongIdentity, str]]) -> int:
         return self._songs.update_song_calibration_hashes(updates)
 
-    def update_library_song_modified_time(self, song_id: int, modified_time_ms: int) -> None:
-        return self._songs.update_library_song_modified_time(song_id, modified_time_ms)
+    def set_modified_time(self, song: SongIdentity, modified_time_ms: int) -> FieldWriteResult:
+        return self._songs.set_modified_time(song, modified_time_ms)
 
-    def set_library_song_chromaprint(self, song_id: int, chromaprint: str) -> None:
-        return self._songs.set_library_song_chromaprint(song_id, chromaprint)
+    def set_last_tagged(self, song: SongIdentity, tagged_at_ms: int) -> FieldWriteResult:
+        return self._songs.set_last_tagged(song, tagged_at_ms)
 
-    def update_library_song_last_tagged_at(self, song_id: int, tagged_at_ms: int) -> None:
-        return self._songs.update_library_song_last_tagged_at(song_id, tagged_at_ms)
+    def set_chromaprint(self, song: SongIdentity, value: ChromaprintValue) -> FieldWriteResult:
+        return self._songs.set_chromaprint(song, value)
 
     def remove_song(self, command: SongRemoval) -> bool:
         return self._songs.remove_song(command)

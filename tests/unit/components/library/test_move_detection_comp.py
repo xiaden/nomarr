@@ -29,6 +29,7 @@ from nomarr.helpers.dataclasses.song_command_dataclass import (
     SongPathUpdate,
     SongScanUpdate,
 )
+from nomarr.helpers.dataclasses.song_dataclass import Song
 
 
 def make_db() -> MagicMock:
@@ -54,6 +55,26 @@ def _new_file_entry(**overrides: object) -> dict[str, object]:
 def _mock_valid_library_path(mock_build: MagicMock) -> None:
     """Make ``build_library_path_from_input`` return a valid path handle."""
     mock_build.return_value.is_valid.return_value = True
+
+
+def _song(path: str, normalized_path: str, duration_seconds: float | None = 180.0) -> Song:
+    """Build the semantic ``Song`` a chromaprint candidate lookup returns."""
+    return Song(
+        path=path,
+        normalized_path=normalized_path,
+        file_size=1000,
+        modified_time=2000,
+        duration_seconds=duration_seconds,
+        chromaprint=None,
+        needs_tagging=False,
+        is_valid=True,
+        tagged=False,
+        calibration_hash=None,
+        write_claimed_by=None,
+        last_tagged_at=None,
+        scanned_at=None,
+        created_at=0,
+    )
 
 
 _LIBRARY = Library(library_uuid="45064f6d-d92e-5179-ad4d-6a15c1354737", name="main", root_path="/music")
@@ -96,11 +117,10 @@ def test_detect_file_move_via_db_skips_self_match() -> None:
     ):
         _mock_valid_library_path(mock_build)
         mock_chromaprint.return_value = "abc123"
-        mock_candidate.return_value = {
-            "path": entry["path"],  # same path → self-match
-            "normalized_path": "new/song.flac",
-            "duration_seconds": 180.0,
-        }
+        mock_candidate.return_value = _song(
+            path=str(entry["path"]),  # same path → self-match
+            normalized_path="new/song.flac",
+        )
 
         result = detect_file_move_via_db(entry, _LIBRARY, db)
 
@@ -111,11 +131,7 @@ def test_detect_file_move_via_db_skips_self_match() -> None:
 def test_detect_file_move_via_db_passes_library_domain_object_and_builds_source_locator() -> None:
     db = make_db()
     entry = _new_file_entry()
-    candidate = {
-        "path": "D:/Music/old/song.flac",
-        "normalized_path": "old/song.flac",
-        "duration_seconds": 180.0,
-    }
+    candidate = _song(path="D:/Music/old/song.flac", normalized_path="old/song.flac")
 
     with (
         patch("nomarr.components.library.move_detection_comp.build_library_path_from_input") as mock_build,

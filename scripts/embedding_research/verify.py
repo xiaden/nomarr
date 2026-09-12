@@ -1,24 +1,7 @@
-"""``python run.py verify [--strict]`` — current-format artifact audit.
-
-DD durable-artifact contract: verify validates current-format filename-to-manifest
-identity (every payload has a sibling manifest that parses), payload
-shape/finiteness, the current catalog, and a clean catalog close (no non-empty
-sibling WAL).  ``--strict`` freshly rehashes every current payload (recomputing
-the payload digest and comparing it to the digest that names the file), so an
-mtime-preserving same-size tamper is caught only under strict verification.
-Commit markers (``observation_commits/``) are NOT validated here — that is
-``reindex``'s scope (``streams/reindex.py``).  Verify OWNS read-write WAL
-recovery/checkpoint of a WAL-bearing current catalog (recovering it, then
-re-validating) and reports corruption as refusals.
-
-Non-strict never rehashes and never mutates payloads; the only filesystem
-mutation verify performs (both modes) is the verify-owned catalog WAL
-recovery/checkpoint.  Verify is CPU-only: it never opens audio/models/sessions.
-"""
+"""CPU-only verification of current geometry-era observation artifacts."""
 
 from __future__ import annotations
 
-import contextlib
 import hashlib
 import json
 import logging
@@ -26,10 +9,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import duckdb
 import numpy as np
 
-from scripts.embedding_research import catalog_storage
 from scripts.embedding_research.streams.publication import parse_artifact_name
 
 _log = logging.getLogger(__name__)
@@ -40,9 +21,6 @@ _PAYLOAD_FAMILIES: tuple[tuple[str, str], ...] = (
     ("heads", ".npz"),
     ("audio_masks", ".npy"),
 )
-_CATALOGS_DIR = "catalogs"
-_CATALOGS_CURRENT = "current.json"
-_STRAY_HINT = "run cleanup --scope stray"
 
 
 @dataclass
@@ -72,7 +50,7 @@ def _verify_payload_families(root: Path, *, strict: bool, report: VerificationRe
             identity = parse_artifact_name(payload.name, suffix)
             if identity is None:
                 # Not a current-format digest name — outside the current grammar,
-                # never classified, never hashed (DD: no legacy-name handling).
+                # never classified, never hashed (current names only).
                 continue
             sibling = payload.with_suffix(".json")
             if not sibling.is_file():
@@ -155,83 +133,58 @@ def _strict_payload_check(
         report.refusals.append(f"{sub}/{payload.name}: payload unreadable/unloadable during strict verification")
 
 
-def _verify_catalog(root: Path, *, report: VerificationReport) -> None:
-    """Validate the current catalog; verify OWNS read-write WAL recovery/checkpoint."""
-    catalogs = root / _CATALOGS_DIR
-    current_file = catalogs / _CATALOGS_CURRENT
-    if not catalogs.is_dir() or not current_file.is_file():
-        report.issues.append("no current catalog selected (no catalogs/current.json) — nothing to verify")
+def _verify_geometry_artifacts(
+    root: Path,
+    *,
+    report: VerificationReport,
+    con: Any = None,
+    profile: Any = None,
+) -> None:
+    """Verify every committed observation is bound to its current persisted geometry.
+
+    Filesystem-only audits (``con is None``) skip this seam because the geometry identity is
+    owned by the research DB.  With a connection, a missing/stale/duplicate/corrupt binding is
+    a refusal and never silently ignored.
+    """
+    if con is None:
         return
+    from scripts.embedding_research.db.geometry import GeometryRefusal, verify_geometry_current
+    from scripts.embedding_research.streams.store import StreamStore
 
-    def _open_verified() -> tuple[Any | None, str | None]:
-        """Return (handle, None) on success or (None, wal_msg) when WAL-bearing.
-
-        Non-WAL failures are appended to ``report.refusals`` here.
-        """
+    marker_dir = root / "observation_commits"
+    if not marker_dir.is_dir():
+        return
+    store = StreamStore(con, output_root=root)
+    for marker in sorted(marker_dir.glob("*.json")):
         try:
-            return catalog_storage.open_current_catalog(root, verify=True), None
-        except catalog_storage.CatalogWalError as exc:
-            return None, str(exc)
-        except (catalog_storage.CatalogIncompleteError, catalog_storage.CatalogMismatchError) as exc:
-            report.refusals.append(f"current catalog refused: {exc}")
-            return None, None
-        except Exception as exc:  # pragma: no cover - defensive
-            report.refusals.append(f"current catalog refusal: {exc}")
-            return None, None
-
-    def _record_verified(handle: Any | None) -> bool:
-        if handle is None:
-            return False
-        try:
-            report.verified += 1
-            _log.debug("verified current catalog %s", getattr(handle, "catalog_id", "?"))
-        finally:
-            with contextlib.suppress(Exception):
-                handle.con.close()
-        return True
-
-    handle, wal_msg = _open_verified()
-    if _record_verified(handle):
-        return
-    if wal_msg is None:
-        # A non-WAL refusal was already appended by _open_verified.
-        return
-
-    # WAL-bearing current catalog: verify owns read-write recovery/checkpoint.
-    try:
-        selection = json.loads(current_file.read_text(encoding="utf-8"))
-        catalog_id = selection.get("catalog_id")
-    except (OSError, ValueError):
-        report.refusals.append("catalogs/current.json is unreadable/malformed")
-        return
-    if not catalog_id:
-        report.refusals.append("catalogs/current.json does not select a catalog_id")
-        return
-    db = catalogs / catalog_id / "catalog.duckdb"
-    if not db.is_file():
-        report.refusals.append(f"current catalog {catalog_id}: catalog.duckdb missing (WAL-bearing refusal {wal_msg})")
-        return
-    try:
-        with duckdb.connect(str(db), read_only=False) as con:
-            con.execute("CHECKPOINT")
-        report.recovered.append(catalog_id)
-    except Exception as exc:
-        report.refusals.append(f"current catalog {catalog_id}: WAL recovery/checkpoint failed: {exc}")
-        return
-    # Re-validate the recovered catalog.
-    handle2, wal_msg2 = _open_verified()
-    if wal_msg2 is not None:
-        report.refusals.append(f"current catalog {catalog_id}: still WAL-bearing after recovery ({wal_msg2})")
-        return
-    if not _record_verified(handle2):
-        report.refusals.append(f"current catalog {catalog_id}: still refused after WAL recovery/checkpoint")
+            doc = json.loads(marker.read_text(encoding="utf-8"))
+            observation = store.load_committed_observation(str(doc["song_id"]), str(doc["backbone"]))
+            record = verify_geometry_current(con, observation, profile=profile)
+        except GeometryRefusal as exc:
+            report.refusals.append(f"geometry {marker.name}: {exc.code}: {exc}")
+            continue
+        except Exception as exc:  # store/schema refusal is a fail-closed refusal
+            report.refusals.append(f"geometry {marker.name}: INTEGRITY_REFUSED: {exc}")
+            continue
+        if record is None:
+            report.refusals.append(
+                f"geometry {marker.name}: INTEGRITY_REFUSED: no committed geometry for the current observation"
+            )
 
 
-def verify_current_artifacts(root: Path, *, strict: bool = False) -> VerificationReport:
+def verify_current_artifacts(
+    root: Path,
+    *,
+    strict: bool = False,
+    con: Any = None,
+    profile: Any = None,
+) -> VerificationReport:
     """Audit the current-format artifacts under *root* (see module docstring).
 
     Returns a :class:`VerificationReport`; it never raises on a corrupt tree —
-    the caller (run.py) maps refusals to a nonzero exit.
+    the caller (run.py) maps refusals to a nonzero exit.  When *con* is supplied the
+    DB-backed geometry binding seam is verified too; without it the audit stays
+    filesystem-only.
     """
     root = Path(root)
     report = VerificationReport()
@@ -247,5 +200,5 @@ def verify_current_artifacts(root: Path, *, strict: bool = False) -> Verificatio
             report.refusals.append("corpus/manifest.json is unreadable/malformed")
 
     _verify_payload_families(root, strict=strict, report=report)
-    _verify_catalog(root, report=report)
+    _verify_geometry_artifacts(root, report=report, con=con, profile=profile)
     return report

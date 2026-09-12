@@ -35,7 +35,6 @@ RUN_PROVENANCE_EXPECTED = {
     "command_line": "VARCHAR",
     "structural_change_summary": "VARCHAR",
     "retained": "BOOLEAN",
-    "view_refs": "VARCHAR",
 }
 
 CORPUS_STATE_EXPECTED = {
@@ -43,7 +42,6 @@ CORPUS_STATE_EXPECTED = {
     "registered_song_count": "INTEGER",
     "eligible_song_count": "INTEGER",
     "complete_flag": "BOOLEAN",
-    "latest_catalog_run_id": "VARCHAR",
     "reconciled_at": "BIGINT",
     "reconciliation_status": "VARCHAR",
 }

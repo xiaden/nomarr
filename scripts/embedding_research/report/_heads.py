@@ -1,124 +1,55 @@
-"""Active head-analysis section builder.
+"""Geometry head-analysis report section.
 
-Research-only.  Reads ONLY the canonical ``head_phase_provenance`` rows (via
-``db.head_phase.load_head_phase_provenance``) and renders them as the ``head-analysis``
-section.  There are no dead-table readers and no retired-boundary prose: the canonical rows
-already carry the active ``boundary_source='catalog'`` /
-``head_pool_variant='shared_catalog_boundary'`` labels written by the head-analysis phase.
+Renders the exact complete head identity evidence persisted for the run, or an explicit
+refusal.  Only the exact geometry/observation/threshold/evaluation/scoring/execution
+identities are read; no other scope resolution or inferred lineage is consulted.
 """
 
 from __future__ import annotations
 
-from scripts.embedding_research.db.head_phase import load_head_phase_provenance
+from scripts.embedding_research.db.identity_persistence import IdentityRefusal, read_head_evidence_for_run
 
-from ._base import fmt, make_section, make_table
+from ._base import make_section, make_table
 
-_HEAD_ANALYSIS_DISPLAY_COLUMNS = [
-    "backbone",
-    "config_id",
-    "head",
-    "semantics",
-    "threshold_effective",
-    "status",
-    "finite",
-    "n_songs",
-    "n_pooled",
-    "coverage",
-    "boundary_source",
-    "head_pool_variant",
+_HEAD_IDENTITY_COLUMNS = (
+    "geometry_id",
+    "observation_id",
+    "geometry_semantics_version",
+    "numerical_profile_digest",
+    "threshold_id",
+    "structural_identity",
+    "search_representation_id",
+    "evaluation_id",
     "scoring_semantics_version",
-    "reference_corpus_hash",
-]
+    "execution_id",
+)
 
 
-def _row_dict(r) -> dict:
-    coverage = None
-    if r.n_pooled > 0:
-        coverage = r.n_pooled / r.n_songs if r.n_songs else 0.0
-    return {
-        "backbone": r.backbone,
-        "config_id": r.config_id,
-        "head": r.head or "—",
-        "semantics": fmt(r.semantics),
-        "threshold_effective": fmt(r.threshold_effective),
-        "status": r.status,
-        "finite": r.finite,
-        "n_songs": r.n_songs,
-        "n_pooled": r.n_pooled,
-        "coverage": coverage if coverage is not None else None,
-        "boundary_source": r.boundary_source,
-        "head_pool_variant": r.head_pool_variant,
-        "scoring_semantics_version": r.scoring_semantics_version,
-        "reference_corpus_hash": fmt(r.reference_corpus_hash),
-    }
-
-
-def section_head_analysis(con) -> dict:
-    """Render the canonical ``head_phase_provenance`` rows as the head-analysis section."""
-    try:
-        rows = load_head_phase_provenance(con)
-    except Exception:
-        rows = []
-
+def section_head_analysis(con, *, run_id: str | None = None):
+    """Render exact head identity evidence, or a visible refusal section when incomplete."""
+    rows: list[dict] = []
+    if run_id:
+        try:
+            rows = list(read_head_evidence_for_run(con, run_id=run_id))
+        except IdentityRefusal:
+            rows = []
     if not rows:
         return make_section(
             "head-analysis",
             "Head Analysis",
-            empty_message="No canonical head-phase provenance recorded. Run the head-analysis phase.",
+            warnings=[{"level": "error", "message": "Head identity evidence unavailable; head analysis refused."}],
+            empty_message="REFUSED: no exact head identity evidence.",
         )
-
-    per_backbone: dict[str, list[dict]] = {}
-    for r in rows:
-        per_backbone.setdefault(str(r.backbone), []).append(_row_dict(r))
-
-    subsections = []
-    for backbone in sorted(per_backbone):
-        table_rows = per_backbone[backbone]
-        n_done = sum(1 for d in table_rows if d["status"] == "done")
-        n_finite = sum(1 for d in table_rows if d["finite"] is True)
-        table_rows_sorted = sorted(
-            table_rows,
-            key=lambda d: (
-                d["config_id"] if d["config_id"] is not None else 10**12,
-                str(d["head"]),
-            ),
+    missing = [column for column in _HEAD_IDENTITY_COLUMNS if any(not row.get(column) for row in rows)]
+    if missing:
+        return make_section(
+            "head-analysis",
+            "Head Analysis",
+            warnings=[{"level": "error", "message": f"Head identity evidence incomplete: {', '.join(missing)}"}],
+            empty_message="REFUSED: incomplete head identity evidence.",
         )
-        subsections.append(
-            {
-                "id": f"head-analysis-{backbone}",
-                "title": str(backbone),
-                "description": "",
-                "stats": [
-                    {"label": "canonical rows", "value": len(table_rows)},
-                    {"label": "done", "value": n_done},
-                    {"label": "finite", "value": n_finite},
-                ],
-                "charts": [],
-                "tables": [
-                    make_table(
-                        table_rows_sorted,
-                        id=f"head_phase_provenance_{backbone}",
-                        title=f"Canonical head-phase provenance ({backbone})",
-                        collapsible=True,
-                        summary_text=f"{len(table_rows_sorted)} canonical row(s)",
-                    )
-                ],
-                "panels": [],
-                "subsections": [],
-                "warnings": [],
-                "headline": None,
-                "empty_message": "",
-            }
-        )
-
     return make_section(
         "head-analysis",
         "Head Analysis",
-        description=(
-            "Canonical head-phase provenance per backbone, read directly from "
-            "head_phase_provenance.  coverage = n_pooled / n_songs.  Canonical rows carry the "
-            "active catalog boundary identity (boundary_source='catalog', "
-            "head_pool_variant='shared_catalog_boundary')."
-        ),
-        subsections=subsections,
+        tables=[make_table(rows, id="geometry_head_identity", title="Exact head identity evidence")],
     )

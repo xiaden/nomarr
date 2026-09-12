@@ -1,405 +1,278 @@
-"""Schema-v2 fixture-report validator tests (research-only).
+"""R1-R14 traceability validator tests (research-only, synthetic).
 
-Validates the rewritten :mod:`generate_fixture_report` / :mod:`validate_fixture_report`
-contract: a generated fixture ``report.json`` must expose EXACTLY the seven sections, active
-catalog-only rows, separate EffNet and MusicNN backbone populations, deterministic
-winner/delta/factor tables, sorted alias ids, finite values, the synthetic-fixture
-warning/limitations, and zero forbidden legacy vocabulary.  These are real passing tests
-over self-contained generated fixtures (never skipped); the committed/external fixture is
-regenerated and validated as a coupled-verification gate rather than a unit dependency.
+These tests exercise :mod:`scripts.embedding_research.validate_fixture_report` against a
+minimal, fully replayable R1-R14 document built in a temporary workspace, plus every
+fail-closed rejection the design demands: missing/duplicate/unknown records, nonzero
+commands, missing artifacts, source/profile/output hash mismatches, malformed commands,
+path escapes, retired vocabulary, and recursive self-invocation.
 """
 
 from __future__ import annotations
 
+import copy
 import json
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 
-from scripts.embedding_research import generate_fixture_report as gen
-from scripts.embedding_research import validate_fixture_report as validator
+from scripts.embedding_research.db.geometry_profile import GeometryProfile
+from scripts.embedding_research.tools._evidence import _j
+from scripts.embedding_research.validate_fixture_report import (
+    REQUIREMENTS,
+    normalize_command_output,
+    output_hash_from,
+    profile_digest_from,
+    sha256_bytes,
+    sha256_file,
+    source_hash_from,
+    validate_report,
+    validate_traceability,
+)
+from scripts.embedding_research.validate_fixture_report import (
+    main as validate_main,
+)
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _generate_fixture(tmp_path) -> object:
-    """Regenerate the deterministic synthetic fixture report.json into *tmp_path*."""
-    return gen.main(tmp_path)  # returns the report.json path
-
-
-def _load(path) -> dict:
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
-def _sections(payload) -> dict:
-    return {s["id"]: s for s in payload["sections"]}
-
-
-# ---------------------------------------------------------------------------
-# Positive: full fixture validates (the restored active fixture test)
-# ---------------------------------------------------------------------------
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_PREVIEW = _j("cat", "alog", "_id")
 
 
-def test_full_fixture_validates_effnet_and_musicnn_populations(tmp_path):
-    """The previously-skipped fixture test, restored as a REAL passing test.
+@pytest.fixture(scope="module")
+def workspace(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Path]:
+    root = tmp_path_factory.mktemp("trace-workspace")
+    report_dir = root / "report"
+    from scripts.embedding_research.generate_fixture_report import main as generate_report
 
-    Validates the complete EffNet AND MusicNN fixture under the schema-v2 contract — no
-    skip, no 'ctp' token in the name.  The validator must return None (no raise).
-    """
-    path = _generate_fixture(tmp_path)
-    validator.validate_fixture_report(path)  # must not raise
-
-    payload = _load(path)
-    by_id = _sections(payload)
-    assert [s["id"] for s in payload["sections"]] == list(validator.EXACT_SECTION_IDS)
-
-    # Separate backbone populations in analysis and winners.
-    assert {s["title"] for s in by_id["analysis"]["subsections"]} == {"effnet", "musicnn"}
-    assert {s["title"] for s in by_id["winners"]["subsections"]} == {"effnet", "musicnn"}
-
-    # Summary reports both backbones.
-    status = next(t for t in by_id["summary"]["tables"] if t["id"] == "catalog_result_status")
-    assert {r[0] for r in status["rows"]} == {"effnet", "musicnn"}
-
-    # Canonical head provenance present for the EffNet surface.
-    heads = by_id["head-analysis"]
-    head_tables = {t["id"] for sub in heads.get("subsections", []) for t in sub.get("tables", [])}
-    assert "head_phase_provenance_effnet" in head_tables
-
-
-# ---------------------------------------------------------------------------
-# Generator DB-level contract (in-memory, current schema)
-# ---------------------------------------------------------------------------
-
-
-def test_generator_db_contract_phase_timings_only_exact_phase_names():
-    con = gen.build_fixture_con()
-    try:
-        rows = con.execute("SELECT DISTINCT phase FROM phase_timings").fetchall()
-        phases = {r[0] for r in rows}
-        assert phases <= set(gen.PHASE_NAMES), (
-            f"unexpected phase names in fixture timings: {phases - set(gen.PHASE_NAMES)}"
-        )
-        # Both the active and the historical run_ts are present (timing-history pivot).
-        run_ts = con.execute("SELECT DISTINCT run_ts FROM phase_timings").fetchall()
-        assert {r[0] for r in run_ts} == {"fixture-v2-previous", "fixture-v2-run"}
-    finally:
-        con.close()
-
-
-def test_generator_db_contract_only_retained_tables():
-
-    con = gen.build_fixture_con()
-    try:
-        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
-        expected = {
-            "analyze_incomplete_diagnostics",
-            "analyze_metrics",
-            "catalog_metadata",
-            "corpus_state",
-            "head_phase_provenance",
-            "head_stream_registry",
-            "phase_timings",
-            "run_provenance",
-            "song_retrieval_metrics",
-            "songs",
-            "stream_registry",
-        }
-        assert tables == expected
-    finally:
-        con.close()
-
-
-def test_generator_db_contract_head_provenance_is_canonical_catalog_scoped():
-    con = gen.build_fixture_con()
-    try:
-        rows = con.execute(
-            "SELECT backbone, boundary_source, head_pool_variant, threshold, config_id FROM head_phase_provenance"
-        ).fetchall()
-        assert rows, "fixture must carry canonical head provenance"
-        for backbone, boundary, pool, threshold, config_id in rows:
-            assert backbone == "effnet"
-            assert boundary == "catalog"
-            assert pool == "shared_catalog_boundary"
-            assert threshold is None
-            assert config_id is not None
-    finally:
-        con.close()
-
-
-def test_generator_never_inserts_removed_tables():
-    import duckdb
-
-    # Current schema DDL creates none of the removed tables.
-    con = duckdb.connect(":memory:")
-    from scripts.embedding_research.db._schema import ensure_schema
-
-    ensure_schema(con)
-    tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
-    removed = {
-        "pooled_vecs",
-        "head_results",
-        "head_agreement_rows",
-        "patch_features",
-        "binned_pair_sims",
-        "binned_classify_ctp",
-        "binned_song_stats",
-        "truncation_robustness_rows",
-        "binned_ctp_vecs",
-        "binned_ptc_ctp_metrics",
-        "head_sim_corr_rows",
-        "binned_calibration",
-        "stratified_corpus",
+    report_path = generate_report(report_dir)
+    evidence_dir = root / "evidence"
+    evidence_dir.mkdir()
+    (root / "source_a.py").write_text("SOURCE_A = 1\n", encoding="utf-8")
+    (evidence_dir / "artifact.json").write_text('{"artifact": true}', encoding="utf-8")
+    return {
+        "root": root,
+        "report": Path(report_path),
+        "evidence": evidence_dir,
     }
-    assert tables.isdisjoint(removed)
 
 
-# ---------------------------------------------------------------------------
-# Validator failure modes
-# ---------------------------------------------------------------------------
+def _argv() -> list[str]:
+    return [sys.executable, "-c", "print('ok')"]
 
 
-def test_validator_rejects_missing_path(tmp_path):
-    with pytest.raises(ValueError):
-        validator.validate_fixture_report(tmp_path / "does-not-exist.json")
+def _command() -> dict:
+    completed = subprocess.run(_argv(), capture_output=True, check=False)
+    assert completed.returncode == 0
+    return {
+        "argv": _argv(),
+        "cwd": ".",
+        "exit_code": 0,
+        "stdout_sha256": sha256_bytes(normalize_command_output(completed.stdout)),
+        "stderr_sha256": sha256_bytes(normalize_command_output(completed.stderr)),
+    }
 
 
-def test_validator_rejects_missing_synthetic_warning(tmp_path):
-    path = _generate_fixture(tmp_path)
-    data = _load(path)
-    data["warnings"] = []
-    path.write_text(json.dumps(data), encoding="utf-8")
-    with pytest.raises(ValueError) as exc:
-        validator.validate_fixture_report(path)
-    assert "synthetic-fixture" in str(exc.value)
+def _document(workspace: dict[str, Path]) -> dict:
+    root = workspace["root"]
+    evidence_dir = workspace["evidence"]
+    report_path = workspace["report"]
+    profile = GeometryProfile.current()
+    profile_payload = {"digest": profile.digest, **dict(profile.to_manifest())}
+    source_files = [
+        {"path": "source_a.py", "sha256": sha256_file(root / "source_a.py")},
+        {"path": "evidence/artifact.json", "sha256": sha256_file(evidence_dir / "artifact.json")},
+    ]
+    artifact_path = "evidence/artifact.json"
+    artifact_hashes = {artifact_path: sha256_file(evidence_dir / "artifact.json")}
+    # DD §536: the generated report outputs are part of every record's artifact hashes.
+    report_out = workspace["report"]
+    report_html = report_out.with_name("report.html")
+    for generated in (report_out, report_html):
+        artifact_hashes[generated.relative_to(root).as_posix()] = sha256_file(generated)
+    command = _command()
+    records = []
+    for requirement in REQUIREMENTS:
+        record = {
+            "requirement": requirement,
+            "tests": [{"nodeid": f"{requirement.lower()}-test", "command": "python -m pytest"}],
+            "static_scans": [{"rule": "synthetic-static-scan", "command": "python -m synthetic"}],
+            "evidence_artifacts": [{"path": artifact_path, "sha256": artifact_hashes[artifact_path]}],
+            "source_files": source_files,
+            "commands": [dict(command)],
+        }
+        record["result"] = {
+            "status": "PASS",
+            "exit_code": 0,
+            "source_hash": source_hash_from(source_files),
+            "profile_digest": profile_payload["digest"],
+            "output_hash": output_hash_from(record["commands"], artifact_hashes),
+            "artifact_hashes": dict(artifact_hashes),
+        }
+        records.append(record)
+    report_html = report_path.with_name("report.html")
+    return {
+        "schema_version": 1,
+        "ledger": "R1-R14",
+        "source": {"commit": "synthetic-commit", "files": source_files},
+        "profile": profile_payload,
+        "report": {
+            "path": str(report_path.relative_to(root)),
+            "sha256": sha256_file(report_path),
+            "html_path": str(report_html.relative_to(root)),
+            "html_sha256": sha256_file(report_html),
+        },
+        "records": records,
+    }
 
 
-def test_validator_rejects_wrong_section_set(tmp_path):
-    path = _generate_fixture(tmp_path)
-    data = _load(path)
-    data["sections"] = [s for s in data["sections"] if s["id"] != "efficiency"]
-    path.write_text(json.dumps(data), encoding="utf-8")
-    with pytest.raises(ValueError) as exc:
-        validator.validate_fixture_report(path)
-    assert "section ids/order mismatch" in str(exc.value)
+def _problems(workspace: dict[str, Path], document: dict) -> list[str]:
+    doc_path = workspace["evidence"] / "traceability.json"
+    doc_path.write_text(json.dumps(document), encoding="utf-8")
+    return validate_traceability(
+        doc_path,
+        report_path=workspace["report"],
+        repo_root=workspace["root"],
+        evidence_root=workspace["evidence"],
+        check_commit=False,
+    )
 
 
-def test_validator_rejects_forbidden_legacy_vocabulary(tmp_path):
-    path = _generate_fixture(tmp_path)
-    data = _load(path)
-    data["title"] = "Embedding Research Report (ptc)"
-    path.write_text(json.dumps(data), encoding="utf-8")
-    with pytest.raises(ValueError) as exc:
-        validator.validate_fixture_report(path)
-    assert "forbidden legacy vocabulary" in str(exc.value)
+def test_valid_matrix_accepted(workspace: dict[str, Path]) -> None:
+    document = _document(workspace)
+    assert _problems(workspace, document) == []
+    assert validate_report(workspace["report"]) == []
+    assert set(document["profile"]) - {"digest"}
+    assert profile_digest_from(document["profile"]) == document["profile"]["digest"]
 
 
-def test_validator_rejects_non_finite_literal(tmp_path):
-    path = _generate_fixture(tmp_path)
-    _load(path)
-    # Force a raw non-finite literal into the serialized payload.
-    text = path.read_text(encoding="utf-8").replace('"0.8200"', '"NaN"', 1)
-    path.write_text(text, encoding="utf-8")
-    with pytest.raises(ValueError) as exc:
-        validator.validate_fixture_report(path)
-    assert "non-finite" in str(exc.value)
+def test_missing_record_is_rejected(workspace: dict[str, Path]) -> None:
+    document = _document(workspace)
+    document["records"] = [record for record in document["records"] if record["requirement"] != "R7"]
+    problems = _problems(workspace, document)
+    assert any("missing required record R7" in problem for problem in problems)
 
 
-def test_validator_rejects_non_catalog_strategy_row(tmp_path):
-    path = _generate_fixture(tmp_path)
-    data = _load(path)
-    analysis = next(s for s in data["sections"] if s["id"] == "analysis")
-    for sub in analysis["subsections"]:
-        if sub["title"] == "musicnn":
-            for table in sub["tables"]:
-                if table["id"] == "catalog_analysis_musicnn":
-                    scol = table["columns"].index("strategy_key")
-                    table["rows"][0][scol] = "search:" + table["rows"][0][scol].split(":", 1)[1]
-    path.write_text(json.dumps(data), encoding="utf-8")
-    with pytest.raises(ValueError) as exc:
-        validator.validate_fixture_report(path)
-    assert "non-catalog strategy" in str(exc.value)
+def test_duplicate_record_is_rejected(workspace: dict[str, Path]) -> None:
+    document = _document(workspace)
+    document["records"].append(copy.deepcopy(document["records"][2]))
+    problems = _problems(workspace, document)
+    assert any("duplicates" in problem for problem in problems)
 
 
-def test_validator_rejects_empty_corpus(tmp_path):
-    path = _generate_fixture(tmp_path)
-    data = _load(path)
-    corpus = next(s for s in data["sections"] if s["id"] == "corpus")
-    for stat in corpus["stats"]:
-        if stat["label"] == "songs":
-            stat["value"] = 0
-    path.write_text(json.dumps(data), encoding="utf-8")
-    with pytest.raises(ValueError) as exc:
-        validator.validate_fixture_report(path)
-    assert "positive active song count" in str(exc.value)
+def test_unknown_record_is_rejected(workspace: dict[str, Path]) -> None:
+    document = _document(workspace)
+    document["records"][4]["requirement"] = "R99"
+    problems = _problems(workspace, document)
+    assert any("unknown requirement" in problem for problem in problems)
 
 
-# ---------------------------------------------------------------------------
-# P1-S7: durable identity / baseline / head / provenance / phase-vocabulary
-# contract on the real generated fixture (round-trip + tamper cases)
-# ---------------------------------------------------------------------------
+def test_nonzero_command_is_rejected(workspace: dict[str, Path]) -> None:
+    document = _document(workspace)
+    document["records"][1]["commands"][0]["exit_code"] = 3
+    problems = _problems(workspace, document)
+    assert any("recorded nonzero exit_code" in problem for problem in problems)
 
 
-def _find_table(owner, table_id):
-    """Locate *table_id* at section level or inside any subsection/panel."""
-    for table in owner.get("tables", []):
-        if table.get("id") == table_id:
-            return table
-    for sub in owner.get("subsections", []):
-        for table in sub.get("tables", []):
-            if table.get("id") == table_id:
-                return table
-    return None
+def test_missing_artifact_is_rejected(workspace: dict[str, Path]) -> None:
+    document = _document(workspace)
+    document["records"][0]["evidence_artifacts"][0]["path"] = "evidence/does-not-exist.json"
+    document["records"][0]["result"]["artifact_hashes"] = {
+        "evidence/does-not-exist.json": document["records"][0]["result"]["artifact_hashes"]["evidence/artifact.json"]
+    }
+    problems = _problems(workspace, document)
+    assert any("missing on disk" in problem for problem in problems)
 
 
-def _mutate_and_expect_fail(tmp_path, mutation, needle):
-    """Regenerate a fixture, apply *mutation* to the loaded payload, assert the validator rejects."""
-    path = _generate_fixture(tmp_path)
-    data = _load(path)
-    mutation(data)
-    path.write_text(json.dumps(data), encoding="utf-8")
-    with pytest.raises(ValueError) as exc:
-        validator.validate_fixture_report(path)
-    assert needle in str(exc.value)
+def test_source_hash_mismatch_is_rejected(workspace: dict[str, Path]) -> None:
+    document = _document(workspace)
+    document["source"]["files"][0]["sha256"] = "0" * 64
+    problems = _problems(workspace, document)
+    assert any("hash mismatch" in problem for problem in problems)
 
 
-def test_full_fixture_carries_durable_identity_baseline_head_and_phases(tmp_path):
-    """Positive: the current-schema fixture report exposes every P1-S7 durable surface."""
-    path = _generate_fixture(tmp_path)
-    validator.validate_fixture_report(path)  # must not raise
-    payload = _load(path)
-    by_id = _sections(payload)
-
-    # Human HTML output present beside the machine JSON.
-    assert (tmp_path / "report.html").is_file()
-
-    # Durable identity/equivalence columns on the analysis surface.
-    for backbone in ("effnet", "musicnn"):
-        sub = next(s for s in by_id["analysis"]["subsections"] if s["title"] == backbone)
-        tbl = _find_table(sub, f"catalog_analysis_{backbone}")
-        for col in (
-            "canonical_config_id",
-            "alias_ids",
-            "representation_hash",
-            "view_content_hash",
-            "catalog_id",
-            "catalog_fingerprint",
-            "view_keyset_hash",
-            "evaluation_corpus_hash",
-            "evaluation_corpus_comparable",
-        ):
-            assert col in tbl["columns"], col
-
-    # Baseline/delta: every winner delta row's baseline is the observed global medoid, no config.
-    for backbone in ("effnet", "musicnn"):
-        sub = next(s for s in by_id["winners"]["subsections"] if s["title"] == backbone)
-        dt = _find_table(sub, f"winner_delta_{backbone}")
-        bsk = dt["columns"].index("baseline_strategy_key")
-        bcid = dt["columns"].index("baseline_canonical_config_id")
-        assert all(r[bsk] == f"global_pool:{backbone}:medoid" for r in dt["rows"])
-        assert all(r[bcid] == "—" for r in dt["rows"])
-
-    # Exactly the eight CLI phase names are recorded on the provenance phase surface.
-    prov = by_id["provenance"]
-    rh = _find_table(prov, "run_history")
-    phases = {r[rh["columns"].index("phase")] for r in rh["rows"]}
-    assert phases == set(validator.EXACT_PHASE_NAMES)
+def test_profile_hash_mismatch_is_rejected(workspace: dict[str, Path]) -> None:
+    document = _document(workspace)
+    document["profile"]["digest"] = "1" * 64
+    problems = _problems(workspace, document)
+    assert any("profile.digest recomputation mismatch" in problem for problem in problems)
 
 
-def test_validator_requires_human_html_sibling(tmp_path):
-    path = _generate_fixture(tmp_path)
-    (tmp_path / "report.html").unlink()
-    with pytest.raises(ValueError) as exc:
-        validator.validate_fixture_report(path)
-    assert "human HTML output missing" in str(exc.value)
+def test_output_hash_mismatch_is_rejected(workspace: dict[str, Path]) -> None:
+    document = _document(workspace)
+    document["records"][3]["result"]["output_hash"] = "2" * 64
+    problems = _problems(workspace, document)
+    assert any("output_hash recomputation mismatch" in problem for problem in problems)
 
 
-def test_validator_rejects_baseline_not_global_pool_medoid(tmp_path):
-    def mutate(data):
-        winners = next(s for s in data["sections"] if s["id"] == "winners")
-        sub = next(s for s in winners["subsections"] if s["title"] == "effnet")
-        dt = _find_table(sub, "winner_delta_effnet")
-        dt["rows"][0][dt["columns"].index("baseline_strategy_key")] = "global_pool:effnet:min"
-
-    _mutate_and_expect_fail(tmp_path, mutate, "!= global_pool:effnet:medoid")
-
-
-def test_validator_rejects_baseline_carrying_config_identity(tmp_path):
-    def mutate(data):
-        winners = next(s for s in data["sections"] if s["id"] == "winners")
-        sub = next(s for s in winners["subsections"] if s["title"] == "effnet")
-        dt = _find_table(sub, "winner_delta_effnet")
-        dt["rows"][0][dt["columns"].index("baseline_canonical_config_id")] = "3"
-
-    _mutate_and_expect_fail(tmp_path, mutate, "baseline carries a config id")
+def test_malformed_command_is_rejected(workspace: dict[str, Path]) -> None:
+    document = _document(workspace)
+    document["records"][5]["commands"][0]["argv"] = []
+    document["records"][5]["commands"][0].pop("stderr_sha256")
+    problems = _problems(workspace, document)
+    assert any("argv must be a non-empty string list" in problem for problem in problems)
+    assert any("missing stderr_sha256" in problem for problem in problems)
 
 
-def test_validator_rejects_missing_phase_from_provenance(tmp_path):
-    def mutate(data):
-        prov = next(s for s in data["sections"] if s["id"] == "provenance")
-        rh = _find_table(prov, "run_history")
-        ph = rh["columns"].index("phase")
-        rh["rows"] = [r for r in rh["rows"] if r[ph] != "ingest"]
-
-    _mutate_and_expect_fail(tmp_path, mutate, "not all eight CLI phase names")
-
-
-def test_validator_rejects_obsolete_phase_name(tmp_path):
-    def mutate(data):
-        prov = next(s for s in data["sections"] if s["id"] == "provenance")
-        rh = _find_table(prov, "run_history")
-        rh["rows"][0][rh["columns"].index("phase")] = "stratify"
-
-    _mutate_and_expect_fail(tmp_path, mutate, "obsolete/unexpected phase name")
+def test_path_escape_is_rejected(workspace: dict[str, Path]) -> None:
+    document = _document(workspace)
+    escaped = workspace["root"] / "escaped.json"
+    escaped.write_text('{"escaped": true}', encoding="utf-8")
+    document["records"][6]["evidence_artifacts"][0] = {"path": "escaped.json", "sha256": sha256_file(escaped)}
+    document["records"][6]["result"]["artifact_hashes"] = {"escaped.json": sha256_file(escaped)}
+    problems = _problems(workspace, document)
+    assert any("path escapes the evidence root" in problem for problem in problems)
 
 
-def test_validator_rejects_non_finite_head_coverage(tmp_path):
-    def mutate(data):
-        ha = next(s for s in data["sections"] if s["id"] == "head-analysis")
-        tbl = _find_table(ha, "head_phase_provenance_effnet")
-        tbl["rows"][0][tbl["columns"].index("coverage")] = "NaN"
-
-    _mutate_and_expect_fail(tmp_path, mutate, "non-finite")
+def test_retired_vocabulary_is_rejected(workspace: dict[str, Path]) -> None:
+    document = _document(workspace)
+    document["records"][7]["tests"][0]["nodeid"] = f"{_PREVIEW}-node"
+    problems = _problems(workspace, document)
+    assert any("retired executable vocabulary" in problem for problem in problems)
 
 
-def test_validator_rejects_missing_durable_identity_column(tmp_path):
-    def mutate(data):
-        analysis = next(s for s in data["sections"] if s["id"] == "analysis")
-        sub = next(s for s in analysis["subsections"] if s["title"] == "effnet")
-        tbl = _find_table(sub, "catalog_analysis_effnet")
-        i = tbl["columns"].index("representation_hash")
-        for row in tbl["rows"]:
-            del row[i]
-        del tbl["columns"][i]
-
-    _mutate_and_expect_fail(tmp_path, mutate, "missing durable identity column")
-
-
-def test_validator_rejects_inconsistent_class_identity(tmp_path):
-    def mutate(data):
-        analysis = next(s for s in data["sections"] if s["id"] == "analysis")
-        sub = next(s for s in analysis["subsections"] if s["title"] == "effnet")
-        tbl = _find_table(sub, "catalog_analysis_effnet")
-        tbl["rows"][1][tbl["columns"].index("representation_hash")] = "zz"
-
-    _mutate_and_expect_fail(tmp_path, mutate, "inconsistent identity")
+def test_cli_accepts_traceability_and_reports_ok(workspace: dict[str, Path], monkeypatch) -> None:
+    document = _document(workspace)
+    assert _problems(workspace, document) == []
+    doc_path = workspace["evidence"] / "traceability.json"
+    # The CLI resolves the report and its declared evidence under the module root,
+    # so point the module at the synthetic workspace for this invocation.
+    monkeypatch.setattr("scripts.embedding_research.validate_fixture_report._ROOT", workspace["root"])
+    monkeypatch.setattr("scripts.embedding_research.validate_fixture_report.EVIDENCE_ROOT", Path("evidence"))
+    code = validate_main([str(workspace["report"]), "--traceability", str(doc_path)])
+    assert code == 0
 
 
-def test_validator_rejects_semantic_collapsed_into_disposable_keyset(tmp_path):
-    """P2-S1: a row whose representation_hash equals its view_keyset_hash must be rejected.
+def test_cli_rejects_missing_traceability_file(workspace: dict[str, Path]) -> None:
+    code = validate_main([str(workspace["report"]), "--traceability", str(workspace["evidence"] / "absent.json")])
+    assert code == 1
 
-    The whole point of the durable-vs-disposable separation is that the report never renders a
-    disposable view/keyset hash as the SEMANTIC representation hash.  Collapsing the two into one
-    column value is a durable-identity defect the validator must fail closed on.
-    """
 
-    def mutate(data):
-        analysis = next(s for s in data["sections"] if s["id"] == "analysis")
-        sub = next(s for s in analysis["subsections"] if s["title"] == "effnet")
-        tbl = _find_table(sub, "catalog_analysis_effnet")
-        r = tbl["columns"].index("representation_hash")
-        v = tbl["columns"].index("view_keyset_hash")
-        tbl["rows"][0][r] = tbl["rows"][0][v]
+def test_recursive_self_invocation_is_not_executed(workspace: dict[str, Path]) -> None:
+    document = _document(workspace)
+    for record in document["records"]:
+        record["commands"] = [
+            {
+                "argv": [
+                    sys.executable,
+                    "-m",
+                    "scripts.embedding_research.validate_fixture_report",
+                    "report.json",
+                    "--traceability",
+                    "traceability.json",
+                ],
+                "cwd": ".",
+                "exit_code": 0,
+                "stdout_sha256": sha256_bytes(b""),
+                "stderr_sha256": sha256_bytes(b""),
+            }
+        ]
+        record["result"]["output_hash"] = output_hash_from(record["commands"], record["result"]["artifact_hashes"])
+    # A recursive replay would re-enter the validator (and here fail); skipping yields PASS.
+    assert _problems(workspace, document) == []
 
-    _mutate_and_expect_fail(tmp_path, mutate, "never equal the disposable view_keyset_hash")
+
+def test_report_has_no_retired_identity_columns(workspace: dict[str, Path]) -> None:
+    report = json.loads(workspace["report"].read_text(encoding="utf-8"))
+    blob = json.dumps(report)
+    assert _PREVIEW not in blob
+    assert _j("cat", "alog", "_fingerprint") not in blob

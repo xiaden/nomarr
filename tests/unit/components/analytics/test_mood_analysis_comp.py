@@ -21,6 +21,14 @@ from nomarr.helpers.dataclasses.song_tag_dataclass import TagRef
 _UUID = "123e4567-e89b-42d3-a456-426614174000"
 
 
+def _locator(path: str) -> SongIdentity:
+    return SongIdentity(library=LibraryIdentity(library_uuid=_UUID), normalized_path=path)
+
+
+def _row(path: str, value: str) -> tuple[SongIdentity, str]:
+    return (_locator(path), value)
+
+
 def _song(song_id: int, **overrides: object) -> Song:
     base: dict = {
         "path": f"/music/{song_id}.mp3",
@@ -82,9 +90,9 @@ class TestGetMoodCoverage:
             patch(
                 "nomarr.components.analytics.mood_analysis_comp._get_tag_edge_rows",
                 side_effect=[
-                    [(1, "happy"), (2, "calm"), (1, "happy")],
-                    [(3, "warm"), (4, "bright"), (3, "warm")],
-                    [(5, "dreamy")],
+                    [_row("1.mp3", "happy"), _row("2.mp3", "calm"), _row("1.mp3", "happy")],
+                    [_row("3.mp3", "warm"), _row("4.mp3", "bright"), _row("3.mp3", "warm")],
+                    [_row("5.mp3", "dreamy")],
                 ],
             ) as get_tag_edge_rows_mock,
             patch(
@@ -131,7 +139,7 @@ class TestGetMoodBalance:
         with patch(
             "nomarr.components.analytics.mood_analysis_comp._get_tag_edge_rows",
             side_effect=[
-                [(1, "happy"), (2, "happy")],
+                [_row("1.mp3", "happy"), _row("2.mp3", "happy")],
                 [],
                 [],
             ],
@@ -151,7 +159,7 @@ class TestGetMoodBalance:
         mock_db = MagicMock()
         with patch(
             "nomarr.components.analytics.mood_analysis_comp._get_tag_edge_rows",
-            side_effect=[[(1, "(happy,sad)")], [], []],
+            side_effect=[[_row("1.mp3", "(happy,sad)")], [], []],
         ):
             result = get_mood_balance(mock_db)
 
@@ -177,11 +185,11 @@ class TestGetMoodAndTierTagsForCorrelation:
             patch(
                 "nomarr.components.analytics.mood_analysis_comp._get_tag_edge_rows",
                 side_effect=[
-                    [(1, "happy")],
-                    [(2, "calm")],
+                    [_row("1.mp3", "happy")],
+                    [_row("2.mp3", "calm")],
                     [],
-                    [(1, "high")],
-                    [(2, "fast")],
+                    [_row("1.mp3", "high")],
+                    [_row("2.mp3", "fast")],
                 ],
             ) as get_tag_edge_rows_mock,
             patch(
@@ -193,13 +201,13 @@ class TestGetMoodAndTierTagsForCorrelation:
 
         assert result == {
             "mood_tag_rows": [
-                (1, "happy"),
-                (2, "calm"),
+                _row("1.mp3", "happy"),
+                _row("2.mp3", "calm"),
             ],
             "tier_tag_keys": ["nom:energy_tier", "nom:tempo_tier"],
             "tier_tag_rows": {
-                "nom:energy_tier": [(1, "high")],
-                "nom:tempo_tier": [(2, "fast")],
+                "nom:energy_tier": [_row("1.mp3", "high")],
+                "nom:tempo_tier": [_row("2.mp3", "fast")],
             },
         }
         get_tier_tag_keys_mock.assert_called_once_with(mock_db)
@@ -216,9 +224,9 @@ class TestGetMoodDistributionData:
         with patch(
             "nomarr.components.analytics.mood_analysis_comp._get_tag_edge_rows",
             side_effect=[
-                [(1, "happy")],
-                [(2, "calm")],
-                [(3, "dreamy")],
+                [_row("1.mp3", "happy")],
+                [_row("2.mp3", "calm")],
+                [_row("3.mp3", "dreamy")],
             ],
         ) as get_tag_edge_rows_mock:
             result = get_mood_distribution_data(mock_db)
@@ -238,7 +246,7 @@ class TestGetMoodDistributionData:
         library = Library(name="main", root_path="/music")
         with patch(
             "nomarr.components.analytics.mood_analysis_comp._get_tag_edge_rows",
-            side_effect=[[], [(2, "warm")], []],
+            side_effect=[[], [_row("2.mp3", "warm")], []],
         ) as get_tag_edge_rows_mock:
             result = get_mood_distribution_data(mock_db, library=library)
 

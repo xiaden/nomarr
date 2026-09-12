@@ -1,279 +1,234 @@
-"""P1-S4 cleanup/reset semantics tests (current-format only, byte-preserving Tier 1/2).
+"""Geometry-era cleanup/reset tests: disposable scopes and immutable geometry evidence.
 
-These exercise the new ``cleanup_current`` (staging | stray | views) and
-``reset_analysis`` on synthetic fixtures — never a real corpus/model/audio.
-Candidates are derived from the current-format grammar + manifest relationships
-alone; bare/.vN/legacy names are never classified or removed.
+Only the two current-format cleanup scopes (leftover staging ``.tmp`` files and
+digest payloads with no sibling manifest) are exercised, plus the named
+``GEOMETRY_RESET_UNAVAILABLE`` refusal and the analysis reset that must preserve
+every ``song_patch_geometry`` byte.  Synthetic temp roots and in-memory DuckDB
+only; no real corpus, audio, models, or filesystem Gram.
 """
 
 from __future__ import annotations
 
-from scripts.embedding_research import cleanup
+import hashlib
+
+import duckdb
+import pytest
+
+from scripts.embedding_research.cleanup import (
+    GeometryResetUnavailableError,
+    cleanup_current,
+    reset_analysis,
+    reset_geometry,
+)
+from scripts.embedding_research.db._schema import ensure_schema, schema_fingerprint
 
 
-def _digest_name(song: str, backbone: str, suffix: str, hexlen: int = 64) -> str:
-    return f"{song}.{backbone}.{'a' * hexlen}{suffix}"
-
-
-def _write(root, rel: str, content: bytes = b"x") -> None:
+def _write(root, rel: str, content: bytes = b"x"):
     path = root / rel
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(content)
     return path
 
 
-# ── cleanup_current --scope staging ───────────────────────────────────────────
+def _digest_name(song: str, backbone: str, suffix: str) -> str:
+    return f"{song}.{backbone}.{'a' * 64}{suffix}"
 
 
-def test_cleanup_staging_dry_run_default_reports_only(tmp_path):
-    d = _write(tmp_path, "catalogs/.staging-run1/catalog.duckdb", b"db")
-    t = _write(tmp_path, "streams/.staging/stream.tmp", b"tmp")
+# ── disposable cleanup scopes ────────────────────────────────────────────────
 
-    report = cleanup.cleanup_current(tmp_path, None, scope="staging")
+
+def test_cleanup_staging_dry_run_reports_without_removing(tmp_path):
+    leftover = _write(tmp_path, "streams/.staging/stream.tmp", b"tmp")
+
+    report = cleanup_current(tmp_path, None, scope="staging")
+
     assert report.scope == "staging"
     assert report.dry_run is True
-    assert len(report.removed) == 2
-    assert d.exists() and t.exists()  # report-only by default
+    assert report.removed == [str(leftover)]
+    assert leftover.exists()
 
 
-def test_cleanup_staging_removes_when_not_dry_run(tmp_path):
-    d = _write(tmp_path, "catalogs/.staging-run1/catalog.duckdb", b"db")
-    t = _write(tmp_path, "heads/.staging/head.tmp", b"tmp")
+def test_cleanup_staging_removes_leftover_tmp_when_not_dry_run(tmp_path):
+    leftover = _write(tmp_path, "heads/.staging/head.tmp", b"tmp")
 
-    report = cleanup.cleanup_current(tmp_path, None, scope="staging", dry_run=False)
-    assert not d.exists()
-    assert not t.exists()
+    report = cleanup_current(tmp_path, None, scope="staging", dry_run=False)
+
     assert report.changed
+    assert not leftover.exists()
 
 
-def test_cleanup_staging_does_not_touch_published_catalog(tmp_path):
-    published = _write(tmp_path, "catalogs/abc123/catalog.duckdb", b"db")
-    _write(tmp_path, "catalogs/current.json", b'{"catalog_id": "abc123"}')
+def test_cleanup_stray_removes_orphan_digest_payload_only(tmp_path):
+    orphan = _write(tmp_path, f"streams/{_digest_name('s1', 'effnet', '.npy')}", b"data")
+    kept = _write(tmp_path, f"streams/{_digest_name('s2', 'effnet', '.npy')}", b"data")
+    _write(tmp_path, f"streams/{_digest_name('s2', 'effnet', '.json')}", b"{}")
 
-    cleanup.cleanup_current(tmp_path, None, scope="staging", dry_run=False)
-    assert published.exists()
+    report = cleanup_current(tmp_path, None, scope="stray", dry_run=False)
 
-
-# ── cleanup_current --scope stray ─────────────────────────────────────────────
-
-
-def test_cleanup_stray_removes_unreferenced_digest_payload_only(tmp_path):
-    stray = _write(tmp_path, f"streams/{_digest_name('s1', 'effnet', '.npy')}", b"data")
-    referenced = _write(tmp_path, f"streams/{_digest_name('s2', 'effnet', '.npy')}", b"data")
-    _write(tmp_path, f"streams/{_digest_name('s2', 'effnet', '.json')}", b'{"kind": "stream"}')
-
-    report = cleanup.cleanup_current(tmp_path, None, scope="stray", dry_run=False)
-    assert not stray.exists()  # orphan digest payload removed
-    assert referenced.exists()  # payload with a manifest is current, kept
-    assert report.changed
+    assert report.removed == [str(orphan)]
+    assert not orphan.exists()
+    assert kept.exists()
 
 
-def test_cleanup_stray_never_classifies_non_current_names(tmp_path):
-    # A bare/.vN/legacy name is NOT a current-format stray and must never be removed.
-    legacy = _write(tmp_path, "streams/s1_effnet_v3.npy", b"legacy")
+def test_cleanup_stray_ignores_non_digest_names(tmp_path):
     bare = _write(tmp_path, "streams/song.npy", b"bare")
 
-    report = cleanup.cleanup_current(tmp_path, None, scope="stray", dry_run=False)
+    report = cleanup_current(tmp_path, None, scope="stray", dry_run=False)
+
     assert not report.changed
-    assert legacy.exists() and bare.exists()
+    assert bare.exists()
 
 
-def test_cleanup_stray_removes_unselected_valid_catalog(tmp_path):
-    selected = _write(tmp_path, "catalogs/aaa/catalog.duckdb", b"db")
-    _write(tmp_path, "catalogs/aaa/catalog.manifest.json", b"{}")
-    stray_cat = _write(tmp_path, "catalogs/bbb/catalog.duckdb", b"db")
-    _write(tmp_path, "catalogs/bbb/catalog.manifest.json", b"{}")
-    _write(tmp_path, "catalogs/current.json", b'{"catalog_id": "aaa"}')
+def test_cleanup_unknown_scope_is_refused(tmp_path):
+    report = cleanup_current(tmp_path, None, scope="unknown", dry_run=False)  # type: ignore[arg-type]
 
-    cleanup.cleanup_current(tmp_path, None, scope="stray", dry_run=False)
-    assert selected.exists()
-    assert not stray_cat.exists()  # valid but not current -> reported for cleanup
+    assert report.refused
+    assert not report.changed
 
 
-# ── cleanup_current --scope views ─────────────────────────────────────────────
+# ── reset: analysis preserved upstream, geometry immutable ───────────────────
 
 
-def test_cleanup_views_removes_view_tree(tmp_path):
-    v = _write(tmp_path, "views/xyz/payload.npy", b"view")
-    report = cleanup.cleanup_current(tmp_path, None, scope="views", dry_run=False)
-    assert not v.exists()
-    assert not (tmp_path / "views").exists()
-    assert report.changed
+def _geometry_row() -> dict[str, object]:
+    blob = b"geometry-bytes\x00\xff"
+    return {
+        "geometry_id": "g1",
+        "song_id": "s1",
+        "backbone": "effnet",
+        "observation_commit_sha256": "commit",
+        "stream_ref": "streams/s1.effnet.stream.npy",
+        "stream_fingerprint_sha256": "stream",
+        "stream_payload_sha256": "stream-payload",
+        "mask_ref": "audio_masks/s1.effnet.mask.npy",
+        "mask_payload_sha256": "mask-payload",
+        "patch_count": 2,
+        "embedding_dim": 3,
+        "stream_dtype": "float32",
+        "stream_format_version": "1",
+        "embed_semantics_version": 1,
+        "preprocess_fn": "identity",
+        "preprocess_version": "1",
+        "backbone_model_hash": "model",
+        "audio_params": "{}",
+        "provenance_source": "synthetic",
+        "provenance_assumption": "synthetic",
+        "alignment_token": "align",
+        "audio_content_sha256": "audio",
+        "mask_semantics_version": "1",
+        "group_format_version": "1",
+        "provenance_identity": "identity",
+        "geometry_semantics_version": "1",
+        "numerical_profile_digest": "profile",
+        "geometry_blob_byte_length": len(blob),
+        "geometry_blob_sha256": hashlib.sha256(blob).hexdigest(),
+        "gram_blob": blob,
+        "status": "committed",
+        "writer_run_id": "run-1",
+        "created_at_ms": 1,
+        "updated_at_ms": 1,
+    }
 
 
-def test_cleanup_views_dry_run_reports(tmp_path):
-    v = _write(tmp_path, "views/xyz/payload.npy", b"view")
-    report = cleanup.cleanup_current(tmp_path, None, scope="views", dry_run=True)
-    assert v.exists()
-    # Nothing is retained-run-protected, so a real run would empty ``views/`` and the report
-    # claims both the keyset dir and the parent ``views/`` removal on the simulated post-state.
-    assert str(tmp_path / "views" / "xyz") in report.removed
-    assert str(tmp_path / "views") in report.removed
-
-
-def test_cleanup_views_dry_run_protected_parent_not_reported(con, tmp_path):
-    """A dry-run views GC with a retained-run-referenced keyset dir must report the protected
-    dir as skipped, the unprotected dir as removed, and must NOT claim the parent ``views/``
-    removal (a real run would not empty it).  Nothing is deleted in a dry run."""
-    root = tmp_path / "root"
-    protected_keyset = _hashref("d")
-    unprotected_keyset = _hashref("e")
-    _seed_view(root, protected_keyset)
-    _seed_view(root, unprotected_keyset)
-    _write_retained_run(con, view_refs=f"k1|c1|views/{protected_keyset}")
-
-    report = cleanup.cleanup_current(root, con, scope="views", dry_run=True)
-
-    assert str(root / "views" / protected_keyset) in report.skipped
-    assert str(root / "views" / unprotected_keyset) in report.removed
-    assert str(root / "views") not in report.removed, "views/ survives because a protected dir is kept"
-    assert (root / "views" / protected_keyset).is_dir()
-    assert (root / "views" / unprotected_keyset).is_dir()
-
-
-# ── reset_analysis --scope analysis ───────────────────────────────────────────
-
-
-def _seed_tree(root, db_path):
-    root.mkdir(parents=True, exist_ok=True)
-    db = _write(root, str(db_path), b"research-duckdb")
-    wal = _write(root, f"{db_path}.wal", b"wal")
-    view = _write(root, "views/k/p.npy", b"view")
-    # Tier 1/2 payloads (must be preserved byte-for-byte)
-    tier12 = [
-        "corpus/manifest.json",
-        "corpus/songs.json",
-        "streams/s1.effnet.npy",
-        "audio_masks/s1.effnet.npy",
-        "heads/s1.effnet.npz",
-        "observation_commits/s1.effnet.json",
-        "catalogs/current.json",
-        "catalogs/aaa/catalog.duckdb",
-    ]
-    preserved = {rel: _write(root, rel, bytes([i % 251 for i in range(len(rel))])) for rel in tier12}
-    return db, wal, view, preserved
-
-
-def test_reset_analysis_removes_db_and_views_preserves_tier12(tmp_path):
-    db_path = tmp_path / "research.duckdb"
-    db, wal, view, preserved = _seed_tree(tmp_path, db_path)
-    before = {rel: path.read_bytes() for rel, path in preserved.items()}
-
-    report = cleanup.reset_analysis(tmp_path, db_path, dry_run=False)
-
-    assert not db.exists()
-    assert not wal.exists()
-    assert not view.exists()
-    assert report.scope == "analysis"
-    for rel, content in before.items():
-        assert preserved[rel].read_bytes() == content  # byte-for-byte preserved
-
-
-def test_reset_analysis_dry_run_removes_nothing(tmp_path):
-    db_path = tmp_path / "research.duckdb"
-    db, wal, view, _ = _seed_tree(tmp_path, db_path)
-    cleanup.reset_analysis(tmp_path, db_path, dry_run=True)
-    assert db.exists() and wal.exists() and view.exists()
-
-
-def test_reset_analysis_missing_db_is_noop(tmp_path):
-    db_path = tmp_path / "research.duckdb"
-    report = cleanup.reset_analysis(tmp_path, db_path, dry_run=False)
-    assert report.removed == []
-
-
-def _hashref(hexchar: str) -> str:
-    return hexchar * 64
-
-
-def _seed_view(root, keyset: str, rel: str = "payload.npy") -> None:
-    _write(root, f"views/{keyset}/{rel}", b"view")
-
-
-def _write_retained_run(db_con, **extra):
-    """Ensure schema on *db_con* and record a retained analyze run referencing a view."""
-    from scripts.embedding_research.db import provenance as _prov
-    from scripts.embedding_research.db._schema import ensure_schema
-
-    ensure_schema(db_con)
-    _prov.write_run_provenance(
-        db_con,
-        run_id="retained-run",
-        phase="analyze",
-        status="complete",
-        started_at=0,
-        finished_at=0,
-        retained=True,
-        **extra,
+def _insert_geometry(con, row: dict[str, object]) -> None:
+    columns = tuple(row)
+    con.execute(
+        f"INSERT INTO song_patch_geometry ({', '.join(columns)}) VALUES ({', '.join('?' for _ in columns)})",
+        tuple(row.values()),
     )
 
 
-def test_cleanup_views_preserves_retained_run_refs_deletes_unretained_run(con, tmp_path):
-    """GC may delete only views not referenced by a retained run; protected keyset dirs
-    survive and ``views/`` is only removed once empty."""
-    root = tmp_path / "root"
-    retained_keyset = _hashref("b")
-    unretained_keyset = _hashref("a")
-    _seed_view(root, retained_keyset)
-    _seed_view(root, unretained_keyset)
-    from scripts.embedding_research.db import provenance as _prov
-
-    _prov.write_run_provenance(
-        con,
-        run_id="retained-run",
-        phase="analyze",
-        status="complete",
-        started_at=0,
-        finished_at=0,
-        retained=True,
-        view_refs=f"k1|c1|views/{retained_keyset}",
+def test_reset_analysis_preserves_geometry_bytes(tmp_path):
+    db_path = tmp_path / "db.duckdb"
+    con = duckdb.connect(str(db_path))
+    ensure_schema(con)
+    row = _geometry_row()
+    columns = tuple(row)
+    con.execute(
+        f"INSERT INTO song_patch_geometry ({', '.join(columns)}) VALUES ({', '.join('?' for _ in columns)})",
+        tuple(row.values()),
     )
+    con.execute("INSERT INTO analyze_metrics VALUES ('run-1','geometry:s1','geometry','l2',1,'metric',0.5)")
+    con.close()
+    digest_before = hashlib.sha256(row["gram_blob"]).hexdigest()  # type: ignore[arg-type]
 
-    report = cleanup.cleanup_current(root, con, scope="views", dry_run=False)
+    report = reset_analysis(tmp_path, db_path)
 
-    assert not (root / "views" / unretained_keyset).exists(), "un-retained view must be GC'd"
-    assert (root / "views" / retained_keyset).is_dir(), "retained-run-referenced view survives"
-    assert str(root / "views" / retained_keyset) in report.skipped
-    assert (root / "views").is_dir(), "views/ parent stays because a protected dir survives"
-
-
-def test_cleanup_views_no_db_deletes_all_views(tmp_path):
-    """research.duckdb absent (no conn -> no retained refs): every view is GC-eligible and the
-    whole ``views/`` tree is removed."""
-    root = tmp_path / "root"
-    _seed_view(root, _hashref("a"))
-    _seed_view(root, _hashref("b"))
-
-    report = cleanup.cleanup_current(root, None, scope="views", dry_run=False)
-
-    assert not (root / "views").exists()
-    assert report.skipped == [], "no DB -> nothing is retained-protected"
-    assert report.changed
+    assert report.removed
+    check = duckdb.connect(str(db_path), read_only=True)
+    preserved = check.execute("SELECT gram_blob FROM song_patch_geometry").fetchone()[0]
+    assert preserved == row["gram_blob"]
+    assert hashlib.sha256(preserved).hexdigest() == digest_before
+    assert check.execute("SELECT COUNT(*) FROM analyze_metrics").fetchone()[0] == 0
+    check.close()
 
 
-def test_reset_analysis_removes_views_regardless_of_retention(tmp_path):
-    """reset --scope analysis removes research.duckdb + WAL + the whole views/ tree regardless
-    of a retained run (retained protection lives only for ``cleanup --scope views``; the
-    retained view_refs are deleted along with the research DB)."""
-    import duckdb as duckdb_mod
+def test_reset_analysis_preserves_every_geometry_byte_and_schema(tmp_path):
+    """Every geometry row survives byte-for-byte and the schema fingerprint is unchanged."""
+    db_path = tmp_path / "db.duckdb"
+    con = duckdb.connect(str(db_path))
+    ensure_schema(con)
+    before_rows: list[tuple[object, ...]] = []
+    for index, blob in enumerate((b"geometry-bytes\x00\xff", b"second\x00blob\xfe")):
+        row = {
+            **_geometry_row(),
+            "geometry_id": f"g{index}",
+            "song_id": f"s{index}",
+            "gram_blob": blob,
+            "geometry_blob_byte_length": len(blob),
+            "geometry_blob_sha256": hashlib.sha256(blob).hexdigest(),
+        }
+        _insert_geometry(con, row)
+        before_rows.append((row["geometry_id"], row["geometry_blob_sha256"], row["geometry_blob_byte_length"], blob))
+    con.execute("INSERT INTO analyze_metrics VALUES ('run-1','geometry:s1','geometry','l2',1,'metric',0.5)")
+    fingerprint_before = schema_fingerprint(con)
+    con.close()
 
-    root = tmp_path / "root"
-    db_path = root / "research.duckdb"
-    keyset = _hashref("c")
-    _seed_view(root, keyset)
-    _write(root, "research.duckdb.wal", b"wal")
-    # A real research.duckdb holding a retained analyze run that references the view.
-    db_con = duckdb_mod.connect(str(db_path))
-    try:
-        _write_retained_run(db_con, view_refs=f"k1|c1|views/{keyset}")
-    finally:
-        db_con.close()
-    assert (root / "views" / keyset).is_dir()
+    reset_analysis(tmp_path, db_path)
 
-    report = cleanup.reset_analysis(root, db_path, dry_run=False)
+    check = duckdb.connect(str(db_path), read_only=True)
+    after_rows = check.execute(
+        "SELECT geometry_id, geometry_blob_sha256, geometry_blob_byte_length, gram_blob "
+        "FROM song_patch_geometry ORDER BY geometry_id"
+    ).fetchall()
+    assert after_rows == before_rows
+    assert schema_fingerprint(check) == fingerprint_before
+    assert check.execute("SELECT COUNT(*) FROM analyze_metrics").fetchone()[0] == 0
+    check.close()
 
-    assert report.removed, "reset must remove the disposable tier"
-    assert not db_path.exists(), "research.duckdb removed despite retained run"
-    assert not (root / "research.duckdb.wal").exists()
-    assert not (root / "views").exists(), "views tree removed regardless of retention"
-    assert not (root / "views" / keyset).exists()
+
+def test_reset_analysis_preserves_corpus_state(tmp_path):
+    """Analysis reset never clears the upstream embed-phase corpus_state singleton."""
+    from scripts.embedding_research.db import update_corpus_state
+
+    db_path = tmp_path / "db.duckdb"
+    con = duckdb.connect(str(db_path))
+    ensure_schema(con)
+    update_corpus_state(con, state_version=1, registered_song_count=2, reconciled_at=1)
+    con.close()
+
+    reset_analysis(tmp_path, db_path)
+
+    check = duckdb.connect(str(db_path), read_only=True)
+    assert check.execute("SELECT COUNT(*) FROM corpus_state").fetchone()[0] == 1
+    assert check.execute("SELECT registered_song_count FROM corpus_state").fetchone()[0] == 2
+    check.close()
+
+
+def test_reset_cli_refuses_geometry_and_unknown_scopes():
+    """The CLI refuses geometry reset (typed) and every non-analysis scope (exit 2)."""
+    from types import SimpleNamespace
+
+    from scripts.embedding_research import run as run_mod
+
+    with pytest.raises(SystemExit) as geometry_exit:
+        run_mod._cmd_reset(SimpleNamespace(scope="geometry", dry_run=True))
+    assert "GEOMETRY_RESET_UNAVAILABLE" in str(geometry_exit.value)
+
+    for scope in ("unknown", "staging", "stray", "views", "dead"):
+        with pytest.raises(SystemExit) as unknown_exit:
+            run_mod._cmd_reset(SimpleNamespace(scope=scope, dry_run=True))
+        assert unknown_exit.value.code == 2
+
+
+def test_reset_geometry_is_unavailable():
+    with pytest.raises(GeometryResetUnavailableError, match="GEOMETRY_RESET_UNAVAILABLE"):
+        reset_geometry()

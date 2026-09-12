@@ -20,24 +20,20 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from nomarr.components.infrastructure.path_comp import build_library_path_from_db
 from nomarr.components.library.library_records_comp import find_library_containing_path
-from nomarr.components.library.library_song_mutation_comp import update_song_modified_time
-from nomarr.components.library.reconciliation_comp import set_file_written
-from nomarr.components.processing.file_write_comp import (
-    get_file_for_writing,
-    get_nomarr_tags,
-    release_file_claim,
-    resolve_library_root,
-)
+from nomarr.components.library.reconciliation_comp import release_claim, set_file_written
+from nomarr.components.processing.file_write_comp import resolve_library_root
 from nomarr.components.tagging.tagging_writer_comp import TagWriter
-from nomarr.helpers.dataclasses.tags_dataclass import Tags
+from nomarr.helpers.dataclasses.tags_dataclass import Tag, Tags, TagValue
 
 if TYPE_CHECKING:
     from nomarr.helpers.dataclasses.library_dataclass import Library
+    from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
     from nomarr.helpers.dataclasses.song_dataclass import Song
+    from nomarr.helpers.dataclasses.song_tag_dataclass import SongTagAssignment
     from nomarr.helpers.dto.path_dto import LibraryPath
     from nomarr.persistence.db import Database
 
@@ -48,7 +44,7 @@ logger = logging.getLogger(__name__)
 class WriteResult:
     """Result from write_file_tags_workflow."""
 
-    file_key: str  # Document id of the file
+    file_key: SongIdentity  # Semantic locator of the file
     tags_written: int  # Number of tags written to file
     tags_filtered: int  # Number of tags filtered out by mode
     success: bool  # Whether write succeeded
@@ -133,19 +129,19 @@ def _resolve_library_path(
     return library_path, library
 
 
-def _release_failed_write(db: Database, file_key: str, worker_id: str) -> None:
+def _release_failed_write(db: Database, file_key: SongIdentity, worker_id: str) -> None:
     """Release a failed write while leaving it in the reconciliation queue.
 
     A failed projection write must not be marked current: the database
     projection is still stale and must be retried.  Only the claim is released;
     cleanup is best effort because it runs while handling another failure.
     """
-    release_file_claim(db, file_key, worker_id)
+    release_claim(db, file_key, worker_id)
 
 
 def write_file_tags_workflow(
     db: Database,
-    file_key: str,
+    file_key: SongIdentity,
     worker_id: str,
     target_mode: str,
     has_calibration: bool,
@@ -159,7 +155,10 @@ def write_file_tags_workflow(
 
     Args:
         db: Database instance
-        file_key: Document id of the file to write
+        file_key: Semantic locator of the file to write
+        worker_id: Reconciliation worker identity holding the write claim; used to
+            release the exact claim on every terminal failure path and to advance
+            the file's projection state on success.
         target_mode: Desired write mode ("none", "minimal", "full")
         has_calibration: Whether calibration exists (affects mood tag filtering)
         namespace: Tag namespace (default: "nom")
@@ -175,8 +174,9 @@ def write_file_tags_workflow(
 
     """
     try:
-        # Get file document via component
-        file_id, file_key, song = get_file_for_writing(db, file_key)
+        # Resolve the semantic locator through the public facade.  The facade
+        # keeps generated row identity private; a stale locator is a clean miss.
+        song = db.library.get_song(file_key)
 
         if song is None:
             _release_failed_write(db, file_key, worker_id)
@@ -185,7 +185,7 @@ def write_file_tags_workflow(
                 tags_written=0,
                 tags_filtered=0,
                 success=False,
-                error=f"File not found: {file_id}",
+                error="File not found",
             )
 
         # Resolve library path + owning domain Library from the file's path.
@@ -197,19 +197,16 @@ def write_file_tags_workflow(
                 tags_written=0,
                 tags_filtered=0,
                 success=False,
-                error=f"Invalid path: {song.path}",
+                error="Invalid path",
             )
 
+        # A valid ``library_path`` always carries its owning domain ``Library``
+        # (``_resolve_library_path`` returns ``(None, library)`` on invalid paths),
+        # so reaching here guarantees ``library`` is present. Assert rather than
+        # branch: the state is impossible, not a recoverable failure.
+        assert library is not None
+
         # Get library root for safe write (domain Library, path-derived).
-        if library is None:
-            _release_failed_write(db, file_key, worker_id)
-            return WriteResult(
-                file_key=file_key,
-                tags_written=0,
-                tags_filtered=0,
-                success=False,
-                error=f"Invalid library for path: {song.path}",
-            )
         library_root = resolve_library_root(db, library)
         if not library_root:
             _release_failed_write(db, file_key, worker_id)
@@ -218,15 +215,27 @@ def write_file_tags_workflow(
                 tags_written=0,
                 tags_filtered=0,
                 success=False,
-                error=f"Library not found: {library.name}",
+                error="Library not found",
             )
 
         # Require known mtime to prevent writing to externally-modified files.
         # ``Song.modified_time`` is a non-optional int, so it is always present.
         expected_mtime_ms = song.modified_time
 
-        # Get tags from database (nomarr tags only) - returns Tags | None
-        db_tags = get_nomarr_tags(db, file_id)
+        # Get tags from the locator-addressed facade and project only semantic
+        # name/value pairs into the file-writer DTO.
+        assignments: tuple[SongTagAssignment, ...] = db.library.list_tags_for_song(file_key)
+        nomarr_assignments = [assignment for assignment in assignments if assignment.namespace == "nom"]
+        grouped: dict[str, list[TagValue]] = {}
+        for assignment in nomarr_assignments:
+            # SongTagAssignment.value is typed ``object`` but is always a scalar
+            # TagValue at runtime; the canonical ``Tag`` validates the type.
+            grouped.setdefault(assignment.name, []).append(cast("TagValue", assignment.value))
+        db_tags = (
+            Tags(items=tuple(Tag(name=name, values=tuple(values)) for name, values in grouped.items()))
+            if grouped
+            else None
+        )
 
         # Filter tags for target mode. ``None`` means "clear/remove all tags"
         # and is passed to the writer so it still clears the namespace.
@@ -260,7 +269,7 @@ def write_file_tags_workflow(
 
         # Sync mtime in DB so scanner skips this file on next scan
         if result.new_mtime_ms is not None:
-            update_song_modified_time(db, file_id, result.new_mtime_ms)
+            db.library.set_modified_time(file_key, result.new_mtime_ms)
 
         # Update file projection state in database
         set_file_written(db, file_key, worker_id)
@@ -277,13 +286,13 @@ def write_file_tags_workflow(
             success=True,
         )
 
-    except Exception as e:
-        logger.exception(f"[write_file_tags] Failed to write tags for {file_key}")
+    except Exception:
+        logger.exception("[write_file_tags] Failed to write tags for locator")
         _release_failed_write(db, file_key, worker_id)
         return WriteResult(
             file_key=file_key,
             tags_written=0,
             tags_filtered=0,
             success=False,
-            error=str(e),
+            error="Unexpected error during tag write",
         )

@@ -25,7 +25,7 @@ The ``stream_registry`` / ``head_stream_registry`` tables are a REBUILDABLE CACH
 downstream consumers — they are never the source of truth for artifact existence or content.
 Artifact bytes and self-describing manifests on disk are authoritative; a registry row only
 becomes ``ready`` when the referenced manifest + payload both verify.  Post-migration there is
-NO bare/``.vN``/legacy grammar and no supersession/adoption/rowless-orphan classification in
+NO bare/``.vN`` grammar and no supersession/adoption/rowless-orphan classification in
 this store (Git is the source archive; old outputs are never interpreted at runtime).
 
 Artifact references are resolved against the store's ``output_root`` (default
@@ -160,8 +160,7 @@ class _RegistryStore:
     def output_root(self) -> Path:
         """The storage root this store publishes artifacts under (read-only, public seam).
 
-        Plan D's disposable search-view materialization derives its disposable-views
-        directory from the same root so view bytes stay beside the frozen streams that
+        Derived observation artifacts are rooted beside the frozen streams that
         produced them and under the same test-isolated tmp root.  The root is a storage
         location only — it is never an identity, SQL key, or external result ID (R3).
         """
@@ -348,7 +347,7 @@ class _RegistryStore:
 
         The registry is a cache/index only: reconcile walks the ROWS and validates each
         referenced artifact against the authoritative filesystem.  It does NOT scan for
-        rowless files (superseded/legacy/stray) — orphan detection and manifest-only
+        rowless files (superseded/stray) — orphan detection and manifest-only
         reindex belong to the Phase-5 filesystem-authoritative reconcile/reindex.
         """
         rows = _reg.list_rows(self._con, self._table, self._columns)
@@ -386,7 +385,6 @@ class _RegistryStore:
             corrupt=counts["corrupt"],
             orphan=0,
             superseded=0,
-            legacy=0,
             stray=0,
             stale=stale,
             strict=strict,
@@ -424,7 +422,7 @@ class _RegistryStore:
         """True when *report* supports a strict ``--verify`` complete-corpus claim.
 
         Every scanned registry cache row must be ``ready`` (no missing/corrupt/
-        unpromoted pending).  Rowless-orphan scanning (legacy/stray/superseded) is not a
+        unpromoted pending).  Rowless-orphan scanning (stray/superseded) is not a
         Phase-2 reconcile concern; the Phase-5 manifest walk is authoritative for that.
         """
         return report.scanned >= 1 and report.ready == report.scanned
@@ -668,7 +666,7 @@ class StreamStore(_RegistryStore):
         payload + manifest are durably published under ``audio_masks/``, then the
         observation-commit marker is staged + durably written under ``observation_commits/``
         LAST.  The commit marker digest is the sha256 of its content excluding its own
-        ``commit_sha256`` field (the DD catalog-id pattern), so re-reading the marker
+        ``commit_sha256`` field, so re-reading the marker
         recomputes the same digest.  Returns the committed :class:`ObservationCommit`.
 
         A crash before the commit marker leaves NO committed observation group: the partial
@@ -791,7 +789,10 @@ class StreamStore(_RegistryStore):
         stream or mask — are never ready.  When *stream_record* is given, the resolved
         committed group must be the exact one that record references.
         """
-        observation = self._resolve_committed_observation(song_id, backbone)
+        try:
+            observation = self._resolve_committed_observation(song_id, backbone)
+        except (StreamValidationError, ValueError, TypeError, KeyError, OSError):
+            return False
         if observation is None:
             return False
         return not (stream_record is not None and observation.identity.stream_ref != stream_record.artifact_ref)
@@ -864,7 +865,7 @@ class StreamStore(_RegistryStore):
         return None
 
     # ── committed-group filesystem-authoritative read seam (P1-S2) ────────────
-    # The resolvers / catalog / head consumers must read a stream and its silence
+    # The resolvers / head consumers must read a stream and its silence
     # mask ONLY as ONE complete committed observation group.  ``load_committed_observation``
     # is that filesystem-authoritative seam: it validates the newest valid commit marker
     # filename grammar + content digest, the referenced current-format stream/mask
@@ -874,7 +875,7 @@ class StreamStore(_RegistryStore):
     # payloads plus the immutable group identity.  Absent or invalid groups raise a typed
     # fail-closed refusal (``StreamValidationError``) — never a partial stream/mask and
     # never silence-as-absence.  The private :meth:`_resolve_committed_observation` is the
-    # shared group-resolution helper later steps (P1-S3 shared predicate, catalog/head
+    # shared group-resolution helper later steps (P1-S3 shared predicate, head
     # consumers) reuse.
 
     @staticmethod
@@ -1040,23 +1041,48 @@ class StreamStore(_RegistryStore):
             group_format_version=str(doc.get("group_format_version")),
             commit_sha256=str(doc.get("commit_sha256")),
         )
-        return CommittedObservation(identity=identity, stream=stream, mask=mask)
+        stream_record = StreamRecord(
+            song_id=song_id,
+            backbone=backbone,
+            artifact_ref=stream_ref,
+            patch_count=stream_patch_count,
+            dim=stream_dim,
+            dtype=str(stream_manifest.get("dtype", "float32")),
+            format_version=str(stream_manifest.get("format_version", "1")),
+            fingerprint_sha256=stream_digest,
+            preprocess_fn=str(stream_manifest.get("preprocess_fn", "")),
+            preprocess_version=str(stream_manifest.get("preprocess_version", "")),
+            backbone_model_hash=str(stream_manifest.get("backbone_model_hash", "")),
+            audio_params=str(stream_manifest.get("audio_params", "")),
+            embed_semantics_version=int(stream_manifest.get("embed_semantics_version", 1)),
+            provenance_source=str(stream_manifest.get("provenance_source", "")),
+            provenance_assumption=str(stream_manifest.get("provenance_assumption", "")),
+            status="ready",
+            run_id=str(stream_manifest.get("run_id", "")),
+            created_at=int(stream_manifest.get("created_at", 0) or 0),
+            updated_at=int(stream_manifest.get("updated_at", 0) or 0),
+        )
+        return CommittedObservation(
+            identity=identity,
+            stream=stream,
+            mask=mask,
+            stream_record=stream_record,
+            provenance_identity=str(stream_manifest.get("provenance_identity", "")) or None,
+        )
 
     def _resolve_committed_observation(self, song_id: str, backbone: str) -> CommittedObservation | None:
-        """The newest VALID committed group for ``(song_id, backbone)``, or ``None``.
+        """Resolve exactly the newest committed marker, or refuse it.
 
-        Iterates the digest-grammar commit markers newest-first (each already validated
-        for marker filename grammar + content digest by :meth:`_commit_documents`) and
-        returns the first whose full stream+mask group verifies.  A corrupt newer group
-        does not poison resolution of an older fully-valid group.  ``None`` when no marker
-        yields a fully-valid group.
+        A superseding marker is an immutable observation decision.  If its referenced
+        payload or manifest is damaged, the store must not silently rebind to an older
+        generation; callers receive the same fail-closed refusal as any other incomplete
+        observation.  This prevents a stale geometry row from being made current by a
+        search walk through historical markers.
         """
-        for doc in self._commit_documents(song_id, backbone):
-            try:
-                return self._observation_from_marker(doc, song_id, backbone)
-            except (StreamValidationError, ValueError, TypeError, KeyError, OSError):
-                continue
-        return None
+        documents = self._commit_documents(song_id, backbone)
+        if not documents:
+            return None
+        return self._observation_from_marker(documents[0], song_id, backbone)
 
     def load_committed_observation(self, song_id: str, backbone: str) -> CommittedObservation:
         """Filesystem-authoritative read of the newest VALID committed observation group.
@@ -1084,8 +1110,8 @@ class StreamStore(_RegistryStore):
         patch-count/alignment + audio fingerprint + mask semantics + group format +
         commit identity) of the newest VALID committed group, raising the typed
         :class:`StreamValidationError` when no complete committed group exists.  This is
-        the authoritative identity-only reader a catalog-binding seam uses to compare the
-        CURRENT committed group against the evidence a compact catalog recorded at build
+        the authoritative identity-only reader a binding seam uses to compare the
+        CURRENT committed group against the evidence recorded at build
         time (Plan A observation binding) — same filesystem-authoritative core as
         :meth:`load_committed_observation`.
         """
@@ -1421,7 +1447,7 @@ class _StoreBackedCurrentStreamResolver:
     identity, alignment, audio-fingerprint, mask-semantics) must fully verify before the
     stream is returned.  A registry ``ready`` row is cache metadata only and can NEVER
     authorise a stream by itself — a stream-only or otherwise incomplete group fails closed
-    to ``None``.  There is NO mask-less fallback and NO old-format fallback.
+    to ``None``.  There is NO mask-less path and NO old-format path.
     """
 
     __slots__ = ("_store",)
@@ -1439,7 +1465,7 @@ class _StoreBackedCurrentStreamResolver:
     def committed_identity(self, song_id: str, backbone: str) -> ObservationGroupIdentity | None:
         """The validated committed-group identity, or ``None`` when no complete group exists.
 
-        Lets the compact catalog producer record the exact committed observation-version
+        Lets the producer record the exact committed observation-version
         evidence (refs/digests/patch-count/alignment/audio-fingerprint/mask-semantics/
         group-format/commit) it built over — the same filesystem-authoritative group its
         ``load`` array came from.
@@ -1498,6 +1524,8 @@ class CommittedObservation:
     identity: ObservationGroupIdentity
     stream: np.ndarray
     mask: np.ndarray
+    stream_record: object | None = None
+    provenance_identity: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.identity, ObservationGroupIdentity):
@@ -1530,7 +1558,7 @@ class _StoreBackedCurrentMaskResolver:
 def make_current_mask_resolver(store: StreamStore) -> CurrentMaskResolver:
     """Return the sole store-backed :class:`CurrentMaskResolver` for *store*.
 
-    This is the only mask-read seam for catalog/head consumers — it exposes no
+    This is the only mask-read seam for head consumers — it exposes no
     filesystem-path API and resolves masks only from complete committed observation
     groups.
     """

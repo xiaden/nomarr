@@ -1,482 +1,110 @@
-"""Deterministic synthetic report fixture generator (schema-v2, active catalog only).
+"""Deterministic synthetic geometry report fixture generator.
 
-Research-only.  Builds an **in-memory** DuckDB over the *current* schema
-(``db._schema.ensure_schema``), seeds it entirely from synthetic data, runs the live
-``report.run`` path, and writes the external fixture ``report.json`` under
-``config.REPORT_DIR``.
-
-The generated report is a **synthetic fixture** for the schema-v2
-report/validator contract.  It is produced from deterministic in-memory data — it is
-NOT the output of a real audio/model/corpus run, performs no inference at generation
-time, and must never be cited as empirical retrieval evidence.  The emitted report
-carries an explicit synthetic-fixture warning to that effect (validated by
-``validate_fixture_report``).
-
-The fixture exercises the schema-v2 contract:
-  * EXACTLY the seven sections ``summary`` / ``corpus`` / ``analysis`` / ``winners`` /
-    ``head-analysis`` / ``provenance`` / ``efficiency``;
-  * active ``analyze_metrics`` rows with ``strategy_type = 'catalog'`` for deterministic
-    EffNet AND MusicNN backbone populations (two catalog classes each, across K);
-  * catalog strategy keys (``catalog:{backbone}:max_per_candidate_segment:v1:{keyset}``),
-    finite metrics, active run ids + hashes, and sorted alias ids (equal representations
-    counted once);
-  * canonical head provenance (``boundary_source='catalog'`` /
-    ``head_pool_variant='shared_catalog_boundary'``) for the EffNet backbone;
-  * an active songs corpus; and
-  * retained ``phase_timings`` restricted to the eight exact CLI phase names.
-
-It never inserts any removed table and never emits forbidden legacy vocabulary.
-
-Corpus-identity surface (Plan C complete-corpus): each seeded segmented class and observed
-``global_pool:{backbone}:medoid`` baseline carries the comparable BASE ``evaluation_corpus_*``
-identity only — backbone/song_ids/corpus_hash/count/eligible/comparable (all the fixture sets
-eligible + comparable) on its ``analyze_scope_v2`` provenance line.  It does NOT seed the full
-13-column digest/evidence surface: ``_fixture_corpus`` leaves ``completeness`` at its default
-``False`` and all the Plan C digest proofs (membership-set digests, observation-binding digest,
-completeness/integrity) empty/``None`` — the 11-table generator DB has no
-``observation_evidence`` table, so a genuine observation binding is unrepresentable there.  The
-``completeness=True`` complete-evidence surface is proven instead by the deterministic
-real-writer seam test (``tests/test_deterministic_fixture_outputs.py``), not by this synthetic
-generator.
+Builds an in-memory research database containing only synthetic committed geometry
+evidence, publishes real ``song_patch_geometry`` rows through ``db.geometry.write_geometry``,
+persists exact geometry analysis and head evidence through the geometry owner APIs, and
+renders the seven-section report.  No audio, model, ONNX, CUDA, real corpus, copied
+vector, or inferred provenance is used.
 """
 
 from __future__ import annotations
 
-import hashlib
 import json
 import sys
 from pathlib import Path
 
-# Ensure the research tree is importable whether this runs under pytest (repo root on
-# sys.path) or as ``python -m scripts.embedding_research.generate_fixture_report``.
 _PKG_DIR = Path(__file__).resolve().parent
-_ROOT = _PKG_DIR.parents[1]  # repo root (parent of scripts/)
-for _p in (_ROOT, _PKG_DIR):
-    if str(_p) not in sys.path:
-        sys.path.insert(0, str(_p))
+_ROOT = _PKG_DIR.parents[1]
+for _path in (_ROOT, _PKG_DIR):
+    if str(_path) not in sys.path:
+        sys.path.insert(0, str(_path))
 
-import duckdb
 
-from scripts.embedding_research.baseline import MEDOID_STRATEGY_TYPE, medoid_strategy_key_for
-from scripts.embedding_research.catalog_identity import (
-    EVALUATION_CORPUS_SEMANTICS_VERSION,
-    EvaluationCorpusIdentity,
-)
+from typing import TYPE_CHECKING
+
 from scripts.embedding_research.config import REPORT_DIR
-from scripts.embedding_research.db import write_analyze_metrics
-from scripts.embedding_research.db._schema import ensure_schema, upsert_phase_timing
-from scripts.embedding_research.db.analyze_scope import (
-    SCOPE_KIND_OBSERVED_BASELINE,
-    AnalyzeScopeIdentity,
-    ScopeMemberIdentity,
-    record_analyze_run_scope,
-    write_catalog_analyze_rows,
-)
-from scripts.embedding_research.db.head_phase import HeadPhaseProvenanceRow, write_head_phase_provenance
-from scripts.embedding_research.db.provenance import write_run_provenance
-from scripts.embedding_research.db.songs import upsert_song
+from scripts.embedding_research.db._schema import schema_fingerprint
 from scripts.embedding_research.report import run as report_run
-
-#: The eight exact CLI phase names (run.CLI_PHASES) allowed in fixture phase_timings.
-PHASE_NAMES: tuple[str, ...] = (
-    "ingest",
-    "embed",
-    "infer-heads",
-    "catalog",
-    "catalog-report",
-    "analyze",
-    "head-analysis",
-    "report",
+from scripts.embedding_research.tests._report_seed import (
+    EVALUATION_ID,
+    EXECUTION_ID,
+    EXPERIMENT,
+    MATRICES,
+    PHASE_NAMES,
+    RUN_ID,
+    SCORING_SEMANTICS_VERSION,
+    SYNTHETIC_WARNING,
+    THRESHOLD_IDS,
+    build_seeded_con,
 )
 
-#: Deterministic backbone populations for the fixture (each seeded with its own classes).
-FIXTURE_BACKBONES: tuple[str, ...] = ("effnet", "musicnn")
+if TYPE_CHECKING:
+    import duckdb
 
-_SCORE_VARIANT = "max_per_candidate_segment"
-_SEMANTICS_VERSION = 1
-
-# Synthetic-warning emitted into the report (schema-v2 provenance/warnings surface).
-SYNTHETIC_WARNING: dict = {
-    "level": "info",
-    "message": "SYNTHETIC FIXTURE — no empirical retrieval claim.",
-    "detail": (
-        "This report was generated by generate_fixture_report.py from deterministic "
-        "in-memory (current-schema) synthetic catalog data for the EffNet and MusicNN "
-        "backbone populations. It is a fixture for the schema-v2 report/validator "
-        "contract — NOT the output of a real audio/model/corpus run — and must not be "
-        "cited as empirical retrieval evidence."
-    ),
-}
+# Re-exported for callers/tests that imported the seed constant from this module.
+_FIXTURE_RUN_ID = RUN_ID
 
 
-def _catalog_key(backbone: str, keyset: str) -> str:
-    return f"catalog:{backbone}:{_SCORE_VARIANT}:v{_SEMANTICS_VERSION}:{keyset}"
-
-
-# Deterministic fixture identities (analyze_scope_v2).  Every seeded class and its backbone's
-# observed-medoid baseline are REAL catalog_class / observed_baseline scopes sharing the same
-# per-backbone catalog anchor AND the same comparable evaluation-corpus identity, so the winners
-# delta gate (which has NO identity-less structural fallback) forms matched per-cell deltas.
-_FIXTURE_SONGS = ("s1", "s2", "s3", "s4", "s5")
-_FIXTURE_BIN_MODE = "temporal_global"
-_FIXTURE_THRESHOLD = 0.5
-
-
-def _fixture_catalog(backbone: str) -> tuple[str, str]:
-    """(catalog_id, catalog_fingerprint) deterministic per backbone."""
-    catalog_id = f"catalog-{backbone}-fixture-0000"
-    fingerprint = hashlib.sha256(f"fixture-catalog:{backbone}".encode()).hexdigest()
-    return catalog_id, fingerprint
-
-
-def _fixture_corpus(backbone: str) -> EvaluationCorpusIdentity:
-    """The comparable evaluation-corpus identity shared by every seeded {backbone} scope."""
-    return EvaluationCorpusIdentity(
-        backbone=backbone,
-        song_ids=_FIXTURE_SONGS,
-        corpus_hash=hashlib.sha256(f"fixture-eval-corpus:{backbone}".encode()).hexdigest()[:16],
-        count=len(_FIXTURE_SONGS),
-        eligible=True,
-        comparable=True,
-        missing_song_ids=(),
-        missing_count=0,
-        missing_digest=None,
-        semantics_version=EVALUATION_CORPUS_SEMANTICS_VERSION,
-    )
-
-
-def _fixture_rep_hash(backbone: str, config_ids: tuple[int, ...]) -> str:
-    """Deterministic durable semantic representation hash for a class (stable across K/metric)."""
-    payload = f"fixture-rep:{backbone}:" + ",".join(str(c) for c in sorted(config_ids))
-    return hashlib.sha256(payload.encode()).hexdigest()
-
-
-def _fixture_members(config_ids: tuple[int, ...]) -> tuple[ScopeMemberIdentity, ...]:
-    """Ordered per-config member evidence (configured/effective threshold, bin, exact segmentation)."""
-    return tuple(
-        ScopeMemberIdentity(
-            config_id=c,
-            threshold_configured=_FIXTURE_THRESHOLD,
-            threshold_effective=_FIXTURE_THRESHOLD,
-            bin_mode=_FIXTURE_BIN_MODE,
-            exact_segmentation_hash=hashlib.sha256(f"fixture-member:{c}".encode()).hexdigest(),
-        )
-        for c in config_ids
-    )
-
-
-# ---------------------------------------------------------------------------
-# Seeding
-# ---------------------------------------------------------------------------
-
-
-def _seed_songs(con) -> None:
-    songs = [
-        ("s1", "/audio/a/s1.flac", "Alice", "Songs of Alice", "One", "jazz"),
-        ("s2", "/audio/a/s2.flac", "Alice", "Songs of Alice", "Two", "jazz"),
-        ("s3", "/audio/b/s3.flac", "Bob", "Bob Tracks", "Three", "rock"),
-        ("s4", "/audio/b/s4.flac", "Bob", "Bob Tracks", "Four", "rock"),
-        ("s5", "/audio/c/s5.flac", "Carol", "Carol EP", "Five", "folk"),
+def _identity_evidence_rows(rows: list[tuple]) -> list[dict]:
+    return [
+        {
+            "geometry_id": row[0],
+            "observation_id": row[1],
+            "geometry_semantics_version": row[2],
+            "numerical_profile_digest": row[3],
+            "threshold_id": THRESHOLD_IDS[0],
+            "structural_identity": f"{EXPERIMENT}:{THRESHOLD_IDS[0]}",
+            "search_representation_id": f"rep:{THRESHOLD_IDS[0]}",
+            "evaluation_id": EVALUATION_ID,
+            "scoring_semantics_version": SCORING_SEMANTICS_VERSION,
+            "execution_id": EXECUTION_ID,
+        }
+        for row in rows
     ]
-    for song_id, path, artist, album, title, genre in songs:
-        upsert_song(con, song_id, path, artist, album, title, genre)
-
-
-def _seed_run_provenance(con, run_id: str) -> None:
-    """Seed one active run's provenance history across all eight CLI phases.
-
-    The ``analyze`` row is seeded with empty ``output_artifact_hashes`` so the catalog
-    writer's run-scope bookkeeping appends its ``analyze_scope_v2`` lines to that single
-    row (the real persistence path the report provenance scope-mapping consumes).
-    """
-    base = 1_700_000_000_000  # stable integer-ms anchor (deterministic)
-    command = {
-        "ingest": "python run.py ingest",
-        "embed": "python run.py embed",
-        "infer-heads": "python run.py infer-heads",
-        "catalog": "python run.py catalog",
-        "catalog-report": "python run.py catalog-report",
-        "analyze": "python run.py analyze",
-        "head-analysis": "python run.py head-analysis",
-        "report": "python run.py report",
-    }
-    for idx, phase in enumerate(PHASE_NAMES):
-        started = base + idx * 2_000
-        write_run_provenance(
-            con,
-            run_id=run_id,
-            phase=phase,
-            status="completed",
-            started_at=started,
-            finished_at=started + 1_500,
-            input_artifact_hashes="",  # analyze scope lines are appended by the writer
-            output_artifact_hashes="",
-            config_hash="abc123def4567890",
-            song_count=5,
-            warning_count=0,
-            command_line=command[phase],
-        )
-
-
-def _seed_catalog_classes(con, run_id: str) -> None:
-    """Seed active catalog analysis rows for EffNet and MusicNN populations.
-
-    Each backbone gets TWO catalog classes over K in {5, 10}, so the winners section has a
-    deterministic winner/delta/factor story per backbone.  EffNet class ``effnet:aa`` uses
-    ``config_ids=(1, 5)`` to exercise sorted alias ids (equal representations counted once).
-    Class metrics use the SUFFIXED artist vocabulary (map_k_artist/mrr_artist) plus the
-    ``n_queries_*`` counts the real analyze writer emits.
-    """
-    classes = [
-        # EffNet population — two classes, one with an alias (1 canonical + 5 alias).
-        {
-            "backbone": "effnet",
-            "keyset": "aa",
-            "config_ids": (1, 5),
-            "view": "viewhash-effnet-aa",
-            "metrics": {"map_k_artist": 0.55, "mrr_artist": 0.45},
-        },
-        {
-            "backbone": "effnet",
-            "keyset": "bb",
-            "config_ids": (3,),
-            "view": "viewhash-effnet-bb",
-            "metrics": {"map_k_artist": 0.82, "mrr_artist": 0.71},
-        },
-        # MusicNN population — independent two-class story.
-        {
-            "backbone": "musicnn",
-            "keyset": "mm",
-            "config_ids": (1,),
-            "view": "viewhash-musicnn-mm",
-            "metrics": {"map_k_artist": 0.66, "mrr_artist": 0.58},
-        },
-        {
-            "backbone": "musicnn",
-            "keyset": "m2",
-            "config_ids": (2,),
-            "view": "viewhash-musicnn-m2",
-            "metrics": {"map_k_artist": 0.61, "mrr_artist": 0.52},
-        },
-    ]
-    for k in (5, 10):
-        for cls in classes:
-            _persist_catalog_class(
-                con,
-                run_id=run_id,
-                backbone=cls["backbone"],
-                keyset=cls["keyset"],
-                k=k,
-                config_ids=cls["config_ids"],
-                view_content_hash=cls["view"],
-                metrics=cls["metrics"],
-            )
-
-
-def _persist_catalog_class(
-    con,
-    *,
-    run_id: str,
-    backbone: str,
-    keyset: str,
-    k: int,
-    config_ids: tuple[int, ...],
-    view_content_hash: str,
-    metrics: dict[str, float],
-) -> None:
-    from scripts.embedding_research.common.catalog_analysis import CatalogAnalysisResult
-
-    strategy_key = _catalog_key(backbone, keyset)
-    # The real analyze writer emits per-ruler ``n_queries_*`` EAV counts alongside the scored
-    # suffixed keys; mirror that so the fixture exercises the n_queries_* exclusion from the
-    # baseline/winner-delta machinery (these fixture classes are artist-ruler-scored only).
-    metrics_with_counts = dict(metrics)
-    metrics_with_counts.update({"n_queries_artist": 5.0, "n_queries_genre": 0.0, "n_queries_head": 0.0})
-    # A REAL catalog_class scope: durable catalog anchor + semantic representation hash (stable
-    # across K/metric) + ordered per-config member evidence + the shared comparable evaluation
-    # corpus.  The corrective hard cut removed the identity-less structural fixture path, so a
-    # class row must carry a complete v2 identity to persist and to match its backbone baseline.
-    catalog_id, catalog_fingerprint = _fixture_catalog(backbone)
-    corpus = _fixture_corpus(backbone)
-    result = CatalogAnalysisResult(
-        run_id=run_id,
-        backbone=backbone,
-        config_ids=config_ids,
-        representation_classes=(),
-        k=k,
-        view_content_hash=view_content_hash,
-        score_variant=_SCORE_VARIANT,
-        scoring_semantics_version=_SEMANTICS_VERSION,
-        strategy_key=strategy_key,
-        finite=True,
-        metrics=metrics_with_counts,
-        per_song={},
-        per_query=(),
-        n_queries=0,
-        n_candidate_rows=0,
-        evaluation_corpus=corpus,
-        comparable=True,
-        missing_song_ids=(),
-        missing_count=0,
-        missing_digest=None,
-        catalog_id=catalog_id,
-        catalog_fingerprint=catalog_fingerprint,
-        search_representation_hash=_fixture_rep_hash(backbone, config_ids),
-        view_keyset_hash=keyset[:16],
-        members=_fixture_members(config_ids),
-    )
-    write_catalog_analyze_rows(con, run_id=run_id, result=result)
-
-
-def _seed_medoid_baselines(con, run_id: str) -> None:
-    """Seed each backbone's observed global-medoid baseline rows (one per k, run-scoped).
-
-    The winners/deltas section under the observed-medoid contract emits a winner/delta row per
-    (backbone, k, metric) cell ONLY when a medoid baseline row shares that exact scope.  Each
-    backbone gets a deterministic ``global_pool:{backbone}:medoid`` row (map_k/mrr, cosine) for
-    every k that has segmented classes, persisted run-scoped under ``MEDOID_STRATEGY_TYPE`` —
-    the same writer/schema the MANDATORY analyze producer (run.py, Plan A P2) uses, with no
-    config identity (a baseline, never a class).  Each baseline row also records its
-    ``analyze_scope_v2`` provenance line TAGGED ``observed_baseline`` (scope_kind) carrying the
-    backbone's catalog anchor and the shared comparable evaluation-corpus identity — mirroring
-    ``run_and_persist_medoid_baseline`` — so the report delta gate matches it against the
-    backbone's classes under the matching-only (no structural fallback) contract.
-    """
-    medoid_metrics = {
-        "effnet": {"map_k_artist": 0.5, "mrr_artist": 0.4},
-        "musicnn": {"map_k_artist": 0.5, "mrr_artist": 0.4},
-    }
-    for backbone, metrics in medoid_metrics.items():
-        metrics_with_counts = dict(metrics)
-        metrics_with_counts.update({"n_queries_artist": 5.0, "n_queries_genre": 0.0, "n_queries_head": 0.0})
-        catalog_id, catalog_fingerprint = _fixture_catalog(backbone)
-        corpus = _fixture_corpus(backbone)
-        for k in (5, 10):
-            write_analyze_metrics(
-                con,
-                medoid_strategy_key_for(backbone),
-                MEDOID_STRATEGY_TYPE,
-                "cosine",
-                k,
-                metrics_with_counts,
-                run_id=run_id,
-            )
-            record_analyze_run_scope(
-                con,
-                run_id=run_id,
-                identity=AnalyzeScopeIdentity(
-                    strategy_key=medoid_strategy_key_for(backbone),
-                    sim_metric="cosine",
-                    k=k,
-                    backbone=backbone,
-                    scope_kind=SCOPE_KIND_OBSERVED_BASELINE,
-                    catalog_id=catalog_id,
-                    catalog_fingerprint=catalog_fingerprint,
-                    score_variant=_SCORE_VARIANT,
-                    scoring_semantics_version=_SEMANTICS_VERSION,
-                    evaluation_corpus_hash=corpus.corpus_hash,
-                    evaluation_corpus_count=int(corpus.count),
-                    evaluation_corpus_comparable=bool(corpus.comparable),
-                    evaluation_corpus_missing_count=int(corpus.missing_count),
-                    evaluation_corpus_missing_digest=corpus.missing_digest or "",
-                    evaluation_corpus_semantics_version=int(corpus.semantics_version),
-                    evaluation_corpus_eligible=bool(corpus.eligible),
-                    evaluation_corpus_eligible_digest=corpus.eligible_digest or "",
-                    evaluation_corpus_requested_count=int(corpus.requested_count),
-                    evaluation_corpus_requested_digest=corpus.requested_digest or "",
-                    evaluation_corpus_observation_digest=corpus.observation_digest or "",
-                    evaluation_corpus_complete=bool(corpus.completeness),
-                    evaluation_corpus_integrity=corpus.integrity or "",
-                ),
-            )
-
-
-def _seed_head_provenance(con, run_id: str) -> None:
-    """Canonical EffNet head-phase provenance (the head-analysis surface is EffNet-only)."""
-    rows = [
-        HeadPhaseProvenanceRow(
-            run_id=run_id,
-            config_id=1,
-            backbone="effnet",
-            head=head,
-            bin_mode="temporal_global",
-            threshold_configured=0.7,
-            threshold_effective=0.7,
-            semantics="direct_distance",
-            status="done",
-            n_songs=5,
-            n_pooled=5,
-            finite=True,
-            reference_corpus_hash="ref-corpus-effnet",
-        )
-        for head in ("genre", "mood_happy")
-    ]
-    write_head_phase_provenance(con, rows)
-
-
-def _seed_phase_timings(con, run_id: str) -> None:
-    # Retained phase_timings hold ONLY the eight exact CLI phase names. Two run_ts values
-    # (the active run + one historical run) so the report's efficiency section renders its
-    # timing-history pivot alongside the per-phase bar chart.
-    elapsed = {
-        "ingest": 1.2,
-        "embed": 3.4,
-        "infer-heads": 2.1,
-        "catalog": 4.5,
-        "catalog-report": 0.8,
-        "analyze": 5.0,
-        "head-analysis": 1.1,
-        "report": 0.2,
-    }
-    for run_ts in ("fixture-v2-previous", run_id):
-        for phase in PHASE_NAMES:
-            upsert_phase_timing(con, run_ts, phase, elapsed[phase])
-
-
-# ---------------------------------------------------------------------------
-# Assembly
-# ---------------------------------------------------------------------------
 
 
 def build_fixture_con() -> duckdb.DuckDBPyConnection:
-    """Build and seed an in-memory, current-schema DuckDB connection (no file writes)."""
-    con = duckdb.connect(":memory:")
-    ensure_schema(con)
-    run_id = "fixture-v2-run"
-    _seed_songs(con)
-    _seed_run_provenance(con, run_id)
-    _seed_catalog_classes(con, run_id)
-    _seed_medoid_baselines(con, run_id)
-    _seed_head_provenance(con, run_id)
-    _seed_phase_timings(con, run_id)
-    return con
-
-
-def _inject_synthetic_warning(report_path: Path) -> None:
-    """Append the synthetic-fixture warning to the emitted ``report.json``.
-
-    ``report.run`` owns single-source assembly; the generator adds the fixture-only
-    warning afterward so the generic report generator stays DB->report pure.
-    """
-    data = json.loads(report_path.read_text(encoding="utf-8"))
-    warnings = data.setdefault("warnings", [])
-    if not any(w.get("message") == SYNTHETIC_WARNING["message"] for w in warnings):
-        warnings.append(SYNTHETIC_WARNING)
-    report_path.write_text(json.dumps(data, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    """Build the fully synthetic in-memory geometry report database."""
+    return build_seeded_con(run_id=RUN_ID)
 
 
 def main(report_dir: Path = REPORT_DIR) -> Path:
-    """Regenerate the external schema-v2 fixture ``report.json`` under *report_dir*."""
+    """Generate the synthetic seven-section fixture report and its sibling HTML.
+
+    Seeds an in-memory geometry database, renders the report through the exact
+    geometry report contract, then augments ``report.json`` with the synthetic-only
+    marker, geometry evidence, and refusal matrices.  Returns the JSON path.
+    """
     con = build_fixture_con()
     try:
-        report_run(con, report_dir)
+        schema_fingerprint(con)
+        report_run(con, report_dir, run_id=RUN_ID)
+        geometry_rows = con.execute(
+            "SELECT geometry_id, observation_commit_sha256, geometry_semantics_version, "
+            "numerical_profile_digest FROM song_patch_geometry ORDER BY geometry_id"
+        ).fetchall()
+        head_rows = con.execute(
+            "SELECT geometry_id, observation_id, geometry_semantics_version, "
+            "numerical_profile_digest FROM geometry_head_evidence "
+            "ORDER BY geometry_id, segment_id"
+        ).fetchall()
     finally:
         con.close()
+
     report_path = report_dir / "report.json"
-    _inject_synthetic_warning(report_path)
+    data = json.loads(report_path.read_text(encoding="utf-8"))
+    data["synthetic_only"] = True
+    data["geometry_evidence"] = {
+        "geometry": _identity_evidence_rows(geometry_rows),
+        "head": _identity_evidence_rows(head_rows),
+        "phases": list(PHASE_NAMES),
+    }
+    data["matrices"] = MATRICES
+    data.setdefault("warnings", []).append(SYNTHETIC_WARNING)
+    report_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"Fixture report written: {report_path}")
     return report_path
 
 
-if __name__ == "__main__":  # pragma: no cover - CLI entry
+if __name__ == "__main__":
     main()

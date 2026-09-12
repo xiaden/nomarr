@@ -1,7 +1,7 @@
 """Direct threshold resolution and canonical identity (Plan A corrective pass).
 
 This module is the single canonical home for the threshold and canonical-identity
-contract consumed by segmentation configs and the durable segmentation catalog.
+contract consumed by segmentation configs and the durable segmentation state.
 It is intentionally free of DuckDB / IO / audio / numpy side effects so strategy
 code and tests can import it without any backend.
 
@@ -11,10 +11,9 @@ There is exactly ONE threshold *application*: ``direct_distance`` — a finite
 boundary value applied directly with no scaling, calibration basis, or
 p50/percentile multiplier (``effective == configured`` exactly).  The application
 label deliberately names only the application mode; it NEVER implies a distance
-metric.  The executed distance metric is owned by the ``bin_mode`` dispatch
-(``helpers.binning.DIST_FNS``) and derived from it — ``l2`` for ``temporal_global``
-and ``chebyshev`` for ``temporal_perdim`` — so an equal numeric threshold under
-the two experiments is a distinct identity and a ``temporal_perdim`` row never
+metric.  The executed distance metric is owned by the experiment identity and derived from it — ``l2`` for ``temporal_global``
+and ``chebyshev`` for ``temporal_perdim_chebyshev_secondary`` — so an equal numeric threshold under
+the two experiments is a distinct identity and a ``temporal_perdim_chebyshev_secondary`` row never
 carries an L2-implying label.  ``resolve_threshold`` accepts no semantics or
 metric selector.  The former ``std_scaled`` and calibration/p50 behavior were
 removed — they are historical and never read at runtime.
@@ -30,7 +29,7 @@ Boundary semantics
 ------------------
 Strict ``>`` boundary comparison (a patch is a boundary when its distance to the
 running spherical centroid is strictly greater than the threshold) is owned by the
-segmentation helper in :mod:`helpers.segmentation` / the temporal segment code,
+canonical geometry engine,
 not by this module.  This module only resolves and canonically encodes the finite
 threshold value.
 
@@ -55,8 +54,8 @@ from typing import Final
 #: The one and only threshold-application semantics: a finite boundary value
 #: applied directly (no scaling / calibration).  This is an APPLICATION label
 #: independent of the executed distance metric (which is derived from ``bin_mode``
-#: via ``helpers.binning.DIST_FNS``).  Kept as a named constant so
-#: ``ThresholdResolution`` values and catalog manifests compare against a single
+#: via the canonical geometry engine).  Kept as a named constant so
+#: ``ThresholdResolution`` values and committed manifests compare against a single
 #: spelling.
 DIRECT_DISTANCE: Final[str] = "direct_distance"
 
@@ -86,7 +85,7 @@ class ThresholdResolution:
     semantics:
         Always :data:`DIRECT_DISTANCE` (``"direct_distance"``) — the threshold
         APPLICATION label.  It never implies a distance metric; the executed metric
-        is derived from the config's ``bin_mode`` via ``helpers.binning.DIST_FNS``.
+        is derived from the config's ``bin_mode`` via the canonical geometry engine.
     encoder_version:
         The whole-module :func:`config_encoder_version` at resolution time, so the
         recorded contract pins the exact encoder source that produced it.
@@ -189,11 +188,6 @@ def canonical_text(value: object, name: str = "text") -> str:
     return value
 
 
-def canonical_bin_mode(value: object) -> str:
-    """Deterministic bin-mode encoding (validated against no fixed set here)."""
-    return canonical_text(value, "bin_mode")
-
-
 def canonical_outlier_window(value: object) -> str:
     """Deterministic outlier-window encoding (validated as a positive int)."""
     window = _coerce_int(value, "outlier_window")
@@ -218,21 +212,21 @@ def canonical_strategy_version(value: object) -> str:
 def canonical_config_inputs(
     *,
     backbone: str,
-    bin_mode: str,
+    experiment: str,
     threshold: float,
     outlier_window: int,
     strategy_version: int,
     encoder_version: str,
 ) -> str:
-    """Deterministic tagged serialization of the seg_config key inputs.
+    """Deterministic tagged serialization of the geometry config key inputs.
 
-    Field order is fixed and documented: backbone, bin_mode, threshold (the
-    single effective==configured direct-L2 value), outlier_window,
+    Field order is fixed and documented: backbone, experiment, threshold (the
+    single effective==configured direct-distance value), outlier_window,
     strategy_version, encoder_version.
     """
     ordered = [
         f"backbone={canonical_text(backbone, 'backbone')}",
-        f"bin_mode={canonical_bin_mode(bin_mode)}",
+        f"experiment={canonical_text(experiment, 'experiment')}",
         f"threshold={canonical_float(threshold)}",
         f"outlier_window={canonical_outlier_window(outlier_window)}",
         f"strategy_version={canonical_strategy_version(strategy_version)}",
@@ -244,25 +238,24 @@ def canonical_config_inputs(
 def canonical_config_hash(
     *,
     backbone: str,
-    bin_mode: str,
+    experiment: str,
     threshold: float,
     outlier_window: int,
     strategy_version: int,
     encoder_version: str,
 ) -> str:
-    """Deterministic SHA-256 canonical identity over the seg_config key ordering.
+    """Deterministic SHA-256 canonical identity over geometry config inputs.
 
     All parameters are required keyword inputs.  ``threshold`` is the single
     direct-distance value (``configured == effective``); there is no metric or
-    calibration input because the executed metric is derived from ``bin_mode`` and
-    only one application semantics exists.  ``bin_mode`` is folded in, so an equal
-    numeric threshold under ``temporal_global`` vs ``temporal_perdim`` is a
-    DISTINCT identity.  The ``encoder_version`` is included so any encoder source
+    calibration input because the executed metric is derived from ``experiment``.
+    ``experiment`` is folded in, so an equal numeric threshold under
+    ``temporal_global`` vs ``temporal_perdim_chebyshev_secondary`` is a DISTINCT identity.  The ``encoder_version`` is included so any encoder source
     change conservatively invalidates identity.
     """
     payload = canonical_config_inputs(
         backbone=backbone,
-        bin_mode=bin_mode,
+        experiment=experiment,
         threshold=threshold,
         outlier_window=outlier_window,
         strategy_version=strategy_version,

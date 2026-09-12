@@ -9,7 +9,7 @@ import os
 import tempfile
 
 import pytest
-from sqlalchemy import create_engine, event
+from sqlalchemy import CheckConstraint, create_engine, event
 from sqlalchemy.dialects.sqlite.base import SQLiteTypeCompiler
 from sqlalchemy.orm import Session
 
@@ -62,6 +62,15 @@ def pg_engine():
     # Import all model modules so Base.metadata is fully populated
     import nomarr.persistence.models as _models  # noqa: F401 — registers tables
     from nomarr.persistence.models.base import Base
+
+    # Keep the marker table while suppressing its PostgreSQL-only regex
+    # constraint for SQLite DDL. The production model intentionally owns
+    # this constraint, so the test harness applies SQLAlchemy's dialect-
+    # conditional DDL rather than changing the model contract.
+    marker_table = Base.metadata.tables["song_mood_calibration_markers"]
+    for constraint in marker_table.constraints:
+        if isinstance(constraint, CheckConstraint) and " ~ " in str(constraint.sqltext):
+            constraint.ddl_if(dialect="postgresql")
 
     # Filter out tables with PostgreSQL-specific column types that
     # cannot be compiled for SQLite (e.g. HALFVEC, PG_ARRAY).

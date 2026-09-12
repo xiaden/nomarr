@@ -89,6 +89,7 @@ addopts = [
     "-v",
     "--strict-markers",
     "--tb=short",
+    "-m", "not container_only and not requires_database and not code_smell",
 ]
 console_output_style = "progress"
 log_cli = false

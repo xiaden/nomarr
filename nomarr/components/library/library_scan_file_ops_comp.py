@@ -16,21 +16,26 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from nomarr.components.library.library_song_query_comp import (
-    get_existing_file_paths,
     list_songs,
 )
 from nomarr.components.library.library_song_state_comp import (
-    initialize_song_states_batch,
     library_has_tagged_files,
     transition_song_state,
 )
 from nomarr.helpers.constants.file_states import STATE_NOT_PROCESSED, STATE_PROCESSED
 from nomarr.helpers.dataclasses.library_domain_dataclasses import LibraryFolder
-from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity, SongRemoval
+from nomarr.helpers.dataclasses.song_command_dataclass import (
+    LibraryIdentity,
+    SongIdentity,
+    SongRemoval,
+    SongScanUpdate,
+    SongUpsertInput,
+)
 from nomarr.helpers.exceptions import DatabaseStateError
 from nomarr.helpers.time_helper import now_ms
 
 if TYPE_CHECKING:
+    from nomarr.components.library.song_query_types import HydratedSong
     from nomarr.helpers.dataclasses.library_dataclass import Library
     from nomarr.persistence.db import Database
 
@@ -61,36 +66,41 @@ def _folder_value(
 # ---------------------------------------------------------------------------
 
 
-def _upsert_batch(db: Database, library: Library, file_docs: list[dict[str, Any]]) -> list[int]:
-    """Batch-upsert library files, ownership edges, and initial state edges."""
+def _library_identity(library: Library) -> LibraryIdentity:
+    if library.library_uuid is None:
+        raise ValueError(f"Library {library.name!r} has no library_uuid")
+    return LibraryIdentity(library_uuid=library.library_uuid, name=library.name, root_path=library.root_path)
+
+
+def _upsert_batch(db: Database, library: Library, file_docs: list[dict[str, Any]]) -> list[SongIdentity]:
+    """Batch-upsert scanned files through one typed atomic batch intent.
+
+    Builds one :class:`SongUpsertInput` command per input document and calls
+    ``db.library.add_songs_to_library_batch(commands)`` exactly once. State
+    initialization for genuinely new rows is create-only and owned by
+    persistence; this component neither reads nor repairs song state. Returns a
+    :class:`SongIdentity` list in the same order as ``file_docs``.
+
+    """
     if not file_docs:
         return []
-
-    clean_docs = [{key: value for key, value in doc.items() if key != "library_id"} for doc in file_docs]
-
-    # Identify which paths already exist before upserting so state edges are
-    # only initialised for genuinely new files.  Re-initialising an existing
-    # file would silently re-insert the negative-side edges for every axis
-    # (e.g. not_processed), overwriting transitions that have already occurred
-    # and pushing those files backwards through the pipeline.
-    paths = [d["path"] for d in clean_docs if "path" in d]
-
-    existing_paths = get_existing_file_paths(db, library, paths)
-
-    file_ids = db.library.add_songs_to_library(library, clean_docs)
-
-    # Repair existing files whose state edges are missing (e.g. interrupted prior scan).
-    # Using insert-ignoring semantics means already-transitioned edges are untouched.
-    existing_file_ids = [
-        file_id for file_id, doc in zip(file_ids, clean_docs, strict=True) if doc.get("path") in existing_paths
+    identity = _library_identity(library)
+    commands = [
+        SongUpsertInput(
+            library=identity,
+            path=str(doc["path"]),
+            scan=SongScanUpdate(
+                normalized_path=str(doc.get("normalized_path", doc["path"])),
+                file_size=int(doc.get("file_size", 0)),
+                modified_time=int(doc.get("modified_time", 0)),
+                duration_seconds=doc.get("duration_seconds"),
+                is_valid=bool(doc.get("is_valid", True)),
+            ),
+            last_tagged_at=doc.get("last_tagged_at"),
+        )
+        for doc in file_docs
     ]
-    if existing_file_ids:
-        missing_state_ids = [fid for fid in existing_file_ids if not db.app.song_state_membership(fid)]
-        if missing_state_ids:
-            logger.warning("[scan] Repairing %d file(s) with missing state edges", len(missing_state_ids))
-            initialize_song_states_batch(db, missing_state_ids)
-
-    return file_ids
+    return db.library.add_songs_to_library_batch(commands)
 
 
 # ---------------------------------------------------------------------------
@@ -101,13 +111,23 @@ def _upsert_batch(db: Database, library: Library, file_docs: list[dict[str, Any]
 def snapshot_existing_files(
     db: Database,
     library: Library,
-) -> tuple[dict[str, dict[str, Any]], bool]:
-    """Load all existing library files and check for tagged files.
+) -> tuple[dict[str, HydratedSong], bool]:
+    """Load the pre-scan snapshot of existing library files.
 
-    Returns (existing_files_dict, has_tagged_files).
+    Args:
+        db: Persistence facade.
+        library: Natural library scope to snapshot.
+
+    Returns:
+        A ``(existing_files, has_tagged_files)`` tuple. ``existing_files`` maps
+        each existing file's physical ``path`` to its ``HydratedSong`` carrier
+        (semantic ``Song`` plus derived metadata), not a row or raw document.
+        ``has_tagged_files`` reports whether the library already has tagged
+        files.
+
     """
     files_tuple = list_songs(db, library=library, limit=1_000_000, offset=0)
-    existing_files_dict: dict[str, dict[str, Any]] = {f["path"]: f for f in files_tuple[0]}
+    existing_files_dict: dict[str, HydratedSong] = {f.song.path: f for f in files_tuple[0]}
     has_tagged_files = library_has_tagged_files(db, library)
     return existing_files_dict, has_tagged_files
 
@@ -122,19 +142,31 @@ def upsert_scanned_files(
     library: Library,
     file_entries: list[dict[str, Any]],
     edge_bootstraps: list[dict[str, Any]] | None = None,
-) -> list[int]:
-    """Batch-upsert scanned files and optionally bootstrap state edges."""
+) -> list[SongIdentity]:
+    """Batch-upsert scanned files and optionally bootstrap state edges.
+
+    Args:
+        db: Persistence facade.
+        library: Natural library scope being scanned.
+        file_entries: Scan entry documents, one per discovered file, keyed by
+            ``path``/``normalized_path`` plus scan metadata.
+        edge_bootstraps: Optional pre-derived state-edge bootstrap requests,
+            keyed by ``normalized_path``.
+
+    Returns:
+        One semantic ``SongIdentity`` locator per accepted entry, in input
+        order; no generated or integer song id crosses this boundary.
+
+    """
     file_ids = _upsert_batch(db, library, file_entries)
 
     if edge_bootstraps:
-        # Build path to id map from results
-        file_id_by_path: dict[str, int] = {}
-        for fid, entry in zip(file_ids, file_entries, strict=True):
-            normalized = entry.get("normalized_path")
-            if normalized:
-                file_id_by_path[normalized] = fid
-
-        bootstrap_file_state_edges(db, edge_bootstraps, file_id_by_path)
+        identity_by_path = {
+            entry["normalized_path"]: song
+            for song, entry in zip(file_ids, file_entries, strict=True)
+            if entry.get("normalized_path")
+        }
+        bootstrap_file_state_edges(db, edge_bootstraps, identity_by_path)
 
     return file_ids
 
@@ -142,21 +174,32 @@ def upsert_scanned_files(
 def bootstrap_file_state_edges(
     db: Database,
     edge_bootstraps: list[dict[str, Any]],
-    file_id_by_path: dict[str, int],
+    song_by_path: dict[str, SongIdentity],
 ) -> int:
     """Create ml_tagged state edges for songs that should skip ML tagging.
 
-    Returns the number of edges created.
+    Args:
+        db: Persistence facade.
+        edge_bootstraps: Bootstrap requests, each keyed by ``normalized_path``
+            and a ``type`` discriminator.
+        song_by_path: Mapping from ``normalized_path`` to the resolved
+            ``SongIdentity`` locator. Entries missing from this mapping are
+            skipped (``None``-skip semantics): a bootstrap whose song could not
+            be resolved is a safe no-op and is never re-addressed by guesswork.
+
+    Returns:
+        The number of state edges created (skipped bootstraps do not count).
+
     """
     count = 0
     for bootstrap in edge_bootstraps:
         normalized_path = bootstrap["normalized_path"]
-        file_id = file_id_by_path.get(normalized_path)
-        if not file_id:
+        song_identity = song_by_path.get(normalized_path)
+        if song_identity is None:
             continue
 
         if bootstrap["type"] == "ml_tagged":
-            transition_song_state(db, [file_id], STATE_NOT_PROCESSED, STATE_PROCESSED)
+            transition_song_state(db, [song_identity], STATE_NOT_PROCESSED, STATE_PROCESSED)
             count += 1
     return count
 
@@ -169,15 +212,12 @@ def remove_deleted_files(db: Database, library: Library, paths: list[str]) -> in
     library's song.
 
     Returns the number of files deleted.
+
+    Raises:
+        ValueError: If ``library`` has no ``library_uuid`` to build a locator.
+
     """
-    if library.library_uuid is None:
-        msg = f"Library {library.name!r} has no library_uuid"
-        raise ValueError(msg)
-    library_identity = LibraryIdentity(
-        library_uuid=library.library_uuid,
-        name=library.name,
-        root_path=library.root_path,
-    )
+    library_identity = _library_identity(library)
     removed = 0
     for path in paths:
         song = db.library.get_song_by_path(path, library)

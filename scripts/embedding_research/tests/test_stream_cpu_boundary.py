@@ -1,7 +1,7 @@
 """Phase 4 (P4-S3) — CPU-only negative-boundary on the frozen-stream READ surfaces.
 
-DD CPU/inference-boundary (post-L228): derived-phase-style workloads (catalog /
-catalog-report / analyze / head-analysis / report) consume ONLY manifests / registry
+DD CPU/inference-boundary (post-L228): derived-phase-style workloads (analyze /
+head-analysis / report) consume ONLY manifests / registry
 rows / frozen stream + head artifacts.  They MUST complete with audio discovery, model
 loading, ONNX session creation/run and CUDA ABSENT, and must PROVE no such call happened.
 
@@ -14,7 +14,7 @@ both COMPLETE and record ZERO sentinel calls — asserting both halves.
 
 The workload here is a numpy-only CPU consumer over ``StreamStore.lookup`` +
 ``batch_gather`` on ready backbone records and ``HeadStreamStore.lookup`` +
-``batch_gather`` (a catalog/analyze-style medoid selection over gathered patch vectors),
+``batch_gather`` (an analyze-style medoid selection over gathered patch vectors),
 plus a reconcile / registry read — no audio, no models, no CUDA, no ONNX.  Both halves
 are asserted: the derived-style workload COMPLETES with the expected numpy result AND
 every installed sentinel recorded ZERO calls.
@@ -138,7 +138,7 @@ def _install_sentinels(monkeypatch) -> dict[str, int]:
 def _cpu_consumer_workload(stream_store, head_store, song: str) -> dict[str, object]:
     """A numpy-only derived-phase-style consumer over frozen ready stream + head reads.
 
-    Mimics catalog medoid selection / analysis gathering: read the ready backbone and
+    Mimics medoid selection / analysis gathering: read the ready backbone and
     head records via ``lookup``, ``batch_gather`` the full patch vectors, and pick a
     medoid source index with pure numpy.  Also performs a reconcile / registry read
     (``ready_rows``) and a strict ``verify``.  No audio/model/CUDA/ONNX is touched.
@@ -151,7 +151,7 @@ def _cpu_consumer_workload(stream_store, head_store, song: str) -> dict[str, obj
     assert head_rec.status == "ready"
     head_rows = head_store.batch_gather(song, "effnet", list(range(head_rec.patch_count)))
 
-    # Medoid selection over the gathered backbone patches (pure numpy, mimic catalog).
+    # Medoid selection over the gathered backbone patches (pure numpy).
     mean = patches.mean(axis=0)
     medoid_idx = int(np.argmin(np.linalg.norm(patches - mean, axis=1)))
     medoid = stream_store.batch_gather(song, "effnet", [medoid_idx])

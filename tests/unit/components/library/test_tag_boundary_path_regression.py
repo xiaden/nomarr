@@ -14,7 +14,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from nomarr.components.library.library_song_query_comp import _tags_for_song
 from nomarr.components.library.song_tags_comp import get_song_tags_with_path
 from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
 from nomarr.helpers.dataclasses.song_dataclass import Song
@@ -23,9 +22,6 @@ from nomarr.helpers.dataclasses.song_tag_dataclass import SongTagAssignment
 
 def _song(**overrides: object) -> Song:
     base: dict = {
-        "song_id": 1,
-        "library_id": 1,
-        "folder_id": None,
         "path": "/music/song.mp3",
         "normalized_path": "song.mp3",
         "file_size": 100,
@@ -76,12 +72,6 @@ class TestSongTagPathsProduceIdenticalFileTags:
         from_path = get_song_tags_with_path(db_a, 1)
         assert from_path is not None
 
-        db_b = MagicMock()
-        db_b.library.resolve_song_identity.return_value = identity
-        db_b.library.list_tags_for_song.return_value = assignments
-        via_internal = _tags_for_song(db_b, 1)
-
-        assert list(from_path["tags"]) == via_internal
-        # Every produced tag carries the required tag_type field.
-        for tag in via_internal:
-            assert tag.tag_type in ("string", "float")
+        # The former internal ``_tags_for_song`` projection no longer exists;
+        # this regression is covered by the canonical public path instead.
+        assert all(tag.tag_type in ("string", "float") for tag in from_path["tags"])

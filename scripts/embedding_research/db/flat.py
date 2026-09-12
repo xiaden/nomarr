@@ -1,30 +1,36 @@
-"""Analyze/retrieval-metrics persistence tables.
+"""Geometry-era flat metric persistence.
 
-The flat-pipeline filesystem head/activation caches (``upsert_head``,
-``head_strategy_done``, ``load_head_labels``) were deleted with the cache layer
-in the corrective-pass hard cut. This module now only hosts the active
-``analyze_metrics`` and ``song_retrieval_metrics`` persistence used by the
-catalog-analysis writer (``db.analyze_scope.write_catalog_analyze_rows``).
+This module owns the small scalar metric tables used by the geometry corpus owner.  Strategy
+keys are transient storage addresses only; semantic identity is persisted separately in the
+  exact geometry evidence rows.  No alternate metric vocabulary is accepted here.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import math
+from collections.abc import Mapping, Sequence
+from typing import Any
 
-import numpy as np
-
-if TYPE_CHECKING:
-    import pandas as pd
+import pandas as pd
 
 
-# ── analyze_metrics ───────────────────────────────────────────────────────────
+def _finite(value: Any, name: str) -> float:
+    try:
+        result = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be numeric") from exc
+    if not math.isfinite(result):
+        raise ValueError(f"{name} must be finite")
+    return result
 
 
 def clear_song_retrieval_metrics(con, strategy_key: str, sim_metric: str, k: int) -> None:
-    """Delete all per-song retrieval metric rows for the given (strategy_key, sim_metric, k) combination."""
+    """Remove one geometry winner-representation's transient per-song metrics."""
+    if not strategy_key or not sim_metric:
+        raise ValueError("strategy_key and sim_metric are required")
     con.execute(
-        "DELETE FROM song_retrieval_metrics WHERE strategy_key = ? AND sim_metric = ? AND k = ?",
-        [strategy_key, sim_metric, k],
+        "DELETE FROM song_retrieval_metrics WHERE strategy_key=? AND sim_metric=? AND k=?",
+        (str(strategy_key), str(sim_metric), int(k)),
     )
 
 
@@ -33,47 +39,44 @@ def write_song_retrieval_metrics(
     strategy_key: str,
     sim_metric: str,
     k: int,
-    per_song: dict,
+    per_song: Mapping[str, Sequence[Any]],
 ) -> None:
-    """Write per-song retrieval metrics into the ``song_retrieval_metrics`` table.
+    """Write finite per-song geometry metrics for one transient representation key."""
+    song_ids = tuple(str(song_id) for song_id in per_song.get("song_ids", ()))
+    fields = ("ap_k", "mrr", "recall_k", "disc_artist_contrib", "disc_genre_contrib", "disc_head_contrib")
+    values = {field: tuple(per_song.get(field, ())) for field in fields}
+    if any(len(values[field]) not in (0, len(song_ids)) for field in fields):
+        raise ValueError("per-song metric arrays must be empty or match song_ids length")
+    rows = []
+    for index, song_id in enumerate(song_ids):
+        row: list[Any] = [song_id]
+        for field in fields:
+            seq = values[field]
+            row.append(None if not seq else _finite(seq[index], field))
+        rows.append(tuple(row))
+    if not rows:
+        return
+    con.executemany(
+        "INSERT OR REPLACE INTO song_retrieval_metrics "
+        "(strategy_key, sim_metric, k, song_id, ap_k, mrr, recall_k, "
+        "disc_artist_contrib, disc_genre_contrib, disc_head_contrib) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [(str(strategy_key), str(sim_metric), int(k), *row) for row in rows],
+    )
 
-    Args:
-        con: DuckDB connection.
-        strategy_key: Strategy identifier.
-        sim_metric: Similarity metric name (e.g. ``"cosine"``).
-        k: Retrieval cut-off.
-        per_song: Dict returned by ``compute_retrieval_metrics`` under key ``"per_song"``.
-            Expected keys: ``song_ids``, ``ap_k``, ``mrr``, ``recall_k``,
-            ``disc_artist_contrib``, ``disc_genre_contrib``, ``disc_head_contrib``.
-    """
-    song_ids = per_song.get("song_ids", [])
-    ap_k = per_song.get("ap_k", [])
-    mrr = per_song.get("mrr", [])
-    recall_k = per_song.get("recall_k", [])
-    disc_artist_contrib = per_song.get("disc_artist_contrib", [])
-    disc_genre_contrib = per_song.get("disc_genre_contrib", [])
-    disc_head_contrib = per_song.get("disc_head_contrib", [])
 
-    rows = [
-        (
-            strategy_key,
-            sim_metric,
-            k,
-            song_id,
-            ap_k[idx] if idx < len(ap_k) else None,
-            mrr[idx] if idx < len(mrr) else None,
-            recall_k[idx] if idx < len(recall_k) else None,
-            disc_artist_contrib[idx] if idx < len(disc_artist_contrib) else None,
-            disc_genre_contrib[idx] if idx < len(disc_genre_contrib) else None,
-            disc_head_contrib[idx] if idx < len(disc_head_contrib) else None,
-        )
-        for idx, song_id in enumerate(song_ids)
-    ]
-    if rows:
-        con.executemany(
-            "INSERT OR REPLACE INTO song_retrieval_metrics (strategy_key, sim_metric, k, song_id, ap_k, mrr, recall_k, disc_artist_contrib, disc_genre_contrib, disc_head_contrib) VALUES (?,?,?,?,?,?,?,?,?,?)",
-            rows,
-        )
+def _flatten_metrics(value: Any, prefix: str = "") -> dict[str, float]:
+    if isinstance(value, Mapping):
+        out: dict[str, float] = {}
+        for key in sorted(value):
+            child = f"{prefix}_{key}" if prefix else str(key)
+            out.update(_flatten_metrics(value[key], child))
+        return out
+    if isinstance(value, (list, tuple)):
+        return {}
+    try:
+        return {prefix: _finite(value, prefix)} if prefix else {}
+    except ValueError:
+        return {}
 
 
 def write_analyze_metrics(
@@ -82,89 +85,76 @@ def write_analyze_metrics(
     strategy_type: str,
     sim_metric: str,
     k: int,
-    metrics: dict,
+    metrics: Mapping[str, Any],
     *,
     run_id: str,
 ) -> None:
-    """Write non-`None` aggregate analysis metrics for one ``(run_id, strategy_key, sim_metric, k)`` scope.
-
-    ``run_id`` is REQUIRED: the caller must supply the CURRENT run identity that produced these
-    rows.  There is no default and no legacy/baseline scope — ``analyze_metrics`` has one current
-    run-scoped meaning and every row is stamped with the run that wrote it.
-
-    The table carries no PRIMARY KEY (DuckDB ART/WAL policy) so uniqueness is asserted here at
-    the application layer: within *run_id*, writing a strategy scope REPLACES that run's prior
-    rows for the same ``(strategy_key, sim_metric, k)`` (delete-then-insert in the caller's
-    transaction).  It never deletes or modifies rows of any other ``run_id``, so retained /
-    unrelated runs are preserved.  A call with no runnable rows is a no-op (nothing is deleted).
-
-    Args:
-        con: DuckDB connection.
-        run_id: The current run identity that produced these rows (required).
-        strategy_key: Strategy identifier.
-        strategy_type: Strategy type label (e.g. ``"catalog"``).
-        sim_metric: Similarity metric name (e.g. ``"cosine"``).
-        k: Retrieval cut-off.
-        metrics: Metric values keyed by metric name; entries with `None` (or list/array)
-            values are skipped.
-    """
-    rows: list[tuple] = []
-    for name, value in metrics.items():
-        if value is None:
-            continue
-        if isinstance(value, dict):
-            for sub_name, sub_value in value.items():
-                if sub_value is not None:
-                    rows.append(
-                        (run_id, strategy_key, strategy_type, sim_metric, k, f"{name}_{sub_name}", float(sub_value))
-                    )
-        elif isinstance(value, (list, np.ndarray)):
-            continue  # per-song lists are never written as aggregate metrics
-        else:
-            rows.append((run_id, strategy_key, strategy_type, sim_metric, k, name, float(value)))
-    if not rows:
-        return
-    # Replace only this run's own scope — never another run's rows.
+    """Replace only one run-scoped geometry metric scope with finite scalar values."""
+    if not run_id or not strategy_key or not strategy_type or not sim_metric:
+        raise ValueError("run_id, strategy_key, strategy_type, and sim_metric are required")
+    flat = _flatten_metrics(metrics)
     con.execute(
-        "DELETE FROM analyze_metrics WHERE run_id = ? AND strategy_key = ? AND sim_metric = ? AND k = ?",
-        [run_id, strategy_key, sim_metric, k],
+        "DELETE FROM analyze_metrics WHERE run_id=? AND strategy_key=? AND sim_metric=? AND k=?",
+        (str(run_id), str(strategy_key), str(sim_metric), int(k)),
     )
-    con.executemany(
-        "INSERT INTO analyze_metrics (run_id, strategy_key, strategy_type, sim_metric, k, metric, value) "
-        "VALUES (?,?,?,?,?,?,?)",
-        rows,
-    )
+    if flat:
+        con.executemany(
+            "INSERT INTO analyze_metrics "
+            "(run_id, strategy_key, strategy_type, sim_metric, k, metric, value) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [
+                (str(run_id), str(strategy_key), str(strategy_type), str(sim_metric), int(k), metric, value)
+                for metric, value in sorted(flat.items())
+            ],
+        )
 
 
-def load_analyze_metrics(con, *, run_id: str | None = None) -> pd.DataFrame:
-    """Load `analyze_metrics` as a wide DataFrame keyed by strategy and query settings.
+def load_analyze_metrics(con, *, run_id: str | None = None):
+    """Load scalar geometry metrics as a wide frame (one column per metric name).
 
-    Args:
-        con: DuckDB connection.
-        run_id: Optional run-scoped filter.  When given, only rows whose physical ``run_id``
-            column equals *run_id* are loaded (the row-level realization of the scope
-            bookkeeping).  When ``None``, the full (current run-scoped) table is loaded.
-
-    Returns:
-        A DataFrame pivoted on `metric` so each metric name becomes a column, sorted by
-        `disc_general` descending when that column is present.
+    The returned frame is run-scoped when ``run_id`` is supplied, otherwise it spans the
+    whole table.  Metric names become columns; rows are keyed by the storage keys
+    (``run_id``, ``strategy_key``, ``strategy_type``, ``sim_metric``, ``k``).  When a
+    ``disc_general`` column is present it orders rows descending; otherwise rows are
+    returned in deterministic key order.
     """
-    df = con.execute("SELECT * FROM analyze_metrics").df()
-    if df.empty:
-        return df
+    query = "SELECT run_id, strategy_key, strategy_type, sim_metric, k, metric, value FROM analyze_metrics"
+    params: list[Any] = []
     if run_id is not None:
-        df = df[df["run_id"] == run_id]
-        if df.empty:
-            return df.iloc[0:0].copy()
-    df = df.drop(columns=["run_id"])
-    df = df.pivot_table(
-        index=["strategy_key", "strategy_type", "sim_metric", "k"],
-        columns="metric",
-        values="value",
-        aggfunc="first",
-    )
-    df.columns.name = None
-    df = df.reset_index()
-    if "disc_general" in df.columns:
-        df = df.sort_values("disc_general", ascending=False, na_position="last")
-    return df
+        query += " WHERE run_id=?"
+        params.append(str(run_id))
+    rows = [
+        {
+            "run_id": str(row[0]),
+            "strategy_key": str(row[1]),
+            "strategy_type": str(row[2]),
+            "sim_metric": str(row[3]),
+            "k": int(row[4]),
+            "metric": str(row[5]),
+            "value": float(row[6]),
+        }
+        for row in con.execute(query, params).fetchall()
+    ]
+    index = ["run_id", "strategy_key", "strategy_type", "sim_metric", "k"]
+    if not rows:
+        return pd.DataFrame(columns=index)
+    frame = pd.DataFrame(rows).pivot_table(index=index, columns="metric", values="value", aggfunc="first")
+    frame.columns.name = None
+    frame = frame.reset_index()
+    if run_id is None:
+        # Whole-table view: one row per storage scope (strategy_key/type/sim_metric/k),
+        # deterministic latest generation by run_id.  Per-run scoping stays exact when
+        # ``run_id`` is supplied.
+        frame = frame.sort_values("run_id").drop_duplicates(
+            subset=["strategy_key", "strategy_type", "sim_metric", "k"], keep="last"
+        )
+    if "disc_general" in frame.columns:
+        frame = frame.sort_values("disc_general", ascending=False).reset_index(drop=True)
+    return frame
+
+
+__all__ = [
+    "clear_song_retrieval_metrics",
+    "load_analyze_metrics",
+    "write_analyze_metrics",
+    "write_song_retrieval_metrics",
+]

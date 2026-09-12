@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, call, patch
 import pytest
 
 from nomarr.components.library.library_scan_file_ops_comp import (
+    _upsert_batch,
     bootstrap_file_state_edges,
     cleanup_stale_folders,
     remove_deleted_files,
@@ -29,6 +30,7 @@ from nomarr.components.library.scan_lifecycle_comp import (
     transition_to_scanning,
     update_scan_progress,
 )
+from nomarr.components.library.song_query_types import HydratedSong
 from nomarr.helpers.constants.file_states import STATE_NOT_PROCESSED, STATE_PROCESSED
 from nomarr.helpers.constants.pipeline_states import (
     CAL_NOT_CALIBRATED,
@@ -45,6 +47,13 @@ from nomarr.helpers.dataclasses.library_domain_dataclasses import (
     LibraryPipelineState,
     LibraryScan,
 )
+from nomarr.helpers.dataclasses.song_command_dataclass import (
+    LibraryIdentity,
+    SongIdentity,
+    SongRemoval,
+    SongScanUpdate,
+    SongUpsertInput,
+)
 from nomarr.helpers.dataclasses.song_dataclass import Song
 from nomarr.helpers.dto.library_dto import LibraryDict
 
@@ -54,6 +63,7 @@ def _library(name: str = "Main", root_path: str = "/tmp") -> Library:
     return Library(
         name=name,
         root_path=root_path,
+        library_uuid="2621ebfb-71ff-5168-a812-5342ca310e8c",
         is_enabled=True,
         watch_mode="off",
         file_write_mode="full",
@@ -65,9 +75,6 @@ def _library(name: str = "Main", root_path: str = "/tmp") -> Library:
 
 def _song(**overrides: object) -> Song:
     base: dict = {
-        "song_id": 1,
-        "library_id": 1,
-        "folder_id": None,
         "path": "/music/song.mp3",
         "normalized_path": "song.mp3",
         "file_size": 100,
@@ -87,6 +94,14 @@ def _song(**overrides: object) -> Song:
     return Song(**base)
 
 
+def _identity(normalized_path: str = "song.mp3") -> SongIdentity:
+    """Semantic song locator used for state-candidate test doubles."""
+    return SongIdentity(
+        library=LibraryIdentity(library_uuid="2621ebfb-71ff-5168-a812-5342ca310e8c", name="Main", root_path="/tmp"),
+        normalized_path=normalized_path,
+    )
+
+
 class TestBootstrapFileStateEdges:
     """Tests for bootstrap_file_state_edges."""
 
@@ -101,12 +116,13 @@ class TestBootstrapFileStateEdges:
         """A ``ml_tagged`` bootstrap transitions the song out of not-processed."""
         mock_db = MagicMock()
         bootstraps = [{"normalized_path": "/music/song.mp3", "type": "ml_tagged"}]
-        file_id_by_path = {"/music/song.mp3": 123}
+        identity = _identity("/music/song.mp3")
+        song_by_path = {"/music/song.mp3": identity}
 
-        result = bootstrap_file_state_edges(mock_db, bootstraps, file_id_by_path)
+        result = bootstrap_file_state_edges(mock_db, bootstraps, song_by_path)
 
         assert result == 1
-        mock_db.app.transition_song_states.assert_called_once_with([123], STATE_NOT_PROCESSED, STATE_PROCESSED)
+        mock_db.app.transition_song_states.assert_called_once_with([identity], STATE_NOT_PROCESSED, STATE_PROCESSED)
 
     @pytest.mark.unit
     def test_unknown_bootstrap_type_is_skipped(self) -> None:
@@ -114,8 +130,8 @@ class TestBootstrapFileStateEdges:
         bootstraps = [
             {"normalized_path": "/music/song.mp3", "type": "unknown_type"},
         ]
-        file_id_by_path = {"/music/song.mp3": 123}
-        result = bootstrap_file_state_edges(mock_db, bootstraps, file_id_by_path)
+        song_by_path = {"/music/song.mp3": _identity("/music/song.mp3")}
+        result = bootstrap_file_state_edges(mock_db, bootstraps, song_by_path)
         assert result == 0
         mock_db.app.remove_song_states.assert_not_called()
         mock_db.app.add_song_states.assert_not_called()
@@ -126,8 +142,8 @@ class TestBootstrapFileStateEdges:
         bootstraps = [
             {"normalized_path": "/music/missing.mp3", "type": "ml_tagged"},
         ]
-        file_id_by_path = {"/music/other.mp3": 456}
-        result = bootstrap_file_state_edges(mock_db, bootstraps, file_id_by_path)
+        song_by_path = {"/music/other.mp3": _identity("/music/other.mp3")}
+        result = bootstrap_file_state_edges(mock_db, bootstraps, song_by_path)
         assert result == 0
         mock_db.app.remove_song_states.assert_not_called()
         mock_db.app.add_song_states.assert_not_called()
@@ -502,16 +518,19 @@ class TestRemoveDeletedFiles:
         library = _library()
         paths = ["/music/a.mp3", "/music/b.mp3", "/music/c.mp3"]
         mock_db.library.get_song_by_path.side_effect = [
-            _song(song_id=1),
-            _song(song_id=2),
+            _song(normalized_path="a.mp3"),
+            _song(normalized_path="b.mp3"),
             None,
         ]
+        library_identity = LibraryIdentity(
+            library_uuid="2621ebfb-71ff-5168-a812-5342ca310e8c", name="Main", root_path="/tmp"
+        )
 
         result = remove_deleted_files(mock_db, library, paths)
 
         assert mock_db.library.remove_song.call_args_list == [
-            call(1),
-            call(2),
+            call(SongRemoval(song_identity=SongIdentity(library=library_identity, normalized_path="a.mp3"))),
+            call(SongRemoval(song_identity=SongIdentity(library=library_identity, normalized_path="b.mp3"))),
         ]
         assert mock_db.library.get_song_by_path.call_args_list == [
             call("/music/a.mp3", library),
@@ -530,6 +549,141 @@ class TestRemoveDeletedFiles:
         mock_db.library.get_song_by_path.assert_not_called()
         mock_db.library.remove_song.assert_not_called()
         assert result == 0
+
+    def test_remove_deleted_files_raises_without_library_uuid(self) -> None:
+        """A library with no ``library_uuid`` cannot form a locator: fail closed."""
+        mock_db = MagicMock()
+        library = Library(
+            name="Main",
+            root_path="/tmp",
+            library_uuid=None,
+            is_enabled=True,
+            watch_mode="off",
+            file_write_mode="full",
+            library_auto_write=False,
+            created_at=None,
+            updated_at=None,
+        )
+
+        with pytest.raises(ValueError, match="has no library_uuid"):
+            remove_deleted_files(mock_db, library, ["/music/a.mp3"])
+
+        mock_db.library.get_song_by_path.assert_not_called()
+        mock_db.library.remove_song.assert_not_called()
+
+    def test_remove_deleted_files_counts_only_successful_removals(self) -> None:
+        """A falsy ``remove_song`` (stale/missing locator) is not counted as removed."""
+        mock_db = MagicMock()
+        library = _library()
+        mock_db.library.get_song_by_path.side_effect = [
+            _song(normalized_path="a.mp3"),
+            _song(normalized_path="b.mp3"),
+        ]
+        mock_db.library.remove_song.side_effect = [False, True]
+
+        result = remove_deleted_files(mock_db, library, ["/music/a.mp3", "/music/b.mp3"])
+
+        assert mock_db.library.remove_song.call_count == 2
+        assert result == 1
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+class TestUpsertBatch:
+    """Tests for ``_upsert_batch`` -- one typed batch facade call for all docs.
+
+    State preservation and create-only initialization are persistence-owned and
+    pinned by the real boundary test
+    ``tests/integration/test_song_upsert_state_boundary_pg.py``.
+    """
+
+    def _doc(self, path: str = "/music/song.mp3", **overrides: object) -> dict:
+        base: dict = {
+            "path": path,
+            "normalized_path": path.lstrip("/"),
+            "file_size": 123,
+            "modified_time": 456,
+            "duration_seconds": 12.5,
+            "is_valid": True,
+        }
+        base.update(overrides)
+        return base
+
+    def test_empty_input_returns_empty_without_facade_calls(self) -> None:
+        mock_db = MagicMock()
+        library = _library()
+
+        result = _upsert_batch(mock_db, library, [])
+
+        assert result == []
+        mock_db.library.add_songs_to_library_batch.assert_not_called()
+
+    def test_missing_library_uuid_raises_value_error(self) -> None:
+        mock_db = MagicMock()
+        library = Library(
+            name="Main",
+            root_path="/tmp",
+            library_uuid=None,
+            is_enabled=True,
+            watch_mode="off",
+            file_write_mode="full",
+            library_auto_write=False,
+            created_at=None,
+            updated_at=None,
+        )
+
+        with pytest.raises(ValueError, match="has no library_uuid"):
+            _upsert_batch(mock_db, library, [self._doc()])
+
+        mock_db.library.add_songs_to_library_batch.assert_not_called()
+
+    def test_docs_map_to_one_atomic_typed_batch_call(self) -> None:
+        """All docs go through one typed batch facade call, preserving order.
+
+        State preservation/create-only initialization is owned by the
+        persistence intent (covered by the real boundary test in
+        ``tests/unit/persistence/api/test_library_db.py``); the component no
+        longer reads or repairs state.
+        """
+        mock_db = MagicMock()
+        library = _library()
+        identity = _identity("music/song.mp3")
+        mock_db.library.add_songs_to_library_batch.return_value = [identity]
+        doc = self._doc()
+
+        result = _upsert_batch(mock_db, library, [doc])
+
+        assert result == [identity]
+        (commands,), _kwargs = mock_db.library.add_songs_to_library_batch.call_args
+        assert len(commands) == 1
+        command = commands[0]
+        assert isinstance(command, SongUpsertInput)
+        assert command.library == LibraryIdentity(
+            library_uuid="2621ebfb-71ff-5168-a812-5342ca310e8c", name="Main", root_path="/tmp"
+        )
+        assert command.path == "/music/song.mp3"
+        assert command.scan == SongScanUpdate(
+            normalized_path="music/song.mp3",
+            file_size=123,
+            modified_time=456,
+            duration_seconds=12.5,
+            is_valid=True,
+        )
+
+    def test_multiple_docs_are_one_batch_call(self) -> None:
+        mock_db = MagicMock()
+        library = _library()
+        si_a = _identity("music/a.mp3")
+        si_b = _identity("music/b.mp3")
+        mock_db.library.add_songs_to_library_batch.return_value = [si_a, si_b]
+        docs = [self._doc(path="/music/a.mp3"), self._doc(path="/music/b.mp3")]
+
+        result = _upsert_batch(mock_db, library, docs)
+
+        assert result == [si_a, si_b]
+        mock_db.library.add_songs_to_library_batch.assert_called_once()
+        commands = mock_db.library.add_songs_to_library_batch.call_args.args[0]
+        assert [command.path for command in commands] == ["/music/a.mp3", "/music/b.mp3"]
 
 
 @pytest.mark.unit
@@ -643,8 +797,8 @@ class TestSnapshotExistingFiles:
         mock_db = MagicMock()
         library = _library()
         files = [
-            {"id": 1, "path": "a.mp3"},
-            {"id": 2, "path": "b.mp3"},
+            HydratedSong(song=_song(path="a.mp3"), metadata={}),
+            HydratedSong(song=_song(path="b.mp3"), metadata={}),
         ]
 
         with (
@@ -693,11 +847,12 @@ class TestUpsertScannedFiles:
         mock_db = MagicMock()
         library = _library()
         file_entries = [{"normalized_path": "music/song.mp3"}]
+        si_one = _identity("music/song.mp3")
 
         with (
             patch(
                 "nomarr.components.library.library_scan_file_ops_comp._upsert_batch",
-                return_value=[1],
+                return_value=[si_one],
             ) as mock_upsert_batch,
             patch(
                 "nomarr.components.library.library_scan_file_ops_comp.bootstrap_file_state_edges"
@@ -705,7 +860,7 @@ class TestUpsertScannedFiles:
         ):
             result = upsert_scanned_files(mock_db, library, file_entries)
 
-        assert result == [1]
+        assert result == [si_one]
         mock_upsert_batch.assert_called_once_with(mock_db, library, file_entries)
         mock_bootstrap_file_state_edges.assert_not_called()
 
@@ -721,10 +876,13 @@ class TestUpsertScannedFiles:
             {"normalized_path": "music/song-b.mp3", "type": "ml_tagged"},
         ]
 
+        si_a = _identity("music/song-a.mp3")
+        si_b = _identity("music/song-b.mp3")
+
         with (
             patch(
                 "nomarr.components.library.library_scan_file_ops_comp._upsert_batch",
-                return_value=[1, 2],
+                return_value=[si_a, si_b],
             ) as mock_upsert_batch,
             patch(
                 "nomarr.components.library.library_scan_file_ops_comp.bootstrap_file_state_edges"
@@ -732,13 +890,13 @@ class TestUpsertScannedFiles:
         ):
             result = upsert_scanned_files(mock_db, library, file_entries, edge_bootstraps=edge_bootstraps)
 
-        assert result == [1, 2]
+        assert result == [si_a, si_b]
         mock_upsert_batch.assert_called_once_with(mock_db, library, file_entries)
         mock_bootstrap_file_state_edges.assert_called_once_with(
             mock_db,
             edge_bootstraps,
             {
-                "music/song-a.mp3": 1,
-                "music/song-b.mp3": 2,
+                "music/song-a.mp3": si_a,
+                "music/song-b.mp3": si_b,
             },
         )

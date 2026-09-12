@@ -314,6 +314,67 @@ class TestCodeQlMatrixMatching:
         assert states["analyze"] == "NOT-APPLICABLE"
 
 
+class TestDatabaseTestsRequiredCheck:
+    """`database-tests` is a required backend-tests job with the same
+    push/pr/manual applicability and stable check-run naming as its siblings."""
+
+    @pytest.mark.unit
+    def test_database_tests_contract_entry(self) -> None:
+        spec = REQUIRED_CHECKS["database-tests"]
+        assert spec.workflow == "backend-tests.yml"
+        assert spec.triggers == frozenset({"push", "pr", "manual"})
+        assert "database-tests" in PUSH_REQUIRED
+        assert "database-tests" in PR_REQUIRED
+
+    @pytest.mark.unit
+    def test_database_tests_success_passes(self) -> None:
+        report = validate_checks(SHA, _all_green(), "push")
+        assert report.ok is True
+        result = next(r for r in report.results if r.name == "database-tests")
+        assert result.state == "PASS"
+
+    @pytest.mark.unit
+    def test_database_tests_missing_fails(self) -> None:
+        runs = [r for r in _all_green() if r["name"] != "database-tests"]
+        report = validate_checks(SHA, runs, "push")
+        assert report.ok is False
+        assert states_missing(report, "database-tests")
+
+    @pytest.mark.unit
+    def test_database_tests_pending_fails(self) -> None:
+        runs = [
+            _check(name)
+            if name != "database-tests"
+            else _check("database-tests", status="in_progress", conclusion=None)
+            for name in sorted(REQUIRED_CHECKS)
+        ]
+        report = validate_checks(SHA, runs, "push")
+        assert report.ok is False
+        result = next(r for r in report.results if r.name == "database-tests")
+        assert result.state == "FAIL"
+        assert "pending" in result.detail
+
+    @pytest.mark.unit
+    def test_database_tests_failed_fails(self) -> None:
+        runs = [
+            _check(name) if name != "database-tests" else _check("database-tests", conclusion="failure")
+            for name in sorted(REQUIRED_CHECKS)
+        ]
+        report = validate_checks(SHA, runs, "push")
+        assert report.ok is False
+        result = next(r for r in report.results if r.name == "database-tests")
+        assert result.state == "FAIL"
+        assert "not success" in result.detail
+
+    @pytest.mark.unit
+    def test_database_tests_wrong_commit_fails(self) -> None:
+        runs = _all_green()
+        runs.append(_check("database-tests", head_sha=OTHER_SHA))
+        report = validate_checks(SHA, runs, "push")
+        assert report.ok is False
+        assert any(run["name"] == "database-tests" for run in report.wrong_commit_runs)
+
+
 def states_missing(report: Report, name: str) -> bool:
     result = next((r for r in report.results if r.name == name), None)
     return result is not None and result.state == "MISSING"

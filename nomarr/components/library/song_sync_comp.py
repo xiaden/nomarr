@@ -18,6 +18,7 @@ from nomarr.components.tagging.tag_write_comp import set_song_tags_batch
 from nomarr.helpers.constants.file_states import STATE_NOT_PROCESSED, STATE_PROCESSED
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
@@ -28,7 +29,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-def mark_song_processed(db: Database, song_id: int) -> None:
+def mark_song_processed(db: Database, song: SongIdentity) -> None:
     """Mark a song as ML processed.
 
     Args:
@@ -36,8 +37,8 @@ def mark_song_processed(db: Database, song_id: int) -> None:
         song_id: Song row ID (integer)
 
     """
-    transition_song_state(db, [song_id], STATE_NOT_PROCESSED, STATE_PROCESSED)
-    persist_last_tagged_at(db, song_id)
+    transition_song_state(db, [song], STATE_NOT_PROCESSED, STATE_PROCESSED)
+    persist_last_tagged_at(db, song)
 
 
 # ---------------------------------------------------------------------------
@@ -47,7 +48,7 @@ def mark_song_processed(db: Database, song_id: int) -> None:
 
 def save_song_tags(
     db: Database,
-    song_id: int,
+    song: SongIdentity,
     parsed_tags: dict[str, list[Any]],
 ) -> None:
     """Write parsed tags for a song.
@@ -61,5 +62,5 @@ def save_song_tags(
         parsed_tags: Mapping of tag name → list of tag values
 
     """
-    entries = [{"song_id": song_id, "name": name, "values": values} for name, values in parsed_tags.items()]
+    entries = [{"song": song, "name": name, "values": values} for name, values in parsed_tags.items()]
     set_song_tags_batch(db, entries)

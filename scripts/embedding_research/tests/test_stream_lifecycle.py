@@ -23,7 +23,7 @@ cache/index (never the source of truth).  This file pins the retained lifecycle:
 * the store-level strict ``verify`` seam (clean passes; missing/corrupt/shape-mismatch/
   unpromoted-pending each raise :class:`VerifyFailureError`).
 
-Legacy/supersession/rowless-orphan classification and ``register_legacy`` are DELETED
+Supersession/rowless-orphan classification and the retired adoption entry point are DELETED
 post-migration (Git is the archive); the S5 manifest-only reindex owns orphan/stray
 detection.  Where a behavior is also asserted in earlier test modules this file re-pins
 it in the single lifecycle context (Phase 4 is the lifecycle gate; stronger coverage).

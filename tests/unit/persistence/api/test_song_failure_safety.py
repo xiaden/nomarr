@@ -7,12 +7,13 @@ the repository boundary backing each D-owned multi-table facade intent and pin
 the facade's observable atomicity promise:
 
 * ``add_song_to_library(SongUpsertInput)`` — canonical typed-upsert handoff
-  (consumed; owned at commit ``9116f176``). The song-row upsert and the state
-  initialization are **separate repository commits**; the facade does not own a
-  transaction across them. Injected tests pin that a state-init failure after the
-  row upsert has committed propagates to the caller **without compensation** (no
-  delete), i.e. the boundary is *recorded-recoverable* (re-running the idempotent
-  intent completes states) rather than all-or-none across (song-row, states).
+  (consumed; owned at commit ``9116f176``; shipped as one facade-owned
+  transaction). The song-row upsert and the state initialization share ONE
+  facade-owned transaction: both are invoked with ``commit=False`` and the facade
+  issues exactly one ``self._session.commit()``. Injected tests pin that a
+  state-init failure rolls the whole transaction back — the song row is NOT left
+  committed — and propagates to the caller **without compensation** (no delete);
+  recovery is a retry of the idempotent intent; the transaction is all-or-none.
 * ``move_library_song(SongPathUpdate)`` — source-locator relocation (ADR-048 §4).
   The repository ``move_song`` is ONE in-place ``UPDATE`` + ONE commit; injected
   statement/commit/uniqueness/connection failures propagate and the facade never
@@ -33,7 +34,7 @@ boundaries are owned externally (TagRef successor B-E pending; worker-claims
 real-PostgreSQL rollback oracle for relocation (destination conflict + stale
 locator leaving source locator / scan metadata / associations unchanged) is owned
 by ``tests/characterization/test_song_move_atomic_intent.py`` (Plan C) and the
-``add_song_to_library`` recorded-recoverable boundary by
+``add_song_to_library`` atomic-rollback boundary by
 ``tests/characterization/test_song_typed_boundary_failure_safety.py`` (Plan D,
 CI ``database-tests`` job). This module proves the facade-level invariants that
 run without a database.
@@ -52,11 +53,13 @@ module (CI ``database-tests`` job).
 
 from __future__ import annotations
 
+from typing import cast
 from unittest.mock import MagicMock
 
 import pytest
 
 from nomarr.helpers.dataclasses.song_command_dataclass import (
+    ChromaprintValue,
     LibraryIdentity,
     SongIdentity,
     SongPathUpdate,
@@ -64,7 +67,13 @@ from nomarr.helpers.dataclasses.song_command_dataclass import (
     SongScanUpdate,
     SongUpsertInput,
 )
-from nomarr.helpers.exceptions import DatabaseStateError, DuplicateEntityError, ReferentialIntegrityError
+from nomarr.helpers.exceptions import (
+    AmbiguousCommitError,
+    DatabaseStateError,
+    DuplicateEntityError,
+    ReferentialIntegrityError,
+    RetryableDatabaseError,
+)
 from nomarr.persistence.api.library_songs import LibrarySongsDb
 
 _LIB = LibraryIdentity(library_uuid="de131b32-af5c-5a84-8874-58e3dc0e2dcd", name="TestLib", root_path="/music")
@@ -131,7 +140,7 @@ def _make_songs() -> tuple[LibrarySongsDb, MagicMock, MagicMock, MagicMock]:
 
 
 # ---------------------------------------------------------------------------
-# add_song_to_library: canonical typed-upsert handoff (recorded-recoverable)
+# add_song_to_library: canonical typed-upsert handoff (single transaction)
 # ---------------------------------------------------------------------------
 
 
@@ -140,41 +149,47 @@ class TestAddSongToLibraryBoundary:
     """Fault injection on the consumed canonical typed-upsert handoff.
 
     The song-row upsert (``song_repo.upsert_songs_for_library``) and the state
-    initialization (``song_state_repo.initialize_song_states``) are two
-    repository-owned commits on the shared session — the facade owns no
-    transaction across them. A state-init failure therefore leaves the song row
-    already persisted (recorded), and the facade must surface the error rather
-    than compensating with a delete.
+    initialization (``song_state_repo.initialize_song_states``) share ONE
+    facade-owned transaction: both are invoked with ``commit=False`` and the
+    facade issues exactly one ``self._session.commit()``. A state-init failure
+    therefore rolls the whole transaction back — the song row is NOT left
+    recorded — and the error propagates. Recovery is a retry of the idempotent
+    intent; the facade never compensates with a delete.
     """
 
-    def test_state_init_failure_after_row_commit_is_recorded_recoverable(self) -> None:
+    def test_state_init_failure_rolls_back_whole_transaction(self) -> None:
         songs, song_repo, state_repo, _ = _make_songs()
-        # The row upsert commits (returns a generated song id); the independent
-        # state-init repository commit then fails.
+        # The row upsert returns a generated song id without committing; the
+        # state init then fails before the single facade-owned commit.
         song_repo.upsert_songs_for_library.return_value = [5]
-        state_repo.initialize_song_states.side_effect = DatabaseStateError("state init commit failed")
+        song_repo.get_song_ids_by_paths.return_value = {"/music/a.mp3": 5}
+        state_repo.initialize_song_states.side_effect = DatabaseStateError("state init failed")
 
         with pytest.raises(DatabaseStateError):
             songs.add_song_to_library(_upsert_command())
 
-        # The song row write was issued (committed by its own repo transaction) and
-        # the facade did NOT compensate with a delete — recovery is a retry of the
-        # idempotent intent (recorded-recoverable), never all-or-none across both.
+        # The song row write was issued but the state-init failure rolled back the
+        # whole transaction (no commit) and the facade did NOT compensate with a
+        # delete — recovery is a retry of the idempotent intent.
         song_repo.upsert_songs_for_library.assert_called_once()
-        state_repo.initialize_song_states.assert_called_once_with([5])
+        state_repo.initialize_song_states.assert_called_once_with([5], commit=False)
+        songs._session.rollback.assert_called_once_with()
+        songs._session.commit.assert_not_called()
         song_repo.delete_song.assert_not_called()
 
     def test_upsert_statement_failure_propagates_and_skips_state_init(self) -> None:
         songs, song_repo, state_repo, _ = _make_songs()
-        # A statement failure inside the row upsert rolls back that single commit.
+        # A statement failure inside the row upsert aborts the shared transaction.
         song_repo.upsert_songs_for_library.side_effect = DatabaseStateError("statement failed")
 
         with pytest.raises(DatabaseStateError):
             songs.add_song_to_library(_upsert_command())
 
         # State init is not reached: no assignments bootstrap for a row that never
-        # committed.
+        # committed; the whole transaction is rolled back with no commit.
         state_repo.initialize_song_states.assert_not_called()
+        songs._session.rollback.assert_called_once_with()
+        songs._session.commit.assert_not_called()
 
     def test_uniqueness_failure_propagates_and_skips_state_init(self) -> None:
         songs, song_repo, state_repo, _ = _make_songs()
@@ -184,6 +199,8 @@ class TestAddSongToLibraryBoundary:
             songs.add_song_to_library(_upsert_command())
 
         state_repo.initialize_song_states.assert_not_called()
+        songs._session.rollback.assert_called_once_with()
+        songs._session.commit.assert_not_called()
 
     def test_connection_failure_propagates(self) -> None:
         songs, song_repo, state_repo, _ = _make_songs()
@@ -193,6 +210,8 @@ class TestAddSongToLibraryBoundary:
             songs.add_song_to_library(_upsert_command())
 
         state_repo.initialize_song_states.assert_not_called()
+        songs._session.rollback.assert_called_once_with()
+        songs._session.commit.assert_not_called()
 
     def test_scanless_command_rejected_before_any_repo_write(self) -> None:
         songs, song_repo, state_repo, _ = _make_songs()
@@ -515,8 +534,8 @@ class TestAddSongIdempotentRetry:
 
     ``add_song_to_library`` maps each invocation from the fresh command to ONE
     repository upsert call; there is no in-facade state that accumulates rows or
-    re-emits prior writes. The recorded-recoverable boundary means a state-init
-    failure does not roll back the committed row and the retry re-issues the same
+    re-emits prior writes. The single-transaction boundary means a state-init
+    failure rolls the whole transaction back and the retry re-issues the same
     single upsert (idempotent at the row level via the repository's ON CONFLICT
     upsert) then completes the state bootstrap.
     """
@@ -524,7 +543,9 @@ class TestAddSongIdempotentRetry:
     def test_state_init_failure_then_retry_reissues_one_upsert_no_growth(self) -> None:
         songs, song_repo, state_repo, _ = _make_songs()
         song_repo.upsert_songs_for_library.return_value = [7]
-        # First attempt: the row upsert commits, the independent state-init fails.
+        song_repo.get_song_ids_by_paths.return_value = {"/music/a.mp3": 7}
+        # First attempt: the row upsert runs without committing; the state-init
+        # failure rolls the whole transaction back.
         state_repo.initialize_song_states.side_effect = [DatabaseStateError("state init failed"), None]
 
         with pytest.raises(DatabaseStateError):
@@ -549,6 +570,7 @@ class TestAddSongIdempotentRetry:
     def test_reissuing_same_command_is_one_upsert_per_call_no_hidden_duplication(self) -> None:
         songs, song_repo, state_repo, _ = _make_songs()
         song_repo.upsert_songs_for_library.return_value = [3]
+        song_repo.get_song_ids_by_paths.return_value = {"/music/a.mp3": 3}
         state_repo.initialize_song_states.return_value = None
 
         first = songs.add_song_to_library(_upsert_command())
@@ -600,6 +622,7 @@ class TestNoResurrectionAfterRemoval:
         # during an add.
         song_repo.get_song_by_normalized_path.return_value = None  # old row no longer resolves
         song_repo.upsert_songs_for_library.return_value = [9]
+        song_repo.get_song_ids_by_paths.return_value = {"/music/a.mp3": 9}
         state_repo.initialize_song_states.return_value = None
 
         result = songs.add_song_to_library(_upsert_command())
@@ -687,6 +710,35 @@ class TestRemoveDoesNotOwnStateOrClaimCleanup:
         # reference — claim cleanup is the worker-claims external owner's scope).
         state_repo.assert_not_called()
         song_repo.delete_song.assert_called_once_with(5)
+
+
+@pytest.mark.unit
+class TestScalarIntentFailureSafety:
+    """P3-S1/P3-S2: scalar validation, outcomes, and operational relay."""
+
+    def test_validation_happens_before_sql_for_all_scalar_intents(self) -> None:
+        songs, song_repo, _, _ = _make_songs()
+        assert songs.set_modified_time(_identity(), -1).status == "INVALID_VALUE"
+        assert songs.set_last_tagged(_identity(), -1).status == "INVALID_VALUE"
+        assert songs.set_chromaprint(_identity(), cast("ChromaprintValue", object())).status == "INVALID_VALUE"
+        song_repo.assert_not_called()
+
+    def test_scalar_business_outcomes_are_relayed_without_mutation(self) -> None:
+        songs, song_repo, _, _ = _make_songs()
+        song_repo.set_modified_time_by_locator.side_effect = ["UPDATED", "UNCHANGED", "STALE_VALUE", "MISSING_LOCATOR"]
+        assert songs.set_modified_time(_identity(), 10).status == "UPDATED"
+        assert songs.set_modified_time(_identity(), 10).status == "UNCHANGED"
+        assert songs.set_modified_time(_identity(), 10).status == "STALE_VALUE"
+        assert songs.set_modified_time(_identity(), 10).status == "MISSING_LOCATOR"
+
+    @pytest.mark.parametrize(
+        "error", [RetryableDatabaseError("retry"), AmbiguousCommitError("unknown"), DatabaseStateError("other")]
+    )
+    def test_scalar_operational_failures_are_not_blindly_completed(self, error: Exception) -> None:
+        songs, song_repo, _, _ = _make_songs()
+        song_repo.set_last_tagged_by_locator.side_effect = error
+        with pytest.raises(type(error), match=str(error)):
+            songs.set_last_tagged(_identity(), 10)
 
 
 @pytest.mark.unit

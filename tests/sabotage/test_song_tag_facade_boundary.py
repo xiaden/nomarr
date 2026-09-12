@@ -277,11 +277,9 @@ class TestSanctionedExceptionsPreserved:
             "resolve_song_identities must remain for batch int->SongIdentity."
         )
 
-    def test_hydrate_song_input_keeps_song_id_handle(self) -> None:
-        """HydrateSongInput.song_id is the sole documented narrow semantic handle."""
-        assert _has_hydrate_song_input_song_id(), (
-            "HydrateSongInput must keep its song_id:int narrow semantic handle (documented ADR-041 exception)."
-        )
+    def test_hydrate_song_input_has_no_storage_identity(self) -> None:
+        """HydrateSongInput carries payload only; identity is locator-addressed."""
+        assert not _has_hydrate_song_input_song_id()
 
 
 def _has_hydrate_song_input_song_id() -> bool:

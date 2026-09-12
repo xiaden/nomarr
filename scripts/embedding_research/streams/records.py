@@ -1,7 +1,7 @@
 """Immutable stream / head-stream value objects and registry contracts (Plan B Phase 1).
 
 This module is intentionally PURE: it has no DuckDB, numpy, audio, or filesystem
-side effects, so any layer (store, catalog, tests) can import it without a
+side effects, so any layer (store, report, tests) can import it without a
 backend.  It is the single source of the record *field vocabulary* that every
 later phase (C-F) consumes - the same names/types the shared planning ledger and
 the DD ``stream_registry`` / ``head_stream_registry`` schemas define.
@@ -23,7 +23,7 @@ scope-limited to the *constrained* fields the ledger/DD pin (``dtype`` must be
 ``float32``, ``status`` must be in the lifecycle vocabulary, counts/dimensions/
 timestamps must be non-negative integers, ``fingerprint_sha256`` must be a
 64-hex sha256, ``artifact_ref`` must be a safe root-relative path).  Free-text
-provenance fields are not over-constrained so legacy semantics can be recorded
+provenance fields are not over-constrained so earlier semantics can be recorded
 verbatim.
 """
 
@@ -69,7 +69,7 @@ class VerifyFailureError(StreamStoreError):
     promoted, or a ``ready`` row whose current digest payload + self-describing
     manifest no longer validate (missing/corrupt/incomplete current payloads or
     manifests, or digest/shape/dtype/finite mismatches).  Reconcile never scans
-    rowless files and no supersession/legacy/archival classification exists, so those
+    rowless files and no supersession/archival classification exists, so those
     conditions are never a strict failure here.  The CLI ``--verify --strict``
     exit-nonzero wiring is Plan E; this is the store-level seam it calls.
     """
@@ -619,13 +619,13 @@ class ReconcileReport:
     a previously ``ready`` row ``missing``/``corrupt`` when its artifact no longer
     validates, and refusing corrupt/incomplete artifacts and reporting any row that fails
     to reach ready (a pending row with a valid manifest+payload promotes; one whose artifact
-    is absent/corrupt stays pending and is reported) — never emitting legacy status rows.  ``stale`` counts rows that were ``ready`` before this pass
+    is absent/corrupt stays pending and is reported) — never emitting unexpected status rows.  ``stale`` counts rows that were ``ready`` before this pass
     and are no longer ``ready`` after it (a previously verified stream degraded).
 
-    The ``orphan``/``superseded``/``legacy``/``stray`` fields are retained only as
-    registry/cache characterization: the legacy-adoption/supersession/rowless
-    classification machinery was deleted by Plan B, so reconcile never scans rowless
-    files and these counts are always 0.
+    The ``orphan``/``superseded``/``stray`` fields are retained only as
+    registry/cache characterization: the supersession/rowless classification
+    machinery was deleted by Plan B, so reconcile never scans rowless files and
+    these counts are always 0.
 
     ``strict`` records whether the reconcile ran in strict ``--verify`` mode; issues
     carry human-readable notes for any non-ready condition.
@@ -638,7 +638,6 @@ class ReconcileReport:
     corrupt: int = 0
     orphan: int = 0
     superseded: int = 0
-    legacy: int = 0
     stray: int = 0
     stale: int = 0
     strict: bool = False
@@ -650,7 +649,7 @@ class ReconcileReport:
 
         A strict caller still decides whether to treat the report as failure; this
         only reports the unqualified readiness of the scanned registry.  The
-        orphan/superseded/legacy/stray counts are always 0 under current reconcile
+        orphan/superseded/stray counts are always 0 under current reconcile
         (the rowless-classification machinery is deleted), so clean is purely
         readiness of the scanned rows plus an empty issues list.
         """
@@ -741,7 +740,7 @@ class ObservationCommit:
     *and* every referenced stream/mask manifest + payload verified — is enforced only by
     the ``observation_group_ready`` flow and by reindex (mirror :class:`ReconcileReport`).
     This dataclass models the marker contents; the marker's digest name is the sha256 over the marker content
-    dict EXCLUDING its own ``commit_sha256`` field (the DD catalog-id pattern) — that
+    dict EXCLUDING its own ``commit_sha256`` field — that
     field is then added before the marker is serialized, so re-reading the marker
     recomputes the same digest.
     """
@@ -778,7 +777,7 @@ class ObservationCommit:
 class ObservationGroupIdentity:
     """Immutable identity of ONE complete committed stream+mask observation group.
 
-    This is the typed identity a catalog/head/reindex consumer requires before it may
+    This is the typed identity a head/reindex consumer requires before it may
     use a stream or its silence mask: the immutable embedding ``stream_ref`` plus its
     ``stream_digest``, the aligned audio-derived ``mask_ref`` plus its ``mask_digest``,
     the ``alignment_token`` that binds them as one group, the ``patch_count`` the stream
@@ -793,8 +792,8 @@ class ObservationGroupIdentity:
     it is never constructed from unverified inputs.  Instances are immutable.
 
     ``patch_count`` and ``group_format_version`` make the identity the COMPLETE immutable
-    observation-version evidence that a compact catalog records per requested
-    ``(song_id, backbone)`` and that every catalog-derived phase re-verifies against the
+    observation-version evidence recorded per requested ``(song_id, backbone)``
+    and that every derived phase re-verifies against the
     current committed group (Plan A observation binding).
     """
 

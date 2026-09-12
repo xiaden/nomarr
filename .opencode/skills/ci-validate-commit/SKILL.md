@@ -15,24 +15,46 @@ name** (not workflow file name). Matching is exact for ordinary entries
 (`run_name == spec.name`) with **one exception**: the CodeQL `analyze` entry
 declares `prefix_match="Analyze ("`, so any check run whose name starts with
 that prefix is consumed (see Key Findings). `CheckSpec._run_matches_spec`
-(`scripts/validate_commit.py:387-397`) implements both modes. Each returned
+(`scripts/validate_commit.py:396-406`) implements both modes. Each returned
 run's `head_sha` must equal the requested SHA (exact-commit guard). Exit codes:
 0 = all required passed, 1 = missing/pending/failed/wrong-commit, 2 = env error.
 
 ## Coverage
 
-**Documented:** contract structure, the CodeQL `Analyze (` prefix-matcher as the
+**Documented:** contract structure, the `database-tests` required entry (added by
+D3B), the CodeQL `Analyze (` prefix-matcher as the
 CURRENT implemented matching contract, the fail-closed `expected_names` matrix
 machinery, matching machinery, prior QA notes, docs drift.
-**Not yet documented:** none known.
-**Last extended:** 2026-09-04 (reconciled to the live validator)
+**Not yet documented:** none known (the `database-tests` required entry added
+by D3B is documented in `scripts/validate_commit.py` and `docs/dev/validate-commit.md`).
+**Last extended:** 2026-09-11 (D3B `database-tests` required entry; line refs reconciled
+after the +9-line `REQUIRED_CHECKS` insertion)
 
 ## Key Findings
 
+### `database-tests` is a REQUIRED contract entry (added by D3B)
+- **Location:** `scripts/validate_commit.py:217-222` (the `database-tests`
+  `CheckSpec`), `.github/workflows/backend-tests.yml` (job `database-tests`)
+- **What:** `REQUIRED_CHECKS["database-tests"]` requires the
+  `backend-tests.yml` job named `database-tests` on triggers
+  `{push, pr, manual}` — the same trigger set as its sibling required jobs
+  `test` and `architecture-qc` in the same workflow. Its note reads
+  "PostgreSQL/pgvector characterization + mood-owner + sabotage contract tests
+  (-m requires_database)". Job id (not workflow file name) is the check-run
+  contract key; the job declares no matrix and no `name:` override, so the
+  check-run name is the stable bare `database-tests`. It has no
+  `continue-on-error`, no `if: false`, and no hidden `not requires_database`
+  masking.
+- **Why it matters:** The D3B wiring makes the mood/pgvector gate a first-class
+  required check. Do not drop it from `REQUIRED_CHECKS`, weaken its trigger set
+  relative to `test`/`architecture-qc`, or add a matrix/`name:` override without
+  updating this skill, `docs/dev/validate-commit.md`, and
+  `tests/unit/scripts/test_validate_commit.py`.
+
 ### The `analyze` prefix matcher is IMPLEMENTED (not merely planned)
-- **Location:** `scripts/validate_commit.py:259-273` (`analyze` CheckSpec),
-  `scripts/validate_commit.py:387-397` (`_run_matches_spec` startswith),
-  `scripts/validate_commit.py:106-116` (module docstring),
+- **Location:** `scripts/validate_commit.py:268-282` (`analyze` CheckSpec),
+  `scripts/validate_commit.py:396-406` (`_run_matches_spec` startswith),
+  `scripts/validate_commit.py:109-118` (module docstring),
   `.github/workflows/codeql.yml:24` (`name: Analyze (${{ matrix.language }})`),
   `.github/workflows/codeql.yml:44-53` (matrix: actions, go,
   javascript-typescript, python)
@@ -49,7 +71,7 @@ machinery, matching machinery, prior QA notes, docs drift.
   `expected_names` set in sync with `codeql.yml`'s actual matrix languages.
 
 ### Matrix legs fail closed via `expected_names`
-- **Location:** `scripts/validate_commit.py:482-494`
+- **Location:** `scripts/validate_commit.py:491-503`
 - **What:** When a spec has `expected_names` (the CodeQL matrix), every known
   leg must be present among the consumed runs. A matrix that silently drops a
   language is a `FAIL` naming the missing leg(s) — not a silent pass. Partial
@@ -59,8 +81,8 @@ machinery, matching machinery, prior QA notes, docs drift.
   silently skipping a language.
 
 ### All matching runs of a name must pass; bare `analyze` does not satisfy
-- **Location:** `scripts/validate_commit.py:496-521` (multiple same-name runs
-  all must pass), `scripts/validate_commit.py:527-532` (unmatched runs are
+- **Location:** `scripts/validate_commit.py:505-530` (multiple same-name runs
+  all must pass), `scripts/validate_commit.py:536-541` (unmatched runs are
   informational `extra_runs`, never failures)
 - **What:** Every run consumed by a contract entry must be `completed` with a
   `success` conclusion. A check named exactly `analyze` (the bare job id) does

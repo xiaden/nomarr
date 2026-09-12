@@ -17,6 +17,7 @@ from nomarr.components.tagging.tag_write_comp import set_song_tags, set_song_tag
 
 if TYPE_CHECKING:
     from nomarr.helpers.dataclasses.library_dataclass import Library
+    from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
     from nomarr.helpers.dataclasses.song_dataclass import Song
     from nomarr.helpers.dataclasses.tags_dataclass import Tags
     from nomarr.persistence.db import Database
@@ -91,28 +92,10 @@ _MOOD_TIER_NAMES = ("nom:mood-strict", "nom:mood-regular", "nom:mood-loose")
 
 def save_mood_tags(
     db: Database,
-    file_id: int,
+    song: SongIdentity,
     mood_tags: Tags | None,
 ) -> int:
-    """Write mood-* tags to the database for a file.
-
-    Always writes all three mood tier keys (mood-strict, mood-regular,
-    mood-loose). Tiers absent from *mood_tags* are explicitly cleared with an
-    empty value list so that previously-written tiers do not persist when the
-    tier count drops after recalibration. ``None`` is
-    the strict representation of "no tags to write" and clears all three tiers.
-
-    Args:
-        db: Database instance
-        file_id: File ID (integer)
-        mood_tags: Tags DTO containing mood tags to write, or ``None`` when
-            no mood tags were produced.
-
-    Returns:
-        Number of tiers written with non-empty values
-
-    """
-    # Build lookup: normalised name -> values
+    """Write mood-* tags to the database for a natural song locator."""
     written: dict[str, list] = {}
     if mood_tags is not None:
         for tag in mood_tags:
@@ -122,7 +105,7 @@ def save_mood_tags(
     count = 0
     for name in _MOOD_TIER_NAMES:
         values = written.get(name, [])
-        set_song_tags(db, file_id, name, list(values))
+        set_song_tags(db, song, name, list(values))
         if values:
             count += 1
     return count
@@ -130,43 +113,23 @@ def save_mood_tags(
 
 def save_mood_tags_batch(
     db: Database,
-    items: list[tuple[int, Tags | None]],
+    items: list[tuple[SongIdentity, Tags | None]],
 ) -> int:
-    """Write mood tags for multiple files via constructor-backed verbs.
-
-    Delegates to ``set_song_tags_batch`` which performs component-layer
-    coordination: edge discovery per ``(song_id, name)`` pair, targeted edge
-    deletion, tag upsert per unique ``(name, value)`` pair, and bulk edge
-    insert.  Query count scales with the number of files and distinct tag
-    values.
-
-    Args:
-        db: Database instance
-        items: List of (file_id, mood_tags) tuples; ``mood_tags`` is ``None``
-            when no mood tags were produced (all three tiers get cleared).
-
-    Returns:
-        Number of (file_id, name) pairs written
-
-    """
+    """Write mood tags for multiple natural song locators."""
     if not items:
         return 0
 
     entries: list[dict] = []
-    for file_id, mood_tags in items:
-        # Build a lookup for this file's non-empty tiers
+    for song, mood_tags in items:
         written: dict[str, list] = {}
         if mood_tags is not None:
             for tag in mood_tags:
                 nomarr_name = f"nom:{tag.name}" if not tag.name.startswith("nom:") else tag.name
                 written[nomarr_name] = list(tag.values)
-        # Always emit all three tiers; absent ones get an empty list (→ delete)
-        entries.extend(
-            {"song_id": int(file_id), "name": name, "values": written.get(name, [])} for name in _MOOD_TIER_NAMES
-        )
+        entries.extend({"song": song, "name": name, "values": written.get(name, [])} for name in _MOOD_TIER_NAMES)
 
     set_song_tags_batch(db, entries)
-    return sum(1 for e in entries if e["values"])
+    return sum(1 for entry in entries if entry["values"])
 
 
 # ---------------------------------------------------------------------------
@@ -184,7 +147,9 @@ def release_file_claim(
     Swallows exceptions so callers in error paths don't need try/except.
     """
     try:
-        release_claim(db, file_key, worker_id)
+        song = db.library.resolve_song_identity(int(file_key))
+        if song is not None:
+            release_claim(db, song, worker_id)
     except (ValueError, RuntimeError) as exc:
         logger.warning(
             "[file_write_comp] Failed to release claim for %s: %s",

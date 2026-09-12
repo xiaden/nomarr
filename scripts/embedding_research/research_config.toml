@@ -1,7 +1,10 @@
-# Strict current research configuration (Plan A P1-S3).
+# Strict current research configuration (geometry era).
 #
-# This file describes ONLY the executable current eight-phase/maintenance settings.
-# There is no permissive fallback: a missing, malformed, or schema-violating file
+# This file describes ONLY the executable current seven-phase/maintenance settings.
+# The seven phases are ``ingest``, ``embed``, ``infer-heads``, ``geometry``,
+# ``analyze``, ``head-analysis``, and ``report``; the derived phases are CPU-only and
+# the canonical primary threshold grid is exactly 171 indexed hypotheses (0..170).
+# There is no permissive default: a missing, malformed, or schema-violating file
 # is a named error from ``helpers.toml.load_research_config`` — never ``{}``.
 #
 # Forbidden key families are rejected outright and do not appear here: archival

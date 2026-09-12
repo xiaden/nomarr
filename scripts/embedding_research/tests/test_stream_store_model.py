@@ -156,7 +156,7 @@ def test_stream_record_with_status_returns_new_instance():
     [
         ({"dtype": "float16"}, ValueError),
         ({"status": "unknown"}, ValueError),
-        ({"status": "legacy"}, ValueError),  # legacy is provenance_source, not a status
+        ({"status": "retired"}, ValueError),  # the retired value is provenance_source, not a status
         ({"patch_count": -1}, ValueError),
         ({"dim": 0}, ValueError),
         ({"embed_semantics_version": -1}, ValueError),

@@ -9,7 +9,7 @@ tests use an in-memory DuckDB connection.
 Post-migration (P1-S2) these fixtures publish/hand-register artifacts under the digest
 grammar ``<subdir>/<sid>.<backbone>.<64-hex>.npy|.npz`` plus a self-describing ``.json``
 manifest sibling — never bare or ``.vN`` names.  Rowless-orphan classification
-(superseded/legacy/stray) is not a reconcile concern here (Phase 5 reindex owns it).
+(superseded/stray) is not a reconcile concern here (Phase 5 reindex owns it).
 """
 
 from __future__ import annotations

@@ -2,7 +2,7 @@
 
 DD "frozen observation corrective pass": a stream and its audio-derived silence mask
 are published as ONE logical observation group (mask payload + manifest durably renamed
-FIRST, commit marker LAST).  A catalog entry, head-analysis pooling, and reindex are
+FIRST, commit marker LAST).  A committed observation, head-analysis pooling, and reindex are
 authorised ONLY by a complete committed group:
 
 * an immutable embedding stream, PLUS
@@ -14,7 +14,7 @@ authorised ONLY by a complete committed group:
 MISSING, corrupt, wrong-length, wrong-digest, or uncommitted masks must FAIL CLOSED —
 absence is never interpreted as "no silence" and a registry ``ready`` row never
 authorises a stream by itself.  Every test here asserts a refusal, never a silent
-all-searchable fallback.
+all-searchable default.
 
 The store-level group predicate (``StreamStore.observation_group_ready``) and the
 current reindex/mask seams ALREADY enforce this fail-closed contract, so the readiness
@@ -374,7 +374,7 @@ def test_future_mask_resolver_refuses_uncommitted_and_wrong_length(con, tmp_path
         io.BytesIO(mask_npy_bytes(np.ones(3, dtype=np.uint8))).getvalue()  # length 3 != 7
     )
     got = resolver.load("songB", "effnet")
-    assert got is None or got.shape == (7,)  # never a length-3 silent-ones fallback
+    assert got is None or got.shape == (7,)  # never a length-3 silent-ones default
     _ = record
 
 

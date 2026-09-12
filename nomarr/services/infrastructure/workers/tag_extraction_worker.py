@@ -31,6 +31,7 @@ from nomarr.helpers.constants.file_states import (
 )
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
@@ -39,7 +40,7 @@ IDLE_SLEEP_S = 1.0
 MAX_CONSECUTIVE_ERRORS = 10
 
 
-def _process_file(db: Database, song_id: int) -> None:
+def _process_file(db: Database, song: SongIdentity) -> None:
     """Extract tags for one song and hydrate it via the atomic intent.
 
     Builds exactly one :class:`HydrateSongInput` from the extracted audio
@@ -59,7 +60,7 @@ def _process_file(db: Database, song_id: int) -> None:
 
     Args:
         db: Database instance
-        song_id: Integer primary key of the song record
+        song: Semantic locator identity of the song record
 
     Raises:
         Exception: Propagated to caller for error counting and state transition
@@ -72,16 +73,15 @@ def _process_file(db: Database, song_id: int) -> None:
     from nomarr.components.tagging.tag_parsing_comp import parse_tag_values
     from nomarr.helpers.dto.hydration_dto import HydrateSongInput
 
-    song = db.library.get_song(song_id)
-    if song is None:
-        msg = f"Song not found: {song_id}"
-        raise ValueError(msg)
-    path: str = song.path
+    song_value = db.library.get_song(song)
+    if song_value is None:
+        raise ValueError("Song not found for locator")
+    path: str = song_value.path
     namespace: str = "nom"
 
     library_path = build_library_path_from_input(path, db)
     if not library_path.is_valid():
-        msg = f"Invalid library path for {song_id}: {library_path.reason}"
+        msg = f"Invalid library path: {library_path.reason}"
         raise ValueError(msg)
 
     metadata = extract_metadata(library_path, namespace=namespace)
@@ -105,13 +105,12 @@ def _process_file(db: Database, song_id: int) -> None:
     # fields, one-shot duration, state transition all in one unit of work).
     duration = metadata.get("duration")
     hydrate_input = HydrateSongInput(
-        song_id=song_id,
         parsed_nom_tags=parsed_nom_tags,
         entity_tags=entity_tags,
         metadata_cache=metadata_cache,
         duration_seconds=float(duration) if duration is not None else None,
     )
-    db.library.songs.hydrate_song(hydrate_input)
+    db.library.songs.hydrate_song(song, hydrate_input)
 
 
 class TagExtractionWorker(threading.Thread):
@@ -150,22 +149,20 @@ class TagExtractionWorker(threading.Thread):
         consecutive_errors = 0
 
         while not self._stop_event.is_set():
-            file_id = discover_and_claim_file_for_tags(self._db, self._worker_id)
-            if file_id is None:
+            song = discover_and_claim_file_for_tags(self._db, self._worker_id)
+            if song is None:
                 self._stop_event.wait(IDLE_SLEEP_S)
                 continue
-            song_id: int = int(file_id)
-
             try:
-                _process_file(self._db, song_id)
+                _process_file(self._db, song)
                 consecutive_errors = 0
-                logger.debug("[%s] Extracted tags for %s", self._worker_id, song_id)
+                logger.debug("[%s] Extracted tags", self._worker_id)
             except Exception:
-                logger.exception("[%s] Error extracting tags for %s", self._worker_id, song_id)
+                logger.exception("[%s] Error extracting tags", self._worker_id)
                 try:
-                    transition_song_state(self._db, [song_id], STATE_NOT_ERRORED, STATE_ERRORED)
+                    transition_song_state(self._db, [song], STATE_NOT_ERRORED, STATE_ERRORED)
                 except Exception:
-                    logger.exception("[%s] Failed to set error state for %s", self._worker_id, song_id)
+                    logger.exception("[%s] Failed to set error state", self._worker_id)
                 consecutive_errors += 1
                 if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
                     logger.error(
@@ -176,8 +173,8 @@ class TagExtractionWorker(threading.Thread):
                     break
             finally:
                 try:
-                    release_claim(self._db, song_id, self._worker_id)
+                    release_claim(self._db, song, self._worker_id)
                 except Exception:
-                    logger.exception("[%s] Failed to release claim for %s", self._worker_id, song_id)
+                    logger.exception("[%s] Failed to release claim", self._worker_id)
 
         logger.info("[%s] Tag extraction worker stopped", self._worker_id)

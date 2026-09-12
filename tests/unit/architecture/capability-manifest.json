@@ -1,0 +1,81 @@
+{
+  "plan": "TASK-tag-persistence-ownership-D3B-mood-ci-wiring-required-check",
+  "refreshed_by": "TASK-tag-persistence-ownership-D3D-B-mood-fault-evidence-ci (D3D-B added commit-ack-drop/connection-loss closure + D3A-D1 resolved-by-D2R-B reconciliation; it did not author the whole manifest; docs-accuracy repair: leak proof cited to the fault-disarmed follow-up, pool.checkedout()==0 recorded as hygiene only); Q3-A boundary-suite wiring reconciliation (TASK-song-row-mirror-leaks-into-domain-Q3-A-state-claims-phase1): tests/integration/test_song_upsert_state_boundary_pg.py listed in pytest_paths + exact_command and skip-only in CI (no NOMARR_TEST_DATABASE_URL) = CI_DEFERRED; pytest_paths/exact_command/required_matrix/ci_job unchanged)",
+  "baseline": "418c5d9b checkpoint",
+  "status": "tracked-clean-checkout-fixture",
+  "evidence_policy": {
+    "local_pass": "Only a command actually executed locally and passed",
+    "local_unavailable": "LOCAL_UNAVAILABLE: required capability cannot execute in this environment",
+    "ci_deferred": "CI_DEFERRED: required capability is explicitly wired to a named CI job but has not run here",
+    "ci_pass": "CI_PASS: an actual GitHub Actions run passed; never represented as local pass"
+  },
+  "ci_job": "database-tests",
+  "ci_workflow": ".github/workflows/backend-tests.yml",
+  "required_check_disposition": {
+    "status": "REQUIRED",
+    "reason": "database-tests has a stable check-run name (no matrix and no `name:` override), the same push/pr/manual trigger and path-filter coverage as its sibling required jobs `test` and `architecture-qc` in the same workflow, no hidden exclusion (no `continue-on-error`, no `if: false`, no `not requires_database` masking), and reliable failure propagation. It was therefore added to scripts/validate_commit.py::REQUIRED_CHECKS with triggers {push, pr, manual}.",
+    "required_checks_entry": {
+      "name": "database-tests",
+      "workflow": "backend-tests.yml",
+      "triggers": ["push", "pr", "manual"]
+    }
+  },
+  "required_matrix": [
+    "PostgreSQL",
+    "transaction",
+    "rollback",
+    "concurrency",
+    "SQLSTATE",
+    "UUID-locator",
+    "mood-marker",
+    "mood-batch",
+    "ambiguous-commit",
+    "commit-ack-drop",
+    "connection-loss"
+  ],
+  "pytest_paths": [
+    "tests/characterization/",
+    "tests/characterization/test_mood_owner_pg.py",
+    "tests/characterization/test_mood_owner_pg_faults.py",
+    "tests/integration/test_library_uuid_locator_identity_pg.py",
+    "tests/integration/test_song_upsert_state_boundary_pg.py",
+    "tests/sabotage/test_no_facades_begin_transactions.py"
+  ],
+  "mood_suite_path": "tests/characterization/test_mood_owner_pg.py",
+  "marker": "requires_database",
+  "exact_command": "pytest tests/characterization/ tests/characterization/test_mood_owner_pg.py tests/integration/test_library_uuid_locator_identity_pg.py tests/integration/test_song_upsert_state_boundary_pg.py tests/sabotage/test_no_facades_begin_transactions.py -v -m requires_database",
+  "dependency_install": "pip install -e \".[dev]\"",
+  "docker_requirement": "docker version --format '{{.Server.Version}}' (testcontainers pgvector/pgvector:pg17 needs the native Docker daemon preinstalled on ubuntu-latest)",
+  "forbidden_workflow_properties": ["continue-on-error", "hidden exclusion"],
+  "closed_capabilities": [
+    {
+      "id": "D3A-D2",
+      "capability": "pgcode-less ambiguous commit (dropped commit ack)",
+      "matrix": "commit-ack-drop",
+      "evidence": "tests/characterization/test_mood_owner_pg_faults.py::test_drop_ack_batch_is_single_ambiguous_commit_with_convergence_readback (real PostgreSQL 17.11 driver through tests/characterization/pg_fault_proxy.py PgFaultMode.DROP_ACK); LOCAL_PASS",
+      "proof": "exactly one MoodBatchResult AMBIGUOUS_COMMIT, commit_count==1, connections_accepted==1 (fault phase; a disarmed follow-up opens a second connection), backend_committed, fresh-session convergence readback, the genuine no-leak proof is the pre-close fault-disarmed follow-up owner call on the same single-connection Database (would raise/block on a leaked session), pool.checkedout()==0 recorded as non-discriminating hygiene only (a severed connection is invalidated and returned regardless of cleanup), redacted repr. active_connection_count()==0 is retained only as harness handler-teardown, not as the leak proof.",
+      "contrast_traceability": "pre-commit SEVER_PRE_COMMIT contrast: tests/characterization/test_mood_owner_pg_faults.py::test_pre_commit_sever_is_infra_failure_not_ambiguous (no COMMIT forwarded -> INFRA_FAILURE, never AMBIGUOUS_COMMIT); LOCAL_PASS"
+    },
+    {
+      "id": "D3A-D3",
+      "capability": "connection-loss",
+      "matrix": "connection-loss",
+      "evidence": "tests/characterization/test_mood_owner_pg_faults.py::test_sever_commit_phase_is_single_ambiguous_commit_with_no_leak (real driver PgFaultMode.SEVER); LOCAL_PASS",
+      "proof": "exactly one MoodWriteResult AMBIGUOUS_COMMIT, commit_count==1, connections_accepted==1 (fault phase; a disarmed follow-up opens a second connection), no replay, the genuine no-leak proof is the pre-close fault-disarmed follow-up owner call on the same single-connection Database (would raise/block on a leaked session), pool.checkedout()==0 recorded as non-discriminating hygiene only (a severed connection is invalidated and returned regardless of cleanup), joint (tags,marker) non-torn readback, redacted repr",
+      "contrast_traceability": "pre-commit SEVER_PRE_COMMIT contrast: tests/characterization/test_mood_owner_pg_faults.py::test_pre_commit_sever_is_infra_failure_not_ambiguous (no COMMIT forwarded -> INFRA_FAILURE, never AMBIGUOUS_COMMIT); LOCAL_PASS"
+    }
+  ],
+  "resolved_by_other_plans": [
+    {
+      "id": "D3A-D1",
+      "capability": "same-locator single-winner serialization",
+      "status": "RESOLVED_BY_D2R_B",
+      "resolved_by": "TASK-tag-persistence-ownership-D2R-B-mood-serialization-evidence",
+      "evidence_node": "tests/characterization/test_mood_owner_pg.py::TestMoodConcurrencyAndReaddress::test_same_locator_concurrent_writers_are_single_winner",
+      "evidence_repeat": "5/5 consecutive LOCAL_PASS (deterministic real-PostgreSQL evidence)",
+      "source": "artifacts/designs/parts/tag-persistence-ownership/D2R-B-HANDOFF.md section 2/7",
+      "note": "Distinct from the D3D-B-closed capabilities (D3A-D2/D3A-D3): D3A-D1 was resolved upstream by D2R-B, not by D3D-B, and is not claimed as D3D-B closure. D3D-B only reconciles the manifest to the D2R-B handoff."
+    }
+  ],
+  "blocked_capabilities": []
+}

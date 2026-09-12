@@ -213,9 +213,9 @@ def apply_calibration_wf(
                     logger.warning(f"[apply_calibration] Batch calibration hash flush failed: {e}", exc_info=True)
 
             if writes_succeeded:
-                for song_id, _ in batch_ctx.pending_mood_tags:
-                    if STATE_TAGS_CURRENT in db.app.song_state_membership(song_id):
-                        transition_song_state(db, [song_id], STATE_TAGS_CURRENT, STATE_TAGS_NOT_FRESH)
+                for song, _ in batch_ctx.pending_mood_tags:
+                    if STATE_TAGS_CURRENT in db.app.song_state_membership(song):
+                        transition_song_state(db, [song], STATE_TAGS_CURRENT, STATE_TAGS_NOT_FRESH)
 
             logger.debug(f"[apply_calibration] Chunk {chunk_num}/{n_chunks} done in {_t_io_chunk:.2f}s I/O")
 

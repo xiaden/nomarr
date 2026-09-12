@@ -4,14 +4,14 @@ Plan D (TASK-song-row-mirror-leaks-into-domain-D) Phase 1 real-DB proof of the
 ``add_song_to_library(SongUpsertInput)`` canonical typed-upsert handoff boundary:
 
 - The song-row upsert (``song_repo.upsert_songs_for_library``) and the state
-  initialization (``song_state_repo.initialize_song_states``) are TWO
-  repository-owned commits on the shared session — the facade owns no
-  transaction across them. A state-init failure after the row upsert commits
-  therefore leaves the song ROW persisted (recorded) with NO initial state
-  assignments, and the facade surfaces the error rather than compensating with a
-  delete. This is the **recorded-recoverable** boundary: re-running the
-  idempotent intent completes the state bootstrap. It is NOT all-or-none across
-  (song-row, states) — that two-commit split is the honest contract Plan E/M/O
+  initialization (``song_state_repo.initialize_song_states``) share ONE
+  facade-owned transaction: both are invoked with ``commit=False`` and the facade
+  issues exactly one ``self._session.commit()``. A state-init failure therefore
+  rolls the whole transaction back — NO song row and NO state assignments
+  persist — and the facade surfaces the error rather than compensating with a
+  delete. This is the **atomic-rollback** boundary: re-running the idempotent
+  intent completes the state bootstrap. It IS all-or-none across (song-row,
+  states) — that single-transaction contract is the honest contract Plan E/M/O
   must rely on.
 
 Relocation (destination-conflict + stale-locator rollback leaving source locator,
@@ -23,10 +23,12 @@ pending; worker-claims canonical ``db.app.add_claim`` surface; ML typed
 write-boundary commit ``0dce610f`` green).
 
 PostgreSQL-only (relies on real commit/rollback semantics), so this module is
-marked ``characterization`` + ``requires_database`` and runs only in the CI
-``database-tests`` job. Docker is DOWN in the authoring workspace, so this file
-is authored for CI and is NOT runnable here; the environment blocker is reported
-honestly (unavailable infrastructure is not PASS).
+marked ``characterization`` + ``requires_database``. It runs in the CI
+``database-tests`` job through the testcontainers characterization fixtures
+(``tests/characterization/conftest.py`` provides the migrated PostgreSQL session).
+Docker is not available in the authoring workspace, so this file cannot be
+executed here; the environment blocker is reported honestly (unavailable
+infrastructure is not PASS).
 """
 
 from __future__ import annotations
@@ -101,28 +103,27 @@ def _song_row_id(session: Session, library_id: int, normalized_path: str) -> int
 
 @pytest.mark.characterization
 @pytest.mark.requires_database
-class TestAddSongToLibraryRecordedRecoverableBoundary:
-    """The canonical typed-upsert handoff is recorded-recoverable, not all-or-none.
+class TestAddSongToLibraryAtomicRollbackBoundary:
+    """The canonical typed-upsert handoff is all-or-none across (song-row, states).
 
-    Proves on real PostgreSQL that the song-row upsert commit and the
-    state-initialization commit are independent: a state-init failure leaves the
-    row persisted without initial states, the facade surfaces the error without a
-    compensating delete, and a retry of the idempotent intent completes the
-    bootstrap.
+    Proves on real PostgreSQL that the song-row upsert and the state
+    initialization share one facade-owned transaction: a state-init failure rolls
+    the whole transaction back so the row is absent with no state assignments,
+    the facade surfaces the error without a compensating delete, and a retry of
+    the idempotent intent completes the bootstrap.
     """
 
-    def test_state_init_failure_leaves_committed_row_and_retry_recovers(
+    def test_state_init_failure_rolls_back_row_and_retry_recovers(
         self,
         db: Database,
         inference_session: Session,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         lib = db.library.create_library(Library(name="FSLib", root_path="/tmp/fslib"))
+        assert lib.library_uuid is not None  # persistence mints the immutable identity
         library_id = _library_storage_id(inference_session, "FSLib")
         try:
-            library_identity = LibraryIdentity(
-                library_uuid="c06873e2-1470-5747-9f76-0dd31225ca66", name="FSLib", root_path="/tmp/fslib"
-            )
+            library_identity = LibraryIdentity(library_uuid=lib.library_uuid, name="FSLib", root_path="/tmp/fslib")
 
             def _cmd(path: str, normalized_path: str) -> SongUpsertInput:
                 return SongUpsertInput(
@@ -143,19 +144,20 @@ class TestAddSongToLibraryRecordedRecoverableBoundary:
             assert _count_songs_by_normalized_path(inference_session, library_id, "ok.flac") == 1
             assert _count_state_assignments(inference_session, library_id, "ok.flac") > 0
 
-            # 2) Inject a state-init failure AFTER the row upsert has committed.
-            def _state_init_fails(song_ids):  # type: ignore[no-untyped-def]
-                raise DatabaseStateError("injected state-init commit failure")
+            # 2) Inject a state-init failure inside the shared transaction (the
+            # shipped call passes the keyword-only commit=False).
+            def _state_init_fails(song_ids, *, commit=False):  # type: ignore[no-untyped-def]
+                raise DatabaseStateError("injected state-init failure")
 
             monkeypatch.setattr(db.library.songs._song_state_repo, "initialize_song_states", _state_init_fails)
 
             with pytest.raises(DatabaseStateError):
                 db.library.add_song_to_library(_cmd("/tmp/fslib/partial.flac", "partial.flac"))
 
-            # The song ROW was committed by its own repository transaction...
-            assert _count_songs_by_normalized_path(inference_session, library_id, "partial.flac") == 1
-            # ...but the state bootstrap did NOT commit (separate commit boundary).
-            assert _count_state_assignments(inference_session, library_id, "partial.flac") == 0
+            # The whole facade-owned transaction rolled back: neither the song ROW
+            # nor any state assignments persist (file's song-absent sentinel is -1).
+            assert _count_songs_by_normalized_path(inference_session, library_id, "partial.flac") == 0
+            assert _count_state_assignments(inference_session, library_id, "partial.flac") == -1
 
             # 3) Re-run the idempotent intent (no injected failure) → recovery.
             monkeypatch.undo()
@@ -184,11 +186,10 @@ class TestRetryIdempotentAndNoResurrection:
         inference_session: Session,
     ) -> None:
         lib = db.library.create_library(Library(name="FSRetry", root_path="/tmp/fsretry"))
+        assert lib.library_uuid is not None  # persistence mints the immutable identity
         library_id = _library_storage_id(inference_session, "FSRetry")
         try:
-            library_identity = LibraryIdentity(
-                library_uuid="988e2d21-efc7-5a2f-9592-b994a2f6f725", name="FSRetry", root_path="/tmp/fsretry"
-            )
+            library_identity = LibraryIdentity(library_uuid=lib.library_uuid, name="FSRetry", root_path="/tmp/fsretry")
 
             def _cmd() -> SongUpsertInput:
                 return SongUpsertInput(
@@ -225,10 +226,11 @@ class TestRetryIdempotentAndNoResurrection:
         inference_session: Session,
     ) -> None:
         lib = db.library.create_library(Library(name="FSRemoval", root_path="/tmp/fsremoval"))
+        assert lib.library_uuid is not None  # persistence mints the immutable identity
         library_id = _library_storage_id(inference_session, "FSRemoval")
         try:
             library_identity = LibraryIdentity(
-                library_uuid="d44d6b2c-691c-57df-92f5-d9a662d13b16", name="FSRemoval", root_path="/tmp/fsremoval"
+                library_uuid=lib.library_uuid, name="FSRemoval", root_path="/tmp/fsremoval"
             )
 
             def _cmd() -> SongUpsertInput:

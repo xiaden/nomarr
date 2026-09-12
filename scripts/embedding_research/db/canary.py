@@ -1,6 +1,6 @@
 """Post-crash rollback-only verification canary over surviving PK/UNIQUE tables.
 
-DD "Post-crash verification canary": before any ``catalog`` / ``analyze`` /
+DD "Post-crash verification canary": before any ``analyze`` /
 ``report`` read — after a detected post-crash condition, or when ``--verify``
 requests it — probe **every** surviving table that carries a ``PRIMARY KEY`` or
 ``UNIQUE`` constraint by:
@@ -49,7 +49,7 @@ __all__ = [
 
 #: Exact repair instructions embedded in every canary-failure refusal.
 REPAIR_GUIDANCE = (
-    "Canary blocked all catalog/analyze/report reads. Repair the DuckDB file with "
+    "Canary blocked all analyze/report reads. Repair the DuckDB file with "
     "`EXPORT DATABASE '<dir>'` followed by `IMPORT DATABASE '<dir>'` into a fresh "
     "DuckDB file, then re-run the phase."
 )

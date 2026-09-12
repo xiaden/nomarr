@@ -18,10 +18,12 @@ from typing import TYPE_CHECKING
 from sqlalchemy.exc import IntegrityError, NoResultFound, OperationalError, ProgrammingError, SQLAlchemyError
 
 from nomarr.helpers.exceptions import (
+    AmbiguousCommitError,
     DatabaseStateError,
     DuplicateEntityError,
     EntityNotFoundError,
     ReferentialIntegrityError,
+    RetryableDatabaseError,
 )
 from nomarr.persistence.exceptions import DuplicateKeyError, PersistenceError
 
@@ -47,6 +49,8 @@ def map_persistence_exceptions() -> Iterator[None]:
     * ``IntegrityError`` with pgcode 23505 (unique_violation) → ``DuplicateEntityError``
     * ``IntegrityError`` with pgcode 23503 (foreign_key_violation) → ``ReferentialIntegrityError``
     * ``IntegrityError`` with unknown/missing pgcode → ``DatabaseStateError`` (logged at WARNING)
+    * SQLSTATE ``40001``/``40P01``/``55P03`` → ``RetryableDatabaseError``
+    * SQLSTATE ``40003`` → ``AmbiguousCommitError``
     * ``OperationalError`` → ``DatabaseStateError``
     * ``ProgrammingError`` → ``DatabaseStateError``
     """
@@ -63,7 +67,12 @@ def map_persistence_exceptions() -> Iterator[None]:
         logger.warning("IntegrityError with unexpected pgcode=%s: %s", pgcode, e)
         raise DatabaseStateError(f"Database error (pgcode={pgcode}): {e}") from None
     except OperationalError as e:
-        raise DatabaseStateError(f"Database operational error: {e}") from None
+        pgcode = getattr(e.orig, "pgcode", None) if e.orig is not None else None
+        if pgcode in {"40001", "40P01", "55P03"}:
+            raise RetryableDatabaseError(f"Database retryable failure (pgcode={pgcode})") from None
+        if pgcode == "40003":
+            raise AmbiguousCommitError("Database commit outcome is unknown") from None
+        raise DatabaseStateError("Database operational error") from None
     except ProgrammingError as e:
         raise DatabaseStateError(f"Database programming error: {e}") from None
 

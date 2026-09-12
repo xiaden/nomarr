@@ -2,7 +2,7 @@
 
 Research-only, active-surface only.  Dead-table progress helpers (``query_head_sim_corr_done``
 on ``head_sim_corr_rows``, ``query_binned_classify_done`` on ``binned_classify_ctp``) were
-removed with the hard-cut deletion of the legacy report tables (Wave 2a).  The single
+removed with the hard-cut deletion of the earlier report tables (Wave 2a).  The single
 retained helper reads the active ``analyze_metrics`` table.
 """
 

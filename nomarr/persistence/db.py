@@ -85,13 +85,22 @@ class Database:
         )
         self._folder_repo = FolderRepository(self._scoped)
         self._tag_repo = TagRepository(self._scoped)
-        self._song_tag_repo = SongTagRepository(self._scoped)
+        # Phase 2 (TASK-tag-persistence-ownership-D2): the song-tag repository is
+        # the Tier-2 owner of the private locator-addressed mood intent, so it
+        # receives the tag/song/library resolvers it composes privately.
+        self._song_tag_repo = SongTagRepository(
+            self._scoped,
+            tag_repo=self._tag_repo,
+            song_repo=self._song_repo,
+            library_repo=self._library_repo,
+        )
         self._song_hydration_repo = SongHydrationRepository(
             session=self._scoped,
             song_repo=self._song_repo,
             tag_repo=self._tag_repo,
             song_tag_repo=self._song_tag_repo,
             song_state_repo=self._song_state_repo,
+            library_repo=self._library_repo,
         )
         self._vector_repo = VectorRepo(self._scoped)
         self._model_repo = ModelRepo(self._scoped)

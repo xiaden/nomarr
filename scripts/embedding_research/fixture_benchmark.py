@@ -117,9 +117,8 @@ def validate_benchmark_report(record: Mapping[str, Any]) -> list[str]:
     return errors
 
 
-#: Fixtures-only application/format version label (was ``search_views.APPLICATION_VERSION``;
-#: the view software triple is gone under the disposable catalog-first model, so the fixture
-#: benchmark carries its own fixtures-only label rather than a search-view identity version).
+#: Fixtures-only application/format version label.  The fixture benchmark carries its own
+#: fixtures-only label rather than a persisted software-triple identity version.
 _APPLICATION_VERSION = "1"
 
 

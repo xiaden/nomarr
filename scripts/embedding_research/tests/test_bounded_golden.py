@@ -12,7 +12,7 @@ deferred to Phase 4:
   divergence;
 * the documented tolerance constants and their rationale are stated here;
 * **identity / discrete outcomes are byte-exact, never tolerance-bounded** — collisions,
-  tie groups and the set of winning sources compare exactly (and the search-view identity
+  tie groups and the set of winning sources compare exactly (and the candidate identity
   hashes ``keyset_hash`` / ``content_hash`` are asserted byte-equal
   across identical regenerations, and stale corpora differ byte-wise, not within a
   tolerance);
@@ -82,7 +82,7 @@ def _publish_committed_stream(store, song_id: str, matrix: np.ndarray, *, run_id
     """Publish a stream AND its complete committed observation group (all-searchable mask).
 
     P1-S3: the store-backed current-stream resolver resolves ONLY complete committed groups,
-    so any helper that later builds a catalog does so from the complete committed
+    so any helper that later builds a representation does so from the complete committed
     groups published here, resolving the mask through the two-key store-backed seam
     ``make_current_mask_resolver(store)`` (stream via ``make_current_stream_resolver``).
     """
@@ -322,75 +322,3 @@ def test_tie_winner_is_lowest_tied_source_and_deterministic():
     o = _oracle(sv, cv, sw, cw, "first_index", "retain_all_candidate_segments")
     assert _norm_collisions(res.collisions) == _norm_collisions(o.collisions)
     assert _norm_winner_sources(res.winner_counts) == _norm_winner_sources(o.winner_counts)
-
-
-# --------------------------------------------------------------------------- #
-# Identity hashes are byte-exact, never tolerance-bounded                        #
-# --------------------------------------------------------------------------- #
-
-
-def _identity_hash_compare(con, out, run_id):
-    """Build a synthetic COMPACT corpus, materialize a view, return identity-hash primitives."""
-    from scripts.embedding_research import catalog
-    from scripts.embedding_research import search_views as sv
-    from scripts.embedding_research.catalog_storage import open_snapshot_file
-    from scripts.embedding_research.streams import make_current_mask_resolver, make_current_stream_resolver
-    from scripts.embedding_research.streams.store import StreamStore
-
-    store = StreamStore(con, output_root=str(out))
-    rng = np.random.default_rng(7)
-    for song in ("s1", "s2"):
-        _publish_committed_stream(store, song, _unit(rng, 10, 6), run_id="run-embed")
-    store.reconcile()
-    catalog.build_segmentation_catalog(
-        make_current_stream_resolver(store),
-        make_current_mask_resolver(store),
-        [
-            catalog.SegConfigInput(
-                backbone="effnet",
-                bin_mode="temporal_global",
-                threshold_configured=0.7,
-                threshold_effective=0.7,
-            )
-        ],
-        ["s1", "s2"],
-        output_root=str(out),
-        run_id="run-cat-1",
-        verify=True,
-    )
-    handle = open_snapshot_file(f"{out}/catalogs/.staging-run-cat-1/catalog.duckdb", read_only=True)
-    try:
-        # Two independent materializations of the SAME scope must hash byte-equal.
-        rec_a = sv.materialize_search_view(
-            handle.con,
-            store,
-            song_ids=["s1", "s2"],
-            backbone="effnet",
-            run_id=run_id,
-            working_memory=1024 * 1024,
-        )
-        rec_b = sv.materialize_search_view(
-            handle.con,
-            store,
-            song_ids=["s1", "s2"],
-            backbone="effnet",
-            run_id=run_id,
-            working_memory=1024 * 1024,
-        )
-        return rec_a, rec_b
-    finally:
-        handle.close()
-
-
-def test_search_view_identity_hashes_byte_exact(con, tmp_path):
-    """keyset/content hashes are byte-exact across identical regeneration."""
-    rec_a, rec_b = _identity_hash_compare(con, tmp_path / "out", "run-an-x")
-    # Byte equality of the identity hashes (never tolerance-bounded).
-    assert rec_a.keyset_hash == rec_b.keyset_hash
-    assert rec_a.content_hash == rec_b.content_hash
-    # The hashes are real hex digests, not floats — equality is string equality.
-    assert isinstance(rec_a.keyset_hash, str) and len(rec_a.keyset_hash) == 64
-    assert isinstance(rec_a.content_hash, str) and len(rec_a.content_hash) == 64
-    # Same scope => same matrix shape and row set (byte-stable discrete surface).
-    assert rec_a.row_addresses == rec_b.row_addresses
-    assert rec_a.matrix_shape == rec_b.matrix_shape

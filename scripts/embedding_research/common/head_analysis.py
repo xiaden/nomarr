@@ -1,682 +1,283 @@
-"""Canonical CPU catalog-scoped head analysis (Plan E P1-S1/P1-S2) — the ACTIVE home.
+"""CPU-only geometry head-analysis owner.
 
-This module is the sole **active** home for the CPU head-analysis surface: the
-boundary/variant constants, the per-configuration coverage record
-(:class:`HeadAnalysisConfigRecord`), the orchestration manifest
-(:class:`HeadAnalysisManifest`) and the CPU-only catalog runner
-:func:`run_shared_catalog_head_analysis`.
-
-Design rules (parts CONTRACTS §E + the corrective exact-``M_g`` rewire):
-* Head membership is defined **only** by each compact segment's exact searchable
-  set ``M_g = structural[start_idx, end_idx) - absorbed_indices - {mask[i] == 0}``
-  reconstructed via ``helpers.segmentation.reconstruct_searchable_indices`` from the
-  COMPACT ``seg_meta`` rows.  ``start_idx/end_idx`` are structural report ranges that
-  only seed the reconstruction; they are never an inclusive membership authority.
-  There is no ``seg_membership`` table and no inclusive/absorbed-inclusive range is
-  ever pooled.
-* Head membership consumes the SAME committed silence-mask authority the compact
-  catalog used at build time: the runner resolves each ``(song_id, backbone)`` song's
-  committed ``uint8`` mask through the sole store-backed committed-mask resolver
-  (``mask_store``) and reconstructs
-  ``M_g = structural[start_idx, end_idx) - absorbed_indices - {mask[i] == 0}`` from it.
-  A missing/invalid committed mask is never interpreted as no silence — such a song is
-  reported and skipped, never pooled all-searchable.  Fully-silent (empty-``M_g``)
-  segments are skipped without any audio/model/ONNX/CUDA access.
-* Config eligibility is canonical/config-keyed: only COMPACT canonical configs with a
-  non-empty ``canonical_config_hash`` and the direct-L2 PTC semantics / bin mode /
-  strategy version are pooled over.  ``alias_of_config_id``/durable aliases/calibration
-  columns are never read.
-* The operation is **CPU-only and derived**: it consumes frozen ready head streams and
-  compact catalog rows only.  It never discovers audio, loads models, runs
-  ONNX/CUDA/sklearn, invokes segmentation or CTP, reads artifact paths, or infers
-  membership.
-* Pooled values are **transient** and never persisted as vectors/cache files or copied
-  medoids.  The only durable head-analysis sink is canonical coverage/skip provenance
-  in ``head_phase_provenance`` written by ``db/head_phase.py`` (the caller persists the
-  returned manifest).
-* The class-1 head value is taken from ``act[1]`` (never ``act[0]``) of each gathered
-  head array; the concatenated ``HeadStreamStore.batch_gather`` columns are in canonical
-  head order and sliced per head by ``dim_by_head``.  Every emitted numeric value is
-  finite and JSON-safe.  No new PK/UNIQUE/index is introduced.
-
-The legacy live-ONNX cache/range runner (``classify.run_shared_ptc_head_pooling``), the
-top-level ``head_pooling.py`` legacy surface, and the retired
-``pool_head_outputs_over_ptc_boundaries`` / ``run_shared_ptc_head_pooling`` symbols from
-this module are deleted with the inclusive pooling paths (P1-S2).
+Head analysis consumes already committed geometry projections and aligned head evidence.  It
+never discovers audio, loads models, segments streams, or touches accelerator runtimes.
 """
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
 
-from scripts.embedding_research.helpers.thresholds import (
-    canonical_float as _canonical_float,
-)
-
 __all__ = [
-    "BOUNDARY_SOURCE_CATALOG",
-    "HEAD_POOL_VARIANT",
-    "PTC_SEMANTICS",
-    "TEMPORAL_BIN_MODES",
-    "HeadAnalysisConfigRecord",
-    "HeadAnalysisManifest",
-    "run_shared_catalog_head_analysis",
+    "GeometryHeadAnalysisManifest",
+    "GeometryHeadOutput",
+    "GeometryHeadRefusalError",
+    "run_shared_geometry_head_analysis",
 ]
 
-#: The only boundary source this phase may consume.  CTP boundaries are never accepted
-#: or produced, and no head-specific-segmentation boundary exists.
-BOUNDARY_SOURCE_CATALOG = "catalog"
-
-#: The single explicit label for the shared-boundary head-pooling variant.  It is part of
-#: the head-phase configuration identity and is deliberately disjoint from any
-#: hypothetical head-specific-segmentation variant: this phase pools over the
-#: *already-produced* compact-catalog boundaries (exact membership) and never creates
-#: head-specific bins.
-HEAD_POOL_VARIANT = "shared_catalog_boundary"
-
-#: Canonical EffNet ``seg_config`` ``bin_mode`` values eligible for the shared CPU
-#: head analysis.  Canonical head provenance is L2-primary (``temporal_global``)
-#: ONLY: ``temporal_perdim``/Chebyshev rows are never admitted as canonical head
-#: evidence, so only the primary experiment's configs are selected here.
-TEMPORAL_BIN_MODES: frozenset[str] = frozenset({"temporal_global"})
-
-#: Canonical threshold-application semantics labels eligible for the shared CPU
-#: head analysis.  The corrective pass is a single direct-distance application:
-#: ``std_scaled`` and calibration semantics are gone (DD R3), so only
-#: ``direct_distance`` is admissible.  This label names the APPLICATION only and
-#: never implies a metric (the executed metric for canonical-head rows is ``l2``,
-#: derived from the L2-primary ``temporal_global`` mode).
-PTC_SEMANTICS: frozenset[str] = frozenset({"direct_distance"})
-
-#: Scoring-input semantics contract version for the canonical CPU head-analysis manifest.
-#: This module is the active owner (formerly ``cache_identity.SCORING_SEMANTICS_VERSION``,
-#: deleted with the cache layer in the corrective-pass hard cut).  The value stays pinned
-#: to the search-view / bounded-scoring semantics version (1).
-SCORING_SEMANTICS_VERSION: int = 1
-
-#: Class-1 lives at index 1 of the head-activation vector; ``act[0]`` is never the
-#: class-1 value.
-_CLASS1_INDEX = 1
-
-#: Per-configuration head-phase status vocabulary (mirrors the persistence row).
-_HEAD_PHASE_STATUSES: frozenset[str] = frozenset({"done", "skipped", "error"})
+SCORING_SEMANTICS_VERSION = 1
 
 
-# --------------------------------------------------------------------------- #
-# Transient per-segment pooling (internal)                                     #
-# --------------------------------------------------------------------------- #
+class GeometryHeadRefusalError(ValueError):
+    """Fail-closed refusal for incomplete, stale, or misaligned head evidence."""
 
 
 @dataclass(frozen=True)
-class _SegmentPooledHead:
-    """One transient pooled class-1 value for one exact segment membership.
+class GeometryHeadOutput:
+    """One validated class-1 head result keyed to exact geometry and threshold evidence."""
 
-    ``acts`` is the float32 ``[C]`` mean head-activation vector over the exact
-    reconstructed searchable member rows (row ``i`` is the activation of source patch
-    ``member_patch_indices[i]``).  ``class1`` is the scalar class-1 value taken from
-    ``acts[_CLASS1_INDEX]`` (the mean of ``act[1]`` over the members) — never
-    ``act[0]``.  ``weight`` is the searchable count ``|M_g|``.  ``finite`` is True only
-    when every emitted numeric value is finite.  This object is transient: it is never
-    persisted or returned in the orchestration manifest.
-    """
-
-    acts: np.ndarray
-    class1: float
-    weight: int
-    member_patch_indices: tuple[int, ...]
-    segment_id: int
-    finite: bool
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "acts": [float(v) for v in self.acts],
-            "class1": float(self.class1),
-            "weight": int(self.weight),
-            "member_patch_indices": [int(i) for i in self.member_patch_indices],
-            "segment_id": int(self.segment_id),
-            "finite": bool(self.finite),
-        }
-
-    def to_json(self) -> str:
-        return json.dumps(self.to_dict(), sort_keys=True)
-
-
-def _pool_segment_heads(
-    acts: np.ndarray,
-    member_patch_indices: Any,
-    *,
-    segment_id: int,
-) -> _SegmentPooledHead:
-    """Pool the class-1 head value over one exact segment membership (pure, internal).
-
-    ``acts`` must already be gathered **in the exact reconstructed ``M_g`` order**:
-    finite float32 ``[N, C]`` where row ``i`` is the activation of source patch
-    ``member_patch_indices[i]`` (the segment's searchable members only; absorbed and
-    mask-silent rows are excluded upstream).  The mean is over exactly those rows and
-    the class-1 value is ``acts.mean(axis=0)[_CLASS1_INDEX]`` — never ``act[0]``.  This
-    performs no IO/audio/model/ONNX/CUDA/segmentation/CTP.
-
-    Raises
-    ------
-    ValueError
-        On malformed input: non-finite / wrong-rank / empty acts, non-co-indexed or
-        non-unique or negative membership indices, or a negative segment id.
-    """
-    acts_f = np.asarray(acts, dtype=np.float32)
-    if acts_f.ndim != 2:
-        raise ValueError(f"gathered head rows must be 2-D [N, C]; got ndim={acts_f.ndim}")
-    n_rows = int(acts_f.shape[0])
-    if n_rows == 0:
-        raise ValueError("gathered head rows must contain at least one exact member row")
-    if acts_f.shape[1] < 1:
-        raise ValueError("gathered head rows must have at least one class column")
-    if not np.all(np.isfinite(acts_f)):
-        raise ValueError("gathered head rows must be finite (no NaN/Inf)")
-    if isinstance(segment_id, bool) or not isinstance(segment_id, int) or segment_id < 0:
-        raise ValueError(f"segment_id must be a non-negative integer; got {segment_id!r}")
-
-    member_ids = tuple(int(i) for i in member_patch_indices)
-    if len(member_ids) != n_rows:
-        raise ValueError(
-            f"member_patch_indices must be co-indexed with the gathered rows: "
-            f"{len(member_ids)} indices for {n_rows} rows"
-        )
-    if not all(i >= 0 for i in member_ids):
-        raise ValueError("member_patch_indices must be non-negative observed source indices")
-    if len(set(member_ids)) != n_rows:
-        raise ValueError("member_patch_indices must be unique observed source indices")
-
-    # Mean over the exact gathered member rows -> one pooled vector per segment.
-    pooled = acts_f.mean(axis=0).astype(np.float32)
-    class1 = float(pooled[_CLASS1_INDEX])  # act[1], never act[0]
-    finite = bool(np.all(np.isfinite(pooled)))
-
-    return _SegmentPooledHead(
-        acts=pooled,
-        class1=class1,
-        weight=n_rows,
-        member_patch_indices=member_ids,
-        segment_id=int(segment_id),
-        finite=finite,
-    )
-
-
-# --------------------------------------------------------------------------- #
-# Per-configuration outcome + orchestration manifest (P1-S1)                   #
-# --------------------------------------------------------------------------- #
-
-
-@dataclass(frozen=True)
-class HeadAnalysisConfigRecord:
-    """One auditable per-(config, head) outcome of the catalog-scoped head phase.
-
-    ``config_id`` is the application identity of the selected canonical ``seg_config``
-    the head output was pooled over; ``threshold_configured`` / ``threshold_effective``
-    / ``semantics`` carry that config's resolved direct-L2 threshold identity.
-    ``status`` is one of ``"done"`` (at least one song pooled), ``"skipped"`` (attempted
-    but nothing pooled), or ``"error"`` (a song's membership/pooling failed validation).
-    ``reason`` records the skip/error explanation for the manifest.
-    """
-
-    config_id: int
-    backbone: str
+    geometry_id: str
+    observation_id: str
+    geometry_semantics_version: str
+    numerical_profile_digest: str
+    threshold_id: str
+    structural_identity: str
+    search_representation_id: str
+    evaluation_id: str
+    scoring_semantics_version: int
+    execution_id: str
     head: str
-    bin_mode: str
-    threshold_configured: float
-    threshold_effective: float
-    semantics: str
-    status: str
-    reason: str
-    n_songs: int
-    n_pooled: int
-    finite: bool
-    boundary_source: str = BOUNDARY_SOURCE_CATALOG
-    head_pool_variant: str = HEAD_POOL_VARIANT
+    segment_id: int
+    member_patch_indices: tuple[int, ...]
+    class1: float
+    searchable_weight: float
+    observed_medoid_source_index: int | None
+    observed_medoid_centrality: float | None
+    collapse_class_id: str = ""
+    collapse_member_threshold_indices: tuple[int, ...] = ()
+    status: str = "done"
 
     def __post_init__(self) -> None:
-        if self.boundary_source != BOUNDARY_SOURCE_CATALOG:
-            raise ValueError(
-                f"head-analysis config record boundary_source must be "
-                f"{BOUNDARY_SOURCE_CATALOG!r}; got {self.boundary_source!r} (CTP never used)"
-            )
-        if self.head_pool_variant != HEAD_POOL_VARIANT:
-            raise ValueError(
-                f"head-analysis config record head_pool_variant must be {HEAD_POOL_VARIANT!r}; "
-                f"got {self.head_pool_variant!r} (head-specific segmentation is not a shared-boundary row)"
-            )
-        if self.status not in _HEAD_PHASE_STATUSES:
-            raise ValueError(
-                f"head-analysis config record status must be one of {sorted(_HEAD_PHASE_STATUSES)}; got {self.status!r}"
-            )
-        if self.semantics not in PTC_SEMANTICS:
-            raise ValueError(
-                f"head-analysis config record semantics must be one of {sorted(PTC_SEMANTICS)}; got {self.semantics!r}"
-            )
-        object.__setattr__(self, "threshold_configured", float(_canonical_float(self.threshold_configured)))
-        object.__setattr__(self, "threshold_effective", float(_canonical_float(self.threshold_effective)))
-        if isinstance(self.config_id, bool) or not isinstance(self.config_id, int) or self.config_id < 0:
-            raise ValueError(f"config_id must be a non-negative integer; got {self.config_id!r}")
-        if isinstance(self.n_songs, bool) or not isinstance(self.n_songs, int) or self.n_songs < 0:
-            raise ValueError("n_songs must be a non-negative integer")
-        if isinstance(self.n_pooled, bool) or not isinstance(self.n_pooled, int) or self.n_pooled < 0:
-            raise ValueError("n_pooled must be a non-negative integer")
-        if self.n_pooled > self.n_songs:
-            raise ValueError(f"n_pooled ({self.n_pooled}) cannot exceed n_songs ({self.n_songs})")
+        for name in (
+            "geometry_id",
+            "observation_id",
+            "geometry_semantics_version",
+            "numerical_profile_digest",
+            "threshold_id",
+            "structural_identity",
+            "search_representation_id",
+            "evaluation_id",
+            "execution_id",
+            "head",
+        ):
+            if not isinstance(getattr(self, name), str) or not getattr(self, name):
+                raise GeometryHeadRefusalError(f"head output evidence {name} is incomplete")
+        if self.status != "done" or self.scoring_semantics_version < 1 or self.segment_id < 0:
+            raise GeometryHeadRefusalError("head output has invalid lifecycle evidence")
+        if not self.collapse_class_id or not self.collapse_member_threshold_indices:
+            raise GeometryHeadRefusalError("head output is missing collapse evidence")
+        if not np.isfinite(self.class1) or not np.isfinite(self.searchable_weight):
+            raise GeometryHeadRefusalError("head output is non-finite")
+        if self.observed_medoid_centrality is not None and not np.isfinite(self.observed_medoid_centrality):
+            raise GeometryHeadRefusalError("observed medoid evidence is non-finite")
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "config_id": int(self.config_id),
-            "backbone": self.backbone,
-            "head": self.head,
-            "bin_mode": self.bin_mode,
-            "threshold_configured": float(self.threshold_configured),
-            "threshold_effective": float(self.threshold_effective),
-            "semantics": self.semantics,
-            "status": self.status,
-            "reason": self.reason,
-            "n_songs": int(self.n_songs),
-            "n_pooled": int(self.n_pooled),
-            "finite": bool(self.finite),
-            "boundary_source": self.boundary_source,
-            "head_pool_variant": self.head_pool_variant,
-        }
+        return {key: ([*value] if isinstance(value, tuple) else value) for key, value in self.__dict__.items()}
 
 
 @dataclass(frozen=True)
-class HeadAnalysisManifest:
-    """JSON-safe, deterministic manifest of a canonical catalog-scoped head run.
-
-    Records the ``run_id``, the selected canonical ``config_ids``, the
-    per-(config, head) coverage outcomes, and every deterministic skip/error reason.
-    No pooled vector or medoid value is persisted in this manifest: pooled values are
-    transient.
-    """
+class GeometryHeadAnalysisManifest:
+    """Completed head-analysis outputs and their exact geometry/evaluation provenance."""
 
     run_id: str
-    config_ids: tuple[int, ...]
-    boundary_source: str
-    head_pool_variant: str
-    backbones: tuple[str, ...]
-    heads: tuple[str, ...]
-    song_ids: tuple[str, ...]
+    geometry_id: str
+    observation_id: str
+    evaluation_id: str
+    execution_id: str
+    geometry_semantics_version: str
+    numerical_profile_digest: str
     scoring_semantics_version: int
-    results: tuple[HeadAnalysisConfigRecord, ...]
-    skip_reasons: tuple[tuple[str, str], ...]
-    done: int
-    skipped: int
-    errors: int
-    finite: bool
+    outputs: tuple[GeometryHeadOutput, ...]
+    observed_medoid_source_index: int | None
+    observed_medoid_centrality: float | None
+    status: str = "done"
+    refusal: str | None = None
+
+    def __post_init__(self) -> None:
+        if (
+            self.status != "done"
+            or self.refusal is not None
+            or not all(
+                (
+                    self.run_id,
+                    self.geometry_id,
+                    self.observation_id,
+                    self.evaluation_id,
+                    self.execution_id,
+                    self.geometry_semantics_version,
+                    self.numerical_profile_digest,
+                )
+            )
+        ):
+            raise GeometryHeadRefusalError("head-analysis manifest evidence is incomplete")
+        if self.observed_medoid_centrality is not None and not np.isfinite(self.observed_medoid_centrality):
+            raise GeometryHeadRefusalError("global observed medoid evidence is non-finite")
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "run_id": self.run_id,
-            "config_ids": [int(c) for c in self.config_ids],
-            "boundary_source": self.boundary_source,
-            "head_pool_variant": self.head_pool_variant,
-            "backbones": list(self.backbones),
-            "heads": list(self.heads),
-            "song_ids": list(self.song_ids),
-            "scoring_semantics_version": int(self.scoring_semantics_version),
-            "results": [r.to_dict() for r in self.results],
-            "skip_reasons": [[str(scope), str(reason)] for scope, reason in self.skip_reasons],
-            "done": int(self.done),
-            "skipped": int(self.skipped),
-            "errors": int(self.errors),
-            "finite": bool(self.finite),
+            "geometry_id": self.geometry_id,
+            "observation_id": self.observation_id,
+            "evaluation_id": self.evaluation_id,
+            "execution_id": self.execution_id,
+            "geometry_semantics_version": self.geometry_semantics_version,
+            "numerical_profile_digest": self.numerical_profile_digest,
+            "scoring_semantics_version": self.scoring_semantics_version,
+            "observed_medoid_source_index": self.observed_medoid_source_index,
+            "observed_medoid_centrality": self.observed_medoid_centrality,
+            "status": self.status,
+            "outputs": [item.to_dict() for item in self.outputs],
         }
 
-    def to_json(self) -> str:
-        return json.dumps(self.to_dict(), sort_keys=True)
+
+def _head_matrix(store: Any, song_id: str, backbone: str) -> tuple[Any, np.ndarray]:
+    loader = next(
+        (
+            getattr(store, name, None)
+            for name in ("load_all", "read_all", "load", "read")
+            if getattr(store, name, None) is not None
+        ),
+        None,
+    )
+    if loader is None:
+        raise GeometryHeadRefusalError("aligned head evidence requires a read payload seam")
+    payload = loader(song_id, backbone)
+    if payload is None:
+        raise GeometryHeadRefusalError("aligned head evidence is missing")
+    matrix = next(
+        (
+            getattr(payload, name, None)
+            for name in ("activations", "matrix", "values", "array")
+            if getattr(payload, name, None) is not None
+        ),
+        None,
+    )
+    if matrix is None and isinstance(payload, np.ndarray):
+        matrix = payload
+    if matrix is None:
+        raise GeometryHeadRefusalError("aligned head payload has no activation matrix")
+    return payload, np.asarray(matrix, dtype=np.float32)
 
 
-# --------------------------------------------------------------------------- #
-# Canonical CPU catalog runner (P1-S1)                                         #
-# --------------------------------------------------------------------------- #
-
-
-def _collect_segment_membership(con, config_id: int, song_id: str, segments_fn, reconstruct_fn, patch_count, *, mask):
-    """Yield each compact segment's exact reconstructed searchable membership ``M_g``.
-
-    Reconstructs ``M_g = {start <= i < end} - absorbed_indices - {mask[i] == 0}`` for
-    every compact ``seg_meta`` row via ``reconstruct_fn`` (the canonical
-    ``reconstruct_searchable_indices`` helper) over the SAME committed ``uint8`` silence
-    mask (``mask``) that segmented the song at catalog build time — never ``mask=None``
-    (a missing mask is never interpreted as no silence).  Yields
-    ``(seg_id, searchable_indices, weight)`` in ascending seg_id order.  Absorbed and
-    mask-silent rows are excluded from pooling inputs; an empty-``M_g`` (fully silent)
-    segment yields nothing.
-    """
-    segs = segments_fn(con, config_id, song_id)
-    for seg in segs:
-        mg = reconstruct_fn(seg, mask, patch_count)
-        if len(mg) == 0:
-            continue
-        indices = tuple(int(i) for i in mg)
-        yield seg.seg_id, indices, len(indices)
-
-
-def run_shared_catalog_head_analysis(
-    catalog: Any,
+def run_shared_geometry_head_analysis(
+    geometry_record: Any,
     head_store: Any,
     *,
-    mask_store: Any,
-    config_ids: Any = None,
-    song_ids: Any = None,
-    heads: Any = None,
+    analysis: Any,
     run_id: str,
-) -> HeadAnalysisManifest:
-    """Canonical CPU catalog-scoped head analysis (ACTIVE — exact ``M_g`` semantics).
+    evaluation_id: str | None = None,
+    execution_id: str | None = None,
+    current_observation: Any = None,
+    profile: Any = None,
+    stream_store: Any = None,
+) -> GeometryHeadAnalysisManifest:
+    """Run geometry-keyed head analysis over one persisted geometry record.
 
-    Deterministic, CPU-only and non-blocking.  ``catalog`` is a compact
-    :class:`CatalogHandle` (or its snapshot ``con`` — resolved duck-typed via
-    ``getattr(catalog, "con", catalog)``, mirroring the D-phase analysis path): the runner
-    reads only the compact ``seg_config``/``catalog_song``/``seg_meta`` tables and
-    reconstructs each segment's exact searchable membership
-    ``M_g = structural[start_idx,end_idx) - absorbed_indices - {mask[i] == 0}`` via
-    :func:`helpers.segmentation.reconstruct_searchable_indices` over the SAME committed
-    silence mask the compact catalog encoded at build time.  It never reads a per-patch
-    membership relation, never treats ``start_idx/end_idx`` as an inclusive membership
-    authority, and never reads ``alias_of_config_id``.  Membership therefore matches the
-    catalog exactly by construction — the head pool excludes precisely the committed-silent
-    and absorbed-outlier source indices the catalog rows exclude.
-
-    Config eligibility is canonical/config-keyed: only COMPACT canonical configs with a
-    non-empty ``canonical_config_hash`` and the direct-L2 PTC semantics / bin mode /
-    strategy version are pooled over.  When ``config_ids`` is ``None`` the default is the
-    canonical compact configs of the default primary backbone ``effnet``.
-
-    Gathers each song's reconstructed searchable rows once per (config, song) through
-    ``HeadStreamStore.batch_gather`` (all heads in canonical sorted-column order), slices
-    per head using the registry ``dim_by_head``, and pools each non-empty segment over its
-    exact ``M_g`` rows taking the class-1 value from ``act[1]`` (never ``act[0]``).  Empty
-    (fully-silent) ``M_g`` segments produce no pooled value and are skipped without any
-    audio/model/ONNX/CUDA/sklearn/CTP work.  Performs no audio/model/ONNX/CUDA/sklearn/CTP
-    work and persists no pooled vector/cache/medoid artifact; the returned manifest carries
-    deterministic coverage/skip/error outcomes and the caller persists canonical provenance.
-
-    Parameters
-    ----------
-    catalog:
-        A compact :class:`CatalogHandle` (or its snapshot ``con``).
-    head_store:
-        A :class:`HeadStreamStore` (or an interface-parity fake) exposing ``lookup`` and
-        ``batch_gather`` over frozen aligned head rows.
-    mask_store:
-        The committed-mask read seam (``.load(song_id, backbone) -> uint8[patch_count] |
-        None``; the real seam is ``make_current_mask_resolver``) resolving each song's
-        silence mask from the SAME complete committed observation group that authorises
-        the catalog read.  Reconstruction never passes ``mask=None``: a song whose
-        committed mask is absent or invalid is reported and skipped (never pooled
-        all-searchable), and a missing mask is never interpreted as no silence.
-    config_ids:
-        Optional explicit canonical ``seg_config`` ids to analyze.
-    song_ids:
-        Optional explicit song selection (default: every compact ``catalog_song`` row of
-        the selected configs).
-    heads:
-        Optional explicit head-name selection (default: all heads in the aligned record).
-    run_id:
-        Run identity recorded on the returned manifest.
-
-    Returns
-    -------
-    :class:`HeadAnalysisManifest` with the selected ``config_ids``, per-(config, head)
-    coverage, deterministic skip/error reasons, and a finite status.
+    Consumes verified geometry-derived structural/search membership plus aligned
+    committed head evidence, and returns the manifest of per-segment head outputs.
+    The caller is responsible for persisting those outputs; this function performs
+    no model inference work and refuses incomplete geometry/observation/evaluation/
+    execution evidence before any head row is scored.
     """
-    from scripts.embedding_research.catalog import (
-        compact_catalog_songs_by_config as _config_songs_fn,
-    )
-    from scripts.embedding_research.catalog import (
-        compact_configs_by_backbone as _configs_by_backbone,
-    )
-    from scripts.embedding_research.catalog import (
-        compact_segments_by_config_song as _segments_fn,
-    )
-    from scripts.embedding_research.helpers.segmentation import (
-        reconstruct_searchable_indices as _reconstruct_mg,
-    )
-    from scripts.embedding_research.helpers.thresholds import PTC_STRATEGY_VERSION as _PTC_V
-    from scripts.embedding_research.streams.records import (
-        parse_dim_by_head as _parse_dim,
-    )
-    from scripts.embedding_research.streams.records import (
-        parse_head_ids as _parse_head_ids,
+    from scripts.embedding_research.db.geometry import (
+        GeometryRecord,
+        preflight_geometry_binding,
     )
 
-    # Lazy catalog attach: accept a CatalogHandle or its snapshot connection.
-    con = getattr(catalog, "con", catalog)
+    if current_observation is not None:
+        if not isinstance(geometry_record, GeometryRecord):
+            raise GeometryHeadRefusalError("head analysis requires a complete persisted geometry record")
+        preflight_geometry_binding(geometry_record, profile, observation=current_observation)
+    evidence = dict(getattr(geometry_record, "evidence", {}) or {})
+    geometry_id = str(getattr(geometry_record, "geometry_id", evidence.get("geometry_id", "")))
+    identity_obj = getattr(geometry_record, "identity", geometry_record)
+    song_id = str(getattr(identity_obj, "song_id", ""))
+    backbone = str(getattr(identity_obj, "backbone", ""))
+    observation_id = str(getattr(analysis, "observation_id", ""))
+    semantics = str(getattr(analysis, "geometry_semantics_version", ""))
+    profile_digest = str(getattr(analysis, "profile_digest", ""))
+    evaluation = evaluation_id or str(getattr(analysis, "evaluation_id", ""))
+    execution = execution_id or str(getattr(analysis, "execution_id", ""))
+    if not all((geometry_id, observation_id, semantics, profile_digest, evaluation, execution, run_id)):
+        raise GeometryHeadRefusalError("complete geometry/evaluation/execution evidence is required")
+    payload, matrix = _head_matrix(head_store, song_id, backbone)
+    if matrix.ndim != 2 or not matrix.shape[0] or not np.isfinite(matrix).all():
+        raise GeometryHeadRefusalError("aligned head payload must be finite two-dimensional evidence")
+    from scripts.embedding_research.streams.records import parse_dim_by_head, parse_head_ids
 
-    backbone = "effnet"  # default primary backbone for the shared-boundary head phase.
-    backbone_configs = tuple(sorted(_configs_by_backbone(con, backbone), key=lambda c: c.config_id))
-
-    def _eligible(cfg) -> bool:
-        return (
-            bool(cfg.canonical_config_hash)
-            and cfg.threshold_semantics in PTC_SEMANTICS
-            and cfg.bin_mode in TEMPORAL_BIN_MODES
-            and cfg.strategy_version == _PTC_V
-        )
-
-    requested = {int(c) for c in config_ids} if config_ids is not None else None
-    if requested is None:
-        selected = [c for c in backbone_configs if _eligible(c)]
-        skip_reasons: list[tuple[str, str]] = []
-    else:
-        by_id = {c.config_id: c for c in backbone_configs}
-        selected = []
-        skip_reasons = []
-        for cid in sorted(requested):
-            cfg = by_id.get(cid)
-            if cfg is None:
-                skip_reasons.append(
-                    (f"config:{cid}", f"no seg_config row for requested config_id under backbone {backbone}")
-                )
-            elif not _eligible(cfg):
-                skip_reasons.append((f"config:{cid}", "config not eligible for canonical catalog-scoped head analysis"))
-            else:
-                selected.append(cfg)
-
-    explicit_heads: frozenset[str] | None = frozenset(str(h) for h in heads) if heads is not None else None
-
-    # key -> [n_attempted_songs, n_pooled_songs, any_error, all_finite, reason]
-    agg: dict[tuple[int, str], list] = {}
-    processed_song_ids: set[str] = set()
-    active_heads: set[str] = set()
-
-    for cfg in selected:
-        song_leaves = {r.song_id: r for r in _config_songs_fn(con, cfg.config_id)}
-        if song_ids is not None:
-            songs = sorted(str(s) for s in song_ids)
-        else:
-            songs = sorted(song_leaves)
-        for song in songs:
-            leaf = song_leaves.get(song)
-            if leaf is None:
+    heads = parse_head_ids(getattr(payload, "head_ids", "") or "")
+    dims = parse_dim_by_head(getattr(payload, "dim_by_head", "") or "")
+    if set(heads) != set(dims) or sum(int(dims[h]) for h in heads) != matrix.shape[1]:
+        raise GeometryHeadRefusalError("head identity and dimensions are misaligned")
+    medoid = evidence.get("observed_medoid_source_index", getattr(analysis, "observed_medoid_source_index", None))
+    centrality = evidence.get("observed_medoid_centrality", getattr(analysis, "observed_medoid_centrality", None))
+    classes = tuple(getattr(analysis, "representation_classes", ()) or ())
+    collapse: dict[int, tuple[str, tuple[int, ...]]] = {}
+    for item in classes:
+        members = tuple(int(x) for x in (getattr(item, "member_threshold_indices", ()) or ()))
+        for index in members:
+            collapse[index] = (str(getattr(item, "key", "class")), members)
+    outputs: list[GeometryHeadOutput] = []
+    offsets: dict[str, tuple[int, int]] = {}
+    cursor = 0
+    for head in heads:
+        offsets[head] = (cursor, cursor + int(dims[head]))
+        cursor += int(dims[head])
+    for result in tuple(getattr(analysis, "results", ())):
+        for segment_id, segment in enumerate(result.search_projection.segments):
+            members = tuple(int(x) for x in segment.searchable_indices)
+            if not members:
                 continue
-            patch_count = int(leaf.patch_count)
-            record_scope = f"config:{cfg.config_id}:song:{song}"
-            # Resolve the song's committed silence mask from the SAME complete committed
-            # observation group that built the catalog.  A missing/invalid committed mask
-            # fails closed (reported + skipped) — never an implicit all-searchable default.
-            try:
-                committed_mask = mask_store.load(song, cfg.backbone)
-            except Exception as exc:
-                skip_reasons.append(
-                    (
-                        record_scope,
-                        f"committed silence mask load refused for backbone {cfg.backbone}: {exc!r}",
-                    )
-                )
-                continue
-            if committed_mask is None:
-                skip_reasons.append(
-                    (
-                        record_scope,
-                        f"no committed silence mask for group ({song!r}, {cfg.backbone!r}); head "
-                        "membership cannot be reconstructed (a missing committed mask is never "
-                        "treated as no silence)",
-                    )
-                )
-                continue
-            segs = list(
-                _collect_segment_membership(
-                    con,
-                    cfg.config_id,
-                    song,
-                    segments_fn=_segments_fn,
-                    reconstruct_fn=_reconstruct_mg,
-                    patch_count=patch_count,
-                    mask=committed_mask,
-                )
-            )
-            if not segs:
-                continue
-            try:
-                record = head_store.lookup(song, cfg.backbone)
-            except Exception as exc:
-                skip_reasons.append((record_scope, f"head stream lookup failed for backbone {cfg.backbone}: {exc!r}"))
-                continue
-            raw_head_ids = record.head_ids
-            if not (raw_head_ids and str(raw_head_ids).strip()):
-                skip_reasons.append(
-                    (
-                        record_scope,
-                        f"no frozen head stream available for backbone {cfg.backbone} "
-                        f"(empty head record {raw_head_ids!r})",
-                    )
-                )
-                continue
-            record_heads = _parse_head_ids(raw_head_ids)
-            if explicit_heads is not None:
-                record_heads = tuple(h for h in record_heads if h in explicit_heads)
-            rec_heads = record_heads  # consumed by the offset/pool loops below
-            if not record_heads:
-                # An explicit ``heads=`` restriction may legitimately leave a song with
-                # no matching requested head; that is intended filtering, not a partial
-                # stream/catalog misalignment to report.
-                continue
-            dims = _parse_dim(record.dim_by_head)
-            offsets: dict[str, tuple[int, int]] = {}
-            col = 0
-            for h in _parse_head_ids(record.head_ids):
-                d = int(dims.get(h, 0))
-                if d > 0 and h in rec_heads:
-                    offsets[h] = (col, col + d)
-                col += d
-            union: list[int] = []
-            for _seg_id, indices, _w in segs:
-                union.extend(indices)
-            try:
-                gathered = head_store.batch_gather(song, cfg.backbone, union)
-            except Exception as exc:
-                skip_reasons.append(
-                    (
-                        record_scope,
-                        f"head stream gather failed for backbone {cfg.backbone} "
-                        f"over {len(union)} searchable rows: {exc!r}",
-                    )
-                )
-                continue
-            for head in rec_heads:
-                if head not in offsets:
-                    continue
+            rows = matrix[np.asarray(members, dtype=np.intp)]
+            for head in heads:
                 start, end = offsets[head]
-                key = (cfg.config_id, head)
-                entry = agg.setdefault(key, [0, 0, False, True, ""])
-                entry[0] += 1
-                processed_song_ids.add(song)
-                active_heads.add(head)
-                head_pooled = False
-                head_finite = True
-                row_cursor = 0
-                for _seg_id, indices, _weight in segs:
-                    n_members = len(indices)
-                    rows = gathered[row_cursor : row_cursor + n_members, start:end]
-                    row_cursor += n_members
-                    try:
-                        pooled = _pool_segment_heads(
-                            rows,
-                            indices,
-                            segment_id=_seg_id,
-                        )
-                    except ValueError as exc:
-                        entry[2] = True
-                        entry[4] = f"membership/pooling validation failed for song {song}: {exc}"
-                        break
-                    if pooled.finite:
-                        head_pooled = True
-                    else:
-                        head_finite = False
-                if not entry[2]:
-                    if head_pooled:
-                        entry[1] += 1
-                    entry[3] = entry[3] and head_finite
-
-    results: list[HeadAnalysisConfigRecord] = []
-    done = 0
-    skipped = 0
-    errors = 0
-    finite_overall = True
-    for (config_id, head), (n_songs, n_pooled, any_err, all_finite, reason) in sorted(agg.items()):
-        cfg = next((c for c in selected if c.config_id == config_id), None)
-        if cfg is None:
-            continue
-        if any_err:
-            status = "error"
-            errors += 1
-        elif n_pooled > 0:
-            status = "done"
-            done += 1
-        else:
-            status = "skipped"
-            skipped += 1
-            if not reason:
-                reason = "no song produced a finite pooled head value"
-        finite_overall = finite_overall and bool(all_finite and not any_err)
-        results.append(
-            HeadAnalysisConfigRecord(
-                config_id=config_id,
-                backbone=cfg.backbone,
-                head=head,
-                bin_mode=cfg.bin_mode,
-                threshold_configured=float(cfg.threshold_configured),
-                threshold_effective=float(cfg.threshold_effective),
-                semantics=cfg.threshold_semantics,
-                status=status,
-                reason=reason,
-                n_songs=int(n_songs),
-                n_pooled=int(n_pooled),
-                finite=bool(all_finite and not any_err),
-                boundary_source=BOUNDARY_SOURCE_CATALOG,
-                head_pool_variant=HEAD_POOL_VARIANT,
-            )
-        )
-
-    config_ids_used = tuple(sorted({r.config_id for r in results}))
-    song_tuple = tuple(sorted(processed_song_ids))
-    active_head_tuple = tuple(sorted(active_heads))
-    skip_reasons.extend(
-        (f"config:{cfg.config_id}", "config has no pooled head output")
-        for cfg in selected
-        if cfg.config_id not in config_ids_used
-    )
-    return HeadAnalysisManifest(
-        run_id=run_id,
-        config_ids=config_ids_used,
-        boundary_source=BOUNDARY_SOURCE_CATALOG,
-        head_pool_variant=HEAD_POOL_VARIANT,
-        backbones=(backbone,),
-        heads=active_head_tuple,
-        song_ids=song_tuple,
-        scoring_semantics_version=SCORING_SEMANTICS_VERSION,
-        results=tuple(results),
-        skip_reasons=tuple(skip_reasons),
-        done=done,
-        skipped=skipped,
-        errors=errors,
-        finite=bool(finite_overall),
+                pooled = rows[:, start:end].mean(axis=0, dtype=np.float32)
+                if pooled.size < 2 or not np.isfinite(pooled).all():
+                    raise GeometryHeadRefusalError("head pooling produced incomplete evidence")
+                cls = collapse.get(
+                    int(result.threshold.index),
+                    (str(result.search.search_representation_id), (int(result.threshold.index),)),
+                )
+                outputs.append(
+                    GeometryHeadOutput(
+                        geometry_id,
+                        observation_id,
+                        semantics,
+                        profile_digest,
+                        str(result.threshold.threshold_id),
+                        result.structural.identity,
+                        result.search.search_representation_id,
+                        evaluation,
+                        int(result.search.scoring_semantics_version),
+                        execution,
+                        head,
+                        segment_id,
+                        members,
+                        float(pooled[1]),
+                        float(segment.searchable_weight),
+                        int(segment.medoid_source_index) if segment.medoid_source_index is not None else None,
+                        float(segment.medoid_centrality) if segment.medoid_centrality is not None else None,
+                        cls[0],
+                        cls[1],
+                    )
+                )
+    if current_observation is not None:
+        # Re-read the CURRENT committed tuple after computation; a supersession that
+        # occurred while pooling must refuse before any head evidence escapes.
+        preflight_geometry_binding(geometry_record, profile, store=stream_store, observation=current_observation)
+    return GeometryHeadAnalysisManifest(
+        run_id,
+        geometry_id,
+        observation_id,
+        evaluation,
+        execution,
+        semantics,
+        profile_digest,
+        SCORING_SEMANTICS_VERSION,
+        tuple(outputs),
+        int(medoid) if medoid is not None else None,
+        float(centrality) if centrality is not None else None,
     )

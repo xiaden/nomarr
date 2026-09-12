@@ -1,30 +1,7 @@
-"""Active observed global-medoid baseline (Plan B §B / DD "global_pool:{backbone}:medoid").
+"""Report identity and baseline delta construction for research evaluation.
 
-Research-only.  This module restores ``global_pool:effnet:medoid`` as an ACTIVE
-*silence-aware observed searchable-patch baseline* — it is NOT a cache or compatibility
-path.  It provides:
-
-* :data:`GLOBAL_MEDOID_STRATEGY_KEY` (and :func:`medoid_strategy_key_for`) — the report
-  identity under which the observed EffNet (or per-backbone) medoid baseline is emitted.
-* committed-observation bridges — :func:`whole_song_searchable_source_indices` and
-  :func:`observed_global_medoid_from_observation` — that turn a Plan-A committed
-  observation (``.stream`` + aligned committed ``.mask``) into the whole-song observed
-  global medoid using the SAME mean-cosine / smallest-source-index rule as the segment
-  medoid (see ``helpers/segmentation.observed_global_medoid``).  Zero-searchable songs
-  yield ``ObservedMedoid(None, None)`` — no baseline vector — and are excluded from both
-  a baseline population and candidate search by downstream consumers.
-* :func:`build_baseline_delta_rows` — the standalone baseline + per-cell delta builder
-  over a decoded long-form analysis frame that already carries the medoid baseline value
-  rows (``strategy_key == GLOBAL_MEDOID_STRATEGY_KEY`` per backbone/cell).  It returns the
-  structured :class:`BaselineDeltaResult` of matched ``rows`` (finite ``delta = winner -
-  baseline`` when the segmented representation shares the SAME equal, comparable
-  evaluation corpus / sim_metric / k / metric scope as its medoid baseline) plus surfaced
-  ``incomplete`` diagnostics for representations whose population cannot match (never a
-  silent partial comparison).
-
-NO durable cache, alias graph, cross-backbone union, or synthetic (coordinate-wise)
-medoid vector is introduced.  Computation is CPU-only (numpy/pandas).  Non-finite input
-fails closed (refuses rather than emitting an infinite/silent delta).
+Baseline values are produced by the geometry analysis phase; this module only
+matches persisted evaluation rows and emits finite delta diagnostics.
 """
 
 from __future__ import annotations
@@ -32,14 +9,6 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
-
-import numpy as np
-
-from scripts.embedding_research.helpers.segmentation import (
-    ObservedMedoid,
-    observed_global_medoid,
-    require_exact_whole_song_mask,
-)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -51,13 +20,8 @@ __all__ = [
     "GLOBAL_MEDOID_STRATEGY_KEY",
     "MEDOID_STRATEGY_TYPE",
     "BaselineDeltaResult",
-    "ObservedMedoid",
     "build_baseline_delta_rows",
     "medoid_strategy_key_for",
-    "observed_global_medoid",
-    "observed_global_medoid_from_observation",
-    "observed_global_medoid_unit_vector",
-    "whole_song_searchable_source_indices",
 ]
 
 
@@ -70,7 +34,7 @@ def medoid_strategy_key_for(backbone: str) -> str:
     ``GLOBAL_MEDOID_STRATEGY_KEY`` is ``medoid_strategy_key_for("effnet")``.  A per-cell
     medoid baseline row carries ``strategy_key == medoid_strategy_key_for(backbone)`` for
     that cell's backbone; build_baseline_delta_rows keys baseline rows by this exact
-    identity (never the lowest catalog class).
+    identity (never the lowest-scoring class).
     """
     return f"global_pool:{backbone}:medoid"
 
@@ -79,85 +43,10 @@ def medoid_strategy_key_for(backbone: str) -> str:
 GLOBAL_MEDOID_STRATEGY_KEY: str = "global_pool:effnet:medoid"
 
 #: ``analyze_metrics.strategy_type`` under which the analyze phase persists the observed
-#: global-medoid baseline rows.  Deliberately DISTINCT from ``"catalog"`` so
-#: ``report._retrieval.query_analyze_metrics`` (catalog-only, pinned forever) keeps excluding
-#: them from ``section_analysis`` while the winners loader reads them through a distinct path.
+#: global-medoid baseline rows.  Deliberately DISTINCT from the per-representation winner
+#: strategy type so ``report._retrieval.query_analyze_metrics`` keeps excluding them from
+#: ``section_analysis`` while the winners loader reads them through a distinct path.
 MEDOID_STRATEGY_TYPE: str = "global_pool"
-
-
-# --------------------------------------------------------------------------- #
-# Committed-observation bridges (Plan A committed mask/stream authority)       #
-# --------------------------------------------------------------------------- #
-def whole_song_searchable_source_indices(mask: np.ndarray, patch_count: int) -> np.ndarray:
-    """The whole-song non-silent searchable source indices (``{i | mask[i] == 1}``), sorted.
-
-    This is the DD "all non-silent searchable patches" population over which the global
-    medoid is selected (absorption is a per-segment concept and does not exclude a patch
-    from the UNSEGMENTED global population).  ``mask`` must be the whole-song committed
-    ``uint8[patch_count]`` silence mask (``1`` = searchable, ``0`` = silent) for the exact
-    ``(song_id, backbone)`` observation group.  The mask is REQUIRED and must be EXACTLY
-    ``uint8[patch_count]``: a None/short/long/wrong-dtype/non-1D mask raises a typed
-    ``ValueError`` (fail closed) — a shorter mask is NEVER truncated or read with trailing
-    patches searchable, and a missing mask is never interpreted as no silence.  A
-    fully-silent song yields an empty array (zero-searchable → no baseline vector).
-    """
-    arr = require_exact_whole_song_mask(mask, int(patch_count))
-    return np.nonzero(arr == 1)[0].astype(int)
-
-
-def observed_global_medoid_from_observation(observation: Any) -> ObservedMedoid:
-    """Whole-song observed global medoid from one Plan-A committed observation (duck-typed).
-
-    ``observation`` must expose the aligned committed payloads ``.stream`` (float32
-    ``[patch_count, dim]`` patch matrix) and ``.mask`` (``uint8[patch_count]`` silence
-    mask) — exactly the shape returned by ``StreamStore.load_committed_observation``
-    (``CommittedObservation``).  Finite nonzero rows are L2-normalised to unit rows (the
-    shared segmentation/medoid convention; zero rows are preserved and never medoid
-    candidates), then :func:`~helpers.segmentation.observed_global_medoid` selects the
-    medoid over ``{i | mask[i] == 1}``.  A zero-searchable song (empty searchable set) or
-    an all-zero-norm song returns ``ObservedMedoid(None, None)``.  Non-finite stream input
-    among the candidate rows raises ``ValueError`` (never a silent medoid).
-    """
-    unit = _to_unit_rows(np.asarray(observation.stream, dtype=np.float32))
-    # Pass the committed mask RAW (no dtype coercion): a wrong-dtype/short/long/non-1D
-    # mask is a typed refusal from the exact-mask validator, never silently coerced.
-    searchable = whole_song_searchable_source_indices(observation.mask, int(unit.shape[0]))
-    return observed_global_medoid(unit, searchable)
-
-
-def observed_global_medoid_unit_vector(observation: Any) -> np.ndarray | None:
-    """The L2-unit vector of the observed global medoid for one committed observation, or ``None``.
-
-    Same selection as :func:`observed_global_medoid_from_observation` (whole-song
-    ``mask == 1`` population, mean-cosine / smallest-source-index rule, zero-norm never a
-    medoid) but returns the medoid's UNIT vector (``float32[dim]``) — the representation
-    the analyze phase scores per song for the observed baseline.  Returns ``None`` for a
-    zero-searchable song, an all-zero-norm song, or a missing medoid (no baseline vector;
-    such a song is excluded from the baseline population AND candidate search).
-    """
-    unit = _to_unit_rows(np.asarray(observation.stream, dtype=np.float32))
-    # Pass the committed mask RAW (no dtype coercion): a wrong-dtype/short/long/non-1D
-    # mask is a typed refusal from the exact-mask validator, never silently coerced.
-    searchable = whole_song_searchable_source_indices(observation.mask, int(unit.shape[0]))
-    medoid = observed_global_medoid(unit, searchable)
-    if medoid.source_index is None:
-        return None
-    return np.asarray(unit[int(medoid.source_index)], dtype=np.float32)
-
-
-def _to_unit_rows(patches: np.ndarray) -> np.ndarray:
-    """Row L2-normalise a ``[P_s, D]`` float32 matrix to unit rows (finite-nonzero).
-
-    Zero-norm rows are preserved as-is (never medoid candidates), matching the catalog's
-    shared segmentation/medoid unit convention.  Non-finite rows are NOT normalised away:
-    they propagate so the medoid selector's finite check can refuse them (fail closed).
-    """
-    arr = np.asarray(patches, dtype=np.float32)
-    if arr.ndim != 2:
-        raise ValueError(f"committed stream must be 2-D [P_s, D]; got shape {arr.shape}")
-    norms = np.linalg.norm(arr, axis=1, keepdims=True)
-    norms = np.where(norms == 0.0, 1.0, norms)
-    return (arr / norms).astype(np.float32, copy=False)
 
 
 # --------------------------------------------------------------------------- #
@@ -175,8 +64,6 @@ BASELINE_DELTA_COLUMNS: list[str] = [
     "baseline_strategy_key",
     "baseline_value",
     "winner_strategy_key",
-    "winner_canonical_config_id",
-    "winner_alias_ids",
     "winner_value",
     "delta",
 ]
@@ -274,7 +161,7 @@ class BaselineDeltaResult:
 class _CorpusIdentity:
     """The decoded per-row evaluation-corpus identity the delta gate compares.
 
-    Carries EVERY persisted corpus identity/evidence field (the legacy hash/count/comparability/
+    Carries EVERY persisted corpus identity/evidence field (the hash/count/comparability/
     missing evidence plus the Plan C Phase 1 semantics/eligible/digest-proof/completeness/integrity
     extensions).  A field is ``None`` (absent) when the row carries no value for it.
     """
@@ -350,7 +237,7 @@ def _row_corpus_identity(r: Mapping[str, object]) -> _CorpusIdentity | None:
 
 
 def _identity_from_corpus(evaluation_corpus: Any) -> _CorpusIdentity | None:
-    """Decode an :class:`~scripts.embedding_research.catalog_identity.EvaluationCorpusIdentity` for the gate."""
+    """Decode an optional evaluation-corpus identity object for the gate."""
     if evaluation_corpus is None:
         return None
     raw = {
@@ -414,8 +301,8 @@ def build_baseline_delta_rows(
 
     ``analysis_df`` is a decoded long-form frame (the shape returned by
     ``report._retrieval.query_winners_metrics``) whose rows carry at least ``backbone``,
-    ``sim_metric``, ``k``, ``metric``, ``strategy_key``, ``value``, ``canonical_config_id``
-    and ``alias_ids``, AND which already contains the medoid baseline value row per cell
+    ``sim_metric``, ``k``, ``metric``, ``strategy_key``, and ``value``, AND which already
+    contains the medoid baseline value row per cell
     with ``strategy_key == medoid_strategy_key_for(backbone)`` (e.g.
     ``global_pool:effnet:medoid``).  When the frame's rows carry the persisted evaluation-
     corpus identity columns (:data:`CORPUS_IDENTITY_COLUMNS`, read from each row's
@@ -432,7 +319,7 @@ def build_baseline_delta_rows(
       excluded from winner candidacy and surfaced in the result's ``incomplete``
       diagnostics, retaining its strategy key, cell provenance, corpus hash/count/
       comparability and excluded-song missing count/digest evidence.
-    * There is NO identity-less structural fallback: a cell whose segmented class and
+    * There is NO identity-less structural path: a cell whose segmented class and
       medoid baseline BOTH lack a corpus identity (or a one-sided identity) never yields a
       matched delta — it is always surfaced as an ``incomplete`` diagnostic.  Every cell
       must carry an explicit, equal, comparable evaluation-corpus identity to match.
@@ -442,8 +329,8 @@ def build_baseline_delta_rows(
     winner candidate), the highest *finite* matched segmented class (**winner**; ties break
     to the lowest ``strategy_key``), and ``delta = winner_value - baseline_value``.
 
-    ``evaluation_corpus`` (an :class:`~scripts.embedding_research.catalog_identity.
-    EvaluationCorpusIdentity`) optionally supplies the baseline's authoritative identity when
+    ``evaluation_corpus`` (an optional evaluation-corpus identity object) supplies the
+    baseline's authoritative identity when
     the medoid row itself carries none; it never widens the gate (a row identity, when
     present, is authoritative).  A present non-finite value raises ``ValueError`` (fail
     closed).  Returns a :class:`BaselineDeltaResult` (matched ``rows`` + surfaced
@@ -464,8 +351,6 @@ def build_baseline_delta_rows(
         "metric",
         "strategy_key",
         "value",
-        "canonical_config_id",
-        "alias_ids",
     ] + [c for c in CORPUS_IDENTITY_COLUMNS if c in analysis_df.columns]
     recs = analysis_df[sel].to_dict("records")
 
@@ -530,7 +415,7 @@ def build_baseline_delta_rows(
                 reason = "evaluation-corpus identity present on only one side of the baseline/segmented comparison"
             else:
                 # Both sides identity-less (no corpus identity on the segmented row nor the medoid
-                # baseline).  There is NO legacy structural fallback: an identity-less cell can
+                # baseline).  There is NO structural path for identity-less cells: they can
                 # never be a matched delta under the matching-only gate.
                 reason = (
                     "evaluation-corpus identity absent on both sides of the baseline/segmented "
@@ -566,8 +451,6 @@ def build_baseline_delta_rows(
                 "baseline_strategy_key": medoid_key,
                 "baseline_value": baseline_value,
                 "winner_strategy_key": str(winner["strategy_key"]),
-                "winner_canonical_config_id": _ccid(winner.get("canonical_config_id")),
-                "winner_alias_ids": _sorted_aliases(winner.get("alias_ids")),
                 "winner_value": winner_value,
                 "delta": winner_value - baseline_value,
             }
@@ -580,25 +463,3 @@ def build_baseline_delta_rows(
         frame = frame.sort_values(order, kind="mergesort").reset_index(drop=True)
         rows = tuple(frame.to_dict("records"))
     return BaselineDeltaResult(rows=rows, incomplete=tuple(incomplete))
-
-
-def _ccid(v: Any) -> int | None:
-    if isinstance(v, bool):
-        return None
-    if isinstance(v, int):
-        return v
-    if isinstance(v, float) and not math.isnan(v):
-        return int(v)
-    return None
-
-
-def _sorted_aliases(v: Any) -> list[int]:
-    if not v:
-        return []
-    out: list[int] = []
-    for a in v:
-        try:
-            out.append(int(a))
-        except (TypeError, ValueError):
-            continue
-    return sorted(out)

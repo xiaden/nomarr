@@ -117,22 +117,6 @@ def _library_song_identities(db: Database, library: Library) -> list[SongIdentit
     ]
 
 
-def _state_song_ids(db: Database, state: str) -> set[int]:
-    """Read persistence handles only for legacy mutation adapters.
-
-    State selection itself is typed; callers that still need a persistence
-    handle for an older mutation intent are kept explicit until the claim/state
-    write migration replaces that intent.  No Song row or dictionary is
-    projected here.
-    """
-    return set(db.app.song_ids_with_state(state))
-
-
-def _library_song_ids(db: Database, library: Library) -> set[int]:
-    """Read persistence handles only for legacy mutation adapters."""
-    return set(db.library.list_library_song_ids(library))
-
-
 def _exclude_claimed(db: Database, candidates: list[SongStateCandidate]) -> list[SongStateCandidate]:
     """Remove claimed candidates using their semantic locators directly."""
     claimed_identities = {claim.song for claim in db.app.list_claims()}

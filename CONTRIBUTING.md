@@ -48,6 +48,7 @@ Thank you for your interest in contributing to Nomarr! This document provides gu
 - CI must pass before merge on `develop` or `main`. Checks run in **independent workflows** that each report their own result (no monolithic chain):
   - **Backend quality** (`.github/workflows/backend-quality.yml`): `ruff check .`, `ruff format --check .`, `mypy nomarr/ --config-file pyproject.toml`, `lint-imports`, `deptry . --known-first-party nomarr`
   - **Backend tests** (`.github/workflows/backend-tests.yml`): `pytest tests/ -v -m "not container_only and not requires_database and not code_smell"` plus the ADR-042 architecture-QC suite run explicitly (`pytest tests/test_architecture_qc.py -v`)
+  - **Database tests** (`.github/workflows/backend-tests.yml`, `database-tests` job): `pytest tests/characterization/ tests/characterization/test_mood_owner_pg.py tests/integration/test_library_uuid_locator_identity_pg.py tests/sabotage/test_no_facades_begin_transactions.py -v -m requires_database` (requires Docker; testcontainers starts `pgvector/pgvector:pg17`)
   - **Frontend checks** (`.github/workflows/frontend-checks.yml`): `npm ci`, `npm run lint`, `npx tsc -b --noEmit`, `npm run test`, and `npm run build`
   - **Docker publish** (`.github/workflows/docker-publish.yml`): builds and publishes the image on push / `workflow_dispatch` only
   - **CodeQL** (`.github/workflows/codeql.yml`) on push to `main`, pull requests to `main`, and on a weekly schedule
@@ -199,6 +200,10 @@ These commands mirror the independent CI gates. Run them locally before pushing 
 # ADR-042 architecture/quality enforcement is excluded by the `not code_smell`
 # expression above, so run it explicitly as CI does:
 .venv/bin/pytest tests/test_architecture_qc.py -v
+# PostgreSQL/pgvector-backed tests (matches backend-tests.yml `database-tests`
+# job). Requires Docker: the fixtures use testcontainers, which starts its own
+# pgvector/pgvector:pg17 container (or set NOMARR_TEST_DATABASE_URL).
+.venv/bin/pytest tests/characterization/ tests/characterization/test_mood_owner_pg.py tests/integration/test_library_uuid_locator_identity_pg.py tests/sabotage/test_no_facades_begin_transactions.py -v -m requires_database
 
 # Frontend checks (matches frontend-checks.yml; run from frontend/)
 cd frontend
@@ -237,7 +242,7 @@ scope). The validator only issues read-only `gh api` GET calls.
 **Required-check semantics:** the contract is defined in `REQUIRED_CHECKS`
 inside `scripts/validate_commit.py` (see [docs/dev/validate-commit.md](docs/dev/validate-commit.md)).
 Checks are keyed on the GitHub check-run *job* names: `lint`, `deptry`, `test`,
-`architecture-qc` (ADR-042), `frontend-checks`, `build-and-push`, `promote`,
+`architecture-qc` (ADR-042), `database-tests` (PostgreSQL/pgvector), `frontend-checks`, `build-and-push`, `promote`,
 `e2e`, `docs-check`, and `analyze` (CodeQL). Which checks are required depends on
 the trigger context (`--trigger push|pr|manual`, default `push`); checks that are
 documented as not applicable to the context are reported as `NOT-APPLICABLE`,

@@ -74,19 +74,18 @@ def section_efficiency(con) -> dict:
     )
 
     tables = []
-    if df["run_ts"].nunique() > 1:
-        pivot = df.pivot(index="run_ts", columns="phase", values="elapsed_s")
-        pivot.columns.name = None
-        pivot.index.name = "run"
-        hist_rows = [{"run": str(idx), **row.to_dict()} for idx, row in pivot.iterrows()]
-        tables.append(
-            make_table(
-                hist_rows,
-                id="timing_history",
-                collapsible=True,
-                summary_text="History (all runs)",
-            )
+    pivot = df.pivot(index="run_ts", columns="phase", values="elapsed_s")
+    pivot.columns.name = None
+    pivot.index.name = "run"
+    hist_rows = [{"run": str(idx), **row.to_dict()} for idx, row in pivot.iterrows()]
+    tables.append(
+        make_table(
+            hist_rows,
+            id="timing_history",
+            collapsible=True,
+            summary_text=f"History ({df['run_ts'].nunique()} run(s), {df['phase'].nunique()} phases)",
         )
+    )
 
     total_s = float(latest["elapsed_s"].sum())
     total_min = total_s / 60
@@ -95,8 +94,8 @@ def section_efficiency(con) -> dict:
         "efficiency",
         "Pipeline Efficiency",
         description=(
-            f"Latest run {latest_ts} \u2014 total {total_s:.0f}s / {total_min:.1f} min "
-            f"across {len(latest)} phases. "
+            f"Timing scope {latest_ts} \u2014 total {total_s:.0f}s / {total_min:.1f} min "
+            f"across {len(latest)} phases ({df['phase'].nunique()} distinct phases recorded). "
             "Useful for identifying bottlenecks when scaling corpus size or adding backbones."
         ),
         charts=[make_chart(fig, id="phase_timing", title=f"Phase timing \u2014 {latest_ts}")],

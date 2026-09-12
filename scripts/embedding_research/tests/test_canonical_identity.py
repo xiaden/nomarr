@@ -6,7 +6,7 @@ ambiguity; non-finite rejected; ``-0.0`` normalized), canonical text identities
 for bin mode / outlier window / strategy version / encoder version, and the
 deterministic direct-L2 config hash over the fixed field ordering
 ``backbone | bin_mode | threshold | outlier_window | strategy_version |
-encoder_version``.  There is no semantics/calibration/alias input and no
+encoder_version``.  There is no semantics/calibration input and no
 ``std_scaled``/``canonical_semantics``/``canonical_calibration_record``/
 ``canonical_threshold`` surface.  The whole-module ``config_encoder_version()``
 is content-addressed (SHA-256 of ``helpers/thresholds.py`` bytes).
@@ -102,7 +102,7 @@ def test_canonical_scalar_text_helpers() -> None:
 
 
 def test_no_scaled_or_calibration_surface() -> None:
-    """The removed semantics/calibration/alias encoders no longer exist on thresholds."""
+    """The removed semantics/calibration encoders no longer exist on thresholds."""
     import scripts.embedding_research.helpers.thresholds as _t
 
     for removed in (
@@ -110,7 +110,6 @@ def test_no_scaled_or_calibration_surface() -> None:
         "canonical_calibration_record",
         "canonical_threshold",
         "canonical_threshold_of",
-        "canonical_alias",
         "STD_SCALED",
         "ThresholdSemantics",
         "validate_semantics",

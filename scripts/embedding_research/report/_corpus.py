@@ -1,7 +1,7 @@
 """Active songs / corpus health section.
 
-Research-only.  Renders the retained ``songs`` table as corpus health for the active
-matching corpus.  No retired pipeline vocabulary.
+Research-only. Renders the retained ``songs`` table as corpus health for active
+geometry analysis. No retired pipeline vocabulary.
 """
 
 from __future__ import annotations
@@ -197,7 +197,7 @@ def section_corpus(con) -> dict:
         "corpus",
         "Active Songs & Corpus Health",
         description=(
-            "Active matching corpus used by the catalog analysis and head analysis. "
+            "Active matching corpus used by the geometry analysis and head analysis. "
             "Trust signal for all discrimination metrics. "
             "Artists with only 1 song cannot form within-artist pairs, so disc_artist "
             "cannot be computed for them. "

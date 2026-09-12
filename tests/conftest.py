@@ -70,9 +70,10 @@ def _make_song(
     library: LibraryIdentity | None = None,
     **overrides: object,
 ) -> Song:
-    """Build a minimal semantic domain ``Song`` (mirrors the caller-migration test convention).
+    """Build a minimal semantic domain ``Song`` for the typed state-read contract fixtures.
 
-    ``path`` defaults to the owning library's ``root_path`` joined with ``normalized_path``.
+    Exposed as ``song_state_contract.make_song``; ``**overrides`` is a convenience passthrough
+    onto the base field dict, not a ratified caller-migration convention.
     """
     lib = library or _make_library()
     base = {

@@ -8,7 +8,16 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
+
 apply_module = importlib.import_module("nomarr.workflows.calibration.apply_calibration_wf")
+
+
+def _song_identity(index: int) -> SongIdentity:
+    return SongIdentity(
+        library=LibraryIdentity(library_uuid="library-1", name="Music", root_path="/music"),
+        normalized_path=f"file-{index}.flac",
+    )
 
 
 @pytest.mark.unit
@@ -41,9 +50,9 @@ class TestApplyCalibrationWorkflow:
             file_path = params.file_path
             write_calls.append(file_path)
             with batch_ctx._lock:
-                song_id = int(file_path.rsplit("-", 1)[1].split(".", 1)[0])
-                batch_ctx.pending_mood_tags.append((song_id, None))
-                batch_ctx.pending_calibration_hashes.append(song_id)
+                index = int(file_path.rsplit("-", 1)[1].split(".", 1)[0])
+                batch_ctx.pending_mood_tags.append((_song_identity(index), None))
+                batch_ctx.pending_calibration_hashes.append((_song_identity(index), "version-1"))
             return True
 
         monkeypatch.setattr(apply_module, "write_calibrated_tags_wf", _write_calibrated_tags)
@@ -68,7 +77,7 @@ class TestApplyCalibrationWorkflow:
         assert transition_song_state.call_count == 5
         assert transition_song_state.call_args_list[0].args == (
             db,
-            [0],
+            [_song_identity(0)],
             apply_module.STATE_TAGS_CURRENT,
             apply_module.STATE_TAGS_NOT_FRESH,
         )
@@ -88,8 +97,8 @@ class TestApplyCalibrationWorkflow:
 
         def _write(*, batch_ctx: Any, **_: Any) -> bool:
             with batch_ctx._lock:
-                batch_ctx.pending_mood_tags.append((1, None))
-                batch_ctx.pending_calibration_hashes.append(1)
+                batch_ctx.pending_mood_tags.append((_song_identity(1), None))
+                batch_ctx.pending_calibration_hashes.append((_song_identity(1), "version-1"))
             return True
 
         monkeypatch.setattr(apply_module, "write_calibrated_tags_wf", _write)
@@ -123,8 +132,8 @@ class TestApplyCalibrationWorkflow:
 
         def _write(*, batch_ctx: Any, **_: Any) -> bool:
             with batch_ctx._lock:
-                batch_ctx.pending_mood_tags.append((1, None))
-                batch_ctx.pending_calibration_hashes.append(1)
+                batch_ctx.pending_mood_tags.append((_song_identity(1), None))
+                batch_ctx.pending_calibration_hashes.append((_song_identity(1), "version-1"))
             return True
 
         monkeypatch.setattr(apply_module, "write_calibrated_tags_wf", _write)

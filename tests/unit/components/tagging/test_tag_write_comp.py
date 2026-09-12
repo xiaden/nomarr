@@ -41,15 +41,13 @@ class TestSetSongTags:
     def test_replaces_requested_tag_name_and_keeps_other_tags(self) -> None:
         mock_db = MagicMock()
         song_identity = _song_identity(1)
-        mock_db.library.resolve_song_identity.return_value = song_identity
         mock_db.library.list_tags_for_song.return_value = (
             SongTagAssignment(name="genre", value="old"),
             SongTagAssignment(name="mood", value="happy", namespace="default"),
         )
 
-        set_song_tags(mock_db, 1, "genre", ["rock"])
+        set_song_tags(mock_db, song_identity, "genre", ["rock"])
 
-        mock_db.library.resolve_song_identity.assert_called_once_with(1)
         mock_db.library.list_tags_for_song.assert_called_once_with(song_identity)
         mock_db.library.replace_song_tags.assert_called_once_with(
             song_identity,
@@ -64,13 +62,12 @@ class TestSetSongTags:
     def test_empty_values_remove_only_requested_name(self) -> None:
         mock_db = MagicMock()
         song_identity = _song_identity(1)
-        mock_db.library.resolve_song_identity.return_value = song_identity
         mock_db.library.list_tags_for_song.return_value = (
             SongTagAssignment(name="genre", value="old"),
             SongTagAssignment(name="mood", value="happy", namespace="default"),
         )
 
-        set_song_tags(mock_db, 1, "genre", [])
+        set_song_tags(mock_db, song_identity, "genre", [])
 
         mock_db.library.replace_song_tags.assert_called_once_with(
             song_identity,
@@ -82,10 +79,9 @@ class TestSetSongTags:
     def test_handles_missing_existing_tags(self) -> None:
         mock_db = MagicMock()
         song_identity = _song_identity(1)
-        mock_db.library.resolve_song_identity.return_value = song_identity
         mock_db.library.list_tags_for_song.return_value = ()
 
-        set_song_tags(mock_db, 1, "genre", ["rock"])
+        set_song_tags(mock_db, song_identity, "genre", ["rock"])
 
         mock_db.library.replace_song_tags.assert_called_once_with(
             song_identity,
@@ -94,14 +90,15 @@ class TestSetSongTags:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_is_noop_when_song_identity_not_found(self) -> None:
+    def test_writes_using_supplied_song_identity(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.resolve_song_identity.return_value = None
+        song = _song_identity(999)
+        mock_db.library.list_tags_for_song.return_value = ()
 
-        set_song_tags(mock_db, 999, "genre", ["rock"])
+        set_song_tags(mock_db, song, "genre", ["rock"])
 
-        mock_db.library.list_tags_for_song.assert_not_called()
-        mock_db.library.replace_song_tags.assert_not_called()
+        mock_db.library.list_tags_for_song.assert_called_once_with(song)
+        mock_db.library.replace_song_tags.assert_called_once()
 
 
 class TestSetSongTagsBatch:
@@ -123,13 +120,12 @@ class TestSetSongTagsBatch:
     def test_processes_multiple_entries_per_song_with_single_replace(self) -> None:
         mock_db = MagicMock()
         entries = [
-            {"song_id": 1, "name": "genre", "values": ["rock"]},
-            {"song_id": 1, "name": "mood", "values": ["happy", "bright"]},
-            {"song_id": 2, "name": "genre", "values": ["jazz"]},
+            {"song": _song_identity(1), "name": "genre", "values": ["rock"]},
+            {"song": _song_identity(1), "name": "mood", "values": ["happy", "bright"]},
+            {"song": _song_identity(2), "name": "genre", "values": ["jazz"]},
         ]
         id1 = _song_identity(1)
         id2 = _song_identity(2)
-        mock_db.library.resolve_song_identities.return_value = {1: id1, 2: id2}
         mock_db.library.list_song_tags_for_songs.return_value = {
             id1: (
                 SongTagAssignment(name="genre", value="old"),
@@ -140,7 +136,6 @@ class TestSetSongTagsBatch:
 
         set_song_tags_batch(mock_db, entries)
 
-        mock_db.library.resolve_song_identities.assert_called_once_with([1, 2])
         mock_db.library.list_song_tags_for_songs.assert_called_once_with([id1, id2])
         assert mock_db.library.replace_song_tags.call_args_list == [
             call(
@@ -209,7 +204,6 @@ class TestDeleteSongTags:
 
         delete_song_tags(mock_db, 1)
 
-        mock_db.library.resolve_song_identity.assert_called_once_with(1)
         mock_db.library.remove_song_tags.assert_called_once_with(song_identity)
 
     @pytest.mark.unit

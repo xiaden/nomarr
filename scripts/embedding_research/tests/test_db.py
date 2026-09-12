@@ -42,7 +42,7 @@ def con():
 EXPECTED_TABLES = {
     # Retained core experiment + provenance tables.  The obsolete copied-vector /
     # threshold / stratification tables were PHYSICALLY REMOVED at Plan E P1-S5
-    # Wave 2b (zero live writers/readers after the hard-cut deletion of the legacy
+    # Wave 2b (zero live writers/readers after the hard-cut deletion of the old
     # report tables and db/stratify.py); they must never reappear.
     "songs",
     "analyze_metrics",
@@ -54,11 +54,13 @@ EXPECTED_TABLES = {
     # sidecars, no PK/UNIQUE (application-level identity).
     "stream_registry",
     "head_stream_registry",
-    # Post-run phase/state surfaces (Plan B, Phase 2; Plan C Phase 4 adds catalog_metadata)
-    # — no PK/UNIQUE.
+    # Post-run phase/state surfaces (Plan B, Phase 2) — no PK/UNIQUE.
     "run_provenance",
     "corpus_state",
-    "catalog_metadata",
+    "song_patch_geometry",
+    # Exact geometry-era analysis + head evidence tables.
+    "geometry_analysis_records",
+    "geometry_head_evidence",
 }
 
 # The thirteen tables removed in the P1-S5 Wave 2b hard cut.  Asserted absent.
@@ -247,7 +249,7 @@ def test_query_analysis_done_returns_empty_set_on_missing_table(con):
 # Hard cut: one current run-scoped analyze_metrics schema
 # ---------------------------------------------------------------------------
 
-_LEGACY_PRECUT_ANALYZE_METRICS_DDL = """
+_PRECUT_ANALYZE_METRICS_DDL = """
 CREATE TABLE IF NOT EXISTS analyze_metrics (
     strategy_key  TEXT NOT NULL,
     strategy_type TEXT NOT NULL,
@@ -277,7 +279,7 @@ def test_write_analyze_metrics_requires_run_id(con):
 def test_analyze_metrics_current_schema_run_id_required_no_default(con):
     """P1-S4 spec: the current schema creates run_id TEXT NOT NULL with NO DEFAULT."""
     default, nullable = _run_id_column_default(con)
-    assert default is None  # no DEFAULT 'legacy' (or any default) tags rows
+    assert default is None  # the current run_id column carries no default
     assert nullable == "NO"
     # An unscoped INSERT omitting run_id is refused (the current run identity is required).
     with pytest.raises(duckdb.ConstraintException):
@@ -295,11 +297,11 @@ def test_analyze_metrics_no_pk_duplicate_run_rows_accepted(con):
     assert int(con.execute("SELECT COUNT(*) FROM analyze_metrics").fetchone()[0]) == 2
 
 
-def test_current_schema_has_no_legacy_partition_or_backup(con):
-    """P1-S4 spec: writing a current run never produces a legacy partition or a backup table."""
+def test_current_schema_has_no_partition_or_backup(con):
+    """P1-S4 spec: writing a current run never produces a partition or a backup table."""
     write_analyze_metrics(con, "bb/mean", "flat", "cosine", 10, {"disc_general": 0.42}, run_id="run-1")
     rows = con.execute("SELECT run_id FROM analyze_metrics").fetchall()
-    assert rows and all(r[0] != "legacy" for r in rows)
+    assert rows and all(r[0] == "run-1" for r in rows)
     n_backup = con.execute(
         "SELECT COUNT(*) FROM information_schema.tables WHERE table_name='analyze_metrics_backup'"
     ).fetchone()[0]
@@ -317,47 +319,23 @@ def test_ensure_schema_creates_current_schema_fresh():
 def test_ensure_schema_refuses_precut_table_without_run_id():
     """P1-S4 spec: a stale pre-cut analyze_metrics (no run_id) is refused, never migrated."""
     stale = duckdb.connect(":memory:")
-    stale.execute(_LEGACY_PRECUT_ANALYZE_METRICS_DDL)
+    stale.execute(_PRECUT_ANALYZE_METRICS_DDL)
     with pytest.raises(StaleSchemaError):
         ensure_schema(stale)
-    # Nothing was relabeled / copied into an executable legacy partition.
+    # Nothing was relabeled / copied into an executable partition.
     assert _run_id_column_default(stale) is None
     stale.close()
 
 
-def test_ensure_schema_refuses_legacy_partition_rows():
-    """P1-S4 spec: a table carrying run_id='legacy' rows (old pre-cut migration) is refused."""
+def test_ensure_schema_refuses_mixed_analyze_metrics_columns():
+    """P1-S4 spec: an analyze_metrics table that has the run_id column but a non-current
+    column set (an unexpected/mixed shape) is refused rather than silently accepted."""
     stale = duckdb.connect(":memory:")
     stale.execute(
         "CREATE TABLE analyze_metrics (run_id TEXT NOT NULL, strategy_key TEXT NOT NULL, "
         "strategy_type TEXT NOT NULL, sim_metric TEXT NOT NULL, k INTEGER NOT NULL, "
-        "metric TEXT NOT NULL, value DOUBLE)"
+        "metric TEXT NOT NULL)"
     )
-    stale.execute(
-        "INSERT INTO analyze_metrics (run_id, strategy_key, strategy_type, sim_metric, k, metric, value) "
-        "VALUES ('legacy', 'bb/mean', 'flat', 'cosine', 10, 'disc_general', 0.42)"
-    )
-    with pytest.raises(StaleSchemaError):
-        ensure_schema(stale)
-    stale.close()
-
-
-def test_ensure_schema_refuses_head_era_run_id_default_even_with_zero_rows():
-    """P1-S4 spec: a HEAD-era table whose run_id column has ``DEFAULT 'legacy'`` but holds no
-    'legacy' rows is still refused (the dormant legacy default is never silently accepted).
-
-    Row-presence alone cannot catch this shape: with ZERO rows the row-presence check finds
-    no ``run_id='legacy'`` rows and would let the table pass with a dormant ``DEFAULT
-    'legacy'`` left on the live column.  Refuse instead, matching the no-default current
-    schema (``_run_id_column_default`` is already None for a fresh current schema).
-    """
-    stale = duckdb.connect(":memory:")
-    stale.execute(
-        "CREATE TABLE analyze_metrics (run_id TEXT NOT NULL DEFAULT 'legacy', strategy_key TEXT NOT NULL, "
-        "strategy_type TEXT NOT NULL, sim_metric TEXT NOT NULL, k INTEGER NOT NULL, "
-        "metric TEXT NOT NULL, value DOUBLE)"
-    )
-    # Zero rows: the row-presence staleness check alone would find nothing to refuse.
     with pytest.raises(StaleSchemaError):
         ensure_schema(stale)
     stale.close()

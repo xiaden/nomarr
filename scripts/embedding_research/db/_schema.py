@@ -1,7 +1,7 @@
 """
 DuckDB schema, connection management, and DDL for the embedding research DB.
 
-Tables (11 total)
+Tables (13 total)
 -----------------
 The obsolete copied-vector / threshold / stratification tables that earlier corrective
 passes (P1-S5 Wave 1 / Wave 2a) stripped their writers and readers from are now PHYSICALLY
@@ -12,14 +12,11 @@ REMOVED (Plan E P1-S5 Wave 2b): ``pooled_vecs``, ``head_results``, ``head_agreem
 ``db/stratify.py`` writer/reader was deleted with a zero-caller proof).  No replacement or
 compatibility DDL is introduced; their canary/schema expectations were dropped.
 
-The DURABLE compact catalog SEGMENTATION tables (``seg_config`` / ``catalog_song`` /
-``seg_meta``) live ONLY in the compact filesystem snapshots (``catalog_storage.py``,
-``catalogs/<catalog-id>/catalog.duckdb``), never in this ``research.duckdb`` DDL.  The
-``run_provenance`` / ``catalog_metadata`` tables DO exist in this DDL (see the ACTIVE list
-below) as rebuildable registry/provenance copies; the authoritative catalog payload is the
-filesystem snapshot.
+Committed stream payloads, masks, head payloads, observations, and the geometry
+analysis/head evidence tables are the authoritative geometry-era artifacts; there is no
+filesystem snapshot format in the geometry pipeline.
 
-ACTIVE — frozen-stream / catalog / provenance + core live-writer tables (primary):
+ACTIVE — frozen-stream / geometry / provenance + core live-writer tables (primary):
   stream_registry           (song_id, backbone, artifact_ref, patch_count, dim, dtype,
                              format_version, fingerprint_sha256, preprocess_fn,
                              preprocess_version, backbone_model_hash, audio_params,
@@ -30,41 +27,38 @@ ACTIVE — frozen-stream / catalog / provenance + core live-writer tables (prima
                              dim_by_head, format_version, fingerprint_sha256, preprocess_fn,
                              preprocess_version, backbone_model_hash, alignment_version,
                              status, run_id, created_at, updated_at)  -- no PK/UNIQUE
+  song_patch_geometry       (exact committed geometry identity + BLOB digests; see
+                             ``GEOMETRY_COLUMNS``)  -- authoritative geometry rows
+  geometry_analysis_records (run_id + the eight geometry axes + metric, value, evidence_json)
+                             -- exact semantic analysis evidence, no PK/UNIQUE
+  geometry_head_evidence    (run_id + the eight geometry axes + head, segment_id, evidence_json)
+                             -- exact head evidence, no PK/UNIQUE
   run_provenance            (run_id, phase, status, started_at, finished_at,
                              input_artifact_hashes, output_artifact_hashes, config_hash,
                              song_count, warning_count, software_versions, command_line,
-                             structural_change_summary, retained, view_refs)  -- no PK/UNIQUE
+                             structural_change_summary, retained)  -- no PK/UNIQUE
   corpus_state              (state_version, registered_song_count, eligible_song_count,
-                             complete_flag, latest_catalog_run_id,
-                             reconciled_at, reconciliation_status)  -- singleton, no PK/UNIQUE
-  catalog_metadata          (catalog_semantics_version, serialization_version, manifest_version,
-                             backbone_set, latest_catalog_run_id, latest_config_ids,
-                             reconciled_at)  -- metadata-only singleton, no PK/UNIQUE
+                             complete_flag, reconciled_at,
+                             reconciliation_status)  -- singleton, no PK/UNIQUE
   songs                     (song_id PK, path, artist, album, title, genre)
   analyze_metrics           (run_id, strategy_key, strategy_type, sim_metric, k, metric,
                              value)  -- run-scoped; no PK/UNIQUE
   song_retrieval_metrics    (strategy_key, sim_metric, k, song_id, ap_k, mrr, recall_k,
                              disc_artist_contrib, disc_genre_contrib, disc_head_contrib)
-  head_phase_provenance     (run_id, config_id, backbone, head, bin_mode,
-                             threshold_configured, threshold_effective, semantics,
-                             boundary_source, head_pool_variant, status, reason,
-                             n_songs, n_pooled, finite, scoring_semantics_version,
-                             reference_corpus_hash, threshold)  -- 18-col, no PK/UNIQUE;
-                             canonical current rows only
-  analyze_incomplete_diagnostics (run_id, strategy_key, sim_metric, k, backbone,
+  head_phase_provenance     (run_id + the eight geometry axes + geometry_semantics_version,
+                             scoring_semantics_version, execution_id, head, segment_id,
+                             finite, status, refusal)  -- no PK/UNIQUE
+  analyze_incomplete_diagnostics (run_id + the eight geometry axes + sim_metric, k,
                              experiment, diagnostic_version, status, reason, metric,
-                             catalog_id, catalog_fingerprint, search_representation_hash,
-                             canonical_config_id, config_ids_json, members_json,
-                             observation_evidence_json, evaluation_corpus_hash,
-                             evaluation_corpus_count, evaluation_corpus_comparable,
                              missing_song_ids_json, missing_count, missing_digest,
-                             ruler_status_json, query_count, baseline_strategy_key,
+                             evaluation_corpus_hash, evaluation_corpus_count,
+                             evaluation_corpus_comparable, baseline_strategy_key,
                              baseline_evaluation_corpus_hash,
                              baseline_evaluation_corpus_count,
                              baseline_evaluation_corpus_comparable, created_at)
                              -- non-metric diagnostics, no PK/UNIQUE; app-scoped
-                             replacement by (run_id, strategy_key, sim_metric, k)
-  phase_timings             (run_ts, phase, elapsed_s)  -- active efficiency source
+                             replacement by (run_id, geometry_id, evaluation_id, sim_metric)
+    phase_timings             (run_ts, phase, elapsed_s)  -- active efficiency source
 """
 
 from __future__ import annotations
@@ -87,7 +81,98 @@ from scripts.embedding_research.config import DB_PATH
 if TYPE_CHECKING:
     from collections.abc import Generator
 
+GEOMETRY_TABLE = "song_patch_geometry"
+GEOMETRY_COLUMNS: tuple[str, ...] = (
+    "geometry_id",
+    "song_id",
+    "backbone",
+    "observation_commit_sha256",
+    "stream_ref",
+    "stream_fingerprint_sha256",
+    "stream_payload_sha256",
+    "mask_ref",
+    "mask_payload_sha256",
+    "patch_count",
+    "embedding_dim",
+    "stream_dtype",
+    "stream_format_version",
+    "embed_semantics_version",
+    "preprocess_fn",
+    "preprocess_version",
+    "backbone_model_hash",
+    "audio_params",
+    "provenance_source",
+    "provenance_assumption",
+    "alignment_token",
+    "audio_content_sha256",
+    "mask_semantics_version",
+    "group_format_version",
+    "provenance_identity",
+    "geometry_semantics_version",
+    "numerical_profile_digest",
+    "geometry_blob_byte_length",
+    "geometry_blob_sha256",
+    "gram_blob",
+    "status",
+    "writer_run_id",
+    "created_at_ms",
+    "updated_at_ms",
+)
+
+_GEOMETRY_CREATE = """
+CREATE TABLE IF NOT EXISTS song_patch_geometry (
+    geometry_id TEXT NOT NULL, song_id TEXT NOT NULL, backbone TEXT NOT NULL,
+    observation_commit_sha256 TEXT NOT NULL, stream_ref TEXT NOT NULL,
+    stream_fingerprint_sha256 TEXT NOT NULL, stream_payload_sha256 TEXT NOT NULL,
+    mask_ref TEXT NOT NULL, mask_payload_sha256 TEXT NOT NULL, patch_count INTEGER NOT NULL,
+    embedding_dim INTEGER NOT NULL, stream_dtype TEXT NOT NULL, stream_format_version TEXT NOT NULL,
+    embed_semantics_version INTEGER NOT NULL, preprocess_fn TEXT NOT NULL, preprocess_version TEXT NOT NULL,
+    backbone_model_hash TEXT NOT NULL, audio_params TEXT NOT NULL, provenance_source TEXT NOT NULL,
+    provenance_assumption TEXT NOT NULL, alignment_token TEXT NOT NULL, audio_content_sha256 TEXT NOT NULL,
+    mask_semantics_version TEXT NOT NULL, group_format_version TEXT NOT NULL, provenance_identity TEXT NOT NULL,
+    geometry_semantics_version TEXT NOT NULL, numerical_profile_digest TEXT NOT NULL,
+    geometry_blob_byte_length BIGINT NOT NULL, geometry_blob_sha256 TEXT NOT NULL, gram_blob BLOB NOT NULL,
+    status TEXT NOT NULL, writer_run_id TEXT NOT NULL, created_at_ms BIGINT NOT NULL, updated_at_ms BIGINT NOT NULL
+);
+"""
+
 _DDL = """
+CREATE TABLE IF NOT EXISTS geometry_analysis_records (
+    run_id TEXT NOT NULL,
+    geometry_id TEXT NOT NULL,
+    observation_id TEXT NOT NULL,
+    geometry_semantics_version TEXT NOT NULL,
+    numerical_profile_digest TEXT NOT NULL,
+    threshold_id TEXT NOT NULL,
+    structural_identity TEXT NOT NULL,
+    search_representation_id TEXT NOT NULL,
+    evaluation_id TEXT NOT NULL,
+    scoring_semantics_version INTEGER NOT NULL,
+    execution_id TEXT NOT NULL,
+    metric TEXT NOT NULL,
+    value DOUBLE NOT NULL,
+    evidence_json TEXT NOT NULL,
+    created_at_ms BIGINT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS geometry_head_evidence (
+    run_id TEXT NOT NULL,
+    geometry_id TEXT NOT NULL,
+    observation_id TEXT NOT NULL,
+    geometry_semantics_version TEXT NOT NULL,
+    numerical_profile_digest TEXT NOT NULL,
+    threshold_id TEXT NOT NULL,
+    structural_identity TEXT NOT NULL,
+    search_representation_id TEXT NOT NULL,
+    evaluation_id TEXT NOT NULL,
+    scoring_semantics_version INTEGER NOT NULL,
+    execution_id TEXT NOT NULL,
+    head TEXT NOT NULL,
+    segment_id INTEGER NOT NULL,
+    evidence_json TEXT NOT NULL,
+    created_at_ms BIGINT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS songs (
     song_id TEXT PRIMARY KEY,
     path    TEXT NOT NULL,
@@ -174,8 +259,7 @@ CREATE TABLE IF NOT EXISTS head_stream_registry (
 -- Post-run phase provenance (Plan B Phase 2; Plan C extends usage on this same table).
 -- One row per completed phase run.  NO PRIMARY KEY / UNIQUE constraint (application
 -- string ``run_id`` + ``phase``; DuckDB ART/WAL policy).  ``retained`` protects a row
--- from manifest/view garbage collection; ``view_refs`` is a root-relative view-ref seed
--- (empty now; Plan D populates it).  Timestamps are INTEGER milliseconds.
+-- from garbage collection.  Timestamps are INTEGER milliseconds.
 CREATE TABLE IF NOT EXISTS run_provenance (
     run_id                      TEXT NOT NULL,
     phase                       TEXT NOT NULL,
@@ -190,115 +274,85 @@ CREATE TABLE IF NOT EXISTS run_provenance (
     software_versions           TEXT,
     command_line                TEXT,
     structural_change_summary   TEXT,
-    retained                    BOOLEAN NOT NULL DEFAULT FALSE,
-    view_refs                   TEXT
+    retained                    BOOLEAN NOT NULL DEFAULT FALSE
 );
 
--- Corpus-level post-run state (Plan B Phase 2 base; Plan C extends usage on this same
--- table).  SINGLETON: must hold zero-or-one rows; every update verifies that first and
--- raises if the invariant is violated (more than one row = corruption).  NO PK/UNIQUE.
--- Fields Plan C owns later (latest_catalog_run_id) are written
--- empty/NULL now.  ``reconciled_at`` is INTEGER milliseconds.  (The Plan D P1-S2 search-view
--- rework removed the ``latest_search_view_hash`` column: search views are disposable and
--- regenerated per run, so corpus state tracks no durable search-view hash.)
+-- Corpus-level post-run state (Plan B Phase 2 base).  SINGLETON: must hold zero-or-one
+-- rows; every update verifies that first and raises if the invariant is violated (more
+-- than one row = corruption).  NO PK/UNIQUE.  ``reconciled_at`` is INTEGER milliseconds.
 CREATE TABLE IF NOT EXISTS corpus_state (
     state_version            INTEGER NOT NULL,
     registered_song_count    INTEGER NOT NULL,
     eligible_song_count      INTEGER NOT NULL,
     complete_flag            BOOLEAN NOT NULL DEFAULT FALSE,
-    latest_catalog_run_id    TEXT,
     reconciled_at            BIGINT NOT NULL,
     reconciliation_status    TEXT
 );
-
--- Catalog-level metadata (Plan C, Phase 4).  A small metadata-only SINGLETON (zero or
--- one row, like corpus_state; more than one is corruption) carrying the identity-relevant
--- catalog semantics / canonical-serialization / manifest versions, the backbone set, and
--- the latest run/config identifiers.  Scalar columns only, NO PRIMARY KEY / UNIQUE
--- (DuckDB ART/WAL policy).  It is included in the manifest and in the logical-state /
--- schema-dump catalog_fingerprint check but is NOT duplicated into row identity.  This
--- table NEVER stores catalog_fingerprint (that value is manifest-only and non-
--- self-referential).  catalog_semantics_version / serialization_version / manifest_version
--- are INTEGER; backbone_set is the sorted, comma-joined canonical backbone text.
-CREATE TABLE IF NOT EXISTS catalog_metadata (
-    catalog_semantics_version INTEGER NOT NULL,
-    serialization_version     INTEGER NOT NULL,
-    manifest_version          INTEGER NOT NULL,
-    backbone_set              TEXT,
-    latest_catalog_run_id     TEXT,
-    latest_config_ids         TEXT,
-    reconciled_at             BIGINT NOT NULL
-);
 """
 
-# -- head_phase_provenance (Plan E, Phase 1 AMEND ROUND 2 — 18-col superset) -----
-# Kept OUT of the monolithic ``_DDL`` so the 18-column definitions live here as the
+# -- head_phase_provenance (Plan E, Phase 1 geometry-era sink) ---------------------
+# Kept OUT of the monolithic ``_DDL`` so the 16-column definitions live here as the
 # single source of truth (``_HPP_COLUMN_DEFS`` feeds ``_HPP_CREATE``).  It has
 # NO PRIMARY KEY / UNIQUE / index (DuckDB ART/WAL policy — application identity and
 # uniqueness are asserted before commit and rechecked after write).
 _HPP_COLUMN_DEFS: tuple[str, ...] = (
-    "run_id                    TEXT NOT NULL",
-    "config_id                 INTEGER NULL",
-    "backbone                  TEXT NOT NULL",
-    "head                      TEXT NOT NULL",
-    "bin_mode                  TEXT NOT NULL",
-    "threshold_configured      DOUBLE NULL",
-    "threshold_effective       DOUBLE NULL",
-    "semantics                 TEXT NULL",
-    "boundary_source           TEXT NOT NULL",
-    "head_pool_variant         TEXT NOT NULL",
-    "status                    TEXT NOT NULL",
-    "reason                    TEXT NULL",
-    "n_songs                   INTEGER NOT NULL",
-    "n_pooled                  INTEGER NOT NULL",
-    "finite                    INTEGER NOT NULL",
+    "run_id TEXT NOT NULL",
+    "geometry_id TEXT NOT NULL",
+    "observation_id TEXT NOT NULL",
+    "geometry_semantics_version TEXT NOT NULL",
+    "numerical_profile_digest TEXT NOT NULL",
+    "threshold_id TEXT NOT NULL",
+    "structural_identity TEXT NOT NULL",
+    "search_representation_id TEXT NOT NULL",
+    "evaluation_id TEXT NOT NULL",
     "scoring_semantics_version INTEGER NOT NULL",
-    "reference_corpus_hash     TEXT NULL",
-    "threshold                 DOUBLE NULL",
+    "execution_id TEXT NOT NULL",
+    "head TEXT NOT NULL",
+    "segment_id INTEGER NOT NULL",
+    "finite INTEGER NOT NULL",
+    "status TEXT NOT NULL",
+    "refusal TEXT NULL",
 )
 
-#: ``CREATE TABLE IF NOT EXISTS`` statement for the canonical 18-column table.
+#: ``CREATE TABLE IF NOT EXISTS`` statement for the canonical 16-column table.
 _HPP_CREATE = "CREATE TABLE IF NOT EXISTS head_phase_provenance (\n    " + ",\n    ".join(_HPP_COLUMN_DEFS) + "\n);"
 
-# -- analyze_incomplete_diagnostics (execution-reporting Plan B P2) -------------
+# -- analyze_incomplete_diagnostics (geometry era, 29 columns) ------------------
 # Durable, report-readable NON-METRIC diagnostics for a non-comparable (skipped)
-# catalog search-representation class.  Kept OUT of the monolithic ``_DDL`` so the
-# column definitions live here as the single source of truth
+# geometry representation.  Kept OUT of the monolithic ``_DDL`` so the column
+# definitions live here as the single source of truth
 # (``_INCOMPLETE_DIAGNOSTIC_COLUMN_DEFS`` feeds ``_INCOMPLETE_DIAGNOSTICS_CREATE``
-# and ``db.incomplete_diagnostics.incomplete_diagnostic_columns``).  A row carries
-# version + run/backbone/experiment/class/threshold/member identity, observation and
-# complete evaluation-corpus evidence, sim/K, reason, missing membership/count/
-# digest, ruler/query-count status, the MANDATORY observed-baseline evidence, and a
-# creation timestamp.  It is NEVER an ``analyze_metrics`` row and NEVER a complete
-# ``analyze_scope_v2`` line.  No PRIMARY KEY / UNIQUE / index (DuckDB ART/WAL policy):
-# application-scoped replacement is by ``(run_id, strategy_key, sim_metric, k)``,
-# preserving unrelated runs exactly.
+# and ``db.incomplete_diagnostics.incomplete_diagnostic_columns``).  A row carries the
+# complete eleven-field geometry identity, experiment/sim/K, refusal reason and status,
+# missing membership/count/digest evidence, the complete evaluation-corpus evidence, and
+# the MANDATORY observed-baseline evidence.  It is NEVER an ``analyze_metrics`` row.
+# No PRIMARY KEY / UNIQUE / index (DuckDB ART/WAL policy): application-scoped replacement
+# is by ``(run_id, geometry_id, evaluation_id, sim_metric)``, preserving unrelated runs.
 _INCOMPLETE_DIAGNOSTIC_COLUMN_DEFS: tuple[str, ...] = (
     "run_id                                TEXT NOT NULL",
-    "strategy_key                          TEXT NOT NULL",
+    "geometry_id                           TEXT NOT NULL",
+    "observation_id                        TEXT NOT NULL",
+    "geometry_semantics_version            TEXT NOT NULL",
+    "numerical_profile_digest              TEXT NOT NULL",
+    "threshold_id                          TEXT NOT NULL",
+    "structural_identity                   TEXT NOT NULL",
+    "search_representation_id              TEXT NOT NULL",
+    "evaluation_id                         TEXT NOT NULL",
+    "scoring_semantics_version             INTEGER NOT NULL",
+    "execution_id                          TEXT NOT NULL",
     "sim_metric                            TEXT NOT NULL",
     "k                                     INTEGER NOT NULL",
-    "backbone                              TEXT NOT NULL",
     "experiment                            TEXT NOT NULL",
     "diagnostic_version                    INTEGER NOT NULL",
     "status                                TEXT NOT NULL",
     "reason                                TEXT NOT NULL",
     "metric                                TEXT NOT NULL",
-    "catalog_id                            TEXT NOT NULL",
-    "catalog_fingerprint                   TEXT NOT NULL",
-    "search_representation_hash            TEXT NOT NULL",
-    "canonical_config_id                   INTEGER NOT NULL",
-    "config_ids_json                       TEXT NOT NULL",
-    "members_json                          TEXT NOT NULL",
-    "observation_evidence_json             TEXT NOT NULL",
     "evaluation_corpus_hash                TEXT NOT NULL",
     "evaluation_corpus_count               INTEGER NOT NULL",
     "evaluation_corpus_comparable          BOOLEAN NOT NULL",
     "missing_song_ids_json                 TEXT NOT NULL",
     "missing_count                         INTEGER NOT NULL",
     "missing_digest                        TEXT NULL",
-    "ruler_status_json                     TEXT NOT NULL",
-    "query_count                           INTEGER NOT NULL",
     "baseline_strategy_key                 TEXT NOT NULL",
     "baseline_evaluation_corpus_hash       TEXT NOT NULL",
     "baseline_evaluation_corpus_count      INTEGER NOT NULL",
@@ -327,29 +381,12 @@ def _table_has_column(con, table: str, column: str) -> bool:
     return bool(row and row[0])
 
 
-def _column_default(con, table: str, column: str):
-    """Return the ``column_default`` for one column, or None when the column is absent.
-
-    DuckDB surfaces a column DEFAULT as its expression string via
-    ``information_schema.columns.column_default`` (e.g. ``'legacy'`` for ``DEFAULT
-    'legacy'``) and NULL for a column with no default.  Used by the stale-schema refusal
-    guard to catch a HEAD-era pre-cut table whose ``run_id`` column still carries a
-    ``DEFAULT 'legacy'`` but holds no ``'legacy'`` rows to trip the row-presence check.
-    """
-    row = con.execute(
-        "SELECT column_default FROM information_schema.columns WHERE table_name = ? AND column_name = ?",
-        [table, column],
-    ).fetchone()
-    return row[0] if row else None
-
-
 # ── analyze_metrics (one current run-scoped schema) ──────────────────────────
 
 #: Column definitions for ``analyze_metrics``.  The ``run_id`` column is the row-level
 #: realization of the analyze-scope bookkeeping and carries ONE current meaning: the run that
-#: produced the row.  There is no pre-cut / legacy partition, no ``DEFAULT 'legacy'`` and no
-#: reserved legacy run id — every row is written by a run-scoped caller that supplies the
-#: current ``run_id``.  The old four-column PRIMARY KEY was dropped; DuckDB ART/WAL policy
+#: produced the row.  There is no partition and no reserved run id — every row is written by
+#: a run-scoped caller that supplies the current ``run_id``.  The old four-column PRIMARY KEY was dropped; DuckDB ART/WAL policy
 #: (like ``head_phase_provenance``) allows no PK/UNIQUE/index on a maintained table —
 #: application-level uniqueness is asserted on write within a run_id (see
 #: ``db.flat.write_analyze_metrics``: it replaces only its own run scope).
@@ -370,60 +407,45 @@ _ANALYZE_METRICS_CREATE = (
 
 
 class StaleSchemaError(RuntimeError):
-    """A pre-cut (legacy-partitioned) ``analyze_metrics`` schema/table was detected.
+    """An incompatible or unexpected primary/analyze schema was detected.
 
     Raised by :func:`ensure_schema` when an existing ``analyze_metrics`` table cannot be
-    treated as the ONE current run-scoped schema — either it predates the ``run_id`` column,
-    or it carries ``run_id='legacy'`` rows copied by the removed pre-cut migration, or whose
-    ``run_id`` column exposes a non-None DEFAULT (a HEAD-era pre-cut shape carrying
-    ``DEFAULT 'legacy'`` with no rows to trip the row-presence check).  The corrective hard
-    cut REFUSES such a table rather than relabeling/copying its rows into an executable
-    legacy partition: the table must be explicitly reset/recreated (``run.py reset --scope
-    analysis`` removes the disposable research DB + views; re-running the phase then
-    recreates the current schema) before analysis proceeds.
+    treated as the one current run-scoped schema (it predates the ``run_id`` column) and by
+    :func:`schema_fingerprint` when the primary geometry schema is missing, mixed, or
+    otherwise unexpected. The schema is never repaired in place: the operator explicitly
+    resets/recreates it (``run.py reset --scope analysis`` removes disposable analysis
+    metadata; re-running the phase then recreates the current schema) before analysis proceeds.
     """
 
 
 def _ensure_current_analyze_metrics(con) -> None:
-    """Create the current ``analyze_metrics`` schema or refuse a stale pre-cut table.
+    """Create the current ``analyze_metrics`` schema or refuse a pre-cut table.
 
     * absent table -> create the current run-scoped schema;
-    * present CURRENT table (has ``run_id`` with no column default, no legacy-partition rows)
-      -> no-op (``CREATE TABLE IF NOT EXISTS`` idempotency);
-    * present table lacking ``run_id`` (pre-cut), OR containing ``run_id='legacy'`` rows (a
-      legacy partition left by the removed pre-cut migration), OR exposing a NON-None
-      ``run_id`` column default (a HEAD-era table that has the ``run_id`` column with
-      ``DEFAULT 'legacy'`` but no ``'legacy'`` rows to trip the row-presence check) -> raise
-      :class:`StaleSchemaError` so the operator explicitly resets/recreates the schema instead
-      of silently relabeling stale rows as current or leaving a dormant ``DEFAULT 'legacy'``
-      on the live column.
+    * present CURRENT table (has ``run_id``) -> no-op (``CREATE TABLE IF NOT EXISTS``
+      idempotency);
+    * present table lacking ``run_id`` (a pre-cut schema) -> raise
+      :class:`StaleSchemaError` so the operator explicitly resets/recreates the schema.
     """
     if not _table_exists(con, "analyze_metrics"):
         con.execute(_ANALYZE_METRICS_CREATE)
         return
     if not _table_has_column(con, "analyze_metrics", "run_id"):
         raise StaleSchemaError(
-            "analyze_metrics exists WITHOUT the current run_id column (a pre-cut schema). "
-            "Refusing to run on it: the hard cut makes analyze_metrics one current "
-            "run-scoped schema with no legacy partition. Reset/recreate explicitly (e.g. "
-            "`python run.py reset --scope analysis`, or drop + recreate the DB) and re-run "
-            "the phase."
+            "analyze_metrics exists without the current run_id column. Refusing to run on it; "
+            "reset/recreate explicitly and re-run the phase."
         )
-    if _column_default(con, "analyze_metrics", "run_id") is not None:
+    columns = tuple(
+        str(row[0])
+        for row in con.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'analyze_metrics' ORDER BY ordinal_position"
+        ).fetchall()
+    )
+    expected = tuple(definition.split()[0] for definition in _ANALYZE_METRICS_COLUMN_DEFS)
+    if columns != expected:
         raise StaleSchemaError(
-            "analyze_metrics has a run_id column with a DEFAULT ('legacy'); the current "
-            "hard-cut schema pins run_id with NO default (every row is written by a "
-            "run-scoped caller). Refusing to run on it rather than silently accept a dormant "
-            "legacy default on the live column. Reset/recreate explicitly (e.g. `python "
-            "run.py reset --scope analysis`) and re-run the phase."
-        )
-    legacy_rows = int(con.execute("SELECT COUNT(*) FROM analyze_metrics WHERE run_id = 'legacy'").fetchone()[0])
-    if legacy_rows:
-        raise StaleSchemaError(
-            "analyze_metrics carries run_id='legacy' rows (a legacy partition copied by the "
-            "removed pre-cut migration). Refusing to run on them: old rows are never relabeled "
-            "into an executable legacy partition. Reset/recreate explicitly (e.g. `python "
-            "run.py reset --scope analysis`) and re-run the phase."
+            "analyze_metrics has an unexpected column shape; reset/recreate explicitly and re-run the phase."
         )
     con.execute(_ANALYZE_METRICS_CREATE)
 
@@ -431,7 +453,7 @@ def _ensure_current_analyze_metrics(con) -> None:
 def _require_duckdb() -> None:
     if not _HAS_DUCKDB:
         raise ImportError(
-            "duckdb is not installed. Run:\n  pip install -r /workspace/scripts/embedding_research/requirements.txt"
+            "duckdb is not installed. Run:\n  pip install -r /workspace/nomarr/scripts/embedding_research/requirements.txt"
         )
 
 
@@ -483,7 +505,7 @@ def require_supported_duckdb() -> None:
         raise RuntimeError(
             f"Unsupported duckdb version {duckdb.__version__!r}: this research package requires "
             f"duckdb >=1.5,<2.0 (got {version[0]}.{version[1]}). Install a supported release:"
-            "\n  pip install -r /workspace/scripts/embedding_research/requirements.txt"
+            "\n  pip install -r /workspace/nomarr/scripts/embedding_research/requirements.txt"
         )
 
 
@@ -498,12 +520,30 @@ def storage_version_label(value: object) -> str:
     return str(value)
 
 
+def schema_fingerprint(con) -> str:
+    """Return the deterministic fingerprint of the accepted primary schema, refusing drift."""
+    import hashlib
+
+    rows = con.execute(
+        "SELECT table_name, column_name, data_type, is_nullable FROM information_schema.columns "
+        "WHERE table_schema='main' ORDER BY table_name, ordinal_position"
+    ).fetchall()
+    actual = tuple(tuple(str(v) for v in row) for row in rows)
+    if not any(row[0] == GEOMETRY_TABLE for row in actual):
+        raise StaleSchemaError("primary schema is missing song_patch_geometry")
+    geometry = tuple(row for row in actual if row[0] == GEOMETRY_TABLE)
+    if tuple(row[1] for row in geometry) != GEOMETRY_COLUMNS:
+        raise StaleSchemaError("song_patch_geometry schema is pre-cut, mixed, retired, or malformed")
+    payload = "\\n".join("|".join(row) for row in actual).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
 def ensure_schema(con) -> None:
     """Execute the DDL against an already-open connection. Safe to call multiple times.
 
     Ensures the current run-scoped ``analyze_metrics`` table (creating it when absent, or
-    raising :class:`StaleSchemaError` when a stale pre-cut / legacy-partitioned table is
-    present — never relabeling old rows), then the monolithic DDL and the two tables owned
+    raising :class:`StaleSchemaError` when an incompatible table is present), then the
+    monolithic DDL and the two tables owned
     outside the monolithic ``_DDL``: the canonical 18-column ``head_phase_provenance`` table
     and the 30-column ``analyze_incomplete_diagnostics`` table (``_INCOMPLETE_DIAGNOSTICS_CREATE``,
     built from ``_INCOMPLETE_DIAGNOSTIC_COLUMN_DEFS``).
@@ -511,8 +551,28 @@ def ensure_schema(con) -> None:
     _require_duckdb()
     _ensure_current_analyze_metrics(con)
     con.execute(_DDL)
+    con.execute(_GEOMETRY_CREATE)
     con.execute(_HPP_CREATE)
+    con.execute("""CREATE TABLE IF NOT EXISTS geometry_analysis_records (
+        run_id TEXT NOT NULL, geometry_id TEXT NOT NULL, observation_id TEXT NOT NULL,
+        geometry_semantics_version TEXT NOT NULL, numerical_profile_digest TEXT NOT NULL,
+        threshold_id TEXT NOT NULL, structural_identity TEXT NOT NULL,
+        search_representation_id TEXT NOT NULL, evaluation_id TEXT NOT NULL,
+        scoring_semantics_version INTEGER NOT NULL, execution_id TEXT NOT NULL,
+        metric TEXT NOT NULL, value DOUBLE NOT NULL,
+        evidence_json TEXT NOT NULL, created_at_ms BIGINT NOT NULL
+    )""")
+    con.execute("""CREATE TABLE IF NOT EXISTS geometry_head_evidence (
+        run_id TEXT NOT NULL, geometry_id TEXT NOT NULL, observation_id TEXT NOT NULL,
+        geometry_semantics_version TEXT NOT NULL, numerical_profile_digest TEXT NOT NULL,
+        threshold_id TEXT NOT NULL, structural_identity TEXT NOT NULL,
+        search_representation_id TEXT NOT NULL, evaluation_id TEXT NOT NULL,
+        scoring_semantics_version INTEGER NOT NULL, execution_id TEXT NOT NULL,
+        head TEXT NOT NULL, segment_id INTEGER NOT NULL,
+        evidence_json TEXT NOT NULL, created_at_ms BIGINT NOT NULL
+    )""")
     con.execute(_INCOMPLETE_DIAGNOSTICS_CREATE)
+    schema_fingerprint(con)
 
 
 def upsert_phase_timing(con, run_ts: str, phase: str, elapsed_s: float) -> None:

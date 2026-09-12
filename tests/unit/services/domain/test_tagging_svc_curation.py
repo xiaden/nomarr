@@ -6,17 +6,19 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
+from nomarr.components.library.library_song_query_comp import _locators_for_songs
 from nomarr.helpers.constants.file_states import (
     STATE_NOT_WRITTEN,
     STATE_TAGS_CURRENT,
     STATE_TAGS_NOT_FRESH,
     STATE_WRITTEN,
 )
+from nomarr.helpers.dataclasses.library_dataclass import Library
 from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
 from nomarr.helpers.dataclasses.song_dataclass import Song
-from nomarr.helpers.dataclasses.song_tag_dataclass import RelinkResult, TagRef
-from nomarr.helpers.dataclasses.tags_dataclass import Tag, Tags
+from nomarr.helpers.dataclasses.song_tag_dataclass import RelinkResult, SongTagAssignment, TagRef
 from nomarr.helpers.dto.tag_curation_dto import MergeResult, RenameResult, SplitResult
+from nomarr.helpers.song_locator_codec import SongLocatorFormatError, encode_song_locator
 from nomarr.services.domain.tagging_svc import TaggingService, TaggingServiceConfig
 from nomarr.services.domain.tagging_svc.curation import TaggingCurationMixin
 
@@ -53,6 +55,24 @@ def _song(song_id: int) -> Song:
         scanned_at=None,
         created_at=0,
     )
+
+
+_LIBRARY = LibraryIdentity(library_uuid="2621ebfb-71ff-4168-a812-5342ca310e8c", name="music", root_path="/music")
+
+
+def _song_identity(song_id: int) -> SongIdentity:
+    """Semantic locator matching the ``_token`` helper for one test fixture."""
+    return SongIdentity(library=_LIBRARY, normalized_path=f"{song_id}.flac")
+
+
+def _token(song_id: int) -> str:
+    """Opaque ``nom1`` SongLocator token for one test fixture."""
+    return encode_song_locator(_song_identity(song_id))
+
+
+def _stub_song_lookup(service: TaggingService) -> None:
+    """Stub the library-by-uuid read used to decode song locator tokens."""
+    service.db.library.get_library_by_uuid = MagicMock(return_value=Library(name="music", root_path="/music"))
 
 
 def _present(service: TaggingService, identity: TagRef) -> MagicMock:
@@ -156,6 +176,10 @@ class TestRenameTag:
                 return_value=RelinkResult(moved=5, skipped=0, source_orphaned=1),
             ),
             patch(
+                "nomarr.services.domain.tagging_svc.curation._locators_for_songs",
+                return_value=[_song_identity(10), _song_identity(20)],
+            ),
+            patch(
                 "nomarr.services.domain.tagging_svc.curation.transition_song_state",
             ) as mock_transition,
         ):
@@ -253,6 +277,10 @@ class TestRenameTag:
                 "nomarr.services.domain.tagging_svc.curation.relink_tag_edges",
                 return_value=RelinkResult(moved=2, skipped=1, source_orphaned=1),
             ) as mock_relink,
+            patch(
+                "nomarr.services.domain.tagging_svc.curation._locators_for_songs",
+                return_value=[_song_identity(10)],
+            ),
             patch("nomarr.services.domain.tagging_svc.curation.transition_song_state"),
         ):
             result = service.rename_tag(source, "new")
@@ -353,6 +381,10 @@ class TestMergeTags:
                 return_value=RelinkResult(moved=3, skipped=0, source_orphaned=1),
             ),
             patch(
+                "nomarr.services.domain.tagging_svc.curation._locators_for_songs",
+                return_value=[_song_identity(10)],
+            ),
+            patch(
                 "nomarr.services.domain.tagging_svc.curation.transition_song_state",
             ) as mock_transition,
         ):
@@ -444,12 +476,10 @@ class TestSplitTag:
     def test_split_tag_success(self) -> None:
         """Successful split should return moved count and new_tag_created flag."""
         service = _make_service()
+        _stub_song_lookup(service)
         source = TagRef(name="genre", value="genre", namespace="default")
-        si_10 = SongIdentity(library=self._lib(), normalized_path="10.flac")
-        si_20 = SongIdentity(library=self._lib(), normalized_path="20.flac")
         get_tag = _present(service, source)
         service.db.library.ensure_tag = MagicMock(return_value=TagRef(name="genre", value="rock", namespace="default"))
-        service.db.library.resolve_song_identities = MagicMock(return_value={10: si_10, 20: si_20})
         with (
             patch(
                 "nomarr.services.domain.tagging_svc.curation.relink_tag_edges",
@@ -459,7 +489,7 @@ class TestSplitTag:
                 "nomarr.services.domain.tagging_svc.curation.transition_song_state",
             ) as mock_transition,
         ):
-            result = service.split_tag(source, ["10", "20"], "rock")
+            result = service.split_tag(source, [_token(10), _token(20)], "rock")
 
         assert result == SplitResult(moved=2, new_tag_created=True)
         assert mock_transition.call_count == 2
@@ -472,11 +502,12 @@ class TestSplitTag:
     def test_split_tag_song_boundary_unchanged(self) -> None:
         """Split song ids resolve through the song-side identity bridge (separate boundary)."""
         service = _make_service()
+        _stub_song_lookup(service)
         source = TagRef(name="genre", value="genre", namespace="default")
-        si_10 = SongIdentity(library=self._lib(), normalized_path="10.flac")
+        si_10 = _song_identity(10)
+        token = _token(10)
         _present(service, source)
         service.db.library.ensure_tag = MagicMock(return_value=TagRef(name="genre", value="rock", namespace="default"))
-        service.db.library.resolve_song_identities = MagicMock(return_value={10: si_10})
         with (
             patch(
                 "nomarr.services.domain.tagging_svc.curation.relink_tag_edges",
@@ -484,11 +515,11 @@ class TestSplitTag:
             ) as mock_relink,
             patch("nomarr.services.domain.tagging_svc.curation.transition_song_state"),
         ):
-            service.split_tag(source, ["10"], "rock")
+            service.split_tag(source, [token], "rock")
 
-        # Song identity is NOT a tag identity: integer song handles are still the
-        # song boundary and are passed to the song-side resolver unchanged.
-        service.db.library.resolve_song_identities.assert_called_once_with([10])
+        # Song identity is NOT a tag identity: the opaque SongLocator token is
+        # decoded to a semantic locator; no integer identity bridge participates.
+        service.db.library.resolve_song_identities.assert_not_called()
         mock_relink.assert_called_once_with(
             service.db,
             source,
@@ -517,14 +548,13 @@ class TestSplitTag:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_split_tag_numeric_natural_value_is_data(self) -> None:
-        """A numeric source natural value ('120') is addressed as data, never a storage PK."""
+    def test_split_tag_existing_target_does_not_report_new_created(self) -> None:
+        """Splitting onto the source's own identity reports ``new_tag_created=False``."""
         service = _make_service()
-        source = TagRef(name="genre", value="120", namespace="default")
-        si_10 = SongIdentity(library=self._lib(), normalized_path="10.flac")
-        get_tag = _present(service, source)
-        service.db.library.ensure_tag = MagicMock(return_value=TagRef(name="genre", value="rock", namespace="default"))
-        service.db.library.resolve_song_identities = MagicMock(return_value={10: si_10})
+        _stub_song_lookup(service)
+        source = TagRef(name="genre", value="rock", namespace="default")
+        _present(service, source)
+        service.db.library.ensure_tag = MagicMock(return_value=source)
         with (
             patch(
                 "nomarr.services.domain.tagging_svc.curation.relink_tag_edges",
@@ -532,7 +562,27 @@ class TestSplitTag:
             ),
             patch("nomarr.services.domain.tagging_svc.curation.transition_song_state"),
         ):
-            result = service.split_tag(source, ["10"], "rock")
+            result = service.split_tag(source, [_token(10)], "rock")
+
+        assert result == SplitResult(moved=1, new_tag_created=False)
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_split_tag_numeric_natural_value_is_data(self) -> None:
+        """A numeric source natural value ('120') is addressed as data, never a storage PK."""
+        service = _make_service()
+        _stub_song_lookup(service)
+        source = TagRef(name="genre", value="120", namespace="default")
+        get_tag = _present(service, source)
+        service.db.library.ensure_tag = MagicMock(return_value=TagRef(name="genre", value="rock", namespace="default"))
+        with (
+            patch(
+                "nomarr.services.domain.tagging_svc.curation.relink_tag_edges",
+                return_value=RelinkResult(moved=1, skipped=0, source_orphaned=0),
+            ),
+            patch("nomarr.services.domain.tagging_svc.curation.transition_song_state"),
+        ):
+            result = service.split_tag(source, [_token(10)], "rock")
 
         assert result == SplitResult(moved=1, new_tag_created=True)
         get_tag.assert_called_once_with(TagRef(name="genre", value="120", namespace="default"))
@@ -550,12 +600,18 @@ class TestRenameTagWritePending:
         target = TagRef(name="genre", value="new", namespace="default")
         _present(service, source)
         service.db.library.ensure_tag = MagicMock(return_value=target)
+        si_10 = _song_identity(10)
+        si_20 = _song_identity(20)
         service.db.library.find_songs_with_tag = MagicMock(return_value=(_song(10), _song(20)))
         service.db.app.song_state_membership = MagicMock(return_value={STATE_WRITTEN, STATE_TAGS_CURRENT})
         with (
             patch(
                 "nomarr.services.domain.tagging_svc.curation.relink_tag_edges",
                 return_value=RelinkResult(moved=2, skipped=0, source_orphaned=0),
+            ),
+            patch(
+                "nomarr.services.domain.tagging_svc.curation._locators_for_songs",
+                return_value=[si_10, si_20],
             ),
             patch(
                 "nomarr.services.domain.tagging_svc.curation.transition_song_state",
@@ -565,10 +621,10 @@ class TestRenameTagWritePending:
 
         # ADR-008: each curated song is queued for both projection and write-back.
         assert [call.args[1:] for call in mock_transition.call_args_list] == [
-            ([10], STATE_WRITTEN, STATE_NOT_WRITTEN),
-            ([10], STATE_TAGS_CURRENT, STATE_TAGS_NOT_FRESH),
-            ([20], STATE_WRITTEN, STATE_NOT_WRITTEN),
-            ([20], STATE_TAGS_CURRENT, STATE_TAGS_NOT_FRESH),
+            ([si_10], STATE_WRITTEN, STATE_NOT_WRITTEN),
+            ([si_10], STATE_TAGS_CURRENT, STATE_TAGS_NOT_FRESH),
+            ([si_20], STATE_WRITTEN, STATE_NOT_WRITTEN),
+            ([si_20], STATE_TAGS_CURRENT, STATE_TAGS_NOT_FRESH),
         ]
 
 
@@ -580,17 +636,20 @@ class TestUpdateSongTags:
     def test_curated_song_is_marked_not_fresh_for_file_write(self) -> None:
         """Curation must enqueue the song in the reconciliation stale state."""
         service = _make_service()
+        _stub_song_lookup(service)
+        si = _song_identity(1)
+        token = _token(1)
+        service.db.library.list_tags_for_song = MagicMock(return_value=[])
         service.db.app.song_state_membership = MagicMock(return_value={STATE_WRITTEN, STATE_TAGS_CURRENT})
         with (
             patch("nomarr.services.domain.tagging_svc.curation.set_song_tags"),
-            patch("nomarr.services.domain.tagging_svc.curation.get_song_tags", return_value=None),
             patch("nomarr.services.domain.tagging_svc.curation.transition_song_state") as transition,
         ):
-            service.update_song_tags("1", "genre", ["rock"])
+            service.update_song_tags(token, "genre", ["rock"])
 
         assert [call.args[1:] for call in transition.call_args_list] == [
-            ([1], STATE_WRITTEN, STATE_NOT_WRITTEN),
-            ([1], STATE_TAGS_CURRENT, STATE_TAGS_NOT_FRESH),
+            ([si], STATE_WRITTEN, STATE_NOT_WRITTEN),
+            ([si], STATE_TAGS_CURRENT, STATE_TAGS_NOT_FRESH),
         ]
 
     @pytest.mark.unit
@@ -598,7 +657,12 @@ class TestUpdateSongTags:
     def test_update_song_tags_success(self) -> None:
         """Successful update should return file_id, name, and tag list."""
         service = _make_service()
-        tags_obj = Tags(items=(Tag(name="genre", values=("rock",)),))
+        _stub_song_lookup(service)
+        si = _song_identity(1)
+        token = _token(1)
+        service.db.library.list_tags_for_song = MagicMock(
+            return_value=[SongTagAssignment(name="genre", value="rock", namespace="default")]
+        )
         with (
             patch(
                 "nomarr.services.domain.tagging_svc.curation.set_song_tags",
@@ -606,15 +670,11 @@ class TestUpdateSongTags:
             patch(
                 "nomarr.services.domain.tagging_svc.curation.transition_song_state",
             ) as mock_transition,
-            patch(
-                "nomarr.services.domain.tagging_svc.curation.get_song_tags",
-                return_value=tags_obj,
-            ),
         ):
-            result = service.update_song_tags("1", "genre", ["rock"])
+            result = service.update_song_tags(token, "genre", ["rock"])
 
         assert result == {
-            "file_id": "1",
+            "file_id": token,
             "name": "genre",
             "tags": [
                 {
@@ -625,14 +685,17 @@ class TestUpdateSongTags:
                 },
             ],
         }
-        mock_set.assert_called_once()
+        mock_set.assert_called_once_with(service.db, si, "genre", ["rock"])
         mock_transition.assert_called_once()
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_update_song_tags_returns_empty_tags_when_get_song_tags_returns_none(self) -> None:
-        """The strict None state maps to an empty ``tags`` list in the response."""
+    def test_update_song_tags_returns_empty_tags_when_no_tags_match(self) -> None:
+        """An empty tag read maps to an empty ``tags`` list in the response."""
         service = _make_service()
+        _stub_song_lookup(service)
+        token = _token(1)
+        service.db.library.list_tags_for_song = MagicMock(return_value=[])
         with (
             patch(
                 "nomarr.services.domain.tagging_svc.curation.set_song_tags",
@@ -640,15 +703,11 @@ class TestUpdateSongTags:
             patch(
                 "nomarr.services.domain.tagging_svc.curation.transition_song_state",
             ) as mock_transition,
-            patch(
-                "nomarr.services.domain.tagging_svc.curation.get_song_tags",
-                return_value=None,
-            ),
         ):
-            result = service.update_song_tags("1", "genre", ["rock"])
+            result = service.update_song_tags(token, "genre", ["rock"])
 
         assert result == {
-            "file_id": "1",
+            "file_id": token,
             "name": "genre",
             "tags": [],
         }
@@ -662,3 +721,161 @@ class TestUpdateSongTags:
         service = _make_service()
         with pytest.raises(ValueError, match="read-only"):
             service.update_song_tags("1", "nom:genre", ["rock"])
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_update_song_tags_filters_to_the_named_tag_only(self) -> None:
+        """Only assignments whose name matches are returned, tagged with is_nomarr."""
+        service = _make_service()
+        _stub_song_lookup(service)
+        token = _token(1)
+        service.db.library.list_tags_for_song = MagicMock(
+            return_value=[
+                SongTagAssignment(name="genre", value="rock", namespace="default"),
+                SongTagAssignment(name="mood", value="happy", namespace="nom"),
+            ]
+        )
+        with (
+            patch("nomarr.services.domain.tagging_svc.curation.set_song_tags"),
+            patch("nomarr.services.domain.tagging_svc.curation.transition_song_state"),
+        ):
+            result = service.update_song_tags(token, "genre", ["rock"])
+
+        # The non-matching 'mood' assignment is excluded from the echoed tag list.
+        assert result["tags"] == [
+            {"key": "genre", "value": "rock", "tag_type": "string", "is_nomarr": False},
+        ]
+
+
+class TestMarkSongWritePending:
+    """Tests for ``TaggingCurationMixin._mark_song_write_pending``."""
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_marks_written_and_current_then_not_fresh(self) -> None:
+        service = _make_service()
+        si = _song_identity(1)
+        service.db.app.song_state_membership = MagicMock(return_value={STATE_WRITTEN, STATE_TAGS_CURRENT})
+        with patch("nomarr.services.domain.tagging_svc.curation.transition_song_state") as transition:
+            service._mark_song_write_pending(si)
+
+        assert [call.args[1:] for call in transition.call_args_list] == [
+            ([si], STATE_WRITTEN, STATE_NOT_WRITTEN),
+            ([si], STATE_TAGS_CURRENT, STATE_TAGS_NOT_FRESH),
+        ]
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_skips_tags_transition_when_tags_current_absent(self) -> None:
+        """Without TAGS_CURRENT membership no tags-not-fresh transition may run."""
+        service = _make_service()
+        si = _song_identity(1)
+        service.db.app.song_state_membership = MagicMock(return_value={STATE_WRITTEN})
+        with patch("nomarr.services.domain.tagging_svc.curation.transition_song_state") as transition:
+            service._mark_song_write_pending(si)
+
+        assert [call.args[1:] for call in transition.call_args_list] == [
+            ([si], STATE_WRITTEN, STATE_NOT_WRITTEN),
+        ]
+
+
+class TestSongIdentityFromToken:
+    """Tests for ``TaggingCurationMixin._song_identity_from_token``."""
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_unknown_library_token_raises_value_error(self) -> None:
+        """A syntactically valid token for a missing library is a not-found error."""
+        service = _make_service()
+        service.db.library.get_library_by_uuid = MagicMock(return_value=None)
+
+        with pytest.raises(ValueError, match="Unknown library"):
+            service._song_identity_from_token(_token(1))
+
+        service.db.library.get_library_by_uuid.assert_called_once()
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_malformed_token_propagates_decode_error_without_fallback(self) -> None:
+        """A non-token string propagates the decode error; no library lookup runs."""
+        service = _make_service()
+        service.db.library.get_library_by_uuid = MagicMock()
+
+        with pytest.raises(SongLocatorFormatError):
+            service._song_identity_from_token("10")
+
+        service.db.library.get_library_by_uuid.assert_not_called()
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_resolves_existing_library_to_semantic_locator(self) -> None:
+        """A valid token resolves through the UUID facade to a semantic locator."""
+        service = _make_service()
+        _stub_song_lookup(service)
+
+        result = service._song_identity_from_token(_token(1))
+
+        assert result == SongIdentity(library=_LIBRARY, normalized_path="1.flac")
+        assert not isinstance(result.normalized_path, int)
+
+
+class TestMarkMatchedSongsWritePending:
+    """Tests for ``TaggingCurationMixin._mark_matched_songs_write_pending``."""
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_skips_stale_none_locator_and_never_readdresses(self) -> None:
+        """A ``None`` (stale) locator is skipped; resolved entries are marked."""
+        service = _make_service()
+        tag = TagRef(name="genre", value="rock", namespace="default")
+        si_20 = _song_identity(20)
+        service.db.library.find_songs_with_tag = MagicMock(return_value=(_song(10), _song(20)))
+        service.db.app.song_state_membership = MagicMock(return_value={STATE_WRITTEN})
+        with (
+            patch(
+                "nomarr.services.domain.tagging_svc.curation._locators_for_songs",
+                return_value=[None, si_20],
+            ) as mock_locators,
+            patch("nomarr.services.domain.tagging_svc.curation.transition_song_state") as transition,
+        ):
+            service._mark_matched_songs_write_pending(tag)
+
+        mock_locators.assert_called_once()
+        # Only the resolved locator is transitioned; the stale None is never
+        # re-addressed into a locator and never transitioned.
+        assert [call.args[1] for call in transition.call_args_list] == [[si_20]]
+
+
+class TestLocatorsForSongs:
+    """Direct tests for the shared ``_locators_for_songs`` read projection."""
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_empty_input_short_circuits_without_facade_call(self) -> None:
+        db = MagicMock()
+
+        assert _locators_for_songs(db, []) == []
+        db.library.list_libraries.assert_not_called()
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_resolves_locator_when_facade_returns_equal_song(self) -> None:
+        db = MagicMock()
+        library = Library(library_uuid="2621ebfb-71ff-4168-a812-5342ca310e8c", name="music", root_path="/music")
+        song = _song(10)
+        db.library.list_libraries = MagicMock(return_value=[library])
+        db.library.list_songs_by_identity = MagicMock(return_value=[song])
+
+        result = _locators_for_songs(db, [song])
+
+        assert result == [SongIdentity(library=_LIBRARY, normalized_path="music/10.flac")]
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_unresolved_song_yields_none(self) -> None:
+        db = MagicMock()
+        library = Library(library_uuid="2621ebfb-71ff-4168-a812-5342ca310e8c", name="music", root_path="/music")
+        db.library.list_libraries = MagicMock(return_value=[library])
+        db.library.list_songs_by_identity = MagicMock(return_value=[])
+
+        assert _locators_for_songs(db, [_song(10)]) == [None]

@@ -4,8 +4,8 @@ The loader accepts ONLY the executable current schema: ``[pipeline]`` (EffNet
 default backbone + explicit MusicNN opt-in, optional heads, ONNX device, corpus
 limit, force) and ``[analysis]`` (k / workers / blas_threads).  Missing,
 malformed, parser-unavailable and validation failures are DISTINCT named
-errors — never a warn-and-return-``{}``.  Unknown top-level/nested keys, alias
-keys, forbidden legacy families (archival CTP, std_scaled/calibration/p50,
+errors — never a warn-and-return-``{}``.  Unknown top-level/nested keys,
+unknown families (archival CTP, std_scaled/calibration/p50,
 optimizer/weighted, obsolete pooling/threshold, ``rep_a``/``rep_b``, zero-caller
 keys) and invalid types are rejected.
 """
@@ -143,7 +143,7 @@ def test_errors_are_distinct_exceptions() -> None:
     assert research_toml.ResearchConfigValidationError is not research_toml.ResearchConfigSyntaxError
 
 
-# ── unknown / forbidden-family / alias keys rejected ─────────────────────────
+# ── unknown / forbidden-family keys rejected ────────────────────────────────
 
 
 @pytest.mark.parametrize(
@@ -187,9 +187,9 @@ def test_unknown_and_forbidden_nested_keys_rejected(doc, tmp_path, monkeypatch) 
         _load(doc, tmp_path, monkeypatch)
 
 
-def test_alias_legacy_key_rejected(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A formerly-permissive alias section is rejected, never silently honoured."""
-    doc = '[pipeline]\nbackbones = ["effnet"]\n[pipeline.backbones_alias]\n'
+def test_unknown_nested_section_rejected(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A formerly-permissive nested section is rejected, never silently honoured."""
+    doc = '[pipeline]\nbackbones = ["effnet"]\n[pipeline.backbones_typo]\n'
     with pytest.raises(research_toml.ResearchConfigValidationError):
         _load(doc, tmp_path, monkeypatch)
 

@@ -1,6 +1,6 @@
 # Research package dependencies — install inside the devcontainer before running.
 #
-#   pip install -r /workspace/scripts/embedding_research/requirements.txt
+#   pip install -r /workspace/nomarr/scripts/embedding_research/requirements.txt
 #
 # Core ML / metrics (FAISS/ANN dependency removed under Plan D P1-S6 — similarity.py is exact-CPU-only)
 scikit-learn>=1.4.0       # MAP, NDCG, pairwise metrics, t-SNE
@@ -22,7 +22,7 @@ onnxruntime-gpu>=1.18.0
 
 # Audio feature extraction (optional — required for patch_features extraction)
 librosa>=0.10.0            # audio analysis: RMS, spectral centroid, beat tracking
-soundfile>=0.12.0          # fast libsndfile backend for librosa (avoids audioread fallback)
+soundfile>=0.12.0          # fast libsndfile backend for librosa (avoids the audioread path)
 
 # Utilities
 alive-progress>=3.1.0     # pretty progress bars

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pickle
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -154,17 +155,17 @@ class TestHandleProcessError:
 
     _PATCH_RELEASE = "nomarr.components.workers.worker_discovery_comp.release_claim"
 
-    def _call(self, mock_self, db, file_id, error, consecutive_errors):
+    def _call(self, mock_self, db, song, error, consecutive_errors):
         from nomarr.services.infrastructure.workers.discovery_worker import DiscoveryWorker
 
-        return DiscoveryWorker._handle_process_error(mock_self, db, file_id, error, consecutive_errors)
+        return DiscoveryWorker._handle_process_error(mock_self, db, song, error, consecutive_errors)
 
     @pytest.mark.unit
     @patch(_PATCH_RELEASE)
     def test_returns_incremented_error_count(self, mock_release):
         """Error count should be incremented by 1."""
         mock_self = _make_worker_self()
-        result = self._call(mock_self, MagicMock(), f"{'songs'}/abc", RuntimeError("oops"), 3)
+        result = self._call(mock_self, MagicMock(), _song(), RuntimeError("oops"), 3)
         assert result == 4
 
     @pytest.mark.unit
@@ -175,11 +176,11 @@ class TestHandleProcessError:
         mock_self = _make_worker_self()
         mock_db = MagicMock()
 
-        self._call(mock_self, mock_db, f"{'songs'}/xyz", ValueError("bad"), 0)
+        self._call(mock_self, mock_db, _song(), ValueError("bad"), 0)
 
         mock_transition_file_state.assert_called_once_with(
             mock_db,
-            [f"{'songs'}/xyz"],
+            [_song()],
             STATE_NOT_ERRORED,
             STATE_ERRORED,
         )
@@ -191,9 +192,9 @@ class TestHandleProcessError:
         mock_self = _make_worker_self()
         mock_db = MagicMock()
 
-        self._call(mock_self, mock_db, f"{'songs'}/abc", RuntimeError("x"), 0)
+        self._call(mock_self, mock_db, _song(), RuntimeError("x"), 0)
 
-        mock_release.assert_called_once_with(mock_db, f"{'songs'}/abc", "worker:tag:0")
+        mock_release.assert_called_once_with(mock_db, _song(), "worker:tag:0")
 
     @pytest.mark.unit
     @patch(
@@ -206,15 +207,15 @@ class TestHandleProcessError:
         mock_self = _make_worker_self()
         mock_db = MagicMock()
 
-        self._call(mock_self, mock_db, f"{'songs'}/abc", RuntimeError("x"), 0)
+        self._call(mock_self, mock_db, _song(), RuntimeError("x"), 0)
 
         mock_transition_file_state.assert_called_once_with(
             mock_db,
-            [f"{'songs'}/abc"],
+            [_song()],
             STATE_NOT_ERRORED,
             STATE_ERRORED,
         )
-        mock_release.assert_called_once_with(mock_db, f"{'songs'}/abc", "worker:tag:0")
+        mock_release.assert_called_once_with(mock_db, _song(), "worker:tag:0")
 
     @pytest.mark.unit
     @patch(_PATCH_RELEASE)
@@ -226,7 +227,7 @@ class TestHandleProcessError:
         result = self._call(
             mock_self,
             MagicMock(),
-            f"{'songs'}/abc",
+            _song(),
             RuntimeError("x"),
             MAX_CONSECUTIVE_ERRORS - 1,
         )
@@ -244,16 +245,16 @@ class TestCheckResourceHeadroom:
     _PATCH_CHECK = "nomarr.components.platform.resource_monitor_comp.check_resource_headroom"
     _PATCH_RELEASE = "nomarr.components.workers.worker_discovery_comp.release_claim"
 
-    def _call(self, mock_self, db, file_id, rm_config):
+    def _call(self, mock_self, db, song, rm_config):
         from nomarr.services.infrastructure.workers.discovery_worker import DiscoveryWorker
 
-        return DiscoveryWorker._check_resource_headroom(mock_self, db, file_id, rm_config)
+        return DiscoveryWorker._check_resource_headroom(mock_self, db, song, rm_config)
 
     @pytest.mark.unit
     def test_returns_none_when_resource_management_config_is_none(self):
         mock_self = _make_worker_self()
 
-        result = self._call(mock_self, MagicMock(), f"{'songs'}/abc", None)
+        result = self._call(mock_self, MagicMock(), _song(), None)
 
         assert result is None
 
@@ -263,7 +264,7 @@ class TestCheckResourceHeadroom:
         mock_rm = MagicMock()
         mock_rm.enabled = False
 
-        result = self._call(mock_self, MagicMock(), f"{'songs'}/abc", mock_rm)
+        result = self._call(mock_self, MagicMock(), _song(), mock_rm)
 
         assert result is None
 
@@ -289,7 +290,7 @@ class TestCheckResourceHeadroom:
         )
         mock_internal_s.return_value = MagicMock(value=100.0)
 
-        result = self._call(mock_self, mock_db, f"{'songs'}/abc", mock_rm)
+        result = self._call(mock_self, mock_db, _song(), mock_rm)
 
         assert result == 130.0
         assert mock_self._current_status == "recovering"
@@ -300,7 +301,7 @@ class TestCheckResourceHeadroom:
             ram_estimate_mb=2048,
             ram_detection_mode="rss",
         )
-        mock_release_claim.assert_called_once_with(mock_db, f"{'songs'}/abc", "worker:tag:0")
+        mock_release_claim.assert_called_once_with(mock_db, _song(), "worker:tag:0")
 
     @pytest.mark.unit
     @patch(_PATCH_RELEASE)
@@ -322,7 +323,7 @@ class TestCheckResourceHeadroom:
             ram_used_mb=12000,
         )
 
-        result = self._call(mock_self, mock_db, f"{'songs'}/abc", mock_rm)
+        result = self._call(mock_self, mock_db, _song(), mock_rm)
 
         assert result is None
         mock_release_claim.assert_not_called()
@@ -336,27 +337,24 @@ class TestCheckResourceHeadroom:
 class TestProcessClaimedFile:
     """Tests for DiscoveryWorker._process_claimed_file.
 
-    The worker resolves the claimed integer handle to a semantic ``SongIdentity``
-    (``db.library.resolve_song_identity``) before any deferred ML write, passes
-    that identity to the workflow as ``song=``, and carries the integer handle
-    only alongside the deferred payload at executor submission time for the
-    unrelated non-ML claim/state lifecycle calls.
+    The worker addresses the claimed song by its semantic ``SongIdentity``
+    locator end-to-end: it loads the located song via ``db.library.get_song``,
+    passes that same identity to the workflow as ``song=``, and uses the locator
+    for the claim/state lifecycle. No integer handle or resolver is involved.
     """
 
     _PATCH_RELEASE = "nomarr.components.workers.worker_discovery_comp.release_claim"
     _PATCH_PROCESS = "nomarr.workflows.processing.process_file_wf.process_file_workflow"
-    _PATCH_GET_FILE = "nomarr.components.library.library_song_query_comp.get_song_by_id"
     _PATCH_TRANSITION = "nomarr.components.library.library_song_state_comp.transition_song_state"
     _PATCH_UPDATE_TAGGED = f"{_MODULE}.update_last_tagged_at"
     _PATCH_GETSIZE = f"{_MODULE}.os.path.getsize"
     _PATCH_MALLOC_TRIM = f"{_MODULE}._malloc_trim"
-    _SONG_ID = 42
 
-    def _call(self, mock_self, db, file_id, config, onnx_cache, pending_write, write_executor):
+    def _call(self, mock_self, db, song, config, onnx_cache, pending_write, write_executor):
         from nomarr.services.infrastructure.workers.discovery_worker import DiscoveryWorker
 
         return DiscoveryWorker._process_claimed_file(
-            mock_self, db, file_id, config, onnx_cache, pending_write, write_executor
+            mock_self, db, song, config, onnx_cache, pending_write, write_executor
         )
 
     def _deferred_writes(self) -> DeferredFileWrites:
@@ -371,19 +369,21 @@ class TestProcessClaimedFile:
             backbone_vectors=[DeferredBackboneVectorWrite(backbone="bb1", vectors=[_vector_command()])],
         )
 
+    def _located_song(self) -> SimpleNamespace:
+        return SimpleNamespace(path="D:/music/song.mp3")
+
     @pytest.mark.unit
     @patch(_PATCH_RELEASE)
-    @patch(_PATCH_GET_FILE)
-    def test_releases_claim_and_returns_false_when_file_not_found(self, mock_get_file_by_id, mock_release_claim):
+    def test_releases_claim_and_returns_false_when_file_not_found(self, mock_release_claim):
         mock_self = _make_worker_self()
         mock_db = MagicMock()
-        mock_get_file_by_id.return_value = None
+        mock_db.library.get_song.return_value = None
         pending_write = MagicMock()
 
         result = self._call(
             mock_self,
             mock_db,
-            self._SONG_ID,
+            _song(),
             MagicMock(),
             MagicMock(),
             pending_write,
@@ -391,29 +391,28 @@ class TestProcessClaimedFile:
         )
 
         assert result == (pending_write, False)
-        mock_release_claim.assert_called_once_with(mock_db, self._SONG_ID, "worker:tag:0")
-        # Identity resolution is not attempted when the file doc is absent.
-        mock_db.library.resolve_song_identity.assert_not_called()
+        mock_db.library.get_song.assert_called_once_with(_song())
+        # The locator itself addresses the release; no resolver/int handle.
+        mock_release_claim.assert_called_once_with(mock_db, _song(), "worker:tag:0")
 
     @pytest.mark.unit
     @patch(_PATCH_RELEASE)
     @patch(_PATCH_PROCESS)
     @patch(_PATCH_TRANSITION)
-    @patch(_PATCH_GET_FILE)
-    def test_unresolved_identity_marks_errored_and_releases_claim_without_workflow(
-        self, mock_get_file_by_id, mock_transition_file_state, mock_process_file_workflow, mock_release_claim
+    def test_missing_locator_releases_claim_without_workflow(
+        self, mock_transition_file_state, mock_process_file_workflow, mock_release_claim
     ):
-        """resolve_song_identity returning None is the negative path: no ML write."""
+        """A locator with no persisted song is the negative path: no ML write and
+        no state transition, just the locator-addressed claim release."""
         mock_self = _make_worker_self()
         mock_db = MagicMock()
-        mock_get_file_by_id.return_value = {"path": "D:/music/song.mp3"}
-        mock_db.library.resolve_song_identity.return_value = None
+        mock_db.library.get_song.return_value = None
         pending_write = MagicMock()
 
         result = self._call(
             mock_self,
             mock_db,
-            self._SONG_ID,
+            _song(),
             MagicMock(),
             MagicMock(),
             pending_write,
@@ -421,15 +420,9 @@ class TestProcessClaimedFile:
         )
 
         assert result == (pending_write, False)
-        mock_db.library.resolve_song_identity.assert_called_once_with(self._SONG_ID)
         mock_process_file_workflow.assert_not_called()
-        mock_transition_file_state.assert_called_once_with(
-            mock_db,
-            [self._SONG_ID],
-            STATE_NOT_ERRORED,
-            STATE_ERRORED,
-        )
-        mock_release_claim.assert_called_once_with(mock_db, self._SONG_ID, "worker:tag:0")
+        mock_transition_file_state.assert_not_called()
+        mock_release_claim.assert_called_once_with(mock_db, _song(), "worker:tag:0")
 
     @pytest.mark.unit
     @patch(_PATCH_TRANSITION)
@@ -438,10 +431,8 @@ class TestProcessClaimedFile:
     @patch(_PATCH_MALLOC_TRIM)
     @patch(_PATCH_GETSIZE)
     @patch(_PATCH_PROCESS)
-    @patch(_PATCH_GET_FILE)
     def test_sets_tagged_and_releases_claim_when_all_heads_skipped(
         self,
-        mock_get_file_by_id,
         mock_process_file_workflow,
         mock_getsize,
         mock_malloc_trim,
@@ -451,8 +442,7 @@ class TestProcessClaimedFile:
     ):
         mock_self = _make_worker_self()
         mock_db = MagicMock()
-        mock_get_file_by_id.return_value = {"path": "D:/music/song.mp3"}
-        mock_db.library.resolve_song_identity.return_value = _song()
+        mock_db.library.get_song.return_value = self._located_song()
         mock_getsize.return_value = 1234
         pending_write = MagicMock()
         mock_process_file_workflow.return_value = MagicMock(
@@ -464,7 +454,7 @@ class TestProcessClaimedFile:
         result = self._call(
             mock_self,
             mock_db,
-            self._SONG_ID,
+            _song(),
             MagicMock(),
             MagicMock(),
             pending_write,
@@ -477,11 +467,11 @@ class TestProcessClaimedFile:
         assert mock_process_file_workflow.call_args.kwargs["song"] == _song()
         mock_transition_file_state.assert_called_once_with(
             mock_db,
-            [self._SONG_ID],
+            [_song()],
             STATE_NOT_PROCESSED,
             STATE_PROCESSED,
         )
-        mock_release_claim.assert_called_once_with(mock_db, self._SONG_ID, "worker:tag:0")
+        mock_release_claim.assert_called_once_with(mock_db, _song(), "worker:tag:0")
         mock_malloc_trim.assert_called_once_with()
 
     @pytest.mark.unit
@@ -489,14 +479,12 @@ class TestProcessClaimedFile:
     @patch(_PATCH_MALLOC_TRIM)
     @patch(_PATCH_GETSIZE)
     @patch(_PATCH_PROCESS)
-    @patch(_PATCH_GET_FILE)
     def test_releases_decoder_crash_for_retry(
-        self, mock_get_file_by_id, mock_process_file_workflow, mock_getsize, mock_malloc_trim, mock_release_claim
+        self, mock_process_file_workflow, mock_getsize, mock_malloc_trim, mock_release_claim
     ):
         mock_self = _make_worker_self()
         mock_db = MagicMock()
-        mock_get_file_by_id.return_value = {"path": "D:/music/broken.mp3"}
-        mock_db.library.resolve_song_identity.return_value = _song()
+        mock_db.library.get_song.return_value = self._located_song()
         mock_getsize.return_value = 1234
         mock_process_file_workflow.return_value = MagicMock(
             heads_processed=0,
@@ -508,7 +496,7 @@ class TestProcessClaimedFile:
         result = self._call(
             mock_self,
             mock_db,
-            self._SONG_ID,
+            _song(),
             MagicMock(),
             MagicMock(),
             None,
@@ -516,7 +504,7 @@ class TestProcessClaimedFile:
         )
 
         assert result == (None, False)
-        mock_release_claim.assert_called_once_with(mock_db, self._SONG_ID, "worker:tag:0")
+        mock_release_claim.assert_called_once_with(mock_db, _song(), "worker:tag:0")
         mock_malloc_trim.assert_called_once_with()
 
     @pytest.mark.unit
@@ -524,16 +512,14 @@ class TestProcessClaimedFile:
     @patch(_PATCH_MALLOC_TRIM)
     @patch(_PATCH_GETSIZE)
     @patch(_PATCH_PROCESS)
-    @patch(_PATCH_GET_FILE)
     def test_submits_deferred_writes_when_workflow_returns_them(
-        self, mock_get_file_by_id, mock_process_file_workflow, mock_getsize, mock_malloc_trim, mock_release_claim
+        self, mock_process_file_workflow, mock_getsize, mock_malloc_trim, mock_release_claim
     ):
         from nomarr.services.infrastructure.workers.discovery_worker import _execute_deferred_writes
 
         mock_self = _make_worker_self()
         mock_db = MagicMock()
-        mock_get_file_by_id.return_value = {"path": "D:/music/song.mp3"}
-        mock_db.library.resolve_song_identity.return_value = _song()
+        mock_db.library.get_song.return_value = self._located_song()
         mock_getsize.return_value = 4321
         write_executor = MagicMock()
         new_future = MagicMock()
@@ -551,7 +537,7 @@ class TestProcessClaimedFile:
         result = self._call(
             mock_self,
             mock_db,
-            self._SONG_ID,
+            _song(),
             MagicMock(),
             MagicMock(),
             None,
@@ -561,14 +547,12 @@ class TestProcessClaimedFile:
         assert result == (new_future, True)
         mock_process_file_workflow.assert_called_once()
         assert mock_process_file_workflow.call_args.kwargs["song"] == _song()
-        # The integer handle rides alongside the semantic deferred payload at
-        # submission time (never inside the DTO) for the non-ML lifecycle calls.
+        # The semantic payload and worker id are submitted — no integer handle.
         write_executor.submit.assert_called_once_with(
             _execute_deferred_writes,
             mock_db,
             deferred_writes,
             mock_self.worker_id,
-            self._SONG_ID,
         )
         mock_release_claim.assert_not_called()
         mock_malloc_trim.assert_called_once_with()
@@ -578,14 +562,12 @@ class TestProcessClaimedFile:
     @patch(_PATCH_MALLOC_TRIM)
     @patch(_PATCH_GETSIZE)
     @patch(_PATCH_PROCESS)
-    @patch(_PATCH_GET_FILE)
     def test_releases_claim_and_returns_pending_write_when_no_deferred_writes(
-        self, mock_get_file_by_id, mock_process_file_workflow, mock_getsize, mock_malloc_trim, mock_release_claim
+        self, mock_process_file_workflow, mock_getsize, mock_malloc_trim, mock_release_claim
     ):
         mock_self = _make_worker_self()
         mock_db = MagicMock()
-        mock_get_file_by_id.return_value = {"path": "D:/music/song.mp3"}
-        mock_db.library.resolve_song_identity.return_value = _song()
+        mock_db.library.get_song.return_value = self._located_song()
         mock_getsize.return_value = 9876
         mock_process_file_workflow.return_value = MagicMock(
             heads_processed=1,
@@ -596,7 +578,7 @@ class TestProcessClaimedFile:
         result = self._call(
             mock_self,
             mock_db,
-            self._SONG_ID,
+            _song(),
             MagicMock(),
             MagicMock(),
             None,
@@ -604,7 +586,7 @@ class TestProcessClaimedFile:
         )
 
         assert result == (None, True)
-        mock_release_claim.assert_called_once_with(mock_db, self._SONG_ID, "worker:tag:0")
+        mock_release_claim.assert_called_once_with(mock_db, _song(), "worker:tag:0")
         mock_malloc_trim.assert_called_once_with()
 
 
@@ -614,9 +596,9 @@ class TestExecuteDeferredWrites:
 
     The deferred payload carries ``song: SongIdentity`` plus typed
     ``BackboneVectorWrite``/``OutputStreamWrite`` commands. The worker addresses
-    the ML aggregate with ``song=`` only; the non-ML lifecycle calls (tags /
-    chromaprint / state / claim) receive the integer claim handle that is
-    passed alongside the payload at submission time.
+    the ML aggregate and every lifecycle intent (tags / chromaprint / state /
+    claim release) by the same semantic locator — no integer claim handle or
+    storage key crosses this boundary.
     """
 
     _PATCH_PARSE = "nomarr.components.tagging.tag_parsing_comp.parse_tag_values"
@@ -625,9 +607,8 @@ class TestExecuteDeferredWrites:
     _PATCH_TRANSITION = "nomarr.components.library.library_song_state_comp.transition_song_state"
     _PATCH_RELEASE = "nomarr.components.workers.worker_discovery_comp.release_claim"
     _PATCH_UPDATE_TAGGED = f"{_MODULE}.update_last_tagged_at"
-    _SONG_ID = 42
 
-    def _call(self, db, writes, song_id: int = _SONG_ID):
+    def _call(self, db, writes):
         """Invoke ``_execute_deferred_writes`` with component deps mocked."""
         from nomarr.services.infrastructure.workers.discovery_worker import _execute_deferred_writes
 
@@ -639,7 +620,7 @@ class TestExecuteDeferredWrites:
             patch(self._PATCH_RELEASE) as mock_release,
             patch(self._PATCH_UPDATE_TAGGED),
         ):
-            _execute_deferred_writes(db, writes, "worker:tag:0", song_id)
+            _execute_deferred_writes(db, writes, "worker:tag:0")
         return mock_transition, mock_release
 
     def _writes(self, *, with_vectors: bool = True, with_streams: bool = True) -> DeferredFileWrites:
@@ -673,7 +654,7 @@ class TestExecuteDeferredWrites:
             vectors=[_vector_command()],
             output_streams=[OutputStreamWrite(output_id="out-0", values=[0.1, 0.9], output_index=0)],
         )
-        mock_release.assert_called_once_with(db, self._SONG_ID, "worker:tag:0")
+        mock_release.assert_called_once_with(db, _song(), "worker:tag:0")
 
     def test_no_integer_song_key_or_raw_storage_dict_reaches_ml_facade(self) -> None:
         db = MagicMock()
@@ -700,7 +681,7 @@ class TestExecuteDeferredWrites:
             vectors=[],
             output_streams=[OutputStreamWrite(output_id="out-0", values=[0.1, 0.9], output_index=0)],
         )
-        mock_release.assert_called_once_with(db, self._SONG_ID, "worker:tag:0")
+        mock_release.assert_called_once_with(db, _song(), "worker:tag:0")
 
     def test_multiple_backbones_never_erase_each_other(self) -> None:
         db = MagicMock()
@@ -729,7 +710,7 @@ class TestExecuteDeferredWrites:
         expected_streams = [OutputStreamWrite(output_id="out-0", values=[0.1, 0.9], output_index=0)]
         assert bb1_call.kwargs["output_streams"] == expected_streams
         assert openl3_call.kwargs["output_streams"] == expected_streams
-        mock_release.assert_called_once_with(db, self._SONG_ID, "worker:tag:0")
+        mock_release.assert_called_once_with(db, _song(), "worker:tag:0")
 
     def test_backbones_without_streams_replaces_streams_with_none(self) -> None:
         """Backbones present with no streams: aggregate called with vectors and
@@ -745,7 +726,7 @@ class TestExecuteDeferredWrites:
             vectors=[_vector_command()],
             output_streams=[],
         )
-        mock_release.assert_called_once_with(db, self._SONG_ID, "worker:tag:0")
+        mock_release.assert_called_once_with(db, _song(), "worker:tag:0")
 
     def test_duplicate_output_ids_passed_through_verbatim_without_caller_dedup(self) -> None:
         """Duplicate output_ids reach persistence verbatim — persistence owns
@@ -778,8 +759,8 @@ class TestExecuteDeferredWrites:
         writes = self._writes()
         mock_transition, mock_release = self._call(db, writes)
 
-        mock_transition.assert_any_call(db, [self._SONG_ID], STATE_NOT_ERRORED, STATE_ERRORED)
-        mock_release.assert_called_once_with(db, self._SONG_ID, "worker:tag:0")
+        mock_transition.assert_any_call(db, [_song()], STATE_NOT_ERRORED, STATE_ERRORED)
+        mock_release.assert_called_once_with(db, _song(), "worker:tag:0")
 
     def test_multi_backbone_partial_failure_keeps_earlier_commits_and_releases(self) -> None:
         """Injected failure on a later backbone leaves the earlier backbone call
@@ -816,9 +797,9 @@ class TestExecuteDeferredWrites:
         assert all(isinstance(v, BackboneVectorWrite) for v in received[0][2])
         assert all(isinstance(s, OutputStreamWrite) for s in received[0][3])
         # success-path processed transition never runs; errored marking did.
-        mock_transition.assert_any_call(db, [self._SONG_ID], STATE_NOT_ERRORED, STATE_ERRORED)
+        mock_transition.assert_any_call(db, [_song()], STATE_NOT_ERRORED, STATE_ERRORED)
         assert STATE_PROCESSED not in [a.args[-1] for a in mock_transition.call_args_list]
-        mock_release.assert_called_once_with(db, self._SONG_ID, "worker:tag:0")
+        mock_release.assert_called_once_with(db, _song(), "worker:tag:0")
 
     def test_no_write_when_no_streams_and_no_vectors(self) -> None:
         db = MagicMock()
@@ -826,7 +807,7 @@ class TestExecuteDeferredWrites:
         _, mock_release = self._call(db, writes)
 
         db.ml.replace_song_inference_results.assert_not_called()
-        mock_release.assert_called_once_with(db, self._SONG_ID, "worker:tag:0")
+        mock_release.assert_called_once_with(db, _song(), "worker:tag:0")
 
     def test_deferred_semantic_payload_survives_pickle_reload(self) -> None:
         """P4-S4: a deferred semantic DTO round-trips through pickle (the reload
@@ -896,9 +877,9 @@ class TestExecuteDeferredWrites:
             patch(self._PATCH_UPDATE_TAGGED),
         ):
             # first attempt fails on the later backbone (after bb1 committed)
-            _execute_deferred_writes(db, writes, "worker:tag:0", self._SONG_ID)
+            _execute_deferred_writes(db, writes, "worker:tag:0")
             # retry after restart — fresh semantic commands from the same DTO
-            _execute_deferred_writes(db, writes, "worker:tag:0", self._SONG_ID)
+            _execute_deferred_writes(db, writes, "worker:tag:0")
 
         # dispatched order: bb1 (attempt), openl3 (failed attempt), then the
         # retry re-dispatches fresh semantic commands bb1 then openl3 — never a

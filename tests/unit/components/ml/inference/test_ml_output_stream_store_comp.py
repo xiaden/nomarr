@@ -9,13 +9,20 @@ import pytest
 
 from nomarr.components.ml.inference.ml_output_stream_store_comp import (
     LoadedOutputStream,
-    StreamRecord,
     build_output_stream_lookup,
     fetch_output_streams,
     load_output_streams_for_song,
     resolve_output_stream_lookup,
 )
 from nomarr.helpers.dataclasses.ml_output_stream_dataclass import OutputStream, OutputStreamWrite
+from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
+
+
+def _song_identity(index: int = 1) -> SongIdentity:
+    return SongIdentity(
+        library=LibraryIdentity(library_uuid="library-1", name="Music", root_path="/music"),
+        normalized_path=f"file-{index}.flac",
+    )
 
 
 @pytest.mark.unit
@@ -27,10 +34,10 @@ class TestFetchOutputStreams:
         mock_db = MagicMock()
         mock_db.ml.list_output_streams_for_song.return_value = []
 
-        result = fetch_output_streams(mock_db, song_id=7)
+        result = fetch_output_streams(mock_db, song=_song_identity(7))
 
         assert result == []
-        mock_db.ml.list_output_streams_for_song.assert_called_once_with(7)
+        mock_db.ml.list_output_streams_for_song.assert_called_once_with(_song_identity(7))
 
     def test_fetches_stream_records_sorted_by_output_index_then_id(self) -> None:
         mock_db = MagicMock()
@@ -40,12 +47,12 @@ class TestFetchOutputStreams:
             OutputStream(output_id="ml_model_outputs/out-z", output_index=9, values=[9.9]),
         ]
 
-        result = fetch_output_streams(mock_db, song_id=f"{'songs'}/file-2")
+        result = fetch_output_streams(mock_db, song=_song_identity(2))
 
         assert result == [
-            StreamRecord(output_id="ml_model_outputs/out-a", output_index=1, values=[3.5, 4.5]),
-            StreamRecord(output_id="ml_model_outputs/out-b", output_index=2, values=[1.0, 2.0]),
-            StreamRecord(output_id="ml_model_outputs/out-z", output_index=9, values=[9.9]),
+            OutputStream(output_id="ml_model_outputs/out-a", output_index=1, values=[3.5, 4.5]),
+            OutputStream(output_id="ml_model_outputs/out-b", output_index=2, values=[1.0, 2.0]),
+            OutputStream(output_id="ml_model_outputs/out-z", output_index=9, values=[9.9]),
         ]
 
     def test_skips_streams_without_valid_output_metadata(self) -> None:
@@ -54,7 +61,7 @@ class TestFetchOutputStreams:
         # this component is called; this test exercises the empty domain result.
         mock_db.ml.list_output_streams_for_song.return_value = []
 
-        result = fetch_output_streams(mock_db, song_id=f"{'songs'}/file-3")
+        result = fetch_output_streams(mock_db, song=_song_identity(3))
 
         assert result == []
 
@@ -82,18 +89,18 @@ class TestFetchOutputStreams:
         # The read side: the persisted rows (as the facade returns them) must
         # round-trip the index through fetch_output_streams.
         mock_db.ml.list_output_streams_for_song.return_value = [
-            StreamRecord(
+            OutputStream(
                 output_id=payload.output_id,
                 values=payload.values,
                 output_index=payload.output_index,
             )
             for payload in stream_writes
         ]
-        records = fetch_output_streams(mock_db, song_id=7)
+        records = fetch_output_streams(mock_db, song=_song_identity(7))
 
         assert records == [
-            StreamRecord(output_id="ml_model_outputs/out-0", output_index=0, values=[0.1, 0.9]),
-            StreamRecord(output_id="ml_model_outputs/out-1", output_index=1, values=[0.3, 0.7]),
+            OutputStream(output_id="ml_model_outputs/out-0", output_index=0, values=[0.1, 0.9]),
+            OutputStream(output_id="ml_model_outputs/out-1", output_index=1, values=[0.3, 0.7]),
         ]
 
     def test_fetch_places_legacy_none_output_index_after_indexed_rows(self) -> None:
@@ -104,11 +111,11 @@ class TestFetchOutputStreams:
             OutputStream(output_id="ml_model_outputs/out-ok", output_index=1, values=[0.5]),
         ]
 
-        result = fetch_output_streams(mock_db, song_id=7)
+        result = fetch_output_streams(mock_db, song=_song_identity(7))
 
         assert result == [
-            StreamRecord(output_id="ml_model_outputs/out-ok", output_index=1, values=[0.5]),
-            StreamRecord(output_id="ml_model_outputs/out-null", output_index=None, values=[0.1]),
+            OutputStream(output_id="ml_model_outputs/out-ok", output_index=1, values=[0.5]),
+            OutputStream(output_id="ml_model_outputs/out-null", output_index=None, values=[0.1]),
         ]
 
 
@@ -199,16 +206,16 @@ class TestLoadOutputStreamsForSong:
         ):
             result = load_output_streams_for_song(
                 mock_db,
-                song_id=f"{'songs'}/file-1",
+                song=_song_identity(1),
                 file_path="music/file-1.mp3",
                 head_infos=head_infos,
             )
 
         assert result == []
-        mock_fetch.assert_called_once_with(mock_db, f"{'songs'}/file-1")
+        mock_fetch.assert_called_once_with(mock_db, _song_identity(1))
         mock_transition.assert_called_once_with(
             mock_db,
-            [f"{'songs'}/file-1"],
+            [_song_identity(1)],
             "processed",
             "not_processed",
         )
@@ -218,7 +225,7 @@ class TestLoadOutputStreamsForSong:
         mock_db = MagicMock()
         head_infos = [SimpleNamespace(name="mood", model_path="models/mood.onnx", labels=["happy"])]
         stream_records = [
-            StreamRecord(
+            OutputStream(
                 output_id="ml_model_outputs/out-missing",
                 output_index=0,
                 values=[0.2, 0.8],
@@ -240,16 +247,16 @@ class TestLoadOutputStreamsForSong:
         ):
             result = load_output_streams_for_song(
                 mock_db,
-                song_id=f"{'songs'}/file-2",
+                song=_song_identity(2),
                 file_path="music/file-2.mp3",
                 head_infos=head_infos,
             )
 
         assert result == []
-        mock_fetch.assert_called_once_with(mock_db, f"{'songs'}/file-2")
+        mock_fetch.assert_called_once_with(mock_db, _song_identity(2))
         mock_transition.assert_called_once_with(
             mock_db,
-            [f"{'songs'}/file-2"],
+            [_song_identity(2)],
             "processed",
             "not_processed",
         )
@@ -261,12 +268,12 @@ class TestLoadOutputStreamsForSong:
             SimpleNamespace(name="mood", model_path="models/mood.onnx", labels=["sad", "happy"]),
         ]
         stream_records = [
-            StreamRecord(
+            OutputStream(
                 output_id="ml_model_outputs/out-1",
                 output_index=0,
                 values=[0.1, 0.9],
             ),
-            StreamRecord(
+            OutputStream(
                 output_id="ml_model_outputs/out-2",
                 output_index=1,
                 values=[0.3, 0.7],
@@ -288,7 +295,7 @@ class TestLoadOutputStreamsForSong:
         ):
             result = load_output_streams_for_song(
                 mock_db,
-                song_id=f"{'songs'}/file-3",
+                song=_song_identity(3),
                 file_path="music/file-3.mp3",
                 head_infos=head_infos,
             )
@@ -309,7 +316,7 @@ class TestLoadOutputStreamsForSong:
                 values=[0.3, 0.7],
             ),
         ]
-        mock_fetch.assert_called_once_with(mock_db, f"{'songs'}/file-3")
+        mock_fetch.assert_called_once_with(mock_db, _song_identity(3))
         mock_resolve.assert_called_once_with(mock_db, head_infos, cached_lookup=None)
 
     def test_passes_cached_output_lookup_to_resolver_when_provided(self) -> None:
@@ -317,7 +324,7 @@ class TestLoadOutputStreamsForSong:
         head_infos = [SimpleNamespace(name="mood", model_path="models/mood.onnx", labels=["happy"])]
         cached_lookup = {"ml_model_outputs/out-1": ("mood", "happy")}
         stream_records = [
-            StreamRecord(
+            OutputStream(
                 output_id="ml_model_outputs/out-1",
                 output_index=0,
                 values=[0.6],
@@ -336,7 +343,7 @@ class TestLoadOutputStreamsForSong:
         ):
             result = load_output_streams_for_song(
                 mock_db,
-                song_id=f"{'songs'}/file-4",
+                song=_song_identity(4),
                 file_path="music/file-4.mp3",
                 head_infos=head_infos,
                 output_lookup=cached_lookup,
@@ -351,5 +358,5 @@ class TestLoadOutputStreamsForSong:
                 values=[0.6],
             )
         ]
-        mock_fetch.assert_called_once_with(mock_db, f"{'songs'}/file-4")
+        mock_fetch.assert_called_once_with(mock_db, _song_identity(4))
         mock_resolve.assert_called_once_with(mock_db, head_infos, cached_lookup=cached_lookup)

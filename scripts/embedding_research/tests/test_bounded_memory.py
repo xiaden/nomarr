@@ -11,7 +11,7 @@ This module proves the memory/behaviour obligations that Phase 2's smoke tests o
   sizes and sits far below the full K x M product bytes for a sized fixture, in both query
   modes and over larger K x M fixtures than the Phase-2 smoke.
 * (c) Finite streaming reductions — non-finite input (vector or weight) is rejected up front
-  (ValueError) before any result can escape, and at the catalog-analysis boundary a
+  (ValueError) before any result can escape, and at the analysis boundary a
   non-finite condition rejects before persistence with no partial write / scope escaping
   (aligning with Phase 3's NonFiniteResultError final gate).
 * (d) No normal-path source-x-candidate (N x N) trace allocation/retention — structural +
@@ -230,7 +230,7 @@ def _publish_committed_stream(store, song_id: str, matrix: np.ndarray, *, run_id
     """Publish a stream AND its complete committed observation group (all-searchable mask).
 
     P1-S3: the store-backed current-stream resolver resolves ONLY complete committed groups,
-    so any helper that later builds a catalog does so from the complete committed
+    so any helper that later builds a representation does so from the complete committed
     groups published here, resolving the mask through the two-key store-backed seam
     ``make_current_mask_resolver(store)`` (stream via ``make_current_stream_resolver``).
     """
@@ -254,105 +254,6 @@ def _publish_committed_stream(store, song_id: str, matrix: np.ndarray, *, run_id
         ),
     )
     return record
-
-
-def _build_catalog(con, out, songs):
-    """Deterministic per-song COMPACT catalog; return (store, open snapshot handle).
-
-    Caller must ``.close()`` the handle (its ``.con`` is the compact snapshot connection).
-    """
-    from scripts.embedding_research import catalog
-    from scripts.embedding_research.catalog_storage import open_snapshot_file
-    from scripts.embedding_research.streams import make_current_mask_resolver, make_current_stream_resolver
-    from scripts.embedding_research.streams.store import StreamStore
-
-    store = StreamStore(con, output_root=str(out))
-    rng = np.random.default_rng(7)
-    for song in songs:
-        _publish_committed_stream(store, song, _unit(rng, 10, 6), run_id="run-embed")
-    store.reconcile()
-    rep = catalog.build_segmentation_catalog(
-        make_current_stream_resolver(store),
-        make_current_mask_resolver(store),
-        [
-            catalog.SegConfigInput(
-                backbone="effnet",
-                bin_mode="temporal_global",
-                threshold_configured=0.7,
-                threshold_effective=0.7,
-            )
-        ],
-        list(songs),
-        output_root=str(out),
-        run_id="run-cat-1",
-        verify=True,
-    )
-    assert rep.verify_ok is True
-    handle = open_snapshot_file(f"{out}/catalogs/.staging-run-cat-1/catalog.duckdb", read_only=True)
-    return store, handle
-
-
-def test_non_finite_analysis_rejected_before_persistence_no_partial_write(con, tmp_path, monkeypatch):
-    """A poisoned candidate weight rejects before persistence and writes no partial scope."""
-    from scripts.embedding_research.common import catalog_analysis as ca
-    from scripts.embedding_research.db import analyze_scope
-
-    songs = ("s1", "s2", "s3", "s4")
-    artists = {"s1": "A", "s2": "A", "s3": "B", "s4": "B"}
-    store, handle = _build_catalog(con, tmp_path / "out", songs)
-    cfg = ca.CatalogAnalysisConfig(run_id="run-poison", backbone="effnet", song_ids=songs, artists=artists)
-
-    real = ca.candidate_weights_from_catalog
-    poisoned = [False]
-
-    def _poisoned(catalog, rows):
-        w = real(catalog, rows).astype(np.float64)
-        if poisoned[0]:
-            w = w.copy()
-            w[-1] = np.nan  # a NaN segment weight in the last row
-        return w
-
-    monkeypatch.setattr(ca, "candidate_weights_from_catalog", _poisoned)
-    try:
-        # A good run completes and may be persisted without a partial poisoned scope.
-        good = ca.run_catalog_analysis(store, handle.con, cfg, research_con=con)
-        assert good.finite is True
-        # Record a scope for the good run to prove it is NOT disturbed by the poisoned run.
-        # Persist the good result through the REAL writer seam, which builds + records its complete
-        # v2 catalog_class scope (the corrective gate refuses the old hand-built incomplete identity).
-        analyze_scope.write_catalog_analyze_rows(con, run_id="run-poison", result=good)
-        good_scopes = analyze_scope.run_row_scopes(con, run_id="run-poison")
-        assert good_scopes, "good run scope must be recorded"
-
-        poisoned[0] = True
-        with pytest.raises(ValueError):
-            ca.run_catalog_analysis(store, handle.con, cfg, research_con=con)
-        # The poisoned run never wrote a partial analyze scope/result — run_id scope is unchanged.
-        assert analyze_scope.run_row_scopes(con, run_id="run-poison") == good_scopes
-    finally:
-        handle.close()
-
-
-def test_finite_writer_gate_refuses_non_finite_result(con, tmp_path):
-    """The persistence writer is finite-only: it refuses a non-finite result before writing."""
-    from scripts.embedding_research.common import catalog_analysis as ca
-    from scripts.embedding_research.db import analyze_scope
-
-    songs = ("s1", "s2")
-    artists = {"s1": "A", "s2": "A"}
-    store, handle = _build_catalog(con, tmp_path / "out", songs)
-    cfg = ca.CatalogAnalysisConfig(run_id="run-fin", backbone="effnet", song_ids=songs, artists=artists)
-    try:
-        good = ca.run_catalog_analysis(store, handle.con, cfg, research_con=con)
-    finally:
-        handle.close()
-    import dataclasses
-
-    bad = dataclasses.replace(good, finite=False, run_id="run-bad")
-    with pytest.raises(ValueError):
-        analyze_scope.write_catalog_analyze_rows(con, run_id="run-bad", result=bad)
-    # Nothing was written for the refused run.
-    assert analyze_scope.run_row_scopes(con, run_id="run-bad") == frozenset()
 
 
 # --------------------------------------------------------------------------- #

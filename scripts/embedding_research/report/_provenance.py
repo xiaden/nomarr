@@ -1,9 +1,9 @@
-"""Active run-provenance section.
+"""Run-provenance section.
 
-Research-only.  Renders the active ``run_provenance`` rows (command lines, config hashes,
+Research-only.  Renders the exact ``run_provenance`` rows (command lines, config hashes,
 artifact hashes, statuses) with an explicit scope-and-limitations note describing what this
 report reused / refused to reuse.  This section performs no inference — it reports the
-completed phases that produced the current catalog analysis and head provenance.
+completed phases that produced the persisted geometry analysis and head evidence.
 """
 
 from __future__ import annotations
@@ -52,7 +52,7 @@ def section_provenance(con, *, run_id: str | None = None) -> dict:
     """Render the active ``run_provenance`` rows and scope/limitations notes."""
     try:
         rows = read_run_provenance(con)
-    except Exception:
+    except (ValueError, RuntimeError):
         rows = []
 
     active_rows = rows
@@ -97,10 +97,11 @@ def section_provenance(con, *, run_id: str | None = None) -> dict:
             )
 
     scope_note = (
-        "This report reads the active completed scope: every recorded analyze/head-analysis/"
-        "catalog phase that produced current rows. No legacy analyses are reused because none "
-        "are active, and no inference is performed at report time — the current report.json / "
-        "report.html are rendered verbatim from the completed analysis and head provenance."
+        "This report renders only the exact completed run scope recorded in run_provenance "
+        "(every recorded analyze/head-analysis phase that produced the persisted rows). "
+        "No earlier analysis is reused and no inference is performed at report time — the "
+        "report.json / report.html artifacts are rendered verbatim from the persisted "
+        "analysis and head evidence."
     )
     if run_id is not None:
         scope_note = (
@@ -121,7 +122,7 @@ def section_provenance(con, *, run_id: str | None = None) -> dict:
         "provenance",
         "Run Provenance",
         description=(
-            "Active run provenance: recorded phases with their command lines, config hashes, "
+            "Run provenance: recorded phases with their command lines, config hashes, "
             "input/output artifact hashes, statuses, and the report's reuse / refusal notes."
         ),
         stats=stats,

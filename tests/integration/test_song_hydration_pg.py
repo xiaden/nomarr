@@ -40,7 +40,9 @@ from nomarr.helpers.constants.file_states import (
     STATE_NOT_HYDRATED,
     STATE_PROCESSED,
 )
+from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
 from nomarr.helpers.dto.hydration_dto import HydrateSongInput
+from nomarr.persistence.database.library_repo import LibraryRepository
 from nomarr.persistence.database.song_hydration_repo import SongHydrationRepository
 from nomarr.persistence.database.song_repo import SongRepository
 from nomarr.persistence.database.song_state_repo import SongStateRepository
@@ -89,17 +91,35 @@ def _create_library_and_song(session, path: str = "/pgint/lib/test.mp3") -> tupl
     return lib_id, song_id
 
 
+def _locator(session, song_id: int) -> SongIdentity:
+    """Build the public SongLocator for a persisted song row."""
+    row = session.execute(select(Song.__table__).where(Song.__table__.c.id == song_id)).fetchone()
+    library_uuid = session.execute(
+        select(Library.__table__.c.library_uuid).where(Library.__table__.c.id == row.library_id)
+    ).scalar_one()
+    return SongIdentity(
+        library=LibraryIdentity(library_uuid=library_uuid),
+        normalized_path=row.normalized_path,
+    )
+
+
+def _missing_locator(normalized_path: str = "/pgint/lib/missing.mp3") -> SongIdentity:
+    """A locator that resolves to no persisted song row."""
+    return SongIdentity(
+        library=LibraryIdentity(library_uuid="00000000-0000-0000-0000-000000000000"),
+        normalized_path=normalized_path,
+    )
+
+
 def _make_input(
-    song_id: int,
     *,
     parsed_nom_tags: Mapping[str, Sequence[str | int | float]] | None = None,
     entity_tags: Mapping[str, Sequence[str | int | float]] | None = None,
     metadata_cache: Mapping[str, str | int | float | list[str] | None] | None = None,
     duration_seconds: float | None = None,
 ) -> HydrateSongInput:
-    """Build a HydrateSongInput, overriding fields as needed."""
+    """Build a HydrateSongInput payload, overriding fields as needed."""
     return HydrateSongInput(
-        song_id=song_id,
         parsed_nom_tags=(parsed_nom_tags if parsed_nom_tags is not None else {"nom:mood-strict": ["happy"]}),
         entity_tags=entity_tags if entity_tags is not None else {"genre": ["rock"], "year": [1999]},
         metadata_cache=metadata_cache if metadata_cache is not None else {"artist": "The Test"},
@@ -115,6 +135,7 @@ def _build_repo(session) -> SongHydrationRepository:
         tag_repo=TagRepository(session),
         song_tag_repo=SongTagRepository(session),
         song_state_repo=SongStateRepository(session),
+        library_repo=LibraryRepository(session),
     )
 
 
@@ -188,7 +209,7 @@ class TestHydrateSongPgAtomicity:
         monkeypatch.setattr(repo._song_state_repo, "transition_to_hydrated", _boom)
 
         with pytest.raises(RuntimeError):
-            repo.hydrate_song(_make_input(song_id, duration_seconds=321.0))
+            repo.hydrate_song(_locator(pg_session, song_id), _make_input(duration_seconds=321.0))
 
         # Nothing partial persisted: no tag edges, no duration, no hydrated state.
         assert _song_tags(pg_session, song_id) == set()
@@ -206,7 +227,7 @@ class TestHydrateSongPgAtomicity:
         song_id = _pending_song(pg_session)
         state_repo = SongStateRepository(pg_session)
 
-        _build_repo(pg_session).hydrate_song(_make_input(song_id, duration_seconds=222.0))
+        _build_repo(pg_session).hydrate_song(_locator(pg_session, song_id), _make_input(duration_seconds=222.0))
 
         assert _song_tags(pg_session, song_id) == {
             ("nom:mood-strict", "happy"),
@@ -226,7 +247,7 @@ class TestHydrateSongPgAtomicity:
         """Entity tags are ``default``, Nomarr tags ``nom``; confidence/source stay on edges."""
         song_id = _pending_song(pg_session)
 
-        _build_repo(pg_session).hydrate_song(_make_input(song_id))
+        _build_repo(pg_session).hydrate_song(_locator(pg_session, song_id), _make_input())
 
         # Complete identity triples: entity -> default, parsed nom -> nom.
         rows = _song_tag_rows(pg_session, song_id)
@@ -248,7 +269,8 @@ class TestHydrateSongPgAtomicity:
         song_id = _pending_song(pg_session)
 
         _build_repo(pg_session).hydrate_song(
-            _make_input(song_id, parsed_nom_tags={"genre": ["Rock"]}, entity_tags={"genre": ["Rock"]})
+            _locator(pg_session, song_id),
+            _make_input(parsed_nom_tags={"genre": ["Rock"]}, entity_tags={"genre": ["Rock"]}),
         )
 
         rows = _song_tag_rows(pg_session, song_id)
@@ -282,10 +304,10 @@ class TestHydrateSongsBatchPgChunks:
         # chunk_size=1: [s1] | [999999(missing)] | [s2] | [s3].
         # The missing-song chunk fails and rolls back; the rest commit.
         inputs = [
-            _make_input(s1, parsed_nom_tags={"nom:c1": ["a"]}),
-            _make_input(999999, parsed_nom_tags={"nom:c2": ["x"]}),
-            _make_input(s2, parsed_nom_tags={"nom:c1": ["b"]}),
-            _make_input(s3, parsed_nom_tags={"nom:c1": ["c"]}),
+            (_locator(pg_session, s1), _make_input(parsed_nom_tags={"nom:c1": ["a"]})),
+            (_missing_locator(), _make_input(parsed_nom_tags={"nom:c2": ["x"]})),
+            (_locator(pg_session, s2), _make_input(parsed_nom_tags={"nom:c1": ["b"]})),
+            (_locator(pg_session, s3), _make_input(parsed_nom_tags={"nom:c1": ["c"]})),
         ]
 
         committed = _build_repo(pg_session).hydrate_songs_batch(inputs, chunk_size=1)
@@ -319,8 +341,8 @@ class TestHydrateSongsBatchPgChunks:
         # chunk_size=100 → both inputs share one chunk; both must roll back.
         committed = repo.hydrate_songs_batch(
             [
-                _make_input(s1, parsed_nom_tags={"nom:u": ["1"]}),
-                _make_input(s2, parsed_nom_tags={"nom:u": ["2"]}),
+                (_locator(pg_session, s1), _make_input(parsed_nom_tags={"nom:u": ["1"]})),
+                (_locator(pg_session, s2), _make_input(parsed_nom_tags={"nom:u": ["2"]})),
             ],
             chunk_size=100,
         )

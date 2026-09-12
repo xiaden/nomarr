@@ -1,9 +1,8 @@
 """Shared rendering primitives: formatting helpers and Plotly chart/table/section builders.
 
 Research-only.  This module owns the pure rendering surface shared by every report
-section plus the single source of truth for the active catalog identity vocabulary
-(the ``catalog:{backbone}:{score_variant}:v{version}:{keyset}`` decode).  It carries NO
-legacy strategy/head/bin/weighted vocabulary.
+    section plus shared geometry identity formatting helpers. It carries no earlier
+    strategy/head/bin/weighted vocabulary.
 """
 
 from __future__ import annotations
@@ -68,97 +67,6 @@ def make_chart(fig: go.Figure, *, id: str = "", title: str = "") -> dict:
     return {"id": id, "title": title, "type": "plotly", "figure": figure_dict(fig)}
 
 
-# ---------------------------------------------------------------------------
-# Catalog identity vocabulary
-# ---------------------------------------------------------------------------
-
-#: strategy_type written by the catalog analyze pipeline for every active analysis row.
-CATALOG_STRATEGY_TYPE = "catalog"
-
-#: The enriched long-form columns produced by ``report._retrieval.query_analyze_metrics``
-#: (and the identical medoid-baseline frame from ``query_medoid_baselines``).  Every row is one
-#: literal ``analyze_metrics`` (strategy_key, sim_metric, k, metric, value) cell, enriched with
-#: the decoded active identity and the durable provenance-scope fields read from the
-#: ``analyze_scope_v2`` run line (via :func:`parse_analyze_scope`; :func:`decode_analyze_scope_v2`
-#: is also exercised by the producers' encode/preflight round-trip in
-#: ``db.analyze_scope.write_catalog_analyze_rows`` and
-#: ``common.catalog_analysis.run_and_persist_medoid_baseline``).
-#:
-#: ``representation_hash`` is the class's durable SEMANTIC search-representation hash (the real
-#: ``catalog_identity.search_representation_hash`` value), never a disposable view/keyset hash;
-#: a genuinely identity-less structural row (no durable semantic recorded) stays VISIBLY
-#: incomplete (``representation_hash`` None) and its disposable keyset rides only in
-#: ``view_keyset_hash`` — the loader never promotes a keyset into the semantic column (Plan B
-#: P3 removed the transitional keyset fallback; seeds now carry full v2 anchors).
-#: ``catalog_id``/``catalog_fingerprint`` are the compact-catalog anchor of
-#: the class scope; ``canonical_config_id``/``alias_ids``/``config_ids``/``class_members`` carry
-#: the canonical, sorted-alias, full ordered member-id and per-member evidence
-#: (threshold / bin-mode / exact-segmentation-hash) surface; ``view_keyset_hash`` is the
-#: DISPOSABLE per-run view-keyset (kept separate from the semantic identity) and
-#: ``view_content_hash`` the disposable view content.  The persisted evaluation-corpus identity
-#: (``evaluation_corpus_*``) is consumed by the matching-only delta builder.
-CATALOG_ANALYSIS_COLUMNS: list[str] = [
-    "run_id",
-    "backbone",
-    "strategy_key",
-    "strategy_type",
-    "sim_metric",
-    "k",
-    "score_variant",
-    "scoring_semantics_version",
-    "representation_hash",
-    "catalog_id",
-    "catalog_fingerprint",
-    "canonical_config_id",
-    "alias_ids",
-    "config_ids",
-    "view_keyset_hash",
-    "view_content_hash",
-    "class_members",
-    "evaluation_corpus_hash",
-    "evaluation_corpus_count",
-    "evaluation_corpus_comparable",
-    "evaluation_corpus_missing_count",
-    "evaluation_corpus_missing_digest",
-    "evaluation_corpus_semantics_version",
-    "evaluation_corpus_eligible",
-    "evaluation_corpus_eligible_digest",
-    "evaluation_corpus_requested_count",
-    "evaluation_corpus_requested_digest",
-    "evaluation_corpus_observation_digest",
-    "evaluation_corpus_complete",
-    "evaluation_corpus_integrity",
-    "metric",
-    "value",
-]
-
-
-def decode_catalog_strategy_key(strategy_key: str) -> dict[str, Any] | None:
-    """Decode an active ``catalog:{backbone}:{score_variant}:v{version}:{keyset}`` identity.
-
-    Returns a dict with ``backbone``, ``score_variant``, ``scoring_semantics_version`` and
-    ``keyset_hash`` (the trailing 16-hex disposable view-keyset marker; never the semantic
-    representation), or ``None`` when the key is not a well-formed catalog identity.  The scoring-semantics version is parsed from
-    the ``v<version>`` segment; a malformed segment yields ``None`` (never a silent 0).
-    """
-    if not isinstance(strategy_key, str) or not strategy_key.startswith("catalog:"):
-        return None
-    parts = strategy_key.split(":")
-    if len(parts) != 5 or not parts[1] or not parts[2]:
-        return None
-    version_seg = parts[3]
-    if not version_seg.startswith("v") or not version_seg[1:].isdigit():
-        return None
-    if not parts[4]:
-        return None
-    return {
-        "backbone": parts[1],
-        "score_variant": parts[2],
-        "scoring_semantics_version": int(version_seg[1:]),
-        "keyset_hash": parts[4],
-    }
-
-
 def empty_df(columns: list[str]) -> pd.DataFrame:
     """Return an empty DataFrame with the given columns."""
     return pd.DataFrame(columns=columns)
@@ -178,13 +86,6 @@ def fmt(v) -> str:
             return "—"
         return f"{v:.4f}"
     return str(v)
-
-
-def _alias_text(alias_ids) -> str:
-    """Render an ordered alias list as a compact comma-joined string ('—' when empty)."""
-    if not alias_ids:
-        return "—"
-    return ",".join(str(a) for a in alias_ids)
 
 
 def table_exists(con, name: str) -> bool:

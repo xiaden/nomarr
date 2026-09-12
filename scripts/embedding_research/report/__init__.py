@@ -1,4 +1,4 @@
-"""Embedding research report generator — schema v2."""
+"""Embedding research geometry report generator — schema v2."""
 
 from __future__ import annotations
 
@@ -13,7 +13,16 @@ from ._corpus import ruler_disc_warnings, section_corpus
 from ._efficiency import section_efficiency
 from ._heads import section_head_analysis
 from ._provenance import section_provenance
-from ._retrieval import query_analyze_metrics, query_winners_metrics, section_analysis
+from ._retrieval import (
+    GEOMETRY_ANALYSIS_COLUMNS,
+    IDENTITY_COLUMNS,
+    query_analyze_metrics,
+    query_geometry_identity,
+    query_observed_baselines,
+    query_winners_metrics,
+    section_analysis,
+    verify_geometry_bindings_for_run,
+)
 from ._summary import section_summary
 from ._winners_report import section_winners
 
@@ -283,7 +292,7 @@ def _payload(
 # ---------------------------------------------------------------------------
 
 
-def run(con, out_path=None, *, run_id: str | None = None) -> dict:
+def run(con, out_path=None, *, run_id: str | None = None, stream_store: Any = None, profile: Any = None) -> dict:
     """Generate the embedding research report and write HTML + JSON files.
 
     Emits EXACTLY seven schema-v2 sections, in order: ``summary``, ``corpus``,
@@ -292,22 +301,20 @@ def run(con, out_path=None, *, run_id: str | None = None) -> dict:
     Parameters
     ----------
     con:
-        Open DuckDB connection with active catalog analysis + head provenance results.
+        Open DuckDB connection with completed geometry analysis + head evidence results.
     out_path:
         Required directory where ``report.html`` and ``report.json`` will be written.
         Raises ``ValueError`` if not provided.
     run_id:
-        Optional physical run-scope selector naming a completed analyze scope (per the CLI's
-        grouped per-run predicate: the run has at least one ``complete``/``completed`` ``analyze``
-        provenance row and no ``failed`` one).  When given, only
-        that run's catalog analysis rows feed the analysis/winners/summary sections and only that
-        run's provenance is reported.  When ``None`` (the default) every catalog-analysis row
-        present is rendered — this whole-set read is the DIRECT-caller contract (empty databases
-        and seeded tests); the run.py ``report`` CLI never relies on it, resolving and passing an
-        explicit completed analyze scope via ``_run_report`` (which rejects incomplete scopes
-        rather than blending runs).  Head provenance is inherently current (rows replace
-        same-identity), so the head-analysis section is not run-scoped.  No inference is ever
-        performed at report time — the report is rendered verbatim from completed phases.
+        Exact run-scope selector naming a completed analyze scope (per the CLI's grouped per-run
+        predicate: the run has at least one ``complete``/``completed`` ``analyze`` provenance row
+        and no ``failed`` one).  When given, only that run's exact geometry analysis/head evidence
+        and provenance feed the sections; there is no whole-set blend or runtime scope
+        selection.  When ``None`` (an empty database with no completed analyze scope) every evidence
+        section renders an explicit refusal and no database evidence is read.  Head provenance is
+        inherent to the run scope, so the head-analysis section reads exactly that run's persisted
+        head evidence.  No inference is ever performed at report time — the report is rendered
+        verbatim from exact persisted phases.
 
     Returns:
         The assembled payload dict (also written to ``report.json`` / ``report.html``).
@@ -322,23 +329,47 @@ def run(con, out_path=None, *, run_id: str | None = None) -> dict:
 
     print("Generating report…")
 
-    # Data loaders.  ``df`` is the catalog-only decoded frame (drives the analysis section;
-    # the catalog-only pin in tests/test_report.py stays valid).  ``wdf`` additionally carries
-    # each cell's observed ``global_pool:{backbone}:medoid`` baseline row, which the summary and
-    # winners sections consume (the medoid is never a winner candidate).
-    df, _ = _step("query_analyze_metrics", lambda: query_analyze_metrics(con, run_id=run_id))
-    wdf, _ = _step("query_winners_metrics", lambda: query_winners_metrics(con, run_id=run_id))
+    import pandas as pd
+
+    if run_id and stream_store is not None and profile is not None:
+        # Fail closed before reading or rendering anything: a superseded/corrupt geometry
+        # binding must never publish a clean-looking report.
+        _step(
+            "verify_geometry_bindings",
+            lambda: verify_geometry_bindings_for_run(con, run_id=run_id, stream_store=stream_store, profile=profile),
+        )
+
+    if run_id:
+        df, _ = _step("query_analyze_metrics", lambda: query_analyze_metrics(con, run_id=run_id))
+        identity, _ = _step("query_geometry_identity", lambda: query_geometry_identity(con, run_id=run_id))
+        wdf, _ = _step("query_winners_metrics", lambda: query_winners_metrics(con, run_id=run_id))
+        bdf, _ = _step("query_observed_baselines", lambda: query_observed_baselines(con, run_id=run_id))
+    else:
+        # No completed analyze scope was resolved: every evidence section visibly refuses
+        # instead of blending runs or selecting a latest/current scope.
+        df = pd.DataFrame(columns=GEOMETRY_ANALYSIS_COLUMNS)
+        identity = pd.DataFrame(columns=["run_id", *IDENTITY_COLUMNS])
+        wdf = df
+        bdf = df
 
     # Global warnings
     warnings, _ = _step("discrimination_warnings", lambda: ruler_disc_warnings(con))
+    if not run_id:
+        warnings = [
+            {
+                "level": "error",
+                "message": "No completed analyze scope: report evidence refused. Run `analyze` to completion.",
+            },
+            *warnings,
+        ]
 
     # Section builders (exact order contract).
     sections_raw: list[tuple[str, Any]] = [
-        ("summary", lambda: section_summary(wdf)),
+        ("summary", lambda: section_summary(wdf, bdf)),
         ("corpus", lambda: section_corpus(con)),
-        ("analysis", lambda: section_analysis(df)),
-        ("winners", lambda: section_winners(wdf)),
-        ("head-analysis", lambda: section_head_analysis(con)),
+        ("analysis", lambda: section_analysis(df, identity)),
+        ("winners", lambda: section_winners(wdf, bdf)),
+        ("head-analysis", lambda: section_head_analysis(con, run_id=run_id)),
         ("provenance", lambda: section_provenance(con, run_id=run_id)),
         ("efficiency", lambda: section_efficiency(con)),
     ]

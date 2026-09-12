@@ -31,7 +31,8 @@ class HydrateSongInput:
     persistence facade owns storing all of it atomically and idempotently.
 
     Attributes:
-        song_id: Library song row primary key to hydrate.
+        Song identity is supplied separately by the locator-addressed
+             persistence intent; this payload contains only parsed values.
         parsed_nom_tags: Mapping of tag name → values for ``nom:``-prefixed
             parsed tags. Values may be strings or numbers.
         entity_tags: Mapping of entity/tag relationship name → values (e.g.
@@ -49,7 +50,6 @@ class HydrateSongInput:
     database-row state.
     """
 
-    song_id: int
     parsed_nom_tags: Mapping[str, Sequence[str | int | float]]
     entity_tags: Mapping[str, Sequence[str | int | float]]
     metadata_cache: Mapping[str, str | int | float | list[str] | None]

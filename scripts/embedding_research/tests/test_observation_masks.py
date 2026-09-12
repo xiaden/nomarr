@@ -500,7 +500,7 @@ def test_embed_song_raw_produce_masks_publishes_group(con, monkeypatch, tmp_path
 
 @pytest.mark.unit
 def test_embed_song_raw_produce_masks_false_leaves_no_group(con, monkeypatch, tmp_path):
-    """Legacy direct callers (produce_masks=False) publish only the stream."""
+    """Earlier direct callers (produce_masks=False) publish only the stream."""
     store = _store(con, tmp_path)
     sid = "songN"
     monkeypatch.setattr(embed_mod, "_song_id", lambda _path: sid)

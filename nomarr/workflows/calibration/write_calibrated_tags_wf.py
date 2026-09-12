@@ -44,7 +44,12 @@ import threading
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, cast
 
-from nomarr.components.library.library_song_query_comp import require_library_song_id
+from nomarr.components.library.library_records_comp import find_library_containing_path
+from nomarr.components.library.library_song_query_comp import (
+    _library_identity,
+    _song_identity,
+    get_library_song,
+)
 from nomarr.components.ml.calibration.ml_calibration_state_comp import (
     get_calibration_version,
     load_calibration_lookup,
@@ -62,12 +67,24 @@ from nomarr.components.tagging.tagging_reconstruction_comp import (
 )
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
     from nomarr.helpers.dataclasses.tags_dataclass import Tags
     from nomarr.helpers.dto.calibration_dto import WriteCalibratedTagsParams
     from nomarr.helpers.dto.ml_head_dto import HeadInfo
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_song_identity_for_path(db: Database, file_path: str) -> SongIdentity:
+    """Resolve a physical library path to its natural ADR-048 locator."""
+    library = find_library_containing_path(db, file_path)
+    if library is None:
+        raise FileNotFoundError(f"File not found in a configured library: {file_path}")
+    song = get_library_song(db, file_path, library=library)
+    if song is None:
+        raise FileNotFoundError(f"File not found in the library database: {file_path}")
+    return _song_identity(song, _library_identity(library))
 
 
 @dataclass
@@ -83,8 +100,8 @@ class BatchContext:
         calibration_version: Global calibration version string
         output_stream_lookup: Optional cached mapping of output_id to
             ``(head_name, label)`` derived from registered model outputs.
-        pending_mood_tags: Accumulated (song_id, mood_tags) for deferred batch write.
-        pending_calibration_hashes: Accumulated song_ids for deferred batch calibration mark.
+        pending_mood_tags: Accumulated (song, mood_tags) for deferred batch write.
+        pending_calibration_hashes: Accumulated (song, calibration_version) updates.
 
     """
 
@@ -92,8 +109,8 @@ class BatchContext:
     calibrations: dict[str, Any]
     calibration_version: str | None
     output_stream_lookup: dict[str, tuple[str, str]] | None = None
-    pending_mood_tags: list[tuple[int, Tags | None]] = field(default_factory=list)
-    pending_calibration_hashes: list[int] = field(default_factory=list)
+    pending_mood_tags: list[tuple[SongIdentity, Tags | None]] = field(default_factory=list)
+    pending_calibration_hashes: list[tuple[SongIdentity, str]] = field(default_factory=list)
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
 
 
@@ -146,7 +163,7 @@ def write_calibrated_tags_wf(
     file_path = params.file_path
     models_dir = params.models_dir
     logger.debug("[calibrated_tags] Processing %s", file_path)
-    song_id = require_library_song_id(db, file_path)
+    song = _resolve_song_identity_for_path(db, file_path)
 
     # Use cached values from batch context when available
     heads: list[Any] | None = batch_ctx.heads if batch_ctx is not None else None
@@ -173,7 +190,7 @@ def write_calibrated_tags_wf(
 
     output_streams = load_output_streams_for_song(
         db,
-        song_id,
+        song,
         file_path,
         heads_list,
         output_lookup=output_stream_lookup,
@@ -203,14 +220,14 @@ def write_calibrated_tags_wf(
     # Write to DB — batch mode defers, single-file mode writes immediately
     if batch_ctx is not None:
         with batch_ctx._lock:
-            batch_ctx.pending_mood_tags.append((song_id, mood_tags))
+            batch_ctx.pending_mood_tags.append((song, mood_tags))
             global_version = batch_ctx.calibration_version
             if global_version:
-                batch_ctx.pending_calibration_hashes.append(song_id)
+                batch_ctx.pending_calibration_hashes.append((song, global_version))
     else:
-        save_mood_tags(db, song_id, mood_tags)
+        save_mood_tags(db, song, mood_tags)
         global_version = get_calibration_version(db)
         if global_version:
-            update_file_calibration_hash(db, song_id, global_version)
+            update_file_calibration_hash(db, song, global_version)
         logger.debug("[calibrated_tags] Updated mood tags in DB for %s", file_path)
     return True

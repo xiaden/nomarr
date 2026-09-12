@@ -9,6 +9,15 @@ import pytest
 from nomarr.components.library.song_sync_comp import mark_song_processed, save_song_tags
 from nomarr.components.playlist_import.track_matcher_comp import LibraryTrack
 from nomarr.helpers.constants.file_states import STATE_NOT_PROCESSED, STATE_PROCESSED
+from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
+
+
+def _song(normalized_path: str = "song.flac") -> SongIdentity:
+    """Semantic locator used to address a song at the component boundary."""
+    return SongIdentity(
+        library=LibraryIdentity(library_uuid="691ebf37-b1e4-5244-a9c0-4758c39eaab6", name="Test Library"),
+        normalized_path=normalized_path,
+    )
 
 
 class TestMarkFileTagged:
@@ -23,16 +32,17 @@ class TestMarkFileTagged:
         mock_persist_last_tagged_at: MagicMock,
     ) -> None:
         mock_db = MagicMock()
+        song = _song()
 
-        mark_song_processed(mock_db, 42)
+        mark_song_processed(mock_db, song)
 
         mock_transition_file_state.assert_called_once_with(
             mock_db,
-            [42],
+            [song],
             STATE_NOT_PROCESSED,
             STATE_PROCESSED,
         )
-        mock_persist_last_tagged_at.assert_called_once_with(mock_db, 42)
+        mock_persist_last_tagged_at.assert_called_once_with(mock_db, song)
 
 
 class TestSaveSongTags:
@@ -45,18 +55,19 @@ class TestSaveSongTags:
         mock_set_song_tags_batch: MagicMock,
     ) -> None:
         mock_db = MagicMock()
+        song = _song()
         parsed_tags = {
             "genre": ["classical", "baroque"],
             "nom:mood": ["calm"],
         }
 
-        save_song_tags(mock_db, 42, parsed_tags)
+        save_song_tags(mock_db, song, parsed_tags)
 
         mock_set_song_tags_batch.assert_called_once_with(
             mock_db,
             [
-                {"song_id": 42, "name": "genre", "values": ["classical", "baroque"]},
-                {"song_id": 42, "name": "nom:mood", "values": ["calm"]},
+                {"song": song, "name": "genre", "values": ["classical", "baroque"]},
+                {"song": song, "name": "nom:mood", "values": ["calm"]},
             ],
         )
 
@@ -71,26 +82,28 @@ class TestSaveSongTags:
         # empty entry list rather than no call (matches actual save_song_tags).
         mock_db = MagicMock()
 
-        save_song_tags(mock_db, 42, {})
+        save_song_tags(mock_db, _song(), {})
 
         mock_set_song_tags_batch.assert_called_once_with(mock_db, [])
 
     @pytest.mark.unit
     @patch("nomarr.components.library.song_sync_comp.set_song_tags_batch")
-    def test_propagates_integer_song_id_into_batch_payload(
+    def test_propagates_semantic_locator_into_batch_payload(
         self,
         mock_set_song_tags_batch: MagicMock,
     ) -> None:
-        # Regression: save_song_tags accepts an integer song_id (V1 PostgreSQL
-        # entity ID) and must propagate it as int — never a string document key.
+        # Regression: save_song_tags addresses the song by its semantic
+        # SongIdentity locator — the integer storage id never enters the payload.
         mock_db = MagicMock()
+        song = _song()
 
-        save_song_tags(mock_db, 42, {"genre": ["classical"]})
+        save_song_tags(mock_db, song, {"genre": ["classical"]})
 
         payload = mock_set_song_tags_batch.call_args.args[1]
         assert len(payload) == 1
-        assert payload[0]["song_id"] == 42
-        assert isinstance(payload[0]["song_id"], int)
+        assert payload[0]["song"] == song
+        assert isinstance(payload[0]["song"], SongIdentity)
+        assert "song_id" not in payload[0]
 
 
 class TestLibraryTrackFromDbRow:

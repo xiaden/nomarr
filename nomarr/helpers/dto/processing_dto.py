@@ -111,7 +111,7 @@ class WorkerStatusResult:
     workers: list[dict[str, Any]]
 
 
-@dataclass
+@dataclass(frozen=True)
 class DeferredOutputStreamWrite:
     """Deferred canonical stream write for one model output."""
 
@@ -120,7 +120,7 @@ class DeferredOutputStreamWrite:
     output_index: int | None = None
 
 
-@dataclass
+@dataclass(frozen=True)
 class DeferredBackboneVectorWrite:
     """Deferred typed vector commands for one backbone.
 
@@ -135,7 +135,7 @@ class DeferredBackboneVectorWrite:
     vectors: Sequence[BackboneVectorWrite]
 
 
-@dataclass
+@dataclass(frozen=True)
 class DeferredFileWrites:
     """DB write payloads collected during ML processing.
 

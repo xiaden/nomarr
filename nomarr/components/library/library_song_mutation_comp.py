@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from nomarr.helpers.dataclasses.song_command_dataclass import (
+    ChromaprintValue,
     LibraryIdentity,
     SongIdentity,
     SongPathUpdate,
@@ -12,6 +13,10 @@ from nomarr.helpers.dataclasses.song_command_dataclass import (
     SongUpsertInput,
 )
 from nomarr.helpers.time_helper import now_ms
+
+# Provenance carried by DB-derived chromaprint handles resolved at this inbound
+# adapter boundary. Real caller-supplied provenance is a Q3 caller-cutover item.
+_CHROMAPRINT_PROVENANCE = "decoder:v1"
 
 if TYPE_CHECKING:
     from nomarr.helpers.dataclasses.library_dataclass import Library
@@ -109,8 +114,19 @@ def update_song_path(db: Database, command: SongPathUpdate) -> SongIdentity | No
 
 
 def update_song_modified_time(db: Database, file_key: int, modified_time_ms: int) -> None:
-    """Update the stored modified-time after a successful file write."""
-    db.library.update_library_song_modified_time(file_key, modified_time_ms)
+    """Update the stored modified-time after a successful file write.
+
+    Inbound integer-handle adapter (allowlisted Q1): the claim handle is
+    resolved to the semantic ``SongIdentity`` exactly once and the write
+    delegates to the locator-addressed ``set_modified_time`` intent. The handle
+    never propagates past this point. A handle that does not resolve is a
+    missing-locator no-op: no write occurs and no error is raised (mirroring the
+    facade's ``MISSING_LOCATOR`` outcome).
+    """
+    song = db.library.resolve_song_identity(file_key)
+    if song is None:
+        return
+    db.library.set_modified_time(song, modified_time_ms)
 
 
 def bulk_delete_songs(db: Database, paths: list[str], library: Library) -> int:
@@ -133,20 +149,30 @@ def bulk_delete_songs(db: Database, paths: list[str], library: Library) -> int:
     return len(matched_paths)
 
 
-def get_song_library_key(db: Database, song_id: int) -> int | None:
-    """Return the owning library id for a song id.
+def set_chromaprint(db: Database, song: SongIdentity, chromaprint: str) -> None:
+    """Persist a chromaprint fingerprint for one song.
 
-    PostgreSQL returns integer library ids directly (no ``libraries/`` prefix).
+    Inbound integer-handle adapter (allowlisted Q1): the handle is resolved to
+    the semantic ``SongIdentity`` exactly once and the write delegates to the
+    guarded locator-addressed ``set_chromaprint`` intent.
+    ``expected_absent=False`` preserves the prior unconditional-replace behavior
+    for DB-derived fingerprints; provenance travels with the value. A handle that
+    does not resolve is a missing-locator no-op: no write occurs and no error is
+    raised (mirroring the facade's ``MISSING_LOCATOR`` outcome).
     """
-    library_ids = db.library.get_library_ids_for_songs([song_id])
-    return library_ids.get(song_id)
+    db.library.set_chromaprint(
+        song,
+        ChromaprintValue(chromaprint, _CHROMAPRINT_PROVENANCE, expected_absent=False),
+    )
 
 
-def set_chromaprint(db: Database, song_id: int, chromaprint: str) -> None:
-    """Persist a chromaprint fingerprint for one song."""
-    db.library.set_library_song_chromaprint(song_id, chromaprint)
+def update_last_tagged_at(db: Database, song: SongIdentity) -> None:
+    """Record the wall-clock time at which a song was tagged.
 
-
-def update_last_tagged_at(db: Database, song_id: int) -> None:
-    """Record the wall-clock time at which a song was tagged."""
-    db.library.update_library_song_last_tagged_at(song_id, now_ms().value)
+    Inbound integer-handle adapter (allowlisted Q1): resolves the handle to the
+    semantic ``SongIdentity`` once and delegates to ``set_last_tagged``. The
+    handle never propagates past this point. A handle that does not resolve is a
+    missing-locator no-op: no write occurs and no error is raised (mirroring the
+    facade's ``MISSING_LOCATOR`` outcome).
+    """
+    db.library.set_last_tagged(song, now_ms().value)

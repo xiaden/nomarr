@@ -19,9 +19,15 @@ song-tag migration contract, 2026-08-30):
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from nomarr.helpers.dataclasses.song_tag_dataclass import (
+    CalibrationMoodMarker,
+    MoodAssignments,
+    MoodBatchResult,
+    MoodReplacementCommand,
+    MoodWriteResult,
     RelinkResult,
     SongTagAssignment,
     TagCleanupResult,
@@ -37,6 +43,9 @@ from nomarr.persistence.mappers.song_tag_mapper import (
     tag_usage_from_row,
 )
 
+#: Hard upper bound on one mood replacement batch, validated before any SQL.
+_MAX_MOOD_BATCH_COMMANDS = 1000
+
 
 def _ordinary_namespace(namespace: str) -> str:
     """Normalize an empty ordinary namespace to the literal ``default``.
@@ -51,8 +60,6 @@ def _ordinary_namespace(namespace: str) -> str:
 
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
-
     from sqlalchemy.orm import Session, scoped_session
 
     from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
@@ -374,6 +381,66 @@ class LibraryTagsDb:
         # Repo-owned short transaction: commits the pending tag inserts from
         # get_or_create_tags_batch together with the edge replacement.
         self._song_tag_repo.replace_song_tags(song_id, edges)
+
+    def replace_mood_tags(
+        self,
+        song: SongIdentity,
+        assignments: MoodAssignments | None,
+        marker: CalibrationMoodMarker,
+    ) -> MoodWriteResult:
+        """Replace one song's three mood tiers and marker in one owner transaction."""
+        command = MoodReplacementCommand(song=song, assignments=assignments, marker=marker)
+        result = self.replace_mood_tags_batch((command,))
+        published = LibraryTagsDb._mood_value_count(assignments) if result.status in {"UPDATED", "UNCHANGED"} else 0
+        return MoodWriteResult(result.status, published)
+
+    @staticmethod
+    def _mood_value_count(assignments: MoodAssignments | None) -> int:
+        """Count canonical mood values published by a replacement (0 for ``None``)."""
+        if assignments is None:
+            return 0
+        return sum(len(values) for _tier, values in assignments.tiers)
+
+    def replace_mood_tags_batch(
+        self,
+        commands: Sequence[MoodReplacementCommand],
+    ) -> MoodBatchResult:
+        """Validate a bounded mood batch and delegate the complete intent once.
+
+        Tier-3 semantic owner only: input validation and duplicate folding happen
+        before any SQL, and the complete batch intent is delegated to the Tier-2
+        tag repository in exactly one call. The repository owns locator
+        resolution, mood/marker SQL, the single transaction, commit/rollback,
+        exception mapping, poisoned-session disposal, and bounded retry.
+        """
+        try:
+            normalized = LibraryTagsDb._normalize_mood_commands(commands)
+        except (TypeError, ValueError):
+            return MoodBatchResult("INVALID_VALUE")
+        if not normalized:
+            return MoodBatchResult("UNCHANGED")
+        return self._song_tag_repo.replace_mood_tags_batch(normalized)
+
+    @staticmethod
+    def _normalize_mood_commands(
+        commands: Sequence[MoodReplacementCommand],
+    ) -> tuple[MoodReplacementCommand, ...]:
+        if isinstance(commands, (str, bytes)) or not isinstance(commands, Sequence):
+            raise TypeError("mood commands must be a sequence")
+        if len(commands) > _MAX_MOOD_BATCH_COMMANDS:
+            raise ValueError("mood batch exceeds bound")
+        unique: dict[SongIdentity, MoodReplacementCommand] = {}
+        order: list[SongIdentity] = []
+        for command in commands:
+            if not isinstance(command, MoodReplacementCommand):
+                raise TypeError("invalid mood command")
+            previous = unique.get(command.song)
+            if previous is None:
+                unique[command.song] = command
+                order.append(command.song)
+            elif previous != command:
+                raise ValueError("conflicting mood locator")
+        return tuple(unique[identity] for identity in order)
 
     def relink_tags(
         self,

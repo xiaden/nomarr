@@ -12,6 +12,7 @@ from nomarr.components.library.reconciliation_comp import (
     release_claim,
 )
 from nomarr.helpers import ManagedTask
+from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
 from nomarr.helpers.dto.library_dto import WriteTagsResult
 from nomarr.helpers.exceptions import TaskCancelledError
 from nomarr.services.domain.library_svc.task_ids import write_tags_task_id
@@ -108,8 +109,15 @@ class TaggingWriteMixin:
         processed = 0
         failed = 0
 
+        library_identity = (
+            LibraryIdentity(library.library_uuid, library.name, library.root_path)
+            if library.library_uuid is not None
+            else None
+        )
         for song in claimed_files:
-            file_key = str(song.song_id)
+            if library_identity is None:  # No identity -> claim_files returns no songs.
+                break
+            file_key = SongIdentity(library=library_identity, normalized_path=song.normalized_path)
             try:
                 result = write_file_tags_workflow(
                     db=self.db,
@@ -122,21 +130,19 @@ class TaggingWriteMixin:
                 if result.success:
                     processed += 1
                 elif result.error == "file_modified_externally":
-                    logger.debug(
-                        f"[reconcile] Skipping {file_key}: modified externally, will retry after rescan",
-                    )
+                    logger.debug("[reconcile] Skipping modified file; will retry after rescan")
                     release_claim(self.db, file_key, worker_id)
                 else:
                     failed += 1
                     release_claim(self.db, file_key, worker_id)
-                    logger.warning(f"[reconcile] Failed to write tags for {file_key}: {result.error}")
+                    logger.warning("[reconcile] Failed to write tags for locator: %s", result.error)
             except Exception as e:
                 failed += 1
-                logger.exception(f"[reconcile] Error processing {file_key}: {e}")
+                logger.exception("[reconcile] Error processing locator: %s", e)
                 try:
                     release_claim(self.db, file_key, worker_id)
                 except Exception as release_err:
-                    logger.warning(f"[reconcile] Failed to release claim for {file_key}: {release_err}", exc_info=True)
+                    logger.warning("[reconcile] Failed to release claim: %s", release_err, exc_info=True)
 
         remaining = count_files_needing_reconciliation(self.db, library=library)
 

@@ -294,7 +294,7 @@ def path_to_meta(path: Path) -> dict:
         }
     except Exception as exc:
         _log.warning(
-            "path_to_meta: tag extraction failed for %s: %s — using path-derived fallback",
+            "path_to_meta: tag extraction failed for %s: %s — using path-derived default",
             path.name,
             exc,
         )

@@ -117,33 +117,44 @@ def sqlite_app_db() -> AppDb:
 
 class TestAppDbFileStateMethods:
     @pytest.mark.unit
-    def test_get_file_states_delegates_to_song_state_repo(self, app_db: AppDb, mock_song_state_repo: MagicMock) -> None:
+    def test_get_file_states_delegates_to_song_state_repo(
+        self, app_db: AppDb, mock_app_repo: MagicMock, mock_song_state_repo: MagicMock
+    ) -> None:
+        song = SongIdentity(LibraryIdentity("library-uuid"), "song.mp3")
+        mock_app_repo._resolve_song_id.return_value = 42
         mock_song_state_repo.get_song_states.return_value = {"queued", "written"}
 
-        result = app_db.song_state_membership(42)
+        result = app_db.song_state_membership(song)
 
         assert result == {"queued", "written"}
+        mock_app_repo._resolve_song_id.assert_called_once_with(song)
         mock_song_state_repo.get_song_states.assert_called_once_with(42)
 
     @pytest.mark.unit
     def test_get_file_states_returns_empty_set_when_no_state(
-        self, app_db: AppDb, mock_song_state_repo: MagicMock
+        self, app_db: AppDb, mock_app_repo: MagicMock, mock_song_state_repo: MagicMock
     ) -> None:
-        mock_song_state_repo.get_song_states.return_value = set()
+        song = SongIdentity(LibraryIdentity("library-uuid"), "missing.mp3")
+        mock_app_repo._resolve_song_id.return_value = None
 
-        result = app_db.song_state_membership(99)
+        result = app_db.song_state_membership(song)
 
         assert result == set()
-        mock_song_state_repo.get_song_states.assert_called_once_with(99)
+        mock_app_repo._resolve_song_id.assert_called_once_with(song)
+        mock_song_state_repo.get_song_states.assert_not_called()
 
     @pytest.mark.unit
-    def test_get_file_states_for_files_delegates(self, app_db: AppDb, mock_song_state_repo: MagicMock) -> None:
-        expected = {1: {"queued"}, 2: {"tagged", "queued"}}
-        mock_song_state_repo.get_song_states_for_songs.return_value = expected
+    def test_get_file_states_for_files_delegates(
+        self, app_db: AppDb, mock_app_repo: MagicMock, mock_song_state_repo: MagicMock
+    ) -> None:
+        first = SongIdentity(LibraryIdentity("library-uuid"), "first.mp3")
+        second = SongIdentity(LibraryIdentity("library-uuid"), "second.mp3")
+        mock_app_repo._resolve_song_id.side_effect = [1, 2]
+        mock_song_state_repo.get_song_states_for_songs.return_value = {1: {"queued"}, 2: {"tagged", "queued"}}
 
-        result = app_db.song_state_memberships([1, 2])
+        result = app_db.song_state_memberships([first, second, first])
 
-        assert result == expected
+        assert result == {first: {"queued"}, second: {"tagged", "queued"}}
         mock_song_state_repo.get_song_states_for_songs.assert_called_once_with([1, 2])
 
     @pytest.mark.unit
@@ -198,10 +209,15 @@ class TestAppDbFileStateMethods:
         mock_song_state_repo.count_songs_in_state.assert_called_once_with("queued")
 
     @pytest.mark.unit
-    def test_add_file_states_assigns_each_file(self, app_db: AppDb, mock_song_state_repo: MagicMock) -> None:
-        app_db.set_song_state([1, 2, 3], "queued")
+    def test_add_file_states_assigns_each_file(
+        self, app_db: AppDb, mock_app_repo: MagicMock, mock_song_state_repo: MagicMock
+    ) -> None:
+        songs = [SongIdentity(LibraryIdentity("library-uuid"), "one.mp3")]
+        mock_app_repo._resolve_song_id.return_value = 3
 
-        mock_song_state_repo.set_state_for_songs.assert_called_once_with([1, 2, 3], "queued")
+        app_db.set_song_state(songs, "queued")
+
+        mock_song_state_repo.set_state_for_songs.assert_called_once_with([3], "queued")
 
     @pytest.mark.unit
     def test_add_file_states_empty_list_no_calls(self, app_db: AppDb, mock_song_state_repo: MagicMock) -> None:
@@ -211,11 +227,14 @@ class TestAppDbFileStateMethods:
 
     @pytest.mark.unit
     def test_replace_file_states_delegates_to_atomic_replacement(
-        self, app_db: AppDb, mock_song_state_repo: MagicMock
+        self, app_db: AppDb, mock_app_repo: MagicMock, mock_song_state_repo: MagicMock
     ) -> None:
-        app_db.transition_song_states([1, 2], "not_processed", "processed")
+        songs = [SongIdentity(LibraryIdentity("library-uuid"), "one.mp3")]
+        mock_app_repo._resolve_song_id.return_value = 3
 
-        mock_song_state_repo.transition_state_for_songs.assert_called_once_with([1, 2], "not_processed", "processed")
+        app_db.transition_song_states(songs, "not_processed", "processed")
+
+        mock_song_state_repo.transition_state_for_songs.assert_called_once_with([3], "not_processed", "processed")
 
     @pytest.mark.unit
     def test_remove_file_states_skips_empty_batch(self, app_db: AppDb, mock_song_state_repo: MagicMock) -> None:
@@ -224,8 +243,14 @@ class TestAppDbFileStateMethods:
         mock_song_state_repo.remove_states_for_songs.assert_called_once_with([])
 
     @pytest.mark.unit
-    def test_remove_file_states_delegates_non_empty(self, app_db: AppDb, mock_song_state_repo: MagicMock) -> None:
-        app_db.clear_song_states([10, 20])
+    def test_remove_file_states_delegates_non_empty(
+        self, app_db: AppDb, mock_app_repo: MagicMock, mock_song_state_repo: MagicMock
+    ) -> None:
+        first = SongIdentity(LibraryIdentity("library-uuid"), "first.mp3")
+        second = SongIdentity(LibraryIdentity("library-uuid"), "second.mp3")
+        mock_app_repo._resolve_song_id.side_effect = [10, 20]
+
+        app_db.clear_song_states([first, second])
 
         mock_song_state_repo.remove_states_for_songs.assert_called_once_with([10, 20])
 

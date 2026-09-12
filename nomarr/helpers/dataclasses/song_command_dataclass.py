@@ -31,6 +31,49 @@ class LibraryIdentity:
 
 
 @dataclass(frozen=True, slots=True)
+class FieldWriteResult:
+    """Typed outcome of a locator-addressed scalar field write."""
+
+    status: str
+
+    def __post_init__(self) -> None:
+        if self.status not in {
+            "UPDATED",
+            "UNCHANGED",
+            "STALE_VALUE",
+            "INVALID_VALUE",
+            "MISSING_LOCATOR",
+            "INFRA_FAILURE",
+            "AMBIGUOUS_COMMIT",
+        }:
+            raise ValueError("unsupported field-write status")
+
+
+@dataclass(frozen=True, slots=True)
+class ChromaprintValue:
+    """Canonical decoder output plus caller-supplied provenance."""
+
+    value: str
+    provenance: str
+    expected_value: str | None = None
+    expected_absent: bool = True
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.value, str) or not self.value or self.value != self.value.strip():
+            raise ValueError("ChromaprintValue.value must be a non-empty whitespace-free string")
+        if any(char.isspace() for char in self.value):
+            raise ValueError("ChromaprintValue.value must not contain whitespace")
+        if not isinstance(self.provenance, str) or not self.provenance.strip():
+            raise ValueError("ChromaprintValue.provenance must not be blank")
+        if self.expected_absent and self.expected_value is not None:
+            raise ValueError("expected_absent and expected_value are mutually exclusive")
+        if self.expected_value is not None and (
+            not self.expected_value or any(char.isspace() for char in self.expected_value)
+        ):
+            raise ValueError("expected_value must be non-empty and whitespace-free")
+
+
+@dataclass(frozen=True, slots=True)
 class SongIdentity:
     """Natural identity of a song within a library."""
 

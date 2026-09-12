@@ -1,15 +1,17 @@
 # mypy: disable-error-code=func-returns-value
 """Facade identity-boundary contract tests.
 
-Phase 3 (``TASK-song-intent-facade-correction-A``) added a typed
-numeric-handle → natural-identity bridge on the song side that unblocks caller
-migration onto the sealed domain tag surface:
+Historical bridge tests below characterize persistence-private behavior only.
+They do not approve these methods as current application adapters. Under the H
+contract, ``resolve_song_identity`` / ``resolve_song_identities`` require an
+exact L/N/P allowlist naming owner, boundary, reason, positive test,
+non-propagation assertion, and removal condition. A symbol name or historical
+plan wording is not approval. The sole retained provisional integer crossing is
+J's inbound ``HydrateSongInput(song_id: int, ...)`` repository boundary.
 
-- ``LibrarySongsDb`` / ``LibraryDb`` ``resolve_song_identity`` /
-  ``resolve_song_identities`` / ``resolve_library_identity`` /
-  ``resolve_library_identities`` — the song-side adapter. Resolves song/library
-  storage handles to ``SongIdentity`` / ``LibraryIdentity`` natural references.
-  No row, ``Song``, ``Library``, or storage id is exposed.
+The bridge methods resolve song/library storage handles to natural references
+inside persistence fixtures; no row, ``Song``, ``Library``, or storage id is
+exposed by their return value.
 
 The root ``Database`` tag boundary resolver (``resolve_tag_identity`` /
 ``resolve_tag_identities``) was retired after the repo-wide caller migration

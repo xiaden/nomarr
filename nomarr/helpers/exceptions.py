@@ -71,6 +71,14 @@ class DatabaseStateError(Exception):
         super().__init__(message)
 
 
+class RetryableDatabaseError(DatabaseStateError):
+    """A transaction may be retried in a fresh repository-owned session."""
+
+
+class AmbiguousCommitError(DatabaseStateError):
+    """Commit outcome is unknown; callers must perform authorized readback."""
+
+
 class TaskCancelledError(Exception):
     """Raised by a managed task to signal cooperative cancellation.
 

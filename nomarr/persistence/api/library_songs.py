@@ -1,18 +1,29 @@
 """Song and folder sub-facade for the library persistence surface.
 
-Holds all song-domain (``songs`` table) and folder-domain
-(``library_folders`` table) intent methods. Wired into ``LibraryDb`` as
-its ``songs`` namespace (namespaced-forwarding split per
-DD-persistence-intent-facade-rebuild §Phase 1).
+Locator-addressed persistence facade: song operations are addressed by the
+semantic ``SongIdentity`` locator (``LibraryIdentity.library_uuid`` plus the
+library-relative normalized path, ADR-048). The private ``songs.id``,
+``libraries.id``, and owning-library foreign keys are resolved internally only
+to reach the row and never cross this facade; a locator that no longer resolves
+is a deterministic miss (``None``/empty/``MISSING_LOCATOR``), never an integer
+fallback.
 
-Overlap: a concurrent song-domain agent (TASK-song-intent-facade-correction-A)
-is mid-refactor of this file (Song value mapping, state-intent initialization,
-hydration). This change (P3-S3/P3-S5 of TASK-library-domain-facades-A) only
-changes library *scoping*: library-scoped methods accept the domain ``Library``
-natural key and resolve the storage ``library_id`` internally, and folder-facing
-methods use the ``LibraryFolder`` value object with relative-path identity. It
-does not redesign song values/facades or hydration — that remains the song
-plan's ownership. Concurrent hunks are preserved verbatim.
+The scalar write surface is exactly the three locator intents
+``set_modified_time(SongIdentity, int)``, ``set_last_tagged(SongIdentity, int)``,
+and ``set_chromaprint(SongIdentity, ChromaprintValue)``; each validates before
+SQL, delegates to one short repository-owned transaction, and returns a
+``FieldWriteResult`` carrying the seven-status business vocabulary (``UPDATED``,
+``UNCHANGED``, ``STALE_VALUE``, ``INVALID_VALUE``, ``MISSING_LOCATOR``,
+``INFRA_FAILURE``, ``AMBIGUOUS_COMMIT``). Operational failures propagate as
+mapped domain exceptions rather than statuses, and no row, storage id, SQLSTATE,
+or session detail is exposed. Legacy integer scalar writers/forwarders are
+deleted, not wrapped.
+
+Wired into ``LibraryDb`` as its ``songs`` namespace (namespaced-forwarding split
+per DD-persistence-intent-facade-rebuild §Phase 1). Library-scoped methods accept
+the domain ``Library`` natural key and resolve the storage ``library_id``
+internally, and folder-facing methods use the ``LibraryFolder`` value object with
+relative-path identity.
 """
 
 from __future__ import annotations
@@ -20,6 +31,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from nomarr.helpers.dataclasses.song_command_dataclass import (
+    ChromaprintValue,
+    FieldWriteResult,
     LibraryIdentity,
     SongIdentity,
     SongPathUpdate,
@@ -512,36 +525,78 @@ class LibrarySongsDb:
         return payload
 
     def add_song_to_library(self, command: SongUpsertInput) -> SongIdentity:
-        """Insert or update one library-song row from a typed command.
+        """Insert or update one library-song row and initialize only new rows.
 
-        Persistence alone resolves ``command.library`` to the private library row
-        id, maps the command to the repository's private row payload, applies
-        defaults, invokes the private upsert, and initializes states with the
-        private returned song id. The generated storage id never leaves this
-        facade.
+        Single-command form of :meth:`add_songs_to_library_batch`; the upsert and the
+        create-only state initialization run in one facade-owned transaction.
 
-        Returns the natural ``SongIdentity`` built from ``command.library`` and the
-        normalized path selected by the same command/default mapping used for the
-        upsert.
+        Args:
+            command: The typed song upsert intent; its scan metadata must be set.
+
+        Returns:
+            The resolved ``SongIdentity`` for the upserted song.
 
         Raises:
-            LookupError: If the command's library does not exist.
-            ValueError: If the command omits scan metadata (its row cannot
-                satisfy the non-null scan-sourced column contract).
-            RuntimeError: If the upsert returns no song IDs.
-
+            ValueError: If ``command.scan`` is ``None``.
         """
-        library_id = self._resolve_library_identity(command.library)
-        payload = self._song_upsert_payload(command)
-        song_ids = self._song_repo.upsert_songs_for_library(library_id, [payload])
-        if not song_ids:
-            msg = "add_song_to_library() expected one song id"
-            raise RuntimeError(msg)
-        # This overlaps the concurrent Song domain-identity migration in this
-        # facade; retain that work while using the state intent operation. The
-        # generated id is consumed only by the private state initializer.
-        self._song_state_repo.initialize_song_states([song_ids[0]])
-        return SongIdentity(library=command.library, normalized_path=payload["normalized_path"])
+        return self.add_songs_to_library_batch([command])[0]
+
+    def add_songs_to_library_batch(self, commands: Sequence[SongUpsertInput]) -> list[SongIdentity]:
+        """Upsert typed songs and initialize state only for new rows, atomically.
+
+        The song-row upsert and the create-only state initialization share ONE
+        facade-owned transaction: both repositories are called with ``commit=False``
+        and the facade issues a single ``self._session.commit()``. Any failure rolls the
+        whole transaction back and re-raises, so a row is never left committed without
+        its state initialization.
+
+        New song ids are resolved by path via ``get_song_ids_by_paths`` rather than from
+        ``INSERT ... RETURNING`` order, which PostgreSQL does not guarantee.
+
+        Args:
+            commands: Typed upsert intents. All must target the same
+                ``LibraryIdentity``; an empty sequence returns ``[]``.
+
+        Returns:
+            One ``SongIdentity`` per input command, in input order.
+
+        Raises:
+            ValueError: If ``commands`` span more than one library identity ("song
+                batch must target one library"), or if any command's scan metadata
+                is ``None``.
+        """
+        commands = list(commands)
+        if not commands:
+            return []
+        library = commands[0].library
+        if any(command.library != library for command in commands):
+            raise ValueError("song batch must target one library")
+        library_id = self._resolve_library_identity(library)
+        payloads = [self._song_upsert_payload(command) for command in commands]
+        try:
+            existing = set(
+                self._song_repo.list_existing_song_paths(library_id, [payload["path"] for payload in payloads])
+            )
+            song_ids = self._song_repo.upsert_songs_for_library(library_id, payloads, commit=False)
+            if len(song_ids) != len(commands):
+                raise RuntimeError("song batch upsert returned an unexpected row count")
+            # Do not use the INSERT ... RETURNING row order to associate ids with
+            # payloads. PostgreSQL does not guarantee that order matches VALUES.
+            new_paths = [payload["path"] for payload in payloads if payload["path"] not in existing]
+            new_ids: list[int] = []
+            if new_paths:
+                song_ids_by_path = self._song_repo.get_song_ids_by_paths(library_id, new_paths)
+                new_ids = [song_ids_by_path[path] for path in new_paths]
+            if new_ids:
+                self._song_state_repo.initialize_song_states(new_ids, commit=False)
+            self._session.commit()
+        except Exception:
+            self._session.rollback()
+            raise
+        return [
+            SongIdentity(library=command.library, normalized_path=payload["normalized_path"])
+            for command, payload in zip(commands, payloads, strict=True)
+        ]
 
     def add_songs_to_library(
         self,
@@ -701,24 +756,106 @@ class LibrarySongsDb:
             return None
         return SongIdentity(library=source.library, normalized_path=scan.normalized_path)
 
-    def update_library_song_modified_time(self, song_id: int, modified_time_ms: int) -> None:
-        """Update the modification timestamp of a library song."""
-        self._song_repo.update_song(song_id, {"modified_time": modified_time_ms})
+    def set_modified_time(self, song: SongIdentity, modified_time_ms: int) -> FieldWriteResult:
+        """Set a song's stored modified-time addressed by its locator.
 
-    def set_library_song_chromaprint(self, song_id: int, chromaprint: str) -> None:
-        """Set the Chromaprint fingerprint on a library song."""
-        self._song_repo.update_song(song_id, {"chromaprint": chromaprint})
+        Pre-SQL validation: a non-``SongIdentity`` song, a non-``int``/``bool``
+        value, or a negative timestamp returns ``FieldWriteResult("INVALID_VALUE")``
+        without touching the session. A locator whose owning library does not
+        resolve, or whose song does not resolve within that library, returns
+        ``FieldWriteResult("MISSING_LOCATOR")`` and writes nothing. Otherwise the
+        delegated repository monotonic write yields ``UPDATED``, ``UNCHANGED``
+        (equal), or ``STALE_VALUE`` (lower than the stored value). Operational
+        failures propagate as the mapped domain exceptions
+        (``RetryableDatabaseError``, ``AmbiguousCommitError``,
+        ``DatabaseStateError``); they are raised, not returned as
+        ``FieldWriteResult`` statuses. No row, storage id, SQLSTATE, or session
+        detail crosses this facade.
+        """
+        if (
+            not isinstance(song, SongIdentity)
+            or not isinstance(modified_time_ms, int)
+            or isinstance(modified_time_ms, bool)
+        ):
+            return FieldWriteResult("INVALID_VALUE")
+        if modified_time_ms < 0:
+            return FieldWriteResult("INVALID_VALUE")
+        library_id = self._try_resolve_library_identity(song.library)
+        if library_id is None:
+            return FieldWriteResult("MISSING_LOCATOR")
+        return FieldWriteResult(
+            self._song_repo.set_modified_time_by_locator(library_id, song.normalized_path, modified_time_ms)
+        )
 
-    def update_library_song_last_tagged_at(self, song_id: int, tagged_at_ms: int) -> None:
-        """Update the last-tagged timestamp on a library song."""
-        self._song_repo.update_song(song_id, {"last_tagged_at": tagged_at_ms})
+    def set_last_tagged(self, song: SongIdentity, tagged_at_ms: int) -> FieldWriteResult:
+        """Set a song's stored last-tagged timestamp addressed by its locator.
+
+        Pre-SQL validation: a non-``SongIdentity`` song, a non-``int``/``bool``
+        value, or a negative timestamp returns ``FieldWriteResult("INVALID_VALUE")``
+        without touching the session. A locator whose owning library does not
+        resolve, or whose song does not resolve within that library, returns
+        ``FieldWriteResult("MISSING_LOCATOR")`` and writes nothing. Otherwise the
+        delegated repository monotonic write yields ``UPDATED``, ``UNCHANGED``
+        (equal), or ``STALE_VALUE`` (lower than the stored value). Operational
+        failures propagate as the mapped domain exceptions
+        (``RetryableDatabaseError``, ``AmbiguousCommitError``,
+        ``DatabaseStateError``); they are raised, not returned as
+        ``FieldWriteResult`` statuses. No row, storage id, SQLSTATE, or session
+        detail crosses this facade.
+        """
+        if not isinstance(song, SongIdentity) or not isinstance(tagged_at_ms, int) or isinstance(tagged_at_ms, bool):
+            return FieldWriteResult("INVALID_VALUE")
+        if tagged_at_ms < 0:
+            return FieldWriteResult("INVALID_VALUE")
+        library_id = self._try_resolve_library_identity(song.library)
+        if library_id is None:
+            return FieldWriteResult("MISSING_LOCATOR")
+        return FieldWriteResult(
+            self._song_repo.set_last_tagged_by_locator(library_id, song.normalized_path, tagged_at_ms)
+        )
+
+    def set_chromaprint(self, song: SongIdentity, value: ChromaprintValue) -> FieldWriteResult:
+        """Guarded chromaprint replacement addressed by the song's locator.
+
+        Pre-SQL validation: a non-``SongIdentity`` song or a non-``ChromaprintValue``
+        value returns ``FieldWriteResult("INVALID_VALUE")`` without touching the
+        session; ``ChromaprintValue`` itself rejects blank/whitespace values,
+        blank provenance, and the mutually exclusive ``expected_absent`` /
+        ``expected_value`` pair before any write. A locator whose owning library
+        does not resolve, or whose song does not resolve within that library,
+        returns ``FieldWriteResult("MISSING_LOCATOR")`` and writes nothing.
+        Otherwise the delegated repository guarded replacement yields ``UPDATED``,
+        ``UNCHANGED``, or ``STALE_VALUE`` according to the caller's
+        ``expected_absent``/``expected_value`` precondition. Operational failures
+        propagate as the mapped domain exceptions (``RetryableDatabaseError``,
+        ``AmbiguousCommitError``, ``DatabaseStateError``); they are raised, not
+        returned as ``FieldWriteResult`` statuses. No row, storage id, SQLSTATE,
+        or session detail crosses this facade.
+        """
+        if not isinstance(song, SongIdentity) or not isinstance(value, ChromaprintValue):
+            return FieldWriteResult("INVALID_VALUE")
+        library_id = self._try_resolve_library_identity(song.library)
+        if library_id is None:
+            return FieldWriteResult("MISSING_LOCATOR")
+        return FieldWriteResult(
+            self._song_repo.set_chromaprint_by_locator(
+                library_id,
+                song.normalized_path,
+                value.value,
+                expected_value=value.expected_value,
+                expected_absent=value.expected_absent,
+            )
+        )
 
     # ------------------------------------------------------------------
     # Song hydration (transactional intent)
     # ------------------------------------------------------------------
 
-    def hydrate_song(self, input: HydrateSongInput) -> None:
+    def hydrate_song(self, song: SongIdentity, input: HydrateSongInput) -> None:
         """Hydrate a single song atomically from an already-parsed input.
+
+        The song is addressed by its semantic locator; persistence resolves
+        the locator to its private row key internally.
 
         Owns the complete logical unit of work: parsed ``nom:`` tags,
         entity/tag relationships, the accepted-but-ignored metadata-cache
@@ -740,15 +877,15 @@ class LibrarySongsDb:
                 extracted/parsed — persistence never calls extraction.
 
         """
-        self._song_hydration_repo.hydrate_song(input)
+        self._song_hydration_repo.hydrate_song(song, input)
 
     def hydrate_songs_batch(
         self,
-        inputs: Sequence[HydrateSongInput],
+        inputs: Sequence[tuple[SongIdentity, HydrateSongInput]],
         *,
         chunk_size: int = 100,
     ) -> int:
-        """Hydrate a batch of songs, committing each bounded chunk atomically.
+        """Hydrate a batch of locator-addressed songs, committing each bounded chunk atomically.
 
         Owns the complete logical unit of work per chunk. Each chunk of up
         to *chunk_size* inputs is committed as one shared-session
@@ -762,7 +899,8 @@ class LibrarySongsDb:
         transactions.
 
         Args:
-            inputs: Fully-parsed hydration payloads.
+            inputs: Locator-addressed hydration intents as
+                ``(song_identity, payload)`` pairs.
             chunk_size: Maximum inputs per atomic chunk. Each chunk runs as
                 set-based persistence, never per-song/per-tag lookups.
 

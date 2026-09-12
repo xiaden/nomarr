@@ -1,7 +1,7 @@
 """CPU bounded exact scorer (Plan D, Phase 2 — P2-S1..P2-S4).
 
 Implements the fixed ledger contract ``score_bounded_exact(...) -> BoundedScoreResult``
-(``scripts/embedding_research/CONTRACTS.md`` → "Disposable views and bounded scoring";
+(``scripts/embedding_research/CONTRACTS.md`` → "Disposable rows and bounded scoring";
 DD R12).  It reproduces, chunk-by-chunk, the exact ``max_per_candidate_segment``
 semantics whose small full-matrix fixture oracle is
 :func:`scoring_harness.score_max_per_candidate_segment` — that oracle is left
@@ -9,7 +9,7 @@ untouched and remains authoritative.  This module is a *pure CPU numpy kernel*:
 
 * no DuckDB connection is required for the scoring path;
 * no audio / ONNX / CUDA and no file I/O in the hot path (the candidate payload is
-  an in-memory ``row_addresses`` + float32-vectors view);
+  an in-memory ``row_addresses`` + float32-vector row set);
 * only the documented primary semantics vocabulary is used — never a generic
   mean/median/max/min/medoid aggregate label.
 
@@ -18,7 +18,7 @@ Semantics reproduced exactly (oracle-equivalent)
 The oracle's single ordered comparison has a *source* side (``source_vectors`` /
 ``source_weights``) and a *candidate* side (``candidate_vectors`` /
 ``candidate_weights``).  In :func:`score_bounded_exact` the **query** is the source
-side and the **candidate view rows** are the candidate side::
+side and the **candidate rows** are the candidate side::
 
     max_cos[b] = max over query rows a of dot(query_a, candidate_row_b)
 
@@ -34,7 +34,7 @@ Matching the oracle, ``query_weights`` are validated (finite, strictly positive,
 length-aligned) but do **not** enter this primary formula — only the candidate-side
 weights do (exactly as ``source_weights`` are validated-but-unused inside
 ``score_max_per_candidate_segment``).  Candidate-side weights come from the
-consumed view's optional ``candidate_weights`` (default all-ones when absent).
+consumed row set's optional ``candidate_weights`` (default all-ones when absent).
 
 Ambiguity variants (same vocabulary as the oracle)::
 
@@ -113,8 +113,8 @@ __all__ = [
     "BoundedScoreResult",
     "BoundedScoreTrace",
     "CandidateSegmentSummary",
+    "CandidateViewLike",
     "ScoringCandidateView",
-    "SearchViewLike",
     "derive_chunk_sizes",
     "score_bounded_exact",
     "validate_policies",
@@ -134,12 +134,9 @@ _NEG_INF = -np.inf
 #: Default working-memory when callers supply neither chunk sizes nor a budget.
 _DEFAULT_WORKING_MEMORY = 32 * 1024 * 1024  # 32 MiB
 
-#: Scoring-input semantics version stamped on every emitted result.  Single global value,
-#: equal to ``search_views.SCORING_SEMANTICS_VERSION`` and to the old
-#: ``cache_identity.SCORING_SEMANTICS_VERSION``.  It is defined locally so this pure CPU
-#: kernel does not import the E-owned ``cache_identity`` module (scheduled for deletion); a
-#: contract test (``test_bounded_exact_contract``) pins the equality against the search-view
-#: constant so the copies cannot drift unnoticed.
+#: Scoring-input semantics version stamped on every emitted result.  Single global value;
+#: it is defined locally so this pure CPU kernel owns its own constant, and a contract test
+#: (``test_bounded_exact_contract``) pins the value so it cannot drift unnoticed.
 SCORING_SEMANTICS_VERSION = 1
 
 _TIE_POLICIES = tuple(_TIE_POLICIES)
@@ -157,17 +154,16 @@ def validate_policies(*, tie_policy: str, collision_policy: str) -> None:
         raise ValueError(f"Unknown collision_policy {collision_policy!r}; expected one of {list(_COLLISION_POLICIES)}")
 
 
-# ── Candidate view protocol ───────────────────────────────────────────────────
+# ── Candidate rows protocol ───────────────────────────────────────────────────
 
 
-class SearchViewLike(Protocol):
+class CandidateViewLike(Protocol):
     """The lightweight candidate payload consumed by the bounded scorer.
 
-    Only ``vectors`` and ``row_addresses`` are required (both match Phase 1's
-    ``SearchViewRecord`` surface).  Optional attributes enable extra provenance /
-    weighting::
+    Only ``vectors`` and ``row_addresses`` are required (both match the candidate
+    record surface).  Optional attributes enable extra provenance / weighting::
 
-    * ``key`` — an object exposing the view keyset (e.g. a record's ``keyset_hash`` /
+    * ``key`` — an object exposing the candidate keyset (e.g. a record's ``keyset_hash`` /
       ``content_hash``) so the query role identity is carried as provenance;
     * ``candidate_weights`` — per-row candidate-segment weights aligned to
       ``row_addresses`` (default all-ones when absent).
@@ -187,8 +183,8 @@ class SearchViewLike(Protocol):
 class ScoringCandidateView:
     """A pure, in-memory candidate payload (row_addresses + float32 vectors).
 
-    Lets callers / tests invoke the scorer without a materialised on-disk view.  ``key``
-    is optional (used only to surface the view keyset as query/candidate provenance).
+    Lets callers / tests invoke the scorer without a materialised on-disk row set.  ``key``
+    is optional (used only to surface the row keyset as query/candidate provenance).
     ``candidate_weights`` align to the rows of ``vectors`` (default all-ones).
     """
 
@@ -423,7 +419,7 @@ def _as_f64_weights(weights: Any, n_rows: int, name: str) -> np.ndarray:
     return arr
 
 
-def _extract_view(view: SearchViewLike) -> tuple[np.ndarray, Any, Any, np.ndarray]:
+def _extract_candidate(view: CandidateViewLike) -> tuple[np.ndarray, Any, Any, np.ndarray]:
     vectors = _as_f64_vectors(getattr(view, "vectors", None), "candidate_view.vectors", allow_empty=True)
     row_addresses = getattr(view, "row_addresses", None)
     key = getattr(view, "key", None)
@@ -556,7 +552,7 @@ def _enumerate_ties_for_col(
 def score_bounded_exact(
     query_vectors: Any,
     query_weights: Any,
-    candidate_view: SearchViewLike,
+    candidate_view: CandidateViewLike,
     *,
     query_chunk_size: int | None = None,
     candidate_chunk_size: int | None = None,
@@ -579,8 +575,8 @@ def score_bounded_exact(
         enter ``max_per_candidate_segment``).
     candidate_view:
         An in-memory candidate payload exposing ``vectors`` (float32/float64 ``(n_cand, D)``)
-        and ``row_addresses`` (Phase 1 ``SearchViewRecord`` surface), optionally
-        ``candidate_weights`` (default all-ones) and ``key`` (view keyset provenance).
+        and ``row_addresses`` (the candidate-record surface), optionally
+        ``candidate_weights`` (default all-ones) and ``key`` (candidate keyset provenance).
     query_chunk_size, candidate_chunk_size:
         Bounded row counts per temporary matmul chunk.  When ``None`` they are derived
         from ``working_memory`` (P2-S4 arithmetic).  Explicit values override the
@@ -610,7 +606,7 @@ def score_bounded_exact(
     # Source weights are validated (finite, strictly positive, length-aligned) but, as
     # in the oracle, do not enter the primary max-per-candidate-segment formula.
     _as_f64_weights(query_weights, int(q.shape[0]), "query_weights")
-    cand, row_addresses, key, cw = _extract_view(candidate_view)
+    cand, row_addresses, key, cw = _extract_candidate(candidate_view)
     m_rows = int(cand.shape[0])
     k_rows = int(q.shape[0])
 

@@ -7,23 +7,36 @@ group (see persistence.md size guidelines).
 
 from __future__ import annotations
 
+import contextlib
 import time
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import Float, and_, case, cast, delete, exists, func, literal, select, update
+from sqlalchemy import Float, and_, case, cast, delete, exists, func, literal, select, tuple_, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.exc import DBAPIError
 
+from nomarr.helpers.dataclasses.song_tag_dataclass import MoodBatchResult
 from nomarr.helpers.dto.repo_dto import NumericSongTagMatchRow, SongRow
+from nomarr.helpers.exceptions import AmbiguousCommitError, DatabaseStateError, RetryableDatabaseError
 from nomarr.persistence.models.song import Song
+from nomarr.persistence.models.song_mood_calibration_marker import SongMoodCalibrationMarker
 from nomarr.persistence.models.song_tag import SongTag
 from nomarr.persistence.models.tag import Tag
 from nomarr.persistence.sql.exceptions import map_persistence_exceptions
 from nomarr.persistence.sql.primitives import insert_one
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from sqlalchemy.engine import Row
     from sqlalchemy.orm import Session, scoped_session
     from sqlalchemy.schema import Table
+
+    from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
+    from nomarr.helpers.dataclasses.song_tag_dataclass import MoodReplacementCommand
+    from nomarr.persistence.database.library_repo import LibraryRepository
+    from nomarr.persistence.database.song_repo import SongRepository
+    from nomarr.persistence.database.tag_repo import TagRepository
 
 
 def _escape_like_search(value: str) -> str:
@@ -34,6 +47,12 @@ def _escape_like_search(value: str) -> str:
 _T: Table = Tag.__table__  # type: ignore[assignment]  # Model.__table__ is typed as FromClause; we know it's Table
 _ST: Table = SongTag.__table__  # type: ignore[assignment]  # Model.__table__ is typed as FromClause; we know it's Table
 _S: Table = Song.__table__  # type: ignore[assignment]  # Model.__table__ is typed as FromClause; we know it's Table
+_MM: Table = SongMoodCalibrationMarker.__table__  # type: ignore[assignment]  # Model.__table__ is typed as FromClause; we know it's Table
+
+#: Complete mood tier tag names owned by the repository (namespace ``nom``).
+_MOOD_TAG_NAMES = ("nom:mood-strict", "nom:mood-regular", "nom:mood-loose")
+#: Bounded fresh-session attempts for immutable transient mood failures.
+_MAX_MOOD_TRANSACTION_ATTEMPTS = 3
 
 
 def _tag_row_to_dto(row: Row) -> dict[str, Any]:
@@ -114,8 +133,20 @@ _NUMERIC_TEXT_RE = r"^[+-]?([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][+-]?[0-9]+)?$"
 class SongTagRepository:
     """Repository for the ``song_tags`` junction table."""
 
-    def __init__(self, session: scoped_session[Session]) -> None:
+    def __init__(
+        self,
+        session: scoped_session[Session],
+        *,
+        tag_repo: TagRepository | None = None,
+        song_repo: SongRepository | None = None,
+        library_repo: LibraryRepository | None = None,
+    ) -> None:
         self._session = session
+        # Collaborators required only by the locator-addressed mood intent. They
+        # are wired by ``Database``; other repository methods do not need them.
+        self._tag_repo = tag_repo
+        self._song_repo = song_repo
+        self._library_repo = library_repo
 
     # ── song-tag associations ───────────────────────────────────
 
@@ -253,6 +284,255 @@ class SongTagRepository:
                     ]
                     self._session.execute(pg_insert(_ST).values(rows))
             self._session.commit()
+
+    # ── dedicated mood replacement (owner transaction) ──────────
+
+    def replace_mood_tags_batch(
+        self,
+        commands: Sequence[MoodReplacementCommand],
+    ) -> MoodBatchResult:
+        """Apply a bounded, locator-addressed, all-or-none mood publication.
+
+        The Tier-3 facade has already validated and de-duplicated *commands*;
+        this repository intent owns the complete short transaction: private
+        ``SongIdentity`` resolution, complete tag-identity creation, mood-edge
+        and marker SQL, one commit, rollback on failure, poisoned-session
+        disposal, and a bounded fresh-session replay of the immutable command
+        set for the retryable SQLSTATEs. Transient serialization/deadlock
+        failures retry the whole immutable command set; every other failure is
+        a redacted infrastructure outcome and never a locator miss.
+        """
+        for attempt in range(_MAX_MOOD_TRANSACTION_ATTEMPTS):
+            try:
+                return self._replace_mood_batch_once(commands)
+            except RetryableDatabaseError:
+                self._discard_session()
+                if attempt == _MAX_MOOD_TRANSACTION_ATTEMPTS - 1:
+                    return MoodBatchResult("INFRA_FAILURE", len(commands))
+            except AmbiguousCommitError:
+                self._discard_session()
+                return MoodBatchResult("AMBIGUOUS_COMMIT", len(commands))
+            except Exception:
+                self._discard_session()
+                return MoodBatchResult("INFRA_FAILURE", len(commands))
+        return MoodBatchResult("INFRA_FAILURE", len(commands))
+
+    def _replace_mood_batch_once(
+        self,
+        commands: Sequence[MoodReplacementCommand],
+    ) -> MoodBatchResult:
+        """Run one complete mood replacement unit of work and commit it once.
+
+        Composes only UoW-safe existing primitives
+        (``TagRepository.get_or_create_tags_batch`` and set-based reads, which
+        never commit) so tag creation, mood edges, and the marker publish in a
+        single owner transaction. All locator resolution and SQL run before the
+        distinct commit phase in :meth:`_commit_mood_batch`.
+
+        Same-locator single-winner invariant (D2R-A): immediately after private
+        ``SongIdentity`` resolution this method locks every resolved private
+        ``songs`` row with ``SELECT ... FOR NO KEY UPDATE`` (see
+        :meth:`_lock_mood_song_rows`) before any mood/marker read. A later
+        replacement for the same ``SongIdentity`` therefore blocks until the
+        predecessor's owner transaction commits and then reads post-commit
+        state: concurrent same-locator replacements cannot interleave or union.
+        Batch locks are acquired all-or-none in ascending private-id order, so
+        concurrent batches take the same lock order and cannot deadlock. This
+        is the only serialization mechanism -- there is no lock table, marker
+        lock, advisory lock, OCC/revision, idempotency registry, or publication
+        envelope. The lock is pre-commit, so a serialization/deadlock raised by
+        it is classified through the existing retryable path and never through
+        the commit phase.
+        """
+        if self._tag_repo is None or self._song_repo is None or self._library_repo is None:
+            raise RuntimeError("SongTagRepository mood resolvers are not wired")
+        now_ms = int(time.time() * 1000)
+        with map_persistence_exceptions():
+            identities = tuple(command.song for command in commands)
+            song_ids = self._resolve_mood_song_ids_map(identities)
+            if len(song_ids) != len(identities):
+                # A stale/delete-recreate locator is a typed miss: no mutation,
+                # no generated id, and never an alias/tombstone/history lookup.
+                self._session.rollback()
+                return MoodBatchResult("MISSING_LOCATOR", len(commands))
+
+            scope_song_ids = list(song_ids.values())
+            self._lock_mood_song_rows(scope_song_ids)
+            desired_by_song: dict[int, set[tuple[str, str, str]]] = {}
+            tag_rows: list[dict[str, str]] = []
+            for command in commands:
+                song_id = song_ids[command.song]
+                desired: set[tuple[str, str, str]] = set()
+                if command.assignments is not None:
+                    for tier, values in command.assignments.tiers:
+                        for value in values:
+                            desired.add(("nom", tier, value))
+                            tag_rows.append({"namespace": "nom", "name": tier, "value": value})
+                desired_by_song[song_id] = desired
+
+            tag_ids = self._tag_repo.get_or_create_tags_batch(tag_rows)
+            existing = self._session.execute(
+                select(
+                    _ST.c.song_id,
+                    _T.c.name,
+                    _T.c.value,
+                    _ST.c.tag_id,
+                )
+                .join(_T, _T.c.id == _ST.c.tag_id)
+                .where(
+                    _ST.c.song_id.in_(scope_song_ids),
+                    _T.c.namespace == "nom",
+                    _T.c.name.in_(_MOOD_TAG_NAMES),
+                )
+            ).all()
+            existing_by_song: dict[int, dict[tuple[str, str, str], int]] = {sid: {} for sid in scope_song_ids}
+            for row in existing:
+                existing_by_song[int(row[0])][("nom", row[1], row[2])] = int(row[3])
+
+            obsolete_pairs: list[tuple[int, int]] = []
+            insert_rows: list[dict[str, Any]] = []
+            changed_by_song: dict[int, bool] = dict.fromkeys(scope_song_ids, False)
+            for command in commands:
+                song_id = song_ids[command.song]
+                current = existing_by_song[song_id]
+                desired = desired_by_song[song_id]
+                obsolete = set(current) - desired
+                missing = desired - set(current)
+                if obsolete or missing:
+                    changed_by_song[song_id] = True
+                obsolete_pairs.extend((song_id, current[key]) for key in obsolete)
+                insert_rows.extend(
+                    {
+                        "song_id": song_id,
+                        "tag_id": tag_ids[key],
+                        "confidence": 1.0,
+                        "source": "nomarr",
+                        "created_at": now_ms,
+                    }
+                    for key in missing
+                )
+
+            existing_markers = {
+                int(row[0]): row[1]
+                for row in self._session.execute(
+                    select(_MM.c.song_id, _MM.c.calibration_version).where(_MM.c.song_id.in_(scope_song_ids))
+                ).all()
+            }
+            marker_upsert_rows: list[dict[str, Any]] = []
+            marker_delete_ids: list[int] = []
+            for command in commands:
+                song_id = song_ids[command.song]
+                wanted = command.marker.version if command.marker.status == "calibrated" else None
+                if existing_markers.get(song_id) != wanted:
+                    changed_by_song[song_id] = True
+                    if wanted is None:
+                        marker_delete_ids.append(song_id)
+                    else:
+                        marker_upsert_rows.append({"song_id": song_id, "calibration_version": wanted})
+
+            if obsolete_pairs:
+                self._session.execute(delete(_ST).where(tuple_(_ST.c.song_id, _ST.c.tag_id).in_(obsolete_pairs)))
+            if insert_rows:
+                self._session.execute(pg_insert(_ST).values(insert_rows))
+            if marker_delete_ids:
+                self._session.execute(delete(_MM).where(_MM.c.song_id.in_(marker_delete_ids)))
+            if marker_upsert_rows:
+                upsert = pg_insert(_MM).values(marker_upsert_rows)
+                self._session.execute(
+                    upsert.on_conflict_do_update(
+                        index_elements=[_MM.c.song_id],
+                        set_={"calibration_version": upsert.excluded.calibration_version},
+                    )
+                )
+
+            changed_count = sum(1 for changed in changed_by_song.values() if changed)
+        # Commit is a distinct transaction phase: a commit-time failure with an
+        # unknown outcome must never be reported as plain infrastructure or
+        # blindly retried.
+        self._commit_mood_batch()
+        if changed_count:
+            return MoodBatchResult("UPDATED", len(commands), changed_count)
+        return MoodBatchResult("UNCHANGED", len(commands))
+
+    def _lock_mood_song_rows(self, song_ids: Sequence[int]) -> None:
+        """Serialize same-locator mood replacements with private row locks.
+
+        Locks every resolved private ``songs`` row in the caller's single owner
+        transaction with ``SELECT ... FOR NO KEY UPDATE`` before any mood/marker
+        read. ``FOR NO KEY UPDATE`` self-conflicts, so two same-locator
+        replacements serialize, but it does not conflict with the ``FOR KEY
+        SHARE`` lock a foreign-key insert acquires on the song row -- literal
+        ``FOR UPDATE`` would block ordinary ``song_tags`` inserts and regress
+        existing duplicate-edge negative behavior, so the non-key row lock is
+        the minimal correct choice. Handles are locked in ascending order in
+        ONE statement per batch, so concurrent batches acquire locks in the same
+        order (all-or-none, deadlock-avoiding) and a later same-``SongIdentity``
+        replacement blocks until the predecessor commits, then reads the
+        committed state rather than a pre-commit snapshot -- no interleave, no
+        union. Uses row locks only: no lock table, marker lock, advisory lock,
+        OCC/revision, idempotency registry, or publication envelope. The private
+        row handles never leave this method or the repository.
+        """
+        if not song_ids:
+            return
+        self._session.execute(
+            select(_S.c.id).where(_S.c.id.in_(sorted(song_ids))).order_by(_S.c.id).with_for_update(key_share=True)
+        )
+
+    def _resolve_mood_song_ids_map(self, songs: Sequence[SongIdentity]) -> dict[SongIdentity, int]:
+        """Resolve song locators to private storage ids, keyed by identity.
+
+        Set-based: libraries resolve by ``library_uuid`` in one query and songs
+        in one query. Integer ids never leave the repository.
+        """
+        assert self._library_repo is not None
+        assert self._song_repo is not None
+        if not songs:
+            return {}
+        library_uuid_map = self._library_repo.get_library_ids_by_uuids(list({s.library.library_uuid for s in songs}))
+        resolved = [s for s in songs if s.library.library_uuid in library_uuid_map]
+        song_id_map = self._song_repo.get_song_ids_by_normalized_paths(
+            [(library_uuid_map[s.library.library_uuid], s.normalized_path) for s in resolved]
+        )
+        return {
+            s: song_id_map[(library_uuid_map[s.library.library_uuid], s.normalized_path)]
+            for s in resolved
+            if (library_uuid_map[s.library.library_uuid], s.normalized_path) in song_id_map
+        }
+
+    def _commit_mood_batch(self) -> None:
+        """Commit the owner transaction and classify commit-phase failures.
+
+        A ``40003`` (statement/transaction completion unknown) or a pgcode-less
+        ``OperationalError`` / ``InterfaceError`` / generic ``DBAPIError`` raised
+        during or after ``commit()`` means the commit outcome is unknown: the
+        session is discarded by the caller and the result is
+        ``AMBIGUOUS_COMMIT`` -- never a success claim and never a blind retry.
+        The retryable serialization/deadlock SQLSTATEs remain bounded
+        fresh-session retries; every other commit failure is a redacted
+        ``INFRA_FAILURE``.
+
+        This transaction-phase distinction is deliberately owned here. The
+        global ``map_persistence_exceptions`` mapper is intentionally unchanged,
+        so a pgcode-less failure outside the commit path stays ``INFRA_FAILURE``
+        rather than being misclassified as an ambiguous commit.
+        """
+        try:
+            self._session.commit()
+        except Exception as exc:
+            pgcode = getattr(getattr(exc, "orig", None), "pgcode", None)
+            if pgcode in {"40001", "40P01", "55P03"}:
+                raise RetryableDatabaseError("Database retryable commit failure") from None
+            if pgcode == "40003" or (pgcode is None and isinstance(exc, DBAPIError)):
+                raise AmbiguousCommitError("Database commit outcome is unknown") from None
+            raise DatabaseStateError("Database commit failed") from None
+
+    def _discard_session(self) -> None:
+        """Roll back and dispose the current session so a retry starts fresh."""
+        with contextlib.suppress(Exception):
+            self._session.rollback()
+        with contextlib.suppress(Exception):
+            self._session.remove()
 
     def get_songs_for_tag(self, tag_id: int, limit: int | None = None) -> list[SongRow]:
         """Return songs assigned to a tag via JOIN."""

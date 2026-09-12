@@ -15,9 +15,6 @@ from nomarr.helpers.dto.library_dto import FileTag
 
 def _song(**overrides: object) -> Song:
     base: dict = {
-        "song_id": 1,
-        "library_id": 1,
-        "folder_id": None,
         "path": "/music/song.mp3",
         "normalized_path": "song.mp3",
         "file_size": 100,
@@ -38,7 +35,7 @@ def _song(**overrides: object) -> Song:
 
 
 def _identity() -> SongIdentity:
-    """Domain identity the sealed tag facade expects in place of an int song id."""
+    """Semantic locator the sealed tag facade expects in place of an int song id."""
     return SongIdentity(
         library=LibraryIdentity(library_uuid="45064f6d-d92e-5179-ad4d-6a15c1354737", name="main", root_path="/music"),
         normalized_path="song.flac",
@@ -58,26 +55,28 @@ class TestGetFileTagsWithPath:
     def test_returns_none_when_file_not_found(self) -> None:
         mock_db = MagicMock()
         mock_db.library.get_song.return_value = None
+        identity = _identity()
 
-        result = get_song_tags_with_path(mock_db, 1)
+        result = get_song_tags_with_path(mock_db, identity)
 
         assert result is None
-        mock_db.library.get_song.assert_called_once_with(1)
+        mock_db.library.get_song.assert_called_once_with(identity)
         mock_db.library.resolve_song_identity.assert_not_called()
         mock_db.library.list_tags_for_song.assert_not_called()
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_returns_none_when_song_identity_unresolved(self) -> None:
+        """A stale locator whose song row is gone short-circuits without tag reads."""
         mock_db = MagicMock()
-        mock_db.library.get_song.return_value = _song(path="D:/Music/song.flac")
-        mock_db.library.resolve_song_identity.return_value = None
+        mock_db.library.get_song.return_value = None
+        identity = _identity()
 
-        result = get_song_tags_with_path(mock_db, 1)
+        result = get_song_tags_with_path(mock_db, identity)
 
         assert result is None
-        mock_db.library.get_song.assert_called_once_with(1)
-        mock_db.library.resolve_song_identity.assert_called_once_with(1)
+        mock_db.library.get_song.assert_called_once_with(identity)
+        mock_db.library.resolve_song_identity.assert_not_called()
         mock_db.library.list_tags_for_song.assert_not_called()
 
     @pytest.mark.unit
@@ -87,14 +86,13 @@ class TestGetFileTagsWithPath:
         file_doc = _song(path="D:/Music/song.flac")
         mock_db.library.get_song.return_value = file_doc
         identity = _identity()
-        mock_db.library.resolve_song_identity.return_value = identity
         mock_db.library.list_tags_for_song.return_value = ()
 
-        result = get_song_tags_with_path(mock_db, 1)
+        result = get_song_tags_with_path(mock_db, identity)
 
         assert result == {"path": "D:/Music/song.flac", "tags": []}
-        mock_db.library.get_song.assert_called_once_with(1)
-        mock_db.library.resolve_song_identity.assert_called_once_with(1)
+        mock_db.library.get_song.assert_called_once_with(identity)
+        mock_db.library.resolve_song_identity.assert_not_called()
         mock_db.library.list_tags_for_song.assert_called_once_with(identity)
 
     @pytest.mark.unit
@@ -104,12 +102,11 @@ class TestGetFileTagsWithPath:
         file_doc = _song(path="D:/Music/song.flac")
         mock_db.library.get_song.return_value = file_doc
         identity = _identity()
-        mock_db.library.resolve_song_identity.return_value = identity
         mock_db.library.list_tags_for_song.return_value = [
             _assign("nom:mood", "happy", namespace="nom"),
         ]
 
-        result = get_song_tags_with_path(mock_db, 1)
+        result = get_song_tags_with_path(mock_db, identity)
 
         assert result == {
             "path": "D:/Music/song.flac",
@@ -123,12 +120,11 @@ class TestGetFileTagsWithPath:
         mock_db = MagicMock()
         mock_db.library.get_song.return_value = _song(path="D:/Music/song.flac")
         identity = _identity()
-        mock_db.library.resolve_song_identity.return_value = identity
         mock_db.library.list_tags_for_song.return_value = [
             _assign("tempo", 120),
         ]
 
-        result = get_song_tags_with_path(mock_db, 1)
+        result = get_song_tags_with_path(mock_db, identity)
 
         assert result is not None
         assert result["tags"][0] == FileTag(key="tempo", value="120", tag_type="float", is_nomarr=False)
@@ -140,13 +136,12 @@ class TestGetFileTagsWithPath:
         file_doc = _song(path="D:/Music/song.flac")
         mock_db.library.get_song.return_value = file_doc
         identity = _identity()
-        mock_db.library.resolve_song_identity.return_value = identity
         mock_db.library.list_tags_for_song.return_value = [
             _assign("genre", "a"),
             _assign("genre", "b"),
         ]
 
-        result = get_song_tags_with_path(mock_db, 1)
+        result = get_song_tags_with_path(mock_db, identity)
 
         assert result == {
             "path": "D:/Music/song.flac",
@@ -163,15 +158,14 @@ class TestGetFileTagsWithPath:
         file_doc = _song(path="D:/Music/song.flac")
         mock_db.library.get_song.return_value = file_doc
         identity = _identity()
-        mock_db.library.resolve_song_identity.return_value = identity
         mock_db.library.list_tags_for_song.return_value = [
             _assign("nom:mood", "happy", namespace="nom"),
             _assign("genre", "a"),
         ]
 
-        result = get_song_tags_with_path(mock_db, 1, nomarr_only=True)
+        result = get_song_tags_with_path(mock_db, identity, nomarr_only=True)
 
-        mock_db.library.resolve_song_identity.assert_called_once_with(1)
+        mock_db.library.resolve_song_identity.assert_not_called()
         mock_db.library.list_tags_for_song.assert_called_once_with(identity)
         # nomarr_only=True must exclude non-nomarr tags from the result.
         assert result == {

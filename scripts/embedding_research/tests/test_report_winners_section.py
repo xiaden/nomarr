@@ -1,169 +1,31 @@
-"""Catalog winners-report section tests.
-
-Research-only.  Verifies the ``winners`` section renders per-backbone winner/delta and factor
-tables, honours the active-key-only / no-forbidden-vocabulary contract, and yields an
-explicit empty message when there are no active catalog results.
-"""
+"""Winners section renders winner evidence and the observed baseline as separate tables."""
 
 from __future__ import annotations
 
-from scripts.embedding_research.report._summary import section_summary
+from scripts.embedding_research.report._retrieval import query_geometry_winners, query_observed_baselines
 from scripts.embedding_research.report._winners_report import section_winners
-from scripts.embedding_research.tests._report_seed import (
-    assert_no_forbidden_vocabulary,
-    catalog_key,
-    seed_catalog,
-    seed_medoid_baseline,
-)
-
-# Active keys allowed in emitted section/table columns.
-_ACTIVE_KEYS = {
-    "backbone",
-    "strategy_key",
-    "strategy_type",
-    "score_variant",
-    "config_id",
-    "canonical_config_id",
-    "alias_ids",
-    "representation_hash",
-    "run_id",
-    "metric",
-    "value",
-    "delta",
-    "status",
-    "coverage",
-    "command",
-    "hash",
-    "limitation",
-    "sim_metric",
-    "k",
-    "n_classes",
-    "baseline_strategy_key",
-    "baseline_canonical_config_id",
-    "baseline_value",
-    "winner_strategy_key",
-    "winner_canonical_config_id",
-    "winner_alias_ids",
-    "winner_value",
-    "scoring_semantics_version",
-    "view_content_hash",
-    "head",
-    "semantics",
-    "threshold_effective",
-    "finite",
-    "n_songs",
-    "n_pooled",
-    "boundary_source",
-    "head_pool_variant",
-    "reference_corpus_hash",
-    "input_artifact_hashes",
-    "output_artifact_hashes",
-    "started_at",
-    "finished_at",
-    "config_hash",
-    "song_count",
-    "warning_count",
-    "phase",
-    # Deliberately added by Plan B P3-S1: the winners factor roster renders the DURABLE SEMANTIC
-    # representation_hash distinctly from the DISPOSABLE view_keyset_hash plus the catalog anchor;
-    # the winners section also renders the incomplete/non-comparable representations table whose
-    # per-cell reason + corpus/missing evidence columns follow.
-    "view_keyset_hash",
-    "catalog_id",
-    "reason",
-    "baseline_evaluation_corpus_hash",
-    "baseline_evaluation_corpus_count",
-    "baseline_evaluation_corpus_comparable",
-    "representation_evaluation_corpus_hash",
-    "representation_evaluation_corpus_count",
-    "representation_evaluation_corpus_comparable",
-    "representation_missing_count",
-    "representation_missing_digest",
-    # Plan B P2: persisted non-comparable diagnostics also surface the tested class's durable
-    # SEMANTIC representation hash, canonical config id + full tested-threshold membership, and
-    # the actual lost-song membership (observation evidence).
-    "search_representation_hash",
-    "config_ids",
-    "missing_song_ids",
-}
+from scripts.embedding_research.tests._report_seed import RUN_ID, build_seeded_con
 
 
-def test_section_winners_empty_message():
-    import pandas as pd
+def _table_ids(section: dict) -> set[str]:
+    return {table["id"] for table in section.get("tables", [])}
 
-    section = section_winners(pd.DataFrame())
+
+def test_section_winners_renders_winner_and_baseline_tables():
+    con = build_seeded_con()
+    try:
+        winners = query_geometry_winners(con, run_id=RUN_ID)
+        baselines = query_observed_baselines(con, run_id=RUN_ID)
+        section = section_winners(winners, baselines)
+    finally:
+        con.close()
+
     assert section["id"] == "winners"
-    assert section.get("empty_message")
+    assert {"geometry_representations", "observed_global_medoid_baseline"} <= _table_ids(section)
+    assert not section.get("empty_message")
 
 
-def test_section_winners_renders_per_backbone_tables(con):
-    seed_catalog(
-        con,
-        run_id="run-1",
-        backbone="effnet",
-        strategy_key=catalog_key("effnet", "a"),
-        k=5,
-        metrics={"map_k": 0.6},
-        config_ids=(1, 2),
-    )
-    seed_catalog(
-        con,
-        run_id="run-1",
-        backbone="musicnn",
-        strategy_key=catalog_key("musicnn", "b"),
-        k=5,
-        metrics={"map_k": 0.5},
-    )
-    seed_medoid_baseline(con, run_id="run-1", backbone="effnet", k=5, metrics={"map_k": 0.4})
-    seed_medoid_baseline(con, run_id="run-1", backbone="musicnn", k=5, metrics={"map_k": 0.3})
-    section = section_winners(_load(con))
-    assert section["id"] == "winners"
-    backbones = [sub["title"] for sub in section["subsections"]]
-    assert backbones == ["effnet", "musicnn"]
-    effnet_tables = {t["id"] for t in section["subsections"][0]["tables"]}
-    assert {"winner_delta_effnet", "factor_classes_effnet"} <= effnet_tables
-
-    # Active-key-only column check on every emitted table.
-    for sub in section["subsections"]:
-        for tbl in sub["tables"]:
-            for col in tbl["columns"]:
-                assert col in _ACTIVE_KEYS, f"non-active emitted column {col!r}"
-    assert_no_forbidden_vocabulary(section)
-
-
-def test_section_summary_per_backbone_and_empty(con):
-    section_empty = section_summary(_load_empty())
-    assert section_empty["id"] == "summary"
-    assert section_empty.get("empty_message")
-
-    seed_catalog(
-        con,
-        run_id="run-1",
-        backbone="effnet",
-        strategy_key=catalog_key("effnet", "a"),
-        k=5,
-        metrics={"map_k": 0.7},
-        config_ids=(1,),
-    )
-    seed_medoid_baseline(con, run_id="run-1", backbone="effnet", k=5, metrics={"map_k": 0.4})
-    section = section_summary(_load(con))
-    table = section["tables"][0]
-    assert table["id"] == "catalog_result_status"
-    cell = dict(zip(table["columns"], table["rows"][0], strict=False))
-    assert cell["backbone"] == "effnet"
-    assert int(cell["active_catalog_classes"]) == 1
-    assert int(cell["evaluation_cells"]) == 1
-
-
-def _load(con):
-    from scripts.embedding_research.report._retrieval import query_winners_metrics
-
-    return query_winners_metrics(con)
-
-
-def _load_empty():
-    import pandas as pd
-
-    from scripts.embedding_research.report._base import CATALOG_ANALYSIS_COLUMNS
-
-    return pd.DataFrame(columns=list(CATALOG_ANALYSIS_COLUMNS))
+def test_section_winners_refuses_when_evidence_absent():
+    section = section_winners(None, None)
+    assert section["empty_message"]
+    assert section.get("warnings")

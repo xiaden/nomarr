@@ -18,6 +18,7 @@ from nomarr.persistence.models.ml_output_stream import MlOutputStream
 from nomarr.persistence.models.pipeline_state import PipelineState
 from nomarr.persistence.models.session import Session
 from nomarr.persistence.models.song import Song
+from nomarr.persistence.models.song_mood_calibration_marker import SongMoodCalibrationMarker
 from nomarr.persistence.models.song_state import SongState
 from nomarr.persistence.models.song_state_assignment import SongStateAssignment
 from nomarr.persistence.models.song_tag import SongTag
@@ -45,6 +46,7 @@ __all__ = [
     "PipelineState",
     "Session",
     "Song",
+    "SongMoodCalibrationMarker",
     "SongState",
     "SongStateAssignment",
     "SongTag",

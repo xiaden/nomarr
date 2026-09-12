@@ -38,15 +38,17 @@ class TestDiscoverNextFile:
     """Tests for discover_next_file."""
 
     @pytest.mark.unit
-    def test_returns_file_id_when_file_found(self) -> None:
+    def test_returns_semantic_candidate_when_file_found(self) -> None:
         mock_db = MagicMock()
+        candidate = SimpleNamespace(identity=_identity(123))
         with patch(
             "nomarr.components.workers.worker_discovery_comp.discover_next_untagged_file",
-            return_value=SimpleNamespace(identity=_identity(123)),
+            return_value=candidate,
         ) as mock_discover_next:
             result = discover_next_file(mock_db)
 
-        assert result == _identity(123)
+        assert result is candidate
+        assert candidate.identity == _identity(123)
         mock_discover_next.assert_called_once_with(
             mock_db,
             exclude_claimed=True,
@@ -79,11 +81,18 @@ class TestClaimFile:
         mock_db.app.add_claim.assert_called_once_with(_untyped_claim(123, "worker:tag:0", 999))
 
     @pytest.mark.unit
-    def test_returns_false_when_song_unresolvable(self) -> None:
+    def test_claim_file_forwards_locator_without_resolution(self) -> None:
+        """The claim is locator-addressed — it never resolves an integer handle."""
         mock_db = MagicMock()
-        result = claim_file(mock_db, _identity(123), "worker:tag:0")
-        assert result is False
-        mock_db.app.add_claim.assert_not_called()
+        mock_db.app.add_claim.return_value = True
+        with patch(
+            "nomarr.components.workers.worker_discovery_comp.now_ms",
+            return_value=SimpleNamespace(value=999),
+        ):
+            result = claim_file(mock_db, _identity(123), "worker:tag:0")
+        assert result is True
+        mock_db.app.add_claim.assert_called_once_with(_untyped_claim(123, "worker:tag:0", 999))
+        mock_db.library.resolve_song_identity.assert_not_called()
 
     @pytest.mark.unit
     def test_returns_false_when_claim_conflicts(self) -> None:
@@ -109,10 +118,14 @@ class TestReleaseClaim:
         )
 
     @pytest.mark.unit
-    def test_noop_when_song_unresolvable(self) -> None:
+    def test_release_claim_forwards_locator_without_resolution(self) -> None:
+        """Release is locator-addressed — it never resolves an integer handle."""
         mock_db = MagicMock()
         release_claim(mock_db, _identity(123), "worker:tag:0")
-        mock_db.app.remove_claim.assert_not_called()
+        mock_db.app.remove_claim.assert_called_once_with(
+            WorkerClaimIdentity(song=_identity(123), worker_id="worker:tag:0", claim_type=None)
+        )
+        mock_db.library.resolve_song_identity.assert_not_called()
 
 
 class TestCleanupStaleClaims:
