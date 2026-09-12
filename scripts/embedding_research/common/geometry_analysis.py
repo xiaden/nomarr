@@ -548,21 +548,18 @@ def _geometry_ruler_metrics(
     dict[str, dict[str, float]],
     dict[str, float],
 ]:
-    """Aggregate finite per-query winner/baseline scores into three independent rulers.
+    """Compute independent ranking-relevance metrics for each frozen ruler.
 
-    The geometry corpus owns one bounded winner score and one separate observed
-    whole-song medoid baseline score per query song, both scored against the same
-    leave-one-out candidate population.  Each ruler (artist, genre, and the frozen
-    semantic-head full tuple) builds its own labeled population from that song's
-    labels.  A ``None`` or blank label is locally absent (never an ``unknown``
-    bucket), so the song is excluded from that ruler only.  A baseline delta is
-    retained only when the evaluation identity is comparable and the baseline
-    score exists.  No other vocabulary, IO, or segmentation is owned here.
+    Labels define relevance among the ranked leave-one-out neighborhoods.  Each
+    ruler is evaluated independently and only queries with a label and at least
+    one labeled relevant candidate are eligible.  Score summaries remain in the
+    per-query evidence for compatibility with the persistence surface, but are
+    not used as ruler relevance metrics.
     """
     labels_by_ruler = {
-        "artist": {analysis.request.song_id: _ruler_label(analysis.request.artist) for analysis in analyses},
-        "genre": {analysis.request.song_id: _ruler_label(analysis.request.genre) for analysis in analyses},
-        "head": {analysis.request.song_id: _ruler_label(analysis.request.head_label) for analysis in analyses},
+        "artist": {a.request.song_id: _ruler_label(a.request.artist) for a in analyses},
+        "genre": {a.request.song_id: _ruler_label(a.request.genre) for a in analyses},
+        "head": {a.request.song_id: _ruler_label(a.request.head_label) for a in analyses},
     }
     per_song: dict[str, dict[str, float]] = {}
     for analysis in analyses:
@@ -587,25 +584,77 @@ def _geometry_ruler_metrics(
 
     aggregate: dict[str, dict[str, float]] = {}
     baseline_deltas: dict[str, float] = {}
-    all_song_ids = tuple(sorted(per_song))
     for ruler, labels in labels_by_ruler.items():
-        labeled = [song_id for song_id in all_song_ids if labels.get(song_id) is not None]
-        winners = [per_song[song_id]["winner_score"] for song_id in labeled]
-        baselines = [
-            per_song[song_id]["baseline_score"] for song_id in labeled if "baseline_score" in per_song[song_id]
-        ]
-        deltas = [per_song[song_id]["baseline_delta"] for song_id in labeled if "baseline_delta" in per_song[song_id]]
-        mean_delta = float(np.mean(deltas)) if deltas else 0.0
-        aggregate[ruler] = {
-            "active": 1.0 if labeled else 0.0,
-            "n_songs": float(len(labeled)),
+        winner_relevance: list[float] = []
+        baseline_relevance: list[float] = []
+        winner_mrr: list[float] = []
+        baseline_mrr: list[float] = []
+        winner_p1: list[float] = []
+        baseline_p1: list[float] = []
+        winner_scores: list[float] = []
+        baseline_scores: list[float] = []
+        deltas: list[float] = []
+        eligible = 0
+        missing = 0
+        for analysis in analyses:
+            query_label = labels.get(analysis.request.song_id)
+            if query_label is None or not analysis.state.defined:
+                missing += 1
+                continue
+            candidate_labels = {
+                candidate.search_representation_id: labels.get(candidate.song_id)
+                for candidate in analysis.roster.representations
+            }
+            relevant = {key for key, label in candidate_labels.items() if label == query_label}
+            eligible += 1
+
+            def ranking_metrics(
+                neighborhood: tuple[NeighborhoodEntry, ...],
+                relevant_ids: set[str],
+            ) -> tuple[float, float, float]:
+                hits = [entry for entry in neighborhood if entry.search_representation_id in relevant_ids]
+                first_rank = hits[0].rank if hits else None
+                return (
+                    1.0 if hits else 0.0,
+                    1.0 / float(first_rank + 1) if first_rank is not None else 0.0,
+                    1.0 if neighborhood and neighborhood[0].search_representation_id in relevant_ids else 0.0,
+                )
+
+            wr, wmrr, wp1 = ranking_metrics(analysis.neighborhood, relevant)
+            br, bmrr, bp1 = ranking_metrics(analysis.baseline_neighborhood, relevant)
+            winner_relevance.append(wr)
+            baseline_relevance.append(br)
+            winner_mrr.append(wmrr)
+            baseline_mrr.append(bmrr)
+            winner_p1.append(wp1)
+            baseline_p1.append(bp1)
+            winner_scores.append(max(analysis.scores.scores.values(), default=0.0))
+            baseline_scores.append(float(analysis.scores.baseline_score or 0.0))
+            if analysis.scores.baseline_score is not None and analysis.scores.evaluation_comparable:
+                deltas.append(
+                    float(max(analysis.scores.scores.values(), default=0.0)) - float(analysis.scores.baseline_score)
+                )
+
+        def mean(values: list[float]) -> float:
+            return float(np.mean(values)) if values else 0.0
+
+        metrics = {
+            "active": 1.0 if eligible else 0.0,
+            "n_songs": float(eligible),
             "n_compared": float(len(deltas)),
-            "missing_count": float(len(all_song_ids) - len(labeled)),
-            "mean_winner": float(np.mean(winners)) if winners else 0.0,
-            "mean_baseline": float(np.mean(baselines)) if baselines else 0.0,
-            "mean_delta": mean_delta,
+            "missing_count": float(missing),
+            "mean_winner": mean(winner_scores),
+            "mean_baseline": mean(baseline_scores),
+            "mean_delta": mean(deltas),
+            "winner_recall": mean(winner_relevance),
+            "baseline_recall": mean(baseline_relevance),
+            "winner_mrr": mean(winner_mrr),
+            "baseline_mrr": mean(baseline_mrr),
+            "winner_precision_at_1": mean(winner_p1),
+            "baseline_precision_at_1": mean(baseline_p1),
         }
-        baseline_deltas[ruler] = mean_delta
+        aggregate[ruler] = metrics
+        baseline_deltas[ruler] = metrics["mean_delta"]
     return aggregate["artist"], aggregate["genre"], aggregate["head"], per_song, baseline_deltas
 
 
@@ -620,16 +669,16 @@ def _observation_geometry_identity(observation: Any, profile: GeometryProfile) -
     identity = getattr(observation, "identity", None)
     if identity is None:
         raise ValueError("committed observation has no identity")
-    commit = getattr(identity, "commit_sha256", None)
-    if not commit:
-        raise ValueError("committed observation has no commit identity")
+    observation_group = getattr(identity, "observation_group_sha256", None)
+    if not observation_group:
+        raise ValueError("committed observation has no observation-group identity")
     semantics = profile.to_manifest().get("geometry_semantics_version")
     if not semantics:
         raise ValueError("geometry profile has no geometry semantics version")
     return GeometryIdentity(
         str(identity.song_id),
         str(identity.backbone),
-        str(commit),
+        str(observation_group),
         str(semantics),
         str(profile.digest),
     )
@@ -1297,6 +1346,7 @@ def _corpus_evidence(result: GeometryCorpusAnalysis) -> dict[str, Any]:
         "execution_id": str(result.execution_id),
         "evaluation_id": str(result.evaluation_id),
         "experiment": str(result.experiment),
+        "numerical_profile_digest": str(result.numerical_profile_digest),
         "scoring_semantics_version": int(result.scoring_semantics_version),
         "comparable": bool(result.comparable),
         "reasons": list(_corpus_reasons(result)),
@@ -1309,6 +1359,19 @@ def _corpus_evidence(result: GeometryCorpusAnalysis) -> dict[str, Any]:
             for song, values in result.per_song_metrics.items()
         },
         "baseline_deltas": {key: float(value) for key, value in result.baseline_deltas.items()},
+        "threshold_map": [
+            {
+                "song_id": str(query.request.song_id),
+                "backbone": str(query.request.backbone),
+                "threshold_id": str(item.threshold.threshold_id),
+                "structural_identity": str(getattr(item.structural, "identity", "")),
+                "search_representation_id": str(item.search.search_representation_id),
+                "comparable": (str(query.request.song_id), str(item.search.search_representation_id))
+                not in {(ev.song_id, ev.search_representation_id) for ev in result.noncomparable},
+            }
+            for analysis, query in _analysis_query_pairs(result)
+            for item in analysis.results
+        ],
         "membership": [asdict(entry) for entry in membership],
         "missing_searchable": sorted({entry.song_id for entry in membership if entry.searchable_count == 0}),
         "queries": [asdict(entry) for entry in _query_evidence_entries(result)],
@@ -1537,6 +1600,79 @@ def _validated_corpus_evidence(
     return corpus_evidence
 
 
+def read_geometry_threshold_map(
+    con: Any,
+    *,
+    run_id: str,
+    identity: Any,
+) -> tuple[GeometryThresholdMapEntry, ...]:
+    """Read the ordered threshold map embedded in the canonical corpus evidence."""
+    raw = _validated_corpus_evidence(con, run_id=run_id, identity=identity)
+    return tuple(GeometryThresholdMapEntry(**item) for item in _require_evidence_list(raw, "threshold_map"))
+
+
+def read_geometry_corpus_evidence(
+    con: Any,
+    *,
+    run_id: str,
+    identity: Any,
+    stream_store: Any = None,
+    profile: GeometryProfile | None = None,
+) -> GeometryCorpusEvidence:
+    """Read the complete canonical corpus evidence for one exact publication identity."""
+    raw = _validated_corpus_evidence(con, run_id=run_id, identity=identity, stream_store=stream_store, profile=profile)
+    membership = tuple(GeometryMembershipEntry(**item) for item in _require_evidence_list(raw, "membership"))
+    threshold_map = tuple(GeometryThresholdMapEntry(**item) for item in _require_evidence_list(raw, "threshold_map"))
+    queries: list[GeometryQueryEvidence] = []
+    for item in _require_evidence_list(raw, "queries"):
+        if not isinstance(item, dict):
+            raise ValueError("geometry corpus query evidence must be a mapping")
+        queries.append(
+            GeometryQueryEvidence(
+                **{key: value for key, value in item.items() if key not in {"neighborhood", "baseline_neighborhood"}},
+                neighborhood=_parse_neighborhood(item.get("neighborhood")),
+                baseline_neighborhood=_parse_neighborhood(item.get("baseline_neighborhood")),
+            )
+        )
+    noncomparable = tuple(
+        NonComparableEvidence(
+            str(item["song_id"]),
+            str(item["backbone"]),
+            tuple(int(value) for value in item["threshold_indices"]),
+            str(item["structural_identity"]),
+            str(item["search_representation_id"]),
+            tuple(str(v) for v in item["reasons"]),
+        )
+        for item in _require_evidence_list(raw, "noncomparable")
+    )
+    counters = raw.get("counters")
+    if not isinstance(counters, dict):
+        raise ValueError("geometry corpus counters are missing")
+    return GeometryCorpusEvidence(
+        run_id=str(raw["run_id"]),
+        execution_id=str(raw["execution_id"]),
+        evaluation_id=str(raw["evaluation_id"]),
+        experiment=str(raw["experiment"]),
+        numerical_profile_digest=str(raw["numerical_profile_digest"]),
+        scoring_semantics_version=int(raw["scoring_semantics_version"]),
+        comparable=bool(raw["comparable"]),
+        reasons=tuple(str(v) for v in raw.get("reasons", ())),
+        membership=membership,
+        missing_searchable=tuple(str(v) for v in raw.get("missing_searchable", ())),
+        queries=tuple(queries),
+        noncomparable=noncomparable,
+        threshold_map=threshold_map,
+        artist_metrics={str(k): float(v) for k, v in raw["artist_metrics"].items()},
+        genre_metrics={str(k): float(v) for k, v in raw["genre_metrics"].items()},
+        head_metrics={str(k): float(v) for k, v in raw["head_metrics"].items()},
+        per_song_metrics={
+            str(k): {str(n): float(v) for n, v in values.items()} for k, values in raw["per_song_metrics"].items()
+        },
+        baseline_deltas={str(k): float(v) for k, v in raw["baseline_deltas"].items()},
+        counters=GeometryAnalysisCounters(**counters),
+    )
+
+
 def read_geometry_corpus_analysis(
     con: Any,
     *,
@@ -1546,34 +1682,29 @@ def read_geometry_corpus_analysis(
     profile: GeometryProfile | None = None,
 ) -> GeometryCorpusAnalysis:
     """Read exactly one complete geometry corpus scope; no alternate scope is selected."""
-    corpus_evidence = _validated_corpus_evidence(
+    corpus_evidence = read_geometry_corpus_evidence(
         con, run_id=run_id, identity=identity, stream_store=stream_store, profile=profile
     )
-    counters = corpus_evidence.get("counters")
-    if not isinstance(counters, dict):
-        raise ValueError("geometry corpus counters are missing")
+    counters = corpus_evidence.counters
     return GeometryCorpusAnalysis(
         run_id=str(run_id),
         execution_id=str(identity.execution_id),
-        experiment=str(corpus_evidence["experiment"]),
+        experiment=corpus_evidence.experiment,
         evaluation_id=str(identity.evaluation_id),
         numerical_profile_digest=str(identity.numerical_profile_digest),
-        scoring_semantics_version=int(corpus_evidence["scoring_semantics_version"]),
+        scoring_semantics_version=corpus_evidence.scoring_semantics_version,
         analyses=(),
         roster=None,
         scores=None,
         baseline=None,
-        artist_metrics={str(k): float(v) for k, v in corpus_evidence["artist_metrics"].items()},
-        genre_metrics={str(k): float(v) for k, v in corpus_evidence["genre_metrics"].items()},
-        head_metrics={str(k): float(v) for k, v in corpus_evidence["head_metrics"].items()},
-        per_song_metrics={
-            str(song): {str(k): float(v) for k, v in values.items()}
-            for song, values in corpus_evidence["per_song_metrics"].items()
-        },
-        baseline_deltas={str(k): float(v) for k, v in corpus_evidence["baseline_deltas"].items()},
-        comparable=bool(corpus_evidence["comparable"]),
-        reasons=tuple(str(reason) for reason in corpus_evidence.get("reasons", ())),
-        counters=GeometryAnalysisCounters(**counters),
+        artist_metrics=corpus_evidence.artist_metrics,
+        genre_metrics=corpus_evidence.genre_metrics,
+        head_metrics=corpus_evidence.head_metrics,
+        per_song_metrics=corpus_evidence.per_song_metrics,
+        baseline_deltas=corpus_evidence.baseline_deltas,
+        comparable=corpus_evidence.comparable,
+        reasons=corpus_evidence.reasons,
+        counters=counters,
     )
 
 
@@ -1770,6 +1901,13 @@ class GeometryCorpusEvidence:
     missing_searchable: tuple[str, ...]
     queries: tuple[GeometryQueryEvidence, ...]
     noncomparable: tuple[NonComparableEvidence, ...]
+    threshold_map: tuple[GeometryThresholdMapEntry, ...] = ()
+    artist_metrics: Mapping[str, float] = field(default_factory=dict)
+    genre_metrics: Mapping[str, float] = field(default_factory=dict)
+    head_metrics: Mapping[str, float] = field(default_factory=dict)
+    per_song_metrics: Mapping[str, Mapping[str, float]] = field(default_factory=dict)
+    baseline_deltas: Mapping[str, float] = field(default_factory=dict)
+    counters: GeometryAnalysisCounters = field(default_factory=GeometryAnalysisCounters)
 
     def __post_init__(self) -> None:
         for name in ("run_id", "execution_id", "evaluation_id", "experiment", "numerical_profile_digest"):
@@ -1780,6 +1918,15 @@ class GeometryCorpusEvidence:
             raise ValueError("comparable must be boolean")
         object.__setattr__(self, "reasons", tuple(str(reason) for reason in self.reasons))
         object.__setattr__(self, "missing_searchable", tuple(str(song) for song in self.missing_searchable))
+        object.__setattr__(self, "membership", tuple(self.membership))
+        object.__setattr__(self, "queries", tuple(self.queries))
+        object.__setattr__(self, "noncomparable", tuple(self.noncomparable))
+        object.__setattr__(self, "threshold_map", tuple(self.threshold_map))
+        object.__setattr__(self, "artist_metrics", dict(self.artist_metrics))
+        object.__setattr__(self, "genre_metrics", dict(self.genre_metrics))
+        object.__setattr__(self, "head_metrics", dict(self.head_metrics))
+        object.__setattr__(self, "per_song_metrics", {str(k): dict(v) for k, v in self.per_song_metrics.items()})
+        object.__setattr__(self, "baseline_deltas", dict(self.baseline_deltas))
 
 
 def _representation_scoring_pairs(search: Any) -> tuple[tuple[int, ...], tuple[float, ...]]:
@@ -1787,10 +1934,13 @@ def _representation_scoring_pairs(search: Any) -> tuple[tuple[int, ...], tuple[f
     indices: list[int] = []
     weights: list[float] = []
     for index, weight in zip(search.medoid_source_indices, search.searchable_weights, strict=True):
-        if index is None:
+        if index is None or not np.isfinite(float(weight)) or float(weight) <= 0.0:
             continue
         indices.append(int(index))
         weights.append(float(weight))
+    total = float(sum(weights))
+    if total > 0.0:
+        weights = [weight / total for weight in weights]
     return tuple(indices), tuple(weights)
 
 

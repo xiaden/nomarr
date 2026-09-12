@@ -401,7 +401,6 @@ def _search_representation_key(search: SearchRepresentation) -> tuple[object, ..
     # geometry, not the exact source-index/weight inputs consumed by scoring.
     return (
         search.experiment,
-        search.geometry_id,
         search.observation_id,
         search.profile_digest,
         search.mask_digest,
@@ -495,7 +494,6 @@ def analyze_all_thresholds(
         medoids = tuple(segment.medoid_source_index for segment in projection.segments)
         weights = tuple(float(segment.searchable_weight) for segment in projection.segments)
         search_payload = {
-            "structural_identity": structural_id,
             "medoid_source_indices": medoids,
             "searchable_weights": weights,
             "geometry_id": geometry_id,

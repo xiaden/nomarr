@@ -19,7 +19,7 @@ from scripts.embedding_research.common.threshold_analysis import (
     dense_primary_threshold_request,
 )
 from scripts.embedding_research.db import ensure_schema, write_geometry
-from scripts.embedding_research.db.geometry import GeometryIdentity
+from scripts.embedding_research.db.geometry import GeometryIdentity, StaleRefused
 from scripts.embedding_research.db.geometry_profile import GeometryProfile
 
 pytestmark = pytest.mark.unit
@@ -33,6 +33,7 @@ class _Identity:
     mask_semantics_version = "mask-v1"
     group_format_version = "group-v1"
     commit_sha256 = "commit-1"
+    observation_group_sha256 = "commit-1"
 
 
 class _StreamRecord:
@@ -198,7 +199,7 @@ def test_supersession_refuses_before_result_publication() -> None:
     observation, _record, request = _seed(con)
     original = observation.identity.commit_sha256
     observation.identity.commit_sha256 = "commit-superseded"
-    with pytest.raises(ValueError, match="identity does not match"):
+    with pytest.raises(StaleRefused, match="requested geometry identity"):
         analyze_geometry_corpus(
             request, con=con, stream_store=_Store(observation), profile=GeometryProfile.current(), scoring=_scorer([])
         )

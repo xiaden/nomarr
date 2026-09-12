@@ -55,22 +55,6 @@ class StructuralResult:
         return tuple(segment.absorbed_indices for segment in self.segments)
 
 
-def _f32(value: float | np.float32) -> np.float32:
-    return np.float32(value)
-
-
-def _add(a: np.float32, b: np.float32) -> np.float32:
-    return _f32(_f32(a) + _f32(b))
-
-
-def _mul(a: np.float32, b: np.float32) -> np.float32:
-    return _f32(_f32(a) * _f32(b))
-
-
-def _sqrt(value: np.float32) -> np.float32:
-    return _f32(np.sqrt(_f32(value), dtype=np.float32))
-
-
 def normalize_float32(stream: Any) -> np.ndarray:
     """Normalize rows with NumPy float32 row arithmetic.
 
@@ -100,7 +84,7 @@ def gram_from_stream(stream: Any) -> tuple[np.ndarray, bytes]:
     if gram.shape != (count, count) or not np.isfinite(gram).all():
         raise GramRefusalError("Gram matrix is non-finite or non-square")
     gram = np.asarray(gram, dtype="<f4", order="C")
-    blob = gram.tobytes(order="C")
+    blob = np.asarray(gram, dtype="<f4", order="C").tobytes(order="C")
     if len(blob) != 4 * count * count:
         raise GramRefusalError("invalid Gram serialization length")
     decoded = np.frombuffer(blob, dtype="<f4").reshape((count, count), order="C")
@@ -115,7 +99,7 @@ def _threshold(threshold_index: int) -> np.float32:
         raise GramRefusalError("threshold_index must be an integer")
     if int(threshold_index) < 0:
         raise GramRefusalError("threshold_index must be non-negative")
-    value = _f32(_f32(0.30) + _f32(_f32(threshold_index) * _f32(0.01)))
+    value = np.float32(np.float32(0.30) + np.float32(threshold_index) * np.float32(0.01))
     if not np.isfinite(value):
         raise GramRefusalError("threshold is non-finite")
     return value
@@ -131,21 +115,32 @@ def _validate_gram(gram: Any) -> np.ndarray:
 
 
 def _row_distance(gram: np.ndarray, row: int, indices: list[int]) -> np.float32:
-    centroid_norm_sq = np.float32(0.0)
-    for left in indices:
-        for right in indices:
-            centroid_norm_sq = _add(centroid_norm_sq, gram[left, right])
-    centroid_norm = _sqrt(max(np.float32(0.0), centroid_norm_sq))
-    row_norm_sq = max(np.float32(0.0), gram[row, row])
-    row_centroid = np.float32(0.0)
-    for source in indices:
-        row_centroid = _add(row_centroid, gram[row, source])
-    if centroid_norm > np.float32(0.0):
-        row_centroid = _f32(row_centroid / centroid_norm)
-    else:
-        row_centroid = np.float32(0.0)
-    distance_sq = _f32(row_norm_sq + np.float32(1.0) - _f32(np.float32(2.0) * row_centroid))
-    return _sqrt(max(np.float32(0.0), distance_sq))
+    """Return the float32 distance to the running spherical centroid.
+
+    For source rows ``u_i`` represented by a Gram matrix ``G``, the running
+    centroid is ``c = s / ||s||`` where ``s = sum(u_i)``.  Consequently,
+    ``||s||² = sum(G[i, j])`` and ``u_row · s = sum(G[row, i])``.  The
+    vectorized reductions below are the sole production centroid arithmetic;
+    an exactly (or numerically) cancelling ``s`` is represented by the zero
+    centroid and therefore has distance ``sqrt(||u_row||² + 1)``.  Zero rows
+    remain zero rows and are never promoted to searchable medoids elsewhere.
+    """
+    if not indices:
+        return np.float32(0.0)
+    positions = np.asarray(indices, dtype=np.intp)
+    centroid_norm_sq = np.sum(gram[np.ix_(positions, positions)], dtype=np.float32)
+    centroid_norm_sq = np.maximum(centroid_norm_sq, np.float32(0.0))
+    centroid_norm = np.sqrt(centroid_norm_sq, dtype=np.float32)
+    row_norm_sq = np.maximum(gram[row, row], np.float32(0.0))
+    row_centroid = np.sum(gram[row, positions], dtype=np.float32)
+    row_centroid = np.divide(
+        row_centroid,
+        centroid_norm,
+        out=np.zeros((), dtype=np.float32),
+        where=centroid_norm > np.float32(0.0),
+    )
+    distance_sq = np.float32(row_norm_sq + np.float32(1.0) - np.float32(np.float32(2.0) * row_centroid))
+    return np.sqrt(np.maximum(distance_sq, np.float32(0.0)), dtype=np.float32)
 
 
 def derive_temporal_global_from_gram(gram: Any, threshold_index: int) -> StructuralResult:

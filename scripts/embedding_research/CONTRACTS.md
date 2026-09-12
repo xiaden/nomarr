@@ -68,7 +68,11 @@ a hard cut with no alternate symbol name. Unrelated scientific artifact SHA-256
 hashes (`gram`/geometry blob, stream payload, mask payload, audio content, numerical profile digest)
 are retained and are never renamed to an observation identity.
 
-### Evidence
+### Current-head deletion and retained validation boundary
+
+Plans H–M retain report validation, scientific artifact SHA-256 helpers, geometry/stream/mask/audio/profile hashes, synthetic-only metadata, and complete corpus evidence. Plans L–M must remove stale prerequisites and callers for the deleted Git/source replay surface: `--traceability`, traceability producers/tests, source manifests and commit checks, R1–R14 replay matrices, replay-only fields, and compatibility aliases or dual readers/writers. Their absence is a hard negative contract; it is not replaced by a new traceability mechanism. The evidence root is JSON-only (a human summary, if needed, belongs below `docs/`), and no real corpus or model/audio execution is evidence.
+
+## Evidence
 
 R1–R14 Git/source traceability replay (producer, validator, CLI flag, source-commit/source-manifest
 fields, matrix callers, and generated traceability artifacts) is deleted. Report validation and

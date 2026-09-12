@@ -50,7 +50,7 @@ def _identity_evidence_rows(rows: list[tuple]) -> list[dict]:
     return [
         {
             "geometry_id": row[0],
-            "observation_id": row[1],
+            "observation_group_sha256": row[1],
             "geometry_semantics_version": row[2],
             "numerical_profile_digest": row[3],
             "threshold_id": THRESHOLD_IDS[0],
@@ -155,7 +155,6 @@ def main(report_dir: Path = REPORT_DIR) -> Path:
         },
         "round_trips": ["geometry_blob", "report_json", "scientific_hashes"],
         "scientific_hash_retention": True,
-        "source_commit_traceability": False,
         "benchmark": benchmark,
     }
     data.setdefault("warnings", []).append(SYNTHETIC_WARNING)

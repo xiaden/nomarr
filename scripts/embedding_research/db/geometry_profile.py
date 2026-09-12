@@ -14,6 +14,7 @@ from typing import Any
 GEOMETRY_SEMANTICS_VERSION = "gram-ptc-v1"
 GEOMETRY_SERIALIZATION_VERSION = "float32-le-c-order-v1"
 NUMPY_KERNEL_VERSION = "numpy-row-normalize-f32-matmul-v1"
+GRAM_BLOB_LAYOUT = "np.asarray(G,dtype='<f4',order='C').tobytes(order='C')"
 
 
 def _version(package: str) -> str:
@@ -48,6 +49,7 @@ class GeometryProfile:
             "normalization_policy": "numpy-row-l2-float32-zero-preserving",
             "threshold_arithmetic_policy": "float32-canonical-indexed",
             "operation_manifest": "numpy-normalize-matmul-float32-v1",
+            "gram_blob_layout": GRAM_BLOB_LAYOUT,
         }
         manifest = tuple(sorted(values.items()))
         digest = profile_digest(dict(manifest))
@@ -92,6 +94,7 @@ def _blas_provider() -> str:
 __all__ = [
     "GEOMETRY_SEMANTICS_VERSION",
     "GEOMETRY_SERIALIZATION_VERSION",
+    "GRAM_BLOB_LAYOUT",
     "NUMPY_KERNEL_VERSION",
     "GeometryProfile",
     "canonical_profile_json",

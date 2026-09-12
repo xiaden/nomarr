@@ -298,6 +298,57 @@ def test_observation_identity_symbol_is_hard_cut() -> None:
     assert "observation_group_sha256" in inspect.signature(module.search_representation_id).parameters
 
 
+def test_current_head_repair_chain_and_boundaries_are_frozen() -> None:
+    parts = PARTS_CONTRACTS_PATH.read_text(encoding="utf-8")
+    readme = (PARTS_DIR / "README.md").read_text(encoding="utf-8")
+    runtime = RUNTIME_README_PATH.read_text(encoding="utf-8")
+    chain = (
+        "H-contract-and-boundary",
+        "I-numpy-kernel",
+        "J-corpus-retrieval",
+        "K-persistence-and-report",
+        "L-traceability-and-evidence",
+        "M-final-current-head-verification",
+    )
+    for name in chain:
+        assert name in parts and name in readme
+    assert "3efecd9cf726c1b1a4ae4f7f9d69dd9c6e2b75d4" in parts
+    assert "read_geometry_corpus_evidence" in parts
+    assert "same-population" in runtime
+
+
+def test_canonical_non_comparable_reason_vocabulary_is_exact() -> None:
+    module = _identity_module()
+    state = module.classify_representation(
+        alignment_ok=False,
+        searchable_count=0,
+        medoid_defined=False,
+        candidate_count=0,
+        label_defined=False,
+    )
+    assert state.reasons == (
+        "alignment_failed",
+        "no_searchable",
+        "no_medoid",
+        "no_candidates",
+    )
+    labelled = module.classify_representation(
+        alignment_ok=True,
+        searchable_count=1,
+        medoid_defined=True,
+        candidate_count=1,
+        label_defined=False,
+    )
+    assert labelled.reasons == ("label_missing",)
+
+
+def test_no_compatibility_or_dual_write_surface_is_declared() -> None:
+    runtime = RUNTIME_CONTRACTS_PATH.read_text(encoding="utf-8").lower()
+    assert "no compatibility apis" in runtime
+    assert "dual writes" in runtime
+    assert "observation_group_sha256" in runtime
+
+
 def test_traceability_replay_machinery_is_absent() -> None:
     assert not (PACKAGE_ROOT / "tests" / "test_gram_traceability.py").exists()
     assert not (PACKAGE_ROOT / "tools" / "emit_traceability.py").exists()

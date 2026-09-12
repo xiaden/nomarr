@@ -88,6 +88,7 @@ REQUIRED_BENCHMARK_FIELDS: tuple[str, ...] = (
     "working_memory_bytes",
     "fixtures_only",
     "no_empirical_statement",
+    "numerical_kernel_version",
 )
 
 #: Error message prefix used by validate_benchmark_report for a missing required field.
@@ -176,6 +177,7 @@ class BenchmarkRecord:
     working_memory_bytes: int
     fixtures_only: bool = FIXTURES_ONLY
     no_empirical_statement: str = NO_EMPIRICAL_STATEMENT
+    numerical_kernel_version: str = "numpy-row-normalize-f32-matmul-v1"
     # Additional observed, labelled context (not required fields but informative).
     k_rows: int = 0
     m_rows: int = 0
@@ -282,6 +284,7 @@ def run_bounded_benchmark(
         candidate_chunk_size=int(result.candidate_chunk_size),
         working_memory_bytes=int(result.working_memory),
         no_empirical_statement=NO_EMPIRICAL_STATEMENT,
+        numerical_kernel_version="numpy-row-normalize-f32-matmul-v1",
         k_rows=k_rows,
         m_rows=m_rows,
         full_product_bytes=int(full_product_bytes),

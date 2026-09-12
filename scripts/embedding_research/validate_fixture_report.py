@@ -36,7 +36,7 @@ EXACT_SECTION_IDS = ("summary", "corpus", "analysis", "winners", "head-analysis"
 EXACT_PHASE_NAMES = ("ingest", "embed", "infer-heads", "geometry", "analyze", "head-analysis", "report")
 EXPECTED_IDENTITY_COLUMNS = (
     "geometry_id",
-    "observation_id",
+    "observation_group_sha256",
     "geometry_semantics_version",
     "numerical_profile_digest",
     "threshold_id",
@@ -297,8 +297,6 @@ def validate_report(path: str | Path) -> list[str]:
             problems.extend(_comparability_reason_problems(comparability))
         if not corrective.get("scientific_hash_retention"):
             problems.append("scientific artifact-hash retention is missing")
-        if corrective.get("source_commit_traceability") is not False:
-            problems.append("source-commit traceability must be absent")
         benchmark = corrective.get("benchmark")
         if not isinstance(benchmark, dict):
             problems.append("fixtures-only benchmark metadata is missing")

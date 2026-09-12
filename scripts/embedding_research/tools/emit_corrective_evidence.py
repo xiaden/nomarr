@@ -17,9 +17,7 @@ if str(_HERE.parents[3]) not in sys.path:
 from scripts.embedding_research.fixture_benchmark import run_bounded_benchmark
 from scripts.embedding_research.tools._evidence import sha256_file, write_evidence
 
-#: Live environment-observed measurements.  They vary run to run, so the emitted
-#: evidence artifact normalizes them to zero to stay byte-deterministic; the
-#: representative timing stays in the human-readable PLAN-F-SUMMARY.md.
+#: Live environment-observed measurements are normalized to zero so JSON evidence remains deterministic.
 _MEASURED_BENCHMARK_FIELDS = ("elapsed_ms", "peak_rss_bytes", "peak_tracemalloc_bytes")
 
 
@@ -46,7 +44,6 @@ def main(argv: list[str] | None = None) -> int:
         "real_corpus_run": False,
         "interactive_explorer_run": False,
         "production_model_audio_path": False,
-        "source_commit_traceability": False,
         "scientific_hashes": {"report_json_sha256": sha256_file(report)},
         "test_command": "python -m pytest scripts/embedding_research/tests/test_validate_fixture_report.py scripts/embedding_research/tests/test_fixture_benchmark.py scripts/embedding_research/tests/test_geometry_corpus_retrieval.py -q",
         "focused_test_count": arguments.test_count,

@@ -148,7 +148,8 @@ def _evidence(observation: Any) -> dict[str, Any]:
             "audio_content_sha256": identity.audio_content_sha256,
             "mask_semantics_version": identity.mask_semantics_version,
             "group_format_version": identity.group_format_version,
-            "observation_group_sha256": identity.commit_sha256,
+            "observation_group_sha256": _field(identity, "observation_group_sha256")
+            or _field(identity, "commit_sha256"),
             "provenance_identity": provenance_identity,
         }
     )

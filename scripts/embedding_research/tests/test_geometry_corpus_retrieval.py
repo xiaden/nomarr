@@ -53,6 +53,7 @@ class _Identity:
         self.audio_content_sha256 = f"audio:{song_id}"
         self.mask_semantics_version = "mask-v1"
         self.group_format_version = "group-v1"
+        self.observation_group_sha256 = commit
         self.commit_sha256 = commit
 
 

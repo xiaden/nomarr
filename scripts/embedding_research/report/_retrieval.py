@@ -110,25 +110,37 @@ def query_incomplete_analyze_diagnostics(con, *, run_id: str) -> tuple[dict[str,
 
 
 def query_corpus_evidence(con, *, run_id: str) -> dict[str, Any] | None:
-    """Read the exact run-scoped corpus evidence document, or ``None`` when absent.
-
-    The corpus document is the sole source of threshold/corpus maps, comparability reasons,
-    membership/missing-song evidence, per-query ruler metrics, and winner/baseline
-    neighborhoods.  An absent document is explicit refusal evidence, never an alternate scope.
-    """
+    """Read the canonical complete corpus evidence for the exact run publication."""
     exact_run = _require_run_id(run_id)
-    rows = con.execute("SELECT evidence_json FROM geometry_analysis_records WHERE run_id=?", (exact_run,)).fetchall()
-    for row in rows:
-        raw = row[0]
-        if not raw:
-            continue
-        try:
-            doc = json.loads(raw)
-        except (TypeError, ValueError):
-            continue
-        if isinstance(doc, dict) and doc.get("role") == "corpus":
-            return doc
-    return None
+    from scripts.embedding_research.common.geometry_analysis import read_geometry_corpus_evidence
+    from scripts.embedding_research.common.threshold_analysis import AnalysisEvidenceIdentity
+
+    rows = con.execute(
+        "SELECT geometry_id, observation_id, geometry_semantics_version, numerical_profile_digest, "
+        "threshold_id, structural_identity, evaluation_id, search_representation_id, "
+        "scoring_semantics_version, execution_id FROM geometry_analysis_records "
+        'WHERE run_id=? AND evidence_json LIKE \'%"role":"corpus"%\'',
+        (exact_run,),
+    ).fetchall()
+    if not rows:
+        return None
+    row = rows[0]
+    identity = AnalysisEvidenceIdentity(
+        geometry_id=str(row[0]),
+        observation_id=str(row[1]),
+        geometry_semantics_version=str(row[2]),
+        numerical_profile_digest=str(row[3]),
+        threshold_id=str(row[4]),
+        structural_identity=str(row[5]),
+        evaluation_id=str(row[6]),
+        search_representation_id=str(row[7]),
+        scoring_semantics_version=int(row[8]),
+        execution_id=str(row[9]),
+    )
+    evidence = read_geometry_corpus_evidence(con, run_id=exact_run, identity=identity)
+    from dataclasses import asdict
+
+    return asdict(evidence)
 
 
 def _neighborhood_rows(queries: Any, key: str) -> list[dict[str, Any]]:

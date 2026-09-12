@@ -15,6 +15,12 @@ interactive explorer is run.
 
 Historical migration-status paragraphs below are retained only as context. The active contract is the corrected corpus-wide, leave-one-out geometry path described above; self-song scoring, one-song baselines, scalar production Gram arithmetic, and source-traceability validation are not active obligations.
 
+## Current-head H–M repair boundary
+
+The active repair sequence is `H-contract-and-boundary → I-numpy-kernel → J-corpus-retrieval → K-persistence-and-report → L-traceability-and-evidence → M-final-current-head-verification`, frozen at HEAD `3efecd9cf726c1b1a4ae4f7f9d69dd9c6e2b75d4`. Historical A–G notes are not current-head evidence. H is contract/spec work only: it records remaining gaps and preserves the hard absence of self-similarity, one-song baselines, scalar production Gram arithmetic, unconditional comparability, compatibility paths, and Git/source/R1–R14 replay.
+
+The later ownership boundary is fixed now: J owns same-threshold leave-one-out corpus maps, collapse inputs, same-population baseline, and independent per-query artist/genre/frozen-head relevance; K owns atomic corpus evidence and `read_geometry_corpus_evidence`; L owns traceability-prerequisite deletion and JSON-only evidence hygiene; M owns final synthetic-only verification. `observation_group_sha256` is the sole observation-publication identity. `search_representation_id` is independent of threshold and structural identity; scientific hashes remain retained separately.
+
 ## Geometry contract (current)
 
 The threshold-independent per-song Gram geometry migration is complete. The hard cut removed the
