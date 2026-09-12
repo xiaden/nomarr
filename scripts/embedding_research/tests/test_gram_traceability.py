@@ -65,6 +65,10 @@ _MATRIX: dict[str, tuple[str, ...]] = {
         "test_gram_phase_boundaries.py::test_exact_cli_phase_tuple_and_runner_map",
         "test_gram_phase_boundaries.py::test_preflight_and_allowlist_contract",
         "test_gram_phase_boundaries.py::test_fixture_sentinels_and_timings",
+        "test_derived_phase_negative_boundaries.py::test_report_phase_dispatch_completes_with_zero_forbidden_calls",
+        "test_derived_phase_negative_boundaries.py::test_geometry_phase_dispatch_is_cpu_only_on_empty_store",
+        "test_phase4_dispatch_boundaries.py::test_derived_runner_imports_only_cpu_roots",
+        "test_phase4_dispatch_boundaries.py::test_derived_runner_never_references_forbidden_tokens",
     ),
     "R10": (
         "test_gram_staleness.py::test_stale_refusal_at_geometry_open_and_write",
@@ -72,6 +76,8 @@ _MATRIX: dict[str, tuple[str, ...]] = {
         "test_gram_staleness.py::test_stale_refusal_at_reindex_seam",
         "test_gram_staleness.py::test_stale_refusal_at_analyze_head_analysis_and_report",
         "test_gram_staleness.py::test_preflight_stale_refusal",
+        "test_maintenance_proofs.py::test_geometry_preflight_after_supersession_refuses",
+        "test_maintenance_proofs.py::test_analyze_refuses_supersession_after_computation",
     ),
     "R11": (
         "test_gram_report_identity.py::test_report_schema_and_provenance_golden",
@@ -88,6 +94,7 @@ _MATRIX: dict[str, tuple[str, ...]] = {
     "R14": (
         "test_gram_traceability.py::test_traceability_validator_complete_matrix",
         "test_gram_traceability.py::test_traceability_validator_rejects_missing_duplicate_bad_hash_and_nonzero",
+        "test_gram_traceability.py::test_committed_traceability_artifact_validates_with_informational_commit",
     ),
 }
 
@@ -118,7 +125,7 @@ _EVIDENCE_BY_REQ: dict[str, tuple[str, ...]] = {
 
 def _declared_functions() -> dict[str, set[str]]:
     functions: dict[str, set[str]] = {}
-    for path in sorted(_TEST_DIR.glob("test_gram_*.py")):
+    for path in sorted(_TEST_DIR.glob("test_*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         functions[path.name] = {
             node.name for node in ast.walk(tree) if isinstance(node, ast.FunctionDef) and node.name.startswith("test_")

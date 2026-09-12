@@ -7,13 +7,13 @@ call per unique search representation (plus the separately identified baseline).
 
 from __future__ import annotations
 
-import ast
 import inspect
 from types import SimpleNamespace
 
 import duckdb
 import numpy as np
 
+from scripts.embedding_research.bounded_scoring import ScoringCandidateView, score_bounded_exact
 from scripts.embedding_research.common import threshold_analysis as ta
 from scripts.embedding_research.common.geometry_analysis import (
     FrozenSearchRepresentation,
@@ -91,27 +91,39 @@ def test_no_segmentation_in_scorer() -> None:
     ):
         assert forbidden not in source, f"scorer reachable from {forbidden}"
 
-    calls: list[object] = []
-
-    def scoring(_query_vectors, _query_weights, view):
-        calls.append(view)
-        return SimpleNamespace(finite=True, score=0.5)
-
     roster = GeometryRepresentationRoster(
         representations=(_representation("rep-1"), _representation("rep-2", song_id="song-2"))
     )
+    # Instrument the real scorer entry point so the assertion observes the actual call
+    # boundary rather than a counter the bundle reports about itself.  The wrapper records
+    # each invocation and refuses any candidate that is not the frozen ScoringCandidateView
+    # (i.e. any segmentation/geometry payload trying to cross into the scorer).
+    invocations: list[object] = []
+    original_scorer = score_bounded_exact
+
+    def instrumented_scorer(query_vectors, query_weights, candidate):
+        invocations.append(candidate)
+        assert isinstance(candidate, ScoringCandidateView), "scorer boundary must receive a ScoringCandidateView"
+        return original_scorer(query_vectors, query_weights, candidate)
+
     bundle = score_unique_geometry_representations(
         roster,
         {
             "query_vectors": np.asarray([[1.0, 0.0]], dtype=np.float32),
             "query_weights": np.asarray([1.0], dtype=np.float64),
         },
-        scoring=scoring,
+        scoring=instrumented_scorer,
     )
-    assert len(calls) == 2, "one scorer call per unique representation, no segmentation pass"
-    assert bundle.segmentation_from_scorer_count == 0
+    # Exactly one scorer invocation per unique representation, observed at the entry point.
+    assert len(invocations) == 2, "scorer entry point must be invoked once per unique representation"
+    # Every invocation carried frozen candidate vectors/weights — no segmentation result,
+    # no stream gather, no geometry matrix entered the scorer.
+    for candidate in invocations:
+        assert candidate.vectors.shape == (1, 2)
+        assert candidate.candidate_weights.shape == (1,)
+        assert len(candidate.row_addresses) == 1
     assert bundle.scorer_call_count == 2
-    emit_evidence("r6-scorer-boundary.json", {"scorer_calls": len(calls), "segmentation_from_scorer_count": 0})
+    emit_evidence("r6-scorer-boundary.json", {"scorer_calls": len(invocations), "segmentation_from_scorer_count": 0})
 
 
 def test_representation_collapse_and_unique_scorer_count() -> None:

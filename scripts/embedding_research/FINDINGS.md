@@ -20,7 +20,7 @@ There is one threshold contract: the finite threshold-*application* semantics `d
 with `configured == effective` exactly, resolved in `helpers/thresholds.py`. The primary Gram engine
 compares rows by unit-vector L2 and derives all 171 primary thresholds from one decoded Gram; the
 Chebyshev path is an explicit, separately-named secondary experiment (`temporal_perdim_chebyshev_secondary`) over
-canonical coordinates, never a `bin_mode`-selected variant of the primary path. The strict loader
+canonical coordinates, never a legacy threshold-selector variant of the primary path. The strict loader
 `helpers/toml.py` rejects scaled, calibration, optimizer, weighted, and pooling settings, and never
 warns-and-returns an empty mapping.
 
@@ -49,6 +49,6 @@ winner candidate.
 ## Deferred experiments
 
 - The Chebyshev secondary path (`temporal_perdim_chebyshev_secondary`) is an explicitly-named experimental comparison,
-  not a configurable `bin_mode` variant of the primary Gram engine.
+  not a configurable legacy threshold-selector variant of the primary Gram engine.
 - No real-corpus execution is planned inside this research tree; deterministic synthetic fixtures
   remain the only execution evidence.

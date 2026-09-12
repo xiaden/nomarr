@@ -149,8 +149,11 @@ class DeferredFileWrites:
     3. ``replace_song_inference_results`` (canonical output streams + backbone
                                           vectors, one atomic aggregate write
                                           per backbone)
-    4. ``mark_song_processed``            (only if 1-3 succeeded)
-    5. ``release_claim``                  (always, even on error)
+    4. ``transition_song_state`` to processed + ``update_last_tagged_at``
+                                           (only if 1-3 succeeded)
+    5. ``transition_song_state`` to vectors-extracted
+                                           (only if step 4 succeeded)
+    6. ``release_claim``                  (always, even on error)
 
     ``song`` is the semantic :class:`SongIdentity` of the processed file; the
     worker resolves it to the storage song row only inside persistence. No

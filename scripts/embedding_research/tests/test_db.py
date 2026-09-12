@@ -96,6 +96,25 @@ def test_schema_has_no_removed_tables(con):
     assert REMOVED_TABLES.isdisjoint(actual), f"Removed tables still present: {REMOVED_TABLES & actual}"
 
 
+def _column_count(con, table: str) -> int:
+    row = con.execute(
+        "SELECT count(*) FROM information_schema.columns WHERE table_name = ?",
+        [table],
+    ).fetchone()
+    return int(row[0])
+
+
+def test_schema_exact_column_counts(con):
+    """The two tables owned outside the monolithic DDL have exact, pinned column counts.
+
+    ``head_phase_provenance`` is the canonical 16-column head sink and
+    ``analyze_incomplete_diagnostics`` is the canonical 29-column diagnostics sink.  A
+    drifted count means a dual/partial schema slipped in; fail closed on the exact shape.
+    """
+    assert _column_count(con, "head_phase_provenance") == 16
+    assert _column_count(con, "analyze_incomplete_diagnostics") == 29
+
+
 # ---------------------------------------------------------------------------
 # 5. write_analyze_metrics / load_analyze_metrics
 # ---------------------------------------------------------------------------

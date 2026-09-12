@@ -1,16 +1,4 @@
-"""Unit tests for canonical numeric/text identity and config hashing (Plan A P1-S2).
-
-These pin the deterministic identity inputs later ``seg_config`` rows consume:
-fixed canonical numeric formatting (same binary float -> same text; no exponent
-ambiguity; non-finite rejected; ``-0.0`` normalized), canonical text identities
-for bin mode / outlier window / strategy version / encoder version, and the
-deterministic direct-L2 config hash over the fixed field ordering
-``backbone | bin_mode | threshold | outlier_window | strategy_version |
-encoder_version``.  There is no semantics/calibration input and no
-``std_scaled``/``canonical_semantics``/``canonical_calibration_record``/
-``canonical_threshold`` surface.  The whole-module ``config_encoder_version()``
-is content-addressed (SHA-256 of ``helpers/thresholds.py`` bytes).
-"""
+"""Unit tests for canonical numeric/text identity and config hashing (Plan A P1-S2)."""
 
 from __future__ import annotations
 
@@ -19,7 +7,6 @@ import pytest
 from scripts.embedding_research.helpers.thresholds import (
     DIRECT_DISTANCE,
     ThresholdResolution,
-    canonical_bin_mode,
     canonical_config_hash,
     canonical_config_inputs,
     canonical_float,
@@ -31,25 +18,18 @@ from scripts.embedding_research.helpers.thresholds import (
     resolve_threshold,
 )
 
-# ── canonical numeric formatting ──────────────────────────────────────────────
-
 
 def test_canonical_float_is_deterministic() -> None:
-    """The same value encodes identically every time."""
     assert canonical_float(1.25) == canonical_float(1.25)
 
 
 def test_canonical_float_equivalent_spellings_identical() -> None:
-    """0.1 and 1e-1 are the same double and encode identically (no spelling drift)."""
-    assert canonical_float(0.1) == canonical_float(1e-1)
-    assert canonical_float(0.1) == "0.1"
+    assert canonical_float(0.1) == canonical_float(1e-1) == "0.1"
 
 
 def test_canonical_float_has_no_exponent_ambiguity() -> None:
-    """Exponent forms are expanded to fixed-point; never scientific notation."""
     assert canonical_float(1e-06) == "0.000001"
     assert "e" not in canonical_float(1e-06)
-    assert "e" not in canonical_float(1.5e-05)
     assert canonical_float(1.5e-05) == "0.000015"
 
 
@@ -59,7 +39,6 @@ def test_canonical_float_round_trips_integers() -> None:
 
 
 def test_canonical_float_negative_zero_normalised() -> None:
-    """-0.0 is normalised to 0.0 (mathematically equal, identical encoding)."""
     assert canonical_float(-0.0) == canonical_float(0.0) == "0.0"
 
 
@@ -71,7 +50,6 @@ def test_canonical_float_rejects_non_finite() -> None:
 
 
 def test_canonical_float_keeps_distinct_floats_distinct() -> None:
-    """Two genuinely different floats never collide (no fixed-precision rounding)."""
     assert canonical_float(0.949999) != canonical_float(0.95)
 
 
@@ -81,9 +59,6 @@ def test_canonical_int_rejects_bool_and_non_int() -> None:
         canonical_int(True)
     with pytest.raises(TypeError):
         canonical_int(3.0)
-
-
-# ── canonical text identities ─────────────────────────────────────────────────
 
 
 def test_canonical_text_non_empty() -> None:
@@ -96,14 +71,13 @@ def test_canonical_text_non_empty() -> None:
 
 
 def test_canonical_scalar_text_helpers() -> None:
-    assert canonical_bin_mode("temporal_global") == "temporal_global"
+    assert canonical_text("temporal_global") == "temporal_global"
     assert canonical_outlier_window(3) == "3"
     assert canonical_strategy_version(1) == "1"
 
 
 def test_no_scaled_or_calibration_surface() -> None:
-    """The removed semantics/calibration encoders no longer exist on thresholds."""
-    import scripts.embedding_research.helpers.thresholds as _t
+    import scripts.embedding_research.helpers.thresholds as module
 
     for removed in (
         "canonical_semantics",
@@ -114,86 +88,67 @@ def test_no_scaled_or_calibration_surface() -> None:
         "ThresholdSemantics",
         "validate_semantics",
     ):
-        assert not hasattr(_t, removed), f"forbidden surface {removed} still present"
-
-
-# ── encoder version (whole-module content hash) ───────────────────────────────
+        assert not hasattr(module, removed)
 
 
 def test_encoder_version_is_64_hex() -> None:
-    v = config_encoder_version()
-    assert isinstance(v, str)
-    assert len(v) == 64
-    int(v, 16)  # must be hex
+    version = config_encoder_version()
+    assert isinstance(version, str) and len(version) == 64
+    int(version, 16)
 
 
 def test_encoder_version_is_deterministic_across_calls() -> None:
-    """The whole-module encoder-version guard is call-order independent and repeatable, so
-    every exact/search leaf and config preimage that folds it is deterministic (Plan B P1-S2)."""
     assert config_encoder_version() == config_encoder_version()
 
 
 def test_module_sha256_two_source_strings_differ() -> None:
-    """Two different source byte strings always hash differently (content-addressed)."""
     from scripts.embedding_research.helpers.thresholds import _module_sha256
 
     assert _module_sha256(b"def a():\n    return 1\n") != _module_sha256(b"def a():\n    return 2\n")
 
 
 def test_encoder_version_refreshes_on_metadata_change(monkeypatch) -> None:
-    """The cached version refreshes when the module file metadata (mtime/size) changes."""
-    from scripts.embedding_research.helpers import thresholds as _t
+    from scripts.embedding_research.helpers import thresholds as module
 
-    real_stat = _t._MODULE_PATH.stat()
-    fresh = (_t._module_sha256(_t._MODULE_PATH.read_bytes()), real_stat.st_mtime_ns, real_stat.st_size)
-
-    first = _t.config_encoder_version()
-    # Force a cache key that differs from the real file metadata, proving the cache
-    # is keyed on metadata (size, mtime_ns) — a change invalidates and re-hashes.
-    monkeypatch.setattr(_t, "_encoder_version_cache", ("stale-key", 0, "stale"))
-    second = _t.config_encoder_version()
-    assert second == first  # re-derived from real module content, not the stale entry
-    assert second == fresh[0]
-
-
-# ── canonical config-hash (direct-L2 only) ────────────────────────────────────
+    stat = module._MODULE_PATH.stat()
+    expected = module._module_sha256(module._MODULE_PATH.read_bytes())
+    first = module.config_encoder_version()
+    monkeypatch.setattr(module, "_encoder_version_cache", ("stale-key", 0, "stale"))
+    assert module.config_encoder_version() == first == expected
+    assert stat.st_size > 0
 
 
 def _hash_kwargs(**overrides):
-    base = {
+    values = {
         "backbone": "effnet",
-        "bin_mode": "temporal_global",
+        "experiment": "temporal_global",
         "threshold": 1.25,
         "outlier_window": 3,
         "strategy_version": 1,
         "encoder_version": config_encoder_version(),
     }
-    base.update(overrides)
-    return base
+    values.update(overrides)
+    return values
 
 
 def test_config_hash_is_deterministic() -> None:
-    kwargs = _hash_kwargs()
-    assert canonical_config_hash(**kwargs) == canonical_config_hash(**kwargs)
+    assert canonical_config_hash(**_hash_kwargs()) == canonical_config_hash(**_hash_kwargs())
 
 
 def test_config_hash_same_for_equivalent_numeric_spellings() -> None:
-    """0.1 and 1e-1 are the same float, so a config using either hashes identically."""
-    a = canonical_config_hash(**_hash_kwargs(threshold=0.1))
-    b = canonical_config_hash(**_hash_kwargs(threshold=1e-1))
-    assert a == b
+    assert canonical_config_hash(**_hash_kwargs(threshold=0.1)) == canonical_config_hash(**_hash_kwargs(threshold=1e-1))
 
 
 def test_config_hash_sensitive_to_threshold() -> None:
     assert canonical_config_hash(**_hash_kwargs(threshold=1.25)) != canonical_config_hash(**_hash_kwargs(threshold=1.5))
 
 
-def test_config_hash_sensitive_to_backbone_and_bin_mode() -> None:
+def test_config_hash_sensitive_to_backbone_and_experiment() -> None:
     assert canonical_config_hash(**_hash_kwargs(backbone="effnet")) != canonical_config_hash(
         **_hash_kwargs(backbone="musicnn")
     )
-    assert canonical_config_hash(**_hash_kwargs(bin_mode="temporal_global")) != canonical_config_hash(
-        **_hash_kwargs(bin_mode="temporal_perdim")
+    assert canonical_config_hash(**_hash_kwargs(experiment="temporal_global")) != canonical_config_hash(
+        **_hash_kwargs(experiment="temporal_perdim_chebyshev_secondary")
     )
 
 
@@ -209,48 +164,44 @@ def test_config_hash_rejects_non_finite_threshold() -> None:
 
 
 def test_config_hash_requires_all_keyword_arguments() -> None:
-    """Every config-hash input is a required keyword; omission raises TypeError."""
     with pytest.raises(TypeError):
-        canonical_config_hash(backbone="effnet", bin_mode="temporal_global")  # type: ignore[call-arg]
+        canonical_config_hash(backbone="effnet", experiment="temporal_global")  # type: ignore[call-arg]
 
 
 def test_config_inputs_fixed_field_order() -> None:
-    """The pre-hash inputs follow the documented direct-L2 seg_config field ordering."""
     encoder = config_encoder_version()
     inputs = canonical_config_inputs(
         backbone="effnet",
-        bin_mode="temporal_global",
+        experiment="temporal_global",
         threshold=1.25,
         outlier_window=3,
         strategy_version=1,
         encoder_version=encoder,
     )
-    ordered = [
-        "backbone=effnet",
-        "bin_mode=temporal_global",
-        "threshold=1.25",
-        "outlier_window=3",
-        "strategy_version=1",
-        f"encoder_version={encoder}",
-    ]
-    assert inputs == "|".join(ordered)
+    assert inputs == "|".join(
+        [
+            "backbone=effnet",
+            "experiment=temporal_global",
+            "threshold=1.25",
+            "outlier_window=3",
+            "strategy_version=1",
+            f"encoder_version={encoder}",
+        ]
+    )
 
 
 def test_config_hash_resolution_helper_shape() -> None:
-    """A resolved direct-L2 ThresholdResolution carries the canonical finite fields."""
-    res = resolve_threshold(1.25)
-    assert isinstance(res, ThresholdResolution)
-    assert res.semantics == DIRECT_DISTANCE
-    assert res.effective == res.configured == 1.25
-    assert res.encoder_version
-    # The config hash is computed from the resolved threshold + whole-module version.
-    h = canonical_config_hash(
+    resolution = resolve_threshold(1.25)
+    assert isinstance(resolution, ThresholdResolution)
+    assert resolution.semantics == DIRECT_DISTANCE
+    assert resolution.effective == resolution.configured == 1.25
+    digest = canonical_config_hash(
         backbone="effnet",
-        bin_mode="temporal_global",
-        threshold=res.effective,
+        experiment="temporal_global",
+        threshold=resolution.effective,
         outlier_window=3,
         strategy_version=1,
-        encoder_version=res.encoder_version,
+        encoder_version=resolution.encoder_version,
     )
-    assert len(h) == 64
-    int(h, 16)
+    assert len(digest) == 64
+    int(digest, 16)

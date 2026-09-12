@@ -7,11 +7,13 @@ Audio tag extraction is handled by the background tag extraction worker.
 
 import logging
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from nomarr.components.infrastructure.path_comp import build_library_path_from_input
+from nomarr.components.library.song_query_types import StateTaggedSong
 from nomarr.helpers.files_helper import is_audio_file
 from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence import Database
@@ -35,8 +37,7 @@ class FileBatchResult:
 def scan_folder_files(
     folder_path: Path,
     library_root: Path,
-    existing_files: dict[str, dict],
-    tagger_version: str,
+    existing_files: Mapping[str, StateTaggedSong],
     db: Database,
 ) -> FileBatchResult:
     """Scan all files in a single folder and return batch-ready data.
@@ -47,8 +48,10 @@ def scan_folder_files(
     Args:
         folder_path: Absolute folder path to scan
         library_root: Library root for normalization
-        existing_files: Path → existing file dict (for determining if file is new/updated)
-        tagger_version: Current model suite hash (used for ml-tagged bootstrap)
+        existing_files: Physical path → typed ``StateTaggedSong`` carrier for files
+            the database already knows about. Only the carrier's prior
+            ``modified_time`` is consulted; no row, raw document, or integer
+            identity crosses this boundary.
         db: Database instance (for build_library_path_from_input)
 
     Returns:
@@ -105,28 +108,17 @@ def scan_folder_files(
 
             discovered_paths.add(file_path_str)
 
-            # Check if file exists in DB and get disk mtime
+            # Check if the database already knows this file and get the disk mtime
             existing_file = existing_files.get(file_path_str)
             file_stat = os.stat(file_path_str)
             modified_time = int(file_stat.st_mtime * 1000)
             file_size = file_stat.st_size
 
-            # Skip unchanged files: if file exists in DB and mtime matches, nothing to do
-            if existing_file is not None and existing_file.get("modified_time") == modified_time:
+            # Skip unchanged files: if the typed carrier's prior modified_time
+            # matches the on-disk mtime, there is nothing to do.
+            if existing_file is not None and existing_file.candidate.song.modified_time == modified_time:
                 stats["files_skipped"] += 1
                 continue
-
-            # Check if already tagged with current model suite (skip ML re-tagging)
-            if existing_file is not None and existing_file.get("has_tagged_state"):
-                file_version = existing_file.get("tagger_version")
-                if file_version == tagger_version:
-                    edge_bootstraps.append(
-                        {
-                            "normalized_path": normalized_path,
-                            "type": "ml_tagged",
-                            "version": tagger_version,
-                        }
-                    )
 
             # Prepare batch entry — pure file data, no state fields, no metadata
             # No library_id is stuffed into the batch entry: the library scope is

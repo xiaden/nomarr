@@ -27,7 +27,6 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
     from nomarr.helpers.dataclasses.library_dataclass import Library
-    from nomarr.helpers.dataclasses.song_dataclass import Song
     from nomarr.helpers.dataclasses.song_state_candidate_dataclass import SongStateCandidate
     from nomarr.persistence.db import Database
 
@@ -95,17 +94,6 @@ def _state_candidates(db: Database, state: str, library: Library | None = None) 
     return db.library.list_songs_with_state(state, library=library_identity)
 
 
-def _state_song_docs(db: Database, state: str) -> list[Song]:
-    return db.app.songs_with_state(state)
-
-
-def _library_song_docs(db: Database, library: Library) -> list[Song]:
-    identity = _library_identity(library)
-    if identity is None:
-        return []
-    return db.library.list_songs(identity)
-
-
 def _library_song_identities(db: Database, library: Library) -> list[SongIdentity]:
     """Derive locators from semantic library-scoped songs."""
     library_identity = _library_identity(library)
@@ -126,10 +114,11 @@ def _exclude_claimed(db: Database, candidates: list[SongStateCandidate]) -> list
 
 
 def _state_membership_for_songs(db: Database, songs: Sequence[SongIdentity]) -> Mapping[SongIdentity, set[str]]:
-    """Return the current state memberships for the given song IDs.
+    """Return the current state memberships for the given SongIdentities.
 
-    Uses a single targeted edge-traversal query — no full state scan,
-    no document fetch.
+    Delegates to the app facade's membership query, which resolves the
+    supplied song identities to their state vertices without a full state
+    scan.
     """
     if not songs:
         return {}
@@ -301,9 +290,10 @@ def get_songs_with_incomplete_tags(
             library.
 
     Returns:
-        List of dicts with ``file_id``, ``file_key``, ``library_id``,
-            ``matched_count``, ``missing_count``, and ``missing_heads`` for each
-            written song missing one or more expected heads.
+        List of ``IncompleteTagCandidate`` values, one per written song missing one or
+            more expected heads. Each carries the song's ``identity`` (a
+            ``SongIdentity``) and ``song`` record alongside ``matched_count``,
+            ``missing_count``, and the ``missing_heads`` tuple of expected head keys.
 
     """
     candidates = _state_candidates(db, STATE_WRITTEN, library)

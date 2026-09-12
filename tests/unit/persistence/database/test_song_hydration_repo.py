@@ -13,7 +13,7 @@ from itertools import count
 from typing import TYPE_CHECKING
 
 import pytest
-from sqlalchemy import event, insert, select
+from sqlalchemy import delete, event, insert, select
 
 from nomarr.helpers.constants.file_states import (
     STATE_HYDRATED,
@@ -754,3 +754,25 @@ class TestHydrateBatchBoundedBulk:
         # bounded chunk's statements, never inputs x tags.
         assert seven_count >= four_count
         assert seven_count <= four_count + 15
+
+
+@pytest.mark.unit
+@pytest.mark.integration
+class TestHydrateStaleLocator:
+    """A deleted song's locator misses — no resurrection (Q3-D boundary proof)."""
+
+    def test_deleted_song_locator_misses_without_resurrection(self, pg_session) -> None:
+        """After the row is deleted, hydrating its stale locator raises, never recreates it."""
+        SongStateRepository(pg_session).bootstrap_states([])
+        _, song_id = _create_library_and_song(pg_session)
+        stale_locator = _locator(pg_session, song_id)
+
+        pg_session.execute(delete(Song).where(Song.id == song_id))
+        pg_session.flush()
+
+        with pytest.raises(EntityNotFoundError):
+            _build_repo(pg_session).hydrate_song(stale_locator, _make_input())
+
+        # The stale locator did not resurrect any song row.
+        remaining = pg_session.execute(select(Song.__table__.c.id).where(Song.__table__.c.id == song_id)).fetchall()
+        assert remaining == []

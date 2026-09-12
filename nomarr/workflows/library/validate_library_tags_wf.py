@@ -41,7 +41,12 @@ def validate_library_tags_workflow(
             so the tag worker reprocesses them.
 
     Returns:
-        Validation summary dict with files_checked/complete_files/\n        incomplete_files/files_repaired/missing_names_summary/expected_heads/details.
+        Validation summary dict with ``files_checked``, ``complete_files``,
+        ``incomplete_files``, ``files_repaired``, ``missing_names_summary``,
+        ``expected_heads``, and ``details``. ``details`` is the list of typed
+        ``IncompleteTagCandidate`` values for the incomplete files. When no model
+        heads are discovered, the early return reports zeroed counts and omits
+        ``details`` (no candidates are computed).
 
     """
     heads = discover_heads(models_dir, db)
@@ -77,16 +82,20 @@ def validate_library_tags_workflow(
         library=library,
     )
 
-    incomplete = [r for r in results if r["missing_count"] > 0]
+    # ``get_songs_with_incomplete_tags`` returns typed ``IncompleteTagCandidate``
+    # values. Each candidate carries its semantic ``SongIdentity`` locator and its
+    # missing head names directly, so no raw row, integer identity, or resolver is
+    # consulted here (ADR-048; CONTRACTS §5/§9.1).
+    incomplete = [candidate for candidate in results if candidate.missing_count > 0]
     missing_counter: Counter[str] = Counter()
-    for row in incomplete:
-        for head_key in row["missing_heads"]:
+    for candidate in incomplete:
+        for head_key in candidate.missing_heads:
             missing_counter[head_key] += 1
 
     repaired = 0
     if auto_repair and incomplete:
-        song_ids = [row["file_id"] for row in incomplete]
-        transition_song_state(db, song_ids, STATE_WRITTEN, STATE_NOT_WRITTEN)
+        identities = [candidate.identity for candidate in incomplete]
+        transition_song_state(db, identities, STATE_WRITTEN, STATE_NOT_WRITTEN)
         repaired = len(incomplete)
 
     return {

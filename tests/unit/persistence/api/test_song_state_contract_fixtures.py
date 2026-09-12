@@ -63,14 +63,22 @@ def test_candidate_locator_and_song_agree_and_carry_no_generated_id(
 
 
 @pytest.mark.unit
-def test_assert_candidate_semantic_rejects_raw_row_dict_song(song_state_contract: SimpleNamespace) -> None:
-    """A raw storage-row/dict shape must never pass the semantic candidate check."""
+def test_candidate_construction_rejects_raw_row_dict_song(song_state_contract: SimpleNamespace) -> None:
+    """A raw storage-row/dict shape must never become a semantic candidate."""
+    good = song_state_contract.make_candidate("a.flac")
+    with pytest.raises(TypeError):
+        SongStateCandidate(
+            identity=good.identity,
+            song={"id": 5, "path": "/music/a.flac", "normalized_path": "a.flac"},  # type: ignore[arg-type]
+            states=good.states,
+        )
+
+
+@pytest.mark.unit
+def test_assert_candidate_semantic_rejects_forced_raw_row_dict_song(song_state_contract: SimpleNamespace) -> None:
+    """``assert_candidate_semantic`` still rejects a raw row/dict forced past construction."""
     bad = song_state_contract.make_candidate("a.flac")
-    bad = SongStateCandidate(
-        identity=bad.identity,
-        song={"id": 5, "path": "/music/a.flac", "normalized_path": "a.flac"},  # type: ignore[arg-type]
-        states=bad.states,
-    )
+    object.__setattr__(bad, "song", {"id": 5, "path": "/music/a.flac", "normalized_path": "a.flac"})
     with pytest.raises(AssertionError):
         song_state_contract.assert_candidate_semantic(bad)
 

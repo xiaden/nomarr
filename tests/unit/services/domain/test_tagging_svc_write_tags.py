@@ -13,6 +13,7 @@ from nomarr.helpers import ManagedTask
 from nomarr.helpers.dataclasses.library_dataclass import Library
 from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
 from nomarr.helpers.dataclasses.song_dataclass import Song
+from nomarr.helpers.dataclasses.song_state_candidate_dataclass import SongStateCandidate
 from nomarr.helpers.dto.library_dto import WriteTagsResult
 from nomarr.helpers.exceptions import TaskCancelledError
 from nomarr.services.domain.tagging_svc import TaggingService, TaggingServiceConfig
@@ -53,6 +54,15 @@ def _identity(normalized_path: str = "song.mp3") -> SongIdentity:
     return SongIdentity(
         library=LibraryIdentity(library_uuid="uuid-lib1", name="lib1", root_path="/music"),
         normalized_path=normalized_path,
+    )
+
+
+def _candidate(normalized_path: str = "song.mp3") -> SongStateCandidate:
+    """Build a real typed reconciliation candidate (what Q3-E now returns)."""
+    return SongStateCandidate(
+        identity=_identity(normalized_path),
+        song=_song(normalized_path=normalized_path),
+        states=("not_written",),
     )
 
 
@@ -254,7 +264,7 @@ class TestWriteTagsToFiles:
         with (
             patch(
                 "nomarr.services.domain.tagging_svc.write.claim_files_for_reconciliation",
-                return_value=[_song(), _song(normalized_path="song2.mp3")],
+                return_value=[_candidate(), _candidate(normalized_path="song2.mp3")],
             ),
             patch(
                 "nomarr.services.domain.tagging_svc.write.count_files_needing_reconciliation",
@@ -289,7 +299,7 @@ class TestWriteTagsToFiles:
         with (
             patch(
                 "nomarr.services.domain.tagging_svc.write.claim_files_for_reconciliation",
-                return_value=[_song(), _song(normalized_path="song2.mp3")],
+                return_value=[_candidate(), _candidate(normalized_path="song2.mp3")],
             ),
             patch(
                 "nomarr.services.domain.tagging_svc.write.count_files_needing_reconciliation",
@@ -323,7 +333,7 @@ class TestWriteTagsToFiles:
         with (
             patch(
                 "nomarr.services.domain.tagging_svc.write.claim_files_for_reconciliation",
-                return_value=[_song()],
+                return_value=[_candidate()],
             ),
             patch(
                 "nomarr.services.domain.tagging_svc.write.count_files_needing_reconciliation",
@@ -354,7 +364,7 @@ class TestWriteTagsToFiles:
         with (
             patch(
                 "nomarr.services.domain.tagging_svc.write.claim_files_for_reconciliation",
-                return_value=[_song()],
+                return_value=[_candidate()],
             ),
             patch(
                 "nomarr.services.domain.tagging_svc.write.count_files_needing_reconciliation",
@@ -384,10 +394,6 @@ class TestWriteTagsToFiles:
 
         with (
             patch(
-                "nomarr.services.domain.tagging_svc.write.claim_files_for_reconciliation",
-                return_value=[_song()],
-            ) as mock_claim,
-            patch(
                 "nomarr.services.domain.tagging_svc.write.count_files_needing_reconciliation",
                 return_value=0,
             ),
@@ -398,7 +404,8 @@ class TestWriteTagsToFiles:
             result = service.write_tags_to_files(library)
 
         assert result == WriteTagsResult(processed=0, remaining=0, failed=0)
-        mock_claim.assert_called_once()
+        # The real claim read returns no candidates for a UUID-less library.
+        mock_db.library.list_songs_with_state.assert_not_called()
         mock_workflow.assert_not_called()
 
     @pytest.mark.unit
@@ -413,7 +420,7 @@ class TestWriteTagsToFiles:
         with (
             patch(
                 "nomarr.services.domain.tagging_svc.write.claim_files_for_reconciliation",
-                return_value=[_song()],
+                return_value=[_candidate()],
             ),
             patch(
                 "nomarr.services.domain.tagging_svc.write.count_files_needing_reconciliation",
@@ -432,3 +439,71 @@ class TestWriteTagsToFiles:
 
         assert result == WriteTagsResult(processed=0, remaining=0, failed=1)
         mock_release_claim.assert_called_once_with(mock_db, _identity(), "reconcile:lib1")
+
+
+class TestWriteTagsToFilesTypedClaims:
+    """Regression coverage for the typed Q3-E reconciliation claim contract."""
+
+    @pytest.mark.unit
+    def test_write_tags_to_files_reconciles_real_typed_claims(self) -> None:
+        """Real typed claims must be re-addressed through ``candidate.identity``.
+
+        Guards the cross-plan break where the caller read ``song.normalized_path``
+        from what Q3-E now returns as a typed ``SongStateCandidate`` (``AttributeError``).
+        This exercises the real ``claim_files_for_reconciliation`` with real candidates
+        (no claim mock) and asserts the workflow receives the candidate's locator.
+        """
+        mock_db = MagicMock()
+        mock_db.app.get_calibration_version.return_value = "calibration-v1"
+        mock_db.app.add_claim.return_value = True
+        candidate = _candidate(normalized_path="typed/song.mp3")
+        mock_db.library.list_songs_with_state.side_effect = [[candidate], []]
+        service = _make_service(db=mock_db)
+
+        with (
+            patch(
+                "nomarr.services.domain.tagging_svc.write.count_files_needing_reconciliation",
+                return_value=0,
+            ),
+            patch(
+                "nomarr.services.domain.tagging_svc.write.write_file_tags_workflow",
+                return_value=SimpleNamespace(success=True),
+            ) as mock_workflow,
+        ):
+            result = service.write_tags_to_files(_make_library())
+
+        assert result == WriteTagsResult(processed=1, remaining=0, failed=0)
+        assert mock_workflow.call_args.kwargs["file_key"] == candidate.identity
+
+    @pytest.mark.unit
+    def test_write_tags_to_files_cancellation_releases_in_flight_claim(self) -> None:
+        """A raised error mid-batch must release the in-flight typed claim and be counted.
+
+        ``write_file_tags_workflow`` raising is handled by the loop's catch-all branch:
+        the candidate's typed locator claim is released and the file is counted failed;
+        the batch continues to completion. No production behavior is changed by this test.
+        """
+        mock_db = MagicMock()
+        mock_db.app.get_calibration_version.return_value = "calibration-v1"
+        mock_db.app.add_claim.return_value = True
+        candidate = _candidate(normalized_path="typed/cancel.mp3")
+        mock_db.library.list_songs_with_state.side_effect = [[candidate], []]
+        service = _make_service(db=mock_db)
+
+        with (
+            patch(
+                "nomarr.services.domain.tagging_svc.write.count_files_needing_reconciliation",
+                return_value=1,
+            ),
+            patch(
+                "nomarr.services.domain.tagging_svc.write.release_claim",
+            ) as mock_release_claim,
+            patch(
+                "nomarr.services.domain.tagging_svc.write.write_file_tags_workflow",
+                side_effect=TaskCancelledError("cancelled"),
+            ),
+        ):
+            result = service.write_tags_to_files(_make_library())
+
+        assert result == WriteTagsResult(processed=0, remaining=1, failed=1)
+        mock_release_claim.assert_called_once_with(mock_db, candidate.identity, "reconcile:lib1")

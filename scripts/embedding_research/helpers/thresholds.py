@@ -53,7 +53,7 @@ from typing import Final
 
 #: The one and only threshold-application semantics: a finite boundary value
 #: applied directly (no scaling / calibration).  This is an APPLICATION label
-#: independent of the executed distance metric (which is derived from ``bin_mode``
+#: independent of the executed distance metric (which is derived from ``experiment``
 #: via the canonical geometry engine).  Kept as a named constant so
 #: ``ThresholdResolution`` values and committed manifests compare against a single
 #: spelling.
@@ -85,7 +85,7 @@ class ThresholdResolution:
     semantics:
         Always :data:`DIRECT_DISTANCE` (``"direct_distance"``) — the threshold
         APPLICATION label.  It never implies a distance metric; the executed metric
-        is derived from the config's ``bin_mode`` via the canonical geometry engine.
+        is derived from the config's ``experiment`` via the canonical geometry engine.
     encoder_version:
         The whole-module :func:`config_encoder_version` at resolution time, so the
         recorded contract pins the exact encoder source that produced it.
@@ -141,7 +141,7 @@ def resolve_threshold(configured: object) -> ThresholdResolution:
     as a finite scalar boundary value (``effective == configured`` exactly).
     Non-finite or non-numeric inputs are rejected.  The semantics is the
     application label :data:`DIRECT_DISTANCE` and never implies a distance metric;
-    the executed metric is derived from the config's ``bin_mode``.  No ``semantics``
+    the executed metric is derived from the config's ``experiment``.  No ``semantics``
     or ``calibration_record`` selector exists; scaled/calibration/p50 resolution is
     not representable.
     """

@@ -11,6 +11,10 @@ from nomarr.components.library.file_batch_scanner_comp import (
     _compute_normalized_path,
     scan_folder_files,
 )
+from nomarr.components.library.song_query_types import StateTaggedSong
+from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
+from nomarr.helpers.dataclasses.song_dataclass import Song
+from nomarr.helpers.dataclasses.song_state_candidate_dataclass import SongStateCandidate
 from nomarr.helpers.time_helper import Milliseconds
 
 if TYPE_CHECKING:
@@ -42,6 +46,36 @@ def _make_invalid_library_path(reason: str = "invalid path") -> MagicMock:
     library_path.absolute = None
     library_path.reason = reason
     return library_path
+
+
+def _state_tagged(
+    *, modified_time: int, tagged: bool = False, normalized_path: str = "Rock/song.mp3"
+) -> StateTaggedSong:
+    """Build a typed folder carrier as the scan workflows now provide it."""
+    library = LibraryIdentity(library_uuid="uuid-lib", name="lib", root_path="/music")
+    return StateTaggedSong(
+        candidate=SongStateCandidate(
+            identity=SongIdentity(library=library, normalized_path=normalized_path),
+            song=Song(
+                path=f"/music/{normalized_path}",
+                normalized_path=normalized_path,
+                file_size=100,
+                modified_time=modified_time,
+                duration_seconds=None,
+                chromaprint=None,
+                needs_tagging=False,
+                is_valid=True,
+                tagged=tagged,
+                calibration_hash=None,
+                write_claimed_by=None,
+                last_tagged_at=None,
+                scanned_at=None,
+                created_at=modified_time,
+            ),
+            states=("processed",) if tagged else (),
+        ),
+        has_tagged_state=tagged,
+    )
 
 
 class TestComputeNormalizedPath:
@@ -80,7 +114,6 @@ class TestScanFolderFiles:
                 folder_path=folder_path,
                 library_root=library_root,
                 existing_files={},
-                tagger_version="suite-v1",
                 db=mock_db,
             )
 
@@ -107,8 +140,7 @@ class TestScanFolderFiles:
             result = scan_folder_files(
                 folder_path=folder_path,
                 library_root=library_root,
-                existing_files={str(track_path): {"modified_time": modified_time}},
-                tagger_version="suite-v1",
+                existing_files={str(track_path): _state_tagged(modified_time=modified_time)},
                 db=mock_db,
             )
 
@@ -134,7 +166,6 @@ class TestScanFolderFiles:
                 folder_path=folder_path,
                 library_root=library_root,
                 existing_files={},
-                tagger_version="suite-v1",
                 db=mock_db,
             )
 
@@ -161,7 +192,6 @@ class TestScanFolderFiles:
                 folder_path=folder_path,
                 library_root=library_root,
                 existing_files={},
-                tagger_version="suite-v1",
                 db=mock_db,
             )
 
@@ -191,7 +221,6 @@ class TestScanFolderFiles:
                 folder_path=folder_path,
                 library_root=library_root,
                 existing_files={},
-                tagger_version="suite-v1",
                 db=mock_db,
             )
 
@@ -211,7 +240,10 @@ class TestScanFolderFiles:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_marks_changed_currently_tagged_file_as_updated_with_version_edge(self, tmp_path: Path) -> None:
+    def test_marks_changed_tagged_carrier_as_updated_without_bootstrap_edges(self, tmp_path: Path) -> None:
+        """A changed, already-tagged typed carrier is updated; the retired version
+        bootstrap emits no edge.
+        """
         mock_db = MagicMock()
         library_root = tmp_path / "music"
         folder_path = library_root / "Rock"
@@ -227,24 +259,78 @@ class TestScanFolderFiles:
             result = scan_folder_files(
                 folder_path=folder_path,
                 library_root=library_root,
-                existing_files={
-                    str(track_path): {
-                        "modified_time": 0,
-                        "has_tagged_state": True,
-                        "tagger_version": "suite-v1",
-                    }
-                },
-                tagger_version="suite-v1",
+                existing_files={str(track_path): _state_tagged(modified_time=0, tagged=True)},
                 db=mock_db,
             )
 
         assert len(result.file_entries) == 1
         assert result.new_file_paths == set()
         assert result.stats == {"files_updated": 1, "files_failed": 0, "files_skipped": 0}
-        assert result.edge_bootstraps == [
-            {
-                "normalized_path": "Rock/song.mp3",
-                "type": "ml_tagged",
-                "version": "suite-v1",
-            }
-        ]
+        assert result.edge_bootstraps == []
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_preserves_discovery_order_across_multiple_files(self, tmp_path: Path) -> None:
+        """Multiple discovered files must keep the disk-listing order in file_entries.
+
+        The scan workflow relies on ``file_entries`` staying aligned with the typed
+        identities returned by ``upsert_scanned_files`` (``zip(..., strict=True)``), so
+        the scanner must not reorder or deduplicate across files.
+        """
+        mock_db = MagicMock()
+        library_root = tmp_path / "music"
+        folder_path = library_root / "Rock"
+        names = ["a.mp3", "b.mp3", "c.mp3"]
+        for name in names:
+            _make_audio_file(folder_path / name)
+        expected_paths = [str(folder_path / name) for name in names]
+
+        from pathlib import Path as RuntimePath
+
+        with (
+            patch(
+                f"{MODULE}.build_library_path_from_input",
+                side_effect=lambda path, _db: _make_valid_library_path(RuntimePath(path)),
+            ),
+            patch(f"{MODULE}.now_ms", return_value=Milliseconds(111)),
+        ):
+            result = scan_folder_files(
+                folder_path=folder_path,
+                library_root=library_root,
+                existing_files={},
+                db=mock_db,
+            )
+
+        assert [entry["path"] for entry in result.file_entries] == expected_paths
+        assert [entry["normalized_path"] for entry in result.file_entries] == [f"Rock/{name}" for name in names]
+        assert result.discovered_paths == set(expected_paths)
+        assert result.new_file_paths == set(expected_paths)
+        assert result.stats == {"files_updated": 0, "files_failed": 0, "files_skipped": 0}
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_rejects_raw_row_shaped_existing_files(self, tmp_path: Path) -> None:
+        """The scanner boundary accepts typed ``StateTaggedSong`` carriers only.
+
+        Raw row/dict scan entries are no longer representable; passing one must not
+        silently work. This pins the hard cut so a future change cannot reintroduce a
+        raw-document path at this boundary.
+        """
+        mock_db = MagicMock()
+        library_root = tmp_path / "music"
+        folder_path = library_root / "Rock"
+        track_path = _make_audio_file(folder_path / "song.mp3")
+
+        with (
+            patch(
+                f"{MODULE}.build_library_path_from_input",
+                return_value=_make_valid_library_path(track_path),
+            ),
+            pytest.raises(AttributeError),
+        ):
+            scan_folder_files(
+                folder_path=folder_path,
+                library_root=library_root,
+                existing_files={str(track_path): {"modified_time": 0}},
+                db=mock_db,
+            )

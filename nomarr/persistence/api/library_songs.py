@@ -872,6 +872,7 @@ class LibrarySongsDb:
         transactions.
 
         Args:
+            song: Semantic locator identifying the song to hydrate.
             input: Fully-parsed hydration payload (see
                 :class:`HydrateSongInput`). Values must already be
                 extracted/parsed — persistence never calls extraction.

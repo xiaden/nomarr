@@ -31,8 +31,6 @@ class HydrateSongInput:
     persistence facade owns storing all of it atomically and idempotently.
 
     Attributes:
-        Song identity is supplied separately by the locator-addressed
-             persistence intent; this payload contains only parsed values.
         parsed_nom_tags: Mapping of tag name → values for ``nom:``-prefixed
             parsed tags. Values may be strings or numbers.
         entity_tags: Mapping of entity/tag relationship name → values (e.g.
@@ -45,6 +43,9 @@ class HydrateSongInput:
             plus bpm/key/title/tracknumber/discnumber).
         duration_seconds: Optional duration to store. Persistence treats this
             as one-shot: it must not overwrite an already-present duration.
+
+    Song identity is supplied separately by the locator-addressed
+    persistence intent; this payload contains only parsed values.
 
     The dataclass is frozen (immutable) and holds no extraction logic or
     database-row state.

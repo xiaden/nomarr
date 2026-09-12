@@ -544,8 +544,8 @@ def ensure_schema(con) -> None:
     Ensures the current run-scoped ``analyze_metrics`` table (creating it when absent, or
     raising :class:`StaleSchemaError` when an incompatible table is present), then the
     monolithic DDL and the two tables owned
-    outside the monolithic ``_DDL``: the canonical 18-column ``head_phase_provenance`` table
-    and the 30-column ``analyze_incomplete_diagnostics`` table (``_INCOMPLETE_DIAGNOSTICS_CREATE``,
+    outside the monolithic ``_DDL``: the canonical 16-column ``head_phase_provenance`` table
+    and the 29-column ``analyze_incomplete_diagnostics`` table (``_INCOMPLETE_DIAGNOSTICS_CREATE``,
     built from ``_INCOMPLETE_DIAGNOSTIC_COLUMN_DEFS``).
     """
     _require_duckdb()

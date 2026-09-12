@@ -53,7 +53,7 @@ evidence.
 `FrozenSearchRepresentation` and `GeometryRepresentationRoster` are transient CPU-memory values.
 They preserve every structural threshold member while collapsing only equal ordered scoring inputs
 within one experiment/evidence domain. Primary `temporal_global`/unit-space L2 and explicit
-secondary `temporal_perdim`/Chebyshev never collapse, even at equal numeric thresholds. Frozen
+secondary `temporal_perdim_chebyshev_secondary`/Chebyshev never collapse, even at equal numeric thresholds. Frozen
 source rows are gathered once per unique representation; the observed whole-song source medoid is
 a separate baseline representation, never a winner candidate, and no synthetic/coordinate-wise
 medoid is allowed.
@@ -88,7 +88,7 @@ streams are excluded.
 Current invariants: a single finite threshold-application contract `direct_distance` with
 `configured == effective` exactly — its executed distance metric is never stored but derived from
 the configured geometry mode (`l2` for `temporal_global`, `chebyshev`
-for `temporal_perdim`); commit-bound observation evidence whose structural ranges yield the exact
+for `temporal_perdim_chebyshev_secondary`); commit-bound observation evidence whose structural ranges yield the exact
 searchable membership reconstructed on read (never a per-patch table, never an inclusive range),
 with absorbed outliers represented exactly and segment medoids stored as observed source patch
 indices; per-geometry identity preimages that bind each leaf to its song id and fold the frozen
@@ -117,8 +117,8 @@ There is exactly ONE threshold contract: a single finite threshold-*application*
 executed boundary distance is a *derived* quantity, not a stored configuration axis: the primary
 Gram engine compares rows by unit-vector L2 and derives all 171 primary thresholds from one decoded
 Gram, while the Chebyshev secondary path is an explicit, separately-named experiment
-(`temporal_perdim`, per-dimension Chebyshev over canonical coordinates). The advertised metric
-always equals the executed metric; there is no `bin_mode`-selected metric dispatch. Scaled
+(`temporal_perdim_chebyshev_secondary`, per-dimension Chebyshev over canonical coordinates). The advertised metric
+always equals the executed metric; there is no `experiment`-selected metric dispatch. Scaled
 (`std_scaled`), calibration/p50, weighted-reduction, and per-threshold cache/table vocabulary were
 removed and are historical only. The pure API home is `helpers/thresholds.py`, free of
 DuckDB/IO/audio deps:
@@ -133,7 +133,7 @@ class ThresholdResolution:
 
 resolve_threshold(configured: object) -> ThresholdResolution   # single arg only
 canonical_float(value: object) -> str      # finite; -0.0 -> "0.0"; rejects NaN/Inf
-canonical_config_hash(*, backbone, bin_mode, threshold, outlier_window,
+canonical_config_hash(*, backbone, experiment, threshold, outlier_window,
                       strategy_version, encoder_version) -> str
 config_encoder_version() -> str            # lazy whole-module SHA-256, metadata-refreshed
 ```
@@ -146,7 +146,7 @@ executed metric is a property of the geometry engine, not a configurable axis �
 `calibration_record`/`config_membership` columns. The resolved threshold is one scalar with
 `configured == effective` and application semantics `direct_distance` in every retained mode. The
 primary Gram engine uses unit-vector L2 over the 171-grid; the Chebyshev secondary is a distinct,
-explicitly-named experiment (`temporal_perdim`) and never a `bin_mode`-selected variant of the
+explicitly-named experiment (`temporal_perdim_chebyshev_secondary`) and never a `experiment`-selected variant of the
 primary path.
 
 The strict configuration loader lives in `helpers/toml.py`:
@@ -271,12 +271,13 @@ constraints. Application checks and duplicate tests enforce identities.
 - `songs` — corpus rows (PK `song_id`).
 - `analyze_metrics` — one current run-scoped schema: `run_id TEXT NOT NULL` with no default, no PK.
 - `song_retrieval_metrics` — per-song aggregate lenses (PK `strategy_key,sim_metric,k,song_id`).
-- `head_phase_provenance` — canonical 18-column head sink, no PK.
+- `head_phase_provenance` — canonical 16-column head sink, no PK.
 - `phase_timings` — elapsed wall-clock per phase (PK `run_ts,phase`); the active efficiency source.
 - `run_provenance` — per-phase run rows, including retention state.
 - `corpus_state` — singleton post-run corpus state; zero/one application check.
-- `analyze_incomplete_diagnostics` — versioned non-metric diagnostics for non-comparable
-  representations, no PK/UNIQUE; app-scoped replacement by `(run_id, strategy_key, sim_metric, k)`.
+- `analyze_incomplete_diagnostics` — canonical 29-column non-metric diagnostics sink for
+  non-comparable representations, no PK/UNIQUE; app-scoped replacement by
+  `(run_id, geometry_id, evaluation_id, sim_metric)`.
 
 No vector BLOBs, `view_manifest`, or artifact-classification table is introduced. `analyze_metrics`
 is run-scoped: `run_id` is a required non-null `TEXT` column with no default. All readers and

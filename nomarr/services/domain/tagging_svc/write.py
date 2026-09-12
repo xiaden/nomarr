@@ -12,7 +12,6 @@ from nomarr.components.library.reconciliation_comp import (
     release_claim,
 )
 from nomarr.helpers import ManagedTask
-from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
 from nomarr.helpers.dto.library_dto import WriteTagsResult
 from nomarr.helpers.exceptions import TaskCancelledError
 from nomarr.services.domain.library_svc.task_ids import write_tags_task_id
@@ -109,15 +108,12 @@ class TaggingWriteMixin:
         processed = 0
         failed = 0
 
-        library_identity = (
-            LibraryIdentity(library.library_uuid, library.name, library.root_path)
-            if library.library_uuid is not None
-            else None
-        )
-        for song in claimed_files:
-            if library_identity is None:  # No identity -> claim_files returns no songs.
-                break
-            file_key = SongIdentity(library=library_identity, normalized_path=song.normalized_path)
+        # ``claim_files_for_reconciliation`` returns typed ``SongStateCandidate`` values;
+        # each candidate already carries the locator to re-address, so no path/identity is
+        # reconstructed at this boundary (ADR-048; CONTRACTS §5). A missing library UUID
+        # yields no candidates from the claim read, so the loop is a no-op for that case.
+        for candidate in claimed_files:
+            file_key = candidate.identity
             try:
                 result = write_file_tags_workflow(
                     db=self.db,

@@ -13,6 +13,7 @@ from nomarr.helpers.constants.file_states import (
     STATE_NOT_ERRORED,
     STATE_NOT_PROCESSED,
     STATE_PROCESSED,
+    STATE_VECTORS_EXTRACTED,
 )
 from nomarr.helpers.dataclasses.ml_output_stream_dataclass import OutputStreamWrite
 from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
@@ -608,20 +609,68 @@ class TestExecuteDeferredWrites:
     _PATCH_RELEASE = "nomarr.components.workers.worker_discovery_comp.release_claim"
     _PATCH_UPDATE_TAGGED = f"{_MODULE}.update_last_tagged_at"
 
-    def _call(self, db, writes):
+    def _call(self, db, writes, *, chromaprint_side_effect=None, transition_side_effect=None):
         """Invoke ``_execute_deferred_writes`` with component deps mocked."""
         from nomarr.services.infrastructure.workers.discovery_worker import _execute_deferred_writes
 
         with (
             patch(self._PATCH_PARSE, return_value={}),
             patch(self._PATCH_SAVE_TAGS),
-            patch(self._PATCH_CHROMAPRINT),
-            patch(self._PATCH_TRANSITION) as mock_transition,
+            patch(self._PATCH_CHROMAPRINT, side_effect=chromaprint_side_effect),
+            patch(self._PATCH_TRANSITION, side_effect=transition_side_effect) as mock_transition,
             patch(self._PATCH_RELEASE) as mock_release,
             patch(self._PATCH_UPDATE_TAGGED),
         ):
             _execute_deferred_writes(db, writes, "worker:tag:0")
         return mock_transition, mock_release
+
+    def test_full_stage_relative_order_tag_scalar_ml_state(self) -> None:
+        """The deferred executor runs the tag -> chromaprint scalar -> per-backbone
+        ML aggregate -> PROCESSED/state -> update_last_tagged_at -> VECTORS_EXTRACTED
+        stages in exactly that relative order.
+
+        Each stage is instrumented to append a marker to one shared list, so the
+        assertion is call-ordering based (no sleeps or timing)."""
+        from nomarr.services.infrastructure.workers.discovery_worker import _execute_deferred_writes
+
+        db = MagicMock()
+        writes = self._writes(with_vectors=True, with_streams=True)
+        order: list[str] = []
+
+        def _record_save_tags(_db, _song, _tags):
+            order.append("tags")
+
+        def _record_chromaprint(_db, _song, _chromaprint):
+            order.append("chromaprint")
+
+        def _record_aggregate(song, backbone, *, vectors, output_streams):
+            order.append(f"ml:{backbone}")
+
+        def _record_transition(_db, _songs, _from_state, to_state):
+            order.append(f"state:{to_state}")
+
+        def _record_update_tagged(_db, _song):
+            order.append("update_last_tagged_at")
+
+        db.ml.replace_song_inference_results.side_effect = _record_aggregate
+        with (
+            patch(self._PATCH_PARSE, return_value={"genre": ["rock"]}),
+            patch(self._PATCH_SAVE_TAGS, side_effect=_record_save_tags),
+            patch(self._PATCH_CHROMAPRINT, side_effect=_record_chromaprint),
+            patch(self._PATCH_TRANSITION, side_effect=_record_transition),
+            patch(self._PATCH_RELEASE),
+            patch(self._PATCH_UPDATE_TAGGED, side_effect=_record_update_tagged),
+        ):
+            _execute_deferred_writes(db, writes, "worker:tag:0")
+
+        assert order == [
+            "tags",
+            "chromaprint",
+            "ml:bb1",
+            f"state:{STATE_PROCESSED}",
+            "update_last_tagged_at",
+            f"state:{STATE_VECTORS_EXTRACTED}",
+        ]
 
     def _writes(self, *, with_vectors: bool = True, with_streams: bool = True) -> DeferredFileWrites:
         return DeferredFileWrites(
@@ -752,6 +801,25 @@ class TestExecuteDeferredWrites:
             OutputStreamWrite(output_id="head_0", values=[0.1, 0.9], output_index=0),
             OutputStreamWrite(output_id="head_0", values=[0.4, 0.6], output_index=0),
         ]
+
+    def test_chromaprint_failure_sets_errored_and_releases_claim(self) -> None:
+        db = MagicMock()
+        writes = self._writes()
+        mock_transition, mock_release = self._call(db, writes, chromaprint_side_effect=RuntimeError("chromaprint down"))
+
+        mock_transition.assert_called_once_with(db, [_song()], STATE_NOT_ERRORED, STATE_ERRORED)
+        mock_release.assert_called_once_with(db, _song(), "worker:tag:0")
+
+    def test_state_failure_sets_errored_and_releases_claim(self) -> None:
+        db = MagicMock()
+        writes = self._writes()
+        mock_transition, mock_release = self._call(
+            db, writes, transition_side_effect=[RuntimeError("state down"), None]
+        )
+
+        assert mock_transition.call_args_list[0].args == (db, [_song()], STATE_NOT_PROCESSED, STATE_PROCESSED)
+        mock_transition.assert_any_call(db, [_song()], STATE_NOT_ERRORED, STATE_ERRORED)
+        mock_release.assert_called_once_with(db, _song(), "worker:tag:0")
 
     def test_aggregate_failure_sets_errored_and_releases_claim(self) -> None:
         db = MagicMock()
@@ -947,3 +1015,102 @@ class TestWarmOnnxCacheVramPromise:
         assert "backbone.onnx" in promise_rows
         assert "512 MB" in promise_rows
         assert "UNKNOWN" in promise_rows
+
+
+# ---------------------------------------------------------------------------
+# run() shutdown / cancellation / pending-write drain (Q3-D lifecycle)
+# ---------------------------------------------------------------------------
+
+
+class TestRunShutdownLifecycle:
+    """``DiscoveryWorker.run`` lifecycle closure for the Q3-D proof.
+
+    Covers cooperative cancellation before any discovery work and the
+    shutdown drain of an in-flight deferred write. Both paths must release the
+    worker cleanly, mark health ``stopping``, and shut the write executor down
+    without an integer Song/storage handle ever entering the loop.
+    """
+
+    _PATCH_DISCOVER = "nomarr.components.workers.worker_discovery_comp.discover_and_claim_file"
+    _PATCH_SHUTDOWN_AUDIO = "nomarr.components.ml.audio.ml_audio_comp.shutdown_audio_loader"
+    _PATCH_SHUTDOWN_HEADS = "nomarr.components.ml.inference.ml_head_pipeline_comp.shutdown_head_pool"
+    _PATCH_RELEASE_PROMISES = "nomarr.components.ml.resources.ml_vram_coordinator_comp.release_worker_promises"
+
+    def _run(self, mock_self, setup, discover_result=None):
+        from nomarr.services.infrastructure.workers.discovery_worker import DiscoveryWorker
+
+        mock_self._preflight_and_connect.return_value = setup
+        with (
+            patch(f"{_MODULE}.ThreadPoolExecutor") as mock_executor_cls,
+            patch(self._PATCH_SHUTDOWN_AUDIO) as mock_shutdown_audio,
+            patch(self._PATCH_SHUTDOWN_HEADS) as mock_shutdown_heads,
+            patch(self._PATCH_RELEASE_PROMISES) as mock_release_promises,
+            patch(self._PATCH_DISCOVER, return_value=discover_result) as mock_discover,
+        ):
+            DiscoveryWorker.run(mock_self)
+        return mock_executor_cls, mock_discover, mock_release_promises, mock_shutdown_audio, mock_shutdown_heads
+
+    @pytest.mark.unit
+    def test_run_cancellation_exits_without_discovery(self):
+        """A pre-set stop event cancels the loop before any claim/discovery."""
+        mock_self = _make_worker_self()
+        mock_self._stop_event.is_set.return_value = True
+        db = MagicMock()
+
+        mock_executor_cls, mock_discover, _release_promises, _shutdown_audio, _shutdown_heads = self._run(
+            mock_self, (db, MagicMock(), None)
+        )
+
+        mock_discover.assert_not_called()
+        db.app.update_health.assert_called_once()
+        assert db.app.update_health.call_args.kwargs["status"] == "stopping"
+        mock_executor_cls.return_value.shutdown.assert_called_once_with(wait=True)
+
+    @pytest.mark.unit
+    def test_run_drains_pending_write_on_shutdown(self):
+        """An in-flight deferred write is awaited (bounded) before exit."""
+        mock_self = _make_worker_self()
+        mock_self._stop_event.is_set.side_effect = [False, True]
+        mock_self._check_resource_headroom.return_value = None
+        mock_self._warm_onnx_cache.return_value = MagicMock()
+        pending_write = MagicMock()
+        mock_self._process_claimed_file.return_value = (pending_write, True)
+        db = MagicMock()
+
+        mock_executor_cls, mock_discover, _release_promises, _shutdown_audio, _shutdown_heads = self._run(
+            mock_self, (db, MagicMock(), None), discover_result=_song()
+        )
+
+        mock_discover.assert_called_once_with(db, "worker:tag:0")
+        pending_write.result.assert_called_once_with(timeout=30)
+        db.app.update_health.assert_called_once()
+        assert db.app.update_health.call_args.kwargs["status"] == "stopping"
+        mock_executor_cls.return_value.shutdown.assert_called_once_with(wait=True)
+
+    @pytest.mark.unit
+    def test_run_suppresses_pending_write_error_and_still_completes_shutdown(self):
+        """A deferred write that fails during the finally-path drain is logged and
+        suppressed: shutdown still runs the executor drain, health marking, VRAM
+        promise release, and audio/head teardown without propagating."""
+        mock_self = _make_worker_self()
+        mock_self._stop_event.is_set.side_effect = [False, True]
+        mock_self._check_resource_headroom.return_value = None
+        mock_self._warm_onnx_cache.return_value = MagicMock()
+        pending_write = MagicMock()
+        pending_write.result.side_effect = RuntimeError("deferred write failed")
+        mock_self._process_claimed_file.return_value = (pending_write, True)
+        db = MagicMock()
+
+        mock_executor_cls, mock_discover, mock_release_promises, mock_shutdown_audio, mock_shutdown_heads = self._run(
+            mock_self, (db, MagicMock(), None), discover_result=_song()
+        )
+
+        mock_discover.assert_called_once_with(db, "worker:tag:0")
+        pending_write.result.assert_called_once_with(timeout=30)
+        # The exception is swallowed; shutdown still completes fully.
+        mock_executor_cls.return_value.shutdown.assert_called_once_with(wait=True)
+        db.app.update_health.assert_called_once()
+        assert db.app.update_health.call_args.kwargs["status"] == "stopping"
+        mock_release_promises.assert_called_once_with(db, "worker:tag:0")
+        mock_shutdown_audio.assert_called_once_with()
+        mock_shutdown_heads.assert_called_once_with()

@@ -236,7 +236,7 @@ def dense_primary_threshold_request() -> PrimaryThresholdRequest:
 def validate_secondary_chebyshev_request(request: object) -> SecondaryChebyshevRequest:
     """Require an explicit secondary request, never silently coerce a primary one."""
     if not isinstance(request, SecondaryChebyshevRequest):
-        raise ValueError("temporal_perdim requires an explicit SecondaryChebyshevRequest")
+        raise ValueError("temporal_perdim_chebyshev_secondary requires an explicit SecondaryChebyshevRequest")
     return request
 
 

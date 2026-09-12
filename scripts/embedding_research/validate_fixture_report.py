@@ -302,6 +302,24 @@ def _is_contained(target: Path, root: Path) -> bool:
         return False
 
 
+def _current_source_manifest() -> dict[str, str]:
+    """Derive the current research-tree source set, keyed by workspace-relative path.
+
+    Mirrors :func:`tools.emit_traceability._source_manifest`: every ``*.py``/``*.toml``
+    file under ``scripts/embedding_research/`` excluding ``__pycache__``.  The traceability
+    document's declared ``source.files`` must match this set exactly — an omitted file is
+    an unaccounted-for producer and an unexpected file is a stale/foreign declaration.
+    """
+    manifest: dict[str, str] = {}
+    for path in sorted(_PKG_DIR.rglob("*")):
+        if not path.is_file() or "__pycache__" in path.parts:
+            continue
+        if path.suffix not in (".py", ".toml"):
+            continue
+        manifest[str(path.relative_to(_ROOT))] = sha256_file(path)
+    return manifest
+
+
 # ── traceability validation ────────────────────────────────────────────────────
 
 
@@ -443,6 +461,20 @@ def validate_traceability(
         if actual != entry["sha256"]:
             problems.append(f"traceability.source.files[{rel}] hash mismatch")
         known_source[rel] = actual
+    # Manifest completeness (fail closed): derive the current allowed research-tree source
+    # set and require exact set equality with the declaration.  Verifying only declared files
+    # would let a producer be silently omitted or a stale/foreign path be declared.
+    current_source = _current_source_manifest()
+    declared_paths = set(known_source)
+    expected_paths = set(current_source)
+    problems.extend(
+        f"traceability.source.files omits research source: {omitted}"
+        for omitted in sorted(expected_paths - declared_paths)
+    )
+    problems.extend(
+        f"traceability.source.files declares unexpected source: {unexpected}"
+        for unexpected in sorted(declared_paths - expected_paths)
+    )
     declared_commit = str(source.get("commit", ""))
     if check_commit not in (True, False, "informational"):
         problems.append(f"traceability commit-check mode is invalid: {check_commit!r}")

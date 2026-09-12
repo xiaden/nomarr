@@ -17,7 +17,7 @@ from nomarr.helpers.time_helper import now_ms
 
 if TYPE_CHECKING:
     from nomarr.helpers.dataclasses.library_dataclass import Library
-    from nomarr.helpers.dataclasses.song_dataclass import Song
+    from nomarr.helpers.dataclasses.song_state_candidate_dataclass import SongStateCandidate
     from nomarr.persistence.db import Database
 
 
@@ -27,8 +27,8 @@ def claim_files_for_reconciliation(
     worker_id: str,
     batch_size: int = 100,
     lease_ms: int = 60000,
-) -> list[Song]:
-    """Claim stale or pending songs addressed by semantic locators."""
+) -> list[SongStateCandidate]:
+    """Claim stale or pending songs as typed candidates addressed by semantic locators."""
     library_identity = library.library_uuid
     if library_identity is None:
         return []
@@ -40,7 +40,7 @@ def claim_files_for_reconciliation(
             STATE_NOT_WRITTEN, library=LibraryIdentity(library_identity, library.name, library.root_path)
         ),
     ]
-    claimed: list[Song] = []
+    claimed: list[SongStateCandidate] = []
     now = now_ms().value
     for candidate in dict.fromkeys(candidates):
         if len(claimed) >= batch_size:
@@ -50,7 +50,7 @@ def claim_files_for_reconciliation(
             claimed_at_ms=now,
         )
         if db.app.add_claim(claim, lease_ms=lease_ms):
-            claimed.append(candidate.song)
+            claimed.append(candidate)
     return claimed
 
 

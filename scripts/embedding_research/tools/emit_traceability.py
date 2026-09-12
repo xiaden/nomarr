@@ -258,6 +258,20 @@ _MATRIX: dict[str, dict[str, Any]] = {
                     "test_fixture_sentinels_and_timings",
                 ],
             ),
+            (
+                _TEST_DIR + "/test_derived_phase_negative_boundaries.py",
+                [
+                    "test_report_phase_dispatch_completes_with_zero_forbidden_calls",
+                    "test_geometry_phase_dispatch_is_cpu_only_on_empty_store",
+                ],
+            ),
+            (
+                _TEST_DIR + "/test_phase4_dispatch_boundaries.py",
+                [
+                    "test_derived_runner_imports_only_cpu_roots",
+                    "test_derived_runner_never_references_forbidden_tokens",
+                ],
+            ),
         ],
         "static": [
             ("emit_phase_boundary_evidence.py", ["--root", "scripts/embedding_research"], "phase-boundary.json")
@@ -274,6 +288,13 @@ _MATRIX: dict[str, dict[str, Any]] = {
                     "test_stale_refusal_at_reindex_seam",
                     "test_stale_refusal_at_analyze_head_analysis_and_report",
                     "test_preflight_stale_refusal",
+                ],
+            ),
+            (
+                _TEST_DIR + "/test_maintenance_proofs.py",
+                [
+                    "test_geometry_preflight_after_supersession_refuses",
+                    "test_analyze_refuses_supersession_after_computation",
                 ],
             ),
         ],
@@ -345,6 +366,7 @@ _MATRIX: dict[str, dict[str, Any]] = {
                 [
                     "test_traceability_validator_complete_matrix",
                     "test_traceability_validator_rejects_missing_duplicate_bad_hash_and_nonzero",
+                    "test_committed_traceability_artifact_validates_with_informational_commit",
                 ],
             ),
         ],
@@ -477,6 +499,7 @@ def _build_record(requirement: str, spec: dict[str, Any], *, profile_digest: str
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Generate the synthetic report and emit the replayable R1-R14 traceability document."""
     parser = argparse.ArgumentParser(description="Emit the R1-R14 traceability document.")
     parser.add_argument("--output", default=f"{_EVIDENCE_REL}/r1-r14-traceability.json")
     arguments = parser.parse_args(argv)

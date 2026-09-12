@@ -113,9 +113,17 @@ def test_same_scope_replaces_and_unrelated_scopes_survive(con) -> None:
     _write(con, run_id="r", identity=_identity(evaluation_id="e1"))  # replacement, not a second row
     _write(con, run_id="r", identity=_identity(evaluation_id="e2"))
     _write(con, run_id="other", identity=_identity(evaluation_id="e1"))
+    # The replacement key is (run_id, geometry_id, evaluation_id, sim_metric).  With the
+    # same run_id / evaluation_id / sim_metric but a DIFFERENT geometry_id, this is an
+    # unrelated scope: it must survive as its own diagnostic row, not replace the first.
+    _write(con, run_id="r", identity=_identity(evaluation_id="e1", geometry_id="g2"))
 
     run_rows = read_incomplete_analyze_diagnostics(con, run_id="r")
-    assert len(run_rows) == 2
-    assert {row["evaluation_id"] for row in run_rows} == {"e1", "e2"}
+    assert len(run_rows) == 3
+    assert {(row["evaluation_id"], row["geometry_id"]) for row in run_rows} == {
+        ("e1", "g"),
+        ("e2", "g"),
+        ("e1", "g2"),
+    }
     assert len(read_incomplete_analyze_diagnostics(con, run_id="other")) == 1
-    assert len(read_incomplete_analyze_diagnostics(con)) == 3
+    assert len(read_incomplete_analyze_diagnostics(con)) == 4

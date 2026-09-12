@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 from collections import defaultdict
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from nomarr.components.library.file_batch_scanner_comp import scan_folder_files
 from nomarr.components.library.folder_analysis_comp import discover_library_folders
@@ -70,7 +70,7 @@ def _check_cancelled(stop_event: threading.Event | None) -> None:
 def scan_library_full_workflow(
     db: Database,
     library: Library,
-    tagger_version: str,
+    tagger_version: str,  # noqa: ARG001 - retained public signature; version gate retired
     models_dir: str | None = None,
     namespace: str = "nom",
     skip_validation_autorepair: bool = False,
@@ -87,7 +87,8 @@ def scan_library_full_workflow(
     Args:
         db: Database instance
         library: Domain ``Library`` (natural identity) to scan
-        tagger_version: Model suite hash for version comparison
+        tagger_version: Retained for public signature compatibility; the version
+            gate is retired and the value is unused.
         models_dir: Path to ML models (enables tag validation when provided)
         namespace: Tag namespace (default ``"nom"``)
         skip_validation_autorepair: If True, tag validation will not auto-repair
@@ -147,7 +148,6 @@ def scan_library_full_workflow(
                         folder_path=Path(folder.abs_path),
                         library_root=library_root,
                         existing_files=existing_for_folder,
-                        tagger_version=tagger_version,
                         db=db,
                     )
 
@@ -161,26 +161,25 @@ def scan_library_full_workflow(
                     # Upsert all discovered files immediately
                     if batch.file_entries:
                         new_paths = batch.discovered_paths - set(existing_for_folder)
-                        file_ids = cast(
-                            "list[int]",
-                            upsert_scanned_files(db, library, batch.file_entries, batch.edge_bootstraps),
-                        )
-                        transition_song_state(db, file_ids, STATE_NOT_SCANNED, STATE_SCANNED)
-                        transition_song_state(db, file_ids, STATE_ERRORED, STATE_NOT_ERRORED)
+                        song_identities = upsert_scanned_files(db, library, batch.file_entries, batch.edge_bootstraps)
+                        transition_song_state(db, song_identities, STATE_NOT_SCANNED, STATE_SCANNED)
+                        transition_song_state(db, song_identities, STATE_ERRORED, STATE_NOT_ERRORED)
                         # Reset hydrated → not_hydrated for modified files
                         # so the tag extraction worker re-extracts their audio tags.
                         # New files already get not_hydrated from state bootstrap.
-                        modified_file_ids = [
-                            fid
-                            for fid, e in zip(file_ids, batch.file_entries, strict=True)
+                        modified_identities = [
+                            identity
+                            for identity, e in zip(song_identities, batch.file_entries, strict=True)
                             if e["path"] not in new_paths
                         ]
-                        if modified_file_ids:
-                            transition_song_state(db, modified_file_ids, STATE_HYDRATED, STATE_NOT_HYDRATED)
-                        new_file_ids = [
-                            fid for fid, e in zip(file_ids, batch.file_entries, strict=True) if e["path"] in new_paths
+                        if modified_identities:
+                            transition_song_state(db, modified_identities, STATE_HYDRATED, STATE_NOT_HYDRATED)
+                        new_identities = [
+                            identity
+                            for identity, e in zip(song_identities, batch.file_entries, strict=True)
+                            if e["path"] in new_paths
                         ]
-                        stats["files_added"] += len(new_file_ids)
+                        stats["files_added"] += len(new_identities)
 
                     # Files in DB for this folder no longer on disk → delete
                     deleted_paths = [p for p in existing_for_folder if p not in batch.discovered_paths]
