@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from nomarr.components.library.library_song_query_comp import _locators_for_songs
+from nomarr.components.library.song_query_types import TrackSong
 from nomarr.helpers.constants.file_states import (
     STATE_NOT_WRITTEN,
     STATE_TAGS_CURRENT,
@@ -176,7 +177,7 @@ class TestRenameTag:
                 return_value=RelinkResult(moved=5, skipped=0, source_orphaned=1),
             ),
             patch(
-                "nomarr.services.domain.tagging_svc.curation._locators_for_songs",
+                "nomarr.services.domain.tagging_svc.curation.locators_for_carriers",
                 return_value=[_song_identity(10), _song_identity(20)],
             ),
             patch(
@@ -278,7 +279,7 @@ class TestRenameTag:
                 return_value=RelinkResult(moved=2, skipped=1, source_orphaned=1),
             ) as mock_relink,
             patch(
-                "nomarr.services.domain.tagging_svc.curation._locators_for_songs",
+                "nomarr.services.domain.tagging_svc.curation.locators_for_carriers",
                 return_value=[_song_identity(10)],
             ),
             patch("nomarr.services.domain.tagging_svc.curation.transition_song_state"),
@@ -381,7 +382,7 @@ class TestMergeTags:
                 return_value=RelinkResult(moved=3, skipped=0, source_orphaned=1),
             ),
             patch(
-                "nomarr.services.domain.tagging_svc.curation._locators_for_songs",
+                "nomarr.services.domain.tagging_svc.curation.locators_for_carriers",
                 return_value=[_song_identity(10)],
             ),
             patch(
@@ -500,7 +501,7 @@ class TestSplitTag:
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_split_tag_song_boundary_unchanged(self) -> None:
-        """Split song ids resolve through the song-side identity bridge (separate boundary)."""
+        """Split locator tokens resolve through the song-side semantic boundary (separate from tags)."""
         service = _make_service()
         _stub_song_lookup(service)
         source = TagRef(name="genre", value="genre", namespace="default")
@@ -610,7 +611,7 @@ class TestRenameTagWritePending:
                 return_value=RelinkResult(moved=2, skipped=0, source_orphaned=0),
             ),
             patch(
-                "nomarr.services.domain.tagging_svc.curation._locators_for_songs",
+                "nomarr.services.domain.tagging_svc.curation.locators_for_carriers",
                 return_value=[si_10, si_20],
             ),
             patch(
@@ -820,7 +821,46 @@ class TestSongIdentityFromToken:
 
 
 class TestMarkMatchedSongsWritePending:
-    """Tests for ``TaggingCurationMixin._mark_matched_songs_write_pending``."""
+    """Deferred write-back (ADR-008) on matched-tag curation."""
+
+    @pytest.mark.unit
+    def test_projects_real_track_carriers_before_marking_resolved_songs(self) -> None:
+        """The curation path uses the public carrier projection without patching it."""
+
+        class FakeLibraryDb:
+            def find_songs_with_tag(self, tag: TagRef, *, limit: int | None) -> tuple[Song, ...]:
+                assert limit is None
+                return (_song(10), _song(20))
+
+            def list_libraries(self) -> list[Library]:
+                return [Library(library_uuid=_LIBRARY.library_uuid, name="music", root_path="/music")]
+
+            def list_songs_by_identity(self, identities: list[SongIdentity]) -> list[Song]:
+                assert [identity.normalized_path for identity in identities] == [
+                    "music/10.flac",
+                    "music/20.flac",
+                ]
+                return [_song(10), _song(20)]
+
+        class FakeDatabase:
+            library = FakeLibraryDb()
+
+        class RecordingCuration(TaggingCurationMixin):
+            db: Any = FakeDatabase()
+
+            def __init__(self) -> None:
+                self.marked: list[SongIdentity] = []
+
+            def _mark_song_write_pending(self, song: SongIdentity) -> None:
+                self.marked.append(song)
+
+        service = RecordingCuration()
+        service._mark_matched_songs_write_pending(TagRef(name="genre", value="rock", namespace="default"))
+
+        assert service.marked == [
+            SongIdentity(_LIBRARY, "music/10.flac"),
+            SongIdentity(_LIBRARY, "music/20.flac"),
+        ]
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -833,7 +873,7 @@ class TestMarkMatchedSongsWritePending:
         service.db.app.song_state_membership = MagicMock(return_value={STATE_WRITTEN})
         with (
             patch(
-                "nomarr.services.domain.tagging_svc.curation._locators_for_songs",
+                "nomarr.services.domain.tagging_svc.curation.locators_for_carriers",
                 return_value=[None, si_20],
             ) as mock_locators,
             patch("nomarr.services.domain.tagging_svc.curation.transition_song_state") as transition,
@@ -841,41 +881,45 @@ class TestMarkMatchedSongsWritePending:
             service._mark_matched_songs_write_pending(tag)
 
         mock_locators.assert_called_once()
-        # Only the resolved locator is transitioned; the stale None is never
-        # re-addressed into a locator and never transitioned.
         assert [call.args[1] for call in transition.call_args_list] == [[si_20]]
 
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_constructs_track_song_carriers_with_empty_metadata_and_no_isrc(self) -> None:
+        """Each matched song is wrapped as ``TrackSong(song, metadata={}, isrc=None)``."""
+        service = _make_service()
+        tag = TagRef(name="genre", value="rock", namespace="default")
+        songs = (_song(10), _song(20))
+        service.db.library.find_songs_with_tag = MagicMock(return_value=songs)
+        service.db.app.song_state_membership = MagicMock(return_value={STATE_WRITTEN})
+        with (
+            patch(
+                "nomarr.services.domain.tagging_svc.curation.locators_for_carriers",
+                return_value=[None, None],
+            ) as mock_locators,
+            patch("nomarr.services.domain.tagging_svc.curation.transition_song_state"),
+        ):
+            service._mark_matched_songs_write_pending(tag)
 
-class TestLocatorsForSongs:
-    """Direct tests for the shared ``_locators_for_songs`` read projection."""
+        (carriers,) = mock_locators.call_args.args[1:]
+        assert carriers == [TrackSong(song=song, metadata={}, isrc=None) for song in songs]
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_empty_input_short_circuits_without_facade_call(self) -> None:
-        db = MagicMock()
+    def test_propagates_locator_projection_error_without_marking(self) -> None:
+        """A projection failure propagates and runs no write-pending transition."""
+        service = _make_service()
+        tag = TagRef(name="genre", value="rock", namespace="default")
+        service.db.library.find_songs_with_tag = MagicMock(return_value=(_song(10),))
+        service.db.app.song_state_membership = MagicMock(return_value={STATE_WRITTEN})
+        with (
+            patch(
+                "nomarr.services.domain.tagging_svc.curation.locators_for_carriers",
+                side_effect=RuntimeError("projection failed"),
+            ),
+            patch("nomarr.services.domain.tagging_svc.curation.transition_song_state") as transition,
+            pytest.raises(RuntimeError, match="projection failed"),
+        ):
+            service._mark_matched_songs_write_pending(tag)
 
-        assert _locators_for_songs(db, []) == []
-        db.library.list_libraries.assert_not_called()
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
-    def test_resolves_locator_when_facade_returns_equal_song(self) -> None:
-        db = MagicMock()
-        library = Library(library_uuid="2621ebfb-71ff-4168-a812-5342ca310e8c", name="music", root_path="/music")
-        song = _song(10)
-        db.library.list_libraries = MagicMock(return_value=[library])
-        db.library.list_songs_by_identity = MagicMock(return_value=[song])
-
-        result = _locators_for_songs(db, [song])
-
-        assert result == [SongIdentity(library=_LIBRARY, normalized_path="music/10.flac")]
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
-    def test_unresolved_song_yields_none(self) -> None:
-        db = MagicMock()
-        library = Library(library_uuid="2621ebfb-71ff-4168-a812-5342ca310e8c", name="music", root_path="/music")
-        db.library.list_libraries = MagicMock(return_value=[library])
-        db.library.list_songs_by_identity = MagicMock(return_value=[])
-
-        assert _locators_for_songs(db, [_song(10)]) == [None]
+        transition.assert_not_called()

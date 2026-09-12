@@ -12,14 +12,10 @@ from typing import TYPE_CHECKING
 
 from nomarr.components.library.library_records_comp import get_library_record
 from nomarr.components.library.reconciliation_comp import release_claim
-from nomarr.components.tagging.tag_query_comp import get_song_tags
-from nomarr.components.tagging.tag_write_comp import set_song_tags, set_song_tags_batch
 
 if TYPE_CHECKING:
     from nomarr.helpers.dataclasses.library_dataclass import Library
-    from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
     from nomarr.helpers.dataclasses.song_dataclass import Song
-    from nomarr.helpers.dataclasses.tags_dataclass import Tags
     from nomarr.persistence.db import Database
 
 
@@ -65,71 +61,6 @@ def resolve_library_root(
     if not library_doc:
         return None
     return Path(library_doc.root_path)
-
-
-# ---------------------------------------------------------------------------
-# Tag retrieval / mutation
-# ---------------------------------------------------------------------------
-
-
-def get_nomarr_tags(
-    db: Database,
-    file_id: int,
-) -> Tags | None:
-    """Fetch Nomarr-namespaced tags for *file_id*.
-
-    Returns ``None`` when the file has no nomarr tags. Equivalent to calling the
-    component-owned tag query helper with ``nomarr_only=True``.
-    """
-    return get_song_tags(db, file_id, nomarr_only=True)
-
-
-# All three mood tier names that must always be written (or cleared) together.
-# Writing an empty list for a name deletes any existing edges for it,
-# which prevents stale tiers from persisting when the tier count drops.
-_MOOD_TIER_NAMES = ("nom:mood-strict", "nom:mood-regular", "nom:mood-loose")
-
-
-def save_mood_tags(
-    db: Database,
-    song: SongIdentity,
-    mood_tags: Tags | None,
-) -> int:
-    """Write mood-* tags to the database for a natural song locator."""
-    written: dict[str, list] = {}
-    if mood_tags is not None:
-        for tag in mood_tags:
-            nomarr_name = f"nom:{tag.name}" if not tag.name.startswith("nom:") else tag.name
-            written[nomarr_name] = list(tag.values)
-
-    count = 0
-    for name in _MOOD_TIER_NAMES:
-        values = written.get(name, [])
-        set_song_tags(db, song, name, list(values))
-        if values:
-            count += 1
-    return count
-
-
-def save_mood_tags_batch(
-    db: Database,
-    items: list[tuple[SongIdentity, Tags | None]],
-) -> int:
-    """Write mood tags for multiple natural song locators."""
-    if not items:
-        return 0
-
-    entries: list[dict] = []
-    for song, mood_tags in items:
-        written: dict[str, list] = {}
-        if mood_tags is not None:
-            for tag in mood_tags:
-                nomarr_name = f"nom:{tag.name}" if not tag.name.startswith("nom:") else tag.name
-                written[nomarr_name] = list(tag.values)
-        entries.extend({"song": song, "name": name, "values": written.get(name, [])} for name in _MOOD_TIER_NAMES)
-
-    set_song_tags_batch(db, entries)
-    return sum(1 for entry in entries if entry["values"])
 
 
 # ---------------------------------------------------------------------------

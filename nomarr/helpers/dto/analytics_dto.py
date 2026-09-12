@@ -110,7 +110,7 @@ class ComputeTagCoOccurrenceParams:
 
     x_tags: list[TagSpec]
     y_tags: list[TagSpec]
-    tag_data: dict[tuple[str, str], set[int]]  # (key, value) -> set of file_ids (PostgreSQL integer)
+    tag_data: dict[tuple[str, str], set[SongIdentity]]  # (key, value) -> set of song locators
 
 
 # ──────────────────────────────────────────────────────────────────────

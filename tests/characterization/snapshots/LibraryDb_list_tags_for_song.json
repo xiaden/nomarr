@@ -1,0 +1,32 @@
+[
+  {
+    "confidence": 0.95,
+    "name": "nom:mood-strict",
+    "namespace": "nom",
+    "song": {
+      "library": {
+        "library_uuid": "<UUID>",
+        "name": "TestLib1",
+        "root_path": "/tmp/test1"
+      },
+      "normalized_path": "song1.flac"
+    },
+    "source": "ml",
+    "value": "happy"
+  },
+  {
+    "confidence": 0.88,
+    "name": "nom:genre",
+    "namespace": "nom",
+    "song": {
+      "library": {
+        "library_uuid": "<UUID>",
+        "name": "TestLib1",
+        "root_path": "/tmp/test1"
+      },
+      "normalized_path": "song1.flac"
+    },
+    "source": "ml",
+    "value": "rock"
+  }
+]

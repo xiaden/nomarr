@@ -7,14 +7,20 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
 from nomarr.helpers.dto.navidrome_dto import NavidromeGeneratePlaylistsResult, NavidromePersonalPlaylistEntry
 from nomarr.helpers.exceptions import MisconfiguredError
+from nomarr.helpers.song_locator_codec import encode_song_locator
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.web.dependencies import get_navidrome_service
 from nomarr.interfaces.api.web.navidrome_if import router as navidrome_router
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+
+_LIB = LibraryIdentity(library_uuid="123e4567-e89b-42d3-a456-426614174000")
+_TOKEN_A = encode_song_locator(SongIdentity(library=_LIB, normalized_path="track-a.flac"))
+_TOKEN_B = encode_song_locator(SongIdentity(library=_LIB, normalized_path="track-b.flac"))
 
 
 @pytest.mark.unit
@@ -37,7 +43,7 @@ class TestNavidromePushPlaylistEndpoint:
 
     def test_push_playlist_returns_descriptors(self, client: TestClient, mock_navidrome_service: MagicMock) -> None:
         mock_navidrome_service.resolve_files_to_descriptors.return_value = {
-            "1": {
+            _TOKEN_A: {
                 "title": "Song A",
                 "artist": "Artist A",
                 "album": "Album A",
@@ -48,7 +54,7 @@ class TestNavidromePushPlaylistEndpoint:
                 "year": 2020,
                 "nomarr_file_key": "f1",
             },
-            "2": {
+            _TOKEN_B: {
                 "title": "Song B",
                 "artist": "Artist B",
                 "album": "Album B",
@@ -64,7 +70,7 @@ class TestNavidromePushPlaylistEndpoint:
         response = client.post(
             "/api/web/navidrome/playlist/push",
             json={
-                "file_ids": ["1", "2"],
+                "file_ids": [_TOKEN_A, _TOKEN_B],
                 "playlist_name": "Test Playlist",
             },
         )
@@ -84,13 +90,25 @@ class TestNavidromePushPlaylistEndpoint:
 
         response = client.post(
             "/api/web/navidrome/playlist/push",
-            json={"file_ids": ["1"], "playlist_name": "Test"},
+            json={"file_ids": [_TOKEN_A], "playlist_name": "Test"},
         )
 
         assert response.status_code == 200
         data = response.json()
         assert data["track_count"] == 0
         assert data["songs"] == []
+
+    def test_push_playlist_rejects_invalid_locator_token(
+        self, client: TestClient, mock_navidrome_service: MagicMock
+    ) -> None:
+        """A non-``nom1`` token is rejected with 400 before service dispatch."""
+        response = client.post(
+            "/api/web/navidrome/playlist/push",
+            json={"file_ids": ["1"], "playlist_name": "Test"},
+        )
+
+        assert response.status_code == 400
+        mock_navidrome_service.resolve_files_to_descriptors.assert_not_called()
 
 
 @pytest.mark.unit
@@ -109,13 +127,13 @@ class TestNavidromeGeneratePersonalPlaylistsEndpoint:
                     NavidromePersonalPlaylistEntry(
                         playlist_type="top_tracks",
                         playlist_name="Your Top Tracks",
-                        file_ids=["1"],
+                        file_ids=[_TOKEN_A],
                     )
                 ],
             )
         )
         mock_navidrome_service.resolve_files_to_descriptors.return_value = {
-            "1": {
+            _TOKEN_A: {
                 "title": "Top Track",
                 "artist": "Some Artist",
                 "album": "Some Album",
@@ -130,7 +148,7 @@ class TestNavidromeGeneratePersonalPlaylistsEndpoint:
 
         response = client.post(
             "/api/web/navidrome/generate-personal-playlists",
-            json={"top_plays": [{"file_id": "1", "playcount": 5}]},
+            json={"top_plays": [{"file_id": _TOKEN_A, "playcount": 5}]},
         )
 
         assert response.status_code == 200
@@ -150,7 +168,7 @@ class TestNavidromeGeneratePersonalPlaylistsEndpoint:
 
         response = client.post(
             "/api/web/navidrome/generate-personal-playlists",
-            json={"top_plays": [{"file_id": "1", "playcount": 1}]},
+            json={"top_plays": [{"file_id": _TOKEN_A, "playcount": 1}]},
         )
 
         assert response.status_code == 422
@@ -166,7 +184,7 @@ class TestNavidromeGeneratePersonalPlaylistsEndpoint:
 
         response = client.post(
             "/api/web/navidrome/generate-personal-playlists",
-            json={"top_plays": [{"file_id": "1", "playcount": 1}]},
+            json={"top_plays": [{"file_id": _TOKEN_A, "playcount": 1}]},
         )
 
         assert response.status_code == 200

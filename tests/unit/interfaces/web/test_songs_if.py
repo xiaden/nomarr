@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from nomarr.helpers.dataclasses.library_dataclass import Library
+from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
 from nomarr.helpers.dto.library_dto import (
     FileTag,
     FileTagsResult,
@@ -16,6 +17,7 @@ from nomarr.helpers.dto.library_dto import (
     SearchFilesResult,
     UniqueTagKeysResult,
 )
+from nomarr.helpers.song_locator_codec import encode_song_locator
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.web.dependencies import get_library_service, get_tagging_service
 from nomarr.interfaces.api.web.songs_if import router as songs_router
@@ -23,13 +25,20 @@ from nomarr.interfaces.api.web.songs_if import router as songs_router
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+_LIBRARY_UUID = "6313b0d3-d270-47a8-9e0d-21e8255107e3"
+_LIBRARY = LibraryIdentity(library_uuid=_LIBRARY_UUID, name="Test Library", root_path="D:/Music/Test")
+_SONG = SongIdentity(library=_LIBRARY, normalized_path="songs/song.flac")
+_SONG_TOKEN = encode_song_locator(_SONG)
+_REPLY_SONG = SongIdentity(library=_LIBRARY, normalized_path="songs/reply.flac")
+_REPLY_TOKEN = encode_song_locator(_REPLY_SONG)
 
-def make_library_file(file_id: int = 1) -> LibrarySongWithTags:
-    """Build a minimal library file DTO for interface tests."""
+
+def make_library_file(file_id: str = _REPLY_TOKEN) -> LibrarySongWithTags:
+    """Build a minimal library file DTO for interface tests (opaque locator + UUID)."""
     return LibrarySongWithTags(
-        id=file_id,
+        file_id=file_id,
         path="/music/song.flac",
-        library_id=1,
+        library_uuid=_LIBRARY_UUID,
         file_size=1234,
         modified_time=1710000000,
         duration_seconds=215.5,
@@ -39,9 +48,9 @@ def make_library_file(file_id: int = 1) -> LibrarySongWithTags:
         calibration_version=None,
         scanned_at=1710000001,
         last_tagged_at=1710000002,
-        tagged=1,
+        tagged=True,
         tagged_version="v1",
-        skip_auto_tag=0,
+        skip_auto_tag=False,
         created_at="2026-04-06T00:00:00+00:00",
         updated_at="2026-04-06T00:00:00+00:00",
         tags=[
@@ -72,8 +81,13 @@ def make_search_result() -> SearchFilesResult:
 
 @pytest.fixture
 def mock_library_service() -> MagicMock:
-    """Provide a mocked library service dependency."""
-    return MagicMock()
+    """Provide a mocked library service dependency that resolves opaque tokens."""
+    service = MagicMock()
+    service.build_song_locator.side_effect = lambda library_uuid, normalized_path: SongIdentity(
+        library=LibraryIdentity(library_uuid=library_uuid),
+        normalized_path=normalized_path,
+    )
+    return service
 
 
 @pytest.fixture
@@ -120,7 +134,7 @@ class TestLibraryFilesEndpoints:
         client: TestClient,
         mock_library_service: MagicMock,
     ) -> None:
-        """GET file search should build SearchFilesQuery and serialize the result."""
+        """GET file search should build SearchFilesQuery and serialize opaque locators."""
         mock_library_service.search_files.return_value = make_search_result()
 
         response = client.get(
@@ -141,9 +155,9 @@ class TestLibraryFilesEndpoints:
         assert response.json() == {
             "files": [
                 {
-                    "file_id": 1,
+                    "file_id": _REPLY_TOKEN,
                     "path": "/music/song.flac",
-                    "library_id": 1,
+                    "library_uuid": _LIBRARY_UUID,
                     "file_size": 1234,
                     "modified_time": 1710000000,
                     "duration_seconds": 215.5,
@@ -153,9 +167,9 @@ class TestLibraryFilesEndpoints:
                     "calibration_version": None,
                     "scanned_at": 1710000001,
                     "last_tagged_at": 1710000002,
-                    "tagged": 1,
+                    "tagged": True,
                     "tagged_version": "v1",
-                    "skip_auto_tag": 0,
+                    "skip_auto_tag": False,
                     "created_at": "2026-04-06T00:00:00+00:00",
                     "updated_at": "2026-04-06T00:00:00+00:00",
                     "tags": [
@@ -185,14 +199,16 @@ class TestLibraryFilesEndpoints:
             offset=5,
         )
 
-    def test_get_files_by_ids_decodes_ids_before_service_call(
+    def test_get_files_by_ids_decodes_tokens_to_semantic_locators(
         self,
         client: TestClient,
         mock_library_service: MagicMock,
     ) -> None:
-        """POST by-ids should decode every file ID before invoking the service."""
+        """POST by-ids should resolve every opaque token to a semantic locator before the service call."""
+        first = SongIdentity(library=_LIBRARY, normalized_path="songs/one.flac")
+        second = SongIdentity(library=_LIBRARY, normalized_path="songs/two.flac")
         mock_library_service.get_files_by_ids.return_value = SearchFilesResult(
-            songs=[make_library_file(file_id=42)],
+            songs=[make_library_file(file_id=_REPLY_TOKEN)],
             total=1,
             limit=1,
             offset=0,
@@ -200,14 +216,43 @@ class TestLibraryFilesEndpoints:
 
         response = client.post(
             "/api/web/library/file/by-ids",
-            json={"file_ids": ["1", "2"]},
+            json={"file_ids": [encode_song_locator(first), encode_song_locator(second)]},
         )
 
         assert response.status_code == 200
-        assert response.json()["files"][0]["file_id"] == 42
-        mock_library_service.get_files_by_ids.assert_called_once_with(
-            [1, 2],
+        assert response.json()["files"][0]["file_id"] == _REPLY_TOKEN
+        mock_library_service.get_files_by_ids.assert_called_once_with([first, second])
+
+    def test_get_files_by_ids_rejects_malformed_token(
+        self,
+        client: TestClient,
+        mock_library_service: MagicMock,
+    ) -> None:
+        """A malformed opaque token should surface as 400, not 500."""
+        response = client.post(
+            "/api/web/library/file/by-ids",
+            json={"file_ids": ["not-a-locator"]},
         )
+
+        assert response.status_code == 400
+        mock_library_service.get_files_by_ids.assert_not_called()
+
+    def test_get_files_by_ids_propagates_404_when_locator_unknown(
+        self,
+        client: TestClient,
+        mock_library_service: MagicMock,
+    ) -> None:
+        """A syntactically valid token whose song is unknown should propagate 404 and skip the service."""
+        mock_library_service.build_song_locator.side_effect = ValueError("unknown song")
+
+        response = client.post(
+            "/api/web/library/file/by-ids",
+            json={"file_ids": [_SONG_TOKEN]},
+        )
+
+        assert response.status_code == 404
+        assert response.json() == {"detail": "Song not found"}
+        mock_library_service.get_files_by_ids.assert_not_called()
 
     def test_search_files_by_tag_returns_response(
         self,
@@ -308,11 +353,11 @@ class TestLibraryFilesEndpoints:
     def test_get_file_tags_returns_response(
         self,
         client: TestClient,
-        mock_tagging_service: MagicMock,
+        mock_library_service: MagicMock,
     ) -> None:
-        """GET file tags should decode the path ID and serialize the tag payload."""
-        mock_tagging_service.get_song_tags.return_value = FileTagsResult(
-            file_id=1,
+        """GET file tags should resolve the opaque token and serialize the tag payload."""
+        mock_library_service.get_song_tags.return_value = FileTagsResult(
+            file_id=_SONG_TOKEN,
             path="/music/song.flac",
             tags=[
                 FileTag(
@@ -324,11 +369,11 @@ class TestLibraryFilesEndpoints:
             ],
         )
 
-        response = client.get("/api/web/library/file/1/tag")
+        response = client.get(f"/api/web/library/file/{_SONG_TOKEN}/tag")
 
         assert response.status_code == 200
         assert response.json() == {
-            "file_id": 1,
+            "file_id": _SONG_TOKEN,
             "path": "/music/song.flac",
             "tags": [
                 {
@@ -339,29 +384,22 @@ class TestLibraryFilesEndpoints:
                 }
             ],
         }
-        mock_tagging_service.get_song_tags.assert_called_once_with(
-            song_id=1,
-            nomarr_only=False,
-        )
-        # HTTP path ID "1" must be decoded to int at the interface boundary.
-        assert isinstance(mock_tagging_service.get_song_tags.call_args.kwargs["song_id"], int)
+        call = mock_library_service.get_song_tags.call_args
+        assert call.kwargs["song"] == _SONG
+        assert call.kwargs["nomarr_only"] is False
 
     def test_get_file_tags_returns_404_when_missing(
         self,
         client: TestClient,
-        mock_tagging_service: MagicMock,
+        mock_library_service: MagicMock,
     ) -> None:
         """Missing files should surface as HTTP 404."""
-        mock_tagging_service.get_song_tags.side_effect = ValueError("missing")
+        mock_library_service.get_song_tags.side_effect = ValueError("missing")
 
-        response = client.get("/api/web/library/file/1/tag")
+        response = client.get(f"/api/web/library/file/{_SONG_TOKEN}/tag")
 
         assert response.status_code == 404
         assert response.json() == {"detail": "File not found"}
-        mock_tagging_service.get_song_tags.assert_called_once_with(
-            song_id=1,
-            nomarr_only=False,
-        )
 
     def test_retry_errored_files_returns_response(
         self,
@@ -380,7 +418,7 @@ class TestLibraryFilesEndpoints:
         mock_library_service.get_library_by_name.assert_called_once_with("Test Library")
         mock_library_service.retry_errored_songs.assert_called_once_with(
             library,
-            song_ids=None,
+            songs=None,
         )
 
     def test_retry_errored_files_returns_404_when_missing(

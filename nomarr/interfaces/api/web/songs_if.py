@@ -42,9 +42,13 @@ async def _resolve_library(library_service, raw_name: str) -> Library:
 
 
 class FileIdsRequest(BaseModel):
-    """Request body for fetching files by IDs."""
+    """Request body for fetching files by semantic SongLocator tokens."""
 
-    file_ids: list[str] = Field(..., description="List of file _ids to fetch", max_length=500)
+    file_ids: list[str] = Field(
+        ...,
+        description="List of opaque nom1 SongLocator tokens to fetch",
+        max_length=500,
+    )
 
 
 class TagSearchRequest(BaseModel):
@@ -95,10 +99,10 @@ async def get_files_by_ids(
     request: FileIdsRequest,
     library_service: Annotated["LibraryService", Depends(get_library_service)],
 ) -> SearchFilesResponse:
-    """Get files by their IDs with full metadata and tags.
+    """Get files by their semantic SongLocator tokens with full metadata and tags.
 
     Used for batch lookup (e.g., when browsing songs for an entity).
-    Returns files in same order as input IDs where possible.
+    Returns files in the same order as the input SongLocator tokens where possible.
 
     Each inbound id is an opaque ``nom1`` SongLocator token; malformed tokens are
     rejected with 400 and unknown library/song locators with 404.
@@ -107,8 +111,10 @@ async def get_files_by_ids(
         locators = await asyncio.gather(*(resolve_song_locator(library_service, fid) for fid in request.file_ids))
         result = await asyncio.to_thread(library_service.get_files_by_ids, list(locators))
         return SearchFilesResponse.from_dto(result)
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.exception("[Web API] Error getting files by IDs")
+        logger.exception("[Web API] Error getting files by SongLocator tokens")
         raise HTTPException(status_code=500, detail=sanitize_exception_message(e, "Failed to get files")) from e
 
 
@@ -219,13 +225,12 @@ async def cleanup_orphaned_tags(
 async def get_file_tags(
     file_id: str,
     nomarr_only: Annotated[bool, Query(description="Only return Nomarr-generated tags")] = False,
-    tagging_service: "TaggingService" = Depends(get_tagging_service),
     library_service: "LibraryService" = Depends(get_library_service),
 ) -> FileTagsResponse:
     """Get all tags for a specific file."""
     locator = await resolve_song_locator(library_service, file_id)
     try:
-        result = await asyncio.to_thread(lambda: tagging_service.get_song_tags(song=locator, nomarr_only=nomarr_only))
+        result = await asyncio.to_thread(lambda: library_service.get_song_tags(song=locator, nomarr_only=nomarr_only))
         return FileTagsResponse.from_dto(result)
     except ValueError:
         raise HTTPException(status_code=404, detail="File not found") from None
@@ -277,7 +282,7 @@ async def retry_errored_files(
             if request and request.file_ids
             else None
         )
-        result = await asyncio.to_thread(library_service.retry_errored_songs, library, song_ids=song_locators)
+        result = await asyncio.to_thread(library_service.retry_errored_songs, library, songs=song_locators)
         return RetryErroredResponse(**result)
     except HTTPException:
         raise

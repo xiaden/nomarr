@@ -2,8 +2,9 @@
 
 Focused coverage for the natural-identity query path (``get_tag_songs``): the
 service threads a complete ``TagRef`` into the query components without integer
-conversion, preserves the public response shape, and keeps a missing natural
-identity a deterministic empty result.
+conversion, preserves the public response shape, and emits an opaque ``nom1``
+SongLocator token as each song's ``file_id`` (never a generated integer). A
+missing natural identity stays a deterministic empty result.
 """
 
 from __future__ import annotations
@@ -12,10 +13,15 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from nomarr.helpers.dataclasses.library_dataclass import Library
 from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
 from nomarr.helpers.dataclasses.song_dataclass import Song
 from nomarr.helpers.dataclasses.song_tag_dataclass import SongTagAssignment, TagRef
+from nomarr.helpers.song_locator_codec import encode_song_locator
 from nomarr.services.domain.tagging_svc import TaggingService, TaggingServiceConfig
+
+_LIBRARY_UUID = "6313b0d3-d270-4a8e-9e0d-21e8255107e3"
+_LIBRARY = Library(name="Music", root_path="/music", library_uuid=_LIBRARY_UUID)
 
 
 def _make_service(*, db: MagicMock | None = None) -> TaggingService:
@@ -54,9 +60,19 @@ def _song(song_id: int) -> Song:
 
 def _song_identity(song_id: int) -> SongIdentity:
     return SongIdentity(
-        library=LibraryIdentity(library_uuid="6313b0d3-d270-57a8-9e0d-21e8255107e3", name="Music", root_path="/music"),
+        library=LibraryIdentity(library_uuid=_LIBRARY_UUID, name="Music", root_path="/music"),
         normalized_path=f"music/{song_id}.flac",
     )
+
+
+def _wire_projection(db: MagicMock, songs: list[Song]) -> None:
+    db.library.list_libraries.return_value = [_LIBRARY]
+    by_path = {song.normalized_path: song for song in songs}
+
+    def _resolve(requested: list[SongIdentity]) -> list[Song]:
+        return [by_path[r.normalized_path] for r in requested if r.normalized_path in by_path]
+
+    db.library.list_songs_by_identity.side_effect = _resolve
 
 
 class TestGetTagSongs:
@@ -69,12 +85,11 @@ class TestGetTagSongs:
         service = _make_service()
         electronic = TagRef(name="genre", value="Electronic")
         song = _song(1)
-        song_identity = _song_identity(1)
+        _wire_projection(service.db, [song])
         # Both the metadata listing (limit=50, offset=0) and the count (limit=None)
         # route through the same natural song lookup.
         service.db.library.find_songs_with_tag.return_value = (song,)
         service.db.library.get_song.return_value = song
-        service.db.library.resolve_song_identity.return_value = song_identity
         service.db.library.list_tags_for_song.return_value = (
             SongTagAssignment(name="title", value="Neon"),
             SongTagAssignment(name="artist", value="Synthwave Artist"),
@@ -85,7 +100,8 @@ class TestGetTagSongs:
 
         assert result["total"] == 1
         assert len(result["songs"]) == 1
-        assert result["songs"][0]["file_id"] == 1
+        assert result["songs"][0]["file_id"] == encode_song_locator(_song_identity(1))
+        assert result["songs"][0]["file_id"].startswith("nom1")
         assert result["songs"][0]["title"] == "Neon"
         assert result["songs"][0]["artist"] == "Synthwave Artist"
         assert result["songs"][0]["album"] == "Retro"

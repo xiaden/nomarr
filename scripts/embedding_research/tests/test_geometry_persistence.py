@@ -104,7 +104,7 @@ def test_geometry_corruption_and_profile_identity_refuse(profile):
     changed = GeometryIdentity(
         record.identity.song_id,
         record.identity.backbone,
-        record.identity.observation_commit_sha256,
+        record.identity.observation_group_sha256,
         record.identity.geometry_semantics_version,
         "0" * 64,
     )

@@ -100,7 +100,7 @@ Rules:
 # ✅ Preferred: intent-level persistence access
 # READ methods use SQLAlchemy autobegin — no explicit transaction required.
 song_identity = SongIdentity(
-    library=LibraryIdentity(name="TestLib", root_path="/music"),
+    library=LibraryIdentity(library_uuid=library.library_uuid, name="TestLib", root_path="/music"),
     normalized_path="track.mp3",
 )
 tags_by_song = db.library.list_song_tags_for_songs([song_identity])
@@ -133,7 +133,7 @@ similar = db.ml.search_vectors("discogs_effnet", query_vector, limit=10)
 
 | Sub-facade | Namespace | Domain |
 | --- | --- | --- |
-| `LibrarySongsDb` | `db.library.songs` | Song/folder domain (incl. `list_orphaned_song_ids`, `truncate_songs`, `truncate_song_links`, `truncate_folder_links`, `truncate_folders`) |
+| `LibrarySongsDb` | `db.library.songs` | Song/folder domain (incl. `prune_orphaned_songs` (destructive maintenance: deletes orphaned songs and returns the count), `truncate_songs`, `truncate_song_links`, `truncate_folder_links`, `truncate_folders`) |
 | `LibraryTagsDb` | `db.library.tags` | Tag/song-tag domain (incl. `admin_cleanup_orphaned_tags` → `TagCleanupResult`, `count_orphaned_tags`, `admin_truncate_tags`, `admin_truncate_song_tag_assignments`) |
 | `LibraryScansDb` | `db.library.scans` | Scan lifecycle (incl. `truncate_scan_records`) |
 | `LibraryRegionsDb` | `db.library.regions` | Library/pipeline-state domain |

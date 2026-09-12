@@ -140,6 +140,7 @@ class TestLibraryCrudEndpoints:
             "libraries": [
                 {
                     "library_id": "Test Library",
+                    "library_uuid": "",
                     "name": "Test Library",
                     "root_path": "D:/Music/Test",
                     "is_enabled": True,

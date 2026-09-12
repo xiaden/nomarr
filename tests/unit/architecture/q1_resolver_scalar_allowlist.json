@@ -11,17 +11,6 @@
     "non_propagation",
     "removal_condition"
   ],
-  "unconditional_exception": {
-    "symbol": "HydrateSongInput.song_id",
-    "module": "nomarr/helpers/dto/hydration_dto.py",
-    "type": "int",
-    "owner": "Plan J",
-    "boundary": "hydration inbound repository boundary (nomarr/persistence/database/song_hydration_repo.py)",
-    "reason": "sole user-approved provisional inbound integer adapter; resolved once privately at the hydration boundary",
-    "positive_test": "tests/unit/architecture/test_song_metadata_handoff_contract.py::test_hydration_integer_is_the_only_explicit_inbound_exception",
-    "non_propagation": "not a public result/projection/wire value; never re-emitted as ordinary Song identity",
-    "removal_condition": "all hydration producers supply SongIdentity; zero-caller/fixture proof plus coordinated contract amendment"
-  },
   "allowlisted_resolvers": [
     {
       "symbol": "LibrarySongsDb.resolve_song_identity",
@@ -74,26 +63,6 @@
       "positive_test": "tests/unit/components/library/test_library_song_mutation_comp.py::test_resolves_handle_and_delegates_to_typed_intent",
       "non_propagation": "returns None; the handle never leaves the adapter",
       "removal_condition": "Q3 migrates write_file_tags_wf to carry SongIdentity; then delete this adapter"
-    },
-    {
-      "symbol": "library_song_mutation_comp.set_chromaprint",
-      "module": "nomarr/components/library/library_song_mutation_comp.py",
-      "owner": "Q3",
-      "boundary": "inbound integer song handle resolved once to SongIdentity, then delegated to guarded set_chromaprint",
-      "reason": "callers discovery_worker/sync_file_to_library_wf are Q3-owned; adapter carries interim decoder provenance until caller-supplied provenance lands",
-      "positive_test": "tests/unit/components/library/test_library_song_mutation_comp.py::test_resolves_handle_and_delegates_guarded_intent",
-      "non_propagation": "returns None; the handle never leaves the adapter",
-      "removal_condition": "Q3 migrates callers to pass ChromaprintValue with caller provenance; then delete this adapter"
-    },
-    {
-      "symbol": "library_song_mutation_comp.update_last_tagged_at",
-      "module": "nomarr/components/library/library_song_mutation_comp.py",
-      "owner": "Q3",
-      "boundary": "inbound integer song handle resolved once to SongIdentity, then delegated to set_last_tagged",
-      "reason": "callers discovery_worker/song_sync_comp are Q3-owned; adapter preserves caller signatures",
-      "positive_test": "tests/unit/components/library/test_library_song_mutation_comp.py::test_resolves_handle_and_delegates_with_current_timestamp",
-      "non_propagation": "returns None; the handle never leaves the adapter",
-      "removal_condition": "Q3 migrates callers to carry SongIdentity; then delete this adapter"
     }
   ],
   "deleted_by_q1": [

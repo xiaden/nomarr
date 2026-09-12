@@ -3,21 +3,17 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from nomarr.components.processing.file_write_comp import (
     get_file_for_writing,
-    get_nomarr_tags,
     release_file_claim,
     resolve_library_root,
-    save_mood_tags,
-    save_mood_tags_batch,
 )
 from nomarr.helpers.dataclasses.library_dataclass import Library
 from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
-from nomarr.helpers.dataclasses.tags_dataclass import Tag, Tags
 
 
 def _make_library() -> Library:
@@ -88,165 +84,6 @@ class TestResolveLibraryRoot:
 
         assert result == Path("/music")
         mock_get_library_record.assert_called_once_with(mock_db, library, include_scan=False)
-
-
-class TestGetNomarrTags:
-    """Tests for ``get_nomarr_tags()``."""
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
-    def test_delegates_to_get_song_tags_with_nomarr_only(self) -> None:
-        mock_db = MagicMock()
-        returned_tags = MagicMock()
-
-        with patch(
-            "nomarr.components.processing.file_write_comp.get_song_tags",
-            return_value=returned_tags,
-        ) as mock_get_song_tags:
-            result = get_nomarr_tags(mock_db, 123)
-
-        assert result is returned_tags
-        mock_get_song_tags.assert_called_once_with(mock_db, 123, nomarr_only=True)
-
-
-class TestSaveMoodTags:
-    """Tests for ``save_mood_tags()``."""
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
-    def test_writes_three_tiers_always(self) -> None:
-        mock_db = MagicMock()
-        song = SongIdentity(LibraryIdentity("library-1", "Music", "/music"), "file-1.flac")
-        mood_tags = Tags(items=(Tag(name="mood-strict", values=("happy",)),))
-
-        with patch("nomarr.components.processing.file_write_comp.set_song_tags") as mock_set_song_tags:
-            result = save_mood_tags(mock_db, song, mood_tags)
-
-        assert result == 1
-        mock_set_song_tags.assert_has_calls(
-            [
-                call(mock_db, song, "nom:mood-strict", ["happy"]),
-                call(mock_db, song, "nom:mood-regular", []),
-                call(mock_db, song, "nom:mood-loose", []),
-            ]
-        )
-        assert mock_set_song_tags.call_count == 3
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
-    def test_returns_count_of_nonempty_tiers(self) -> None:
-        mock_db = MagicMock()
-        song = SongIdentity(LibraryIdentity("library-1", "Music", "/music"), "file-1.flac")
-        mood_tags = Tags(
-            items=(
-                Tag(name="nom:mood-strict", values=("happy",)),
-                Tag(name="mood-regular", values=("calm", "warm")),
-            )
-        )
-
-        with patch("nomarr.components.processing.file_write_comp.set_song_tags"):
-            result = save_mood_tags(mock_db, song, mood_tags)
-
-        assert result == 2
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
-    def test_clears_absent_tiers_with_empty_list(self) -> None:
-        mock_db = MagicMock()
-        song = SongIdentity(LibraryIdentity("library-1", "Music", "/music"), "file-1.flac")
-        mood_tags = Tags(items=(Tag(name="nom:mood-loose", values=("chill",)),))
-
-        with patch("nomarr.components.processing.file_write_comp.set_song_tags") as mock_set_song_tags:
-            save_mood_tags(mock_db, song, mood_tags)
-
-        mock_set_song_tags.assert_any_call(mock_db, song, "nom:mood-strict", [])
-        mock_set_song_tags.assert_any_call(mock_db, song, "nom:mood-regular", [])
-        mock_set_song_tags.assert_any_call(mock_db, song, "nom:mood-loose", ["chill"])
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
-    def test_none_clears_all_three_tiers(self) -> None:
-        """The strict None state clears every mood tier with an empty value list."""
-        mock_db = MagicMock()
-        song = SongIdentity(LibraryIdentity("library-1", "Music", "/music"), "file-1.flac")
-
-        with patch("nomarr.components.processing.file_write_comp.set_song_tags") as mock_set_song_tags:
-            result = save_mood_tags(mock_db, song, None)
-
-        assert result == 0
-        mock_set_song_tags.assert_has_calls(
-            [
-                call(mock_db, song, "nom:mood-strict", []),
-                call(mock_db, song, "nom:mood-regular", []),
-                call(mock_db, song, "nom:mood-loose", []),
-            ]
-        )
-        assert mock_set_song_tags.call_count == 3
-
-
-class TestSaveMoodTagsBatch:
-    """Tests for ``save_mood_tags_batch()``."""
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
-    def test_returns_zero_for_empty_items(self) -> None:
-        mock_db = MagicMock()
-
-        with patch("nomarr.components.processing.file_write_comp.set_song_tags_batch") as mock_set_song_tags_batch:
-            result = save_mood_tags_batch(mock_db, [])
-
-        assert result == 0
-        mock_set_song_tags_batch.assert_not_called()
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
-    def test_delegates_to_set_song_tags_batch(self) -> None:
-        mock_db = MagicMock()
-        song = SongIdentity(LibraryIdentity("library-1", "Music", "/music"), "file-1.flac")
-        mood_tags = Tags(items=(Tag(name="mood-strict", values=("happy",)),))
-        items: list[tuple[SongIdentity, Tags | None]] = [(song, mood_tags)]
-
-        with patch(
-            "nomarr.components.processing.file_write_comp.set_song_tags_batch",
-        ) as mock_set_song_tags_batch:
-            result = save_mood_tags_batch(mock_db, items)
-
-        assert result == 1
-        mock_set_song_tags_batch.assert_called_once_with(
-            mock_db,
-            [
-                {
-                    "song": song,
-                    "name": "nom:mood-strict",
-                    "values": ["happy"],
-                },
-                {"song": song, "name": "nom:mood-regular", "values": []},
-                {"song": song, "name": "nom:mood-loose", "values": []},
-            ],
-        )
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
-    def test_none_entry_clears_all_three_tiers(self) -> None:
-        """A None mood_tags entry emits empty value lists for every tier."""
-        mock_db = MagicMock()
-        song = SongIdentity(LibraryIdentity("library-1", "Music", "/music"), "file-1.flac")
-        items: list[tuple[SongIdentity, Tags | None]] = [(song, None)]
-
-        with patch(
-            "nomarr.components.processing.file_write_comp.set_song_tags_batch",
-        ) as mock_set_song_tags_batch:
-            result = save_mood_tags_batch(mock_db, items)
-
-        assert result == 0
-        mock_set_song_tags_batch.assert_called_once_with(
-            mock_db,
-            [
-                {"song": song, "name": "nom:mood-strict", "values": []},
-                {"song": song, "name": "nom:mood-regular", "values": []},
-                {"song": song, "name": "nom:mood-loose", "values": []},
-            ],
-        )
 
 
 class TestReleaseFileClaim:

@@ -3,8 +3,8 @@
 All reads route through the sealed tag facade using domain values
 (``TagRef`` / ``TagUsage`` / ``Song``). Tag "counts" come from
 ``list_tags_with_song_count`` (typed ``TagUsage``), never from materializing tag
-ids or song-tag edges. Numeric library scopes are translated with the
-song-side library-identity bridge.
+ids or song-tag edges. Library scopes filter song locators on their
+``LibraryIdentity.library_uuid``; no generated id is derived from ``Song``.
 """
 
 from __future__ import annotations
@@ -13,70 +13,82 @@ from collections import defaultdict
 from math import floor
 from typing import TYPE_CHECKING, Any
 
+from nomarr.components.library.library_song_query_comp import locators_for_carriers
+from nomarr.components.library.song_query_types import TrackSong
+from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
+
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from nomarr.helpers.dataclasses.library_dataclass import Library
+    from nomarr.helpers.dataclasses.song_dataclass import Song
     from nomarr.helpers.dataclasses.song_tag_dataclass import TagRef
     from nomarr.persistence.db import Database
 
 
-def _all_songs(db: Database) -> list[dict[str, Any]]:
-    """Return all library song documents across every library.
+def _library_identity(library: Library) -> LibraryIdentity:
+    """Build the immutable ``LibraryIdentity`` for one domain ``Library``."""
+    if library.library_uuid is None:
+        raise ValueError(f"Library {library.name!r} has no library_uuid")
+    return LibraryIdentity(
+        library_uuid=library.library_uuid,
+        name=library.name,
+        root_path=library.root_path,
+    )
+
+
+def _all_songs(db: Database) -> list[Song]:
+    """Return every library's semantic songs across the whole collection.
 
     The intent-level facade has no global ``list_songs`` (song listing requires a
-    ``Library``), so a whole-collection listing is assembled by iterating the
-    known libraries and collecting each library's songs.
+    ``LibraryIdentity``), so a whole-collection listing is assembled by iterating
+    the known libraries and collecting each library's songs.
     """
-    docs: list[dict[str, Any]] = []
+    songs: list[Song] = []
     for library in db.library.list_libraries():
-        docs.extend(song.to_dict() for song in db.library.list_songs(library, limit=None))
-    return docs
+        if library.library_uuid is None:
+            continue
+        songs.extend(db.library.list_songs(_library_identity(library), limit=None))
+    return songs
 
 
-def _songs(db: Database, library: Library | None) -> list[dict[str, Any]]:
-    """Return song documents scoped to one library or the whole collection."""
+def _songs(db: Database, library: Library | None) -> list[Song]:
+    """Return semantic songs scoped to one library or the whole collection."""
     if library is not None:
-        return [song.to_dict() for song in db.library.list_songs(library, limit=None)]
+        return list(db.library.list_songs(_library_identity(library), limit=None))
     return _all_songs(db)
 
 
-def _library_song_ids(db: Database, library: Library) -> set[int]:
-    """Return the file-id set for one natural ``Library`` (empty if missing)."""
-    return {song.song_id for song in db.library.list_songs(library, limit=None)}
+def _project_song_locators(db: Database, songs: Sequence[Song]) -> list[SongIdentity]:
+    """Project bare semantic songs to their UUID-bearing locators in input order.
 
-
-def _tag_file_ids(db: Database, identity: TagRef) -> set[int]:
-    """Return file ids linked to one complete natural tag identity.
-
-    DEAD CODE (no repository-wide caller); retained after the Plan-G bridge
-    audit. Migrated to the natural
-    ``db.library.find_songs_with_tag(identity)`` lookup so no stats path
-    references a tag storage primary key (the root tag-PK bridge is retired).
+    Uses the Q3-C public projection :func:`locators_for_carriers`; unresolved
+    songs are skipped deterministically. No generated id, row, resolver, or
+    physical-path heuristic participates.
     """
-    return {song.song_id for song in db.library.find_songs_with_tag(identity, limit=None)}
-
-
-def _song_count_for_tag(db: Database, identity: TagRef) -> int:
-    """Count songs targeting one complete natural tag identity.
-
-    DEAD CODE (no repository-wide caller); retained for the Plan-G bridge
-    audit. Counts via the natural song lookup (``_tag_file_ids``); never parses
-    a storage tag id.
-    """
-    return len(_tag_file_ids(db, identity))
+    if not songs:
+        return []
+    carriers = [TrackSong(song=song, metadata={}, isrc=None) for song in songs]
+    return [locator for locator in locators_for_carriers(db, carriers) if locator is not None]
 
 
 def _scoped_song_count_for_tag(
     db: Database,
     identity: TagRef,
-    library_song_ids: set[int] | None,
+    library: Library | None,
 ) -> int:
-    """Count songs for a tag identity, optionally intersected with a library file-id set."""
+    """Count songs for a tag identity, scoped to one library by locator uuid.
+
+    Global scope (``library is None``) uses the aggregate facade count. A scoped
+    count projects the tag's songs to locators through the public carrier
+    projection and keeps only the locators owned by the requested library — no
+    integer library-song-id bridge and no generated id comparison.
+    """
     songs = db.library.find_songs_with_tag(identity, limit=None)
-    if library_song_ids is None:
+    if library is None:
         return len(songs)
-    if not library_song_ids:
-        return 0
-    return sum(1 for song in songs if song.song_id in library_song_ids)
+    locators = _project_song_locators(db, songs)
+    return sum(1 for locator in locators if locator.library.library_uuid == library.library_uuid)
 
 
 def _numeric_value(value: object) -> float | None:
@@ -207,8 +219,8 @@ def get_library_stats(db: Database, library: Library | None = None) -> dict[str,
         }
 
     file_count = len(files)
-    total_duration_s = sum(_coerce_sum_value(file_doc.get("duration_seconds")) for file_doc in files)
-    total_size = sum(int(_coerce_sum_value(file_doc.get("file_size"))) for file_doc in files)
+    total_duration_s = sum(_coerce_sum_value(song.duration_seconds) for song in files)
+    total_size = sum(int(_coerce_sum_value(song.file_size)) for song in files)
     return {
         "file_count": file_count,
         "total_duration_ms": floor(total_duration_s * 1000),
@@ -223,18 +235,10 @@ def get_year_distribution(db: Database, library: Library | None = None) -> list[
     if total_year <= 0:
         return []
 
-    library_song_ids: set[int] | None = None
-    if library is not None:
-        library_song_ids = _library_song_ids(db, library)
-
     year_usages = db.library.list_tags_with_song_count(name="year", limit=total_year, offset=0)
     rows: list[dict[str, Any]] = []
     for usage in year_usages:
-        song_count = (
-            usage.song_count
-            if library_song_ids is None
-            else _scoped_song_count_for_tag(db, usage.identity, library_song_ids)
-        )
+        song_count = usage.song_count if library is None else _scoped_song_count_for_tag(db, usage.identity, library)
         if song_count <= 0:
             continue
         rows.append({"year": usage.identity.value, "count": song_count})
@@ -259,21 +263,13 @@ def get_genre_distribution(
     if total_genre <= 0:
         return []
 
-    library_song_ids: set[int] | None = None
-    if library is not None:
-        library_song_ids = _library_song_ids(db, library)
-
     genre_usages = db.library.list_tags_with_song_count(name="genre", limit=total_genre, offset=0)
     rows: list[dict[str, Any]] = []
     for usage in genre_usages:
         genre_value = usage.identity.value
         if not isinstance(genre_value, str):
             continue
-        song_count = (
-            usage.song_count
-            if library_song_ids is None
-            else _scoped_song_count_for_tag(db, usage.identity, library_song_ids)
-        )
+        song_count = usage.song_count if library is None else _scoped_song_count_for_tag(db, usage.identity, library)
         if song_count <= 0:
             continue
         rows.append({"genre": genre_value, "count": song_count})

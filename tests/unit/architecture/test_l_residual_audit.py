@@ -75,11 +75,12 @@ def test_manifest_does_not_approve_broad_resolvers_or_integer_wire_ids() -> None
     assert "No wrapper or alias added by L" in text
 
 
-def test_contract_keeps_hydration_as_the_only_provisional_integer_adapter() -> None:
+def test_contract_keeps_hydration_locator_addressed_without_integer_adapter() -> None:
     path = _fixture("song-row-mirror-contracts.md")
     _assert_tracked_clean_checkout_fixture(path)
     text = path.read_text(encoding="utf-8")
-    assert "HydrateSongInput" in text
+    assert "locator-addressed" in text
+    assert "No generated integer identity crosses the" in text
     assert "All other integer identity crossings are prohibited" in text
     assert "exact L/N/P allowlist" in text
 

@@ -24,6 +24,7 @@ from nomarr.helpers.dto.navidrome_dto import STANDARD_TAG_NAMES
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
     from nomarr.helpers.dto.navidrome_dto import SmartPlaylistFilter, TagCondition
     from nomarr.persistence.db import Database
 else:
@@ -31,8 +32,8 @@ else:
     from nomarr.helpers.dto.navidrome_dto import RuleGroup
 
 
-def _execute_rule_group(db: Database, rule_group: RuleGroup) -> set[int]:  # type: ignore[name-defined]
-    """Recursively execute a rule group and return matching file IDs.
+def _execute_rule_group(db: Database, rule_group: RuleGroup) -> set[SongIdentity]:  # type: ignore[name-defined]
+    """Recursively execute a rule group and return matching song locators.
 
     Combines conditions and nested groups using set operations based on
     the group's logic (AND = intersection, OR = union).
@@ -42,10 +43,10 @@ def _execute_rule_group(db: Database, rule_group: RuleGroup) -> set[int]:  # typ
         rule_group: Rule group to execute (may contain nested groups)
 
     Returns:
-        Set of file IDs matching the rule group
+        Set of semantic ``SongIdentity`` locators matching the rule group
 
     """
-    result_sets: list[set[int]] = []
+    result_sets: list[set[SongIdentity]] = []
 
     # Execute conditions in this group
     for condition in rule_group.conditions:
@@ -69,8 +70,8 @@ def _execute_rule_group(db: Database, rule_group: RuleGroup) -> set[int]:  # typ
     return set.union(*result_sets)
 
 
-def execute_smart_playlist_filter(db: Database, playlist_filter: SmartPlaylistFilter) -> set[int]:
-    """Execute a smart playlist filter and return matching file IDs.
+def execute_smart_playlist_filter(db: Database, playlist_filter: SmartPlaylistFilter) -> set[SongIdentity]:
+    """Execute a smart playlist filter and return matching song locators.
 
     Uses Python set operations to combine conditions:
     - AND conditions: intersection of sets
@@ -82,7 +83,7 @@ def execute_smart_playlist_filter(db: Database, playlist_filter: SmartPlaylistFi
         playlist_filter: Parsed smart playlist filter with nested groups
 
     Returns:
-        Set of file IDs matching the filter
+        Set of semantic ``SongIdentity`` locators matching the filter
 
     """
     return _execute_rule_group(db, playlist_filter.root)
@@ -131,8 +132,8 @@ def _resolve_tag_key(db: Database, tag_key: str) -> list[str]:
     return [tag_key]
 
 
-def _execute_single_condition(db: Database, condition: TagCondition) -> set[int]:
-    """Execute a single tag condition and return matching file IDs.
+def _execute_single_condition(db: Database, condition: TagCondition) -> set[SongIdentity]:
+    """Execute a single tag condition and return matching song locators.
 
     Supports both full versioned tag keys and short user-friendly names.
     Short names are resolved to actual storage keys before querying.
@@ -142,14 +143,14 @@ def _execute_single_condition(db: Database, condition: TagCondition) -> set[int]
         condition: Single tag condition
 
     Returns:
-        Set of file IDs matching the condition
+        Set of semantic ``SongIdentity`` locators matching the condition
 
     """
     # Resolve tag key to actual storage key(s)
     storage_keys = _resolve_tag_key(db, condition.tag_key)
 
     # Union results from all resolved keys
-    all_matching: set[int] = set()
+    all_matching: set[SongIdentity] = set()
 
     for name in storage_keys:
         if condition.operator == "contains":

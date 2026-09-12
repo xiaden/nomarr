@@ -67,11 +67,11 @@ def _make_tags_db() -> tuple[LibraryTagsDb, MagicMock, MagicMock]:
     song_tag_repo = MagicMock()
     song_repo = MagicMock()
     library_repo = MagicMock()
-    # Default natural-key resolution: library identity -> library_id 1 and
+    # Default UUID resolution (ADR-049): library_uuid -> library_id 1 and
     # normalized path -> song_id 7, so tag reads resolve without per-test setup.
-    # Both the single-key and set-based (P2-S6) resolvers are stubbed.
-    library_repo.get_library_by_natural_key.return_value = {"id": 1}
-    library_repo.get_library_ids_by_natural_keys.return_value = {("TestLib", "/music"): 1}
+    # Both the scalar and set-based resolvers are stubbed.
+    library_repo.get_library_by_uuid.return_value = {"id": 1}
+    library_repo.get_library_ids_by_uuids.return_value = {_TEST_LIBRARY.library_uuid: 1}
     song_repo.get_song_by_normalized_path.return_value = {"id": 7}
     song_repo.get_song_ids_by_normalized_paths.return_value = {(1, "a.mp3"): 7}
     tags = LibraryTagsDb(
@@ -89,8 +89,8 @@ def _make_library_db() -> tuple[LibraryDb, LibraryTagsDb, MagicMock, MagicMock]:
     song_tag_repo = MagicMock()
     song_repo = MagicMock()
     library_repo = MagicMock()
-    library_repo.get_library_by_natural_key.return_value = {"id": 1}
-    library_repo.get_library_ids_by_natural_keys.return_value = {("TestLib", "/music"): 1}
+    library_repo.get_library_by_uuid.return_value = {"id": 1}
+    library_repo.get_library_ids_by_uuids.return_value = {_TEST_LIBRARY.library_uuid: 1}
     song_repo.get_song_by_normalized_path.return_value = {"id": 7}
     song_repo.get_song_ids_by_normalized_paths.return_value = {(1, "a.mp3"): 7}
     tags = LibraryTagsDb(
@@ -452,22 +452,22 @@ class TestSongCommandContracts:
         assert (result.added, result.updated, result.removed) == (1, 2, 0)
 
 
-# ── root-path guard (P2-S3): LibraryIdentity.root_path may be None ──────────
-# ``LibraryIdentity.root_path`` is ``str | None``; the tag facade must guard the
-# None case (scalar + set-based batch) rather than loosening the repository's
-# required non-null ``root_path`` contract. Songs whose library has no
-# root_path resolve to nothing — never to a fabricated nullable lookup.
+# ── unknown-library guard (ADR-049) ─────────────────────────────────────────
+# ``SongIdentity.library`` is addressed by the immutable ``library_uuid``; the
+# tag facade must guard the case where that UUID does not resolve (scalar +
+# set-based batch) rather than fabricating a lookup. Songs whose library UUID is
+# unknown resolve to nothing — never to a fabricated nullable lookup.
 
 
-@pytest.mark.unit
-class TestRootPathNoneGuard:
-    """LibraryIdentity with ``root_path=None`` is guarded in scalar + batch paths."""
+class TestUnknownLibraryUuidGuard:
+    """A SongIdentity whose library_uuid is unknown is guarded in scalar + batch paths."""
 
-    def test_scalar_resolution_omits_none_root_path(self) -> None:
+    def test_scalar_resolution_omits_unknown_library_uuid(self) -> None:
         tags, tag_repo, song_tag_repo = _make_tags_db()
+        tags._library_repo.get_library_by_uuid.return_value = None
         song = SongIdentity(
             library=LibraryIdentity(
-                library_uuid="08042357-9a97-5066-a9bf-bcab3b77ec8b", name="TestLib", root_path=None
+                library_uuid="08042357-9a97-5066-a9bf-bcab3b77ec8b", name="TestLib", root_path="/music"
             ),
             normalized_path="a.mp3",
         )
@@ -475,41 +475,42 @@ class TestRootPathNoneGuard:
         result = tags.list_tags_for_song(song)
 
         assert result == ()
-        # No library/song lookup is attempted — the repository is never reached.
+        # No song lookup is attempted once the library UUID is unknown.
         tag_repo.list_tags.assert_not_called()
         song_tag_repo.get_tags_for_song.assert_not_called()
 
-    def test_batch_resolution_skips_none_root_path_songs(self) -> None:
+    def test_batch_resolution_skips_unknown_library_uuid_songs(self) -> None:
         tags, _, song_tag_repo = _make_tags_db()
         with_path = _song("a.mp3")
-        without_path = SongIdentity(
+        unknown = SongIdentity(
             library=LibraryIdentity(
-                library_uuid="08042357-9a97-5066-a9bf-bcab3b77ec8b", name="TestLib", root_path=None
+                library_uuid="08042357-9a97-5066-a9bf-bcab3b77ec8b", name="Other", root_path="/other"
             ),
             normalized_path="b.mp3",
         )
-        song_tag_repo.get_genre_tags_for_songs.return_value = [{"name": "genre", "value": "Jazz", "namespace": ""}]
+        song_tag_repo.get_tags_for_songs_batch.return_value = [
+            {"song_id": 7, "tag_id": 1, "tag_name": "artist", "tag_value": "X", "namespace": "", "confidence": 1.0}
+        ]
 
-        result = tags.list_genre_tags_for_songs([with_path, without_path])
+        result = tags.list_song_tags_for_songs([with_path, unknown])
 
-        # Only the resolvable (root_path present) song contributes results; the
-        # None-root song is silently skipped and never reaches the repo.
-        assert result
-        assert all(isinstance(a, SongTagAssignment) for a in result)
-        song_tag_repo.get_genre_tags_for_songs.assert_called_once()
+        # Only the resolvable (known UUID) song contributes results; the unknown
+        # library song is silently skipped and never reaches the repo.
+        assert set(result) == {with_path}
+        song_tag_repo.get_tags_for_songs_batch.assert_called_once()
 
-    def test_set_based_map_omits_none_root_path_keys(self) -> None:
+    def test_set_based_map_omits_unknown_library_uuid_keys(self) -> None:
         tags, _, _ = _make_tags_db()
         with_path = _song("a.mp3")
-        without_path = SongIdentity(
+        unknown = SongIdentity(
             library=LibraryIdentity(
-                library_uuid="08042357-9a97-5066-a9bf-bcab3b77ec8b", name="TestLib", root_path=None
+                library_uuid="08042357-9a97-5066-a9bf-bcab3b77ec8b", name="Other", root_path="/other"
             ),
             normalized_path="b.mp3",
         )
 
-        resolved = tags._resolve_song_ids_map([with_path, without_path])
+        resolved = tags._resolve_song_ids_map([with_path, unknown])
 
-        # Set-based resolver drops None-root identities; the resolvable one maps.
+        # Set-based resolver drops unknown-UUID identities; the resolvable one maps.
         assert set(resolved) == {with_path}
-        assert without_path not in resolved
+        assert unknown not in resolved

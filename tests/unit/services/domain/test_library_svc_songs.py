@@ -13,8 +13,15 @@ from nomarr.helpers.constants.file_states import (
     STATE_PROCESSED,
 )
 from nomarr.helpers.dataclasses.library_dataclass import Library
-from nomarr.helpers.dto.library_dto import RetryErroredResult
+from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
+from nomarr.helpers.dto.library_dto import FileTag, FileTagsResult, RetryErroredResult
+from nomarr.helpers.song_locator_codec import encode_song_locator
 from nomarr.services.domain.library_svc.songs import LibrarySongsMixin
+
+_LIBRARY = LibraryIdentity(library_uuid="6313b0d3-d270-47a8-9e0d-21e8255107e3")
+_STATE_A = SongIdentity(library=_LIBRARY, normalized_path="songs/a.flac")
+_STATE_B = SongIdentity(library=_LIBRARY, normalized_path="songs/b.flac")
+_STATE_C = SongIdentity(library=_LIBRARY, normalized_path="songs/c.flac")
 
 
 class _ConcreteSongsMixin(LibrarySongsMixin):
@@ -37,7 +44,7 @@ class TestRetryErroredSongs:
     @patch("nomarr.services.domain.library_svc.songs.transition_song_state")
     @patch(
         "nomarr.services.domain.library_svc.songs.get_errored_song_ids",
-        return_value=[1, 2],
+        return_value=[_STATE_A, _STATE_B],
     )
     def test_retries_all_errored_when_no_song_ids(
         self,
@@ -55,13 +62,13 @@ class TestRetryErroredSongs:
         assert mock_transition_song_state.call_args_list == [
             call(
                 mock_db,
-                [1, 2],
+                [_STATE_A, _STATE_B],
                 STATE_ERRORED,
                 STATE_NOT_ERRORED,
             ),
             call(
                 mock_db,
-                [1, 2],
+                [_STATE_A, _STATE_B],
                 STATE_PROCESSED,
                 STATE_NOT_PROCESSED,
             ),
@@ -71,7 +78,7 @@ class TestRetryErroredSongs:
     @patch("nomarr.services.domain.library_svc.songs.transition_song_state")
     @patch(
         "nomarr.services.domain.library_svc.songs.get_errored_song_ids",
-        return_value=[1, 2, 3],
+        return_value=[_STATE_A, _STATE_B, _STATE_C],
     )
     def test_filters_to_specified_song_ids(
         self,
@@ -84,20 +91,20 @@ class TestRetryErroredSongs:
 
         mixin.retry_errored_songs(
             library,
-            song_ids=[1, 3],
+            songs=[_STATE_A, _STATE_C],
         )
 
         mock_get_errored_song_ids.assert_called_once_with(mock_db, library)
         assert mock_transition_song_state.call_args_list == [
             call(
                 mock_db,
-                [1, 3],
+                [_STATE_A, _STATE_C],
                 STATE_ERRORED,
                 STATE_NOT_ERRORED,
             ),
             call(
                 mock_db,
-                [1, 3],
+                [_STATE_A, _STATE_C],
                 STATE_PROCESSED,
                 STATE_NOT_PROCESSED,
             ),
@@ -107,7 +114,7 @@ class TestRetryErroredSongs:
     @patch("nomarr.services.domain.library_svc.songs.transition_song_state")
     @patch(
         "nomarr.services.domain.library_svc.songs.get_errored_song_ids",
-        return_value=[1],
+        return_value=[_STATE_A],
     )
     def test_calls_transition_helper_twice_for_errored_songs(
         self,
@@ -134,6 +141,48 @@ class TestRetryErroredSongs:
             ),
         ):
             mixin.retry_errored_songs(_make_library())
+
+
+class TestGetSongTags:
+    """Tests for ``LibrarySongsMixin.get_song_tags``."""
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_returns_opaque_locator_for_semantic_identity(self) -> None:
+        """A found song returns ``FileTagsResult`` whose file_id is the opaque locator token."""
+        mock_db = MagicMock()
+        mixin = _ConcreteSongsMixin(mock_db)
+        tag = FileTag(key="genre", value="rock", tag_type="string", is_nomarr=False)
+
+        with patch(
+            "nomarr.services.domain.library_svc.songs.get_song_tags_with_path",
+            return_value={"path": "/music/songs/a.flac", "tags": [tag]},
+        ) as mock_get_song_tags_with_path:
+            result = mixin.get_song_tags(_STATE_A, nomarr_only=True)
+
+        assert result == FileTagsResult(
+            file_id=encode_song_locator(_STATE_A),
+            path="/music/songs/a.flac",
+            tags=[tag],
+        )
+        assert result.file_id == encode_song_locator(_STATE_A)
+        mock_get_song_tags_with_path.assert_called_once_with(mock_db, _STATE_A, nomarr_only=True)
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_raises_value_error_when_component_result_is_falsy(self) -> None:
+        """A falsy component result (missing song) raises ``ValueError``."""
+        mock_db = MagicMock()
+        mixin = _ConcreteSongsMixin(mock_db)
+
+        with (
+            patch(
+                "nomarr.services.domain.library_svc.songs.get_song_tags_with_path",
+                return_value={},
+            ),
+            pytest.raises(ValueError, match="Song not found"),
+        ):
+            mixin.get_song_tags(_STATE_A)
 
 
 class TestReconcileLibraryPaths:

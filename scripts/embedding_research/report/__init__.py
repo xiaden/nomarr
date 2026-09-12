@@ -17,6 +17,7 @@ from ._retrieval import (
     GEOMETRY_ANALYSIS_COLUMNS,
     IDENTITY_COLUMNS,
     query_analyze_metrics,
+    query_corpus_evidence,
     query_geometry_identity,
     query_observed_baselines,
     query_winners_metrics,
@@ -344,6 +345,7 @@ def run(con, out_path=None, *, run_id: str | None = None, stream_store: Any = No
         identity, _ = _step("query_geometry_identity", lambda: query_geometry_identity(con, run_id=run_id))
         wdf, _ = _step("query_winners_metrics", lambda: query_winners_metrics(con, run_id=run_id))
         bdf, _ = _step("query_observed_baselines", lambda: query_observed_baselines(con, run_id=run_id))
+        corpus_evidence, _ = _step("query_corpus_evidence", lambda: query_corpus_evidence(con, run_id=run_id))
     else:
         # No completed analyze scope was resolved: every evidence section visibly refuses
         # instead of blending runs or selecting a latest/current scope.
@@ -351,6 +353,7 @@ def run(con, out_path=None, *, run_id: str | None = None, stream_store: Any = No
         identity = pd.DataFrame(columns=["run_id", *IDENTITY_COLUMNS])
         wdf = df
         bdf = df
+        corpus_evidence = None
 
     # Global warnings
     warnings, _ = _step("discrimination_warnings", lambda: ruler_disc_warnings(con))
@@ -367,7 +370,7 @@ def run(con, out_path=None, *, run_id: str | None = None, stream_store: Any = No
     sections_raw: list[tuple[str, Any]] = [
         ("summary", lambda: section_summary(wdf, bdf)),
         ("corpus", lambda: section_corpus(con)),
-        ("analysis", lambda: section_analysis(df, identity)),
+        ("analysis", lambda: section_analysis(df, identity, corpus_evidence=corpus_evidence)),
         ("winners", lambda: section_winners(wdf, bdf)),
         ("head-analysis", lambda: section_head_analysis(con, run_id=run_id)),
         ("provenance", lambda: section_provenance(con, run_id=run_id)),

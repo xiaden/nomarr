@@ -1,0 +1,11 @@
+{
+  "created_at": "<DB_ID>",
+  "file_write_mode": "full",
+  "is_enabled": true,
+  "library_auto_write": false,
+  "library_uuid": "<UUID>",
+  "name": "TestLib1",
+  "root_path": "/tmp/test1",
+  "updated_at": "<DB_ID>",
+  "watch_mode": "off"
+}

@@ -57,23 +57,19 @@ def preview_smart_playlist_workflow(
     # Parse query into filter tree
     playlist_filter = parse_smart_playlist_query(query, namespace)
 
-    # Execute filter to get matching song storage handles. The smart-playlist
-    # tag engine still returns private handles; resolve them once to mutable
-    # locators at this boundary and never carry the integers further.
-    song_ids = execute_smart_playlist_filter(db, playlist_filter)
+    # The filter engine yields mutable locators directly; no resolver or
+    # generated integer identity crosses this boundary.
+    locators = list(execute_smart_playlist_filter(db, playlist_filter))
 
     # Count total matches
-    total_count = len(song_ids)
-
-    identities_by_id = db.library.resolve_song_identities(list(song_ids))
-    sample_identities = list(identities_by_id.values())[:preview_limit]
+    total_count = len(locators)
 
     # Fetch sample tracks (limit already validated at API layer: 1-100)
     sample_pairs = []
-    for identity in sample_identities:
-        song = db.library.get_song(identity)
+    for locator in locators[:preview_limit]:
+        song = db.library.get_song(locator)
         if song is not None:
-            sample_pairs.append((identity, song))
+            sample_pairs.append((locator, song))
     hydrated = hydrate_songs_with_metadata(
         db,
         [song for _, song in sample_pairs],

@@ -6,10 +6,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nomarr.components.library.song_query_types import TrackSong
 from nomarr.components.library.song_sync_comp import mark_song_processed, save_song_tags
 from nomarr.components.playlist_import.track_matcher_comp import LibraryTrack
 from nomarr.helpers.constants.file_states import STATE_NOT_PROCESSED, STATE_PROCESSED
 from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
+from nomarr.helpers.dataclasses.song_dataclass import Song
 
 
 def _song(normalized_path: str = "song.flac") -> SongIdentity:
@@ -17,6 +19,25 @@ def _song(normalized_path: str = "song.flac") -> SongIdentity:
     return SongIdentity(
         library=LibraryIdentity(library_uuid="691ebf37-b1e4-5244-a9c0-4758c39eaab6", name="Test Library"),
         normalized_path=normalized_path,
+    )
+
+
+def _semantic_song(normalized_path: str = "song.flac") -> Song:
+    return Song(
+        path=f"/music/{normalized_path}",
+        normalized_path=normalized_path,
+        file_size=1,
+        modified_time=1,
+        duration_seconds=None,
+        chromaprint=None,
+        needs_tagging=True,
+        is_valid=True,
+        tagged=False,
+        calibration_hash=None,
+        write_claimed_by=None,
+        last_tagged_at=None,
+        scanned_at=None,
+        created_at=1,
     )
 
 
@@ -106,18 +127,40 @@ class TestSaveSongTags:
         assert "song_id" not in payload[0]
 
 
-class TestLibraryTrackFromDbRow:
-    """Tests for LibraryTrack.from_db_row row-to-DTO conversion."""
+class TestLibraryTrackFromTrackSong:
+    """Tests for the typed ``TrackSong`` → ``LibraryTrack`` conversion.
+
+    The converter preserves the semantic ``SongIdentity`` locator and never
+    invents a generated integer handle or raw-row field.
+    """
 
     @pytest.mark.unit
-    def test_requires_id_key_instead_of_silent_empty_fallback(self) -> None:
-        # Regression: from_db_row reads row["id"] directly; a row without the
-        # id key must raise KeyError rather than silently yielding file_id="".
-        with pytest.raises(KeyError):
-            LibraryTrack.from_db_row({"path": "/music/song.flac"})
+    def test_carries_semantic_locator_and_metadata(self) -> None:
+        locator = _song("song.flac")
+        track = TrackSong(
+            song=_semantic_song("song.flac"),
+            metadata={"title": "T", "artist": "A", "album": "B"},
+            isrc="US1234567890",
+        )
+
+        lib_track = LibraryTrack.from_track_song(locator, track)
+
+        assert lib_track.song_identity is locator
+        assert lib_track.file_path == "/music/song.flac"
+        assert lib_track.title == "T"
+        assert lib_track.artist == "A"
+        assert lib_track.album == "B"
+        assert lib_track.isrc == "US1234567890"
+        assert not hasattr(lib_track, "file_id")
 
     @pytest.mark.unit
-    def test_accepts_integer_id(self) -> None:
-        track = LibraryTrack.from_db_row({"id": 42, "path": "/music/song.flac"})
-        assert track.file_id == 42
-        assert isinstance(track.file_id, int)
+    def test_non_string_metadata_is_treated_as_absent(self) -> None:
+        locator = _song()
+        track = TrackSong(song=_semantic_song(), metadata={"title": 5, "artist": None}, isrc=None)
+
+        lib_track = LibraryTrack.from_track_song(locator, track)
+
+        assert lib_track.title == ""
+        assert lib_track.artist == ""
+        assert lib_track.album is None
+        assert lib_track.isrc is None

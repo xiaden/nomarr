@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, NoReturn
+from typing import TYPE_CHECKING, NoReturn
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
     from nomarr.helpers.dataclasses.vector_dataclass import SongVector, VectorMatch
     from nomarr.persistence.db import Database
     from nomarr.services.infrastructure.config_svc import ConfigService
@@ -19,22 +20,6 @@ class MissingSeedVectorError(ValueError):
 
 class VectorIndexUnavailableError(ValueError):
     """Raised when the cold vector index is unavailable for searching."""
-
-
-def _resolve_match_file_id(db: Database, match: VectorMatch) -> int | None:
-    """Adapt a result's natural ``SongIdentity`` back to its transport file id.
-
-    The authoritative reverse lookup lives in ``db.library``: a match is located
-    by its owning library's natural ``(name, root_path)`` key plus its
-    ``normalized_path``, and the resulting song handle is returned.  This is the
-    existing application/transport adaptation boundary — no integer storage id
-    ever enters ``MlDb``; identities are converted back to transport ids here.
-    """
-    song_obj = db.library.get_song_by_normalized_path(
-        match.song.library,
-        match.song.normalized_path,
-    )
-    return song_obj.song_id if song_obj is not None else None
 
 
 class VectorSearchService:
@@ -57,20 +42,21 @@ class VectorSearchService:
 
     def search_similar_tracks(
         self,
-        file_id: int,
+        song: SongIdentity,
         backbone_id: str,
         limit: int,
         min_score: float = 0.0,
         nprobe: int | None = None,
-    ) -> list[dict[str, Any]]:
+    ) -> list[VectorMatch]:
         """Search for similar tracks using vector similarity.
 
-        Resolves the source track's vector from ``file_id``, then performs a
-        single ANN query against the per-backbone cold tier. Cross-library
-        search is the default (tiers are per-backbone, not per-library).
+        Reads the source track's stored vector through its semantic
+        ``SongIdentity`` locator, then performs a single ANN query against the
+        per-backbone cold tier. Cross-library search is the default (tiers are
+        per-backbone, not per-library).
 
         Args:
-            file_id: Library file handle to find similar tracks for.
+            song: Semantic ``SongIdentity`` locator addressing the source track.
             backbone_id: Backbone identifier (e.g., "effnet", "yamnet")
             limit: Maximum number of results
             min_score: Minimum cosine similarity threshold (-1 to 1). Results below
@@ -79,10 +65,11 @@ class VectorSearchService:
                 cold-tier search, which uses the global ``hnsw.ef_search``).
 
         Returns:
-            List of transport-adapted matches with exactly the keys:
-                - file_id: Library file handle
-                - score: Cosine similarity in [-1, 1] (higher = more similar)
-                - vector: The stored embedding vector
+            Score-descending, threshold-filtered ``VectorMatch`` values, each
+            carrying the matched ``SongIdentity`` locator and its stored
+            embedding. No generated integer identity or transport key is
+            produced here; opaque wire encoding happens at the interface
+            boundary.
 
         Raises:
             MissingSeedVectorError: If no vector exists for the source track.
@@ -96,18 +83,14 @@ class VectorSearchService:
         if not self.db.ml.has_vector_index(backbone_id):
             raise VectorIndexUnavailableError(f"No vector index available for backbone '{backbone_id}'.")
 
-        # Step 1: Resolve the source file handle to a natural identity through
-        # the authoritative library lookup, then read its cold-tier vector.
-        song = self.db.library.resolve_song_identity(file_id)
-        if song is None:
-            self._raise_missing_seed(file_id, backbone_id)
+        # Read the source track's cold-tier vector through its semantic locator.
         song_vector = self.db.ml.get_song_vector(backbone_id, song)
         if song_vector is None:
-            self._raise_missing_seed(file_id, backbone_id)
+            self._raise_missing_seed(backbone_id)
         seed_vector = song_vector.vector
 
-        # Step 2: Single ANN search on the per-backbone cold tier, requesting
-        # the stored vector for each match so the API can echo it.
+        # Single ANN search on the per-backbone cold tier, requesting the
+        # stored vector for each match so the API can echo it.
         matches = self.db.ml.search_similar_vectors(
             backbone_id,
             seed_vector,
@@ -117,52 +100,31 @@ class VectorSearchService:
         )
 
         # Matches arrive distance-ordered (highest score first). Preserve the
-        # explicit score filter and descending-score sort.
-        filtered = [m for m in matches if m.score >= min_score]
+        # explicit score filter and descending-score sort, dropping any match
+        # whose stored vector was not returned.
+        filtered = [m for m in matches if m.score >= min_score and m.vector is not None]
         filtered.sort(key=lambda m: m.score, reverse=True)
 
         logger.debug(
             f"Vector search: backbone={backbone_id}, limit={limit}, nprobe={nprobe}, "
             f"raw_matches={len(matches)}, filtered={len(filtered)}"
         )
+        return filtered
 
-        # Transport adaptation: identity -> file_id stays here (never in MlDb).
-        results: list[dict[str, Any]] = []
-        for match in filtered:
-            match_file_id = _resolve_match_file_id(self.db, match)
-            if match_file_id is None or match.vector is None:
-                continue
-            results.append(
-                {
-                    "file_id": match_file_id,
-                    "score": match.score,
-                    "vector": list(match.vector),
-                }
-            )
-        return results
-
-    def get_track_vector(self, backbone_id: str, file_id: int) -> SongVector | None:
-        """Get vector for a specific track.
-
-        Delegates to the get_track_vector workflow, which resolves the file
-        handle to a natural identity and reads the cold-tier stored vector.
+    def get_track_vector(self, backbone_id: str, song: SongIdentity) -> SongVector | None:
+        """Get the promoted cold-tier vector for a semantic song locator.
 
         Args:
             backbone_id: Backbone identifier
-            file_id: Library file handle
+            song: Semantic ``SongIdentity`` locator addressing the track
 
         Returns:
             The selected track's :class:`SongVector`, or ``None`` when no
             promoted vector exists.
 
         """
-        from nomarr.workflows.vectors.get_track_vector_wf import get_track_vector as get_track_vector_wf
+        return self.db.ml.get_song_vector(backbone_id, song)
 
-        return get_track_vector_wf(self.db, file_id, backbone_id)
-
-    def _raise_missing_seed(self, file_id: int, backbone_id: str) -> NoReturn:
-        msg = (
-            f"No vector found for file '{file_id}' with backbone "
-            f"'{backbone_id}'. Track may not have been processed yet."
-        )
+    def _raise_missing_seed(self, backbone_id: str) -> NoReturn:
+        msg = f"No vector found for backbone '{backbone_id}'. Track may not have been processed yet."
         raise MissingSeedVectorError(msg)

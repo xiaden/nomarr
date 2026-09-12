@@ -7,14 +7,24 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
 from nomarr.helpers.dto import NavidromeGeneratePlaylistsResult
 from nomarr.helpers.exceptions import MisconfiguredError
+from nomarr.helpers.song_locator_codec import encode_song_locator
 from nomarr.interfaces.api.auth import verify_key
 from nomarr.interfaces.api.v1.navidrome_v1_if import router as navidrome_router
 from nomarr.interfaces.api.web.dependencies import get_navidrome_service
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+
+# Canonical opaque ``nom1`` SongLocator token used on the v1 wire.
+_TOKEN = encode_song_locator(
+    SongIdentity(
+        library=LibraryIdentity(library_uuid="123e4567-e89b-42d3-a456-426614174000"),
+        normalized_path="track-1.flac",
+    ),
+)
 
 
 @pytest.fixture
@@ -151,7 +161,7 @@ class TestGeneratePlaylistsEndpoint:
             "/api/v1/navidrome/playlist/generate",
             json={
                 "user_id": "user-1",
-                "top_plays": [{"file_id": 1, "playcount": 5}],
+                "top_plays": [{"file_id": _TOKEN, "playcount": 5}],
             },
         )
 
@@ -178,7 +188,7 @@ class TestGeneratePlaylistsEndpoint:
             "/api/v1/navidrome/playlist/generate",
             json={
                 "user_id": "user-1",
-                "top_plays": [{"file_id": 1, "playcount": 5}],
+                "top_plays": [{"file_id": _TOKEN, "playcount": 5}],
             },
         )
 
@@ -223,7 +233,7 @@ class TestGeneratePlaylistsEndpoint:
             "/api/v1/navidrome/playlist/generate",
             json={
                 "user_id": "user-1",
-                "top_plays": [{"file_id": 1, "playcount": 5}],
+                "top_plays": [{"file_id": _TOKEN, "playcount": 5}],
             },
         )
 
@@ -256,10 +266,28 @@ class TestGeneratePlaylistsEndpoint:
             [f"{'songs'}/track-1"],
         )
         mock_navidrome_service.resolve_files_to_nd.assert_not_called()
-        # Request-body file_id (int on the wire) must arrive at the service as int.
+        # Request-body file_id (opaque nom1 token) must reach the service
+        # unchanged, never coerced to a generated integer identity.
         top_plays = mock_navidrome_service.generate_playlists.call_args.kwargs["top_plays"]
-        assert top_plays[0]["file_id"] == 1
-        assert isinstance(top_plays[0]["file_id"], int)
+        assert top_plays[0]["file_id"] == _TOKEN
+        assert isinstance(top_plays[0]["file_id"], str)
+
+    def test_integer_file_id_is_rejected(
+        self,
+        client: TestClient,
+        mock_navidrome_service: MagicMock,
+    ) -> None:
+        """An integer identity on the wire is rejected before reaching the service."""
+        response = client.post(
+            "/api/v1/navidrome/playlist/generate",
+            json={
+                "user_id": "user-1",
+                "top_plays": [{"file_id": 1, "playcount": 5}],
+            },
+        )
+
+        assert response.status_code == 422
+        mock_navidrome_service.generate_playlists.assert_not_called()
 
     def test_misconfigured_status_on_result_returns_422(
         self,
@@ -276,7 +304,7 @@ class TestGeneratePlaylistsEndpoint:
             "/api/v1/navidrome/playlist/generate",
             json={
                 "user_id": "user-1",
-                "top_plays": [{"file_id": 1, "playcount": 5}],
+                "top_plays": [{"file_id": _TOKEN, "playcount": 5}],
             },
         )
 
@@ -325,7 +353,7 @@ class TestGeneratePlaylistsEndpoint:
             "/api/v1/navidrome/playlist/generate",
             json={
                 "user_id": "user-1",
-                "top_plays": [{"file_id": 1, "playcount": 5}],
+                "top_plays": [{"file_id": _TOKEN, "playcount": 5}],
             },
         )
 

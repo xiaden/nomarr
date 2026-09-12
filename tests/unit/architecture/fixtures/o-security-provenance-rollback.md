@@ -27,8 +27,8 @@ metrics, and logs must not disclose normalized or absolute paths, UUIDs,
 generated IDs, SQL/session/constraint details, raw rows, tag payloads,
 credentials, or sensitive metadata.
 
-The sole retained provisional inbound integer crossing is the narrow
-HydrateSongInput(song_id: int, ...) hydration adapter.
+Hydration is locator-addressed and payload-only: HydrateSongInput carries no
+song_id integer, so no inbound integer adapter is retained.
 Every other integer identity crossing is prohibited, including
 resolve_song_identity and resolve_song_identities.
 No broad resolver allowlist is invented here.

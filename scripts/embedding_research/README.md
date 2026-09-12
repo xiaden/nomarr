@@ -1,8 +1,19 @@
 # Embedding Research — Operational Notes
 
 Research-only pipeline. This directory contains no production code; nothing here changes
-production behavior. All execution evidence is synthetic; no real corpus is used for the
-threshold-independent Gram geometry migration.
+production behavior. The focused corrective plan `TASK-gram-geometry-corrective-repair` is the
+active authority over the superseded migration notes below. DB-persisted per-song Gram geometry
+feeds synthetic corpus-wide leave-one-out retrieval in which a query is never its own candidate;
+each committed Gram and exact mask is decoded once per song and all 171 thresholds are derived
+before scoring. Evaluation identity is segmentation-independent, the observed global-medoid
+baseline uses the same candidate population as the winner neighborhoods, and comparability,
+threshold/corpus maps, per-query ruler metrics, and at least one hundred top-N neighborhoods are
+persisted (non-comparable entries keep explicit reasons). The production Gram kernel row-normalizes
+and multiplies float32 rows with NumPy and publishes little-endian C-order float32 bytes. Scientific
+artifact hashes remain; Git/source R1–R14 traceability machinery is deleted. No real corpus or
+interactive explorer is run.
+
+Historical migration-status paragraphs below are retained only as context. The active contract is the corrected corpus-wide, leave-one-out geometry path described above; self-song scoring, one-song baselines, scalar production Gram arithmetic, and source-traceability validation are not active obligations.
 
 ## Geometry contract (current)
 
@@ -41,14 +52,7 @@ See `CONTRACTS.md` for the binding API and `FINDINGS.md` for run conclusions.
 
 ## Migration status
 
-The hard cut is complete. The research tree contains no retired ownership module, reader, writer,
-dual schema, or dynamic registry; the deleted surfaces and their geometry replacements are
-recorded as historical traceability in the formal planning and evidence artifacts. Every active
-caller, test, fixture, report, maintenance seam, schema consumer, and serialized phase consumes
-the geometry contract. Each migration phase required compileall, clean import smoke, and focused
-synthetic tests; no compatibility runtime or dual reader/writer remains. The seven-phase topology,
-the geometry-preserving analysis reset, the unavailable geometry reset, stale-evidence refusal,
-and the R1–R14 evidence matrix are all final.
+The corrective hard cut is complete. Active callers, fixtures, reports, maintenance seams, schema consumers, and serialized phases consume the DB-persisted Gram geometry contract. Evidence is synthetic and report-only: scientific artifact hashes remain visible, while Git/source R1–R14 replay machinery is deleted. No compatibility runtime, dual reader/writer, filesystem-owned geometry store, real-corpus run, or interactive explorer remains.
 
 - **Design contract**: see `CONTRACTS.md` (the authoritative module/API reference).
 - **Findings log**: see `FINDINGS.md` (per-run conclusions, decisions, final semantics).
@@ -74,7 +78,7 @@ CPU-only DERIVED phases.
 | artifact | produced by | notes |
 | --- | --- | --- |
 | stream sidecars + `stream_registry` | `embed` | immutable float32 unit-normed patch arrays per `(song_id, backbone)` |
-| aligned silence mask + observation commit | `embed` | committed observation group written last |
+| aligned silence mask + observation group | `embed` | committed observation group written last |
 | head streams + `head_stream_registry` | `infer-heads` | finite `[T,C]` rows aligned to the backbone patch count |
 | `song_patch_geometry` rows | `geometry` | one exact-key complete geometry per `(song_id, backbone)` |
 | `geometry_analysis_records` | `analyze` | run-scoped identity-keyed analysis with the observed baseline |
@@ -85,7 +89,8 @@ CPU-only DERIVED phases.
 ## Immutable filesystem artifacts and reindex
 
 The authoritative research artifacts are the immutable stream and head sidecars, their manifests,
-the aligned silence masks, and the observation commit markers. Registry rows are rebuildable
+the aligned silence masks, and the observation group markers (the publication identity is
+`observation_group_sha256`). Registry rows are rebuildable
 index/cache metadata: `reindex` reconciles each registry row to exactly `ready`, `missing`, or
 `corrupt` from the on-disk manifests, and only `ready` records that also validate on disk may be
 read. Paths are never IDs or SQL keys.

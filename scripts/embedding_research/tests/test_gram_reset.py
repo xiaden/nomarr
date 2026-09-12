@@ -19,7 +19,7 @@ def test_analysis_reset_preserves_geometry_bytes(tmp_path) -> None:
     fingerprint = schema_fingerprint(con)
     record = write_geometry(SyntheticObservation(con), GeometryProfile.current(), "run-reset")
     row = con.execute(
-        "SELECT gram_blob, geometry_blob_byte_length, geometry_blob_sha256, observation_commit_sha256 "
+        "SELECT gram_blob, geometry_blob_byte_length, geometry_blob_sha256, observation_group_sha256 "
         "FROM song_patch_geometry WHERE geometry_id = ?",
         [record.geometry_id],
     ).fetchone()
@@ -37,7 +37,7 @@ def test_analysis_reset_preserves_geometry_bytes(tmp_path) -> None:
         assert reread.gram_blob == row[0]
         assert len(reread.gram_blob) == row[1]
         assert sha256_bytes(reread.gram_blob) == row[2]
-        assert reread.identity.observation_commit_sha256 == row[3]
+        assert reread.identity.observation_group_sha256 == row[3]
     finally:
         reopened.close()
 

@@ -149,7 +149,7 @@ def _request(record) -> GeometryCorpusRequest:
     identity = GeometryIdentity(
         record.identity.song_id,
         record.identity.backbone,
-        record.identity.observation_commit_sha256,
+        record.identity.observation_group_sha256,
         record.identity.geometry_semantics_version,
         record.identity.numerical_profile_digest,
     )
@@ -417,7 +417,7 @@ def _insert_corpus_evidence(con, record, *, run_id: str) -> None:
         {
             "song_id": record.identity.song_id,
             "backbone": record.identity.backbone,
-            "observation_id": record.identity.observation_commit_sha256,
+            "observation_id": record.identity.observation_group_sha256,
             "geometry_semantics_version": record.identity.geometry_semantics_version,
             "numerical_profile_digest": record.identity.numerical_profile_digest,
             "geometry_id": record.geometry_id,
@@ -429,7 +429,7 @@ def _insert_corpus_evidence(con, record, *, run_id: str) -> None:
         (
             run_id,
             record.geometry_id,
-            record.identity.observation_commit_sha256,
+            record.identity.observation_group_sha256,
             record.identity.geometry_semantics_version,
             record.identity.numerical_profile_digest,
             "threshold:0",

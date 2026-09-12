@@ -5,19 +5,41 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import insert
 
+from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
+from nomarr.persistence.database.library_repo import LibraryRepository
 from nomarr.persistence.database.output_repo import OutputRepo
+from nomarr.persistence.database.song_repo import SongRepository
 from nomarr.persistence.models.library import Library
 from nomarr.persistence.models.ml_model import MlModel
 from nomarr.persistence.models.song import Song
 
+_LIBRARY_UUID = "2b202d70-24f8-5ecc-8ec9-be6a83da5fd7"
+
+
+def _make_repo(session) -> OutputRepo:
+    """Build an OutputRepo with the identity resolvers it needs (ADR-049)."""
+    return OutputRepo(
+        session,
+        library_repo=LibraryRepository(session),
+        song_repo=SongRepository(session),
+    )
+
+
+def _song_identity(normalized_path: str) -> SongIdentity:
+    return SongIdentity(
+        library=LibraryIdentity(library_uuid=_LIBRARY_UUID, name="Test Library", root_path="/music/test"),
+        normalized_path=normalized_path,
+    )
+
 
 def _insert_library(session) -> int:
-    """Insert a library row and return its id."""
+    """Insert a library row (with its immutable uuid) and return its id."""
     stmt = (
         insert(Library)
         .values(
             name="Test Library",
             path="/music/test",
+            library_uuid=_LIBRARY_UUID,
             library_type="music",
             auto_tag=0,
             auto_curate=0,
@@ -76,7 +98,7 @@ class TestOutputRepo:
         _insert_library(pg_session)
         _insert_model(pg_session, "out_model_1")
 
-        repo = OutputRepo(pg_session)
+        repo = _make_repo(pg_session)
         record = repo.store_model_output(
             model_id="out_model_1",
             output_id="output_1",
@@ -93,7 +115,7 @@ class TestOutputRepo:
         _insert_library(pg_session)
         _insert_model(pg_session, "upsert_model")
 
-        repo = OutputRepo(pg_session)
+        repo = _make_repo(pg_session)
         first = repo.store_model_output(
             model_id="upsert_model",
             output_id="output_1",
@@ -126,7 +148,7 @@ class TestOutputRepo:
         lib_id = _insert_library(pg_session)
         song_id = _insert_song(pg_session, lib_id)
 
-        repo = OutputRepo(pg_session)
+        repo = _make_repo(pg_session)
         record = repo.store_output_stream(
             song_id=song_id,
             output_id="output_1",
@@ -145,11 +167,11 @@ class TestOutputRepo:
         lib_id = _insert_library(pg_session)
         song_id = _insert_song(pg_session, lib_id)
 
-        repo = OutputRepo(pg_session)
+        repo = _make_repo(pg_session)
         repo.store_output_stream(song_id, output_id="output_a", values=[0.5, 0.6], output_index=0)
         repo.store_output_stream(song_id, output_id="output_b", values=[0.7, 0.8], output_index=1)
 
-        results = repo.list_output_streams_for_song(song_id)
+        results = repo.list_output_streams_for_song(_song_identity("/music/test/file.mp3"))
         assert len(results) == 2
         by_id = {r["output_id"]: r for r in results}
         assert by_id["output_a"]["values"] == [0.5, 0.6]
@@ -159,8 +181,8 @@ class TestOutputRepo:
 
     def test_list_output_streams_for_song_nonexistent(self, pg_session) -> None:
         """list_output_streams_for_song should return [] for a song with no streams."""
-        repo = OutputRepo(pg_session)
-        assert repo.list_output_streams_for_song(999999) == []
+        repo = _make_repo(pg_session)
+        assert repo.list_output_streams_for_song(_song_identity("/music/test/missing.mp3")) == []
 
     def test_delete_output_streams_for_song_scopes_to_song(self, pg_session) -> None:
         """delete_output_streams_for_song should remove only that song's streams."""
@@ -180,21 +202,21 @@ class TestOutputRepo:
         )
         song_id_2 = song_r.scalar_one()
 
-        repo = OutputRepo(pg_session)
+        repo = _make_repo(pg_session)
         repo.store_output_stream(song_id_1, output_id="a", values=[1.0], output_index=0)
         repo.store_output_stream(song_id_2, output_id="b", values=[2.0], output_index=0)
 
         deleted = repo.delete_output_streams_for_song(song_id_1)
         assert deleted == 1
-        assert repo.list_output_streams_for_song(song_id_1) == []
-        assert len(repo.list_output_streams_for_song(song_id_2)) == 1
+        assert repo.list_output_streams_for_song(_song_identity("/music/test/file.mp3")) == []
+        assert len(repo.list_output_streams_for_song(_song_identity("/music/test/stream2.mp3"))) == 1
 
     def test_get_output_existing(self, pg_session) -> None:
         """get_output should return the record for an existing output id."""
         _insert_library(pg_session)
         _insert_model(pg_session, "get_model")
 
-        repo = OutputRepo(pg_session)
+        repo = _make_repo(pg_session)
         stored = repo.store_model_output(
             model_id="get_model",
             output_id="get_output",
@@ -207,7 +229,7 @@ class TestOutputRepo:
 
     def test_get_output_nonexistent(self, pg_session) -> None:
         """get_output should return None for a missing output id."""
-        repo = OutputRepo(pg_session)
+        repo = _make_repo(pg_session)
         result = repo.get_output("missing")
         assert result is None
 
@@ -216,7 +238,7 @@ class TestOutputRepo:
         _insert_library(pg_session)
         _insert_model(pg_session, "list_model")
 
-        repo = OutputRepo(pg_session)
+        repo = _make_repo(pg_session)
         repo.store_model_output("list_model", "list_a", {"f": 1}, output_index=0)
         repo.store_model_output("list_model", "list_b", {"f": 2}, output_index=1)
 
@@ -229,7 +251,7 @@ class TestOutputRepo:
         _insert_library(pg_session)
         _insert_model(pg_session, "order_model")
 
-        repo = OutputRepo(pg_session)
+        repo = _make_repo(pg_session)
         repo.store_model_output("order_model", "late", {"f": 3}, output_index=2)
         repo.store_model_output("order_model", "early", {"f": 1}, output_index=0)
 
@@ -241,7 +263,7 @@ class TestOutputRepo:
         _insert_library(pg_session)
         _insert_model(pg_session, "del_model")
 
-        repo = OutputRepo(pg_session)
+        repo = _make_repo(pg_session)
         repo.store_model_output("del_model", "delete_output", {"x": 1})
         repo.delete_output("delete_output")
         result = repo.get_output("delete_output")
@@ -252,7 +274,7 @@ class TestOutputRepo:
         _insert_library(pg_session)
         _insert_model(pg_session, "del_fm")
 
-        repo = OutputRepo(pg_session)
+        repo = _make_repo(pg_session)
         repo.store_model_output("del_fm", "delete_a", {"a": 1})
         repo.store_model_output("del_fm", "delete_b", {"b": 2})
 

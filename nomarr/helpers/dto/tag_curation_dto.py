@@ -53,7 +53,14 @@ class CommitResult(TypedDict):
 
 
 class TagSongItem(TypedDict):
-    file_id: int
+    """One tag-linked song row in the curation browse projection.
+
+    ``file_id`` is an opaque ``nom1`` SongLocator token, not a generated
+    integer. It is not stable across a root move and must never be parsed,
+    compared to an integer, or used as a foreign key.
+    """
+
+    file_id: str
     title: str
     artist: str
     album: str

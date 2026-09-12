@@ -4,7 +4,56 @@ from __future__ import annotations
 
 import pytest
 
-from nomarr.components.metadata.entity_seeding_comp import extract_entity_tag_mapping
+from nomarr.components.metadata.entity_seeding_comp import (
+    build_song_tag_assignments,
+    extract_entity_tag_mapping,
+)
+
+
+class TestBuildSongTagAssignments:
+    """Tests for the locator-addressed assignment command derivation."""
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_flattens_name_and_value_from_entity_tags(self) -> None:
+        """Entity tags flatten into ``(name, value)`` assignment commands."""
+        assignments = build_song_tag_assignments(
+            {
+                "artist": "Canonical Artist",
+                "artists": ["Canonical Artist", "Guest Artist"],
+                "album": "Selected Ambient Works",
+                "title": "Xtal",
+                "label": "Warp",
+                "genre": ["Ambient", "Drone"],
+                "year": 1994,
+            }
+        )
+
+        assert [(a.name, a.value) for a in assignments] == [
+            ("artist", "Canonical Artist"),
+            ("artists", "Canonical Artist"),
+            ("artists", "Guest Artist"),
+            ("album", "Selected Ambient Works"),
+            ("title", "Xtal"),
+            ("label", "Warp"),
+            ("genre", "Ambient"),
+            ("genre", "Drone"),
+            ("year", 1994),
+        ]
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_empty_tags_returns_empty_list(self) -> None:
+        """No entity fields → no assignment commands."""
+        assert build_song_tag_assignments({}) == []
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_non_entity_fields_are_ignored(self) -> None:
+        """Unrelated metadata does not produce assignments."""
+        assignments = build_song_tag_assignments({"bpm": 120, "key": "A"})
+
+        assert assignments == []
 
 
 class TestExtractEntityTagMapping:

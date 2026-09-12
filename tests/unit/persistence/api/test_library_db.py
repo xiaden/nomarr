@@ -16,7 +16,7 @@ domain contracts (per ADR-032/041/043 and the song-domain-repair ledger):
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, sentinel
+from unittest.mock import MagicMock, call, sentinel
 
 import pytest
 
@@ -240,8 +240,11 @@ def test_exposes_library_maintenance_surface() -> None:
 
     # Maintenance surface is forwarded at the LibraryDb top level; legacy
     # storage-id maintenance methods (delete_tags_by_ids / list_orphaned_tag_ids)
-    # are removed per the song-tag hard-cut.
-    assert hasattr(db, "list_orphaned_song_ids")
+    # are removed per the song-tag hard-cut, and the id-disclosing
+    # list_orphaned_song_ids is removed in favor of the count-only
+    # prune_orphaned_songs intent (no generated IDs above persistence).
+    assert hasattr(db, "prune_orphaned_songs")
+    assert not hasattr(db, "list_orphaned_song_ids")
     assert hasattr(db, "admin_cleanup_orphaned_tags")
     assert not hasattr(db, "delete_tags_by_ids")
     assert not hasattr(db, "list_orphaned_tag_ids")
@@ -255,8 +258,10 @@ def test_exposes_library_maintenance_surface() -> None:
     assert hasattr(db, "admin_truncate_song_tag_assignments")
     assert hasattr(db, "truncate_scan_records")
 
-    # Forwarders route to the correct sub-facade repo
-    db.list_orphaned_song_ids()
+    # Forwarders route to the correct sub-facade repo; the count-only prune
+    # intent privately consumes the repo's orphan handles and never exposes them.
+    song_repo.list_orphaned_song_ids = MagicMock(return_value=[])
+    db.prune_orphaned_songs()
     song_repo.list_orphaned_song_ids.assert_called_once_with()
 
     tag_repo.get_orphaned_tag_ids = MagicMock(return_value=[])
@@ -1706,14 +1711,33 @@ def _make_tags_db() -> tuple[LibraryTagsDb, MagicMock, MagicMock]:
 
 
 @pytest.mark.unit
-def test_maintenance_list_orphaned_song_ids() -> None:
+def test_maintenance_prune_orphaned_songs_returns_count_only() -> None:
+    """``prune_orphaned_songs`` is locator-free and returns only an int count.
+
+    Persistence resolves the orphan row handles privately and never exposes a
+    generated ``songs.id``, row, or handle to the caller.
+    """
     db, song_repo, _ = _make_songs_db()
-    song_repo.list_orphaned_song_ids = MagicMock(return_value=sentinel.ids)
+    song_repo.list_orphaned_song_ids = MagicMock(return_value=[7, 9])
 
-    result = db.list_orphaned_song_ids()
+    result = db.prune_orphaned_songs()
 
-    assert result is sentinel.ids
+    assert result == 2
+    assert isinstance(result, int)
+    assert not hasattr(result, "song")
     song_repo.list_orphaned_song_ids.assert_called_once_with()
+    assert song_repo.delete_song.call_args_list == [call(7), call(9)]
+
+
+@pytest.mark.unit
+def test_maintenance_prune_orphaned_songs_empty_returns_zero() -> None:
+    db, song_repo, _ = _make_songs_db()
+    song_repo.list_orphaned_song_ids = MagicMock(return_value=[])
+
+    result = db.prune_orphaned_songs()
+
+    assert result == 0
+    song_repo.delete_song.assert_not_called()
 
 
 @pytest.mark.unit

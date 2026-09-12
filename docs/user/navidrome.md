@@ -175,7 +175,7 @@ Instead of downloading `.nsp` files, you can push playlists directly to Navidrom
 
 For hand-picked playlists (not based on tags), you can create static M3U playlists:
 
-1. Select specific tracks by their file IDs
+1. Select specific tracks by their opaque `nom1` SongLocator tokens (returned as the `nomarr_file_key` field of a prior descriptor/push response)
 2. Generate an M3U playlist file
 3. Download or use in Navidrome
 
@@ -267,7 +267,7 @@ Request body:
  | Field | Type | Description |
  | ------- | ------ | ------------- |
  | `user_id` | string | Navidrome user identifier |
- | `top_plays` | object[] | Play history entries supplied by the Navidrome plugin (required). Each entry: `file_id` (int, library file primary key resolved from a prior `nomarr_file_key` descriptor), `playcount` (int ≥ 0), `last_played` (int \| null) |
+ | `top_plays` | object[] | Play history entries supplied by the Navidrome plugin (required). Each entry: `file_id` (string, opaque `nom1` SongLocator token resolved from a prior `nomarr_file_key` descriptor — never a generated integer id), `playcount` (int ≥ 0), `last_played` (int \| null) |
  | `enabled_types` | string[] \ | null | Override which playlist types to generate; `null` uses config |
  | `max_songs` | int \ | null | Override max songs per playlist; `null` uses config |
  | `min_songs` | int \ | null | Override min songs per playlist; `null` uses config |
@@ -326,8 +326,8 @@ For programmatic access, Nomarr provides a full REST API for all Navidrome opera
  | `/api/web/navidrome/playlist/preview` | POST | Preview playlist query results |
  | `/api/web/navidrome/playlist/generate` | POST | Generate .nsp playlist file |
  | `/api/web/navidrome/playlist/static` | POST | Generate static M3U playlist |
- | `/api/web/navidrome/playlist/push` | POST | Resolve file IDs to portable track descriptors (plugin pushes to Navidrome) |
- | `/api/web/navidrome/generate-personal-playlists` | POST | Generate personal playlists from plugin-supplied play history (`top_plays`: object[] with `file_id`, `playcount`, `last_played`); returns `status` (`ok` / `no_data`), `message`, and `playlists` of portable track descriptors |
+ | `/api/web/navidrome/playlist/push` | POST | Resolve opaque `nom1` SongLocator tokens (request `file_ids`) to portable track descriptors (plugin pushes to Navidrome) |
+ | `/api/web/navidrome/generate-personal-playlists` | POST | Generate personal playlists from plugin-supplied play history (`top_plays`: object[] whose entries carry an opaque `nom1` `file_id` locator, `playcount`, `last_played`); returns `status` (`ok` / `no_data`), `message`, and `playlists` of portable track descriptors |
  | `/api/web/navidrome/template` | GET | List available templates |
  | `/api/web/navidrome/template` | POST | Batch generate from templates |
  | `/api/web/navidrome/sync-song` | POST | Removed (410 Gone) — sync endpoint returns 410 |

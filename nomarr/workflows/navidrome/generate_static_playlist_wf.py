@@ -1,8 +1,10 @@
-"""Generate static M3U playlist from a list of file IDs.
+"""Generate a static M3U playlist from opaque ``nom1`` SongLocator tokens.
 
-This workflow accepts a list of library file document IDs,
-resolves their paths and metadata from the database, and
-generates M3U playlist content suitable for Navidrome import.
+This workflow accepts a list of opaque ``nom1`` SongLocator tokens,
+strictly decodes each to its ``{library_uuid, path}`` payload, and reads
+the semantic ``Song`` and tag-derived metadata through the library facade
+to generate M3U playlist content suitable for Navidrome import. Generated
+integer ids never appear on this boundary.
 
 Unlike smart playlists (.nsp) which are rule-based, this produces
 a fixed, static playlist of specific tracks.

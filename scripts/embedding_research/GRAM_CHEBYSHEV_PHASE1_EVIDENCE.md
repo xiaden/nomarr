@@ -1,5 +1,7 @@
 # Phase 1 Gram/Chebyshev evidence
 
+> **Historical/test-oracle only — superseded by the corrective repair.** The scalar stream oracle and comparison described below are historical evidence and test-only; they are not the production Gram kernel. Production is the NumPy row-normalize + float32 `np.matmul` kernel (see the binding corrective contract in `CONTRACTS.md` and the pending DD); this file must not be read as the production obligation.
+
 ## Call graph
 
 `gram_from_stream -> normalize_float32`; `derive_all_temporal_global -> derive_temporal_global_from_gram -> _validate_gram, _threshold, _row_distance`; `_row_distance -> _add, _sqrt`. The Gram module has no import or call edge to vector segmentation or Chebyshev.

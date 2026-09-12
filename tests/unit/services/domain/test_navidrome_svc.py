@@ -6,7 +6,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nomarr.helpers.dataclasses.library_dataclass import Library
+from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
 from nomarr.helpers.dto import NavidromeGeneratePlaylistsResult
+from nomarr.helpers.song_locator_codec import encode_song_locator
 
 # MisconfiguredError import removed per ADR-036 (library_key no longer checked)
 from nomarr.services.domain.navidrome_svc import NavidromeConfig, NavidromeService
@@ -162,85 +165,93 @@ class TestNavidromeServiceGeneratePlaylists:
 class TestNavidromeServiceDescriptorResolution:
     """Tests for ``NavidromeService.resolve_files_to_descriptors``."""
 
+    _UUID = "6313b0d3-d270-47a8-9e0d-21e8255107e3"
+
+    @staticmethod
+    def _token(path: str = "songs/a.mp3") -> str:
+        return encode_song_locator(
+            SongIdentity(
+                library=LibraryIdentity(library_uuid=TestNavidromeServiceDescriptorResolution._UUID),
+                normalized_path=path,
+            )
+        )
+
+    @staticmethod
+    def _configure_library(service: NavidromeService, *, present: bool = True) -> None:
+        service._db.library.get_library_by_uuid.return_value = (
+            Library(name="Music", root_path="/music", library_uuid=TestNavidromeServiceDescriptorResolution._UUID)
+            if present
+            else None
+        )
+
+    @staticmethod
+    def _descriptor() -> dict[str, object]:
+        return {
+            "title": "Song A",
+            "artist": "Artist A",
+            "album": "Album A",
+            "album_artist": "",
+            "duration_ms": None,
+            "track_number": None,
+            "disc_number": None,
+            "year": None,
+            "nomarr_file_key": "track-1",
+        }
+
     def test_resolve_files_to_descriptors_returns_descriptor_map(self) -> None:
         service, _ = _make_service()
-
-        with (
-            patch(
-                "nomarr.services.domain.navidrome_svc.get_songs_by_ids_with_tags",
-                return_value=[{"id": 1}],
-            ) as mock_get_files,
-            patch(
-                "nomarr.services.domain.navidrome_svc.build_track_descriptor",
-                return_value={
-                    "title": "Song A",
-                    "artist": "Artist A",
-                    "album": "Album A",
-                    "album_artist": "",
-                    "duration_ms": None,
-                    "track_number": None,
-                    "disc_number": None,
-                    "year": None,
-                    "nomarr_file_key": "track-1",
-                },
-            ) as mock_build,
-        ):
-            descriptors = service.resolve_files_to_descriptors(["1"])
-
-        assert descriptors == {
-            "1": {
-                "title": "Song A",
-                "artist": "Artist A",
-                "album": "Album A",
-                "album_artist": "",
-                "duration_ms": None,
-                "track_number": None,
-                "disc_number": None,
-                "year": None,
-                "nomarr_file_key": "track-1",
-            },
-        }
-        mock_get_files.assert_called_once_with(service._db, [1])
-        mock_build.assert_called_once()
-
-    def test_resolve_files_to_descriptors_ignores_docs_without_id(self) -> None:
-        service, _ = _make_service()
+        self._configure_library(service)
+        token = self._token()
+        descriptor = self._descriptor()
 
         with patch(
-            "nomarr.services.domain.navidrome_svc.get_songs_by_ids_with_tags",
-            return_value=[{"_key": "missing-id"}],
-        ):
-            descriptors = service.resolve_files_to_descriptors(["1"])
+            "nomarr.services.domain.navidrome_svc.descriptor_for_locator",
+            return_value=descriptor,
+        ) as mock_build:
+            descriptors = service.resolve_files_to_descriptors([token])
+
+        assert descriptors == {token: descriptor}
+        mock_build.assert_called_once()
+        resolved_locator = mock_build.call_args.args[1]
+        assert resolved_locator.normalized_path == "songs/a.mp3"
+
+    def test_resolve_files_to_descriptors_ignores_malformed_tokens(self) -> None:
+        service, _ = _make_service()
+        self._configure_library(service)
+
+        with patch("nomarr.services.domain.navidrome_svc.descriptor_for_locator") as mock_build:
+            descriptors = service.resolve_files_to_descriptors(["not-a-valid-token"])
 
         assert descriptors == {}
+        mock_build.assert_not_called()
 
-    def test_resolve_files_to_descriptors_propagates_query_errors(self) -> None:
+    def test_resolve_files_to_descriptors_ignores_unknown_library(self) -> None:
         service, _ = _make_service()
+        self._configure_library(service, present=False)
+
+        with patch("nomarr.services.domain.navidrome_svc.descriptor_for_locator") as mock_build:
+            descriptors = service.resolve_files_to_descriptors([self._token()])
+
+        assert descriptors == {}
+        mock_build.assert_not_called()
+
+    def test_resolve_files_to_descriptors_propagates_descriptor_errors(self) -> None:
+        service, _ = _make_service()
+        self._configure_library(service)
 
         with (
             patch(
-                "nomarr.services.domain.navidrome_svc.get_songs_by_ids_with_tags",
+                "nomarr.services.domain.navidrome_svc.descriptor_for_locator",
                 side_effect=RuntimeError("query failed"),
             ),
             pytest.raises(RuntimeError, match="query failed"),
         ):
-            service.resolve_files_to_descriptors(["1"])
+            service.resolve_files_to_descriptors([self._token()])
 
-    def test_resolve_files_to_descriptors_propagates_build_errors(self) -> None:
+    def test_resolve_files_to_descriptors_empty_input(self) -> None:
         service, _ = _make_service()
 
-        with (
-            patch(
-                "nomarr.services.domain.navidrome_svc.get_songs_by_ids_with_tags",
-                return_value=[{"id": 1}],
-            ),
-            patch(
-                "nomarr.services.domain.navidrome_svc.build_track_descriptor",
-                side_effect=ValueError("bad descriptor"),
-            ),
-            pytest.raises(ValueError, match="bad descriptor"),
-        ):
-            service.resolve_files_to_descriptors(["1"])
+        assert service.resolve_files_to_descriptors([]) == {}
 
 
 @pytest.mark.unit

@@ -5,11 +5,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, TypedDict
 
 from nomarr.components.analytics.analytics_comp import DominantVibeResult, compute_dominant_vibes
-from nomarr.components.library.library_song_query_comp import (
-    _library_identity,
-    _locators_for_songs,
-    get_library_stats,
-)
+from nomarr.components.library.library_song_query_comp import get_library_stats
+from nomarr.components.library.song_query_types import TrackSong
 
 if TYPE_CHECKING:
     from nomarr.helpers.dataclasses.library_dataclass import Library
@@ -63,7 +60,7 @@ def _get_tag_edge_rows(
     generated integer ``songs.id``/``file_id``). When ``library`` is supplied,
     rows are scoped to that library by ``library_uuid``.
     """
-    scope_uuid = _library_identity(library).library_uuid if library is not None else None
+    scope_uuid = library.library_uuid if library is not None else None
 
     tag_docs = _get_tag_docs_for_name(db, name)
 
@@ -71,7 +68,11 @@ def _get_tag_edge_rows(
     for identity in tag_docs:
         tag_value = str(identity.value)
         songs = db.library.find_songs_with_tag(identity, limit=None)
-        for locator in _locators_for_songs(db, songs):
+        carriers = [TrackSong(song=song, metadata={}, isrc=None) for song in songs]
+        # Keep the projection local to avoid the library package's import cycle.
+        from nomarr.components.library.library_song_query_comp import locators_for_carriers
+
+        for locator in locators_for_carriers(db, carriers):
             if locator is None:
                 continue
             if scope_uuid is not None and locator.library.library_uuid != scope_uuid:
@@ -112,12 +113,14 @@ def get_mood_and_tier_tags_for_correlation(db: Database) -> dict[str, Any]:
         db: Database instance used to query mood and tier tag edges.
 
     Returns:
-        A dictionary with three keys: ``mood_tag_rows`` containing ``(song_id,
-        tag_value)`` tuples for all mood-tag names across the strict,
-        regular, and loose mood tiers; ``tier_tag_keys`` containing the tier
-        tag names discovered in ``tags``; and ``tier_tag_rows`` containing
-        a mapping from each tier tag name to its own list of ``(song_id,
-        tag_value)`` tuples.
+        A dictionary with three keys: ``mood_tag_rows`` containing
+        ``(SongIdentity, tag_value)`` tuples for all mood-tag names across the
+        strict, regular, and loose mood tiers; ``tier_tag_keys`` containing the
+        tier tag names discovered in ``tags``; and ``tier_tag_rows`` containing
+        a mapping from each tier tag name to its own list of
+        ``(SongIdentity, tag_value)`` tuples. Each ``SongIdentity`` is a
+        UUID-bearing ``SongLocator`` tuple (library UUID and normalized path);
+        generated ``songs.id``/``file_id`` values are not returned.
 
     """
     mood_tag_rows: list[tuple[SongIdentity, str]] = []

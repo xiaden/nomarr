@@ -197,7 +197,7 @@ async def resolve_song_locator(library_service: LibraryService, token: str) -> S
     payload = decode_song_locator_or_400(token)
     try:
         return await asyncio.to_thread(
-            library_service.resolve_song_identity,
+            library_service.build_song_locator,
             payload.library_uuid,
             payload.path,
         )

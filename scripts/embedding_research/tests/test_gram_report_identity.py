@@ -17,7 +17,7 @@ _EXPECTED_SECTIONS = ("summary", "corpus", "analysis", "winners", "head-analysis
 _EXPECTED_TABLES = {
     "summary": ["geometry_threshold_summary", "observed_baseline_summary"],
     "corpus": ["per_artist"],
-    "analysis": ["geometry_identity", "geometry_analysis"],
+    "analysis": ["geometry_identity", "geometry_analysis", "geometry_threshold_map"],
     "winners": ["geometry_representations", "observed_global_medoid_baseline"],
     "head-analysis": ["geometry_head_identity"],
     "provenance": ["run_history", "artifact_hashes"],

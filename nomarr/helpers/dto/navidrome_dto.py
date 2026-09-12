@@ -183,7 +183,7 @@ class StaticPlaylistResult:
     """Result from static playlist generation.
 
     Used for vector-search-to-M3U export where tracks are a fixed set
-    of file IDs rather than a dynamic tag query.
+    of opaque SongLocator tokens rather than a dynamic tag query.
     """
 
     playlist_name: str

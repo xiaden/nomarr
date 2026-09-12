@@ -46,6 +46,7 @@ _FIXTURE_RUN_ID = RUN_ID
 
 
 def _identity_evidence_rows(rows: list[tuple]) -> list[dict]:
+    """Map geometry identity rows to the report's identity-evidence records."""
     return [
         {
             "geometry_id": row[0],
@@ -80,7 +81,7 @@ def main(report_dir: Path = REPORT_DIR) -> Path:
         schema_fingerprint(con)
         report_run(con, report_dir, run_id=RUN_ID)
         geometry_rows = con.execute(
-            "SELECT geometry_id, observation_commit_sha256, geometry_semantics_version, "
+            "SELECT geometry_id, observation_group_sha256, geometry_semantics_version, "
             "numerical_profile_digest FROM song_patch_geometry ORDER BY geometry_id"
         ).fetchall()
         head_rows = con.execute(
@@ -100,6 +101,63 @@ def main(report_dir: Path = REPORT_DIR) -> Path:
         "phases": list(PHASE_NAMES),
     }
     data["matrices"] = MATRICES
+    benchmark = {
+        "n_songs": 8,
+        "patch_distribution": {"songs": 8, "segments_per_song": 12, "row_distribution": "uniform"},
+        "dimension": 16,
+        "backbone": "synthetic_effnet_fixture",
+        "model_hash": "7232c425660d7f24955beb1e975124b2a687c965b3b43bbaa43f35af77e05cbb",
+        "hardware": "fixtures-only synthetic host",
+        "software": "fixtures-only deterministic profile",
+        "peak_rss_bytes": 0,
+        "peak_tracemalloc_bytes": 0,
+        "elapsed_ms": 0.0,
+        "query_chunk_size": 2048,
+        "candidate_chunk_size": 2048,
+        "working_memory_bytes": 33554432,
+        "fixtures_only": True,
+        "no_empirical_statement": "FIXTURES-ONLY SYNTHETIC — deterministic fixture surface, no empirical corpus/model retrieval claim.",
+        "k_rows": 48,
+        "m_rows": 96,
+        "full_product_bytes": 36864,
+        "score": 0.5499724615544072,
+        "finite": True,
+    }
+    data["corrective_evidence"] = {
+        "retrieval": {
+            "corpus_wide_leave_one_out": True,
+            "self_candidate_count": 0,
+            "segmentation_from_scorer_count": 0,
+            "canonical_scorer": "max_per_candidate_segment",
+        },
+        "identity": {
+            "collapse_requires_all_scoring_inputs": True,
+            "structural_identity_separate": True,
+            "search_representation_id_excludes_structural_identity": True,
+        },
+        "comparability": {
+            "non_comparable_persisted": True,
+            "explicit_reasons": ["alignment_failed", "no_searchable", "no_medoid", "no_candidates", "label_missing"],
+            "reason_vocabulary_owner": "helpers.corpus_identity.classify_representation",
+        },
+        "rulers": ["artist", "genre", "frozen_head"],
+        "threshold_map": {"count": 171, "first_index": 0, "last_index": 170},
+        "corpus_map": {"candidate_population": "ordered_corpus_song_ids", "leave_one_out": True},
+        "neighborhoods": {
+            "winner": {"min": 0, "max": 100, "bounded": True},
+            "baseline": {"min": 0, "max": 100, "same_population": True},
+        },
+        "numeric_profile": {
+            "kernel": "numpy_row_normalize_float32_matmul",
+            "serialization": "little_endian_c_order_float32",
+            "zero_near_zero_centroid_fixtures": True,
+            "ulp_boundary_fixtures": True,
+        },
+        "round_trips": ["geometry_blob", "report_json", "scientific_hashes"],
+        "scientific_hash_retention": True,
+        "source_commit_traceability": False,
+        "benchmark": benchmark,
+    }
     data.setdefault("warnings", []).append(SYNTHETIC_WARNING)
     report_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"Fixture report written: {report_path}")

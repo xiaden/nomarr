@@ -24,6 +24,11 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from nomarr.helpers.dataclasses.library_dataclass import Library
+from nomarr.helpers.dataclasses.song_command_dataclass import (
+    LibraryIdentity,
+    SongIdentity,
+    SongRemoval,
+)
 from nomarr.persistence.api.application import AppDb
 from nomarr.persistence.api.library import LibraryDb
 from nomarr.persistence.api.library_regions import LibraryRegionsDb
@@ -43,6 +48,13 @@ def session() -> Session:
     finally:
         session.close()
         engine.dispose()
+
+
+def _song(normalized_path: str = "song.flac") -> SongIdentity:
+    return SongIdentity(
+        library=LibraryIdentity(library_uuid="de131b32-af5c-5a84-8874-58e3dc0e2dcd", name="music"),
+        normalized_path=normalized_path,
+    )
 
 
 def _make_library(session: Session) -> tuple[LibraryDb, MagicMock]:
@@ -131,6 +143,7 @@ def test_write_succeeds_without_transaction(session: Session) -> None:
         Library(
             name="music",
             root_path="/music",
+            library_uuid="de131b32-af5c-5a84-8874-58e3dc0e2dcd",
             is_enabled=True,
             watch_mode="manual",
             file_write_mode="never",
@@ -143,6 +156,7 @@ def test_write_succeeds_without_transaction(session: Session) -> None:
         {
             "name": "music",
             "path": "/music",
+            "library_uuid": "de131b32-af5c-5a84-8874-58e3dc0e2dcd",
             "library_type": "music",
             "auto_tag": 1,
             "auto_curate": 0,
@@ -173,8 +187,9 @@ def test_write_via_forwarder_succeeds_without_transaction(session: Session) -> N
 
 def test_sub_facade_write_succeeds_without_transaction(session: Session) -> None:
     songs, song_repo = _make_songs(session)
-    songs.remove_song(1)
-    song_repo.delete_song.assert_called_once_with(1)
+    song_repo.get_song_by_normalized_path.return_value = {"id": 7}
+    songs.remove_song(SongRemoval(song_identity=_song()))
+    song_repo.delete_song.assert_called_once_with(7)
 
 
 def test_app_db_write_succeeds_without_transaction(session: Session) -> None:

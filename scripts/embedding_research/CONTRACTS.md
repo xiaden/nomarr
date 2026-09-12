@@ -1,10 +1,79 @@
 # Embedding Research — Geometry Contracts
 
-> **Current geometry era (migration complete):** The threshold-independent per-song Gram geometry
-> DD and Plans A–U supersede the earlier runtime contract. The hard-cut deletion completed and the
-> historical sections of this file were removed; what remains describes only the current
-> geometry-era reality. Nothing here is permission for compatibility APIs, alternate readers,
-> dual writes, or retired runtime vocabulary.
+> **Current geometry era — corrective repair binding.** The authoritative corrective Gram-geometry ledger in the user request for `TASK-gram-geometry-corrective-repair` supersedes conflicting text in the pending migration DD, Plans A–U, and this file. DB-persisted per-song Gram geometry feeds corpus-wide leave-one-out retrieval; each committed Gram and exact mask is loaded once per song and all 171 thresholds are derived before any scoring. Explicit non-comparability, threshold/corpus maps, per-query ruler metrics, and bounded winner/baseline neighborhoods are persisted, and the NumPy row-normalize/float32-matmul kernel is the production Gram kernel. Git/source R1–R14 traceability machinery is hard-deleted while scientific artifact hashes remain. No compatibility APIs, alternate readers, dual writes, old/new schema coexistence, filesystem-owned store/Gram, real-corpus execution, or interactive explorer is permitted.
+>
+> Statements below that describe synthetic-only ownership, self-similarity, one-song baselines, scalar production kernels, unconditional comparable publication, or R1–R14 replay are superseded implementation obligations, not current requirements. The binding corrective contract follows; see the pending DD and parts contracts for the R1–R14 deletion inventory (the inventory names retired modules, so it is kept in `artifacts/`, outside this runtime tree).
+
+## Corrective repair contract (binding)
+
+### Retrieval geometry
+
+- **Corpus-wide leave-one-out.** Similarity retrieval scores every query song against a corpus-wide
+  candidate population. A query is never its own candidate (`segmentation_from_scorer_count == 0`;
+  no self-candidate, no self-similarity publication).
+- **One Gram decode per song.** Each committed Gram and its exact binary mask are loaded once per song
+  and every primary threshold is derived from that single decode before scoring. Threshold derivation
+  and scoring are batched; a per-threshold Gram reload is forbidden.
+- **Canonical bounded scorer.** Scoring uses the single canonical max-per-candidate-segment scorer over
+  the candidate population. Full NxN materialization is not a production path.
+- **Segmentation-independent evaluation.** Ruler evaluation identity (`evaluation_id`,
+  `scoring_semantics_version`) freezes the requested/eligible population and observation binding only;
+  it never depends on threshold, boundaries, absorbed locations, or segmentation.
+- **Same-population observed baseline.** The observed global medoid baseline is computed over the exact
+  same leave-one-out candidate population and ruler eligibility as the winner neighborhoods, never
+  over a one-song or single-similarity population.
+- **Independent rulers.** Artist, genre, and frozen-head rulers are evaluated independently, each with
+  per-query eligibility, defined-state, baseline, and delta metrics.
+- **Persisted evidence.** Threshold maps, corpus maps, per-query ruler metrics, and at least one
+  hundred deterministic top-N winner neighborhoods plus the same-population baseline neighborhoods
+  are persisted. Non-comparable thresholds/representations persist with missing ids and explicit
+  reasons instead of being silently dropped.
+
+### Numeric kernel
+
+- The production Gram kernel row-normalizes each retained row and multiplies float32 rows via NumPy
+  (`np.matmul`), then publishes little-endian C-order float32 bytes
+  (`np.asarray(G, dtype='<f4', order='C').tobytes(order='C')`, `4 * patch_count * patch_count` bytes).
+- Zero and near-zero centroid detection is defined and covered by fixtures, alongside numerical ULP
+  sensitivity fixtures. A scalar production loop is not an accepted kernel.
+
+### Binding DTO and identity rules
+
+The corrective `search_representation_id` is a content hash over only the inputs that change the
+scored search result:
+
+```text
+experiment semantics, scoring_semantics_version,
+numerical_profile_digest, geometry_semantics_version,
+observation_group_sha256, mask identity,
+ordered corpus song ids (candidate roster),
+ordered medoid source indices,
+normalized searchable weights, searchable count
+```
+
+`threshold_id`, `structural_identity`, segment boundaries, absorbed locations, and any transient
+per-song `geometry_id` that does not change the scoring inputs are excluded. Two representations
+collapse only when every one of the included inputs matches and the populations match; representations
+with different geometry ids but identical scoring inputs may collapse. Structural identity is retained
+separately (`structural_identity` over `threshold_id`, boundaries, absorbed locations) and never enters
+search hashing. Each threshold/representation persists its `comparable`, `defined`, and `eligible`
+state with a reason for non-comparability.
+
+`observation_group_sha256` is the immutable observation-publication identity. It is the SHA-256 of the
+canonical committed observation-group manifest (song id, backbone, stream ref and payload hash, mask
+ref and payload hash, alignment token, audio content hash, mask semantics version, group format
+version, patch count) and replaces the earlier commit-named field at every DTO, schema, persistence,
+serialized, and report surface, replacing the earlier `observation_commit_sha256` symbol exactly. It is
+a hard cut with no alternate symbol name. Unrelated scientific artifact SHA-256
+hashes (`gram`/geometry blob, stream payload, mask payload, audio content, numerical profile digest)
+are retained and are never renamed to an observation identity.
+
+### Evidence
+
+R1–R14 Git/source traceability replay (producer, validator, CLI flag, source-commit/source-manifest
+fields, matrix callers, and generated traceability artifacts) is deleted. Report validation and
+scientific artifact hash validation are retained. The exact deletion inventory lives in the pending
+DD and parts contracts.
 
 ## Migration status (complete)
 
@@ -14,8 +83,10 @@ dynamic-dispatch, and serialized-phase surface to the geometry contracts below. 
 remaining retired ownership and stale schema surfaces. Plans M, N, O, P, Q, R, S, T, and U
 completed exact identity persistence, seven-section reporting, seven-phase dispatch, stale-evidence
 refusal, geometry-preserving maintenance, deletion proof, synthetic R1–R13 behavior, R1–R14
-validation, and final acceptance. Every phase required compileall, clean import smoke, and focused
-synthetic tests. No compatibility runtime or dual reader/writer remains.
+validation, and final acceptance. **Corrective note:** the R1–R14 Git/source replay and traceability-matrix
+deliverables named in this historical sentence are hard-deleted by corrective Plan E and are not a current
+obligation; only report validation and scientific artifact-hash validation remain. Every phase required
+compileall, clean import smoke, and focused synthetic tests. No compatibility runtime or dual reader/writer remains.
 
 ## Corpus-level geometry contract
 
@@ -40,8 +111,8 @@ write_geometries_for_current_songs(con, *, stream_store, profile, run_id, lock,
 analyze_geometry_corpus(request, *, con, stream_store, profile,
                         scoring=score_bounded_exact) -> GeometryCorpusAnalysis
 score_unique_geometry_representations(roster, evaluation, scoring) -> GeometryScoreBundle
-write_geometry_corpus_analysis(con, *, run_id, result) -> None
-read_geometry_corpus_analysis(con, *, run_id, identity) -> GeometryCorpusAnalysis
+write_geometry_corpus_analysis(con, *, run_id, result, stream_store=None, profile=None) -> None
+read_geometry_corpus_analysis(con, *, run_id, identity, stream_store=None, profile=None) -> GeometryCorpusAnalysis
 ```
 
 The scheduler orders `(song_id, backbone)` deterministically; loads/verifies exactly one committed
@@ -88,7 +159,7 @@ streams are excluded.
 Current invariants: a single finite threshold-application contract `direct_distance` with
 `configured == effective` exactly — its executed distance metric is never stored but derived from
 the configured geometry mode (`l2` for `temporal_global`, `chebyshev`
-for `temporal_perdim_chebyshev_secondary`); commit-bound observation evidence whose structural ranges yield the exact
+for `temporal_perdim_chebyshev_secondary`); observation-group-bound evidence whose structural ranges yield the exact
 searchable membership reconstructed on read (never a per-patch table, never an inclusive range),
 with absorbed outliers represented exactly and segment medoids stored as observed source patch
 indices; per-geometry identity preimages that bind each leaf to its song id and fold the frozen
@@ -175,7 +246,7 @@ Paths are never IDs or SQL keys.
 
 Publication is staged `.tmp` write, file `fsync`, close, atomic rename, directory `fsync`,
 transactional `pending` registration, then reconcile to exactly `ready`, `missing`, or `corrupt`.
-Current filesystem manifests and observation commits are authoritative; registry rows are
+Current committed observation groups are authoritative; registry rows are
 rebuildable index/cache metadata. Supersession is handled by immutable content addressing, and
 downstream registry consumers read through the registry row/status contract. Immutable current
 bytes are never replaced at an existing digest.
@@ -184,7 +255,8 @@ bytes are never replaced at an existing digest.
 
 A **committed observation group** is the immutable publication unit a derived consumer may read:
 the immutable embedding **stream**, the **aligned audio-derived silence mask**, and the
-**commit/identity marker** (`observation_commits/<song_id>.<backbone>.<commit_sha256>.json`,
+**observation-group identity marker** (`observation_commits/<song_id>.<backbone>.<commit_sha256>.json`,
+where `commit_sha256` is the manifest digest published as `observation_group_sha256`;
 written last). A complete, valid group is REQUIRED for geometry construction, for canonical head
 analysis, and for FS-reindex readiness. There is no stream-only, mask-less, uncommitted, or
 old-format read path, and no compatibility reader or dual write.
@@ -229,7 +301,8 @@ coverage/skip provenance into `head_phase_provenance`.
 `db/geometry.py` owns the geometry record and its exact-key persistence:
 
 - `song_patch_geometry` stores one exact-key complete geometry per `(song_id, backbone)`:
-  `geometry_id`, the observation commit digest, `geometry_semantics_version`,
+  `geometry_id`, the observation-group digest (`observation_group_sha256`),
+  `geometry_semantics_version`,
   `numerical_profile_digest`, the complete observation-evidence tuple, the Gram blob, and the
   matrix.
 - `write_geometry(observation, profile, run_id, *, lock=None)` computes and publishes one
@@ -294,9 +367,15 @@ The `report` phase is the executable entry point. It renders exactly seven secti
 - `summary` — active geometry-result status per backbone (winner / delta / factor summary, or an
   explicit empty-active-results message).
 - `corpus` — active songs / corpus health.
-- `analysis` — ONLY `analyze_metrics` rows with `strategy_type == 'geometry'`: run id / sim_metric
-  / k / metric / value plus geometry strategy identity, score variant, scoring-semantics version,
-  evidence-content-hash provenance, canonical geometry id, and sorted membership ids.
+- `analysis` — `analyze_metrics` rows with `strategy_type == 'geometry'` (run id / sim_metric /
+  k / metric / value) plus geometry strategy identity, score variant, scoring-semantics version,
+  evidence-content-hash provenance, canonical geometry id, and sorted membership ids, rendered as
+  `geometry_identity` and `geometry_analysis` tables with a `geometry_threshold_map`. When corpus
+  evidence is available it additionally renders `geometry_membership` (corpus comparability),
+  `geometry_queries` (per-query ruler metrics and comparability), `geometry_neighborhoods` (bounded
+  winner neighborhoods), and `geometry_baseline_neighborhoods` (same-population observed baseline
+  neighborhoods), and emits explicit warnings for non-comparable corpora and for songs with no
+  searchable representation; missing corpus evidence is itself a visible error.
 - `winners` — deterministic winner / delta / factor tables per backbone. The baseline per
   `(backbone, sim_metric, k, metric)` is the observed whole-song source medoid baseline row (when
   a finite one shares that exact scope); the medoid is never itself a winner candidate. The winner

@@ -62,22 +62,34 @@ Direct persistence access is **private** to the domain. Other domains CANNOT cal
 
 ```python
 # ✅ GOOD — Component imports persistence
-# components/library/library_file_mutation_comp.py
+# components/library/library_song_mutation_comp.py
+from nomarr.helpers.dataclasses.library_dataclass import Library
+from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
+from nomarr.helpers.dto import LibraryPath
 from nomarr.persistence.db import Database
 
 
-def upsert_library_file(db: Database, library_id: int, file_path: str) -> dict:
-    return db.library.update_songs(...)
+def upsert_library_song(
+    db: Database,
+    path: LibraryPath,
+    library: Library,
+    file_size: int,
+    modified_time: int,
+) -> SongIdentity:
+    # The component validates the path and composes a typed command; persistence
+    # resolves (library_uuid, normalized_path) and returns the locator.
+    command = ...  # SongUpsertInput(library=LibraryIdentity(...), path=..., scan=...)
+    return db.library.add_song_to_library(command)
 
 
 # ✅ GOOD — Workflow calls component
 # workflows/library/scan_library_full_wf.py
-from nomarr.components.library import upsert_library_file
+from nomarr.components.library import upsert_library_song
 
 
-def scan_library(db, library_id):
+def scan_library(db, library: Library):
     for path in discovered:
-        upsert_library_file(db, library_id, path)
+        locator: SongIdentity = upsert_library_song(db, path, library, file_size, modified_time)
 
 
 # ❌ BAD — Workflow imports persistence
@@ -90,12 +102,12 @@ db.library.update_songs(...)  # BYPASSES INVARIANTS!
 
 ```python
 # ✅ GOOD — Library workflow calls metadata domain component
-from nomarr.components.metadata.entity_seeding_comp import seed_entities_for_scan_batch
+from nomarr.components.metadata.entity_seeding_comp import build_song_tag_assignments
 
 
-def scan_song_workflow(db, library_id, song, tags):
-    song_id = db.library.add_song_to_library(library_id, song)  # Library domain
-    seed_entities_for_scan_batch(db, [str(song["id"])], {song["id"]: tags})  # Metadata domain
+def scan_song_workflow(db, song: SongIdentity, tags):
+    assignments = build_song_tag_assignments(tags)  # Metadata domain (compute-only)
+    db.library.replace_song_tags(song, assignments)  # Library domain persistence
 
 
 # ❌ BAD — Library workflow bypasses metadata domain
@@ -128,7 +140,7 @@ Each domain maps to a subfolder under `components/` and owns specific PostgreSQL
 
 **Key components:**
 
-- `library_file_mutation_comp.py` — Add/update files with path validation
+- `library_song_mutation_comp.py` — Add/update songs with path validation, returning the ``SongIdentity`` locator
 - `file_batch_scanner_comp.py` — Batch file discovery
 - `scan_lifecycle_comp.py` — Scan state management
 - `move_detection_comp.py` — Match chromaprints for moved files
@@ -143,17 +155,20 @@ Each domain maps to a subfolder under `components/` and owns specific PostgreSQL
 
 **Owns:**
 
-- Entity data seeded from file tags (artists, albums, genres)
+- Pure, compute-only helpers that derive entity tag assignments and metadata
+  cache-field mappings from already-parsed file metadata. No table is owned by
+  this domain; persistence of the derived assignments belongs to the
+  `library`/`tagging` domains (`db.library.replace_song_tags`).
 
 **Invariants:**
 
 - Entity keys must be normalized (deduplication)
-- Edges must reference valid vertices
+- These helpers perform no database reads or writes
 
 **Key components:**
 
-- `entity_seeding_comp.py` — Create entity vertices and edges from tags
-- `metadata_cache_comp.py` — Metadata cache management
+- `entity_seeding_comp.py` — Compute entity tag assignments from tags (pure; no DB writes — `build_song_tag_assignments`, `extract_entity_tag_mapping`)
+- `metadata_cache_comp.py` — Compute metadata cache-field mappings from raw metadata (pure; ADR-045 removed the cache writer, so no cache writer remains)
 
 ---
 
@@ -331,7 +346,7 @@ Each domain maps to a subfolder under `components/` and owns specific PostgreSQL
 
 **Owns:**
 
-- No tag persistence ownership; `save_mood_tags*` is historical/non-authoritative and must not be treated as a generic mood replacement path
+- No tag persistence ownership; the legacy `save_mood_tags*` names were removed by Q3-J and must not be recreated as a generic mood replacement path
 
 
 - No persistent tables (coordinates file writing)

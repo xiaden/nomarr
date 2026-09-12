@@ -109,8 +109,73 @@ def query_incomplete_analyze_diagnostics(con, *, run_id: str) -> tuple[dict[str,
     return tuple(dict(zip(names, row, strict=False)) for row in rows)
 
 
-def section_analysis(df: pd.DataFrame, identity: pd.DataFrame | None = None) -> dict:
-    """Render the exact analysis identity evidence and metric rows, or refuse visibly."""
+def query_corpus_evidence(con, *, run_id: str) -> dict[str, Any] | None:
+    """Read the exact run-scoped corpus evidence document, or ``None`` when absent.
+
+    The corpus document is the sole source of threshold/corpus maps, comparability reasons,
+    membership/missing-song evidence, per-query ruler metrics, and winner/baseline
+    neighborhoods.  An absent document is explicit refusal evidence, never an alternate scope.
+    """
+    exact_run = _require_run_id(run_id)
+    rows = con.execute("SELECT evidence_json FROM geometry_analysis_records WHERE run_id=?", (exact_run,)).fetchall()
+    for row in rows:
+        raw = row[0]
+        if not raw:
+            continue
+        try:
+            doc = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+        if isinstance(doc, dict) and doc.get("role") == "corpus":
+            return doc
+    return None
+
+
+def _neighborhood_rows(queries: Any, key: str) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for query in queries or ():
+        if not isinstance(query, dict):
+            continue
+        song_id = str(query.get("song_id", ""))
+        for entry in query.get(key) or ():
+            if not isinstance(entry, dict):
+                continue
+            rows.append({"query_song_id": song_id, **entry})
+    return rows
+
+
+def _threshold_map_rows(df: pd.DataFrame) -> list[dict[str, Any]]:
+    if df is None or df.empty:
+        return []
+    rows: list[dict[str, Any]] = []
+    for record in df.to_dict("records"):
+        raw = record.get("evidence_json")
+        try:
+            evidence = json.loads(raw) if raw else {}
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(evidence, dict) or evidence.get("role") != "threshold":
+            continue
+        rows.append(
+            {
+                "song_id": str(evidence.get("song_id", "")),
+                "backbone": str(evidence.get("backbone", "")),
+                "threshold_id": str(record.get("threshold_id", "")),
+                "structural_identity": str(record.get("structural_identity", "")),
+                "search_representation_id": str(record.get("search_representation_id", "")),
+                "comparable": bool(evidence.get("comparable", True)),
+            }
+        )
+    return rows
+
+
+def section_analysis(
+    df: pd.DataFrame,
+    identity: pd.DataFrame | None = None,
+    *,
+    corpus_evidence: dict[str, Any] | None = None,
+) -> dict:
+    """Render exact identity, maps, comparability, and neighborhoods, or refuse visibly."""
     tables = []
     if identity is not None and not identity.empty:
         tables.append(
@@ -118,6 +183,65 @@ def section_analysis(df: pd.DataFrame, identity: pd.DataFrame | None = None) -> 
         )
     if df is not None and not df.empty:
         tables.append(make_table(df.to_dict("records"), id="geometry_analysis", title="Geometry analysis metrics"))
+    threshold_map = _threshold_map_rows(df)
+    if threshold_map:
+        tables.append(make_table(threshold_map, id="geometry_threshold_map", title="Threshold-to-representation map"))
+
+    warnings: list[dict[str, str]] = []
+    if corpus_evidence is None:
+        warnings.append(
+            {
+                "level": "error",
+                "message": "Corpus comparability/neighborhood evidence unavailable; only raw identity rows are shown.",
+            }
+        )
+    else:
+        membership = corpus_evidence.get("membership")
+        if isinstance(membership, list) and membership:
+            tables.append(
+                make_table(list(membership), id="geometry_membership", title="Corpus membership and comparability")
+            )
+        missing = corpus_evidence.get("missing_searchable")
+        if isinstance(missing, list) and missing:
+            warnings.append(
+                {
+                    "level": "warning",
+                    "message": f"Songs without any searchable representation: {', '.join(str(song) for song in missing)}",
+                }
+            )
+        queries = corpus_evidence.get("queries")
+        if isinstance(queries, list) and queries:
+            query_rows = [
+                {key: value for key, value in query.items() if key not in ("neighborhood", "baseline_neighborhood")}
+                for query in queries
+                if isinstance(query, dict)
+            ]
+            tables.append(
+                make_table(query_rows, id="geometry_queries", title="Per-query ruler metrics and comparability")
+            )
+            winner_rows = _neighborhood_rows(queries, "neighborhood")
+            if winner_rows:
+                tables.append(
+                    make_table(winner_rows, id="geometry_neighborhoods", title="Winner neighborhoods (leave-one-out)")
+                )
+            baseline_rows = _neighborhood_rows(queries, "baseline_neighborhood")
+            if baseline_rows:
+                tables.append(
+                    make_table(
+                        baseline_rows,
+                        id="geometry_baseline_neighborhoods",
+                        title="Same-population observed baseline neighborhoods",
+                    )
+                )
+        if not bool(corpus_evidence.get("comparable", False)):
+            reasons = corpus_evidence.get("reasons") or []
+            warnings.append(
+                {
+                    "level": "error",
+                    "message": "Non-comparable geometry corpus published with explicit reasons: "
+                    + (", ".join(str(reason) for reason in reasons) or "unspecified"),
+                }
+            )
     if not tables:
         return make_section(
             "analysis",
@@ -125,7 +249,10 @@ def section_analysis(df: pd.DataFrame, identity: pd.DataFrame | None = None) -> 
             warnings=[{"level": "error", "message": "Geometry identity evidence unavailable; analysis refused."}],
             empty_message="REFUSED: no exact geometry identity evidence.",
         )
-    return make_section("analysis", "Geometry Analysis", tables=tables)
+    section = make_section("analysis", "Geometry Analysis", tables=tables)
+    if warnings:
+        section["warnings"] = warnings
+    return section
 
 
 def verify_geometry_bindings_for_run(con, *, run_id: str, stream_store: Any, profile: Any) -> None:
@@ -183,6 +310,7 @@ __all__ = [
     "GEOMETRY_ANALYSIS_COLUMNS",
     "IDENTITY_COLUMNS",
     "query_analyze_metrics",
+    "query_corpus_evidence",
     "query_geometry_identity",
     "query_geometry_winners",
     "query_incomplete_analyze_diagnostics",

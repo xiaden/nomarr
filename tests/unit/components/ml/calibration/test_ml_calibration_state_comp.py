@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -31,41 +32,76 @@ from nomarr.helpers.dataclasses.calibration_history_dataclass import Calibration
 from nomarr.helpers.dataclasses.calibration_state_dataclass import CalibrationState
 from nomarr.helpers.dto.library_dto import LibraryDict
 
+if TYPE_CHECKING:
+    from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
+
 
 class TestUpdateFileCalibrationHash:
-    """Tests for update_file_calibration_hash delegation."""
+    """Tests for locator-addressed update_file_calibration_hash delegation."""
 
     @pytest.mark.unit
-    def test_delegates_to_file_states_transition(self) -> None:
+    def test_updates_hash_then_transitions_located_song(self) -> None:
         mock_db = MagicMock()
+        mock_db.library.update_song_calibration_hash.return_value = True
+        song = MagicMock()
         with patch(
             "nomarr.components.ml.calibration.ml_calibration_state_comp.transition_song_state"
         ) as mock_transition:
-            update_file_calibration_hash(mock_db, 123)
+            result = update_file_calibration_hash(mock_db, song, "hash-1")
 
+        assert result is True
+        mock_db.library.update_song_calibration_hash.assert_called_once_with(song, "hash-1")
         mock_transition.assert_called_once_with(
             mock_db,
-            [123],
+            [song],
             STATE_NOT_CALIBRATED,
             STATE_CALIBRATED,
         )
 
-
-class TestUpdateFileCalibrationHashesBatch:
-    """Tests for update_file_calibration_hashes_batch delegation."""
-
     @pytest.mark.unit
-    def test_calls_transition_for_each_file_id(self) -> None:
+    def test_missing_locator_skips_transition(self) -> None:
         mock_db = MagicMock()
-        file_ids = [101, 102, 103]
+        mock_db.library.update_song_calibration_hash.return_value = False
+        song = MagicMock()
         with patch(
             "nomarr.components.ml.calibration.ml_calibration_state_comp.transition_song_state"
         ) as mock_transition:
-            update_file_calibration_hashes_batch(mock_db, file_ids)
+            result = update_file_calibration_hash(mock_db, song, "hash-1")
 
-        assert mock_transition.call_count == 3
-        for fid in file_ids:
-            mock_transition.assert_any_call(mock_db, [fid], STATE_NOT_CALIBRATED, STATE_CALIBRATED)
+        assert result is False
+        mock_transition.assert_not_called()
+
+
+class TestUpdateFileCalibrationHashesBatch:
+    """Tests for locator-addressed update_file_calibration_hashes_batch delegation."""
+
+    @pytest.mark.unit
+    def test_batch_updates_and_transitions_located_songs_once(self) -> None:
+        mock_db = MagicMock()
+        mock_db.library.update_song_calibration_hashes.return_value = 3
+        songs = [MagicMock(), MagicMock(), MagicMock()]
+        updates: list[tuple[SongIdentity, str]] = [(cast("SongIdentity", song), "hash") for song in songs]
+        with patch(
+            "nomarr.components.ml.calibration.ml_calibration_state_comp.transition_song_state"
+        ) as mock_transition:
+            result = update_file_calibration_hashes_batch(mock_db, updates)
+
+        assert result == 3
+        mock_db.library.update_song_calibration_hashes.assert_called_once_with(updates)
+        mock_transition.assert_called_once_with(mock_db, songs, STATE_NOT_CALIBRATED, STATE_CALIBRATED)
+
+    @pytest.mark.unit
+    def test_no_rows_updated_skips_transition(self) -> None:
+        mock_db = MagicMock()
+        mock_db.library.update_song_calibration_hashes.return_value = 0
+        updates: list[tuple[SongIdentity, str]] = [(cast("SongIdentity", MagicMock()), "hash")]
+        with patch(
+            "nomarr.components.ml.calibration.ml_calibration_state_comp.transition_song_state"
+        ) as mock_transition:
+            result = update_file_calibration_hashes_batch(mock_db, updates)
+
+        assert result == 0
+        mock_transition.assert_not_called()
 
     @pytest.mark.unit
     def test_empty_list_makes_no_calls(self) -> None:
@@ -73,8 +109,10 @@ class TestUpdateFileCalibrationHashesBatch:
         with patch(
             "nomarr.components.ml.calibration.ml_calibration_state_comp.transition_song_state"
         ) as mock_transition:
-            update_file_calibration_hashes_batch(mock_db, [])
+            result = update_file_calibration_hashes_batch(mock_db, [])
 
+        assert result == 0
+        mock_db.library.update_song_calibration_hashes.assert_not_called()
         mock_transition.assert_not_called()
 
 

@@ -1,0 +1,10 @@
+{
+  "calibration": null,
+  "count": 3,
+  "library_id": null,
+  "tag_keys": [
+    "nom:genre",
+    "nom:mood-strict",
+    "nom:tempo"
+  ]
+}

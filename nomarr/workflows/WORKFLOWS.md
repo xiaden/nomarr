@@ -47,8 +47,7 @@ workflows/
 │   └── validate_library_tags_wf.py        # Validate library tag state
 │
 ├── metadata/
-│   ├── cleanup_orphaned_entities_wf.py    # Clean up orphaned entities
-│   └── rebuild_metadata_cache_wf.py       # Rebuild metadata cache
+│   └── cleanup_orphaned_entities_wf.py    # Clean up orphaned entities
 │
 ├── navidrome/
 │   ├── filter_engine_wf.py                # Smart playlist filter engine
@@ -111,7 +110,7 @@ def process_file_workflow(
     tags = predictions_to_tags(predictions, namespace)
     
     # Step 5: Write tags via component (component calls persistence)
-    write_tags_to_library(db, file_record.id, tags)
+    write_tags_to_library(db, song_locator, tags)
     
     return ProcessFileResult(file=file_path, tags_written=len(tags))
 ```
@@ -213,12 +212,10 @@ def cleanup_workflow(db: Database, library: Library) -> CleanupResult:
 
 
 # ❌ Bad — workflow reconstructing a multi-step intent (choreography)
-def cleanup_workflow(db: Database, library: Library) -> CleanupResult:
-    song_ids = db.library.list_library_song_ids(library, limit=None)
+def cleanup_workflow(db: Database, locators: list[SongIdentity]) -> CleanupResult:
     removed = 0
-    for song_id in song_ids:
-        identity = db.library.resolve_song_identity(song_id)
-        removed += len(db.library.list_tags_for_song(identity))  # sequencing facade calls in a loop
+    for locator in locators:
+        removed += len(db.library.list_tags_for_song(locator))  # sequencing facade calls in a loop
     return CleanupResult(removed=removed)  # belongs in a component
 ```
 

@@ -1,0 +1,11 @@
+{
+  "created_at": "<DB_ID>",
+  "file_write_mode": "full",
+  "is_enabled": true,
+  "library_auto_write": false,
+  "library_uuid": "<UUID>",
+  "name": "ServiceTestLib",
+  "root_path": "/tmp/pytest-of-opencode/pytest-<N>/test_library_service_create_li0/library_root/servicetest",
+  "updated_at": "<DB_ID>",
+  "watch_mode": "off"
+}

@@ -183,7 +183,7 @@ async def web_navidrome_push_playlist(
     request: StaticPlaylistRequest,
     navidrome_service: Annotated["NavidromeService", Depends(get_navidrome_service)],
 ) -> PushStaticPlaylistResponse:
-    """Resolve file IDs to portable track descriptors for plugin-side playlist push.
+    """Resolve opaque ``nom1`` SongLocator tokens to portable track descriptors for plugin-side playlist push.
 
     Returns track descriptors that the Navidrome plugin can use to resolve
     to Navidrome mediafile IDs and push as a playlist on its side.

@@ -6,10 +6,10 @@ tokens, identifiers, commit hashes, absolute paths, or executed-CI claim.
 
 ## Broad resolver boundary
 
-The only retained provisional inbound integer adapter is the narrow
-`HydrateSongInput(song_id: int, ...)` hydration adapter.
+Hydration is locator-addressed and payload-only: `HydrateSongInput` carries no
+`song_id` integer, so no inbound integer adapter is retained.
 
-Retaining `resolve_song_identity`/`resolve_song_identities` or any other broad
-resolver requires an exact L/N/P allowlist naming owner, boundary, reason,
-positive test, non-propagation assertion, and removal condition; a symbol name
-alone is never approval.
+Retaining `resolve_song_identity`/`resolve_song_identities` or any other integer
+identity crossing requires an exact L/N/P allowlist naming owner, boundary,
+reason, positive test, non-propagation assertion, and removal condition; a
+symbol name alone is never approval.

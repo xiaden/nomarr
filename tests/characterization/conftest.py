@@ -9,7 +9,11 @@ Provides:
 
 from __future__ import annotations
 
+import base64
+import dataclasses
+import json
 import os
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -22,6 +26,7 @@ from testcontainers.community.postgres import PostgresContainer
 
 from alembic import command
 from nomarr.helpers.dataclasses.library_dataclass import Library
+from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
 from nomarr.helpers.dataclasses.song_tag_dataclass import SongTagAssignment, TagRef
 from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence.db import Database
@@ -162,10 +167,12 @@ def seed_data(db):
     """Insert seed data into the test database using the sealed domain facade.
 
     Phase 6 (song-tag correction): seed creation now goes through the domain
-    contracts — ``create_library(Library)``, ``add_song_to_library(Library, …)``,
+    contracts — ``create_library(Library)``, ``add_songs_to_library(Library, …)``,
     ``ensure_tag(TagRef)``, ``replace_song_tags(SongIdentity, …)`` and
-    ``start_scan(Library, …)``. Storage ids are never passed to callers; song
-    ids are returned so tests can resolve them through the identity bridge.
+    ``start_scan(Library, …)``. The returned song ids are persistence-private
+    integer handles only; semantic ``SongIdentity`` locators are constructed
+    directly (no integer-handle resolver crossing) and exposed under
+    ``song_identities``.
 
     Creates:
     - 2 libraries
@@ -190,46 +197,50 @@ def seed_data(db):
     lib2 = db.library.create_library(Library(name="TestLib2", root_path="/tmp/test2"))
     created["libraries"] = [lib1, lib2]
 
-    # Create 3 songs (2 in lib1, 1 in lib2); returns storage song ids.
+    # Create 3 songs (2 in lib1, 1 in lib2); the batch intent returns storage
+    # song ids. ``path`` stays absolute while ``normalized_path`` is the
+    # library-relative canonical locator path (ADR-048) so the semantic
+    # SongIdentity is directly encodable as an opaque ``nom1`` token.
     now_ms_val = now_ms()
-    song1_id = db.library.add_song_to_library(
+    song1_id, song2_id = db.library.add_songs_to_library(
         lib1,
-        {
-            "path": "/tmp/test1/song1.flac",
-            "normalized_path": "/tmp/test1/song1.flac",
-            "file_size": 1024000,
-            "modified_time": now_ms_val.value,
-            "duration_seconds": 180.5,
-            "needs_tagging": 0,
-            "is_valid": 1,
-            "tagged": 0,
-        },
+        [
+            {
+                "path": "/tmp/test1/song1.flac",
+                "normalized_path": "song1.flac",
+                "file_size": 1024000,
+                "modified_time": now_ms_val.value,
+                "duration_seconds": 180.5,
+                "needs_tagging": 0,
+                "is_valid": 1,
+                "tagged": 0,
+            },
+            {
+                "path": "/tmp/test1/song2.mp3",
+                "normalized_path": "song2.mp3",
+                "file_size": 512000,
+                "modified_time": now_ms_val.value,
+                "duration_seconds": 240.0,
+                "needs_tagging": 1,
+                "is_valid": 1,
+                "tagged": 0,
+            },
+        ],
     )
-    song2_id = db.library.add_song_to_library(
-        lib1,
-        {
-            "path": "/tmp/test1/song2.mp3",
-            "normalized_path": "/tmp/test1/song2.mp3",
-            "file_size": 512000,
-            "modified_time": now_ms_val.value,
-            "duration_seconds": 240.0,
-            "needs_tagging": 1,
-            "is_valid": 1,
-            "tagged": 0,
-        },
-    )
-    song3_id = db.library.add_song_to_library(
+    (song3_id,) = db.library.add_songs_to_library(
         lib2,
-        {
-            "path": "/tmp/test2/song3.flac",
-            "normalized_path": "/tmp/test2/song3.flac",
-            "file_size": 2048000,
-            "modified_time": now_ms_val.value,
-            "duration_seconds": 300.0,
-            "needs_tagging": 0,
-            "is_valid": 1,
-            "tagged": 1,
-        },
+        [
+            {
+                "path": "/tmp/test2/song3.flac",
+                "normalized_path": "song3.flac",
+                "file_size": 2048000,
+                "modified_time": now_ms_val.value,
+                "duration_seconds": 300.0,
+                "needs_tagging": 0,
+                "is_valid": 1,
+                "tagged": 1,
+            },
+        ],
     )
     created["songs"] = [song1_id, song2_id, song3_id]
 
@@ -241,10 +252,23 @@ def seed_data(db):
     tag5 = db.library.ensure_tag(TagRef(name="nom:tempo", value="fast", namespace="nom"))
     created["tags"] = [tag1, tag2, tag3, tag4, tag5]
 
-    # Assign tags to songs via the natural identity + domain assignments.
-    song1 = db.library.resolve_song_identity(song1_id)
-    song2 = db.library.resolve_song_identity(song2_id)
-    assert song1 is not None and song2 is not None
+    # Assign tags to songs via directly-constructed semantic locators: no
+    # integer-handle -> SongIdentity resolver crossing participates.
+    assert lib1.library_uuid is not None
+    assert lib2.library_uuid is not None
+    song1 = SongIdentity(
+        library=LibraryIdentity(library_uuid=lib1.library_uuid),
+        normalized_path="song1.flac",
+    )
+    song2 = SongIdentity(
+        library=LibraryIdentity(library_uuid=lib1.library_uuid),
+        normalized_path="song2.mp3",
+    )
+    song3 = SongIdentity(
+        library=LibraryIdentity(library_uuid=lib2.library_uuid),
+        normalized_path="song3.flac",
+    )
+    created["song_identities"] = [song1, song2, song3]
     db.library.replace_song_tags(
         song1,
         [
@@ -288,14 +312,56 @@ def _cleanup_seed_data(db: Database) -> None:
 # Result normalization (P1-S2)
 # ---------------------------------------------------------------------------
 
+# ``libraries.library_uuid`` is minted randomly per library row, so bare canonical
+# version-4 UUID strings are masked to keep locator/UUID-bearing snapshots
+# deterministic across runs.
+_CANONICAL_UUID4_RE = re.compile("[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}")
+
+# Opaque SongLocator wire token prefix (``nomarr.helpers.song_locator_codec``).
+_SONG_LOCATOR_PREFIX = "nom1"
+
+# pytest's ``tmp_path`` embeds a per-invocation run counter inside an otherwise
+# identical absolute path; mask the counter so path-bearing snapshots are
+# deterministic.
+_PYTEST_TMP_RE = re.compile(r"pytest-\d+")
+
+
+def _mask_song_locator(token: str) -> str:
+    """Mask the random ``library_uuid`` embedded in an opaque ``nom1`` token.
+
+    Decodes the canonical payload, replaces ``library_uuid`` with the stable
+    ``"<UUID>"`` placeholder, and re-encodes deterministically. The relative
+    ``path`` is preserved, so locators remain distinguishable **only when**
+    their relative path differs; two locators that share a path but differ only
+    by ``library_uuid`` collapse to the same masked token. Malformed payloads
+    fail to decode; payloads that decode but are not exactly
+    ``{library_uuid, path}`` are rejected — both fall back to a single stable
+    ``"<SONG_LOCATOR>"`` placeholder, which also drops the ``nom1`` prefix.
+    """
+    body = token[len(_SONG_LOCATOR_PREFIX) :]
+    try:
+        raw = base64.urlsafe_b64decode(body + "=" * (-len(body) % 4))
+        payload = json.loads(raw.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
+        return "<SONG_LOCATOR>"
+    if not isinstance(payload, dict) or set(payload) != {"library_uuid", "path"}:
+        return "<SONG_LOCATOR>"
+    payload["library_uuid"] = "<UUID>"
+    masked = json.dumps(payload, ensure_ascii=True, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return _SONG_LOCATOR_PREFIX + base64.urlsafe_b64encode(masked).decode("ascii").rstrip("=")
+
 
 def _normalize(value: Any) -> Any:
     """Normalize a value for snapshot comparison.
 
     Applies the following transformations recursively:
     - DB IDs (integers > 1000) → "<DB_ID>"
+    - Canonical version-4 UUID strings → "<UUID>"
+    - ``nom1`` SongLocator tokens → deterministic token with masked UUID
+    - pytest ``tmp_path`` run counters (``pytest-<n>``) → ``pytest-<N>``
     - Floats → rounded to 6 decimal places
     - numpy ndarray → .tolist()
+    - dataclasses → dict (so their field values are normalized too)
     - dict, list, tuple → recursively normalized
     - Other types → passed through (orjson handles datetime, UUID, Enum)
 
@@ -314,6 +380,16 @@ def _normalize(value: Any) -> Any:
     except ImportError:
         pass
 
+    # Mask strings carrying per-run identity before generic pass-through.
+    if isinstance(value, str):
+        if _CANONICAL_UUID4_RE.fullmatch(value):
+            return "<UUID>"
+        if value.startswith(_SONG_LOCATOR_PREFIX) and len(value) > len(_SONG_LOCATOR_PREFIX):
+            return _mask_song_locator(value)
+        if "pytest-" in value:
+            return _PYTEST_TMP_RE.sub("pytest-<N>", value)
+        return value
+
     # DB ID masking: integers > 1000 are likely database IDs
     if isinstance(value, int) and not isinstance(value, bool) and value > 1000:
         return "<DB_ID>"
@@ -321,6 +397,11 @@ def _normalize(value: Any) -> Any:
     # Float rounding: 6 decimal places
     if isinstance(value, float):
         return round(value, 6)
+
+    # Dataclasses bypass container recursion above, so expose their fields to
+    # normalization (asdict yields plain dicts/lists recursively).
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        return _normalize(dataclasses.asdict(value))
 
     # Recursive normalization for containers
     if isinstance(value, dict):
@@ -330,7 +411,7 @@ def _normalize(value: Any) -> Any:
     if isinstance(value, tuple):
         return tuple(_normalize(item) for item in value)
 
-    # Pass through other types (datetime, UUID, Enum, str, bool, None, etc.)
+    # Pass through other types (datetime, UUID, Enum, bool, None, etc.)
     return value
 
 

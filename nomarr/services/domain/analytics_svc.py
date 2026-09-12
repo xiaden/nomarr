@@ -48,6 +48,7 @@ from nomarr.helpers.dto.analytics_dto import (
 
 if TYPE_CHECKING:
     from nomarr.helpers.dataclasses.library_dataclass import Library
+    from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
     from nomarr.persistence.db import Database
 
 
@@ -244,8 +245,8 @@ class AnalyticsService:
             else:
                 regular_specs.append((key, value))
 
-        # Fetch file IDs using appropriate query method
-        tag_data: dict[tuple[str, str], set[int]] = {}
+        # Fetch song locators using appropriate query method
+        tag_data: dict[tuple[str, str], set[SongIdentity]] = {}
 
         # Regular tags: use exact match
         if regular_specs:

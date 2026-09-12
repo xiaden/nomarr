@@ -1,0 +1,16 @@
+{
+  "calibration_hash": null,
+  "chromaprint": null,
+  "created_at": "<DB_ID>",
+  "duration_seconds": 180.5,
+  "file_size": "<DB_ID>",
+  "is_valid": true,
+  "last_tagged_at": null,
+  "modified_time": "<DB_ID>",
+  "needs_tagging": false,
+  "normalized_path": "song1.flac",
+  "path": "/tmp/test1/song1.flac",
+  "scanned_at": null,
+  "tagged": false,
+  "write_claimed_by": null
+}

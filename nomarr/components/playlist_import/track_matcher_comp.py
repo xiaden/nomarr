@@ -8,15 +8,17 @@ Implements tiered matching strategy:
 
 import logging
 from dataclasses import dataclass
-from typing import Any
 
 from rapidfuzz import fuzz
 
+from nomarr.components.library.song_query_types import TrackSong
 from nomarr.components.playlist_import.metadata_normalizer_comp import (
     normalize_artist,
     normalize_title,
 )
+from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
 from nomarr.helpers.dto.playlist_import_dto import MatchedFileInfo, MatchResult, PlaylistTrackInput
+from nomarr.helpers.song_locator_codec import encode_song_locator
 
 logger = logging.getLogger(__name__)
 
@@ -25,14 +27,16 @@ FUZZY_HIGH_THRESHOLD = 85  # High confidence fuzzy match
 FUZZY_LOW_THRESHOLD = 70  # Ambiguous match (needs review)
 
 
-@dataclass
+@dataclass(frozen=True)
 class LibraryTrack:
-    """A track from the library database for matching purposes.
+    """A semantic library track for matching, addressed by its mutable locator.
 
-    Contains normalized versions of metadata for efficient comparison.
+    Carries the resolved ``SongIdentity`` so a successful match can be projected
+    to an opaque ``nom1`` token at the boundary. There is no generated integer
+    handle, raw row/dict, or path-to-ID heuristic.
     """
 
-    file_id: int
+    song_identity: SongIdentity
     file_path: str
     title: str
     artist: str
@@ -43,28 +47,38 @@ class LibraryTrack:
     normalized_artist: str
 
     @classmethod
-    def from_db_row(cls, row: dict[str, Any]) -> "LibraryTrack":
-        """Create LibraryTrack from database row.
+    def from_track_song(cls, locator: SongIdentity, track: TrackSong) -> "LibraryTrack":
+        """Build a semantic ``LibraryTrack`` from a typed ``TrackSong`` carrier.
 
-        Expected row keys: id, path, title, artist, album, isrc
+        ``locator`` is the UUID-bearing ``SongIdentity`` resolved by the public
+        carrier projection; ``track`` supplies the semantic song, ADR-045
+        metadata, and derived ``isrc``. A non-string or absent metadata value is
+        treated as absent rather than coerced.
         """
+        metadata = track.metadata
+        title_value = metadata.get("title")
+        artist_value = metadata.get("artist")
+        album_value = metadata.get("album")
+        title = title_value if isinstance(title_value, str) else ""
+        artist = artist_value if isinstance(artist_value, str) else ""
+        album = album_value if isinstance(album_value, str) else None
         return cls(
-            file_id=row["id"],
-            file_path=row.get("path", ""),
-            title=row.get("title", ""),
-            artist=row.get("artist", ""),
-            album=row.get("album"),
-            isrc=row.get("isrc"),
-            normalized_title=normalize_title(row.get("title", "")),
-            normalized_artist=normalize_artist(row.get("artist", "")),
+            song_identity=locator,
+            file_path=track.song.path,
+            title=title,
+            artist=artist,
+            album=album,
+            isrc=track.isrc,
+            normalized_title=normalize_title(title),
+            normalized_artist=normalize_artist(artist),
         )
 
 
 def _to_file_info(lib_track: LibraryTrack) -> MatchedFileInfo:
-    """Convert a LibraryTrack to a MatchedFileInfo for API responses."""
+    """Project a semantic ``LibraryTrack`` to an opaque-locator ``MatchedFileInfo``."""
     return MatchedFileInfo(
         path=lib_track.file_path,
-        file_id=lib_track.file_id,
+        file_id=encode_song_locator(lib_track.song_identity),
         title=lib_track.title,
         artist=lib_track.artist,
         album=lib_track.album,

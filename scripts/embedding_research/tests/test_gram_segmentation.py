@@ -1,4 +1,4 @@
-"""Synthetic contract tests for the scalar Gram temporal-global engine."""
+"""Synthetic contract tests for the NumPy Gram temporal-global engine."""
 
 from __future__ import annotations
 

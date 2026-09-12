@@ -1,4 +1,10 @@
-"""Deterministic scalar Gram geometry and temporal-global PTC."""
+"""Gram geometry and deterministic temporal-global PTC.
+
+The production Gram matrix is built by NumPy row normalization followed by
+float32 ``np.matmul`` and serialized as little-endian C-order float32 bytes.
+The temporal-global PTC derivation itself remains deterministic scalar float32
+arithmetic over that matrix.
+"""
 
 from __future__ import annotations
 
@@ -66,21 +72,19 @@ def _sqrt(value: np.float32) -> np.float32:
 
 
 def normalize_float32(stream: Any) -> np.ndarray:
-    """Normalize rows with scalar float32 operations in ascending dimension order."""
+    """Normalize rows with NumPy float32 row arithmetic.
+
+    Zero rows are retained as zero rows.  Inputs are validated before any
+    normalization so non-finite evidence cannot reach the matrix kernel.
+    """
     values = np.asarray(stream)
     if values.ndim != 2 or values.shape[0] == 0 or values.shape[1] == 0:
         raise GramRefusalError("stream must be a non-empty two-dimensional matrix")
     if values.dtype != np.dtype("float32") or not np.isfinite(values).all():
         raise GramRefusalError("stream must be finite float32 evidence")
-    result = np.zeros(values.shape, dtype=np.float32)
-    for row_index, row in enumerate(values):
-        norm_sq = np.float32(0.0)
-        for value in row:
-            norm_sq = _add(norm_sq, _mul(value, value))
-        norm = _sqrt(norm_sq)
-        if norm > np.float32(0.0):
-            for dim, value in enumerate(row):
-                result[row_index, dim] = _f32(value / norm)
+    norms = np.linalg.norm(values, axis=1, keepdims=True).astype(np.float32)
+    safe_norms = np.where(norms > np.float32(0.0), norms, np.float32(1.0))
+    result = np.divide(values, safe_norms, dtype=np.float32)
     if not np.isfinite(result).all():
         raise GramRefusalError("normalized stream is non-finite")
     result = np.asarray(result, dtype="<f4", order="C")
@@ -89,16 +93,10 @@ def normalize_float32(stream: Any) -> np.ndarray:
 
 
 def gram_from_stream(stream: Any) -> tuple[np.ndarray, bytes]:
-    """Produce the full square Gram matrix and canonical raw bytes."""
+    """Produce the canonical full square Gram matrix and raw bytes."""
     unit = normalize_float32(stream)
     count = unit.shape[0]
-    gram = np.zeros((count, count), dtype=np.float32)
-    for left in range(count):
-        for right in range(count):
-            total = np.float32(0.0)
-            for dim in range(unit.shape[1]):
-                total = _add(total, _mul(unit[left, dim], unit[right, dim]))
-            gram[left, right] = total
+    gram = np.matmul(unit, unit.T, dtype=np.float32)
     if gram.shape != (count, count) or not np.isfinite(gram).all():
         raise GramRefusalError("Gram matrix is non-finite or non-square")
     gram = np.asarray(gram, dtype="<f4", order="C")
@@ -106,7 +104,7 @@ def gram_from_stream(stream: Any) -> tuple[np.ndarray, bytes]:
     if len(blob) != 4 * count * count:
         raise GramRefusalError("invalid Gram serialization length")
     decoded = np.frombuffer(blob, dtype="<f4").reshape((count, count), order="C")
-    if not np.array_equal(decoded, gram):
+    if not np.array_equal(decoded, gram) or decoded.tobytes(order="C") != blob:
         raise GramRefusalError("Gram serialization failed byte round-trip")
     gram.setflags(write=False)
     return gram, blob

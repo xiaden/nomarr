@@ -1,10 +1,11 @@
 """Q1 resolver/scalar closure enforcement (CONTRACTS §12/§12.1).
 
-Negative architecture guard: the only retained integer identity crossings are the
-machine-readable allowlist entries in ``q1_resolver_scalar_allowlist.json`` plus
-the sole unconditional ``HydrateSongInput.song_id`` exception. The three locator
-``FieldWriteResult`` intents are the only public scalar write surface, and legacy
-integer scalar writers must be absent (deleted, not forwarded/wrapped).
+Negative architecture guard: every retained integer identity crossing is a
+machine-readable allowlist entry in ``q1_resolver_scalar_allowlist.json``. There
+is no unconditional hydration integer exception — hydration is locator-addressed
+and payload-only. The three locator ``FieldWriteResult`` intents are the only
+public scalar write surface, and legacy integer scalar writers must be absent
+(deleted, not forwarded/wrapped).
 """
 
 from __future__ import annotations
@@ -98,7 +99,7 @@ def _source(relative: str) -> str:
 
 def _allowlist_entries() -> list[dict]:
     data = _load_allowlist()
-    return [data["unconditional_exception"], *data["allowlisted_resolvers"], *data["allowlisted_integer_adapters"]]
+    return [*data["allowlisted_resolvers"], *data["allowlisted_integer_adapters"]]
 
 
 def _public_method_bodies(relative: str) -> dict[str, str]:
@@ -157,10 +158,9 @@ def test_required_allowlist_field_tuple_is_hardcoded() -> None:
 
 
 def test_every_allowlist_entry_carries_all_six_required_fields() -> None:
-    """All six fields are validated on the exception and both allowlisted collections."""
+    """All six fields are validated on both allowlisted collections."""
     data = _load_allowlist()
     collections = {
-        "unconditional_exception": [data["unconditional_exception"]],
         "allowlisted_resolvers": data["allowlisted_resolvers"],
         "allowlisted_integer_adapters": data["allowlisted_integer_adapters"],
     }

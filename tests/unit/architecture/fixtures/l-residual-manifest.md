@@ -13,7 +13,7 @@ Every residual is assigned one of the contract categories:
 conversion, alias, shim, dual path, stable identity, generic mood writer, or
 caller transaction is authorized.
 
-The current contract permits only the narrow inbound HydrateSongInput adapter; each other resolver needs owner, boundary, reason, positive test, non-propagation, removal condition. The locator wire is UUID-bearing nom1 and is never integer. No wrapper or alias added by L.
+The current contract retains no inbound integer adapter: hydration is locator-addressed and payload-only, and each other resolver needs owner, boundary, reason, positive test, non-propagation, removal condition. The locator wire is UUID-bearing nom1 and is never integer. No wrapper or alias added by L.
 
 Owner routing: **M** (recovery, concurrency, partial failure), **N** (static
 enforcement and CI wiring), **O** (security, redaction, provenance, rollback),

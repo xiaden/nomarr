@@ -131,7 +131,7 @@ def analysis_identity(
     """Build the exact ten-axis analysis identity for one geometry record."""
     return SimpleNamespace(
         geometry_id=record.geometry_id,
-        observation_id=record.identity.observation_commit_sha256,
+        observation_id=record.identity.observation_group_sha256,
         geometry_semantics_version=record.identity.geometry_semantics_version,
         numerical_profile_digest=record.identity.numerical_profile_digest,
         threshold_id=threshold_id,
@@ -147,7 +147,7 @@ def head_output(record: GeometryRecord, *, head: str = "genre", segment_id: int 
     """Build one exact head evidence output anchored on a geometry record."""
     return _HeadOutput(
         geometry_id=record.geometry_id,
-        observation_id=record.identity.observation_commit_sha256,
+        observation_id=record.identity.observation_group_sha256,
         geometry_semantics_version=record.identity.geometry_semantics_version,
         numerical_profile_digest=record.identity.numerical_profile_digest,
         threshold_id=THRESHOLD_IDS[0],

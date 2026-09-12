@@ -711,10 +711,6 @@ def delete_song_tags():
     pass  # Tag deletion
 
 
-def get_nomarr_tags_bulk():
-    pass  # Bulk tag retrieval
-
-
 def show_multiple():
     pass  # Multi-tag display
 

@@ -26,6 +26,7 @@ from nomarr.components.library.library_song_query_comp import (
     get_tagged_file_paths,
     locators_for_carriers,
     search_songs_by_tag,
+    tagged_songs_for_locators,
 )
 from nomarr.components.library.library_song_state_comp import (
     count_errored_songs,
@@ -71,6 +72,7 @@ from nomarr.helpers.song_locator_codec import encode_song_locator
 
 if TYPE_CHECKING:
     from nomarr.helpers.dataclasses.library_dataclass import Library
+    from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
     from nomarr.helpers.dto.info_dto import WorkStatusResult
     from nomarr.persistence.db import Database
 
@@ -218,19 +220,8 @@ class LibraryQueryMixin:
             tags=list(carrier.tags) if isinstance(carrier, TaggedSong) else [],
         )
 
-    def _songs_for_locators(self, locators: list[Any]) -> list[TaggedSong]:
-        if not locators:
-            return []
-        from nomarr.components.library.library_song_query_comp import _file_tags, _tag_assignments
-        from nomarr.components.library.tag_hydration_comp import hydrate_songs_with_metadata
-
-        songs = self.db.library.list_songs_by_identity(locators)
-        metadata = hydrate_songs_with_metadata(self.db, songs, locators)
-        assignments = _tag_assignments(self.db, locators)
-        return [
-            TaggedSong(song=song, metadata=hydrated.metadata, tags=_file_tags(assignments.get(locator, ())))
-            for song, hydrated, locator in zip(songs, metadata, locators, strict=True)
-        ]
+    def _songs_for_locators(self, locators: list[SongIdentity]) -> list[TaggedSong]:
+        return tagged_songs_for_locators(self.db, locators)
 
     def search_files(self, query: SearchFilesQuery) -> SearchFilesResult:
         """Search library files with optional filters.
@@ -248,21 +239,21 @@ class LibraryQueryMixin:
         files_with_tags = [self._tagged_song_dto(f) for f in files]
         return SearchFilesResult(songs=files_with_tags, total=total, limit=query.limit, offset=query.offset)
 
-    def get_files_by_ids(self, file_ids: list[int]) -> SearchFilesResult:
-        """Get files by IDs with their tags.
+    def get_files_by_ids(self, songs: list[SongIdentity]) -> SearchFilesResult:
+        """Get files by their semantic locators with their tags.
 
         Used for batch lookup (e.g., when browsing songs for an entity).
 
         Args:
-            file_ids: List of file _ids to fetch
+            songs: Semantic ``SongIdentity`` locators to fetch
 
         Returns:
-            SearchFilesResult with files matching the IDs
+            SearchFilesResult with files matching the locators
 
         """
-        files = self._songs_for_locators(file_ids)
+        files = self._songs_for_locators(songs)
         files_with_tags = [self._tagged_song_dto(f) for f in files]
-        return SearchFilesResult(songs=files_with_tags, total=len(files), limit=len(file_ids), offset=0)
+        return SearchFilesResult(songs=files_with_tags, total=len(files), limit=len(songs), offset=0)
 
     def search_songs_by_tag(
         self,

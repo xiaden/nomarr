@@ -135,7 +135,7 @@ It wraps operations such as:
 - library CRUD and library-domain queries
 - song and folder queries plus intent-level song lifecycle operations
 - tag lookup, replacement, aggregation, and cleanup routed through library-domain methods
-- maintenance-only routines (orphan cleanup, destructive resets) are flat on the facade: `db.library.list_orphaned_song_ids()`, `db.library.count_orphaned_tags()` (count-only, non-destructive read intent — previews orphaned tags without deleting; `admin_cleanup_orphaned_tags()` is the sole destructive orphan-cleanup intent and returns a typed `TagCleanupResult`), `db.library.truncate_songs()`, `db.library.truncate_song_links()`, `db.library.truncate_folder_links()`, `db.library.truncate_folders()`, `db.library.admin_truncate_tags()`, `db.library.admin_truncate_song_tag_assignments()`, `db.library.truncate_scan_records()`
+- maintenance-only routines (orphan cleanup, destructive resets) are flat on the facade: `db.library.prune_orphaned_songs()` (count-only locator-free orphan cleanup — resolves row handles privately and returns only the number removed, never generated ids), `db.library.count_orphaned_tags()` (count-only, non-destructive read intent — previews orphaned tags without deleting; `admin_cleanup_orphaned_tags()` is the sole destructive orphan-cleanup intent and returns a typed `TagCleanupResult`), `db.library.truncate_songs()`, `db.library.truncate_song_links()`, `db.library.truncate_folder_links()`, `db.library.truncate_folders()`, `db.library.admin_truncate_tags()`, `db.library.admin_truncate_song_tag_assignments()`, `db.library.truncate_scan_records()`
 
 **Sealed tag facade** (`LibraryTagsDb` via `db.library.tags`, and its forwarders on `db.library`): tags and songs are addressed by **natural domain identity**, never integer tag/song ids. `get_tag`/`ensure_tag` take/return `TagRef`; `list_tags_for_song` takes a `SongIdentity` and returns `SongTagAssignment` values; reads return typed domain objects (`TagRef`, `SongTagAssignment`, `TagUsage`, `RelinkResult`, `TagCleanupResult`, `Song`, `SongTagMatch`) — no `TagRow`/`SongRow`/raw-dict projections, and no integer tag-id facade contracts. Storage ids resolve internally (set-based), and the facade exposes no transaction context (repos own short internal transactions).
 
@@ -153,7 +153,7 @@ Cleared set on a successful reset (all-or-nothing): `embeddings`, `ml_output_str
 
 **Row → domain conversion is persistence-owned.** All row/dict → domain conversion (e.g. `song_tag_mapper.tag_identity_from_row`, `song_tag_assignment_from_row`, `tag_usage_from_row`, `song_from_row`, `song_tag_match_from_row`) lives in `persistence/mappers/` and is called *inside* the facade sub-facades. Higher layers never construct storage row shapes, edge dicts, or table/primary-key payloads.
 
-**Identity bridge.** The sanctioned int→domain conversion points for callers holding opaque legacy storage handles are the song-side adapters `db.library.resolve_song_identity(song_id: int) -> SongIdentity | None` and `db.library.resolve_song_identities(song_ids) -> Mapping[int, SongIdentity]` (with `resolve_library_identity(s)` / `resolve_library_identities(s)`). They exist for callers that hold a legacy storage id — e.g. read a `Song.song_id` and need the natural identity for a song-tag operation. The former root-`Database` tag-handle resolver was retired after the natural-facade migration; callers holding an opaque tag handle obtain the natural `TagRef` through the sealed tag facade (`db.library.get_tag`), never via an integer tag-id conversion on `Database`. `HydrateSongInput.song_id: int` is the sole documented narrow semantic handle; `FileTag` and `(file_id, tag_value)` analytics tuples are interface/physical-file projections allowed at the boundary.
+**Identity bridge.** Persistence-private integer handles stay inside persistence. The locator-addressed application boundary is `SongIdentity`; the four `db.library.resolve_song_identity(song_id)` / `resolve_song_identities(song_ids)` / `resolve_library_identity` / `resolve_library_identities` bridges remain persistence-private and are the only sanctioned int→domain conversion points, each requiring an exact L/N/P allowlist entry (owner, boundary, reason, positive test, non-propagation assertion, removal condition). Hydration is locator-addressed and payload-only: `HydrateSongInput` carries no `song_id`. `FileTag` and `(file_id, tag_value)` analytics tuples are interface/physical-file projections allowed at the boundary.
 
 **Removed legacy tag methods.** The sealed tag facade no longer exposes any of: `search_songs_by_tag`/`search_songs_by_tag_contains`/`search_songs_by_tag_pattern` (use `find_songs_with_tag`/`_contains`/`_pattern`), `list_song_ids_for_tag_id`, `list_song_tag_edges`, `list_tags_by_name` (use `list_tags(name=...)`), `delete_tags_by_ids` (use `admin_cleanup_orphaned_tags`), `find_or_create_tag` (use `ensure_tag(TagRef)`), `replace_tag_references`/`replace_selected_tag_references` (use `relink_tags(source, target, songs)`), and `list_orphaned_tag_ids`. These must not reappear as facade methods; the sabotage suites `tests/sabotage/test_song_tag_facade_boundary.py` and `tests/sabotage/test_sealed_tag_facade_boundary.py` enforce this.
 
@@ -344,20 +344,28 @@ Prefer intent-level calls from higher layers:
 
 ```python
 library = db.library.get_library_by_name("Main Library")
-songs = db.library.list_songs(library, limit=100)
-streams = db.ml.list_output_streams_for_song(song_id)
+assert library is not None and library.library_uuid is not None
+library_identity = LibraryIdentity(library_uuid=library.library_uuid)
+songs = db.library.list_songs(library_identity, limit=100)
+streams = db.ml.list_output_streams_for_song(SongIdentity(library=library_identity, normalized_path="track.mp3"))
 ```
 
 Within higher layers, do **not** drop to raw SQL just because a session is available, and do **not** open your own transactions for ordinary writes. Facade write methods execute directly; the underlying repositories own their own short internal transactions (AR-SDR-4). Just call the write method:
 
 ```python
-song = db.library.get_song(song_id)
+locator = SongIdentity(
+    library=LibraryIdentity(
+        library_uuid=library.library_uuid, name="TestLib", root_path="/music"
+    ),  # library_uuid asserted above
+    normalized_path="track.mp3",
+)
+song = db.library.get_song(locator)
 db.library.replace_song_tags(
-    SongIdentity(library=LibraryIdentity(name="TestLib", root_path="/music"), normalized_path="track.mp3"),
+    locator,
     [SongTagAssignment(name="genre", value="rock", namespace="nom")],
 )
 db.library.complete_scan(library, finished_at)
-db.app.set_song_state(song_ids, "processing")
+db.app.set_song_state([locator], "processing")
 ```
 
 Higher layers must not use raw SQL or open sessions/transactions; route an un-wrapped capability through a new or extended intent-facade method. Raw SQL (`session.execute(text(...))`) is a persistence-internal escape hatch only.

@@ -1,0 +1,10 @@
+{
+  "error": null,
+  "files_found": 0,
+  "files_processed": 0,
+  "finished_at": null,
+  "heartbeat_at": "<DB_ID>",
+  "scan_type": "incremental",
+  "started_at": "<DB_ID>",
+  "status": "in_progress"
+}

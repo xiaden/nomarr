@@ -107,7 +107,7 @@ __all__ = [
 from .geometry_profile import (
     GEOMETRY_SEMANTICS_VERSION,
     GEOMETRY_SERIALIZATION_VERSION,
-    SCALAR_KERNEL_VERSION,
+    NUMPY_KERNEL_VERSION,
     GeometryProfile,
     canonical_profile_json,
     profile_digest,
@@ -152,8 +152,8 @@ __all__ = [
     "GEOMETRY_SEMANTICS_VERSION",
     "GEOMETRY_SERIALIZATION_VERSION",
     "GEOMETRY_TABLE",
+    "NUMPY_KERNEL_VERSION",
     "REPAIR_GUIDANCE",
-    "SCALAR_KERNEL_VERSION",
     "CanaryCorruptionError",
     "CanaryProbeReport",
     "CorpusStateCorruptionError",

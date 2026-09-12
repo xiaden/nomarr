@@ -6,8 +6,9 @@ They do not approve these methods as current application adapters. Under the H
 contract, ``resolve_song_identity`` / ``resolve_song_identities`` require an
 exact L/N/P allowlist naming owner, boundary, reason, positive test,
 non-propagation assertion, and removal condition. A symbol name or historical
-plan wording is not approval. The sole retained provisional integer crossing is
-J's inbound ``HydrateSongInput(song_id: int, ...)`` repository boundary.
+plan wording is not approval. Hydration is locator-addressed and payload-only:
+``HydrateSongInput`` carries no ``song_id`` integer and no inbound integer
+adapter is retained.
 
 The bridge methods resolve song/library storage handles to natural references
 inside persistence fixtures; no row, ``Song``, ``Library``, or storage id is

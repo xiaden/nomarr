@@ -80,11 +80,12 @@ async def search_vectors(
 
         result_items = [
             VectorSearchResultItem(
-                file_id=encode_song_locator(result["song"]),
-                score=result["score"],
-                vector=result["vector"],
+                file_id=encode_song_locator(match.song),
+                score=match.score,
+                vector=list(match.vector),
             )
-            for result in results
+            for match in results
+            if match.vector is not None
         ]
 
         return VectorSearchResponse(results=result_items)

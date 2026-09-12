@@ -17,10 +17,46 @@ from nomarr.components.ml.calibration.ml_calibration_comp import (
     get_default_histogram_spec,
     get_sparse_histogram,
     import_calibration_state_from_json,
+    mood_tags_to_assignments,
 )
 from nomarr.helpers.dataclasses.calibration_state_dataclass import CalibrationState
 from nomarr.helpers.dataclasses.ml_model_dataclass import RegisteredModel
-from nomarr.helpers.dataclasses.song_tag_dataclass import TagRef
+from nomarr.helpers.dataclasses.song_tag_dataclass import MoodAssignments, TagRef
+from nomarr.helpers.dataclasses.tags_dataclass import Tag, Tags
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+class TestMoodTagsToAssignments:
+    """Tests for canonical mood tag conversion before the tag owner call."""
+
+    def test_none_returns_none_clear_all(self) -> None:
+        assert mood_tags_to_assignments(None) is None
+
+    def test_maps_unprefixed_tiers_to_canonical_nom_tiers(self) -> None:
+        tags = Tags(
+            items=(
+                Tag(name="mood-strict", values=("happy", "calm")),
+                Tag(name="mood-loose", values=("sad",)),
+            )
+        )
+
+        assert mood_tags_to_assignments(tags) == MoodAssignments(strict=("happy", "calm"), loose=("sad",))
+
+    def test_accepts_already_prefixed_tiers(self) -> None:
+        tags = Tags(items=(Tag(name="nom:mood-regular", values=("calm",)),))
+
+        assert mood_tags_to_assignments(tags) == MoodAssignments(regular=("calm",))
+
+    def test_absent_tiers_are_empty_not_missing(self) -> None:
+        tags = Tags(items=(Tag(name="mood-strict", values=("happy",)),))
+
+        result = mood_tags_to_assignments(tags)
+
+        assert result is not None
+        assert result.strict == ("happy",)
+        assert result.regular == ()
+        assert result.loose == ()
 
 
 @pytest.mark.unit

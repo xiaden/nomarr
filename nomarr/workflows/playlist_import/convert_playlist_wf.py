@@ -8,7 +8,10 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from nomarr.components.library.library_song_query_comp import get_tracks_for_matching
+from nomarr.components.library.library_song_query_comp import (
+    get_tracks_for_matching,
+    locators_for_carriers,
+)
 
 if TYPE_CHECKING:
     from nomarr.helpers.dataclasses.library_dataclass import Library
@@ -90,9 +93,18 @@ def convert_playlist_workflow(
 
     logger.info(f"Fetched {len(input_tracks)} tracks from '{metadata.name}'")
 
-    # Step 3: Load library tracks
-    library_rows = get_tracks_for_matching(db, library=library)
-    library_tracks = [LibraryTrack.from_db_row(row) for row in library_rows]
+    # Step 3: Load semantic library tracks through the public locator projection.
+    # ``get_tracks_for_matching`` returns typed ``TrackSong`` carriers; the public
+    # ``locators_for_carriers`` gate resolves each carrier's UUID-bearing
+    # ``SongIdentity``. A carrier whose locator does not resolve is dropped before
+    # matching — no raw row, generated id, or path-to-ID conversion participates.
+    track_carriers = get_tracks_for_matching(db, library=library)
+    locators = locators_for_carriers(db, track_carriers)
+    library_tracks = [
+        LibraryTrack.from_track_song(locator, track)
+        for track, locator in zip(track_carriers, locators, strict=True)
+        if locator is not None
+    ]
 
     logger.info(f"Loaded {len(library_tracks)} library tracks for matching")
 

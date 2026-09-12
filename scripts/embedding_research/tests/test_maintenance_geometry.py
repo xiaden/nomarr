@@ -27,7 +27,7 @@ def _geometry_row() -> dict[str, object]:
         "geometry_id": "g1",
         "song_id": "s1",
         "backbone": "effnet",
-        "observation_commit_sha256": "commit",
+        "observation_group_sha256": "commit",
         "stream_ref": "streams/s1.effnet.stream.npy",
         "stream_fingerprint_sha256": "stream",
         "stream_payload_sha256": "stream-payload",

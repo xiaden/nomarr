@@ -223,13 +223,13 @@ class GenerateTemplateFilesRequest(BaseModel):
 
 
 class StaticPlaylistRequest(BaseModel):
-    """Request model for static playlist generation from file IDs."""
+    """Request model for static playlist generation from opaque SongLocator tokens."""
 
     file_ids: list[str] = Field(
         ...,
         min_length=1,
         max_length=200,
-        description="Library file IDs to include in the playlist",
+        description="Opaque `nom1` SongLocator tokens to include in the playlist",
     )
     playlist_name: str = Field("Vector Search Playlist", description="Name for the generated playlist")
 
@@ -240,7 +240,7 @@ class StaticPlaylistResponse(BaseModel):
     playlist_name: str = Field(..., description="Name of the generated playlist")
     m3u_content: str = Field(..., description="M3U playlist file content")
     track_count: int = Field(..., description="Number of tracks in the playlist")
-    missing_ids: list[str] = Field(default_factory=list, description="File IDs not found in the library")
+    missing_ids: list[str] = Field(default_factory=list, description="SongLocator tokens not found in the library")
     saved_path: str | None = Field(None, description="Server-side path where M3U was saved, null if disabled")
 
     @classmethod
@@ -270,9 +270,9 @@ class SyncSongsResponse(BaseModel):
 class TrackPlayRequestItem(BaseModel):
     """Play history entry provided by the Navidrome plugin for playlist generation.
 
-     * `file_id` is the opaque `nom1` SongLocator token (never a generated integer id).
-    that the plugin resolves from a ``nomarr_file_key`` received in prior
-    descriptor responses.
+    ``file_id`` is the opaque ``nom1`` SongLocator token (never a generated
+    integer id) that the plugin resolves from a ``nomarr_file_key`` received in
+    prior descriptor responses.
     """
 
     file_id: str

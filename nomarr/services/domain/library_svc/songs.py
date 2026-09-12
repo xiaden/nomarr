@@ -21,6 +21,7 @@ from nomarr.helpers.constants.file_states import (
     STATE_PROCESSED,
 )
 from nomarr.helpers.dto.library_dto import FileTagsResult, RetryErroredResult, TagCleanupResult
+from nomarr.helpers.song_locator_codec import encode_song_locator
 from nomarr.workflows.library.cleanup_orphaned_tags_wf import cleanup_orphaned_tags_workflow
 from nomarr.workflows.library.reconcile_paths_wf import reconcile_library_paths_workflow
 
@@ -29,6 +30,7 @@ if TYPE_CHECKING:
 
     from nomarr.components.library.reconcile_paths_comp import ReconcilePolicy, ReconcileResult
     from nomarr.helpers.dataclasses.library_dataclass import Library
+    from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
     from nomarr.persistence.db import Database
 
     from .config import LibraryServiceConfig
@@ -75,30 +77,32 @@ class LibrarySongsMixin:
             deleted_count=result["deleted_count"],
         )
 
-    def get_song_tags(self, song_id: int, nomarr_only: bool = False) -> FileTagsResult:
+    def get_song_tags(self, song: SongIdentity, nomarr_only: bool = False) -> FileTagsResult:
         """Get all tags for a specific song.
 
         Args:
-            song_id: Library song ID
+            song: Semantic ``SongIdentity`` locator addressing the song.
             nomarr_only: If True, only return Nomarr-generated tags
 
         Returns:
-            FileTagsResult DTO with song info and tags
+            FileTagsResult DTO carrying the opaque locator, path, and tags
 
         Raises:
             ValueError: If song not found
 
         """
-        # Get song and tags from component
-        result = get_song_tags_with_path(self.db, int(song_id), nomarr_only=nomarr_only)
+        # Resolve through the locator-addressed component; no integer handle or
+        # path-to-ID heuristic is used.
+        result = get_song_tags_with_path(self.db, song, nomarr_only=nomarr_only)
         if not result:
-            msg = f"Song with ID {song_id} not found"
+            msg = "Song not found"
             raise ValueError(msg)
 
         # Component already returns library-owned FileTag objects via the shared
-        # row-to-FileTag mapper; pass them through unchanged.
+        # row-to-FileTag mapper; pass them through unchanged and encode only the
+        # opaque outward locator token.
         return FileTagsResult(
-            file_id=int(song_id),
+            file_id=encode_song_locator(song),
             path=result["path"],
             tags=result["tags"],
         )
@@ -182,13 +186,14 @@ class LibrarySongsMixin:
     def retry_errored_songs(
         self,
         library: Library,
-        song_ids: list[int] | None = None,
+        songs: list[SongIdentity] | None = None,
     ) -> RetryErroredResult:
         """Clear errored state for songs and re-queue them for discovery.
 
         Args:
             library: Domain ``Library`` (natural identity) to scope the operation.
-            song_ids: Optional subset of song IDs to retry. If None, retries all errored.
+            songs: Optional subset of semantic ``SongIdentity`` locators to retry.
+                If None, retries all errored songs.
 
         Returns:
             RetryErroredResult with count of retried songs
@@ -198,12 +203,12 @@ class LibrarySongsMixin:
 
         """
         self._get_library_or_error(library)
-        errored_ids = get_errored_song_ids(self.db, library)
-        if song_ids:
-            allowed = set(song_ids)
-            errored_ids = [fid for fid in errored_ids if fid in allowed]
-        if errored_ids:
-            transition_song_state(self.db, errored_ids, STATE_ERRORED, STATE_NOT_ERRORED)
-            transition_song_state(self.db, errored_ids, STATE_PROCESSED, STATE_NOT_PROCESSED)
-        cleared = len(errored_ids)
+        errored = get_errored_song_ids(self.db, library)
+        if songs:
+            allowed = set(songs)
+            errored = [locator for locator in errored if locator in allowed]
+        if errored:
+            transition_song_state(self.db, errored, STATE_ERRORED, STATE_NOT_ERRORED)
+            transition_song_state(self.db, errored, STATE_PROCESSED, STATE_NOT_PROCESSED)
+        cleared = len(errored)
         return RetryErroredResult(retried=cleared)

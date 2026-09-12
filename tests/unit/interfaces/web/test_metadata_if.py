@@ -9,12 +9,21 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
+from nomarr.helpers.song_locator_codec import encode_song_locator
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.web.dependencies import get_metadata_service
 from nomarr.interfaces.api.web.metadata_if import router
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+
+_ENTITY_SONG_TOKEN = encode_song_locator(
+    SongIdentity(
+        library=LibraryIdentity(library_uuid="6313b0d3-d270-47a8-9e0d-21e8255107e3"),
+        normalized_path="songs/track.flac",
+    )
+)
 
 
 @pytest.fixture
@@ -54,7 +63,7 @@ def test_artist_to_albums_to_tracks_round_trips_natural_ids(
         {"id": "Master of Puppets", "display_name": "Master of Puppets", "song_count": 1}
     ]
     metadata_service.list_songs_for_entity.return_value = {
-        "song_ids": [42],
+        "song_ids": [_ENTITY_SONG_TOKEN],
         "total": 1,
         "limit": 100,
         "offset": 0,
@@ -75,7 +84,7 @@ def test_artist_to_albums_to_tracks_round_trips_natural_ids(
     assert albums_response.status_code == 200
     assert albums_response.json()[0]["entity_id"] == "Master of Puppets"
     assert tracks_response.status_code == 200
-    assert tracks_response.json()["song_ids"] == [42]
+    assert tracks_response.json()["song_ids"] == [_ENTITY_SONG_TOKEN]
     metadata_service.list_albums_for_artist.assert_called_once_with("Metallica", limit=100)
     metadata_service.list_artists_for_album.assert_not_called()
     metadata_service.list_songs_for_entity.assert_called_once_with(

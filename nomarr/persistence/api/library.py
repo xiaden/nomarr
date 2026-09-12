@@ -362,9 +362,6 @@ class LibraryDb:
     # Maintenance forwarding (songs)
     # ------------------------------------------------------------------
 
-    def list_orphaned_song_ids(self) -> list[int]:
-        return self._songs.list_orphaned_song_ids()
-
     def prune_orphaned_songs(self) -> int:
         """Delete all songs whose owning library no longer exists; return count."""
         return self._songs.prune_orphaned_songs()

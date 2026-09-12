@@ -36,7 +36,7 @@ def main(argv: list[str] | None = None) -> int:
         "geometry_id": "synthetic-geometry-row",
         "song_id": "song-1",
         "backbone": "backbone-a",
-        "observation_commit_sha256": "commit-1",
+        "observation_group_sha256": "commit-1",
         "stream_ref": "stream-ref-a",
         "stream_fingerprint_sha256": "fingerprint-a",
         "stream_payload_sha256": "payload-a",

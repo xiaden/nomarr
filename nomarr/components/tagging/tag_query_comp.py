@@ -1,12 +1,14 @@
 """Tag query helpers extracted from legacy tag persistence.
 
-All reads route through the sealed intent-level tag facade (``LibraryTagsDb``)
+All reads route through the public ``db.library`` tag forwarders (the intent-level
+``LibraryTagsDb`` sub-facade is reached only via ``db.library``)
 using domain identities (``TagRef`` / ``SongIdentity``) and typed domain
 results (``SongTagAssignment`` / ``Song`` / ``SongTagMatch`` / ``TagUsage``).
-Song handles are translated with the song-side identity bridge
-(``db.library.resolve_song_identity(s)``). Tag get/count/list-song paths
-accept complete natural ``TagRef`` identities and never parse ``tag_id`` or
-convert a numeric natural value into a storage tag primary key.
+Song handles are translated to semantic ``SongIdentity`` locators through the
+public carrier projection (``locators_for_carriers``); results are keyed by
+locators, never generated ids. Tag get/count/list-song paths accept complete
+natural ``TagRef`` identities and never parse ``tag_id`` or convert a numeric
+natural value into a storage tag primary key.
 """
 
 from __future__ import annotations
@@ -17,13 +19,36 @@ from typing import TYPE_CHECKING, Any, cast
 from nomarr.helpers.dataclasses.song_tag_dataclass import TagRef
 from nomarr.helpers.dataclasses.tags_dataclass import Tag, Tags, TagValue
 from nomarr.helpers.dto.tag_curation_dto import TagSongItem
+from nomarr.helpers.song_locator_codec import encode_song_locator
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from nomarr.helpers.dataclasses.library_dataclass import Library
+    from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
+    from nomarr.helpers.dataclasses.song_dataclass import Song
     from nomarr.helpers.dataclasses.song_tag_dataclass import SongTagAssignment
     from nomarr.persistence.db import Database
+
+
+def _project_song_locators(db: Database, songs: Sequence[Song]) -> list[SongIdentity]:
+    """Project bare semantic songs to their UUID-bearing locators in input order.
+
+    Uses the Q3-C public projection :func:`locators_for_carriers`; a song whose
+    owning library or row no longer resolves is skipped deterministically. No
+    generated id, row, resolver, or physical-path heuristic participates.
+    """
+    if not songs:
+        return []
+    # Imported locally: the ``library`` package eagerly imports ``search_files_comp``,
+    # which imports this module. A top-level import closes an order-dependent cycle
+    # (tagging -> library -> search_files_comp -> tagging) that breaks standalone
+    # collection. Both symbols are needed only at call time.
+    from nomarr.components.library.library_song_query_comp import locators_for_carriers
+    from nomarr.components.library.song_query_types import TrackSong
+
+    carriers = [TrackSong(song=song, metadata={}, isrc=None) for song in songs]
+    return [locator for locator in locators_for_carriers(db, carriers) if locator is not None]
 
 
 def _numeric_value(value: object) -> float | None:
@@ -104,7 +129,7 @@ def _first_assignment_value(assignments: Sequence[SongTagAssignment], name: str)
     return ""
 
 
-def _assignments_to_tags(assignments: Sequence[SongTagAssignment]) -> Tags:
+def assignments_to_tags(assignments: Sequence[SongTagAssignment]) -> Tags:
     """Convert public ``SongTagAssignment`` domain values into a canonical ``Tags``.
 
     Component-local conversion over the public facade result (replaces the old
@@ -124,17 +149,6 @@ def _assignments_to_tags(assignments: Sequence[SongTagAssignment]) -> Tags:
         aggregated.setdefault(assignment.name, []).append(cast("TagValue", assignment.value))
     items = tuple(Tag(name=name, values=tuple(values)) for name, values in aggregated.items())
     return Tags(items=items)
-
-
-def _library_song_ids(db: Database, library_id: int) -> set[int] | None:
-    """Resolve a numeric library handle to its song-id set (or None if missing)."""
-    library_identity = db.library.resolve_library_identity(library_id)
-    if library_identity is None:
-        return None
-    library = db.library.get_library_by_name(library_identity.name)
-    if library is None:
-        return None
-    return set(db.library.list_library_song_ids(library, limit=None))
 
 
 def get_tag(db: Database, identity: TagRef) -> dict[str, Any] | None:
@@ -210,55 +224,20 @@ def count_tags_by_name(db: Database, name: str | None = None, search: str | None
     return db.library.count_tags_filtered(name=name, search=search)
 
 
-def get_song_tags(db: Database, song_id: int, name: str | None = None, nomarr_only: bool = False) -> Tags | None:
-    """Return tags for one song as a ``Tags`` DTO, or ``None`` if no tags match."""
-    song_identity = db.library.resolve_song_identity(song_id)
-    if song_identity is None:
-        return None
-    assignments = db.library.list_tags_for_song(song_identity)
-    matching = [
-        assignment
-        for assignment in assignments
-        if (name is None or assignment.name == name) and (not nomarr_only or assignment.namespace == "nom")
-    ]
-    if not matching:
-        return None
-    return _assignments_to_tags(matching)
-
-
-def get_nomarr_tags_bulk(db: Database, file_ids: list[int]) -> dict[int, Tags]:
-    """Return Nomarr-prefixed tags for many files in one query."""
-    if not file_ids:
-        return {}
-
-    identity_map = db.library.resolve_song_identities(file_ids)
-    if not identity_map:
-        return {}
-    id_to_identity = {identity: song_id for song_id, identity in identity_map.items()}
-    by_identity = db.library.list_song_tags_for_songs(list(identity_map.values()), name_starts_with="nom:")
-
-    result: dict[int, Tags] = {}
-    for identity, assignments in by_identity.items():
-        song_id = id_to_identity.get(identity)
-        if song_id is None:
-            continue
-        if not assignments:
-            continue
-        result[song_id] = _assignments_to_tags(assignments)
-    return result
-
-
-def list_songs_for_tag(db: Database, identity: TagRef, limit: int = 100, offset: int = 0) -> list[int]:
-    """List song ids connected to one complete natural tag identity.
+def list_songs_for_tag(db: Database, identity: TagRef, limit: int = 100, offset: int = 0) -> list[SongIdentity]:
+    """List song locators connected to one complete natural tag identity.
 
     Matches the exact ``(name, value, namespace)`` natural key via
-    ``db.library.find_songs_with_tag``; a tag with no matching row yields [].
+    ``db.library.find_songs_with_tag`` and projects each semantic song to its
+    UUID-bearing ``SongIdentity``; a tag with no matching row yields ``[]``.
+    Input order is preserved and unresolved songs are skipped.
     """
-    return [song.song_id for song in db.library.find_songs_with_tag(identity, limit=limit, offset=offset)]
+    songs = db.library.find_songs_with_tag(identity, limit=limit, offset=offset)
+    return _project_song_locators(db, songs)
 
 
-def get_file_ids_matching_tag(db: Database, name: str, operator: str, value: TagValue) -> set[int]:
-    """Return file ids matching one tag comparison."""
+def get_file_ids_matching_tag(db: Database, name: str, operator: str, value: TagValue) -> set[SongIdentity]:
+    """Return song locators matching one tag comparison."""
     all_tags = (
         list(db.library.list_tags(name=name, limit=None))
         if name is not None
@@ -266,25 +245,22 @@ def get_file_ids_matching_tag(db: Database, name: str, operator: str, value: Tag
     )
     matching_tags = [identity for identity in all_tags if _matches_tag_operator(identity.value, operator, value)]
 
-    file_ids: set[int] = set()
-    for identity in matching_tags:
-        for song in db.library.find_songs_with_tag(identity, limit=None):
-            file_ids.add(song.song_id)
-    return file_ids
+    songs = [song for identity in matching_tags for song in db.library.find_songs_with_tag(identity, limit=None)]
+    return set(_project_song_locators(db, songs))
 
 
 def get_file_ids_for_tags(
     db: Database,
     tag_specs: list[tuple[str, str]],
     library: Library | None = None,
-) -> dict[tuple[str, str], set[int]]:
-    """Get file-id sets for many ``(name, value)`` tag specs."""
-    result: dict[tuple[str, str], set[int]] = {}
+) -> dict[tuple[str, str], set[SongIdentity]]:
+    """Get song-locator sets for many ``(name, value)`` tag specs.
 
-    # Resolve library-scoped file ids when a library is provided
-    library_ids: set[int] | None = (
-        {song.song_id for song in db.library.list_songs(library, limit=None)} if library is not None else None
-    )
+    Library scope filters the projected locators on the owning
+    ``LibraryIdentity.library_uuid`` rather than rebuilding an integer
+    library-song-id bridge. ``None`` keeps global scope.
+    """
+    result: dict[tuple[str, str], set[SongIdentity]] = {}
 
     for name, value in tag_specs:
         tags = list(db.library.list_tags(name=name, limit=None))
@@ -292,14 +268,11 @@ def get_file_ids_for_tags(
             candidates = _candidate_filter_values(value)
             tags = [identity for identity in tags if identity.value in candidates]
 
-        file_ids: set[int] = set()
-        for identity in tags:
-            for song in db.library.find_songs_with_tag(identity, limit=None):
-                file_ids.add(song.song_id)
-
-        if library_ids is not None:
-            file_ids &= library_ids
-        result[(name, value)] = file_ids
+        songs = [song for identity in tags for song in db.library.find_songs_with_tag(identity, limit=None)]
+        locators = _project_song_locators(db, songs)
+        if library is not None:
+            locators = [locator for locator in locators if locator.library.library_uuid == library.library_uuid]
+        result[(name, value)] = set(locators)
 
     return result
 
@@ -309,22 +282,18 @@ def get_file_ids_for_mood_tags(
     mood_values: list[str],
     mood_tier: str = "mood-strict",
     library: Library | None = None,
-) -> dict[str, set[int]]:
-    """Return file-id sets for mood values using CONTAINS array matching."""
-    result: dict[str, set[int]] = {}
+) -> dict[str, set[SongIdentity]]:
+    """Return song-locator sets for mood values using CONTAINS array matching."""
+    result: dict[str, set[SongIdentity]] = {}
     name = f"nom:{mood_tier}" if not mood_tier.startswith("nom:") else mood_tier
-
-    library_ids: set[int] | None = (
-        {song.song_id for song in db.library.list_songs(library, limit=None)} if library is not None else None
-    )
 
     for mood_value in mood_values:
         identity = TagRef(name=name, value=mood_value, namespace="nom")
         songs = db.library.find_songs_with_tag_contains(identity, limit=None)
-        file_ids: set[int] = {song.song_id for song in songs}
-        if library_ids is not None:
-            file_ids &= library_ids
-        result[mood_value] = file_ids
+        locators = _project_song_locators(db, songs)
+        if library is not None:
+            locators = [locator for locator in locators if locator.library.library_uuid == library.library_uuid]
+        result[mood_value] = set(locators)
 
     return result
 
@@ -337,15 +306,12 @@ def get_unique_mood_values(db: Database, mood_tier: str = "mood-strict", limit: 
     return values[:limit]
 
 
-def get_distinct_tag_values_for_files(db: Database, file_ids: list[int], name: str) -> list[str]:
-    """Return distinct values for one tag name across many files."""
-    if not file_ids:
+def get_distinct_tag_values_for_files(db: Database, locators: Sequence[SongIdentity], name: str) -> list[str]:
+    """Return distinct string values for one tag name across many song locators."""
+    if not locators:
         return []
 
-    identity_map = db.library.resolve_song_identities(file_ids)
-    if not identity_map:
-        return []
-    by_identity = db.library.list_song_tags_for_songs(list(identity_map.values()))
+    by_identity = db.library.list_song_tags_for_songs(list(locators))
     values = {
         str(assignment.value)
         for assignments in by_identity.values()
@@ -355,42 +321,38 @@ def get_distinct_tag_values_for_files(db: Database, file_ids: list[int], name: s
     return sorted(values)
 
 
-def get_tag_values_grouped_by_file(db: Database, file_ids: list[int], name: str) -> dict[int, set[str]]:
-    """Return tag values grouped by file for one tag name."""
-    if not file_ids:
+def get_tag_values_grouped_by_file(
+    db: Database, locators: Sequence[SongIdentity], name: str
+) -> dict[SongIdentity, set[str]]:
+    """Return string tag values grouped by song locator for one tag name."""
+    if not locators:
         return {}
 
-    identity_map = db.library.resolve_song_identities(file_ids)
-    if not identity_map:
-        return {}
-    id_to_identity = {identity: song_id for song_id, identity in identity_map.items()}
-    by_identity = db.library.list_song_tags_for_songs(list(identity_map.values()))
-    result: dict[int, set[str]] = {}
+    by_identity = db.library.list_song_tags_for_songs(list(locators))
+    result: dict[SongIdentity, set[str]] = {}
     for identity, assignments in by_identity.items():
-        song_id = id_to_identity.get(identity)
-        if song_id is None:
-            continue
         for assignment in assignments:
             if assignment.name != name or not isinstance(assignment.value, str):
                 continue
-            result.setdefault(song_id, set()).add(assignment.value)
+            result.setdefault(identity, set()).add(assignment.value)
     return result
 
 
 def get_tag_songs_with_metadata(db: Database, identity: TagRef, limit: int = 50, offset: int = 0) -> list[TagSongItem]:
-    """Return song rows for a tag with basic file metadata."""
+    """Return song rows for a tag with basic file metadata.
+
+    ``file_id`` is the opaque ``nom1`` SongLocator token of the song; no
+    generated integer id crosses this projection.
+    """
     result: list[TagSongItem] = []
-    for song_id in list_songs_for_tag(db, identity, limit=limit, offset=offset):
-        song = db.library.get_song(song_id)
+    for locator in list_songs_for_tag(db, identity, limit=limit, offset=offset):
+        song = db.library.get_song(locator)
         if song is None:
             continue
-        song_identity = db.library.resolve_song_identity(song_id)
-        if song_identity is None:
-            continue
-        assignments = db.library.list_tags_for_song(song_identity)
+        assignments = db.library.list_tags_for_song(locator)
         result.append(
             TagSongItem(
-                file_id=song_id,
+                file_id=encode_song_locator(locator),
                 title=_first_assignment_value(assignments, "title"),
                 artist=_first_assignment_value(assignments, "artist"),
                 album=_first_assignment_value(assignments, "album"),

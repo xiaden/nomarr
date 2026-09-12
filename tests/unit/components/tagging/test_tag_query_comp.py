@@ -1,15 +1,17 @@
 """Tests for nomarr.components.tagging.tag_query_comp module.
 
-Phase 6 rewrite: asserts the migrated domain-facing API. All reads route
+Q3-H rewrite: asserts the locator-keyed domain-facing API. All reads route
 through the sealed ``LibraryTagsDb`` facade using ``TagRef`` /
 ``SongIdentity`` and typed results (``SongTagAssignment`` / ``Song`` /
-``TagUsage``); song handles are translated by the song-side identity bridge
-(``db.library.resolve_song_identity(s)``). Tag reads accept complete natural
-``TagRef`` identities and never parse an integer tag primary key.
+``TagUsage``); bare ``Song`` results are projected to UUID-bearing
+``SongIdentity`` locators via the Q3-C public carrier projection
+(``locators_for_carriers``). No generated id, row, resolver, or path heuristic
+participates in the analytics helpers.
 """
 
 from __future__ import annotations
 
+import inspect
 from unittest.mock import MagicMock
 
 import pytest
@@ -19,13 +21,14 @@ from nomarr.components.tagging.tag_query_comp import (
     _first_assignment_value,
     _matches_tag_operator,
     _numeric_value,
+    _project_song_locators,
+    assignments_to_tags,
     count_songs_for_tag,
     count_tags_by_name,
     get_distinct_tag_values_for_files,
     get_file_ids_for_mood_tags,
+    get_file_ids_for_tags,
     get_file_ids_matching_tag,
-    get_nomarr_tags_bulk,
-    get_song_tags,
     get_tag,
     get_tag_songs_with_metadata,
     get_tag_values_grouped_by_file,
@@ -36,13 +39,16 @@ from nomarr.helpers.dataclasses.library_dataclass import Library
 from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
 from nomarr.helpers.dataclasses.song_dataclass import Song
 from nomarr.helpers.dataclasses.song_tag_dataclass import SongTagAssignment, TagRef, TagUsage
+from nomarr.helpers.song_locator_codec import encode_song_locator
+
+# Canonical lowercase version-4 UUID accepted by the opaque ``nom1`` codec.
+_LIBRARY_UUID = "6313b0d3-d270-4a8e-9e0d-21e8255107e3"
+_LIBRARY = Library(name="Music", root_path="/music", library_uuid=_LIBRARY_UUID)
+_LIBRARY_IDENTITY = LibraryIdentity(library_uuid=_LIBRARY_UUID, name="Music", root_path="/music")
 
 
 def _song(**overrides: object) -> Song:
     base: dict = {
-        "song_id": 1,
-        "library_id": 1,
-        "folder_id": None,
         "path": "/music/song.mp3",
         "normalized_path": "song.mp3",
         "file_size": 100,
@@ -62,11 +68,35 @@ def _song(**overrides: object) -> Song:
     return Song(**base)
 
 
-def _song_identity(song_id: int) -> SongIdentity:
+def _locator(normalized_path: str, library: Library | None = None) -> SongIdentity:
+    """Build the ``SongIdentity`` a resolved song projects to."""
+    selected = library or _LIBRARY
     return SongIdentity(
-        library=LibraryIdentity(library_uuid="6313b0d3-d270-57a8-9e0d-21e8255107e3", name="Music", root_path="/music"),
-        normalized_path=f"song{song_id}.mp3",
+        library=LibraryIdentity(
+            library_uuid=selected.library_uuid,
+            name=selected.name,
+            root_path=selected.root_path,
+        ),
+        normalized_path=normalized_path,
     )
+
+
+def _wire_projection(db: MagicMock, pairs: list[tuple[Library, list[Song]]]) -> None:
+    """Wire the Q3-C carrier projection facades for the given library/song pairs."""
+    db.library.list_libraries.return_value = [library for library, _ in pairs]
+
+    def _resolve(requested: list[SongIdentity]) -> list[Song]:
+        resolved: list[Song] = []
+        for library, songs in pairs:
+            by_path = {song.normalized_path: song for song in songs}
+            resolved.extend(
+                by_path[identity.normalized_path]
+                for identity in requested
+                if identity.library.library_uuid == library.library_uuid and identity.normalized_path in by_path
+            )
+        return resolved
+
+    db.library.list_songs_by_identity.side_effect = _resolve
 
 
 class TestMatchesTagOperator:
@@ -183,6 +213,29 @@ class TestNumericValue:
         assert _numeric_value(value) is None
 
 
+class TestAssignmentsToTags:
+    """Tests for the public ``assignments_to_tags`` projection."""
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_merges_duplicate_names_and_preserves_order(self) -> None:
+        assignments = [
+            SongTagAssignment(name="genre", value="Rock"),
+            SongTagAssignment(name="genre", value="Pop"),
+            SongTagAssignment(name="artist", value="A"),
+        ]
+
+        tags = assignments_to_tags(assignments)
+
+        assert tags.to_dict() == {"artist": ("A",), "genre": ("Rock", "Pop")}
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_empty_input_raises_canonical_value_error(self) -> None:
+        with pytest.raises(ValueError):
+            assignments_to_tags([])
+
+
 class TestListTagsByName:
     """Tests for list_tags_by_name."""
 
@@ -274,7 +327,7 @@ class TestCountSongsForTag:
     def test_counts_songs_via_natural_identity_lookup(self) -> None:
         mock_db = MagicMock()
         electronic = TagRef(name="genre", value="Electronic")
-        mock_db.library.find_songs_with_tag.return_value = (_song(song_id=1), _song(song_id=2))
+        mock_db.library.find_songs_with_tag.return_value = (_song(), _song())
 
         result = count_songs_for_tag(mock_db, electronic)
 
@@ -305,7 +358,7 @@ class TestCountSongsForTag:
         mock_db = MagicMock()
         string_120 = TagRef(name="bpm", value="120")
         int_120 = TagRef(name="bpm", value=120)
-        mock_db.library.find_songs_with_tag.return_value = (_song(song_id=7),)
+        mock_db.library.find_songs_with_tag.return_value = (_song(),)
 
         result = count_songs_for_tag(mock_db, string_120)
 
@@ -320,7 +373,7 @@ class TestCountSongsForTag:
     def test_preserves_namespace_separation(self) -> None:
         """nom vs default namespaces route through distinct natural identities."""
         mock_db = MagicMock()
-        mock_db.library.find_songs_with_tag.return_value = (_song(song_id=1),)
+        mock_db.library.find_songs_with_tag.return_value = (_song(),)
         nom = TagRef(name="nom:mood-tier-1", value="calm", namespace="nom")
         ordinary = TagRef(name="mood-tier-1", value="calm")
 
@@ -338,14 +391,16 @@ class TestListSongsForTag:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_returns_song_ids_from_domain_songs(self) -> None:
+    def test_returns_song_locators_from_domain_songs(self) -> None:
         mock_db = MagicMock()
         electronic = TagRef(name="genre", value="Electronic")
-        mock_db.library.find_songs_with_tag.return_value = (_song(song_id=1),)
+        song = _song(normalized_path="a.mp3")
+        mock_db.library.find_songs_with_tag.return_value = (song,)
+        _wire_projection(mock_db, [(_LIBRARY, [song])])
 
         result = list_songs_for_tag(mock_db, electronic, limit=5, offset=2)
 
-        assert result == [1]
+        assert result == [_locator("a.mp3")]
         mock_db.library.find_songs_with_tag.assert_called_once_with(electronic, limit=5, offset=2)
 
     @pytest.mark.unit
@@ -360,6 +415,7 @@ class TestListSongsForTag:
         mock_db.library.find_songs_with_tag.assert_called_once_with(
             TagRef(name="genre", value="Electronic"), limit=100, offset=0
         )
+        mock_db.library.list_libraries.assert_not_called()
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -367,11 +423,14 @@ class TestListSongsForTag:
         """A listed natural identity drives the song lookup unchanged."""
         mock_db = MagicMock()
         usage_identity = TagRef(name="genre", value="Electronic")
-        mock_db.library.find_songs_with_tag.return_value = (_song(song_id=1), _song(song_id=2))
+        first = _song(normalized_path="a.mp3")
+        second = _song(normalized_path="b.mp3")
+        mock_db.library.find_songs_with_tag.return_value = (first, second)
+        _wire_projection(mock_db, [(_LIBRARY, [first, second])])
 
         result = list_songs_for_tag(mock_db, usage_identity, limit=50, offset=0)
 
-        assert result == [1, 2]
+        assert result == [_locator("a.mp3"), _locator("b.mp3")]
         mock_db.library.find_songs_with_tag.assert_called_once_with(usage_identity, limit=50, offset=0)
 
 
@@ -380,14 +439,13 @@ class TestGetTagSongsWithMetadata:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_returns_tag_song_items_with_metadata(self) -> None:
+    def test_returns_tag_song_items_with_opaque_locator_file_id(self) -> None:
         mock_db = MagicMock()
         electronic = TagRef(name="genre", value="Electronic")
-        song = _song(song_id=3)
+        song = _song()
         mock_db.library.find_songs_with_tag.return_value = (song,)
+        _wire_projection(mock_db, [(_LIBRARY, [song])])
         mock_db.library.get_song.return_value = song
-        song_identity = _song_identity(3)
-        mock_db.library.resolve_song_identity.return_value = song_identity
         mock_db.library.list_tags_for_song.return_value = (
             SongTagAssignment(name="title", value="Neon"),
             SongTagAssignment(name="artist", value="Synthwave Artist"),
@@ -397,17 +455,15 @@ class TestGetTagSongsWithMetadata:
         result = get_tag_songs_with_metadata(mock_db, electronic, limit=5, offset=2)
 
         assert len(result) == 1
-        assert result[0] == {
-            "file_id": 3,
-            "title": "Neon",
-            "artist": "Synthwave Artist",
-            "album": "Retro",
-            "path": "/music/song.mp3",
-        }
+        assert result[0]["file_id"] == encode_song_locator(_locator("song.mp3"))
+        assert result[0]["file_id"].startswith("nom1")
+        assert result[0]["title"] == "Neon"
+        assert result[0]["artist"] == "Synthwave Artist"
+        assert result[0]["album"] == "Retro"
+        assert result[0]["path"] == "/music/song.mp3"
         mock_db.library.find_songs_with_tag.assert_called_once_with(electronic, limit=5, offset=2)
-        mock_db.library.get_song.assert_called_once_with(3)
-        mock_db.library.resolve_song_identity.assert_called_once_with(3)
-        mock_db.library.list_tags_for_song.assert_called_once_with(song_identity)
+        mock_db.library.get_song.assert_called_once_with(_locator("song.mp3"))
+        mock_db.library.list_tags_for_song.assert_called_once_with(_locator("song.mp3"))
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -419,6 +475,30 @@ class TestGetTagSongsWithMetadata:
 
         assert result == []
         mock_db.library.get_song.assert_not_called()
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_skips_song_whose_locator_projection_is_none(self) -> None:
+        """An unresolved song projects to no locator, so its row is skipped."""
+        mock_db = MagicMock()
+        electronic = TagRef(name="genre", value="Electronic")
+        resolvable = _song(normalized_path="a.mp3")
+        unresolved = _song(normalized_path="z.mp3")
+        mock_db.library.find_songs_with_tag.return_value = (resolvable, unresolved)
+        # Only the resolvable song is registered in the library projection; the
+        # unresolved song yields ``None`` from ``locators_for_carriers``.
+        _wire_projection(mock_db, [(_LIBRARY, [resolvable])])
+        mock_db.library.get_song.return_value = resolvable
+        mock_db.library.list_tags_for_song.return_value = (SongTagAssignment(name="title", value="Neon"),)
+
+        result = get_tag_songs_with_metadata(mock_db, electronic)
+
+        assert len(result) == 1
+        assert result[0]["file_id"] == encode_song_locator(_locator("a.mp3"))
+        assert result[0]["file_id"].startswith("nom1")
+        assert result[0]["title"] == "Neon"
+        mock_db.library.get_song.assert_called_once_with(_locator("a.mp3"))
+        mock_db.library.list_tags_for_song.assert_called_once_with(_locator("a.mp3"))
 
 
 class TestCountTagsByName:
@@ -458,85 +538,25 @@ class TestCountTagsByName:
         mock_db.library.count_tags_filtered.assert_called_once_with(name="genre", search="classical")
 
 
-class TestGetNomarrTagsBulk:
-    """Tests for get_nomarr_tags_bulk."""
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
-    def test_returns_empty_dict_for_empty_file_ids(self) -> None:
-        mock_db = MagicMock()
-
-        result = get_nomarr_tags_bulk(mock_db, [])
-
-        assert result == {}
-        mock_db.library.resolve_song_identities.assert_not_called()
-        mock_db.library.list_song_tags_for_songs.assert_not_called()
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
-    def test_batches_nomarr_rows_by_file_id(self) -> None:
-        mock_db = MagicMock()
-        id1 = _song_identity(1)
-        id2 = _song_identity(2)
-        mock_db.library.resolve_song_identities.return_value = {1: id1, 2: id2}
-        mock_db.library.list_song_tags_for_songs.return_value = {
-            id1: (
-                SongTagAssignment(name="nom:mood", value="calm"),
-                SongTagAssignment(name="nom:mood", value="bright"),
-            ),
-            id2: (SongTagAssignment(name="nom:energy", value=0.91),),
-        }
-
-        result = get_nomarr_tags_bulk(mock_db, [1, 2])
-
-        assert result[1].to_dict() == {"nom:mood": ("calm", "bright")}
-        assert result[2].to_dict() == {"nom:energy": (0.91,)}
-        mock_db.library.resolve_song_identities.assert_called_once_with([1, 2])
-        mock_db.library.list_song_tags_for_songs.assert_called_once_with([id1, id2], name_starts_with="nom:")
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
-    def test_preserves_scalar_types_and_required_fields(self) -> None:
-        """Bulk conversion keeps scalar value types; persistence-only fields stay out."""
-        mock_db = MagicMock()
-        id1 = _song_identity(1)
-        mock_db.library.resolve_song_identities.return_value = {1: id1}
-        mock_db.library.list_song_tags_for_songs.return_value = {
-            id1: (
-                SongTagAssignment(name="nom:energy", value=0.91, namespace="nom", confidence=0.8, source="ml"),
-                SongTagAssignment(name="nom:energy", value=0.91),
-                SongTagAssignment(name="nom:year", value=1990),
-            ),
-        }
-
-        result = get_nomarr_tags_bulk(mock_db, [1])
-
-        assert result[1].to_dict() == {"nom:energy": (0.91,), "nom:year": (1990,)}
-        mock_db.library.resolve_song_identities.assert_called_once_with([1])
-        mock_db.library.list_song_tags_for_songs.assert_called_once_with([id1], name_starts_with="nom:")
-
-
 class TestGetDistinctTagValuesForFiles:
-    """Tests for get_distinct_tag_values_for_files."""
+    """Tests for get_distinct_tag_values_for_files (locator-keyed)."""
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_returns_empty_list_for_empty_file_ids(self) -> None:
+    def test_returns_empty_list_for_empty_locators(self) -> None:
         mock_db = MagicMock()
 
         result = get_distinct_tag_values_for_files(mock_db, [], "genre")
 
         assert result == []
-        mock_db.library.resolve_song_identities.assert_not_called()
         mock_db.library.list_song_tags_for_songs.assert_not_called()
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_returns_sorted_distinct_string_values(self) -> None:
         mock_db = MagicMock()
-        id1 = _song_identity(1)
-        id2 = _song_identity(2)
-        mock_db.library.resolve_song_identities.return_value = {1: id1, 2: id2}
+        id1 = _locator("song1.mp3")
+        id2 = _locator("song2.mp3")
         mock_db.library.list_song_tags_for_songs.return_value = {
             id1: (
                 SongTagAssignment(name="genre", value="Rock"),
@@ -549,35 +569,32 @@ class TestGetDistinctTagValuesForFiles:
             ),
         }
 
-        result = get_distinct_tag_values_for_files(mock_db, [1, 2], "genre")
+        result = get_distinct_tag_values_for_files(mock_db, [id1, id2], "genre")
 
         assert result == ["Ambient", "Pop", "Rock"]
-        mock_db.library.resolve_song_identities.assert_called_once_with([1, 2])
         mock_db.library.list_song_tags_for_songs.assert_called_once_with([id1, id2])
 
 
 class TestGetTagValuesGroupedByFile:
-    """Tests for get_tag_values_grouped_by_file."""
+    """Tests for get_tag_values_grouped_by_file (locator-keyed)."""
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_returns_empty_dict_for_empty_file_ids(self) -> None:
+    def test_returns_empty_dict_for_empty_locators(self) -> None:
         mock_db = MagicMock()
 
         result = get_tag_values_grouped_by_file(mock_db, [], "genre")
 
         assert result == {}
-        mock_db.library.resolve_song_identities.assert_not_called()
         mock_db.library.list_song_tags_for_songs.assert_not_called()
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_groups_matching_values_by_file(self) -> None:
+    def test_groups_matching_values_by_locator(self) -> None:
         mock_db = MagicMock()
-        id1 = _song_identity(1)
-        id2 = _song_identity(2)
-        id3 = _song_identity(3)
-        mock_db.library.resolve_song_identities.return_value = {1: id1, 2: id2, 3: id3}
+        id1 = _locator("song1.mp3")
+        id2 = _locator("song2.mp3")
+        id3 = _locator("song3.mp3")
         mock_db.library.list_song_tags_for_songs.return_value = {
             id1: (
                 SongTagAssignment(name="genre", value="Rock"),
@@ -590,202 +607,112 @@ class TestGetTagValuesGroupedByFile:
             ),
         }
 
-        result = get_tag_values_grouped_by_file(mock_db, [1, 2, 3], "genre")
+        result = get_tag_values_grouped_by_file(mock_db, [id1, id2, id3], "genre")
 
         assert result == {
-            1: {"Rock", "Pop"},
-            3: {"Jazz"},
+            id1: {"Rock", "Pop"},
+            id3: {"Jazz"},
         }
-        mock_db.library.resolve_song_identities.assert_called_once_with([1, 2, 3])
         mock_db.library.list_song_tags_for_songs.assert_called_once_with([id1, id2, id3])
 
 
-class TestGetSongTags:
-    """Tests for get_song_tags."""
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
-    def test_returns_all_tags_when_no_filters_are_provided(self) -> None:
-        mock_db = MagicMock()
-        song_identity = _song_identity(1)
-        mock_db.library.resolve_song_identity.return_value = song_identity
-        mock_db.library.list_tags_for_song.return_value = (
-            SongTagAssignment(name="genre", value="Rock"),
-            SongTagAssignment(name="artist", value="Artist One"),
-        )
-
-        result = get_song_tags(mock_db, 1)
-
-        assert result.to_dict() == {
-            "artist": ("Artist One",),
-            "genre": ("Rock",),
-        }
-        mock_db.library.resolve_song_identity.assert_called_once_with(1)
-        mock_db.library.list_tags_for_song.assert_called_once_with(song_identity)
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
-    def test_filters_by_name_when_name_is_provided(self) -> None:
-        mock_db = MagicMock()
-        song_identity = _song_identity(1)
-        mock_db.library.resolve_song_identity.return_value = song_identity
-        mock_db.library.list_tags_for_song.return_value = (
-            SongTagAssignment(name="genre", value="Rock"),
-            SongTagAssignment(name="artist", value="Artist One"),
-            SongTagAssignment(name="genre", value="Pop"),
-        )
-
-        result = get_song_tags(mock_db, 1, name="genre")
-
-        assert result.to_dict() == {"genre": ("Rock", "Pop")}
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
-    def test_filters_to_nomarr_tags_when_nomarr_only_is_true(self) -> None:
-        mock_db = MagicMock()
-        song_identity = _song_identity(1)
-        mock_db.library.resolve_song_identity.return_value = song_identity
-        mock_db.library.list_tags_for_song.return_value = (
-            SongTagAssignment(name="genre", value="Rock", namespace="default"),
-            SongTagAssignment(name="nom:mood-tier-1", value="calm", namespace="nom"),
-            SongTagAssignment(name="nom:mood-tier-1", value="bright", namespace="nom"),
-        )
-
-        result = get_song_tags(mock_db, 1, nomarr_only=True)
-
-        assert result.to_dict() == {"nom:mood-tier-1": ("calm", "bright")}
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
-    def test_returns_none_when_no_rows_match(self) -> None:
-        """The strict None state represents a song with no matching tags."""
-        mock_db = MagicMock()
-        song_identity = _song_identity(1)
-        mock_db.library.resolve_song_identity.return_value = song_identity
-        mock_db.library.list_tags_for_song.return_value = (SongTagAssignment(name="genre", value="Rock"),)
-
-        result = get_song_tags(mock_db, 1, name="artist")
-
-        assert result is None
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
-    def test_returns_none_when_no_rows_at_all(self) -> None:
-        mock_db = MagicMock()
-        song_identity = _song_identity(1)
-        mock_db.library.resolve_song_identity.return_value = song_identity
-        mock_db.library.list_tags_for_song.return_value = ()
-
-        result = get_song_tags(mock_db, 1)
-
-        assert result is None
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
-    def test_returns_none_when_song_identity_not_resolved(self) -> None:
-        mock_db = MagicMock()
-        mock_db.library.resolve_song_identity.return_value = None
-
-        result = get_song_tags(mock_db, 999)
-
-        assert result is None
-        mock_db.library.list_tags_for_song.assert_not_called()
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
-    def test_preserves_mixed_scalar_value_types(self) -> None:
-        """Mixed value types (str/int/float/bool) survive conversion untouched."""
-        mock_db = MagicMock()
-        song_identity = _song_identity(1)
-        mock_db.library.resolve_song_identity.return_value = song_identity
-        mock_db.library.list_tags_for_song.return_value = (
-            SongTagAssignment(name="year", value=1990),
-            SongTagAssignment(name="rating", value=3.5),
-            SongTagAssignment(name="genre", value="Rock"),
-            SongTagAssignment(name="is_compilation", value=True),
-        )
-
-        result = get_song_tags(mock_db, 1)
-
-        assert result.to_dict() == {
-            "genre": ("Rock",),
-            "is_compilation": (True,),
-            "rating": (3.5,),
-            "year": (1990,),
-        }
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
-    def test_merges_duplicate_names_and_dedupes_values(self) -> None:
-        """Repeated names collapse into one Tag with duplicate values removed."""
-        mock_db = MagicMock()
-        song_identity = _song_identity(1)
-        mock_db.library.resolve_song_identity.return_value = song_identity
-        mock_db.library.list_tags_for_song.return_value = (
-            SongTagAssignment(name="genre", value="Rock"),
-            SongTagAssignment(name="genre", value="Pop"),
-            SongTagAssignment(name="genre", value="Rock"),
-        )
-
-        result = get_song_tags(mock_db, 1)
-
-        assert result.to_dict() == {"genre": ("Rock", "Pop")}
-
-    @pytest.mark.unit
-    @pytest.mark.mocked
-    def test_preserves_name_value_and_not_persistence_only_fields(self) -> None:
-        """Public name/value carry through; source/confidence/namespace do not leak."""
-        mock_db = MagicMock()
-        song_identity = _song_identity(1)
-        mock_db.library.resolve_song_identity.return_value = song_identity
-        mock_db.library.list_tags_for_song.return_value = (
-            SongTagAssignment(name="nom:mood", value="calm", namespace="nom", confidence=0.9, source="ml"),
-            SongTagAssignment(name="genre", value="Rock"),
-        )
-
-        result = get_song_tags(mock_db, 1)
-
-        assert result.to_dict() == {"genre": ("Rock",), "nom:mood": ("calm",)}
-
-
 class TestGetFileIdsMatchingTag:
-    """Tests for get_file_ids_matching_tag - verifies domain tags/songs matching."""
+    """Tests for get_file_ids_matching_tag - locator projection."""
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_uses_domain_tags_and_songs_for_file_lookup(self) -> None:
+    def test_uses_domain_tags_and_songs_for_locator_lookup(self) -> None:
         """Matching domain tag identities drive per-identity song lookups."""
         mock_db = MagicMock()
         rock = TagRef(name="genre", value="Rock")
         jazz = TagRef(name="genre", value="Jazz")
         mock_db.library.list_tags.return_value = (rock, jazz)
+        first = _song(normalized_path="a.mp3")
+        second = _song(normalized_path="b.mp3")
+        third = _song(normalized_path="c.mp3")
         mock_db.library.find_songs_with_tag.side_effect = [
-            (_song(song_id=1), _song(song_id=3)),
-            (_song(song_id=2),),
+            (first, third),
+            (second,),
         ]
+        _wire_projection(mock_db, [(_LIBRARY, [first, second, third])])
 
         result = get_file_ids_matching_tag(mock_db, "genre", "==", "Rock")
 
-        assert result == {1, 3}
+        assert result == {_locator("a.mp3"), _locator("c.mp3")}
         mock_db.library.list_tags.assert_called_once_with(name="genre", limit=None)
         mock_db.library.find_songs_with_tag.assert_called_once_with(rock, limit=None)
 
 
+class TestGetFileIdsForTags:
+    """Tests for get_file_ids_for_tags (locator-keyed, library-scoped by uuid)."""
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_returns_locator_sets_per_spec(self) -> None:
+        mock_db = MagicMock()
+        rock = TagRef(name="genre", value="Rock")
+        first = _song(normalized_path="a.mp3")
+        second = _song(normalized_path="b.mp3")
+        mock_db.library.list_tags.return_value = (rock,)
+        mock_db.library.find_songs_with_tag.return_value = (first, second)
+        _wire_projection(mock_db, [(_LIBRARY, [first, second])])
+
+        result = get_file_ids_for_tags(mock_db, [("genre", "Rock")])
+
+        assert result == {("genre", "Rock"): {_locator("a.mp3"), _locator("b.mp3")}}
+        mock_db.library.list_tags.assert_called_once_with(name="genre", limit=None)
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_scopes_locators_to_library_uuid(self) -> None:
+        """Library scope filters projected locators on the owning library uuid."""
+        mock_db = MagicMock()
+        other_library = Library(name="Other", root_path="/other", library_uuid="aaaaaaaa-1111-4bbb-8ccc-222222222222")
+        in_library = _song(normalized_path="a.mp3")
+        out_of_library = _song(normalized_path="z.mp3")
+        mock_db.library.list_tags.return_value = (TagRef(name="genre", value="Rock"),)
+        mock_db.library.find_songs_with_tag.return_value = (in_library, out_of_library)
+        _wire_projection(mock_db, [(_LIBRARY, [in_library]), (other_library, [out_of_library])])
+
+        result = get_file_ids_for_tags(mock_db, [("genre", "Rock")], library=_LIBRARY)
+
+        assert result == {("genre", "Rock"): {_locator("a.mp3")}}
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_wildcard_value_matches_all_tags_for_the_name(self) -> None:
+        """``*`` bypasses value filtering and unions every matching tag's songs."""
+        mock_db = MagicMock()
+        rock = TagRef(name="genre", value="Rock")
+        jazz = TagRef(name="genre", value="Jazz")
+        first = _song(normalized_path="a.mp3")
+        second = _song(normalized_path="b.mp3")
+        mock_db.library.list_tags.return_value = (rock, jazz)
+        mock_db.library.find_songs_with_tag.side_effect = [(first,), (second,)]
+        _wire_projection(mock_db, [(_LIBRARY, [first, second])])
+
+        result = get_file_ids_for_tags(mock_db, [("genre", "*")])
+
+        assert result == {("genre", "*"): {_locator("a.mp3"), _locator("b.mp3")}}
+        mock_db.library.list_tags.assert_called_once_with(name="genre", limit=None)
+
+
 class TestGetFileIdsForMoodTags:
-    """Tests for get_file_ids_for_mood_tags."""
+    """Tests for get_file_ids_for_mood_tags (locator-keyed, CONTAINS matching)."""
 
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_uses_contains_matching_for_mood_tags(self) -> None:
         """Mood tags are stored as arrays, so we need CONTAINS matching."""
         mock_db = MagicMock()
-        # Simulate files with mood arrays
+        first = _song(normalized_path="a.mp3")
+        second = _song(normalized_path="b.mp3")
+        third = _song(normalized_path="c.mp3")
         mock_db.library.find_songs_with_tag_contains.side_effect = [
-            # Files with "aggressive" in their mood array
-            (_song(song_id=1), _song(song_id=2)),
-            # Files with "happy" in their mood array
-            (_song(song_id=2), _song(song_id=3)),
+            (first, second),
+            (second, third),
         ]
+        _wire_projection(mock_db, [(_LIBRARY, [first, second, third])])
 
         result = get_file_ids_for_mood_tags(
             mock_db,
@@ -794,8 +721,8 @@ class TestGetFileIdsForMoodTags:
         )
 
         assert result == {
-            "aggressive": {1, 2},
-            "happy": {2, 3},
+            "aggressive": {_locator("a.mp3"), _locator("b.mp3")},
+            "happy": {_locator("b.mp3"), _locator("c.mp3")},
         }
         # Verify CONTAINS method was called (not exact match) with domain identities
         assert mock_db.library.find_songs_with_tag_contains.call_count == 2
@@ -811,26 +738,22 @@ class TestGetFileIdsForMoodTags:
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_scopes_to_library_when_provided(self) -> None:
-        """A library should restrict results to files in that library."""
-        library = Library(name="Music", root_path="/music")
+        """A library should restrict results to locators owned by that library."""
+        other_library = Library(name="Other", root_path="/other", library_uuid="aaaaaaaa-1111-4bbb-8ccc-222222222222")
         mock_db = MagicMock()
-        mock_db.library.list_songs.return_value = (_song(song_id=1), _song(song_id=2))
-        mock_db.library.find_songs_with_tag_contains.return_value = (
-            _song(song_id=1),
-            _song(song_id=2),
-            _song(song_id=3),  # Not in library
-        )
+        in_library = _song(normalized_path="a.mp3")
+        out_of_library = _song(normalized_path="z.mp3")
+        mock_db.library.find_songs_with_tag_contains.return_value = (in_library, out_of_library)
+        _wire_projection(mock_db, [(_LIBRARY, [in_library]), (other_library, [out_of_library])])
 
         result = get_file_ids_for_mood_tags(
             mock_db,
             mood_values=["aggressive"],
             mood_tier="mood-strict",
-            library=library,
+            library=_LIBRARY,
         )
 
-        # Should only include files 1 and 2 (file 3 is not in the library)
-        assert result == {"aggressive": {1, 2}}
-        mock_db.library.list_songs.assert_called_once_with(library, limit=None)
+        assert result == {"aggressive": {_locator("a.mp3")}}
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -846,3 +769,62 @@ class TestGetFileIdsForMoodTags:
         )
 
         assert result == {"nonexistent": set()}
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_already_namespaced_mood_tier_is_not_double_prefixed(self) -> None:
+        """A tier that is already ``nom:``-prefixed is forwarded unchanged."""
+        mock_db = MagicMock()
+        song = _song(normalized_path="a.mp3")
+        mock_db.library.find_songs_with_tag_contains.return_value = (song,)
+        _wire_projection(mock_db, [(_LIBRARY, [song])])
+
+        result = get_file_ids_for_mood_tags(
+            mock_db,
+            mood_values=["aggressive"],
+            mood_tier="nom:mood-strict",
+        )
+
+        assert result == {"aggressive": {_locator("a.mp3")}}
+        mock_db.library.find_songs_with_tag_contains.assert_called_once_with(
+            TagRef(name="nom:mood-strict", value="aggressive", namespace="nom"),
+            limit=None,
+        )
+
+
+class TestNoGeneratedIdProjection:
+    """Negative proof: the analytics helpers never derive a generated id."""
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_song_carries_no_generated_id(self) -> None:
+        assert not hasattr(Song, "song_id")
+        assert not hasattr(Song, "library_id")
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_owned_helpers_have_no_generated_id_or_resolver(self) -> None:
+        owned = (
+            _project_song_locators,
+            assignments_to_tags,
+            list_songs_for_tag,
+            get_file_ids_matching_tag,
+            get_file_ids_for_tags,
+            get_file_ids_for_mood_tags,
+            get_distinct_tag_values_for_files,
+            get_tag_values_grouped_by_file,
+            get_tag_songs_with_metadata,
+        )
+        forbidden = (
+            ".song_id",
+            ".to_dict(",
+            "from_row",
+            "resolve_song_identity",
+            "resolve_song_identities",
+            "require_library_song_id",
+            "_locators_for_songs(",
+        )
+        for func in owned:
+            source = inspect.getsource(func)
+            for token in forbidden:
+                assert token not in source, f"{func.__name__} contains forbidden token {token!r}"

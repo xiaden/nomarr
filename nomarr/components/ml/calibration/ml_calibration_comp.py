@@ -13,12 +13,38 @@ import os
 from typing import TYPE_CHECKING, Any, cast
 
 from nomarr.helpers.dataclasses.calibration_state_dataclass import CalibrationState
+from nomarr.helpers.dataclasses.song_tag_dataclass import MoodAssignments
 from nomarr.helpers.dto.ml_dto import SaveCalibrationSidecarsResult
 
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from nomarr.helpers.dataclasses.ml_model_dataclass import RegisteredModel
+    from nomarr.helpers.dataclasses.tags_dataclass import Tags
     from nomarr.persistence.db import Database
+
+
+def mood_tags_to_assignments(mood_tags: Tags | None) -> MoodAssignments | None:
+    """Canonicalize aggregated mood tags into the tag owner's assignment value.
+
+    The tag owner validates and canonicalizes again before SQL; this conversion
+    only maps the aggregation output's unprefixed tier names (``mood-strict``)
+    onto the owner's literal ``nom:`` tiers and normalizes values to strings.
+
+    ``None`` means no mood output and is the owner's clear-all-mood
+    representation; the marker is still applied by the owner so a calibrated
+    no-output publication is recorded.
+    """
+    if mood_tags is None:
+        return None
+    tiers: dict[str, tuple[str, ...]] = {}
+    for tag in mood_tags:
+        normalized = tag.name if tag.name.startswith("nom:") else f"nom:{tag.name}"
+        tiers[normalized] = tuple(str(value) for value in tag.values)
+    return MoodAssignments(
+        strict=tiers.get("nom:mood-strict", ()),
+        regular=tiers.get("nom:mood-regular", ()),
+        loose=tiers.get("nom:mood-loose", ()),
+    )
 
 
 def _parse_tag_key_components(tag_key: str) -> tuple[str, str, str] | None:

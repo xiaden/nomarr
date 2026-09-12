@@ -86,7 +86,7 @@ GEOMETRY_COLUMNS: tuple[str, ...] = (
     "geometry_id",
     "song_id",
     "backbone",
-    "observation_commit_sha256",
+    "observation_group_sha256",
     "stream_ref",
     "stream_fingerprint_sha256",
     "stream_payload_sha256",
@@ -122,7 +122,7 @@ GEOMETRY_COLUMNS: tuple[str, ...] = (
 _GEOMETRY_CREATE = """
 CREATE TABLE IF NOT EXISTS song_patch_geometry (
     geometry_id TEXT NOT NULL, song_id TEXT NOT NULL, backbone TEXT NOT NULL,
-    observation_commit_sha256 TEXT NOT NULL, stream_ref TEXT NOT NULL,
+    observation_group_sha256 TEXT NOT NULL, stream_ref TEXT NOT NULL,
     stream_fingerprint_sha256 TEXT NOT NULL, stream_payload_sha256 TEXT NOT NULL,
     mask_ref TEXT NOT NULL, mask_payload_sha256 TEXT NOT NULL, patch_count INTEGER NOT NULL,
     embedding_dim INTEGER NOT NULL, stream_dtype TEXT NOT NULL, stream_format_version TEXT NOT NULL,
@@ -546,31 +546,14 @@ def ensure_schema(con) -> None:
     monolithic DDL and the two tables owned
     outside the monolithic ``_DDL``: the canonical 16-column ``head_phase_provenance`` table
     and the 29-column ``analyze_incomplete_diagnostics`` table (``_INCOMPLETE_DIAGNOSTICS_CREATE``,
-    built from ``_INCOMPLETE_DIAGNOSTIC_COLUMN_DEFS``).
+    built from ``_INCOMPLETE_DIAGNOSTIC_COLUMN_DEFS``).  The ``geometry_analysis_records``
+    and ``geometry_head_evidence`` tables are defined once in the monolithic ``_DDL``.
     """
     _require_duckdb()
     _ensure_current_analyze_metrics(con)
     con.execute(_DDL)
     con.execute(_GEOMETRY_CREATE)
     con.execute(_HPP_CREATE)
-    con.execute("""CREATE TABLE IF NOT EXISTS geometry_analysis_records (
-        run_id TEXT NOT NULL, geometry_id TEXT NOT NULL, observation_id TEXT NOT NULL,
-        geometry_semantics_version TEXT NOT NULL, numerical_profile_digest TEXT NOT NULL,
-        threshold_id TEXT NOT NULL, structural_identity TEXT NOT NULL,
-        search_representation_id TEXT NOT NULL, evaluation_id TEXT NOT NULL,
-        scoring_semantics_version INTEGER NOT NULL, execution_id TEXT NOT NULL,
-        metric TEXT NOT NULL, value DOUBLE NOT NULL,
-        evidence_json TEXT NOT NULL, created_at_ms BIGINT NOT NULL
-    )""")
-    con.execute("""CREATE TABLE IF NOT EXISTS geometry_head_evidence (
-        run_id TEXT NOT NULL, geometry_id TEXT NOT NULL, observation_id TEXT NOT NULL,
-        geometry_semantics_version TEXT NOT NULL, numerical_profile_digest TEXT NOT NULL,
-        threshold_id TEXT NOT NULL, structural_identity TEXT NOT NULL,
-        search_representation_id TEXT NOT NULL, evaluation_id TEXT NOT NULL,
-        scoring_semantics_version INTEGER NOT NULL, execution_id TEXT NOT NULL,
-        head TEXT NOT NULL, segment_id INTEGER NOT NULL,
-        evidence_json TEXT NOT NULL, created_at_ms BIGINT NOT NULL
-    )""")
     con.execute(_INCOMPLETE_DIAGNOSTICS_CREATE)
     schema_fingerprint(con)
 

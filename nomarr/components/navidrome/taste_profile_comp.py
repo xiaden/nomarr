@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING, cast
 import numpy as np
 
 from nomarr.components.tagging.tag_query_comp import get_tag_values_grouped_by_file
+from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
+from nomarr.helpers.song_locator_codec import SongLocatorFormatError, decode_song_locator
 from nomarr.helpers.time_helper import now_ms
 
 if TYPE_CHECKING:
@@ -16,6 +18,28 @@ if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_token(db: Database, token: str) -> SongIdentity | None:
+    """Resolve an opaque ``nom1`` play token to its UUID-bearing ``SongIdentity``.
+
+    Strict codec decode followed by the public library-UUID facade, mirroring the
+    Navidrome service/component precedent. Malformed tokens and unknown libraries
+    are a miss (``None``); no generated integer identity is accepted or produced.
+    """
+    try:
+        payload = decode_song_locator(token)
+    except SongLocatorFormatError:
+        return None
+    library = db.library.get_library_by_uuid(payload.library_uuid)
+    if library is None:
+        return None
+    identity = LibraryIdentity(
+        library_uuid=library.library_uuid or payload.library_uuid,
+        name=library.name,
+        root_path=library.root_path,
+    )
+    return SongIdentity(library=identity, normalized_path=payload.path)
 
 
 def compute_taste_profile(
@@ -35,12 +59,14 @@ def compute_taste_profile(
     returns the top ``pp_max_clusters`` clusters sorted by total recency
     weight.
 
-    Each play's ``file_id`` handle is resolved to a natural
+    Each play's ``file_id`` is an opaque ``nom1`` SongLocator token; it is
+    resolved to a mutable
     :class:`~nomarr.helpers.dataclasses.song_command_dataclass.SongIdentity`
-    through authoritative ``db.library`` and its embedding read as a domain
+    through the canonical codec and the authoritative ``db.library`` facade, and
+    its embedding is read as a domain
     :class:`~nomarr.helpers.dataclasses.vector_dataclass.SongVector` via the
-    typed ``db.ml.get_song_vector`` intent — never a raw persistence row or
-    storage key.
+    typed ``db.ml.get_song_vector`` intent — never a raw persistence row, storage
+    key, or generated id.
 
     Returns a :class:`TasteProfile` dict with ``clusters``, or ``None`` if no
     play data was provided or insufficient plays with embeddings are available.
@@ -67,54 +93,69 @@ def compute_taste_profile(
         )
         return None
 
-    file_ids = [fid for p in resolved_plays if (fid := p["file_id"]) is not None]
     now_val = now_ms().value
     resolved_backbone = backbone_id or "default"
 
-    # Memoised per-file resolution: a play's file handle is bridged to its
-    # natural SongIdentity via db.library, then the cold-tier stored vector is
-    # read as a SongVector via db.ml. Only the authoritative domain values are
-    # consumed here; no raw song_id/embedding row access remains.
-    _vector_cache: dict[int, list[float] | None] = {}
+    # Resolve each distinct opaque token once to its mutable SongIdentity; an
+    # unresolved/malformed token is dropped before any authoritative tag/vector
+    # read. Only semantic locators cross the component boundary from here.
+    locator_by_token: dict[str, SongIdentity] = {}
+    for play in resolved_plays:
+        token = play["file_id"]
+        if token is None or token in locator_by_token:
+            continue
+        locator = _resolve_token(db, token)
+        if locator is not None:
+            locator_by_token[token] = locator
 
-    def _vector_for_file(fid: int) -> list[float] | None:
-        """Return the stored embedding for ``fid`` (memoised per file handle)."""
-        if fid in _vector_cache:
-            return _vector_cache[fid]
+    locators = list(locator_by_token.values())
+
+    # Memoised per-locator resolution: the cold-tier stored vector is read as a
+    # SongVector via db.ml. No raw song_id/embedding row access remains.
+    _vector_cache: dict[SongIdentity, list[float] | None] = {}
+
+    def _vector_for_locator(locator: SongIdentity) -> list[float] | None:
+        """Return the stored embedding for ``locator`` (memoised per locator)."""
+        if locator in _vector_cache:
+            return _vector_cache[locator]
         vector: list[float] | None = None
-        song = db.library.resolve_song_identity(fid)
-        if song is not None:
-            song_vector = db.ml.get_song_vector(resolved_backbone, song)
-            if song_vector is not None:
-                vector = list(song_vector.vector)
-        _vector_cache[fid] = vector
+        song_vector = db.ml.get_song_vector(resolved_backbone, locator)
+        if song_vector is not None:
+            vector = list(song_vector.vector)
+        _vector_cache[locator] = vector
         return vector
 
-    # Group file_ids by genre
-    # get_tag_values_grouped_by_file returns {file_id: {genre_set}}
-    file_genre_map: dict[int, set[str]] = {}
+    # Group locators by genre; the analytics helper is locator-keyed.
+    file_genre_map: dict[SongIdentity, set[str]] = {}
     if backbone_id:
-        file_genre_map = get_tag_values_grouped_by_file(db, file_ids, "genre")
+        file_genre_map = get_tag_values_grouped_by_file(db, locators, "genre")
 
-    # Invert to {genre: set[file_ids]}
-    genre_to_files: dict[str, set[int]] = {}
-    for fid, genres in file_genre_map.items():
+    # Invert to {genre: set[locators]}
+    genre_to_locators: dict[str, set[SongIdentity]] = {}
+    for locator, genres in file_genre_map.items():
         for genre in genres:
-            genre_to_files.setdefault(genre, set()).add(fid)
+            genre_to_locators.setdefault(genre, set()).add(locator)
 
     # Build per-genre clusters
     clusters: list[dict] = []
-    for genre_label, genre_file_set in genre_to_files.items():
-        genre_plays = [p for p in resolved_plays if p.get("file_id") in genre_file_set]
+    for genre_label, genre_locators in genre_to_locators.items():
+        genre_plays = [
+            p
+            for p in resolved_plays
+            if (token := p["file_id"]) is not None and locator_by_token.get(token) in genre_locators
+        ]
         if len(genre_plays) < 3:
             continue
 
         paired: list[tuple[TrackPlayData, list[float]]] = []
         for play in genre_plays:
-            fid = play.get("file_id")
-            if fid is None:
+            token = play["file_id"]
+            if token is None:
                 continue
-            vec = _vector_for_file(fid)
+            locator = locator_by_token.get(token)
+            if locator is None:
+                continue
+            vec = _vector_for_locator(locator)
             if vec is not None:
                 paired.append((play, vec))
 
@@ -141,18 +182,25 @@ def compute_taste_profile(
             },
         )
 
-    # Add untagged cluster for files without genre
-    tagged_file_ids = set().union(*genre_to_files.values()) if genre_to_files else set()
-    untagged_file_ids = set(file_ids) - tagged_file_ids
-    if untagged_file_ids:
-        untagged_plays = [p for p in resolved_plays if p.get("file_id") in untagged_file_ids]
+    # Add untagged cluster for locators without genre
+    tagged_locators = set().union(*genre_to_locators.values()) if genre_to_locators else set()
+    untagged_locators = set(locators) - tagged_locators
+    if untagged_locators:
+        untagged_plays = [
+            p
+            for p in resolved_plays
+            if (token := p["file_id"]) is not None and locator_by_token.get(token) in untagged_locators
+        ]
         if len(untagged_plays) >= 3:
             ut_paired: list[tuple[TrackPlayData, list[float]]] = []
             for play in untagged_plays:
-                fid = play.get("file_id")
-                if fid is None:
+                token = play["file_id"]
+                if token is None:
                     continue
-                vec = _vector_for_file(fid)
+                locator = locator_by_token.get(token)
+                if locator is None:
+                    continue
+                vec = _vector_for_locator(locator)
                 if vec is not None:
                     ut_paired.append((play, vec))
             if len(ut_paired) >= 3:

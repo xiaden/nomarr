@@ -16,7 +16,9 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from nomarr.helpers.dataclasses.library_dataclass import Library
+from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
 from nomarr.helpers.dataclasses.song_tag_dataclass import TagRef
+from nomarr.helpers.song_locator_codec import encode_song_locator
 from nomarr.helpers.tag_handle_codec import decode_tag_handle, encode_tag_handle
 from nomarr.interfaces.api.auth import verify_session
 from nomarr.interfaces.api.web import tag_curation_if
@@ -26,6 +28,11 @@ from nomarr.interfaces.api.web.dependencies import get_library_service, get_tagg
 def _handle(name: str, value: object, namespace: str = "default") -> str:
     """Encode a complete natural identity into an opaque wire handle."""
     return encode_tag_handle(TagRef(name=name, value=value, namespace=namespace))
+
+
+_LIBRARY_UUID = "6313b0d3-d270-47a8-9e0d-21e8255107e3"
+_LIBRARY = LibraryIdentity(library_uuid=_LIBRARY_UUID, name="Test Library", root_path="D:/Music/Test")
+_FILE_TOKEN = encode_song_locator(SongIdentity(library=_LIBRARY, normalized_path="songs/song.flac"))
 
 
 @pytest.fixture
@@ -816,9 +823,9 @@ class TestUpdateFileTags:
         client: TestClient,
         mock_tagging_service: MagicMock,
     ) -> None:
-        """Should update file tags and return result."""
+        """Should forward the opaque token and return the service result."""
         mock_tagging_service.update_song_tags.return_value = {
-            "file_id": "123",
+            "file_id": _FILE_TOKEN,
             "name": "genre",
             "tags": [
                 {
@@ -837,13 +844,13 @@ class TestUpdateFileTags:
         }
 
         response = client.patch(
-            "/tag-curation/file/123/tag",
+            f"/tag-curation/file/{_FILE_TOKEN}/tag",
             json={"name": "genre", "values": ["rock", "alternative"]},
         )
 
         assert response.status_code == 200
         data = response.json()
-        assert data["file_id"] == "123"
+        assert data["file_id"] == _FILE_TOKEN
         assert data["name"] == "genre"
         assert data["tags"] == [
             {
@@ -860,7 +867,7 @@ class TestUpdateFileTags:
             },
         ]
         mock_tagging_service.update_song_tags.assert_called_once_with(
-            song_id="123", name="genre", values=["rock", "alternative"]
+            song_id=_FILE_TOKEN, name="genre", values=["rock", "alternative"]
         )
 
     def test_update_file_tags_value_error(
@@ -868,17 +875,19 @@ class TestUpdateFileTags:
         client: TestClient,
         mock_tagging_service: MagicMock,
     ) -> None:
-        """Should return 400 when ValueError raised."""
+        """A valid token whose service raises ValueError still maps to 400."""
         mock_tagging_service.update_song_tags.side_effect = ValueError("Invalid file ID")
 
         response = client.patch(
-            "/tag-curation/file/999/tag",
+            f"/tag-curation/file/{_FILE_TOKEN}/tag",
             json={"name": "genre", "values": ["rock"]},
         )
 
         assert response.status_code == 400
         assert "Invalid file ID" in response.json()["detail"]
-        mock_tagging_service.update_song_tags.assert_called_once_with(song_id="999", name="genre", values=["rock"])
+        mock_tagging_service.update_song_tags.assert_called_once_with(
+            song_id=_FILE_TOKEN, name="genre", values=["rock"]
+        )
 
     def test_update_file_tags_exception(
         self,
@@ -889,40 +898,42 @@ class TestUpdateFileTags:
         mock_tagging_service.update_song_tags.side_effect = RuntimeError("Database error")
 
         response = client.patch(
-            "/tag-curation/file/123/tag",
+            f"/tag-curation/file/{_FILE_TOKEN}/tag",
             json={"name": "genre", "values": ["rock"]},
         )
 
         assert response.status_code == 500
         assert "Failed to update file tags" in response.json()["detail"]
 
-    def test_update_file_tags_decodes_numeric_id_and_rejects_non_numeric(
+    def test_update_file_tags_rejects_malformed_token_and_forwards_valid(
         self,
         client: TestClient,
         mock_tagging_service: MagicMock,
     ) -> None:
-        """Regression: the route validates the path ID at the boundary like songs_if."""
+        """Regression: the route validates the opaque token at the boundary like songs_if."""
         mock_tagging_service.update_song_tags.return_value = {
-            "file_id": "456",
+            "file_id": _FILE_TOKEN,
             "name": "genre",
             "tags": [],
         }
 
-        # Non-numeric → 400 at the boundary, service not called.
+        # Ordinary integer / malformed → 400 at the boundary, service not called.
         response = client.patch(
-            "/tag-curation/file/not-a-number/tag",
+            "/tag-curation/file/123/tag",
             json={"name": "genre", "values": ["rock"]},
         )
 
         assert response.status_code == 400
-        assert "Invalid ID format" in response.json()["detail"]
+        assert response.json()["detail"] == "Invalid SongLocator token"
         mock_tagging_service.update_song_tags.assert_not_called()
 
-        # Numeric → passes the boundary gate and is forwarded to the service.
+        # Valid opaque token → passes the boundary gate and is forwarded verbatim.
         response = client.patch(
-            "/tag-curation/file/456/tag",
+            f"/tag-curation/file/{_FILE_TOKEN}/tag",
             json={"name": "genre", "values": ["rock"]},
         )
 
         assert response.status_code == 200
-        mock_tagging_service.update_song_tags.assert_called_once_with(song_id="456", name="genre", values=["rock"])
+        mock_tagging_service.update_song_tags.assert_called_once_with(
+            song_id=_FILE_TOKEN, name="genre", values=["rock"]
+        )

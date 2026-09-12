@@ -52,8 +52,8 @@ def _make_tags_db() -> tuple[LibraryTagsDb, MagicMock, MagicMock, MagicMock, Mag
     song_tag_repo = MagicMock()
     song_repo = MagicMock()
     library_repo = MagicMock()
-    library_repo.get_library_by_natural_key.return_value = {"id": 1}
-    library_repo.get_library_ids_by_natural_keys.return_value = {(_LIBRARY.name, _LIBRARY.root_path): 1}
+    library_repo.get_library_by_uuid.return_value = {"id": 1}
+    library_repo.get_library_ids_by_uuids.return_value = {_LIBRARY.library_uuid: 1}
     song_repo.get_song_by_normalized_path.return_value = {"id": 7}
     song_repo.get_song_ids_by_normalized_paths.return_value = {(1, "a.mp3"): 7}
     db = LibraryTagsDb(

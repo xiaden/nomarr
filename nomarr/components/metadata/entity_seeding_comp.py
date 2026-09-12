@@ -27,14 +27,15 @@ def _extract_entity_tags(metadata: dict[str, Any]) -> dict[str, Any]:
     return {k: metadata.get(k) for k in _ENTITY_TAG_KEYS}
 
 
-def _build_song_tag_entries(song_id: int, tags: dict[str, Any]) -> list[dict[str, Any]]:
+def _build_song_tag_entries(tags: dict[str, Any]) -> list[dict[str, Any]]:
     """Build song-tag entries from raw entity tags.
 
-    Returns a list with zero or one entry. Each entry has ``"song_id"``
-    and ``"tags"`` keys, where ``"tags"`` is a list of flat
-    ``{name, value}`` payloads derived from the entity tag mappings:
-    artist (primary) + artists (multi), album, title, label, genre, and
-    year (coerced to int).
+    Returns a list with zero or one entry. Each entry carries only a
+    ``"tags"`` key, a list of flat ``{name, value}`` payloads derived from the
+    entity tag mappings: artist (primary) + artists (multi), album, title,
+    label, genre, and year (coerced to int). The song is addressed by the
+    caller's ``SongIdentity`` locator; no generated id or row handle is carried
+    here.
 
     Returns an empty list when the raw tags contain no entity fields.
 
@@ -96,19 +97,19 @@ def _build_song_tag_entries(song_id: int, tags: dict[str, Any]) -> list[dict[str
     if not tag_payloads:
         return []
 
-    return [{"song_id": song_id, "tags": tag_payloads}]
+    return [{"tags": tag_payloads}]
 
 
-def build_song_tag_assignments(song_id: int, tags: dict[str, Any]) -> list[SongTagAssignment]:
+def build_song_tag_assignments(tags: dict[str, Any]) -> list[SongTagAssignment]:
     """Map raw entity tags to domain assignment commands for one song.
 
-    Compute-only: resolves nothing against the database. The caller resolves
-    the song's :class:`SongIdentity` and persists through the sealed facade, so
-    no raw tag payload dict ever crosses into the facade.
+    Compute-only: resolves nothing against the database. The caller owns the
+    song's :class:`SongIdentity` locator and persists through the sealed facade,
+    so no raw tag payload dict and no generated id ever crosses into the facade.
 
     Returns an empty list when the raw tags contain no entity fields.
     """
-    entries = _build_song_tag_entries(song_id, tags)
+    entries = _build_song_tag_entries(tags)
     if not entries:
         return []
     return [SongTagAssignment(name=str(tag["name"]), value=tag["value"]) for entry in entries for tag in entry["tags"]]
@@ -128,7 +129,7 @@ def extract_entity_tag_mapping(metadata: dict[str, Any]) -> dict[str, list[str |
 
     """
     entity_tags = _extract_entity_tags(metadata)
-    entries = _build_song_tag_entries(0, entity_tags)
+    entries = _build_song_tag_entries(entity_tags)
     if not entries:
         return {}
     mapping: dict[str, list[str | int | float]] = {}

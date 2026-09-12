@@ -46,8 +46,10 @@ def _make_tags_db() -> tuple[LibraryTagsDb, MagicMock, MagicMock, MagicMock, Mag
     song_tag_repo = MagicMock()
     song_repo = MagicMock()
     library_repo = MagicMock()
-    library_repo.get_library_by_natural_key.return_value = {"id": 1}
-    library_repo.get_library_ids_by_natural_keys.return_value = {("TestLib", "/music"): 1}
+    # ADR-049: SongIdentity.library carries the immutable library_uuid, so the
+    # facade resolves libraries by UUID (never a name/root_path natural key).
+    library_repo.get_library_by_uuid.return_value = {"id": 1}
+    library_repo.get_library_ids_by_uuids.return_value = {_TEST_LIBRARY.library_uuid: 1}
     song_repo.get_song_by_normalized_path.return_value = {"id": 7}
     song_repo.get_song_ids_by_normalized_paths.return_value = {(1, "a.mp3"): 7}
     tags = LibraryTagsDb(
@@ -105,7 +107,7 @@ class TestCompleteTagRefResolved:
 class TestMissingTargetsAreSafe:
     def test_list_tags_for_song_empty_when_song_missing(self) -> None:
         tags, _, song_tag_repo, song_repo, library_repo = _make_tags_db()
-        library_repo.get_library_by_natural_key.return_value = None
+        library_repo.get_library_by_uuid.return_value = None
         assert tags.list_tags_for_song(_song()) == ()
         song_tag_repo.get_tags_for_song.assert_not_called()
         song_repo.get_song_by_normalized_path.assert_not_called()
@@ -117,20 +119,20 @@ class TestMissingTargetsAreSafe:
 
     def test_list_song_tags_for_songs_empty_when_no_songs_resolve(self) -> None:
         tags, _, song_tag_repo, _, library_repo = _make_tags_db()
-        library_repo.get_library_ids_by_natural_keys.return_value = {}
+        library_repo.get_library_ids_by_uuids.return_value = {}
         assert tags.list_song_tags_for_songs([_song("missing.mp3")]) == {}
         # No edge batch is fetched for unresolved songs.
         song_tag_repo.get_tags_for_songs_batch.assert_not_called()
 
     def test_list_genre_tags_empty_when_no_songs_resolve(self) -> None:
         tags, _, song_tag_repo, _, library_repo = _make_tags_db()
-        library_repo.get_library_ids_by_natural_keys.return_value = {}
+        library_repo.get_library_ids_by_uuids.return_value = {}
         assert tags.list_genre_tags_for_songs([_song()]) == ()
         song_tag_repo.get_genre_tags_for_songs.assert_not_called()
 
     def test_replace_song_tags_noop_when_song_missing(self) -> None:
         tags, tag_repo, song_tag_repo, song_repo, library_repo = _make_tags_db()
-        library_repo.get_library_by_natural_key.return_value = None
+        library_repo.get_library_by_uuid.return_value = None
         tags.replace_song_tags(_song(), [SongTagAssignment(name="artist", value="X")])
         song_tag_repo.replace_song_tags.assert_not_called()
         tag_repo.get_or_create_tags_batch.assert_not_called()
@@ -138,7 +140,7 @@ class TestMissingTargetsAreSafe:
 
     def test_remove_song_tags_noop_when_song_missing(self) -> None:
         tags, _tag_repo, song_tag_repo, song_repo, library_repo = _make_tags_db()
-        library_repo.get_library_by_natural_key.return_value = None
+        library_repo.get_library_by_uuid.return_value = None
         tags.remove_song_tags(_song(), [TagRef(name="artist", value="X")])
         song_tag_repo.remove_tags_from_song.assert_not_called()
         song_tag_repo.replace_song_tags.assert_not_called()
@@ -197,7 +199,7 @@ class TestSetBasedResolution:
         tags, tag_repo, song_tag_repo, song_repo, library_repo = _make_tags_db()
         tag_repo.get_tag_ids_by_identities.return_value = {("default", "old", "A"): 1}
         tag_repo.get_or_create_tags_batch.return_value = {("default", "new", "B"): 2}
-        library_repo.get_library_ids_by_natural_keys.return_value = {("TestLib", "/music"): 1}
+        library_repo.get_library_ids_by_uuids.return_value = {_TEST_LIBRARY.library_uuid: 1}
         song_repo.get_song_ids_by_normalized_paths.return_value = {(1, "a.mp3"): 7}
         song_tag_repo.relink_song_tags.return_value = {"moved": 2, "skipped": 1, "source_orphaned": 1}
         result = tags.relink_tags(

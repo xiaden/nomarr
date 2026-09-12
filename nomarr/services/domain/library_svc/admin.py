@@ -89,7 +89,7 @@ class LibraryAdminMixin:
         """
         return self.db.library.get_library_by_uuid(library_uuid)
 
-    def resolve_song_identity(self, library_uuid: str, normalized_path: str) -> SongIdentity:
+    def build_song_locator(self, library_uuid: str, normalized_path: str) -> SongIdentity:
         """Build a UUID-bearing ``SongIdentity`` locator from a decoded token.
 
         Reconstructs the complete ``LibraryIdentity`` from the current persisted
@@ -106,7 +106,8 @@ class LibraryAdminMixin:
             The UUID-bearing ``SongIdentity`` locator.
 
         Raises:
-            ValueError: If no library exists with ``library_uuid`` or no song
+            ValueError: If no library exists with ``library_uuid``, or the
+                resolved library has no persisted ``library_uuid``, or no song
                 exists at ``normalized_path`` within it.
 
         """
@@ -114,8 +115,12 @@ class LibraryAdminMixin:
         if library is None:
             msg = f"Unknown library_uuid: {library_uuid}"
             raise ValueError(msg)
+        stored_uuid = library.library_uuid
+        if stored_uuid is None:
+            msg = f"Library {library_uuid} has no persisted library_uuid"
+            raise ValueError(msg)
         identity = LibraryIdentity(
-            library_uuid=library.library_uuid or library_uuid,
+            library_uuid=stored_uuid,
             name=library.name,
             root_path=library.root_path,
         )

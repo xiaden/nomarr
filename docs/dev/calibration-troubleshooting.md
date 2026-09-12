@@ -219,7 +219,7 @@ Use Docker environment (`.docker/compose.yaml`) to test with realistic data:
 5. Query calibration_state to verify expectations
 6. Test frontend display (Settings → Calibration page)
 
-**Performance note:** Queries against `song_has_tags` (~200k docs) or calibration generation can take 30-120 seconds. Use generous timeouts (120s minimum) when testing.
+**Performance note:** Queries against the `song_tags` assignment table (~200k rows) or calibration generation can take 30-120 seconds. Use generous timeouts (120s minimum) when testing.
 
 ---
 

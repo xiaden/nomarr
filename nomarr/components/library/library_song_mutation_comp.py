@@ -152,13 +152,13 @@ def bulk_delete_songs(db: Database, paths: list[str], library: Library) -> int:
 def set_chromaprint(db: Database, song: SongIdentity, chromaprint: str) -> None:
     """Persist a chromaprint fingerprint for one song.
 
-    Inbound integer-handle adapter (allowlisted Q1): the handle is resolved to
-    the semantic ``SongIdentity`` exactly once and the write delegates to the
-    guarded locator-addressed ``set_chromaprint`` intent.
-    ``expected_absent=False`` preserves the prior unconditional-replace behavior
-    for DB-derived fingerprints; provenance travels with the value. A handle that
-    does not resolve is a missing-locator no-op: no write occurs and no error is
-    raised (mirroring the facade's ``MISSING_LOCATOR`` outcome).
+    Locator-addressed delegation: the caller supplies the semantic
+    ``SongIdentity`` and the write delegates to the guarded locator-addressed
+    ``set_chromaprint`` intent. ``expected_absent=False`` preserves the prior
+    unconditional-replace behavior for DB-derived fingerprints; provenance
+    travels with the value. A locator that does not resolve is a
+    missing-locator no-op: no write occurs and no error is raised (mirroring the
+    facade's ``MISSING_LOCATOR`` outcome).
     """
     db.library.set_chromaprint(
         song,
@@ -169,10 +169,9 @@ def set_chromaprint(db: Database, song: SongIdentity, chromaprint: str) -> None:
 def update_last_tagged_at(db: Database, song: SongIdentity) -> None:
     """Record the wall-clock time at which a song was tagged.
 
-    Inbound integer-handle adapter (allowlisted Q1): resolves the handle to the
-    semantic ``SongIdentity`` once and delegates to ``set_last_tagged``. The
-    handle never propagates past this point. A handle that does not resolve is a
-    missing-locator no-op: no write occurs and no error is raised (mirroring the
-    facade's ``MISSING_LOCATOR`` outcome).
+    Locator-addressed delegation: the caller supplies the semantic
+    ``SongIdentity`` and the write delegates directly to ``set_last_tagged``. A
+    locator that does not resolve is a missing-locator no-op: no write occurs and
+    no error is raised (mirroring the facade's ``MISSING_LOCATOR`` outcome).
     """
     db.library.set_last_tagged(song, now_ms().value)

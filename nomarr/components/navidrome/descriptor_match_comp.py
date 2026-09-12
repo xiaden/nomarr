@@ -10,12 +10,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, TypedDict
 
 from nomarr.components.library.library_song_query_comp import (
-    _derive_metadata,
-    _file_tags,
-    _locators_for_songs,
-    _tag_assignments,
+    locators_for_carriers,
+    tagged_songs_for_locators,
 )
-from nomarr.components.library.song_query_types import TaggedSong
+from nomarr.components.library.song_query_types import TaggedSong, TrackSong
 from nomarr.components.playlist_import.metadata_normalizer_comp import normalize_artist, normalize_title
 from nomarr.helpers.dataclasses.song_tag_dataclass import TagRef
 from nomarr.helpers.song_locator_codec import encode_song_locator
@@ -107,16 +105,14 @@ def _candidate_locators(db: Database, seed: TrackDescriptor) -> list[SongIdentit
         songs = list(db.library.find_songs_with_tag(TagRef(name="artist", value=seed["artist"]), limit=None))
     else:
         return []
-    return [locator for locator in _locators_for_songs(db, songs) if locator is not None]
+    carriers = [TrackSong(song=song, metadata={}, isrc=None) for song in songs]
+    return [locator for locator in locators_for_carriers(db, carriers) if locator is not None]
 
 
 def _carrier_for_locator(db: Database, locator: SongIdentity) -> TaggedSong | None:
     """Build an ID-free typed carrier for one locator via the authoritative facade."""
-    song = db.library.get_song(locator)
-    if song is None:
-        return None
-    assignments = db.library.list_song_tags_for_songs([locator]).get(locator, ())
-    return TaggedSong(song=song, metadata=_derive_metadata(assignments), tags=_file_tags(assignments))
+    carriers = tagged_songs_for_locators(db, [locator])
+    return carriers[0] if carriers else None
 
 
 def descriptor_for_locator(db: Database, locator: SongIdentity) -> TrackDescriptor | None:
@@ -129,14 +125,11 @@ def descriptor_for_locator(db: Database, locator: SongIdentity) -> TrackDescript
 
 def _descriptors_by_key(db: Database, locators: Sequence[SongIdentity]) -> dict[str, TrackDescriptor]:
     """Build descriptors keyed by the opaque locator token for each candidate."""
-    assignments = _tag_assignments(db, locators)
     descriptors: dict[str, TrackDescriptor] = {}
     for locator in locators:
-        song = db.library.get_song(locator)
-        if song is None:
+        carrier = _carrier_for_locator(db, locator)
+        if carrier is None:
             continue
-        tags = assignments.get(locator, ())
-        carrier = TaggedSong(song=song, metadata=_derive_metadata(tags), tags=_file_tags(tags))
         descriptors[encode_song_locator(locator)] = _descriptor_from_carrier(carrier, locator)
     return descriptors
 

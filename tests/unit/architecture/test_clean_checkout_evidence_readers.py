@@ -135,7 +135,9 @@ def test_sensitive_patterns_match_crafted_poisoned_samples(pattern: re.Pattern[s
 def test_sensitive_patterns_ignore_clean_contract_vocabulary() -> None:
     """Negative control: ordinary contract vocabulary must not trip the scan,
     so the guard does not false-positive on the fixtures' allowed prose."""
-    clean = "HydrateSongInput(song_id: int, ...) and the opaque nom1 locator token are contract vocabulary."
+    clean = (
+        "HydrateSongInput is locator-addressed payload-only and the opaque nom1 locator token are contract vocabulary."
+    )
     for pattern in (_UUID_RE, _COMMIT40_RE, _COMMIT8_RE, _ABS_PATH_RE, _CREDENTIAL_RE):
         assert pattern.search(clean) is None, f"pattern false-positived on clean sample: {pattern.pattern!r}"
 

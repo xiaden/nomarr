@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from nomarr.helpers.dataclasses.library_dataclass import Library
+from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
 from nomarr.helpers.exceptions import DuplicateEntityError
 from nomarr.services.domain.library_svc.admin import LibraryAdminMixin
 from nomarr.services.domain.library_svc.task_ids import library_task_id, write_tags_task_id
@@ -390,6 +391,75 @@ class TestDeleteLibrary:
         scan_id = library_task_id(library, "scan")
         write_id = write_tags_task_id(library)
         assert call_order == ["stop", f"quiesce:{scan_id}", f"quiesce:{write_id}", "delete"]
+
+
+class TestBuildSongLocator:
+    """Tests for ``LibraryAdminMixin.build_song_locator``."""
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_raises_when_stored_library_uuid_is_none(self) -> None:
+        """A library row with no persisted ``library_uuid`` cannot build a locator."""
+        mock_db = MagicMock()
+        library = _make_library()  # library_uuid defaults to None
+        mock_db.library.get_library_by_uuid.return_value = library
+        mixin = _ConcreteAdminMixin(mock_db, MagicMock())
+
+        with pytest.raises(ValueError, match="has no persisted library_uuid"):
+            mixin.build_song_locator("c0ffee00-0000-4000-8000-000000000000", "album/track.flac")
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_raises_when_library_uuid_unknown(self) -> None:
+        """An unknown ``library_uuid`` is a lookup miss, not a locator."""
+        mock_db = MagicMock()
+        mock_db.library.get_library_by_uuid.return_value = None
+        mixin = _ConcreteAdminMixin(mock_db, MagicMock())
+
+        with pytest.raises(ValueError, match="Unknown library_uuid"):
+            mixin.build_song_locator("c0ffee00-0000-4000-8000-000000000000", "album/track.flac")
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_raises_when_song_path_unknown(self) -> None:
+        """A path with no persisted song cannot produce a locator."""
+        mock_db = MagicMock()
+        mock_db.library.get_library_by_uuid.return_value = Library(
+            name="Rock Library",
+            root_path="/music/rock",
+            library_uuid="c0ffee00-0000-4000-8000-000000000000",
+        )
+        mock_db.library.get_song.return_value = None
+        mixin = _ConcreteAdminMixin(mock_db, MagicMock())
+
+        with pytest.raises(ValueError, match="Unknown song path"):
+            mixin.build_song_locator("c0ffee00-0000-4000-8000-000000000000", "album/missing.flac")
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_returns_uuid_bearing_locator_for_known_song(self) -> None:
+        """A known library + song path returns the complete UUID-bearing locator."""
+        mock_db = MagicMock()
+        library = Library(
+            name="Rock Library",
+            root_path="/music/rock",
+            library_uuid="c0ffee00-0000-4000-8000-000000000000",
+        )
+        mock_db.library.get_library_by_uuid.return_value = library
+        mock_db.library.get_song.return_value = MagicMock()
+        mixin = _ConcreteAdminMixin(mock_db, MagicMock())
+
+        result = mixin.build_song_locator("c0ffee00-0000-4000-8000-000000000000", "album/track.flac")
+
+        assert result == SongIdentity(
+            library=LibraryIdentity(
+                library_uuid="c0ffee00-0000-4000-8000-000000000000",
+                name="Rock Library",
+                root_path="/music/rock",
+            ),
+            normalized_path="album/track.flac",
+        )
+        mock_db.library.get_song.assert_called_once_with(result)
 
 
 class TestClearLibraryData:

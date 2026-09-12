@@ -218,6 +218,26 @@ def _hydrate_metadata(
     return [metadata_by_song.get(song, {}) for song in songs]
 
 
+def tagged_songs_for_locators(db: Database, locators: Sequence[SongIdentity]) -> list[TaggedSong]:
+    """Hydrate semantic songs and sealed tags for many locators in one pass.
+
+    Component-owned batch projection: reads semantic songs by locator, hydrates
+    ADR-045 metadata, and projects sealed tag assignments into ``FileTag``
+    tuples. No generated integer id, raw row, or tag payload dict crosses this
+    boundary; unresolvable/no-tag locators pass through with empty tags.
+    """
+    if not locators:
+        return []
+
+    songs = db.library.list_songs_by_identity(list(locators))
+    metadata = hydrate_songs_with_metadata(db, songs, locators)
+    assignments = _tag_assignments(db, locators)
+    return [
+        TaggedSong(song=song, metadata=hydrated.metadata, tags=_file_tags(assignments.get(locator, ())))
+        for song, hydrated, locator in zip(songs, metadata, locators, strict=True)
+    ]
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # Path / numeric / sort / pagination helpers
 # ─────────────────────────────────────────────────────────────────────────

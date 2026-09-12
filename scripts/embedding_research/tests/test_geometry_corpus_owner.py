@@ -147,10 +147,16 @@ def test_real_owner_loads_decodes_derives_then_gathers_unique_representations() 
     assert result.counters.source_gather_count == len(store.gathers)
     assert result.counters.scorer_call_count == len(calls)
     assert result.counters.segmentation_from_scorer_count == 0
-    assert result.comparable is True
-    assert all(0.0 <= value <= 1.0 and np.isfinite(value) for value in result.scores.scores.values())
+    # Corrective semantics: a one-song corpus has no leave-one-out candidates, so the
+    # query is explicitly non-comparable (never self-similarity) and is not scored.
+    assert calls == []
+    assert result.comparable is False
+    assert result.candidates == ()
+    assert result.scores is None
     assert result.baseline is not None
-    assert result.scores.baseline_score is not None
+    assert result.queries[0].state.comparable is False
+    assert "no_candidates" in result.queries[0].state.reasons
+    assert result.noncomparable
     con.close()
 
 
@@ -163,12 +169,15 @@ def test_owner_zero_mask_is_empty_and_baseline_is_separate() -> None:
     result = analyze_geometry_corpus(
         request, con=con, stream_store=store, profile=GeometryProfile.current(), scoring=_scorer([])
     )
-    assert result.analyses[0].unique_representation_count == 2
+    # Zero searchable mass is explicit non-comparable evidence, not a silent drop.
+    assert result.noncomparable
+    assert all("no_searchable" in evidence.reasons for evidence in result.noncomparable)
     assert result.baseline is None
-    assert result.scores is not None
-    assert result.scores.scores == {}
-    assert result.scores.baseline_score is None
+    assert result.scores is None
+    assert result.candidates == ()
     assert result.counters.source_gather_count == 0
+    assert result.queries[0].state.comparable is False
+    assert result.queries[0].neighborhood == ()
     con.close()
 
 

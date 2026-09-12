@@ -1,29 +1,29 @@
 # Metadata
 
-Entity lifecycle management — seeding tag relationships from raw metadata, rebuilding caches, and cleaning orphans.
+Entity lifecycle management — deriving entity tag assignments from raw metadata, computing metadata cache fields, and cleaning orphans.
 
 ## Responsibilities
 
-- Seed song–entity edges (artist, album, genre, label, year) from raw file metadata
-- Compute and write denormalized metadata cache fields on song documents
+- Derive song–entity tag assignments (artist, album, genre, label, year) from raw file metadata — compute-only
+- Compute the denormalized metadata cache fields (`artist`, `album`, `genres`, etc.) accepted by the hydration contract — compute-only
 - Detect and remove orphaned tags no longer referenced by any song
-- Batch-optimized seeding for scan workflows (4 queries per folder instead of ~20×N per file)
+- Provide the hydration entity mapping consumed by the tag-extraction worker
 
 ## Key Modules
 
  | Module | Purpose |
  | -------- | ---------- |
- | `entity_seeding_comp` | Seed tag vertices/edges from raw mutagen metadata — single-file (`seed_song_entities_from_tags`) and batch (`seed_entities_for_scan_batch`) paths |
- | `metadata_cache_comp` | Compute and write denormalized cache fields (artist, album, genres, etc.) on song documents — single rebuild, batch update, and full-library rebuild |
+ | `entity_seeding_comp` | Compute entity tag assignments from raw metadata — the typed assignment list (`build_song_tag_assignments`) and the hydration entity mapping (`extract_entity_tag_mapping`), both pure functions |
+ | `metadata_cache_comp` | Compute denormalized cache fields (`compute_metadata_cache_fields`) from a raw metadata dict — pure, single entry point |
 
 ## Patterns
 
-- **Hybrid storage model:** Tags live in a graph (vertices + edges) for querying, but songs also carry denormalized cache fields for fast reads. Both must stay in sync.
-- **Batch optimization:** `seed_entities_for_scan_batch` collects per-file entries in memory, then issues 3 queries for tags + 1 query for cache = 4 total, regardless of file count.
-- **Pure + DB dual paths:** `compute_metadata_cache_fields` is pure (no DB), used during scan to skip read-back. `rebuild_song_metadata_cache` reads tags from DB for repair.
+- **Compute-only:** `metadata_cache_comp` computes and returns cache-field mappings; it does **not** read or write the database. Per ADR-045 the embedded song cache writer was removed, and no cache writer remains. The result is accepted by the hydration contract as a forward-compatible `metadata_cache` member but is deliberately never persisted by this module.
+- **Batch optimization:** the scan callers collect per-file entity assignments via the compute-only `build_song_tag_assignments`/`extract_entity_tag_mapping` helpers before the library facade persists them.
+- **One way in:** `build_song_tag_assignments(tags: dict[str, Any]) -> list[SongTagAssignment]` and `extract_entity_tag_mapping(metadata: dict[str, Any]) -> dict[str, list[str | int | float]]` are pure functions over already-parsed metadata; the caller owns the song's `SongIdentity` locator and persists through the sealed facade.
 
 ## Dependencies
 
-- **Upstream:** Called by scan workflows and metadata repair services
-- **Downstream:** Calls the intent-level persistence facade (`db.library`) for tag reads and metadata repair updates
+- **Upstream:** Called by scan workflows, the tag-extraction worker, and metadata services
+- **Downstream:** No database access; these are pure helpers
 - **External:** Standard library only

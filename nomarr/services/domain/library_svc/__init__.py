@@ -51,8 +51,12 @@ class LibraryService(LibraryAdminMixin, LibraryScanMixin, LibraryQueryMixin, Lib
         stats = service.get_library_stats()
         files = service.search_files(SearchFilesQuery(query_text="rock"))
 
-        # Song operations
-        tags = service.get_song_tags(song_id="song-123")
+        # Song operations (locator-addressed semantic SongIdentity)
+        song = SongIdentity(
+            library=LibraryIdentity(library_uuid="6313b0d3-d270-47a8-9e0d-21e8255107e3"),
+            normalized_path="Artist/Album/Track.flac",
+        )
+        tags = service.get_song_tags(song=song)
         service.cleanup_orphaned_tags()
     """
 

@@ -281,9 +281,9 @@ class TestApplyDetectedMoves:
 
         assert applied == 1
         mock_extract.assert_called_once_with({"artist": "X"})
-        # build_song_tag_assignments keeps its compute-only int API; the caller
-        # passes the existing 0 sentinel — no numeric identity migration.
-        mock_build.assert_called_once_with(0, [{"name": "artist", "value": "X"}])
+        # build_song_tag_assignments is compute-only and takes only the entity
+        # tags — no numeric identity argument participates.
+        mock_build.assert_called_once_with([{"name": "artist", "value": "X"}])
         # Tags are re-seeded under the DESTINATION locator returned by the move
         # intent (after a successful move the source locator no longer resolves);
         # the retired numeric resolve_song_identity(source song_id) bridge is gone.

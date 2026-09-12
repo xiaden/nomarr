@@ -9,6 +9,7 @@ from nomarr.components.tagging.tag_stats_comp import get_unique_names
 from nomarr.helpers.tag_key_mapping import is_versioned_ml_key, make_short_tag_name
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
     from nomarr.persistence.db import Database
 
 
@@ -22,10 +23,13 @@ def find_files_matching_tag(
     name: str,
     operator: str,
     value: Any,
-) -> set[int]:
-    """Find file IDs matching a tag condition."""
-    result = get_file_ids_matching_tag(db, name=name, operator=operator, value=value)
-    return set(result) if not isinstance(result, set) else result
+) -> set[SongIdentity]:
+    """Find song locators matching a tag condition.
+
+    Returns UUID-bearing ``SongIdentity`` locators (never generated integer
+    handles); the underlying analytics helper is the authoritative source.
+    """
+    return get_file_ids_matching_tag(db, name=name, operator=operator, value=value)
 
 
 def get_short_to_versioned_mapping(

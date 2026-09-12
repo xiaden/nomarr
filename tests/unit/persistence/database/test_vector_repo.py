@@ -708,11 +708,11 @@ class TestGetEmbeddingCounts:
 
         assert counts == EmbeddingCounts(hot_count=1, cold_count=2)
 
-    def test_name_only_library_returns_zero_counts_without_querying(self) -> None:
-        # A name-only identity (``root_path=None``) cannot be resolved; the real
-        # ``_resolve_library_storage_id`` returns None without issuing a query,
-        # so get_embedding_counts yields zero counts and never reaches the
-        # grouping/counts statement.
+    def test_name_only_library_runs_resolution_lookup_then_returns_zero_counts(self) -> None:
+        # A name-only identity (``root_path=None``) still runs the UUID resolution
+        # lookup (ADR-049 resolves by library_uuid, not root_path); when it does
+        # not resolve, get_embedding_counts yields zero counts and never reaches
+        # the grouping/counts statement.
         session = self._mock_rows()
         repo = VectorRepo(session)
 
@@ -721,7 +721,7 @@ class TestGetEmbeddingCounts:
         )
 
         assert counts == EmbeddingCounts(hot_count=0, cold_count=0)
-        assert session.execute.call_count == 0
+        assert session.execute.call_count == 2
 
     def test_unknown_library_returns_zero_counts_without_grouping_stmt(self) -> None:
         # A library with a root_path that does not exist resolves to None (real
@@ -831,6 +831,7 @@ class TestRowToVectorMatch:
     @staticmethod
     def _row(**mapping) -> SimpleNamespace:
         defaults = {
+            "library_uuid": "2b202d70-24f8-5ecc-8ec9-be6a83da5fd7",
             "library_name": "lib",
             "library_path": "/lib",
             "normalized_path": "a.mp3",
@@ -879,7 +880,13 @@ class TestSearchSimilarVectorsPipeline:
 
     @staticmethod
     def _match(distance: float, embedding: list[float] | None = None) -> SimpleNamespace:
-        mapping = {"library_name": "lib", "library_path": "/lib", "normalized_path": "a.mp3", "distance": distance}
+        mapping = {
+            "library_uuid": "2b202d70-24f8-5ecc-8ec9-be6a83da5fd7",
+            "library_name": "lib",
+            "library_path": "/lib",
+            "normalized_path": "a.mp3",
+            "distance": distance,
+        }
         if embedding is not None:
             mapping["embedding"] = embedding
         return SimpleNamespace(_mapping=mapping)

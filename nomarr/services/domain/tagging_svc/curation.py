@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from nomarr.components.library.library_song_query_comp import _locators_for_songs
+from nomarr.components.library.library_song_query_comp import locators_for_carriers
 from nomarr.components.library.library_song_state_comp import transition_song_state
-from nomarr.components.tagging.tag_query_comp import _assignments_to_tags
+from nomarr.components.library.song_query_types import TrackSong
+from nomarr.components.tagging.tag_query_comp import assignments_to_tags
 from nomarr.components.tagging.tag_write_comp import relink_tag_edges, set_song_tags
 from nomarr.helpers.constants.file_states import (
     STATE_NOT_WRITTEN,
@@ -22,14 +23,8 @@ from nomarr.helpers.song_locator_codec import decode_song_locator
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
-# NOTE (Q3-C/K handoff): this service imports two private carriers-to-locator
-# helpers cross-module -- ``_locators_for_songs`` (library_song_query_comp) and
-# ``_assignments_to_tags`` (tag_query_comp) -- because the public carrier->
-# SongLocator projection (CONTRACTS §3.1) is owned by Q3-C/K and does not exist
-# yet. CONTRACTS §3.1 states Plan K "must not ... expose _locators_for_songs",
-# so when K publishes that public projection these imports must be unwound and
-# replaced. This is a classified residual for Q3-C/K; no shim, alias, or public
-# projection is built here.
+# Q3-G consumes the Q3-C public carrier-to-locator projection. The tag
+# assignment projection is now the public ``assignments_to_tags`` (Q3-H).
 
 
 class TaggingCurationMixin:
@@ -70,11 +65,13 @@ class TaggingCurationMixin:
         """Mark every located song carrying ``tag`` as write-pending.
 
         ``find_songs_with_tag`` returns bare semantic songs without their owning
-        library; locators are recovered through the shared read projection and
-        unresolved (stale) songs are skipped rather than re-addressed by guesswork.
+        library; each song is wrapped in the public ``TrackSong`` carrier and
+        projected through the shared read boundary. Unresolved (stale) songs are
+        skipped rather than re-addressed by guesswork.
         """
         songs = list(self.db.library.find_songs_with_tag(tag, limit=None))
-        for locator in _locators_for_songs(self.db, songs):
+        carriers = [TrackSong(song=song, metadata={}, isrc=None) for song in songs]
+        for locator in locators_for_carriers(self.db, carriers):
             if locator is not None:
                 self._mark_song_write_pending(locator)
 
@@ -232,7 +229,7 @@ class TaggingCurationMixin:
         self._mark_song_write_pending(song)
         assignments = self.db.library.list_tags_for_song(song)
         matching = [assignment for assignment in assignments if assignment.name == name]
-        tags = _assignments_to_tags(matching) if matching else None
+        tags = assignments_to_tags(matching) if matching else None
         if tags is None:
             tags_list: list[dict[str, Any]] = []
         else:

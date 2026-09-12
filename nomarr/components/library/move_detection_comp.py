@@ -318,10 +318,7 @@ def apply_detected_moves(
         if new_metadata:
             try:
                 entity_tags = _extract_entity_tags(new_metadata)
-                # build_song_tag_assignments' int argument is compute-only and is
-                # dropped by its flat mapping; pass the existing sentinel (0) as
-                # extract_entity_tag_mapping does — no identity migration.
-                assignments = build_song_tag_assignments(0, entity_tags)
+                assignments = build_song_tag_assignments(entity_tags)
                 if assignments:
                     db.library.replace_song_tags(destination, assignments)
             except RuntimeError as e:

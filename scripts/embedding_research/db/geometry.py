@@ -44,7 +44,7 @@ class GeometryIdentity:
 
     song_id: str
     backbone: str
-    observation_commit_sha256: str
+    observation_group_sha256: str
     geometry_semantics_version: str
     numerical_profile_digest: str
 
@@ -148,7 +148,7 @@ def _evidence(observation: Any) -> dict[str, Any]:
             "audio_content_sha256": identity.audio_content_sha256,
             "mask_semantics_version": identity.mask_semantics_version,
             "group_format_version": identity.group_format_version,
-            "observation_commit_sha256": identity.commit_sha256,
+            "observation_group_sha256": identity.commit_sha256,
             "provenance_identity": provenance_identity,
         }
     )
@@ -176,7 +176,7 @@ def _row_to_record(row: tuple[Any, ...], *, matrix: np.ndarray) -> GeometryRecor
     identity = GeometryIdentity(
         str(values["song_id"]),
         str(values["backbone"]),
-        str(values["observation_commit_sha256"]),
+        str(values["observation_group_sha256"]),
         str(values["geometry_semantics_version"]),
         str(values["numerical_profile_digest"]),
     )
@@ -250,7 +250,7 @@ def write_geometry(observation: Any, profile: GeometryProfile, run_id: str, *, l
         raise GeometryRefusal("stream patch count does not match committed evidence")
     digest = _sha(blob)
     identity = GeometryIdentity(
-        evidence["song_id"], evidence["backbone"], evidence["observation_commit_sha256"], semantics, profile.digest
+        evidence["song_id"], evidence["backbone"], evidence["observation_group_sha256"], semantics, profile.digest
     )
     canonical = "|".join((*identity.__dict__.values(), digest)).encode("utf-8")
     geometry_id = _sha(canonical)
@@ -272,11 +272,11 @@ def write_geometry(observation: Any, profile: GeometryProfile, run_id: str, *, l
     if len(row) != len(GEOMETRY_COLUMNS):
         raise GeometryRefusal("geometry row does not match schema")
     schema_fingerprint(con)
-    key = (identity.song_id, identity.backbone, identity.observation_commit_sha256, semantics, profile.digest)
+    key = (identity.song_id, identity.backbone, identity.observation_group_sha256, semantics, profile.digest)
     try:
         con.execute("BEGIN")
         count = con.execute(
-            "SELECT count(*) FROM song_patch_geometry WHERE song_id=? AND backbone=? AND observation_commit_sha256=? AND geometry_semantics_version=? AND numerical_profile_digest=?",
+            "SELECT count(*) FROM song_patch_geometry WHERE song_id=? AND backbone=? AND observation_group_sha256=? AND geometry_semantics_version=? AND numerical_profile_digest=?",
             key,
         ).fetchone()[0]
         if count != 0:
@@ -311,7 +311,7 @@ def read_geometry(exact_identity: GeometryIdentity, con: Any) -> GeometryRecord:
         raise GeometryRefusal("geometry reads require an exact GeometryIdentity")
     schema_fingerprint(con)
     rowset = con.execute(
-        f"SELECT {', '.join(GEOMETRY_COLUMNS)} FROM song_patch_geometry WHERE song_id=? AND backbone=? AND observation_commit_sha256=? AND geometry_semantics_version=? AND numerical_profile_digest=?",
+        f"SELECT {', '.join(GEOMETRY_COLUMNS)} FROM song_patch_geometry WHERE song_id=? AND backbone=? AND observation_group_sha256=? AND geometry_semantics_version=? AND numerical_profile_digest=?",
         tuple(exact_identity.__dict__.values()),
     ).fetchall()
     if len(rowset) != 1:
@@ -362,7 +362,7 @@ def _classify_evidence(
     except (AttributeError, KeyError, TypeError, ValueError) as exc:
         raise IntegrityRefused(f"INTEGRITY_REFUSED: malformed current observation evidence: {exc}") from exc
 
-    if expected.get("observation_commit_sha256") != current.get("observation_commit_sha256"):
+    if expected.get("observation_group_sha256") != current.get("observation_group_sha256"):
         raise StaleRefused("STALE_REFUSED: committed observation has been superseded")
     identity_fields = ("song_id", "backbone", "geometry_semantics_version", "numerical_profile_digest")
     if (
@@ -418,7 +418,7 @@ def verify_geometry_current(
     if exact_identity is not None:
         if not isinstance(exact_identity, GeometryIdentity):
             raise IntegrityRefused("INTEGRITY_REFUSED: exact geometry identity is required")
-        if (exact_identity.song_id, exact_identity.backbone, exact_identity.observation_commit_sha256) != (
+        if (exact_identity.song_id, exact_identity.backbone, exact_identity.observation_group_sha256) != (
             song_id,
             backbone,
             commit,
@@ -436,7 +436,7 @@ def verify_geometry_current(
     ).fetchall()
     if not rows:
         return None
-    commit_index = GEOMETRY_COLUMNS.index("observation_commit_sha256")
+    commit_index = GEOMETRY_COLUMNS.index("observation_group_sha256")
     semantics_index = GEOMETRY_COLUMNS.index("geometry_semantics_version")
     digest_index = GEOMETRY_COLUMNS.index("numerical_profile_digest")
 

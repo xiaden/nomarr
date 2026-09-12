@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from nomarr.components.library.library_records_comp import list_all_libraries
-from nomarr.components.library.library_song_query_comp import count_songs_by_tag, search_songs_by_tag
+from nomarr.components.library.library_song_query_comp import (
+    count_songs_by_tag,
+    locators_for_carriers,
+    search_songs_by_tag,
+)
 from nomarr.components.library.library_song_state_comp import count_pending_tag_writes
 from nomarr.components.library.search_files_comp import get_unique_tag_values
-from nomarr.components.library.song_tags_comp import get_song_tags_with_path
+from nomarr.components.library.song_query_types import TaggedSong, TagMatchedSong
 from nomarr.components.tagging.tag_query_comp import (
     count_songs_for_tag,
     count_tags_by_name,
@@ -18,17 +22,18 @@ from nomarr.components.tagging.tag_query_comp import (
 )
 from nomarr.components.tagging.tag_stats_comp import get_unique_names
 from nomarr.helpers.dto.library_dto import (
-    FileTagsResult,
+    LibrarySongWithTags,
     SearchFilesResult,
     TagCleanupResult,
     UniqueTagKeysResult,
-    map_song_with_tags_to_dto,
 )
 from nomarr.helpers.dto.tag_curation_dto import CommitResult, TagListResult, TagSongItem, TagValueItem
+from nomarr.helpers.song_locator_codec import encode_song_locator
 from nomarr.workflows.library.cleanup_orphaned_tags_wf import cleanup_orphaned_tags_workflow
 
 if TYPE_CHECKING:
     from nomarr.helpers.dataclasses.library_dataclass import Library
+    from nomarr.helpers.dataclasses.song_dataclass import Song
     from nomarr.helpers.dataclasses.song_tag_dataclass import TagRef
     from nomarr.helpers.dto.library_dto import WriteTagsResult
     from nomarr.persistence.db import Database
@@ -167,6 +172,39 @@ class TaggingQueryMixin:
         keys = get_unique_names(self.db, nomarr_only)
         return UniqueTagKeysResult(tag_keys=keys, count=len(keys), calibration=None, library_id=None)
 
+    def _tagged_song_dto(self, carrier: TaggedSong | TagMatchedSong) -> LibrarySongWithTags:
+        """Project a typed tag-search carrier to a locator-addressed song DTO.
+
+        Mirrors the already-migrated ``LibraryQueryMixin._tagged_song_dto``: the
+        carrier's semantic ``Song`` is projected to its public ``SongIdentity``
+        locator and ``file_id`` carries the opaque ``nom1`` token. Matched songs
+        carry no sealed tag payload, so ``tags`` is always empty here.
+        """
+        locator = locators_for_carriers(self.db, [carrier])[0]
+        if locator is None:
+            raise ValueError("Unable to resolve song locator for tag-search projection")
+        song: Song = carrier.song
+        return LibrarySongWithTags(
+            file_id=encode_song_locator(locator),
+            path=song.path,
+            library_uuid=locator.library.library_uuid,
+            file_size=song.file_size,
+            modified_time=song.modified_time,
+            duration_seconds=song.duration_seconds,
+            artist=cast("str | None", carrier.metadata.get("artist")),
+            album=cast("str | None", carrier.metadata.get("album")),
+            title=cast("str | None", carrier.metadata.get("title")),
+            calibration_version=song.calibration_hash,
+            scanned_at=song.scanned_at,
+            last_tagged_at=song.last_tagged_at,
+            tagged=song.tagged,
+            tagged_version=None,
+            skip_auto_tag=False,
+            created_at=str(song.created_at),
+            updated_at=None,
+            tags=list(carrier.tags) if isinstance(carrier, TaggedSong) else [],
+        )
+
     def get_unique_tag_values(self, tag_key: str, nomarr_only: bool = False) -> UniqueTagKeysResult:
         """Get all unique values for a specific tag key.
 
@@ -194,26 +232,6 @@ class TaggingQueryMixin:
         """
         values = get_unique_mood_values(self.db, mood_tier=mood_tier, limit=limit)
         return UniqueTagKeysResult(tag_keys=values, count=len(values), calibration=None, library_id=None)
-
-    def get_song_tags(self, song_id: int, nomarr_only: bool = False) -> FileTagsResult:
-        """Return the tags currently stored for a single song.
-
-        Args:
-            song_id: The song identifier.
-            nomarr_only: Whether to only include ``nom:`` namespace tags.
-
-        Returns:
-            A :class:`FileTagsResult` containing the song's stored tags.
-
-        Raises:
-            ValueError: If the song does not exist.
-        """
-        result = get_song_tags_with_path(self.db, int(song_id), nomarr_only=nomarr_only)
-        if not result:
-            raise ValueError(f"Song with ID {song_id} not found")
-        # Component already returns library-owned FileTag objects via the shared
-        # row-to-FileTag mapper; pass them through unchanged.
-        return FileTagsResult(file_id=int(song_id), path=result["path"], tags=result["tags"])
 
     def cleanup_orphaned_tags(self, dry_run: bool = False) -> TagCleanupResult:
         """Clean up orphaned tags from the database.
@@ -252,5 +270,5 @@ class TaggingQueryMixin:
         """
         files = search_songs_by_tag(self.db, tag_key, target_value, limit, offset)
         total = count_songs_by_tag(self.db, tag_key, target_value)
-        files_with_tags = [map_song_with_tags_to_dto(f) for f in files]
+        files_with_tags = [self._tagged_song_dto(f) for f in files]
         return SearchFilesResult(songs=files_with_tags, total=total, limit=limit, offset=offset)

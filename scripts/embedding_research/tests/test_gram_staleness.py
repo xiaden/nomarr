@@ -50,7 +50,7 @@ def test_stale_refusal_at_geometry_open_and_write() -> None:
     try:
         old, _new, record = _old_new(con)
         assert read_geometry(record.identity, con).gram_blob == record.gram_blob
-        absent = dataclasses.replace(record.identity, observation_commit_sha256="commit-absent")
+        absent = dataclasses.replace(record.identity, observation_group_sha256="commit-absent")
         with pytest.raises(GeometryRefusal, match="expected one row"):
             read_geometry(absent, con)
         with pytest.raises(GeometryRefusal, match="already exists"):

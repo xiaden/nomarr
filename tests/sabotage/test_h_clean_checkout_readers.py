@@ -61,7 +61,8 @@ _SENSITIVE_PATTERNS = (_UUID_RE, _COMMIT40_RE, _COMMIT8_RE, _HEX32_RE, _HEX64_RE
 # a reader assertion plus a fixture edit must not stay green.
 _REQUIRED_ASSERTION_TOKENS = (
     "exact L/N/P allowlist",
-    "HydrateSongInput(song_id: int, ...)",
+    "locator-addressed",
+    "no inbound integer adapter",
     "resolve_song_identity",
     "resolve_song_identities",
     "BLOCKED: no named owner contract",
@@ -243,7 +244,9 @@ def test_h_sensitive_patterns_match_crafted_poisoned_samples(pattern: re.Pattern
 @pytest.mark.unit
 def test_h_sensitive_patterns_ignore_clean_contract_vocabulary() -> None:
     """Negative control: ordinary contract vocabulary must not trip the scan."""
-    clean = "HydrateSongInput(song_id: int, ...) and the opaque nom1 locator token are contract vocabulary."
+    clean = (
+        "HydrateSongInput is locator-addressed payload-only and the opaque nom1 locator token are contract vocabulary."
+    )
     for pattern in _SENSITIVE_PATTERNS:
         assert pattern.search(clean) is None, f"pattern false-positived on clean sample: {pattern.pattern!r}"
 
@@ -299,7 +302,7 @@ def test_h_reader_keeps_required_assertion_tokens() -> None:
     """
     reader_text = READER.read_text(encoding="utf-8")
     fixture_text = "\n".join(path.read_text(encoding="utf-8") for path in _fixture_files())
-    assert "HydrateSongInput(song_id: int, ...)" in fixture_text
+    assert "locator-addressed" in fixture_text
     assert "No schema or marker semantics are invented" in fixture_text
     for token in _REQUIRED_ASSERTION_TOKENS:
         assert token in reader_text, f"required H reader assertion token missing from reader: {token!r}"

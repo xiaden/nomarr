@@ -10,9 +10,10 @@ import pytest
 
 from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
 from nomarr.helpers.dataclasses.vector_dataclass import EmbeddingCounts, SongVector, VectorMatch
+from nomarr.helpers.song_locator_codec import encode_song_locator
 from nomarr.workflows.navidrome.generate_playlists_wf import generate_playlists
 
-_LIB = LibraryIdentity(library_uuid="fe2223d4-9b05-57af-9714-e3f08a868b99", name="test-library", root_path="/music")
+_LIB = LibraryIdentity(library_uuid="fe2223d4-9b05-47af-9714-e3f08a868b99", name="test-library", root_path="/music")
 
 
 def _song_identity(file_id: int) -> SongIdentity:
@@ -167,13 +168,19 @@ class TestGeneratePlaylistsWorkflow:
         )
 
     def test_generates_playlist_from_typed_cold_vectors(self) -> None:
-        """The workflow consumes typed vectors, not persistence-row embeddings."""
+        """The workflow consumes typed vectors and opaque locator tokens, not rows."""
         db = _make_db()
         backbone = "effnet-discogs"
         file_ids = [101, 102, 103]
         identities = {fid: _song_identity(fid) for fid in file_ids}
+        tokens = {fid: encode_song_locator(identities[fid]) for fid in file_ids}
         vectors = {fid: _typed_vector(fid, backbone) for fid in file_ids}
-        db.library.resolve_song_identity.side_effect = identities.get
+        db.library.get_library_by_uuid.return_value = SimpleNamespace(
+            library_uuid=_LIB.library_uuid,
+            name="test-library",
+            root_path="/music",
+        )
+        db.library.get_song.return_value = SimpleNamespace(normalized_path="track.flac")
         db.ml.get_song_vector.side_effect = lambda _backbone, song: vectors.get(
             next(fid for fid, identity in identities.items() if identity == song),
         )
@@ -181,12 +188,9 @@ class TestGeneratePlaylistsWorkflow:
         db.ml.search_similar_vectors.return_value = tuple(
             VectorMatch(song=identities[fid], backbone=backbone, score=0.9) for fid in file_ids
         )
-        db.library.get_song_by_normalized_path.side_effect = lambda path, _library: SimpleNamespace(
-            song_id=next(fid for fid, identity in identities.items() if identity.normalized_path == path),
-        )
 
-        plays = [{"file_id": fid, "playcount": 5, "last_played": 123} for fid in file_ids]
-        tags = {fid: {"rock"} for fid in file_ids}
+        plays = [{"file_id": tokens[fid], "playcount": 5, "last_played": 123} for fid in file_ids]
+        tags = {identities[fid]: {"rock"} for fid in file_ids}
         with patch(
             "nomarr.components.navidrome.taste_profile_comp.get_tag_values_grouped_by_file",
             return_value=tags,
@@ -209,7 +213,7 @@ class TestGeneratePlaylistsWorkflow:
             {
                 "playlist_type": "familiar",
                 "playlist_name": "Your Favorites",
-                "file_ids": [str(fid) for fid in file_ids],
+                "file_ids": [tokens[fid] for fid in file_ids],
             }
         ]
         db.ml.get_song_vector.assert_called()

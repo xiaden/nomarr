@@ -250,7 +250,7 @@ export interface PushStaticPlaylistResponse {
 }
 
 /**
- * Resolve file IDs to portable track descriptors for plugin-side Navidrome push.
+ * Resolve opaque `nom1` SongLocator tokens to portable track descriptors for plugin-side Navidrome push.
  */
 export async function pushStaticPlaylist(
   fileIds: string[],

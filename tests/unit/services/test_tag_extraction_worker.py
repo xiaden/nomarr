@@ -3,8 +3,8 @@
 ``TagExtractionWorker._process_file`` extracts audio metadata and submits
 exactly one :class:`HydrateSongInput` to ``db.library.songs.hydrate_song``.
 These tests assert the intent boundary: no old per-purpose choreography
-(``save_song_tags`` / ``seed_entities_for_scan_batch`` / duration /
-``transition_song_state``) is recreated in the worker.
+(``save_song_tags`` / duration / ``transition_song_state``) is recreated in
+the worker.
 """
 
 from __future__ import annotations
@@ -101,7 +101,6 @@ class TestProcessFile:
 
         # No old per-purpose choreography is recreated.
         db.library.save_song_tags.assert_not_called()
-        db.library.seed_entities_for_scan_batch.assert_not_called()
         db.library.update_library_song_duration.assert_not_called()
         db.library.transition_song_state.assert_not_called()
 

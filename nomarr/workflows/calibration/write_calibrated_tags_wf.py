@@ -50,6 +50,8 @@ from nomarr.components.library.library_song_query_comp import (
     _song_identity,
     get_library_song,
 )
+from nomarr.components.library.library_song_state_comp import transition_song_state
+from nomarr.components.ml.calibration.ml_calibration_comp import mood_tags_to_assignments
 from nomarr.components.ml.calibration.ml_calibration_state_comp import (
     get_calibration_version,
     load_calibration_lookup,
@@ -60,15 +62,18 @@ from nomarr.components.ml.inference.ml_output_stream_store_comp import (
     load_output_streams_for_song,
 )
 from nomarr.components.ml.onnx.ml_discovery_comp import discover_heads
-from nomarr.components.processing.file_write_comp import save_mood_tags
 from nomarr.components.tagging.tagging_aggregation_comp import aggregate_mood_tags
 from nomarr.components.tagging.tagging_reconstruction_comp import (
     reconstruct_head_outputs_from_streams,
 )
+from nomarr.helpers.constants.file_states import STATE_TAGS_CURRENT, STATE_TAGS_NOT_FRESH
+from nomarr.helpers.dataclasses.song_tag_dataclass import (
+    CalibrationMoodMarker,
+    MoodReplacementCommand,
+)
 
 if TYPE_CHECKING:
     from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
-    from nomarr.helpers.dataclasses.tags_dataclass import Tags
     from nomarr.helpers.dto.calibration_dto import WriteCalibratedTagsParams
     from nomarr.helpers.dto.ml_head_dto import HeadInfo
     from nomarr.persistence.db import Database
@@ -100,7 +105,8 @@ class BatchContext:
         calibration_version: Global calibration version string
         output_stream_lookup: Optional cached mapping of output_id to
             ``(head_name, label)`` derived from registered model outputs.
-        pending_mood_tags: Accumulated (song, mood_tags) for deferred batch write.
+        pending_mood_commands: Accumulated typed mood commands for the owner's
+            deferred all-or-none batch write.
         pending_calibration_hashes: Accumulated (song, calibration_version) updates.
 
     """
@@ -109,7 +115,7 @@ class BatchContext:
     calibrations: dict[str, Any]
     calibration_version: str | None
     output_stream_lookup: dict[str, tuple[str, str]] | None = None
-    pending_mood_tags: list[tuple[SongIdentity, Tags | None]] = field(default_factory=list)
+    pending_mood_commands: list[MoodReplacementCommand] = field(default_factory=list)
     pending_calibration_hashes: list[tuple[SongIdentity, str]] = field(default_factory=list)
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
 
@@ -137,6 +143,19 @@ def write_calibrated_tags_wf(
 
     This is much faster than retagging because it skips ML inference entirely,
     reusing the canonical raw output streams already stored in the database.
+
+    Sequencing (binding): computation -> mood publication + marker (owner
+    transaction) -> separate locator-addressed calibration hash/state ->
+    ``STATE_TAGS_NOT_FRESH`` marking for filesystem reconciliation by locator.
+    The single-file branch is self-contained: on a successful mood publication
+    (``UPDATED``/``UNCHANGED``) it records the hash and marks the located song
+    ``STATE_TAGS_NOT_FRESH`` for downstream reconciliation. A non-success
+    owner status returns ``False`` without a hash or state change;
+    ``AMBIGUOUS_COMMIT`` is never retried by this caller.
+
+    Batch mode defers both the mood commands and the hash updates to
+    ``apply_calibration_wf``, which owns the flush and the corresponding
+    reconciliation marking for the whole chunk.
 
     Args:
         db: Database instance (must provide library, tags accessors)
@@ -209,25 +228,48 @@ def write_calibrated_tags_wf(
         return False
     mood_tags = aggregate_mood_tags(head_outputs)
     # mood_tags may be None when all labels conflict or scores are below threshold.
-    # None is a valid calibration result — we still write it (to clear stale tiers)
-    # and update calibration_hash so the file is not re-queued on every apply run.
+    # None is a valid calibration result — the owner clears all mood tiers while
+    # still applying the marker, and the hash is updated so the file is not
+    # re-queued on every apply run.
     if not mood_tags:
         logger.debug(
-            "[calibrated_tags] No mood tags produced for %s — writing None tiers and marking hash",
+            "[calibrated_tags] No mood tags produced for %s — clearing tiers and marking hash",
             file_path,
         )
 
-    # Write to DB — batch mode defers, single-file mode writes immediately
+    assignments = mood_tags_to_assignments(mood_tags)
+    global_version = batch_ctx.calibration_version if batch_ctx is not None else get_calibration_version(db)
+    marker = (
+        CalibrationMoodMarker.calibrated(global_version)
+        if global_version is not None
+        else CalibrationMoodMarker.uncalibrated()
+    )
+    command = MoodReplacementCommand(song=song, assignments=assignments, marker=marker)
+
+    # Mood publication (assignments + marker) precedes the separate locator
+    # hash/state update. Batch mode defers one all-or-none owner transaction;
+    # single-file mode publishes immediately through the exact tag owner.
     if batch_ctx is not None:
         with batch_ctx._lock:
-            batch_ctx.pending_mood_tags.append((song, mood_tags))
-            global_version = batch_ctx.calibration_version
+            batch_ctx.pending_mood_commands.append(command)
             if global_version:
                 batch_ctx.pending_calibration_hashes.append((song, global_version))
     else:
-        save_mood_tags(db, song, mood_tags)
-        global_version = get_calibration_version(db)
+        # Single-file mode publishes immediately through the exact tag owner and
+        # consumes the typed result exactly like the batch path: only a successful
+        # publication may advance to the separate locator hash/state step and
+        # the STATE_TAGS_NOT_FRESH reconciliation marking. AMBIGUOUS_COMMIT is
+        # never retried by the caller (owner contract: no blind retry).
+        mood_result = db.library.tags.replace_mood_tags(song, assignments, marker)
+        if mood_result.status not in ("UPDATED", "UNCHANGED"):
+            logger.warning(
+                "[calibrated_tags] Mood publication did not complete (%s)",
+                mood_result.status,
+            )
+            return False
         if global_version:
             update_file_calibration_hash(db, song, global_version)
+        if STATE_TAGS_CURRENT in db.app.song_state_membership(song):
+            transition_song_state(db, [song], STATE_TAGS_CURRENT, STATE_TAGS_NOT_FRESH)
         logger.debug("[calibrated_tags] Updated mood tags in DB for %s", file_path)
     return True

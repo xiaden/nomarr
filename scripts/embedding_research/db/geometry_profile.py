@@ -13,7 +13,7 @@ from typing import Any
 
 GEOMETRY_SEMANTICS_VERSION = "gram-ptc-v1"
 GEOMETRY_SERIALIZATION_VERSION = "float32-le-c-order-v1"
-SCALAR_KERNEL_VERSION = "scalar-f32-v1"
+NUMPY_KERNEL_VERSION = "numpy-row-normalize-f32-matmul-v1"
 
 
 def _version(package: str) -> str:
@@ -35,7 +35,7 @@ class GeometryProfile:
         values: dict[str, str] = {
             "geometry_semantics_version": GEOMETRY_SEMANTICS_VERSION,
             "geometry_serialization_version": GEOMETRY_SERIALIZATION_VERSION,
-            "scalar_kernel_version": SCALAR_KERNEL_VERSION,
+            "numerical_kernel_version": NUMPY_KERNEL_VERSION,
             "python_version": platform.python_version(),
             "numpy_version": _version("numpy"),
             "duckdb_version": _version("duckdb"),
@@ -45,9 +45,9 @@ class GeometryProfile:
             "blas_provider": _blas_provider(),
             "blas_threads": os.environ.get("OPENBLAS_NUM_THREADS", "unknown"),
             "fpu_denormal_policy": "environment-observable-only",
-            "normalization_policy": "scalar-float32-ascending-dimension",
+            "normalization_policy": "numpy-row-l2-float32-zero-preserving",
             "threshold_arithmetic_policy": "float32-canonical-indexed",
-            "scalar_operation_manifest": "f32-add-mul-div-sqrt-max-ascending-v1",
+            "operation_manifest": "numpy-normalize-matmul-float32-v1",
         }
         manifest = tuple(sorted(values.items()))
         digest = profile_digest(dict(manifest))
@@ -92,7 +92,7 @@ def _blas_provider() -> str:
 __all__ = [
     "GEOMETRY_SEMANTICS_VERSION",
     "GEOMETRY_SERIALIZATION_VERSION",
-    "SCALAR_KERNEL_VERSION",
+    "NUMPY_KERNEL_VERSION",
     "GeometryProfile",
     "canonical_profile_json",
     "profile_digest",

@@ -7,7 +7,7 @@ Workflows for Navidrome integration — smart/static playlist generation, config
 - Parse and execute smart playlist queries with nested boolean logic
 - Generate `.nsp` smart playlist structures for Navidrome
 - Preview smart playlist results with sample tracks
-- Generate static M3U playlists from file IDs
+- Generate static M3U playlists from opaque `nom1` SongLocator tokens
 - Generate Navidrome TOML config for custom tag fields
 - Preview tag statistics for config generation
 - Find similar tracks via vector ANN search
@@ -21,7 +21,7 @@ Workflows for Navidrome integration — smart/static playlist generation, config
  | `filter_engine_wf.py` | Execute `SmartPlaylistFilter` against DB using set operations (AND=intersection, OR=union) |
  | `generate_smart_playlist_wf.py` | Convert parsed filter to `.nsp` JSON structure with sort/limit validation |
  | `preview_smart_playlist_wf.py` | Execute filter and return total count + sample tracks |
- | `generate_static_playlist_wf.py` | Resolve file IDs to paths, generate M3U content, optional server-side save |
+ | `generate_static_playlist_wf.py` | Resolve opaque `nom1` SongLocator tokens to paths, generate M3U content, optional server-side save |
  | `generate_navidrome_config_wf.py` | Query tags collection, detect types, generate TOML with field aliases |
  | `preview_tag_stats_wf.py` | Batched tag statistics for all tags (type, multivalue, summary, short_name) |
  | `find_similar_tracks_wf.py` | Resolve seed descriptor → vector → ANN search → return similar-track descriptors |

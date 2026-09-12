@@ -23,10 +23,10 @@ Workflow for converting streaming service playlists (Spotify, Deezer) to local M
 
 ## Architecture Rules
 
-> **Workflows MUST NOT call persistence directly.** The workflow receives `Database` and uses it to load library tracks for matching. Streaming API access uses `components/playlist_import/*` for fetching and normalization.
+> **Workflows MUST NOT call persistence directly.** The workflow receives `Database` but loads library tracks only through the public typed component boundary — `components/library/library_song_query_comp.py::get_tracks_for_matching` returns `TrackSong` carriers and `locators_for_carriers` projects them to opaque `SongIdentity` locators. There is no direct persistence seam and no path-to-id conversion. Streaming API access uses `components/playlist_import/*` for fetching and normalization.
 
 ## Dependencies
 
 - **Called by**: `services/domain/playlist_import_svc.py`
-- **Calls**: `components/playlist_import/*` (URL parsing, Spotify/Deezer fetching, track matching, metadata normalization)
+- **Calls**: `components/playlist_import/*` (URL parsing, Spotify/Deezer fetching, track matching, metadata normalization); `components/library/library_song_query_comp.py` (typed `TrackSong` carriers + opaque locator projection)
 - **Receives**: `Database`, playlist_url, Spotify credentials

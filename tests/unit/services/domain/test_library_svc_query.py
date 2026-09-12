@@ -6,9 +6,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nomarr.components.library.song_query_types import TaggedSong
 from nomarr.helpers.dataclasses.library_dataclass import Library
+from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
+from nomarr.helpers.dataclasses.song_dataclass import Song
 from nomarr.helpers.dto.info_dto import WorkStatusResult
 from nomarr.helpers.dto.library_dto import LibraryDict, LibraryStatsResult
+from nomarr.helpers.song_locator_codec import encode_song_locator
 from nomarr.services.domain.library_svc.query import LibraryQueryMixin
 
 
@@ -23,6 +27,39 @@ class _ConcreteQueryMixin(LibraryQueryMixin):
 def _make_library(*, name: str = "L1") -> Library:
     """Build a domain ``Library`` (natural identity) fixture."""
     return Library(name=name, root_path="/p1", is_enabled=True)
+
+
+def _song(*, path: str, duration_seconds: float | None = None) -> Song:
+    """Build a minimal semantic ``Song`` fixture."""
+    return Song(
+        path=path,
+        normalized_path=path.lstrip("/"),
+        file_size=0,
+        modified_time=0,
+        duration_seconds=duration_seconds,
+        chromaprint=None,
+        needs_tagging=False,
+        is_valid=True,
+        tagged=True,
+        calibration_hash=None,
+        write_claimed_by=None,
+        last_tagged_at=None,
+        scanned_at=None,
+        created_at=0,
+    )
+
+
+def _locator(*, library_uuid: str, normalized_path: str) -> SongIdentity:
+    """Build a semantic ``SongIdentity`` locator fixture."""
+    return SongIdentity(
+        library=LibraryIdentity(library_uuid=library_uuid, name="L1", root_path="/p1"),
+        normalized_path=normalized_path,
+    )
+
+
+def _tagged_song(*, path: str, metadata: dict[str, object], duration_seconds: float | None = None) -> TaggedSong:
+    """Build a semantic ``TaggedSong`` carrier fixture."""
+    return TaggedSong(song=_song(path=path, duration_seconds=duration_seconds), metadata=metadata, tags=())
 
 
 class TestGetLibraryStats:
@@ -108,6 +145,14 @@ class TestGetPathsNeedingCalibration:
         mock_db = MagicMock()
         mixin = _ConcreteQueryMixin(mock_db)
         library = _make_library()
+        locator_a = _locator(library_uuid="2621ebfb-71ff-4168-a812-5342ca310e8c", normalized_path="songs/a")
+        locator_b = _locator(library_uuid="5f0c1b2a-3d4e-4f60-8a91-b2c3d4e5f607", normalized_path="songs/b")
+        mock_db.library.get_song = MagicMock(
+            side_effect=[
+                _song(path="/music/song1.mp3"),
+                _song(path="/music/song2.mp3"),
+            ]
+        )
 
         with (
             patch(
@@ -116,17 +161,14 @@ class TestGetPathsNeedingCalibration:
             ),
             patch(
                 "nomarr.services.domain.library_svc.query.get_uncalibrated_tagged_song_ids",
-                return_value=[f"{'songs'}/a", f"{'songs'}/b"],
-            ),
-            patch(
-                "nomarr.services.domain.library_svc.query.get_songs_by_ids_with_tags",
-                return_value=[{"path": "/music/song1.mp3"}, {"path": "/music/song2.mp3"}],
-            ) as mock_files,
+                return_value=[locator_a, locator_b],
+            ) as mock_uncalibrated,
         ):
             result = mixin.get_paths_needing_calibration()
 
         assert result == ["/music/song1.mp3", "/music/song2.mp3"]
-        mock_files.assert_called_once_with(mock_db, [f"{'songs'}/a", f"{'songs'}/b"])
+        mock_uncalibrated.assert_called_once_with(mock_db, library)
+        assert [call.args[0] for call in mock_db.library.get_song.call_args_list] == [locator_a, locator_b]
 
 
 class TestGetErroredFiles:
@@ -137,6 +179,21 @@ class TestGetErroredFiles:
         mock_db = MagicMock()
         mixin = _ConcreteQueryMixin(mock_db)
         library = _make_library()
+
+        locator_1 = _locator(library_uuid="2621ebfb-71ff-4168-a812-5342ca310e8c", normalized_path="songs/1")
+        locator_2 = _locator(library_uuid="5f0c1b2a-3d4e-4f60-8a91-b2c3d4e5f607", normalized_path="songs/2")
+        carriers = [
+            _tagged_song(
+                path="/music/song1.mp3",
+                metadata={"artist": "Artist A", "title": "Song 1"},
+                duration_seconds=180,
+            ),
+            _tagged_song(
+                path="/music/song2.mp3",
+                metadata={"artist": "Artist B", "title": "Song 2"},
+                duration_seconds=200,
+            ),
+        ]
 
         with (
             patch.object(
@@ -150,33 +207,18 @@ class TestGetErroredFiles:
             ),
             patch(
                 "nomarr.services.domain.library_svc.query.get_errored_song_ids",
-                return_value=[f"{'songs'}/1", f"{'songs'}/2"],
+                return_value=[locator_1, locator_2],
             ),
-            patch(
-                "nomarr.services.domain.library_svc.query.get_songs_by_ids_with_tags",
-                return_value=[
-                    {
-                        "id": 1,
-                        "path": "/music/song1.mp3",
-                        "duration_seconds": 180,
-                        "artist": "Artist A",
-                        "title": "Song 1",
-                    },
-                    {
-                        "id": 2,
-                        "path": "/music/song2.mp3",
-                        "duration_seconds": 200,
-                        "artist": "Artist B",
-                        "title": "Song 2",
-                    },
-                ],
-            ),
+            patch.object(mixin, "_songs_for_locators", return_value=carriers),
         ):
             result = mixin.get_errored_files(library)
 
         assert result["total"] == 2
         assert len(result["files"]) == 2
-        assert result["files"][0]["id"] == 1
+        # file_id is an opaque nom1 SongLocator token, never a generated integer id.
+        assert result["files"][0]["file_id"] == encode_song_locator(locator_1)
+        assert result["files"][1]["file_id"] == encode_song_locator(locator_2)
+        assert result["files"][0]["artist"] == "Artist A"
         assert result["files"][1]["path"] == "/music/song2.mp3"
 
     @pytest.mark.unit
@@ -207,10 +249,6 @@ class TestGetErroredFiles:
             ),
             patch(
                 "nomarr.services.domain.library_svc.query.get_errored_song_ids",
-                return_value=[],
-            ),
-            patch(
-                "nomarr.services.domain.library_svc.query.get_songs_by_ids_with_tags",
                 return_value=[],
             ),
         ):

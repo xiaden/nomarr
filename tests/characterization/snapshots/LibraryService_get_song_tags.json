@@ -1,0 +1,18 @@
+{
+  "file_id": "nom1eyJsaWJyYXJ5X3V1aWQiOiI8VVVJRD4iLCJwYXRoIjoic29uZzEuZmxhYyJ9",
+  "path": "/tmp/test1/song1.flac",
+  "tags": [
+    {
+      "is_nomarr": true,
+      "key": "nom:mood-strict",
+      "tag_type": "string",
+      "value": "happy"
+    },
+    {
+      "is_nomarr": true,
+      "key": "nom:genre",
+      "tag_type": "string",
+      "value": "rock"
+    }
+  ]
+}

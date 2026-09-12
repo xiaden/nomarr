@@ -135,7 +135,8 @@ def test_h_real_evidence_guarded_when_ignored_docs_present() -> None:
         )
     contract_text = contracts.read_text(encoding="utf-8")
     assert "exact L/N/P allowlist" in contract_text
-    assert "HydrateSongInput(song_id: int, ...)" in contract_text
+    assert "locator-addressed" in contract_text
+    assert "no inbound integer adapter" in contract_text
     assert "resolve_song_identity`/`resolve_song_identities" in contract_text
     evidence_text = evidence.read_text(encoding="utf-8")
     assert "BLOCKED: no named owner contract" in evidence_text

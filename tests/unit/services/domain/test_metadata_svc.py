@@ -6,14 +6,21 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from nomarr.helpers.dataclasses.song_tag_dataclass import TagCleanupResult, TagRef
-from nomarr.helpers.dataclasses.tags_dataclass import Tag, Tags
+from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
+from nomarr.helpers.dataclasses.song_tag_dataclass import SongTagAssignment, TagCleanupResult, TagRef
+from nomarr.helpers.song_locator_codec import encode_song_locator
 from nomarr.services.domain.metadata_svc import COLLECTION_REL_MAP, EntityCollection, MetadataService
 
 
 def _make_service(*, db: MagicMock | None = None) -> MetadataService:
     """Build a MetadataService with a mock database."""
     return MetadataService(db=db or MagicMock())
+
+
+_LIBRARY = LibraryIdentity(library_uuid="6313b0d3-d270-47a8-9e0d-21e8255107e3")
+_S1 = SongIdentity(library=_LIBRARY, normalized_path="songs/one.flac")
+_S2 = SongIdentity(library=_LIBRARY, normalized_path="songs/two.flac")
+_S3 = SongIdentity(library=_LIBRARY, normalized_path="songs/three.flac")
 
 
 class TestCollectionRelMap:
@@ -202,11 +209,15 @@ class TestListSongsForEntity:
     def test_returns_song_ids_and_count_via_flat_api(self) -> None:
         mock_db = MagicMock()
         service = _make_service(db=mock_db)
-        songs = [MagicMock(song_id=1), MagicMock(song_id=2)]
+        songs = [MagicMock(), MagicMock()]
         mock_db.library.find_songs_with_tag.side_effect = [songs, [MagicMock() for _ in range(5)]]
-        result = service.list_songs_for_entity("artist", "Metallica", "artist", limit=10, offset=0)
-        assert result["song_ids"] == [1, 2]
-        assert all(isinstance(song_id, int) for song_id in result["song_ids"])
+        with patch(
+            "nomarr.services.domain.metadata_svc.locators_for_carriers",
+            return_value=[_S1, _S2],
+        ):
+            result = service.list_songs_for_entity("artist", "Metallica", "artist", limit=10, offset=0)
+        assert result["song_ids"] == [encode_song_locator(_S1), encode_song_locator(_S2)]
+        assert all(isinstance(song_id, str) for song_id in result["song_ids"])
         assert result["total"] == 5
         assert result["limit"] == 10
         assert result["offset"] == 0
@@ -282,14 +293,18 @@ class TestMetadataTraversal:
     @pytest.mark.mocked
     def test_lists_deduplicated_sorted_albums_for_artist(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.find_songs_with_tag.return_value = [MagicMock(song_id=1), MagicMock(song_id=2)]
+        mock_db.library.find_songs_with_tag.return_value = [MagicMock(), MagicMock()]
+        mock_db.library.list_tags_for_song.side_effect = [
+            (
+                SongTagAssignment(name="album", value="Zeta"),
+                SongTagAssignment(name="album", value="Alpha"),
+            ),
+            (SongTagAssignment(name="album", value="Alpha"),),
+        ]
         service = _make_service(db=mock_db)
         with patch(
-            "nomarr.services.domain.metadata_svc.get_song_tags",
-            side_effect=[
-                Tags(items=(Tag(name="album", values=("Zeta", "Alpha")),)),
-                Tags(items=(Tag(name="album", values=("Alpha",)),)),
-            ],
+            "nomarr.services.domain.metadata_svc.locators_for_carriers",
+            return_value=[_S1, _S2],
         ):
             result = service.list_albums_for_artist("Metallica", limit=10)
         assert [album["id"] for album in result] == ["Alpha", "Zeta"]
@@ -301,14 +316,18 @@ class TestMetadataTraversal:
     @pytest.mark.mocked
     def test_lists_deduplicated_sorted_artists_for_album_with_limit(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.find_songs_with_tag.return_value = [MagicMock(song_id=3), MagicMock(song_id=4)]
+        mock_db.library.find_songs_with_tag.return_value = [MagicMock(), MagicMock()]
+        mock_db.library.list_tags_for_song.side_effect = [
+            (
+                SongTagAssignment(name="artist", value="Zeta"),
+                SongTagAssignment(name="artist", value="Alpha"),
+            ),
+            (),
+        ]
         service = _make_service(db=mock_db)
         with patch(
-            "nomarr.services.domain.metadata_svc.get_song_tags",
-            side_effect=[
-                Tags(items=(Tag(name="artist", values=("Zeta", "Alpha")),)),
-                None,
-            ],
+            "nomarr.services.domain.metadata_svc.locators_for_carriers",
+            return_value=[_S3, _S1],
         ):
             result = service.list_artists_for_album("Record", limit=1)
         assert [artist["id"] for artist in result] == ["Alpha"]

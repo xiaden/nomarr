@@ -16,16 +16,19 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Literal
 
+from nomarr.components.library.library_song_query_comp import locators_for_carriers
+from nomarr.components.library.song_query_types import HydratedSong
 from nomarr.components.tagging.tag_cleanup_comp import cleanup_orphaned_tags, count_orphaned_tags
-from nomarr.components.tagging.tag_query_comp import (
-    count_tags_by_name,
-    get_song_tags,
-    list_tags_by_name,
-)
+from nomarr.components.tagging.tag_query_comp import count_tags_by_name, list_tags_by_name
 from nomarr.helpers.dataclasses.song_tag_dataclass import TagRef
 from nomarr.helpers.dto.metadata_dto import EntityDict, EntityListResult, SongListForEntityResult
+from nomarr.helpers.song_locator_codec import encode_song_locator
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
+    from nomarr.helpers.dataclasses.song_dataclass import Song
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
@@ -54,6 +57,19 @@ class MetadataService:
 
         """
         self.db = db
+
+    def _project_song_locators(self, songs: Sequence[Song]) -> list[SongIdentity | None]:
+        """Project bare semantic songs through the public carrier→locator gate.
+
+        ``find_songs_with_tag`` returns bare ``Song`` values; the public
+        projection accepts only typed carriers, so each song is wrapped in a
+        metadata-only ``HydratedSong`` carrier. Order is preserved and
+        unresolved songs map to ``None``. No generated integer identity, raw
+        row, or private projection helper is used.
+        """
+        if not songs:
+            return []
+        return locators_for_carriers(self.db, [HydratedSong(song=song, metadata={}) for song in songs])
 
     def list_entities(
         self,
@@ -122,15 +138,18 @@ class MetadataService:
             offset: Skip first N results
 
         Returns:
-            SongListForEntityResult with integer song_ids, total, limit, offset
+            SongListForEntityResult whose ``song_ids`` are opaque ``nom1``
+            SongLocator tokens. Generated integer song ids never cross the
+            service boundary.
 
         """
         identity = TagRef(name=COLLECTION_REL_MAP[collection], value=entity_id)
-        song_ids = [song.song_id for song in self.db.library.find_songs_with_tag(identity, limit=limit, offset=offset)]
+        songs = self.db.library.find_songs_with_tag(identity, limit=limit, offset=offset)
         total = len(self.db.library.find_songs_with_tag(identity, limit=None))
+        locators = self._project_song_locators(songs)
 
         return SongListForEntityResult(
-            song_ids=song_ids,
+            song_ids=[encode_song_locator(locator) for locator in locators if locator is not None],
             total=total,
             limit=limit,
             offset=offset,
@@ -150,34 +169,33 @@ class MetadataService:
             List of EntityDict (artists)
 
         """
-        # Get all songs for this album by its natural tag identity.
-        song_ids = [
-            song.song_id
-            for song in self.db.library.find_songs_with_tag(TagRef(name="album", value=album_id), limit=10000)
-        ]
+        # Get all songs for this album by its natural tag identity, then read
+        # each song's tags through its semantic locator (never a generated id).
+        songs = self.db.library.find_songs_with_tag(TagRef(name="album", value=album_id), limit=10000)
+        locators = self._project_song_locators(songs)
 
-        # For each song, get primary artist tags. Entity identity is the natural
-        # tag value (no tag PK exists); dedupe on the value itself.
+        # Entity identity is the natural tag value (no tag PK exists); dedupe on
+        # the value itself.
         artist_ids_seen: set[str] = set()
         artists: list[EntityDict] = []
 
-        for song_id in song_ids:
-            artist_tags = get_song_tags(self.db, song_id, name="artist")
-            if artist_tags is None:
+        for locator in locators:
+            if locator is None:
                 continue
-            for artist_tag in artist_tags:
-                for value in artist_tag.values:
-                    value_str = str(value)
-                    if value_str in artist_ids_seen:
-                        continue
-                    artist_ids_seen.add(value_str)
-                    artists.append(
-                        EntityDict(
-                            id=value_str,
-                            display_name=value_str,
-                            song_count=None,
-                        ),
-                    )
+            for assignment in self.db.library.list_tags_for_song(locator):
+                if assignment.name != "artist":
+                    continue
+                value_str = str(assignment.value)
+                if value_str in artist_ids_seen:
+                    continue
+                artist_ids_seen.add(value_str)
+                artists.append(
+                    EntityDict(
+                        id=value_str,
+                        display_name=value_str,
+                        song_count=None,
+                    ),
+                )
 
         # Sort by display_name and limit
         artists.sort(key=lambda a: a["display_name"])
@@ -197,34 +215,33 @@ class MetadataService:
             List of EntityDict (albums)
 
         """
-        # Get all songs for this artist by its natural tag identity.
-        song_ids = [
-            song.song_id
-            for song in self.db.library.find_songs_with_tag(TagRef(name="artist", value=artist_id), limit=10000)
-        ]
+        # Get all songs for this artist by its natural tag identity, then read
+        # each song's tags through its semantic locator (never a generated id).
+        songs = self.db.library.find_songs_with_tag(TagRef(name="artist", value=artist_id), limit=10000)
+        locators = self._project_song_locators(songs)
 
-        # For each song, get album tags. Entity identity is the natural tag
-        # value (no tag PK exists); dedupe on the value itself.
+        # Entity identity is the natural tag value (no tag PK exists); dedupe on
+        # the value itself.
         album_ids_seen: set[str] = set()
         albums: list[EntityDict] = []
 
-        for song_id in song_ids:
-            album_tags = get_song_tags(self.db, song_id, name="album")
-            if album_tags is None:
+        for locator in locators:
+            if locator is None:
                 continue
-            for album_tag in album_tags:
-                for value in album_tag.values:
-                    value_str = str(value)
-                    if value_str in album_ids_seen:
-                        continue
-                    album_ids_seen.add(value_str)
-                    albums.append(
-                        EntityDict(
-                            id=value_str,
-                            display_name=value_str,
-                            song_count=None,
-                        ),
-                    )
+            for assignment in self.db.library.list_tags_for_song(locator):
+                if assignment.name != "album":
+                    continue
+                value_str = str(assignment.value)
+                if value_str in album_ids_seen:
+                    continue
+                album_ids_seen.add(value_str)
+                albums.append(
+                    EntityDict(
+                        id=value_str,
+                        display_name=value_str,
+                        song_count=None,
+                    ),
+                )
 
         # Sort by display_name and limit
         albums.sort(key=lambda a: a["display_name"])

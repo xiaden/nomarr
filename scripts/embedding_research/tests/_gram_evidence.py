@@ -1,9 +1,15 @@
-"""Shared declared-evidence emitter and synthetic fixtures for the Plan S R1-R13 matrix.
+"""Shared declared-evidence emitter and synthetic fixtures for the retained R1-R13 matrix.
 
-Every Plan S matrix test produces a deterministic synthetic artifact under a DECLARED
+R1-R13 label the retained synthetic *behavior* evidence (schema, binding, retrieval,
+medoid, silence/weight, collapse/scorer boundary, report identity, deleted surface,
+phase timings, storage lifecycle, reset, and scope/synthetic-only checks).  Only R14 —
+the Git/source-commit traceability replay — was hard-deleted by the corrective pass;
+the R1-R13 scientific behavior tests and their ``rN-*.json`` artifacts are retained.
+
+Every retained matrix test produces a deterministic synthetic artifact under a DECLARED
 evidence path.  Nothing here reads audio, a model, ONNX, CUDA, or a real corpus: the
-observations are pure in-memory numpy arrays and the geometry is computed by the
-research package's own scalar kernel.
+observations are pure in-memory numpy arrays; fixtures target the NumPy
+production Gram kernel (row normalization plus float32 matmul).
 """
 
 from __future__ import annotations
@@ -15,8 +21,8 @@ from typing import Any
 
 import numpy as np
 
-#: Declared evidence root for the completed hard-cut migration bundle.  Plan T's
-#: traceability validator consumes exactly these workspace-relative artifacts.
+#: Declared synthetic evidence root for the completed hard-cut migration bundle.
+#: The retained synthetic behavior tests consume exactly these workspace-relative artifacts.
 EVIDENCE_ROOT = Path("artifacts/evidence/threshold-independent-per-song-gram-geometry-migration")
 
 

@@ -1,0 +1,19 @@
+{
+  "tags": [
+    {
+      "id": "happy",
+      "name": "nom:mood-strict",
+      "namespace": "nom",
+      "song_count": 1,
+      "value": "happy"
+    },
+    {
+      "id": "sad",
+      "name": "nom:mood-strict",
+      "namespace": "nom",
+      "song_count": 1,
+      "value": "sad"
+    }
+  ],
+  "total": 2
+}

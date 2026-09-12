@@ -13,7 +13,6 @@ from nomarr.components.ml.calibration.ml_calibration_state_comp import (
     update_file_calibration_hashes_batch,
 )
 from nomarr.components.ml.onnx.ml_discovery_comp import discover_heads
-from nomarr.components.processing.file_write_comp import save_mood_tags_batch
 from nomarr.helpers.constants.file_states import STATE_TAGS_CURRENT, STATE_TAGS_NOT_FRESH
 from nomarr.helpers.dto.calibration_dto import WriteCalibratedTagsParams
 from nomarr.helpers.dto.recalibration_dto import ApplyCalibrationResult
@@ -60,7 +59,9 @@ def apply_calibration_wf(
     Pre-computes invariant data (heads, calibrations, library roots) once
     before the loop to avoid redundant DB queries and filesystem scans.
 
-    File writes execute concurrently via a ThreadPoolExecutor (default 4 workers).
+    Concurrent per-file calibration compute runs via a ThreadPoolExecutor (default 4
+    workers); the DB flush is sequential and filesystem writes are a later reconcile
+    stage.
 
     Paths are processed in chunks of `prefetch_chunk_size` (default 1000) to
     bound peak RAM usage and cap deferred batch-write size. Each chunk processes
@@ -76,7 +77,7 @@ def apply_calibration_wf(
         version_tag_key: Metadata key for version tracking
         calibrate_heads: Whether to apply calibration heads
         on_progress: Optional callback invoked after each file
-        max_write_workers: Max concurrent file write workers (default 4)
+        max_write_workers: Max concurrent per-file calibration compute workers (default 4)
         prefetch_chunk_size: Maximum files processed per chunk before deferred
             writes flush (default 1000). Lower values reduce peak RAM and batch
             write size at the cost of more flush cycles.
@@ -181,22 +182,36 @@ def apply_calibration_wf(
             _t_io_total += _t_io_chunk
 
             # Persist DB updates before marking files stale for file write-back.
-            # Any mood-tag or calibration-hash failure leaves the file eligible
-            # for a later retry and avoids projecting a partial DB update.
+            # The tag owner publishes mood assignments and the calibration marker
+            # in one all-or-none transaction; the separate locator-addressed
+            # hash/state update runs only after that publication succeeds. Any
+            # failure leaves the file eligible for a later retry and avoids
+            # projecting a partial DB update.
             writes_succeeded = True
-            if batch_ctx.pending_mood_tags:
+            mood_commands = batch_ctx.pending_mood_commands
+            if mood_commands:
                 logger.debug(
                     f"[apply_calibration] Chunk {chunk_num}/{n_chunks}: "
-                    f"flushing {len(batch_ctx.pending_mood_tags)} mood tag writes..."
+                    f"flushing {len(mood_commands)} mood replacement commands..."
                 )
+                mood_status: str | None = None
                 try:
-                    save_mood_tags_batch(db, batch_ctx.pending_mood_tags)
-                except Exception as e:
+                    mood_result = db.library.tags.replace_mood_tags_batch(mood_commands)
+                    mood_status = mood_result.status
+                except Exception:
+                    mood_status = None
+                    logger.warning("[apply_calibration] Batch mood flush raised unexpectedly", exc_info=True)
+
+                if mood_status not in ("UPDATED", "UNCHANGED"):
                     writes_succeeded = False
-                    failed_writes = len(batch_ctx.pending_mood_tags)
+                    failed_writes = len(mood_commands)
                     success_count -= failed_writes
                     fail_count += failed_writes
-                    logger.warning(f"[apply_calibration] Batch mood tag flush failed: {e}", exc_info=True)
+                    if mood_status is not None:
+                        logger.warning(
+                            "[apply_calibration] Batch mood flush did not publish (%s)",
+                            mood_status,
+                        )
 
             if writes_succeeded and batch_ctx.pending_calibration_hashes:
                 logger.debug(
@@ -213,9 +228,9 @@ def apply_calibration_wf(
                     logger.warning(f"[apply_calibration] Batch calibration hash flush failed: {e}", exc_info=True)
 
             if writes_succeeded:
-                for song, _ in batch_ctx.pending_mood_tags:
-                    if STATE_TAGS_CURRENT in db.app.song_state_membership(song):
-                        transition_song_state(db, [song], STATE_TAGS_CURRENT, STATE_TAGS_NOT_FRESH)
+                for command in mood_commands:
+                    if STATE_TAGS_CURRENT in db.app.song_state_membership(command.song):
+                        transition_song_state(db, [command.song], STATE_TAGS_CURRENT, STATE_TAGS_NOT_FRESH)
 
             logger.debug(f"[apply_calibration] Chunk {chunk_num}/{n_chunks} done in {_t_io_chunk:.2f}s I/O")
 

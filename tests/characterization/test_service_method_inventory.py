@@ -15,11 +15,27 @@ Marked with @pytest.mark.characterization.
 
 from __future__ import annotations
 
+from dataclasses import replace
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
 import pytest
 
 from .conftest import assert_snapshot_matches
+
+if TYPE_CHECKING:
+    from nomarr.helpers.dto.library_dto import UniqueTagKeysResult
+
+
+def _sorted_tag_keys_snapshot(result: UniqueTagKeysResult) -> UniqueTagKeysResult:
+    """Return a copy of ``result`` with ``tag_keys`` sorted.
+
+    ``tag_repo.list_all_tag_names`` issues ``select(name).distinct()`` with no
+    ``ORDER BY``, so PostgreSQL may return the distinct names in any order
+    across runs. Sorting here keeps the characterization snapshot deterministic
+    without weakening the assertion or changing production ordering.
+    """
+    return replace(result, tag_keys=sorted(result.tag_keys))
 
 
 @pytest.mark.characterization
@@ -108,7 +124,14 @@ class TestServiceMethodInventory:
         assert_snapshot_matches("LibraryService_search_files", result)
 
     def test_library_service_get_song_tags(self, db, seed_data):
-        """Snapshot: LibraryService.get_song_tags(song_id, nomarr_only=False)."""
+        """Snapshot: LibraryService.get_song_tags(SongIdentity, nomarr_only=False).
+
+        The locator is the fixture's directly-constructed semantic ``SongIdentity``
+        (no integer-handle resolver crossing). The typed result must carry the
+        opaque ``nom1`` locator of that exact identity and the seeded tag
+        assignments, so any regression reintroducing an integer handle fails here.
+        """
+        from nomarr.helpers.song_locator_codec import encode_song_locator
         from nomarr.services.domain.library_svc import LibraryService
         from nomarr.services.domain.library_svc.config import LibraryServiceConfig
 
@@ -118,8 +141,14 @@ class TestServiceMethodInventory:
             tagger_version="test-v1",
         )
         service = LibraryService(cfg=cfg, db=db)
-        song_id = seed_data["songs"][0]
-        result = service.get_song_tags(song_id, nomarr_only=False)
+        song = seed_data["song_identities"][0]
+        result = service.get_song_tags(song, nomarr_only=False)
+        assert result.file_id == encode_song_locator(song)
+        assert result.file_id.startswith("nom1")
+        assert {tag.key: tag.value for tag in result.tags} == {
+            "nom:mood-strict": "happy",
+            "nom:genre": "rock",
+        }
         assert_snapshot_matches("LibraryService_get_song_tags", result)
 
     def test_library_service_cleanup_orphaned_tags(self, db, seed_data):
@@ -164,6 +193,7 @@ class TestServiceMethodInventory:
 
     def test_tagging_service_update_song_tags(self, db, seed_data):
         """Snapshot: TaggingService.update_song_tags(song_id, name, values)."""
+        from nomarr.helpers.song_locator_codec import encode_song_locator
         from nomarr.services.domain.tagging_svc import TaggingService
         from nomarr.services.domain.tagging_svc.config import TaggingServiceConfig
 
@@ -180,7 +210,7 @@ class TestServiceMethodInventory:
             bts=bts,
             config_service=config_service,
         )
-        song_id = str(seed_data["songs"][0])
+        song_id = encode_song_locator(seed_data["song_identities"][0])
         result = service.update_song_tags(
             song_id=song_id,
             name="mood",
@@ -229,7 +259,10 @@ class TestServiceMethodInventory:
             config_service=config_service,
         )
         result = service.get_unique_tag_keys(nomarr_only=False)
-        assert_snapshot_matches("TaggingService_get_unique_tag_keys", result)
+        assert_snapshot_matches(
+            "TaggingService_get_unique_tag_keys",
+            _sorted_tag_keys_snapshot(result),
+        )
 
     # -----------------------------------------------------------------------
     # WorkerSystemService (3 methods)

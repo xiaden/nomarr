@@ -199,3 +199,40 @@ def read_head_evidence_for_run(con, *, run_id: str) -> tuple[dict[str, Any], ...
     if not rows:
         raise IdentityRefusal("no geometry head evidence for run")
     return tuple(dict(zip(_HEAD_EVIDENCE_COLUMNS, row, strict=True)) for row in rows)
+
+
+def read_threshold_map_rows(
+    con: Any,
+    *,
+    run_id: str,
+    evaluation_id: str,
+    execution_id: str,
+) -> tuple[dict[str, Any], ...]:
+    """Read the per-threshold structural/search mapping rows for one exact corpus scope.
+
+    Threshold rows carry the structural identity and search representation chosen for one
+    threshold plus the role/song/backbone/comparability evidence.  Rows from another
+    evaluation or execution are never substituted.
+    """
+    rows = con.execute(
+        "SELECT threshold_id, structural_identity, search_representation_id, evidence_json "
+        "FROM geometry_analysis_records WHERE run_id=? AND evaluation_id=? AND execution_id=? "
+        "AND metric='total_searchable' ORDER BY threshold_id",
+        (run_id, evaluation_id, execution_id),
+    ).fetchall()
+    entries: list[dict[str, Any]] = []
+    for threshold_id, structural_identity, search_representation_id, evidence_json in rows:
+        evidence = json.loads(evidence_json) if evidence_json else {}
+        if not isinstance(evidence, dict) or evidence.get("role") != "threshold":
+            continue
+        entries.append(
+            {
+                "song_id": str(evidence.get("song_id", "")),
+                "backbone": str(evidence.get("backbone", "")),
+                "threshold_id": str(threshold_id),
+                "structural_identity": str(structural_identity),
+                "search_representation_id": str(search_representation_id),
+                "comparable": bool(evidence.get("comparable", True)),
+            }
+        )
+    return tuple(entries)

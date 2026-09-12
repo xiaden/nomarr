@@ -1,12 +1,14 @@
-"""Focused synthetic tests for Plan K P2-S7/S8 geometry corpus persistence.
+"""Focused synthetic tests for the corrective Plan D geometry corpus persistence.
 
-They prove that one complete finite corpus analysis publishes atomically through the
-existing exact-identity DuckDB APIs (threshold evidence + mandatory observed baseline +
-aggregate/per-song/ruler/counter evidence + invocation/terminal lifecycle), that every
-geometry binding is revalidated before commit, that any refusal rolls back every output,
-and that the exact reader rejects incomplete invocation state, duplicate rows, non-finite
-values and mixed/stale evidence. No alternate vocabulary or dual schema, real
-corpus, or threshold-result table is involved.
+They prove that one complete corpus analysis publishes atomically through the single
+exact-identity DuckDB APIs (threshold-to-representation map + mandatory observed baseline +
+aggregate/per-song/ruler/counter evidence + membership/missing-song/comparability evidence +
+per-query ruler metrics + winner and baseline neighborhoods + invocation/terminal lifecycle),
+that every geometry binding is revalidated before commit, that a non-comparable corpus is
+published with explicit reasons instead of being refused, that any write failure rolls back
+every output, and that the exact readers reject incomplete invocation state, duplicate rows,
+non-finite values and mixed/stale evidence.  No alternate vocabulary or dual schema, real
+corpus, filesystem Gram storage, or threshold-result table is involved.
 """
 
 from __future__ import annotations
@@ -19,9 +21,16 @@ from scripts.embedding_research.common.geometry_analysis import (
     FrozenSearchRepresentation,
     GeometryAnalysisCounters,
     GeometryCorpusAnalysis,
+    GeometryQueryEvidence,
     GeometryRepresentationRoster,
     GeometryScoreBundle,
+    GeometrySongAnalysis,
+    GeometrySongRequest,
+    NeighborhoodEntry,
+    build_geometry_corpus_identity,
     read_geometry_corpus_analysis,
+    read_geometry_corpus_evidence,
+    read_geometry_threshold_map,
     write_geometry_corpus_analysis,
 )
 from scripts.embedding_research.common.threshold_analysis import (
@@ -34,8 +43,10 @@ from scripts.embedding_research.common.threshold_analysis import (
 )
 from scripts.embedding_research.db import ensure_schema, write_geometry
 from scripts.embedding_research.db.analyze_scope import invocation_state, record_analyze_invocation
+from scripts.embedding_research.db.geometry import GeometryIdentity
 from scripts.embedding_research.db.geometry_profile import GeometryProfile
 from scripts.embedding_research.db.identity_persistence import IdentityRefusal, write_analysis_rows
+from scripts.embedding_research.helpers.corpus_identity import RepresentationState
 
 pytestmark = pytest.mark.unit
 
@@ -96,7 +107,7 @@ def _representation(record, *, name: str, baseline: bool = False) -> FrozenSearc
         weights=np.ones(1, dtype=np.float64),
         search_representation_id=name,
         geometry_id=record.geometry_id,
-        observation_id=record.identity.observation_commit_sha256,
+        observation_id=record.identity.observation_group_sha256,
         numerical_profile_digest=record.identity.numerical_profile_digest,
         mask_digest="mask-a",
         scoring_semantics_version=1,
@@ -105,7 +116,54 @@ def _representation(record, *, name: str, baseline: bool = False) -> FrozenSearc
     )
 
 
-def _corpus(record, *, comparable: bool = True) -> GeometryCorpusAnalysis:
+def _neighborhood(count: int, *, prefix: str = "rep") -> tuple[NeighborhoodEntry, ...]:
+    return tuple(
+        NeighborhoodEntry(rank, f"song-{rank + 2}", "backbone-a", f"{prefix}-{rank}", 1.0 - rank * 0.001)
+        for rank in range(count)
+    )
+
+
+def _song_analysis(
+    record,
+    *,
+    analysis: AllThresholdAnalysis,
+    roster: GeometryRepresentationRoster,
+    scores: GeometryScoreBundle,
+    state: RepresentationState | None = None,
+    neighborhood: tuple[NeighborhoodEntry, ...] = (),
+    baseline_neighborhood: tuple[NeighborhoodEntry, ...] = (),
+) -> GeometrySongAnalysis:
+    request = GeometrySongRequest(
+        song_id=record.identity.song_id,
+        backbone=record.identity.backbone,
+        geometry_identity=GeometryIdentity(
+            record.identity.song_id,
+            record.identity.backbone,
+            record.identity.observation_group_sha256,
+            record.identity.geometry_semantics_version,
+            record.identity.numerical_profile_digest,
+        ),
+        observation_evidence={"song_id": record.identity.song_id, "backbone": record.identity.backbone},
+    )
+    return GeometrySongAnalysis(
+        request=request,
+        thresholds=analysis,
+        roster=roster,
+        scores=scores,
+        state=state or RepresentationState(True, True, True, ()),
+        neighborhood=neighborhood,
+        baseline_neighborhood=baseline_neighborhood,
+    )
+
+
+def _corpus(
+    record,
+    *,
+    comparable: bool = True,
+    state: RepresentationState | None = None,
+    neighborhood: tuple[NeighborhoodEntry, ...] = (),
+    baseline_neighborhood: tuple[NeighborhoodEntry, ...] = (),
+) -> GeometryCorpusAnalysis:
     threshold = ThresholdSpec(0, 0.0, "temporal_global:threshold:0:0.0")
     structural = StructuralIdentity(threshold.threshold_id, 0, (), (), "structural-a")
     search = SearchRepresentation(
@@ -114,7 +172,7 @@ def _corpus(record, *, comparable: bool = True) -> GeometryCorpusAnalysis:
         searchable_weights=(1.0,),
         total_searchable=3,
         geometry_id=record.geometry_id,
-        observation_id=record.identity.observation_commit_sha256,
+        observation_id=record.identity.observation_group_sha256,
         profile_digest=record.identity.numerical_profile_digest,
         mask_digest="mask-a",
         scoring_semantics_version=1,
@@ -124,7 +182,7 @@ def _corpus(record, *, comparable: bool = True) -> GeometryCorpusAnalysis:
     analysis = AllThresholdAnalysis(
         experiment="temporal_global",
         geometry_id=record.geometry_id,
-        observation_id=record.identity.observation_commit_sha256,
+        observation_id=record.identity.observation_group_sha256,
         profile_digest=record.identity.numerical_profile_digest,
         mask_digest="mask-a",
         results=(ThresholdAnalysisResult(threshold, structural, search, None),),
@@ -137,7 +195,17 @@ def _corpus(record, *, comparable: bool = True) -> GeometryCorpusAnalysis:
     scores = GeometryScoreBundle(
         scores={"representation-a": 0.5},
         baseline_score=0.25,
+        baseline_representation_id="baseline-a",
         evaluation_comparable=comparable,
+    )
+    query = _song_analysis(
+        record,
+        analysis=analysis,
+        roster=roster,
+        scores=scores,
+        state=state,
+        neighborhood=neighborhood,
+        baseline_neighborhood=baseline_neighborhood,
     )
     ruler = {
         "active": 1.0,
@@ -173,13 +241,14 @@ def _corpus(record, *, comparable: bool = True) -> GeometryCorpusAnalysis:
         baseline_deltas={"artist": 0.25},
         comparable=comparable,
         counters=GeometryAnalysisCounters(1, 1, 1, 1, 1, 1, 0),
+        queries=(query,),
     )
 
 
-def _corpus_identity(record) -> AnalysisEvidenceIdentity:
+def _raw_identity(record) -> AnalysisEvidenceIdentity:
     return AnalysisEvidenceIdentity(
         geometry_id=record.geometry_id,
-        observation_id=record.identity.observation_commit_sha256,
+        observation_id=record.identity.observation_group_sha256,
         geometry_semantics_version=record.identity.geometry_semantics_version,
         numerical_profile_digest=record.identity.numerical_profile_digest,
         threshold_id="corpus",
@@ -195,7 +264,8 @@ def test_corpus_roundtrip_exact_identity_and_terminal() -> None:
     con = duckdb.connect(":memory:")
     ensure_schema(con)
     record = _seed_geometry(con)
-    write_geometry_corpus_analysis(con, run_id=_RUN_ID, result=_corpus(record))
+    result = _corpus(record)
+    write_geometry_corpus_analysis(con, run_id=_RUN_ID, result=result)
 
     state = invocation_state(con, run_id=_RUN_ID)
     assert state["obligations_present"] is True
@@ -209,7 +279,8 @@ def test_corpus_roundtrip_exact_identity_and_terminal() -> None:
         > 0
     )
 
-    loaded = read_geometry_corpus_analysis(con, run_id=_RUN_ID, identity=_corpus_identity(record))
+    identity = build_geometry_corpus_identity(result)
+    loaded = read_geometry_corpus_analysis(con, run_id=_RUN_ID, identity=identity)
     assert loaded.run_id == _RUN_ID
     assert loaded.execution_id == _EXECUTION_ID
     assert loaded.experiment == "temporal_global"
@@ -221,7 +292,7 @@ def test_corpus_roundtrip_exact_identity_and_terminal() -> None:
 
     wrong = AnalysisEvidenceIdentity(
         geometry_id="superseded",
-        observation_id=record.identity.observation_commit_sha256,
+        observation_id=record.identity.observation_group_sha256,
         geometry_semantics_version=record.identity.geometry_semantics_version,
         numerical_profile_digest=record.identity.numerical_profile_digest,
         threshold_id="corpus",
@@ -236,6 +307,63 @@ def test_corpus_roundtrip_exact_identity_and_terminal() -> None:
     con.close()
 
 
+def test_threshold_map_and_corpus_evidence_roundtrip() -> None:
+    con = duckdb.connect(":memory:")
+    ensure_schema(con)
+    record = _seed_geometry(con)
+    result = _corpus(record, neighborhood=_neighborhood(100), baseline_neighborhood=_neighborhood(100, prefix="base"))
+    write_geometry_corpus_analysis(con, run_id=_RUN_ID, result=result)
+
+    identity = build_geometry_corpus_identity(result)
+    threshold_map = read_geometry_threshold_map(con, run_id=_RUN_ID, identity=identity)
+    assert len(threshold_map) == 1
+    assert threshold_map[0].threshold_id == "temporal_global:threshold:0:0.0"
+    assert threshold_map[0].structural_identity == "structural-a"
+    assert threshold_map[0].search_representation_id == "representation-a"
+    assert threshold_map[0].song_id == record.identity.song_id
+    assert threshold_map[0].comparable is True
+
+    evidence = read_geometry_corpus_evidence(con, run_id=_RUN_ID, identity=identity)
+    assert evidence.comparable is True
+    assert len(evidence.membership) == 1
+    assert evidence.membership[0].observation_group_sha256 == record.identity.observation_group_sha256
+    assert evidence.missing_searchable == ()
+    assert len(evidence.queries) == 1
+    query = evidence.queries[0]
+    assert isinstance(query, GeometryQueryEvidence)
+    assert query.winner_score == pytest.approx(0.5)
+    assert query.baseline_score == pytest.approx(0.25)
+    assert query.baseline_delta == pytest.approx(0.25)
+    assert query.searchable_count == 3
+    assert [entry.rank for entry in query.neighborhood] == list(range(100))
+    assert len(query.neighborhood) == 100
+    assert len(query.baseline_neighborhood) == 100
+    assert query.neighborhood[0].search_representation_id == "rep-0"
+    assert query.baseline_neighborhood[0].search_representation_id == "base-0"
+    con.close()
+
+
+def test_non_comparable_corpus_publishes_explicit_reasons() -> None:
+    con = duckdb.connect(":memory:")
+    ensure_schema(con)
+    record = _seed_geometry(con)
+    state = RepresentationState(False, False, False, ("no_searchable",))
+    result = _corpus(record, comparable=False, state=state)
+    write_geometry_corpus_analysis(con, run_id=_RUN_ID, result=result)
+
+    assert invocation_state(con, run_id=_RUN_ID)["terminal_completed"] is True
+    identity = build_geometry_corpus_identity(result)
+    loaded = read_geometry_corpus_analysis(con, run_id=_RUN_ID, identity=identity)
+    assert loaded.comparable is False
+    assert "no_searchable" in loaded.reasons
+
+    evidence = read_geometry_corpus_evidence(con, run_id=_RUN_ID, identity=identity)
+    assert evidence.comparable is False
+    assert "no_searchable" in evidence.reasons
+    assert evidence.queries[0].comparable is False
+    con.close()
+
+
 def test_corpus_duplicate_publication_is_refused() -> None:
     con = duckdb.connect(":memory:")
     ensure_schema(con)
@@ -244,18 +372,6 @@ def test_corpus_duplicate_publication_is_refused() -> None:
     write_geometry_corpus_analysis(con, run_id=_RUN_ID, result=result)
     with pytest.raises(ValueError, match="already terminalized"):
         write_geometry_corpus_analysis(con, run_id=_RUN_ID, result=result)
-    con.close()
-
-
-def test_corpus_refusal_rolls_back_every_output() -> None:
-    con = duckdb.connect(":memory:")
-    ensure_schema(con)
-    record = _seed_geometry(con)
-    with pytest.raises(ValueError, match="non-comparable"):
-        write_geometry_corpus_analysis(con, run_id=_RUN_ID, result=_corpus(record, comparable=False))
-
-    assert con.execute("SELECT count(*) FROM geometry_analysis_records").fetchone()[0] == 0
-    assert invocation_state(con, run_id=_RUN_ID)["obligations_present"] is False
     con.close()
 
 
@@ -290,7 +406,7 @@ def test_reader_rejects_incomplete_invocation_state() -> None:
     con = duckdb.connect(":memory:")
     ensure_schema(con)
     record = _seed_geometry(con)
-    identity = _corpus_identity(record)
+    identity = _raw_identity(record)
     record_analyze_invocation(con, run_id="run-open", backbones=[])
     write_analysis_rows(
         con,
@@ -308,8 +424,9 @@ def test_reader_rejects_duplicate_and_nonfinite_rows() -> None:
     con = duckdb.connect(":memory:")
     ensure_schema(con)
     record = _seed_geometry(con)
-    write_geometry_corpus_analysis(con, run_id=_RUN_ID, result=_corpus(record))
-    identity = _corpus_identity(record)
+    result = _corpus(record)
+    write_geometry_corpus_analysis(con, run_id=_RUN_ID, result=result)
+    identity = build_geometry_corpus_identity(result)
     evidence = con.execute(
         "SELECT evidence_json FROM geometry_analysis_records WHERE run_id=? AND threshold_id='corpus' LIMIT 1",
         (_RUN_ID,),
@@ -322,10 +439,10 @@ def test_reader_rejects_duplicate_and_nonfinite_rows() -> None:
     )
     base = (
         _RUN_ID,
-        record.geometry_id,
-        record.identity.observation_commit_sha256,
-        record.identity.geometry_semantics_version,
-        record.identity.numerical_profile_digest,
+        identity.geometry_id,
+        identity.observation_id,
+        identity.geometry_semantics_version,
+        identity.numerical_profile_digest,
         "corpus",
         "temporal_global:corpus",
         "corpus",

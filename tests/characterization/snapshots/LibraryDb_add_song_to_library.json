@@ -1,0 +1,8 @@
+{
+  "library": {
+    "library_uuid": "<UUID>",
+    "name": "TestLib1",
+    "root_path": "/tmp/test1"
+  },
+  "normalized_path": "/tmp/test1/char_song.flac"
+}

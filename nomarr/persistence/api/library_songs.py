@@ -1067,10 +1067,6 @@ class LibrarySongsDb:
         library_id = self._resolve_library_id(library)
         return [song_row_to_domain(row) for row in self._song_repo.list_tracks_for_matching(library_id, limit=limit)]
 
-    def list_orphaned_song_ids(self) -> list[int]:
-        """List song IDs that have no matching library-song row."""
-        return self._song_repo.list_orphaned_song_ids()
-
     def prune_orphaned_songs(self) -> int:
         """Delete every song row that has no owning library row; return the count.
 
