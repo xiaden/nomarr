@@ -3,8 +3,8 @@
 ``LibraryDb`` is the caller-facing entry point for the library persistence
 surface. It holds no logic of its own: every public method delegates to one
 of four domain-identity sub-facades (``songs``, ``tags``, ``scans``,
-``regions``) per DD-persistence-intent-facade-rebuild §Phase 1 (namespaced
-forwarding), plus a public maintenance nested sub-facade,
+``regions``) through namespaced domain forwarding, plus a public maintenance nested
+sub-facade,
 ``db.library.maintenance``, for destructive whole-library resets. Callers
 keep using ``db.library.method()`` unchanged.
 
@@ -12,7 +12,7 @@ keep using ``db.library.method()`` unchanged.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -196,21 +196,6 @@ class LibraryDb:
     def get_song(self, identity: SongIdentity) -> Song | None:
         return self._songs.get_song(identity)
 
-    # Numeric-handle identity bridge (P3, song-tag correction) — non-tag
-    # forwarders delegating to the song-side bridge on ``LibrarySongsDb``.
-
-    def resolve_song_identity(self, song_id: int) -> SongIdentity | None:
-        return self._songs.resolve_song_identity(song_id)
-
-    def resolve_song_identities(self, song_ids: Sequence[int]) -> Mapping[int, SongIdentity]:
-        return self._songs.resolve_song_identities(song_ids)
-
-    def resolve_library_identity(self, library_id: int) -> LibraryIdentity | None:
-        return self._songs.resolve_library_identity(library_id)
-
-    def resolve_library_identities(self, library_ids: Sequence[int]) -> Mapping[int, LibraryIdentity]:
-        return self._songs.resolve_library_identities(library_ids)
-
     def get_song_by_path(self, path: str, library: Library) -> Song | None:
         return self._songs.get_song_by_path(path, library)
 
@@ -248,14 +233,8 @@ class LibraryDb:
     def count_songs(self, library: Library) -> int:
         return self._songs.count_songs(library)
 
-    def get_library_ids_for_songs(self, song_ids: list[int]) -> dict[int, int]:
-        return self._songs.get_library_ids_for_songs(song_ids)
-
     def count_recently_tagged(self, cutoff_ms: int) -> int:
         return self._songs.count_recently_tagged(cutoff_ms)
-
-    def list_library_song_ids(self, library: Library, *, limit: int | None = None) -> list[int]:
-        return self._songs.list_library_song_ids(library, limit=limit)
 
     def count_songs_for_library(self, library: Library) -> int:
         return self._songs.count_songs_for_library(library)
@@ -273,23 +252,6 @@ class LibraryDb:
     def add_songs_to_library_batch(self, commands: Sequence[SongUpsertInput]) -> list[SongIdentity]:
         """Forward the create-only, single-transaction atomic song batch upsert."""
         return self._songs.add_songs_to_library_batch(commands)
-
-    def add_songs_to_library(
-        self,
-        library: Library,
-        payloads: list[dict[str, Any]],
-    ) -> list[int]:
-        # Preserve the concurrent Song-domain facade migration.
-        return self._songs.add_songs_to_library(library, payloads)
-
-    def update_songs(
-        self,
-        library: Library,
-        payloads: list[dict[str, Any]],
-        *,
-        remove_missing: bool = True,
-    ) -> dict[str, int]:
-        return self._songs.update_songs(library, payloads, remove_missing=remove_missing)
 
     def move_library_song(self, command: SongPathUpdate) -> SongIdentity | None:
         """Forward one atomic Song move to the songs intent facade (ADR-048).

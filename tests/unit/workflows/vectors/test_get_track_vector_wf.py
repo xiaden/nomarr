@@ -37,6 +37,12 @@ def comp_shim(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
+_SONG = SongIdentity(
+    library=LibraryIdentity(library_uuid="6313b0d3-d270-57a8-9e0d-21e8255107e3", name="Music", root_path="/music"),
+    normalized_path="songs/1.mp3",
+)
+
+
 def _song_vector(vector: tuple[float, ...]) -> SongVector:
     song = SongIdentity(
         library=LibraryIdentity(library_uuid="6313b0d3-d270-57a8-9e0d-21e8255107e3", name="Music", root_path="/music"),
@@ -62,18 +68,18 @@ class TestGetTrackVectorWorkflow:
         expected = _song_vector((0.1, 0.2, 0.3))
         db._get_cold_track_vector = MagicMock(return_value=expected)
 
-        result = get_track_vector(db, 1, "effnet")
+        result = get_track_vector(db, _SONG, "effnet")
 
         assert result is expected
         assert isinstance(result, SongVector)
         assert result.vector == (0.1, 0.2, 0.3)
-        db._get_cold_track_vector.assert_called_once_with(1, "effnet")
+        db._get_cold_track_vector.assert_called_once_with(_SONG, "effnet")
 
     def test_returns_none_when_no_vector(self) -> None:
         db = _make_db()
         db._get_cold_track_vector = MagicMock(return_value=None)
 
-        result = get_track_vector(db, 999, "effnet")
+        result = get_track_vector(db, _SONG, "effnet")
 
         assert result is None
-        db._get_cold_track_vector.assert_called_once_with(999, "effnet")
+        db._get_cold_track_vector.assert_called_once_with(_SONG, "effnet")

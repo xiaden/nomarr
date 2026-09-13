@@ -32,7 +32,7 @@ def test_geometry_runner_requires_aligned_persisted_head_payload() -> None:
         evidence = MappingProxyType({})
 
     class Analysis:
-        observation_id = "observation"
+        observation_group_sha256 = "observation"
         geometry_semantics_version = "gram-v1"
         profile_digest = "profile"
         evaluation_id = "evaluation"
@@ -46,7 +46,7 @@ def test_geometry_runner_requires_aligned_persisted_head_payload() -> None:
 def test_geometry_runner_source_preserves_required_evidence_names() -> None:
     for name in (
         "geometry_id",
-        "observation_id",
+        "observation_group_sha256",
         "threshold_id",
         "structural_identity",
         "search_representation_id",

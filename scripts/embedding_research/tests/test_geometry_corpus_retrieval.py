@@ -276,7 +276,7 @@ def test_zero_searchable_is_explicitly_non_comparable() -> None:
     assert all(candidate.representation.song_id != "song-1" for candidate in result.candidates)
     assert result.noncomparable
     assert all(evidence.song_id == "song-1" for evidence in result.noncomparable)
-    assert any("no_searchable" in evidence.reasons for evidence in result.noncomparable)
+    assert any("zero_searchable" in evidence.reasons for evidence in result.noncomparable)
     disabled = next(query for query in result.queries if query.request.song_id == "song-1")
     assert disabled.state.comparable is False
     assert disabled.state.reasons
@@ -337,7 +337,7 @@ def test_no_full_matrix_and_bounded_top_n() -> None:
             weights=np.ones(1, dtype=np.float64),
             search_representation_id=f"rep-{i:03d}",
             geometry_id=f"g{i}",
-            observation_id=f"o{i}",
+            observation_group_sha256=f"o{i}",
             numerical_profile_digest="p",
             mask_digest="m",
             scoring_semantics_version=1,

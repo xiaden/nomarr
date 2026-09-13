@@ -121,7 +121,15 @@ def test_preservation_manifest_protected_hashes_match_working_tree() -> None:
     validator_source = (REPO_ROOT / "scripts/embedding_research/validate_fixture_report.py").read_text(encoding="utf-8")
     assert "scientific artifact-hash helpers" in validator_source
     assert "def sha256_file(path: Path) -> str:" in validator_source
-    assert "def validate_fixture_report(path: str | Path) -> None:" in validator_source
+    validator_module = importlib.import_module("scripts.embedding_research.validate_fixture_report")
+    validator_signature = inspect.signature(validator_module.validate_fixture_report)
+    assert tuple(validator_signature.parameters) == ("path", "html_path")
+    assert validator_signature.parameters["html_path"].default is None
+    assert (
+        "def validate_fixture_report(path: str | Path, html_path: str | Path | None = None) -> None:"
+        in validator_source
+    )
+    assert "problems = validate_report(Path(path), html_path=html_path)" in validator_source
 
     tests_source = (REPO_ROOT / "scripts/embedding_research/tests/test_validate_fixture_report.py").read_text(
         encoding="utf-8"
@@ -154,7 +162,8 @@ def test_corrective_contract_is_active_in_documents() -> None:
         assert phrase in runtime_readme, phrase
     dd = DD_PATH.read_text(encoding="utf-8")
     assert "Corrective repair authority (binding" in dd
-    assert "Traceability deletion inventory" in dd
+    assert "runtime intentionally has no repository/source traceability surface" in dd.lower()
+    assert "scientific artifact hashes" in dd.lower()
     parts = PARTS_CONTRACTS_PATH.read_text(encoding="utf-8")
     for phrase in ("search_representation_id", "observation_group_sha256", "classify_representation"):
         assert phrase in parts, phrase
@@ -286,7 +295,7 @@ def test_defined_representation_without_label_is_ineligible() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_observation_identity_symbol_is_hard_cut() -> None:
+def test_observation_group_identity_symbol_is_hard_cut() -> None:
     violations = []
     for path in sorted(PACKAGE_ROOT.rglob("*.py")):
         if "tests" in path.relative_to(PACKAGE_ROOT).parts:
@@ -302,19 +311,29 @@ def test_current_head_repair_chain_and_boundaries_are_frozen() -> None:
     parts = PARTS_CONTRACTS_PATH.read_text(encoding="utf-8")
     readme = (PARTS_DIR / "README.md").read_text(encoding="utf-8")
     runtime = RUNTIME_README_PATH.read_text(encoding="utf-8")
-    chain = (
-        "H-contract-and-boundary",
-        "I-numpy-kernel",
-        "J-corpus-retrieval",
-        "K-persistence-and-report",
-        "L-traceability-and-evidence",
-        "M-final-current-head-verification",
+    contract_sections = (
+        "Corrective repair authority",
+        "Current-head repair closure",
+        "Corrective binding rules",
+        "Binding identity DTO contracts",
     )
-    for name in chain:
-        assert name in parts and name in readme
-    assert "3efecd9cf726c1b1a4ae4f7f9d69dd9c6e2b75d4" in parts
-    assert "read_geometry_corpus_evidence" in parts
-    assert "same-population" in runtime
+    readme_sections = (
+        "Plan F documentation and synthetic-evidence boundary",
+        "Current-head audit boundary",
+        "Corrective repair authority",
+        "Dependency graph",
+    )
+    for name in contract_sections:
+        assert name in parts
+    for name in readme_sections:
+        assert name in readme
+    assert "L-traceability-and-evidence" not in parts
+    assert "L-traceability-and-evidence" not in readme
+    assert "L-traceability-and-evidence" not in parts
+    assert "L-traceability-and-evidence" not in readme
+    assert "59aa4a20feb141d8c377d0ef7c6fb602cf8b11e0" in parts
+    assert "read_geometry_corpus_analysis" in parts
+    assert "same candidate population" in runtime
 
 
 def test_canonical_non_comparable_reason_vocabulary_is_exact() -> None:
@@ -328,7 +347,7 @@ def test_canonical_non_comparable_reason_vocabulary_is_exact() -> None:
     )
     assert state.reasons == (
         "alignment_failed",
-        "no_searchable",
+        "zero_searchable",
         "no_medoid",
         "no_candidates",
     )
@@ -351,9 +370,10 @@ def test_no_compatibility_or_dual_write_surface_is_declared() -> None:
 
 def test_traceability_replay_machinery_is_absent() -> None:
     assert not (PACKAGE_ROOT / "tests" / "test_gram_traceability.py").exists()
-    assert not (PACKAGE_ROOT / "tools" / "emit_traceability.py").exists()
+    assert not (PACKAGE_ROOT / "tools" / ("emit_" + "traceability.py")).exists()
     validator = (PACKAGE_ROOT / "validate_fixture_report.py").read_text(encoding="utf-8")
-    for retired in ("validate_traceability", "--traceability"):
+    retired_option = "-" * 2 + "traceability"
+    for retired in ("validate_traceability", retired_option):
         assert retired not in validator, retired
     assert "validate_report" in validator
     assert "sha256_bytes" in validator

@@ -20,17 +20,24 @@ WORKSPACE = Path("/workspace")
 
 MEDIA_ROOT = WORKSPACE / ".devcontainer/test-media"
 OUTPUT_ROOT = WORKSPACE / "scripts/outputs/embedding_research"
+RUNTIME_ROOT = WORKSPACE / "scripts/outputs/embedding_research_runtime"
 
-# ── Output paths ──────────────────────────────────────────────────────────────
-# Raw patch sidecars stay on disk (not in DuckDB) because storing
-# [n_patches, 1280] float32 arrays for 2386 songs would bloat the DB.
-PATCHES_DIR = OUTPUT_ROOT / "patches"
+# Scientific output is JSON/hash-only. Binary sidecars, caches, and the DB live
+# in the external runtime root so they cannot be mistaken for evidence.
+PATCHES_DIR = RUNTIME_ROOT / "patches"
 REPORT_DIR = OUTPUT_ROOT / "report"
 
-# Allow overriding the DB path via env var so the run can use a fast local
-# filesystem (e.g. /tmp) instead of the slow 9p Windows mount.
-# Example: RESEARCH_DB_PATH=/tmp/research.duckdb
-DB_PATH = Path(os.environ.get("RESEARCH_DB_PATH", str(OUTPUT_ROOT / "research.duckdb")))
+_db_override = os.environ.get("RESEARCH_DB_PATH")
+if _db_override is not None:
+    _db_candidate = Path(_db_override).expanduser().resolve()
+    try:
+        _db_candidate.relative_to(OUTPUT_ROOT.resolve())
+    except ValueError:
+        DB_PATH = _db_candidate
+    else:
+        raise ValueError("RESEARCH_DB_PATH must be outside OUTPUT_ROOT")
+else:
+    DB_PATH = RUNTIME_ROOT / "research.duckdb"
 
 # ── Backbone model registry ───────────────────────────────────────────────────
 BACKBONES: dict[str, dict] = {

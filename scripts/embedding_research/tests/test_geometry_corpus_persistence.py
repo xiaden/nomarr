@@ -107,7 +107,7 @@ def _representation(record, *, name: str, baseline: bool = False) -> FrozenSearc
         weights=np.ones(1, dtype=np.float64),
         search_representation_id=name,
         geometry_id=record.geometry_id,
-        observation_id=record.identity.observation_group_sha256,
+        observation_group_sha256=record.identity.observation_group_sha256,
         numerical_profile_digest=record.identity.numerical_profile_digest,
         mask_digest="mask-a",
         scoring_semantics_version=1,
@@ -172,7 +172,7 @@ def _corpus(
         searchable_weights=(1.0,),
         total_searchable=3,
         geometry_id=record.geometry_id,
-        observation_id=record.identity.observation_group_sha256,
+        observation_group_sha256=record.identity.observation_group_sha256,
         profile_digest=record.identity.numerical_profile_digest,
         mask_digest="mask-a",
         scoring_semantics_version=1,
@@ -182,7 +182,7 @@ def _corpus(
     analysis = AllThresholdAnalysis(
         experiment="temporal_global",
         geometry_id=record.geometry_id,
-        observation_id=record.identity.observation_group_sha256,
+        observation_group_sha256=record.identity.observation_group_sha256,
         profile_digest=record.identity.numerical_profile_digest,
         mask_digest="mask-a",
         results=(ThresholdAnalysisResult(threshold, structural, search, None),),
@@ -248,7 +248,7 @@ def _corpus(
 def _raw_identity(record) -> AnalysisEvidenceIdentity:
     return AnalysisEvidenceIdentity(
         geometry_id=record.geometry_id,
-        observation_id=record.identity.observation_group_sha256,
+        observation_group_sha256=record.identity.observation_group_sha256,
         geometry_semantics_version=record.identity.geometry_semantics_version,
         numerical_profile_digest=record.identity.numerical_profile_digest,
         threshold_id="corpus",
@@ -292,7 +292,7 @@ def test_corpus_roundtrip_exact_identity_and_terminal() -> None:
 
     wrong = AnalysisEvidenceIdentity(
         geometry_id="superseded",
-        observation_id=record.identity.observation_group_sha256,
+        observation_group_sha256=record.identity.observation_group_sha256,
         geometry_semantics_version=record.identity.geometry_semantics_version,
         numerical_profile_digest=record.identity.numerical_profile_digest,
         threshold_id="corpus",
@@ -433,14 +433,14 @@ def test_reader_rejects_duplicate_and_nonfinite_rows() -> None:
     ).fetchone()[0]
 
     columns = (
-        "run_id, geometry_id, observation_id, geometry_semantics_version, numerical_profile_digest,"
+        "run_id, geometry_id, observation_group_sha256, geometry_semantics_version, numerical_profile_digest,"
         " threshold_id, structural_identity, search_representation_id, evaluation_id,"
         " scoring_semantics_version, execution_id, metric, value, evidence_json, created_at_ms"
     )
     base = (
         _RUN_ID,
         identity.geometry_id,
-        identity.observation_id,
+        identity.observation_group_sha256,
         identity.geometry_semantics_version,
         identity.numerical_profile_digest,
         "corpus",

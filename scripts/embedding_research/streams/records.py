@@ -775,27 +775,7 @@ class ObservationCommit:
 
 @dataclass(frozen=True)
 class ObservationGroupIdentity:
-    """Immutable identity of ONE complete committed stream+mask observation group.
-
-    This is the typed identity a head/reindex consumer requires before it may
-    use a stream or its silence mask: the immutable embedding ``stream_ref`` plus its
-    ``stream_digest``, the aligned audio-derived ``mask_ref`` plus its ``mask_digest``,
-    the ``alignment_token`` that binds them as one group, the ``patch_count`` the stream
-    and mask agree on (their shared frame length), the ``audio_content_sha256``
-    fingerprint the mask manifest and the commit marker agree on, the
-    ``mask_semantics_version`` naming the uint8 mask grammar, the
-    ``group_format_version`` sealing the marker grammar, and the ``commit_sha256``
-    marker content digest that seals the group.
-
-    It is rehydrated ONLY from a valid current-format commit marker plus its referenced
-    current-format manifests/payloads (see ``StreamStore.load_committed_observation``);
-    it is never constructed from unverified inputs.  Instances are immutable.
-
-    ``patch_count`` and ``group_format_version`` make the identity the COMPLETE immutable
-    observation-version evidence recorded per requested ``(song_id, backbone)``
-    and that every derived phase re-verifies against the
-    current committed group (Plan A observation binding).
-    """
+    """Immutable identity of one complete committed stream+mask observation group."""
 
     song_id: str
     backbone: str
@@ -809,6 +789,11 @@ class ObservationGroupIdentity:
     mask_semantics_version: str = ""
     group_format_version: str = ""
     commit_sha256: str = ""
+
+    @property
+    def observation_group_sha256(self) -> str:
+        """Canonical digest of the committed observation-group manifest."""
+        return self.commit_sha256
 
     def __post_init__(self) -> None:
         if not self.song_id or "." in self.song_id:

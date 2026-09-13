@@ -47,7 +47,7 @@ def _rep(name: str) -> FrozenSearchRepresentation:
         weights=np.ones(1, dtype=np.float64),
         search_representation_id=name,
         geometry_id=f"g-{name}",
-        observation_id=f"o-{name}",
+        observation_group_sha256=f"o-{name}",
         numerical_profile_digest="profile",
         mask_digest="mask",
         scoring_semantics_version=1,
@@ -129,7 +129,7 @@ def test_normalized_query_vectors_drops_zero_rows_and_returns_canonical_arrays()
 # ── GAP 3: read_threshold_map_rows exact scope and filtering ───────────────────
 
 _ANALYSIS_COLUMNS = (
-    "run_id, geometry_id, observation_id, geometry_semantics_version, numerical_profile_digest,"
+    "run_id, geometry_id, observation_group_sha256, geometry_semantics_version, numerical_profile_digest,"
     " threshold_id, structural_identity, search_representation_id, evaluation_id,"
     " scoring_semantics_version, execution_id, metric, value, evidence_json, created_at_ms"
 )

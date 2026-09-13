@@ -44,7 +44,7 @@ from scripts.embedding_research.common.threshold_analysis import (
     dense_primary_threshold_request,
     primary_experiment_manifest,
 )
-from scripts.embedding_research.config import DB_PATH, OUTPUT_ROOT
+from scripts.embedding_research.config import DB_PATH, OUTPUT_ROOT, RUNTIME_ROOT
 from scripts.embedding_research.helpers.toml import load_research_config as _load_research_config
 from scripts.embedding_research.helpers.toml import load_research_config_bytes as _load_raw_cfg
 
@@ -198,7 +198,7 @@ def _run_geometry(con, cfg: dict, run_id: str) -> dict:
     lock = cfg.get("run_lock")
     if lock is None:
         raise RuntimeError("geometry phase requires the exclusive run lock")
-    store = StreamStore(con, output_root=cfg.get("output_root") or OUTPUT_ROOT)
+    store = StreamStore(con, output_root=cfg.get("runtime_root") or RUNTIME_ROOT)
     records = write_geometries_for_current_songs(
         con,
         stream_store=store,
@@ -222,7 +222,7 @@ def _run_analyze(con, cfg: dict, run_id: str) -> dict:
     from scripts.embedding_research.streams.store import StreamStore
 
     profile = GeometryProfile.current()
-    store = StreamStore(con, output_root=cfg.get("output_root") or OUTPUT_ROOT)
+    store = StreamStore(con, output_root=cfg.get("runtime_root") or RUNTIME_ROOT)
     request = build_geometry_corpus_request(
         con,
         stream_store=store,
@@ -253,8 +253,8 @@ def _run_head_analysis(con, cfg: dict, run_id: str) -> dict:
     from scripts.embedding_research.streams.store import HeadStreamStore, StreamStore
 
     profile = GeometryProfile.current()
-    streams = StreamStore(con, output_root=cfg.get("output_root") or OUTPUT_ROOT)
-    heads = HeadStreamStore(con, output_root=cfg.get("output_root") or OUTPUT_ROOT)
+    streams = StreamStore(con, output_root=cfg.get("runtime_root") or RUNTIME_ROOT)
+    heads = HeadStreamStore(con, output_root=cfg.get("runtime_root") or RUNTIME_ROOT)
     request = build_geometry_corpus_request(
         con,
         stream_store=streams,
@@ -449,10 +449,11 @@ def _run_report(con, cfg: dict, _run_id: str) -> dict:
         con,
         out_dir,
         run_id=run_id,
-        stream_store=StreamStore(con, output_root=cfg.get("output_root") or OUTPUT_ROOT),
+        stream_store=StreamStore(con, output_root=cfg.get("runtime_root") or RUNTIME_ROOT),
         profile=GeometryProfile.current(),
+        html_out_path=cfg.get("html_out_path") or out_dir.parent / "docs" / "embedding-research-report.html",
     )
-    return {"song_count": 0, "output_artifact_hashes": "report.json,report.html"}
+    return {"song_count": 0, "output_artifact_hashes": "report.json (JSON); external HTML viewer"}
 
 
 CLI_PHASE_RUNNERS: dict[str, Callable[..., dict]] = {
@@ -713,7 +714,7 @@ def main() -> None:
     _fmt = logging.Formatter("%(asctime)s  %(levelname)-8s  %(message)s", datefmt="%H:%M:%S")
     _sh = logging.StreamHandler()
     _sh.setFormatter(_fmt)
-    _log_dir = OUTPUT_ROOT
+    _log_dir = RUNTIME_ROOT
     _log_dir.mkdir(parents=True, exist_ok=True)
     _log_path = _log_dir / "post_pipeline_run.log"
     # Process-lifetime handle: the StreamHandler below owns `_fh` and flushes on each
@@ -773,7 +774,7 @@ def main() -> None:
 
         # One exclusive run lock guards EVERY branch that opens the DB or mutates
         # artifacts — all seven phases and the four maintenance commands.
-        with _RunLock(OUTPUT_ROOT, DB_PATH) as _run_lock:
+        with _RunLock(RUNTIME_ROOT, DB_PATH) as _run_lock:
             if cmd == "verify":
                 _cmd_verify(args)
                 return
@@ -853,7 +854,8 @@ def _build_run_config(args) -> dict:
         "threshold_request": dense_primary_threshold_request(),
         "threshold_manifest": primary_experiment_manifest(),
         # derived phases read/write frozen artifacts under the configured output root.
-        "output_root": OUTPUT_ROOT,
+        "output_root": RUNTIME_ROOT,
+        "runtime_root": RUNTIME_ROOT,
         "report_dir": OUTPUT_ROOT / "report",
         "retained": bool(args.retained),
         "verify": bool(args.verify),
@@ -879,12 +881,12 @@ def _cmd_verify(args) -> None:
         con = duckdb.connect(str(DB_PATH))
         try:
             report = verify_current_artifacts(
-                OUTPUT_ROOT, strict=bool(args.strict), con=con, profile=GeometryProfile.current()
+                RUNTIME_ROOT, strict=bool(args.strict), con=con, profile=GeometryProfile.current()
             )
         finally:
             con.close()
     else:
-        report = verify_current_artifacts(OUTPUT_ROOT, strict=bool(args.strict))
+        report = verify_current_artifacts(RUNTIME_ROOT, strict=bool(args.strict))
     _log.info(
         "verify strict=%s verified=%d recovered=%d refusals=%d issues=%d",
         bool(args.strict),
@@ -912,7 +914,7 @@ def _cmd_reindex(_args) -> None:
 
     with duckdb.connect(str(DB_PATH)) as con:
         _db_mod.ensure_schema(con)
-        report = _reindex_run(OUTPUT_ROOT, con)
+        report = _reindex_run(RUNTIME_ROOT, con)
     _log.info(
         "reindex scanned=%d rows_rebuilt=%d ready=%d orphan=%d issues=%d",
         report.scanned,
@@ -944,11 +946,11 @@ def _cmd_cleanup(args) -> None:
     if DB_PATH.exists():
         con = duckdb.connect(str(DB_PATH))
         try:
-            report = _cleanup.cleanup_current(OUTPUT_ROOT, con, scope=scope, dry_run=dry)
+            report = _cleanup.cleanup_current(RUNTIME_ROOT, con, scope=scope, dry_run=dry)
         finally:
             con.close()
     else:
-        report = _cleanup.cleanup_current(OUTPUT_ROOT, None, scope=scope, dry_run=dry)
+        report = _cleanup.cleanup_current(RUNTIME_ROOT, None, scope=scope, dry_run=dry)
     _log.info(
         "cleanup scope=%s dry_run=%s removed=%d skipped=%d refused=%d",
         scope,
@@ -991,13 +993,13 @@ def _cmd_reset(args) -> None:
 
         with duckdb.connect(str(DB_PATH)) as audit_con:
             _db_mod.ensure_schema(audit_con)
-            audit = verify_current_artifacts(OUTPUT_ROOT, con=audit_con, profile=GeometryProfile.current())
+            audit = verify_current_artifacts(RUNTIME_ROOT, con=audit_con, profile=GeometryProfile.current())
         if audit.refusals:
             _log.error("reset refused: stale/invalid geometry evidence present")
             for _refusal in audit.refusals:
                 _log.error("  %s", _refusal)
             raise SystemExit(1)
-    report = reset_analysis(OUTPUT_ROOT, DB_PATH, dry_run=dry)
+    report = reset_analysis(RUNTIME_ROOT, DB_PATH, dry_run=dry)
     _log.info(
         "reset scope=analysis dry_run=%s removed=%d",
         dry,

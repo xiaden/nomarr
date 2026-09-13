@@ -24,7 +24,7 @@ from scripts.embedding_research.db.incomplete_diagnostics import (
 
 _TEXT_IDENTITY_FIELDS = (
     "geometry_id",
-    "observation_id",
+    "observation_group_sha256",
     "geometry_semantics_version",
     "numerical_profile_digest",
     "threshold_id",
@@ -38,7 +38,7 @@ _TEXT_IDENTITY_FIELDS = (
 def _identity(**overrides):
     values = {
         "geometry_id": "g",
-        "observation_id": "o",
+        "observation_group_sha256": "o",
         "geometry_semantics_version": "gram-v1",
         "numerical_profile_digest": "p",
         "threshold_id": "t",
@@ -77,7 +77,7 @@ def test_diagnostic_roundtrip_exact_identity_and_baseline_ordering(con) -> None:
     assert row["diagnostic_version"] == DIAGNOSTIC_VERSION
     assert row["sim_metric"] == ANALYZE_SIM_METRIC
     assert row["geometry_id"] == "g"
-    assert row["observation_id"] == "o"
+    assert row["observation_group_sha256"] == "o"
     assert row["structural_identity"] == "struct"
     assert row["scoring_semantics_version"] == 1
     assert row["baseline_strategy_key"] == "global_pool:effnet:medoid"

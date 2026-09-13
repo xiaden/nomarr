@@ -293,32 +293,25 @@ def _payload(
 # ---------------------------------------------------------------------------
 
 
-def run(con, out_path=None, *, run_id: str | None = None, stream_store: Any = None, profile: Any = None) -> dict:
+def _external_default_html_path():
+    from scripts.embedding_research.config import RUNTIME_ROOT
+
+    return RUNTIME_ROOT / "docs" / "embedding-research-report.html"
+
+
+def run(
+    con,
+    out_path=None,
+    *,
+    run_id: str | None = None,
+    stream_store: Any = None,
+    profile: Any = None,
+    html_out_path: Any = None,
+) -> dict:
     """Generate the embedding research report and write HTML + JSON files.
 
     Emits EXACTLY seven schema-v2 sections, in order: ``summary``, ``corpus``,
     ``analysis``, ``winners``, ``head-analysis``, ``provenance``, ``efficiency``.
-
-    Parameters
-    ----------
-    con:
-        Open DuckDB connection with completed geometry analysis + head evidence results.
-    out_path:
-        Required directory where ``report.html`` and ``report.json`` will be written.
-        Raises ``ValueError`` if not provided.
-    run_id:
-        Exact run-scope selector naming a completed analyze scope (per the CLI's grouped per-run
-        predicate: the run has at least one ``complete``/``completed`` ``analyze`` provenance row
-        and no ``failed`` one).  When given, only that run's exact geometry analysis/head evidence
-        and provenance feed the sections; there is no whole-set blend or runtime scope
-        selection.  When ``None`` (an empty database with no completed analyze scope) every evidence
-        section renders an explicit refusal and no database evidence is read.  Head provenance is
-        inherent to the run scope, so the head-analysis section reads exactly that run's persisted
-        head evidence.  No inference is ever performed at report time — the report is rendered
-        verbatim from exact persisted phases.
-
-    Returns:
-        The assembled payload dict (also written to ``report.json`` / ``report.html``).
     """
     import pathlib
 
@@ -326,6 +319,17 @@ def run(con, out_path=None, *, run_id: str | None = None, stream_store: Any = No
         raise ValueError("out_path is required; pass the report output directory")
 
     out_path = pathlib.Path(out_path)
+    html_path = pathlib.Path(html_out_path) if html_out_path is not None else _external_default_html_path()
+    from scripts.embedding_research.config import OUTPUT_ROOT
+
+    scientific_root = OUTPUT_ROOT.resolve()
+    try:
+        html_path.resolve().relative_to(scientific_root)
+    except ValueError:
+        pass
+    else:
+        raise ValueError("HTML viewer must be outside the scientific JSON root")
+
     out_path.mkdir(parents=True, exist_ok=True)
 
     print("Generating report…")
@@ -391,7 +395,7 @@ def run(con, out_path=None, *, run_id: str | None = None, stream_store: Any = No
     json_path.write_text(payload_json, encoding="utf-8")
     print(f"  Wrote {json_path} ({len(payload_json) // 1024} KB)")
 
-    html_path = out_path / "report.html"
+    html_path.parent.mkdir(parents=True, exist_ok=True)
     html_path.write_text(_viewer_shell(), encoding="utf-8")
     print(f"  Wrote {html_path}")
 

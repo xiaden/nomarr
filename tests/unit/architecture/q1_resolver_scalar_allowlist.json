@@ -1,89 +1,19 @@
 {
-  "plan": "TASK-song-row-mirror-leaks-into-domain-Q1-resolver-scalar-closure",
-  "baseline_head": "99131462e63d3ba6568ee7dc4b5045bd1ce6d041",
-  "branch": "feat/develop-branch-migration",
-  "authority": "artifacts/designs/parts/song-row-mirror-leaks-into-domain/CONTRACTS.md §12/§12.1",
-  "required_allowlist_fields": [
-    "owner",
-    "boundary",
-    "reason",
-    "positive_test",
-    "non_propagation",
-    "removal_condition"
-  ],
-  "allowlisted_resolvers": [
-    {
-      "symbol": "LibrarySongsDb.resolve_song_identity",
-      "module": "nomarr/persistence/api/library_songs.py",
-      "owner": "Q3",
-      "boundary": "inbound integer claim/state handle resolved once to SongIdentity at the persistence facade",
-      "reason": "callers are E/F/J/K-owned and not yet migrated (CONTRACTS §12.1: Q3 owns caller cutover); Q1 removal would break production and Q3-owned callers",
-      "positive_test": "tests/unit/persistence/api/test_facade_identity_bridge.py (resolve_song_identity positive/missing); tests/unit/components/library/test_library_song_mutation_comp.py (adapter delegation)",
-      "non_propagation": "returns locator-only SongIdentity; the integer handle is not returned, projected, logged, or placed on a carrier",
-      "removal_condition": "Q3 migrates every production/test caller to locator-addressed reads/commands, L/N prove zero callers, then delete this facade method"
-    },
-    {
-      "symbol": "LibrarySongsDb.resolve_song_identities",
-      "module": "nomarr/persistence/api/library_songs.py",
-      "owner": "Q3",
-      "boundary": "batch inbound integer handle set resolved once to SongIdentity mapping at the persistence facade",
-      "reason": "consumers in tag_query_comp, curation, and preview_smart_playlist_wf are Q3-owned; never a general compatibility path",
-      "positive_test": "tests/unit/persistence/api/test_facade_identity_bridge.py (batch empty/unresolved-omitted)",
-      "non_propagation": "returns Mapping[int, SongIdentity]; unresolved handles are omitted, never re-emitted as identity",
-      "removal_condition": "Q3 migrates all batch consumers to locator-addressed reads; then delete this facade method"
-    },
-    {
-      "symbol": "LibrarySongsDb.resolve_library_identity",
-      "module": "nomarr/persistence/api/library_songs.py",
-      "owner": "Q3",
-      "boundary": "inbound integer library handle resolved once to LibraryIdentity at the persistence facade",
-      "reason": "only consumer is tag_query_comp library-scoped reads, a Q3-owned component path",
-      "positive_test": "tests/unit/persistence/api/test_facade_identity_bridge.py",
-      "non_propagation": "returns LibraryIdentity (library_uuid); no integer library id is returned",
-      "removal_condition": "Q3 migrates the tag_query_comp caller to a UUID locator; then delete this facade method"
-    },
-    {
-      "symbol": "LibrarySongsDb.resolve_library_identities",
-      "module": "nomarr/persistence/api/library_songs.py",
-      "owner": "Q3",
-      "boundary": "batch inbound library-handle boundary returning Mapping[int, LibraryIdentity] from LibrarySongsDb; the same-named LibraryDb.resolve_library_identities is its batch forwarder",
-      "reason": "the only consumer is tag_query_comp library-scoped reads funneled through the single-library resolve_library_identity forwarder; it is not a batch song resolver and has no Q3-independent batch consumer; Q3-owned removal",
-      "positive_test": "tests/unit/persistence/api/test_facade_identity_bridge.py",
-      "non_propagation": "returns Mapping[int, LibraryIdentity]; no integer library id is returned",
-      "removal_condition": "Q3 migrates tag_query_comp off the singular resolve_library_identity, proves zero callers of the singular and plural library resolvers, then deletes the singular and plural library resolver methods together"
-    }
-  ],
-  "allowlisted_integer_adapters": [
-    {
-      "symbol": "library_song_mutation_comp.update_song_modified_time",
-      "module": "nomarr/components/library/library_song_mutation_comp.py",
-      "owner": "Q3",
-      "boundary": "inbound file claim handle resolved once to SongIdentity, then delegated to set_modified_time",
-      "reason": "caller write_file_tags_wf is Q3-owned; adapter preserves the caller signature while the facade legacy writer is deleted",
-      "positive_test": "tests/unit/components/library/test_library_song_mutation_comp.py::test_resolves_handle_and_delegates_to_typed_intent",
-      "non_propagation": "returns None; the handle never leaves the adapter",
-      "removal_condition": "Q3 migrates write_file_tags_wf to carry SongIdentity; then delete this adapter"
-    }
-  ],
+  "plan": "TASK-song-domain-identity-boundary-completion",
+  "authority": "ADR-048 and DD-song-domain-completion-and-repository-hygiene.md",
+  "required_allowlist_fields": ["owner", "boundary", "reason", "positive_test", "non_propagation", "removal_condition"],
+  "allowlisted_resolvers": [],
+  "allowlisted_integer_adapters": [],
   "deleted_by_q1": [
-    "LibrarySongsDb.update_library_song_modified_time",
-    "LibrarySongsDb.set_library_song_chromaprint",
-    "LibrarySongsDb.update_library_song_last_tagged_at",
-    "LibraryDb.update_library_song_modified_time",
-    "LibraryDb.set_library_song_chromaprint",
-    "LibraryDb.update_library_song_last_tagged_at",
-    "library_song_mutation_comp.get_song_library_key"
+    "LibrarySongsDb.resolve_song_identity",
+    "LibrarySongsDb.resolve_song_identities",
+    "LibrarySongsDb.resolve_library_identity",
+    "LibrarySongsDb.resolve_library_identities",
+    "LibraryDb.resolve_song_identity",
+    "LibraryDb.resolve_song_identities",
+    "LibraryDb.resolve_library_identity",
+    "LibraryDb.resolve_library_identities",
+    "library_song_mutation_comp.update_song_modified_time"
   ],
-  "residual_owners": [
-    {
-      "residual": "integer identity carriers outside Q1 closure (get_library_ids_for_songs, list_library_song_ids, list_orphaned_song_ids, prune_orphaned_songs, transition_song_state int lists, tag_write/query int song_id, worker/claim integer lifecycle)",
-      "owner": "Q3 (J/I/K caller cutover) and L/N residual audit",
-      "stop_condition": "machine-readable allowlist or full migration; no Q1 green claim"
-    },
-    {
-      "residual": "stale test fixtures referencing removed Song(song_id=...) / Library without library_uuid / library_song_query_comp.get_song_by_id",
-      "owner": "Q3 (stale fixture/import repair)",
-      "stop_condition": "broad collection and full mypy succeed"
-    }
-  ]
+  "residual_owners": [{"residual": "persistence-private SongRepository ID/path joins and tests", "owner": "persistence", "stop_condition": "must remain private"}]
 }

@@ -119,10 +119,10 @@ def _typed_write(db: Any, song: SongIdentity, backbone: str, *, vectors: list[An
     )
 
 
-def _song_identity(db: Any, song_id: int) -> SongIdentity:
-    """Resolve a seeded storage song id back to its semantic SongIdentity."""
-    identity = db.library.resolve_song_identity(song_id)
-    assert identity is not None
+def _song_identity(seed_data: dict[str, Any], index: int = 0) -> SongIdentity:
+    """Read the seeded semantic SongIdentity without crossing an integer bridge."""
+    identity = seed_data["song_identities"][index]
+    assert isinstance(identity, SongIdentity)
     return identity
 
 
@@ -134,7 +134,7 @@ class TestTypedWritePreservation:
     def test_vector_row_field_preservation(self, db: Any, inference_session: Any, seed_data: dict) -> None:
         """embed_dim, suite-hash mapping, empty suite-hash col, NULL seg hash, hot tier."""
         song_id = seed_data["songs"][0]
-        song = _song_identity(db, song_id)
+        song = _song_identity(seed_data, seed_data["songs"].index(song_id))
         suite_hash = "suite-hash-canonical"
         stored = tuple(_random_vector(seed=101))
 
@@ -166,7 +166,7 @@ class TestTypedWritePreservation:
     def test_genres_none_is_distinct(self, db: Any, inference_session: Any, seed_data: dict) -> None:
         """genres=None persists as NULL (distinct from []); num_segments preserved."""
         song_id = seed_data["songs"][0]
-        song = _song_identity(db, song_id)
+        song = _song_identity(seed_data, seed_data["songs"].index(song_id))
         _typed_write(
             db,
             song,
@@ -192,7 +192,7 @@ class TestTypedWritePreservation:
     ) -> None:
         """genres=() persists as [] (empty array), distinct from genres=None (NULL)."""
         song_id = seed_data["songs"][0]
-        song = _song_identity(db, song_id)
+        song = _song_identity(seed_data, seed_data["songs"].index(song_id))
         _typed_write(
             db,
             song,
@@ -217,7 +217,7 @@ class TestTypedWritePreservation:
     ) -> None:
         """R5: persisting one backbone never erases another backbone's vectors."""
         song_id = seed_data["songs"][0]
-        song = _song_identity(db, song_id)
+        song = _song_identity(seed_data, seed_data["songs"].index(song_id))
         _typed_write(
             db,
             song,
@@ -263,7 +263,7 @@ class TestTypedWritePreservation:
     ) -> None:
         """Stable ids/values/order round-trip; duplicate output_id is last-wins (1 row)."""
         song_id = seed_data["songs"][0]
-        song = _song_identity(db, song_id)
+        song = _song_identity(seed_data, seed_data["songs"].index(song_id))
         suite_hash = "suite-hash-streams"
         out_id_0 = canonical_output_id(suite_hash, 0)
         out_id_1 = canonical_output_id(suite_hash, 1)
@@ -294,7 +294,7 @@ class TestTypedWritePreservation:
     def test_stream_only_sentinel_keeps_vectors(self, db: Any, inference_session: Any, seed_data: dict) -> None:
         """Streams-only (vectors=[], backbone="") clears streams but keeps vectors."""
         song_id = seed_data["songs"][0]
-        song = _song_identity(db, song_id)
+        song = _song_identity(seed_data, seed_data["songs"].index(song_id))
         out_id = canonical_output_id("suite-clear", 0)
         _typed_write(
             db,
@@ -324,7 +324,7 @@ class TestTypedWritePreservation:
     def test_empty_streams_arg_clears_streams(self, db: Any, inference_session: Any, seed_data: dict) -> None:
         """R6: output_streams=[] with an empty backbone is the clear-stream path."""
         song_id = seed_data["songs"][0]
-        song = _song_identity(db, song_id)
+        song = _song_identity(seed_data, seed_data["songs"].index(song_id))
         out_id = canonical_output_id("suite-empty", 0)
         _typed_write(
             db,
@@ -383,7 +383,7 @@ class TestTypedWriteRejectsStorageShapedInput:
                 num_segments=1,
                 model_suite_hash="m",
                 genres=None,
-                embed_dim=2,
+                embed_dim=2,  # type: ignore[call-arg]
             )
 
 
@@ -397,7 +397,7 @@ class TestTypedAggregateSessionNeutrality:
         from nomarr.helpers.exceptions import DuplicateEntityError
 
         song_id = seed_data["songs"][0]
-        song = _song_identity(db, song_id)
+        song = _song_identity(seed_data, seed_data["songs"].index(song_id))
         with pytest.raises(DuplicateEntityError):
             _typed_write(
                 db,
@@ -420,7 +420,7 @@ class TestTypedAggregateSessionNeutrality:
         from nomarr.helpers.exceptions import DuplicateEntityError
 
         song_id = seed_data["songs"][0]
-        song = _song_identity(db, song_id)
+        song = _song_identity(seed_data, seed_data["songs"].index(song_id))
         with pytest.raises(DuplicateEntityError):
             _typed_write(
                 db,

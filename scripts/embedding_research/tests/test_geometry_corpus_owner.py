@@ -172,7 +172,7 @@ def test_owner_zero_mask_is_empty_and_baseline_is_separate() -> None:
     )
     # Zero searchable mass is explicit non-comparable evidence, not a silent drop.
     assert result.noncomparable
-    assert all("no_searchable" in evidence.reasons for evidence in result.noncomparable)
+    assert all("zero_searchable" in evidence.reasons for evidence in result.noncomparable)
     assert result.baseline is None
     assert result.scores is None
     assert result.candidates == ()

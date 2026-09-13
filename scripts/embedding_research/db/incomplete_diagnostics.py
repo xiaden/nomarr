@@ -51,7 +51,7 @@ ANALYZE_SIM_METRIC: str = "geometry"
 #: The eleven exact geometry identity fields, in canonical order.
 _GEOMETRY_IDENTITY_FIELDS: tuple[str, ...] = (
     "geometry_id",
-    "observation_id",
+    "observation_group_sha256",
     "geometry_semantics_version",
     "numerical_profile_digest",
     "threshold_id",

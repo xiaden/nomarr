@@ -30,13 +30,59 @@ def workspace(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Path]:
     report_dir = root / "report"
     from scripts.embedding_research.generate_fixture_report import main as generate_report
 
-    report_path = generate_report(report_dir)
-    return {"root": root, "report": Path(report_path)}
+    viewer = root.parent / f"{root.name}_runtime" / "docs" / "embedding-research-report.html"
+    report_path = generate_report(report_dir, html_out_path=viewer)
+    return {"root": root, "report": Path(report_path), "viewer": viewer}
 
 
 def test_valid_report_accepted(workspace: dict[str, Path]) -> None:
     assert validate_report(workspace["report"]) == []
     validate_fixture_report(workspace["report"])
+
+
+def test_external_viewer_is_required_outside_json_root(workspace: dict[str, Path]) -> None:
+    report = workspace["root"] / "without-viewer" / "report" / "report.json"
+    report.parent.mkdir(parents=True)
+    report.write_text(workspace["report"].read_text(encoding="utf-8"), encoding="utf-8")
+    (report.parent / "report.html").write_text("<html></html>", encoding="utf-8")
+
+    problems = validate_report(report)
+    assert any("external sibling embedding-research-report.html is missing or empty" in problem for problem in problems)
+
+
+def test_runtime_report_accepts_runtime_sibling_viewer(workspace: dict[str, Path]) -> None:
+    report = workspace["root"] / "outputs" / "embedding_research" / "report" / "report.json"
+    report.parent.mkdir(parents=True)
+    report.write_text(workspace["report"].read_text(encoding="utf-8"), encoding="utf-8")
+    viewer = workspace["root"] / "outputs" / "embedding_research_runtime" / "docs" / "embedding-research-report.html"
+    viewer.parent.mkdir(parents=True)
+    viewer.write_text("<html></html>", encoding="utf-8")
+
+    assert validate_report(report) == []
+
+
+def test_in_root_docs_viewer_is_rejected(workspace: dict[str, Path]) -> None:
+    viewer = workspace["report"].parent.parent / "docs" / "embedding-research-report.html"
+    viewer.parent.mkdir(parents=True, exist_ok=True)
+    viewer.write_text("<html></html>", encoding="utf-8")
+    problems = validate_report(workspace["report"], html_path=viewer)
+    assert any("outside the scientific JSON root" in problem for problem in problems)
+
+
+def test_explicit_external_viewer_is_accepted(workspace: dict[str, Path]) -> None:
+    viewer = workspace["root"].parent / "custom-docs" / "embedding-research-report.html"
+    viewer.parent.mkdir(parents=True)
+    viewer.write_text("<html></html>", encoding="utf-8")
+
+    assert validate_report(workspace["report"], html_path=viewer) == []
+
+
+def test_root_viewer_is_rejected_even_when_explicit(workspace: dict[str, Path]) -> None:
+    viewer = workspace["report"].parent / "report.html"
+    viewer.write_text("<html></html>", encoding="utf-8")
+
+    problems = validate_report(workspace["report"], html_path=viewer)
+    assert any("outside the scientific JSON root" in problem for problem in problems)
 
 
 def test_missing_report_is_rejected(workspace: dict[str, Path]) -> None:

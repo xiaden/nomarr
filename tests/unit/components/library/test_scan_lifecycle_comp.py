@@ -744,7 +744,7 @@ class TestOnScanCompletePipelineHook:
     def test_transitions_ml_axis_when_files_exist(self) -> None:
         mock_db = MagicMock()
         library = _library()
-        mock_db.library.list_library_song_ids.return_value = ["file1", "file2"]
+        mock_db.library.count_songs_for_library.return_value = 2
         mock_db.library.get_pipeline_state.return_value = LibraryPipelineState(
             scan_state="scanned",
             ml_state=ML_NOT_PROCESSED,
@@ -767,7 +767,7 @@ class TestOnScanCompletePipelineHook:
     def test_transitions_ml_axis_when_no_files(self) -> None:
         mock_db = MagicMock()
         library = _library()
-        mock_db.library.list_library_song_ids.return_value = []
+        mock_db.library.count_songs_for_library.return_value = 0
         mock_db.library.get_pipeline_state.return_value = LibraryPipelineState(
             scan_state="scanned",
             ml_state=ML_IN_PROGRESS,

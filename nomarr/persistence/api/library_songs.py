@@ -19,8 +19,7 @@ mapped domain exceptions rather than statuses, and no row, storage id, SQLSTATE,
 or session detail is exposed. Legacy integer scalar writers/forwarders are
 deleted, not wrapped.
 
-Wired into ``LibraryDb`` as its ``songs`` namespace (namespaced-forwarding split
-per DD-persistence-intent-facade-rebuild §Phase 1). Library-scoped methods accept
+Wired into ``LibraryDb`` as its ``songs`` namespace. Library-scoped methods accept
 the domain ``Library`` natural key and resolve the storage ``library_id``
 internally, and folder-facing methods use the ``LibraryFolder`` value object with
 relative-path identity.
@@ -44,7 +43,7 @@ from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence.mappers.song_mapper import song_row_to_domain
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Sequence
 
     from sqlalchemy.orm import Session, scoped_session
 
@@ -84,8 +83,6 @@ class LibrarySongsDb:
         self._song_state_repo = song_state_repo
         self._song_hydration_repo = song_hydration_repo
         self._library_repo = library_repo
-
-    # ── natural-key resolution (persistence-internal) ────────────────────
 
     def _resolve_library_id(self, library: Library) -> int:
         """Resolve a domain ``Library``'s immutable UUID to its storage row id.
@@ -155,80 +152,6 @@ class LibrarySongsDb:
             "mtime": folder.mtime,
             "file_count": folder.file_count,
             "last_scanned_at": folder.last_scanned_at,
-        }
-
-    # ------------------------------------------------------------------
-    # Numeric-handle identity bridge (P3, song-tag correction)
-    # ------------------------------------------------------------------
-    # Adapters for external/API or legacy aggregate handles that still carry a
-    # numeric storage id. They resolve the row's private library FK and path to
-    # the typed natural identity; no row, ``Song``, ``Library``, or storage id
-    # crosses this boundary. Set-based (one song query + one library query per
-    # batch), repository-owned short transactions, never a facade transaction.
-
-    def resolve_song_identity(self, song_id: int) -> SongIdentity | None:
-        """Resolve a song storage handle to its natural ``SongIdentity``.
-
-        ``None`` when the song is missing or its owning library is missing (the
-        identity cannot be constructed). The storage id is never exposed.
-        """
-        result = self.resolve_song_identities([song_id])
-        return result.get(song_id)
-
-    def resolve_song_identities(
-        self,
-        song_ids: Sequence[int],
-    ) -> Mapping[int, SongIdentity]:
-        """Resolve a batch of song storage handles to natural identities.
-
-        Set-based: one ``get_songs_by_ids`` query and one library primary-key
-        read for the distinct owning libraries. Unresolved song ids and songs
-        whose owning library is missing are omitted; empty input yields ``{}``.
-        """
-        if not song_ids:
-            return {}
-        song_rows = self._song_repo.get_songs_by_ids(list(song_ids))
-        library_ids = {int(r["library_id"]) for r in song_rows if r.get("library_id") is not None}
-        if not library_ids:
-            return {}
-        libraries = self._library_repo.get_libraries_by_ids(list(library_ids))
-        library_by_id = {int(r["id"]): r for r in libraries}
-        result: dict[int, SongIdentity] = {}
-        for row in song_rows:
-            library_id = row.get("library_id")
-            library_row = library_by_id.get(library_id) if library_id is not None else None
-            if library_row is None:
-                continue
-            result[int(row["id"])] = SongIdentity(
-                library=LibraryIdentity(
-                    library_uuid=library_row["library_uuid"],
-                    name=library_row["name"],
-                    root_path=library_row["path"],
-                ),
-                normalized_path=row["normalized_path"],
-            )
-        return result
-
-    def resolve_library_identity(self, library_id: int) -> LibraryIdentity | None:
-        """Resolve a numeric library handle to its natural reference."""
-        result = self.resolve_library_identities([library_id])
-        return result.get(library_id)
-
-    def resolve_library_identities(
-        self,
-        library_ids: Sequence[int],
-    ) -> Mapping[int, LibraryIdentity]:
-        """Resolve numeric library handles to natural references (set-based)."""
-        if not library_ids:
-            return {}
-        rows = self._library_repo.get_libraries_by_ids(list(library_ids))
-        return {
-            int(r["id"]): LibraryIdentity(
-                library_uuid=r["library_uuid"],
-                name=r["name"],
-                root_path=r["path"],
-            )
-            for r in rows
         }
 
     # ------------------------------------------------------------------
@@ -319,23 +242,9 @@ class LibrarySongsDb:
             result.append(song_row_to_domain(row))
         return result
 
-    def get_library_ids_for_songs(self, song_ids: list[int]) -> dict[int, int]:
-        """Return mapping of song_id → library_id for the given song IDs."""
-        return self._song_repo.get_library_ids_for_songs(song_ids)
-
     def count_recently_tagged(self, cutoff_ms: int) -> int:
         """Count songs tagged since the given cutoff timestamp (epoch ms)."""
         return self._song_repo.count_recently_tagged(cutoff_ms)
-
-    def list_library_song_ids(
-        self,
-        library: Library,
-        *,
-        limit: int | None = None,
-    ) -> list[int]:
-        """Return song IDs belonging to a library, with optional limit."""
-        library_id = self._resolve_library_id(library)
-        return self._song_repo.list_library_song_ids(library_id, limit=limit)
 
     def list_songs(
         self,
@@ -597,94 +506,6 @@ class LibrarySongsDb:
             SongIdentity(library=command.library, normalized_path=payload["normalized_path"])
             for command, payload in zip(commands, payloads, strict=True)
         ]
-
-    def add_songs_to_library(
-        self,
-        library: Library,
-        payloads: list[dict[str, Any]],
-    ) -> list[int]:
-        """Upsert songs and bootstrap initial states for newly created rows."""
-        library_id = self._resolve_library_id(library)
-        existing_paths = set(
-            self._song_repo.list_existing_song_paths(
-                library_id,
-                [str(p["path"]) for p in payloads if "path" in p],
-            )
-        )
-        self._song_repo.upsert_songs_for_library(library_id, payloads)
-        song_ids_by_path = self._song_repo.get_song_ids_by_paths(
-            library_id,
-            [str(p["path"]) for p in payloads],
-        )
-        ordered_song_ids = [song_ids_by_path[str(p["path"])] for p in payloads]
-        # Bootstrap state only for songs that were newly created
-        for song_id, payload in zip(ordered_song_ids, payloads, strict=True):
-            if payload.get("path") not in existing_paths:
-                # Preserve concurrent domain-object changes in this method;
-                # initialization is an intent operation, not state-table access.
-                self._song_state_repo.initialize_song_states([song_id])
-        return ordered_song_ids
-
-    def update_songs(
-        self,
-        library: Library,
-        payloads: list[dict[str, Any]],
-        *,
-        remove_missing: bool = True,
-    ) -> dict[str, int]:
-        """Reconcile library songs: upsert, init states, optionally remove missing.
-
-        FK ON DELETE CASCADE handles derived data cleanup (streams, vectors,
-        tags, state assignments) — no explicit derived-data removal needed.
-        """
-        library_id = self._resolve_library_id(library)
-        allowed_fields = {
-            "path",
-            "normalized_path",
-            "folder_id",
-            "file_size",
-            "modified_time",
-            "duration_seconds",
-            "scanned_at",
-        }
-        invalid_fields = sorted({key for payload in payloads for key in payload if key not in allowed_fields})
-        if invalid_fields:
-            raise ValueError(
-                "update_songs() accepts scan/reconciliation fields only; "
-                f"use an intent method for: {', '.join(invalid_fields)}"
-            )
-        result: dict[str, int] = {"added": 0, "updated": 0, "removed": 0}
-
-        # Determine existing paths to distinguish new vs updated songs
-        incoming_paths = [str(p["path"]) for p in payloads if "path" in p]
-        existing_paths = set(self._song_repo.list_existing_song_paths(library_id, incoming_paths))
-
-        # Do not use the INSERT ... RETURNING row order to associate ids with
-        # payloads. PostgreSQL does not guarantee that order matches VALUES.
-        self._song_repo.upsert_songs_for_library(library_id, payloads)
-        song_ids_by_path = self._song_repo.get_song_ids_by_paths(library_id, incoming_paths)
-        ordered_song_ids = [song_ids_by_path[str(payload["path"])] for payload in payloads]
-
-        new_count = 0
-        for song_id, payload in zip(ordered_song_ids, payloads, strict=True):
-            if payload.get("path") not in existing_paths:
-                new_count += 1
-                # This method is concurrently being migrated to domain Song
-                # values; route only its state hook through the intent operation.
-                self._song_state_repo.initialize_song_states([song_id])
-        result["added"] = new_count
-        result["updated"] = len(ordered_song_ids) - new_count
-
-        if remove_missing:
-            current_ids = set(self._song_repo.list_library_song_ids(library_id))
-            upserted_ids = set(ordered_song_ids)
-            to_remove = sorted(current_ids - upserted_ids)
-            if to_remove:
-                self._song_repo.remove_songs(to_remove)
-                # FK CASCADE handles song_state_assignments, song_tags, etc.
-            result["removed"] = len(to_remove)
-
-        return result
 
     def move_library_song(self, command: SongPathUpdate) -> SongIdentity | None:
         """Atomically relocate one existing Song from its source locator.

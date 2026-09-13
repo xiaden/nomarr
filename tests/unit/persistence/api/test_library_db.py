@@ -1,8 +1,7 @@
 # mypy: disable-error-code=func-returns-value
 """Unit tests for ``LibraryDb`` delegation to the four sub-facades.
 
-Rewritten in Phase 6 of ``TASK-song-intent-facade-correction-A`` to the sealed
-domain contracts (per ADR-032/041/043 and the song-domain-repair ledger):
+These tests cover the sealed domain contracts (per ADR-032/041/043):
 
 - Library-facing methods accept/return ``Library`` / ``LibraryUpdate`` /
   ``LibraryPipelineState`` / ``LibraryFolder`` / ``LibraryScan`` domain values;
@@ -10,8 +9,8 @@ domain contracts (per ADR-032/041/043 and the song-domain-repair ledger):
 - Tag-facing methods accept/return ``TagRef`` / ``SongTagAssignment`` /
   ``TagUsage`` / ``RelinkResult`` / ``TagCleanupResult``; song identity is the
   natural ``SongIdentity`` (never a PostgreSQL ``song_id``).
-- The identity bridge (``resolve_song_identity``/``resolve_library_identity``)
-  is the documented int→natural-identity conversion point.
+- Library identity conversion remains a persistence-internal library-handle
+  operation; song identity crosses the facade only as ``SongIdentity``.
 """
 
 from __future__ import annotations
@@ -645,11 +644,11 @@ def test_count_songs_delegates_with_library_scope() -> None:
 
 
 @pytest.mark.unit
-def test_get_library_ids_for_songs_delegates() -> None:
-    db, _, song_repo, *_ = _make_library_db()
+def test_private_song_repository_get_library_ids_preserves_mapping() -> None:
+    _db, _, song_repo, *_ = _make_library_db()
     song_repo.get_library_ids_for_songs = MagicMock(return_value=sentinel.mapping)
 
-    result = db.get_library_ids_for_songs([10, 20])
+    result = song_repo.get_library_ids_for_songs([10, 20])
 
     assert result is sentinel.mapping
     song_repo.get_library_ids_for_songs.assert_called_once_with([10, 20])
@@ -667,40 +666,24 @@ def test_count_recently_tagged_delegates() -> None:
 
 
 @pytest.mark.unit
-def test_list_library_song_ids_delegates_with_library_scope() -> None:
-    db, _library_repo, song_repo, *_ = _make_library_db()
+def test_private_song_repository_lists_library_song_ids_with_scope() -> None:
+    _db, _library_repo, song_repo, *_ = _make_library_db()
     song_repo.list_library_song_ids = MagicMock(return_value=[1, 2, 3])
 
-    result = db.list_library_song_ids(_LIB)
+    result = song_repo.list_library_song_ids(1, limit=None)
 
     assert result == [1, 2, 3]
     song_repo.list_library_song_ids.assert_called_once_with(1, limit=None)
 
 
-# ── Identity bridge (song-tag correction, P3) ─────────────────────────────
+# ── Identity boundary ─────────────────────────────────────────────────────
 
 
 @pytest.mark.unit
-def test_resolve_song_identity_bridge() -> None:
-    db, _, song_repo, *_ = _make_library_db()
-    song_repo.get_songs_by_ids = MagicMock(return_value=[_song_row()])
-    db._songs._library_repo.get_libraries_by_ids = MagicMock(return_value=[_library_row()])
-
-    identity = db.resolve_song_identity(10)
-
-    assert identity == _song()
-    assert identity is not None
-    assert isinstance(identity.library, LibraryIdentity)
-
-
-@pytest.mark.unit
-def test_resolve_library_identity_bridge() -> None:
-    db, library_repo, *_ = _make_library_db()
-    library_repo.get_libraries_by_ids = MagicMock(return_value=[_library_row()])
-
-    identity = db.resolve_library_identity(1)
-
-    assert identity == _TEST_LIBRARY
+def test_library_identity_is_supplied_semantically() -> None:
+    assert _TEST_LIBRARY.library_uuid
+    assert _TEST_LIBRARY.name == "TestLib"
+    assert _TEST_LIBRARY.root_path == "/music"
 
 
 # ── Song mutations ────────────────────────────────────────────────────────
@@ -1011,48 +994,6 @@ def test_add_song_to_library_retry_after_state_init_failure_succeeds() -> None:
     assert result == SongIdentity(library=_TEST_LIBRARY, normalized_path="a.mp3")
     assert song_repo.upsert_songs_for_library.call_count == 2
     assert song_state_repo.initialize_song_states.call_count == 2
-
-
-@pytest.mark.unit
-def test_update_songs_delegates() -> None:
-    db, _, song_repo, *_ = _make_library_db()
-    song_repo.list_existing_song_paths = MagicMock(return_value=[])
-    song_repo.upsert_songs_for_library = MagicMock()
-    song_repo.get_song_ids_by_paths = MagicMock(return_value={"/music/a.mp3": 1, "/music/b.mp3": 2})
-    song_repo.list_library_song_ids = MagicMock(return_value=[1, 2])
-
-    result = db.update_songs(
-        _LIB,
-        [{"path": "/music/a.mp3", "file_size": 1}, {"path": "/music/b.mp3", "file_size": 2}],
-    )
-
-    assert result == {"added": 2, "updated": 0, "removed": 0}
-    song_repo.upsert_songs_for_library.assert_called_once_with(
-        1, [{"path": "/music/a.mp3", "file_size": 1}, {"path": "/music/b.mp3", "file_size": 2}]
-    )
-    song_repo.get_song_ids_by_paths.assert_called_once_with(1, ["/music/a.mp3", "/music/b.mp3"])
-
-
-@pytest.mark.unit
-def test_update_songs_resolves_ids_by_path_not_returning_order() -> None:
-    db, _, song_repo, _, _, _, _, song_state_repo, _ = _make_library_db()
-    song_repo.list_existing_song_paths = MagicMock(return_value=["/music/existing.mp3"])
-    # The repository's RETURNING rows are intentionally in the wrong order.
-    song_repo.upsert_songs_for_library = MagicMock(return_value=[99, 10])
-    song_repo.get_song_ids_by_paths = MagicMock(return_value={"/music/new.mp3": 10, "/music/existing.mp3": 99})
-    song_repo.list_library_song_ids = MagicMock(return_value=[10, 99])
-
-    result = db.update_songs(
-        _LIB,
-        [
-            {"path": "/music/new.mp3", "file_size": 1},
-            {"path": "/music/existing.mp3", "file_size": 2},
-        ],
-    )
-
-    assert result == {"added": 1, "updated": 1, "removed": 0}
-    song_repo.get_song_ids_by_paths.assert_called_once_with(1, ["/music/new.mp3", "/music/existing.mp3"])
-    song_state_repo.initialize_song_states.assert_called_once_with([10])
 
 
 @pytest.mark.unit

@@ -26,30 +26,28 @@ class TestGetFileForWriting:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_resolves_integer_handle_to_song(self) -> None:
+    def test_reads_song_using_supplied_locator(self) -> None:
         mock_db = MagicMock()
         identity = SongIdentity(LibraryIdentity("library-1", "Music", "/music"), "song.flac")
         song = MagicMock()
-        mock_db.library.resolve_song_identity.return_value = identity
         mock_db.library.get_song.return_value = song
 
-        result = get_file_for_writing(mock_db, "123")
+        result = get_file_for_writing(mock_db, identity)
 
-        assert result == (123, "123", song)
-        mock_db.library.resolve_song_identity.assert_called_once_with(123)
+        assert result is song
         mock_db.library.get_song.assert_called_once_with(identity)
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_returns_none_when_handle_no_longer_resolves(self) -> None:
+    def test_returns_none_when_locator_no_longer_resolves(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.resolve_song_identity.return_value = None
+        identity = SongIdentity(LibraryIdentity("library-1", "Music", "/music"), "missing.flac")
+        mock_db.library.get_song.return_value = None
 
-        result = get_file_for_writing(mock_db, "999")
+        result = get_file_for_writing(mock_db, identity)
 
-        assert result == (999, "999", None)
-        mock_db.library.resolve_song_identity.assert_called_once_with(999)
-        mock_db.library.get_song.assert_not_called()
+        assert result is None
+        mock_db.library.get_song.assert_called_once_with(identity)
 
 
 class TestResolveLibraryRoot:
@@ -94,10 +92,9 @@ class TestReleaseFileClaim:
     def test_delegates_to_release_claim(self) -> None:
         mock_db = MagicMock()
         song = SongIdentity(LibraryIdentity("library-1", "Music", "/music"), "song.flac")
-        mock_db.library.resolve_song_identity.return_value = song
 
         with patch("nomarr.components.processing.file_write_comp.release_claim") as mock_release_claim:
-            release_file_claim(mock_db, "123", "worker:write:0")
+            release_file_claim(mock_db, song, "worker:write:0")
 
         mock_release_claim.assert_called_once_with(mock_db, song, "worker:write:0")
 
@@ -106,12 +103,11 @@ class TestReleaseFileClaim:
     def test_swallows_exceptions(self) -> None:
         mock_db = MagicMock()
         song = SongIdentity(LibraryIdentity("library-1", "Music", "/music"), "song.flac")
-        mock_db.library.resolve_song_identity.return_value = song
 
         with patch(
             "nomarr.components.processing.file_write_comp.release_claim",
             side_effect=RuntimeError("boom"),
         ) as mock_release_claim:
-            release_file_claim(mock_db, "123", "worker:write:0")
+            release_file_claim(mock_db, song, "worker:write:0")
 
         mock_release_claim.assert_called_once_with(mock_db, song, "worker:write:0")

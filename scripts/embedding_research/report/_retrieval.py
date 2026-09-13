@@ -19,7 +19,7 @@ from ._base import make_section, make_table
 #: The complete exact geometry-era identity axes carried by every evidence row.
 IDENTITY_COLUMNS = [
     "geometry_id",
-    "observation_id",
+    "observation_group_sha256",
     "geometry_semantics_version",
     "numerical_profile_digest",
     "threshold_id",
@@ -62,7 +62,7 @@ def query_geometry_identity(con, *, run_id: str) -> pd.DataFrame:
     """
     exact_run = _require_run_id(run_id)
     query = (
-        "SELECT run_id, geometry_id, observation_id, geometry_semantics_version, "
+        "SELECT run_id, geometry_id, observation_group_sha256, geometry_semantics_version, "
         "numerical_profile_digest, threshold_id, structural_identity, "
         "search_representation_id, evaluation_id, scoring_semantics_version, execution_id "
         "FROM geometry_analysis_records WHERE run_id=? "
@@ -116,7 +116,7 @@ def query_corpus_evidence(con, *, run_id: str) -> dict[str, Any] | None:
     from scripts.embedding_research.common.threshold_analysis import AnalysisEvidenceIdentity
 
     rows = con.execute(
-        "SELECT geometry_id, observation_id, geometry_semantics_version, numerical_profile_digest, "
+        "SELECT geometry_id, observation_group_sha256, geometry_semantics_version, numerical_profile_digest, "
         "threshold_id, structural_identity, evaluation_id, search_representation_id, "
         "scoring_semantics_version, execution_id FROM geometry_analysis_records "
         'WHERE run_id=? AND evidence_json LIKE \'%"role":"corpus"%\'',
@@ -127,7 +127,7 @@ def query_corpus_evidence(con, *, run_id: str) -> dict[str, Any] | None:
     row = rows[0]
     identity = AnalysisEvidenceIdentity(
         geometry_id=str(row[0]),
-        observation_id=str(row[1]),
+        observation_group_sha256=str(row[1]),
         geometry_semantics_version=str(row[2]),
         numerical_profile_digest=str(row[3]),
         threshold_id=str(row[4]),
@@ -305,7 +305,7 @@ def verify_geometry_bindings_for_run(con, *, run_id: str, stream_store: Any, pro
         identity = GeometryIdentity(
             str(axis["song_id"]),
             str(axis["backbone"]),
-            str(axis["observation_id"]),
+            str(axis["observation_group_sha256"]),
             str(axis["geometry_semantics_version"]),
             str(axis["numerical_profile_digest"]),
         )

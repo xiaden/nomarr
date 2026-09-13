@@ -13,7 +13,7 @@ from ._base import make_section, make_table
 
 _HEAD_IDENTITY_COLUMNS = (
     "geometry_id",
-    "observation_id",
+    "observation_group_sha256",
     "geometry_semantics_version",
     "numerical_profile_digest",
     "threshold_id",

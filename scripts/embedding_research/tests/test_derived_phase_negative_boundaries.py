@@ -85,7 +85,12 @@ def test_canonical_report_owner_is_cpu_only(seeded_con, tmp_path, monkeypatch):
 
 def test_report_phase_dispatch_completes_with_zero_forbidden_calls(seeded_con, tmp_path, monkeypatch):
     events, installed = _install_sentinels(monkeypatch)
-    cfg = {"run_id": _report_seed.RUN_ID, "report_dir": tmp_path, "report_run_id": _report_seed.RUN_ID}
+    cfg = {
+        "run_id": _report_seed.RUN_ID,
+        "report_dir": tmp_path,
+        "report_run_id": _report_seed.RUN_ID,
+        "html_out_path": tmp_path.parent / "docs" / "embedding-research-report.html",
+    }
     run_mod._run_single_phase(seeded_con, "report", cfg)
     assert installed
     assert events == []

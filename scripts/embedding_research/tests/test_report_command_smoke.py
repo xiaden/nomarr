@@ -12,11 +12,15 @@ EXACT_SECTION_IDS = ("summary", "corpus", "analysis", "winners", "head-analysis"
 
 
 def test_generate_fixture_report_command_smoke(tmp_path):
-    report_path = main(tmp_path)
+    report_dir = tmp_path / "report"
+    html_path = tmp_path.parent / f"{tmp_path.name}_runtime" / "docs" / "embedding-research-report.html"
+    report_path = main(report_dir, html_out_path=html_path)
     validate_fixture_report(report_path)
 
     data = json.loads(report_path.read_text(encoding="utf-8"))
     assert [section["id"] for section in data["sections"]] == list(EXACT_SECTION_IDS)
     assert data["synthetic_only"] is True
     assert tuple(data["geometry_evidence"]["phases"]) == PHASE_NAMES
-    assert (tmp_path / "report.html").stat().st_size > 0
+    assert html_path.stat().st_size > 0
+    assert not list(report_dir.rglob("*.html"))
+    assert all(path.suffix == ".json" for path in report_dir.rglob("*") if path.is_file())

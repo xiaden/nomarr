@@ -67,6 +67,7 @@ class _Identity:
         self.mask_semantics_version = "mask-v1"
         self.group_format_version = "group-v1"
         self.commit_sha256 = f"synthetic-commit-{song_id}-{backbone}"
+        self.observation_group_sha256 = f"synthetic-observation-group-{song_id}-{backbone}"
 
 
 class _StreamRecord:
@@ -102,7 +103,7 @@ class _Observation:
 @dataclass
 class _HeadOutput:
     geometry_id: str
-    observation_id: str
+    observation_group_sha256: str
     geometry_semantics_version: str
     numerical_profile_digest: str
     threshold_id: str
@@ -131,7 +132,7 @@ def analysis_identity(
     """Build the exact ten-axis analysis identity for one geometry record."""
     return SimpleNamespace(
         geometry_id=record.geometry_id,
-        observation_id=record.identity.observation_group_sha256,
+        observation_group_sha256=record.identity.observation_group_sha256,
         geometry_semantics_version=record.identity.geometry_semantics_version,
         numerical_profile_digest=record.identity.numerical_profile_digest,
         threshold_id=threshold_id,
@@ -147,7 +148,7 @@ def head_output(record: GeometryRecord, *, head: str = "genre", segment_id: int 
     """Build one exact head evidence output anchored on a geometry record."""
     return _HeadOutput(
         geometry_id=record.geometry_id,
-        observation_id=record.identity.observation_group_sha256,
+        observation_group_sha256=record.identity.observation_group_sha256,
         geometry_semantics_version=record.identity.geometry_semantics_version,
         numerical_profile_digest=record.identity.numerical_profile_digest,
         threshold_id=THRESHOLD_IDS[0],

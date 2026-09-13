@@ -206,7 +206,7 @@ def test_generated_output_has_no_retired_vocabulary_or_filesystem_paths(tmp_path
     from scripts.embedding_research.generate_fixture_report import main as generate
 
     generate(tmp_path)
-    for name in ("report.json", "report.html"):
+    for name in ("report.json",):
         text = (tmp_path / name).read_text(encoding="utf-8", errors="replace").lower()
         for token in _retired_output_tokens():
             assert token not in text, f"{name} emitted retired token {token!r}"

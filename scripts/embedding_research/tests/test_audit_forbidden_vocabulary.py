@@ -135,7 +135,7 @@ RETIRED_CONCEPTS: tuple[dict[str, str], ...] = (
         "kind": "vocabulary",
         "identifier": _OWN + " identity fields",
         "replacement": (
-            "observation_id/geometry_id/geometry_semantics_version/numerical_profile_digest/"
+            "observation_group_sha256/geometry_id/geometry_semantics_version/numerical_profile_digest/"
             "threshold_id/structural_identity/search_representation_id/evaluation_id/"
             "scoring_semantics_version/execution_id"
         ),
@@ -606,10 +606,14 @@ def test_generated_report_artifacts_are_clean() -> None:
 def test_fixture_generated_output_is_clean(tmp_path) -> None:
     from scripts.embedding_research.generate_fixture_report import main as generate
 
-    generate(tmp_path)
-    for name in ("report.json", "report.html"):
-        text = (tmp_path / name).read_text(encoding="utf-8", errors="replace")
-        assert scan_generated_text(text) == [], name
+    html = tmp_path.parent / "docs" / "embedding-research-report.html"
+    generate(tmp_path, html_out_path=html)
+    text = (tmp_path / "report.json").read_text(encoding="utf-8", errors="replace")
+    assert scan_generated_text(text) == [], "report.json"
+    html = tmp_path.parent / "docs" / "embedding-research-report.html"
+    assert html.is_file() and html.stat().st_size > 0
+    assert not list(tmp_path.rglob("*.html"))
+    assert all(path.suffix == ".json" for path in tmp_path.rglob("*") if path.is_file())
 
 
 def test_historical_prose_is_not_scanned_as_executable() -> None:

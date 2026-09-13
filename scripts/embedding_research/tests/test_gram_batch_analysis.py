@@ -41,7 +41,7 @@ def _representation(representation_id: str, *, song_id: str = "song-1") -> Froze
         weights=np.asarray([1.0], dtype="<f8"),
         search_representation_id=representation_id,
         geometry_id="geometry-1",
-        observation_id="observation-1",
+        observation_group_sha256="observation-1",
         numerical_profile_digest="profile-1",
         mask_digest="mask-1",
         scoring_semantics_version=1,

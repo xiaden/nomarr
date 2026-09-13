@@ -14,7 +14,7 @@ from scripts.embedding_research.db import (
 def identity(**overrides):
     values = {
         "geometry_id": "g",
-        "observation_id": "o",
+        "observation_group_sha256": "o",
         "geometry_semantics_version": "gram-v1",
         "numerical_profile_digest": "p",
         "threshold_id": "t",
@@ -42,7 +42,7 @@ def test_refuses_incomplete_nonfinite_duplicate_and_stale_identity():
     con = duckdb.connect(":memory:")
     ensure_schema(con)
     with pytest.raises(IdentityRefusal):
-        write_analysis_rows(con, run_id="r", identity=identity(observation_id=""), metrics={"m": 1})
+        write_analysis_rows(con, run_id="r", identity=identity(observation_group_sha256=""), metrics={"m": 1})
     with pytest.raises(IdentityRefusal):
         write_analysis_rows(con, run_id="r", identity=identity(), metrics={"m": float("nan")})
     write_analysis_rows(con, run_id="r", identity=identity(), metrics={"m": 1})

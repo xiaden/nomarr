@@ -417,7 +417,7 @@ def _insert_corpus_evidence(con, record, *, run_id: str) -> None:
         {
             "song_id": record.identity.song_id,
             "backbone": record.identity.backbone,
-            "observation_id": record.identity.observation_group_sha256,
+            "observation_group_sha256": record.identity.observation_group_sha256,
             "geometry_semantics_version": record.identity.geometry_semantics_version,
             "numerical_profile_digest": record.identity.numerical_profile_digest,
             "geometry_id": record.geometry_id,

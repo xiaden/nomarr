@@ -103,7 +103,7 @@ class GeometryIdentityAxes:
     """The complete identity axes carried by one analysis outcome."""
 
     geometry_id: str
-    observation_id: str
+    observation_group_sha256: str
     geometry_semantics_version: str
     numerical_profile_digest: str
     mask_digest: str
@@ -117,7 +117,7 @@ class GeometryIdentityAxes:
     def __post_init__(self) -> None:
         for name in (
             "geometry_id",
-            "observation_id",
+            "observation_group_sha256",
             "geometry_semantics_version",
             "numerical_profile_digest",
             "mask_digest",
@@ -205,7 +205,7 @@ class FrozenSearchRepresentation:
     weights: np.ndarray
     search_representation_id: str
     geometry_id: str
-    observation_id: str
+    observation_group_sha256: str
     numerical_profile_digest: str
     mask_digest: str
     scoring_semantics_version: int
@@ -219,7 +219,7 @@ class FrozenSearchRepresentation:
             "backbone",
             "search_representation_id",
             "geometry_id",
-            "observation_id",
+            "observation_group_sha256",
             "numerical_profile_digest",
             "mask_digest",
             "experiment",
@@ -903,7 +903,7 @@ def analyze_geometry_corpus(
         )
         eligible_song_ids = tuple(sorted({candidate.representation.song_id for candidate in other_candidates}))
         evidence_digest = "|".join(
-            sorted({str(candidate.representation.observation_id) for candidate in other_candidates})
+            sorted({str(candidate.representation.observation_group_sha256) for candidate in other_candidates})
         )
         query_state = classify_representation(
             alignment_ok=prep["query_vectors"].shape[0] > 0,
@@ -1135,7 +1135,7 @@ def _geometry_versions(result: GeometryCorpusAnalysis) -> dict[tuple[str, str, s
         version = str(getattr(analysis, "geometry_semantics_version", ""))
         if not version:
             raise ValueError("geometry corpus analysis is missing a geometry semantics version")
-        key = (str(analysis.geometry_id), str(analysis.observation_id), str(analysis.profile_digest))
+        key = (str(analysis.geometry_id), str(analysis.observation_group_sha256), str(analysis.profile_digest))
         existing = versions.setdefault(key, version)
         if existing != version:
             raise ValueError("mixed geometry semantics version across corpus analyses")
@@ -1149,7 +1149,7 @@ def _geometry_axes_payload(result: GeometryCorpusAnalysis) -> list[dict[str, str
     if reps:
         axes: list[dict[str, str]] = []
         for rep in reps:
-            key = (str(rep.geometry_id), str(rep.observation_id), str(rep.numerical_profile_digest))
+            key = (str(rep.geometry_id), str(rep.observation_group_sha256), str(rep.numerical_profile_digest))
             version = versions.get(key)
             if version is None:
                 raise ValueError("representation has no matching corpus geometry identity")
@@ -1158,7 +1158,7 @@ def _geometry_axes_payload(result: GeometryCorpusAnalysis) -> list[dict[str, str
                     "song_id": str(rep.song_id),
                     "backbone": str(rep.backbone),
                     "geometry_id": str(rep.geometry_id),
-                    "observation_id": str(rep.observation_id),
+                    "observation_group_sha256": str(rep.observation_group_sha256),
                     "geometry_semantics_version": version,
                     "numerical_profile_digest": str(rep.numerical_profile_digest),
                 }
@@ -1172,7 +1172,7 @@ def _geometry_axes_payload(result: GeometryCorpusAnalysis) -> list[dict[str, str
             "song_id": str(query.request.song_id),
             "backbone": str(query.request.backbone),
             "geometry_id": str(analysis.geometry_id),
-            "observation_id": str(analysis.observation_id),
+            "observation_group_sha256": str(analysis.observation_group_sha256),
             "geometry_semantics_version": str(analysis.geometry_semantics_version),
             "numerical_profile_digest": str(analysis.profile_digest),
         }
@@ -1191,7 +1191,7 @@ def _revalidate_geometry_bindings(
         identity = GeometryIdentity(
             axis["song_id"],
             axis["backbone"],
-            axis["observation_id"],
+            axis["observation_group_sha256"],
             axis["geometry_semantics_version"],
             axis["numerical_profile_digest"],
         )
@@ -1217,7 +1217,7 @@ def build_geometry_corpus_identity(result: GeometryCorpusAnalysis) -> AnalysisEv
     members = sorted(
         (
             str(analysis.geometry_id),
-            str(analysis.observation_id),
+            str(analysis.observation_group_sha256),
             str(analysis.profile_digest),
             str(analysis.geometry_semantics_version),
         )
@@ -1231,7 +1231,7 @@ def build_geometry_corpus_identity(result: GeometryCorpusAnalysis) -> AnalysisEv
         raise ValueError("mixed numerical profile digest across corpus analyses")
     return AnalysisEvidenceIdentity(
         geometry_id=_stable_id("corpus-geometry", [member[0] for member in members]),
-        observation_id=_stable_id("corpus-observation", [member[1] for member in members]),
+        observation_group_sha256=_stable_id("corpus-observation", [member[1] for member in members]),
         geometry_semantics_version=next(iter(versions)),
         numerical_profile_digest=next(iter(digests)),
         threshold_id=_CORPUS_THRESHOLD_ID,
@@ -1278,7 +1278,7 @@ def _membership_entries(result: GeometryCorpusAnalysis) -> tuple[GeometryMembers
             GeometryMembershipEntry(
                 song_id=str(representation.song_id),
                 backbone=str(representation.backbone),
-                observation_group_sha256=str(representation.observation_id),
+                observation_group_sha256=str(representation.observation_group_sha256),
                 geometry_id=str(representation.geometry_id),
                 numerical_profile_digest=str(representation.numerical_profile_digest),
                 comparable=candidate.state.comparable,
@@ -1429,7 +1429,7 @@ def write_geometry_corpus_analysis(
         for item in analysis.results:
             threshold_identity = SimpleNamespace(
                 geometry_id=str(item.search.geometry_id),
-                observation_id=str(item.search.observation_id),
+                observation_group_sha256=str(item.search.observation_group_sha256),
                 geometry_semantics_version=str(analysis.geometry_semantics_version),
                 numerical_profile_digest=str(item.search.profile_digest),
                 threshold_id=str(item.threshold.threshold_id),
@@ -1503,7 +1503,7 @@ def write_geometry_corpus_analysis(
             for backbone in baseline_backbones:
                 baseline_identity = SimpleNamespace(
                     geometry_id=str(corpus_identity.geometry_id),
-                    observation_id=str(corpus_identity.observation_id),
+                    observation_group_sha256=str(corpus_identity.observation_group_sha256),
                     geometry_semantics_version=str(corpus_identity.geometry_semantics_version),
                     numerical_profile_digest=str(corpus_identity.numerical_profile_digest),
                     threshold_id=f"observed-baseline:{backbone}",
@@ -1546,7 +1546,7 @@ def _revalidate_geometry_axis_payloads(
         identity = GeometryIdentity(
             str(axis["song_id"]),
             str(axis["backbone"]),
-            str(axis["observation_id"]),
+            str(axis["observation_group_sha256"]),
             str(axis["geometry_semantics_version"]),
             str(axis["numerical_profile_digest"]),
         )

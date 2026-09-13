@@ -1,6 +1,6 @@
 # Phase 1 Gram/Chebyshev evidence
 
-> **Historical/test-oracle only — superseded by the corrective repair.** The scalar stream oracle and comparison described below are historical evidence and test-only; they are not the production Gram kernel. Production is the NumPy row-normalize + float32 `np.matmul` kernel (see the binding corrective contract in `CONTRACTS.md` and the pending DD); this file must not be read as the production obligation.
+> **Historical/test-oracle only — superseded by the corrective repair.** Every scalar operation and comparison described below is historical evidence and test-only. Active production is NumPy row-normalization plus float32 `np.matmul`; scalar arithmetic is not a selectable engine, compatibility path, or production obligation (see `CONTRACTS.md` and the pending DD). This file must not be read as production authority.
 
 ## Call graph
 

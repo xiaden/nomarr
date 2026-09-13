@@ -2,9 +2,9 @@
 
 All writes route through the sealed tag facade (``LibraryTagsDb``) using
 domain identities (``SongIdentity`` / ``TagRef``) and typed assignment
-commands (``SongTagAssignment``). Numeric song handles are translated with the
-song-side identity bridge (``db.library.resolve_song_identity(s)`` /
-``resolve_song_identities``); tag relink uses the facade ``relink_tags`` intent
+commands (``SongTagAssignment``). Song operations accept semantic locators
+without crossing an integer identity bridge; tag relink uses the facade
+``relink_tags`` intent
 and consumes the typed ``RelinkResult``. No integer tag resolution, raw
 replacement dictionaries, edge scans, or manual collision/orphan bookkeeping
 remains at this layer.
@@ -79,24 +79,18 @@ def set_song_tags_batch(db: Database, entries: list[dict[str, Any]]) -> None:
         )
 
 
-def add_song_tag(db: Database, song_id: int, name: str, value: TagValue) -> None:
+def add_song_tag(db: Database, song: SongIdentity, name: str, value: TagValue) -> None:
     """Add one tag value to a song without replacing other values for the name."""
-    song_identity = db.library.resolve_song_identity(song_id)
-    if song_identity is None:
-        return
-    existing_tags = db.library.list_tags_for_song(song_identity)
+    existing_tags = db.library.list_tags_for_song(song)
     db.library.replace_song_tags(
-        song_identity,
+        song,
         [*existing_tags, SongTagAssignment(name=name, value=value)],
     )
 
 
-def delete_song_tags(db: Database, song_id: int) -> None:
+def delete_song_tags(db: Database, song: SongIdentity) -> None:
     """Delete all tag edges for one song."""
-    song_identity = db.library.resolve_song_identity(song_id)
-    if song_identity is None:
-        return
-    db.library.remove_song_tags(song_identity)
+    db.library.remove_song_tags(song)
 
 
 def relink_tag_edges(

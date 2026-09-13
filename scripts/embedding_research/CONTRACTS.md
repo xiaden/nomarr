@@ -1,8 +1,10 @@
 # Embedding Research — Geometry Contracts
 
-> **Current geometry era — corrective repair binding.** The authoritative corrective Gram-geometry ledger in the user request for `TASK-gram-geometry-corrective-repair` supersedes conflicting text in the pending migration DD, Plans A–U, and this file. DB-persisted per-song Gram geometry feeds corpus-wide leave-one-out retrieval; each committed Gram and exact mask is loaded once per song and all 171 thresholds are derived before any scoring. Explicit non-comparability, threshold/corpus maps, per-query ruler metrics, and bounded winner/baseline neighborhoods are persisted, and the NumPy row-normalize/float32-matmul kernel is the production Gram kernel. Git/source R1–R14 traceability machinery is hard-deleted while scientific artifact hashes remain. No compatibility APIs, alternate readers, dual writes, old/new schema coexistence, filesystem-owned store/Gram, real-corpus execution, or interactive explorer is permitted.
+> **Current geometry era — corrective repair binding.** The authoritative corrective Gram-geometry ledger in the user request for `TASK-gram-geometry-corrective-repair` supersedes conflicting text in the pending migration DD, Plans A–U, and this file. DB-persisted per-song Gram geometry feeds corpus-wide leave-one-out retrieval; each committed Gram and exact mask is loaded once per song and all 171 thresholds are derived before any scoring. Explicit non-comparability, threshold/corpus maps, per-query ruler metrics, and bounded winner/baseline neighborhoods are persisted, and NumPy row-normalization plus float32 `np.matmul` is the production Gram kernel. Scalar arithmetic is historical/test-oracle only, not a selectable engine, compatibility path, or production obligation. Git/source R1–R14 replay metadata is intentionally absent while report validation and scientific artifact hashes remain. No compatibility APIs, alternate readers, dual writes, old/new schema coexistence, filesystem-owned store/Gram, real-corpus execution, or interactive explorer is permitted.
 >
 > Statements below that describe synthetic-only ownership, self-similarity, one-song baselines, scalar production kernels, unconditional comparable publication, or R1–R14 replay are superseded implementation obligations, not current requirements. The binding corrective contract follows; see the pending DD and parts contracts for the R1–R14 deletion inventory (the inventory names retired modules, so it is kept in `artifacts/`, outside this runtime tree).
+>
+> The active corrective contract is evaluated at current head `59aa4a20`; scientific evidence is synthetic-only, with JSON reports and scientific hashes under configured `config.OUTPUT_ROOT` and the human-readable report explicitly placed in an external sibling runtime `docs/` directory; logs, locks, caches/streams/sidecars, DuckDB, and patch arrays remain external to the JSON root, and `OUTPUT_ROOT/docs` is not an accepted viewer location.
 
 ## Corrective repair contract (binding)
 
@@ -31,11 +33,12 @@
 
 ### Numeric kernel
 
-- The production Gram kernel row-normalizes each retained row and multiplies float32 rows via NumPy
-  (`np.matmul`), then publishes little-endian C-order float32 bytes
+- The sole production Gram kernel performs NumPy row-normalization and multiplies the resulting
+  float32 rows with `np.matmul`, then publishes little-endian C-order float32 bytes
   (`np.asarray(G, dtype='<f4', order='C').tobytes(order='C')`, `4 * patch_count * patch_count` bytes).
 - Zero and near-zero centroid detection is defined and covered by fixtures, alongside numerical ULP
-  sensitivity fixtures. A scalar production loop is not an accepted kernel.
+  sensitivity fixtures. Scalar arithmetic is historical/test-oracle-only and is not a production
+  kernel, alternate execution path, or compatibility obligation.
 
 ### Binding DTO and identity rules
 
@@ -62,20 +65,30 @@ state with a reason for non-comparability.
 `observation_group_sha256` is the immutable observation-publication identity. It is the SHA-256 of the
 canonical committed observation-group manifest (song id, backbone, stream ref and payload hash, mask
 ref and payload hash, alignment token, audio content hash, mask semantics version, group format
-version, patch count) and replaces the earlier commit-named field at every DTO, schema, persistence,
-serialized, and report surface, replacing the earlier `observation_commit_sha256` symbol exactly. It is
-a hard cut with no alternate symbol name. Unrelated scientific artifact SHA-256
+version, patch count) and is the sole observation identity name at every DTO, schema, persistence, serialized, and report surface;
+no alternate observation identity name is supported. Unrelated scientific artifact SHA-256
 hashes (`gram`/geometry blob, stream payload, mask payload, audio content, numerical profile digest)
 are retained and are never renamed to an observation identity.
 
 ### Current-head deletion and retained validation boundary
 
-Plans H–M retain report validation, scientific artifact SHA-256 helpers, geometry/stream/mask/audio/profile hashes, synthetic-only metadata, and complete corpus evidence. Plans L–M must remove stale prerequisites and callers for the deleted Git/source replay surface: `--traceability`, traceability producers/tests, source manifests and commit checks, R1–R14 replay matrices, replay-only fields, and compatibility aliases or dual readers/writers. Their absence is a hard negative contract; it is not replaced by a new traceability mechanism. The evidence root is JSON-only (a human summary, if needed, belongs below `docs/`), and no real corpus or model/audio execution is evidence.
+Plans H–M retain report validation, scientific artifact SHA-256 helpers, geometry/stream/mask/audio/profile hashes, synthetic-only metadata, and complete corpus evidence. Plans L–M remove stale prerequisites and callers for the deleted Git/source replay surface, including source manifests, commit checks, replay matrices, replay-only fields, and compatibility names or dual readers/writers. Their absence is a hard negative contract; no replacement replay mechanism is permitted. the configured `config.OUTPUT_ROOT` (`/workspace/scripts/outputs/embedding_research`) is the sole JSON/hash evidence root; the former `artifacts/evidence/threshold-independent-per-song-gram-geometry-migration` helper/fixture root is retired, not a compatibility path. A human summary belongs at the external runtime `docs/embedding-research-report.html` sibling of that root (or another explicitly external destination), and no real corpus or model/audio execution is evidence.
 
 ## Evidence
 
-R1–R14 Git/source traceability replay (producer, validator, CLI flag, source-commit/source-manifest
-fields, matrix callers, and generated traceability artifacts) is deleted. Report validation and
+### Bounded output migration map
+
+| Artifact class | Retired location | Current location | Contract |
+| --- | --- | --- | --- |
+| Scientific JSON and SHA-256 evidence | `artifacts/evidence/threshold-independent-per-song-gram-geometry-migration/` | `/workspace/scripts/outputs/embedding_research/` (`config.OUTPUT_ROOT`) | JSON/hash only |
+| Report JSON | retired root `report/report.json` | `/workspace/scripts/outputs/embedding_research/report/report.json` | below JSON root |
+| Human report viewer | retired/JSON root | `/workspace/scripts/outputs/embedding_research_runtime/docs/embedding-research-report.html` | external sibling runtime root; never `OUTPUT_ROOT/docs` |
+| Logs and binary caches | retired/JSON root | external runtime/log/cache destinations | never scientific JSON |
+
+The inventory covers `tools.write_evidence()` and `tests._gram_evidence.emit_evidence()` plus the report writer and fixture validator. It excludes real-corpus execution, Git/source traceability, R1–R14 restoration, production/frontend paths, and unrelated dirty files.
+
+R1–R14 Git/source replay (producer, validator, CLI flag, source-commit/source-manifest
+fields, matrix callers, and generated replay artifacts) is deleted. Report validation and
 scientific artifact hash validation are retained. The exact deletion inventory lives in the pending
 DD and parts contracts.
 
@@ -86,10 +99,9 @@ runtime and migrated every active runtime caller, test, fixture, report, mainten
 dynamic-dispatch, and serialized-phase surface to the geometry contracts below. Plan L deleted the
 remaining retired ownership and stale schema surfaces. Plans M, N, O, P, Q, R, S, T, and U
 completed exact identity persistence, seven-section reporting, seven-phase dispatch, stale-evidence
-refusal, geometry-preserving maintenance, deletion proof, synthetic R1–R13 behavior, R1–R14
-validation, and final acceptance. **Corrective note:** the R1–R14 Git/source replay and traceability-matrix
-deliverables named in this historical sentence are hard-deleted by corrective Plan E and are not a current
-obligation; only report validation and scientific artifact-hash validation remain. Every phase required
+refusal, geometry-preserving maintenance, deleted-surface proof, synthetic behavior, validation, and final
+acceptance. The earlier Git/source replay deliverables are removed and are not a current obligation; only
+report validation and scientific artifact-hash validation remain. Every phase required
 compileall, clean import smoke, and focused synthetic tests. No compatibility runtime or dual reader/writer remains.
 
 ## Corpus-level geometry contract
@@ -259,8 +271,8 @@ bytes are never replaced at an existing digest.
 
 A **committed observation group** is the immutable publication unit a derived consumer may read:
 the immutable embedding **stream**, the **aligned audio-derived silence mask**, and the
-**observation-group identity marker** (`observation_commits/<song_id>.<backbone>.<commit_sha256>.json`,
-where `commit_sha256` is the manifest digest published as `observation_group_sha256`;
+**observation-group identity marker** (`observation_commits/<song_id>.<backbone>.<manifest_digest>.json`,
+where the manifest digest is published as `observation_group_sha256`;
 written last). A complete, valid group is REQUIRED for geometry construction, for canonical head
 analysis, and for FS-reindex readiness. There is no stream-only, mask-less, uncommitted, or
 old-format read path, and no compatibility reader or dual write.

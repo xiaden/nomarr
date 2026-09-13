@@ -22,7 +22,7 @@ def _representation(name: str, *, baseline: bool = False) -> FrozenSearchReprese
         weights=np.ones(2, dtype=np.float64),
         search_representation_id=name,
         geometry_id="geometry-a",
-        observation_id="observation-a",
+        observation_group_sha256="observation-a",
         numerical_profile_digest="profile-a",
         mask_digest="mask-a",
         scoring_semantics_version=1,

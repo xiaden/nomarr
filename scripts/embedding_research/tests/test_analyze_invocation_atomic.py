@@ -46,7 +46,7 @@ def _obligation(backbone: str) -> tuple[str, str]:
 def _baseline_identity(backbone: str) -> SimpleNamespace:
     return SimpleNamespace(
         geometry_id=_geometry_id(backbone),
-        observation_id=f"observation:{backbone}",
+        observation_group_sha256=f"observation:{backbone}",
         geometry_semantics_version="gram-v1",
         numerical_profile_digest="profile-digest",
         threshold_id=f"observed-baseline:{backbone}",

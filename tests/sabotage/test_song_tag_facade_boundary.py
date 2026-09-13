@@ -21,15 +21,14 @@ ADR-032/041):
   services, and workflows may touch persistence only through the injected public
   ``Database`` intent facades from ``nomarr.persistence.db``; interfaces and
   helpers must not import persistence.
-- Allowed int→domain exceptions, which must be preserved:
-  - the identity bridge ``resolve_song_identity(song_id)`` (documented conversion
-    point at the library boundary),
-  - ``HydrateSongInput.song_id`` (hydration handle),
-  - ``FileTag`` / ``(file_id, tag_value)`` analytics tuples (interface /
-    physical-file projections).
+  - Song identity crosses this boundary only as ``SongIdentity`` locators; no
+    integer song-ID compatibility bridge is part of the component contract.
+  - ``HydrateSongInput`` remains payload-only and locator-addressed.
+  - ``FileTag`` / ``(file_id, tag_value)`` analytics tuples remain interface /
+    physical-file projections.
 
 The tests scan source code at test time and report violations. The scan scope is
-clean — all violations here were resolved by Phase 6 and Plan C P1-S5b, which
+clean, and the contract is enforced at the current semantic boundary.
 adds ``TestFacadeNeverImportsNamespaceFreeProjection``: the facade modules never
 import/use the namespace-dropping ``tags_from_tag_rows`` projection for
 assignment resolution or persistence (only namespace-bearing ``song_tag_mapper``
@@ -250,32 +249,13 @@ class TestFacadeNeverImportsNamespaceFreeProjection:
 
 
 # ---------------------------------------------------------------------------
-# Test 6: Sanctioned int→domain exceptions are preserved
+# Test 6: Locator-addressed payload boundaries
 # ---------------------------------------------------------------------------
-
-BRIDGE_SONG_PATTERN = re.compile(r"def\s+resolve_song_identity\s*\(")
-BRIDGE_IDENTITIES_PATTERN = re.compile(r"def\s+resolve_song_identities\s*\(")
 
 
 @pytest.mark.sabotage_check
-class TestSanctionedExceptionsPreserved:
-    """The documented int→domain exceptions still exist (identity bridge, hydration)."""
-
-    def test_identity_bridge_resolve_song_identity_present(self) -> None:
-        """resolve_song_identity(song_id) remains the library-boundary bridge."""
-        songs_module = Path("nomarr/persistence/api/library_songs.py")
-        content = _read(songs_module)
-        assert BRIDGE_SONG_PATTERN.search(content), (
-            "The identity bridge resolve_song_identity(song_id) must remain on LibrarySongsDb / LibraryDb."
-        )
-
-    def test_identity_bridge_resolve_song_identities_present(self) -> None:
-        """Set-based resolve_song_identities(ids) remains for batch conversion."""
-        songs_module = Path("nomarr/persistence/api/library_songs.py")
-        content = _read(songs_module)
-        assert BRIDGE_IDENTITIES_PATTERN.search(content), (
-            "resolve_song_identities must remain for batch int->SongIdentity."
-        )
+class TestLocatorAddressedBoundaries:
+    """Application boundaries do not require integer song identity bridges."""
 
     def test_hydrate_song_input_has_no_storage_identity(self) -> None:
         """HydrateSongInput carries payload only; identity is locator-addressed."""

@@ -11,7 +11,6 @@ from nomarr.components.library.library_song_mutation_comp import (
     delete_library_song,
     set_chromaprint,
     update_last_tagged_at,
-    update_song_modified_time,
     update_song_path,
     upsert_library_song,
 )
@@ -328,7 +327,7 @@ class TestUpdateFilePath:
         silently resolved or dropped by the component; persistence owns the
         NOT NULL rejection decision."""
         mock_db = MagicMock()
-        command = self._command(normalized_path=None)
+        command = self._command(normalized_path=None)  # type: ignore[arg-type]
 
         update_song_path(mock_db, command)
 
@@ -348,30 +347,6 @@ class TestUpdateFilePath:
         forwarded = mock_db.library.move_library_song.call_args.args[0]
         assert isinstance(forwarded, SongPathUpdate)
         assert forwarded.scan.scanned_at is None
-
-
-class TestUpdateFileModifiedTime:
-    """Tests for modified-time updates after file writes."""
-
-    @pytest.mark.unit
-    def test_resolves_handle_and_delegates_to_typed_intent(self) -> None:
-        mock_db = MagicMock()
-        identity = SongIdentity(LibraryIdentity("library-1", "Music", "/music"), "song.flac")
-        mock_db.library.resolve_song_identity.return_value = identity
-
-        update_song_modified_time(mock_db, "abc123", 7777)
-
-        mock_db.library.resolve_song_identity.assert_called_once_with("abc123")
-        mock_db.library.set_modified_time.assert_called_once_with(identity, 7777)
-
-    @pytest.mark.unit
-    def test_missing_handle_writes_nothing(self) -> None:
-        mock_db = MagicMock()
-        mock_db.library.resolve_song_identity.return_value = None
-
-        update_song_modified_time(mock_db, 999, 7777)
-
-        mock_db.library.set_modified_time.assert_not_called()
 
 
 class TestSetChromaprint:

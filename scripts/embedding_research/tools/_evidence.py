@@ -14,13 +14,17 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from scripts.embedding_research.config import OUTPUT_ROOT
+
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
 _HERE = Path(__file__).resolve()
 WORKSPACE_ROOT = _HERE.parents[3]
 PACKAGE_ROOT = _HERE.parents[1]
-EVIDENCE_ROOT = WORKSPACE_ROOT / "artifacts/evidence/threshold-independent-per-song-gram-geometry-migration"
+# Sole scientific JSON/hash root.  The retired artifacts/evidence fixture root is not
+# a compatibility location; callers must migrate to config.OUTPUT_ROOT.
+EVIDENCE_ROOT = OUTPUT_ROOT
 
 
 def _j(*parts: str) -> str:
@@ -40,11 +44,26 @@ def sha256_file(path: Path) -> str:
     return sha256_bytes(path.read_bytes())
 
 
+def _evidence_destination(path: str | Path) -> Path:
+    """Resolve and validate a scientific JSON destination without touching disk."""
+    root = OUTPUT_ROOT.resolve()
+    candidate = Path(path)
+    if candidate.is_absolute():
+        destination = candidate.resolve()
+    else:
+        destination = (root / candidate).resolve()
+    if destination.suffix != ".json":
+        raise ValueError("evidence destinations must use the .json suffix")
+    try:
+        destination.relative_to(root)
+    except ValueError as exc:
+        raise ValueError("evidence destination must be contained by OUTPUT_ROOT") from exc
+    return destination
+
+
 def write_evidence(path: str | Path, payload: dict[str, Any]) -> Path:
     """Write a canonical compact JSON evidence artifact (no digest field)."""
-    destination = Path(path)
-    if not destination.is_absolute():
-        destination = WORKSPACE_ROOT / destination
+    destination = _evidence_destination(path)
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_bytes(canonical_json_bytes(payload))
     return destination

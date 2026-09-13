@@ -113,22 +113,6 @@ def update_song_path(db: Database, command: SongPathUpdate) -> SongIdentity | No
     return db.library.move_library_song(command)
 
 
-def update_song_modified_time(db: Database, file_key: int, modified_time_ms: int) -> None:
-    """Update the stored modified-time after a successful file write.
-
-    Inbound integer-handle adapter (allowlisted Q1): the claim handle is
-    resolved to the semantic ``SongIdentity`` exactly once and the write
-    delegates to the locator-addressed ``set_modified_time`` intent. The handle
-    never propagates past this point. A handle that does not resolve is a
-    missing-locator no-op: no write occurs and no error is raised (mirroring the
-    facade's ``MISSING_LOCATOR`` outcome).
-    """
-    song = db.library.resolve_song_identity(file_key)
-    if song is None:
-        return
-    db.library.set_modified_time(song, modified_time_ms)
-
-
 def bulk_delete_songs(db: Database, paths: list[str], library: Library) -> int:
     """Delete multiple library-song documents by path in one library.
 

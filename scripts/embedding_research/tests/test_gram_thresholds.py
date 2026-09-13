@@ -37,7 +37,7 @@ def _search(*, experiment: str, index: int) -> SearchRepresentation:
         searchable_weights=(1.0,),
         total_searchable=1,
         geometry_id="geometry-1",
-        observation_id="observation-1",
+        observation_group_sha256="observation-1",
         profile_digest="profile-1",
         mask_digest="mask-1",
         scoring_semantics_version=1,
@@ -115,7 +115,7 @@ def test_chebyshev_does_not_collapse_global() -> None:
     analysis = AllThresholdAnalysis(
         experiment=PRIMARY_EXPERIMENT,
         geometry_id="geometry-1",
-        observation_id="observation-1",
+        observation_group_sha256="observation-1",
         profile_digest="profile-1",
         mask_digest="mask-1",
         results=(

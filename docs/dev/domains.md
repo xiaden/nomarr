@@ -92,8 +92,8 @@ def scan_library(db, library: Library):
         locator: SongIdentity = upsert_library_song(db, path, library, file_size, modified_time)
 
 
-# ❌ BAD — Workflow imports persistence
-db.library.update_songs(...)  # BYPASSES INVARIANTS!
+# ❌ BAD — Workflow bypasses the typed scan owner
+ db.library.add_songs_to_library_batch(...)  # Use the scan/reconciliation workflow owner instead
 ```
 
 ### Rule 2: Cross-Domain via Components Only
@@ -346,9 +346,7 @@ Each domain maps to a subfolder under `components/` and owns specific PostgreSQL
 
 **Owns:**
 
-- No tag persistence ownership; the legacy `save_mood_tags*` names were removed by Q3-J and must not be recreated as a generic mood replacement path
-
-
+- No tag persistence ownership; mood-tag replacement is owned by `LibraryTagsDb.replace_mood_tags*`
 - No persistent tables (coordinates file writing)
 
 **Key components:**

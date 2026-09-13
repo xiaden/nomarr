@@ -1,6 +1,6 @@
 """Retrieve a track's normalized embedding vector.
 
-Resolves the requested file handle and fetches the promoted (cold-tier) vector
+Fetches the promoted (cold-tier) vector for a semantic song locator
 through :func:`nomarr.components.ml.vectors.ml_vector_retrieve_comp.get_cold_track_vector`,
 returning a domain :class:`SongVector` carrying the actual stored embedding.
 Transport identity/response adaptation to ``VectorGetResponse`` happens at the
@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 from nomarr.components.ml.vectors.ml_vector_retrieve_comp import get_cold_track_vector
 
 if TYPE_CHECKING:
+    from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
     from nomarr.helpers.dataclasses.vector_dataclass import SongVector
     from nomarr.persistence.db import Database
 
@@ -23,24 +24,20 @@ logger = logging.getLogger(__name__)
 
 def get_track_vector(
     db: Database,
-    file_id: int,
+    song: SongIdentity,
     backbone_id: str,
 ) -> SongVector | None:
-    """Get a track's promoted vector by file handle and backbone.
-
-    Single step: the component resolves the ``file_id`` to a natural
-    :class:`~nomarr.helpers.dataclasses.song_command_dataclass.SongIdentity`
-    through ``db.library`` and reads the cold-tier stored vector.
+    """Get a track's promoted vector by semantic locator and backbone.
 
     Args:
         db: Database instance.
-        file_id: Library song handle (file id).
+        song: Semantic ``SongIdentity`` locator.
         backbone_id: Backbone identifier (e.g. ``"effnet"``).
 
     Returns:
         A :class:`SongVector` carrying the actual stored embedding, or ``None``
-        when the file handle does not resolve, the backbone has no cold
+        when the backbone has no cold
         embeddings, or the song has no promoted vector.
 
     """
-    return get_cold_track_vector(db, file_id, backbone_id)
+    return get_cold_track_vector(db, song, backbone_id)

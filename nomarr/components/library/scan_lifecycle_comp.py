@@ -280,7 +280,7 @@ def on_scan_complete_pipeline_hook(db: Database, library: Library) -> None:
         library: Domain ``Library`` (natural identity)
 
     """
-    file_count = len(db.library.list_library_song_ids(library))
+    file_count = db.library.count_songs_for_library(library)
     next_state = ML_IN_PROGRESS if file_count > 0 else ML_NOT_PROCESSED
     current = get_pipeline_state(db, library)
     if current.ml_state != next_state:

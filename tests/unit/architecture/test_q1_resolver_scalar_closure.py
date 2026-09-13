@@ -1,11 +1,8 @@
-"""Q1 resolver/scalar closure enforcement (CONTRACTS §12/§12.1).
+"""Q1 resolver/scalar closure enforcement.
 
-Negative architecture guard: every retained integer identity crossing is a
-machine-readable allowlist entry in ``q1_resolver_scalar_allowlist.json``. There
-is no unconditional hydration integer exception — hydration is locator-addressed
-and payload-only. The three locator ``FieldWriteResult`` intents are the only
-public scalar write surface, and legacy integer scalar writers must be absent
-(deleted, not forwarded/wrapped).
+Public integer identity resolver bridges are forbidden. Persistence-private
+``_resolve_*`` joins remain implementation details, and canonical locator
+scalar intents remain the only public scalar write surface.
 """
 
 from __future__ import annotations
@@ -50,12 +47,7 @@ _LEGACY_SCALAR_WRITERS = (
     "set_library_song_chromaprint",
     "update_library_song_last_tagged_at",
 )
-_RESOLVER_NAMES = (
-    "resolve_song_identity",
-    "resolve_song_identities",
-    "resolve_library_identity",
-    "resolve_library_identities",
-)
+_RESOLVER_NAMES: tuple[str, ...] = ()
 
 # Canonical public scalar writers; every other writer-shaped method touching
 # modified-time/last-tagged/chromaprint is forbidden.
@@ -70,8 +62,8 @@ _SCALAR_WRITE_PRIMITIVES = (
     "_set_monotonic_scalar",
 )
 
-# Resolver-bridge modules that must remain fully allowlisted. ``db.py`` exposes no
-# resolver of its own but is scanned so a future public bridge cannot hide there.
+# Resolver definitions are forbidden in the public facade modules. Private
+# ``_resolve_*`` repository helpers are intentionally outside this scan.
 _RESOLVER_SCAN_MODULES = (
     "nomarr/persistence/api/library_songs.py",
     "nomarr/persistence/api/library.py",
@@ -158,17 +150,12 @@ def test_required_allowlist_field_tuple_is_hardcoded() -> None:
 
 
 def test_every_allowlist_entry_carries_all_six_required_fields() -> None:
-    """All six fields are validated on both allowlisted collections."""
+    """Any future allowlist entry must carry the complete machine-readable schema."""
     data = _load_allowlist()
-    collections = {
-        "allowlisted_resolvers": data["allowlisted_resolvers"],
-        "allowlisted_integer_adapters": data["allowlisted_integer_adapters"],
-    }
-    for collection, entries in collections.items():
-        assert entries, f"{collection} must not be empty"
-        for entry in entries:
+    for collection in ("allowlisted_resolvers", "allowlisted_integer_adapters"):
+        for entry in data[collection]:
             for field in _REQUIRED_ALLOWLIST_FIELDS:
-                assert entry.get(field), f"{collection}: {entry.get('symbol')} missing machine-readable field: {field}"
+                assert entry.get(field), f"{collection}: {entry.get('symbol')} missing {field}"
 
 
 def test_every_positive_test_target_exists() -> None:
@@ -186,20 +173,17 @@ def test_every_positive_test_target_exists() -> None:
                 )
 
 
-def test_every_public_resolver_is_allowlisted() -> None:
-    """No public ``resolve_*`` bridge may exist in a Q1 resolver module unallowlisted."""
-    allowed = {entry["symbol"].split(".")[-1] for entry in _load_allowlist()["allowlisted_resolvers"]}
+def test_no_public_resolver_definitions() -> None:
+    """Public resolver bridges are forbidden; private ``_resolve_*`` helpers remain valid."""
     for relative in _RESOLVER_SCAN_MODULES:
         defined = set(re.findall(r"^    def (resolve_[a-z_]+)\(", _source(relative), flags=re.MULTILINE))
-        assert defined <= allowed, f"{relative}: unallowlisted resolver(s): {sorted(defined - allowed)}"
+        assert not defined, f"{relative}: public resolver(s) remain: {sorted(defined)}"
 
 
-def test_library_facade_forwarders_are_allowlisted() -> None:
-    allowed = {entry["symbol"].split(".")[-1] for entry in _load_allowlist()["allowlisted_resolvers"]}
+def test_library_facade_has_no_resolver_forwarders() -> None:
     source = _source("nomarr/persistence/api/library.py")
     for name in _RESOLVER_NAMES:
-        assert re.search(rf"^    def {name}\(", source, flags=re.MULTILINE), f"forwarder {name} missing"
-        assert name in allowed
+        assert not re.search(rf"^    def {name}\\(", source, flags=re.MULTILINE)
 
 
 def test_deleted_by_q1_symbols_are_absent_from_their_declared_modules() -> None:
@@ -264,10 +248,9 @@ def test_no_ad_hoc_public_scalar_writer_names() -> None:
     assert not offenders, f"ad-hoc/legacy public scalar writer(s): {offenders}"
 
 
-def test_allowlisted_symbols_actually_exist() -> None:
+def test_no_allowlisted_public_resolvers_or_adapters() -> None:
     data = _load_allowlist()
-    for entry in data["allowlisted_resolvers"]:
-        assert hasattr(LibrarySongsDb, entry["symbol"].split(".")[-1]), f"stale allowlist entry {entry['symbol']}"
+    assert data["allowlisted_resolvers"] == []
     for entry in data["allowlisted_integer_adapters"]:
         assert hasattr(mutation_comp, entry["symbol"].split(".")[-1]), f"stale allowlist entry {entry['symbol']}"
 

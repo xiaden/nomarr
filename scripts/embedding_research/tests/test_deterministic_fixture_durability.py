@@ -9,7 +9,8 @@ from scripts.embedding_research.validate_fixture_report import validate_fixture_
 
 
 def test_fixture_report_survives_reload_and_rerun(tmp_path):
-    report_path = main(tmp_path)
+    html_path = tmp_path.parent / "docs" / "embedding-research-report.html"
+    report_path = main(tmp_path, html_out_path=html_path)
     validate_fixture_report(report_path)
     first = json.loads(report_path.read_text(encoding="utf-8"))
 
@@ -17,7 +18,7 @@ def test_fixture_report_survives_reload_and_rerun(tmp_path):
     validate_fixture_report(report_path)
 
     # A second render into the same directory replaces the artifacts durably.
-    report_path = main(tmp_path)
+    report_path = main(tmp_path, html_out_path=html_path)
     validate_fixture_report(report_path)
     second = json.loads(report_path.read_text(encoding="utf-8"))
 
@@ -26,4 +27,7 @@ def test_fixture_report_survives_reload_and_rerun(tmp_path):
     first.pop("run_ts", None)
     second.pop("run_ts", None)
     assert first == second
-    assert (tmp_path / "report.html").stat().st_size > 0
+    html_path = tmp_path.parent / "docs" / "embedding-research-report.html"
+    assert html_path.stat().st_size > 0
+    assert not list(tmp_path.rglob("*.html"))
+    assert all(path.suffix == ".json" for path in tmp_path.rglob("*") if path.is_file())

@@ -140,7 +140,7 @@ _DDL = """
 CREATE TABLE IF NOT EXISTS geometry_analysis_records (
     run_id TEXT NOT NULL,
     geometry_id TEXT NOT NULL,
-    observation_id TEXT NOT NULL,
+    observation_group_sha256 TEXT NOT NULL,
     geometry_semantics_version TEXT NOT NULL,
     numerical_profile_digest TEXT NOT NULL,
     threshold_id TEXT NOT NULL,
@@ -158,7 +158,7 @@ CREATE TABLE IF NOT EXISTS geometry_analysis_records (
 CREATE TABLE IF NOT EXISTS geometry_head_evidence (
     run_id TEXT NOT NULL,
     geometry_id TEXT NOT NULL,
-    observation_id TEXT NOT NULL,
+    observation_group_sha256 TEXT NOT NULL,
     geometry_semantics_version TEXT NOT NULL,
     numerical_profile_digest TEXT NOT NULL,
     threshold_id TEXT NOT NULL,
@@ -298,7 +298,7 @@ CREATE TABLE IF NOT EXISTS corpus_state (
 _HPP_COLUMN_DEFS: tuple[str, ...] = (
     "run_id TEXT NOT NULL",
     "geometry_id TEXT NOT NULL",
-    "observation_id TEXT NOT NULL",
+    "observation_group_sha256 TEXT NOT NULL",
     "geometry_semantics_version TEXT NOT NULL",
     "numerical_profile_digest TEXT NOT NULL",
     "threshold_id TEXT NOT NULL",
@@ -331,7 +331,7 @@ _HPP_CREATE = "CREATE TABLE IF NOT EXISTS head_phase_provenance (\n    " + ",\n 
 _INCOMPLETE_DIAGNOSTIC_COLUMN_DEFS: tuple[str, ...] = (
     "run_id                                TEXT NOT NULL",
     "geometry_id                           TEXT NOT NULL",
-    "observation_id                        TEXT NOT NULL",
+    "observation_group_sha256                        TEXT NOT NULL",
     "geometry_semantics_version            TEXT NOT NULL",
     "numerical_profile_digest              TEXT NOT NULL",
     "threshold_id                          TEXT NOT NULL",

@@ -26,7 +26,12 @@ from testcontainers.community.postgres import PostgresContainer
 
 from alembic import command
 from nomarr.helpers.dataclasses.library_dataclass import Library
-from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
+from nomarr.helpers.dataclasses.song_command_dataclass import (
+    LibraryIdentity,
+    SongIdentity,
+    SongScanUpdate,
+    SongUpsertInput,
+)
 from nomarr.helpers.dataclasses.song_tag_dataclass import SongTagAssignment, TagRef
 from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence.db import Database
@@ -166,11 +171,11 @@ def inference_session(pg_engine):
 def seed_data(db):
     """Insert seed data into the test database using the sealed domain facade.
 
-    Phase 6 (song-tag correction): seed creation now goes through the domain
-    contracts — ``create_library(Library)``, ``add_songs_to_library(Library, …)``,
+    Seed creation goes through the canonical typed domain contracts —
+    ``create_library(Library)``, ``add_songs_to_library_batch(SongUpsertInput, …)``,
     ``ensure_tag(TagRef)``, ``replace_song_tags(SongIdentity, …)`` and
-    ``start_scan(Library, …)``. The returned song ids are persistence-private
-    integer handles only; semantic ``SongIdentity`` locators are constructed
+    ``start_scan(Library, …)``. The returned song identities are semantic
+    ``SongIdentity`` locators; semantic identities are constructed
     directly (no integer-handle resolver crossing) and exposed under
     ``song_identities``.
 
@@ -188,6 +193,7 @@ def seed_data(db):
     created: dict[str, list[object]] = {
         "libraries": [],
         "songs": [],
+        "song_identities": [],
         "tags": [],
         "scans": [],
     }
@@ -197,52 +203,60 @@ def seed_data(db):
     lib2 = db.library.create_library(Library(name="TestLib2", root_path="/tmp/test2"))
     created["libraries"] = [lib1, lib2]
 
-    # Create 3 songs (2 in lib1, 1 in lib2); the batch intent returns storage
-    # song ids. ``path`` stays absolute while ``normalized_path`` is the
-    # library-relative canonical locator path (ADR-048) so the semantic
-    # SongIdentity is directly encodable as an opaque ``nom1`` token.
+    # Create 3 songs (2 in lib1, 1 in lib2) through the canonical typed
+    # SongUpsert batch owner. The returned values are locator-shaped identities;
+    # generated persistence IDs remain private to the repository.
     now_ms_val = now_ms()
-    song1_id, song2_id = db.library.add_songs_to_library(
-        lib1,
-        [
-            {
-                "path": "/tmp/test1/song1.flac",
-                "normalized_path": "song1.flac",
-                "file_size": 1024000,
-                "modified_time": now_ms_val.value,
-                "duration_seconds": 180.5,
-                "needs_tagging": 0,
-                "is_valid": 1,
-                "tagged": 0,
-            },
-            {
-                "path": "/tmp/test1/song2.mp3",
-                "normalized_path": "song2.mp3",
-                "file_size": 512000,
-                "modified_time": now_ms_val.value,
-                "duration_seconds": 240.0,
-                "needs_tagging": 1,
-                "is_valid": 1,
-                "tagged": 0,
-            },
-        ],
+    song_identities = list(
+        db.library.add_songs_to_library_batch(
+            [
+                SongUpsertInput(
+                    library=LibraryIdentity(
+                        library_uuid=lib1.library_uuid or "", name=lib1.name, root_path=lib1.root_path
+                    ),
+                    path="/tmp/test1/song1.flac",
+                    scan=SongScanUpdate(
+                        normalized_path="song1.flac",
+                        file_size=1024000,
+                        modified_time=now_ms_val.value,
+                        duration_seconds=180.5,
+                    ),
+                ),
+                SongUpsertInput(
+                    library=LibraryIdentity(
+                        library_uuid=lib1.library_uuid or "", name=lib1.name, root_path=lib1.root_path
+                    ),
+                    path="/tmp/test1/song2.mp3",
+                    scan=SongScanUpdate(
+                        normalized_path="song2.mp3",
+                        file_size=512000,
+                        modified_time=now_ms_val.value,
+                        duration_seconds=240.0,
+                    ),
+                ),
+            ]
+        )
     )
-    (song3_id,) = db.library.add_songs_to_library(
-        lib2,
-        [
-            {
-                "path": "/tmp/test2/song3.flac",
-                "normalized_path": "song3.flac",
-                "file_size": 2048000,
-                "modified_time": now_ms_val.value,
-                "duration_seconds": 300.0,
-                "needs_tagging": 0,
-                "is_valid": 1,
-                "tagged": 1,
-            },
-        ],
+    song_identities.extend(
+        db.library.add_songs_to_library_batch(
+            [
+                SongUpsertInput(
+                    library=LibraryIdentity(
+                        library_uuid=lib2.library_uuid or "", name=lib2.name, root_path=lib2.root_path
+                    ),
+                    path="/tmp/test2/song3.flac",
+                    scan=SongScanUpdate(
+                        normalized_path="song3.flac",
+                        file_size=2048000,
+                        modified_time=now_ms_val.value,
+                        duration_seconds=300.0,
+                    ),
+                )
+            ]
+        )
     )
-    created["songs"] = [song1_id, song2_id, song3_id]
+    created["songs"] = song_identities
+    created["song_identities"] = song_identities
 
     # Create 5 tags via the domain identity (never a storage id).
     tag1 = db.library.ensure_tag(TagRef(name="nom:mood-strict", value="happy", namespace="nom"))
@@ -269,6 +283,7 @@ def seed_data(db):
         normalized_path="song3.flac",
     )
     created["song_identities"] = [song1, song2, song3]
+    created["songs"] = [song1, song2, song3]
     db.library.replace_song_tags(
         song1,
         [

@@ -1,22 +1,13 @@
 # mypy: disable-error-code=func-returns-value
 """Facade identity-boundary contract tests.
 
-Historical bridge tests below characterize persistence-private behavior only.
-They do not approve these methods as current application adapters. Under the H
-contract, ``resolve_song_identity`` / ``resolve_song_identities`` require an
-exact L/N/P allowlist naming owner, boundary, reason, positive test,
-non-propagation assertion, and removal condition. A symbol name or historical
-plan wording is not approval. Hydration is locator-addressed and payload-only:
-``HydrateSongInput`` carries no ``song_id`` integer and no inbound integer
-adapter is retained.
-
-The bridge methods resolve song/library storage handles to natural references
-inside persistence fixtures; no row, ``Song``, ``Library``, or storage id is
-exposed by their return value.
+These tests cover the retained library-handle mapping used inside persistence.
+Application callers use ``SongIdentity`` directly; hydration remains
+locator-addressed and payload-only.
 
 The root ``Database`` tag boundary resolver (``resolve_tag_identity`` /
 ``resolve_tag_identities``) was retired after the repo-wide caller migration
-(CONTRACTS.md, "Bridge-retirement contract"): the zero-caller audit proved
+(the bridge-retirement contract): the zero-caller audit proved
 safe deletion, the methods are gone, and no integer tag primary key may enter
 the public tag contract. This module asserts their permanent absence and that
 the natural ``library_tags`` surface alone carries the full tag intent surface,
@@ -33,7 +24,6 @@ import pytest
 
 from nomarr.helpers.dataclasses.song_command_dataclass import (
     LibraryIdentity,
-    SongIdentity,
 )
 from nomarr.persistence.api.library import LibraryDb
 from nomarr.persistence.api.library_songs import LibrarySongsDb
@@ -57,10 +47,6 @@ def _make_songs_db() -> tuple[LibrarySongsDb, MagicMock, MagicMock]:
     return songs, song_repo, library_repo
 
 
-def _song_row(song_id: int, library_id: int, normalized_path: str) -> dict:
-    return {"id": song_id, "library_id": library_id, "normalized_path": normalized_path}
-
-
 def _library_row(library_id: int, name: str, root_path: str) -> dict:
     return {
         "id": library_id,
@@ -71,116 +57,16 @@ def _library_row(library_id: int, name: str, root_path: str) -> dict:
 
 
 @pytest.mark.unit
-class TestSongIdentityBridge:
-    """LibrarySongsDb song-handle → SongIdentity bridge."""
+class TestLibraryIdentityBoundary:
+    """Library identity is supplied semantically; storage IDs stay private."""
 
-    def test_resolve_song_identity_maps_natural_key(self) -> None:
-        songs, song_repo, library_repo = _make_songs_db()
-        song_repo.get_songs_by_ids.return_value = [_song_row(5, 2, "a.mp3")]
-        library_repo.get_libraries_by_ids.return_value = [_library_row(2, "TestLib", "/music")]
-        result = songs.resolve_song_identity(5)
-        assert result == SongIdentity(library=_TEST_LIBRARY, normalized_path="a.mp3")
-        assert isinstance(result.library, LibraryIdentity)
-        song_repo.get_songs_by_ids.assert_called_once_with([5])
-        library_repo.get_libraries_by_ids.assert_called_once_with([2])
+    def test_library_identity_is_a_locator_value(self) -> None:
+        assert _TEST_LIBRARY.library_uuid
+        assert _TEST_LIBRARY.name == "TestLib"
 
-    def test_resolve_song_identities_set_based_call_counts(self) -> None:
-        songs, song_repo, library_repo = _make_songs_db()
-        song_repo.get_songs_by_ids.return_value = [
-            _song_row(5, 2, "a.mp3"),
-            _song_row(6, 2, "b.mp3"),
-            _song_row(7, 3, "c.mp3"),
-        ]
-        library_repo.get_libraries_by_ids.return_value = [
-            _library_row(2, "TestLib", "/music"),
-            _library_row(3, "Other", "/other"),
-        ]
-        result = songs.resolve_song_identities([5, 6, 7])
-        assert result[5] == SongIdentity(library=_TEST_LIBRARY, normalized_path="a.mp3")
-        assert result[6] == SongIdentity(library=_TEST_LIBRARY, normalized_path="b.mp3")
-        assert result[7] == SongIdentity(
-            library=LibraryIdentity(
-                library_uuid="608fcf8c-1580-5fcd-84ad-d594717ad011", name="Other", root_path="/other"
-            ),
-            normalized_path="c.mp3",
-        )
-        # One song query + one distinct-library query for the whole batch.
-        song_repo.get_songs_by_ids.assert_called_once_with([5, 6, 7])
-        library_repo.get_libraries_by_ids.assert_called_once_with([2, 3])
-
-    def test_resolve_song_identity_missing_song_returns_none(self) -> None:
-        songs, song_repo, library_repo = _make_songs_db()
-        song_repo.get_songs_by_ids.return_value = []
-        assert songs.resolve_song_identity(999) is None
-        library_repo.get_libraries_by_ids.assert_not_called()
-
-    def test_resolve_song_identity_missing_owning_library_returns_none(self) -> None:
-        songs, song_repo, library_repo = _make_songs_db()
-        song_repo.get_songs_by_ids.return_value = [_song_row(5, 2, "a.mp3")]
-        library_repo.get_libraries_by_ids.return_value = []
-        assert songs.resolve_song_identity(5) is None
-
-    def test_resolve_song_identities_unresolved_omitted(self) -> None:
-        songs, song_repo, library_repo = _make_songs_db()
-        song_repo.get_songs_by_ids.return_value = [
-            _song_row(5, 2, "a.mp3"),
-            _song_row(6, 999, "b.mp3"),  # owning library missing
-        ]
-        library_repo.get_libraries_by_ids.return_value = [_library_row(2, "TestLib", "/music")]
-        result = songs.resolve_song_identities([5, 6])
-        assert set(result) == {5}
-
-    def test_resolve_song_identities_empty_batch_returns_empty(self) -> None:
-        songs, song_repo, library_repo = _make_songs_db()
-        assert songs.resolve_song_identities([]) == {}
-        song_repo.get_songs_by_ids.assert_not_called()
-        library_repo.get_libraries_by_ids.assert_not_called()
-
-    def test_resolve_song_identity_exposes_no_storage_ids(self) -> None:
-        songs, song_repo, library_repo = _make_songs_db()
-        song_repo.get_songs_by_ids.return_value = [_song_row(5, 2, "a.mp3")]
-        library_repo.get_libraries_by_ids.return_value = [_library_row(2, "TestLib", "/music")]
-        result = songs.resolve_song_identity(5)
-        assert isinstance(result, SongIdentity)
-        assert isinstance(result.library, LibraryIdentity)
-        # No storage PK or row shape crosses the boundary.
-        assert result.library.name == "TestLib"
-        assert result.library.root_path == "/music"
-        assert result.normalized_path == "a.mp3"
-
-
-@pytest.mark.unit
-class TestLibraryIdentityBridge:
-    """LibrarySongsDb library-handle → LibraryIdentity bridge."""
-
-    def test_resolve_library_identity_maps_natural_key(self) -> None:
-        songs, _, library_repo = _make_songs_db()
-        library_repo.get_libraries_by_ids.return_value = [_library_row(2, "TestLib", "/music")]
-        result = songs.resolve_library_identity(2)
-        assert result == _TEST_LIBRARY
-
-    def test_resolve_library_identity_missing_returns_none(self) -> None:
-        songs, _, library_repo = _make_songs_db()
-        library_repo.get_libraries_by_ids.return_value = []
-        assert songs.resolve_library_identity(2) is None
-
-    def test_resolve_library_identities_set_based_unresolved_omitted(self) -> None:
-        songs, _, library_repo = _make_songs_db()
-        library_repo.get_libraries_by_ids.return_value = [
-            _library_row(2, "TestLib", "/music"),
-            _library_row(4, "Three", "/three"),
-        ]
-        result = songs.resolve_library_identities([2, 3, 4])
-        assert result == {
-            2: _TEST_LIBRARY,
-            4: LibraryIdentity(library_uuid="b0da3722-b47b-50ca-abb5-21927059a411", name="Three", root_path="/three"),
-        }
-        library_repo.get_libraries_by_ids.assert_called_once_with([2, 3, 4])
-
-    def test_resolve_library_identities_empty_batch_returns_empty(self) -> None:
-        songs, _, library_repo = _make_songs_db()
-        assert songs.resolve_library_identities([]) == {}
-        library_repo.get_libraries_by_ids.assert_not_called()
+    def test_library_identity_requires_uuid(self) -> None:
+        with pytest.raises(ValueError, match="library_uuid"):
+            LibraryIdentity(library_uuid="", name="TestLib", root_path="/music")
 
 
 @pytest.mark.unit

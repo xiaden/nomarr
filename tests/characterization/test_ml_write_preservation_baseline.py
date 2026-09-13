@@ -57,6 +57,7 @@ from nomarr.persistence.models.ml_output_stream import MlOutputStream
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
+    from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
     from nomarr.persistence.db import Database
 
 # Embedding dimension must match HALFVEC(1280) in the Embedding model.
@@ -127,26 +128,18 @@ def _random_vector(dim: int = _EMBED_DIM, seed: int | None = None) -> list[float
 
 def _persist_typed(
     db: Database,
-    song_id: int,
+    song: SongIdentity,
     backbone: str,
     *,
     vectors: list[dict[str, Any]],
     streams: list[OutputStreamWrite],
 ) -> None:
-    """Drive the typed aggregate via an authoritative SongIdentity (P5-S3).
+    """Drive the typed aggregate with a semantic ``SongIdentity`` locator.
 
-    Mirrors the production worker boundary: the storage song id is resolved once
-    to a semantic ``SongIdentity`` through the authorized library identity bridge
-    (``db.library.resolve_song_identity``) before the ML write, and only the
-    identity plus typed ``BackboneVectorWrite``/``OutputStreamWrite`` commands
-    cross ``db.ml``. The legacy raw vector dicts (``embedding_vector``,
-    ``model_id``, ``num_segments``, ``genres``) are translated here to typed
-    commands carrying the SAME values so no raw vector dictionary reaches the
-    facade. Persistence derives ``embed_dim``; no storage field is passed.
+    The seeded locator is already supplied by the typed fixture. Only the
+    identity and typed vector/stream commands cross ``db.ml``; storage IDs and
+    raw vector dictionaries remain outside the persistence intent boundary.
     """
-    identity = db.library.resolve_song_identity(song_id)
-    assert identity is not None, f"seeded song {song_id} could not resolve to a SongIdentity"
-
     typed_vectors = [
         BackboneVectorWrite(
             vector=tuple(v["embedding_vector"]),
@@ -157,7 +150,7 @@ def _persist_typed(
         for v in vectors
     ]
     db.ml.replace_song_inference_results(
-        song=identity,
+        song=song,
         backbone=backbone,
         vectors=typed_vectors,
         output_streams=list(streams),
@@ -181,13 +174,13 @@ class TestWritePreservationBaseline:
 
     def test_vector_row_field_preservation(self, db: Database, inference_session: Session, seed_data: dict) -> None:
         """embed_dim, suite-hash mapping, empty suite-hash col, NULL seg hash, hot tier."""
-        song_id = cast("int", seed_data["songs"][0])
+        song = cast("SongIdentity", seed_data["song_identities"][0])
         suite_hash = "suite-hash-canonical"
         stored = _random_vector(seed=101)
 
         _persist_typed(
             db,
-            song_id,
+            song,
             "effnet",
             vectors=[
                 {
@@ -200,7 +193,7 @@ class TestWritePreservationBaseline:
             streams=[],
         )
 
-        rows = _vector_rows(inference_session, song_id)
+        rows = _vector_rows(inference_session, cast("int", seed_data["songs"][0]))
         assert len(rows) == 1
         row = rows[0]
         assert row["backbone_id"] == "effnet"
@@ -218,10 +211,10 @@ class TestWritePreservationBaseline:
 
     def test_genres_none_is_distinct(self, db: Database, inference_session: Session, seed_data: dict) -> None:
         """genres=None persists as NULL (distinct from []); num_segments preserved."""
-        song_id = cast("int", seed_data["songs"][0])
+        song = cast("SongIdentity", seed_data["song_identities"][0])
         _persist_typed(
             db,
-            song_id,
+            song,
             "musicnn",
             vectors=[
                 {
@@ -233,7 +226,7 @@ class TestWritePreservationBaseline:
             ],
             streams=[],
         )
-        rows = _vector_rows(inference_session, song_id)
+        rows = _vector_rows(inference_session, cast("int", seed_data["songs"][0]))
         assert len(rows) == 1
         assert rows[0]["genres"] is None
         assert rows[0]["num_segments"] == 3
@@ -243,10 +236,10 @@ class TestWritePreservationBaseline:
         self, db: Database, inference_session: Session, seed_data: dict
     ) -> None:
         """R5: persisting one backbone never erases another backbone's vectors."""
-        song_id = cast("int", seed_data["songs"][0])
+        song = cast("SongIdentity", seed_data["song_identities"][0])
         _persist_typed(
             db,
-            song_id,
+            song,
             "backbone_a",
             vectors=[
                 {"embedding_vector": _random_vector(seed=1), "model_id": "model-a", "num_segments": 1, "genres": None}
@@ -255,7 +248,7 @@ class TestWritePreservationBaseline:
         )
         _persist_typed(
             db,
-            song_id,
+            song,
             "backbone_b",
             vectors=[
                 {"embedding_vector": _random_vector(seed=2), "model_id": "model-b", "num_segments": 2, "genres": None}
@@ -265,14 +258,14 @@ class TestWritePreservationBaseline:
         # Re-persist backbone_a: only backbone_a's rows are replaced.
         _persist_typed(
             db,
-            song_id,
+            song,
             "backbone_a",
             vectors=[
                 {"embedding_vector": _random_vector(seed=3), "model_id": "model-a2", "num_segments": 4, "genres": None}
             ],
             streams=[],
         )
-        rows = _vector_rows(inference_session, song_id)
+        rows = _vector_rows(inference_session, cast("int", seed_data["songs"][0]))
         by_backbone = {r["backbone_id"]: r for r in rows}
         assert set(by_backbone) == {"backbone_a", "backbone_b"}
         assert by_backbone["backbone_a"]["model_id"] == "model-a2"
@@ -282,14 +275,14 @@ class TestWritePreservationBaseline:
         self, db: Database, inference_session: Session, seed_data: dict
     ) -> None:
         """Stable ids/values/order round-trip; duplicate output_id is last-wins (1 row)."""
-        song_id = cast("int", seed_data["songs"][0])
+        song = cast("SongIdentity", seed_data["song_identities"][0])
         suite_hash = "suite-hash-streams"
         out_id_0 = canonical_output_id(suite_hash, 0)
         out_id_1 = canonical_output_id(suite_hash, 1)
 
         _persist_typed(
             db,
-            song_id,
+            song,
             "",
             vectors=[],
             streams=[
@@ -300,7 +293,7 @@ class TestWritePreservationBaseline:
             ],
         )
 
-        rows = _stream_rows(inference_session, song_id)
+        rows = _stream_rows(inference_session, cast("int", seed_data["songs"][0]))
         by_id = {row["output_id"]: row for row in rows}
         assert set(by_id) == {out_id_0, out_id_1}
         # Stable string identity is exactly the documented sha256[:16] form.
@@ -314,12 +307,12 @@ class TestWritePreservationBaseline:
         self, db: Database, inference_session: Session, seed_data: dict
     ) -> None:
         """output_streams=[] clears streams; streams-only (vectors=[], backbone="") keeps vectors."""
-        song_id = cast("int", seed_data["songs"][0])
+        song = cast("SongIdentity", seed_data["song_identities"][0])
         out_id = canonical_output_id("suite-clear", 0)
 
         _persist_typed(
             db,
-            song_id,
+            song,
             "effnet",
             vectors=[
                 {
@@ -331,35 +324,35 @@ class TestWritePreservationBaseline:
             ],
             streams=[OutputStreamWrite(output_id=out_id, values=[1.0], output_index=0)],
         )
-        assert _stream_rows(inference_session, song_id)
+        assert _stream_rows(inference_session, cast("int", seed_data["songs"][0]))
 
         # Streams-only sentinel clears streams but must NOT delete vectors.
         _persist_typed(
             db,
-            song_id,
+            song,
             "",
             vectors=[],
             streams=[OutputStreamWrite(output_id=out_id, values=[2.0], output_index=0)],
         )
-        streams = _stream_rows(inference_session, song_id)
+        streams = _stream_rows(inference_session, cast("int", seed_data["songs"][0]))
         assert [row["values"] for row in streams] == [[2.0]]
-        assert len(_vector_rows(inference_session, song_id)) == 1
+        assert len(_vector_rows(inference_session, cast("int", seed_data["songs"][0]))) == 1
 
     def test_empty_streams_arg_clears_streams(self, db: Database, inference_session: Session, seed_data: dict) -> None:
         """R6: output_streams=[] with an empty backbone is the clear-stream path."""
-        song_id = cast("int", seed_data["songs"][0])
+        song = cast("SongIdentity", seed_data["song_identities"][0])
         out_id = canonical_output_id("suite-empty", 0)
         _persist_typed(
             db,
-            song_id,
+            song,
             "",
             vectors=[],
             streams=[OutputStreamWrite(output_id=out_id, values=[1.0], output_index=0)],
         )
-        assert _stream_rows(inference_session, song_id)
+        assert _stream_rows(inference_session, cast("int", seed_data["songs"][0]))
 
-        _persist_typed(db, song_id, "", vectors=[], streams=[])
-        assert _stream_rows(inference_session, song_id) == []
+        _persist_typed(db, song, "", vectors=[], streams=[])
+        assert _stream_rows(inference_session, cast("int", seed_data["songs"][0])) == []
 
 
 @pytest.mark.characterization
@@ -373,11 +366,11 @@ class TestAggregateSessionNeutrality:
         """R10: an insert violation inside the aggregate rolls back both tables."""
         from nomarr.helpers.exceptions import DuplicateEntityError
 
-        song_id = cast("int", seed_data["songs"][0])
+        song = cast("SongIdentity", seed_data["song_identities"][0])
         with pytest.raises(DuplicateEntityError):
             _persist_typed(
                 db,
-                song_id,
+                song,
                 "effnet",
                 vectors=[
                     {
@@ -395,17 +388,17 @@ class TestAggregateSessionNeutrality:
                 ],
                 streams=[],
             )
-        assert _vector_rows(inference_session, song_id) == []
+        assert _vector_rows(inference_session, cast("int", seed_data["songs"][0])) == []
 
     def test_session_is_neutral_after_failure(self, db: Database, inference_session: Session, seed_data: dict) -> None:
         """R9: after an injected failure, a subsequent write on the same session succeeds."""
         from nomarr.helpers.exceptions import DuplicateEntityError
 
-        song_id = cast("int", seed_data["songs"][0])
+        song = cast("SongIdentity", seed_data["song_identities"][0])
         with pytest.raises(DuplicateEntityError):
             _persist_typed(
                 db,
-                song_id,
+                song,
                 "effnet",
                 vectors=[
                     {"embedding_vector": _random_vector(seed=3), "model_id": "m-x", "num_segments": 1, "genres": None},
@@ -417,12 +410,12 @@ class TestAggregateSessionNeutrality:
         good_vec = _random_vector(seed=5)
         _persist_typed(
             db,
-            song_id,
+            song,
             "effnet",
             vectors=[{"embedding_vector": good_vec, "model_id": "m-ok", "num_segments": 2, "genres": None}],
             streams=[],
         )
-        rows = _vector_rows(inference_session, song_id)
+        rows = _vector_rows(inference_session, cast("int", seed_data["songs"][0]))
         assert len(rows) == 1
         assert rows[0]["model_id"] == "m-ok"
         assert _decode_embedding(rows[0]["embedding"]) == tuple(good_vec)

@@ -43,7 +43,7 @@ def _request(
         song_id=song_id,
         backbone="effnet",
         geometry_identity=GeometryIdentity(song_id, "effnet", "commit-a", "geometry-v1", "profile-a"),
-        observation_evidence={"observation_id": f"observation-{song_id}"},
+        observation_evidence={"observation_group_sha256": f"observation-{song_id}"},
         artist=artist,  # type: ignore[arg-type]
         genre=genre,  # type: ignore[arg-type]
         head_label=head_label,
@@ -61,7 +61,7 @@ def _analysis(
     thresholds = AllThresholdAnalysis(
         experiment="temporal_global",
         geometry_id=f"geometry-{song_id}",
-        observation_id=f"observation-{song_id}",
+        observation_group_sha256=f"observation-{song_id}",
         profile_digest="profile-a",
         mask_digest="mask-a",
         results=(),
@@ -176,7 +176,7 @@ def _representation() -> FrozenSearchRepresentation:
         weights=np.ones(1, dtype=np.float64),
         search_representation_id="representation-a",
         geometry_id="geometry-a",
-        observation_id="observation-a",
+        observation_group_sha256="observation-a",
         numerical_profile_digest="profile-a",
         mask_digest="mask-a",
         scoring_semantics_version=1,

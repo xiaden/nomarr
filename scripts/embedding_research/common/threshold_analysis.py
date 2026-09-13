@@ -141,7 +141,7 @@ def analyze_secondary_all_thresholds(
         if norm > np.float32(0.0):
             normalized[row_index] = row / norm
     geometry_id = "secondary-coordinate:" + _digest(normalized.tolist())
-    observation_id = "secondary-observation:" + _digest([values.shape, mask.tolist()])
+    observation_group_sha256 = "secondary-observation:" + _digest([values.shape, mask.tolist()])
     profile_digest = "secondary-profile:" + _digest([str(values.dtype), values.shape[1]])
     mask_digest = _digest(mask.tolist())
     results: list[ThresholdAnalysisResult] = []
@@ -175,7 +175,7 @@ def analyze_secondary_all_thresholds(
                 request.experiment,
                 structural_id,
                 geometry_id,
-                observation_id,
+                observation_group_sha256,
                 profile_digest,
                 mask_digest,
                 tuple(medoids),
@@ -203,7 +203,7 @@ def analyze_secondary_all_thresholds(
                     weights,
                     total,
                     geometry_id,
-                    observation_id,
+                    observation_group_sha256,
                     profile_digest,
                     mask_digest,
                     1,
@@ -216,7 +216,7 @@ def analyze_secondary_all_thresholds(
     return AllThresholdAnalysis(
         request.experiment,
         geometry_id,
-        observation_id,
+        observation_group_sha256,
         profile_digest,
         mask_digest,
         tuple(results),
@@ -260,7 +260,7 @@ class SearchRepresentation:
     searchable_weights: tuple[float, ...]
     total_searchable: int
     geometry_id: str
-    observation_id: str
+    observation_group_sha256: str
     profile_digest: str
     mask_digest: str
     scoring_semantics_version: int
@@ -313,7 +313,7 @@ class AnalysisEvidenceIdentity:
     """
 
     geometry_id: str
-    observation_id: str
+    observation_group_sha256: str
     geometry_semantics_version: str
     numerical_profile_digest: str
     threshold_id: str
@@ -326,7 +326,7 @@ class AnalysisEvidenceIdentity:
     def __post_init__(self) -> None:
         fields = {
             "geometry_id": self.geometry_id,
-            "observation_id": self.observation_id,
+            "observation_group_sha256": self.observation_group_sha256,
             "geometry_semantics_version": self.geometry_semantics_version,
             "numerical_profile_digest": self.numerical_profile_digest,
             "threshold_id": self.threshold_id,
@@ -348,7 +348,7 @@ class AllThresholdAnalysis:
 
     experiment: str
     geometry_id: str
-    observation_id: str
+    observation_group_sha256: str
     profile_digest: str
     mask_digest: str
     results: tuple[ThresholdAnalysisResult, ...]
@@ -361,7 +361,7 @@ class AllThresholdAnalysis:
     segmentation_from_scorer_count: int = 0
 
     def __post_init__(self) -> None:
-        if not self.geometry_id or not self.observation_id or not self.profile_digest or not self.mask_digest:
+        if not self.geometry_id or not self.observation_group_sha256 or not self.profile_digest or not self.mask_digest:
             raise ValueError("analysis evidence requires complete geometry/observation/profile/mask identity")
         if not self.geometry_semantics_version:
             raise ValueError("analysis evidence requires geometry_semantics_version")
@@ -401,7 +401,7 @@ def _search_representation_key(search: SearchRepresentation) -> tuple[object, ..
     # geometry, not the exact source-index/weight inputs consumed by scoring.
     return (
         search.experiment,
-        search.observation_id,
+        search.observation_group_sha256,
         search.profile_digest,
         search.mask_digest,
         tuple(search.medoid_source_indices),
@@ -428,11 +428,11 @@ def collapse_search_representations(
     return tuple(sorted(classes, key=lambda item: item.canonical_threshold_index))
 
 
-def _observation_id(record: Any) -> str:
+def _observation_group_sha256(record: Any) -> str:
     identity = getattr(record, "identity", None)
     if identity is None:
         return ""
-    return _digest({"identity": dict(vars(identity))})
+    return str(getattr(identity, "observation_group_sha256", "") or "")
 
 
 def _verified_geometry_decode(record: Any) -> np.ndarray:
@@ -469,7 +469,7 @@ def analyze_all_thresholds(
     gram = _verified_geometry_decode(geometry_record)
     mask = require_exact_binary_mask(committed_mask, gram.shape[0])
     structures = derive_all_temporal_global(gram, threshold_request.indices)
-    observation_id = _observation_id(geometry_record)
+    observation_group_sha256 = _observation_group_sha256(geometry_record)
     geometry_id = str(geometry_record.geometry_id)
     evidence = getattr(geometry_record, "evidence", {})
     record_identity = getattr(geometry_record, "identity", None)
@@ -478,7 +478,13 @@ def analyze_all_thresholds(
     mask_digest = str(evidence.get("mask_payload_sha256", evidence.get("mask_digest", "")))
     evaluation_id = str(evidence.get("evaluation_id", "evaluation:unbound"))
     execution_id = str(evidence.get("execution_id", "execution:analysis"))
-    if not geometry_id or not observation_id or not profile_digest or not geometry_semantics_version or not mask_digest:
+    if (
+        not geometry_id
+        or not observation_group_sha256
+        or not profile_digest
+        or not geometry_semantics_version
+        or not mask_digest
+    ):
         raise GramRefusalError("complete geometry-era analysis identity is required")
     results: list[ThresholdAnalysisResult] = []
     for spec, structural in zip(threshold_request.thresholds, structures, strict=True):
@@ -497,7 +503,7 @@ def analyze_all_thresholds(
             "medoid_source_indices": medoids,
             "searchable_weights": weights,
             "geometry_id": geometry_id,
-            "observation_id": observation_id,
+            "observation_group_sha256": observation_group_sha256,
             "profile_digest": profile_digest,
             "mask_digest": mask_digest,
             "scoring_semantics_version": 1,
@@ -516,7 +522,7 @@ def analyze_all_thresholds(
                     weights,
                     projection.total_searchable,
                     geometry_id,
-                    observation_id,
+                    observation_group_sha256,
                     profile_digest,
                     mask_digest,
                     1,
@@ -529,7 +535,7 @@ def analyze_all_thresholds(
     return AllThresholdAnalysis(
         experiment,
         geometry_id,
-        observation_id,
+        observation_group_sha256,
         profile_digest,
         mask_digest,
         tuple(results),

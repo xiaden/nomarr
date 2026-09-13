@@ -2,9 +2,9 @@
 
 Phase 6 rewrite: asserts the migrated domain-facing API. All writes route
 through the sealed ``LibraryTagsDb`` facade using ``SongIdentity`` /
-``TagRef`` and typed ``SongTagAssignment`` commands / ``RelinkResult``
-results. Numeric song handles are translated with the identity bridge
-(``db.library.resolve_song_identity(s)`` / ``resolve_song_identities``). The
+``TagRef`` and typed ``SongTagAssignment`` commands / ``RelinkResult`` results.
+The component accepts semantic song locators directly; no numeric song bridge
+is used. The
 deleted ``find_or_create_tag`` and raw replacement-dict/edge-scan behavior are
 gone from this layer.
 """
@@ -165,12 +165,11 @@ class TestAddSongTag:
     def test_appends_tag_via_replace_song_tags(self) -> None:
         mock_db = MagicMock()
         song_identity = _song_identity(1)
-        mock_db.library.resolve_song_identity.return_value = song_identity
         mock_db.library.list_tags_for_song.return_value = (
             SongTagAssignment(name="mood", value="happy", namespace="default"),
         )
 
-        add_song_tag(mock_db, 1, "genre", "rock")
+        add_song_tag(mock_db, song_identity, "genre", "rock")
 
         mock_db.library.replace_song_tags.assert_called_once_with(
             song_identity,
@@ -182,14 +181,15 @@ class TestAddSongTag:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_is_noop_when_song_identity_not_found(self) -> None:
+    def test_uses_supplied_song_identity_without_resolution(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.resolve_song_identity.return_value = None
+        song_identity = _song_identity(999)
+        mock_db.library.list_tags_for_song.return_value = ()
 
-        add_song_tag(mock_db, 999, "genre", "rock")
+        add_song_tag(mock_db, song_identity, "genre", "rock")
 
-        mock_db.library.list_tags_for_song.assert_not_called()
-        mock_db.library.replace_song_tags.assert_not_called()
+        mock_db.library.list_tags_for_song.assert_called_once_with(song_identity)
+        mock_db.library.replace_song_tags.assert_called_once()
 
 
 class TestDeleteSongTags:
@@ -200,21 +200,19 @@ class TestDeleteSongTags:
     def test_deletes_all_edges_for_song(self) -> None:
         mock_db = MagicMock()
         song_identity = _song_identity(1)
-        mock_db.library.resolve_song_identity.return_value = song_identity
-
-        delete_song_tags(mock_db, 1)
+        delete_song_tags(mock_db, song_identity)
 
         mock_db.library.remove_song_tags.assert_called_once_with(song_identity)
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_is_noop_when_song_identity_not_found(self) -> None:
+    def test_deletes_using_supplied_song_identity_without_resolution(self) -> None:
         mock_db = MagicMock()
-        mock_db.library.resolve_song_identity.return_value = None
+        song_identity = _song_identity(999)
 
-        delete_song_tags(mock_db, 999)
+        delete_song_tags(mock_db, song_identity)
 
-        mock_db.library.remove_song_tags.assert_not_called()
+        mock_db.library.remove_song_tags.assert_called_once_with(song_identity)
 
 
 class TestRelinkTagEdges:

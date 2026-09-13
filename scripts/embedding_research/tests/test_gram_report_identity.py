@@ -36,7 +36,12 @@ def _table(node: dict, table_id: str) -> dict:
 def _run_report(tmp_path) -> dict:
     con = _report_seed.build_seeded_con()
     try:
-        return run(con, tmp_path, run_id=_report_seed.RUN_ID)
+        return run(
+            con,
+            tmp_path,
+            run_id=_report_seed.RUN_ID,
+            html_out_path=tmp_path.parent / "docs" / "embedding-research-report.html",
+        )
     finally:
         con.close()
 
@@ -48,7 +53,7 @@ def test_report_schema_and_provenance_golden(tmp_path) -> None:
     tables = {section["id"]: [table["id"] for table in section.get("tables", [])] for section in payload["sections"]}
     assert tables == _EXPECTED_TABLES
     assert (tmp_path / "report.json").stat().st_size > 0
-    assert (tmp_path / "report.html").stat().st_size > 0
+    assert (tmp_path.parent / "docs" / "embedding-research-report.html").stat().st_size > 0
 
     identity = _table(_section(payload, "analysis"), "geometry_identity")
     assert not identity.get("empty")
@@ -86,7 +91,11 @@ def test_report_has_no_retired_vocabulary(tmp_path) -> None:
     # scripts removed.
     import re
 
-    html = re.sub(r"(?is)<script.*?</script>", "", (tmp_path / "report.html").read_text(encoding="utf-8"))
+    html = re.sub(
+        r"(?is)<script.*?</script>",
+        "",
+        (tmp_path.parent / "docs" / "embedding-research-report.html").read_text(encoding="utf-8"),
+    )
     text = (tmp_path / "report.json").read_text(encoding="utf-8") + html
     lowered = text.lower()
     for fragment in (*audit.retired_vocabulary(), *audit.retired_filesystem_artifacts()):

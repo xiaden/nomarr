@@ -1,8 +1,8 @@
 """Retrieve and search promoted track embeddings from cold vector stores.
 
 These components are the cold-only vector read helpers shared by the vector
-service/workflow consumers.  They resolve integer file handles to a natural
-:class:`SongIdentity` through authoritative ``db.library`` before calling the
+service/workflow consumers. They accept a natural :class:`SongIdentity` locator
+before calling the
 typed ``db.ml`` read intents, and they return the caller-facing domain values
 (:class:`SongVector` / :class:`VectorMatch`) — never raw persistence rows or
 storage keys.  Hot collections are write-only accumulation tiers and must
@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
     from nomarr.helpers.dataclasses.vector_dataclass import SongVector, VectorMatch
     from nomarr.persistence.db import Database
 
@@ -25,19 +26,18 @@ logger = logging.getLogger(__name__)
 
 def get_cold_track_vector(
     db: Database,
-    file_id: int,
+    song: SongIdentity,
     backbone_id: str,
 ) -> SongVector | None:
     """Fetch a track's promoted vector from the cold tier.
 
     Short-circuits when the backbone has no cold embeddings (empty-cold
-    optimization), resolves ``file_id`` to a natural :class:`SongIdentity`
-    through ``db.library``, then reads the single cold-tier stored vector via
+    optimization), then reads the single cold-tier stored vector via
     ``db.ml.get_song_vector``.
 
     Args:
         db: Database instance.
-        file_id: Library song handle (file id).
+        song: Semantic ``SongIdentity`` locator.
         backbone_id: Backbone identifier (e.g. ``"effnet"``).
 
     Returns:
@@ -52,10 +52,6 @@ def get_cold_track_vector(
             "[vectors] Cold tier is empty for backbone=%s",
             backbone_id,
         )
-        return None
-
-    song = db.library.resolve_song_identity(file_id)
-    if song is None:
         return None
 
     return db.ml.get_song_vector(backbone_id, song)

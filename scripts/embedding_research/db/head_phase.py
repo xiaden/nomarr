@@ -13,7 +13,7 @@ from typing import Any
 HEAD_PHASE_PROVENANCE_COLUMNS = (
     "run_id",
     "geometry_id",
-    "observation_id",
+    "observation_group_sha256",
     "geometry_semantics_version",
     "numerical_profile_digest",
     "threshold_id",
@@ -35,7 +35,7 @@ CANONICAL_HEAD_PHASE_WHERE = "status = 'done' AND finite = 1"
 class HeadPhaseProvenanceRow:
     run_id: str
     geometry_id: str
-    observation_id: str
+    observation_group_sha256: str
     geometry_semantics_version: str
     numerical_profile_digest: str
     threshold_id: str
@@ -55,7 +55,7 @@ class HeadPhaseProvenanceRow:
         return ":".join(
             (
                 self.geometry_id,
-                self.observation_id,
+                self.observation_group_sha256,
                 self.threshold_id,
                 self.search_representation_id,
                 self.head,
@@ -71,7 +71,14 @@ def head_phase_config_key(**kwargs: Any) -> str:
     """Build the stable colon-delimited identity key for one head segment."""
     return ":".join(
         str(kwargs.get(key, ""))
-        for key in ("geometry_id", "observation_id", "threshold_id", "search_representation_id", "head", "segment_id")
+        for key in (
+            "geometry_id",
+            "observation_group_sha256",
+            "threshold_id",
+            "search_representation_id",
+            "head",
+            "segment_id",
+        )
     )
 
 
@@ -92,7 +99,7 @@ def build_head_phase_provenance_rows(
         HeadPhaseProvenanceRow(
             run_id=manifest.run_id,
             geometry_id=manifest.geometry_id,
-            observation_id=manifest.observation_id,
+            observation_group_sha256=manifest.observation_group_sha256,
             geometry_semantics_version=manifest.geometry_semantics_version,
             numerical_profile_digest=manifest.numerical_profile_digest,
             threshold_id=output.threshold_id,
@@ -124,7 +131,7 @@ def write_head_phase_provenance(con: Any, rows: Any) -> None:
 def load_head_phase_provenance(con: Any) -> list[HeadPhaseProvenanceRow]:
     """Load canonical head-phase provenance rows in deterministic identity order."""
     rows = con.execute(
-        f"SELECT {', '.join(HEAD_PHASE_PROVENANCE_COLUMNS)} FROM head_phase_provenance WHERE {CANONICAL_HEAD_PHASE_WHERE} ORDER BY geometry_id, observation_id, threshold_id, head, segment_id"
+        f"SELECT {', '.join(HEAD_PHASE_PROVENANCE_COLUMNS)} FROM head_phase_provenance WHERE {CANONICAL_HEAD_PHASE_WHERE} ORDER BY geometry_id, observation_group_sha256, threshold_id, head, segment_id"
     ).fetchall()
     return [HeadPhaseProvenanceRow(*row) for row in rows]
 

@@ -6,8 +6,8 @@ from the legacy int-id/raw-row facade shapes to the sealed domain contracts
 
 - Libraries are ``Library`` domain values (``create_library`` / ``get_library`` /
   ``update_library`` / ``remove_library``), never storage ``library_id``.
-- Songs are addressed by ``SongIdentity`` natural key (resolved from storage ids
-  only through the identity bridge ``resolve_song_identity``).
+- Songs are addressed directly by ``SongIdentity`` natural-key locators; storage ids
+  remain persistence-private and do not cross the characterization boundary.
 - Tags are ``TagRef`` natural keys (``ensure_tag`` / ``get_tag``), never
   integer tag ids.
 - Tag writes use ``SongTagAssignment`` domain values; reads return typed domain
@@ -29,28 +29,26 @@ Marked with @pytest.mark.characterization.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import cast
 
 import pytest
 
 from nomarr.helpers.dataclasses.library_dataclass import Library
 from nomarr.helpers.dataclasses.library_domain_dataclasses import LibraryUpdate
+from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
 from nomarr.helpers.dataclasses.song_tag_dataclass import TagRef
 
 from .conftest import assert_snapshot_matches
-
-if TYPE_CHECKING:
-    from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
 
 
 def _lib1(seed_data: dict) -> Library:
     return cast("Library", seed_data["libraries"][0])
 
 
-def _song_identity(db, song_id: int) -> SongIdentity:
-    identity = db.library.resolve_song_identity(song_id)
-    assert identity is not None
-    return cast("SongIdentity", identity)
+def _song_identity(seed_data: dict, index: int = 0) -> SongIdentity:
+    identity = seed_data["song_identities"][index]
+    assert isinstance(identity, SongIdentity)
+    return identity
 
 
 @pytest.mark.characterization
@@ -122,11 +120,11 @@ class TestLibraryDbFacadeCharacterization:
         result = db.library.get_song_by_path("/tmp/test1/song1.flac", _lib1(seed_data))
         assert_snapshot_matches("LibraryDb_get_song_by_path", result)
 
-    def test_list_songs_by_ids(self, db, seed_data):
-        """Snapshot: list_songs_by_ids(song_ids) → list[Song]."""
-        song_ids = seed_data["songs"][:2]  # First 2 songs (storage ids)
-        result = db.library.list_songs_by_ids(song_ids)
-        assert_snapshot_matches("LibraryDb_list_songs_by_ids", result)
+    def test_list_songs_by_identity(self, db, seed_data):
+        """Snapshot: list_songs_by_identity(locators) → list[Song]."""
+        locators = seed_data["song_identities"][:2]
+        result = db.library.list_songs_by_identity(locators)
+        assert_snapshot_matches("LibraryDb_list_songs_by_identity", result)
 
     def test_replace_song_tags(self, db, seed_data):
         """Snapshot: replace_song_tags(SongIdentity, Sequence[SongTagAssignment]) → None.
@@ -134,7 +132,7 @@ class TestLibraryDbFacadeCharacterization:
         This method returns None, so we snapshot the state after the call
         by reading back the tags as domain assignments.
         """
-        song = _song_identity(db, seed_data["songs"][0])
+        song = _song_identity(seed_data)
         from nomarr.helpers.dataclasses.song_tag_dataclass import SongTagAssignment
 
         # Replace tags with two domain assignments
@@ -154,7 +152,7 @@ class TestLibraryDbFacadeCharacterization:
 
     def test_list_tags_for_song(self, db, seed_data):
         """Snapshot: list_tags_for_song(SongIdentity) → tuple[SongTagAssignment, ...]."""
-        song = _song_identity(db, seed_data["songs"][0])
+        song = _song_identity(seed_data)
         result = db.library.list_tags_for_song(song)
         assert_snapshot_matches("LibraryDb_list_tags_for_song", result)
 

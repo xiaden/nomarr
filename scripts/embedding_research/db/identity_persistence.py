@@ -22,7 +22,7 @@ def _json(value: Any) -> str:
 _HEAD_EVIDENCE_COLUMNS: tuple[str, ...] = (
     "run_id",
     "geometry_id",
-    "observation_id",
+    "observation_group_sha256",
     "geometry_semantics_version",
     "numerical_profile_digest",
     "threshold_id",
@@ -40,7 +40,7 @@ _HEAD_EVIDENCE_COLUMNS: tuple[str, ...] = (
 def _identity(value: Any) -> dict[str, Any]:
     names = (
         "geometry_id",
-        "observation_id",
+        "observation_group_sha256",
         "geometry_semantics_version",
         "numerical_profile_digest",
         "threshold_id",
@@ -109,13 +109,13 @@ def write_analysis_rows_in_transaction(
     for metric, value in rows:
         key = (run_id, *ident.values(), metric)
         count = con.execute(
-            "SELECT count(*) FROM geometry_analysis_records WHERE run_id=? AND geometry_id=? AND observation_id=? AND geometry_semantics_version=? AND numerical_profile_digest=? AND threshold_id=? AND structural_identity=? AND search_representation_id=? AND evaluation_id=? AND scoring_semantics_version=? AND execution_id=? AND metric=?",
+            "SELECT count(*) FROM geometry_analysis_records WHERE run_id=? AND geometry_id=? AND observation_group_sha256=? AND geometry_semantics_version=? AND numerical_profile_digest=? AND threshold_id=? AND structural_identity=? AND search_representation_id=? AND evaluation_id=? AND scoring_semantics_version=? AND execution_id=? AND metric=?",
             key,
         ).fetchone()[0]
         if count:
             raise IdentityRefusal("duplicate geometry analysis identity")
         con.execute(
-            "INSERT INTO geometry_analysis_records (run_id,geometry_id,observation_id,geometry_semantics_version,numerical_profile_digest,threshold_id,structural_identity,search_representation_id,evaluation_id,scoring_semantics_version,execution_id,metric,value,evidence_json,created_at_ms) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO geometry_analysis_records (run_id,geometry_id,observation_group_sha256,geometry_semantics_version,numerical_profile_digest,threshold_id,structural_identity,search_representation_id,evaluation_id,scoring_semantics_version,execution_id,metric,value,evidence_json,created_at_ms) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             [run_id, *ident.values(), metric, value, payload, stamp],
         )
 
@@ -130,7 +130,7 @@ def read_analysis_rows(con, *, run_id: str, identity: Any) -> tuple[dict[str, An
     """Read the metric rows for one exact geometry identity, refusing when absent."""
     ident = _identity(identity)
     rows = con.execute(
-        "SELECT metric,value,evidence_json FROM geometry_analysis_records WHERE run_id=? AND geometry_id=? AND observation_id=? AND geometry_semantics_version=? AND numerical_profile_digest=? AND threshold_id=? AND structural_identity=? AND search_representation_id=? AND evaluation_id=? AND scoring_semantics_version=? AND execution_id=? ORDER BY metric",
+        "SELECT metric,value,evidence_json FROM geometry_analysis_records WHERE run_id=? AND geometry_id=? AND observation_group_sha256=? AND geometry_semantics_version=? AND numerical_profile_digest=? AND threshold_id=? AND structural_identity=? AND search_representation_id=? AND evaluation_id=? AND scoring_semantics_version=? AND execution_id=? ORDER BY metric",
         [run_id, *ident.values()],
     ).fetchall()
     if not rows:
@@ -156,13 +156,13 @@ def write_head_evidence(con, *, run_id: str, outputs: Iterable[Any]) -> None:
     with _transaction(con):
         for row in rows:
             count = con.execute(
-                "SELECT count(*) FROM geometry_head_evidence WHERE run_id=? AND geometry_id=? AND observation_id=? AND geometry_semantics_version=? AND numerical_profile_digest=? AND threshold_id=? AND structural_identity=? AND search_representation_id=? AND evaluation_id=? AND scoring_semantics_version=? AND execution_id=? AND head=? AND segment_id=?",
+                "SELECT count(*) FROM geometry_head_evidence WHERE run_id=? AND geometry_id=? AND observation_group_sha256=? AND geometry_semantics_version=? AND numerical_profile_digest=? AND threshold_id=? AND structural_identity=? AND search_representation_id=? AND evaluation_id=? AND scoring_semantics_version=? AND execution_id=? AND head=? AND segment_id=?",
                 row[:13],
             ).fetchone()[0]
             if count:
                 raise IdentityRefusal("duplicate geometry head identity")
         con.executemany(
-            "INSERT INTO geometry_head_evidence (run_id,geometry_id,observation_id,geometry_semantics_version,numerical_profile_digest,threshold_id,structural_identity,search_representation_id,evaluation_id,scoring_semantics_version,execution_id,head,segment_id,evidence_json,created_at_ms) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO geometry_head_evidence (run_id,geometry_id,observation_group_sha256,geometry_semantics_version,numerical_profile_digest,threshold_id,structural_identity,search_representation_id,evaluation_id,scoring_semantics_version,execution_id,head,segment_id,evidence_json,created_at_ms) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             rows,
         )
 
@@ -171,7 +171,7 @@ def read_head_evidence(con, *, run_id: str, identity: Any) -> tuple[dict[str, An
     """Read persisted head-evidence payloads for one exact geometry identity."""
     ident = _identity(identity)
     rows = con.execute(
-        "SELECT evidence_json FROM geometry_head_evidence WHERE run_id=? AND geometry_id=? AND observation_id=? AND geometry_semantics_version=? AND numerical_profile_digest=? AND threshold_id=? AND evaluation_id=? AND search_representation_id=? AND execution_id=? ORDER BY head,segment_id",
+        "SELECT evidence_json FROM geometry_head_evidence WHERE run_id=? AND geometry_id=? AND observation_group_sha256=? AND geometry_semantics_version=? AND numerical_profile_digest=? AND threshold_id=? AND evaluation_id=? AND search_representation_id=? AND execution_id=? ORDER BY head,segment_id",
         [run_id, *ident.values()],
     ).fetchall()
     if not rows:
@@ -189,10 +189,10 @@ def read_head_evidence_for_run(con, *, run_id: str) -> tuple[dict[str, Any], ...
     if not run_id:
         raise IdentityRefusal("run_id is required")
     rows = con.execute(
-        "SELECT run_id,geometry_id,observation_id,geometry_semantics_version,"
+        "SELECT run_id,geometry_id,observation_group_sha256,geometry_semantics_version,"
         "numerical_profile_digest,threshold_id,structural_identity,search_representation_id,"
         "evaluation_id,scoring_semantics_version,execution_id,head,segment_id,evidence_json "
-        "FROM geometry_head_evidence WHERE run_id=? ORDER BY geometry_id,observation_id,"
+        "FROM geometry_head_evidence WHERE run_id=? ORDER BY geometry_id,observation_group_sha256,"
         "evaluation_id,head,segment_id",
         (str(run_id),),
     ).fetchall()

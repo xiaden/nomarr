@@ -28,7 +28,6 @@ def _make_db() -> MagicMock:
     """Build a mock Database exposing the typed db.ml / db.library surface."""
     db = MagicMock()
     db.ml.embedding_counts.return_value = EmbeddingCounts(hot_count=0, cold_count=300)
-    db.library.resolve_song_identity.return_value = _SEED_SONG
     db.ml.get_song_vector.return_value = SongVector(
         song=_SEED_SONG,
         backbone="effnet",
@@ -46,47 +45,44 @@ def _make_db() -> MagicMock:
 
 @pytest.mark.unit
 class TestGetColdTrackVector:
-    """get_cold_track_vector resolves identity and reads a typed SongVector."""
+    """get_cold_track_vector reads a typed SongVector by semantic locator."""
 
     def test_returns_none_when_cold_tier_empty(self) -> None:
         db = _make_db()
         db.ml.embedding_counts.return_value = EmbeddingCounts(hot_count=0, cold_count=0)
 
-        result = get_cold_track_vector(db, 1, "effnet")
+        result = get_cold_track_vector(db, _SEED_SONG, "effnet")
 
         assert result is None
-        db.library.resolve_song_identity.assert_not_called()
         db.ml.get_song_vector.assert_not_called()
 
-    def test_returns_none_when_file_handle_unresolved(self) -> None:
+    def test_passes_missing_locator_to_typed_vector_reader(self) -> None:
         db = _make_db()
-        db.library.resolve_song_identity.return_value = None
+        db.ml.get_song_vector.return_value = None
 
-        result = get_cold_track_vector(db, 999, "effnet")
+        result = get_cold_track_vector(db, _SEED_SONG, "effnet")
 
         assert result is None
-        db.ml.get_song_vector.assert_not_called()
+        db.ml.get_song_vector.assert_called_once_with("effnet", _SEED_SONG)
 
     def test_returns_none_when_song_has_no_vector(self) -> None:
         db = _make_db()
         db.ml.get_song_vector.return_value = None
 
-        result = get_cold_track_vector(db, 1, "effnet")
+        result = get_cold_track_vector(db, _SEED_SONG, "effnet")
 
         assert result is None
         db.ml.get_song_vector.assert_called_once_with("effnet", _SEED_SONG)
 
     def test_resolves_and_reads_cold_vector(self) -> None:
         db = _make_db()
-        db.library.resolve_song_identity.return_value = _SEED_SONG
 
-        result = get_cold_track_vector(db, 1, "effnet")
+        result = get_cold_track_vector(db, _SEED_SONG, "effnet")
 
         assert result is not None
         assert isinstance(result, SongVector)
         assert result.song == _SEED_SONG
         assert result.vector == (0.1, 0.2, 0.3)
-        db.library.resolve_song_identity.assert_called_once_with(1)
         db.ml.get_song_vector.assert_called_once_with("effnet", _SEED_SONG)
 
 

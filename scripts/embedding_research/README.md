@@ -9,17 +9,19 @@ before scoring. Evaluation identity is segmentation-independent, the observed gl
 baseline uses the same candidate population as the winner neighborhoods, and comparability,
 threshold/corpus maps, per-query ruler metrics, and at least one hundred top-N neighborhoods are
 persisted (non-comparable entries keep explicit reasons). The production Gram kernel row-normalizes
-and multiplies float32 rows with NumPy and publishes little-endian C-order float32 bytes. Scientific
-artifact hashes remain; Git/source R1–R14 traceability machinery is deleted. No real corpus or
+and multiplies float32 rows with NumPy (`np.matmul`) and publishes little-endian C-order float32 bytes.
+Scalar arithmetic is historical/test-oracle material only, never a selectable production
+path. Scientific artifact hashes remain; repository/source traceability metadata is intentionally
+absent from the evidence contract. No real corpus or
 interactive explorer is run.
 
-Historical migration-status paragraphs below are retained only as context. The active contract is the corrected corpus-wide, leave-one-out geometry path described above; self-song scoring, one-song baselines, scalar production Gram arithmetic, and source-traceability validation are not active obligations.
+Historical migration-status paragraphs below are retained only as context. The active contract is the corrected corpus-wide, leave-one-out geometry path described above; self-song scoring, one-song baselines, and scalar production Gram arithmetic are not active obligations.
 
 ## Current-head H–M repair boundary
 
-The active repair sequence is `H-contract-and-boundary → I-numpy-kernel → J-corpus-retrieval → K-persistence-and-report → L-traceability-and-evidence → M-final-current-head-verification`, frozen at HEAD `3efecd9cf726c1b1a4ae4f7f9d69dd9c6e2b75d4`. Historical A–G notes are not current-head evidence. H is contract/spec work only: it records remaining gaps and preserves the hard absence of self-similarity, one-song baselines, scalar production Gram arithmetic, unconditional comparability, compatibility paths, and Git/source/R1–R14 replay.
+The corrective repair is evaluated at current HEAD `59aa4a20feb141d8c377d0ef7c6fb602cf8b11e0`. Evidence is synthetic-only, and the active runtime intentionally publishes no repository/source traceability metadata. `observation_group_sha256` is the sole observation-publication identity; scientific artifact SHA-256 values remain retained separately.
 
-The later ownership boundary is fixed now: J owns same-threshold leave-one-out corpus maps, collapse inputs, same-population baseline, and independent per-query artist/genre/frozen-head relevance; K owns atomic corpus evidence and `read_geometry_corpus_evidence`; L owns traceability-prerequisite deletion and JSON-only evidence hygiene; M owns final synthetic-only verification. `observation_group_sha256` is the sole observation-publication identity. `search_representation_id` is independent of threshold and structural identity; scientific hashes remain retained separately.
+Corpus retrieval is corpus-wide leave-one-out: each query is excluded from its candidate population, the observed baseline uses that same population, and artist, genre, and frozen-head rulers remain independent. `search_representation_id` is independent of threshold and structural identity. JSON evidence artifacts and their scientific hashes belong under the evidence root; the human HTML viewer is written under the external sibling runtime `docs/` directory (never `OUTPUT_ROOT/docs`), while logs, locks, caches/streams/sidecars, DuckDB, and patch arrays remain outside the JSON root.
 
 ## Geometry contract (current)
 
@@ -58,7 +60,7 @@ See `CONTRACTS.md` for the binding API and `FINDINGS.md` for run conclusions.
 
 ## Migration status
 
-The corrective hard cut is complete. Active callers, fixtures, reports, maintenance seams, schema consumers, and serialized phases consume the DB-persisted Gram geometry contract. Evidence is synthetic and report-only: scientific artifact hashes remain visible, while Git/source R1–R14 replay machinery is deleted. No compatibility runtime, dual reader/writer, filesystem-owned geometry store, real-corpus run, or interactive explorer remains.
+The corrective hard cut is complete. Active callers, fixtures, reports, maintenance seams, schema consumers, and serialized phases consume the DB-persisted Gram geometry contract. Evidence is synthetic and report-only: scientific artifact hashes remain visible, while repository metadata is intentionally absent. No compatibility runtime, dual reader/writer, filesystem-owned geometry store, real-corpus run, or interactive explorer remains.
 
 - **Design contract**: see `CONTRACTS.md` (the authoritative module/API reference).
 - **Findings log**: see `FINDINGS.md` (per-run conclusions, decisions, final semantics).
@@ -101,7 +103,10 @@ index/cache metadata: `reindex` reconciles each registry row to exactly `ready`,
 `corrupt` from the on-disk manifests, and only `ready` records that also validate on disk may be
 read. Paths are never IDs or SQL keys.
 
-## Report contract
+## Report and evidence contract
+
+The sole scientific evidence root is `config.OUTPUT_ROOT` (`/workspace/scripts/outputs/embedding_research`) and is JSON-only. Fixture/report generation writes `report/report.json` and other JSON/hash evidence below it, and writes the optional human-readable viewer to the external sibling runtime root `embedding_research_runtime/docs/embedding-research-report.html` (or another explicitly supplied external HTML destination); `OUTPUT_ROOT/docs` is invalid. The retired `artifacts/evidence/threshold-independent-per-song-gram-geometry-migration` helper/fixture root is not a compatibility path. Logs, locks, caches/streams/sidecars, DuckDB, and patch arrays remain external; scientific artifact SHA-256 hashes are retained.
+
 
 `report` renders exactly seven sections (`summary`, `corpus`, `analysis`, `winners`,
 `head-analysis`, `provenance`, `efficiency`) and selects a completed scope per `run_id`; a

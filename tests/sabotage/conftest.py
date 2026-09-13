@@ -112,9 +112,9 @@ def seed_data(db):
     lib2 = db.library.create_library(Library(name="TestLib2", root_path="/tmp/test2"))
     created["libraries"] = [lib1, lib2]
 
-    # Create 3 songs (2 in lib1, 1 in lib2); returns storage song ids.
+    # Create 3 songs (2 in lib1, 1 in lib2); returns semantic locators.
     now_ms_val = now_ms()
-    song1_id = db.library.add_song_to_library(
+    song1 = db.library.add_song_to_library(
         lib1,
         {
             "path": "/tmp/test1/song1.flac",
@@ -127,7 +127,7 @@ def seed_data(db):
             "tagged": 0,
         },
     )
-    song2_id = db.library.add_song_to_library(
+    song2 = db.library.add_song_to_library(
         lib1,
         {
             "path": "/tmp/test1/song2.mp3",
@@ -140,7 +140,7 @@ def seed_data(db):
             "tagged": 0,
         },
     )
-    song3_id = db.library.add_song_to_library(
+    song3 = db.library.add_song_to_library(
         lib2,
         {
             "path": "/tmp/test2/song3.flac",
@@ -153,7 +153,7 @@ def seed_data(db):
             "tagged": 1,
         },
     )
-    created["songs"] = [song1_id, song2_id, song3_id]
+    created["songs"] = [song1, song2, song3]
 
     # Create 5 tags via the domain identity (never a storage id).
     tag1 = db.library.ensure_tag(TagRef(name="nom:mood-strict", value="happy", namespace="nom"))
@@ -164,9 +164,6 @@ def seed_data(db):
     created["tags"] = [tag1, tag2, tag3, tag4, tag5]
 
     # Assign tags to songs via the natural identity + domain assignments.
-    song1 = db.library.resolve_song_identity(song1_id)
-    song2 = db.library.resolve_song_identity(song2_id)
-    assert song1 is not None and song2 is not None
     db.library.replace_song_tags(
         song1,
         [

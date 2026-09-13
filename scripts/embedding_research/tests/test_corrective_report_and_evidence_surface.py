@@ -32,6 +32,7 @@ from scripts.embedding_research.report._retrieval import (
     query_corpus_evidence,
     section_analysis,
 )
+from scripts.embedding_research.tools import _evidence
 from scripts.embedding_research.tools.emit_corrective_evidence import (
     main as emit_corrective_evidence,
 )
@@ -183,7 +184,7 @@ def test_section_analysis_errors_when_corpus_evidence_unavailable() -> None:
 
 
 _ANALYSIS_COLUMNS = (
-    "run_id, geometry_id, observation_id, geometry_semantics_version, numerical_profile_digest,"
+    "run_id, geometry_id, observation_group_sha256, geometry_semantics_version, numerical_profile_digest,"
     " threshold_id, structural_identity, search_representation_id, evaluation_id,"
     " scoring_semantics_version, execution_id, metric, value, evidence_json, created_at_ms"
 )
@@ -212,15 +213,14 @@ def _insert_analysis_row(con, *, run_id: str, evidence_json: str | None, metric:
     )
 
 
-def test_query_corpus_evidence_returns_first_corpus_document(con) -> None:
+def test_query_corpus_evidence_rejects_incomplete_corpus_rows(con) -> None:
     corpus_doc = {"role": "corpus", "comparable": True, "membership": []}
-    # Malformed and empty evidence_json rows must be skipped without raising.
     _insert_analysis_row(con, run_id="run-a", evidence_json="{not json")
     _insert_analysis_row(con, run_id="run-a", evidence_json="", metric="other")
     _insert_analysis_row(con, run_id="run-a", evidence_json=json.dumps({"role": "threshold"}))
     _insert_analysis_row(con, run_id="run-a", evidence_json=json.dumps(corpus_doc))
 
-    assert query_corpus_evidence(con, run_id="run-a") == corpus_doc
+    assert query_corpus_evidence(con, run_id="run-a") is None
 
 
 def test_query_corpus_evidence_returns_none_without_a_corpus_row(con) -> None:
@@ -267,10 +267,6 @@ def _drop_hash_retention(data: dict) -> None:
     data["corrective_evidence"]["scientific_hash_retention"] = False
 
 
-def _enable_source_commit_traceability(data: dict) -> None:
-    data["corrective_evidence"]["source_commit_traceability"] = True
-
-
 def _non_dict_benchmark(data: dict) -> None:
     data["corrective_evidence"]["benchmark"] = []
 
@@ -284,7 +280,6 @@ def _non_dict_benchmark(data: dict) -> None:
         (_disable_leave_one_out, "corpus-wide leave-one-out evidence is missing"),
         (_truncate_threshold_map, "threshold map must contain all 171 hypotheses"),
         (_drop_hash_retention, "scientific artifact-hash retention is missing"),
-        (_enable_source_commit_traceability, "source-commit traceability must be absent"),
         (_non_dict_benchmark, "fixtures-only benchmark metadata is missing"),
     ],
     ids=[
@@ -294,7 +289,6 @@ def _non_dict_benchmark(data: dict) -> None:
         "leave-one-out",
         "threshold-map-count",
         "hash-retention",
-        "source-commit-traceability",
         "benchmark-not-dict",
     ],
 )
@@ -314,7 +308,9 @@ def test_generated_report_validates_clean(tmp_path) -> None:
 # ── G3: Plan F corrective-evidence emitter ─────────────────────────────────────
 
 
-def test_emit_corrective_evidence_writes_plan_f_summary(tmp_path) -> None:
+def test_emit_corrective_evidence_writes_json_only_evidence(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(_evidence, "OUTPUT_ROOT", tmp_path)
+    monkeypatch.setattr(_evidence, "EVIDENCE_ROOT", tmp_path)
     report_path = generate_report(tmp_path)
     out_path = tmp_path / "corrective-evidence.json"
 
@@ -323,9 +319,9 @@ def test_emit_corrective_evidence_writes_plan_f_summary(tmp_path) -> None:
 
     payload = json.loads(out_path.read_text(encoding="utf-8"))
     assert payload["evidence_kind"] == "corrective-gram-geometry-plan-f"
+    assert not list(out_path.parent.glob("*.md"))
     assert payload["synthetic_only"] is True
     assert payload["real_corpus_run"] is False
-    assert payload["source_commit_traceability"] is False
     proof = payload["architecture_proof"]
     assert proof["self_candidate_count"] == 0
     assert proof["segmentation_from_scorer_count"] == 0
@@ -341,7 +337,9 @@ def test_emit_corrective_evidence_writes_plan_f_summary(tmp_path) -> None:
 _MEASURED_BENCHMARK_FIELDS = ("elapsed_ms", "peak_rss_bytes", "peak_tracemalloc_bytes")
 
 
-def test_emit_corrective_evidence_is_deterministic(tmp_path) -> None:
+def test_emit_corrective_evidence_is_deterministic(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(_evidence, "OUTPUT_ROOT", tmp_path)
+    monkeypatch.setattr(_evidence, "EVIDENCE_ROOT", tmp_path)
     report_path = generate_report(tmp_path)
     first = tmp_path / "first.json"
     second = tmp_path / "second.json"

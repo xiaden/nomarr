@@ -15,6 +15,7 @@ from nomarr.components.library.reconciliation_comp import release_claim
 
 if TYPE_CHECKING:
     from nomarr.helpers.dataclasses.library_dataclass import Library
+    from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
     from nomarr.helpers.dataclasses.song_dataclass import Song
     from nomarr.persistence.db import Database
 
@@ -29,22 +30,10 @@ logger = logging.getLogger(__name__)
 
 def get_file_for_writing(
     db: Database,
-    file_key: str,
-) -> tuple[int, str, Song | None]:
-    """Resolve a claimed file handle to its semantic ``Song`` via the facade.
-
-    The claim handle is an integer-keyed string produced by the reconciliation
-    queue. Persistence's narrow ``resolve_song_identity`` adapter maps the private
-    handle to the mutable ``SongIdentity`` locator, and ``db.library.get_song``
-    returns the semantic ``Song`` value — never a raw row, dict, or generated id
-    projection. Returns ``(file_id, file_key, song)`` with ``song`` ``None`` when
-    the handle no longer resolves.
-    """
-    file_id = int(file_key)
-    identity = db.library.resolve_song_identity(file_id)
-    if identity is None:
-        return file_id, file_key, None
-    return file_id, file_key, db.library.get_song(identity)
+    song: SongIdentity,
+) -> Song | None:
+    """Resolve a semantic song locator to its domain ``Song`` value."""
+    return db.library.get_song(song)
 
 
 # ---------------------------------------------------------------------------
@@ -70,7 +59,7 @@ def resolve_library_root(
 
 def release_file_claim(
     db: Database,
-    file_key: str,
+    song: SongIdentity,
     worker_id: str,
 ) -> None:
     """Release a write claim without updating projection state.
@@ -78,13 +67,11 @@ def release_file_claim(
     Swallows exceptions so callers in error paths don't need try/except.
     """
     try:
-        song = db.library.resolve_song_identity(int(file_key))
-        if song is not None:
-            release_claim(db, song, worker_id)
+        release_claim(db, song, worker_id)
     except (ValueError, RuntimeError) as exc:
         logger.warning(
             "[file_write_comp] Failed to release claim for %s: %s",
-            file_key,
+            song.normalized_path,
             exc,
             exc_info=True,
         )

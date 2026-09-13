@@ -858,10 +858,6 @@ def update_pipeline_state():
     pass  # Pipeline state update
 
 
-def update_songs():
-    pass  # Song update
-
-
 def update_write_mode():
     pass  # Write mode update
 

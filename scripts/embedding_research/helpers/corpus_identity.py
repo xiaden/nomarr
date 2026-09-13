@@ -183,7 +183,7 @@ def classify_representation(
     if not alignment_ok:
         reasons.append("alignment_failed")
     if searchable_count <= 0:
-        reasons.append("no_searchable")
+        reasons.append("zero_searchable")
     if not medoid_defined:
         reasons.append("no_medoid")
     if candidate_count <= 0:

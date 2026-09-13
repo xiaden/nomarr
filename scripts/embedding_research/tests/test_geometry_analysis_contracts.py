@@ -38,7 +38,7 @@ def _song(
         song_id=song_id,
         backbone="effnet",
         geometry_identity=_IDENTITY,
-        observation_evidence={"observation_id": "observation-a"},
+        observation_evidence={"observation_group_sha256": "observation-a"},
         artist=artist,
         genre=genre,
         head_label=None,
@@ -106,7 +106,7 @@ def test_complete_identity_axes_are_required() -> None:
     with pytest.raises(ValueError, match="incomplete"):
         AnalysisEvidenceIdentity(
             geometry_id="geometry-a",
-            observation_id="observation-a",
+            observation_group_sha256="observation-a",
             geometry_semantics_version="geometry-v1",
             numerical_profile_digest="profile-a",
             threshold_id="",
@@ -119,7 +119,7 @@ def test_complete_identity_axes_are_required() -> None:
     with pytest.raises(ValueError, match="non-empty"):
         GeometryIdentityAxes(
             geometry_id="geometry-a",
-            observation_id="observation-a",
+            observation_group_sha256="observation-a",
             geometry_semantics_version="geometry-v1",
             numerical_profile_digest="profile-a",
             mask_digest="mask-a",

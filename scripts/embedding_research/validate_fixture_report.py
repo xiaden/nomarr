@@ -1,6 +1,6 @@
 """Fail-closed validator for the deterministic seven-section synthetic geometry report.
 
-This module validates the geometry report (JSON plus its sibling HTML): schema/version,
+This module validates the geometry report JSON and its permitted sibling HTML viewer: schema/version,
 section identity and ordering, the synthetic-only warning, finite numeric values, the
 geometry evidence phase topology, populated sections and identity tables, winner/baseline
 evidence, run-history and timing phase registries, the refusal/incomplete/resource
@@ -210,7 +210,29 @@ def _comparability_reason_problems(comparability: dict) -> list[str]:
     return problems
 
 
-def validate_report(path: str | Path) -> list[str]:
+def _scientific_root(report_path: Path) -> Path:
+    return report_path.parent.parent.resolve()
+
+
+def _viewer_is_external(viewer: Path, report_path: Path) -> bool:
+    try:
+        viewer.resolve().relative_to(_scientific_root(report_path))
+    except ValueError:
+        return True
+    return False
+
+
+def _viewer_candidates(report_path: Path) -> tuple[Path, ...]:
+    """Return only documented external viewer locations for *report_path*."""
+    report_root = _scientific_root(report_path)
+    candidates = [
+        report_root.parent / f"{report_root.name}_runtime" / "docs" / "embedding-research-report.html",
+        report_root.parent / "docs" / "embedding-research-report.html",
+    ]
+    return tuple(path for path in candidates if _viewer_is_external(path, report_path))
+
+
+def validate_report(path: str | Path, html_path: str | Path | None = None) -> list[str]:
     """Validate the seven-section geometry report; return a list of problems (empty == valid)."""
     report_path = Path(path)
     if not report_path.is_file():
@@ -230,9 +252,19 @@ def validate_report(path: str | Path) -> list[str]:
     messages = [warning.get("message") for warning in data.get("warnings", []) if isinstance(warning, dict)]
     if SYNTHETIC_WARNING_MESSAGE not in messages:
         problems.append("synthetic-only warning is missing")
-    html_path = report_path.with_name("report.html")
-    if not (html_path.is_file() and html_path.stat().st_size):
-        problems.append("report.html is missing or empty")
+    # Scientific evidence roots are JSON-only; the fixture viewer is published only under a
+    # permitted external docs directory, outside the evidence root.
+    if html_path is not None:
+        viewer = Path(html_path)
+        if _viewer_is_external(viewer, report_path):
+            viewer_paths = (viewer,)
+        else:
+            problems.append("HTML viewer must be outside the scientific JSON root")
+            viewer_paths = ()
+    else:
+        viewer_paths = _viewer_candidates(report_path)
+    if viewer_paths and not any(viewer.is_file() and viewer.stat().st_size for viewer in viewer_paths):
+        problems.append("external sibling embedding-research-report.html is missing or empty")
     _check_finite(data, problems)
 
     evidence = data.get("geometry_evidence", {})
@@ -250,7 +282,8 @@ def validate_report(path: str | Path) -> list[str]:
         problems.append("analysis section is missing")
     else:
         _require_identity_table(analysis, "geometry_identity", problems)
-    _require_identity_table(head_analysis, "geometry_head_identity", problems)
+    if head_analysis is not None and not head_analysis.get("empty_message"):
+        _require_identity_table(head_analysis, "geometry_head_identity", problems)
     if winners is None or not any(
         _table(winners, table_id) for table_id in ("geometry_winner_deltas", "geometry_representations")
     ):
@@ -311,12 +344,12 @@ def validate_report(path: str | Path) -> list[str]:
 # ── public entry point ─────────────────────────────────────────────────────────
 
 
-def validate_fixture_report(path: str | Path) -> None:
+def validate_fixture_report(path: str | Path, html_path: str | Path | None = None) -> None:
     """Validate the seven-section synthetic geometry report.
 
     Raises :class:`ValueError` describing every failed field when any check fails.
     """
-    problems = validate_report(Path(path))
+    problems = validate_report(Path(path), html_path=html_path)
     if problems:
         raise ValueError("fixture report violates the geometry contract:\n  - " + "\n  - ".join(problems))
 
@@ -330,6 +363,13 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="report.json path (defaults to the configured report directory)",
     )
+    parser.add_argument(
+        "--html",
+        dest="html_path",
+        type=Path,
+        default=None,
+        help="explicit external HTML viewer path",
+    )
     arguments = parser.parse_args(argv)
 
     if arguments.report_json:
@@ -340,7 +380,7 @@ def main(argv: list[str] | None = None) -> int:
         report_path = REPORT_DIR / "report.json"
 
     try:
-        validate_fixture_report(report_path)
+        validate_fixture_report(report_path, html_path=arguments.html_path)
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         print(f"FAIL: {exc}")
         return 1

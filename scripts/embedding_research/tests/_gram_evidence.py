@@ -21,24 +21,32 @@ from typing import Any
 
 import numpy as np
 
-#: Declared synthetic evidence root for the completed hard-cut migration bundle.
-#: The retained synthetic behavior tests consume exactly these workspace-relative artifacts.
-EVIDENCE_ROOT = Path("artifacts/evidence/threshold-independent-per-song-gram-geometry-migration")
+from scripts.embedding_research.config import OUTPUT_ROOT
+
+#: Sole synthetic scientific JSON/hash root, shared with runtime configuration.
+#: The retired artifacts/evidence fixture root is intentionally not a compatibility path.
+EVIDENCE_ROOT = OUTPUT_ROOT
 
 
 def emit_evidence(name: str, payload: dict[str, Any]) -> dict[str, Any]:
     """Write one deterministic JSON evidence artifact and return it with its digest.
 
-    The artifact is written to the declared :data:`EVIDENCE_ROOT`; the digest is over
-    the canonical (sorted, compact) payload BEFORE the digest field is added.  A
-    round-trip read is asserted so a partial/malformed write can never masquerade as
-    evidence.
+    Fixture names are deliberately narrow: they must be a single contained JSON
+    filename, so synthetic evidence cannot escape the configured scientific root.
+    The digest remains over the canonical payload BEFORE the digest field is added.
     """
+    fixture = Path(name)
+    if fixture.is_absolute() or fixture.suffix != ".json":
+        raise ValueError("fixture evidence names must be contained .json paths")
+    path = (EVIDENCE_ROOT / fixture).resolve()
+    try:
+        path.relative_to(EVIDENCE_ROOT.resolve())
+    except ValueError as exc:
+        raise ValueError("fixture evidence path must be contained by OUTPUT_ROOT") from exc
     record = dict(payload)
     canonical = json.dumps(record, sort_keys=True, separators=(",", ":"), allow_nan=False)
     record["evidence_sha256"] = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-    EVIDENCE_ROOT.mkdir(parents=True, exist_ok=True)
-    path = EVIDENCE_ROOT / name
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(record, sort_keys=True, indent=2) + "\n", encoding="utf-8")
     normalized = json.loads(json.dumps(record, sort_keys=True))
     assert json.loads(path.read_text(encoding="utf-8")) == normalized, f"evidence round-trip failed: {path}"

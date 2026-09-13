@@ -30,7 +30,7 @@ class GeometryHeadOutput:
     """One validated class-1 head result keyed to exact geometry and threshold evidence."""
 
     geometry_id: str
-    observation_id: str
+    observation_group_sha256: str
     geometry_semantics_version: str
     numerical_profile_digest: str
     threshold_id: str
@@ -53,7 +53,7 @@ class GeometryHeadOutput:
     def __post_init__(self) -> None:
         for name in (
             "geometry_id",
-            "observation_id",
+            "observation_group_sha256",
             "geometry_semantics_version",
             "numerical_profile_digest",
             "threshold_id",
@@ -84,7 +84,7 @@ class GeometryHeadAnalysisManifest:
 
     run_id: str
     geometry_id: str
-    observation_id: str
+    observation_group_sha256: str
     evaluation_id: str
     execution_id: str
     geometry_semantics_version: str
@@ -104,7 +104,7 @@ class GeometryHeadAnalysisManifest:
                 (
                     self.run_id,
                     self.geometry_id,
-                    self.observation_id,
+                    self.observation_group_sha256,
                     self.evaluation_id,
                     self.execution_id,
                     self.geometry_semantics_version,
@@ -120,7 +120,7 @@ class GeometryHeadAnalysisManifest:
         return {
             "run_id": self.run_id,
             "geometry_id": self.geometry_id,
-            "observation_id": self.observation_id,
+            "observation_group_sha256": self.observation_group_sha256,
             "evaluation_id": self.evaluation_id,
             "execution_id": self.execution_id,
             "geometry_semantics_version": self.geometry_semantics_version,
@@ -196,12 +196,12 @@ def run_shared_geometry_head_analysis(
     identity_obj = getattr(geometry_record, "identity", geometry_record)
     song_id = str(getattr(identity_obj, "song_id", ""))
     backbone = str(getattr(identity_obj, "backbone", ""))
-    observation_id = str(getattr(analysis, "observation_id", ""))
+    observation_group_sha256 = str(getattr(analysis, "observation_group_sha256", ""))
     semantics = str(getattr(analysis, "geometry_semantics_version", ""))
     profile_digest = str(getattr(analysis, "profile_digest", ""))
     evaluation = evaluation_id or str(getattr(analysis, "evaluation_id", ""))
     execution = execution_id or str(getattr(analysis, "execution_id", ""))
-    if not all((geometry_id, observation_id, semantics, profile_digest, evaluation, execution, run_id)):
+    if not all((geometry_id, observation_group_sha256, semantics, profile_digest, evaluation, execution, run_id)):
         raise GeometryHeadRefusalError("complete geometry/evaluation/execution evidence is required")
     payload, matrix = _head_matrix(head_store, song_id, backbone)
     if matrix.ndim != 2 or not matrix.shape[0] or not np.isfinite(matrix).all():
@@ -244,7 +244,7 @@ def run_shared_geometry_head_analysis(
                 outputs.append(
                     GeometryHeadOutput(
                         geometry_id,
-                        observation_id,
+                        observation_group_sha256,
                         semantics,
                         profile_digest,
                         str(result.threshold.threshold_id),
@@ -271,7 +271,7 @@ def run_shared_geometry_head_analysis(
     return GeometryHeadAnalysisManifest(
         run_id,
         geometry_id,
-        observation_id,
+        observation_group_sha256,
         evaluation,
         execution,
         semantics,

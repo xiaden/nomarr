@@ -22,7 +22,7 @@ for _path in (_ROOT, _PKG_DIR):
 
 from typing import TYPE_CHECKING
 
-from scripts.embedding_research.config import REPORT_DIR
+from scripts.embedding_research.config import REPORT_DIR, RUNTIME_ROOT
 from scripts.embedding_research.db._schema import schema_fingerprint
 from scripts.embedding_research.report import run as report_run
 from scripts.embedding_research.tests._report_seed import (
@@ -69,7 +69,7 @@ def build_fixture_con() -> duckdb.DuckDBPyConnection:
     return build_seeded_con(run_id=RUN_ID)
 
 
-def main(report_dir: Path = REPORT_DIR) -> Path:
+def main(report_dir: Path = REPORT_DIR, *, html_out_path: Path | None = None) -> Path:
     """Generate the synthetic seven-section fixture report and its sibling HTML.
 
     Seeds an in-memory geometry database, renders the report through the exact
@@ -79,13 +79,23 @@ def main(report_dir: Path = REPORT_DIR) -> Path:
     con = build_fixture_con()
     try:
         schema_fingerprint(con)
-        report_run(con, report_dir, run_id=RUN_ID)
+        report_run(
+            con,
+            report_dir,
+            run_id=RUN_ID,
+            html_out_path=html_out_path
+            or (
+                RUNTIME_ROOT / "docs" / "embedding-research-report.html"
+                if report_dir.resolve() == REPORT_DIR.resolve()
+                else report_dir.resolve().parent / "docs" / "embedding-research-report.html"
+            ),
+        )
         geometry_rows = con.execute(
             "SELECT geometry_id, observation_group_sha256, geometry_semantics_version, "
             "numerical_profile_digest FROM song_patch_geometry ORDER BY geometry_id"
         ).fetchall()
         head_rows = con.execute(
-            "SELECT geometry_id, observation_id, geometry_semantics_version, "
+            "SELECT geometry_id, observation_group_sha256, geometry_semantics_version, "
             "numerical_profile_digest FROM geometry_head_evidence "
             "ORDER BY geometry_id, segment_id"
         ).fetchall()
@@ -122,6 +132,7 @@ def main(report_dir: Path = REPORT_DIR) -> Path:
         "full_product_bytes": 36864,
         "score": 0.5499724615544072,
         "finite": True,
+        "numerical_kernel_version": "numpy_row_normalize_float32_matmul_v1",
     }
     data["corrective_evidence"] = {
         "retrieval": {
@@ -137,7 +148,7 @@ def main(report_dir: Path = REPORT_DIR) -> Path:
         },
         "comparability": {
             "non_comparable_persisted": True,
-            "explicit_reasons": ["alignment_failed", "no_searchable", "no_medoid", "no_candidates", "label_missing"],
+            "explicit_reasons": ["alignment_failed", "zero_searchable", "no_medoid", "no_candidates", "label_missing"],
             "reason_vocabulary_owner": "helpers.corpus_identity.classify_representation",
         },
         "rulers": ["artist", "genre", "frozen_head"],
