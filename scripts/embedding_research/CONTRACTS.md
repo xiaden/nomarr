@@ -4,7 +4,7 @@
 >
 > Statements below that describe synthetic-only ownership, self-similarity, one-song baselines, scalar production kernels, unconditional comparable publication, or R1–R14 replay are superseded implementation obligations, not current requirements. The binding corrective contract follows; see the pending DD and parts contracts for the R1–R14 deletion inventory (the inventory names retired modules, so it is kept in `artifacts/`, outside this runtime tree).
 >
-> The active corrective contract is evaluated at current head `59aa4a20`; scientific evidence is synthetic-only, with JSON reports and scientific hashes under configured `config.OUTPUT_ROOT` and the human-readable report explicitly placed in an external sibling runtime `docs/` directory; logs, locks, caches/streams/sidecars, DuckDB, and patch arrays remain external to the JSON root, and `OUTPUT_ROOT/docs` is not an accepted viewer location.
+> The active corrective contract is evaluated at the current committed HEAD selected by the runtime. `empirical_request` binds a bounded CPU-only derived analysis to complete frozen current-head semantic-head suite/head-set provenance; `synthetic_fixture` is the explicit in-memory fixture mode. Neither mode executes a real corpus, model, audio, ONNX, or CUDA. JSON reports and scientific hashes remain under configured `config.OUTPUT_ROOT`, with the human-readable report in an external sibling runtime `docs/` directory; logs, locks, caches/streams/sidecars, DuckDB, and patch arrays remain external to the JSON root, and `OUTPUT_ROOT/docs` is not an accepted viewer location.
 
 ## Corrective repair contract (binding)
 
@@ -118,6 +118,15 @@ GeometryCorpusRequest(items, threshold_request, experiment, evaluation_id,
 FrozenGeometryEvaluation(evaluation_id, query_vectors, query_weights,
                          eligible_song_ids, observation_evidence_digest, comparable)
 GeometrySongAnalysis(request, thresholds, roster, scores)
+GeometryCorpusAnalysis result fields consumed by K/report are `analyses` (all threshold
+batches), `hypotheses` (threshold/collapse membership), `queries` (leave-one-out winner and
+observed-baseline neighborhoods), the independent ruler metrics, `per_song_metrics`,
+`baseline_deltas`, `counters`, `noncomparable`/`reasons`, `evidence_mode`, and
+`head_evidence_provenance`. K persists these through `write_geometry_corpus_analysis`
+atomically; report retrieval reads the exact run scope through `query_corpus_evidence`.
+For `synthetic_only=False`, the result is `empirical_request` only when every item has a
+non-empty current committed head-suite identity and label; missing or mismatched head
+evidence is refused.
 build_geometry_corpus_request(con, *, stream_store, profile, threshold_request,
                               experiment, evaluation_id, run_id, execution_id,
                               scoring_semantics_version, song_ids=None,
@@ -151,8 +160,7 @@ loads, all-threshold batches, source gathers, scorer calls, and
 semantic-head rulers; missing labels exclude only that ruler. Publication preflights all
 geometry/observation/threshold/structural/search/evaluation/scoring/execution identities and
 finite values, then writes aggregate/per-song/ruler/baseline/provenance rows atomically through
-the existing invocation-obligation and terminal-completion lifecycle. Derived phases are CPU-only
-and synthetic fixtures are the only execution evidence; no real corpus, production integration,
+the existing invocation-obligation and terminal-completion lifecycle. Derived phases are CPU-only; empirical requests are frozen-head-bound evidence requests and synthetic fixtures are explicit in-memory producers; no real corpus, production integration,
 audio/model/ONNX/CUDA, optimizer, ANN, or durable threshold-result table is in scope.
 
 The corpus-owner functions listed above were the minimal addition required because the earlier
@@ -383,15 +391,7 @@ The `report` phase is the executable entry point. It renders exactly seven secti
 - `summary` — active geometry-result status per backbone (winner / delta / factor summary, or an
   explicit empty-active-results message).
 - `corpus` — active songs / corpus health.
-- `analysis` — `analyze_metrics` rows with `strategy_type == 'geometry'` (run id / sim_metric /
-  k / metric / value) plus geometry strategy identity, score variant, scoring-semantics version,
-  evidence-content-hash provenance, canonical geometry id, and sorted membership ids, rendered as
-  `geometry_identity` and `geometry_analysis` tables with a `geometry_threshold_map`. When corpus
-  evidence is available it additionally renders `geometry_membership` (corpus comparability),
-  `geometry_queries` (per-query ruler metrics and comparability), `geometry_neighborhoods` (bounded
-  winner neighborhoods), and `geometry_baseline_neighborhoods` (same-population observed baseline
-  neighborhoods), and emits explicit warnings for non-comparable corpora and for songs with no
-  searchable representation; missing corpus evidence is itself a visible error.
+- `analysis` — canonical corpus evidence rendered as threshold/collapse maps, ordered corpus membership with states/reasons, per-query ruler metrics, bounded winner neighborhoods, and separately observed-baseline neighborhoods. The section renders `geometry_threshold_map`, `geometry_membership`, `geometry_queries`, `geometry_neighborhoods`, and `geometry_baseline_neighborhoods`; it emits explicit warnings for non-comparable corpora and songs with no searchable representation, and missing corpus evidence is itself a visible error.
 - `winners` — deterministic winner / delta / factor tables per backbone. The baseline per
   `(backbone, sim_metric, k, metric)` is the observed whole-song source medoid baseline row (when
   a finite one shares that exact scope); the medoid is never itself a winner candidate. The winner

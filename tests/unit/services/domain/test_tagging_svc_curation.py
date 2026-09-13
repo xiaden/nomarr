@@ -520,7 +520,6 @@ class TestSplitTag:
 
         # Song identity is NOT a tag identity: the opaque SongLocator token is
         # decoded to a semantic locator; no integer identity bridge participates.
-        service.db.library.resolve_song_identities.assert_not_called()
         mock_relink.assert_called_once_with(
             service.db,
             source,

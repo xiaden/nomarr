@@ -1,11 +1,11 @@
-"""Real-boundary evidence for create-only song-state initialization (Q3-A P1-S3).
+"""Real-boundary evidence for create-only song-state initialization.
 
 This module exercises the real ``LibrarySongsDb`` facade over real repositories
 and a live PostgreSQL session (never a mocked facade):
 
 - a genuinely new song row is initialized with the canonical negative states;
 - re-upserting an existing row preserves every existing state assignment and
-  does not re-run ``initialize_song_states`` (the Q3-A regression);
+  does not re-run ``initialize_song_states``;
 - a mid-batch failure rolls back every document in that batch, proving the
   scan batch is a single transaction rather than N per-doc transactions.
 

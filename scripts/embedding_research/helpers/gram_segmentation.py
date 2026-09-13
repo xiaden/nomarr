@@ -23,6 +23,11 @@ class GramRefusalError(ValueError):
     """Fail-closed refusal for malformed or non-finite Gram input."""
 
 
+# Shared with the independent vector-oracle contract: below this float32 norm,
+# cancellation represents the zero centroid rather than an artificial unit vector.
+ZERO_CENTROID_NORM_THRESHOLD = np.float32(1e-6)
+
+
 @dataclass(frozen=True)
 class StructuralSegment:
     """One source-ordered structural range and its absorbed source rows."""
@@ -122,7 +127,7 @@ def _row_distance(gram: np.ndarray, row: int, indices: list[int]) -> np.float32:
     ``||s||² = sum(G[i, j])`` and ``u_row · s = sum(G[row, i])``.  The
     vectorized reductions below are the sole production centroid arithmetic;
     an exactly (or numerically) cancelling ``s`` is represented by the zero
-    centroid and therefore has distance ``sqrt(||u_row||² + 1)``.  Zero rows
+    centroid and therefore has distance ``sqrt(||u_row||²)``.  Zero rows
     remain zero rows and are never promoted to searchable medoids elsewhere.
     """
     if not indices:
@@ -139,6 +144,9 @@ def _row_distance(gram: np.ndarray, row: int, indices: list[int]) -> np.float32:
         out=np.zeros((), dtype=np.float32),
         where=centroid_norm > np.float32(0.0),
     )
+    # Shared vector-oracle branch: a cancelled running sum is a zero centroid.
+    if centroid_norm <= ZERO_CENTROID_NORM_THRESHOLD:
+        return np.sqrt(row_norm_sq, dtype=np.float32)
     distance_sq = np.float32(row_norm_sq + np.float32(1.0) - np.float32(np.float32(2.0) * row_centroid))
     return np.sqrt(np.maximum(distance_sq, np.float32(0.0)), dtype=np.float32)
 

@@ -61,7 +61,6 @@ class TestGetFileTagsWithPath:
 
         assert result is None
         mock_db.library.get_song.assert_called_once_with(identity)
-        mock_db.library.resolve_song_identity.assert_not_called()
         mock_db.library.list_tags_for_song.assert_not_called()
 
     @pytest.mark.unit
@@ -76,7 +75,6 @@ class TestGetFileTagsWithPath:
 
         assert result is None
         mock_db.library.get_song.assert_called_once_with(identity)
-        mock_db.library.resolve_song_identity.assert_not_called()
         mock_db.library.list_tags_for_song.assert_not_called()
 
     @pytest.mark.unit
@@ -92,7 +90,6 @@ class TestGetFileTagsWithPath:
 
         assert result == {"path": "D:/Music/song.flac", "tags": []}
         mock_db.library.get_song.assert_called_once_with(identity)
-        mock_db.library.resolve_song_identity.assert_not_called()
         mock_db.library.list_tags_for_song.assert_called_once_with(identity)
 
     @pytest.mark.unit
@@ -165,7 +162,6 @@ class TestGetFileTagsWithPath:
 
         result = get_song_tags_with_path(mock_db, identity, nomarr_only=True)
 
-        mock_db.library.resolve_song_identity.assert_not_called()
         mock_db.library.list_tags_for_song.assert_called_once_with(identity)
         # nomarr_only=True must exclude non-nomarr tags from the result.
         assert result == {

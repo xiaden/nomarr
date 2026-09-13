@@ -14,8 +14,8 @@ from nomarr.helpers.dataclasses.song_command_dataclass import (
 )
 from nomarr.helpers.time_helper import now_ms
 
-# Provenance carried by DB-derived chromaprint handles resolved at this inbound
-# adapter boundary. Real caller-supplied provenance is a Q3 caller-cutover item.
+# Provenance carried by DB-derived chromaprint handles at this inbound adapter
+# boundary. Caller-supplied provenance remains an explicit typed value when present.
 _CHROMAPRINT_PROVENANCE = "decoder:v1"
 
 if TYPE_CHECKING:

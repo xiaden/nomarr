@@ -2141,7 +2141,7 @@ class TestUnknownAndMalformedLibraryUuidRejection:
         song_repo.get_song_ids_by_normalized_paths.assert_not_called()
 
 
-# ── Atomic batch upsert (Q3-A create-only / single transaction) ────────────
+# ── Atomic batch upsert (create-only / single transaction) ─────────────────
 
 
 @pytest.mark.unit

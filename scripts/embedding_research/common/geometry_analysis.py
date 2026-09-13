@@ -1,15 +1,16 @@
 """Geometry-owned corpus analysis contracts.
 
-This module contains the corpus loading and persistence orchestration for the
-synthetic geometry experiment. ``analyze_geometry_corpus`` loads committed
-observations, while ``write_geometry_corpus_analysis`` owns persistence; model
-execution remains outside this CPU-side analysis seam.
+This module contains corpus loading and persistence orchestration for the
+geometry experiment. Synthetic-only fixture production remains explicit, while
+empirical requests publish only frozen-head-bound evidence. ``analyze_geometry_corpus``
+loads committed observations, while ``write_geometry_corpus_analysis`` owns persistence;
+real corpus and model execution remains outside this CPU-side seam.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, cast
 
@@ -33,6 +34,7 @@ from scripts.embedding_research.db.geometry import (
     GeometryIdentity,
     GeometryRecord,
     IntegrityRefused,
+    StaleRefused,
     enforce_geometry_resource_ceiling,
     preflight_geometry_binding,
     read_geometry,
@@ -44,12 +46,12 @@ from scripts.embedding_research.db.geometry import (
 from scripts.embedding_research.db.geometry_profile import GeometryProfile
 from scripts.embedding_research.db.songs import load_all_songs
 from scripts.embedding_research.helpers.corpus_identity import (
+    CorpusSongSearchInput,
     RepresentationState,
     classify_representation,
     search_representation_id,
 )
 from scripts.embedding_research.helpers.gram_segmentation import (
-    normalize_float32,
     observed_global_medoid_from_gram,
     require_exact_binary_mask,
 )
@@ -134,7 +136,12 @@ class GeometryIdentityAxes:
 
 @dataclass(frozen=True)
 class GeometrySongRequest:
-    """One ordered synthetic song/backbone analysis input."""
+    """One ordered song/backbone analysis input with explicit evidence-mode provenance.
+
+    Requests may use an explicit ``synthetic_fixture`` or a bounded
+    ``empirical_request`` bound to complete frozen current-head semantic-head provenance;
+    neither mode permits external corpus or inference execution in this CPU-side analysis seam.
+    """
 
     song_id: str
     backbone: str
@@ -143,6 +150,7 @@ class GeometrySongRequest:
     artist: str | None = None
     genre: str | None = None
     head_label: Any | None = None
+    head_suite_identity: str | None = None
     synthetic_only: bool = True
 
     def __post_init__(self) -> None:
@@ -151,8 +159,10 @@ class GeometrySongRequest:
         if not isinstance(self.geometry_identity, GeometryIdentity):
             raise ValueError("geometry_identity must be GeometryIdentity")
         object.__setattr__(self, "observation_evidence", _mapping(self.observation_evidence, "observation_evidence"))
-        if not isinstance(self.synthetic_only, bool) or not self.synthetic_only:
-            raise ValueError("geometry analysis requests are synthetic-only")
+        if not isinstance(self.synthetic_only, bool):
+            raise ValueError("synthetic_only must be boolean evidence mode")
+        if self.head_suite_identity is not None:
+            _text(self.head_suite_identity, "head_suite_identity")
         for name in ("artist", "genre"):
             value = getattr(self, name)
             if value is not None:
@@ -190,8 +200,8 @@ class GeometryCorpusRequest:
             _text(getattr(self, name), name)
         if isinstance(self.scoring_semantics_version, bool) or self.scoring_semantics_version < 1:
             raise ValueError("scoring_semantics_version must be positive")
-        if not isinstance(self.synthetic_only, bool) or not self.synthetic_only:
-            raise ValueError("geometry analysis requests are synthetic-only")
+        if not isinstance(self.synthetic_only, bool):
+            raise ValueError("synthetic_only must be boolean evidence mode")
 
 
 @dataclass(frozen=True)
@@ -455,7 +465,7 @@ class FrozenGeometryEvaluation:
 
 @dataclass(frozen=True)
 class GeometrySongAnalysis:
-    """Per-query geometry analysis: threshold structure, candidate roster, and scores."""
+    """Per-query evidence scoped to one threshold/collapse hypothesis."""
 
     request: GeometrySongRequest
     thresholds: AllThresholdAnalysis
@@ -464,6 +474,24 @@ class GeometrySongAnalysis:
     state: RepresentationState = field(default_factory=lambda: RepresentationState(True, True, True, ()))
     neighborhood: tuple[NeighborhoodEntry, ...] = ()
     baseline_neighborhood: tuple[NeighborhoodEntry, ...] = ()
+    threshold_id: str = ""
+    collapse_class_id: str = ""
+
+
+@dataclass(frozen=True)
+class GeometryCorpusHypothesis:
+    """Complete ordered same-threshold corpus representations and states."""
+
+    threshold_id: str
+    collapse_class_id: str
+    members: tuple[GeometryCandidate, ...]
+
+    def __post_init__(self) -> None:
+        _text(self.threshold_id, "threshold_id")
+        _text(self.collapse_class_id, "collapse_class_id")
+        object.__setattr__(self, "members", tuple(self.members))
+        if not self.members:
+            raise ValueError("each corpus hypothesis must contain ordered members")
 
 
 @dataclass(frozen=True)
@@ -490,9 +518,16 @@ class GeometryCorpusAnalysis:
     counters: GeometryAnalysisCounters = field(default_factory=GeometryAnalysisCounters)
     synthetic_only: bool = True
     queries: tuple[GeometrySongAnalysis, ...] = ()
+    # Representative queries retain one scored execution per collapse class; this
+    # ordered view expands the same evidence under every threshold context for
+    # canonical publication and reporting.
+    threshold_queries: tuple[GeometrySongAnalysis, ...] = ()
     candidates: tuple[GeometryCandidate, ...] = ()
     noncomparable: tuple[NonComparableEvidence, ...] = ()
     reasons: tuple[str, ...] = ()
+    hypotheses: tuple[GeometryCorpusHypothesis, ...] = ()
+    evidence_mode: str = "synthetic_fixture"
+    head_evidence_provenance: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         for name in ("run_id", "execution_id", "experiment", "evaluation_id", "numerical_profile_digest"):
@@ -505,8 +540,11 @@ class GeometryCorpusAnalysis:
             _text(self.refusal_status, "refusal_status")
         if not isinstance(self.comparable, bool):
             raise ValueError("comparable must be boolean")
-        if not isinstance(self.synthetic_only, bool) or not self.synthetic_only:
-            raise ValueError("geometry analyses are synthetic-only")
+        if not isinstance(self.synthetic_only, bool):
+            raise ValueError("synthetic_only must be boolean evidence mode")
+        if self.evidence_mode not in {"synthetic_fixture", "empirical_request"}:
+            raise ValueError("evidence_mode must identify synthetic_fixture or empirical_request")
+        object.__setattr__(self, "head_evidence_provenance", dict(self.head_evidence_provenance))
         for name in ("artist_metrics", "genre_metrics", "head_metrics", "per_song_metrics", "baseline_deltas"):
             value = _mapping(getattr(self, name), name)
             object.__setattr__(self, name, value)
@@ -517,6 +555,7 @@ class GeometryCorpusAnalysis:
                 else:
                     _finite(metric, name)
         object.__setattr__(self, "reasons", tuple(str(reason) for reason in self.reasons))
+        object.__setattr__(self, "hypotheses", tuple(self.hypotheses))
 
 
 def _ruler_label(value: Any) -> object | None:
@@ -727,7 +766,7 @@ def analyze_geometry_corpus(
     profile: GeometryProfile,
     scoring: Any = score_bounded_exact,
 ) -> GeometryCorpusAnalysis:
-    """Run corpus-wide leave-one-out geometry analysis without a compatibility path.
+    """Evaluate complete threshold-scoped corpus hypotheses with bounded leave-one-out scoring.
 
     Stage one loads exactly one committed observation and geometry per song/backbone
     and derives all requested thresholds before any scorer call.  Stage two builds the
@@ -737,14 +776,15 @@ def analyze_geometry_corpus(
     song as a candidate; the observed whole-song medoid baseline is scored against the
     same leave-one-out population.
     """
-    if not isinstance(request, GeometryCorpusRequest) or not request.synthetic_only:
-        raise ValueError("a synthetic geometry corpus request is required")
+    if not isinstance(request, GeometryCorpusRequest):
+        raise ValueError("a geometry corpus request is required")
     if not isinstance(request.threshold_request, PrimaryThresholdRequest):
         raise ValueError("secondary geometry analysis owner is not available")
+    _validate_corpus_head_evidence(request)
     semantics = str(profile.to_manifest().get("geometry_semantics_version") or "")
     if not semantics:
         raise ValueError("geometry profile has no geometry semantics version")
-    ordered_song_ids = tuple(item.song_id for item in request.items)
+    tuple(item.song_id for item in request.items)
 
     geometry_loads = observation_loads = threshold_batches = gather_count = 0
     prepared: list[dict[str, Any]] = []
@@ -753,7 +793,7 @@ def analyze_geometry_corpus(
         observation_loads += 1
         identity = _observation_geometry_identity(observation, profile)
         if identity != item.geometry_identity:
-            raise ValueError("committed observation identity does not match corpus request")
+            raise StaleRefused("requested geometry identity is superseded by the committed observation")
         record = verify_geometry_current(con, observation, profile=profile, exact_identity=item.geometry_identity)
         geometry_loads += 1
         if record is None:
@@ -761,7 +801,10 @@ def analyze_geometry_corpus(
         mask = require_exact_binary_mask(observation.mask, record.matrix.shape[0])
         thresholds = analyze_all_thresholds(record, mask, request.threshold_request, experiment=request.experiment)
         threshold_batches += 1
-        query_vectors, query_weights = _normalized_query_vectors(observation.stream, mask)
+        # Query vectors are populated after threshold representations are built;
+        # this placeholder is never used for scoring.
+        query_vectors = np.zeros((0, observation.stream.shape[1]), dtype=np.float32)
+        query_weights = np.zeros(0, dtype=np.float64)
         prepared.append(
             {
                 "item": item,
@@ -775,212 +818,327 @@ def analyze_geometry_corpus(
             }
         )
 
-    candidate_records: list[dict[str, Any]] = []
-    noncomparable: list[NonComparableEvidence] = []
-    for prep in prepared:
-        item = prep["item"]
-        record = prep["record"]
-        buckets: dict[str, list[Any]] = {}
-        for result in prep["thresholds"].results:
-            search = result.search
-            indices, weights = _representation_scoring_pairs(search)
-            sid = search_representation_id(
-                experiment=request.experiment,
-                scoring_semantics_version=int(search.scoring_semantics_version),
-                geometry_semantics_version=semantics,
-                numerical_profile_digest=str(search.profile_digest),
-                observation_group_sha256=item.geometry_identity.observation_group_sha256,
-                mask_identity=str(search.mask_digest),
-                ordered_corpus_song_ids=ordered_song_ids,
+    # Materialize every complete ordered threshold preimage before any gather or scorer call.
+    # Equal preimages are one collapse class; structural threshold membership remains in
+    # each hypothesis and is never used as part of the collapse key.
+    threshold_rows: dict[
+        int,
+        tuple[
+            tuple[CorpusSongSearchInput, ...],
+            tuple[tuple[dict[str, Any], Any, tuple[int, ...], tuple[float, ...]], ...],
+        ],
+    ] = {}
+    class_ids: dict[int, str] = {}
+    for threshold_index in request.threshold_request.indices:
+        search_rows: list[tuple[dict[str, Any], Any, tuple[int, ...], tuple[float, ...]]] = []
+        for prep in prepared:
+            result = next(
+                result for result in prep["thresholds"].results if int(result.threshold.index) == int(threshold_index)
+            )
+            indices, weights = _representation_scoring_pairs(result.search)
+            search_rows.append((prep, result, indices, weights))
+        ordered_inputs = tuple(
+            CorpusSongSearchInput(
+                song_id=prep["item"].song_id,
+                observation_group_sha256=prep["item"].geometry_identity.observation_group_sha256,
+                mask_identity=str(prep["thresholds"].mask_digest),
                 medoid_source_indices=indices,
                 normalized_searchable_weights=weights,
-                searchable_count=int(search.total_searchable),
+                searchable_count=int(result.search.total_searchable),
             )
-            buckets.setdefault(sid, []).append(result)
-        for sid, members in sorted(buckets.items(), key=lambda pair: int(pair[1][0].threshold.index)):
-            first = members[0]
-            search = first.search
-            indices, weights = _representation_scoring_pairs(search)
-            threshold_indices = tuple(int(member.threshold.index) for member in members)
+            for prep, result, indices, weights in search_rows
+        )
+        class_ids[int(threshold_index)] = search_representation_id(
+            experiment=request.experiment,
+            scoring_semantics_version=request.scoring_semantics_version,
+            geometry_semantics_version=semantics,
+            numerical_profile_digest=request.numerical_profile_digest,
+            ordered_song_inputs=ordered_inputs,
+        )
+        threshold_rows[int(threshold_index)] = (ordered_inputs, tuple(search_rows))
+
+    class_thresholds: dict[str, list[int]] = {}
+    for threshold_index in request.threshold_request.indices:
+        class_thresholds.setdefault(class_ids[int(threshold_index)], []).append(int(threshold_index))
+
+    threshold_hypotheses: list[GeometryCorpusHypothesis] = []
+    threshold_rosters: dict[str, tuple[GeometryCandidate, ...]] = {}
+    threshold_members: dict[tuple[str, int], tuple[GeometryCandidate, ...]] = {}
+    representative_members: dict[str, tuple[GeometryCandidate, ...]] = {}
+    noncomparable: list[NonComparableEvidence] = []
+    baseline_roster: dict[tuple[str, str], FrozenSearchRepresentation] = {}
+    representation_cache: dict[tuple[str, str, str], FrozenSearchRepresentation] = {}
+
+    for collapse_class_id, threshold_indices in class_thresholds.items():
+        representative_threshold = threshold_indices[0]
+        _ordered_inputs, stored_rows = threshold_rows[representative_threshold]
+        class_members: list[GeometryCandidate] = []
+        for prep, result, indices, weights in stored_rows:
+            item = prep["item"]
             state = classify_representation(
                 alignment_ok=_alignment_ok(indices, weights),
-                searchable_count=int(search.total_searchable),
+                searchable_count=int(result.search.total_searchable),
                 medoid_defined=bool(indices),
                 candidate_count=len(request.items) - 1,
                 label_defined=_label_defined(item),
             )
-            if not state.comparable:
-                noncomparable.append(
-                    NonComparableEvidence(
-                        item.song_id,
-                        item.backbone,
-                        threshold_indices,
-                        str(first.structural.identity),
-                        sid,
-                        state.reasons,
+            cache_key = (item.song_id, item.backbone, collapse_class_id)
+            representation = representation_cache.get(cache_key)
+            if representation is None:
+                if state.comparable:
+                    vectors = stream_store.batch_gather(item.song_id, item.backbone, indices, forbid_duplicates=True)
+                    gather_count += 1
+                else:
+                    vectors = np.zeros((0, prep["record"].matrix.shape[1]), dtype=np.float32)
+                    indices = ()
+                    weights = ()
+                representation = FrozenSearchRepresentation(
+                    item.song_id,
+                    item.backbone,
+                    indices,
+                    vectors,
+                    np.asarray(weights, dtype=np.float64),
+                    f"{collapse_class_id}:{item.song_id}:{item.backbone}",
+                    prep["record"].geometry_id,
+                    item.geometry_identity.observation_group_sha256,
+                    str(result.search.profile_digest),
+                    str(result.search.mask_digest),
+                    int(result.search.scoring_semantics_version),
+                    request.experiment,
+                    tuple(threshold_indices),
+                )
+                representation_cache[cache_key] = representation
+            class_members.append(
+                GeometryCandidate(
+                    representation,
+                    state,
+                    str(result.structural.identity),
+                    tuple(threshold_indices),
+                    int(result.search.total_searchable),
+                )
+            )
+        representative_members[collapse_class_id] = tuple(class_members)
+        for threshold_index in threshold_indices:
+            _inputs, rows = threshold_rows[threshold_index]
+            members_list: list[GeometryCandidate] = []
+            for prep, result, indices, weights in rows:
+                item = prep["item"]
+                state = classify_representation(
+                    alignment_ok=_alignment_ok(indices, weights),
+                    searchable_count=int(result.search.total_searchable),
+                    medoid_defined=bool(indices),
+                    candidate_count=len(request.items) - 1,
+                    label_defined=_label_defined(item),
+                )
+                if not state.comparable:
+                    noncomparable.append(
+                        NonComparableEvidence(
+                            item.song_id,
+                            item.backbone,
+                            (int(threshold_index),),
+                            str(result.structural.identity),
+                            collapse_class_id,
+                            state.reasons,
+                        )
+                    )
+                representation = next(
+                    member.representation for member in class_members if member.representation.song_id == item.song_id
+                )
+                members_list.append(
+                    GeometryCandidate(
+                        representation,
+                        state,
+                        str(result.structural.identity),
+                        (int(threshold_index),),
+                        int(result.search.total_searchable),
                     )
                 )
-                continue
-            vectors = stream_store.batch_gather(item.song_id, item.backbone, indices, forbid_duplicates=True)
-            gather_count += 1
-            representation = FrozenSearchRepresentation(
-                item.song_id,
-                item.backbone,
-                indices,
-                vectors,
-                np.asarray(weights, dtype=np.float64),
-                sid,
-                record.geometry_id,
-                item.geometry_identity.observation_group_sha256,
-                str(search.profile_digest),
-                str(search.mask_digest),
-                int(search.scoring_semantics_version),
-                request.experiment,
-                threshold_indices,
-            )
-            candidate_records.append(
-                {
-                    "representation": representation,
-                    "state": state,
-                    "structural_identity": str(first.structural.identity),
-                    "threshold_indices": threshold_indices,
-                    "searchable_count": int(search.total_searchable),
-                }
-            )
-        medoid, _centrality = observed_global_medoid_from_gram(
-            np.asarray(record.matrix, dtype=np.float32), prep["mask"]
-        )
-        if medoid is not None:
-            baseline_indices = (int(medoid),)
-            baseline_vectors = stream_store.batch_gather(
-                item.song_id, item.backbone, baseline_indices, forbid_duplicates=True
-            )
-            gather_count += 1
-            prep["baseline"] = FrozenSearchRepresentation(
-                item.song_id,
-                item.backbone,
-                baseline_indices,
-                baseline_vectors,
-                np.ones(1, dtype=np.float64),
-                _stable_id("baseline", item.geometry_identity.observation_group_sha256, medoid),
-                _stable_id(item.song_id, item.backbone, item.geometry_identity.observation_group_sha256),
-                item.geometry_identity.observation_group_sha256,
-                str(profile.digest),
-                str(item.observation_evidence.get("mask_payload_sha256", "")),
-                request.scoring_semantics_version,
-                request.experiment,
-                (),
-                True,
-            )
+            members = tuple(members_list)
+            threshold_members[(collapse_class_id, int(threshold_index))] = members
+            threshold_hypotheses.append(GeometryCorpusHypothesis(str(threshold_index), collapse_class_id, members))
+            threshold_rosters[str(threshold_index)] = members
 
-    candidates = tuple(
-        GeometryCandidate(
-            record["representation"],
-            record["state"],
-            record["structural_identity"],
-            record["threshold_indices"],
-            record["searchable_count"],
-        )
-        for record in sorted(
-            candidate_records,
-            key=lambda record: (
-                record["representation"].song_id,
-                record["representation"].backbone,
-                record["representation"].search_representation_id,
-            ),
-        )
-    )
-
-    queries: list[GeometrySongAnalysis] = []
-    scorer_count = 0
+    # Build the observed global-medoid roster independently of winner representations.
     for prep in prepared:
         item = prep["item"]
-        other_candidates = tuple(
-            candidate for candidate in candidates if candidate.representation.song_id != item.song_id
+        medoid, _centrality = observed_global_medoid_from_gram(
+            np.asarray(prep["record"].matrix, dtype=np.float32), prep["mask"]
         )
-        candidate_roster = GeometryRepresentationRoster(
-            tuple(candidate.representation for candidate in other_candidates)
-        )
-        eligible_song_ids = tuple(sorted({candidate.representation.song_id for candidate in other_candidates}))
-        evidence_digest = "|".join(
-            sorted({str(candidate.representation.observation_group_sha256) for candidate in other_candidates})
-        )
-        query_state = classify_representation(
-            alignment_ok=prep["query_vectors"].shape[0] > 0,
-            searchable_count=int(prep["searchable_count"]),
-            medoid_defined=prep["baseline"] is not None,
-            candidate_count=len(other_candidates),
-            label_defined=_label_defined(item),
-        )
-        if not query_state.comparable:
-            queries.append(
-                GeometrySongAnalysis(
-                    item,
-                    prep["thresholds"],
-                    GeometryRepresentationRoster(()),
-                    GeometryScoreBundle(scores={}, evaluation_comparable=False),
-                    state=query_state,
-                )
-            )
+        if medoid is None:
             continue
-        evaluation = FrozenGeometryEvaluation(
-            evaluation_id=request.evaluation_id,
-            query_vectors=prep["query_vectors"],
-            query_weights=prep["query_weights"],
-            eligible_song_ids=eligible_song_ids,
-            observation_evidence_digest=evidence_digest,
-            comparable=query_state.comparable,
+        baseline_indices = (int(medoid),)
+        baseline_vectors = stream_store.batch_gather(
+            item.song_id, item.backbone, baseline_indices, forbid_duplicates=True
         )
-        winner_bundle = score_unique_geometry_representations(candidate_roster, evaluation, scoring)
-        scorer_count += winner_bundle.scorer_call_count
-        baseline = prep["baseline"]
-        baseline_scores: Mapping[str, float] = MappingProxyType({})
-        baseline_neighborhood: tuple[NeighborhoodEntry, ...] = ()
-        baseline_calls = 0
-        if baseline is not None and other_candidates:
-            baseline_evaluation = FrozenGeometryEvaluation(
-                evaluation_id=request.evaluation_id,
-                query_vectors=baseline.vectors,
-                query_weights=baseline.weights,
-                eligible_song_ids=eligible_song_ids,
-                observation_evidence_digest=evidence_digest,
-                comparable=query_state.comparable,
-            )
-            baseline_bundle = score_unique_geometry_representations(candidate_roster, baseline_evaluation, scoring)
-            baseline_calls = baseline_bundle.scorer_call_count
-            scorer_count += baseline_calls
-            baseline_scores = baseline_bundle.scores
-        lookup = {
-            candidate.representation.search_representation_id: candidate.representation
-            for candidate in other_candidates
-        }
-        neighborhood = _select_neighborhood(winner_bundle.scores, lookup)
-        if baseline_scores:
-            baseline_neighborhood = _select_neighborhood(baseline_scores, lookup)
-        baseline_score = max(baseline_scores.values()) if baseline_scores else None
-        bundle = GeometryScoreBundle(
-            scores=winner_bundle.scores,
-            baseline_score=baseline_score,
-            baseline_representation_id=baseline.search_representation_id if baseline is not None else None,
-            evaluation_comparable=query_state.comparable,
-            unique_representation_count=len(other_candidates),
-            source_gather_count=len(other_candidates),
-            scorer_call_count=winner_bundle.scorer_call_count + baseline_calls,
-            segmentation_from_scorer_count=0,
-        )
-        queries.append(
-            GeometrySongAnalysis(
-                item,
-                prep["thresholds"],
-                candidate_roster,
-                bundle,
-                state=query_state,
-                neighborhood=neighborhood,
-                baseline_neighborhood=baseline_neighborhood,
-            )
+        gather_count += 1
+        baseline_roster[(item.song_id, item.backbone)] = FrozenSearchRepresentation(
+            item.song_id,
+            item.backbone,
+            baseline_indices,
+            baseline_vectors,
+            np.ones(1, dtype=np.float64),
+            _stable_id("observed-medoid", item.geometry_identity.observation_group_sha256, medoid),
+            _stable_id(item.song_id, item.backbone, item.geometry_identity.observation_group_sha256),
+            item.geometry_identity.observation_group_sha256,
+            str(profile.digest),
+            str(item.observation_evidence.get("mask_payload_sha256", "")),
+            request.scoring_semantics_version,
+            request.experiment,
+            (),
+            True,
         )
 
-    # Re-read the CURRENT committed tuple at the execution boundary; a superseding
+    # Evaluate once per collapse class and song, never once per threshold copy.
+    queries: list[GeometrySongAnalysis] = []
+    scorer_count = 0
+    public_candidates: list[GeometryCandidate] = []
+    scored_queries: dict[tuple[str, str], GeometrySongAnalysis] = {}
+    for collapse_class_id, representative_members_for_class in representative_members.items():
+        public_candidates.extend(member for member in representative_members_for_class if member.state.comparable)
+        # Collapse may reuse equal scoring inputs, but each threshold is evaluated and published independently.
+        for threshold_index in class_thresholds[collapse_class_id]:
+            members = threshold_members[(collapse_class_id, threshold_index)]
+            for member in members:
+                cached_query = scored_queries.get((collapse_class_id, member.representation.song_id))
+                if cached_query is not None:
+                    threshold_roster = GeometryRepresentationRoster(
+                        tuple(
+                            candidate.representation
+                            for candidate in members
+                            if candidate.state.comparable
+                            and candidate.representation.song_id != member.representation.song_id
+                        )
+                    )
+                    queries.append(
+                        replace(
+                            cached_query,
+                            roster=threshold_roster,
+                            state=member.state,
+                            threshold_id=str(threshold_index),
+                        )
+                    )
+                    continue
+                item = next(
+                    item
+                    for item in request.items
+                    if item.song_id == member.representation.song_id and item.backbone == member.representation.backbone
+                )
+                winner_others = tuple(
+                    candidate
+                    for candidate in members
+                    if candidate.state.comparable and candidate.representation.song_id != item.song_id
+                )
+                winner_roster = GeometryRepresentationRoster(
+                    tuple(candidate.representation for candidate in winner_others)
+                )
+                query_state = member.state
+                if not query_state.comparable or not winner_roster.representations:
+                    queries.append(
+                        GeometrySongAnalysis(
+                            item,
+                            next(prep["thresholds"] for prep in prepared if prep["item"] == item),
+                            winner_roster,
+                            GeometryScoreBundle(scores={}, evaluation_comparable=False),
+                            state=query_state,
+                            threshold_id=str(threshold_index),
+                            collapse_class_id=collapse_class_id,
+                        )
+                    )
+                    continue
+                evaluation = FrozenGeometryEvaluation(
+                    evaluation_id=request.evaluation_id,
+                    query_vectors=member.representation.vectors,
+                    query_weights=member.representation.weights,
+                    eligible_song_ids=tuple(sorted(candidate.representation.song_id for candidate in winner_others)),
+                    observation_evidence_digest="|".join(
+                        sorted({candidate.representation.observation_group_sha256 for candidate in winner_others})
+                    ),
+                    comparable=True,
+                )
+                winner_bundle = score_unique_geometry_representations(winner_roster, evaluation, scoring)
+                scorer_count += winner_bundle.scorer_call_count
+                baseline_query = baseline_roster.get((item.song_id, item.backbone))
+                baseline_scores: Mapping[str, float] = MappingProxyType({})
+                baseline_calls = 0
+                baseline_neighborhood: tuple[NeighborhoodEntry, ...] = ()
+                if baseline_query is not None:
+                    baseline_others = tuple(
+                        rep
+                        for rep in baseline_roster.values()
+                        if rep.song_id != item.song_id and rep.song_id in evaluation.eligible_song_ids
+                    )
+                    baseline_roster_for_query = GeometryRepresentationRoster(
+                        tuple(
+                            FrozenSearchRepresentation(
+                                rep.song_id,
+                                rep.backbone,
+                                rep.source_indices,
+                                rep.vectors,
+                                rep.weights,
+                                f"{rep.search_representation_id}:baseline:{rep.song_id}:{rep.backbone}",
+                                rep.geometry_id,
+                                rep.observation_group_sha256,
+                                rep.numerical_profile_digest,
+                                rep.mask_digest,
+                                rep.scoring_semantics_version,
+                                rep.experiment,
+                                rep.structural_member_threshold_indices,
+                                False,
+                            )
+                            for rep in baseline_others
+                        )
+                    )
+                    baseline_bundle = score_unique_geometry_representations(
+                        baseline_roster_for_query,
+                        FrozenGeometryEvaluation(
+                            request.evaluation_id,
+                            baseline_query.vectors,
+                            baseline_query.weights,
+                            evaluation.eligible_song_ids,
+                            evaluation.observation_evidence_digest,
+                            True,
+                        ),
+                        scoring,
+                    )
+                    baseline_scores = baseline_bundle.scores
+                    baseline_calls = baseline_bundle.scorer_call_count
+                    scorer_count += baseline_calls
+                    baseline_lookup = {
+                        rep.search_representation_id: rep for rep in baseline_roster_for_query.representations
+                    }
+                    baseline_neighborhood = _select_neighborhood(baseline_scores, baseline_lookup)
+                lookup = {candidate.search_representation_id: candidate for candidate in winner_roster.representations}
+                query_result = GeometrySongAnalysis(
+                    item,
+                    next(prep["thresholds"] for prep in prepared if prep["item"] == item),
+                    winner_roster,
+                    GeometryScoreBundle(
+                        scores=winner_bundle.scores,
+                        baseline_score=max(baseline_scores.values()) if baseline_scores else None,
+                        baseline_representation_id=baseline_query.search_representation_id if baseline_query else None,
+                        evaluation_comparable=True,
+                        unique_representation_count=len(winner_roster.representations),
+                        source_gather_count=len(winner_roster.representations) + len(baseline_scores),
+                        scorer_call_count=winner_bundle.scorer_call_count + baseline_calls,
+                    ),
+                    state=query_state,
+                    neighborhood=_select_neighborhood(winner_bundle.scores, lookup),
+                    baseline_neighborhood=baseline_neighborhood,
+                    threshold_id=str(threshold_index),
+                    collapse_class_id=collapse_class_id,
+                )
+                scored_queries[(collapse_class_id, member.representation.song_id)] = query_result
+                queries.append(query_result)
+                continue
+
+    selected_baseline = dict(baseline_roster)
+    selected_members = tuple(public_candidates)
+    threshold_queries = tuple(queries)
+    # The canonical result is the complete threshold-scoped publication view.
+    # Equal collapse classes may reuse scorer work, but no threshold evidence is
+    # discarded or relabeled as a representative query.
+
+    # Re-read the current committed tuple at the execution boundary; a superseding
     # publication must refuse before any result escapes the owner.
     for prep in prepared:
         preflight_geometry_binding(prep["record"], profile, store=stream_store)
@@ -988,17 +1146,18 @@ def analyze_geometry_corpus(
     artist_metrics, genre_metrics, head_metrics, per_song_metrics, baseline_deltas = _geometry_ruler_metrics(
         tuple(queries)
     )
+    candidates = tuple(member for member in selected_members if member.state.comparable)
     counters = GeometryAnalysisCounters(
         geometry_loads,
         observation_loads,
         threshold_batches,
-        len(candidates),
+        len(representation_cache),
         gather_count,
         scorer_count,
         0,
     )
-    corpus_roster = GeometryRepresentationRoster(tuple(candidate.representation for candidate in candidates))
-    first_baseline = next((prep["baseline"] for prep in prepared if prep["baseline"] is not None), None)
+    corpus_roster = GeometryRepresentationRoster(tuple(member.representation for member in candidates))
+    first_baseline = next(iter(selected_baseline.values()), None)
     return GeometryCorpusAnalysis(
         request.run_id,
         request.execution_id,
@@ -1017,10 +1176,42 @@ def analyze_geometry_corpus(
         baseline_deltas=baseline_deltas,
         comparable=bool(queries) and all(query.state.comparable for query in queries),
         counters=counters,
+        synthetic_only=request.synthetic_only,
         queries=tuple(queries),
+        threshold_queries=threshold_queries,
         candidates=candidates,
         noncomparable=tuple(noncomparable),
+        hypotheses=tuple(threshold_hypotheses),
+        evidence_mode="synthetic_fixture" if request.synthetic_only else "empirical_request",
+        head_evidence_provenance=_corpus_head_provenance(request),
     )
+
+
+def _validate_corpus_head_evidence(request: GeometryCorpusRequest) -> None:
+    """Reject empirical requests that are not bound to complete current heads."""
+    if request.synthetic_only:
+        return
+    for item in request.items:
+        if item.synthetic_only or item.head_label is None or not item.head_suite_identity:
+            raise IntegrityRefused("INTEGRITY_REFUSED: empirical geometry request lacks complete current-head evidence")
+
+
+def _corpus_head_provenance(request: GeometryCorpusRequest) -> Mapping[str, Any]:
+    if request.synthetic_only:
+        return {}
+    return {
+        "head_suite_identities": sorted({str(item.head_suite_identity) for item in request.items}),
+        "head_labels_bound": sum(item.head_label is not None for item in request.items),
+        "current_head_bindings": [
+            {
+                "song_id": str(item.song_id),
+                "backbone": str(item.backbone),
+                "head_suite_identity": str(item.head_suite_identity),
+            }
+            for item in request.items
+        ],
+        "source": "current_committed_head_suite",
+    }
 
 
 def build_geometry_corpus_request(
@@ -1036,11 +1227,18 @@ def build_geometry_corpus_request(
     scoring_semantics_version: int,
     song_ids: Any = None,
     backbones: Any = None,
-    synthetic_only: bool = True,
+    head_store: Any = None,
+    synthetic_only: bool = False,
 ) -> GeometryCorpusRequest:
-    """Construct the exact, deterministic corpus request from committed evidence."""
-    if not synthetic_only:
-        raise ValueError("geometry analysis requests are synthetic-only")
+    """Construct a deterministic fixture or empirical corpus request.
+
+    Empirical mode resolves only the CURRENT committed head suite through the supplied
+    store seam; fixture mode may provide labels directly on its request items.
+    """
+    if not isinstance(synthetic_only, bool):
+        raise ValueError("synthetic_only must be boolean evidence mode")
+    if not synthetic_only and head_store is None:
+        raise ValueError("empirical geometry requests require a current head store")
     if not isinstance(profile, GeometryProfile):
         raise ValueError("profile must be GeometryProfile")
     items: list[GeometrySongRequest] = []
@@ -1050,6 +1248,17 @@ def build_geometry_corpus_request(
         record = verify_geometry_current(con, observation, profile=profile, exact_identity=identity)
         if record is None:
             raise IntegrityRefused("INTEGRITY_REFUSED: committed geometry is absent for the corpus request")
+        head_label = None
+        head_suite_identity = None
+        if synthetic_only:
+            head_label = song.get("head_label")
+        else:
+            from scripts.embedding_research.streams.heads_current import resolve_current_head_suite
+            from scripts.embedding_research.streams.records import parse_head_ids
+
+            selection = resolve_current_head_suite(head_store.output_root, song_id, backbone)
+            head_label = tuple(parse_head_ids(selection.record.head_ids))
+            head_suite_identity = selection.marker.head_set_fingerprint
         items.append(
             GeometrySongRequest(
                 song_id=song_id,
@@ -1058,7 +1267,9 @@ def build_geometry_corpus_request(
                 observation_evidence=dict(record.evidence),
                 artist=str(song["artist"]) if song.get("artist") else None,
                 genre=str(song["genre"]) if song.get("genre") else None,
-                synthetic_only=True,
+                head_label=head_label,
+                head_suite_identity=head_suite_identity,
+                synthetic_only=synthetic_only,
             )
         )
     return GeometryCorpusRequest(
@@ -1070,7 +1281,7 @@ def build_geometry_corpus_request(
         run_id=run_id,
         execution_id=execution_id,
         numerical_profile_digest=profile.digest,
-        synthetic_only=True,
+        synthetic_only=synthetic_only,
     )
 
 
@@ -1117,12 +1328,17 @@ def _corpus_backbones(result: GeometryCorpusAnalysis) -> tuple[str, ...]:
 
 
 def _analysis_query_pairs(result: GeometryCorpusAnalysis) -> tuple[tuple[Any, Any], ...]:
-    """Aligned ``(AllThresholdAnalysis, GeometrySongAnalysis)`` pairs in request order."""
-    if not result.queries:
+    """Align each published threshold query with its song's all-threshold analysis."""
+    source_queries = result.threshold_queries or result.queries
+    if not source_queries:
         return ()
-    if len(result.analyses) != len(result.queries):
-        raise ValueError("geometry corpus analyses and queries are misaligned")
-    return tuple(zip(result.analyses, result.queries, strict=True))
+    pairs: list[tuple[Any, Any]] = []
+    for query in source_queries:
+        analysis = query.thresholds
+        if analysis not in result.analyses:
+            raise ValueError("geometry corpus analyses and queries are misaligned")
+        pairs.append((analysis, query))
+    return tuple(pairs)
 
 
 def _analysis_searchable_count(analysis: Any) -> int:
@@ -1292,9 +1508,10 @@ def _membership_entries(result: GeometryCorpusAnalysis) -> tuple[GeometryMembers
 
 
 def _query_evidence_entries(result: GeometryCorpusAnalysis) -> tuple[GeometryQueryEvidence, ...]:
+    source_queries = result.threshold_queries or result.queries
     searchable = {entry.song_id: entry.searchable_count for entry in _membership_entries(result)}
     entries: list[GeometryQueryEvidence] = []
-    for query in result.queries:
+    for query in source_queries:
         bundle = query.scores
         winner = max((float(value) for value in bundle.scores.values()), default=0.0)
         baseline = None if bundle.baseline_score is None else float(bundle.baseline_score)
@@ -1313,6 +1530,8 @@ def _query_evidence_entries(result: GeometryCorpusAnalysis) -> tuple[GeometryQue
                 searchable_count=int(searchable.get(str(query.request.song_id), 0)),
                 neighborhood=query.neighborhood,
                 baseline_neighborhood=query.baseline_neighborhood,
+                threshold_id=str(query.threshold_id),
+                collapse_class_id=str(query.collapse_class_id),
             )
         )
     return tuple(entries)
@@ -1336,10 +1555,47 @@ def _corpus_metrics(result: GeometryCorpusAnalysis) -> dict[str, float]:
     return metrics
 
 
+def _hypothesis_payload(hypothesis: GeometryCorpusHypothesis) -> dict[str, Any]:
+    """Encode ordered threshold/collapse members without persisting vector arrays."""
+    members: list[dict[str, Any]] = []
+    for member in hypothesis.members:
+        representation = member.representation
+        members.append(
+            {
+                "song_id": str(representation.song_id),
+                "backbone": str(representation.backbone),
+                "search_representation_id": str(representation.search_representation_id),
+                "geometry_id": str(representation.geometry_id),
+                "observation_group_sha256": str(representation.observation_group_sha256),
+                "numerical_profile_digest": str(representation.numerical_profile_digest),
+                "mask_digest": str(representation.mask_digest),
+                "experiment": str(representation.experiment),
+                "source_indices": [int(value) for value in representation.source_indices],
+                "weights": [float(value) for value in representation.weights],
+                "structural_member_threshold_indices": [
+                    int(value) for value in representation.structural_member_threshold_indices
+                ],
+                "comparable": bool(member.state.comparable),
+                "defined": bool(member.state.defined),
+                "eligible": bool(member.state.eligible),
+                "reasons": list(member.state.reasons),
+                "structural_identity": str(member.structural_identity),
+                "threshold_indices": [int(value) for value in member.threshold_indices],
+                "searchable_count": int(member.searchable_count),
+            }
+        )
+    return {
+        "threshold_id": hypothesis.threshold_id,
+        "collapse_class_id": hypothesis.collapse_class_id,
+        "members": members,
+    }
+
+
 def _corpus_evidence(result: GeometryCorpusAnalysis) -> dict[str, Any]:
     from dataclasses import asdict
 
     membership = _membership_entries(result)
+    hypotheses = [_hypothesis_payload(item) for item in result.hypotheses]
     return {
         "role": "corpus",
         "run_id": str(result.run_id),
@@ -1377,6 +1633,10 @@ def _corpus_evidence(result: GeometryCorpusAnalysis) -> dict[str, Any]:
         "queries": [asdict(entry) for entry in _query_evidence_entries(result)],
         "noncomparable": [asdict(evidence) for evidence in result.noncomparable],
         "geometry_axes": _geometry_axes_payload(result),
+        "hypotheses": hypotheses,
+        "evidence_mode": str(result.evidence_mode),
+        "synthetic_only": bool(result.synthetic_only),
+        "head_evidence_provenance": dict(result.head_evidence_provenance),
     }
 
 
@@ -1407,8 +1667,16 @@ def write_geometry_corpus_analysis(
 
     if not isinstance(result, GeometryCorpusAnalysis) or result.refusal_status:
         raise ValueError("refused geometry analysis cannot be published")
+    expected_mode = "synthetic_fixture" if result.synthetic_only else "empirical_request"
+    if result.evidence_mode != expected_mode:
+        raise ValueError("geometry corpus evidence mode does not match request mode")
     if not result.synthetic_only:
-        raise ValueError("geometry corpus publication is synthetic-only")
+        provenance = result.head_evidence_provenance
+        if not provenance or provenance.get("source") != "current_committed_head_suite":
+            raise IntegrityRefused("INTEGRITY_REFUSED: empirical geometry evidence lacks frozen-head provenance")
+        identities = provenance.get("head_suite_identities")
+        if not isinstance(identities, (tuple, list)) or not identities or any(not str(item) for item in identities):
+            raise IntegrityRefused("INTEGRITY_REFUSED: empirical geometry evidence has incomplete head provenance")
     if not run_id or str(result.run_id) != str(run_id):
         raise ValueError("geometry corpus run identity does not match the publication run")
 
@@ -1594,9 +1862,115 @@ def _validated_corpus_evidence(
         raise ValueError("geometry corpus evidence belongs to a different execution")
     if str(corpus_evidence.get("evaluation_id")) != str(identity.evaluation_id):
         raise ValueError("geometry corpus evidence belongs to a different evaluation")
+    mode = corpus_evidence.get("evidence_mode")
+    synthetic_only = corpus_evidence.get("synthetic_only")
+    if mode not in {"synthetic_fixture", "empirical_request"} or not isinstance(synthetic_only, bool):
+        raise ValueError("geometry corpus evidence mode is missing or malformed")
+    if (mode == "synthetic_fixture") != synthetic_only:
+        raise ValueError("geometry corpus evidence mode does not match synthetic_only")
+    provenance = corpus_evidence.get("head_evidence_provenance")
+    if mode == "empirical_request":
+        if not isinstance(provenance, dict) or provenance.get("source") != "current_committed_head_suite":
+            raise ValueError("empirical geometry evidence is missing frozen-head provenance")
+        identities = provenance.get("head_suite_identities")
+        if not isinstance(identities, list) or not identities or any(not str(item) for item in identities):
+            raise ValueError("empirical geometry evidence has incomplete frozen-head provenance")
     _revalidate_geometry_axis_payloads(
         corpus_evidence.get("geometry_axes"), con, stream_store=stream_store, profile=profile
     )
+    membership = corpus_evidence.get("membership")
+    hypotheses = corpus_evidence.get("hypotheses")
+    threshold_map = corpus_evidence.get("threshold_map")
+    queries = corpus_evidence.get("queries")
+    if not isinstance(membership, list) or not membership:
+        raise ValueError("geometry corpus membership is missing")
+    if not isinstance(hypotheses, list) or not hypotheses:
+        raise ValueError("geometry corpus hypotheses are missing")
+    if not isinstance(threshold_map, list) or not threshold_map:
+        raise ValueError("geometry corpus threshold map is missing")
+    if not isinstance(queries, list) or not queries:
+        raise ValueError("geometry corpus queries are missing")
+    ordered_membership = [
+        (str(item.get("song_id", "")), str(item.get("backbone", ""))) for item in membership if isinstance(item, dict)
+    ]
+    if len(ordered_membership) != len(membership) or any(
+        not song or not backbone for song, backbone in ordered_membership
+    ):
+        raise ValueError("geometry corpus membership is malformed")
+    if len(set(ordered_membership)) != len(ordered_membership):
+        raise ValueError("geometry corpus membership contains duplicate songs")
+    hypothesis_context: set[tuple[str, str]] = set()
+    for hypothesis in hypotheses:
+        if (
+            not isinstance(hypothesis, dict)
+            or not hypothesis.get("threshold_id")
+            or not hypothesis.get("collapse_class_id")
+        ):
+            raise ValueError("geometry corpus hypothesis is malformed")
+        key = (str(hypothesis["threshold_id"]), str(hypothesis["collapse_class_id"]))
+        if key in hypothesis_context:
+            raise ValueError("geometry corpus hypothesis context is duplicated")
+        hypothesis_context.add(key)
+        members = hypothesis.get("members")
+        if not isinstance(members, list) or not members:
+            raise ValueError("geometry corpus hypothesis must contain ordered members")
+        ordered = [
+            (str(member.get("song_id", "")), str(member.get("backbone", "")))
+            for member in members
+            if isinstance(member, dict)
+        ]
+        if len(ordered) != len(members) or ordered != ordered_membership or len(set(ordered)) != len(ordered):
+            raise ValueError("geometry corpus hypothesis omits or reorders an ordered corpus member")
+        for member in members:
+            indices = member.get("threshold_indices")
+            source_indices = member.get("source_indices")
+            weights = member.get("weights")
+            if not isinstance(indices, list) or not indices:
+                raise ValueError("geometry corpus hypothesis is missing threshold context")
+            if any(isinstance(value, bool) or not isinstance(value, int) for value in indices):
+                raise ValueError("geometry corpus hypothesis threshold indices are malformed")
+            if (
+                not isinstance(source_indices, list)
+                or not isinstance(weights, list)
+                or len(source_indices) != len(weights)
+            ):
+                raise ValueError("geometry corpus hypothesis source/weight alignment is malformed")
+            if any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in source_indices):
+                raise ValueError("geometry corpus hypothesis source indices are malformed")
+            if any(
+                not isinstance(value, (int, float)) or isinstance(value, bool) or not np.isfinite(float(value))
+                for value in weights
+            ):
+                raise ValueError("geometry corpus hypothesis weights are malformed")
+    context_keys = set(hypothesis_context)
+    for query in queries:
+        if not isinstance(query, dict) or not query.get("threshold_id") or not query.get("collapse_class_id"):
+            raise ValueError("geometry corpus query is missing threshold context")
+        if (str(query["threshold_id"]), str(query["collapse_class_id"])) not in context_keys:
+            raise ValueError("geometry corpus query mixes threshold/collapse context")
+        if any(
+            str(reason) not in {"alignment_failed", "zero_searchable", "no_medoid", "no_candidates", "label_missing"}
+            for reason in query.get("reasons", [])
+        ):
+            raise ValueError("geometry corpus query has non-canonical reasons")
+        query_song = str(query.get("song_id", ""))
+        for key in ("neighborhood", "baseline_neighborhood"):
+            neighborhood = query.get(key)
+            if not isinstance(neighborhood, list):
+                raise ValueError("geometry corpus neighborhood is missing")
+            candidate_ids = [str(item.get("song_id", "")) for item in neighborhood if isinstance(item, dict)]
+            if (
+                len(candidate_ids) != len(neighborhood)
+                or len(candidate_ids) != len(set(candidate_ids))
+                or query_song in candidate_ids
+            ):
+                raise ValueError("geometry corpus neighborhood candidates must be unique and non-self")
+            if key == "baseline_neighborhood" and any(
+                "observed-medoid" not in str(item.get("search_representation_id", "")) for item in neighborhood
+            ):
+                raise ValueError("geometry corpus baseline neighborhood must use global medoid representations")
+    if any("raw-query" in str(corpus_evidence) or "raw_query" in str(corpus_evidence) for _ in (0,)):
+        raise ValueError("raw-query markers are forbidden in geometry corpus evidence")
     return corpus_evidence
 
 
@@ -1648,6 +2022,56 @@ def read_geometry_corpus_evidence(
     counters = raw.get("counters")
     if not isinstance(counters, dict):
         raise ValueError("geometry corpus counters are missing")
+    raw_hypotheses = _require_evidence_list(raw, "hypotheses")
+    {str(item.get("threshold_id")) for item in raw_hypotheses if isinstance(item, dict)}
+    {
+        (str(item.get("threshold_id")), str(item.get("collapse_class_id")))
+        for item in raw.get("queries", [])
+        if isinstance(item, dict)
+    }
+    for hypothesis in raw_hypotheses:
+        if (
+            not isinstance(hypothesis, dict)
+            or not hypothesis.get("threshold_id")
+            or not hypothesis.get("collapse_class_id")
+        ):
+            raise ValueError("geometry corpus hypothesis is malformed")
+        members = hypothesis.get("members")
+        if not isinstance(members, list) or not members:
+            raise ValueError("geometry corpus hypothesis must contain ordered members")
+        ids = [str(member.get("song_id", "")) for member in members if isinstance(member, dict)]
+        if len(ids) != len(members) or len(ids) != len(set(ids)):
+            raise ValueError("geometry corpus hypothesis members must be unique and ordered")
+        member_thresholds = {int(value) for member in members for value in member.get("threshold_indices", [])}
+        if any(
+            not isinstance(value, int) or isinstance(value, bool)
+            for member in members
+            for value in member.get("threshold_indices", [])
+        ):
+            raise ValueError("geometry corpus hypothesis threshold indices are malformed")
+        if not member_thresholds:
+            raise ValueError("geometry corpus hypothesis is missing threshold context")
+    canonical_reasons = {"alignment_failed", "zero_searchable", "no_medoid", "no_candidates", "label_missing"}
+    for query in raw.get("queries", []):
+        if not isinstance(query, dict) or not query.get("threshold_id") or not query.get("collapse_class_id"):
+            raise ValueError("geometry corpus query is missing threshold context")
+        if any(str(reason) not in canonical_reasons for reason in query.get("reasons", [])):
+            raise ValueError("geometry corpus query has non-canonical reasons")
+        for key in ("neighborhood", "baseline_neighborhood"):
+            neighborhood = query.get(key)
+            if not isinstance(neighborhood, list):
+                raise ValueError("geometry corpus neighborhood is missing")
+            candidate_ids = [str(item.get("song_id", "")) for item in neighborhood if isinstance(item, dict)]
+            if len(candidate_ids) != len(set(candidate_ids)):
+                raise ValueError("geometry corpus neighborhood candidates must be unique")
+            if str(query.get("song_id")) in candidate_ids:
+                raise ValueError("geometry corpus neighborhood cannot contain the query song")
+            if (
+                key == "baseline_neighborhood"
+                and neighborhood
+                and any("observed-medoid" not in str(item.get("search_representation_id", "")) for item in neighborhood)
+            ):
+                raise ValueError("geometry corpus baseline neighborhood must use global medoid representations")
     return GeometryCorpusEvidence(
         run_id=str(raw["run_id"]),
         execution_id=str(raw["execution_id"]),
@@ -1670,6 +2094,9 @@ def read_geometry_corpus_evidence(
         },
         baseline_deltas={str(k): float(v) for k, v in raw["baseline_deltas"].items()},
         counters=GeometryAnalysisCounters(**counters),
+        hypotheses=tuple(dict(item) for item in _require_evidence_list(raw, "hypotheses")),
+        evidence_mode=str(raw["evidence_mode"]),
+        head_evidence_provenance=dict(raw["head_evidence_provenance"]),
     )
 
 
@@ -1705,6 +2132,8 @@ def read_geometry_corpus_analysis(
         comparable=corpus_evidence.comparable,
         reasons=corpus_evidence.reasons,
         counters=counters,
+        evidence_mode=corpus_evidence.evidence_mode,
+        head_evidence_provenance=corpus_evidence.head_evidence_provenance,
     )
 
 
@@ -1868,6 +2297,8 @@ class GeometryQueryEvidence:
     searchable_count: int
     neighborhood: tuple[NeighborhoodEntry, ...]
     baseline_neighborhood: tuple[NeighborhoodEntry, ...]
+    threshold_id: str = ""
+    collapse_class_id: str = ""
 
     def __post_init__(self) -> None:
         _text(self.song_id, "song_id")
@@ -1908,6 +2339,9 @@ class GeometryCorpusEvidence:
     per_song_metrics: Mapping[str, Mapping[str, float]] = field(default_factory=dict)
     baseline_deltas: Mapping[str, float] = field(default_factory=dict)
     counters: GeometryAnalysisCounters = field(default_factory=GeometryAnalysisCounters)
+    hypotheses: tuple[dict[str, Any], ...] = ()
+    evidence_mode: str = "synthetic_fixture"
+    head_evidence_provenance: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         for name in ("run_id", "execution_id", "evaluation_id", "experiment", "numerical_profile_digest"):
@@ -1927,6 +2361,13 @@ class GeometryCorpusEvidence:
         object.__setattr__(self, "head_metrics", dict(self.head_metrics))
         object.__setattr__(self, "per_song_metrics", {str(k): dict(v) for k, v in self.per_song_metrics.items()})
         object.__setattr__(self, "baseline_deltas", dict(self.baseline_deltas))
+        if self.evidence_mode not in {"synthetic_fixture", "empirical_request"}:
+            raise ValueError("evidence_mode must identify synthetic_fixture or empirical_request")
+        object.__setattr__(self, "head_evidence_provenance", dict(self.head_evidence_provenance))
+        object.__setattr__(self, "hypotheses", tuple(dict(item) for item in self.hypotheses))
+        if self.evidence_mode not in {"synthetic_fixture", "empirical_request"}:
+            raise ValueError("evidence_mode must identify synthetic_fixture or empirical_request")
+        object.__setattr__(self, "head_evidence_provenance", dict(self.head_evidence_provenance))
 
 
 def _representation_scoring_pairs(search: Any) -> tuple[tuple[int, ...], tuple[float, ...]]:
@@ -1952,18 +2393,48 @@ def _label_defined(item: GeometrySongRequest) -> bool:
     return any(_ruler_label(getattr(item, name)) is not None for name in ("artist", "genre", "head_label"))
 
 
-def _normalized_query_vectors(stream: Any, mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Row-normalize the exact searchable observation rows into a finite query manifest."""
-    values = np.asarray(stream, dtype=np.float32)
-    searchable = values[np.asarray(mask, dtype=np.uint8) == 1]
-    if searchable.shape[0] == 0:
-        return np.zeros((0, values.shape[1]), dtype=np.float32), np.zeros(0, dtype=np.float64)
-    normalized = normalize_float32(searchable)
-    array = np.asarray(normalized, dtype=np.float32)
-    norms = np.linalg.norm(array, axis=1)
-    keep = np.isfinite(norms) & (norms > 0)
-    array = array[keep]
-    return np.array(array, dtype=np.float32, order="C", copy=True), np.ones(array.shape[0], dtype=np.float64)
+def _normalized_query_vectors(_stream: Any, _mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Reject the retired raw whole-song query representation."""
+    raise RuntimeError("raw whole-song query vectors are not a geometry representation")
+
+
+def _song_search_identity(
+    *,
+    request: GeometryCorpusRequest,
+    item: GeometrySongRequest,
+    search: Any,
+    indices: tuple[int, ...],
+    weights: tuple[float, ...],
+    _ordered_song_ids: tuple[str, ...],
+) -> str:
+    """Build a corpus-ready identity for one ordered song input."""
+    ordered_inputs = tuple(
+        CorpusSongSearchInput(
+            song_id=member.song_id,
+            observation_group_sha256=member.geometry_identity.observation_group_sha256,
+            mask_identity=str(
+                next(
+                    (
+                        candidate.observation_evidence.get("mask_payload_sha256", "")
+                        for candidate in request.items
+                        if candidate.song_id == member.song_id and candidate.backbone == member.backbone
+                    ),
+                    "",
+                )
+            ),
+            medoid_source_indices=indices if member.song_id == item.song_id else (),
+            normalized_searchable_weights=weights if member.song_id == item.song_id else (),
+            searchable_count=int(search.total_searchable) if member.song_id == item.song_id else 0,
+        )
+        for member in request.items
+    )
+    return search_representation_id(
+        experiment=request.experiment,
+        scoring_semantics_version=int(search.scoring_semantics_version),
+        geometry_semantics_version=str(request.experiment),
+        numerical_profile_digest=str(search.profile_digest),
+        ordered_song_inputs=ordered_inputs,
+    )
 
 
 def _select_neighborhood(
@@ -1975,14 +2446,16 @@ def _select_neighborhood(
     """Deterministic descending-score top-N with a search-identity tie-break."""
     ranked = sorted(((str(key), float(value)) for key, value in scores.items()), key=lambda pair: (-pair[1], pair[0]))
     entries: list[NeighborhoodEntry] = []
-    for rank, (key, value) in enumerate(ranked[:limit]):
+    seen_songs: set[str] = set()
+    for _rank, (key, value) in enumerate(ranked[:limit]):
         representation = lookup.get(key)
-        if representation is None:
+        if representation is None or representation.song_id in seen_songs:
             continue
+        seen_songs.add(representation.song_id)
         _finite(value, "score")
         entries.append(
             NeighborhoodEntry(
-                rank,
+                len(entries),
                 representation.song_id,
                 representation.backbone,
                 key,

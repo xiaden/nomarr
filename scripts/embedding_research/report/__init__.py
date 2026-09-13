@@ -372,10 +372,10 @@ def run(
 
     # Section builders (exact order contract).
     sections_raw: list[tuple[str, Any]] = [
-        ("summary", lambda: section_summary(wdf, bdf)),
+        ("summary", lambda: section_summary(wdf, bdf, corpus_evidence=corpus_evidence)),
         ("corpus", lambda: section_corpus(con)),
         ("analysis", lambda: section_analysis(df, identity, corpus_evidence=corpus_evidence)),
-        ("winners", lambda: section_winners(wdf, bdf)),
+        ("winners", lambda: section_winners(wdf, bdf, corpus_evidence=corpus_evidence)),
         ("head-analysis", lambda: section_head_analysis(con, run_id=run_id)),
         ("provenance", lambda: section_provenance(con, run_id=run_id)),
         ("efficiency", lambda: section_efficiency(con)),

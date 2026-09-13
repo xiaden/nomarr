@@ -48,7 +48,7 @@ Rules that MUST stay true about that data.
 
 ### 4. Private Implementation
 
-Direct persistence access is **private** to the domain. Other domains CANNOT call `db.library` directly — they MUST call library domain components.
+Persistence internals are **private** to the domain. Services and workflows may call injected public intent facades such as `db.library` for thin single-atomic-intent operations, while direct cross-domain persistence access remains component-owned.
 
 **Metaphor:** Domains are like in-process microservices. You call their API (components), you never touch their database directly.
 
@@ -58,7 +58,9 @@ Direct persistence access is **private** to the domain. Other domains CANNOT cal
 
 ### Rule 1: Components Enforce Invariants
 
-**Only components may import from persistence.**
+**Only components may import persistence internals directly.** Services and workflows may call
+injected public intent facades (`db.library`, `db.app`, and `db.ml`) for thin single-atomic-intent
+operations; direct cross-domain persistence access remains component-owned.
 
 ```python
 # ✅ GOOD — Component imports persistence
@@ -181,7 +183,7 @@ Each domain maps to a subfolder under `components/` and owns specific PostgreSQL
 - `tags` — Identity-only rows (`id`, `namespace`, `name`, `value`); no assignment metadata or integer application identity
 - `song_tags` — Edge-owned song/tag assignments and their `confidence`, `source`, and `created_at` metadata
 - `song_mood_calibration_markers` — Private additive current marker owned by `LibraryTagsDb`; it is publication metadata, not a synthetic tag or history/registry
-- `LibraryTagsDb` — Exact `SongIdentity`-only mood owner and same-transaction assignment/marker boundary; broader historical examples and residual documentation are deferred to O
+- `LibraryTagsDb` — Exact `SongIdentity`-only mood owner and same-transaction assignment/marker boundary; historical artifacts remain provenance only and do not define current ownership
 
 
 **Invariants:**

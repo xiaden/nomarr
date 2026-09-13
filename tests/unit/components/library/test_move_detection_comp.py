@@ -263,7 +263,6 @@ class TestApplyDetectedMoves:
         command = db.library.move_library_song.call_args.args[0]
         assert command.scan.normalized_path is None
         db.library.move_library_song.assert_called_once()
-        db.library.resolve_song_identity.assert_not_called()
 
     def test_reseeds_entity_tags_under_destination_identity(self) -> None:
         db = self._make_db()
@@ -287,7 +286,6 @@ class TestApplyDetectedMoves:
         # Tags are re-seeded under the DESTINATION locator returned by the move
         # intent (after a successful move the source locator no longer resolves);
         # the retired numeric resolve_song_identity(source song_id) bridge is gone.
-        db.library.resolve_song_identity.assert_not_called()
         db.library.replace_song_tags.assert_called_once_with(destination, assignments)
 
     def test_counts_applied_and_reseeds_per_move(self) -> None:
@@ -314,7 +312,6 @@ class TestApplyDetectedMoves:
         assert db.library.move_library_song.call_count == 2
         # One reseed per moved song under its own destination identity.
         assert db.library.replace_song_tags.call_count == 2
-        db.library.resolve_song_identity.assert_not_called()
 
     def test_skips_reseed_when_no_metadata_but_still_applies(self) -> None:
         db = self._make_db()
@@ -324,7 +321,6 @@ class TestApplyDetectedMoves:
 
         assert applied == 1
         db.library.move_library_song.assert_called_once()
-        db.library.resolve_song_identity.assert_not_called()
         db.library.replace_song_tags.assert_not_called()
 
     def test_logs_warning_and_still_applies_when_reseed_fails(self) -> None:
@@ -397,4 +393,3 @@ class TestApplyDetectedMoves:
             apply_detected_moves([move], {move.new_path: {"artist": "X"}}, db, Path("/music"))
 
         db.library.move_library_song.assert_called_once()
-        db.library.resolve_song_identity.assert_not_called()

@@ -111,7 +111,6 @@ class TestSetSongTagsBatch:
 
         set_song_tags_batch(mock_db, [])
 
-        mock_db.library.resolve_song_identities.assert_not_called()
         mock_db.library.list_song_tags_for_songs.assert_not_called()
         mock_db.library.replace_song_tags.assert_not_called()
 

@@ -13,6 +13,8 @@ corpus, filesystem Gram storage, or threshold-result table is involved.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import duckdb
 import numpy as np
 import pytest
@@ -20,7 +22,9 @@ import pytest
 from scripts.embedding_research.common.geometry_analysis import (
     FrozenSearchRepresentation,
     GeometryAnalysisCounters,
+    GeometryCandidate,
     GeometryCorpusAnalysis,
+    GeometryCorpusHypothesis,
     GeometryQueryEvidence,
     GeometryRepresentationRoster,
     GeometryScoreBundle,
@@ -43,7 +47,7 @@ from scripts.embedding_research.common.threshold_analysis import (
 )
 from scripts.embedding_research.db import ensure_schema, write_geometry
 from scripts.embedding_research.db.analyze_scope import invocation_state, record_analyze_invocation
-from scripts.embedding_research.db.geometry import GeometryIdentity
+from scripts.embedding_research.db.geometry import GeometryIdentity, IntegrityRefused
 from scripts.embedding_research.db.geometry_profile import GeometryProfile
 from scripts.embedding_research.db.identity_persistence import IdentityRefusal, write_analysis_rows
 from scripts.embedding_research.helpers.corpus_identity import RepresentationState
@@ -65,6 +69,7 @@ class _Identity:
     mask_semantics_version = "mask-v1"
     group_format_version = "group-v1"
     commit_sha256 = "commit-1"
+    observation_group_sha256 = "commit-1"
 
 
 class _StreamRecord:
@@ -153,6 +158,8 @@ def _song_analysis(
         state=state or RepresentationState(True, True, True, ()),
         neighborhood=neighborhood,
         baseline_neighborhood=baseline_neighborhood,
+        threshold_id=analysis.results[0].threshold.threshold_id,
+        collapse_class_id="collapse:representation-a",
     )
 
 
@@ -216,6 +223,19 @@ def _corpus(
         "mean_baseline": 0.25,
         "mean_delta": 0.25,
     }
+    hypothesis = GeometryCorpusHypothesis(
+        threshold_id=threshold.threshold_id,
+        collapse_class_id="collapse:representation-a",
+        members=(
+            GeometryCandidate(
+                roster.representations[0],
+                query.state,
+                structural.identity,
+                (threshold.index,),
+                3,
+            ),
+        ),
+    )
     return GeometryCorpusAnalysis(
         run_id=_RUN_ID,
         execution_id=_EXECUTION_ID,
@@ -242,6 +262,7 @@ def _corpus(
         comparable=comparable,
         counters=GeometryAnalysisCounters(1, 1, 1, 1, 1, 1, 0),
         queries=(query,),
+        hypotheses=(hypothesis,),
     )
 
 
@@ -311,7 +332,9 @@ def test_threshold_map_and_corpus_evidence_roundtrip() -> None:
     con = duckdb.connect(":memory:")
     ensure_schema(con)
     record = _seed_geometry(con)
-    result = _corpus(record, neighborhood=_neighborhood(100), baseline_neighborhood=_neighborhood(100, prefix="base"))
+    result = _corpus(
+        record, neighborhood=_neighborhood(100), baseline_neighborhood=_neighborhood(100, prefix="observed-medoid")
+    )
     write_geometry_corpus_analysis(con, run_id=_RUN_ID, result=result)
 
     identity = build_geometry_corpus_identity(result)
@@ -339,7 +362,7 @@ def test_threshold_map_and_corpus_evidence_roundtrip() -> None:
     assert len(query.neighborhood) == 100
     assert len(query.baseline_neighborhood) == 100
     assert query.neighborhood[0].search_representation_id == "rep-0"
-    assert query.baseline_neighborhood[0].search_representation_id == "base-0"
+    assert query.baseline_neighborhood[0].search_representation_id == "observed-medoid-0"
     con.close()
 
 
@@ -347,7 +370,7 @@ def test_non_comparable_corpus_publishes_explicit_reasons() -> None:
     con = duckdb.connect(":memory:")
     ensure_schema(con)
     record = _seed_geometry(con)
-    state = RepresentationState(False, False, False, ("no_searchable",))
+    state = RepresentationState(False, False, False, ("zero_searchable",))
     result = _corpus(record, comparable=False, state=state)
     write_geometry_corpus_analysis(con, run_id=_RUN_ID, result=result)
 
@@ -355,11 +378,11 @@ def test_non_comparable_corpus_publishes_explicit_reasons() -> None:
     identity = build_geometry_corpus_identity(result)
     loaded = read_geometry_corpus_analysis(con, run_id=_RUN_ID, identity=identity)
     assert loaded.comparable is False
-    assert "no_searchable" in loaded.reasons
+    assert "zero_searchable" in loaded.reasons
 
     evidence = read_geometry_corpus_evidence(con, run_id=_RUN_ID, identity=identity)
     assert evidence.comparable is False
-    assert "no_searchable" in evidence.reasons
+    assert "zero_searchable" in evidence.reasons
     assert evidence.queries[0].comparable is False
     con.close()
 
@@ -463,6 +486,40 @@ def test_reader_rejects_duplicate_and_nonfinite_rows() -> None:
     )
     with pytest.raises(ValueError, match="non-finite geometry evidence"):
         read_geometry_corpus_analysis(con, run_id=_RUN_ID, identity=identity)
+    con.close()
+
+
+def test_empirical_publication_requires_matching_frozen_head_provenance() -> None:
+    con = duckdb.connect(":memory:")
+    ensure_schema(con)
+    record = _seed_geometry(con)
+    empirical = replace(
+        _corpus(record),
+        synthetic_only=False,
+        evidence_mode="empirical_request",
+        head_evidence_provenance={
+            "source": "current_committed_head_suite",
+            "head_suite_identities": ["head-set-a"],
+            "head_labels_bound": 1,
+        },
+    )
+    write_geometry_corpus_analysis(con, run_id=_RUN_ID, result=empirical)
+    identity = build_geometry_corpus_identity(empirical)
+    loaded = read_geometry_corpus_evidence(con, run_id=_RUN_ID, identity=identity)
+    assert loaded.evidence_mode == "empirical_request"
+    assert loaded.head_evidence_provenance["head_suite_identities"] == ["head-set-a"]
+    con.close()
+
+
+def test_empirical_publication_refuses_missing_head_provenance_atomically() -> None:
+    con = duckdb.connect(":memory:")
+    ensure_schema(con)
+    record = _seed_geometry(con)
+    empirical = replace(_corpus(record), synthetic_only=False, evidence_mode="empirical_request")
+    with pytest.raises(IntegrityRefused, match="frozen-head provenance"):
+        write_geometry_corpus_analysis(con, run_id=_RUN_ID, result=empirical)
+    assert con.execute("SELECT count(*) FROM geometry_analysis_records").fetchone()[0] == 0
+    assert invocation_state(con, run_id=_RUN_ID)["obligations_present"] is False
     con.close()
 
 

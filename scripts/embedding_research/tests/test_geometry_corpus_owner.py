@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+from pathlib import Path
 from types import SimpleNamespace
 
 import duckdb
@@ -11,7 +13,9 @@ import pytest
 from scripts.embedding_research.common.geometry_analysis import (
     GeometryCorpusRequest,
     GeometrySongRequest,
+    IntegrityRefused,
     analyze_geometry_corpus,
+    build_geometry_corpus_request,
 )
 from scripts.embedding_research.common.threshold_analysis import (
     SecondaryChebyshevRequest,
@@ -34,6 +38,7 @@ class _Identity:
     group_format_version = "group-v1"
     commit_sha256 = "commit-1"
     observation_group_sha256 = "commit-1"
+    patch_count = 3
 
 
 class _StreamRecord:
@@ -193,15 +198,71 @@ def test_cross_experiment_identity_never_collapses() -> None:
     assert secondary_result.results[0].search.experiment != primary.experiment
 
 
+def test_builder_to_analyze_empirical_handoff_requires_frozen_current_head(monkeypatch) -> None:
+    con = duckdb.connect(":memory:")
+    ensure_schema(con)
+    observation, _record, _request = _seed(con)
+    store = _Store(observation)
+    profile = GeometryProfile.current()
+    song = {"song_id": "song-1", "artist": "artist-a", "genre": "genre-a"}
+    monkeypatch.setattr(
+        "scripts.embedding_research.common.geometry_analysis._selected_geometry_items",
+        lambda *_args: ((song, "backbone-a"),),
+    )
+    monkeypatch.setattr(
+        "scripts.embedding_research.streams.heads_current.resolve_current_head_suite",
+        lambda *_args: SimpleNamespace(
+            record=SimpleNamespace(head_ids="head-a,head-b"),
+            marker=SimpleNamespace(head_set_fingerprint="head-suite-current"),
+        ),
+    )
+    monkeypatch.setattr(
+        "scripts.embedding_research.streams.records.parse_head_ids",
+        lambda value: tuple(value.split(",")),
+    )
+    request = build_geometry_corpus_request(
+        con,
+        stream_store=store,
+        profile=profile,
+        threshold_request=dense_primary_threshold_request(),
+        experiment="temporal_global",
+        evaluation_id="evaluation-empirical",
+        run_id="run-empirical",
+        execution_id="execution-empirical",
+        scoring_semantics_version=1,
+        head_store=SimpleNamespace(output_root=Path("/synthetic/current-heads")),
+        synthetic_only=False,
+    )
+    result = analyze_geometry_corpus(request, con=con, stream_store=store, profile=profile)
+    assert result.synthetic_only is False
+    assert result.evidence_mode == "empirical_request"
+    assert result.head_evidence_provenance == {
+        "head_suite_identities": ["head-suite-current"],
+        "head_labels_bound": 1,
+        "current_head_bindings": [
+            {"song_id": "song-1", "backbone": "backbone-a", "head_suite_identity": "head-suite-current"}
+        ],
+        "source": "current_committed_head_suite",
+    }
+    assert len(result.analyses) == 1 and len(result.analyses[0].results) == 171
+    assert result.hypotheses and result.queries
+
+    missing = replace(request.items[0], head_label=None)
+    refused = replace(request, items=(missing,))
+    with pytest.raises(IntegrityRefused, match="current-head evidence"):
+        analyze_geometry_corpus(refused, con=con, stream_store=store, profile=profile)
+    con.close()
+
+
 def test_supersession_refuses_before_result_publication() -> None:
     con = duckdb.connect(":memory:")
     ensure_schema(con)
     observation, _record, request = _seed(con)
-    original = observation.identity.commit_sha256
-    observation.identity.commit_sha256 = "commit-superseded"
+    original = observation.identity.observation_group_sha256
+    observation.identity.observation_group_sha256 = "commit-superseded"
     with pytest.raises(StaleRefused, match="requested geometry identity"):
         analyze_geometry_corpus(
             request, con=con, stream_store=_Store(observation), profile=GeometryProfile.current(), scoring=_scorer([])
         )
-    assert observation.identity.commit_sha256 != original
+    assert observation.identity.observation_group_sha256 != original
     con.close()

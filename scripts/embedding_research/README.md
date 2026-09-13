@@ -3,9 +3,11 @@
 Research-only pipeline. This directory contains no production code; nothing here changes
 production behavior. The focused corrective plan `TASK-gram-geometry-corrective-repair` is the
 active authority over the superseded migration notes below. DB-persisted per-song Gram geometry
-feeds synthetic corpus-wide leave-one-out retrieval in which a query is never its own candidate;
-each committed Gram and exact mask is decoded once per song and all 171 thresholds are derived
-before scoring. Evaluation identity is segmentation-independent, the observed global-medoid
+feeds corpus-wide leave-one-out retrieval through two explicit bounded evidence modes:
+`synthetic_fixture` and `empirical_request`. The latter is bound to current frozen-head provenance;
+neither mode executes a real corpus, model, audio, ONNX, or CUDA. A query is never its own
+candidate; each committed Gram and exact mask is decoded once per song and all 171 thresholds are
+derived before scoring. Evaluation identity is segmentation-independent, the observed global-medoid
 baseline uses the same candidate population as the winner neighborhoods, and comparability,
 threshold/corpus maps, per-query ruler metrics, and at least one hundred top-N neighborhoods are
 persisted (non-comparable entries keep explicit reasons). The production Gram kernel row-normalizes
@@ -19,7 +21,7 @@ Historical migration-status paragraphs below are retained only as context. The a
 
 ## Current-head H–M repair boundary
 
-The corrective repair is evaluated at current HEAD `59aa4a20feb141d8c377d0ef7c6fb602cf8b11e0`. Evidence is synthetic-only, and the active runtime intentionally publishes no repository/source traceability metadata. `observation_group_sha256` is the sole observation-publication identity; scientific artifact SHA-256 values remain retained separately.
+The corrective repair is evaluated against the active committed HEAD selected by the runtime. Evidence is either an `empirical_request` bound to complete frozen current-head semantic-head suite/head-set provenance or an explicit `synthetic_fixture`; both are bounded CPU-only derived modes, and neither executes a real corpus, model, audio, ONNX, or CUDA. The active runtime intentionally publishes no repository/source traceability metadata. `observation_group_sha256` is the sole observation-publication identity; scientific artifact SHA-256 values remain retained separately.
 
 Corpus retrieval is corpus-wide leave-one-out: each query is excluded from its candidate population, the observed baseline uses that same population, and artist, genre, and frozen-head rulers remain independent. `search_representation_id` is independent of threshold and structural identity. JSON evidence artifacts and their scientific hashes belong under the evidence root; the human HTML viewer is written under the external sibling runtime `docs/` directory (never `OUTPUT_ROOT/docs`), while logs, locks, caches/streams/sidecars, DuckDB, and patch arrays remain outside the JSON root.
 
@@ -60,7 +62,7 @@ See `CONTRACTS.md` for the binding API and `FINDINGS.md` for run conclusions.
 
 ## Migration status
 
-The corrective hard cut is complete. Active callers, fixtures, reports, maintenance seams, schema consumers, and serialized phases consume the DB-persisted Gram geometry contract. Evidence is synthetic and report-only: scientific artifact hashes remain visible, while repository metadata is intentionally absent. No compatibility runtime, dual reader/writer, filesystem-owned geometry store, real-corpus run, or interactive explorer remains.
+The corrective hard cut is complete. Active callers, fixtures, reports, maintenance seams, schema consumers, and serialized phases consume the DB-persisted Gram geometry contract. Evidence is report-only: empirical-request and synthetic-fixture modes remain distinct, scientific artifact hashes remain visible, while repository metadata is intentionally absent. No compatibility runtime, dual reader/writer, filesystem-owned geometry store, real-corpus run, or interactive explorer remains.
 
 - **Design contract**: see `CONTRACTS.md` (the authoritative module/API reference).
 - **Findings log**: see `FINDINGS.md` (per-run conclusions, decisions, final semantics).
@@ -109,7 +111,10 @@ The sole scientific evidence root is `config.OUTPUT_ROOT` (`/workspace/scripts/o
 
 
 `report` renders exactly seven sections (`summary`, `corpus`, `analysis`, `winners`,
-`head-analysis`, `provenance`, `efficiency`) and selects a completed scope per `run_id`; a
+`head-analysis`, `provenance`, `efficiency`) from canonical corpus evidence. The `analysis`
+section renders threshold/collapse maps, ordered membership and states/reasons, per-query winner
+metrics and neighborhoods, and separately observed-baseline neighborhoods (including the
+`section_summary` winner/baseline split). It selects a completed scope per `run_id`; a
 contradictory or incomplete run is refused, never silently selected. The `winners` baseline per
 `(backbone, sim_metric, k, metric)` is the observed whole-song source medoid baseline, which is
 never itself a winner candidate. See `CONTRACTS.md` for the full section contract.
@@ -122,8 +127,7 @@ The research test baseline is:
 python -m pytest scripts/embedding_research/tests/ -x -q
 ```
 
-Tests are deterministic and synthetic-only; no audio, model, ONNX, or CUDA is required for the
-`geometry`, `analyze`, `head-analysis`, and `report` phases.
+Tests are deterministic and use bounded synthetic fixtures or empirical requests bound to existing frozen current-head evidence; neither mode executes a real corpus, model, audio, ONNX, or CUDA in the `geometry`, `analyze`, `head-analysis`, and `report` phases.
 
 ## Maintenance reset scopes
 

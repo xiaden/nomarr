@@ -23,8 +23,9 @@ from nomarr.helpers.song_locator_codec import decode_song_locator
 if TYPE_CHECKING:
     from nomarr.persistence.db import Database
 
-# Q3-G consumes the Q3-C public carrier-to-locator projection. The tag
-# assignment projection is now the public ``assignments_to_tags`` (Q3-H).
+# Tag curation uses the public carrier-to-locator projection and semantic
+# SongLocator values. Tag assignments use the public ``assignments_to_tags``
+# projection; tag persistence remains owned by the tagging facade.
 
 
 class TaggingCurationMixin:
@@ -221,7 +222,9 @@ class TaggingCurationMixin:
             values: The new values to assign.
 
         Returns:
-            A dict keyed by ``file_id`` (API contract), ``name`` and ``tags``.
+            An API wire-shaped dict with ``file_id``, ``name``, and ``tags``.
+            The ``file_id`` value is the same opaque ``nom1`` token supplied in
+            ``song_id``; it is a wire field name, not an integer identity.
         """
         self._reject_nom_prefix(name=name)
         song = self._song_identity_from_token(song_id)

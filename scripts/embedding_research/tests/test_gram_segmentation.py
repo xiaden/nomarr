@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from scripts.embedding_research.helpers.gram_segmentation import (
+    ZERO_CENTROID_NORM_THRESHOLD,
     GramRefusalError,
     derive_all_temporal_global,
     derive_temporal_global_from_gram,
@@ -202,3 +203,28 @@ def test_zero_norm_and_source_order() -> None:
         derive_temporal_global_from_gram(np.eye(2, dtype=np.float32), True)
     with pytest.raises(GramRefusalError):
         derive_temporal_global_from_gram(np.eye(2, dtype=np.float32), -1)
+
+
+@pytest.mark.unit
+def test_row_distance_matches_independent_vector_oracle_for_exact_and_near_cancellation() -> None:
+    from scripts.embedding_research.helpers.gram_segmentation import _row_distance
+
+    def oracle(gram: np.ndarray, row: int, indices: list[int]) -> tuple[np.float32, bool]:
+        # Independent reconstruction from Gram entries: running sum norm and row dot.
+        norm_sq = np.float32(np.sum(gram[np.ix_(indices, indices)], dtype=np.float32))
+        norm = np.float32(np.sqrt(max(float(norm_sq), 0.0), dtype=np.float32))
+        row_norm = np.float32(np.sqrt(max(float(gram[row, row]), 0.0), dtype=np.float32))
+        if norm <= ZERO_CENTROID_NORM_THRESHOLD:
+            return row_norm, True
+        dot = np.float32(np.sum(gram[row, indices], dtype=np.float32) / norm)
+        return np.float32(np.sqrt(max(float(row_norm * row_norm + np.float32(1.0) - 2 * dot), 0.0))), False
+
+    for stream in (
+        np.asarray([[1.0, 0.0], [-1.0, 0.0], [0.0, 1.0]], dtype=np.float32),
+        np.asarray([[1.0, 0.0], [-1.0 + np.float32(1e-7), 0.0], [0.0, 1.0]], dtype=np.float32),
+    ):
+        gram, _ = gram_from_stream(stream)
+        expected, zero_branch = oracle(gram, 2, [0, 1])
+        actual = _row_distance(gram, 2, [0, 1])
+        assert actual == pytest.approx(expected, abs=1e-6)
+        assert zero_branch is True

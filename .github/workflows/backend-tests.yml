@@ -149,25 +149,22 @@ jobs:
   # existing `test`/`architecture-qc` applicability and is recorded here honestly;
   # it is not a database-tests-specific gap.
   #
-  # Scope: the characterization suite (including the D3 mood-owner/marker suite
-  # `tests/characterization/test_mood_owner_pg.py` and the D3D-B real-driver
+  # Scope: the characterization suite (including the mood-owner/marker suite
+  # `tests/characterization/test_mood_owner_pg.py` and the real-driver
   # fault-evidence module `tests/characterization/test_mood_owner_pg_faults.py`),
-  # the UUID locator integration matrix, and the DB-backed sabotage contract
-  # tests. The explicit command below is the discoverable CI home for PostgreSQL,
-  # transaction, rollback, concurrency, SQLSTATE, UUID-locator, and the D3
-  # mood-marker/mood-batch/ambiguous-commit evidence. It now also covers the
-  # previously-blocked pgcode-less commit-ack-drop (D3A-D2) and connection-loss
-  # (D3A-D3) classes through the deterministic D3D-A TCP fault harness
-  # (`tests/characterization/pg_fault_proxy.py`, DROP_ACK + SEVER, LOCAL_PASS);
-  # both are collected via the `tests/characterization/` path with no hidden
-  # exclusion and no failure-suppression keyword. It also collects the Q3-A
+  # the UUID locator integration matrix, and the DB-backed sabotage tests. The
+  # explicit command below is the discoverable CI home for PostgreSQL,
+  # transaction, rollback, concurrency, SQLSTATE, UUID-locator, and
+  # mood-marker/mood-batch/ambiguous-commit evidence. It also covers pgcode-less
+  # commit-ack-drop and connection-loss cases through the deterministic TCP fault
+  # harness (`tests/characterization/pg_fault_proxy.py`, DROP_ACK + SEVER,
+  # LOCAL_PASS); both are collected via the `tests/characterization/` path with
+  # no hidden exclusion and no failure-suppression keyword. It also collects the
   # create-only / single-transaction boundary suite
   # `tests/integration/test_song_upsert_state_boundary_pg.py`; because this job
   # does not provide `NOMARR_TEST_DATABASE_URL`, that module is skip-only in CI
-  # today (wired-not-run = CI_DEFERRED, never CI_PASS). (No approved-decoder suite is wired; the
-  # previous approved-decoder
-  # claim was removed by D3A P1-S5 as unsupported — do not re-add without an
-  # independently wired and executed decoder suite.)
+  # today (collected but not executed). No approved-decoder suite is wired; add
+  # one only when an independently wired and executed decoder suite exists.
   #
   # Setup note: the fixtures (tests/characterization/conftest.py and
   # tests/sabotage/conftest.py) use testcontainers' PostgresContainer, which

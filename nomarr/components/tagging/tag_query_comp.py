@@ -34,7 +34,7 @@ if TYPE_CHECKING:
 def _project_song_locators(db: Database, songs: Sequence[Song]) -> list[SongIdentity]:
     """Project bare semantic songs to their UUID-bearing locators in input order.
 
-    Uses the Q3-C public projection :func:`locators_for_carriers`; a song whose
+    Uses the public carrier projection :func:`locators_for_carriers`; a song whose
     owning library or row no longer resolves is skipped deterministically. No
     generated id, row, resolver, or physical-path heuristic participates.
     """

@@ -62,20 +62,21 @@ def _identity_module():
 
 def _representation_id(**overrides):
     module = _identity_module()
-    kwargs = {
-        "experiment": "temporal_global",
-        "scoring_semantics_version": 1,
-        "geometry_semantics_version": "gram-v1",
-        "numerical_profile_digest": "a" * 64,
-        "observation_group_sha256": "b" * 64,
-        "mask_identity": "c" * 64,
-        "ordered_corpus_song_ids": ("s1", "s2", "s3"),
-        "medoid_source_indices": (0, 2, 5),
-        "normalized_searchable_weights": (0.5, 0.25, 0.25),
-        "searchable_count": 3,
-    }
-    kwargs.update(overrides)
-    return module.search_representation_id(**kwargs)
+    inputs = overrides.pop(
+        "ordered_song_inputs",
+        (
+            module.CorpusSongSearchInput("s1", "b" * 64, "c" * 64, (0,), (0.5,), 1),
+            module.CorpusSongSearchInput("s2", "d" * 64, "e" * 64, (2,), (0.25,), 1),
+            module.CorpusSongSearchInput("s3", "f" * 64, "g" * 64, (5,), (0.25,), 1),
+        ),
+    )
+    return module.search_representation_id(
+        experiment=overrides.pop("experiment", "temporal_global"),
+        scoring_semantics_version=overrides.pop("scoring_semantics_version", 1),
+        geometry_semantics_version=overrides.pop("geometry_semantics_version", "gram-v1"),
+        numerical_profile_digest=overrides.pop("numerical_profile_digest", "a" * 64),
+        ordered_song_inputs=inputs,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -199,18 +200,57 @@ def test_search_representation_id_signature_excludes_structural_inputs() -> None
 
 
 def test_search_representation_id_is_order_sensitive_to_corpus_population() -> None:
-    forward = _representation_id(ordered_corpus_song_ids=("s1", "s2", "s3"))
-    reversed_population = _representation_id(ordered_corpus_song_ids=("s3", "s2", "s1"))
+    module = _identity_module()
+    forward = _representation_id()
+    reversed_population = _representation_id(
+        ordered_song_inputs=tuple(
+            reversed(
+                (
+                    module.CorpusSongSearchInput("s1", "b" * 64, "c" * 64, (0,), (0.5,), 1),
+                    module.CorpusSongSearchInput("s2", "d" * 64, "e" * 64, (2,), (0.25,), 1),
+                    module.CorpusSongSearchInput("s3", "f" * 64, "g" * 64, (5,), (0.25,), 1),
+                )
+            )
+        )
+    )
     assert forward != reversed_population
 
 
 def test_search_representation_id_tracks_medoid_and_weight_inputs() -> None:
+    module = _identity_module()
     base = _representation_id()
-    assert base != _representation_id(medoid_source_indices=(2, 0, 5))
-    assert base != _representation_id(normalized_searchable_weights=(0.5, 0.5, 0.0))
-    assert base != _representation_id(searchable_count=2)
-    assert base != _representation_id(mask_identity="d" * 64)
-    assert base != _representation_id(observation_group_sha256="e" * 64)
+    inputs = (
+        module.CorpusSongSearchInput("s1", "b" * 64, "c" * 64, (0,), (0.5,), 1),
+        module.CorpusSongSearchInput("s2", "d" * 64, "e" * 64, (2,), (0.25,), 1),
+        module.CorpusSongSearchInput("s3", "f" * 64, "g" * 64, (5,), (0.25,), 1),
+    )
+    assert base != _representation_id(
+        ordered_song_inputs=(module.CorpusSongSearchInput("s1", "b" * 64, "c" * 64, (1,), (0.5,), 1), *inputs[1:])
+    )
+    assert base != _representation_id(
+        ordered_song_inputs=(
+            inputs[0],
+            module.CorpusSongSearchInput("s2", "d" * 64, "e" * 64, (2,), (0.5,), 1),
+            inputs[2],
+        )
+    )
+    assert base != _representation_id(
+        ordered_song_inputs=(
+            inputs[0],
+            inputs[1],
+            module.CorpusSongSearchInput("s3", "f" * 64, "g" * 64, (5,), (0.25,), 2),
+        )
+    )
+    assert base != _representation_id(
+        ordered_song_inputs=(
+            inputs[0],
+            module.CorpusSongSearchInput("s2", "d" * 64, "x" * 64, (2,), (0.25,), 1),
+            inputs[2],
+        )
+    )
+    assert base != _representation_id(
+        ordered_song_inputs=(module.CorpusSongSearchInput("s1", "x" * 64, "c" * 64, (0,), (0.5,), 1), *inputs[1:])
+    )
 
 
 def test_structural_identity_is_separate_from_search_identity() -> None:
@@ -304,7 +344,8 @@ def test_observation_group_identity_symbol_is_hard_cut() -> None:
             violations.append(str(path.relative_to(PACKAGE_ROOT)))
     assert violations == [], violations
     module = _identity_module()
-    assert "observation_group_sha256" in inspect.signature(module.search_representation_id).parameters
+    assert "ordered_song_inputs" in inspect.signature(module.search_representation_id).parameters
+    assert "observation_group_sha256" in module.CorpusSongSearchInput.__annotations__
 
 
 def test_current_head_repair_chain_and_boundaries_are_frozen() -> None:

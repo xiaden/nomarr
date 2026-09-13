@@ -94,36 +94,43 @@ def test_select_neighborhood_skips_keys_absent_from_lookup() -> None:
     assert all(entry.search_representation_id != "rep-missing" for entry in neighborhood)
 
 
-# ── GAP 2: _normalized_query_vectors ───────────────────────────────────────────
+# ── GAP 2: threshold-derived medoid/query projections ──────────────────────────
 
 
-def test_normalized_query_vectors_all_zero_mask_is_empty() -> None:
-    stream = np.asarray([[1.0, 0.0], [0.0, 1.0]], dtype=np.float32)
-    mask = np.zeros(2, dtype=np.uint8)
+def test_threshold_projection_derives_observed_medoids_and_query_weights() -> None:
+    from scripts.embedding_research.helpers.gram_segmentation import (
+        derive_temporal_global_from_gram,
+        search_projection_from_gram,
+    )
 
-    vectors, weights = _normalized_query_vectors(stream, mask)
+    stream = np.asarray([[1.0, 0.0], [1.0, 0.0], [0.0, 1.0]], dtype=np.float32)
+    gram, _ = gram_from_stream(stream)
+    structural = derive_temporal_global_from_gram(gram, 0)
+    projection = search_projection_from_gram(structural, gram, np.ones(3, dtype=np.uint8))
 
-    assert vectors.shape == (0, 2)
-    assert vectors.dtype == np.float32
-    assert weights.shape == (0,)
-    assert weights.dtype == np.float64
+    assert projection.total_searchable == 3
+    assert [segment.medoid_source_index for segment in projection.segments] == [0, 2]
+    assert [segment.searchable_weight for segment in projection.segments] == pytest.approx([2 / 3, 1 / 3])
 
 
-def test_normalized_query_vectors_drops_zero_rows_and_returns_canonical_arrays() -> None:
-    # Row 1 is searchable but all-zero, so the norms > 0 filter must drop it.
-    stream = np.asarray([[3.0, 4.0], [0.0, 0.0], [0.0, 2.0]], dtype=np.float32)
-    mask = np.ones(3, dtype=np.uint8)
+def test_retired_raw_query_helper_remains_tombstoned() -> None:
+    with pytest.raises(RuntimeError, match="raw whole-song query vectors"):
+        _normalized_query_vectors(np.ones((1, 2), dtype=np.float32), np.ones(1, dtype=np.uint8))
 
-    vectors, weights = _normalized_query_vectors(stream, mask)
 
-    assert vectors.shape == (2, 2)
-    assert vectors.dtype == np.float32
-    assert np.isfinite(vectors).all()
-    assert not np.any(np.all(vectors == 0.0, axis=1))
-    assert np.allclose(np.linalg.norm(vectors, axis=1), 1.0)
-    assert weights.dtype == np.float64
-    assert weights.shape == (2,)
-    assert weights.tolist() == [1.0, 1.0]
+def test_threshold_projection_refuses_empty_searchable_query() -> None:
+    from scripts.embedding_research.helpers.gram_segmentation import (
+        derive_temporal_global_from_gram,
+        search_projection_from_gram,
+    )
+
+    gram, _ = gram_from_stream(np.asarray([[1.0, 0.0], [0.0, 1.0]], dtype=np.float32))
+    structural = derive_temporal_global_from_gram(gram, 0)
+    projection = search_projection_from_gram(structural, gram, np.zeros(2, dtype=np.uint8))
+
+    assert projection.total_searchable == 0
+    assert all(segment.medoid_source_index is None for segment in projection.segments)
+    assert all(segment.searchable_weight == 0.0 for segment in projection.segments)
 
 
 # ── GAP 3: read_threshold_map_rows exact scope and filtering ───────────────────

@@ -323,6 +323,18 @@ def validate_report(path: str | Path, html_path: str | Path | None = None) -> li
         threshold_map = corrective.get("threshold_map", {})
         if threshold_map.get("count") != 171:
             problems.append("threshold map must contain all 171 hypotheses")
+        analysis_section = _section(data, "analysis") or {}
+        table_ids = {table.get("id") for table in analysis_section.get("tables", []) if isinstance(table, dict)}
+        if not ({"geometry_threshold_collapse_context", "geometry_threshold_map"} & table_ids):
+            problems.append("per-threshold/collapse evidence is missing")
+        corpus_map = corrective.get("corpus_map", {})
+        if corpus_map.get("candidate_population") != "ordered_corpus_song_ids" or not corpus_map.get("leave_one_out"):
+            problems.append("ordered corpus/collapse evidence is missing")
+        serialized = json.dumps(data, sort_keys=True)
+        if "raw-query" in serialized or "raw_query" in serialized or "whole-song query" in serialized:
+            problems.append("raw-query markers are forbidden")
+        if data.get("synthetic_only") is not True:
+            problems.append("fixture report must remain explicitly synthetic")
         comparability = corrective.get("comparability", {})
         if not isinstance(comparability, dict):
             problems.append("comparability corrective evidence is missing")

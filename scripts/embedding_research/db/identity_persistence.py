@@ -171,7 +171,7 @@ def read_head_evidence(con, *, run_id: str, identity: Any) -> tuple[dict[str, An
     """Read persisted head-evidence payloads for one exact geometry identity."""
     ident = _identity(identity)
     rows = con.execute(
-        "SELECT evidence_json FROM geometry_head_evidence WHERE run_id=? AND geometry_id=? AND observation_group_sha256=? AND geometry_semantics_version=? AND numerical_profile_digest=? AND threshold_id=? AND evaluation_id=? AND search_representation_id=? AND execution_id=? ORDER BY head,segment_id",
+        "SELECT evidence_json FROM geometry_head_evidence WHERE run_id=? AND geometry_id=? AND observation_group_sha256=? AND geometry_semantics_version=? AND numerical_profile_digest=? AND threshold_id=? AND structural_identity=? AND search_representation_id=? AND evaluation_id=? AND scoring_semantics_version=? AND execution_id=? ORDER BY head,segment_id",
         [run_id, *ident.values()],
     ).fetchall()
     if not rows:

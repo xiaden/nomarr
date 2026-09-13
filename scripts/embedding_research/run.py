@@ -219,10 +219,11 @@ def _run_analyze(con, cfg: dict, run_id: str) -> dict:
         write_geometry_corpus_analysis,
     )
     from scripts.embedding_research.db.geometry_profile import GeometryProfile
-    from scripts.embedding_research.streams.store import StreamStore
+    from scripts.embedding_research.streams.store import HeadStreamStore, StreamStore
 
     profile = GeometryProfile.current()
     store = StreamStore(con, output_root=cfg.get("runtime_root") or RUNTIME_ROOT)
+    heads = HeadStreamStore(con, output_root=cfg.get("runtime_root") or RUNTIME_ROOT)
     request = build_geometry_corpus_request(
         con,
         stream_store=store,
@@ -235,6 +236,8 @@ def _run_analyze(con, cfg: dict, run_id: str) -> dict:
         scoring_semantics_version=1,
         song_ids=cfg.get("song_ids"),
         backbones=cfg.get("backbones"),
+        head_store=heads,
+        synthetic_only=False,
     )
     result = analyze_geometry_corpus(request, con=con, stream_store=store, profile=profile)
     write_geometry_corpus_analysis(con, run_id=run_id, result=result, stream_store=store, profile=profile)
@@ -267,6 +270,8 @@ def _run_head_analysis(con, cfg: dict, run_id: str) -> dict:
         scoring_semantics_version=1,
         song_ids=cfg.get("song_ids"),
         backbones=cfg.get("backbones"),
+        head_store=heads,
+        synthetic_only=False,
     )
     manifests = []
     if not isinstance(request.threshold_request, PrimaryThresholdRequest):

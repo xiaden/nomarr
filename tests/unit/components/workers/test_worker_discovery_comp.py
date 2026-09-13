@@ -92,7 +92,6 @@ class TestClaimFile:
             result = claim_file(mock_db, _identity(123), "worker:tag:0")
         assert result is True
         mock_db.app.add_claim.assert_called_once_with(_untyped_claim(123, "worker:tag:0", 999))
-        mock_db.library.resolve_song_identity.assert_not_called()
 
     @pytest.mark.unit
     def test_returns_false_when_claim_conflicts(self) -> None:
@@ -125,7 +124,6 @@ class TestReleaseClaim:
         mock_db.app.remove_claim.assert_called_once_with(
             WorkerClaimIdentity(song=_identity(123), worker_id="worker:tag:0", claim_type=None)
         )
-        mock_db.library.resolve_song_identity.assert_not_called()
 
 
 class TestCleanupStaleClaims:

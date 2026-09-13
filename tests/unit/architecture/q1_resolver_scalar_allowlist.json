@@ -4,16 +4,5 @@
   "required_allowlist_fields": ["owner", "boundary", "reason", "positive_test", "non_propagation", "removal_condition"],
   "allowlisted_resolvers": [],
   "allowlisted_integer_adapters": [],
-  "deleted_by_q1": [
-    "LibrarySongsDb.resolve_song_identity",
-    "LibrarySongsDb.resolve_song_identities",
-    "LibrarySongsDb.resolve_library_identity",
-    "LibrarySongsDb.resolve_library_identities",
-    "LibraryDb.resolve_song_identity",
-    "LibraryDb.resolve_song_identities",
-    "LibraryDb.resolve_library_identity",
-    "LibraryDb.resolve_library_identities",
-    "library_song_mutation_comp.update_song_modified_time"
-  ],
   "residual_owners": [{"residual": "persistence-private SongRepository ID/path joins and tests", "owner": "persistence", "stop_condition": "must remain private"}]
 }

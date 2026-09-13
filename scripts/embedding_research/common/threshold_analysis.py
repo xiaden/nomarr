@@ -502,7 +502,6 @@ def analyze_all_thresholds(
         search_payload = {
             "medoid_source_indices": medoids,
             "searchable_weights": weights,
-            "geometry_id": geometry_id,
             "observation_group_sha256": observation_group_sha256,
             "profile_digest": profile_digest,
             "mask_digest": mask_digest,

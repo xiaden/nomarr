@@ -31,14 +31,13 @@ for freshly-inserted hot rows.
 The write driver ``_persist_typed`` drives the typed aggregate signature
 ``replace_song_inference_results(song: SongIdentity, backbone, *,
 vectors: Sequence[BackboneVectorWrite], output_streams:
-Sequence[OutputStreamWrite])`` (retargeted in P5-S3). It mirrors the production
-worker boundary: the seeded storage song id is resolved once to a semantic
-``SongIdentity`` through the authorized library identity bridge
-(``db.library.resolve_song_identity``) and the legacy raw vector dicts
-(``embedding_vector``/``model_id``/``num_segments``/``genres``) are translated to
-``BackboneVectorWrite`` commands carrying the SAME values, so no integer storage
-key or raw vector dictionary crosses ``db.ml``. Every assertion below is the
-preservation proof — the typed call must reproduce the exact persisted-row facts.
+Sequence[OutputStreamWrite])``. It mirrors the production worker boundary: the
+seeded fixture supplies a semantic ``SongIdentity`` and the legacy raw vector
+dicts (``embedding_vector``/``model_id``/``num_segments``/``genres``) are
+translated to ``BackboneVectorWrite`` commands carrying the SAME values, so no
+integer storage key or raw vector dictionary crosses ``db.ml``. Every assertion
+below is the preservation proof — the typed call must reproduce the exact
+persisted-row facts.
 """
 
 from __future__ import annotations

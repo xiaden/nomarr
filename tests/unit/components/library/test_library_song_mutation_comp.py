@@ -363,7 +363,6 @@ class TestSetChromaprint:
             identity, ChromaprintValue("chromaprint-value", "decoder:v1", expected_absent=False)
         )
         # Locator-addressed: no integer handle and no resolver at this boundary.
-        mock_db.library.resolve_song_identity.assert_not_called()
 
     @pytest.mark.unit
     def test_missing_locator_result_writes_nothing_further(self) -> None:
@@ -378,7 +377,6 @@ class TestSetChromaprint:
         mock_db.library.set_chromaprint.assert_called_once_with(
             identity, ChromaprintValue("chromaprint-value", "decoder:v1", expected_absent=False)
         )
-        mock_db.library.resolve_song_identity.assert_not_called()
 
 
 class TestUpdateLastTaggedAt:
@@ -394,7 +392,6 @@ class TestUpdateLastTaggedAt:
             update_last_tagged_at(mock_db, identity)
 
         mock_db.library.set_last_tagged.assert_called_once_with(identity, 9999)
-        mock_db.library.resolve_song_identity.assert_not_called()
 
     @pytest.mark.unit
     def test_missing_locator_result_writes_nothing_further(self) -> None:
@@ -409,4 +406,3 @@ class TestUpdateLastTaggedAt:
             update_last_tagged_at(mock_db, identity)
 
         mock_db.library.set_last_tagged.assert_called_once_with(identity, 9999)
-        mock_db.library.resolve_song_identity.assert_not_called()

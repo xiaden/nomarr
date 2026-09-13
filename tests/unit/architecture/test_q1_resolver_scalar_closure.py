@@ -70,13 +70,6 @@ _RESOLVER_SCAN_MODULES = (
     "nomarr/persistence/db.py",
 )
 
-# Declared module for each ``deleted_by_q1`` symbol prefix.
-_DELETED_SYMBOL_MODULES = {
-    "LibrarySongsDb": "nomarr/persistence/api/library_songs.py",
-    "LibraryDb": "nomarr/persistence/api/library.py",
-    "library_song_mutation_comp": "nomarr/components/library/library_song_mutation_comp.py",
-}
-
 _WRITE_VERB_PREFIXES = ("set_", "update_", "write_", "replace_", "persist_", "save_", "mark_", "record_")
 _SCALAR_FIELD_TOKENS = ("modified_time", "last_tagged", "tagged_at", "chromaprint")
 
@@ -125,14 +118,6 @@ def _extract_test_targets(entry: dict) -> list[tuple[str, str | None]]:
         (match.group(1), match.group(2))
         for match in re.finditer(r"(tests/[A-Za-z0-9_./-]+\.py)(?:::([A-Za-z0-9_]+))?", raw)
     ]
-
-
-def _resolve_deleted_symbol(symbol: str) -> str:
-    """Map a ``deleted_by_q1`` symbol to its declared module path."""
-    for prefix, module in _DELETED_SYMBOL_MODULES.items():
-        if symbol.startswith(f"{prefix}."):
-            return module
-    raise AssertionError(f"deleted_by_q1 symbol {symbol!r} has no declared module in the test map")
 
 
 def test_required_allowlist_field_tuple_is_hardcoded() -> None:
@@ -184,15 +169,6 @@ def test_library_facade_has_no_resolver_forwarders() -> None:
     source = _source("nomarr/persistence/api/library.py")
     for name in _RESOLVER_NAMES:
         assert not re.search(rf"^    def {name}\\(", source, flags=re.MULTILINE)
-
-
-def test_deleted_by_q1_symbols_are_absent_from_their_declared_modules() -> None:
-    """Every ``deleted_by_q1`` symbol is genuinely gone from its declared module."""
-    for symbol in _load_allowlist()["deleted_by_q1"]:
-        module = _resolve_deleted_symbol(symbol)
-        method = symbol.split(".")[-1]
-        source = _source(module)
-        assert not re.search(rf"def {method}\b", source), f"deleted symbol {symbol} still defined in {module}"
 
 
 def test_legacy_integer_scalar_writers_are_absent_not_forwarded() -> None:

@@ -2,7 +2,7 @@
 
 Uses Part B primitives for simple lookups and direct SQLAlchemy Core for
 filtered queries. Pipeline-axis state reads delegate to ``PipelineRepository``,
-which reads/writes the ``pipeline_states`` rows (Q3 contract) rather than any
+which reads/writes the ``pipeline_states`` rows rather than any
 ``libraries`` columns.
 """
 

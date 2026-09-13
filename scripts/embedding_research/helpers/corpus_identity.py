@@ -29,6 +29,7 @@ import json
 from dataclasses import dataclass
 
 __all__ = [
+    "CorpusSongSearchInput",
     "RepresentationState",
     "classify_representation",
     "search_representation_id",
@@ -99,48 +100,55 @@ def _canonical(value: object) -> object:
     raise ValueError(f"unsupported canonical value type: {type(value)!r}")
 
 
+@dataclass(frozen=True)
+class CorpusSongSearchInput:
+    """One ordered song's complete contribution to a corpus search identity."""
+
+    song_id: str
+    observation_group_sha256: str
+    mask_identity: str
+    medoid_source_indices: tuple[int | None, ...]
+    normalized_searchable_weights: tuple[float, ...]
+    searchable_count: int
+
+
 def search_representation_id(
     *,
     experiment: str,
     scoring_semantics_version: int,
     geometry_semantics_version: str,
     numerical_profile_digest: str,
-    observation_group_sha256: str,
-    mask_identity: str,
-    ordered_corpus_song_ids: object,
-    medoid_source_indices: object,
-    normalized_searchable_weights: object,
-    searchable_count: int,
+    ordered_song_inputs: tuple[CorpusSongSearchInput, ...],
 ) -> str:
-    """Return the lowercase 64-hex canonical search-representation identity.
+    """Return the canonical hash for one complete ordered corpus input roster.
 
-    The ordered corpus song ids, ordered medoid source indices, and normalized
-    searchable weights are order-sensitive; mask/observation identity and the
-    searchable count are included. Structural/threshold inputs are never accepted.
+    The DTO is the sole API: every ordered song contributes its observation and mask
+    identities, source medoids, normalized positive weights, and searchable count.
+    Threshold and structural identities remain separate evidence axes.
     """
-    song_ids = [
-        _text(item, "ordered_corpus_song_ids")
-        for item in _as_sequence(ordered_corpus_song_ids, "ordered_corpus_song_ids")
-    ]
-    medoids = [
-        _optional_int(item, "medoid_source_indices")
-        for item in _as_sequence(medoid_source_indices, "medoid_source_indices")
-    ]
-    weights = [
-        _float(item, "normalized_searchable_weights")
-        for item in _as_sequence(normalized_searchable_weights, "normalized_searchable_weights")
-    ]
+    inputs = tuple(ordered_song_inputs)
+    if not inputs or any(not isinstance(item, CorpusSongSearchInput) for item in inputs):
+        raise ValueError("ordered_song_inputs must be a non-empty tuple of CorpusSongSearchInput values")
     payload = {
         "experiment": _text(experiment, "experiment"),
         "scoring_semantics_version": _int(scoring_semantics_version, "scoring_semantics_version"),
         "geometry_semantics_version": _text(geometry_semantics_version, "geometry_semantics_version"),
         "numerical_profile_digest": _text(numerical_profile_digest, "numerical_profile_digest"),
-        "observation_group_sha256": _text(observation_group_sha256, "observation_group_sha256"),
-        "mask_identity": _text(mask_identity, "mask_identity"),
-        "ordered_corpus_song_ids": song_ids,
-        "medoid_source_indices": medoids,
-        "normalized_searchable_weights": weights,
-        "searchable_count": _int(searchable_count, "searchable_count"),
+        "ordered_song_inputs": [
+            {
+                "song_id": item.song_id,
+                "observation_group_sha256": item.observation_group_sha256,
+                "mask_identity": item.mask_identity,
+                "medoid_source_indices": [
+                    _optional_int(value, "medoid_source_indices") for value in item.medoid_source_indices
+                ],
+                "normalized_searchable_weights": [
+                    _float(value, "normalized_searchable_weights") for value in item.normalized_searchable_weights
+                ],
+                "searchable_count": _int(item.searchable_count, "searchable_count"),
+            }
+            for item in inputs
+        ],
     }
     return _sha256(payload)
 

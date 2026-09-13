@@ -82,6 +82,7 @@ class SyntheticIdentity:
         self.mask_semantics_version = mask_semantics_version
         self.group_format_version = group_format_version
         self.commit_sha256 = commit
+        self.observation_group_sha256 = commit
 
 
 class SyntheticStreamRecord:

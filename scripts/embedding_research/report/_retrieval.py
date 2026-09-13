@@ -145,6 +145,7 @@ def query_corpus_evidence(con, *, run_id: str) -> dict[str, Any] | None:
 
 def _neighborhood_rows(queries: Any, key: str) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
     for query in queries or ():
         if not isinstance(query, dict):
             continue
@@ -152,6 +153,10 @@ def _neighborhood_rows(queries: Any, key: str) -> list[dict[str, Any]]:
         for entry in query.get(key) or ():
             if not isinstance(entry, dict):
                 continue
+            candidate = str(entry.get("song_id", ""))
+            if not candidate or candidate == song_id or (song_id, candidate) in seen:
+                raise ValueError("invalid duplicate or self candidate in geometry neighborhood")
+            seen.add((song_id, candidate))
             rows.append({"query_song_id": song_id, **entry})
     return rows
 
@@ -195,8 +200,10 @@ def section_analysis(
         )
     if df is not None and not df.empty:
         tables.append(make_table(df.to_dict("records"), id="geometry_analysis", title="Geometry analysis metrics"))
-    threshold_map = _threshold_map_rows(df)
-    if threshold_map:
+    threshold_map = (
+        list(corpus_evidence.get("threshold_map") or []) if corpus_evidence is not None else _threshold_map_rows(df)
+    )
+    if corpus_evidence is not None or threshold_map:
         tables.append(make_table(threshold_map, id="geometry_threshold_map", title="Threshold-to-representation map"))
 
     warnings: list[dict[str, str]] = []
@@ -208,6 +215,24 @@ def section_analysis(
             }
         )
     else:
+        hypotheses = corpus_evidence.get("hypotheses")
+        if isinstance(hypotheses, list) and hypotheses:
+            context_rows = [
+                {
+                    "threshold_id": item.get("threshold_id"),
+                    "collapse_class_id": item.get("collapse_class_id"),
+                    "ordered_song_count": len(item.get("members") or []),
+                }
+                for item in hypotheses
+                if isinstance(item, dict)
+            ]
+            tables.append(
+                make_table(
+                    context_rows,
+                    id="geometry_threshold_collapse_context",
+                    title="Threshold and collapse hypothesis context",
+                )
+            )
         membership = corpus_evidence.get("membership")
         if isinstance(membership, list) and membership:
             tables.append(

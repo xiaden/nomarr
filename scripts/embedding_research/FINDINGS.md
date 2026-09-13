@@ -11,8 +11,9 @@ marker written last — is the only usable evidence. The CLI exposes exactly sev
 `geometry` phase derives and persists one exact-key complete geometry per `(song_id, backbone)`;
 the `analyze` phase runs the corpus owner `common/geometry_analysis.py` over the exact 171-index
 primary threshold grid; the `report` phase renders exactly seven sections. There is no per-patch
-membership table and no durable threshold-result table. All execution evidence is deterministic
-synthetic fixtures; no real corpus/model/audio/ONNX result is claimed here.
+membership table and no durable threshold-result table. Execution evidence is either an explicit `synthetic_fixture` or a bounded
+`empirical_request` bound to complete frozen current-head semantic-head provenance; neither mode
+executes or claims a real corpus/model/audio/ONNX result here, and CUDA remains out of scope.
 
 ## Threshold and distance semantics
 

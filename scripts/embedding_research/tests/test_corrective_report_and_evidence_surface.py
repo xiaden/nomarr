@@ -23,6 +23,7 @@ import pytest
 
 from scripts.embedding_research.generate_fixture_report import main as generate_report
 from scripts.embedding_research.helpers.corpus_identity import (
+    CorpusSongSearchInput,
     RepresentationState,
     classify_representation,
     search_representation_id,
@@ -32,6 +33,7 @@ from scripts.embedding_research.report._retrieval import (
     query_corpus_evidence,
     section_analysis,
 )
+from scripts.embedding_research.report._summary import section_summary
 from scripts.embedding_research.tools import _evidence
 from scripts.embedding_research.tools.emit_corrective_evidence import (
     main as emit_corrective_evidence,
@@ -140,8 +142,68 @@ def _messages(section: dict, level: str | None = None) -> list[str]:
     ]
 
 
+def test_section_summary_separates_winner_and_observed_baseline_evidence() -> None:
+    evidence = _corpus_evidence()
+    evidence["queries"][0]["neighborhood"][0].update(
+        {
+            "geometry_id": "winner-geometry",
+            "threshold_id": "winner-threshold",
+            "metric": "artist",
+            "value": 0.9,
+        }
+    )
+    evidence["queries"][0]["baseline_neighborhood"][0].update(
+        {
+            "geometry_id": "baseline-geometry",
+            "threshold_id": "observed-baseline:global-medoid",
+            "metric": "artist",
+            "value": 0.4,
+        }
+    )
+
+    section = section_summary(pd.DataFrame(), corpus_evidence=evidence)
+
+    stats = {stat["label"]: stat["value"] for stat in section["stats"]}
+    assert stats["analysis rows"] == 1
+    assert stats["baseline rows"] == 1
+    assert {table["id"] for table in section["tables"]} == {
+        "geometry_threshold_summary",
+        "observed_baseline_summary",
+    }
+    winner_table = next(table for table in section["tables"] if table["id"] == "geometry_threshold_summary")
+    baseline_table = next(table for table in section["tables"] if table["id"] == "observed_baseline_summary")
+    assert winner_table["rows"] == [["winner-threshold", "1", "1"]]
+    assert baseline_table["rows"] == [["observed-baseline:global-medoid", "1", "1"]]
+    assert "observed-baseline:global-medoid" not in str(winner_table["rows"])
+    assert "winner-threshold" not in str(baseline_table["rows"])
+
+
+def test_section_summary_refuses_empty_canonical_corpus_evidence() -> None:
+    section = section_summary(pd.DataFrame(), corpus_evidence={"queries": []})
+
+    assert section["empty_message"] == "REFUSED: no exact geometry analysis or observed-baseline evidence."
+    assert section["warnings"] == [
+        {"level": "error", "message": "No exact geometry analysis evidence; summary refused."}
+    ]
+    assert section["stats"] == []
+    assert section["tables"] == []
+
+
 def test_section_analysis_renders_corpus_membership_queries_and_neighborhoods() -> None:
-    section = section_analysis(_analysis_frame(), corpus_evidence=_corpus_evidence())
+    evidence = _corpus_evidence()
+    second = dict(_query_doc())
+    second["song_id"] = "s2"
+    second["threshold_id"] = "second-threshold"
+    second["collapse_class_id"] = "second-collapse"
+    second["neighborhood"] = [dict(second["neighborhood"][0])]
+    second["neighborhood"] = [{**second["neighborhood"][0], "song_id": "s1"}]
+    second["baseline_neighborhood"] = [{**second["baseline_neighborhood"][0], "song_id": "s1"}]
+    evidence["queries"].append(second)
+    evidence["hypotheses"] = [
+        {"threshold_id": "first-threshold", "collapse_class_id": "first-collapse", "members": [{"song_id": "s1"}]},
+        {"threshold_id": "second-threshold", "collapse_class_id": "second-collapse", "members": [{"song_id": "s1"}]},
+    ]
+    section = section_analysis(_analysis_frame(), corpus_evidence=evidence)
 
     ids = _table_ids(section)
     assert "geometry_analysis" in ids
@@ -150,6 +212,10 @@ def test_section_analysis_renders_corpus_membership_queries_and_neighborhoods() 
     assert "geometry_queries" in ids
     assert "geometry_neighborhoods" in ids
     assert "geometry_baseline_neighborhoods" in ids
+    query_table = next(table for table in section["tables"] if table["id"] == "geometry_queries")
+    assert len(query_table["rows"]) == 2
+    context_table = next(table for table in section["tables"] if table["id"] == "geometry_threshold_collapse_context")
+    assert len(context_table["rows"]) == 2
     assert section["empty_message"] == ""
     assert _messages(section) == []
 
@@ -365,12 +431,11 @@ _BASE_REPRESENTATION_ID_KWARGS: dict[str, Any] = {
     "scoring_semantics_version": 1,
     "geometry_semantics_version": "gram-v1",
     "numerical_profile_digest": "a" * 64,
-    "observation_group_sha256": "b" * 64,
-    "mask_identity": "c" * 64,
-    "ordered_corpus_song_ids": ("s1", "s2", "s3"),
-    "medoid_source_indices": (0, 2, 5),
-    "normalized_searchable_weights": (0.5, 0.25, 0.25),
-    "searchable_count": 3,
+    "ordered_song_inputs": (
+        CorpusSongSearchInput("s1", "b" * 64, "c" * 64, (0,), (0.5,), 1),
+        CorpusSongSearchInput("s2", "d" * 64, "e" * 64, (2,), (0.25,), 1),
+        CorpusSongSearchInput("s3", "f" * 64, "g" * 64, (5,), (0.25,), 1),
+    ),
 }
 
 
@@ -386,13 +451,13 @@ def test_representation_id_accepts_the_canonical_representative_shape() -> None:
     "overrides",
     [
         {"experiment": ""},
-        {"searchable_count": True},
-        {"searchable_count": -1},
-        {"searchable_count": "1"},
-        {"ordered_corpus_song_ids": "s1"},
-        {"normalized_searchable_weights": (float("nan"),)},
-        {"normalized_searchable_weights": (float("inf"),)},
-        {"medoid_source_indices": (True,)},
+        {"ordered_song_inputs": (CorpusSongSearchInput("s1", "b" * 64, "c" * 64, (0,), (0.5,), True),)},
+        {"ordered_song_inputs": (CorpusSongSearchInput("s1", "b" * 64, "c" * 64, (0,), (0.5,), -1),)},
+        {"ordered_song_inputs": (CorpusSongSearchInput("s1", "b" * 64, "c" * 64, (0,), (0.5,), "1"),)},
+        {"ordered_song_inputs": "s1"},
+        {"ordered_song_inputs": (CorpusSongSearchInput("s1", "b" * 64, "c" * 64, (0,), (float("nan"),), 1),)},
+        {"ordered_song_inputs": (CorpusSongSearchInput("s1", "b" * 64, "c" * 64, (0,), (float("inf"),), 1),)},
+        {"ordered_song_inputs": (CorpusSongSearchInput("s1", "b" * 64, "c" * 64, (True,), (0.5,), 1),)},
     ],
     ids=[
         "empty-experiment",

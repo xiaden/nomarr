@@ -323,13 +323,12 @@ def test_database_workflow_on_triggers_match_required_contract() -> None:
 
 
 @pytest.mark.unit
-def test_q3a_boundary_suite_is_wired_and_database_marked() -> None:
-    """The Q3-A create-only boundary suite is DB-marked and explicitly wired.
+def test_song_upsert_state_boundary_is_wired_and_database_marked() -> None:
+    """The create-only boundary suite is DB-marked and explicitly wired.
 
     Static only: the suite path is named in the manifest and in the
     ``database-tests`` step, and its source carries ``requires_database``. This
-    proves the deferred capability is wired for CI collection, not that it ran;
-    runtime status remains CI_DEFERRED until GitHub executes it.
+    verifies that the suite is wired for CI collection, not that it ran.
     """
     workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
     steps = "\n".join(step.get("run", "") for step in workflow["jobs"]["database-tests"]["steps"])
@@ -337,7 +336,7 @@ def test_q3a_boundary_suite_is_wired_and_database_marked() -> None:
     suite_path = "tests/integration/test_song_upsert_state_boundary_pg.py"
     suite_file = ROOT / suite_path
 
-    assert suite_file.is_file(), f"Q3-A boundary suite missing: {suite_path}"
+    assert suite_file.is_file(), f"Create-only boundary suite missing: {suite_path}"
     assert suite_path in manifest["pytest_paths"]
     assert suite_path in manifest["exact_command"]
     # The exact-equality gate above already pins the workflow command to the

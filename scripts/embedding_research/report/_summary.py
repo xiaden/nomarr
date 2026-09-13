@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import pandas as pd
 
 from ._base import make_section, make_table
-
-if TYPE_CHECKING:
-    import pandas as pd
 
 
 def _group_counts(frame: pd.DataFrame, key: str) -> list[dict]:
@@ -23,8 +20,21 @@ def _group_counts(frame: pd.DataFrame, key: str) -> list[dict]:
     return rows
 
 
-def section_summary(analysis_df: pd.DataFrame, baseline_df: pd.DataFrame | None = None) -> dict:
-    """Summarize exact winner threshold evidence and the observed baseline separately."""
+def section_summary(
+    analysis_df: pd.DataFrame,
+    baseline_df: pd.DataFrame | None = None,
+    *,
+    corpus_evidence: dict | None = None,
+) -> dict:
+    """Summarize canonical winner hypotheses and the observed baseline separately."""
+    if corpus_evidence is not None:
+        queries = corpus_evidence.get("queries") or []
+        analysis_df = pd.DataFrame(
+            [entry for q in queries if isinstance(q, dict) for entry in q.get("neighborhood") or []]
+        )
+        baseline_df = pd.DataFrame(
+            [entry for q in queries if isinstance(q, dict) for entry in q.get("baseline_neighborhood") or []]
+        )
     has_analysis = analysis_df is not None and not analysis_df.empty
     has_baseline = baseline_df is not None and not baseline_df.empty
     if not has_analysis and not has_baseline:
@@ -41,10 +51,19 @@ def section_summary(analysis_df: pd.DataFrame, baseline_df: pd.DataFrame | None 
         stats.extend(
             [
                 {"label": "analysis rows", "value": len(analysis_df)},
-                {"label": "geometry ids", "value": int(analysis_df["geometry_id"].nunique())},
-                {"label": "thresholds", "value": int(analysis_df["threshold_id"].nunique())},
-                {"label": "metrics", "value": int(analysis_df["metric"].nunique())},
-                {"label": "finite values", "value": int(analysis_df["value"].notna().sum())},
+                {
+                    "label": "geometry ids",
+                    "value": int(analysis_df["geometry_id"].nunique()) if "geometry_id" in analysis_df else 0,
+                },
+                {
+                    "label": "thresholds",
+                    "value": int(analysis_df["threshold_id"].nunique()) if "threshold_id" in analysis_df else 0,
+                },
+                {"label": "metrics", "value": int(analysis_df["metric"].nunique()) if "metric" in analysis_df else 0},
+                {
+                    "label": "finite values",
+                    "value": int(analysis_df["value"].notna().sum()) if "value" in analysis_df else 0,
+                },
             ]
         )
         tables.append(

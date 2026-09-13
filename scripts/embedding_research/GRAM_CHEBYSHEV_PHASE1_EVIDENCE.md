@@ -4,7 +4,7 @@
 
 ## Call graph
 
-`gram_from_stream -> normalize_float32`; `derive_all_temporal_global -> derive_temporal_global_from_gram -> _validate_gram, _threshold, _row_distance`; `_row_distance -> _add, _sqrt`. The Gram module has no import or call edge to vector segmentation or Chebyshev.
+`gram_from_stream -> normalize_float32`; `derive_all_temporal_global -> derive_temporal_global_from_gram -> _validate_gram, _threshold, _row_distance`; `_row_distance -> NumPy reductions/sqrt`. The Gram module has no import or call edge to vector segmentation or Chebyshev.
 
 ## Comparison boundary
 

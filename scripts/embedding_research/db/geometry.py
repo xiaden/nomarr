@@ -148,8 +148,7 @@ def _evidence(observation: Any) -> dict[str, Any]:
             "audio_content_sha256": identity.audio_content_sha256,
             "mask_semantics_version": identity.mask_semantics_version,
             "group_format_version": identity.group_format_version,
-            "observation_group_sha256": _field(identity, "observation_group_sha256")
-            or _field(identity, "commit_sha256"),
+            "observation_group_sha256": _field(identity, "observation_group_sha256"),
             "provenance_identity": provenance_identity,
         }
     )
@@ -214,16 +213,16 @@ def observation_geometry_identity(observation: Any, profile: GeometryProfile) ->
     identity = getattr(observation, "identity", None)
     if identity is None:
         raise IntegrityRefused("committed observation has no identity")
-    commit = getattr(identity, "commit_sha256", None)
-    if not commit:
-        raise IntegrityRefused("committed observation has no commit identity")
+    observation_group = getattr(identity, "observation_group_sha256", None)
+    if not observation_group:
+        raise IntegrityRefused("committed observation has no observation-group identity")
     if not isinstance(profile, GeometryProfile):
         raise IntegrityRefused("geometry profile is required to derive a geometry identity")
     semantics = profile.to_manifest().get("geometry_semantics_version")
     if not semantics:
         raise IntegrityRefused("geometry profile has no geometry semantics version")
     return GeometryIdentity(
-        str(identity.song_id), str(identity.backbone), str(commit), str(semantics), str(profile.digest)
+        str(identity.song_id), str(identity.backbone), str(observation_group), str(semantics), str(profile.digest)
     )
 
 
@@ -411,9 +410,9 @@ def verify_geometry_current(
         raise IntegrityRefused("INTEGRITY_REFUSED: committed observation has no identity")
     song_id = str(identity.song_id)
     backbone = str(identity.backbone)
-    commit = str(getattr(identity, "commit_sha256", ""))
+    commit = str(getattr(identity, "observation_group_sha256", ""))
     if not commit:
-        raise IntegrityRefused("INTEGRITY_REFUSED: committed observation has no commit identity")
+        raise IntegrityRefused("INTEGRITY_REFUSED: committed observation has no observation-group identity")
 
     candidate: GeometryIdentity | None
     if exact_identity is not None:

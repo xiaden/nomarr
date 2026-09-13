@@ -25,6 +25,7 @@ class Identity:
     mask_semantics_version = "mask-v1"
     group_format_version = "group-v1"
     commit_sha256 = "commit-1"
+    observation_group_sha256 = "commit-1"
 
 
 class Record:
