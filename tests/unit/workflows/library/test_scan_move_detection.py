@@ -1041,10 +1041,10 @@ class TestDeletionScoping:
         assert result["files_removed"] == 1
 
     def test_reconciled_ancestor_never_cleans_nested_skipped_child_rows(self) -> None:
-        """Cleanup's ``get_songs_for_folder`` is prefix-recursive, so an eligible
-        ancestor folder's cleanup lookup also returns rows in nested descendant
-        folders. A genuinely-absent row whose own folder is a cache-skipped child
-        must not be deleted, while an absent row directly in the reconciled
+        """Cleanup reads only the reconciled ancestor's direct members via
+        ``get_songs_in_exact_folder``, so a nested descendant folder is never part
+        of its lookup. A genuinely-absent row whose own folder is a cache-skipped
+        child must not be deleted, while an absent row directly in the reconciled
         ancestor is."""
         child_row = _song("/music/parent/child/stale.flac", "parent/child/stale.flac", "cp-child")
         parent_row = _song("/music/parent/gone.flac", "parent/gone.flac", "cp-parent")
@@ -1066,9 +1066,10 @@ class TestDeletionScoping:
         assert result["files_removed"] == 1
 
     def test_reconciled_ancestor_never_cleans_nested_failed_child_rows(self) -> None:
-        """The same ancestor-cleanup scoping holds for a nested child whose walk
-        FAILED: its absent row must not be deleted while the absent row directly
-        in the reconciled ancestor is."""
+        """The same exact-folder ancestor-cleanup scoping holds for a nested child
+        whose walk FAILED: cleanup reads only the ancestor's direct members, so the
+        nested child's absent row is never read or deleted, while the absent row
+        directly in the reconciled ancestor is."""
         child_row = _song("/music/parent/child/stale.flac", "parent/child/stale.flac", "cp-child")
         parent_row = _song("/music/parent/gone.flac", "parent/gone.flac", "cp-parent")
         with _patched_scan(
@@ -1300,6 +1301,8 @@ class TestExactFolderWalkWorkingSet:
         assert result["files_removed"] == 2
 
 
+@pytest.mark.unit
+@pytest.mark.mocked
 class TestOrphanRecoverySweep:
     """Genuinely-untracked parents are recovered only by the FULL scan's bounded,
     natural-key-paginated sweep; quick scan defers. The sweep holds one page in
@@ -1424,3 +1427,51 @@ class TestOrphanRecoverySweep:
         cursors = [call.kwargs["after_normalized_path"] for call in calls]
         assert cursors == [None, "o1/x.flac", "o3/x.flac"]
         assert result["files_removed"] == 5
+
+    def test_orphan_recovery_exact_multiple_terminates_on_empty_page(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """An exact-multiple library terminates on the empty follow-up page.
+
+        With four orphans and a batch size of two the sweep reads pages of 2, 2,
+        then an EMPTY page: the final full page must NOT advance the cursor past
+        its own last row onto a short page, it must issue one more read that
+        returns nothing and terminate via the empty-page branch. Without that
+        branch the sweep would index ``page[-1]`` on an empty page.
+        """
+        monkeypatch.setattr(full_wf, "_ORPHAN_RECOVERY_BATCH_SIZE", 2)
+        orphans = [_song(f"/music/o{i}/x.flac", f"o{i}/x.flac", None) for i in range(4)]
+        existing: dict[str, dict[str, StateTaggedSong]] = {"scanned": {}}
+        existing.update({f"o{i}": {orphans[i].path: _carrier(orphans[i])} for i in range(4)})
+        with _patched_scan(
+            full_wf,
+            folders=[_folder("scanned")],
+            existing=existing,
+            batches={"/music/scanned": _batch(discovered=set())},
+            present_paths=set(),
+        ) as ctx:
+            result = full_wf.scan_library_full_workflow(ctx.db, _LIBRARY, tagger_version="v1")
+
+        calls = ctx.mocks.get_songs_page.call_args_list
+        # Pages of 2, 2, then EMPTY -> three reads; the third proves termination
+        # is the empty-page branch, not the short-page branch.
+        assert len(calls) == 3
+        cursors = [call.kwargs["after_normalized_path"] for call in calls]
+        assert cursors == [None, "o1/x.flac", "o3/x.flac"]
+        assert result["files_removed"] == 4
+        assert _removed_paths(ctx.mocks.remove_deleted) == {orphan.path for orphan in orphans}
+
+    def test_orphan_recovery_empty_library_single_page_no_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A library with no songs yields one empty page, no removals, no error."""
+        monkeypatch.setattr(full_wf, "_ORPHAN_RECOVERY_BATCH_SIZE", 2)
+        with _patched_scan(
+            full_wf,
+            folders=[_folder("scanned")],
+            existing={"scanned": {}},
+            batches={"/music/scanned": _batch(discovered=set())},
+            present_paths=set(),
+        ) as ctx:
+            result = full_wf.scan_library_full_workflow(ctx.db, _LIBRARY, tagger_version="v1")
+
+        calls = ctx.mocks.get_songs_page.call_args_list
+        assert len(calls) == 1
+        assert calls[0].kwargs["after_normalized_path"] is None
+        assert result["files_removed"] == 0

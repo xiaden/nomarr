@@ -344,6 +344,19 @@ class LibraryDb:
     ) -> list[Song]:
         return self._songs.list_songs_in_exact_folder(library, folder_rel_path)
 
+    def list_songs_after_normalized_path(
+        self,
+        library: Library,
+        *,
+        after_normalized_path: str | None,
+        limit: int,
+    ) -> list[Song]:
+        return self._songs.list_songs_after_normalized_path(
+            library,
+            after_normalized_path=after_normalized_path,
+            limit=limit,
+        )
+
     def list_tracks_for_matching(self, library: Library, *, limit: int | None = None) -> list[Song]:
         return self._songs.list_tracks_for_matching(library, limit=limit)
 

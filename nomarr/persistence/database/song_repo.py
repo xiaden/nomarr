@@ -606,6 +606,31 @@ class SongRepository:
             result = self._session.execute(stmt)
             return [_row_to_dto(r) for r in result.all()]
 
+    def list_songs_after_normalized_path(
+        self,
+        library_id: int,
+        *,
+        after_normalized_path: str | None,
+        limit: int,
+    ) -> list[SongRow]:
+        """Return one bounded ordered page of a library's songs for a maintenance sweep.
+
+        Rows are ordered by ``normalized_path`` and the page starts strictly after
+        *after_normalized_path* (exclusive), so a caller can walk the whole library
+        one bounded page at a time using the last row's ``normalized_path`` as the
+        next cursor. ``(library_id, normalized_path)`` is unique, so the order is
+        total and no page boundary can skip or repeat a row. This is a
+        maintenance-only bounded read: it materializes at most *limit* rows and
+        never the whole library.
+        """
+        with map_persistence_exceptions():
+            stmt = select(_T).where(_T.c.library_id == library_id)
+            if after_normalized_path is not None:
+                stmt = stmt.where(_T.c.normalized_path > after_normalized_path)
+            stmt = stmt.order_by(_T.c.normalized_path).limit(limit)
+            result = self._session.execute(stmt)
+            return [_row_to_dto(r) for r in result.all()]
+
     # ── mutation / maintenance ──────────────────────────────────
 
     def remove_songs(self, song_ids: list[int]) -> None:

@@ -27,7 +27,6 @@ from nomarr.components.library.library_scan_file_ops_comp import (
 from nomarr.components.library.library_scan_state_comp import transition_pipeline_axis
 from nomarr.components.library.library_song_query_comp import (
     get_folder_rel_paths,
-    get_songs_for_folder,
     get_songs_in_exact_folder,
 )
 from nomarr.components.library.library_song_state_comp import transition_song_state
@@ -109,9 +108,16 @@ def scan_library_quick_workflow(
     Move reconciliation is bounded and per-folder: modified files and
     same-locator rebases are applied in place immediately, and a true move is
     resolved one new file at a time via a bounded, library-scoped chromaprint
-    lookup. Missing rows are not deleted during the walk; a final cleanup pass
-    removes only rows in successfully-walked (changed) or vanished folders.
-    Unchanged (cache-skipped) and failed folders are never reconciled or cleaned.
+    lookup. Missing rows are not deleted during the walk; a final exact-folder
+    cleanup pass removes only direct members of successfully-walked (changed) or
+    vanished folders. Unchanged (cache-skipped) and failed folders are never
+    reconciled or cleaned.
+
+    Deferral contract: quick scan does NOT perform untracked-parent-folder
+    recovery. A row whose parent folder has no ``library_folders`` record (and no
+    tracked/discovered audio-bearing ancestor) is left untouched by quick scan;
+    that recovery is deferred to the exhaustive full scan, which reconciles every
+    discovered folder. This preserves quick-scan authority and safety.
 
     Args:
         db: Database instance
@@ -310,26 +316,20 @@ def scan_library_quick_workflow(
             processed_file_count += folder.file_count
             update_scan_progress(db, library, progress=processed_file_count)
 
-        # Step 6 — Deferred, scoped cleanup. Only successfully-walked (changed)
-        # folders and vanished folders are eligible; cache-skipped and failed
-        # folders are never touched. Cleanup deliberately uses the prefix-recursive
-        # ``get_songs_for_folder`` rather than the exact-folder query: exact-folder
-        # would miss persisted rows whose parent folder has no ``library_folders``
-        # record (reachable when ``save_folder_record`` fails after
-        # ``upsert_scanned_files``/``add_songs_to_library_batch`` commits the rows
-        # and the folder is later removed from disk). Such a folder is in neither
-        # ``reconciled_folder_paths`` nor ``vanished_folder_paths``, so exact
-        # per-folder iteration would never visit it. Recursive retrieval from a
-        # reconciled/vanished ancestor still surfaces those rows, and the absent
-        # guard below then deletes them. Per row, reuse the candidate
-        # source-presence guard: delete only rows whose own normalized parent folder
-        # was reconciled by this scan AND whose current absolute path no longer
-        # exists. This keeps rows belonging to a nested cache-skipped/failed subtree
-        # out of the cleanup scope (a relocated row now points at its new, existing
-        # path and is not deleted).
+        # Step 6 — Deferred, exact-folder cleanup. Only successfully-walked
+        # (changed) folders and vanished folders are eligible; cache-skipped and
+        # failed folders are never touched. Cleanup reads only one folder's DIRECT
+        # members (``get_songs_in_exact_folder``), so the per-iteration working set
+        # is bounded to that folder and never re-materializes a nested descendant
+        # subtree. A row relocated during the walk no longer belongs to its source
+        # exact-folder query (it now points at its destination) and is preserved.
+        # Per row, reuse the candidate source-presence guard: delete only rows
+        # whose current absolute path no longer exists. Genuinely-untracked-folder
+        # recovery is NOT performed by quick scan; it is deferred to the exhaustive
+        # full scan.
         for rel_path in (*reconciled_folder_paths, *vanished_folder_paths):
             _check_cancelled(stop_event)
-            folder_rows = get_songs_for_folder(db, library, rel_path)
+            folder_rows = get_songs_in_exact_folder(db, library, rel_path)
             dead = [
                 carrier.candidate.song.path
                 for carrier in folder_rows.values()

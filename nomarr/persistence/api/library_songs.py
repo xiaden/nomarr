@@ -971,6 +971,30 @@ class LibrarySongsDb:
             song_row_to_domain(row) for row in self._song_repo.list_songs_in_exact_folder(library_id, folder_rel_path)
         ]
 
+    def list_songs_after_normalized_path(
+        self,
+        library: Library,
+        *,
+        after_normalized_path: str | None,
+        limit: int,
+    ) -> list[Song]:
+        """Return one bounded ordered page of a library's songs for a maintenance sweep.
+
+        Ordered by ``normalized_path`` with an exclusive *after_normalized_path*
+        cursor, so callers page the library one bounded batch at a time. The
+        owning library's storage id is resolved internally and never crosses this
+        facade.
+        """
+        library_id = self._resolve_library_id(library)
+        return [
+            song_row_to_domain(row)
+            for row in self._song_repo.list_songs_after_normalized_path(
+                library_id,
+                after_normalized_path=after_normalized_path,
+                limit=limit,
+            )
+        ]
+
     def update_song_calibration_hash(self, song: SongIdentity, calibration_hash: str) -> bool:
         """Persist a calibration hash addressed by semantic song identity."""
         song_id = self._resolve_song_id(song)

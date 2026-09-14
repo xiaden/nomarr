@@ -27,7 +27,6 @@ from nomarr.components.library.library_scan_file_ops_comp import (
 from nomarr.components.library.library_scan_state_comp import transition_pipeline_axis
 from nomarr.components.library.library_song_query_comp import (
     get_folder_rel_paths,
-    get_songs_for_folder,
     get_songs_in_exact_folder,
 )
 from nomarr.components.library.library_song_state_comp import transition_song_state
@@ -83,13 +82,79 @@ def _candidate_source_present(song: Song, unreconciled_folder_paths: set[str]) -
     """True when a chromaprint candidate's source is still known/presumed present.
 
     A candidate is presumed live when its folder was not reconciled by this scan
-    (a folder whose walk failed), or when its current absolute path still exists
-    on disk. Only an absent source may be treated as a relocation origin.
+    (a folder whose walk failed), or when its current absolute path still exists on
+    disk. Only an absent source may be treated as a relocation origin.
     """
     parent = song.normalized_path.rsplit("/", 1)[0] if "/" in song.normalized_path else ""
     if parent in unreconciled_folder_paths:
         return True
     return _path_exists(song.path)
+
+
+# Bounded page size for the full-scan orphan-recovery sweep. One page is held in
+# memory at a time; the sweep pages by the natural key ``normalized_path``.
+_ORPHAN_RECOVERY_BATCH_SIZE = 500
+
+
+def _recover_orphaned_songs(
+    db: Database,
+    library: Library,
+    *,
+    reconciled_folder_paths: set[str],
+    vanished_folder_paths: set[str],
+    unreconciled_folder_paths: set[str],
+    stop_event: threading.Event | None,
+) -> int:
+    """Recover rows whose parent folder normal reconciliation never visited.
+
+    Exact-folder ordinary cleanup only visits folders represented by normal
+    reconciliation, so a row whose parent folder has no ``library_folders`` record
+    (and no tracked/discovered audio-bearing ancestor) is never surfaced there.
+    This explicit, bounded sweep pages the library's songs by ``normalized_path``
+    (one page in memory at a time) and deletes a row only when its direct parent
+    folder is OUTSIDE the covered set, no ancestor folder failed its walk
+    (conservative: that scope was not authoritatively inspected), and the row's
+    absolute path is absent. Time is O(all songs) per full scan; memory is bounded
+    by ``_ORPHAN_RECOVERY_BATCH_SIZE``. Returns the number of rows removed.
+    """
+    covered = reconciled_folder_paths | vanished_folder_paths | unreconciled_folder_paths
+    removed = 0
+    after: str | None = None
+    while True:
+        _check_cancelled(stop_event)
+        page = db.library.list_songs_after_normalized_path(
+            library,
+            after_normalized_path=after,
+            limit=_ORPHAN_RECOVERY_BATCH_SIZE,
+        )
+        if not page:
+            break
+        dead: list[str] = []
+        for song in page:
+            parent = song.normalized_path.rsplit("/", 1)[0] if "/" in song.normalized_path else ""
+            if parent in covered:
+                continue
+            # Conservative ancestor guard: skip when any ancestor scope failed to
+            # walk and therefore was not authoritatively inspected.
+            ancestor = parent
+            unreconciled_ancestor = False
+            while True:
+                if ancestor in unreconciled_folder_paths:
+                    unreconciled_ancestor = True
+                    break
+                if not ancestor or "/" not in ancestor:
+                    break
+                ancestor = ancestor.rsplit("/", 1)[0]
+            if unreconciled_ancestor:
+                continue
+            if not _path_exists(song.path):
+                dead.append(song.path)
+        if dead:
+            removed += remove_deleted_files(db, library, dead)
+        if len(page) < _ORPHAN_RECOVERY_BATCH_SIZE:
+            break
+        after = page[-1].normalized_path
+    return removed
 
 
 def scan_library_full_workflow(
@@ -112,9 +177,15 @@ def scan_library_full_workflow(
     Move reconciliation is bounded and per-folder: modified files and
     same-locator rebases are applied in place immediately, and a true move is
     resolved one new file at a time via a bounded, library-scoped chromaprint
-    lookup. Missing rows are not deleted during the walk; a final cleanup pass
-    removes only rows in successfully-walked or vanished folders. Folders whose
-    walk failed are never reconciled or cleaned.
+    lookup. Missing rows are not deleted during the walk; cleanup happens
+    afterward in two stages. An exact-folder pass removes only rows in
+    successfully-walked or vanished folders. A second bounded orphan sweep
+    (``_recover_orphaned_songs``) then pages the library's songs by
+    ``normalized_path`` (one page in memory, O(all songs) per full scan) and
+    removes rows under genuinely-untracked parent folders, guarded by the
+    conservative unreconciled-ancestor check and the absent-path condition.
+    Full scan owns this recovery; quick scan defers it. Folders whose walk
+    failed are never reconciled or cleaned.
 
     Args:
         db: Database instance
@@ -299,24 +370,18 @@ def scan_library_full_workflow(
 
             update_scan_progress(db, library, progress=stats["files_discovered"])
 
-        # Step 6 — Deferred, scoped cleanup. Only successfully-walked and vanished
-        # folders are eligible; failed folders are never touched. Cleanup deliberately
-        # uses the prefix-recursive ``get_songs_for_folder`` rather than the exact-folder
-        # query: exact-folder would miss persisted rows whose parent folder has no
-        # ``library_folders`` record (reachable when ``save_folder_record`` fails after
-        # ``upsert_scanned_files``/``add_songs_to_library_batch`` commits the rows and the
-        # folder is later removed from disk). Such a folder is in neither
-        # ``reconciled_folder_paths`` nor ``vanished_folder_paths``, so exact per-folder
-        # iteration would never visit it. Recursive retrieval from a reconciled/vanished
-        # ancestor still surfaces those rows, and the absent guard below then deletes
-        # them. Per row, reuse the candidate source-presence guard: delete only rows
-        # whose own normalized parent folder was reconciled by this scan AND whose current
-        # absolute path no longer exists. This keeps rows in a nested failed subtree out
-        # of the cleanup scope (a relocated row now points at its new, existing path and
-        # is not deleted).
+        # Step 6 — Deferred, exact-folder cleanup. Only successfully-walked and
+        # vanished folders are eligible; failed folders are never touched. Cleanup
+        # reads only one folder's DIRECT members (``get_songs_in_exact_folder``), so
+        # each iteration is bounded to that folder and never re-materializes a
+        # nested descendant subtree. A row relocated during the walk no longer
+        # belongs to its source exact-folder query (it now points at its
+        # destination) and is preserved. Folders whose full-scan walk failed remain
+        # untouched here. Per row, reuse the candidate source-presence guard: delete
+        # only rows whose current absolute path no longer exists.
         for rel_path in (*reconciled_folder_paths, *vanished_folder_paths):
             _check_cancelled(stop_event)
-            folder_rows = get_songs_for_folder(db, library, rel_path)
+            folder_rows = get_songs_in_exact_folder(db, library, rel_path)
             dead = [
                 carrier.candidate.song.path
                 for carrier in folder_rows.values()
@@ -324,6 +389,24 @@ def scan_library_full_workflow(
             ]
             if dead:
                 stats["files_removed"] += remove_deleted_files(db, library, dead)
+
+        # Step 6b — Explicit bounded recovery for genuinely-untracked parents.
+        # Exact-folder cleanup only visits folders normal reconciliation
+        # represented, so a row whose parent folder has no ``library_folders``
+        # record (and no tracked/discovered audio-bearing ancestor) is never
+        # surfaced there. This bounded sweep pages all songs by natural key (one
+        # page in memory) and deletes only rows whose parent is outside normal
+        # reconciliation, no ancestor folder was unreconciled, and whose absolute
+        # path is absent. Memory is bounded to one page; time is O(all songs) per
+        # full scan. Full scan owns this recovery; quick scan defers it.
+        stats["files_removed"] += _recover_orphaned_songs(
+            db,
+            library,
+            reconciled_folder_paths=reconciled_folder_paths,
+            vanished_folder_paths=vanished_folder_paths,
+            unreconciled_folder_paths=unreconciled_folder_paths,
+            stop_event=stop_event,
+        )
 
         # Step 7 — Clean up stale folder records
         cleanup_stale_folders(db, library, discovered_folder_paths)
