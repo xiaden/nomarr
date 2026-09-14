@@ -177,7 +177,7 @@ class TestRetryIdempotentAndNoResurrection:
     the row or its state assignments, and that a removed song stays removed — a
     re-issued ``remove_song`` is a ``False`` miss and a later upsert of the same
     locator creates a NEW row (fresh private storage id), never a resurrection of
-    the removed row (ADR-048 clause 6 / CONTRACTS).
+    the removed row (ADR-048 clause 6).
     """
 
     def test_reissuing_upsert_is_idempotent_no_duplicate_row_or_state(

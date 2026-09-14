@@ -1,4 +1,4 @@
-"""Static gates for the residual inventory and downstream handoff.
+"""Static gates for the residual inventory.
 
 Clean-checkout boundary: assertions read tracked, non-sensitive fixtures under
 ``tests/unit/architecture/fixtures/`` instead of the globally gitignored

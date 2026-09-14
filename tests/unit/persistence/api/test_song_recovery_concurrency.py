@@ -2,7 +2,7 @@
 
 Real transaction isolation, concurrent claim/upsert/remove, SQLSTATE, connection-loss,
 and mood-owner evidence belongs to the CI database tier and is documented in the
-database-tier handoff. These tests pin the local, deterministic boundary semantics: poisoned
+database-tier evidence record. These tests pin the local, deterministic boundary semantics: poisoned
 sessions are disposed, ambiguous commits are not completed blindly, immutable
 locators/claims are used for restart, and errors are redacted at the presentation
 boundary.
@@ -148,7 +148,7 @@ def test_redaction_hides_locator_storage_and_connection_details(caplog: pytest.L
     assert any("Exception sanitized" in record.message for record in caplog.records)
 
 
-# ── R2-3: direct repository comparison logic (mock session) ────────────────
+# ── Direct repository comparison logic (mock session) ─────────────────────
 
 
 @pytest.mark.unit

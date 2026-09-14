@@ -409,11 +409,14 @@ class LibraryTagsDb:
     ) -> MoodBatchResult:
         """Validate a bounded mood batch and delegate the complete intent once.
 
-        Tier-3 semantic owner only: input validation and duplicate folding happen
-        before any SQL, and the complete batch intent is delegated to the Tier-2
-        tag repository in exactly one call. The repository owns locator
-        resolution, mood/marker SQL, the single transaction, commit/rollback,
-        exception mapping, poisoned-session disposal, and bounded retry.
+        Tier-3 semantic owner only: input validation and duplicate-locator
+        rejection happen before any SQL, and the complete batch intent is
+        delegated to the Tier-2 tag repository in exactly one call. Any repeated
+        ``SongIdentity`` in one batch is rejected (the whole batch returns
+        ``INVALID_VALUE`` with no mutation); duplicates are never folded. The
+        repository owns locator resolution, mood/marker SQL, the single
+        transaction, commit/rollback, exception mapping, poisoned-session
+        disposal, and bounded retry.
         """
         try:
             normalized = LibraryTagsDb._normalize_mood_commands(commands)
@@ -427,22 +430,36 @@ class LibraryTagsDb:
     def _normalize_mood_commands(
         commands: Sequence[MoodReplacementCommand],
     ) -> tuple[MoodReplacementCommand, ...]:
+        """Validate a bounded mood-command sequence.
+
+        Any repeated ``SongIdentity`` (even value-identical) raises ``ValueError``;
+        ``replace_mood_tags_batch`` maps that to ``INVALID_VALUE`` with no mutation.
+        Duplicates are never folded.
+
+        Args:
+            commands: The candidate bounded sequence of mood replacement commands.
+
+        Returns:
+            The validated commands in input order.
+
+        Raises:
+            TypeError: If ``commands`` is not a sequence or holds a non-command.
+            ValueError: If the batch exceeds its bound or repeats a ``SongIdentity``.
+        """
         if isinstance(commands, (str, bytes)) or not isinstance(commands, Sequence):
             raise TypeError("mood commands must be a sequence")
         if len(commands) > _MAX_MOOD_BATCH_COMMANDS:
             raise ValueError("mood batch exceeds bound")
-        unique: dict[SongIdentity, MoodReplacementCommand] = {}
-        order: list[SongIdentity] = []
+        seen: set[SongIdentity] = set()
+        normalized: list[MoodReplacementCommand] = []
         for command in commands:
             if not isinstance(command, MoodReplacementCommand):
                 raise TypeError("invalid mood command")
-            previous = unique.get(command.song)
-            if previous is None:
-                unique[command.song] = command
-                order.append(command.song)
-            elif previous != command:
-                raise ValueError("conflicting mood locator")
-        return tuple(unique[identity] for identity in order)
+            if command.song in seen:
+                raise ValueError("duplicate mood locator")
+            seen.add(command.song)
+            normalized.append(command)
+        return tuple(normalized)
 
     def relink_tags(
         self,

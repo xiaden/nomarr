@@ -231,14 +231,24 @@ class TestMoodBatchValidation:
         assert session.mutations == []
         assert session.commits == 0
 
-    def test_identical_duplicate_locator_folds_to_one_command(self) -> None:
-        normalized = LibraryTagsDb._normalize_mood_commands(
-            (
-                _command(MoodAssignments(strict=("happy",))),
-                _command(MoodAssignments(strict=("happy",))),
-            )
+    def test_identical_duplicate_locator_rejected_before_sql(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        facade, session = _make_facade()
+        monkeypatch.setattr(
+            facade._song_tag_repo,
+            "replace_mood_tags_batch",
+            lambda _commands: pytest.fail("SQL must not run for identical duplicates"),
         )
-        assert len(normalized) == 1
+        duplicate_commands = (
+            _command(MoodAssignments(strict=("happy",))),
+            _command(MoodAssignments(strict=("happy",))),
+        )
+        with pytest.raises(ValueError):
+            LibraryTagsDb._normalize_mood_commands(duplicate_commands)
+        result = facade.replace_mood_tags_batch(duplicate_commands)
+        assert result.status == "INVALID_VALUE"
+        assert result.command_count == 0
+        assert session.mutations == []
+        assert session.commits == 0
 
     def test_batch_over_max_rejected_before_sql(self, monkeypatch: pytest.MonkeyPatch) -> None:
         facade, session = _make_facade()

@@ -18,14 +18,14 @@ Socket-only (no live PostgreSQL):
 8. malformed frontend frame -> typed :class:`FaultHarnessError`
 9. unavailable backend -> typed :class:`HarnessInfrastructureError`
 10. forced harness timeout -> typed :class:`HarnessTimeoutError`
-11. Round-2 DROP_ACK commit-validation guard: ReadyForQuery without a prior
+11. DROP_ACK commit-validation guard: ReadyForQuery without a prior
     COMMIT ``CommandComplete``
     (``test_drop_ack_ready_without_commit_command_complete_is_rejected``)
-12. Round-2 DROP_ACK commit-validation guard: ReadyForQuery with non-idle status
+12. DROP_ACK commit-validation guard: ReadyForQuery with non-idle status
     (``test_drop_ack_non_idle_ready_for_query_is_rejected``)
-13. Round-2 partial-frame relay-desync guard, client side
+13. Partial-frame relay-desync guard, client side
     (``test_mid_frame_client_side_desync_is_infrastructure_error``)
-14. Round-2 partial-frame relay-desync guard, backend side
+14. Partial-frame relay-desync guard, backend side
     (``test_mid_frame_backend_side_desync_is_infrastructure_error``)
 
 Only tests that use a live PostgreSQL server are marked ``requires_database``.
@@ -381,7 +381,7 @@ def test_timeout_surfaces_typed_timeout_error() -> None:
 
 
 # --------------------------------------------------------------------------
-# Socket-only guards for the Round-1 DROP_ACK commit validation and relay
+# Socket-only guards for DROP_ACK commit validation and relay
 # partial-frame desync handling. A minimal canned backend speaks just enough
 # PostgreSQL wire protocol (startup -> AuthenticationOk + ReadyForQuery, then a
 # canned reply to the Query COMMIT) so no live server is involved.

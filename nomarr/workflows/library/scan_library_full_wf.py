@@ -30,6 +30,11 @@ from nomarr.components.library.library_song_query_comp import (
     get_songs_for_folder,
 )
 from nomarr.components.library.library_song_state_comp import transition_song_state
+from nomarr.components.library.move_detection_comp import (
+    apply_detected_moves,
+    detect_file_move_via_db,
+    detect_file_moves,
+)
 from nomarr.components.library.scan_lifecycle_comp import (
     mark_scan_completed,
     resolve_library_for_scan,
@@ -52,6 +57,7 @@ from nomarr.workflows.metadata.cleanup_orphaned_entities_wf import cleanup_orpha
 if TYPE_CHECKING:
     import threading
 
+    from nomarr.components.library.song_query_types import StateTaggedSong
     from nomarr.helpers.dataclasses.library_dataclass import Library
     from nomarr.persistence.db import Database
 
@@ -65,6 +71,49 @@ class ScanCancelledError(TaskCancelledError):
 def _check_cancelled(stop_event: threading.Event | None) -> None:
     if stop_event is not None and stop_event.is_set():
         raise ScanCancelledError("Scan cancelled by user")
+
+
+def _move_candidate(state_tagged: StateTaggedSong) -> dict[str, Any]:
+    """Project a typed song carrier into a move-detection candidate dict.
+
+    Move detection is addressed by the semantic ``Song`` only: physical ``path``
+    plus the canonical ``normalized_path`` it resolves by, with the chromaprint
+    and duration used for matching. No row, generated id, or integer identity
+    crosses this boundary.
+    """
+    song = state_tagged.candidate.song
+    return {
+        "path": song.path,
+        "normalized_path": song.normalized_path,
+        "chromaprint": song.chromaprint,
+        "duration_seconds": song.duration_seconds,
+    }
+
+
+def _source_still_present(
+    normalized_path: str,
+    old_path: str,
+    discovered_paths: set[str],
+    unreconciled_folder_paths: set[str],
+) -> bool:
+    """Whether a DB-fallback match's source is still present on disk.
+
+    A DB chromaprint lookup has no existence filter, so it can return a live
+    song whose content merely duplicates a genuinely new file. A fallback match
+    is only a real relocation when its source is absent: a source discovered this
+    scan, or inside a folder this scan did not reconcile (a folder whose walk
+    failed), is a live file and must not be relocated. A full scan walks every
+    folder, so its unreconciled set holds only folders whose walk failed.
+    """
+    if old_path in discovered_paths:
+        return True
+    for folder in unreconciled_folder_paths:
+        if folder == "":
+            if "/" not in normalized_path:
+                return True
+        elif normalized_path == folder or normalized_path.startswith(f"{folder}/"):
+            return True
+    return False
 
 
 def scan_library_full_workflow(
@@ -84,6 +133,11 @@ def scan_library_full_workflow(
     Pass 1: fast disk walk — upsert files to DB, seed initial state edges.
     Pass 2: background tag extraction worker reads audio tags and seeds entities.
 
+    The complete library is traversed regardless of the folder cache. DB rows
+    absent from disk in a walked folder, DB rows from folders that vanished
+    entirely, and newly discovered files are accumulated as move candidates and
+    reconciled before any genuine insert/delete.
+
     Args:
         db: Database instance
         library: Domain ``Library`` (natural identity) to scan
@@ -99,8 +153,8 @@ def scan_library_full_workflow(
 
     Returns:
         Dict with scan statistics (files_discovered, files_added,
-        files_updated, files_removed, files_failed,
-        files_skipped, scan_duration_s, warnings, scan_id)
+        files_updated, files_skipped, files_moved, files_removed,
+        files_failed, scan_duration_s, warnings, scan_id)
 
     Raises:
         ScanCancelledError: If ``stop_event`` is set mid-scan. The scan records
@@ -133,11 +187,22 @@ def scan_library_full_workflow(
         estimated_total = sum(f.file_count for f in all_folders)
         update_scan_progress(db, library, total=file_count or estimated_total)
 
-        # Step 4 — Track which folders vanished so their files can be deleted after the loop
+        # Step 4 — Track vanished folders; their DB rows seed move candidates so
+        # a move out of a vanished folder into a discovered location is detected
+        # before any delete.
         vanished_folder_paths = db_folder_paths - discovered_folder_paths
         all_discovered_paths: set[str] = set()
+        # Folders this scan did not reconcile (whose walk failed). A DB-fallback
+        # match sourced in one of these must not be applied: the folder is
+        # unknown territory, so a live row there may still exist on disk.
+        unreconciled_folder_paths: set[str] = set()
 
-        # Step 5 — Per-folder scan
+        missing_candidates: list[dict[str, Any]] = []
+        new_candidates: list[dict[str, Any]] = []
+        new_edge_bootstraps: list[dict[str, Any]] = []
+
+        # Step 5 — Per-folder scan. Modified files are upserted immediately; new
+        # files are deferred so move detection can run before any genuine insert.
         for folder in all_folders:
             _check_cancelled(stop_event)
             stats["folders_scanned"] += 1
@@ -158,33 +223,29 @@ def scan_library_full_workflow(
                     warnings.extend(batch.warnings)
                     all_discovered_paths.update(batch.discovered_paths)
 
-                    # Upsert all discovered files immediately
                     if batch.file_entries:
-                        new_paths = batch.discovered_paths - set(existing_for_folder)
-                        song_identities = upsert_scanned_files(db, library, batch.file_entries, batch.edge_bootstraps)
-                        transition_song_state(db, song_identities, STATE_NOT_SCANNED, STATE_SCANNED)
-                        transition_song_state(db, song_identities, STATE_ERRORED, STATE_NOT_ERRORED)
-                        # Reset hydrated → not_hydrated for modified files
-                        # so the tag extraction worker re-extracts their audio tags.
-                        # New files already get not_hydrated from state bootstrap.
-                        modified_identities = [
-                            identity
-                            for identity, e in zip(song_identities, batch.file_entries, strict=True)
-                            if e["path"] not in new_paths
-                        ]
-                        if modified_identities:
-                            transition_song_state(db, modified_identities, STATE_HYDRATED, STATE_NOT_HYDRATED)
-                        new_identities = [
-                            identity
-                            for identity, e in zip(song_identities, batch.file_entries, strict=True)
-                            if e["path"] in new_paths
-                        ]
-                        stats["files_added"] += len(new_identities)
+                        modified_entries = [e for e in batch.file_entries if e["path"] in existing_for_folder]
+                        new_entries = [e for e in batch.file_entries if e["path"] not in existing_for_folder]
 
-                    # Files in DB for this folder no longer on disk → delete
-                    deleted_paths = [p for p in existing_for_folder if p not in batch.discovered_paths]
-                    if deleted_paths:
-                        stats["files_removed"] += remove_deleted_files(db, library, deleted_paths)
+                        # Upsert modified files in place immediately. New files
+                        # wait for move detection below.
+                        if modified_entries:
+                            song_identities = upsert_scanned_files(db, library, modified_entries, batch.edge_bootstraps)
+                            transition_song_state(db, song_identities, STATE_NOT_SCANNED, STATE_SCANNED)
+                            transition_song_state(db, song_identities, STATE_ERRORED, STATE_NOT_ERRORED)
+                            # Reset hydrated → not_hydrated for modified files
+                            # so the tag extraction worker re-extracts their audio tags.
+                            transition_song_state(db, song_identities, STATE_HYDRATED, STATE_NOT_HYDRATED)
+
+                        new_candidates.extend(new_entries)
+                        new_edge_bootstraps.extend(batch.edge_bootstraps)
+
+                    # Files in DB for this folder no longer on disk → move candidates
+                    missing_candidates.extend(
+                        _move_candidate(state_tagged)
+                        for path, state_tagged in existing_for_folder.items()
+                        if path not in batch.discovered_paths
+                    )
 
                     save_folder_record(
                         db,
@@ -207,26 +268,80 @@ def scan_library_full_workflow(
                         logger.error("Folder %r failed after retry, skipping: %s", folder.rel_path, e)
                         stats["files_failed"] += folder.file_count
                         warnings.append(f"Folder {folder.rel_path!r} skipped after error: {e}")
+                        # The walk failed, so neither discovered paths nor missing
+                        # candidates cover this folder: treat it as unreconciled
+                        # so a DB-fallback match sourced here is not applied.
+                        unreconciled_folder_paths.add(folder.rel_path)
 
             update_scan_progress(db, library, progress=len(all_discovered_paths))
 
-        # Step 6 — Delete files from folders that vanished entirely from disk
+        # Step 6 — Seed move candidates from files in folders that vanished entirely
         for folder_rel_path in vanished_folder_paths:
             _check_cancelled(stop_event)
             vanished_files = get_songs_for_folder(db, library, folder_rel_path)
-            if vanished_files:
-                stats["files_removed"] += remove_deleted_files(db, library, list(vanished_files.keys()))
+            missing_candidates.extend(_move_candidate(state_tagged) for state_tagged in vanished_files.values())
 
-        # Step 7 — Clean up stale folder records
+        # Step 7 — Move detection BEFORE any insert/delete. The component fast-fails
+        # when no candidate carries a chromaprint, so only run detection (and the
+        # per-new-file DB fallback) when at least one missing candidate has one;
+        # otherwise no audio is decoded for empty candidate sets.
+        if new_candidates and any(candidate.get("chromaprint") for candidate in missing_candidates):
+            move_result = detect_file_moves(missing_candidates, new_candidates, library, db)
+            if move_result.moves:
+                stats["files_moved"] += apply_detected_moves(move_result.moves, {}, db, library_root)
+                matched_old_paths = {move.old_path for move in move_result.moves}
+                matched_new_paths = {move.new_path for move in move_result.moves}
+                missing_candidates = [
+                    candidate for candidate in missing_candidates if candidate["path"] not in matched_old_paths
+                ]
+                new_candidates = [entry for entry in new_candidates if entry["path"] not in matched_new_paths]
+
+            # Final pass: for new files still unmatched in memory, look the move
+            # candidate up directly in the DB (covers moves whose source row was
+            # not in this scan's candidate set). The DB lookup has no existence
+            # filter, so accept a match only when its source is genuinely absent
+            # from disk; a live file that merely duplicates the new file's
+            # content must not have its row (and tags/states) repointed.
+            remaining_new: list[dict[str, Any]] = []
+            for entry in new_candidates:
+                move = detect_file_move_via_db(entry, library, db)
+                if move is None or _source_still_present(
+                    move.song_identity.normalized_path,
+                    move.old_path,
+                    all_discovered_paths,
+                    unreconciled_folder_paths,
+                ):
+                    remaining_new.append(entry)
+                    continue
+                stats["files_moved"] += apply_detected_moves([move], {}, db, library_root)
+                missing_candidates = [
+                    candidate for candidate in missing_candidates if candidate["path"] != move.old_path
+                ]
+            new_candidates = remaining_new
+
+        # Step 8 — Insert genuinely-new files (a matched move's destination is not new)
+        if new_candidates:
+            song_identities = upsert_scanned_files(db, library, new_candidates, new_edge_bootstraps)
+            transition_song_state(db, song_identities, STATE_NOT_SCANNED, STATE_SCANNED)
+            transition_song_state(db, song_identities, STATE_ERRORED, STATE_NOT_ERRORED)
+            stats["files_added"] += len(new_candidates)
+
+        # Step 9 — Delete genuinely-missing files (a matched move's source is not deleted)
+        if missing_candidates:
+            stats["files_removed"] += remove_deleted_files(
+                db, library, [candidate["path"] for candidate in missing_candidates]
+            )
+
+        # Step 10 — Clean up stale folder records
         cleanup_stale_folders(db, library, discovered_folder_paths)
 
-        # Step 9 — Entity graph cleanup
+        # Step 11 — Entity graph cleanup
         try:
             cleanup_orphaned_entities_workflow(db, dry_run=False)
         except Exception as e:
             logger.warning("Entity cleanup failed: %s", e, exc_info=True)
 
-        # Step 9b — Tag graph validation (optional, requires models_dir)
+        # Step 11b — Tag graph validation (optional, requires models_dir)
         if models_dir:
             try:
                 validation = validate_library_tags_workflow(
@@ -260,7 +375,7 @@ def scan_library_full_workflow(
                 logger.warning("Tag validation failed: %s", e, exc_info=True)
                 warnings.append(f"Tag validation error: {e}")
 
-        # Step 10 — Finalize
+        # Step 12 — Finalize
         scan_duration = internal_s().value - start_time.value
         mark_scan_completed(db, library)
         update_scan_progress(
@@ -272,12 +387,13 @@ def scan_library_full_workflow(
         )
 
         logger.info(
-            "Full scan complete in %.1fs: folders=%d, added=%d, updated=%d, skipped=%d, removed=%d, failed=%d",
+            "Full scan complete in %.1fs: folders=%d, added=%d, updated=%d, skipped=%d, moved=%d, removed=%d, failed=%d",
             scan_duration,
             stats["folders_scanned"],
             stats["files_added"],
             stats["files_updated"],
             stats["files_skipped"],
+            stats["files_moved"],
             stats["files_removed"],
             stats["files_failed"],
         )

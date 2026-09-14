@@ -332,10 +332,6 @@ def add_folder():
     pass  # Library folder mutation
 
 
-def apply_detected_moves():
-    pass  # Move detection
-
-
 def bootstrap_states():
     pass  # File state initialization
 
@@ -358,14 +354,6 @@ def delete_library_file():
 
 def delete_tag():
     pass  # Tag management
-
-
-def detect_file_moves():
-    pass  # Move detection
-
-
-def detect_file_move_via_db():
-    pass  # Move detection
 
 
 def detect_missing_files():

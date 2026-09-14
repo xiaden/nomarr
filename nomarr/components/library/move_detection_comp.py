@@ -342,9 +342,12 @@ def detect_file_move_via_db(
 
     Computes the chromaprint for the new file, then queries the DB for a file
     with the same fingerprint belonging to ``library`` (the natural ``Library``
-    domain value).  Used during the final scan pass when there are no in-memory
-    ``missing_docs_map`` candidates (e.g. files moved from a folder that
-    vanished entirely from disk).
+    domain value). Called during the final scan pass for each new file that the
+    in-memory candidate comparison did not match (e.g. a move whose source row
+    was not in this scan's missing set). The DB lookup has no existence filter,
+    so the caller must additionally accept a match only when its source is
+    genuinely absent from disk; a live file whose content merely duplicates the
+    new file is not a relocation.
 
     The detected move carries its **source locator** (ADR-048): a
     ``SongIdentity`` built from ``library``'s natural key and the candidate

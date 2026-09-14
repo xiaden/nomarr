@@ -48,13 +48,13 @@ git clean, destructive overwrite of unrelated changes, caller-managed
 transactions, row aliases, integer bridges, or any operation that erases
 provenance.
 
-## Evidence labels and handoff
+## Evidence labels
 
 - LOCAL_PASS: only for a command that actually ran and passed locally.
 - LOCAL_UNAVAILABLE: local capability could not execute after feasible setup.
 - CI_DEFERRED: wired to the named database-tests job but not run here.
 - CI_PASS: reserved for an actual workflow run; none is claimed here.
 
-### Exact handoff
+### Missing-evidence disposition
 
 Missing mood owner evidence remains BLOCKED rather than downgraded.

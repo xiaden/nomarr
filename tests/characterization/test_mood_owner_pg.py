@@ -36,11 +36,11 @@ and live in ``tests/unit/persistence/api/test_mood_owner.py``; they are never
 PostgreSQL, driver, SQLSTATE, connection-loss, poisoned-session, rollback, or
 real-commit evidence.
 
-Evidence labels used by the deferred-capability handoff: ``LOCAL_PASS`` = executed and
+Evidence labels used by the deferred-capability reporting: ``LOCAL_PASS`` = executed and
 passed against a real PostgreSQL driver; ``CI_DEFERRED`` = wired into the
 ``database-tests`` job, awaiting actual GitHub execution; ``LOCAL_UNAVAILABLE`` /
 ``BLOCKED`` = not runnable or not deterministically reproducible, recorded with
-    owner + stop condition in the deferred-capability handoff.
+    owner + stop condition in the deferred-capability reporting.
 """
 
 from __future__ import annotations
@@ -205,9 +205,9 @@ def mood_world_many(db: Database, pg_engine) -> Iterator[dict]:
     """Create an isolated library with 1001 distinct persisted song locators.
 
     Used by the real persistence-bound test, where the batch must contain 1000
-    DISTINCT locators that survive the facade's pre-SQL duplicate folding (so the
-    bound is exercised on distinct persisted rows, not folded duplicates), plus a
-    distinct 1001-command over-bound input that must be rejected before SQL.
+    DISTINCT locators (any repeated locator is rejected before SQL, so the bound
+    is exercised on distinct persisted rows), plus a distinct 1001-command
+    over-bound input that must be rejected before SQL.
     """
     suffix = uuid.uuid4().hex[:10]
     name = f"MoodBoundLib-{suffix}"
@@ -379,11 +379,11 @@ def _song_tag_gate(pg_engine, gate_value: str, *, abort: bool = False) -> Iterat
     """
     token = uuid.uuid4().hex[:10]
     key = 6_000_000 + (int(token, 16) % 1_000_000)
-    function = f"d2rb_gate_fn_{token}"
-    trigger = f"d2rb_gate_trg_{token}"
+    function = f"mood_batch_guard_fn_{token}"
+    trigger = f"mood_batch_guard_trg_{token}"
     action = f"PERFORM pg_advisory_lock({key}); "
     if abort:
-        action += "RAISE EXCEPTION 'd2rb gate abort' USING ERRCODE = 'P0001'; "
+        action += "RAISE EXCEPTION 'mood batch abort' USING ERRCODE = 'P0001'; "
     with pg_engine.begin() as conn:
         conn.execute(
             text(
@@ -719,31 +719,37 @@ class TestMoodReplacementOutcomes:
         assert result.command_count == 0
         assert result.changed_count == 0
 
-    def test_conflicting_duplicate_locators_rejected_before_sql(
+    def test_repeated_locator_commands_rejected_before_sql(
         self, db: Database, inference_session: Session, mood_world: dict
     ) -> None:
         song_id = mood_world["song_ids"][0]
         identity = mood_world["identities"][0]
-        commands = (
-            _command(identity, MoodAssignments(strict=("one",)), CalibrationMoodMarker.calibrated(VERSION_A)),
-            _command(identity, MoodAssignments(strict=("two",)), CalibrationMoodMarker.calibrated(VERSION_A)),
+        marker = CalibrationMoodMarker.calibrated(VERSION_A)
+        conflicting = (
+            _command(identity, MoodAssignments(strict=("one",)), marker),
+            _command(identity, MoodAssignments(strict=("two",)), marker),
+        )
+        # Value-identical duplicate commands are rejected too (no folding).
+        identical = (
+            _command(identity, MoodAssignments(strict=("one",)), marker),
+            _command(identity, MoodAssignments(strict=("one",)), marker),
         )
 
-        result = db.library.tags.replace_mood_tags_batch(commands)
-
-        assert result.status == "INVALID_VALUE"
-        assert _all_tag_pairs(inference_session, song_id) == set()
-        assert _marker(inference_session, song_id) is None
+        for commands in (conflicting, identical):
+            result = db.library.tags.replace_mood_tags_batch(commands)
+            assert result.status == "INVALID_VALUE"
+            assert result.command_count == 0
+            assert _all_tag_pairs(inference_session, song_id) == set()
+            assert _marker(inference_session, song_id) is None
 
     def test_exact_bound_accepted_and_over_bound_rejected(
         self, db: Database, inference_session: Session, mood_world_many: dict
     ) -> None:
         """The batch bound is exercised on 1000 DISTINCT persisted locators.
 
-        The commands must survive the facade's pre-SQL duplicate folding as 1000
-        distinct entries, so this is a genuine persistence bound rather than a
-        folded-duplicate no-op; the 1001-command input is likewise distinct and is
-        rejected before any SQL runs.
+        Any repeated locator is rejected before SQL (never folded), so this is a
+        genuine persistence bound over 1000 distinct entries; the 1001-command
+        input is likewise distinct and is rejected before any SQL runs.
         """
         identities = mood_world_many["identities"]
         song_ids = mood_world_many["song_ids"]
@@ -758,7 +764,7 @@ class TestMoodReplacementOutcomes:
         assert accepted.command_count == 1000
         assert accepted.changed_count == 1000
         # Sample distinct persisted locators to prove the 1000 commands were real
-        # distinct rows (not folded duplicates).
+        # distinct rows.
         for song_id in (song_ids[0], song_ids[499], song_ids[999]):
             assert _mood_tags(inference_session, song_id) == {("nom:mood-strict", "bounded")}
         # The 1001st distinct locator was never touched by the accepted batch.

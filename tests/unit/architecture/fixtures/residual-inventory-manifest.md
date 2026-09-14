@@ -1,4 +1,4 @@
-# Residual inventory manifest and handoff (tracked clean-checkout fixture)
+# Residual inventory manifest (tracked clean-checkout fixture)
 
 This tracked fixture carries only the non-sensitive classification vocabulary
 that the residual static readers require. It contains no credentials, raw rows,

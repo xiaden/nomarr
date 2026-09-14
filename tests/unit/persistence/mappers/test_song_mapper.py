@@ -5,7 +5,7 @@ Prove that
 mappings to a semantic application :class:`Song` and to the natural
 :class:`SongIdentity` locator, and that generated row ids / foreign keys /
 storage serialization never cross the persistence boundary. Row fixtures appear
-only in persistence mapper tests (CONTRACTS §2).
+only in persistence mapper tests.
 """
 
 from __future__ import annotations

@@ -293,7 +293,8 @@ class SongTagRepository:
     ) -> MoodBatchResult:
         """Apply a bounded, locator-addressed, all-or-none mood publication.
 
-        The Tier-3 facade has already validated and de-duplicated *commands*;
+        The Tier-3 facade has already validated *commands* and rejects any
+        repeated ``SongIdentity`` before SQL (no de-duplication);
         this repository intent owns the complete short transaction: private
         ``SongIdentity`` resolution, complete tag-identity creation, mood-edge
         and marker SQL, one commit, rollback on failure, poisoned-session

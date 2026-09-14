@@ -236,7 +236,7 @@ class TestMoveLibrarySongNoDeleteRecreate:
 
     One repo ``move_song`` UPDATE + one commit is the whole relocation; the
     facade must never delete-plus-recreate or fabricate a replacement on any
-    injected failure or stale source (ADR-048 §4 / CONTRACTS §4).
+    injected failure or stale source (ADR-048 §4).
     """
 
     def test_statement_failure_propagates_without_delete_or_insert(self) -> None:
@@ -587,7 +587,7 @@ class TestAddSongIdempotentRetry:
 class TestNoResurrectionAfterRemoval:
     """A removed song stays removed; re-issuing remove misses deterministically.
 
-    ADR-048 clause 6 / CONTRACTS: once removed, the locator does not resolve
+    ADR-048 clause 6: once removed, the locator does not resolve
     again. Re-issuing ``remove_song`` after a successful removal returns ``False``
     (no double delete, nothing reappears). A LATER upsert of the same locator is a
     NEW song (a fresh row via the canonical upsert), not a resurrection of the

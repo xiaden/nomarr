@@ -13,8 +13,8 @@ per backbone and (b) real-PostgreSQL backbone-scoped replacement in
 Identity resolution (``_resolve_song_id``) is real-DB (characterization scope); it
 is stubbed here so the repo-level backbone-scope assertion stays unit-runnable.
 
-QA Round-2 additions drive the REAL ``_resolve_song_id`` negative branches and the
-DB-error mapping at the aggregate on a controlled fake session (Findings 2 and 4).
+Follow-up additions drive the REAL ``_resolve_song_id`` negative branches and the
+DB-error mapping at the aggregate on a controlled fake session.
 """
 
 from __future__ import annotations
@@ -76,7 +76,7 @@ def test_typed_vector_commands_carry_no_per_command_backbone() -> None:
 
 
 # ---------------------------------------------------------------------------
-# QA Round-2 Findings 2 & 4: real _resolve_song_id branch coverage and DB-error
+# Real _resolve_song_id branch coverage and DB-error
 # translation at the aggregate. These drive the REAL _resolve_song_id against a
 # controlled fake session whose execute() returns fixed row sequences, through
 # the real aggregate public path so that EntityNotFoundError (deliberate,
@@ -107,7 +107,7 @@ def _replace(repo: MlInferenceRepo, song: SongIdentity) -> None:
 
 @pytest.mark.unit
 class TestResolveSongIdNegativeBranches:
-    """Real _resolve_song_id branch coverage (QA Round-2 Finding 4)."""
+    """Real _resolve_song_id branch coverage."""
 
     def test_unknown_library_uuid_raises_entity_not_found(self) -> None:
         repo, session = _real_resolve_repo()
@@ -135,7 +135,7 @@ class TestResolveSongIdNegativeBranches:
 class TestResolveDbErrorMapping:
     """DB-level failures during identity resolution map like the rest of the aggregate.
 
-    QA Round-2 Finding 2 moved _resolve_song_id INSIDE the
+    _resolve_song_id runs INSIDE the
     map_persistence_exceptions context in replace_song_inference_results; these
     tests pin that OperationalError/ProgrammingError raised by the resolve
     SELECTs surface as DatabaseStateError (never raw) while the deliberate
@@ -163,7 +163,7 @@ class TestResolveDbErrorMapping:
             repo.replace_song_inference_results(song=_SONG, backbone="effnet", vectors=[], output_streams=[])
 
     def test_entity_not_found_is_not_replaced_by_database_state_error(self) -> None:
-        # Guards the Finding-2 placement invariant from the opposite direction:
+        # Guards the placement invariant from the opposite direction:
         # the deliberate EntityNotFoundError from _resolve_song_id must surface as
         # itself (EntityNotFoundError) — never as a mapped DatabaseStateError —
         # even though resolve now runs inside the exception-mapping context.
@@ -174,7 +174,7 @@ class TestResolveDbErrorMapping:
 
 
 # ---------------------------------------------------------------------------
-# QA Round-3 Finding: outer rollback guard on a mutation-block failure. The
+# Outer rollback guard on a mutation-block failure. The
 # aggregate wraps identity resolution + the begin_nested() mutation block + the
 # commit() inside map_persistence_exceptions and, on ANY failure, rolls back the
 # WHOLE outer session (mirroring the repo_helpers atomic_unit_of_work pattern)

@@ -192,7 +192,7 @@ def _command(song: SongIdentity = SONG, *, marker: CalibrationMoodMarker | None 
 
 
 @pytest.mark.unit
-class TestMoodRoundTwoPureCharacterization:
+class TestMoodFacadeContractCharacterization:
     """Facade contract characterization only; executable persistence evidence belongs to the repository and real-DB suites."""
 
     def test_all_statuses_and_public_fields_are_complete_and_redacted(self) -> None:
@@ -331,7 +331,7 @@ class TestMoodRoundTwoPureCharacterization:
         )
         assert _command() == _command()
 
-    def test_duplicate_locator_policy_is_explicitly_conflict_sensitive(self) -> None:
+    def test_duplicate_locator_policy_rejects_any_repeat(self) -> None:
         same = _command()
         # Independently constructed but value-identical commands: genuine
         # dataclass equality, not an object compared to itself.
@@ -349,10 +349,12 @@ class TestMoodRoundTwoPureCharacterization:
         )
         assert independently_identical[0] == independently_identical[1]
         assert conflicting[0] != conflicting[1]
-        # The owner folds identical commands and rejects conflicting duplicates before SQL.
+        # The owner rejects ANY repeated locator before SQL, including
+        # value-identical duplicates; it never folds them.
         with pytest.raises((TypeError, ValueError)):
             LibraryTagsDb._normalize_mood_commands(conflicting)
-        assert len(LibraryTagsDb._normalize_mood_commands(independently_identical)) == 1
+        with pytest.raises((TypeError, ValueError)):
+            LibraryTagsDb._normalize_mood_commands(independently_identical)
 
     def test_invalid_marker_dto_rejects_and_overbound_batch_is_uncharacterized(self) -> None:
         # The marker DTO validates the lowercase 32-hex token purely.
@@ -404,7 +406,7 @@ class TestMoodRoundTwoPureCharacterization:
         assert "replace_mood_tags_batch" in inspect.getsource(LibraryTagsDb.replace_mood_tags)
         assert "_normalize_mood_commands" in inspect.getsource(LibraryTagsDb.replace_mood_tags_batch)
 
-    def test_all_or_none_and_no_mutation_are_d2_d3_obligations_not_evidence(self) -> None:
+    def test_all_or_none_and_no_mutation_are_implementation_obligations_not_evidence(self) -> None:
         # Empty input is a deterministic no-op and the implementation owns SQL atomicity.
         batch_source = inspect.getsource(LibraryTagsDb.replace_mood_tags_batch)
         assert "_normalize_mood_commands" in batch_source

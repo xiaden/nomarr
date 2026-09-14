@@ -1,7 +1,7 @@
 """Static evidence gates for security, provenance, and rollback guidance.
 
 The fixture-backed assertions read a tracked, non-sensitive fixture under
-``tests/unit/architecture/fixtures/``, while the handoff check additionally
+``tests/unit/architecture/fixtures/``, while the evidence-label check additionally
 reads repository files (``capability-manifest.json`` and
 ``.github/workflows/backend-tests.yml``). No assertion reads the globally
 gitignored ``artifacts/`` tree, so a clean checkout passes without it.
@@ -112,7 +112,7 @@ def test_rollback_runbook_forbids_destructive_git_and_preserves_recovery() -> No
 @pytest.mark.unit
 def test_evidence_labels_preserve_blockers() -> None:
     text = _fixture("security-provenance-rollback.md").read_text(encoding="utf-8")
-    assert "Exact handoff" in text
+    assert "Missing-evidence disposition" in text
     assert "LOCAL_PASS" in text
     assert "LOCAL_UNAVAILABLE" in text
     assert "CI_DEFERRED" in text

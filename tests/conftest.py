@@ -103,7 +103,7 @@ def _make_candidate(
     path: str | None = None,
     states: Iterable[str] = ("hydrated", "processed"),
 ) -> SongStateCandidate:
-    """Build a typed ``SongStateCandidate`` consistent with CONTRACTS §5.
+    """Build a typed ``SongStateCandidate``.
 
     Produces a candidate whose ``identity`` (locator) and ``song`` agree on
     ``normalized_path`` and whose ``states`` is a sorted, unique tuple of state *names*.
@@ -122,7 +122,7 @@ def _assert_candidate_semantic(candidate: SongStateCandidate) -> None:
 
     Fails (``AssertionError``) if the candidate (or its ``song``/``identity``) carries a
     generated ``songs.id``/``library_id``, if ``song`` is a raw row/dict shape, or if the
-    locator and song disagree on ``normalized_path`` (ADR-047/048; CONTRACTS §3/§5).
+    locator and song disagree on ``normalized_path`` (ADR-047/048).
     """
     assert isinstance(candidate, SongStateCandidate), "state-read result must be SongStateCandidate"
     identity = candidate.identity

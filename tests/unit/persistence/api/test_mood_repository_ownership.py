@@ -134,7 +134,7 @@ class TestExistingRepositoryOwnsMoodPersistence:
 
 
 @pytest.mark.unit
-class TestUnchangedD3FacingPublicSymbols:
+class TestMoodFacingPublicSymbols:
     def test_exact_public_signatures_are_unchanged(self) -> None:
         single = inspect.signature(LibraryTagsDb.replace_mood_tags)
         batch = inspect.signature(LibraryTagsDb.replace_mood_tags_batch)
@@ -143,7 +143,7 @@ class TestUnchangedD3FacingPublicSymbols:
         assert "MoodWriteResult" in str(single.return_annotation)
         assert "MoodBatchResult" in str(batch.return_annotation)
 
-    def test_d3_can_exercise_public_apis_without_bypassing_the_repository(self) -> None:
+    def test_public_apis_can_be_exercised_without_bypassing_the_repository(self) -> None:
         # The only public mood mutation path delegates to the repository owner,
         # and the facade exposes no session/transaction/retry entry point.
         assert "self._song_tag_repo.replace_mood_tags_batch" in inspect.getsource(LibraryTagsDb.replace_mood_tags_batch)
