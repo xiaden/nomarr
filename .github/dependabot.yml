@@ -1,45 +1,8 @@
 # Dependabot configuration for Nomarr
-# Automates dependency updates for Python (uv and pip), JavaScript (npm), GitHub Actions, and Docker
+# Automates dependency updates for Python (uv), JavaScript (npm), GitHub Actions, and Docker
 
 version: 2
 updates:
-  # Backend - Python dependencies via pip
-  - package-ecosystem: "pip"
-    directory: "/"
-    target-branch: "develop"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "05:00"
-    open-pull-requests-limit: 10
-    labels:
-      - "dependencies"
-      - "backend"
-    commit-message:
-      prefix: "deps(backend)"
-    # Group minor/patch updates for common packages
-    groups:
-      fastapi-ecosystem:
-        patterns:
-          - "fastapi*"
-          - "pydantic*"
-          - "starlette*"
-          - "uvicorn*"
-      ml-stack:
-        patterns:
-          - "numpy*"
-          - "scipy*"
-      testing:
-        patterns:
-          - "pytest*"
-          - "coverage*"
-    # Allow pre-release versions for these packages (alpha project)
-    ignore:
-      - dependency-name: "*"
-        update-types: ["version-update:semver-major"]
-    # Version pinning strategy: allow minor/patch updates only
-    versioning-strategy: increase
-
   # Backend - Python dependencies via uv (tracks pyproject.toml + uv.lock)
   - package-ecosystem: "uv"
     directory: "/"
