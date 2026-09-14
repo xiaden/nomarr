@@ -78,19 +78,26 @@ def _path_exists(path: str) -> bool:
     return Path(path).exists()
 
 
-def _candidate_source_present(song: Song, unreconciled_folder_paths: set[str]) -> bool:
+def _candidate_source_present(
+    song: Song,
+    unreconciled_folder_paths: set[str],
+    discovery_uninspected_folder_paths: set[str],
+) -> bool:
     """True when a chromaprint candidate's source is still known/presumed present.
 
-    Direct-parent-only: only the song's immediate parent folder (the last
-    component of ``normalized_path``) is consulted — ancestors are never
-    checked. A candidate is presumed live when its parent folder was not
-    reconciled by this scan (a folder whose walk failed, or a folder that could
-    not be authoritatively inspected during discovery), or when its current
-    absolute path still exists on disk. Only an absent source may be treated as
-    a relocation origin.
+    Two distinct scopes are consulted. Ordinary unreconciled scope is
+    immediate-parent-only: a candidate is presumed live when its immediate parent
+    folder (the last component of ``normalized_path``) was not reconciled by this
+    scan. Discovery-uninspected scope is ancestry-aware: a candidate is also
+    presumed live when its parent or any ancestor (including the root ``""``) is
+    within discovery-uninspected scope, so a discovery-uninspected ancestor
+    blocks a descendant candidate from relocation sourcing. A candidate whose
+    absolute path still exists on disk is likewise presumed present. Only a
+    genuinely absent, successfully-inspected source may be treated as a
+    relocation origin.
     """
     parent = song.normalized_path.rsplit("/", 1)[0] if "/" in song.normalized_path else ""
-    if parent in unreconciled_folder_paths:
+    if parent in unreconciled_folder_paths or _scope_uninspected(parent, discovery_uninspected_folder_paths):
         return True
     return _path_exists(song.path)
 
@@ -118,6 +125,7 @@ def _recover_orphaned_songs(
     reconciled_folder_paths: set[str],
     vanished_folder_paths: set[str],
     unreconciled_folder_paths: set[str],
+    discovery_uninspected_folder_paths: set[str],
     stop_event: threading.Event | None,
 ) -> int:
     """Recover rows whose parent folder normal reconciliation never visited.
@@ -127,13 +135,16 @@ def _recover_orphaned_songs(
     (and no tracked/discovered audio-bearing ancestor) is never surfaced there.
     This explicit, bounded sweep pages the library's songs by ``normalized_path``
     (one page in memory at a time) and deletes a row only when its direct parent
-    folder is OUTSIDE the covered set, no ancestor folder is in the unreconciled
-    set (failed walk OR failed discovery — conservative: that scope was not
-    authoritatively inspected), and the row's absolute path is absent. Time is
+    folder is OUTSIDE the covered set (ordinary unreconciled scope, including
+    failed-walk folders, is matched on the direct parent only), no ancestor
+    folder is in the ancestry-aware discovery-uninspected scope, and the row's
+    absolute path is absent. Time is
     O(all songs) per full scan; memory is bounded by
     ``_ORPHAN_RECOVERY_BATCH_SIZE``. Returns the number of rows removed.
     """
-    covered = reconciled_folder_paths | vanished_folder_paths | unreconciled_folder_paths
+    covered = (
+        reconciled_folder_paths | vanished_folder_paths | unreconciled_folder_paths | discovery_uninspected_folder_paths
+    )
     removed = 0
     after: str | None = None
     while True:
@@ -151,10 +162,9 @@ def _recover_orphaned_songs(
             if parent in covered:
                 continue
             # Conservative ancestor guard: skip when the folder itself or any
-            # ancestor scope is in the unreconciled set (failed walk OR failed
-            # discovery — including the root "") and therefore was not
-            # authoritatively inspected.
-            if _scope_uninspected(parent, unreconciled_folder_paths):
+            # ancestor scope is discovery-uninspected (including the root "")
+            # and therefore was not authoritatively inspected.
+            if _scope_uninspected(parent, discovery_uninspected_folder_paths):
                 continue
             if not _path_exists(song.path):
                 dead.append(song.path)
@@ -192,7 +202,7 @@ def scan_library_full_workflow(
     (``_recover_orphaned_songs``) then pages the library's songs by
     ``normalized_path`` (one page in memory, O(all songs) per full scan) and
     removes rows under genuinely-untracked parent folders, guarded by the
-    conservative unreconciled-ancestor check and the absent-path condition.
+    conservative discovery-uninspected-ancestor check and the absent-path condition.
     Full scan owns this recovery; quick scan defers it. Folders whose walk
     failed are never reconciled or cleaned.
 
@@ -200,10 +210,11 @@ def scan_library_full_workflow(
     ancestry-aware ``_scope_uninspected``: a folder that could not be
     authoritatively inspected, and every descendant of it, is never treated as
     vanished, never cleaned up as stale, and (full scan) never deleted by the
-    orphan sweep. Relocation sourcing is the exception: it uses the
-    direct-parent-only ``_candidate_source_present``, so for a descendant of an
-    un-inspected folder the guarantee does not extend to its status as a
-    relocation origin — only the song's immediate parent folder is consulted.
+    orphan sweep. Relocation sourcing also consults the ancestry-aware
+    discovery-uninspected scope via ``_candidate_source_present``, so a
+    discovery-uninspected ancestor blocks a descendant candidate from being
+    treated as a relocation origin. Only the ordinary unreconciled scope is
+    immediate-parent-only.
 
     Args:
         db: Database instance
@@ -270,9 +281,12 @@ def scan_library_full_workflow(
         # Folder-scoped bookkeeping only. Successfully-walked folders are cleaned
         # up after the walk; folders whose walk failed, and folders that could not
         # be authoritatively inspected during discovery, are unreconciled — never
-        # cleaned up and never a relocation source.
+        # cleaned up. Relocation-source eligibility is checked separately by
+        # _candidate_source_present, which consults two distinct scopes:
+        # ordinary unreconciled scope on the immediate parent only, and
+        # ancestry-aware discovery-uninspected scope (parent or any ancestor).
         reconciled_folder_paths: set[str] = set()
-        unreconciled_folder_paths: set[str] = set(uninspected_folder_paths)
+        unreconciled_folder_paths: set[str] = set()
 
         # Step 5 — Per-folder scan. Unchanged/modified files are processed
         # immediately, same-locator rebases are applied immediately, and each
@@ -346,7 +360,9 @@ def scan_library_full_workflow(
                                 entry,
                                 library,
                                 db,
-                                source_present=lambda song: _candidate_source_present(song, unreconciled_folder_paths),
+                                source_present=lambda song: _candidate_source_present(
+                                    song, unreconciled_folder_paths, uninspected_folder_paths
+                                ),
                             )
                             if move is not None and relocate_song(
                                 db,
@@ -412,7 +428,9 @@ def scan_library_full_workflow(
             dead = [
                 carrier.candidate.song.path
                 for carrier in folder_rows.values()
-                if not _candidate_source_present(carrier.candidate.song, unreconciled_folder_paths)
+                if not _candidate_source_present(
+                    carrier.candidate.song, unreconciled_folder_paths, uninspected_folder_paths
+                )
             ]
             if dead:
                 stats["files_removed"] += remove_deleted_files(db, library, dead)
@@ -423,7 +441,7 @@ def scan_library_full_workflow(
         # record (and no tracked/discovered audio-bearing ancestor) is never
         # surfaced there. This bounded sweep pages all songs by natural key (one
         # page in memory) and deletes only rows whose parent is outside normal
-        # reconciliation, no ancestor folder was unreconciled, and whose absolute
+        # reconciliation, no ancestor folder is discovery-uninspected, and whose absolute
         # path is absent. Memory is bounded to one page; time is O(all songs) per
         # full scan. Full scan owns this recovery; quick scan defers it.
         stats["files_removed"] += _recover_orphaned_songs(
@@ -432,6 +450,7 @@ def scan_library_full_workflow(
             reconciled_folder_paths=reconciled_folder_paths,
             vanished_folder_paths=vanished_folder_paths,
             unreconciled_folder_paths=unreconciled_folder_paths,
+            discovery_uninspected_folder_paths=uninspected_folder_paths,
             stop_event=stop_event,
         )
 

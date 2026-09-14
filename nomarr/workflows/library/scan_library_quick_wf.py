@@ -77,19 +77,26 @@ def _path_exists(path: str) -> bool:
     return Path(path).exists()
 
 
-def _candidate_source_present(song: Song, unreconciled_folder_paths: set[str]) -> bool:
+def _candidate_source_present(
+    song: Song,
+    unreconciled_folder_paths: set[str],
+    discovery_uninspected_folder_paths: set[str],
+) -> bool:
     """True when a chromaprint candidate's source is still known/presumed present.
 
-    Direct-parent-only: only the song's immediate parent folder (the last
-    component of ``normalized_path``) is consulted — ancestors are never
-    checked. A candidate is presumed live when its parent folder was not
-    reconciled by this scan (an unchanged cache-skipped folder, a folder whose
-    walk failed, or a folder that could not be authoritatively inspected during
-    discovery), or when its current absolute path still exists on disk. Only an
-    absent source may be treated as a relocation origin.
+    Two distinct scopes are consulted. Ordinary unreconciled scope is
+    immediate-parent-only: a candidate is presumed live when its immediate parent
+    folder (the last component of ``normalized_path``) was not reconciled by this
+    scan. Discovery-uninspected scope is ancestry-aware: a candidate is also
+    presumed live when its parent or any ancestor (including the root ``""``) is
+    within discovery-uninspected scope, so a discovery-uninspected ancestor
+    blocks a descendant candidate from relocation sourcing. A candidate whose
+    absolute path still exists on disk is likewise presumed present. Only a
+    genuinely absent, successfully-inspected source may be treated as a
+    relocation origin.
     """
     parent = song.normalized_path.rsplit("/", 1)[0] if "/" in song.normalized_path else ""
-    if parent in unreconciled_folder_paths:
+    if parent in unreconciled_folder_paths or _scope_uninspected(parent, discovery_uninspected_folder_paths):
         return True
     return _path_exists(song.path)
 
@@ -131,11 +138,11 @@ def scan_library_quick_workflow(
     ancestry-aware ``_scope_uninspected``: a folder that could not be
     authoritatively inspected, and every descendant of it, is never treated as
     vanished and never cleaned up as stale. Quick scan has no orphan sweep, so
-    there is no further deletion path to guard. Relocation sourcing is the
-    exception: it uses the direct-parent-only ``_candidate_source_present``, so
-    for a descendant of an un-inspected folder the guarantee does not extend to
-    its status as a relocation origin — only the song's immediate parent folder
-    is consulted.
+    there is no further deletion path to guard. Relocation sourcing consults the
+    ancestry-aware discovery-uninspected scope, so a discovery-uninspected
+    ancestor also blocks a descendant candidate from being treated as a
+    relocation origin; only the ordinary unreconciled scope is
+    immediate-parent-only.
 
     Deferral contract: quick scan does NOT perform untracked-parent-folder
     recovery. A row whose parent folder has no ``library_folders`` record (and no
@@ -202,11 +209,14 @@ def scan_library_quick_workflow(
         # Folder-scoped bookkeeping only. Successfully-walked folders are
         # cleaned up after the walk; unchanged (cache-skipped) folders, folders
         # whose walk failed, and folders that could not be authoritatively
-        # inspected during discovery are unreconciled — never cleaned up and never
-        # a relocation source. Seeding the unreconciled set before the walk keeps
-        # skip decisions order-independent.
+        # inspected during discovery are unreconciled — never cleaned up. The
+        # relocation-source guard separately consults two distinct scopes:
+        # ordinary unreconciled scope on each song's immediate parent only, and
+        # ancestry-aware discovery-uninspected scope (parent or any ancestor).
+        # Seeding the unreconciled set before the walk keeps skip
+        # decisions order-independent.
         reconciled_folder_paths: set[str] = set()
-        unreconciled_folder_paths: set[str] = set(uninspected_folder_paths)
+        unreconciled_folder_paths: set[str] = set()
         for folder in all_folders:
             cached = cached_folders.get(folder.rel_path)
             if cached and cached.mtime == folder.mtime and cached.file_count == folder.file_count:
@@ -293,7 +303,9 @@ def scan_library_quick_workflow(
                                 entry,
                                 library,
                                 db,
-                                source_present=lambda song: _candidate_source_present(song, unreconciled_folder_paths),
+                                source_present=lambda song: _candidate_source_present(
+                                    song, unreconciled_folder_paths, uninspected_folder_paths
+                                ),
                             )
                             if move is not None and relocate_song(
                                 db,
@@ -366,7 +378,9 @@ def scan_library_quick_workflow(
             dead = [
                 carrier.candidate.song.path
                 for carrier in folder_rows.values()
-                if not _candidate_source_present(carrier.candidate.song, unreconciled_folder_paths)
+                if not _candidate_source_present(
+                    carrier.candidate.song, unreconciled_folder_paths, uninspected_folder_paths
+                )
             ]
             if dead:
                 stats["files_removed"] += remove_deleted_files(db, library, dead)

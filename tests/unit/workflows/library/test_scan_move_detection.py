@@ -250,7 +250,10 @@ def _patched_scan(
             patch.object(
                 module,
                 "discover_library_folders",
-                return_value=FolderDiscovery(folders=folders, uninspected_rel_paths=set(uninspected_paths or ())),
+                return_value=FolderDiscovery(
+                    folders=cast("Any", folders),
+                    uninspected_rel_paths=set(uninspected_paths or ()),
+                ),
             )
         )
         mocks.get_songs_in_exact_folder = stack.enter_context(
@@ -731,23 +734,35 @@ class TestCandidateSourcePresent:
         nested_song = _song("/music/sub/dir/track.flac", "sub/dir/track.flac", "cp")
         for module in (quick_wf, full_wf):
             with patch.object(module, "_path_exists", return_value=False):
-                assert module._candidate_source_present(root_song, {""}) is True
-                assert module._candidate_source_present(root_song, set()) is False
-                assert module._candidate_source_present(nested_song, {""}) is False
+                assert module._candidate_source_present(root_song, {""}, set()) is True
+                assert module._candidate_source_present(root_song, set(), set()) is False
+                assert module._candidate_source_present(nested_song, {""}, set()) is False
 
     def test_present_path_is_present_and_absent_path_is_not(self) -> None:
         song = _song("/music/f1/a.flac", "f1/a.flac", "cp")
         for module in (quick_wf, full_wf):
             with patch.object(module, "_path_exists", return_value=True):
-                assert module._candidate_source_present(song, set()) is True
+                assert module._candidate_source_present(song, set(), set()) is True
             with patch.object(module, "_path_exists", return_value=False):
-                assert module._candidate_source_present(song, set()) is False
+                assert module._candidate_source_present(song, set(), set()) is False
 
     def test_unreconciled_parent_folder_short_circuits_absent_path(self) -> None:
         song = _song("/music/f1/a.flac", "f1/a.flac", "cp")
         for module in (quick_wf, full_wf):
             with patch.object(module, "_path_exists", return_value=False):
-                assert module._candidate_source_present(song, {"f1"}) is True
+                assert module._candidate_source_present(song, {"f1"}, set()) is True
+
+    def test_discovery_uninspected_ancestor_blocks_absent_source(self) -> None:
+        song = _song("/music/bad/sub/a.flac", "bad/sub/a.flac", "cp")
+        for module in (quick_wf, full_wf):
+            with patch.object(module, "_path_exists", return_value=False):
+                assert module._candidate_source_present(song, set(), {"bad"}) is True
+
+    def test_reconciled_parent_is_not_blocked_by_unrelated_cache_scope(self) -> None:
+        song = _song("/music/good/a.flac", "good/a.flac", "cp")
+        for module in (quick_wf, full_wf):
+            with patch.object(module, "_path_exists", return_value=False):
+                assert module._candidate_source_present(song, {"cached"}, {"bad"}) is False
 
 
 @pytest.mark.unit
@@ -1314,7 +1329,7 @@ class TestExactFolderWalkWorkingSet:
 class TestOrphanRecoverySweep:
     """Genuinely-untracked parents are recovered only by the FULL scan's bounded,
     natural-key-paginated sweep; quick scan defers. The sweep holds one page in
-    memory and is guarded by the covered set and the unreconciled-ancestor check."""
+    memory and is guarded by the covered set and the discovery-uninspected ancestor check."""
 
     def test_full_scan_recovers_stale_song_under_untracked_top_level_folder(self) -> None:
         orphan = _song("/music/untracked/x.flac", "untracked/x.flac", None)
@@ -1390,10 +1405,11 @@ class TestOrphanRecoverySweep:
         ctx.mocks.remove_deleted.assert_not_called()
         assert result["files_removed"] == 0
 
-    def test_full_scan_preserves_untracked_nested_row_under_failed_folder(self) -> None:
-        """The unreconciled-ancestor guard preserves a row in a nested untracked
-        subfolder even when its path is absent, because its ancestor scope failed to
-        walk and was not authoritatively inspected."""
+    def test_full_scan_recovers_untracked_nested_row_under_failed_folder(self) -> None:
+        """An ordinary failed folder protects only its direct rows from cleanup.
+
+        Its untracked descendant is still eligible for full-scan orphan recovery;
+        discovery-uninspected ancestry is the separate guard for descendants."""
         nested = _song("/music/failed/untracked/x.flac", "failed/untracked/x.flac", None)
         failed_row = _song("/music/failed/live.flac", "failed/live.flac", None)
         with _patched_scan(
@@ -1410,9 +1426,9 @@ class TestOrphanRecoverySweep:
             result = full_wf.scan_library_full_workflow(ctx.db, _LIBRARY, tagger_version="v1")
 
         removed = _removed_paths(ctx.mocks.remove_deleted)
-        assert nested.path not in removed
+        assert nested.path in removed
         assert failed_row.path not in removed
-        assert result["files_removed"] == 0
+        assert result["files_removed"] == 1
 
     def test_quick_scan_defers_untracked_parent_recovery_to_full_scan(self) -> None:
         orphan = _song("/music/untracked/x.flac", "untracked/x.flac", None)
@@ -1512,9 +1528,14 @@ class TestOrphanRecoverySweep:
 @pytest.mark.unit
 @pytest.mark.mocked
 class TestUninspectedDiscoveryScope:
-    """Discovery/measurement failures are un-inspected scope: a folder that could
-    not be authoritatively inspected — or any descendant of one — is never treated
-    as absent (not vanished, not cleaned, not an orphan, not a relocation source)."""
+    """Discovery/measurement failures establish ancestry-aware un-inspected scope.
+
+    The affected folder and its descendants are protected from absence decisions:
+    they are not marked vanished, cleaned, or removed by orphan recovery. Move
+    candidate protection is likewise ancestry-aware: relocation sourcing is
+    blocked by the discovery-uninspected guard, so an un-inspected ancestor does
+    protect a descendant candidate from relocation sourcing. Only the ordinary
+    unreconciled (failed-walk/cache-skip) scope is immediate-parent-only."""
 
     def test_full_scan_preserves_rows_in_folder_that_failed_discovery(self) -> None:
         """A row directly in a folder whose discovery failed is preserved by the
@@ -1552,8 +1573,9 @@ class TestUninspectedDiscoveryScope:
         assert result["files_removed"] == 0
 
     def test_full_scan_preserves_descendant_of_uninspected_ancestor(self) -> None:
-        """A row whose parent is a subfolder of an uninspected ancestor is preserved
-        by the orphan sweep via the ancestor guard, even when its path is absent."""
+        """An absent descendant row is preserved by the orphan sweep via the
+        ancestry-aware guard; the same ancestry-aware discovery-uninspected
+        scope also blocks relocation sourcing."""
         row = _song("/music/bad/sub/x.flac", "bad/sub/x.flac", None)
         with _patched_scan(
             full_wf,
@@ -1645,9 +1667,9 @@ class TestUninspectedDiscoveryScope:
         vanished, so Step 6's exact-folder cleanup never deletes its absent row.
 
         The descendant's immediate parent (``bad/sub``) is not itself in the
-        uninspected set, and ``_candidate_source_present`` is direct-parent-only, so
-        it does not recognize the uninspected ANCESTOR ``bad``. The only guard
-        protecting this row in Step 6 is the ``_scope_uninspected`` filter on
+        uninspected set; the uninspected ANCESTOR ``bad`` is only recognized by
+        the ancestry-aware ``_scope_uninspected`` guard. The guard protecting this
+        row in Step 6 is the ``_scope_uninspected`` filter on
         ``vanished_folder_paths``. Removing that filter makes ``bad/sub`` vanish,
         Step 6 reads its exact-folder rows, and the absent row is deleted — which
         this test would then catch.

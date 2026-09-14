@@ -63,9 +63,10 @@ def discover_library_folders(
     Pure discovery — no cache comparison, no scan policy decisions.
 
     Discovery failures are explicit rather than silent: a directory that cannot
-    be walked (``os.walk`` ``onerror``) or measured (``OSError`` from
-    ``_get_folder_mtime``) is recorded in ``uninspected_rel_paths`` so callers
-    never infer its absence. Successful discovery is unchanged.
+    be walked (``os.walk`` ``onerror``) or measured (``OSError`` from either
+    ``_get_folder_mtime`` or ``_count_audio_files_in_folder``) is recorded in
+    ``uninspected_rel_paths`` so callers never infer its absence. Successful
+    discovery is unchanged.
 
     Args:
         library_root: Absolute path to library root
@@ -188,13 +189,12 @@ def _get_folder_mtime(folder_path: str) -> int:
 
 
 def _count_audio_files_in_folder(folder_path: str) -> int:
-    """Count audio files in a single folder (non-recursive)."""
-    try:
-        return sum(
-            1 for f in os.listdir(folder_path) if is_audio_file(f) and os.path.isfile(os.path.join(folder_path, f))
-        )
-    except OSError:
-        return 0
+    """Count audio files in a single folder (non-recursive).
+
+    ``OSError`` deliberately propagates so discovery can record the folder as
+    uninspected rather than treating an inaccessible directory as empty.
+    """
+    return sum(1 for f in os.listdir(folder_path) if is_audio_file(f) and os.path.isfile(os.path.join(folder_path, f)))
 
 
 def _compute_folder_path(absolute_folder: Path, library_root: Path) -> str:

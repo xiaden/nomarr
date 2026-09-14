@@ -77,6 +77,32 @@ class TestDiscoverLibraryFoldersUninspected:
         assert result.folders == []
         assert result.uninspected_rel_paths == {"bad"}
 
+    def test_enumeration_oserror_is_recorded_when_mtime_succeeds(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        root = _make_library(tmp_path)
+        bad = root / "bad"
+        bad.mkdir()
+
+        def fake_walk(top: str, onerror: Any = None, **kwargs: Any) -> Any:
+            yield (str(root), ["bad"], [])
+            yield (str(bad), [], ["a.flac"])
+
+        monkeypatch.setattr(comp.os, "walk", fake_walk)
+        monkeypatch.setattr(comp, "_get_folder_mtime", lambda _path: 1000)
+
+        def fake_listdir(folder_path: str) -> list[str]:
+            if folder_path == str(bad):
+                raise OSError("cannot enumerate")
+            return []
+
+        monkeypatch.setattr(comp.os, "listdir", fake_listdir)
+
+        result = discover_library_folders(root, [root])
+
+        assert result.folders == []
+        assert result.uninspected_rel_paths == {"bad"}
+
     def test_walk_invoked_with_callable_onerror_that_records(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
