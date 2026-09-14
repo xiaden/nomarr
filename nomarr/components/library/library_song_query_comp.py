@@ -717,7 +717,11 @@ def _state_tagged_songs(
         return []
     processed_candidates = {
         candidate.song.normalized_path: candidate
-        for candidate in db.library.list_songs_with_state(STATE_PROCESSED, library=library_identity)
+        for candidate in db.library.list_songs_with_state_among(
+            STATE_PROCESSED,
+            library=library_identity,
+            songs=list(songs),
+        )
     }
     result: list[StateTaggedSong] = []
     for song in songs:

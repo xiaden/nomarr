@@ -396,6 +396,29 @@ def test_list_existing_song_paths_resolves_library() -> None:
 
 
 @pytest.mark.unit
+def test_list_songs_with_state_among_resolves_library_and_maps(song_state_contract) -> None:
+    songs, song_repo, _, library_repo = _make_songs()
+    library_repo.get_library_by_uuid = MagicMock(return_value=_library_row())
+    library_repo.get_libraries_by_ids = MagicMock(return_value=[_library_row()])
+    domain_song = song_state_contract.make_song("album/track.mp3")
+    song_repo.get_song_ids_by_normalized_paths = MagicMock(return_value={(7, "album/track.mp3"): 11})
+    songs._song_state_repo.get_song_states_for_songs = MagicMock(return_value={11: {"processed", "hydrated"}})
+    song_repo.get_songs_by_ids = MagicMock(return_value=[_song_row()])
+
+    result = songs.list_songs_with_state_among("processed", library=_main_library(), songs=[domain_song])
+
+    assert len(result) == 1
+    candidate = result[0]
+    song_state_contract.assert_candidate_semantic(candidate)
+    assert candidate.identity.normalized_path == "album/track.mp3"
+    assert candidate.states == ("hydrated", "processed")
+    # Private ids are resolved internally and never cross the facade.
+    song_repo.get_song_ids_by_normalized_paths.assert_called_once_with([(7, "album/track.mp3")])
+    songs._song_state_repo.get_song_states_for_songs.assert_called_once_with([11])
+    song_repo.get_songs_by_ids.assert_called_once_with([11])
+
+
+@pytest.mark.unit
 def test_library_scoped_song_raises_when_library_unknown() -> None:
     songs, _, _, library_repo = _make_songs()
     library_repo.get_library_by_uuid = MagicMock(return_value=None)

@@ -689,7 +689,7 @@ class TestFolderStateAnnotations:
         song_a = _song("album/a.flac")
         song_b = _song("album/b.flac")
         db.library.list_songs_for_folder.return_value = [song_a, song_b]
-        db.library.list_songs_with_state.return_value = [_candidate(song_a)]
+        db.library.list_songs_with_state_among.return_value = [_candidate(song_a)]
         result = get_songs_for_folder(db, MUSIC_LIB, "album")
         assert set(result) == {"/music/album/a.flac", "/music/album/b.flac"}
         assert all(isinstance(v, StateTaggedSong) for v in result.values())
@@ -698,6 +698,12 @@ class TestFolderStateAnnotations:
         # candidate carries a semantic locator (never an id)
         assert isinstance(result["/music/album/a.flac"].candidate.identity, SongIdentity)
         assert not hasattr(result["/music/album/a.flac"].candidate.song, "song_id")
+        # Bounded: the library-wide state read is never used; only the folder's
+        # songs are passed to the scoped read.
+        db.library.list_songs_with_state.assert_not_called()
+        db.library.list_songs_with_state_among.assert_called_once_with(
+            STATE_PROCESSED, library=MUSIC, songs=[song_a, song_b]
+        )
 
     @pytest.mark.unit
     def test_get_songs_in_exact_folder_returns_state_tagged_keyed_by_path(self) -> None:
@@ -705,7 +711,7 @@ class TestFolderStateAnnotations:
         song_a = _song("album/a.flac")
         song_b = _song("album/b.flac")
         db.library.list_songs_in_exact_folder.return_value = [song_a, song_b]
-        db.library.list_songs_with_state.return_value = [_candidate(song_a)]
+        db.library.list_songs_with_state_among.return_value = [_candidate(song_a)]
         result = get_songs_in_exact_folder(db, MUSIC_LIB, "album")
         assert set(result) == {"/music/album/a.flac", "/music/album/b.flac"}
         assert all(isinstance(v, StateTaggedSong) for v in result.values())
@@ -714,6 +720,19 @@ class TestFolderStateAnnotations:
         # The exact accessor is used, never the recursive one.
         db.library.list_songs_in_exact_folder.assert_called_once_with(MUSIC_LIB, "album")
         db.library.list_songs_for_folder.assert_not_called()
+        # Bounded: only the exact folder's songs reach the scoped state read.
+        db.library.list_songs_with_state.assert_not_called()
+        db.library.list_songs_with_state_among.assert_called_once_with(
+            STATE_PROCESSED, library=MUSIC, songs=[song_a, song_b]
+        )
+
+    @pytest.mark.unit
+    def test_get_songs_in_exact_folder_empty_short_circuits_state_read(self) -> None:
+        db = _db()
+        db.library.list_songs_in_exact_folder.return_value = []
+        assert get_songs_in_exact_folder(db, MUSIC_LIB, "album") == {}
+        db.library.list_songs_with_state.assert_not_called()
+        db.library.list_songs_with_state_among.assert_not_called()
 
     @pytest.mark.unit
     def test_get_songs_for_folders_filters_across_folders(self, song_state_contract) -> None:
@@ -721,12 +740,16 @@ class TestFolderStateAnnotations:
         song_in = _song("folder/a.flac")
         song_out = _song("other/a.flac")
         db.library.list_songs.return_value = [song_in, song_out]
-        db.library.list_songs_with_state.return_value = []
+        db.library.list_songs_with_state_among.return_value = []
         result = get_songs_for_folders(db, MUSIC_LIB, ["folder"])
         assert set(result) == {"/music/folder/a.flac"}
         for value in result.values():
             assert isinstance(value, StateTaggedSong)
             song_state_contract.assert_candidate_semantic(value.candidate)
+        # Bounded: subtree filtering happens before the scoped state read, so only
+        # the in-subtree song is passed through.
+        db.library.list_songs_with_state.assert_not_called()
+        db.library.list_songs_with_state_among.assert_called_once_with(STATE_PROCESSED, library=MUSIC, songs=[song_in])
 
     @pytest.mark.unit
     def test_get_songs_for_folders_empty_input(self) -> None:

@@ -2110,6 +2110,125 @@ def test_list_songs_with_state_order_by_activity_and_limit() -> None:
     song_repo.get_songs_by_ids.assert_called_once_with([10, 11])
 
 
+# ── list_songs_with_state_among (bounded locator-scoped state read) ──────
+
+
+def _domain_song(normalized_path: str) -> Song:
+    return Song(
+        path=f"/music/{normalized_path}",
+        normalized_path=normalized_path,
+        file_size=0,
+        modified_time=0,
+        duration_seconds=None,
+        chromaprint=None,
+        needs_tagging=False,
+        is_valid=True,
+        tagged=True,
+        calibration_hash=None,
+        write_claimed_by=None,
+        last_tagged_at=None,
+        scanned_at=None,
+        created_at=0,
+    )
+
+
+@pytest.mark.unit
+def test_list_songs_with_state_among_bounded_and_private_locator_resolution() -> None:
+    db, library_repo, song_repo, _, _, _, _, song_state_repo, _ = _make_library_db()
+    songs = [_domain_song("a.mp3"), _domain_song("b.mp3"), _domain_song("c.mp3")]
+    song_repo.get_song_ids_by_normalized_paths = MagicMock(
+        return_value={(1, "a.mp3"): 10, (1, "b.mp3"): 11, (1, "c.mp3"): 12}
+    )
+    song_state_repo.get_song_states_for_songs = MagicMock(
+        return_value={10: {"processed", "hydrated"}, 11: {"hydrated"}, 12: {"processed"}}
+    )
+    song_repo.get_songs_by_ids = MagicMock(return_value=[_row(), _row(12, "c.mp3")])
+    library_repo.get_libraries_by_ids = MagicMock(return_value=[dict(_LIBRARY_ROW)])
+
+    result = db.list_songs_with_state_among("processed", library=_TEST_LIBRARY, songs=songs)
+
+    # Only the in-state songs survive, ordered deterministically.
+    assert [c.identity.normalized_path for c in result] == ["a.mp3", "c.mp3"]
+    first = result[0]
+    assert isinstance(first, SongStateCandidate)
+    assert first.identity == SongIdentity(library=_TEST_LIBRARY, normalized_path="a.mp3")
+    assert first.song.normalized_path == "a.mp3"
+    assert first.states == ("hydrated", "processed")  # sorted state names, never ids
+    assert not hasattr(first.song, "song_id")
+    assert not hasattr(first.song, "library_id")
+    assert not hasattr(first.identity, "song_id")
+    # The input locators are resolved to private ids inside persistence; the
+    # library-wide read is never used.
+    song_repo.get_song_ids_by_normalized_paths.assert_called_once_with([(1, "a.mp3"), (1, "b.mp3"), (1, "c.mp3")])
+    song_state_repo.list_songs_in_state.assert_not_called()
+    # Membership is checked only over the resolved input ids.
+    song_state_repo.get_song_states_for_songs.assert_called_once_with([10, 11, 12])
+    # Only the filtered (in-state) ids are fetched.
+    song_repo.get_songs_by_ids.assert_called_once_with([10, 12])
+
+
+@pytest.mark.unit
+def test_list_songs_with_state_among_empty_input_short_circuits() -> None:
+    db, library_repo, song_repo, _, _, _, _, song_state_repo, _ = _make_library_db()
+
+    assert db.list_songs_with_state_among("processed", library=_TEST_LIBRARY, songs=[]) == []
+    library_repo.get_library_by_uuid.assert_not_called()
+    song_repo.get_song_ids_by_normalized_paths.assert_not_called()
+    song_state_repo.get_song_states_for_songs.assert_not_called()
+    song_repo.get_songs_by_ids.assert_not_called()
+
+
+@pytest.mark.unit
+def test_list_songs_with_state_among_unresolvable_library_is_scoped_miss() -> None:
+    db, library_repo, song_repo, _, _, _, _, song_state_repo, _ = _make_library_db()
+    library_repo.get_library_by_uuid = MagicMock(return_value=None)
+
+    assert db.list_songs_with_state_among("processed", library=_TEST_LIBRARY, songs=[_domain_song("a.mp3")]) == []
+    song_repo.get_song_ids_by_normalized_paths.assert_not_called()
+    song_state_repo.get_song_states_for_songs.assert_not_called()
+    song_repo.get_songs_by_ids.assert_not_called()
+
+
+@pytest.mark.unit
+def test_list_songs_with_state_among_multi_library_path_does_not_leak() -> None:
+    db, library_repo, song_repo, _, _, _, _, song_state_repo, _ = _make_library_db()
+    lib_a = LibraryIdentity(library_uuid="00000000-0000-0000-0000-00000000000a", name="A", root_path="/a")
+    library_a_row = {
+        **_LIBRARY_ROW,
+        "library_uuid": "00000000-0000-0000-0000-00000000000a",
+        "name": "A",
+        "path": "/a",
+    }
+    # Library A resolves to id 1; a same-named path exists in library B (id 99)
+    # but must never be consulted because the input belongs to library A only.
+    library_repo.get_library_by_uuid = MagicMock(return_value=library_a_row)
+    song_repo.get_song_ids_by_normalized_paths = MagicMock(return_value={(1, "shared.mp3"): 10})
+    song_state_repo.get_song_states_for_songs = MagicMock(return_value={10: {"processed"}, 99: {"processed"}})
+    song_repo.get_songs_by_ids = MagicMock(return_value=[_row(10, "shared.mp3")])
+    library_repo.get_libraries_by_ids = MagicMock(return_value=[library_a_row])
+
+    result = db.list_songs_with_state_among("processed", library=lib_a, songs=[_domain_song("shared.mp3")])
+
+    # Only library A's private id is resolved; library B is never consulted.
+    song_repo.get_song_ids_by_normalized_paths.assert_called_once_with([(1, "shared.mp3")])
+    song_state_repo.get_song_states_for_songs.assert_called_once_with([10])
+    song_repo.get_songs_by_ids.assert_called_once_with([10])
+    assert [c.identity.normalized_path for c in result] == ["shared.mp3"]
+    assert result[0].identity.library == lib_a
+
+
+@pytest.mark.unit
+def test_list_songs_with_state_among_forwarder_delegates() -> None:
+    db, *_ = _make_library_db()
+    songs = [_domain_song("a.mp3")]
+    db._songs.list_songs_with_state_among = MagicMock(return_value=[sentinel.result])
+
+    result = db.list_songs_with_state_among("processed", library=_TEST_LIBRARY, songs=songs)
+
+    db._songs.list_songs_with_state_among.assert_called_once_with("processed", library=_TEST_LIBRARY, songs=songs)
+    assert result == [sentinel.result]
+
+
 _MALFORMED_LIBRARY = LibraryIdentity(library_uuid="not-a-uuid", name="Malformed", root_path="/malformed")
 
 

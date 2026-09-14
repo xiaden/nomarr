@@ -230,6 +230,15 @@ class LibraryDb:
             limit=limit,
         )
 
+    def list_songs_with_state_among(
+        self,
+        state: str,
+        *,
+        library: LibraryIdentity,
+        songs: Sequence[Song],
+    ) -> list[SongStateCandidate]:
+        return self._songs.list_songs_with_state_among(state, library=library, songs=songs)
+
     def count_songs(self, library: Library) -> int:
         return self._songs.count_songs(library)
 

@@ -379,6 +379,92 @@ class LibrarySongsDb:
             return candidates[:limit]
         return candidates
 
+    def list_songs_with_state_among(
+        self,
+        state: str,
+        *,
+        library: LibraryIdentity,
+        songs: Sequence[Song],
+    ) -> list[SongStateCandidate]:
+        """Return typed candidates for the supplied songs that are in *state*.
+
+        Bounded variant of :meth:`list_songs_with_state`: instead of materializing
+        every song in *state* across the library, it resolves the supplied song
+        locators (``library`` + each ``song.normalized_path``) to private ids and
+        keeps only the ones whose membership includes *state*. This bounds the
+        per-folder walk working set by the folder's song set rather than total
+        library size.
+
+        Deterministic behavior:
+          * unknown/blank *state* -> ``[]``;
+          * empty *songs* -> ``[]`` with no repository calls;
+          * unresolvable *library* -> ``[]`` (a scoped miss);
+          * songs that resolve to no row, or that are not in *state*, are
+            omitted (the caller represents them as ``has_tagged_state=False``);
+          * results are ordered by ``(library name, root_path, normalized_path)``.
+
+        Private ``songs.id``/``libraries.id`` are resolved internally and never
+        cross this boundary. No hydration, state mutation, or caller
+        transaction/session management.
+        """
+        if not isinstance(state, str) or not state.strip():
+            return []
+        if not songs:
+            return []
+        library_id = self._try_resolve_library_identity(library)
+        if library_id is None:
+            return []
+        targets = [(library_id, song.normalized_path) for song in songs]
+        song_id_by_loc = self._song_repo.get_song_ids_by_normalized_paths(targets)
+        unique_ids = list(dict.fromkeys(song_id_by_loc.values()))
+        if not unique_ids:
+            return []
+        memberships = self._song_state_repo.get_song_states_for_songs(unique_ids)
+        filtered_ids = [sid for sid in unique_ids if state in memberships.get(sid, set())]
+        if not filtered_ids:
+            return []
+        rows = self._song_repo.get_songs_by_ids(filtered_ids)
+        rows_by_id: dict[int, Any] = {int(r["id"]): r for r in rows}
+        if not rows_by_id:
+            return []
+        library_ids = {int(r["library_id"]) for r in rows_by_id.values()}
+        library_rows = (
+            {int(r["id"]): r for r in self._library_repo.get_libraries_by_ids(list(library_ids))} if library_ids else {}
+        )
+
+        candidates: list[SongStateCandidate] = []
+        seen: set[tuple[int, str]] = set()
+        for row in rows_by_id.values():
+            row_library_id = int(row["library_id"])
+            normalized_path = row["normalized_path"]
+            if (row_library_id, normalized_path) in seen:
+                continue
+            seen.add((row_library_id, normalized_path))
+            library_row = library_rows.get(row_library_id)
+            if library_row is None:
+                # Cannot form a natural locator without the owning library's key.
+                continue
+            identity = SongIdentity(
+                library=LibraryIdentity(
+                    library_uuid=library_row["library_uuid"],
+                    name=library_row["name"],
+                    root_path=library_row["path"],
+                ),
+                normalized_path=normalized_path,
+            )
+            song = song_row_to_domain(row)
+            states = tuple(sorted(memberships.get(int(row["id"]), set())))
+            candidates.append(SongStateCandidate(identity=identity, song=song, states=states))
+
+        candidates.sort(
+            key=lambda c: (
+                c.identity.library.name or "",
+                c.identity.library.root_path or "",
+                c.identity.normalized_path,
+            )
+        )
+        return candidates
+
     def find_library_song_by_chromaprint(
         self,
         library: Library,
