@@ -411,17 +411,39 @@ class TestSongRepository:
 
         result = repo.list_songs_by_chromaprint(lib_a, "shared", limit=2)
 
-        assert len(result) == 2
-        assert all(row["library_id"] == lib_a for row in result)
-        assert {row["id"] for row in result} <= set(lib_a_ids)
-        assert all(row["chromaprint"] == "shared" for row in result)
+        assert len(result["songs"]) == 2
+        assert not result["complete"]
+        assert all(row["library_id"] == lib_a for row in result["songs"])
+        assert {row["id"] for row in result["songs"]} <= set(lib_a_ids)
+        assert all(row["chromaprint"] == "shared" for row in result["songs"])
 
         # A limit larger than the in-library match count must return exactly the
         # 4 in-library rows, never the foreign collision or the distinct row.
         unbounded = repo.list_songs_by_chromaprint(lib_a, "shared", limit=10)
-        assert len(unbounded) == len(lib_a_ids) == 4
-        assert {row["id"] for row in unbounded} == set(lib_a_ids)
-        assert all(row["library_id"] == lib_a for row in unbounded)
+        assert len(unbounded["songs"]) == len(lib_a_ids) == 4
+        assert unbounded["complete"]
+        assert {row["id"] for row in unbounded["songs"]} == set(lib_a_ids)
+        assert all(row["library_id"] == lib_a for row in unbounded["songs"])
+
+    def test_list_songs_by_chromaprint_reports_truncation_beyond_nominal_window(self, pg_session) -> None:
+        """More same-fingerprint rows than the nominal window: the repository returns
+        exactly ``limit`` rows and marks the population incomplete so callers never
+        treat a deterministic first window as the whole candidate set."""
+        lib_id = _create_library(pg_session)
+        repo = SongRepository(pg_session)
+        for i in range(51):
+            sid = _create_song(pg_session, lib_id, f"/music/cp-many-{i}.mp3")
+            repo.update_song(sid, {"chromaprint": "many"})
+
+        result = repo.list_songs_by_chromaprint(lib_id, "many", limit=50)
+
+        assert len(result["songs"]) == 50
+        assert result["complete"] is False
+
+        # A population at or below the nominal bound is reported complete.
+        exact = repo.list_songs_by_chromaprint(lib_id, "many", limit=51)
+        assert len(exact["songs"]) == 51
+        assert exact["complete"] is True
 
     def test_list_songs_for_folder(self, pg_session) -> None:
         """list_songs_for_folder should return songs in a folder."""

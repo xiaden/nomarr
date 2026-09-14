@@ -139,7 +139,11 @@ def detect_move_for_new_file(
         logger.warning("Empty chromaprint for %s; skipping move detection", new_path)
         return None
 
-    candidates = find_move_candidates_by_chromaprint(db, library, chromaprint)
+    candidate_matches = find_move_candidates_by_chromaprint(db, library, chromaprint)
+    if not candidate_matches.complete:
+        logger.warning("Refusing move detection for truncated chromaprint candidates: %s", new_path)
+        return None
+    candidates = candidate_matches.songs
     new_duration = new_file_entry.get("duration_seconds")
     new_normalized_path = new_file_entry.get("normalized_path")
 

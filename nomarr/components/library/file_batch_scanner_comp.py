@@ -50,8 +50,8 @@ def scan_folder_files(
         library_root: Library root for normalization
         existing_files: Physical path → typed ``StateTaggedSong`` carrier for files
             the database already knows about. Only the carrier's prior
-            ``modified_time`` is consulted; no row, raw document, or integer
-            identity crosses this boundary.
+            ``modified_time`` and ``file_size`` are consulted; no row, raw
+            document, or integer identity crosses this boundary.
         db: Database instance (for build_library_path_from_input)
 
     Returns:
@@ -114,9 +114,16 @@ def scan_folder_files(
             modified_time = int(file_stat.st_mtime * 1000)
             file_size = file_stat.st_size
 
-            # Skip unchanged files: if the typed carrier's prior modified_time
-            # matches the on-disk mtime, there is nothing to do.
-            if existing_file is not None and existing_file.candidate.song.modified_time == modified_time:
+            # Skip unchanged files: a file is unchanged only when BOTH the prior
+            # modified_time and file_size match the on-disk values. Size is part of
+            # the change signal because a rewrite can preserve mtime (same-second or
+            # mtime-preserving edits), and a size-only change is still a content
+            # change that must follow modified-file invalidation.
+            if (
+                existing_file is not None
+                and existing_file.candidate.song.modified_time == modified_time
+                and existing_file.candidate.song.file_size == file_size
+            ):
                 stats["files_skipped"] += 1
                 continue
 

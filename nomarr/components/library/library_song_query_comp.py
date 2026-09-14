@@ -29,7 +29,7 @@ from nomarr.components.library.tag_hydration_comp import (
 from nomarr.components.library.tag_mapping_comp import is_numeric_tag_value
 from nomarr.helpers.constants.file_states import STATE_PROCESSED
 from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
-from nomarr.helpers.dataclasses.song_dataclass import Song
+from nomarr.helpers.dataclasses.song_dataclass import ChromaprintSongMatches, Song
 from nomarr.helpers.dataclasses.song_state_candidate_dataclass import SongStateCandidate
 from nomarr.helpers.dataclasses.song_tag_dataclass import TagRef
 from nomarr.helpers.dto.library_dto import FileTag
@@ -439,8 +439,8 @@ def get_songs_by_paths_bulk(db: Database, paths: list[str]) -> dict[str, Song]:
     return result
 
 
-def find_move_candidates_by_chromaprint(db: Database, library: Library, chromaprint: str) -> list[Song]:
-    """Return bounded semantic candidate songs matching a chromaprint within a library."""
+def find_move_candidates_by_chromaprint(db: Database, library: Library, chromaprint: str) -> ChromaprintSongMatches:
+    """Return bounded candidates and whether all matches were observed."""
     return db.library.list_library_songs_by_chromaprint(library, chromaprint)
 
 

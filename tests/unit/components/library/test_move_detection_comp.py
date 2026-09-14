@@ -30,7 +30,7 @@ from nomarr.helpers.dataclasses.song_command_dataclass import (
     SongPathUpdate,
     SongScanUpdate,
 )
-from nomarr.helpers.dataclasses.song_dataclass import Song
+from nomarr.helpers.dataclasses.song_dataclass import ChromaprintSongMatches, Song
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
@@ -99,7 +99,7 @@ def _patched_detection(candidates: Sequence[Song]) -> Iterator[MagicMock]:
     ):
         mock_build.return_value.is_valid.return_value = True
         mock_chromaprint.return_value = "abc123"
-        mock_candidate.return_value = list(candidates)
+        mock_candidate.return_value = ChromaprintSongMatches(songs=tuple(candidates), complete=True)
         yield mock_candidate
 
 
@@ -230,6 +230,19 @@ def test_detect_move_preserves_candidate_duration_when_entry_has_none() -> None:
 
     assert isinstance(result, FileMove)
     assert result.new_duration == 181.0
+
+
+@pytest.mark.unit
+def test_detect_move_refuses_truncated_candidate_window() -> None:
+    entry = _new_file_entry()
+    visible_absent = _song("D:/Music/old/visible.flac", "old/visible.flac")
+    outside_window_absent = _song("D:/Music/old/outside.flac", "old/outside.flac")
+
+    with _patched_detection([visible_absent, outside_window_absent]) as mock_candidate:
+        mock_candidate.return_value = ChromaprintSongMatches(songs=(visible_absent,), complete=False)
+        result = detect_move_for_new_file(entry, _LIBRARY, make_db(), source_present=lambda _song: False)
+
+    assert result is None
 
 
 @pytest.mark.unit

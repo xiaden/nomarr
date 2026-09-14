@@ -66,6 +66,7 @@ Collection-level analytics and tag distribution across your music.
 ## Features
 
 - **Scan & tag** — analyze audio with ONNX-accelerated ML, write results to file metadata
+- **Safe rescanning & move detection** — a file is treated as changed when either its modified time or its size differs, so edits that preserve the timestamp are still caught; and move detection refuses automatic relocation whenever the candidate match set was truncated, so a live duplicate is never repointed
 - **File watching** — optional per-library modes (`off` / `event` / `poll`), not always-on by default
 - **Calibration** — tune model output before applying it across your collection
 - **Vector search** — find similar tracks, explore your library by audio similarity

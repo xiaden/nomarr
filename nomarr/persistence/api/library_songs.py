@@ -38,6 +38,7 @@ from nomarr.helpers.dataclasses.song_command_dataclass import (
     SongRemoval,
     SongUpsertInput,
 )
+from nomarr.helpers.dataclasses.song_dataclass import ChromaprintSongMatches
 from nomarr.helpers.dataclasses.song_state_candidate_dataclass import SongStateCandidate
 from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence.mappers.song_mapper import song_row_to_domain
@@ -394,16 +395,19 @@ class LibrarySongsDb:
         chromaprint: str,
         *,
         limit: int = 50,
-    ) -> list[Song]:
-        """Return bounded semantic songs matching a chromaprint within a library.
+    ) -> ChromaprintSongMatches:
+        """Return bounded semantic matches and whether the population is complete.
 
-        Chromaprint is non-unique, so this is a bounded listing (not a single
-        match). The owning library's storage id is resolved privately and never
-        crosses this facade; only semantic ``Song`` values are returned.
+        The owning library's storage id remains private. A false ``complete``
+        value means the nominal window was truncated and must not drive move
+        relocation decisions.
         """
         library_id = self._resolve_library_id(library)
-        rows = self._song_repo.list_songs_by_chromaprint(library_id, chromaprint, limit=limit)
-        return [song_row_to_domain(row) for row in rows]
+        result = self._song_repo.list_songs_by_chromaprint(library_id, chromaprint, limit=limit)
+        return ChromaprintSongMatches(
+            songs=tuple(song_row_to_domain(row) for row in result["songs"]),
+            complete=result["complete"],
+        )
 
     # ------------------------------------------------------------------
     # Song mutations

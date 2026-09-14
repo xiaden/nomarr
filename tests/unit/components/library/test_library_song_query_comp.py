@@ -56,7 +56,7 @@ from nomarr.components.library.song_query_types import (
 from nomarr.helpers.constants.file_states import STATE_PROCESSED
 from nomarr.helpers.dataclasses.library_dataclass import Library
 from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
-from nomarr.helpers.dataclasses.song_dataclass import Song
+from nomarr.helpers.dataclasses.song_dataclass import ChromaprintSongMatches, Song
 from nomarr.helpers.dataclasses.song_state_candidate_dataclass import SongStateCandidate
 from nomarr.helpers.dataclasses.song_tag_dataclass import SongTagAssignment
 
@@ -320,8 +320,9 @@ class TestSingleSongLookups:
     def test_find_move_candidates_by_chromaprint_delegates(self) -> None:
         db = _db()
         song = _song("a.flac")
-        db.library.list_library_songs_by_chromaprint.return_value = [song]
-        assert find_move_candidates_by_chromaprint(db, MUSIC_LIB, "fp") == [song]
+        expected = ChromaprintSongMatches(songs=(song,), complete=True)
+        db.library.list_library_songs_by_chromaprint.return_value = expected
+        assert find_move_candidates_by_chromaprint(db, MUSIC_LIB, "fp") == expected
         db.library.list_library_songs_by_chromaprint.assert_called_once_with(MUSIC_LIB, "fp")
 
 

@@ -50,13 +50,17 @@ from nomarr.helpers.dataclasses.song_command_dataclass import (
     LibraryIdentity,
     SongIdentity,
 )
-from nomarr.helpers.dataclasses.song_dataclass import Song
+from nomarr.helpers.dataclasses.song_dataclass import ChromaprintSongMatches, Song
 from nomarr.helpers.dataclasses.song_state_candidate_dataclass import SongStateCandidate
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
 _MOVEMENT_MODULE = "nomarr.components.library.move_detection_comp"
+
+# The production persistence window is the first ``limit`` rows; the repository
+# fetches one sentinel row beyond it to detect truncation.
+_NOMINAL_CANDIDATE_LIMIT = 50
 
 _LIBRARY = Library(library_uuid="45064f6d-d92e-5179-ad4d-6a15c1354737", name="Main Library", root_path="/music")
 _LIBRARY_IDENTITY = LibraryIdentity(
@@ -137,6 +141,7 @@ def _patched_scan(
     db_folder_paths: set[str] | None = None,
     chromaprint_by_path: dict[str, str] | None = None,
     db_candidates: list[Song] | None = None,
+    candidates_complete: bool = True,
     cached_folders: dict[str, SimpleNamespace] | None = None,
     folder_errors: dict[str, Exception] | None = None,
     folder_transient_errors: dict[str, Exception] | None = None,
@@ -258,12 +263,16 @@ def _patched_scan(
         mocks.compute_chromaprint = stack.enter_context(
             patch(f"{_MOVEMENT_MODULE}.compute_chromaprint_for_file", side_effect=_compute)
         )
-        stack.enter_context(
-            patch(
-                f"{_MOVEMENT_MODULE}.find_move_candidates_by_chromaprint",
-                side_effect=lambda _db, _lib, chromaprint: [c for c in candidates if c.chromaprint == chromaprint],
-            )
-        )
+
+        def _candidates(_db: Any, _lib: Any, chromaprint: str) -> ChromaprintSongMatches:
+            matched = [c for c in candidates if c.chromaprint == chromaprint]
+            if candidates_complete:
+                return ChromaprintSongMatches(songs=tuple(matched), complete=True)
+            # Truncated lookup: only the nominal window is visible; the sentinel
+            # row (matched[limit]) stays hidden behind ``complete=False``.
+            return ChromaprintSongMatches(songs=tuple(matched[:_NOMINAL_CANDIDATE_LIMIT]), complete=False)
+
+        stack.enter_context(patch(f"{_MOVEMENT_MODULE}.find_move_candidates_by_chromaprint", side_effect=_candidates))
         if spy_detect:
             mocks.detect = stack.enter_context(
                 patch.object(module, "detect_move_for_new_file", side_effect=move_comp.detect_move_for_new_file)
@@ -639,7 +648,16 @@ class TestScanMoveDetection:
         assert len(ctx.mocks.upsert_returns) == 1
         immediate_entries, _ = ctx.mocks.upsert_returns[0]
         assert [e["path"] for e in immediate_entries] == [modified_entry["path"]]
+        # The scanner's updated metadata is carried through unchanged (metadata update).
+        assert immediate_entries[0]["modified_time"] == modified_entry["modified_time"]
+        assert immediate_entries[0]["file_size"] == modified_entry["file_size"]
+        assert immediate_entries[0]["scanned_at"] == modified_entry["scanned_at"]
         assert result["files_added"] == 0
+        assert result["files_moved"] == 0
+        # A changed-in-place file keeps its locator: it is never a move candidate and
+        # never deleted/recreated, and no chromaprint is computed for it.
+        ctx.db.library.move_library_song.assert_not_called()
+        ctx.mocks.compute_chromaprint.assert_not_called()
         assert modified_entry["path"] not in _removed_paths(ctx.mocks.remove_deleted)
         assert (STATE_HYDRATED, STATE_NOT_HYDRATED) in [
             call.args[2:4] for call in ctx.mocks.transition_song_state.call_args_list
@@ -915,6 +933,42 @@ class TestAmbiguousRelocation:
         ctx.db.library.move_library_song.assert_not_called()
         assert new["path"] in _upsert_paths(ctx.mocks.upsert)
         assert {src_a.path, src_b.path} <= _removed_paths(ctx.mocks.remove_deleted)
+        assert result["files_moved"] == 0
+        assert result["files_added"] == 1
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+class TestTruncatedCandidateWindow:
+    def test_truncated_window_with_one_visible_absent_candidate_does_not_relocate(
+        self, workflow: tuple[Any, Any]
+    ) -> None:
+        """More than the nominal 50 same-chromaprint rows exist: the visible window
+        holds exactly one absent candidate, while the sentinel row hiding another
+        absent row sits outside the nominal window. Because the population is
+        truncated, no automatic relocation may occur even though exactly one absent
+        survivor is visible."""
+        module, callable_ = workflow
+        visible_absent = _song("/music/f1/visible.flac", "f1/visible.flac", "cp-many")
+        visible_live = [
+            _song(f"/music/f1/live{i}.flac", f"f1/live{i}.flac", "cp-many") for i in range(_NOMINAL_CANDIDATE_LIMIT - 1)
+        ]
+        outside_absent = _song("/music/f1/outside.flac", "f1/outside.flac", "cp-many")
+        new = _entry("/music/f1/new.flac", "f1/new.flac")
+        with _patched_scan(
+            module,
+            folders=[_folder("f1")],
+            existing={"f1": {visible_absent.path: _carrier(visible_absent)}},
+            batches={"/music/f1": _batch(entries=[new], discovered={new["path"]})},
+            db_candidates=[*visible_live, visible_absent, outside_absent],
+            candidates_complete=False,
+            chromaprint_by_path={new["path"]: "cp-many"},
+            present_paths={c.path for c in visible_live} | {new["path"]},
+        ) as ctx:
+            result = callable_(ctx.db, _LIBRARY, tagger_version="v1")
+
+        ctx.db.library.move_library_song.assert_not_called()
+        assert new["path"] in _upsert_paths(ctx.mocks.upsert)
         assert result["files_moved"] == 0
         assert result["files_added"] == 1
 

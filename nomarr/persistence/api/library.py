@@ -35,7 +35,7 @@ if TYPE_CHECKING:
         SongRemoval,
         SongUpsertInput,
     )
-    from nomarr.helpers.dataclasses.song_dataclass import Song, SongTagMatch
+    from nomarr.helpers.dataclasses.song_dataclass import ChromaprintSongMatches, Song, SongTagMatch
     from nomarr.helpers.dataclasses.song_state_candidate_dataclass import SongStateCandidate
     from nomarr.helpers.dataclasses.song_tag_dataclass import (
         RelinkResult,
@@ -253,8 +253,8 @@ class LibraryDb:
         chromaprint: str,
         *,
         limit: int = 50,
-    ) -> list[Song]:
-        """Forward the bounded library-scoped chromaprint listing intent."""
+    ) -> ChromaprintSongMatches:
+        """Forward bounded chromaprint matches with explicit completeness."""
         return self._songs.list_library_songs_by_chromaprint(library, chromaprint, limit=limit)
 
     def add_song_to_library(self, command: SongUpsertInput) -> SongIdentity:

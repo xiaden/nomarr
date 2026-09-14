@@ -65,6 +65,14 @@ class Song:
 
 
 @dataclass(frozen=True, slots=True)
+class ChromaprintSongMatches:
+    """Bounded semantic chromaprint matches and population completeness."""
+
+    songs: tuple[Song, ...]
+    complete: bool
+
+
+@dataclass(frozen=True, slots=True)
 class SongTagMatch:
     """A song returned by a tag search with match metadata."""
 
@@ -73,4 +81,4 @@ class SongTagMatch:
     distance: float
 
 
-__all__ = ["Song", "SongTagMatch"]
+__all__ = ["ChromaprintSongMatches", "Song", "SongTagMatch"]

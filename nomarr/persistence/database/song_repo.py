@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any, cast
 from sqlalchemy import Table, and_, case, delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from nomarr.helpers.dto.repo_dto import SongRow
+from nomarr.helpers.dto.repo_dto import ChromaprintSongRows, SongRow
 from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence.models.song import Song
 from nomarr.persistence.models.song_tag import SongTag
@@ -531,11 +531,12 @@ class SongRepository:
             row = result.fetchone()
             return _row_to_dto(row) if row else None
 
-    def list_songs_by_chromaprint(self, library_id: int, chromaprint: str, *, limit: int) -> list[SongRow]:
-        """Return bounded songs in a library matching a chromaprint (non-unique fingerprint).
+    def list_songs_by_chromaprint(self, library_id: int, chromaprint: str, *, limit: int) -> ChromaprintSongRows:
+        """Return a bounded chromaprint window and whether it is complete.
 
-        The bounded window is deterministically ordered by the primary key
-        (``id``) before the ``limit`` is applied.
+        The query fetches one sentinel row beyond the nominal bound. It never
+        materializes an unbounded match set; ``complete`` is false when the
+        sentinel exists. Results are deterministically ordered by ``id``.
         """
         with map_persistence_exceptions():
             stmt = (
@@ -545,10 +546,11 @@ class SongRepository:
                     _T.c.library_id == library_id,
                 )
                 .order_by(_T.c.id)
-                .limit(limit)
+                .limit(limit + 1)
             )
             result = self._session.execute(stmt)
-            return [_row_to_dto(r) for r in result.all()]
+            rows = [_row_to_dto(r) for r in result.all()]
+            return ChromaprintSongRows(songs=rows[:limit], complete=len(rows) <= limit)
 
     def list_songs_for_folder(self, library_id: int, folder_rel_path: str) -> list[SongRow]:
         """Return songs whose relative path is beneath the requested folder."""

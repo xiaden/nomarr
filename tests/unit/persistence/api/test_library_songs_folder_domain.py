@@ -345,14 +345,16 @@ def test_find_library_song_by_chromaprint_resolves_and_maps() -> None:
 def test_list_library_songs_by_chromaprint_resolves_and_maps() -> None:
     songs, song_repo, _, library_repo = _make_songs()
     library_repo.get_library_by_uuid = MagicMock(return_value=_library_row())
-    song_repo.list_songs_by_chromaprint = MagicMock(return_value=[_song_row(chromaprint="abc")])
+    song_repo.list_songs_by_chromaprint = MagicMock(
+        return_value={"songs": [_song_row(chromaprint="abc")], "complete": True}
+    )
 
     result = songs.list_library_songs_by_chromaprint(_main_library(), "abc", limit=25)
 
     song_repo.list_songs_by_chromaprint.assert_called_once_with(7, "abc", limit=25)
-    assert len(result) == 1
-    assert result[0].chromaprint == "abc"
-    assert not hasattr(result[0], "song_id")  # generated songs.id stays persistence-private
+    assert result.songs[0].chromaprint == "abc"
+    assert result.complete
+    assert not hasattr(result.songs[0], "song_id")  # generated songs.id stays persistence-private
     library_repo.get_library_by_uuid.assert_called_once_with("00000000-0000-0000-0000-000000000007")
 
 
@@ -361,7 +363,7 @@ def test_list_library_songs_by_chromaprint_defaults_limit_to_50() -> None:
     """The bounded chromaprint listing caps at 50 candidates when no limit is given."""
     songs, song_repo, _, library_repo = _make_songs()
     library_repo.get_library_by_uuid = MagicMock(return_value=_library_row())
-    song_repo.list_songs_by_chromaprint = MagicMock(return_value=[])
+    song_repo.list_songs_by_chromaprint = MagicMock(return_value={"songs": [], "complete": True})
 
     songs.list_library_songs_by_chromaprint(_main_library(), "abc")
 

@@ -49,7 +49,7 @@ def _make_invalid_library_path(reason: str = "invalid path") -> MagicMock:
 
 
 def _state_tagged(
-    *, modified_time: int, tagged: bool = False, normalized_path: str = "Rock/song.mp3"
+    *, modified_time: int, file_size: int = 100, tagged: bool = False, normalized_path: str = "Rock/song.mp3"
 ) -> StateTaggedSong:
     """Build a typed folder carrier as the scan workflows now provide it."""
     library = LibraryIdentity(library_uuid="uuid-lib", name="lib", root_path="/music")
@@ -59,7 +59,7 @@ def _state_tagged(
             song=Song(
                 path=f"/music/{normalized_path}",
                 normalized_path=normalized_path,
-                file_size=100,
+                file_size=file_size,
                 modified_time=modified_time,
                 duration_seconds=None,
                 chromaprint=None,
@@ -140,7 +140,12 @@ class TestScanFolderFiles:
             result = scan_folder_files(
                 folder_path=folder_path,
                 library_root=library_root,
-                existing_files={str(track_path): _state_tagged(modified_time=modified_time)},
+                existing_files={
+                    str(track_path): _state_tagged(
+                        modified_time=modified_time,
+                        file_size=track_path.stat().st_size,
+                    )
+                },
                 db=mock_db,
             )
 
@@ -148,6 +153,47 @@ class TestScanFolderFiles:
         assert result.discovered_paths == {str(track_path)}
         assert result.new_file_paths == set()
         assert result.stats == {"files_updated": 0, "files_failed": 0, "files_skipped": 1}
+        assert result.edge_bootstraps == []
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_size_only_change_with_same_mtime_is_updated(self, tmp_path: Path) -> None:
+        """A file whose content changed but whose mtime is unchanged must not be
+        skipped: a differing on-disk size is a content change that follows
+        modified-file invalidation (metadata update + hydration reset)."""
+        mock_db = MagicMock()
+        library_root = tmp_path / "music"
+        folder_path = library_root / "Rock"
+        track_path = _make_audio_file(folder_path / "song.mp3")
+        modified_time = int(track_path.stat().st_mtime * 1000)
+        on_disk_size = track_path.stat().st_size
+
+        with (
+            patch(
+                f"{MODULE}.build_library_path_from_input",
+                return_value=_make_valid_library_path(track_path),
+            ),
+            patch(f"{MODULE}.now_ms", return_value=Milliseconds(555)),
+        ):
+            result = scan_folder_files(
+                folder_path=folder_path,
+                library_root=library_root,
+                existing_files={
+                    str(track_path): _state_tagged(
+                        modified_time=modified_time,
+                        file_size=on_disk_size - 1,
+                    )
+                },
+                db=mock_db,
+            )
+
+        assert len(result.file_entries) == 1
+        entry = result.file_entries[0]
+        assert entry["path"] == str(track_path)
+        assert entry["modified_time"] == modified_time
+        assert entry["file_size"] == on_disk_size
+        assert result.new_file_paths == set()
+        assert result.stats == {"files_updated": 1, "files_failed": 0, "files_skipped": 0}
         assert result.edge_bootstraps == []
 
     @pytest.mark.unit

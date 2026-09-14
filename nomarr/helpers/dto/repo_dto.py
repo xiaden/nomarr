@@ -63,6 +63,13 @@ class NumericSongTagMatchRow(SongRow):
     distance: float
 
 
+class ChromaprintSongRows(TypedDict):
+    """Bounded chromaprint rows plus whether the bounded query was complete."""
+
+    songs: list[SongRow]
+    complete: bool
+
+
 class LibraryFolderRow(TypedDict):
     """Single row from the ``library_folders`` table."""
 
