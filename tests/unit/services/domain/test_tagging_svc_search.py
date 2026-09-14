@@ -62,7 +62,7 @@ def _locator(normalized_path: str) -> SongIdentity:
 
 
 def _wire_projection(db: MagicMock, songs: list[Song]) -> None:
-    """Wire the public Q3-C carrier projection for the given songs."""
+    """Wire the public carrier projection for the given songs."""
     db.library.list_libraries.return_value = [_LIBRARY]
     by_path = {song.normalized_path: song for song in songs}
 

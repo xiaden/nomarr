@@ -1,19 +1,20 @@
-"""D2 owner-behavior tests for the mood tag persistence facade.
+"""Owner-behavior tests for the mood tag persistence facade.
 
 These tests are fault-injection/unit/static evidence.  They exercise the real
 ``LibraryTagsDb`` control flow with a fake session/repository boundary so that
 validation ordering, duplicate policy, missing-locator typing, retry/fresh-session
 disposal, ambiguous-commit handling, redaction, and same-locator serialization are
 pinned without a live PostgreSQL server.  Live PostgreSQL mutation evidence is
-owned by D3/D2R-B/CI and is deliberately not claimed here.
+owned by the live-PostgreSQL characterization suite and CI and is deliberately not
+claimed here.
 
-Same-locator single-winner invariant (D2R-A): the owner locks every resolved
-private ``songs`` row with ``SELECT ... FOR NO KEY UPDATE`` in ascending private-id
-order before any mood/marker read, so a later replacement for the same
-``SongIdentity`` reads state after the predecessor commits (no interleave, no
-union); batch lock order is all-or-none.  ``TestMoodSameLocatorSerialization``
-pins the lock statement and its ordering; real-PostgreSQL single-winner evidence
-is owned by D2R-B, not by this fake-session module.
+Same-locator single-winner invariant: the owner locks every resolved private
+``songs`` row with ``SELECT ... FOR NO KEY UPDATE`` in ascending private-id order
+before any mood/marker read, so a later replacement for the same ``SongIdentity``
+reads state after the predecessor commits (no interleave, no union); batch lock
+order is all-or-none.  ``TestMoodSameLocatorSerialization`` pins the lock
+statement and its ordering; real-PostgreSQL single-winner evidence is owned by
+the live-PostgreSQL characterization suite, not by this fake-session module.
 """
 
 from __future__ import annotations
@@ -655,7 +656,7 @@ class TestMoodCommitPhase:
 
 @pytest.mark.unit
 class TestMoodSameLocatorSerialization:
-    """D2R-A same-locator single-winner serialization control flow.
+    """Same-locator single-winner serialization control flow.
 
     Invariant: the owner locks every resolved private ``songs`` row with
     ``SELECT ... FOR NO KEY UPDATE`` in ascending private-id order BEFORE any
@@ -664,7 +665,7 @@ class TestMoodSameLocatorSerialization:
     all rows all-or-none in one statement. These are fake-session proofs of the
     lock statement, its deterministic ordering, and its position relative to the
     mood read. Deterministic real-PostgreSQL single-winner evidence is owned by
-    D2R-B, not by this module.
+    the real-DB suite, not by this module.
     """
 
     def test_lock_statement_targets_resolved_songs_row_for_update(self) -> None:

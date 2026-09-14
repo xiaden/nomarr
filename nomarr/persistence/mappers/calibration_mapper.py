@@ -10,7 +10,7 @@ payload builder (:func:`calibration_state_payload`) are consumed by
 ``ml.py``.  The history builders/converter
 (:func:`calibration_history_payload`,
 :func:`calibration_history_from_record`) back the natural-identity snapshot
-intents that Plan C's facade will call.
+intents that the facade will call.
 
 Epoch-millisecond handling: ``updated_at``/``created_at`` are integer
 milliseconds since epoch (project convention ``now_ms().value``) — never
@@ -61,7 +61,7 @@ def calibration_state_from_joined_record(record: dict[str, Any]) -> CalibrationS
     """Map a repository join result to the same domain contract.
 
     The joined record carries extra model metadata (including ``backbone_id``)
-    for ``RegisteredModel`` construction in Plan C; the mapper reads only the
+    for ``RegisteredModel`` construction; the mapper reads only the
     calibration state fields and never forwards ``backbone_id`` (or any model
     metadata) into :class:`CalibrationState` — the domain value has no such
     field.

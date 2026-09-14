@@ -26,7 +26,7 @@ def _make_ml_db() -> MlDb:
 @pytest.mark.unit
 @pytest.mark.mocked
 class TestMlDbVectorIndexMethods:
-    """Tests for MlDb vector index management methods added in Phase 3."""
+    """Tests for MlDb vector index management methods added in the facade migration."""
 
     def test_has_vector_index_returns_true_when_index_exists(self) -> None:
         """has_vector_index should return True when pg_indexes has the index."""

@@ -283,7 +283,7 @@ class VectorRepo:
         """Resolve a UUID ``SongIdentity`` to its storage ``songs.id``.
 
         Mirrors the established library_tags/app_repo resolution pattern: the
-        owning library is resolved by ``libraries.library_uuid`` (ADR-049), then
+        owning library is resolved by ``libraries.library_uuid`` (ADR-048), then
         the song's normalized path within it.  A missing library or missing
         normalized path resolves to ``None``.  The id is used only to reach the
         row inside this repository and never crosses the boundary.

@@ -1,7 +1,6 @@
 """Unit tests for the calibration history snapshot domain value object.
 
-``TASK-calibration-state-intent-facade-correction-A`` Phase 1 (P1-S2/P1-S3):
-prove the frozen/slotted ``CalibrationHistorySnapshot`` domain value object
+Prove the frozen/slotted ``CalibrationHistorySnapshot`` domain value object
 carries model/calibration natural identity and named snapshot metrics without
 any history row id, ``event``, JSONB ``data`` envelope, or database-generated
 ``created_at``.  See

@@ -167,7 +167,7 @@ class TestCalibrationRepo:
         assert isinstance(row, CalibrationStateJoined)
         assert row["backbone_id"] == "bb_1"
         assert row["state_data"]["status"] == "ok"
-        # RegisteredModel metadata present for Plan C construction.
+        # RegisteredModel metadata present for calibration construction.
         assert row["model_type"] == "genre"
         assert "path" in row
         assert "head_release_date" in row

@@ -1,6 +1,6 @@
 """Persistence-layer mappers that convert storage rows to domain value objects.
 
-Ownership (per artifacts/designs/parts/tag-boundary/CONTRACTS.md):
+Ownership follows the tag-domain boundary:
 - ``nomarr/helpers/dataclasses/tags_dataclass.py`` is the canonical domain
   ``Tag``/``Tags``; it carries no database-row API or persistence fields.
 - This module lives in the persistence layer and owns the row-to-domain and

@@ -1,16 +1,15 @@
-"""Contract tests for the opaque ``nom1`` SongLocator codec (ADR-048 / ADR-049).
+"""Contract tests for the opaque ``nom1`` SongLocator codec (ADR-048).
 
-Covers the P3-S1 positive canonical contract (round trip, library-scope
-distinction, wire shape/ordering, ``library_uuid`` presence) and the P3-S2
-negative contract (integer ids, missing/malformed/noncanonical/unknown-version
-tokens, alternate formats, malformed/unknown UUIDs, noncanonical paths, and the
-structural absence of an integer wire adapter, shim, alias, or dual path).
+Covers the canonical opaque, versioned ``nom1`` SongLocator contract: UUID-bearing
+round trips, library-scope distinction, wire shape and ordering, and rejection
+of integer ids, malformed or noncanonical tokens, unknown versions, alternate
+formats, malformed or unknown UUIDs, and noncanonical paths. It also verifies
+that no integer wire adapter, shim, alias, or dual path exists.
 
-The authoritative wire format is ``nom1`` + unpadded URL-safe base64 of the
-canonical compact JSON ``{"library_uuid": <v4 uuid>, "path": <relative path>}``
-(CONTRACTS §7). Tests import only ``nomarr.helpers`` (and DTOs) so they collect
-independently of the H-owned ``file_write_comp`` import chain that blocks
-``nomarr.interfaces.api``.
+ADR-048 defines the wire format as ``nom1`` + unpadded URL-safe base64 of the
+canonical compact JSON ``{"library_uuid": <v4 uuid>, "path": <relative path>}``.
+Tests import only ``nomarr.helpers`` (and DTOs) so they collect independently of
+the ``file_write_comp`` import chain that blocks ``nomarr.interfaces.api``.
 """
 
 from __future__ import annotations
@@ -48,7 +47,7 @@ _UUID_A = "123e4567-e89b-42d3-a456-426614174000"
 _UUID_B = "223e4567-e89b-42d3-b456-426614174001"
 _UUID_V5 = "123e4567-e89b-52d3-a456-426614174000"  # version nibble 5 -> non-v4
 
-# Every projection surface named by the P3-S1 shape test (CONTRACTS §7).
+# Every supported projection surface that must preserve the locator contract.
 _PROJECTION_SOURCES = (
     _REPO_ROOT / "nomarr/helpers/song_locator_codec.py",
     _REPO_ROOT / "nomarr/interfaces/api/id_codec.py",
@@ -75,7 +74,7 @@ def _json_token(payload: object, prefix: str = SONG_LOCATOR_PREFIX) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# P3-S1 — positive canonical contract
+# Positive tests for the canonical opaque, versioned ``nom1`` contract
 # ─────────────────────────────────────────────────────────────────────────
 
 
@@ -188,7 +187,7 @@ class TestWireShapeAndOrdering:
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# P3-S2 — negative contract (rejection)
+# Negative contract (rejection)
 # ─────────────────────────────────────────────────────────────────────────
 
 
@@ -339,7 +338,7 @@ class TestRejectsNoncanonicalPaths:
     @pytest.mark.xfail(
         strict=True,
         reason=(
-            "Known codec gap (residual for plan I): is_canonical_relative_path uses "
+            "Known codec gap: is_canonical_relative_path uses "
             "posixpath.normpath, which preserves a leading '..' segment, contradicting "
             "the documented 'no . or .. segments' canonical grammar. Strict xfail so "
             "this flips to a failure once the codec rejects parent escapes."
@@ -374,7 +373,7 @@ class TestErrorsDoNotLeakTokenContents:
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# P3-S2 — structural absence of integer adapter / shim / dual path
+# Structural absence of integer adapter / shim / dual path
 # ─────────────────────────────────────────────────────────────────────────
 
 

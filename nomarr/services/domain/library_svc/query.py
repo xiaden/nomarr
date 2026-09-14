@@ -27,6 +27,7 @@ from nomarr.components.library.library_song_query_comp import (
     locators_for_carriers,
     search_songs_by_tag,
     tagged_songs_for_locators,
+    tagged_songs_with_locators,
 )
 from nomarr.components.library.library_song_state_comp import (
     count_errored_songs,
@@ -222,6 +223,9 @@ class LibraryQueryMixin:
 
     def _songs_for_locators(self, locators: list[SongIdentity]) -> list[TaggedSong]:
         return tagged_songs_for_locators(self.db, locators)
+
+    def _tagged_songs_with_locators(self, locators: list[SongIdentity]) -> list[tuple[SongIdentity, TaggedSong]]:
+        return tagged_songs_with_locators(self.db, locators)
 
     def search_files(self, query: SearchFilesQuery) -> SearchFilesResult:
         """Search library files with optional filters.
@@ -440,11 +444,16 @@ class LibraryQueryMixin:
     def get_errored_files(self, library: Library) -> ErroredFilesResult:
         """Get errored files for a library with basic metadata.
 
+        The total is the source errored-state count before semantic locator
+        projection. Stale or otherwise unresolvable ``SongLocator`` values are
+        omitted from the file list, so the total can exceed ``len(files)``.
+
         Args:
             library: Domain ``Library`` (natural identity).
 
         Returns:
-            ErroredFilesResult with file list and total count.
+            ErroredFilesResult with resolvable errored files and the source
+            errored-state total.
 
         Raises:
             ValueError: If library does not exist.
@@ -453,18 +462,18 @@ class LibraryQueryMixin:
         self._get_library_or_error(library)
         total = count_errored_songs(self.db, library)
         errored_ids = get_errored_song_ids(self.db, library)
-        carriers = self._songs_for_locators(errored_ids)
+        projected = self._tagged_songs_with_locators(errored_ids)
         files: list[ErroredFileItem] = [
             cast(
                 "ErroredFileItem",
                 {
-                    "file_id": encode_song_locator(carrier_locator),
+                    "file_id": encode_song_locator(locator),
                     "path": carrier.song.path,
                     "duration_seconds": carrier.song.duration_seconds,
                     "artist": carrier.metadata.get("artist"),
                     "title": carrier.metadata.get("title"),
                 },
             )
-            for carrier, carrier_locator in zip(carriers, errored_ids, strict=True)
+            for locator, carrier in projected
         ]
         return ErroredFilesResult(files=files, total=total)

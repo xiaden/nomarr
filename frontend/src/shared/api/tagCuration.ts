@@ -131,7 +131,7 @@ export async function getFileTags(
 // ──────────────────────────────────────────────────────────────────────────────
 // Tag Curation API
 //
-// Wire-handle contract (see artifacts/designs/parts/tag-curation-identity-mismatch/CONTRACTS.md):
+// Wire-handle contract:
 //
 //   - Every tag identifier on the wire (`TagValueItem.id`, `tag_id`,
 //     `source_tag_ids`, `canonical_tag_id`, `source_tag_id`) is an OPAQUE

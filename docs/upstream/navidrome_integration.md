@@ -216,9 +216,14 @@ This would enable Navidrome's **Instant Mix** and **Artist Radio** features to u
 Nomarr's ML without any changes to Nomarr's existing API. The AudioMuse-AI plugin is
 the direct reference implementation to clone and adapt.
 
-**Complexity:** Low–Medium. The plugin itself is ~200–400 lines of TinyGo. The hard
-part is the Nomarr-side API endpoint that accepts `(navidrome_song_id) →
-[similar_navidrome_song_ids]` — which requires having the ID mapping solved first.
+**Complexity:** Low–Medium. The plugin itself is ~200–400 lines of TinyGo. A future
+integration could accept an opaque plugin-owned Navidrome song token and return
+plugin-owned tokens for similar tracks. This is a historical/non-operative proposal:
+Nomarr does not persist Navidrome tracks or own a `navidrome_song_id` mapping or
+mapping endpoint. When relevant to Nomarr API or request boundaries, `nom1` is
+Nomarr's opaque, versioned `SongLocator` wire representation—not a persisted
+Navidrome song ID or token. External Navidrome identifiers remain outside Nomarr's
+database.
 
 ### 2. Direct playlist push via Subsonic API
 

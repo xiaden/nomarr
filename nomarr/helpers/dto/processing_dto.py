@@ -43,7 +43,6 @@ class TagWriteProfile:
 class ResourceManagementConfig:
     """Configuration for GPU/CPU adaptive resource management.
 
-    Per GPU_REFACTOR_PLAN.md Section 13:
     - enabled: Whether resource management is active
     - vram_budget_mb: Maximum VRAM ML may consume (absolute MB)
     - ram_budget_mb: Maximum RAM ML may consume (absolute MB)

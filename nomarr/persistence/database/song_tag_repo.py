@@ -2,7 +2,7 @@
 
 Manages the ``song_tags`` junction table that links songs to tags.
 Split from ``TagRepository`` to keep each repo focused on a single table
-group (see persistence.md size guidelines).
+group (see PERSISTENCE.md size guidelines).
 """
 
 from __future__ import annotations
@@ -329,7 +329,7 @@ class SongTagRepository:
         single owner transaction. All locator resolution and SQL run before the
         distinct commit phase in :meth:`_commit_mood_batch`.
 
-        Same-locator single-winner invariant (D2R-A): immediately after private
+        Same-locator single-winner invariant: immediately after private
         ``SongIdentity`` resolution this method locks every resolved private
         ``songs`` row with ``SELECT ... FOR NO KEY UPDATE`` (see
         :meth:`_lock_mood_song_rows`) before any mood/marker read. A later
@@ -890,7 +890,7 @@ class SongTagRepository:
                 "source_orphaned": int(source_orphaned),
             }
 
-    # ── Plan E facade support ───────────────────────────────────
+    # ── Facade support ──────────────────────────────────────────
 
     def get_genre_tags_for_songs(self, song_ids: list[int], *, namespace: str = "default") -> list[dict[str, Any]]:
         """Return genre tags assigned to the given song ids.

@@ -1,13 +1,14 @@
-"""Phase-2 ownership tests for the relocated mood persistence path.
+"""Ownership tests for the relocated mood persistence path.
 
 These are static/source architecture tests. They fail if the Tier-3
 ``LibraryTagsDb`` facade regains mood table/SQL access or transaction control,
 if a second mood repository/alias/shim appears, or if the existing Tier-2
 ``SongTagRepository`` mood intent loses the single marker+mood transaction
-guarantee. They also pin the unchanged D3-facing public symbols.
+guarantee. They also pin the unchanged public mood symbols.
 
 No live PostgreSQL evidence is claimed here; behavioral fault coverage lives in
-``test_mood_owner_d2.py`` and real-driver capability evidence is owned by D3.
+``test_mood_owner.py`` and real-driver capability evidence is owned by the
+live-PostgreSQL characterization suite.
 """
 
 from __future__ import annotations

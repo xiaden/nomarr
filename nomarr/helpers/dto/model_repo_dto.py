@@ -1,6 +1,6 @@
 """TypedDict DTOs for the ModelRepo return types.
 
-These mirror the SQLAlchemy ``MlModel`` model columns from Part A and
+These mirror the SQLAlchemy ``MlModel`` model columns and
 provide type-safe return types for model repository methods.  Import
 only from ``typing``.
 """

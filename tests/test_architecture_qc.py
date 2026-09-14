@@ -39,7 +39,7 @@ PERSISTENCE_TIER_BOOTSTRAP_ALLOWLIST: set[Path] = set()
 
 # Grandfathered ArangoDB field-name references (_id/_key) outside persistence.
 # Key: (relative file path, line number). Value: ISO-format expiry date.
-# Migrated from .arango-field-allowlist.yaml (Part E, P1-S1). Expiry policy:
+# Migrated from the legacy .arango-field-allowlist.yaml. Expiry policy:
 # default 90 days from generation (2026-10-15); interface-boundary entries
 # (Pydantic Field descriptions documenting the API contract) 365 days
 # (2027-07-17). The test fails if a reference is NOT in this allowlist, or if
@@ -623,8 +623,8 @@ def test_persistence_tier_bootstrap_allowlist_stays_empty() -> None:
 def test_no_arango_field_names_outside_persistence():
     """Ensure no ArangoDB field names (_id/_key) appear outside persistence.
 
-    Migrated from scripts/check-arango-fields.sh + .arango-field-allowlist.yaml
-    (Part E, P1-S1). Scans nomarr/**/*.py excluding nomarr/persistence/** and
+    Migrated from the legacy scripts/check-arango-fields.sh + allowlist YAML.
+    Scans nomarr/**/*.py excluding nomarr/persistence/** and
     tests/** for word-boundary _id/_key references. Any reference not in the
     embedded ARANGO_FIELD_ALLOWLIST fails; any allowlist entry whose expiry has
     passed also fails (expiry semantics preserved from the original YAML).
@@ -771,13 +771,16 @@ def test_deterministic_snapshots() -> None:
         set/dict iteration leaking into output);
       * asserts the re-serialization equals the committed bytes - a mismatch
         means the current serializer no longer produces what the baselines
-        contain (regenerate them);
-      * asserts the payload is a flat JSON object - the normalized facade
-        result shape.
+        contain (regenerate them).
+
+    Because normalized facade results may legitimately be a JSON object, array,
+    or scalar (e.g. a list of libraries, a null miss, an int count, or a bool
+    flag), the round-trip is the whole shape guarantee: it proves every
+    committed baseline re-serializes byte-for-byte under the current serializer.
 
     Snapshots are only written when Docker runs the characterization suite, so
-    the file checks skip when snapshots/ is empty - but the serializer
-    round-trip and shape checks run unconditionally, so the test never
+    the test skips when snapshots/ is empty - but the serializer round-trip
+    still runs over whatever baselines are committed, so the test never
     degrades to a pure skip.
     """
     conftest = _load_characterization_conftest()
@@ -799,13 +802,6 @@ def test_deterministic_snapshots() -> None:
             f"serialization ({len(first)} bytes re-serialized vs "
             f"{len(committed)} committed). Regenerate it by running the "
             "characterization suite."
-        )
-
-    for snapshot in snapshots:
-        with snapshot.open("rb") as fh:
-            payload = json.load(fh)
-        assert isinstance(payload, dict), (
-            f"Snapshot {snapshot.name} is a {type(payload).__name__}, expected a normalized facade result object."
         )
 
     if not snapshots:
@@ -833,7 +829,7 @@ _FACADE_TRANSACTION_PATTERNS = (
 def test_facade_transaction_contract_absent() -> None:
     """No facade exposes the AR-2 transaction guard vocabulary (AR-SDR-4).
 
-    CONTRACTS.md AR-SDR-4 abolishes caller-managed transactions as a domain
+    AR-SDR-4 abolishes caller-managed transactions as a domain
     contract: `_require_transaction`, `FacadeMisuseError`, and `transaction()`
     were removed from every facade. This test checks that statically by
     scanning nomarr/persistence/api/*.py - no nomarr imports, so it runs even
@@ -871,7 +867,7 @@ FILE_DOMAIN_SCAN_DIRS = [
     *[Path(f"nomarr/{d}") for d in ("components", "services", "workflows", "interfaces", "helpers")],
 ]
 
-# Eliminated entity/type/facade/transaction surface (hard-zero after Plans A-D).
+# Eliminated entity/type/facade/transaction surface (hard-zero after elimination).
 _FILE_ENTITY_PATTERNS = (
     re.compile(r"\blibrary_files\b"),
     re.compile(r"\bLibraryFile\b"),
@@ -896,7 +892,7 @@ _FILE_TABLE_PATTERNS = (
 # EXCEPTION ALLOWLIST (AR-SDR-1/6/7): a matching line is NOT a violation.
 # (a) Physical audio-file tag-IO layer. (b) AR-SDR-6 constants seed source.
 # (c) Wire/API-contract `file_id` in nomarr/interfaces/ (no bare file_id pattern
-#     is scanned here - it is scoped to persistence+domain API surface in P3-S3).
+#     is scanned here - it is scoped to the persistence+domain API surface).
 _FILE_ALLOWLIST = (
     re.compile(r"file_tags_io_wf"),
     re.compile(r"write_file_tags_wf"),
@@ -968,9 +964,9 @@ def test_no_file_domain_naming_in_persistence_surface() -> None:
         )
 
 
-# ── Worker-claims storage-mechanics ban (Phase 3) ─────────────────────────────
-# The worker_claims intent facade (TASK-worker-claims-intent-facade-A-correction)
-# requires that no storage mechanics cross the persistence boundary: the raw row
+# ── Worker-claims storage-mechanics ban ──────────────────────────────────────
+# The worker_claims intent facade requires that no storage mechanics cross the
+# persistence boundary: the raw row
 # TypedDict (WorkerClaimRow), dead legacy claim method names, the worker_claims
 # table name, encoded claim keys, and claim JSON-payload access
 # (``claim.get("file_id")``) are all persistence-internal. These patterns must not
@@ -1005,7 +1001,7 @@ _CLAIM_PAYLOAD_ACCESS = re.compile(r"claim\.get\(|claim\[[\"']file_id[\"']\]")
 def test_no_worker_claim_storage_mechanics_outside_persistence() -> None:
     """Worker-claims storage shapes/names must not appear outside persistence.
 
-    CONTRACTS.md forbids any non-persistence code from depending on
+    The worker-claims contract forbids any non-persistence code from depending on
     WorkerClaimRow, raw claim dictionaries/payloads, encoded claim keys, the
     worker_claims table name, or a public insert/release/steal compatibility
     alias. Prose inside docstrings is excluded (it documents the boundary).
@@ -1048,9 +1044,9 @@ def test_no_worker_claim_storage_mechanics_outside_persistence() -> None:
         )
 
 
-# ── Calibration intent-facade boundary (Plan E P3-S1 / P3-S2) ────────────────
-# The calibration correction contracts ("final domain signatures", CONTRACTS.md)
-# seal the calibration state/history surface to domain values only. The
+# ── Calibration intent-facade boundary ──────────────────────────────────────
+# The calibration "final domain signatures" contract seals the calibration
+# state/history surface to domain values only. The
 # persistence-internal calibration modules below must not cross into caller
 # code; facade results must not expose the raw JSONB state/history envelopes;
 # and callers must address calibration by natural ``(model_id, head_name, label)``
@@ -1113,7 +1109,7 @@ _CALIBRATION_DB_INTERNAL_ACCESS = re.compile(
     r"\._tier1\b|\._tier2\b|\._scoped\b|\.session\b|\.conn\b|db\.execute\b|db\.raw\b"
 )
 
-# The final production calibration facade surface (CONTRACTS.md "final domain
+# The final production calibration facade surface ("final domain
 # signatures"): 11 routine methods on ``MlDb`` plus the 2 maintenance-only
 # truncate methods on ``db.ml.maintenance``. Each caller-bearing method maps to
 # the call-site pattern that proves a production caller exists.
@@ -1145,8 +1141,8 @@ _CALIBRATION_RETAINED_PUBLIC_SURFACE = {
 
 _CALIBRATION_FACADE_SURFACE = set(_CALIBRATION_FACADE_METHODS_WITH_CALLERS) | _CALIBRATION_RETAINED_PUBLIC_SURFACE
 
-# Superseded raw calibration methods/shims: removed from the facade in Plan C/D
-# and must stay absent from both the surface and any production call site.
+# Superseded raw calibration methods/shims: removed from the facade and must
+# stay absent from both the surface and any production call site.
 _CALIBRATION_SUPERSEDED_METHODS = (
     "remove_calibration_history_entries",
     "remove_calibration_history_for_model",
@@ -1236,7 +1232,7 @@ def test_no_calibration_raw_envelope_outside_persistence() -> None:
     are excluded). The history ``data`` dict envelope (``["data"]`` /
     ``.get("data")``) is scanned across calibration caller code. Facade results
     are domain values with named fields; caller code must never index them as
-    raw storage envelopes. Plan D verified zero such usage - this codifies it.
+    raw storage envelopes. No caller usage exists; this codifies the boundary.
     """
     violations: list[tuple[str, int, str]] = []
 
@@ -1400,10 +1396,10 @@ def test_calibration_superseded_methods_have_no_surface_or_callers() -> None:
 
     remove_calibration_history_entries, remove_calibration_history_for_model,
     list_calibration_history_snapshots, and list_all_calibration_states_with_models
-    were removed in Plan C/D and must stay absent from the facade surface and from
+    were removed and must stay absent from the facade surface and from
     every production call site. Calibration table resets route exclusively through
     ``db.ml.maintenance`` (the deprecated routine ``MlDb`` truncate shims were
-    removed in Phase 1), so every production truncate call must carry the
+    removed earlier), so every production truncate call must carry the
     ``maintenance.`` prefix.
     """
     ml_file = PROJECT_ROOT / "nomarr" / "persistence" / "api" / "ml.py"
@@ -1461,10 +1457,10 @@ def test_calibration_superseded_methods_have_no_surface_or_callers() -> None:
     )
 
 
-# ── Tag-PK bridge retirement boundary (TASK-tag-curation-identity-mismatch-G) ─
+# ── Tag-PK bridge retirement boundary ────────────────────────────────────────
 # The root Database tag-PK resolver (``Database.resolve_tag_identity`` /
-# ``resolve_tag_identities``) was retired after the repo-wide zero-caller audit
-# (P1-S1/P1-S3). Caller code above persistence must reach tags by natural
+# ``resolve_tag_identities``) was retired after the repo-wide zero-caller audit.
+# Caller code above persistence must reach tags by natural
 # ``TagRef`` through the sealed ``db.library`` tag facade, never by an integer
 # tag primary key, by an ``int(tag_id)`` conversion, or by a raw ``TagRow``
 # shape. These scans codify the Bridge-retirement contract so the root resolver
@@ -1516,8 +1512,8 @@ def test_no_tag_pk_resolver_or_int_conversion_above_persistence() -> None:
     """Root tag resolver + integer tag conversions stay out of caller code.
 
     The root Database tag-PK resolver (``Database.resolve_tag_identity`` /
-    ``resolve_tag_identities``) was deleted after the zero-caller audit
-    (P1-S3). It must not reappear on ``Database``, and no caller code above
+    ``resolve_tag_identities``) was deleted after the zero-caller audit.
+    It must not reappear on ``Database``, and no caller code above
     persistence may route tags by integer primary key, perform ``int(tag_id)``
     conversion, or declare an integer tag-id facade parameter. Tag storage PKs
     are persistence-private; the public tag contract is natural ``TagRef`` via
@@ -1600,7 +1596,7 @@ def test_no_raw_tag_row_above_persistence() -> None:
         )
 
 
-# ── Retired TagIdentity type name (TagRef-D P1-S4) ────────────────────────────
+# ── Retired TagIdentity type name ────────────────────────────────────────────
 # The ``TagIdentity`` domain type name was retired with the tag-identity
 # migration; caller code now addresses tags by natural ``TagRef`` via db.library.
 # The type name must not resurface as an imported/constructed symbol in
@@ -1608,7 +1604,6 @@ def test_no_raw_tag_row_above_persistence() -> None:
 # the root resolver *method* names (``resolve_tag_identity`` /
 # ``resolve_tag_identities``) are separately guarded by
 # ``test_no_tag_pk_resolver_or_int_conversion_above_persistence``.
-# TagRef-D P1-S4: test_no_retired_tag_identity_type_above_persistence
 _TAG_IDENTITY_TYPE_SCAN_DIRS = [
     Path("nomarr/components"),
     Path("nomarr/services"),
@@ -1620,7 +1615,6 @@ _RETIRED_TAG_IDENTITY_TYPE_PATTERN = re.compile(r"\bTagIdentity\b")
 
 @pytest.mark.code_smell
 @pytest.mark.slow
-# TagRef-D P1-S4
 def test_no_retired_tag_identity_type_above_persistence() -> None:
     """The retired ``TagIdentity`` type name never resurfaces in caller code.
 
@@ -1656,8 +1650,8 @@ def test_no_retired_tag_identity_type_above_persistence() -> None:
         )
 
 
-# ── Whole-library reset: single maintenance intent, no choreography (P2-S3) ──
-# TASK-library-reset-persistence-choreography-D migrated the global reset to one
+# ── Whole-library reset: single maintenance intent, no choreography ─────────
+# The global reset is one
 # persistence-owned maintenance intent ``db.library.maintenance.reset_library_data()``
 # (LibraryMaintenanceDb -> LibraryResetRepo). No code above persistence may
 # reconstruct the reset choreography from retired per-piece ML collection/stream

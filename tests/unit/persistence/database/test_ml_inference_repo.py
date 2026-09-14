@@ -1,7 +1,6 @@
 """Signature guard for ``MlInferenceRepo.replace_song_inference_results``.
 
-P1-S2 of ``TASK-ml-write-boundary-leaks-storage-representation-A-typed-inference-
-write-boundary``. The typed Phase-2 repository signature IS in force and is pinned
+The typed repository signature IS in force and is pinned
 here without a database: ``TestTypedAggregateSignature`` is the permanent unit-level
 guard holding the repository to the typed contract — a semantic ``SongIdentity``
 *song* (never an integer key) plus keyword-only typed
@@ -22,8 +21,7 @@ import pytest
 from nomarr.persistence.database.ml_inference_repo import MlInferenceRepo
 
 # ---------------------------------------------------------------------------
-# P1-S2 permanent typed repository aggregate signature
-# (TASK-ml-write-boundary-leaks-storage-representation-A). Phase 2 landed: the
+# Permanent typed repository aggregate signature. The typed aggregate landed: the
 # repository accepts a semantic SongIdentity (never an integer song key) and
 # keyword-only typed Sequence[BackboneVectorWrite]/Sequence[OutputStreamWrite]
 # command sequences (resolving the song FK internally). No DB is required to pin

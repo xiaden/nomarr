@@ -152,7 +152,7 @@ class TestMlIfRoutes:
 @pytest.mark.unit
 @pytest.mark.mocked
 class TestMlIfModelOutputRoutes:
-    """Tests for model-output routes that thread model_id (Plan D)."""
+    """Tests for model-output routes that thread model_id."""
 
     def test_get_model_outputs_delegates_to_service(
         self,

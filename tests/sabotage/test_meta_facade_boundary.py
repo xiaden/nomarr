@@ -1,7 +1,6 @@
-"""Sabotage checks: meta-backed intent facade boundary (P4-S3).
+"""Sabotage checks: meta-backed intent facade boundary.
 
-Enforces the hard-cut semantic ``AppDb`` surface from
-``TASK-meta-intent-facades-A-hard-cut``:
+Enforces the hard-cut semantic ``AppDb`` surface:
 
 - No higher-layer code (components, services, workflows, interfaces), script,
   or non-repository test references the storage-level meta surface: ``Meta`` /
@@ -89,7 +88,7 @@ CONFIG_PREFIX_PATTERN = re.compile(
 )
 
 # The renamed clear-result field. ``meta_keys_cleared`` was renamed to
-# ``bookkeeping_values_cleared`` (Plan A, user-approved); reintroduction of the
+# ``bookkeeping_values_cleared`` (user-approved); reintroduction of the
 # old storage-flavored name must be caught.
 META_KEYS_CLEARED_PATTERN = re.compile(r"meta_keys_cleared")
 
@@ -269,7 +268,7 @@ class TestNoStaleClearResultField:
             violations.extend(_scan(directory, META_KEYS_CLEARED_PATTERN))
         violations.extend(_scan(Path("scripts"), META_KEYS_CLEARED_PATTERN))
         assert len(violations) == 0, (
-            "meta_keys_cleared was renamed to bookkeeping_values_cleared (Plan A); "
+            "meta_keys_cleared was renamed to bookkeeping_values_cleared; "
             "callers must use the new field name.\n"
             f"{_format(violations)}"
         )
@@ -315,5 +314,5 @@ class TestAppDbExposesNoGenericMetaSurface:
         exposed = [name for name in forbidden if hasattr(AppDb, name)]
         assert not exposed, (
             "AppDb must not expose generic meta primitives or the legacy "
-            f"update_config_option bridge (P4-S1/P4-S2). Exposed: {exposed}"
+            f"update_config_option bridge. Exposed: {exposed}"
         )

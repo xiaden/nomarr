@@ -1,7 +1,6 @@
-"""Sabotage checks: sealed song-tag facade boundary (P6-S5).
+"""Sabotage checks: sealed song-tag facade boundary.
 
-Enforces the sealed ``LibraryTagsDb`` surface from
-``TASK-song-intent-facade-correction-A``:
+Enforces the sealed ``LibraryTagsDb`` surface:
 
 - Facade results are domain objects (``TagRef`` / ``SongTagAssignment`` /
   ``TagUsage`` / ``RelinkResult`` / ``TagCleanupResult`` / ``Song`` /
@@ -22,7 +21,7 @@ Enforces the sealed ``LibraryTagsDb`` surface from
 - ``TestNoClaimStorageMechanicsInCallers`` — ``WorkerClaimRow`` and encoded
   claim-key strings (``claim_{song_id}``) are persistence-internal and never
   appear in higher-layer caller code.
-- ``TestSongTagAssignmentHasNoSongId`` (Plan C P1-S5 extension) also rejects
+- ``TestSongTagAssignmentHasNoSongId`` also rejects
   storage ``tag_id`` and the removed ``tags`` metadata fields
   (``tier``/``created_at``/``parent_tag_id``) on ``SongTagAssignment`` — only the
   domain identity tuple and edge provenance (confidence/source) may cross.
@@ -138,7 +137,7 @@ class TestNoDirectStorageImports:
         )
 
 
-# ── Worker-claims sealed facade boundary (Phase 3) ────────────────────────────
+# ── Worker-claims sealed facade boundary ──────────────────────────────────────
 # The canonical claims intent surface is add_claim / remove_claim / remove_claims /
 # list_claims / count_claims (plus the all-claims reset under maintenance). The
 # legacy claim persistence names below must never resurface as object-attribute
@@ -180,7 +179,7 @@ class TestNoLegacyClaimFacadeCalls:
             "release_claim_by_song, delete_claims*, steal_claim, aggregate_worker_claims, "
             "count_worker_claims, truncate_worker_claims, claim_song, "
             "try_insert_or_steal_claim, remove_claim_by_song) must not reappear as "
-            "object-attribute calls above persistence (CONTRACTS.md).\n"
+            "object-attribute calls above persistence (the sealed facade contract).\n"
             f"{_format(violations)}"
         )
 
@@ -196,7 +195,7 @@ class TestNoClaimStorageMechanicsInCallers:
         assert len(violations) == 0, (
             "WorkerClaimRow is a persistence-internal storage shape and must not be "
             "imported, referenced, or returned in components/services/workflows/"
-            "interfaces (CONTRACTS.md).\n"
+            "interfaces (the sealed facade contract).\n"
             f"{_format(violations)}"
         )
 
@@ -208,7 +207,7 @@ class TestNoClaimStorageMechanicsInCallers:
             "Encoded claim-key construction/parsing (claim_{song_id} / "
             "claim_{claim_type}_{song_id}) is owned solely by the persistence repo "
             "(app_repo.py); no higher layer may construct, parse, or compare these "
-            "strings (CONTRACTS.md).\n"
+            "strings (the sealed facade contract).\n"
             f"{_format(violations)}"
         )
 

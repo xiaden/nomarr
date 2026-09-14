@@ -1,6 +1,6 @@
 """Opaque complete-``TagRef`` wire-handle codec for tag curation.
 
-Wire-handle contract (``artifacts/designs/parts/tag-curation-identity-mismatch/CONTRACTS.md``):
+Wire-handle contract for opaque tag tokens:
 
 - A public tag identity handle is a versioned, canonical, URL-safe base64url
   encoding of a canonical JSON object containing exactly the semantic ``name``,

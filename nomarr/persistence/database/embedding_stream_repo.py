@@ -1,6 +1,6 @@
 """EmbeddingStreamRepository — CRUD for the ``ml_embedding_streams`` table.
 
-Uses Part B primitives for simple lookups and direct SQLAlchemy Core for
+Uses shared persistence primitives for simple lookups and direct SQLAlchemy Core for
 upserts and filtered queries.
 
 Field mapping note:

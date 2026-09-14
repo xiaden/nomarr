@@ -1,6 +1,6 @@
 """LibraryRepository — CRUD and domain queries for the ``libraries`` table.
 
-Uses Part B primitives for simple lookups and direct SQLAlchemy Core for
+Uses shared persistence primitives for simple lookups and direct SQLAlchemy Core for
 filtered queries. Pipeline-axis state reads delegate to ``PipelineRepository``,
 which reads/writes the ``pipeline_states`` rows rather than any
 ``libraries`` columns.
@@ -106,7 +106,7 @@ class LibraryRepository:
         ``libraries.library_uuid`` carries the ``uq_libraries_library_uuid``
         UNIQUE constraint, so this lookup is singular by construction. It is the
         persistence-side anchor for every SongLocator/library-identity resolution
-        (ADR-049); integer ids remain translation details internal to this layer.
+        (ADR-048); integer ids remain translation details internal to this layer.
         """
         with map_persistence_exceptions():
             stmt = select(_T).where(_T.c.library_uuid == library_uuid)
@@ -148,10 +148,9 @@ class LibraryRepository:
     def get_libraries_by_ids(self, library_ids: list[int]) -> list[LibraryRow]:
         """Fetch libraries by their primary keys in one set-based query.
 
-        Persistence-private primary-key batch read added for the song-side
-        identity bridge (P3 of TASK-song-intent-facade-correction-A), which
-        resolves numeric library handles to their natural ``LibraryIdentity``
-        references. Missing ids are simply absent from the result.
+        Persistence-private primary-key batch read used to resolve storage
+        handles to natural ``LibraryIdentity`` references. Missing ids are simply
+        absent from the result.
         """
         if not library_ids:
             return []

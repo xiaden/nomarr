@@ -878,7 +878,7 @@ class TestExecuteDeferredWrites:
         mock_release.assert_called_once_with(db, _song(), "worker:tag:0")
 
     def test_deferred_semantic_payload_survives_pickle_reload(self) -> None:
-        """P4-S4: a deferred semantic DTO round-trips through pickle (the reload
+        """A deferred semantic DTO round-trips through pickle (the reload
         surrogate for the object-passing ThreadPoolExecutor boundary) with its
         SongIdentity and typed commands intact and no storage handle/dict leak."""
         writes = DeferredFileWrites(
@@ -901,7 +901,7 @@ class TestExecuteDeferredWrites:
         assert isinstance(vector_cmd, BackboneVectorWrite)
 
     def test_retry_after_injected_failure_dispatches_fresh_semantic_commands(self) -> None:
-        """P4-S4: after a restart-style reload and an injected later-backbone
+        """After a restart-style reload and an injected later-backbone
         failure, a retry re-dispatches fresh semantic commands from the same DTO
         — it never replays partial persistence state or a storage key."""
         from nomarr.services.infrastructure.workers.discovery_worker import _execute_deferred_writes
@@ -961,7 +961,7 @@ class TestExecuteDeferredWrites:
 
 
 # ---------------------------------------------------------------------------
-# _warm_onnx_cache — typed VramPromise attribute access (P2-S5)
+# _warm_onnx_cache — typed VramPromise attribute access
 # ---------------------------------------------------------------------------
 
 
@@ -1018,12 +1018,12 @@ class TestWarmOnnxCacheVramPromise:
 
 
 # ---------------------------------------------------------------------------
-# run() shutdown / cancellation / pending-write drain (Q3-D lifecycle)
+# run() shutdown / cancellation / pending-write drain (lifecycle)
 # ---------------------------------------------------------------------------
 
 
 class TestRunShutdownLifecycle:
-    """``DiscoveryWorker.run`` lifecycle closure for the Q3-D proof.
+    """``DiscoveryWorker.run`` lifecycle closure proof.
 
     Covers cooperative cancellation before any discovery work and the
     shutdown drain of an in-flight deferred write. Both paths must release the

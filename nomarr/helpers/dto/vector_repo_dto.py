@@ -1,6 +1,6 @@
 """TypedDict DTOs for the VectorRepo return types.
 
-These mirror the SQLAlchemy ``Embedding`` model columns from Part A and
+These mirror the SQLAlchemy ``Embedding`` model columns and
 provide type-safe return types for vector repository methods.  Import
 only from ``typing``.
 

@@ -1,12 +1,10 @@
-"""Static evidence gates for Plan O security, provenance, and rollback guidance.
+"""Static evidence gates for security, provenance, and rollback guidance.
 
-Clean-checkout boundary (Q2R-A): the fixture-backed assertions read a tracked,
-non-sensitive fixture under ``tests/unit/architecture/fixtures/``, while the
-handoff check additionally reads repository files (``capability-manifest.json``
-and ``.github/workflows/backend-tests.yml``). The globally gitignored
-``artifacts/`` tree is consulted only by a guarded optional provenance check
-that is skipped when the ignored document is absent, so a clean checkout passes
-without it.
+The fixture-backed assertions read a tracked, non-sensitive fixture under
+``tests/unit/architecture/fixtures/``, while the handoff check additionally
+reads repository files (``capability-manifest.json`` and
+``.github/workflows/backend-tests.yml``). No assertion reads the globally
+gitignored ``artifacts/`` tree, so a clean checkout passes without it.
 """
 
 from __future__ import annotations
@@ -20,10 +18,7 @@ from pathlib import Path
 import pytest
 
 _DEFAULT_ROOT = Path(__file__).parents[3]
-REQUIRED_FIXTURES: tuple[str, ...] = ("o-security-provenance-rollback.md",)
-_IGNORED_EVIDENCE = (
-    "artifacts/designs/parts/song-row-mirror-leaks-into-domain/evidence-O-security-provenance-rollback.md"
-)
+REQUIRED_FIXTURES: tuple[str, ...] = ("security-provenance-rollback.md",)
 
 
 def _root() -> Path:
@@ -46,7 +41,7 @@ def _workflow_path() -> Path:
 
 
 def _assert_tracked_clean_checkout_fixture(path: Path) -> None:
-    """Mirror the D3B tracked-fixture containment proof for these fixtures."""
+    """Mirror the tracked-fixture containment proof for these fixtures."""
     assert path.is_file(), f"tracked evidence fixture missing: {path}"
     rel = path.relative_to(_root())
     assert rel.parts[0] == "tests", f"fixture must live under tests/: {rel}"
@@ -63,8 +58,8 @@ def _assert_tracked_clean_checkout_fixture(path: Path) -> None:
 
 
 @pytest.mark.unit
-def test_o_evidence_records_execution_and_protected_file_provenance() -> None:
-    path = _fixture("o-security-provenance-rollback.md")
+def test_evidence_records_execution_and_protected_file_provenance() -> None:
+    path = _fixture("security-provenance-rollback.md")
     _assert_tracked_clean_checkout_fixture(path)
     text = path.read_text(encoding="utf-8")
     assert "worktree was **not** clean" in text
@@ -73,8 +68,8 @@ def test_o_evidence_records_execution_and_protected_file_provenance() -> None:
 
 
 @pytest.mark.unit
-def test_o_evidence_requires_redaction_and_opaque_locator_contract() -> None:
-    path = _fixture("o-security-provenance-rollback.md")
+def test_evidence_requires_redaction_and_opaque_locator_contract() -> None:
+    path = _fixture("security-provenance-rollback.md")
     _assert_tracked_clean_checkout_fixture(path)
     text = path.read_text(encoding="utf-8")
     for required in (
@@ -98,14 +93,14 @@ def test_o_evidence_requires_redaction_and_opaque_locator_contract() -> None:
 
 
 @pytest.mark.unit
-def test_o_rollback_runbook_forbids_destructive_git_and_preserves_recovery() -> None:
-    text = _fixture("o-security-provenance-rollback.md").read_text(encoding="utf-8")
+def test_rollback_runbook_forbids_destructive_git_and_preserves_recovery() -> None:
+    text = _fixture("security-provenance-rollback.md").read_text(encoding="utf-8")
     for forbidden in ("git reset", "git checkout", "git restore", "git stash", "git clean"):
         assert forbidden in text
     for required in (
         "Quiesce callers and workers",
         "Capture the exact HEAD",
-        "Restore the complete A" + chr(0x2013) + "P wave coherently",
+        "Restore the complete protected set coherently",
         "recorded-recoverable",
         "ambiguous commit",
         "DB mood committed",
@@ -115,9 +110,9 @@ def test_o_rollback_runbook_forbids_destructive_git_and_preserves_recovery() -> 
 
 
 @pytest.mark.unit
-def test_o_handoff_preserves_blockers_and_evidence_labels() -> None:
-    text = _fixture("o-security-provenance-rollback.md").read_text(encoding="utf-8")
-    assert "Exact handoff to P" in text
+def test_evidence_labels_preserve_blockers() -> None:
+    text = _fixture("security-provenance-rollback.md").read_text(encoding="utf-8")
+    assert "Exact handoff" in text
     assert "LOCAL_PASS" in text
     assert "LOCAL_UNAVAILABLE" in text
     assert "CI_DEFERRED" in text
@@ -129,21 +124,3 @@ def test_o_handoff_preserves_blockers_and_evidence_labels() -> None:
     assert manifest["ci_job"] == "database-tests"
     assert manifest["marker"] == "requires_database"
     assert "continue-on-error" not in workflow
-
-
-@pytest.mark.unit
-def test_o_real_provenance_guarded_when_ignored_evidence_present() -> None:
-    """Real commit-hash provenance is asserted only when the ignored source exists.
-
-    On a clean checkout this is SKIPPED, never a local PASS: the tracked fixture
-    above already carries the non-sensitive required vocabulary.
-    """
-    evidence = _root() / _IGNORED_EVIDENCE
-    if not evidence.is_file():
-        pytest.skip(
-            "ignored Plan O evidence document absent (clean checkout); "
-            "non-sensitive tracked fixture covers required vocabulary; no LOCAL_PASS claimed"
-        )
-    text = evidence.read_text(encoding="utf-8")
-    assert "418c5d9b checkpoint" in text
-    assert "99131462e63d3ba6568ee7dc4b5045bd1ce6d041" in text

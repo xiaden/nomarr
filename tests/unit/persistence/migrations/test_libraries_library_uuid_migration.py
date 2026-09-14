@@ -1,8 +1,7 @@
 """Contract tests for the immutable ``libraries.library_uuid`` hard cut.
 
-``TASK-song-row-mirror-leaks-into-domain-G`` P1-S1/P1-S6. ADR-049 makes
-``libraries.library_uuid`` the immutable, NOT NULL, UNIQUE Nomarr-minted library
-application identity. This module proves:
+The migration makes ``libraries.library_uuid`` the immutable, NOT NULL, UNIQUE
+Nomarr-minted library application identity. This module proves:
 
 - the amended baseline declares the column for fresh databases and the revision
   chain is a single linear hard cut (no alias or dual path);

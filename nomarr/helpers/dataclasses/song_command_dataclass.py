@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 class LibraryIdentity:
     """Immutable Nomarr-owned identity of a library used to scope an operation.
 
-    ``library_uuid`` is the sole equality/hash identity (ADR-049); it is the
+    ``library_uuid`` is the sole equality/hash identity (ADR-048); it is the
     concrete ``libraries.library_uuid`` value and is never the integer
     ``libraries.id``. ``name`` and ``root_path`` are optional current
     display/location metadata and are deliberately excluded from equality and
@@ -75,7 +75,14 @@ class ChromaprintValue:
 
 @dataclass(frozen=True, slots=True)
 class SongIdentity:
-    """Natural identity of a song within a library."""
+    """Mutable, request-scoped SongLocator for a library-relative song path.
+
+    This is the existing SongLocator shape: a UUID-bearing ``LibraryIdentity``
+    plus a normalized library-relative path. A move or rename changes the
+    locator; it is not a stable application Song ID and has no alias, tombstone,
+    or locator-history mechanism. Generated database identifiers remain private
+    to persistence, which resolves this locator for ordinary facade operations.
+    """
 
     library: LibraryIdentity
     normalized_path: str

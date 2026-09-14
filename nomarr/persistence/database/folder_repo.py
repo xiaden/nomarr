@@ -3,13 +3,9 @@
 Replaces ``folder_has_folder`` edge traversals with ``parent_id``
 self-reference FK and ``library_id`` FK column.
 
-Overlap: a concurrent song-domain agent (TASK-song-intent-facade-correction-A)
-is mid-refactor of this file (they moved read mapping from ``LibraryFolderRow``
-to the domain ``LibraryFolder`` and removed ``_row_to_dto``/``select_by_key``).
-This change completes that mapping toward the facade contract of
-``TASK-library-domain-facades-A`` (P3-S2): read methods return the domain
-``LibraryFolder`` value object, ``parent_id`` is expressed as ``parent_path``,
-and folder ids / parent ids / payload dictionaries stay repository-internal.
+Read methods return the domain ``LibraryFolder`` value object, with
+``parent_id`` expressed as ``parent_path``. Folder ids, parent ids, and payload
+dictionaries stay repository-internal.
 Write methods keep their storage-shaped signatures so the persistence facade
 resolves ids/payloads internally.
 """

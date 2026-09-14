@@ -1,4 +1,4 @@
-"""Static contract checks for Plan E's scalar metadata handoff."""
+"""Static contract checks for the scalar metadata handoff."""
 
 from __future__ import annotations
 

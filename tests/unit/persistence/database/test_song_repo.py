@@ -709,7 +709,7 @@ class TestMoveSongAtomic:
 
 @pytest.mark.unit
 class TestMoveSongPersistenceBoundary:
-    """Failure injection at the repo/session boundary (P3-S6): a failure either
+    """Failure injection at the repo/session boundary: a failure either
     at statement execution (unique conflict on SQLite/Postgres) or at the final
     ``commit`` propagates out of ``move_song`` with the single statement never
     partially applied."""

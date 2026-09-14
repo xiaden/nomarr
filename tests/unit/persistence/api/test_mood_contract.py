@@ -1,4 +1,4 @@
-"""D1 contract tests for the tag-owner mood boundary."""
+"""Contract tests for the tag-owner mood boundary."""
 
 from __future__ import annotations
 
@@ -156,8 +156,8 @@ class TestMoodFacadeContract:
         assert "MoodBatchResult" in str(batch.return_annotation)
 
 
-# D1B characterization fixtures.  These tests intentionally model the frozen
-# boundary without claiming D2 repository or PostgreSQL runtime evidence.
+# Facade contract characterization fixtures. These tests intentionally model the
+# frozen boundary without claiming repository or PostgreSQL runtime evidence.
 MOOD_TIERS = ("nom:mood-strict", "nom:mood-regular", "nom:mood-loose")
 PUBLIC_FORBIDDEN = {
     "id",
@@ -193,7 +193,7 @@ def _command(song: SongIdentity = SONG, *, marker: CalibrationMoodMarker | None 
 
 @pytest.mark.unit
 class TestMoodRoundTwoPureCharacterization:
-    """D1 characterization only; executable persistence evidence belongs to D2/D3."""
+    """Facade contract characterization only; executable persistence evidence belongs to the repository and real-DB suites."""
 
     def test_all_statuses_and_public_fields_are_complete_and_redacted(self) -> None:
         for status in EXPECTED_STATUSES:
@@ -248,13 +248,13 @@ class TestMoodRoundTwoPureCharacterization:
             )
             assert (result.command_count, result.changed_count) == (command_count, changed_count)
         # The DTO does NOT enforce changed_count <= command_count.  These invalid
-        # relationships construct successfully today; rejecting them is a D2/D3
-        # obligation and D1B records only the current boundary limitation.
+        # relationships construct successfully today; rejecting them is a
+        # repository/real-DB obligation and this suite records only the current boundary limitation.
         for command_count, changed_count in ((0, 1), (1, 2), (1000, 1001)):
             unenforced = MoodBatchResult("UPDATED", command_count=command_count, changed_count=changed_count)
             assert unenforced.changed_count > unenforced.command_count
         # A 1,001-command input is likewise accepted by the pure DTO; the 1,000-
-        # command bound is D2/D3-owned and is not enforced by this DTO.
+        # command bound is repository/database-owned and is not enforced by this DTO.
         over_bound = MoodBatchResult("UNCHANGED", command_count=1001, changed_count=0)
         assert over_bound.command_count == 1001
 
@@ -304,16 +304,16 @@ class TestMoodRoundTwoPureCharacterization:
                 value not in repr(MoodWriteResult(cast("MoodWriteStatus", status)))
                 for value in ("sql", "session", "credentials")
             )
-        # Documentation boundary: assert only that the D1 mood-owner paragraph
+        # Documentation boundary: assert only that the mood-owner paragraph
         # contains none of the listed storage/secret tokens.  This does not prove
-        # the paragraph preserves the O-owned resolver/integer scope; the integer
+        # the paragraph preserves the resolver/integer scope; the integer
         # clause is separately asserted against the facade source in
         # TestMoodBoundaryStaticEvidence.test_public_facade_is_the_sole_named_owner_and_exactly_typed.
         persistence = Path(__file__).resolve().parents[4] / "nomarr" / "persistence" / "PERSISTENCE.md"
         mood_paragraph = next(
             line
             for line in persistence.read_text(encoding="utf-8").splitlines()
-            if line.startswith("**Mood ownership (D1):**")
+            if line.startswith("**Mood ownership:**")
         )
         assert all(
             token not in mood_paragraph
@@ -349,7 +349,7 @@ class TestMoodRoundTwoPureCharacterization:
         )
         assert independently_identical[0] == independently_identical[1]
         assert conflicting[0] != conflicting[1]
-        # D2 folds identical commands and rejects conflicting duplicates before SQL.
+        # The owner folds identical commands and rejects conflicting duplicates before SQL.
         with pytest.raises((TypeError, ValueError)):
             LibraryTagsDb._normalize_mood_commands(conflicting)
         assert len(LibraryTagsDb._normalize_mood_commands(independently_identical)) == 1
@@ -371,7 +371,7 @@ class TestMoodRoundTwoPureCharacterization:
 
     def test_missing_marker_status_unproven_is_vocabulary_only_not_a_write_value(self) -> None:
         # The frozen MoodMarkerStatus literal names the missing-marker sentinel
-        # UNPROVEN, but the D1 mood publication/write boundary does not accept it
+        # UNPROVEN, but the mood publication/write boundary does not accept it
         # as a CalibrationMoodMarker publication value or a MoodWriteResult /
         # MoodBatchResult write status.  This is pure vocabulary characterization;
         # it makes no live read-path or runtime claim.

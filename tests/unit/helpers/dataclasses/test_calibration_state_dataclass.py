@@ -1,7 +1,6 @@
 """Unit tests for the canonical calibration state domain value object.
 
-``TASK-calibration-state-intent-facade-correction-A`` Phase 1 (P1-S1/P1-S3):
-prove the frozen/slotted ``CalibrationState`` domain value object carries only
+Prove the frozen/slotted ``CalibrationState`` domain value object carries only
 calibration semantics and stable string model identity, and never exposes
 PostgreSQL primary keys, table metadata, or storage envelopes.  See
 ``nomarr/helpers/dataclasses/calibration_state_dataclass.py``.

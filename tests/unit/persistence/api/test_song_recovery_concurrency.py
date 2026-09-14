@@ -1,8 +1,8 @@
-"""M recovery/concurrency evidence that is executable without PostgreSQL.
+"""Recovery/concurrency evidence that is executable without PostgreSQL.
 
 Real transaction isolation, concurrent claim/upsert/remove, SQLSTATE, connection-loss,
 and mood-owner evidence belongs to the CI database tier and is documented in the
-M handoff. These tests pin the local, deterministic boundary semantics: poisoned
+database-tier handoff. These tests pin the local, deterministic boundary semantics: poisoned
 sessions are disposed, ambiguous commits are not completed blindly, immutable
 locators/claims are used for restart, and errors are redacted at the presentation
 boundary.

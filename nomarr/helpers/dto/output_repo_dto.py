@@ -1,7 +1,7 @@
 """TypedDict DTOs for the OutputRepo return types.
 
 These mirror the SQLAlchemy ``MlOutputStream`` and ``MlModelOutput``
-model columns from Part A and provide type-safe return types for output
+model columns and provide type-safe return types for output
 repository methods.  Import only from ``typing``.
 """
 

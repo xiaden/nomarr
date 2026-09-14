@@ -148,7 +148,7 @@ describe("buildQueryString", () => {
 });
 
 /**
- * P2-S1: Test RuleGroup depth validation - prevent adding groups beyond max depth.
+ * Test RuleGroup depth validation - prevent adding groups beyond max depth.
  */
 describe("RuleGroup depth validation", () => {
   it("single group has depth 1", () => {
@@ -216,7 +216,7 @@ describe("RuleGroup depth validation", () => {
 });
 
 /**
- * P2-S2: Test group removal - ensure state updates correctly.
+ * Test group removal - ensure state updates correctly.
  */
 describe("Group state management", () => {
   it("removing a nested group reduces depth", () => {
@@ -242,7 +242,7 @@ describe("Group state management", () => {
 });
 
 /**
- * P2-S4: Test nested state updates - ensure immutability preserved.
+ * Test nested state updates - ensure immutability preserved.
  */
 describe("Immutability of nested state updates", () => {
   it("flatRulesToRootGroup creates new group without mutating input", () => {

@@ -1,13 +1,13 @@
-"""Executable contract fixture tests (Plan E P2-S3).
+"""Executable contract fixture tests.
 
 Proves the repo-wide contract fixtures in ``tests/conftest.py`` (``song_state_contract`` /
 ``make_song_state_candidate``) build a contract-valid typed state-read result and that
-``assert_candidate_semantic`` rejects a raw row/dict shape. This does NOT duplicate Plan C's
+``assert_candidate_semantic`` rejects a raw row/dict shape. This does NOT duplicate the
 facade-mock coverage of ``list_songs_with_state`` (test_library_db.py / test_song_failure_safety.py);
-it only makes the shared consumer-side contract executable for F/H/K caller-migration tests.
+it only makes the shared consumer-side contract executable for caller-migration tests.
 
 The named-exceptions contract (DuplicateEntityError / DatabaseStateError / ValueError-on-
-invalid-command / deterministic None-[]-False misses) is already pinned in the C/D facade
+invalid-command / deterministic None-[]-False misses) is already pinned in the facade contract
 tests; the two canonical types are surfaced on the fixture namespace for caller tests.
 """
 

@@ -646,7 +646,7 @@ class TestHydrateSongRollback:
 @pytest.mark.unit
 @pytest.mark.integration
 class TestHydrateIdempotencyGaps:
-    """Idempotency gaps not already covered by the Phase 2 suite."""
+    """Idempotency gaps not already covered by the existing suite."""
 
     def test_empty_no_tag_input_transitions_state_without_tag_writes(self, pg_session) -> None:
         """Empty/no-tag input: no tag writes, but state still transitions."""
@@ -759,7 +759,7 @@ class TestHydrateBatchBoundedBulk:
 @pytest.mark.unit
 @pytest.mark.integration
 class TestHydrateStaleLocator:
-    """A deleted song's locator misses — no resurrection (Q3-D boundary proof)."""
+    """A deleted song's locator misses — no resurrection (boundary proof)."""
 
     def test_deleted_song_locator_misses_without_resurrection(self, pg_session) -> None:
         """After the row is deleted, hydrating its stale locator raises, never recreates it."""

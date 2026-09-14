@@ -1,7 +1,7 @@
-"""Real-driver mood-path fault evidence (D3D-B).
+"""Real-driver mood-path fault evidence.
 
 Drives the frozen public mood owner — ``LibraryTagsDb.replace_mood_tags`` and
-``LibraryTagsDb.replace_mood_tags_batch`` — through the D3D-A TCP fault harness
+``LibraryTagsDb.replace_mood_tags_batch`` — through the TCP fault harness
 (``tests/characterization/pg_fault_proxy.py``) against a real PostgreSQL +
 pgvector database. Each test proves the driver-observable commit-phase outcome
 (or the pre-commit contrast), and the production classification on the real owner
@@ -373,7 +373,7 @@ def test_sever_commit_phase_is_single_ambiguous_commit_with_no_leak(
 ) -> None:
     """A severed commit connection yields exactly one AMBIGUOUS_COMMIT.
 
-    ``backend_committed`` is not awaited in SEVER mode (D3D-A handoff §4). The
+    ``backend_committed`` is not awaited in SEVER mode. The
     readback must never show a torn/partial state: tags and marker are asserted
     as a single joint outcome, reporting only current convergence, not
     provenance. The genuine no-leak proof is the pre-close fault-disarmed owner
@@ -424,7 +424,7 @@ def test_sever_commit_phase_is_single_ambiguous_commit_with_no_leak(
         # (pre-close); the pool assertion above is non-discriminating hygiene.
         assert proxy.wait_for_no_active_connections(10.0)
         assert proxy.active_connection_count() == 0
-        # D3D-A §4: backend_committed is not used in SEVER mode.
+        # backend_committed is not used in SEVER mode.
         assert not proxy.backend_committed.is_set()
         # The sever traffic must not leave a harness error behind.
         assert proxy.wait_for_error(0.5) is None

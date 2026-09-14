@@ -1,6 +1,6 @@
-"""Plan D typed-boundary failure-safety oracle on real PostgreSQL.
+"""Typed-boundary failure-safety oracle on real PostgreSQL.
 
-Plan D (TASK-song-row-mirror-leaks-into-domain-D) Phase 1 real-DB proof of the
+Real-DB proof of the
 ``add_song_to_library(SongUpsertInput)`` canonical typed-upsert handoff boundary:
 
 - The song-row upsert (``song_repo.upsert_songs_for_library``) and the state
@@ -11,15 +11,15 @@ Plan D (TASK-song-row-mirror-leaks-into-domain-D) Phase 1 real-DB proof of the
   persist — and the facade surfaces the error rather than compensating with a
   delete. This is the **atomic-rollback** boundary: re-running the idempotent
   intent completes the state bootstrap. It IS all-or-none across (song-row,
-  states) — that single-transaction contract is the honest contract Plan E/M/O
-  must rely on.
+    states) — that single-transaction contract is the honest contract downstream
+    callers must rely on.
 
 Relocation (destination-conflict + stale-locator rollback leaving source locator,
 scan metadata, and associations unchanged) is owned and proven on real PostgreSQL
-by ``tests/characterization/test_song_move_atomic_intent.py`` (Plan C) — this file
+by ``tests/characterization/test_song_move_atomic_intent.py`` — this file
 **links** that oracle rather than duplicating it. Tag / claim / pipeline / ML
-aggregate boundaries are linked to their external owners (TagRef successor B-E
-pending; worker-claims canonical ``db.app.add_claim`` surface; ML typed
+aggregate boundaries are linked to their external owners (the natural TagRef
+facade; worker-claims canonical ``db.app.add_claim`` surface; ML typed
 write-boundary commit ``0dce610f`` green).
 
 PostgreSQL-only (relies on real commit/rollback semantics), so this module is
@@ -171,7 +171,7 @@ class TestAddSongToLibraryAtomicRollbackBoundary:
 @pytest.mark.characterization
 @pytest.mark.requires_database
 class TestRetryIdempotentAndNoResurrection:
-    """P2-S1 real-PostgreSQL proofs for retry idempotency and deletion semantics.
+    """Real-PostgreSQL proofs for retry idempotency and deletion semantics.
 
     Proves on real PG that re-issuing the typed upsert intent does not duplicate
     the row or its state assignments, and that a removed song stays removed — a

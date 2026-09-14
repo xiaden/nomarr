@@ -324,7 +324,7 @@ def _cleanup_seed_data(db: Database) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Result normalization (P1-S2)
+# Result normalization
 # ---------------------------------------------------------------------------
 
 # ``libraries.library_uuid`` is minted randomly per library row, so bare canonical
@@ -431,7 +431,7 @@ def _normalize(value: Any) -> Any:
 
 
 # ---------------------------------------------------------------------------
-# Result serialization (P1-S3)
+# Result serialization
 # ---------------------------------------------------------------------------
 
 

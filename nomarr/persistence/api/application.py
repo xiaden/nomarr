@@ -150,22 +150,15 @@ class AppDb:
             for song_id in [resolved.get(song)]
         }
 
-    def song_ids_with_state(self, state: str, *, limit: int | None = None) -> list[int]:
-        """Return song identifiers currently in the requested state."""
-        return self._song_state_repo.list_songs_in_state(state, limit=limit)
-
     def songs_with_state(
         self,
         state: str,
         *,
         limit: int | None = None,
-        library_id: int | None = None,
         order_by_activity: bool = False,
     ) -> list[Song]:
-        """Return domain songs currently in a state, optionally scoped/sorted."""
+        """Return domain songs currently in a state, optionally limited/sorted."""
         query_kwargs: dict[str, Any] = {"limit": limit}
-        if library_id is not None:
-            query_kwargs["library_id"] = library_id
         if order_by_activity:
             query_kwargs["order_by_activity"] = True
         rows = self._pipeline_repo.list_song_docs_in_state(state, **query_kwargs)

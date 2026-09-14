@@ -1,6 +1,6 @@
 """Focused tests for the playlist-import conversion workflow.
 
-Covers the Q3-I semantic carrier/locator consumption: the workflow loads typed
+Covers the semantic carrier/locator consumption: the workflow loads typed
 ``TrackSong`` carriers, resolves them through the public ``locators_for_carriers``
 projection, drops unresolved carriers, and never converts a path to a generated
 integer id.

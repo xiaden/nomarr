@@ -113,7 +113,7 @@ db.library.replace_song_tags(
     [SongTagAssignment(name="genre", value="rock", namespace="nom")],
 )
 
-tagged_song_ids = db.app.song_ids_with_state("tagged")
+tagged_memberships = db.app.song_state_memberships([song_identity])
 model = db.ml.get_model(model_id)
 outputs = db.ml.list_model_outputs(model_id)
 similar = db.ml.search_vectors("discogs_effnet", query_vector, limit=10)

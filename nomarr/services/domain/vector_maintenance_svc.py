@@ -94,7 +94,7 @@ class VectorMaintenanceService:
             backbone_id: Backbone identifier
             library: Optional domain ``Library`` (natural identity) to scope the
                 counts. Note: per-library scoping is handed off to the ML plan
-                (P4-S8 residual) because the ML persistence filter joins on an
+                (residual) because the ML persistence filter joins on an
                 int library PK with no ``Library``-to-int resolver above the
                 facade; a ``library`` scope therefore resolves to global counts.
 

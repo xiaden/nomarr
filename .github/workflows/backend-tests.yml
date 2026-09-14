@@ -129,7 +129,7 @@ jobs:
       - name: Run architecture-QC enforcement (ADR-042)
         run: |
           source .venv/bin/activate
-          pytest tests/test_architecture_qc.py -v
+          pytest tests/test_architecture_qc.py -v -m "not container_only and not requires_database"
 
   # PostgreSQL-backed tests that need real PostgreSQL + pgvector. These are marked
   # @pytest.mark.requires_database and are therefore EXCLUDED by the

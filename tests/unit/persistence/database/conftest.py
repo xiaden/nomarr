@@ -26,7 +26,7 @@ def _compile_jsonb_as_json(self, type_, **kw):
 
 SQLiteTypeCompiler.visit_JSONB = _compile_jsonb_as_json  # type: ignore[attr-defined]
 
-# ── SQLite fixtures for Part C repository tests ─────────────
+# ── SQLite fixtures for repository tests ────────────────────
 
 # Temp file shared between sync (DDL) and async (query) engines
 # because SQLite :memory: databases are per-connection.

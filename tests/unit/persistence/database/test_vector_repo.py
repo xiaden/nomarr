@@ -511,7 +511,7 @@ class TestVectorRepo:
 @pytest.mark.unit
 @pytest.mark.mocked
 class TestVectorRepoSqlAlchemyTyping:
-    """Pin the SQLAlchemy typing/rowcount conventions added by P2-S2.
+    """Pin the SQLAlchemy typing/rowcount conventions.
 
     - ``rebuild_cold_hnsw_index`` narrows ``get_bind()`` to an ``Engine`` so
       ``.connect()`` type-checks, then runs outside a transaction.
@@ -710,7 +710,7 @@ class TestGetEmbeddingCounts:
 
     def test_name_only_library_runs_resolution_lookup_then_returns_zero_counts(self) -> None:
         # A name-only identity (``root_path=None``) still runs the UUID resolution
-        # lookup (ADR-049 resolves by library_uuid, not root_path); when it does
+        # lookup (the locator resolves by library_uuid, not root_path); when it does
         # not resolve, get_embedding_counts yields zero counts and never reaches
         # the grouping/counts statement.
         session = self._mock_rows()
@@ -1009,7 +1009,7 @@ class TestSearchSimilarVectorsCompiled:
     "uses HALFVEC type and ``<=>`` operator not supported by SQLite"
 )
 class TestVectorRepoTypedReads:
-    """DB-backed semantics of the typed cold read correction (P2-S6).
+    """DB-backed semantics of the typed cold read correction.
 
     Mirrors ``TestVectorRepo`` in requiring pgvector, so it is skipped on the
     SQLite-backed local unit path but is the authoritative typed-contract

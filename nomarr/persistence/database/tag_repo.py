@@ -1,6 +1,6 @@
 """TagRepository — CRUD and domain queries for tags.
 
-Uses Part B primitives for simple lookups and direct SQLAlchemy Core for
+Uses shared persistence primitives for simple lookups and direct SQLAlchemy Core for
 JOINs, filtered queries, and batch operations.
 
 Song-tag junction operations live in ``SongTagRepository``
@@ -96,7 +96,7 @@ class TagRepository:
         """Fetch tags by their primary keys in one set-based query.
 
         Persistence-private primary-key batch read backing the root-database
-        tag boundary resolver (P3 of TASK-song-intent-facade-correction-A) for
+        tag boundary resolver for
         callers that still receive an opaque external tag ID. Missing ids are
         simply absent from the result.
         """
@@ -369,7 +369,7 @@ class TagRepository:
             # Apply per-name limit (SQL LIMIT was global, not per-group)
             return {name: pairs[:limit] for name, pairs in grouped.items()}
 
-    # ── Plan E facade support ───────────────────────────────────
+    # ── Facade support ──────────────────────────────────────────
 
     def list_all_tag_names(self, *, limit: int | None = None) -> list[str]:
         """Return distinct tag names."""

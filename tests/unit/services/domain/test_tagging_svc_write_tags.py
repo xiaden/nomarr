@@ -58,7 +58,7 @@ def _identity(normalized_path: str = "song.mp3") -> SongIdentity:
 
 
 def _candidate(normalized_path: str = "song.mp3") -> SongStateCandidate:
-    """Build a real typed reconciliation candidate (what Q3-E now returns)."""
+    """Build a real typed reconciliation candidate."""
     return SongStateCandidate(
         identity=_identity(normalized_path),
         song=_song(normalized_path=normalized_path),
@@ -442,14 +442,14 @@ class TestWriteTagsToFiles:
 
 
 class TestWriteTagsToFilesTypedClaims:
-    """Regression coverage for the typed Q3-E reconciliation claim contract."""
+    """Regression coverage for the typed reconciliation claim contract."""
 
     @pytest.mark.unit
     def test_write_tags_to_files_reconciles_real_typed_claims(self) -> None:
         """Real typed claims must be re-addressed through ``candidate.identity``.
 
-        Guards the cross-plan break where the caller read ``song.normalized_path``
-        from what Q3-E now returns as a typed ``SongStateCandidate`` (``AttributeError``).
+        Guards the cross-boundary break where the caller read ``song.normalized_path``
+        from what the typed reconciliation returns as a ``SongStateCandidate`` (``AttributeError``).
         This exercises the real ``claim_files_for_reconciliation`` with real candidates
         (no claim mock) and asserts the workflow receives the candidate's locator.
         """

@@ -142,7 +142,7 @@ def test_get_folder_uses_library_relative_natural_identity() -> None:
 @pytest.mark.unit
 def test_list_folders_forwards_domain_values_without_ids() -> None:
     # ``FolderRepository.list_folders_for_library`` performs the row→domain
-    # mapping (P3-S2); the facade forwards domain ``LibraryFolder`` values
+    # mapping; the facade forwards domain ``LibraryFolder`` values
     # unchanged and resolves the natural key. Raw ``LibraryFolderRow`` values
     # never reach the caller.
     songs, _, folder_repo, library_repo = _make_songs()

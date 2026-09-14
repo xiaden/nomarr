@@ -154,7 +154,7 @@ class LibraryDb:
         return self._regions.get_library_by_name(name)
 
     def get_library_by_uuid(self, library_uuid: str) -> Library | None:
-        """Get a library by its immutable ``library_uuid`` identity (ADR-049).
+        """Get a library by its immutable ``library_uuid`` identity (ADR-048).
 
         The persistence-side anchor for SongLocator library resolution; integer
         ``libraries.id`` stays private to this layer.

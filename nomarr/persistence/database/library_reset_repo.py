@@ -1,7 +1,7 @@
 """LibraryResetRepo — repository-owned all-or-nothing global library reset.
 
 Per ASR-0013/ASR-0014, ADR-046/047 and the library-reset persistence
-choreography CONTRACTS.md (2026-09-08), a successful admin clear removes the
+repository reset choreography, a successful admin clear removes the
 documented reset set (``embeddings``, ``ml_output_streams``,
 ``pipeline_states``, ``song_tags``, ``song_state_assignments``, ``songs``,
 ``library_folders``, ``tags``, ``library_scans``) while preserving configured

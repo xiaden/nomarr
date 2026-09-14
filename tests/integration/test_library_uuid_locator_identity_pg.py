@@ -1,10 +1,10 @@
 """Fresh-PostgreSQL identity evidence for ``libraries.library_uuid`` and the locator wire.
 
-P3-S3: schema identity (unique / immutable / rename / delete-recreate /
+Schema identity (unique / immutable / rename / delete-recreate /
 transaction rollback / concurrent duplicate retry) and the stored-UUID ->
 ``nom1`` locator round trip.
 
-This module is the ``requires_database`` half of P3-S3. Docker/PostgreSQL is
+This module is the ``requires_database`` half. Docker/PostgreSQL is
 DOWN in the execution environment and ``NOMARR_TEST_DATABASE_URL`` is unset, so
 the module is skipped with an explicit environment-blocked reason — it is never
 reported as PASS.

@@ -61,8 +61,9 @@ if TYPE_CHECKING:
 class LibrarySongsDb:
     """Persistence sub-facade for library song and folder operations.
 
-    Domain identity for library-scoped calls is the natural ``(name, root_path)``
-    ``Library`` key; the storage ``library_id`` is resolved internally.
+    Domain identity for library-scoped calls is the UUID-bearing
+    ``LibraryIdentity`` / ``SongIdentity`` / ``SongLocator`` contract; the storage
+    ``library_id`` is resolved internally.
     Repository rows are mapped to :class:`Song` / :class:`LibraryFolder` before
     crossing this boundary; callers never need to know the storage row shape.
     """
@@ -255,7 +256,7 @@ class LibrarySongsDb:
         """Return domain songs belonging to a library, with optional limit.
 
         ``library`` is the required natural ``LibraryIdentity`` locator (there
-        is no cross-library listing primitive; CONTRACTS §3). An unresolvable
+        is no cross-library listing primitive. An unresolvable
         library is a deterministic ``LookupError`` (typed error), never a row or
         integer fallback.
         """
@@ -280,7 +281,7 @@ class LibrarySongsDb:
         order_by_activity: bool = False,
         limit: int | None = None,
     ) -> list[SongStateCandidate]:
-        """Return typed candidates for songs currently in *state* (CONTRACTS §3/§5).
+        """Return typed candidates for songs currently in *state*.
 
         Each result carries the semantic ``SongStateCandidate`` (``SongIdentity``
         locator + domain ``Song`` + sorted state-name membership) only. Storage
@@ -532,8 +533,9 @@ class LibrarySongsDb:
         with the destination normalized path) when the move commits, or ``None``
         when the source locator is stale/missing (its library or song no longer
         resolves). ``None`` is a safe no-op miss — no replacement row is fabricated
-        and no other row is relocated (ADR-048 §5). This supersedes the historical
-        ``LookupError`` taxonomy for move addressing.
+        and no other row is relocated (ADR-048 §5). This supersedes the historical ``LookupError`` taxonomy for move addressing;
+        stale or missing source locators are represented by the current ``None``
+        no-op contract rather than raised lookup errors.
 
         Raises:
             ValueError: If ``command.scan.normalized_path`` is ``None``. The
@@ -641,8 +643,8 @@ class LibrarySongsDb:
         Pre-SQL validation: a non-``SongIdentity`` song or a non-``ChromaprintValue``
         value returns ``FieldWriteResult("INVALID_VALUE")`` without touching the
         session; ``ChromaprintValue`` itself rejects blank/whitespace values,
-        blank provenance, and the mutually exclusive ``expected_absent`` /
-        ``expected_value`` pair before any write. A locator whose owning library
+        blank validation/provenance metadata, and the mutually exclusive
+        ``expected_absent`` / ``expected_value`` pair before any write. A locator whose owning library
         does not resolve, or whose song does not resolve within that library,
         returns ``FieldWriteResult("MISSING_LOCATOR")`` and writes nothing.
         Otherwise the delegated repository guarded replacement yields ``UPDATED``,
@@ -891,14 +893,13 @@ class LibrarySongsDb:
     def prune_orphaned_songs(self) -> int:
         """Delete every song row that has no owning library row; return the count.
 
-        Locator-free maintenance intent (plan C/H): an orphaned song has no
-        resolvable ``SongIdentity`` because its owning library is already gone,
-        so the sole way to address it is a persistence-private row handle. This
-        method resolves those handles privately and deletes each orphan's full
-        derived set (FK CASCADE) without ever exposing a generated ``songs.id`` or
-        ``library_id``. It returns only the number of rows removed, is distinct
-        from the ordinary ``SongRemoval`` intent, and must not be used for
-        user-addressed deletes.
+        Locator-free maintenance intent: an orphaned song has no resolvable
+        ``SongIdentity`` because its owning library is already gone, so cleanup is
+        necessarily addressed by a persistence-private row handle. This method
+        resolves those handles privately and deletes each orphan's full derived set
+        (FK CASCADE) without exposing a generated ``songs.id`` or ``library_id``.
+        It returns only the number of rows removed, is distinct from the ordinary
+        ``SongRemoval`` intent, and must not be used for user-addressed deletes.
         """
         orphan_ids = self._song_repo.list_orphaned_song_ids()
         for song_id in orphan_ids:

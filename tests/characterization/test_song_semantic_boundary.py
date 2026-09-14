@@ -1,4 +1,4 @@
-"""Real (non-mocked) semantic boundary coverage for the Q3-G service/query cut.
+"""Real (non-mocked) semantic boundary coverage for service/query behavior.
 
 The migrated semantic read path was previously covered only through facade
 mocks. These tests exercise it end-to-end against the real PostgreSQL
@@ -12,11 +12,9 @@ characterization database:
   handle crosses the boundary).
 
 Marked ``characterization`` + ``requires_database``; runs in the CI
-database-tests job. A native pgvector PostgreSQL cluster was reachable in the
-authoring workspace at ``127.0.0.1:5432`` (credentials from
-``NOMARR_TEST_DATABASE_URL`` / ``PGPASSWORD``), so the local tier is
-``LOCAL_PASS`` against native PostgreSQL; the testcontainer tier remains
-``CI_DEFERRED`` and no ``CI_PASS`` is claimed.
+ database-tests job. Local availability is reported by the test run; the
+ testcontainer tier remains ``CI_DEFERRED`` unless a named CI run passes,
+ and no ``CI_PASS`` is claimed locally.
 """
 
 from __future__ import annotations
@@ -41,7 +39,7 @@ def _service(db) -> LibraryService:
 @pytest.mark.characterization
 @pytest.mark.requires_database
 class TestSongSemanticQueryBoundary:
-    """Q3-G semantic read boundary against real persistence (no mocks)."""
+    """Semantic read boundary against real persistence (no mocks)."""
 
     def test_get_song_tags_returns_opaque_locator_for_identity(self, db, seed_data):
         """The typed result carries the opaque locator of the same identity."""

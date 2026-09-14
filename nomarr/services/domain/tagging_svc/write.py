@@ -110,7 +110,7 @@ class TaggingWriteMixin:
 
         # ``claim_files_for_reconciliation`` returns typed ``SongStateCandidate`` values;
         # each candidate already carries the locator to re-address, so no path/identity is
-        # reconstructed at this boundary (ADR-048; CONTRACTS §5). A missing library UUID
+        # reconstructed at this boundary (ADR-048; locator-addressing contract). A missing library UUID
         # yields no candidates from the claim read, so the loop is a no-op for that case.
         for candidate in claimed_files:
             file_key = candidate.identity

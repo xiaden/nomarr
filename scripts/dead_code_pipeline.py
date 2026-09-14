@@ -52,7 +52,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-# Known deletion suspects from CONTRACTS.md Part B
+# Known deletion suspects from the persistence primitives
 DELETION_SUSPECTS = [
     # Classes
     {"name": "_MlCapacityAdapter", "type": "class", "file": "nomarr/persistence/db.py"},

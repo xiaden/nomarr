@@ -1,4 +1,4 @@
-"""Regression coverage for the sealed song-tag facade (P6-S4).
+"""Regression coverage for the sealed song-tag facade.
 
 Proves replace/add/remove idempotence, duplicate-safe relink and orphan/provenance
 cleanup, numeric/tag searches returning domain values, and batched statistics —

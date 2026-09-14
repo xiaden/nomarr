@@ -1,6 +1,6 @@
 """ModelRepo — CRUD and domain queries for the ``ml_models`` table.
 
-Uses Part B primitives for simple lookups and direct SQLAlchemy Core for
+Uses shared persistence primitives for simple lookups and direct SQLAlchemy Core for
 filtered queries.
 """
 
@@ -125,8 +125,8 @@ class ModelRepo:
         Uses PostgreSQL ``ON CONFLICT (id) DO UPDATE``.  The ``updated_at``
         timestamp is refreshed automatically.
 
-        The *data* dict may include any of the extended fields added in
-        Phase 2 (path, backbone, head_type, model_stem, output_count,
+        The *data* dict may include any of the extended fields added by
+        later schema revisions (path, backbone, head_type, model_stem, output_count,
         fully_configured, is_known, source, head_release_date,
         embedder_release_date, registered_at).  Unknown keys are passed
         through to the database verbatim.

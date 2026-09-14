@@ -7,11 +7,9 @@ File-batch upsert, folder cache management, deleted-file cleanup, and
 state bootstrap operations were extracted to
 ``nomarr.components.library.library_scan_file_ops_comp``.
 
-Overlap: concurrent song-domain repair (TASK-song-intent-facade-correction-A)
-also edits this file. This change is scoped to the library-scan-domain migration
-(P4-S3) — moving all routines from int library ids / scan/pipeline dicts to
-domain ``Library`` + ``LibraryScan``/``LibraryPipelineState`` values — and
-preserves any concurrent hunks.
+The scan lifecycle uses domain ``Library`` and
+``LibraryScan``/``LibraryPipelineState`` values throughout. Storage ids and
+row-shaped scan payloads remain persistence-private.
 """
 
 from __future__ import annotations

@@ -1,10 +1,10 @@
 """Tests for nomarr.components.tagging.tag_query_comp module.
 
-Q3-H rewrite: asserts the locator-keyed domain-facing API. All reads route
+Asserts the locator-keyed domain-facing API. All reads route
 through the sealed ``LibraryTagsDb`` facade using ``TagRef`` /
 ``SongIdentity`` and typed results (``SongTagAssignment`` / ``Song`` /
 ``TagUsage``); bare ``Song`` results are projected to UUID-bearing
-``SongIdentity`` locators via the Q3-C public carrier projection
+``SongIdentity`` locators via the public carrier projection
 (``locators_for_carriers``). No generated id, row, resolver, or path heuristic
 participates in the analytics helpers.
 """
@@ -82,7 +82,7 @@ def _locator(normalized_path: str, library: Library | None = None) -> SongIdenti
 
 
 def _wire_projection(db: MagicMock, pairs: list[tuple[Library, list[Song]]]) -> None:
-    """Wire the Q3-C carrier projection facades for the given library/song pairs."""
+    """Wire the public carrier projection facades for the given library/song pairs."""
     db.library.list_libraries.return_value = [library for library, _ in pairs]
 
     def _resolve(requested: list[SongIdentity]) -> list[Song]:

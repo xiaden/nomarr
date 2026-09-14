@@ -5,7 +5,7 @@ returns to its service/workflow/interface consumers), not persistence DTOs and n
 row-shaped song documents. Each carrier wraps the semantic domain ``Song`` plus, where
 the caller needs it, the ADR-045 tag-derived metadata and/or sealed tag values.
 
-Binding rules (CONTRACTS §3.1 / plan F "Typed carriers F may create or return"):
+Binding rules for typed semantic carriers:
 
 - No carrier carries ``songs.id``, ``song_id``, ``library_id``, ``folder_id``,
   ``file_id``, a persistence row, a raw payload, or a merged song document.

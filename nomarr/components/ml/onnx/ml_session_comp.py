@@ -8,7 +8,7 @@ VRAM budgeting
 --------------
 Each GPU session accepts an explicit ``vram_limit_bytes`` at creation time.
 The value comes from per-model VRAM limits read via
-``db.app.get_model_vram_limit`` (see ml_vram_probe_comp.py / Plan A).  When
+  ``db.app.get_model_vram_limit``. When
 not provided, no explicit ``gpu_mem_limit`` is set and ONNX Runtime allocates
 as needed.
 """

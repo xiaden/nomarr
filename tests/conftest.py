@@ -1,17 +1,17 @@
 """Root-level conftest for pytest fixtures.
 
-Provides repo-wide contract fixtures for the typed song state-read result (Plan E P2-S3).
+Provides repo-wide contract fixtures for the typed song state-read result.
 
-Plan C pins the *implementation* semantics of ``LibrarySongsDb.list_songs_with_state`` in
+The *implementation* semantics of ``LibrarySongsDb.list_songs_with_state`` are pinned in
 ``tests/unit/persistence/api/test_library_db.py`` (typed ``SongStateCandidate`` return shape,
 default ordering, ``order_by_activity`` + ``limit``, library-scope ownership filtering,
 deterministic ``[]`` on empty/unknown-library) and in ``test_song_failure_safety.py``
 (read-only no-write behind the read, ``DatabaseStateError`` propagation, scoped-miss-is-empty).
-Those are not importable, so F/H/K *caller-migration* tests (which mock the facade and consume
+Those are not importable, so caller-migration tests (which mock the facade and consume
 typed results in their own component tests) have no shared way to build a ``SongStateCandidate``
 and assert the semantic-invariant contract.
 
-This root conftest (an ancestor of every ``tests/unit/**`` F/H/K test directory) exposes that
+This root conftest (an ancestor of every ``tests/unit/**`` test directory) exposes that
 thin, reusable, non-duplicative surface as factory fixtures available repo-wide:
 
 - ``song_state_contract`` — a namespace of the builder/checker helpers (``make_candidate``,
@@ -25,9 +25,9 @@ A caller-migration test consumes them by requesting the fixture:
         candidate = song_state_contract.make_candidate("music/a.flac", states=("processed",))
         song_state_contract.assert_candidate_semantic(candidate)
 
-This is a test-support builder only — it does **not** ratify or amend the candidate shape
-(Plan J owns that ratification); it constructs the already-shipped dataclass
-``SongStateCandidate``. The named-exceptions contract is pinned in the C/D facade tests; the
+This is a test-support builder only — it does **not** ratify or amend the candidate shape;
+it constructs the already-shipped dataclass
+``SongStateCandidate``. The named-exceptions contract is pinned in the facade contract tests; the
 two exception types are surfaced here so caller tests that mock the facade raise the canonical
 types without importing them ad hoc.
 

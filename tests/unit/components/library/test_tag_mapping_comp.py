@@ -1,6 +1,6 @@
 """Tests for the library-layer row-to-FileTag mapper.
 
-Pins the CONTRACTS.md library ownership rule: ``tag_mapping_comp`` is the single
+Pins the library ownership rule: ``tag_mapping_comp`` is the single
 row-to-``FileTag`` projection, defining key/value, numeric-vs-string type
 classification, and Nomarr-namespace classification in one place.
 """

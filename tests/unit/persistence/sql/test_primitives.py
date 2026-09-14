@@ -166,7 +166,7 @@ def test_insert_one_returns_row(session: Session, test_table: Table):
 def test_insert_one_raises_on_duplicate(session: Session, test_table: Table):
     """insert_one raises IntegrityError on constraint violation.
 
-    Primitives propagate raw SQLAlchemy exceptions (Phase 3).  The
+    Primitives propagate raw SQLAlchemy exceptions.  The
     translation to ``DuplicateEntityError`` happens at the repository
     level via ``map_persistence_exceptions()`` using PostgreSQL pgcodes,
     which SQLite does not provide.  Tested separately in

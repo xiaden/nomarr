@@ -1,6 +1,6 @@
 """Contract tests for the persistence-owned song-tag mappers.
 
-``TASK-song-intent-facade-correction-A`` Phase 6 (P6-S2): prove that
+Prove that
 ``nomarr/persistence/mappers/song_tag_mapper.py`` converts storage rows/dicts to
 domain value objects internally, so ``TagRow``/``SongRow``/raw edge shapes never
 leak past the persistence facade. Assignment mapping preserves the independent
@@ -279,7 +279,7 @@ class TestTagUsageFromRow:
 
 
 # ---------------------------------------------------------------------------
-# Phase 2 (P2-S2): association hydration isolation
+# association hydration isolation
 #
 # Prove that hydrating a song-tag association attaches the semantic owning
 # SongLocator (never a storage song_id / FK) and that an association absent from

@@ -1,7 +1,7 @@
 """Pipeline and scan state management for library scans.
 
 Extracted from ``scan_lifecycle_comp`` — owns scan read and pipeline-axis
-transition logic. Migrated to the library-domain boundary (P4-S3): functions
+transition logic. Library-domain boundary: functions
 operate on domain ``Library`` values and typed ``LibraryPipelineState`` /
 ``LibraryScan`` value objects; no pipeline/scan dictionary or generated id
 crosses this component's surface.

@@ -1779,7 +1779,7 @@ def test_maintenance_reset_library_data_delegates_exactly_once() -> None:
 @pytest.mark.unit
 def test_library_maintenance_exposes_no_transaction_surface() -> None:
     """The library maintenance surface exposes no transaction()/begin helper
-    (AR-SDR-4 / CONTRACTS.md). The reset delegate owns its own transaction."""
+    (AR-SDR-4). The reset delegate owns its own transaction."""
     db, *_ = _make_library_db()
 
     for name in ("transaction", "_require_transaction", "begin", "begin_nested", "commit"):
@@ -1976,7 +1976,7 @@ class TestMoveLibrarySong:
         song_repo.add_song.assert_not_called()
 
 
-# ── list_songs_with_state (typed state-read owner, Plan C P2) ────────────
+# ── list_songs_with_state (typed state-read owner) ───────────────────────
 
 
 def _row(song_id: int = 10, normalized_path: str = "a.mp3", *, scanned_at: int = 1000) -> dict:
@@ -2103,7 +2103,7 @@ _MALFORMED_LIBRARY = LibraryIdentity(library_uuid="not-a-uuid", name="Malformed"
 
 @pytest.mark.unit
 class TestUnknownAndMalformedLibraryUuidRejection:
-    """ADR-049/CONTRACTS §7: unknown or malformed library UUIDs fail closed.
+    """ADR-048 locator contract: unknown or malformed library UUIDs fail closed.
 
     There is no name or integer fallback: single-locator reads miss with
     ``None``, single-locator writes raise ``LookupError``, and set-based reads

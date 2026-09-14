@@ -1,13 +1,13 @@
 # mypy: disable-error-code=func-returns-value
 """Unit tests for ``MlDb`` delegation and contract shape.
 
-Legacy-method retirement inventory (Phase 3, authoritative manager decision):
+Legacy-method retirement inventory (authoritative manager decision):
 ``list_song_vectors``, ``search_vectors``, and ``get_embedding_stats`` are
 RETAINED as legacy dependency gates on ``MlDb`` — they are NOT part of the
 corrected caller-facing read surface. ``list_song_vectors`` gates the
 out-of-scope ``ml_vector_registry_comp``; ``search_vectors`` had its in-scope
-callers migrated in Phases 4-5 and now has no production callers, so its removal is
-deferred outside this plan scope rather than pursued here; ``get_embedding_stats``
+callers migrated in the caller migration and now has no production callers, so its removal is
+deferred outside this boundary rather than pursued here; ``get_embedding_stats``
 gates the out-of-scope maintenance/promotion callers. Corrected callers use the typed intents
 ``get_song_vector`` / ``search_similar_vectors`` / ``embedding_counts``, which
 expose only domain ``SongVector`` / ``VectorMatch`` / ``EmbeddingCounts`` values.
@@ -75,7 +75,7 @@ def test_required_repositories_are_validated_without_asserts(repository: str, me
 def test_exposes_ml_maintenance_surface() -> None:
     db, _, _, _, calibration_repo, _ = _make_ml_db()
 
-    # The deprecated reset-only collection truncation was retired (Plan C);
+    # The deprecated reset-only collection truncation was retired;
     # only the persistence aggregate owns whole-embeddings deletion.
     assert not hasattr(db, "truncate_vectors_in_collection")
     assert not hasattr(db, "truncate_vector_collection")
@@ -87,7 +87,7 @@ def test_exposes_ml_maintenance_surface() -> None:
     assert hasattr(db.maintenance, "truncate_calibration_history")
 
     # Destructive resets are NOT on the routine db.ml surface: the deprecated
-    # forwarding shims were removed (Plan E). Truncation is reachable only via
+    # forwarding shims were removed. Truncation is reachable only via
     # db.ml.maintenance, which routes to the calibration repository directly.
     assert not hasattr(db, "truncate_calibration_states")
     assert not hasattr(db, "truncate_calibration_history")
@@ -112,14 +112,14 @@ def test_removed_unsanctioned_raw_helpers_are_not_exposed() -> None:
     assert not hasattr(db, "delete_calibration_history_for_model")
     assert not hasattr(db, "get_model_has_calibration_edges_by_ids")
 
-    # Phase 1-2 removed raw/row-shaped calibration helpers are NOT exposed.
+    # Removed raw/row-shaped calibration helpers are NOT exposed.
     assert not hasattr(db, "list_all_calibration_states_with_models")
     assert not hasattr(db, "list_calibration_history_snapshots")
     assert not hasattr(db, "remove_calibration_history_for_model")
     assert not hasattr(db, "remove_calibration_history_entries")
 
     # Destructive calibration reset is maintenance-only: the deprecated
-    # forwarding shims were removed from the routine surface in Plan E.
+    # forwarding shims were removed from the routine surface.
     assert not hasattr(db, "truncate_calibration_states")
     assert not hasattr(db, "truncate_calibration_history")
 
@@ -656,8 +656,7 @@ def test_replace_song_inference_results_makes_single_aggregate_call() -> None:
 
 
 # ---------------------------------------------------------------------------
-# P1-S2 permanent typed-boundary contract (TASK-ml-write-boundary-leaks-
-# storage-representation-A-typed-inference-write-boundary). Phase 2 landed: the
+# Permanent typed-boundary contract. The typed boundary landed: the
 # facade accepts a semantic SongIdentity and typed BackboneVectorWrite/
 # OutputStreamWrite commands and passes them through to the repository WITHOUT
 # laundering stream commands back into dictionaries. These tests pin that
@@ -1408,7 +1407,7 @@ def test_get_embedding_stats_delegates_library_scope_to_vector_repo() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Group 8: Spec-first typed vector-read facade (P1-S3)
+# Group 8: Spec-first typed vector-read facade
 # ---------------------------------------------------------------------------
 # These tests target the corrected sealed typed MlDb read surface:
 #   get_song_vector(backbone, song: SongIdentity) -> SongVector | None
@@ -1416,7 +1415,7 @@ def test_get_embedding_stats_delegates_library_scope_to_vector_repo() -> None:
 #       include_vector=False) -> tuple[VectorMatch, ...]
 #   embedding_counts(backbone, library: LibraryIdentity | None = None)
 #       -> EmbeddingCounts
-# They pin the typed methods that Phase 3 sealed onto MlDb and pass. The legacy
+# They pin the typed methods sealed onto MlDb and pass. The legacy
 # list_song_vectors/search_vectors/get_embedding_stats methods are NOT the
 # corrected caller contract and remain only as out-of-scope dependency gates.
 
@@ -1486,7 +1485,7 @@ class TestTypedVectorReadFacadeSpecFirst:
 
 
 # ---------------------------------------------------------------------------
-# Group 9: Typed vector-read delegation defaults (P3-S2)
+# Group 9: Typed vector-read delegation defaults
 # ---------------------------------------------------------------------------
 # The typed intents are thin delegations and must preserve the EXACT target
 # signatures/defaults: ``limit`` is required keyword-only, ``min_score``

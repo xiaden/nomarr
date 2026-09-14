@@ -1,6 +1,6 @@
 """Contract tests for the persistence-private song row mappers.
 
-``TASK-song-row-mirror-leaks-into-domain-B`` Phase 1 (P1-S2/P1-S3): prove that
+Prove that
 ``nomarr/persistence/mappers/song_mapper.py`` converts persistence ``SongRow``
 mappings to a semantic application :class:`Song` and to the natural
 :class:`SongIdentity` locator, and that generated row ids / foreign keys /
@@ -155,7 +155,7 @@ class TestSongRowToIdentity:
 
 
 # ---------------------------------------------------------------------------
-# Phase 2 (P2-S2): mapper isolation
+# mapper isolation
 #
 # Prove the row->domain / row->locator mappers are isolated from storage shape
 # changes and from storage identity: column changes never surface on the value,
@@ -281,7 +281,7 @@ class TestDeterministicFailureNoDisclosure:
 
 
 # ---------------------------------------------------------------------------
-# Phase 2 (P2-S3): semantic hydration
+# semantic hydration
 #
 # Prove SongLocator/domain values survive a reload (deterministic re-derivation
 # from an identical row) and that missing hydration is explicit — never a hidden
@@ -351,7 +351,7 @@ class TestSemanticHydrationSurvivesReload:
 @pytest.mark.unit
 class TestPhase3BoundaryEvidence:
     def test_mapper_has_no_public_resolver_or_integer_adapter(self) -> None:
-        """The B-owned mapper cannot become an integer identity crossing."""
+        """The mapper cannot become an integer identity crossing."""
         import nomarr.persistence.mappers.song_mapper as mapper
 
         tree = ast.parse(inspect.getsource(mapper))

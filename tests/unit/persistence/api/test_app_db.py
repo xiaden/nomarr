@@ -158,22 +158,13 @@ class TestAppDbFileStateMethods:
         mock_song_state_repo.get_song_states_for_songs.assert_called_once_with([1, 2])
 
     @pytest.mark.unit
-    def test_list_files_in_state_delegates(self, app_db: AppDb, mock_song_state_repo: MagicMock) -> None:
-        mock_song_state_repo.list_songs_in_state.return_value = [10, 20, 30]
+    def test_list_file_docs_in_state_without_limit(self, app_db: AppDb, mock_pipeline_repo: MagicMock) -> None:
+        mock_pipeline_repo.list_song_docs_in_state.return_value = []
 
-        result = app_db.song_ids_with_state("queued", limit=50)
+        result = app_db.songs_with_state("queued")
 
-        assert result == [10, 20, 30]
-        mock_song_state_repo.list_songs_in_state.assert_called_once_with("queued", limit=50)
-
-    @pytest.mark.unit
-    def test_list_files_in_state_without_limit(self, app_db: AppDb, mock_song_state_repo: MagicMock) -> None:
-        mock_song_state_repo.list_songs_in_state.return_value = [10]
-
-        result = app_db.song_ids_with_state("tagged")
-
-        assert result == [10]
-        mock_song_state_repo.list_songs_in_state.assert_called_once_with("tagged", limit=None)
+        assert result == []
+        mock_pipeline_repo.list_song_docs_in_state.assert_called_once_with("queued", limit=None)
 
     @pytest.mark.unit
     def test_list_file_docs_in_state_delegates_to_pipeline_repo(
@@ -192,11 +183,11 @@ class TestAppDbFileStateMethods:
     ) -> None:
         mock_pipeline_repo.list_song_docs_in_state.return_value = []
 
-        result = app_db.songs_with_state("processed", limit=1000, library_id=3, order_by_activity=True)
+        result = app_db.songs_with_state("processed", limit=1000, order_by_activity=True)
 
         assert result == []
         mock_pipeline_repo.list_song_docs_in_state.assert_called_once_with(
-            "processed", limit=1000, library_id=3, order_by_activity=True
+            "processed", limit=1000, order_by_activity=True
         )
 
     @pytest.mark.unit
@@ -898,6 +889,13 @@ class TestAppDbSurface:
         assert not hasattr(app_db, "steal_claim")
         assert not hasattr(app_db, "release_claim")
         assert not hasattr(app_db, "remove_claim_by_song")
+
+    @pytest.mark.unit
+    def test_no_integer_song_id_listing_surface(self, app_db: AppDb) -> None:
+        # ADR-048 §3 / R7: the integer song-id listing surface was removed; the
+        # locator-addressed `songs_with_state` surface is the retained replacement.
+        assert not hasattr(app_db, "song_ids_with_state")
+        assert hasattr(app_db, "songs_with_state")
 
 
 # ══════════════════════════════════════════════════════════════════════════════

@@ -1,7 +1,6 @@
 """Unit tests for the vector backbone scope invariant (typed aggregate).
 
-P5-S4 repair: the Phase-2 typed migration (TASK-ml-write-boundary-leaks-storage-
-representation-A) removed the per-command ``backbone_id`` from vector payloads and
+The typed migration removed the per-command ``backbone_id`` from vector payloads and
 made ``MlInferenceRepo.replace_song_inference_results`` take a semantic
 ``SongIdentity`` plus typed ``BackboneVectorWrite`` commands. Under that contract
 the aggregate's single ``backbone`` argument is the SOLE vector scope: commands

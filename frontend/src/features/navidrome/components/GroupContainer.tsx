@@ -98,7 +98,7 @@ export function GroupContainer({
     }
   };
 
-  // Nested group management (will be used in P3-S2)
+  // Nested group management
   const handleNestedGroupChange = (index: number, updatedGroup: RuleGroup) => {
     const updated = {
       ...group,

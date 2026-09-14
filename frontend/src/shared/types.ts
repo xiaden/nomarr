@@ -10,8 +10,8 @@
 // ──────────────────────────────────────────────────────────────────────
 
 export interface Library {
-  library_id: string; // Natural library name (library-CRUD wire identity, ADR-043/049)
-  libraryUuid: string; // Immutable Nomarr-owned SongLocator library identity (ADR-049)
+  library_id: string; // Natural library name (library-CRUD wire identity, ADR-043)
+  libraryUuid: string; // UUID-bearing SongLocator library component (ADR-048)
   name: string;
   rootPath: string; // maps to backend root_path
   isEnabled: boolean;

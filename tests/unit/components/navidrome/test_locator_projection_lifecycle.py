@@ -1,22 +1,21 @@
-"""Lifecycle characterization for opaque ``nom1`` SongLocator wire projections.
+"""Semantic lifecycle coverage for opaque ``nom1`` SongLocator projections.
 
-P3-S3 evidence: stale locators, partial projection failure, retry/idempotence,
-concurrency, rename and delete/recreate, and non-leaking projection errors for
-the wire-projection components that were re-keyed by the pre-production hard cut.
-
-These tests exercise the *components* only (no interfaces import), so they run
-without the H-owned ``file_write_comp`` import chain that blocks interface tests.
-The fresh-PostgreSQL half of P3-S3 lives in
-``tests/integration/test_library_uuid_locator_identity_pg.py`` and is
-environment-blocked while Docker/PostgreSQL is down.
+These component-level tests cover stale and partial locator projections,
+retry/idempotence, deterministic concurrent token generation, rename and
+delete/recreate invalidation, and projection-error redaction. They intentionally
+exercise the component boundary without importing interfaces. Database-backed
+characterization coverage is environment-dependent and remains deferred to the
+CI PostgreSQL test job when local PostgreSQL or Docker is unavailable.
 """
 
 from __future__ import annotations
 
 import threading
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
+from nomarr.components.library.library_song_query_comp import tagged_songs_for_locators
 from nomarr.components.navidrome.descriptor_match_comp import (
     _descriptors_by_key,
     descriptor_for_locator,
@@ -29,6 +28,9 @@ from nomarr.helpers.song_locator_codec import (
     SongLocatorFormatError,
     encode_song_locator,
 )
+
+if TYPE_CHECKING:
+    from nomarr.persistence.db import Database
 
 pytestmark = pytest.mark.unit
 
@@ -66,6 +68,11 @@ def _tags(path: str, title: str, artist: str, album: str = "Album") -> tuple[Son
         SongTagAssignment(name="artist", value=artist),
         SongTagAssignment(name="album", value=album),
     )
+
+
+def _production_db(db: _ProjectionDb) -> Database:
+    """Cross the production ``Database`` boundary for this in-memory fixture."""
+    return cast("Database", db)
 
 
 class _ProjectionDb:
@@ -118,24 +125,40 @@ class _ProjectionDb:
 
 
 class TestStaleAndPartialProjection:
+    def test_library_scope_keeps_colliding_path_with_live_library(self) -> None:
+        db = _ProjectionDb([(_UUID_B, "shared.mp3", "Library B", "Artist B", "Album B")])
+        stale_a = _locator(_UUID_A, "shared.mp3")
+        live_b = _locator(_UUID_B, "shared.mp3")
+
+        carriers = tagged_songs_for_locators(_production_db(db), [stale_a, live_b])
+        projected = _descriptors_by_key(_production_db(db), [stale_a, live_b])
+
+        assert [carrier.song for carrier in carriers] == [db.get_song(live_b)]
+        tags_by_name = {tag.key: tag.value for tag in carriers[0].tags}
+        assert tags_by_name == {"title": "Library B", "artist": "Artist B", "album": "Album B"}
+        assert set(projected) == {encode_song_locator(live_b)}
+        assert projected[encode_song_locator(live_b)]["title"] == "Library B"
+        assert projected[encode_song_locator(live_b)]["artist"] == "Artist B"
+        assert projected[encode_song_locator(live_b)]["nomarr_file_key"] == encode_song_locator(live_b)
+
     def test_stale_locator_projects_to_none(self) -> None:
         db = _ProjectionDb([(_UUID_A, "gone.mp3", "Gone", "Artist", "Album")])
-        assert descriptor_for_locator(db, _locator(_UUID_A, "gone.mp3")) is not None
-        assert descriptor_for_locator(db, _locator(_UUID_A, "never.mp3")) is None
+        assert descriptor_for_locator(_production_db(db), _locator(_UUID_A, "gone.mp3")) is not None
+        assert descriptor_for_locator(_production_db(db), _locator(_UUID_A, "never.mp3")) is None
 
     def test_partial_projection_skips_stale_locator(self) -> None:
         db = _ProjectionDb([(_UUID_A, "live.mp3", "Live", "Artist", "Album")])
         live = _locator(_UUID_A, "live.mp3")
         stale = _locator(_UUID_A, "missing.mp3")
 
-        projected = _descriptors_by_key(db, [live, stale])
+        projected = _descriptors_by_key(_production_db(db), [live, stale])
 
         assert set(projected) == {encode_song_locator(live)}
         assert projected[encode_song_locator(live)]["title"] == "Live"
 
     def test_all_stale_projection_is_empty_not_an_error(self) -> None:
         db = _ProjectionDb([(_UUID_A, "live.mp3", "Live", "Artist", "Album")])
-        assert _descriptors_by_key(db, [_locator(_UUID_A, "a.mp3"), _locator(_UUID_A, "b.mp3")]) == {}
+        assert _descriptors_by_key(_production_db(db), [_locator(_UUID_A, "a.mp3"), _locator(_UUID_A, "b.mp3")]) == {}
 
 
 class TestRetryAndConcurrency:
@@ -143,8 +166,8 @@ class TestRetryAndConcurrency:
         db = _ProjectionDb([(_UUID_A, "song.mp3", "Song", "Artist", "Album")])
         locator = _locator(_UUID_A, "song.mp3")
 
-        first = _descriptors_by_key(db, [locator])
-        second = _descriptors_by_key(db, [locator])
+        first = _descriptors_by_key(_production_db(db), [locator])
+        second = _descriptors_by_key(_production_db(db), [locator])
 
         assert first == second
         assert encode_song_locator(locator) == encode_song_locator(locator)
@@ -180,8 +203,8 @@ class TestRenameDeleteRecreate:
         new_token = encode_song_locator(new_locator)
 
         assert new_token != old_token
-        assert descriptor_for_locator(after, old_locator) is None
-        assert descriptor_for_locator(after, new_locator) is not None
+        assert descriptor_for_locator(_production_db(after), old_locator) is None
+        assert descriptor_for_locator(_production_db(after), new_locator) is not None
 
     def test_delete_and_recreate_mints_new_library_uuid_and_token(self) -> None:
         path = "song.mp3"
@@ -191,15 +214,15 @@ class TestRenameDeleteRecreate:
         second_token = encode_song_locator(_locator(_UUID_B, path))
 
         assert second_token != first_token
-        assert descriptor_for_locator(recreated, _locator(_UUID_A, path)) is None
-        assert descriptor_for_locator(recreated, _locator(_UUID_B, path)) is not None
+        assert descriptor_for_locator(_production_db(recreated), _locator(_UUID_A, path)) is None
+        assert descriptor_for_locator(_production_db(recreated), _locator(_UUID_B, path)) is not None
 
 
 class TestProjectionErrorsDoNotLeak:
     def test_noncanonical_uuid_error_does_not_echo_locator_contents(self) -> None:
         db = _ProjectionDb([(_UUID_V5, "secret-song.mp3", "Secret", "Artist", "Album")])
         with pytest.raises(SongLocatorFormatError) as excinfo:
-            descriptor_for_locator(db, _locator(_UUID_V5, "secret-song.mp3"))
+            descriptor_for_locator(_production_db(db), _locator(_UUID_V5, "secret-song.mp3"))
 
         message = str(excinfo.value)
         assert "secret-song.mp3" not in message

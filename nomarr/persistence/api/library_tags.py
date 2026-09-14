@@ -4,12 +4,13 @@ Holds all tag-domain (``tags`` table) and song-tag edge (``song_tags``
 junction) intent methods. Wired into ``LibraryDb`` as its ``tags``
 namespace.
 
-Domain boundary (per artifacts/designs/parts/song-domain-repair/CONTRACTS.md —
-song-tag migration contract, 2026-08-30):
+Domain boundary for locator-addressed song-tag operations:
 
 - Tags are addressed by ``TagRef(name, value, namespace)``, never by a
   database primary key.
-- Songs are addressed by ``SongIdentity(library: LibraryIdentity, normalized_path)`` (natural library key + normalized path), resolved internally to the storage song id.
+- Songs are addressed by the existing ``SongIdentity``/``SongLocator`` shape: a
+  UUID-bearing ``LibraryIdentity`` (``library_uuid``) plus a normalized
+  library-relative path. Persistence resolves it internally to the storage song id.
 - Read results are typed domain values (``TagRef``, ``SongTagAssignment``,
   ``TagUsage``, ``RelinkResult``, ``TagCleanupResult``) — no ``TagRow``,
   ``SongRow``, or raw ``dict`` projections leak to callers.
@@ -73,10 +74,11 @@ if TYPE_CHECKING:
 class LibraryTagsDb:
     """Persistence sub-facade for tag and song-tag edge operations.
 
-    Domain identity: ``TagRef(name, value, namespace)`` tag natural key
-    and ``SongIdentity(library: LibraryIdentity, normalized_path)`` song
-    natural key. Tag and song rows are keyed by integer primary keys internally;
-    callers address tags and songs exclusively by their domain identities.
+    Domain identity is the ``TagRef(name, value, namespace)`` tag key and the
+    UUID-bearing ``SongIdentity``/``SongLocator`` (``library_uuid`` plus a
+    normalized library-relative path). Tag and song rows are keyed by integer
+    primary keys internally; callers address tags and songs exclusively by their
+    domain identities.
     """
 
     def __init__(
@@ -101,7 +103,7 @@ class LibraryTagsDb:
     def _resolve_song_id(self, song: SongIdentity) -> int | None:
         """Resolve one song locator to its storage id, or ``None`` if absent.
 
-        ``SongIdentity.library`` is a UUID ``LibraryIdentity`` (ADR-049), so it
+        ``SongIdentity.library`` is a UUID-bearing ``LibraryIdentity`` (ADR-048), so it
         is first resolved to a library primary key by ``library_uuid``, then the
         song's normalized path is resolved within that library. The integer id
         never crosses this facade.
@@ -488,9 +490,9 @@ class LibraryTagsDb:
         removed. Resolves the identities set-based without creating tags.
 
         Side effect: after every per-song removal a DB-wide
-        ``cleanup_orphaned_tags()`` is run to preserve provenance cleanup (tags
-        that lost their last song assignment are deleted). This behavior is
-        intentional and unchanged.
+        ``cleanup_orphaned_tags()`` is run to preserve the orphan-tag invariant:
+        tags that have lost their last song assignment are deleted. This behavior
+        is intentional and unchanged.
         """
         song_id = self._resolve_song_id(song)
         if song_id is None:

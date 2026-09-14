@@ -2,15 +2,16 @@
 
 Covers the deterministic escaped natural task IDs, the URL-encoded library-name
 round trip, and rejection of integer library scope across the domain/facade
-boundary. These are the P4-S10 additions for
-``TASK-library-domain-facades-A``.
+boundary.
 """
 
 from __future__ import annotations
 
 import pytest
 
+import nomarr.interfaces.api.id_codec as id_codec
 from nomarr.helpers.dataclasses.library_dataclass import Library
+from nomarr.helpers.song_locator_codec import SongLocatorFormatError
 from nomarr.interfaces.api.id_codec import decode_library_name, encode_library_name
 from nomarr.services.domain.library_svc.task_ids import library_task_id
 
@@ -141,3 +142,14 @@ class TestLibraryNaturalIdentityContract:
         with pytest.raises(AttributeError):
             lib.name = "Renamed"  # type: ignore[misc]  # frozen: intentional
         assert not hasattr(lib, "__dict__")  # slotted
+
+
+class TestIdCodecExportSurface:
+    """The canonical SongLocator error export is pinned; the removed alias stays gone."""
+
+    @pytest.mark.unit
+    def test_invalid_id_format_alias_removed_and_canonical_error_reexported(self) -> None:
+        """The removed ``InvalidIdFormatError`` alias must not resurface."""
+        assert "InvalidIdFormatError" not in id_codec.__all__
+        assert not hasattr(id_codec, "InvalidIdFormatError")
+        assert id_codec.SongLocatorFormatError is SongLocatorFormatError

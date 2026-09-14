@@ -101,7 +101,7 @@ class TaggingQueryMixin:
 
         Args:
             identity: Complete natural tag identity (``TagRef``). The interface
-                decodes an opaque handle to ``TagRef`` before calling (Plan D).
+                decodes an opaque handle to ``TagRef`` before calling.
             limit: Max results
             offset: Pagination offset
 
@@ -145,7 +145,7 @@ class TaggingQueryMixin:
             CommitResult with started flag and pending file count.
 
         """
-        # overlap: mechanism-A natural-name threading (P4-S8) - sibling
+        # Natural-name threading keeps the library identity semantic.
         # curation.py is under concurrent edit; preserve adjacent hunks.
         pending = count_pending_tag_writes(self.db)
         if pending == 0:

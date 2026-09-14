@@ -479,7 +479,7 @@ class TestTagRepository:
         assert {tag["id"] for tag in repo.get_tags_for_song(selected_song_id)} == {target_id}
         assert {tag["id"] for tag in repo.get_tags_for_song(outside_song_id)} == {source_id, target_id}
 
-    # ── Plan E facade support ───────────────────────────────────
+    # ── Facade support ──────────────────────────────────────────
 
     def test_list_all_tag_names(self, pg_session) -> None:
         """list_all_tag_names should return distinct names."""
@@ -569,7 +569,7 @@ class TestTagRepository:
         result = pg_session.execute(select(Tag))
         assert len(result.all()) == 0
 
-    # ── numeric tag search (Phase 1 SQL pagination) ─────────────
+    # ── numeric tag search (SQL pagination) ─────────────
 
     def test_search_songs_by_numeric_tag_orders_by_distance_and_paginates(self, pg_session) -> None:
         """Numeric search orders by absolute distance and applies SQL offset/limit."""
@@ -843,7 +843,7 @@ class TestTagRepository:
 
         assert repo.count_songs_by_numeric_tag("rating", 5, namespace="genre") == 2
 
-    # ── P1-S3: namespace-aware listing / search / genre reads ───────────
+    # ── namespace-aware listing / search / genre reads ──────────────────
 
     def test_list_tags_with_song_count_is_namespace_aware(self, pg_session) -> None:
         """(default, genre, Rock) and (nom, genre, Rock) are separate rows with distinct counts."""
@@ -880,7 +880,7 @@ class TestTagRepository:
     def test_exact_tag_search_does_not_cross_namespaces(self, pg_session) -> None:
         """An exact search scoped to one namespace never matches the same (name, value) in another.
 
-        P1-S3: ``(nom, genre, Rock)`` must not satisfy a ``default``-namespace
+        ``(nom, genre, Rock)`` must not satisfy a ``default``-namespace
         search, and vice versa — namespace is part of identity in search.
         """
         _, nom_only_song = _create_library_and_song(pg_session)
@@ -922,7 +922,7 @@ class TestTagIdentitySpec:
     identities; duplicate complete-key insertion is prevented; ordinary
     namespace normalizes to the literal ``default`` (never NULL/empty); and
     repository result rows expose no removed tag metadata. The repository
-    implements the identity-only contract (P3-S2/P3-S3); normalization and
+    implements the identity-only contract; normalization and
     row-shape assertions pass.
     """
 
@@ -998,7 +998,7 @@ class TestTagIdentitySpec:
         assert set(row.keys()) == {"id", "namespace", "name", "value"}
 
     def test_edge_writes_never_modify_shared_tag_row(self, pg_session) -> None:
-        """P3-S7: edge writes touch only ``song_tags``, never a shared ``tags`` row.
+        """Edge writes touch only ``song_tags``, never a shared ``tags`` row.
 
         Reassigning the same tag to a song with different per-song edge metadata
         (confidence/source) must not issue an UPDATE against the shared ``tags``
@@ -1030,7 +1030,7 @@ class TestTagIdentitySpec:
         assert edges[0]["source"] == "nomarr"
 
     def test_removed_metadata_keys_are_rejected_on_create_tag(self, pg_session) -> None:
-        """P3-S3: ``create_tag`` rejects payload keys for removed ``tags`` metadata.
+        """``create_tag`` rejects payload keys for removed ``tags`` metadata.
 
         ``tags`` is identity-only; a stale ``source`` / ``confidence`` / ``tier`` /
         ``created_at`` / ``parent_tag_id`` key must raise ``ValueError`` rather than
@@ -1042,7 +1042,7 @@ class TestTagIdentitySpec:
                 repo.create_tag({"name": "genre", "value": "Rock", "namespace": "default", key: "x"})
 
     def test_removed_metadata_keys_are_rejected_in_tags_batch(self, pg_session) -> None:
-        """P3-S3: ``get_or_create_tags_batch`` rejects removed-metadata payload keys."""
+        """``get_or_create_tags_batch`` rejects removed-metadata payload keys."""
         repo = TagRepository(pg_session)
         with pytest.raises(ValueError):
             repo.get_or_create_tags_batch(
@@ -1063,7 +1063,7 @@ class TestTagIdentitySpec:
         assert set(row.keys()) == {"id", "namespace", "name", "value"}
 
     def test_two_songs_share_tag_row_with_independent_edges(self, pg_session) -> None:
-        """P1-S2: two songs share ONE tag primary key while their edges carry different metadata.
+        """Two songs share ONE tag primary key while their edges carry different metadata.
 
         Each song's ``song_tags`` row keeps its own confidence/source; replacing
         one song's assignment leaves the shared ``tags`` identity row AND the

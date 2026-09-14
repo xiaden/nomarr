@@ -1,6 +1,6 @@
 """ScanRepository — CRUD for the ``library_scans`` table.
 
-Simple CRUD using Part B primitives.
+Simple CRUD using shared persistence primitives.
 """
 
 from __future__ import annotations

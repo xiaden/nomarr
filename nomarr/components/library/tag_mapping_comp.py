@@ -1,6 +1,6 @@
 """Library-layer mapper: row-shaped tag inputs to the library ``FileTag`` contract.
 
-Ownership (per artifacts/designs/parts/tag-boundary/CONTRACTS.md):
+Ownership follows the tag-domain boundary:
 - The library owns ``FileTag`` (key/value/tag_type/is_nomarr). It is a
   library/API contract, NOT a domain or persistence representation — it carries
   no persistence identifiers, namespace provenance beyond the ``is_nomarr``

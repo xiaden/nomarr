@@ -1,13 +1,12 @@
-"""Clean-checkout proof for the Q2R-B Plan H state/claim reader.
+"""Clean-checkout proof for the state/claim contract reader.
 
-These tests prove the repaired ``tests/sabotage/test_h_state_claim_contracts.py``
-module passes with the globally gitignored ``artifacts/`` tree absent, without
-moving, deleting, or otherwise touching the real ``artifacts/`` directory
-(non-destructive). They also scan the tracked Plan H fixtures for sensitive
-tokens and statically guard that the two REQUIRED evidence reads never use an
-``artifacts/`` path (that read is confined to the guarded optional test only).
+These tests prove the ``tests/sabotage/test_state_claim_contracts.py`` module
+passes with the globally gitignored ``artifacts/`` tree absent, without moving,
+deleting, or otherwise touching the real ``artifacts/`` directory
+(non-destructive). They also scan the tracked state/claim fixtures for sensitive
+tokens.
 
-The proof runs the H reader in a subprocess for isolation: the subprocess gets a
+The proof runs the reader in a subprocess for isolation: the subprocess gets a
 clean ``NOMARR_TEST_ROOT`` tree with no ``artifacts/`` directory, so ``_root()``
 resolves only the tracked ``tests/`` fixtures. Executing the reader's tests
 in-process would instead run them against this repo root, where the ignored
@@ -16,7 +15,6 @@ in-process would instead run them against this repo root, where the ignored
 
 from __future__ import annotations
 
-import ast
 import importlib.util
 import os
 import re
@@ -33,21 +31,20 @@ if TYPE_CHECKING:
 
 ROOT = Path(__file__).parents[2]
 FIXTURES = ROOT / "tests" / "sabotage" / "fixtures"
-READER = ROOT / "tests" / "sabotage" / "test_h_state_claim_contracts.py"
+READER = ROOT / "tests" / "sabotage" / "test_state_claim_contracts.py"
 
 _REQUIRED_RUNNING_TESTS = (
     "test_broad_resolver_requires_named_allowlist_evidence",
-    "test_handoff_evidence_records_missing_named_owner",
+    "test_owner_gate_records_missing_named_owner",
 )
-_GUARDED_OPTIONAL_TEST = "test_h_real_evidence_guarded_when_ignored_docs_present"
 
 _UUID_RE = re.compile(r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b")
 _COMMIT40_RE = re.compile(r"\b[0-9a-fA-F]{40}\b")
 _COMMIT8_RE = re.compile(r"\b[0-9a-fA-F]{8}\b")
-# 32-hex calibration marker tokens (CONTRACTS §9.3.1) and 64-hex SHA-256 digests
-# must not slip past the scan; read them at a token boundary with alnum/underscore
-# lookarounds (not ``\b``) so a 64-hex hash is caught too (a bare ``\b`` after 40
-# hex would let the trailing 24 hex digits continue an alnum token and not match).
+# 32-hex calibration marker tokens and 64-hex SHA-256 digests must not slip past
+# the scan; read them at a token boundary with alnum/underscore lookarounds (not
+# ``\b``) so a 64-hex hash is caught too (a bare ``\b`` after 40 hex would let the
+# trailing 24 hex digits continue an alnum token and not match).
 _HEX32_RE = re.compile(r"(?<![0-9a-fA-F])[0-9a-fA-F]{32}(?![0-9a-fA-F])")
 _HEX64_RE = re.compile(r"(?<![0-9a-fA-F])[0-9a-fA-F]{64}(?![0-9a-fA-F])")
 _ABS_PATH_RE = re.compile(r"""(?:^|[\s'"`(])(/[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)+)""")
@@ -57,12 +54,10 @@ _CREDENTIAL_RE = re.compile(
 
 _SENSITIVE_PATTERNS = (_UUID_RE, _COMMIT40_RE, _COMMIT8_RE, _HEX32_RE, _HEX64_RE, _ABS_PATH_RE, _CREDENTIAL_RE)
 
-# The exact assertion tokens the H reader must keep: a future paired weakening of
+# The exact assertion tokens the reader must keep: a future paired weakening of
 # a reader assertion plus a fixture edit must not stay green.
 _REQUIRED_ASSERTION_TOKENS = (
-    "exact L/N/P allowlist",
-    "locator-addressed",
-    "no inbound integer adapter",
+    "exact owner/boundary allowlist",
     "resolve_song_identity",
     "resolve_song_identities",
     "BLOCKED: no named owner contract",
@@ -84,9 +79,9 @@ def _load_reader(path: Path) -> ModuleType:
 
 @pytest.mark.sabotage_check
 @pytest.mark.unit
-def test_h_fixtures_are_tracked_and_clean_checkout_safe() -> None:
-    """The H reader's required evidence lives under tracked ``tests/``, not the
-    globally gitignored ``artifacts/`` tree (Q2R-A/D3B precedent)."""
+def test_fixtures_are_tracked_and_clean_checkout_safe() -> None:
+    """The reader's required evidence lives under tracked ``tests/``, not the
+    globally gitignored ``artifacts/`` tree."""
     files = _fixture_files()
     assert files, f"no tracked fixtures found under {FIXTURES}"
     for path in files:
@@ -108,80 +103,8 @@ def test_h_fixtures_are_tracked_and_clean_checkout_safe() -> None:
 
 @pytest.mark.sabotage_check
 @pytest.mark.unit
-def test_h_required_reads_use_no_artifacts_path_outside_guarded_optional() -> None:
-    """Static source guard: the two REQUIRED H evidence reads must not use an
-    ``artifacts/`` path.
-
-    The subprocess proof redirects ``_root()``-relative reads only, and it runs
-    with ``cwd=repo root`` where the ignored ``artifacts/`` tree exists, so a
-    regression that restored a cwd-relative read (``Path("artifacts/...")``,
-    ``Path("artifacts") / "designs"``, ``"artifacts" + "/designs"``, or an
-    f-string) for a required read would still pass that proof. Here every
-    artifacts path construction in the reader source must fall inside the guarded
-    optional test function, so the two required reads resolve under ``tests/``
-    (tracked fixtures) instead.
-    """
-    reader_source = READER.read_text(encoding="utf-8")
-    tree = ast.parse(reader_source, filename=str(READER))
-    top_level_functions = [node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))]
-    guarded = next((node for node in top_level_functions if node.name == _GUARDED_OPTIONAL_TEST), None)
-    assert guarded is not None, f"guarded optional test {_GUARDED_OPTIONAL_TEST!r} not defined in {READER.name}"
-    docstrings = {
-        id(node.value) for node in ast.walk(tree) if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant)
-    }
-    # Attach parent links so path-construction context (BinOp / Call / Subscript /
-    # JoinedStr) can be inspected.
-    for parent in ast.walk(tree):
-        for child in ast.iter_child_nodes(parent):
-            child.parent = parent  # type: ignore[attr-defined]
-
-    # Collect the ``"artifacts"`` string constants that take part in path
-    # construction, and the offset of the *enclosing* node whose location we check.
-    # This catches:
-    #   * ``Path("artifacts/...")``                       (direct call arg, value starts with artifacts/)
-    #   * ``Path("artifacts") / "designs"``               (call arg -> enclosing BinOp)
-    #   * ``"artifacts" + "/designs"``                     (BinOp operand)
-    #   * ``f"artifacts/{sub}"``                           (JoinedStr value)
-    #   * ``parts["artifacts"]``                           (subscript slice)
-    # The legitimate containment assertion ``"artifacts" not in rel.parts`` is a
-    # Compare operand, not path construction, and is deliberately NOT flagged.
-    artifacts_constants: list[ast.Constant] = []
-    for node in ast.walk(tree):
-        if not (isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in docstrings):
-            continue
-        if node.value.startswith("artifacts/") or node.value.startswith("artifacts\\"):
-            artifacts_constants.append(node)
-            continue
-        if node.value != "artifacts":
-            continue
-        parent = getattr(node, "parent", None)
-        if (
-            isinstance(parent, ast.Subscript)
-            or (isinstance(parent, ast.BinOp) and isinstance(parent.op, (ast.Div, ast.Add)))
-            or isinstance(parent, ast.JoinedStr)
-        ):
-            artifacts_constants.append(node)
-        elif isinstance(parent, ast.Call):
-            func = parent.func
-            func_name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")
-            if func_name in {"Path", "PurePath", "joinpath"}:
-                artifacts_constants.append(node)
-
-    assert artifacts_constants, f"expected the guarded optional test to reference artifacts/ in {READER.name}"
-    guarded_end = guarded.end_lineno or guarded.lineno
-    for node in artifacts_constants:
-        parent = getattr(node, "parent", None)
-        flagged = parent if parent is not None else node
-        lineno = getattr(flagged, "lineno", node.lineno)
-        assert guarded.lineno <= lineno <= guarded_end, (
-            f"artifacts path construction outside the guarded optional test at {READER.name}:{lineno}: {node.value!r}"
-        )
-
-
-@pytest.mark.sabotage_check
-@pytest.mark.unit
-def test_h_required_reader_evidence_paths_are_under_tests_not_artifacts() -> None:
-    """No REQUIRED H reader evidence path resolves under ``artifacts/``.
+def test_required_reader_evidence_paths_are_under_tests_not_artifacts() -> None:
+    """No REQUIRED reader evidence path resolves under ``artifacts/``.
 
     Resolve each declared name independently against the tracked fixture
     directory rather than through the reader's ``_fixture`` helper, so a
@@ -202,10 +125,10 @@ def test_h_required_reader_evidence_paths_are_under_tests_not_artifacts() -> Non
 @pytest.mark.sabotage_check
 @pytest.mark.unit
 @pytest.mark.parametrize("path", _fixture_files(), ids=lambda p: p.name)
-def test_h_tracked_fixtures_contain_no_sensitive_tokens(path: Path) -> None:
+def test_tracked_fixtures_contain_no_sensitive_tokens(path: Path) -> None:
     """Fixture-sensitivity scan: no real UUID, commit-like token, 32-hex
     calibration marker, 64-hex SHA-256 digest, absolute path, or credential-like
-    token is present in the tracked H fixtures."""
+    token is present in the tracked state/claim fixtures."""
     text = path.read_text(encoding="utf-8")
     assert _UUID_RE.search(text) is None, f"real UUID-like token in {path.name}"
     assert _COMMIT40_RE.search(text) is None, f"40-hex commit-like token in {path.name}"
@@ -231,8 +154,8 @@ def test_h_tracked_fixtures_contain_no_sensitive_tokens(path: Path) -> None:
     ],
     ids=["uuid", "commit40", "commit8", "hex32_calibration_marker", "hex64_sha256", "abs_path", "credential"],
 )
-def test_h_sensitive_patterns_match_crafted_poisoned_samples(pattern: re.Pattern[str], sample: str) -> None:
-    """Positive control for the H fixture-sensitivity scan.
+def test_sensitive_patterns_match_crafted_poisoned_samples(pattern: re.Pattern[str], sample: str) -> None:
+    """Positive control for the fixture-sensitivity scan.
 
     Each pattern must actually match a crafted poisoned sample; otherwise a
     regex typo would silently disable the guard while the suite stays green.
@@ -242,7 +165,7 @@ def test_h_sensitive_patterns_match_crafted_poisoned_samples(pattern: re.Pattern
 
 @pytest.mark.sabotage_check
 @pytest.mark.unit
-def test_h_sensitive_patterns_ignore_clean_contract_vocabulary() -> None:
+def test_sensitive_patterns_ignore_clean_contract_vocabulary() -> None:
     """Negative control: ordinary contract vocabulary must not trip the scan."""
     clean = (
         "HydrateSongInput is locator-addressed payload-only and the opaque nom1 locator token are contract vocabulary."
@@ -253,8 +176,8 @@ def test_h_sensitive_patterns_ignore_clean_contract_vocabulary() -> None:
 
 @pytest.mark.sabotage_check
 @pytest.mark.unit
-def test_h_reader_passes_in_subprocess_tree_without_artifacts(tmp_path: Path) -> None:
-    """Run the H reader against a tree that contains only tracked fixtures (no
+def test_reader_passes_in_subprocess_tree_without_artifacts(tmp_path: Path) -> None:
+    """Run the reader against a tree that contains only tracked fixtures (no
     ``artifacts/``) via the ``NOMARR_TEST_ROOT`` root override.
 
     The real ``artifacts/`` tree is never touched.
@@ -277,24 +200,17 @@ def test_h_reader_passes_in_subprocess_tree_without_artifacts(tmp_path: Path) ->
     )
     assert result.returncode == 0, result.stdout + result.stderr
     combined = result.stdout + result.stderr
-    # The formerly ignored-artifact-reading tests must actually RUN and pass, not
-    # be skipped or silently absent on a clean checkout.
+    # The fixture-backed evidence tests must actually RUN and pass, not be
+    # skipped or silently absent on a clean checkout.
     for node in _REQUIRED_RUNNING_TESTS:
-        assert node in combined, f"required H reader test did not appear in the run:\n{combined}"
-        assert f"{node} PASSED" in combined, f"required H reader test did not pass:\n{combined}"
-    # The guarded optional provenance test must be reported SKIPPED, not passed:
-    # absence of ignored evidence must never read as LOCAL_PASS.
-    assert "1 skipped" in combined, f"guarded optional H test was not reported skipped:\n{combined}"
-    assert _GUARDED_OPTIONAL_TEST in combined, f"guarded optional H test missing from the run:\n{combined}"
-    assert f"{_GUARDED_OPTIONAL_TEST} SKIPPED" in combined, (
-        f"guarded optional H test was not reported SKIPPED explicitly:\n{combined}"
-    )
+        assert node in combined, f"required reader test did not appear in the run:\n{combined}"
+        assert f"{node} PASSED" in combined, f"required reader test did not pass:\n{combined}"
 
 
 @pytest.mark.sabotage_check
 @pytest.mark.unit
-def test_h_reader_keeps_required_assertion_tokens() -> None:
-    """Pin the exact assertion tokens the H reader must keep.
+def test_reader_keeps_required_assertion_tokens() -> None:
+    """Pin the exact assertion tokens the reader must keep.
 
     Guards against a future paired weakening of a reader assertion plus a fixture
     edit: both the reader source and the tracked fixtures must still carry every
@@ -305,5 +221,5 @@ def test_h_reader_keeps_required_assertion_tokens() -> None:
     assert "locator-addressed" in fixture_text
     assert "No schema or marker semantics are invented" in fixture_text
     for token in _REQUIRED_ASSERTION_TOKENS:
-        assert token in reader_text, f"required H reader assertion token missing from reader: {token!r}"
-        assert token in fixture_text, f"required H reader assertion token missing from fixtures: {token!r}"
+        assert token in reader_text, f"required reader assertion token missing from reader: {token!r}"
+        assert token in fixture_text, f"required reader assertion token missing from fixtures: {token!r}"

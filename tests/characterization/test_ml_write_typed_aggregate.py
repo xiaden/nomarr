@@ -1,11 +1,10 @@
-"""Typed ML write aggregate positive/negative + session-neutrality coverage (P2-S5).
+"""Typed ML write aggregate positive/negative + session-neutrality coverage.
 
-``TASK-ml-write-boundary-leaks-storage-representation-A-typed-inference-write-
-boundary`` Phase 2 (P2-S5). Exercises the typed write aggregate
+Exercises the typed write aggregate
 ``MlDb.replace_song_inference_results(song: SongIdentity, backbone, *, vectors:
 Sequence[BackboneVectorWrite], output_streams: Sequence[OutputStreamWrite])``
 against the real pgvector:pg17 container and asserts the SAME persisted-row facts
-as the P1 preservation oracle
+as the preservation oracle
 (``tests/characterization/test_ml_write_preservation_baseline.py``) — vector
 values/order, ``embed_dim``, ``model_id``==semantic suite hash with the persisted
 ``model_suite_hash`` column == "" , NULL ``segmentation_hash``, genres

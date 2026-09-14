@@ -20,8 +20,8 @@ cover only in isolation:
    ``tests/integration/conftest.py`` (a temp-file SQLite database with
    ``Base.metadata.create_all``). It is NOT live PostgreSQL, and it does NOT
    claim a PostgreSQL startup gate: the corrected fresh-schema initialization
-   against a real PostgreSQL instance is covered by the Phase 3 gate of
-   ``TASK-tag-persistence-ownership-C-tests-and-verification`` (see P3-S1/P3-S2).
+    against a real PostgreSQL instance is covered by the real-database
+    tag-persistence ownership verification.
    These tests remain useful for fast repository behavior and transaction
    rollback semantics, but SQLite-only success must not be treated as evidence
    for PG-specific behavior or for a PG startup.

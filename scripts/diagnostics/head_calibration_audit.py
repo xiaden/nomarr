@@ -225,7 +225,7 @@ def _fetch_tier_counts(db: Database) -> dict[str, int]:
 
     Returns a dict like ``{"strict": N, "regular": N, "loose": N, "other": N}``.
     """
-    # DIAGNOSTIC-ONLY DIRECT SQL (Plan C classification):
+    # DIAGNOSTIC-ONLY DIRECT SQL:
     # This is a read-only audit over the `tags` table (a NON-calibration
     # domain).  It uses the private ``db._scoped`` session and a raw
     # SQLAlchemy ``select`` on ``Tag.__table__`` because the audit needs an
@@ -278,7 +278,7 @@ def main() -> None:
                 pass
 
         # ── 1. Calibration states ───────────────────────────────────────
-        # Plan C: the old ``list_all_calibration_states_with_models`` was
+        # The old ``list_all_calibration_states_with_models`` was
         # REMOVED from the facade; ``list_calibration_states()`` returns
         # ``list[CalibrationState]`` domain values (no row DTO, no state_data
         # envelope).  Each entry is a frozen/slotted dataclass and must be
@@ -303,10 +303,10 @@ def main() -> None:
             scale = 1.0 / span if span > 1e-9 else 1.0
 
             # ── Fetch segment scores ─────────────────────────────────
-            # DIAGNOSTIC-ONLY (Plan C classification): Segment statistics
+            # DIAGNOSTIC-ONLY: Segment statistics
             # were previously read from the raw ``output_data`` JSONB blob on
             # each ``ml_model_outputs`` row.  That JSONB blob is
-            # persistence-internal (Plan C) and is no longer exposed by the
+            # persistence-internal and is no longer exposed by the
             # MlDb intent facade, so this diagnostic can no longer source
             # per-model segment means/stds from it.  The arrays therefore
             # remain empty, ``classify_distribution`` reports

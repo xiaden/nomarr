@@ -120,7 +120,7 @@ class MlInferenceRepo:
     def _resolve_song_id(self, song: SongIdentity) -> int:
         """Resolve a UUID ``SongIdentity`` to its storage song id.
 
-        Matches ``libraries.library_uuid`` (ADR-049) and the song's
+        Matches ``libraries.library_uuid`` (ADR-048) and the song's
         ``normalized_path`` against the storage tables. Persistence-internal:
         never calls the ``db.library`` facade and never exposes the integer id
         upward. Raises :class:`EntityNotFoundError` when the library or song is

@@ -1,7 +1,7 @@
 # mypy: disable-error-code=func-returns-value
 """Facade contract tests for the sealed tag surface.
 
-``TASK-song-intent-facade-correction-A`` Phase 6 (P6-S2): prove that the sealed
+Prove that the sealed
 ``LibraryTagsDb`` facade
 - converts rows/dicts/IDs/edges to domain values internally (never leaking them),
 - resolves the complete tag natural identity set-based (no per-row SQL loops),
@@ -46,7 +46,7 @@ def _make_tags_db() -> tuple[LibraryTagsDb, MagicMock, MagicMock, MagicMock, Mag
     song_tag_repo = MagicMock()
     song_repo = MagicMock()
     library_repo = MagicMock()
-    # ADR-049: SongIdentity.library carries the immutable library_uuid, so the
+    # ADR-048: SongIdentity.library carries the immutable library_uuid, so the
     # facade resolves libraries by UUID (never a name/root_path natural key).
     library_repo.get_library_by_uuid.return_value = {"id": 1}
     library_repo.get_library_ids_by_uuids.return_value = {_TEST_LIBRARY.library_uuid: 1}
@@ -276,7 +276,7 @@ class TestNoFacadeTransactionContext:
 
 @pytest.mark.unit
 class TestIdempotenceAndEmptySemantics:
-    """P6-S4 regression: replace/add/remove idempotence and empty semantics.
+    """Regression: replace/add/remove idempotence and empty semantics.
 
     A repeated ``replace_song_tags`` must produce identical edges, and an empty
     assignment list must replace all edges (no leftover edges).

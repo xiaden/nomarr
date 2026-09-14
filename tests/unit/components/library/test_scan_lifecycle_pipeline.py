@@ -27,7 +27,7 @@ class TestOnScanCompletePipelineHook:
             on_scan_complete_pipeline_hook(mock_db, "libraries/abc123")
 
         mock_transition.assert_called_once_with(mock_db, "libraries/abc123", ML_STATE_FIELD, ML_IN_PROGRESS)
-        mock_db.library.list_library_song_ids.assert_not_called()
+        mock_db.library.count_songs_for_library.assert_called_once_with("libraries/abc123")
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -39,4 +39,4 @@ class TestOnScanCompletePipelineHook:
             on_scan_complete_pipeline_hook(mock_db, "libraries/abc123")
 
         mock_transition.assert_called_once_with(mock_db, "libraries/abc123", ML_STATE_FIELD, ML_NOT_PROCESSED)
-        mock_db.library.list_library_song_ids.assert_not_called()
+        mock_db.library.count_songs_for_library.assert_called_once_with("libraries/abc123")

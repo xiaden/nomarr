@@ -1,6 +1,6 @@
 """Tests for the calibration import bundle workflow.
 
-Pins the v2-JSON boundary contract (P4-S6 / P3-S2): the workflow parses
+Pins the v2-JSON boundary contract: the workflow parses
 ``n``/``underflow_count``/``overflow_count`` from the bundle and calls
 ``save_calibration_state`` with the model_id resolved by
 ``(backbone, embedder_release_date)`` lookup, then recomputes the global

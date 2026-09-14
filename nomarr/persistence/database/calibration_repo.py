@@ -1,6 +1,6 @@
 """CalibrationRepo — CRUD for ``calibration_states`` and ``calibration_history``.
 
-Uses Part B primitives for simple lookups and direct SQLAlchemy Core for
+Uses shared persistence primitives for simple lookups and direct SQLAlchemy Core for
 upserts and joins.
 """
 
@@ -449,9 +449,8 @@ class CalibrationRepo:
            Repository-internal maintenance only.  Not part of the caller-facing
            contract: the natural-identity retention intent
            :meth:`remove_calibration_history` is the sanctioned path.  The
-           ``ml.py`` facade no longer calls this (Plan C removed the
-           ``remove_calibration_history_entries`` shim), so it remains a
-           repository-internal maintenance helper.
+           public facade does not call this primary-key helper; it remains
+           a repository-internal maintenance operation.
         """
         with map_persistence_exceptions():
             with self._session.begin_nested():

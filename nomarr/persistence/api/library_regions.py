@@ -111,7 +111,7 @@ class LibraryRegionsDb:
         return None if row is None else library_from_row(row)
 
     def get_library_by_uuid(self, library_uuid: str) -> Library | None:
-        """Get a library by its immutable ``library_uuid`` identity (ADR-049)."""
+        """Get a library by its immutable ``library_uuid`` identity (ADR-048)."""
         row = self._library_repo.get_library_by_uuid(library_uuid)
         return None if row is None else library_from_row(row)
 

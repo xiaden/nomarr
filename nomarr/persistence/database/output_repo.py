@@ -1,6 +1,6 @@
 """OutputRepo — CRUD for ``ml_model_outputs`` and ``ml_output_streams`` tables.
 
-Uses Part B primitives for simple lookups and direct SQLAlchemy Core for
+Uses shared persistence primitives for simple lookups and direct SQLAlchemy Core for
 filtered queries and deletes.
 """
 

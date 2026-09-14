@@ -1,6 +1,6 @@
 """Sabotage tests: transaction policy and facade API shape (AR-1, AR-2).
 
-Shipped state (per CONTRACTS.md AR-2 / AR-SDR-4):
+Shipped state (AR-2 / AR-SDR-4):
 - WRITE facade methods succeed WITHOUT a ``transaction()`` context; the
   ``transaction()`` context manager and the ``_require_transaction`` guard
   have been removed from all facades (``LibraryDb``, ``AppDb``, ``MlDb`` and
@@ -27,7 +27,7 @@ from nomarr.helpers.dataclasses.library_dataclass import Library
 class TestFacadeMisuseErrorRemoved:
     """Shipped state: FacadeMisuseError no longer exists.
 
-    Per CONTRACTS.md AR-SDR-4 the transaction contract (and the
+    Per AR-SDR-4 the transaction contract (and the
     ``FacadeMisuseError`` raised by its guard) is removed. Importing it from
     ``nomarr.helpers.exceptions`` must raise ImportError.
     """
@@ -47,7 +47,7 @@ class TestFacadeMisuseErrorRemoved:
 class TestWriteMethodsWorkWithoutTransaction:
     """Shipped state: WRITE methods succeed without transaction().
 
-    Per CONTRACTS.md AR-2 / AR-SDR-4, write facade methods no longer require a
+    Per AR-2 / AR-SDR-4, write facade methods no longer require a
     ``transaction()`` context. Calling them directly must succeed.
     """
 
@@ -69,7 +69,7 @@ class TestWriteMethodsWorkWithoutTransaction:
 class TestNoTransactionContract:
     """Shipped state: transaction() and _require_transaction are removed.
 
-    Per CONTRACTS.md AR-SDR-4, ``transaction()`` and ``_require_transaction``
+    Per AR-SDR-4, ``transaction()`` and ``_require_transaction``
     have been removed from every facade. Facades must not expose them.
     """
 
@@ -163,7 +163,7 @@ class TestFacadeMethodsReturnDomainObjects:
 
 
 # ---------------------------------------------------------------------------
-# Test 7: AppDb exposes no legacy claim method / transaction surface (Phase 3)
+# Test 7: AppDb exposes no legacy claim method / transaction surface
 # ---------------------------------------------------------------------------
 
 
@@ -175,7 +175,7 @@ class TestAppDbHasNoLegacyClaimSurface:
     remove_claims / list_claims / count_claims plus the all-claims reset under
     maintenance.delete_all_worker_claims. No legacy insert/release/steal/truncate
     name, no compatibility alias, and no transaction() guard may resurface
-    (CONTRACTS.md / TASK-worker-claims-intent-facade-A-correction Phase 3).
+    (worker-claims intent facade).
     """
 
     def test_app_db_exposes_no_legacy_claim_method(self) -> None:
@@ -197,7 +197,7 @@ class TestAppDbHasNoLegacyClaimSurface:
             "try_insert_or_steal_claim",
             "remove_claim_by_song",
         ):
-            assert not hasattr(AppDb, name), f"AppDb must not expose a '{name}' claim method (CONTRACTS.md)."
+            assert not hasattr(AppDb, name), f"AppDb must not expose a '{name}' claim method (worker-claims contract)."
         assert not hasattr(AppDb, "transaction"), "AppDb must not expose a transaction() method."
         assert not hasattr(AppDb, "_require_transaction"), "AppDb must not expose _require_transaction."
 
@@ -219,7 +219,7 @@ class TestAppDbHasNoLegacyClaimSurface:
 
 # ---------------------------------------------------------------------------
 # Test 8: db.library.maintenance is a legitimate maintenance facade, not a
-# transaction owner (library-reset persistence choreography, P2-S3)
+# transaction owner
 # ---------------------------------------------------------------------------
 
 
@@ -228,7 +228,7 @@ class TestLibraryMaintenanceFacadeBoundary:
     """LibraryMaintenanceDb exposes only the reset intent and no transaction surface.
 
     ``db.library.maintenance.reset_library_data()`` is the single whole-library
-    reset intent (TASK-library-reset-persistence-choreography). Like
+    reset intent. Like
     ``db.app.maintenance`` / ``db.ml.maintenance`` it is a *legitimate* nested
     maintenance facade whose destructive work delegates to a repository-owned
     transaction; it therefore must expose no ``transaction()`` /

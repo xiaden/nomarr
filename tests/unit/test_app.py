@@ -175,7 +175,7 @@ class TestApplicationServices:
 
 
 # ===========================================================================
-# Application lifecycle: keyword-only health contract (P4-S1)
+# Application lifecycle: keyword-only health contract
 # ===========================================================================
 # The three stale health paths in app.py (startup ``starting``, post-start
 # ``healthy``, and shutdown ``stopping``) must call the keyword-only

@@ -1,6 +1,6 @@
 """Spec-first contract tests for the library domain boundary.
 
-Covers the P1-S4 domain values: the frozen natural-key ``Library`` dataclass
+Covers the domain values: the frozen natural-key ``Library`` dataclass
 (the ``(name, root_path)`` identity, absence of storage attributes), the typed
 ``LibraryUpdate`` command, ``LibraryPipelineState`` defaults/axis validation,
 and the no-ID ``LibraryFolder`` / ``LibraryScan`` value objects. These tests

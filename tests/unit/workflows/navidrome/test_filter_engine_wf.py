@@ -14,7 +14,7 @@ from nomarr.workflows.navidrome.filter_engine_wf import _execute_rule_group
 
 
 class TestFilterExecutionWithNestedGroups:
-    """P1-S5: Test filter execution with nested groups."""
+    """Test filter execution with nested groups."""
 
     @pytest.mark.unit
     def test_and_logic_intersection(self) -> None:

@@ -18,7 +18,7 @@ from .domain import (
     TaggingServiceConfig,
 )
 
-# Calibration availability helpers (moved from infrastructure in Part B per CONTRACTS D3)
+# Calibration availability helpers (moved from infrastructure)
 from .domain.calibration_svc import check_missing_calibrations, ensure_calibrations_exist
 
 # Infrastructure services

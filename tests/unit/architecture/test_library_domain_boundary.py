@@ -1,4 +1,4 @@
-"""Library domain-boundary enforcement (P5-S3 of TASK-library-domain-facades-A).
+"""Library domain-boundary enforcement.
 
 Static, no-database scan proving the hard ADR-032/041/043 cut for library
 identity. Non-persistence production code (components / services / workflows /
@@ -18,7 +18,7 @@ interfaces) must know nothing of the persistence layer:
 These are pure text scans (mirroring ``tests/sabotage/test_sealed_tag_facade_boundary.py``),
 so they run without a database. ``HealthRow`` (a non-library health-check DTO) is
 deliberately excluded — it is not in the sealed library row list and is outside
-this plan's scope.
+this boundary's scope.
 """
 
 from __future__ import annotations

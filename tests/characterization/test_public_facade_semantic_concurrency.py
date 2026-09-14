@@ -1,4 +1,4 @@
-"""Real PostgreSQL evidence for the K1R-A public projection boundary.
+"""Real PostgreSQL evidence for semantic public projection boundaries.
 
 These tests deliberately use only semantic facade inputs and reads.  PostgreSQL
 is required because the assertions cover library-scoped predicates, independent
@@ -91,8 +91,8 @@ def _cleanup(db: Database, libraries: Iterator[Library] | tuple[Library, ...]) -
 @pytest.mark.integration
 def test_public_facades_project_analytics_and_navidrome_by_uuid_without_leakage(db: Database) -> None:
     """Real semantic filtering keeps colliding paths and values library-local."""
-    first = _new_library(db, "K1R-A2 first", "/tmp/k1r-a2-first")
-    second = _new_library(db, "K1R-A2 second", "/tmp/k1r-a2-second")
+    first = _new_library(db, "semantic-boundary first", "/tmp/semantic-boundary-first")
+    second = _new_library(db, "semantic-boundary second", "/tmp/semantic-boundary-second")
     try:
         first_locator = _upsert(db, first, title="First Song", artist="First Artist")
         second_locator = _upsert(db, second, title="Second Song", artist="Second Artist")
@@ -133,8 +133,8 @@ def test_independent_databases_have_deterministic_interleaving_and_no_shared_pro
     db: Database, test_db_url: str
 ) -> None:
     """Concurrent public reads remain deterministic and scoped to each UUID."""
-    first = _new_library(db, "K1R-A2 concurrent first", "/tmp/k1r-a2-concurrent-first")
-    second = _new_library(db, "K1R-A2 concurrent second", "/tmp/k1r-a2-concurrent-second")
+    first = _new_library(db, "semantic-boundary concurrent first", "/tmp/semantic-boundary-concurrent-first")
+    second = _new_library(db, "semantic-boundary concurrent second", "/tmp/semantic-boundary-concurrent-second")
     left = Database(url=test_db_url, echo=False, pool_size=2, max_overflow=2)
     right = Database(url=test_db_url, echo=False, pool_size=2, max_overflow=2)
     barrier = Barrier(2)
@@ -202,7 +202,9 @@ def test_public_projection_ownership_is_semantic_and_consume_only() -> None:
         "replace_mood_tags_batch",
     }
     assert executable_tokens.isdisjoint(forbidden)
-    assert "locators_for_carriers" in executable_tokens
+    # This focused source set covers only the selected public projection
+    # functions; ownership of locator-carrier batching is tested at its own
+    # component boundary rather than inferred from these function bodies.
     assert "TagRef(" not in "".join(sources)
 
 

@@ -1,7 +1,7 @@
 """HTTP-facing codec adapters for the opaque SongLocator token.
 
-The pre-production hard cut removed ordinary integer ``file_id``/``song_id`` wire
-values. A song/file is addressed on the wire only by the opaque ``nom1``
+Ordinary integer ``file_id``/``song_id`` values are not wire identities. A
+song/file is addressed on the wire only by the opaque ``nom1``
 SongLocator token defined in :mod:`nomarr.helpers.song_locator_codec`:
 
     ``nom1`` + unpadded URL-safe base64 of canonical compact JSON
@@ -38,14 +38,10 @@ from nomarr.helpers.song_locator_codec import (
     encode_song_locator,
 )
 
-# Backwards-compatible alias for callers/tests that imported the old error name.
-InvalidIdFormatError = SongLocatorFormatError
-
 __all__ = [
     "CANONICAL_UUID4_RE",
     "SONG_LOCATOR_MAX_LENGTH",
     "SONG_LOCATOR_PREFIX",
-    "InvalidIdFormatError",
     "SongLocatorFormatError",
     "SongLocatorPayload",
     "decode_library_name",
@@ -67,7 +63,7 @@ def decode_song_locator_or_400(token: str | int) -> SongLocatorPayload:
 def encode_library_name(name: str) -> str:
     """Encode a natural library name for HTTP transport (URL path/query segment).
 
-    Mechanism A (CONTRACTS.md): the sole *library-route* wire identity is the
+    The sole *library-route* wire identity is the
     URL-encoded natural ``Library.name``. The name is percent-quoted with no safe
     characters (``quote(name, safe="")``) so spaces, slashes, Unicode, percent
     signs, and reserved characters round-trip unambiguously and cannot collide with

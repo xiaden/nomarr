@@ -1,6 +1,6 @@
 """Tests for the histogram calibration generation workflow.
 
-Pins the attribute-based generation contract (P3-S1/S2): the workflow loads the
+Pins the attribute-based generation contract: the workflow loads the
 ``CalibrationState`` list via ``load_all_calibration_states`` and passes it
 directly to ``compute_global_calibration_hash`` (list[CalibrationState]), and
 calls ``save_calibration_state`` with the model_id keyword.

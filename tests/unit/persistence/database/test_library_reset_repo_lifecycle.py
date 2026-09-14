@@ -1,6 +1,6 @@
 """Restart/lifecycle evidence for the atomic library reset aggregate.
 
-P2-S1 of ``TASK-library-reset-persistence-choreography-D-behavior-docs``: prove that a
+Prove that a
 successful ``reset_library_data`` commit is *durable* — the documented cleared rows
 stay absent and the preserved-boundary rows stay present after the database is closed
 and reopened.

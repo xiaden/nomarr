@@ -5,7 +5,7 @@ Tests cover:
 - ``_compute_weighted_centroid`` (pure function)
 - ``compute_taste_profile`` (requires mocking DB/component calls)
 
-The component consumes the Q3-I locator contract: each play's ``file_id`` is an
+The component consumes the locator contract: each play's ``file_id`` is an
 opaque ``nom1`` SongLocator token resolved through the canonical codec and the
 ``db.library.get_library_by_uuid`` facade to a mutable ``SongIdentity``, and its
 embedding is read via ``db.ml.get_song_vector`` returning a

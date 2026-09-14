@@ -1,7 +1,6 @@
 """Worker-claim domain value objects.
 
-``TASK-worker-claims-intent-facade-A-correction`` Phase 1: the immutable domain
-contracts for the ``db.app`` claims intent facade.  They carry natural identities
+Immutable domain contracts for the ``db.app`` claims intent facade.  They carry natural identities
 and claim semantics only — never ``WorkerClaimRow``, raw dictionaries/JSONB,
 generated row ids, encoded claim keys, table names, or storage song ids.
 

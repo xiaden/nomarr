@@ -171,13 +171,13 @@ def _tags_table_has_foreign_key() -> bool:
 
 @pytest.mark.unit
 class TestTagSchemaIdentityContract:
-    """D1A canonical migration characterization: the baseline ``tags`` table carries only reusable identity.
+    """Canonical migration characterization: the baseline ``tags`` table carries only reusable identity.
 
-    These assertions characterize the D1A canonical ``001_current_schema_baseline``
+    These assertions characterize the canonical ``001_current_schema_baseline``
     migration source: exactly the columns ``id``, ``namespace``, ``name``, ``value``;
     ``namespace`` NOT NULL; uniqueness on the complete ``(namespace, name, value)``
-    tuple; and no metadata, FK, or extra index columns. This is D1A source-level
-    migration characterization only; it makes no D1B/D2/D3 runtime claim.
+    tuple; and no metadata, FK, or extra index columns. This is source-level
+    migration characterization only; it makes no runtime claim.
     """
 
     def test_tags_columns_are_exactly_identity_ordered(self) -> None:
@@ -317,12 +317,12 @@ class TestMoodMarkerMigrationContract:
 
 @pytest.mark.unit
 class TestTagAndSongTagModelContract:
-    """D1A canonical model characterization: the ORM models mirror the identity-only ``tags`` and edge-owned ``song_tags``.
+    """Canonical model characterization: the ORM models mirror the identity-only ``tags`` and edge-owned ``song_tags``.
 
     ``Tag`` exposes only identity fields; ``SongTag`` retains only the
     relationship metadata owned by the ``song_tags`` edge. These assertions
-    characterize the D1A canonical model/schema source; they are D1A
-    source-level characterization only and make no D1B/D2/D3 runtime claim.
+    characterize the canonical model/schema source; they are source-level
+    characterization only and make no runtime claim.
     """
 
     def test_tag_model_columns_are_identity_only(self) -> None:

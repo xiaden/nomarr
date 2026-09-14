@@ -19,7 +19,7 @@ from nomarr.workflows.navidrome.parse_smart_playlist_query_wf import (
 
 
 class TestEmptyGroupRejection:
-    """P1-S1: Parser should reject empty groups with clear error."""
+    """Parser should reject empty groups with clear error."""
 
     @pytest.mark.unit
     def test_empty_query_raises_error(self) -> None:
@@ -53,7 +53,7 @@ class TestEmptyGroupRejection:
 
 
 class TestUnmatchedParentheses:
-    """P1-S2: Parser should reject unmatched parentheses."""
+    """Parser should reject unmatched parentheses."""
 
     @pytest.mark.unit
     def test_unclosed_opening_paren(self) -> None:
@@ -87,7 +87,7 @@ class TestUnmatchedParentheses:
 
 
 class TestMaxDepthEnforcement:
-    """P1-S3: Parser should reject queries exceeding max depth."""
+    """Parser should reject queries exceeding max depth."""
 
     @pytest.mark.unit
     def test_exceeds_max_depth_in_tokenizer(self) -> None:
@@ -126,7 +126,7 @@ class TestMaxDepthEnforcement:
 
 
 class TestDeeplyNestedValidExpressions:
-    """P1-S4: Valid deeply nested expressions should parse correctly."""
+    """Valid deeply nested expressions should parse correctly."""
 
     @pytest.mark.unit
     def test_simple_nested_and_or(self) -> None:
@@ -195,7 +195,7 @@ class TestDeeplyNestedValidExpressions:
 
 
 class TestBackwardCompatibility:
-    """P1-S6: Flat queries should parse as single group."""
+    """Flat queries should parse as single group."""
 
     @pytest.mark.unit
     def test_simple_and_query(self) -> None:

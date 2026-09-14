@@ -17,7 +17,7 @@ _LIBRARY_UUID = "2b202d70-24f8-5ecc-8ec9-be6a83da5fd7"
 
 
 def _make_repo(session) -> OutputRepo:
-    """Build an OutputRepo with the identity resolvers it needs (ADR-049)."""
+    """Build an OutputRepo with the identity resolvers it needs (ADR-048)."""
     return OutputRepo(
         session,
         library_repo=LibraryRepository(session),

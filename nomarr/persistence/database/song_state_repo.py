@@ -3,8 +3,8 @@
 Uses the ``song_state_assignments`` junction table (M:N between songs
 and states) and the ``song_states`` lookup table.
 
-Method signatures follow the Plan E contracts (downstream intent-facade
-expectations), NOT the original plan-step signatures.
+Method signatures follow the downstream intent-facade expectations rather than
+legacy storage-oriented signatures.
 """
 
 from __future__ import annotations

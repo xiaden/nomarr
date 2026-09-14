@@ -1,4 +1,4 @@
-"""Static and semantic evidence for Plan F phase-4 hard-cut boundaries."""
+"""Static and semantic evidence for the query-component hard-cut boundaries."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from nomarr.components.library.song_query_types import (
 from nomarr.persistence.api.library_songs import LibrarySongsDb
 
 ROOT = Path(__file__).parents[4]
-F_FILES = (
+QUERY_COMPONENT_FILES = (
     ROOT / "nomarr/components/library/library_song_query_comp.py",
     ROOT / "nomarr/components/library/tag_hydration_comp.py",
     ROOT / "nomarr/components/library/song_query_types.py",
@@ -40,8 +40,8 @@ def _without_docstrings(source: str) -> str:
     return ast.unparse(tree)
 
 
-def test_f_sources_have_no_integer_resolver_or_row_bridge() -> None:
-    source = "\n".join(_without_docstrings(path.read_text()) for path in F_FILES)
+def test_sources_have_no_integer_resolver_or_row_bridge() -> None:
+    source = "\n".join(_without_docstrings(path.read_text()) for path in QUERY_COMPONENT_FILES)
     assert not any(text in source for text in FORBIDDEN_RESOLVER_TEXT)
     assert not any(text in source for text in FORBIDDEN_ROW_TEXT)
     assert "return song.to_dict()" not in source
@@ -49,7 +49,7 @@ def test_f_sources_have_no_integer_resolver_or_row_bridge() -> None:
     assert 'doc[\\"path\\"]' not in source
 
 
-def test_f_carriers_are_id_free_and_metadata_is_not_a_song_document() -> None:
+def test_carriers_are_id_free_and_metadata_is_not_a_song_document() -> None:
     carrier_fields = {
         field
         for carrier in (HydratedSong, TaggedSong, StateTaggedSong, RecentSong, TagMatchedSong, TrackSong)
@@ -68,8 +68,8 @@ def test_scalar_handoff_is_locator_typed_and_non_generic() -> None:
     assert inspect.signature(LibrarySongsDb.set_chromaprint).parameters["value"].annotation == "ChromaprintValue"
 
 
-def test_scalar_callers_are_not_owned_by_f_components() -> None:
-    source = "\n".join(path.read_text() for path in F_FILES)
+def test_scalar_callers_are_not_owned_by_query_components() -> None:
+    source = "\n".join(path.read_text() for path in QUERY_COMPONENT_FILES)
     scalar_names = (
         "update_library_song_modified_time",
         "set_library_song_chromaprint",
@@ -78,7 +78,7 @@ def test_scalar_callers_are_not_owned_by_f_components() -> None:
     assert not any(name in source for name in scalar_names)
 
 
-def test_f_sources_do_not_construct_generic_mood_writes() -> None:
-    source = "\n".join(path.read_text() for path in F_FILES)
+def test_sources_do_not_construct_generic_mood_writes() -> None:
+    source = "\n".join(path.read_text() for path in QUERY_COMPONENT_FILES)
     assert "save_mood_tags" not in source
     assert "set_song_tags_batch" not in source

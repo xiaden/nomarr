@@ -37,8 +37,8 @@ if TYPE_CHECKING:
     from nomarr.persistence.database.song_tag_repo import SongTagRepository
     from nomarr.persistence.database.tag_repo import TagRepository
 
-# Tag namespace for parsed ``nom:`` ML tags (see DD-song-domain-repair:
-# ``name`` stores the full namespaced key, ``namespace`` is ``'nom'`` for ML).
+# Tag namespace for parsed ``nom:`` ML tags: ``name`` stores the full
+# namespaced key, ``namespace`` is ``'nom'`` for ML.
 _NOM_NAMESPACE = "nom"
 # Entity / canonical-metadata tags (artist, album, genre, year, …) live in the
 # ordinary default namespace, stored as the literal ``"default"``.
@@ -197,7 +197,7 @@ class SongHydrationRepository:
         loop), and commits atomically via one unit of work.  Returns the number
         of inputs successfully committed.
 
-        Chunk-unit semantics (per CONTRACTS.md): each chunk is one atomic unit
+        Chunk-unit semantics (per the hydration contract): each chunk is one atomic unit
         of work.  A missing song or a database error inside a chunk fails that
         chunk's unit, rolls back ALL of its writes, and is logged; remaining
         chunks still run and are counted normally.

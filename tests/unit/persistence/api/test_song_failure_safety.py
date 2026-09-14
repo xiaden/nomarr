@@ -1,9 +1,9 @@
-"""Unit fault-injection and transaction-boundary tests for D-owned song intents.
+"""Unit fault-injection and transaction-boundary tests for song intent facades.
 
-Phase 1 (P1-S2 / P1-S3) of TASK-song-row-mirror-leaks-into-domain-D. These are
+These are
 **repository-double** (``MagicMock``) tests — no real database — that inject
 mapper / repository / statement / commit / uniqueness / connection failures at
-the repository boundary backing each D-owned multi-table facade intent and pin
+the repository boundary backing each multi-table facade intent and pin
 the facade's observable atomicity promise:
 
 * ``add_song_to_library(SongUpsertInput)`` — canonical typed-upsert handoff
@@ -29,17 +29,17 @@ the facade's observable atomicity promise:
   back to exposing a raw storage row.
 
 Tag / claim / pipeline / ML aggregates are **linked, not duplicated** here: their
-boundaries are owned externally (TagRef successor B-E pending; worker-claims
+boundaries are owned externally (the natural TagRef facade; worker-claims
 `db.app.add_claim/...`; ML typed write-boundary commit ``0dce610f`` green). The
 real-PostgreSQL rollback oracle for relocation (destination conflict + stale
 locator leaving source locator / scan metadata / associations unchanged) is owned
-by ``tests/characterization/test_song_move_atomic_intent.py`` (Plan C) and the
+by ``tests/characterization/test_song_move_atomic_intent.py`` and the
 ``add_song_to_library`` atomic-rollback boundary by
-``tests/characterization/test_song_typed_boundary_failure_safety.py`` (Plan D,
+``tests/characterization/test_song_typed_boundary_failure_safety.py`` (real-DB,
 CI ``database-tests`` job). This module proves the facade-level invariants that
 run without a database.
 
-Phase 2 (P2-S1 / P2-S2) appends retry/deletion/no-resurrection and error-message
+This module also covers retry/deletion/no-resurrection and error-message
 classes here: re-issuing the typed intents is idempotent (never a growing batch);
 a removed song stays removed (re-issue of ``remove_song`` is a ``False`` miss and
 a later upsert of the same locator is a NEW song, not a resurrection); restart
@@ -47,7 +47,7 @@ stale locators miss deterministically with no generated-id fallback; ``remove_so
 does not independently re-own state/claim cleanup (FK CASCADE + linked worker-claims
 owner); and facade errors relay repo domain messages unchanged with no SQL /
 storage row-id / credential / DSN disclosure. The real-PostgreSQL proofs for
-idempotent retry and removal/no-resurrection live in the Plan D characterization
+idempotent retry and removal/no-resurrection live in the real-DB characterization
 module (CI ``database-tests`` job).
 """
 
@@ -481,17 +481,17 @@ class TestMapperIsolation:
 
 
 # ---------------------------------------------------------------------------
-# P1-S1: facade exposes no transaction surface (callers never open one)
+# Facade exposes no transaction surface (callers never open one)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
 class TestSongFacadeNoTransactionSurface:
-    """The D-owned write seams expose no session/transaction surface.
+    """The write seams expose no session/transaction surface.
 
     Repositories own their commit boundaries; the facade and callers above it
     never open a transaction (ADR-046 thinness; AR-SDR-4). This is the
-    source-visible invariant for the seams characterized by this plan.
+    source-visible invariant for the seams characterized by this contract.
     """
 
     def test_library_songs_db_exposes_no_transaction_api(self) -> None:
@@ -501,7 +501,7 @@ class TestSongFacadeNoTransactionSurface:
 
 
 # ===========================================================================
-# Phase 2 (P2-S1 / P2-S2): retry idempotency, deletion/no-resurrection,
+# Retry idempotency, deletion/no-resurrection,
 # restart-safe re-derivation, claim/state-cleanup scope, and non-leaking
 # error messages
 # ===========================================================================
@@ -513,8 +513,8 @@ def _leaks_internal(msg: str) -> bool:
     Deliberately does NOT flag schema/column *names* referenced in
     developer-facing validation text (e.g. ``songs.normalized_path``) — those
     are documented as an observation, not edited into the concurrent uncommitted
-    Plan C seam. Row-ids, credentials, connection strings, and raw SQL statements
-    are the unambiguous disclosures P2-S2 pins against.
+    The typed seam. Row-ids, credentials, connection strings, and raw SQL statements
+    are the unambiguous disclosures this test pins against.
     """
     upper = msg.upper()
     sql_verbs = (" INSERT ", " UPDATE ", " DELETE ", " SELECT ", " FROM ", " WHERE ", " SET ")
@@ -530,7 +530,7 @@ def _removable_song(song_repo: MagicMock, song_id: int = 5) -> None:
 
 @pytest.mark.unit
 class TestAddSongIdempotentRetry:
-    """P2-S1: re-issuing the typed upsert intent is idempotent, never a growing batch.
+    """Re-issuing the typed upsert intent is idempotent, never a growing batch.
 
     ``add_song_to_library`` maps each invocation from the fresh command to ONE
     repository upsert call; there is no in-facade state that accumulates rows or
@@ -585,7 +585,7 @@ class TestAddSongIdempotentRetry:
 
 @pytest.mark.unit
 class TestNoResurrectionAfterRemoval:
-    """P2-S1: a removed song stays removed; re-issuing remove misses deterministically.
+    """A removed song stays removed; re-issuing remove misses deterministically.
 
     ADR-048 clause 6 / CONTRACTS: once removed, the locator does not resolve
     again. Re-issuing ``remove_song`` after a successful removal returns ``False``
@@ -648,11 +648,11 @@ class TestNoResurrectionAfterRemoval:
 
 @pytest.mark.unit
 class TestRestartSafeReDerivation:
-    """P2-S1: after a restart, stale locators miss deterministically — no id fallback.
+    """After a restart, stale locators miss deterministically — no id fallback.
 
     Scan/detection re-derives locators by (library, normalized_path). When a
     previously-known locator no longer resolves (the row was removed or the DB was
-    rebuilt), every D-owned read/mutation seam returns a deterministic miss
+    rebuilt), every read/mutation seam returns a deterministic miss
     (``None``/``False``) and never falls back to a generated-id lookup or a
     fabricated row.
     """
@@ -689,7 +689,7 @@ class TestRestartSafeReDerivation:
 
 @pytest.mark.unit
 class TestRemoveDoesNotOwnStateOrClaimCleanup:
-    """P2-S1: remove_song does not independently re-own state/claim cleanup.
+    """Remove_song does not independently re-own state/claim cleanup.
 
     Removing a song clears derived aggregates via the repository's single DELETE
     + FK CASCADE (song_state_assignments) and the linked worker-claims owner for
@@ -714,7 +714,7 @@ class TestRemoveDoesNotOwnStateOrClaimCleanup:
 
 @pytest.mark.unit
 class TestScalarIntentFailureSafety:
-    """P3-S1/P3-S2: scalar validation, outcomes, and operational relay."""
+    """Scalar validation, outcomes, and operational relay."""
 
     def test_validation_happens_before_sql_for_all_scalar_intents(self) -> None:
         songs, song_repo, _, _ = _make_songs()
@@ -743,7 +743,7 @@ class TestScalarIntentFailureSafety:
 
 @pytest.mark.unit
 class TestExceptionRelayNoLeak:
-    """P2-S2: repo domain errors relay unchanged — no added SQL / row-id / credential.
+    """Repo domain errors relay unchanged — no added SQL / row-id / credential.
 
     ``map_persistence_exceptions`` already translates persistence failures to
     domain types with the original SQLAlchemy chain suppressed (``from None``).

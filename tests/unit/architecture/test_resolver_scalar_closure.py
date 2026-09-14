@@ -1,4 +1,4 @@
-"""Q1 resolver/scalar closure enforcement.
+"""Resolver/scalar closure enforcement.
 
 Public integer identity resolver bridges are forbidden. Persistence-private
 ``_resolve_*`` joins remain implementation details, and canonical locator
@@ -27,12 +27,12 @@ from nomarr.persistence.api.library_songs import LibrarySongsDb
 pytestmark = pytest.mark.unit
 
 _ARCH_DIR = Path(__file__).resolve().parent
-_ALLOWLIST_PATH = _ARCH_DIR / "q1_resolver_scalar_allowlist.json"
+_ALLOWLIST_PATH = _ARCH_DIR / "resolver_scalar_allowlist.json"
 _REPO_ROOT = _ARCH_DIR.parents[2]
 
 # Hardcoded contract: the six machine-readable fields every allowlist entry must
-# carry (CONTRACTS §12). Deliberately NOT read from the JSON so that a missing
-# key in the data file cannot weaken its own schema check.
+# carry. Deliberately NOT read from the JSON so that a missing key in the data
+# file cannot weaken its own schema check.
 _REQUIRED_ALLOWLIST_FIELDS = (
     "owner",
     "boundary",

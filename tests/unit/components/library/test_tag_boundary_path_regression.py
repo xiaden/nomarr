@@ -1,6 +1,6 @@
 """Regression: both song-tag query paths produce identical FileTag data.
 
-Pins the CONTRACTS.md invariant that the two library projection paths
+Pins the invariant that the two library projection paths
 (``song_tags_comp.get_song_tags_with_path`` and the ``_tags_for_song`` /
 ``_hydrate_files_with_tags`` projection in ``library_song_query_comp``) produce
 identical ``FileTag`` objects — including ``tag_type`` — from the same

@@ -1,6 +1,6 @@
 """Persistence-private row-to-domain mappers for the ``songs`` table.
 
-Ownership (per ADR-032/ADR-041 and the song-row-mirror contracts ledger):
+Ownership (per ADR-032/ADR-041):
 row-to-domain conversion for songs is owned by the persistence layer. The
 :class:`~nomarr.helpers.dataclasses.song_dataclass.Song` application value
 deliberately carries no storage identity and exposes no ``from_row``; these
@@ -71,7 +71,7 @@ def song_row_to_identity(row: SongRow | Mapping[str, Any]) -> SongIdentity:
 
     A raw ``SongRow`` carries only the private ``library_id`` and its own
     ``normalized_path``; a :class:`SongIdentity` requires the owning library's
-    immutable ``library_uuid`` (ADR-049). Library-scoped facade reads resolve
+    immutable ``library_uuid`` (ADR-048). Library-scoped facade reads resolve
     that library and pass an identity-enriched row carrying ``library_uuid``
     (plus optional ``library_name``/``root_path`` display metadata); this mapper
     reads those keys. When the library UUID is absent the mapping fails

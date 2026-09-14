@@ -1,6 +1,6 @@
 """Unit tests for nomarr/helpers/tag_handle_codec.py — the tag wire-handle codec.
 
-Covers the wire-handle contract (CONTRACTS.md): opaque ``t1.`` + canonical
+Covers the wire-handle contract: opaque ``t1.`` + canonical
 URL-safe base64url JSON carrying exactly ``name``/``value``/``namespace``;
 deterministic, unambiguous, storage-ID-free; exact round-trip of JSON value
 types (int/float/str/bool/None); and deterministic rejection of malformed,

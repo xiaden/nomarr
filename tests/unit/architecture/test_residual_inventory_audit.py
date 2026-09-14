@@ -1,7 +1,7 @@
-"""Static gates for Plan L's residual inventory and downstream handoff.
+"""Static gates for the residual inventory and downstream handoff.
 
-Clean-checkout boundary (Q2R-A): assertions read tracked, non-sensitive fixtures
-under ``tests/unit/architecture/fixtures/`` instead of the globally gitignored
+Clean-checkout boundary: assertions read tracked, non-sensitive fixtures under
+``tests/unit/architecture/fixtures/`` instead of the globally gitignored
 ``artifacts/`` tree.
 """
 
@@ -17,7 +17,7 @@ import pytest
 pytestmark = pytest.mark.unit
 
 _DEFAULT_ROOT = Path(__file__).parents[3]
-REQUIRED_FIXTURES: tuple[str, ...] = ("l-residual-manifest.md", "song-row-mirror-contracts.md")
+REQUIRED_FIXTURES: tuple[str, ...] = ("residual-inventory-manifest.md", "residual-boundary-contracts.md")
 
 
 def _root() -> Path:
@@ -32,7 +32,7 @@ def _fixture(name: str) -> Path:
 
 
 def _assert_tracked_clean_checkout_fixture(path: Path) -> None:
-    """Mirror the D3B tracked-fixture containment proof for these fixtures."""
+    """Mirror the tracked-fixture containment proof for these fixtures."""
     assert path.is_file(), f"tracked evidence fixture missing: {path}"
     rel = path.relative_to(_root())
     assert rel.parts[0] == "tests", f"fixture must live under tests/: {rel}"
@@ -49,7 +49,7 @@ def _assert_tracked_clean_checkout_fixture(path: Path) -> None:
 
 
 def test_manifest_has_complete_classification_vocabulary() -> None:
-    path = _fixture("l-residual-manifest.md")
+    path = _fixture("residual-inventory-manifest.md")
     _assert_tracked_clean_checkout_fixture(path)
     text = path.read_text(encoding="utf-8")
     required = {
@@ -62,31 +62,36 @@ def test_manifest_has_complete_classification_vocabulary() -> None:
         "RELEASE_BLOCKING_DEFECT",
     }
     assert all(f"`{item}`" in text for item in required)
-    for owner in ("**M**", "**N**", "**O**", "**P**"):
+    for owner in (
+        "recovery/concurrency/partial failure",
+        "static enforcement and CI wiring",
+        "security/redaction/provenance/rollback",
+        "final adjudication",
+    ):
         assert owner in text
 
 
 def test_manifest_does_not_approve_broad_resolvers_or_integer_wire_ids() -> None:
-    text = _fixture("l-residual-manifest.md").read_text(encoding="utf-8")
+    text = _fixture("residual-inventory-manifest.md").read_text(encoding="utf-8")
     assert (
         "each other resolver needs owner, boundary, reason, positive test, non-propagation, removal condition" in text
     )
     assert "never integer" in text
-    assert "No wrapper or alias added by L" in text
+    assert "No wrapper or alias was added" in text
 
 
 def test_contract_keeps_hydration_locator_addressed_without_integer_adapter() -> None:
-    path = _fixture("song-row-mirror-contracts.md")
+    path = _fixture("residual-boundary-contracts.md")
     _assert_tracked_clean_checkout_fixture(path)
     text = path.read_text(encoding="utf-8")
     assert "locator-addressed" in text
     assert "No generated integer identity crosses the" in text
     assert "All other integer identity crossings are prohibited" in text
-    assert "exact L/N/P allowlist" in text
+    assert "exact owner/boundary allowlist" in text
 
 
 def test_manifest_records_unavailable_infrastructure_without_false_pass() -> None:
-    text = _fixture("l-residual-manifest.md").read_text(encoding="utf-8")
+    text = _fixture("residual-inventory-manifest.md").read_text(encoding="utf-8")
     assert "LOCAL_UNAVAILABLE" in text
     assert "CI_DEFERRED" in text
     assert "no local PASS" in text

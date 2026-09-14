@@ -73,7 +73,7 @@ class TestLibraryIdentityBoundary:
 class TestRootTagBridgeRetired:
     """The root Database tag-PK resolver is deleted and stays absent.
 
-    CONTRACTS.md "Bridge-retirement contract": ``Database.resolve_tag_identity``
+    Bridge-retirement contract: ``Database.resolve_tag_identity``
     / ``resolve_tag_identities`` were lookup-only root-database conversions that
     accepted opaque integer tag PKs. After every caller migrated onto the
     natural facade (``TagRef`` / ``db.library.get_tag``), the zero-caller audit

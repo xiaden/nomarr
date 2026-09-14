@@ -1,7 +1,7 @@
-# Plan L residual manifest and handoff (tracked clean-checkout fixture)
+# Residual inventory manifest and handoff (tracked clean-checkout fixture)
 
 This tracked fixture carries only the non-sensitive classification vocabulary
-that the Plan L static readers require. It contains no credentials, raw rows,
+that the residual static readers require. It contains no credentials, raw rows,
 marker tokens, identifiers, commit hashes, absolute paths, or executed-CI claim.
 
 ## Classification rules
@@ -13,11 +13,9 @@ Every residual is assigned one of the contract categories:
 conversion, alias, shim, dual path, stable identity, generic mood writer, or
 caller transaction is authorized.
 
-The current contract retains no inbound integer adapter: hydration is locator-addressed and payload-only, and each other resolver needs owner, boundary, reason, positive test, non-propagation, removal condition. The locator wire is UUID-bearing nom1 and is never integer. No wrapper or alias added by L.
+The current contract retains no inbound integer adapter: hydration is locator-addressed and payload-only, and each other resolver needs owner, boundary, reason, positive test, non-propagation, removal condition. The locator wire is UUID-bearing nom1 and is never integer. No wrapper or alias was added.
 
-Owner routing: **M** (recovery, concurrency, partial failure), **N** (static
-enforcement and CI wiring), **O** (security, redaction, provenance, rollback),
-**P** (final adjudication).
+Owner routing by concern: recovery/concurrency/partial failure; static enforcement and CI wiring; security/redaction/provenance/rollback; final adjudication.
 
 ## Evidence labels
 

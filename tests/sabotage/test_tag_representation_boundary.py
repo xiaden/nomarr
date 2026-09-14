@@ -1,6 +1,6 @@
-"""Sabotage tests: tag representation boundary (TASK-tag-boundary-A).
+"""Sabotage tests: tag representation boundary.
 
-Ownership rules (per artifacts/designs/parts/tag-boundary/CONTRACTS.md):
+Ownership rules (per the tag-boundary contract):
 - ``nomarr/helpers/dataclasses/tags_dataclass.py`` is the canonical domain
   ``Tag``/``Tags`` — it must NOT expose DB-row factories or persistence fields.
 - ``TagRow`` (``nomarr/helpers/dto/repo_dto.py``) + ``nomarr/persistence/``
@@ -13,8 +13,8 @@ Ownership rules (per artifacts/designs/parts/tag-boundary/CONTRACTS.md):
   split.
 
 The tests scan source code at test time and report violations. The scan scope
-is clean — all violations here were resolved in TASK-tag-boundary-A, plus the
-Plan C P1-S5 extension ``TestTagPersistenceOwnership`` (identity-only ORM /
+is clean — all violations here were resolved by the tag-boundary work, plus the
+``TestTagPersistenceOwnership`` extension (identity-only ORM /
 DTO / repository static gates):
 - ``tags`` is identity-only: the ORM model, repo_dto ``TagRow``, and tag_mapper
   projections expose no removed metadata columns/keys (source/confidence/tier/
@@ -48,7 +48,7 @@ SERVICE_DIRS = [Path("nomarr/services/domain/tagging_svc"), Path("nomarr/service
 API_TYPES_DIR = Path("nomarr/interfaces/api/types")
 API_WEB_DIR = Path("nomarr/interfaces/api/web")
 
-# (TASK-tag-persistence-ownership-B Phase 3) Active persistence files that own
+# Active persistence files that own
 # tags identity reads/writes — the static-scan targets for namespace and
 # identity-only ownership drift guards.
 TAG_MAPPER_FILE = Path("nomarr/persistence/mappers/tag_mapper.py")
@@ -309,7 +309,7 @@ class TestNoFromDbRowsAnywhere:
 
 
 # ---------------------------------------------------------------------------
-# Test 6 (TASK-tag-persistence-ownership-B Phase 3): namespace + identity-only
+# Test 6: namespace + identity-only
 # ownership in active persistence reads/writes
 # ---------------------------------------------------------------------------
 
@@ -318,7 +318,7 @@ class TestNoFromDbRowsAnywhere:
 class TestTagPersistenceOwnership:
     """``tags`` is identity-only and ordinary namespaces are never NULL/empty.
 
-    Phase 3 ownership rules:
+    Ownership rules:
     - No active persistence read/write touches removed ``tags`` metadata columns
       (source/confidence/tier/created_at/parent_tag_id) on the identity-only
       table; edge metadata lives only on ``song_tags``.

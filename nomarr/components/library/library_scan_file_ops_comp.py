@@ -3,11 +3,9 @@
 Extracted from scan_lifecycle_comp — owns file-batch upsert, folder
 cache management, deleted-file cleanup, and state bootstrap.
 
-Overlap: concurrent song-domain repair (TASK-song-intent-facade-correction-A)
-also edits this file. This change is scoped to the library-domain migration
-(P4-S4) — moving folder cache upsert/stale-cleanup and file batch operations to
-``Library`` natural scope and ``LibraryFolder`` values — and preserves the
-concurrent song-domain hunks.
+Folder cache upsert, stale cleanup, and file-batch operations use the
+``Library`` natural scope and ``LibraryFolder`` values. Storage ids remain
+persistence-private.
 """
 
 from __future__ import annotations

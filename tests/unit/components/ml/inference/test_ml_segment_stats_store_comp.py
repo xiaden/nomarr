@@ -1,6 +1,6 @@
 """Obsolete segment-stats store tests.
 
-Canonical raw output streams replaced segment-stats persistence in Phase 6.
+Canonical raw output streams replaced segment-stats persistence.
 The active coverage lives in `test_ml_output_stream_store_comp.py`.
 """
 

@@ -11,7 +11,7 @@ class Library:
     """A configured music library.
 
     ``library_uuid`` is the immutable Nomarr-owned application identity used by
-    the ``SongLocator`` (ADR-049); it is minted by persistence on creation and
+    the ``SongLocator`` (ADR-048); it is minted by persistence on creation and
     never changes across rename or root-path updates. ``name`` and ``root_path``
     are mutable configuration metadata, not Song identity. The object
     deliberately contains no database-generated integer identifier or storage

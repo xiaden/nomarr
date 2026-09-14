@@ -1,6 +1,6 @@
-"""Control and negative tests for the D3D-A PostgreSQL fault proxy.
+"""Control and negative tests for the PostgreSQL fault proxy.
 
-These tests prove the *harness* is trustworthy before D3D-B relies on it. The
+These tests prove the *harness* is trustworthy before the mood fault tests rely on it. The
 suite has 14 tests (5 live-PostgreSQL, 9 socket-only):
 
 Live-PostgreSQL (``requires_database``):
@@ -174,7 +174,7 @@ def test_normal_proxy_control(test_db_url: str, pg_engine: Engine) -> None:
 def test_concurrent_connections_isolate_faults(test_db_url: str, pg_engine: Engine) -> None:
     """Requirement 9: one faulted connection must not leak into a concurrent one.
 
-    D3D-B plan step 4 (concurrency with D2R) depends on this per-connection
+    Concurrent mood fault tests depend on this per-connection
     isolation guarantee.
     """
     table = _unique_table()
@@ -264,7 +264,7 @@ def test_drop_ack_control(test_db_url: str, pg_engine: Engine) -> None:
             finally:
                 db.close()
             assert _pgcode(excinfo.value) is None
-            # Pin the exact driver class D3D-B's AMBIGUOUS_COMMIT evidence observes.
+            # Pin the exact driver class the AMBIGUOUS_COMMIT evidence observes.
             assert isinstance(_orig_error(excinfo.value), psycopg2.OperationalError)
             assert proxy.backend_committed.wait(10.0)
             assert proxy.fault_applied.wait(10.0)
@@ -294,7 +294,7 @@ def test_sever_control(test_db_url: str, pg_engine: Engine) -> None:
             finally:
                 db.close()
             assert _pgcode(excinfo.value) is None
-            # Pin the exact driver class D3D-B's AMBIGUOUS_COMMIT evidence observes.
+            # Pin the exact driver class the AMBIGUOUS_COMMIT evidence observes.
             assert isinstance(_orig_error(excinfo.value), psycopg2.OperationalError)
             assert proxy.fault_applied.wait(10.0)
         assert proxy.active_connection_count() == 0

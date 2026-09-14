@@ -301,7 +301,7 @@ class TestTagIdentityDtoContract:
     ``namespace``, ``name``, ``value``; ``SongTagRow`` exposes exactly the
     relationship metadata owned by the ``song_tags`` edge. ``TagRow`` exposes
     exactly these fields and ``SongTagRow`` exactly the edge fields, matching
-    the implemented P3-S1 contract.
+    the implemented contract.
     """
 
     def test_tag_row_exposes_only_identity_fields(self) -> None:

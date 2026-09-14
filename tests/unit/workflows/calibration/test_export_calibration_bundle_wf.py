@@ -1,6 +1,6 @@
 """Tests for the calibration export bundle workflow.
 
-Pins the attribute-based export contract (P3-S2): the workflow reads
+Pins the attribute-based export contract: the workflow reads
 ``CalibrationState`` domain attributes (``state.head_name``/``p5``/``p95``) and
 writes ``method="histogram"`` — it must not index into a storage-row dict.
 """

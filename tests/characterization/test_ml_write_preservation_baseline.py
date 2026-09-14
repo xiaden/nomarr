@@ -1,9 +1,7 @@
 """Pre-change preservation baseline + session-neutrality oracle for the ML write aggregate.
 
-P1-S3 / P1-S4 of ``TASK-ml-write-boundary-leaks-storage-representation-A-typed-
-inference-write-boundary``. This module records the canonical persisted-row facts
-that MUST be byte-for-byte identical after the typed write boundary lands (Phases
-2-4): vector values/order, ``num_segments``, ``embed_dim``, suite-hash mapping
+This module records the canonical persisted-row facts that MUST be
+byte-for-byte identical after the typed write boundary lands: vector values/order, ``num_segments``, ``embed_dim``, suite-hash mapping
 (the ``model_id`` column holds the semantic suite hash while the persisted
 ``model_suite_hash`` column stays ``""``), NULL ``segmentation_hash``,
 ``genres`` None-vs-empty, hot tier, millisecond timestamps, stable output
@@ -20,7 +18,7 @@ Requires the real pgvector:pg17 container (the ``embeddings`` table uses a
 PostgreSQL-only ``HALFVEC`` column), so this module is marked
 ``characterization`` + ``requires_database`` and runs only in the CI
 ``database-tests`` job. It is NOT runnable in this workspace (no Docker); the
-baseline is authored from the requirement ledger and is the oracle P5-S3 executes
+baseline is authored from the requirement ledger and is the oracle the typed path executes
 after the typed path lands.
 
 Rows are read RAW (direct table selects through ``inference_session``) rather than
@@ -357,7 +355,7 @@ class TestWritePreservationBaseline:
 @pytest.mark.characterization
 @pytest.mark.requires_database
 class TestAggregateSessionNeutrality:
-    """P1-S4/R9-R10: a failed aggregate rolls back cleanly; the session stays usable."""
+    """A failed aggregate rolls back cleanly; the session stays usable."""
 
     def test_failed_aggregate_leaves_no_partial_rows(
         self, db: Database, inference_session: Session, seed_data: dict

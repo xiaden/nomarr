@@ -6,13 +6,13 @@ Tests that:
 3. Every FK column in the schema has a supporting B-tree index.
 4. FK cascade enforcement works correctly across the library→song→embedding chain.
 
-Covers plan steps P5-S1 (pg_trgm) and P5-S2 (FK indexes).
+Covers pg_trgm indexes and foreign-key indexes.
 
-Plan A note: this file is a fresh-establishment gate and is kept
+Note: this file is a fresh-establishment gate and is kept
 self-contained — data setup uses the renamed ORM models (``Song``) and raw
 SQL against the corrected schema (``songs``/``embeddings`` with ``song_id``).
 Repository classes under ``nomarr/persistence/database/`` are transiently
-broken by the hard cut (Plan B fixes them) and are intentionally not imported.
+broken by the hard cut (fixed by the current schema) and are intentionally not imported.
 """
 
 from __future__ import annotations

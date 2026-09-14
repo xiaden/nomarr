@@ -8,7 +8,7 @@ Verifies:
 * Concurrent ``find_nearest`` queries produce no crashes or corruption.
 * ``find_nearest`` on an empty table returns ``[]`` gracefully.
 
-Covers plan steps P4-S1 (HNSW recall) and P4-S2 (concurrency).
+Covers HNSW recall and concurrency.
 """
 
 from __future__ import annotations
@@ -72,7 +72,7 @@ def _random_vector(dim: int = _EMBED_DIM, seed: int | None = None) -> list[float
     return v.tolist()  # type: ignore[no-any-return]
 
 
-# ── P4-S1: HNSW recall benchmark ──────────────────────────────
+# ── HNSW recall benchmark ─────────────────────────────────────
 
 
 @pytest.mark.integration
@@ -239,7 +239,7 @@ class TestHnswRecall:
         assert results == []
 
 
-# ── P4-S2: concurrent access ─────────────────────────────────
+# ── concurrent access ────────────────────────────────────────
 
 
 @pytest.mark.integration

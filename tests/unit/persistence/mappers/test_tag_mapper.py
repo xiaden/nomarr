@@ -1,7 +1,6 @@
 """Tests for the persistence-layer tag row<->domain mappers.
 
-These pin the boundary contracts from
-``artifacts/designs/parts/tag-boundary/CONTRACTS.md``: row-to-domain grouping,
+These pin the tag-boundary contracts: row-to-domain grouping,
 value-order preservation, empty-row behavior, domain rejection of
 persistence-only fields, and the write-payload row shape.
 """

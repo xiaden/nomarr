@@ -1,7 +1,6 @@
 """Unit tests for the caller-facing vector domain value objects.
 
-``TASK-vector-read-contract-correction-A-typed-domain-callers`` Phase 1
-(P1-S2): prove the frozen/slotted ``SongVector``, ``VectorMatch``, and
+Prove the frozen/slotted ``SongVector``, ``VectorMatch``, and
 ``EmbeddingCounts`` domain values carry only application vector-read semantics,
 reuse the existing ``SongIdentity`` composition, preserve tuple vector values
 and order, and expose no persistence row fields or factories.  See
@@ -224,8 +223,7 @@ class TestNoPersistenceLeakage:
 
 
 # ---------------------------------------------------------------------------
-# P1-S2 spec-first: BackboneVectorWrite (TASK-ml-write-boundary-leaks-storage-
-# representation-A). The symbol does NOT exist until Phase 2; these tests are the
+# Spec-first: BackboneVectorWrite. The symbol does NOT exist yet; these tests are the
 # spec and are expected to fail (ImportError/AttributeError at runtime) until
 # `BackboneVectorWrite` lands in nomarr/helpers/dataclasses/vector_dataclass.py.
 # Imports are deferred into a helper so this module still collects and the
@@ -256,10 +254,8 @@ def _backbone_write_cls() -> type:
     """Resolve BackboneVectorWrite at runtime; fail with a clear spec-first message pre-landing."""
     try:
         from nomarr.helpers.dataclasses.vector_dataclass import BackboneVectorWrite as Cls
-    except ImportError as exc:  # pragma: no cover - exercised only before Phase 2 lands
-        raise _BackboneWriteMissingError(
-            "BackboneVectorWrite not yet defined; spec-first until Phase 2 (P2-S1)"
-        ) from exc
+    except ImportError as exc:  # pragma: no cover - exercised only before the migration lands
+        raise _BackboneWriteMissingError("BackboneVectorWrite not yet defined; spec-first placeholder") from exc
     return Cls
 
 
@@ -278,7 +274,7 @@ def _backbone_write(**kwargs: object) -> object:
 
 @pytest.mark.unit
 class TestBackboneVectorWriteSpec:
-    """P1-S2 spec: frozen/slotted vector-write command with NO storage fields."""
+    """Spec: frozen/slotted vector-write command with NO storage fields."""
 
     def test_is_frozen_and_slotted(self) -> None:
         write = _backbone_write()

@@ -1,13 +1,13 @@
 """Deterministic natural-name task keys for library managed tasks.
 
-Mechanism-A (CONTRACTS.md): the sole library wire identity is the URL-encoded
+The sole library wire identity is the URL-encoded
 natural ``Library.name``. Managed scan/write tasks use one shared key operation
 so start/cancel/status/workflow all resolve the same task id from the same
 ``Library`` value, and task lookup/cancellation never parses or reconstructs a
 generated library id.
 
 This module is a leaf (it imports no sibling ``library_svc`` modules) so the
-workflow and interface layers (P4-S6 / P4-S8) can import ``library_task_id``
+workflow and interface layers  can import ``library_task_id``
 without triggering the ``library_svc`` package ``__init__``.
 """
 

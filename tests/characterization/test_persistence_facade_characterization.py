@@ -1,8 +1,6 @@
 """Characterization tests for LibraryDb facade methods (domain contracts).
 
-Phase 6 of ``TASK-song-intent-facade-correction-A``: these tests were rewritten
-from the legacy int-id/raw-row facade shapes to the sealed domain contracts
-(ADR-032/041/043):
+These tests pin the sealed domain contracts (ADR-032/041/043):
 
 - Libraries are ``Library`` domain values (``create_library`` / ``get_library`` /
   ``update_library`` / ``remove_library``), never storage ``library_id``.

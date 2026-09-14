@@ -1,12 +1,10 @@
 # mypy: disable-error-code=func-returns-value
 """Spec-first domain-boundary tests for the song/tag intent facades.
 
-These tests are **SPEC-FIRST**: they assert the canonical domain contract that the
-facade-correction phases of ``TASK-song-intent-facade-correction-A`` must implement
-per ADR-032, ADR-041, ADR-043, the song-domain-repair design doc, and the Plan A
-contracts ledger entry (2026-08-30). The plan is narrowed to the **song-tag slice**
-only; folders, ML/vectors/streams, and worker claims are intentionally out of scope
-here.
+These tests are **SPEC-FIRST**: they assert the canonical song/tag domain contract
+implied by ADR-032, ADR-041, and ADR-043. The scope is narrowed to the **song-tag
+slice** only; folders, ML/vectors/streams, and worker claims are intentionally out of
+scope here.
 
 The contract:
 - Facades return frozen/slotted domain values and never repository TypedDict rows
@@ -20,13 +18,13 @@ QA / executor note: do NOT weaken an assertion to make it pass early; that would
 silently re-open the ADR-032/041 boundary. Assertions that already pass pin the
 domain behavior that must be preserved.
 
-Phase 2 adaptations (per the binding signatures in the Plan A ledger):
+Binding signature adaptations:
 - ``find_or_create_tag`` renamed to ``ensure_tag`` (same assertion body).
 - ``list_tags_by_name`` folded into ``list_tags(name=...)`` (binding hard-cut).
 - ``list_song_tag_edges`` removed (binding hard-cut: no edge-list method at the
   facade); the leak test now asserts the method is gone.
 - ``SongIdentity(library_id=...)`` -> ``SongIdentity(library=LibraryIdentity(...))``
-  (P1-S4 natural library identity gate).
+  (natural library identity gate).
 - ``list_tags_for_song`` / ``list_genre_tags_for_songs`` / ``list_song_tags_for_songs``
   accept ``Sequence[SongIdentity]``; ``assignment.song_id`` -> ``assignment.song``.
 """
@@ -67,7 +65,7 @@ def _make_tags_db() -> tuple[LibraryTagsDb, MagicMock, MagicMock]:
     song_tag_repo = MagicMock()
     song_repo = MagicMock()
     library_repo = MagicMock()
-    # Default UUID resolution (ADR-049): library_uuid -> library_id 1 and
+    # Default UUID resolution (ADR-048): library_uuid -> library_id 1 and
     # normalized path -> song_id 7, so tag reads resolve without per-test setup.
     # Both the scalar and set-based resolvers are stubbed.
     library_repo.get_library_by_uuid.return_value = {"id": 1}
@@ -452,7 +450,7 @@ class TestSongCommandContracts:
         assert (result.added, result.updated, result.removed) == (1, 2, 0)
 
 
-# ── unknown-library guard (ADR-049) ─────────────────────────────────────────
+# ── unknown-library guard (ADR-048) ─────────────────────────────────────────
 # ``SongIdentity.library`` is addressed by the immutable ``library_uuid``; the
 # tag facade must guard the case where that UUID does not resolve (scalar +
 # set-based batch) rather than fabricating a lookup. Songs whose library UUID is

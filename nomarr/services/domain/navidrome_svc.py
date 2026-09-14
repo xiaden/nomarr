@@ -223,7 +223,7 @@ class NavidromeService:
 
         return generate_static_playlist_workflow(
             db=self._db,
-            file_ids=file_ids,  # type: ignore[arg-type]  # H-owned workflow migrates to locator tokens
+            file_ids=file_ids,  # type: ignore[arg-type]  # opaque SongLocator tokens
             playlist_name=playlist_name,
             m3u_output_path=m3u_output_path,
         )

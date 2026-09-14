@@ -12,12 +12,12 @@ Verifies cross-repository invariants that unit tests cannot cover:
 * Deleting every ``embeddings`` row (``DELETE FROM embeddings``)
   clears the entire table.
 
-Plan A note: this file is a fresh-establishment gate and is kept
+Note: this file is a fresh-establishment gate and is kept
 self-contained — data setup and assertions use the renamed ORM models
 (``Library``/``Song``) and raw SQL against the corrected schema
 (``songs``/``embeddings`` with ``song_id``). Repository classes under
 ``nomarr/persistence/database/`` are transiently broken by the hard cut
-(Plan B fixes them) and are intentionally not imported.
+(fixed by the current schema) and are intentionally not imported.
 """
 
 from __future__ import annotations
@@ -149,7 +149,7 @@ def _count_embeddings(session, *, backbone_id: str | None = None, tier: str | No
 class TestCascadeAndDrain:
     """Cross-repository cascade-delete and drain integration tests."""
 
-    # ── P3-S1: cascade delete ───────────────────────────────────
+    # ── cascade delete ──────────────────────────────────────────
 
     def test_delete_library_cascades_to_files(self, pg_session) -> None:
         """Deleting a library must cascade through songs to dependent rows.
@@ -225,7 +225,7 @@ class TestCascadeAndDrain:
             == 0
         )
 
-    # ── P3-S2: drain + delete verification ──────────────────────
+    # ── drain + delete verification ─────────────────────────────
 
     def test_delete_embeddings_for_file(self, pg_session) -> None:
         """Deleting a song's embeddings removes only that song's rows."""

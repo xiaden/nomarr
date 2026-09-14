@@ -30,7 +30,7 @@ def library_from_row(row: Mapping[str, Any]) -> Library:
 def library_insert_payload(library: Library) -> dict[str, Any]:
     """Map a domain library to repository insert fields.
 
-    The immutable ``library_uuid`` application identity (ADR-049) is minted here
+    The immutable ``library_uuid`` application identity (ADR-048) is minted here
     when the input does not already carry one, so every created library row has a
     UUID and a delete/recreate cycle issues a fresh value. ``library_update_payload``
     never includes it, preserving immutability across rename/root-path updates.

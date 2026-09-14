@@ -11,7 +11,7 @@ Design constraints:
   measurement, so context overhead (~400-600 MB) is not attributed to the
   first backbone.
 - Measurements are stored in bytes — same unit as ``gpu_mem_limit`` in
-  the ONNX CUDAExecutionProvider options (Plan B consumer).
+  the ONNX CUDAExecutionProvider options.
 - ``sys.maxsize`` means the model was not measured (GPU unavailable, load failed,
   etc.) — the VRAM coordinator will naturally reject GPU placement for that model.
 """

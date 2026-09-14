@@ -1,6 +1,6 @@
 """Opaque SongLocator wire-token codec (``nom1``).
 
-Wire contract (DD-songlocator-migration.md §4.2, ratified in plan P2-S1):
+Wire contract for the opaque versioned ``nom1`` locator token:
 
 - Prefix ``nom1`` immediately followed by the **unpadded URL-safe base64**
   (RFC 4648 §5) of the UTF-8 bytes of the **canonical compact JSON** object with

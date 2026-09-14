@@ -10,6 +10,7 @@ from nomarr.components.library.song_query_types import TaggedSong
 from nomarr.helpers.dataclasses.library_dataclass import Library
 from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
 from nomarr.helpers.dataclasses.song_dataclass import Song
+from nomarr.helpers.dataclasses.song_tag_dataclass import SongTagAssignment
 from nomarr.helpers.dto.info_dto import WorkStatusResult
 from nomarr.helpers.dto.library_dto import LibraryDict, LibraryStatsResult
 from nomarr.helpers.song_locator_codec import encode_song_locator
@@ -60,6 +61,29 @@ def _locator(*, library_uuid: str, normalized_path: str) -> SongIdentity:
 def _tagged_song(*, path: str, metadata: dict[str, object], duration_seconds: float | None = None) -> TaggedSong:
     """Build a semantic ``TaggedSong`` carrier fixture."""
     return TaggedSong(song=_song(path=path, duration_seconds=duration_seconds), metadata=metadata, tags=())
+
+
+class _RealProjectionDb:
+    """Small semantic facade fixture that exercises the real locator projection."""
+
+    def __init__(self, songs: dict[str, Song]) -> None:
+        self.library = self
+        self._songs = songs
+
+    def list_songs_by_identity(self, locators: list[SongIdentity]) -> list[Song]:
+        return [song for locator in locators if (song := self._songs.get(locator.normalized_path)) is not None]
+
+    def list_song_tags_for_songs(
+        self, locators: list[SongIdentity]
+    ) -> dict[SongIdentity, tuple[SongTagAssignment, ...]]:
+        return {
+            locator: (
+                SongTagAssignment(name="artist", value="Artist"),
+                SongTagAssignment(name="title", value=locator.normalized_path),
+            )
+            for locator in locators
+            if locator.normalized_path in self._songs
+        }
 
 
 class TestGetLibraryStats:
@@ -209,7 +233,11 @@ class TestGetErroredFiles:
                 "nomarr.services.domain.library_svc.query.get_errored_song_ids",
                 return_value=[locator_1, locator_2],
             ),
-            patch.object(mixin, "_songs_for_locators", return_value=carriers),
+            patch.object(
+                mixin,
+                "_tagged_songs_with_locators",
+                return_value=list(zip([locator_1, locator_2], carriers, strict=True)),
+            ),
         ):
             result = mixin.get_errored_files(library)
 
@@ -220,6 +248,37 @@ class TestGetErroredFiles:
         assert result["files"][1]["file_id"] == encode_song_locator(locator_2)
         assert result["files"][0]["artist"] == "Artist A"
         assert result["files"][1]["path"] == "/music/song2.mp3"
+
+    @pytest.mark.unit
+    def test_omits_stale_locators_but_preserves_total_count(self) -> None:
+        library = _make_library()
+        live_locator = _locator(
+            library_uuid="2621ebfb-71ff-4168-a812-5342ca310e8c",
+            normalized_path="songs/live",
+        )
+        stale_locator = _locator(
+            library_uuid="2621ebfb-71ff-4168-a812-5342ca310e8c",
+            normalized_path="songs/stale",
+        )
+        db = _RealProjectionDb({"songs/live": _song(path="/songs/live", duration_seconds=180)})
+        mixin = _ConcreteQueryMixin(db)  # type: ignore[arg-type]
+
+        with (
+            patch.object(mixin, "_get_library_or_error", return_value=library),
+            patch(
+                "nomarr.services.domain.library_svc.query.count_errored_songs",
+                return_value=2,
+            ),
+            patch(
+                "nomarr.services.domain.library_svc.query.get_errored_song_ids",
+                return_value=[live_locator, stale_locator],
+            ),
+        ):
+            result = mixin.get_errored_files(library)
+
+        assert result["total"] == 2
+        assert [item["file_id"] for item in result["files"]] == [encode_song_locator(live_locator)]
+        assert result["files"][0]["path"] == "/songs/live"
 
     @pytest.mark.unit
     def test_raises_on_invalid_library(self) -> None:

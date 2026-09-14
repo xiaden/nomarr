@@ -1,9 +1,9 @@
-"""Clean-checkout proof for the Q2R-A Plan O/L architecture readers.
+"""Clean-checkout proof for the security/provenance and residual-inventory readers.
 
-These tests prove the repaired readers pass with the globally gitignored
-``artifacts/`` tree absent, without moving, deleting, or otherwise touching the
-real ``artifacts/`` directory (non-destructive). They also scan the tracked
-fixtures for sensitive tokens.
+These tests prove the readers pass with the globally gitignored ``artifacts/``
+tree absent, without moving, deleting, or otherwise touching the real
+``artifacts/`` directory (non-destructive). They also scan the tracked fixtures
+for sensitive tokens.
 """
 
 from __future__ import annotations
@@ -25,8 +25,8 @@ if TYPE_CHECKING:
 ROOT = Path(__file__).parents[3]
 FIXTURES = ROOT / "tests" / "unit" / "architecture" / "fixtures"
 READERS = (
-    ROOT / "tests" / "unit" / "architecture" / "test_o_security_provenance_rollback.py",
-    ROOT / "tests" / "unit" / "architecture" / "test_l_residual_audit.py",
+    ROOT / "tests" / "unit" / "architecture" / "test_security_provenance_rollback.py",
+    ROOT / "tests" / "unit" / "architecture" / "test_residual_inventory_audit.py",
 )
 MANIFEST = ROOT / "tests" / "unit" / "architecture" / "capability-manifest.json"
 WORKFLOW = ROOT / ".github" / "workflows" / "backend-tests.yml"
@@ -55,7 +55,7 @@ def _load_reader(path: Path) -> ModuleType:
 @pytest.mark.unit
 def test_fixtures_are_tracked_and_clean_checkout_safe() -> None:
     """The readers' required evidence lives under tracked ``tests/``, not the
-    globally gitignored ``artifacts/`` tree (D3B precedent)."""
+    globally gitignored ``artifacts/`` tree."""
     files = _fixture_files()
     assert files, f"no tracked fixtures found under {FIXTURES}"
     for path in files:
@@ -171,9 +171,7 @@ def test_readers_pass_in_subprocess_tree_without_artifacts(tmp_path: Path) -> No
     )
     assert result.returncode == 0, result.stdout + result.stderr
     combined = result.stdout + result.stderr
-    # Pin that the guarded optional provenance test was reported SKIPPED, not
-    # silently passed: absence of ignored evidence must never read as LOCAL_PASS.
-    assert "1 skipped" in combined, f"guarded optional provenance test was not reported skipped:\n{combined}"
-    assert "test_o_real_provenance_guarded_when_ignored_evidence_present" in combined, (
-        f"guarded optional provenance test did not appear in the run summary:\n{combined}"
-    )
+    # Both readers must actually execute their fixture-backed assertions on a
+    # clean tree, not silently skip. Pin one distinctive test from each module.
+    assert "test_evidence_records_execution_and_protected_file_provenance" in combined, combined
+    assert "test_manifest_has_complete_classification_vocabulary" in combined, combined

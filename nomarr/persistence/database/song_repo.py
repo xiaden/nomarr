@@ -1,6 +1,6 @@
 """SongRepository — CRUD and domain queries for the ``songs`` table.
 
-Uses Part B primitives for simple lookups and direct SQLAlchemy Core for
+Uses shared persistence primitives for simple lookups and direct SQLAlchemy Core for
 filtered queries, batch operations, and maintenance methods.
 """
 

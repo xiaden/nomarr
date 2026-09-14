@@ -1,6 +1,6 @@
 {
-  "plan": "TASK-song-domain-identity-boundary-completion",
-  "authority": "ADR-048 and DD-song-domain-completion-and-repository-hygiene.md",
+  "scope": "resolver and scalar-write closure",
+  "authority": "SongLocator application identity; generated song/library keys remain persistence-private",
   "required_allowlist_fields": ["owner", "boundary", "reason", "positive_test", "non_propagation", "removal_condition"],
   "allowlisted_resolvers": [],
   "allowlisted_integer_adapters": [],

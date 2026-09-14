@@ -899,7 +899,7 @@ class TestAppRepository:
 
         No storage keys, ids, or JSON payloads may leak across the boundary — the
         returned objects are frozen WorkerClaim domain values with a resolved
-        SongIdentity (CONTRACTS.md).
+        SongIdentity.
         """
         repo, register, _ = _claim_env(pg_session)
         assert repo._list_claims() == []
@@ -935,7 +935,7 @@ class TestAppRepository:
 
         A claim whose song identity can no longer be resolved (e.g. song removed)
         must not leak as a raw row; list_claims drops it while count_claims still
-        reflects the persisted row (CONTRACTS.md orphan-quarantine rule).
+        reflects the persisted row (orphan-quarantine rule).
         """
         repo, register, unregister = _claim_env(pg_session)
         s1 = register(1)

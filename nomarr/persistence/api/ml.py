@@ -168,12 +168,11 @@ class MlDb:
         return self._vector_repo.get_embeddings_for_song(song_id, collection_name, tier)
 
     # Legacy dependency gate (RETAINED — NOT the corrected read surface):
-    # ``search_vectors`` is retained solely because its removal is outside this
-    # plan's ten-file scope; no production callers remain (the previously
-    # in-scope Phase 4-5 callers migrated to the typed intents during this
-    # plan). It is NOT a corrected caller contract — corrected callers use the
-    # typed ``search_similar_vectors`` intent below. It is a follow-up cleanup
-    # candidate once removal is in scope.
+    # ``search_vectors`` is retained for backward compatibility; no production
+    # callers remain (all callers migrated to the typed intents). It is NOT a
+    # corrected caller contract — corrected callers use the typed
+    # ``search_similar_vectors`` intent below. It is a follow-up cleanup
+    # candidate.
     def search_vectors(
         self,
         collection_name: str,
@@ -697,7 +696,7 @@ class MlDb:
         )
 
     # ------------------------------------------------------------------
-    # Vector index management methods (Phase 3 — consumer facade)
+    # Vector index management methods (consumer facade)
     # ------------------------------------------------------------------
 
     def has_vector_index(self, _backbone_id: str) -> bool:

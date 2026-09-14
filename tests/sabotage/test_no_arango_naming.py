@@ -1,13 +1,13 @@
 """Sabotage tests: no ArangoDB naming conventions in non-persistence code (AR-3).
 
-Shipped state (per CONTRACTS.md AR-3):
+Shipped state (per AR-3):
 - Field names use ``id``, ``key``, ``rev`` — not ``_id``, ``_key``, ``_rev``.
 - No collection-prefixed filenames in persistence.
 - No AQL primitives in non-persistence code.
 
 The tests scan source code at test time and report violations. The scan
 scope is clean — all previously identified field-reference violations were
-resolved in Part B, and the suite is GREEN.
+resolved in the persistence primitives, and the suite is GREEN.
 """
 
 from __future__ import annotations
@@ -63,7 +63,7 @@ COLLECTION_PREFIX_PATTERN = re.compile(r"^(aql_|collection_|edge_|graph_)", re.I
 # NON_PERSISTENCE_DIRS).
 FILE_DOMAIN_DIRS = [Path("nomarr/persistence"), *NON_PERSISTENCE_DIRS]
 
-# Eliminated entity/type/facade/transaction surface (hard-zero after Plans A-D).
+# Eliminated entity/type/facade/transaction surface (hard-zero after the file-domain elimination).
 FILE_ENTITY_PATTERNS = [
     re.compile(r"\blibrary_files\b"),
     re.compile(r"\bLibraryFile\b"),
@@ -92,7 +92,7 @@ FILE_TABLE_PATTERNS = [
 #     imports of STATE_*/ALL_STATE_VERTICES are sanctioned.
 # (c) Wire/API-contract `file_id` in nomarr/interfaces/ + interface DTOs
 #     (AR-SDR-7: no frontend/API contract changes). No bare `file_id` pattern is
-#     scanned here — it is scoped to the persistence+domain API surface in P3-S3;
+#     scanned here — it is scoped to the persistence+domain API surface;
 #     cosmetic local `file_id` variables in components/services/workflows are out
 #     of scope per the AMEND (447 hits verified, zero in persistence).
 FILE_ALLOWLIST = [

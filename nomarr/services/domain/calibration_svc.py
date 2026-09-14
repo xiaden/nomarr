@@ -331,7 +331,7 @@ class CalibrationService:
 
         logger.info("[CalibrationService] Started histogram calibration generation in background")
 
-    # -- Threading infrastructure (NOT domain logic; see services.instructions.md) --
+    # -- Threading infrastructure (NOT domain logic; see .opencode/skills/nomarr-layers/references/services.md) --
 
     def _update_progress(self, **kwargs: int | str | None) -> None:
         """Thread-safe update of progress state from background thread.

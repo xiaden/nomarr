@@ -5,8 +5,7 @@ surface returns only typed semantic values (``Song``, ``SongStateCandidate``),
 scalar/aggregate values, or the typed metadata/tag carriers from
 :mod:`nomarr.components.library.song_query_types`. No function here reconstructs a
 row-shaped song document, reads ``doc[\"id\"]``/``doc[\"path\"]``, calls
-``Song.to_dict()``/``Song.from_row``, or imports a persistence mapper — see
-CONTRACTS §1/§3/§7 and plan F (binding per-function output table).
+``Song.to_dict()``/``Song.from_row``, or imports a persistence mapper — see the typed semantic projection contract.
 """
 
 from __future__ import annotations
@@ -218,24 +217,42 @@ def _hydrate_metadata(
     return [metadata_by_song.get(song, {}) for song in songs]
 
 
-def tagged_songs_for_locators(db: Database, locators: Sequence[SongIdentity]) -> list[TaggedSong]:
-    """Hydrate semantic songs and sealed tags for many locators in one pass.
-
-    Component-owned batch projection: reads semantic songs by locator, hydrates
-    ADR-045 metadata, and projects sealed tag assignments into ``FileTag``
-    tuples. No generated integer id, raw row, or tag payload dict crosses this
-    boundary; unresolvable/no-tag locators pass through with empty tags.
-    """
+def tagged_songs_with_locators(db: Database, locators: Sequence[SongIdentity]) -> list[tuple[SongIdentity, TaggedSong]]:
+    """Return stale-safe tagged projections paired with their surviving locators."""
     if not locators:
         return []
 
-    songs = db.library.list_songs_by_identity(list(locators))
-    metadata = hydrate_songs_with_metadata(db, songs, locators)
-    assignments = _tag_assignments(db, locators)
+    locators_by_library: dict[str, list[SongIdentity]] = {}
+    for locator in locators:
+        locators_by_library.setdefault(locator.library.library_uuid, []).append(locator)
+
+    songs_by_locator: dict[SongIdentity, Song] = {}
+    for library_locators in locators_by_library.values():
+        songs = db.library.list_songs_by_identity(library_locators)
+        songs_by_path: dict[str, list[Song]] = {}
+        for song in songs:
+            songs_by_path.setdefault(song.normalized_path, []).append(song)
+        for locator in library_locators:
+            candidates = songs_by_path.get(locator.normalized_path)
+            if candidates:
+                songs_by_locator[locator] = candidates.pop(0)
+
+    projected_locators = [locator for locator in locators if locator in songs_by_locator]
+    projected_songs = [songs_by_locator[locator] for locator in projected_locators]
+    metadata = hydrate_songs_with_metadata(db, projected_songs, projected_locators)
+    assignments = _tag_assignments(db, projected_locators)
     return [
-        TaggedSong(song=song, metadata=hydrated.metadata, tags=_file_tags(assignments.get(locator, ())))
-        for song, hydrated, locator in zip(songs, metadata, locators, strict=True)
+        (
+            locator,
+            TaggedSong(song=song, metadata=hydrated.metadata, tags=_file_tags(assignments.get(locator, ()))),
+        )
+        for song, hydrated, locator in zip(projected_songs, metadata, projected_locators, strict=True)
     ]
+
+
+def tagged_songs_for_locators(db: Database, locators: Sequence[SongIdentity]) -> list[TaggedSong]:
+    """Hydrate semantic songs and sealed tags, omitting stale locators in order."""
+    return [carrier for _, carrier in tagged_songs_with_locators(db, locators)]
 
 
 # ─────────────────────────────────────────────────────────────────────────

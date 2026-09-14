@@ -1,15 +1,13 @@
-"""Semantic candidate returned by the typed song-state read (Plan H).
+"""Semantic candidate returned by the typed song-state read.
 
 ``SongStateCandidate`` is the contract-owned value returned by the persistence
 ``list_songs_with_state`` seam. It carries only the mutable, request-scoped
 ``SongLocator`` (the existing ``SongIdentity``), semantic ``Song`` values, and
 state names. Persistence rows, raw joins, assignment rows, generated keys, and
-integer fallbacks are intentionally not representable here (ADR-048;
-CONTRACTS §3/§5).
+integer fallbacks are intentionally not representable here (ADR-048; typed state-read contract).
 
-Plan C owns the persistence implementation; Plan H owns this shape and its
-consumer/invariant contract; Plan I migrates state-read callers after this seam
-is green.
+Persistence owns construction of this value; consumers receive the typed
+shape after the read boundary is established.
 """
 
 from __future__ import annotations

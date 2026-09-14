@@ -1,4 +1,4 @@
-"""Test-only PostgreSQL TCP fault-injection proxy (D3D-A mood fault harness).
+"""Test-only PostgreSQL TCP fault-injection proxy (mood fault harness).
 
 This module is test-only support located under tracked ``tests/characterization/``: it
 contains no production code and is not imported by anything under ``nomarr/``. It sits at the TCP boundary between a
@@ -29,7 +29,7 @@ repository maps to ``AMBIGUOUS_COMMIT`` (see ``song_tag_repo._commit_mood_batch`
 ``SEVER_PRE_COMMIT`` is the contrasting pre-commit fault: because no ``COMMIT`` was
 ever forwarded the owner classifies it as ``INFRA_FAILURE``, never
 ``AMBIGUOUS_COMMIT``. This harness asserts the driver/harness-level signature only;
-the mood-path ``MoodBatchResult`` proof belongs to D3D-B.
+the mood-path ``MoodBatchResult`` proof belongs to the mood fault suite.
 
 Design constraints honored here:
 
@@ -359,8 +359,8 @@ class PgFaultProxy:
         client and backend sockets, so the handler exits and this becomes true
         regardless of driver behavior. For a genuine driver-side no-leak proof,
         read the ``Database`` engine pool while this context is still active and
-        before any test-side ``close()`` (see D3D-B
-        ``_assert_driver_pool_released``).
+        before any test-side ``close()`` (see the driver-pool release
+        assertion).
         """
         return self._no_active_connections.wait(timeout=timeout)
 

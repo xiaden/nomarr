@@ -1,6 +1,6 @@
-"""Sabotage tests: song-tag facade boundary (TASK-song-intent-facade-correction-A P6-S5).
+"""Sabotage tests: song-tag facade boundary.
 
-Ownership rules (per artifacts/designs/parts/song-domain-repair/CONTRACTS.md and
+Ownership rules (per the song/tag facade contract and
 ADR-032/041):
 
 - The sealed tag facade (``LibraryTagsDb`` + ``LibraryDb`` tag forwarders)
@@ -218,7 +218,7 @@ class TestFacadeDoesNotImportRowDto:
 
 
 # ---------------------------------------------------------------------------
-# Test 5 (P1-S5b): Assignment paths never import the namespace-free projection
+# Test 5: Assignment paths never import the namespace-free projection
 # ---------------------------------------------------------------------------
 # ``tags_from_tag_rows`` is the documented namespace-free physical/analytics
 # boundary; resolving/persisting assignments must go through the namespace-

@@ -1,6 +1,6 @@
 """Tests for the calibration web interface (``nomarr.interfaces.api.web.calibration_if``).
 
-Focus: the flat histogram projection contract (P3-S4 / CONTRACTS L1410) —
+Focus: the flat histogram projection contract —
 ``GET /calibration/histogram`` must expose a flat ``CalibrationHistogramItem``
 per calibration state with the required fields
 (``model_key``/``head_name``/``label``/``histogram_bins``/``p5``/``p95``/``n``/

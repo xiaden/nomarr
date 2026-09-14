@@ -45,7 +45,7 @@ class TaggingCurationMixin:
         The wire boundary owns the token format; the service resolves the decoded
         ``library_uuid`` to the owning library through the canonical facade and
         builds the request-scoped ``SongIdentity``. No generated integer identity
-        and no ``resolve_song_identity`` bridge participates. An unknown library
+        and no integer identity bridge participates. An unknown library
         is a deterministic not-found ``ValueError``.
         """
         payload = decode_song_locator(token)

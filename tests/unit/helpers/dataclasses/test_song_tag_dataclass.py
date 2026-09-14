@@ -1,6 +1,6 @@
 """Unit tests for the song/tag domain value objects.
 
-``TASK-song-intent-facade-correction-A`` Phase 6 (P6-S1): prove the frozen/slotted
+Prove the frozen/slotted
 domain value objects that replace the persistence row/edge shapes at the tag
 facade boundary. These value objects carry no database identifiers, table
 metadata, or storage row shapes — see

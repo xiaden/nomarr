@@ -22,7 +22,7 @@ def main() -> None:
     try:
         # ── Count files with calibration_hash ──────────────────────
         session = db._scoped
-        # DIAGNOSTIC-ONLY DIRECT SQL (Plan C classification): the raw queries
+        # DIAGNOSTIC-ONLY DIRECT SQL: the raw queries
         # below (songs calibration_hash counts, mood tags via file_tags/tags
         # JOIN, ml_model_outputs JOIN ml_models, uncalibrated-sample pick)
         # read NON-calibration domains (songs/tags/models/outputs) and are an
@@ -41,7 +41,7 @@ def main() -> None:
         db.app.get_calibration_last_run()
 
         # ── Print calibration_state summary ─────────────────────────
-        # Plan C: ``list_calibration_states()`` returns ``list[CalibrationState]``
+        # ``list_calibration_states()`` returns ``list[CalibrationState]``
         # domain values (frozen/slotted dataclasses).  They must be read via
         # attributes — never dict-indexed (``s["state_data"]`` would crash).
         states = db.ml.list_calibration_states()

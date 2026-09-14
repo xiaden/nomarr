@@ -1,8 +1,7 @@
 """Contract tests for the persistence-private library row mappers.
 
-``TASK-song-row-mirror-leaks-into-domain-G`` P1-S1/P1-S2/P1-S6. ADR-049 makes
-``libraries.library_uuid`` the immutable Nomarr-minted library application
-identity. These tests prove:
+The persistence-private mapper contract makes ``libraries.library_uuid`` the
+immutable Nomarr-minted library application identity. These tests prove:
 
 - every insert mints a UUID when the domain value does not carry one, and a
   delete/recreate cycle (a fresh domain value) mints a new distinct value;

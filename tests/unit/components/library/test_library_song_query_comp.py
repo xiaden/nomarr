@@ -5,7 +5,7 @@ return semantic ``Song`` / ``SongStateCandidate`` values, typed carriers
 (``HydratedSong``/``TaggedSong``/``StateTaggedSong``/``RecentSong``/``TagMatchedSong``/
 ``TrackSong``), or scalar/aggregate values — never row-shaped documents. The facade is
 mocked at the boundary with canned semantic values (per nomarr-testing); persistence
-semantics (SQL/paging internals/FK behavior) are owned by Plan C/E and are not duplicated
+semantics (SQL/paging internals/FK behavior) are owned by the persistence layer and are not duplicated
 here.
 """
 
@@ -42,6 +42,8 @@ from nomarr.components.library.library_song_query_comp import (
     list_songs,
     search_songs_by_tag,
     search_songs_with_tags,
+    tagged_songs_for_locators,
+    tagged_songs_with_locators,
 )
 from nomarr.components.library.song_query_types import (
     HydratedSong,
@@ -122,7 +124,152 @@ def _candidate(song: Song, *, states: tuple[str, ...] = ("processed",)) -> SongS
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# P2-S3 — path lookup / single-song lookups
+# locator projections
+# ─────────────────────────────────────────────────────────────────────────
+
+
+class TestTaggedSongsForLocators:
+    @pytest.mark.unit
+    def test_projects_live_locators_in_request_order_for_hydration_and_tags(self) -> None:
+        db = _db()
+        first = _song("first.flac")
+        second = _song("second.flac")
+        first_locator = _identity(MUSIC, "first.flac")
+        stale_locator = _identity(MUSIC, "stale.flac")
+        second_locator = _identity(MUSIC, "second.flac")
+        db.library.list_songs_by_identity.return_value = [first, second]
+        db.library.list_song_tags_for_songs.return_value = {
+            first_locator: (_tag("title", "First"),),
+            second_locator: (_tag("title", "Second"),),
+        }
+
+        with patch(
+            "nomarr.components.library.library_song_query_comp.hydrate_songs_with_metadata",
+            side_effect=lambda _db, songs, locators: [
+                HydratedSong(song=song, metadata={"title": locator.normalized_path})
+                for song, locator in zip(songs, locators, strict=True)
+            ],
+        ) as hydrate:
+            result = tagged_songs_for_locators(
+                db,
+                [first_locator, stale_locator, second_locator],
+            )
+
+        assert [carrier.song for carrier in result] == [first, second]
+        assert [carrier.metadata for carrier in result] == [{"title": "first.flac"}, {"title": "second.flac"}]
+        assert [tag.value for tag in result[0].tags] == ["First"]
+        assert [tag.value for tag in result[1].tags] == ["Second"]
+        hydrate.assert_called_once_with(db, [first, second], [first_locator, second_locator])
+        db.library.list_song_tags_for_songs.assert_called_once_with([first_locator, second_locator])
+
+    @pytest.mark.unit
+    def test_empty_locator_projection_does_not_query_or_hydrate(self) -> None:
+        db = _db()
+
+        with patch(
+            "nomarr.components.library.library_song_query_comp.hydrate_songs_with_metadata",
+        ) as hydrate:
+            assert tagged_songs_for_locators(db, []) == []
+
+        db.library.list_songs_by_identity.assert_not_called()
+        db.library.list_song_tags_for_songs.assert_not_called()
+        hydrate.assert_not_called()
+
+
+class TestTaggedSongsWithLocators:
+    @pytest.mark.unit
+    def test_pairs_live_locators_with_own_carriers_in_request_order(self) -> None:
+        db = _db()
+        first = _song("first.flac")
+        second = _song("second.flac")
+        first_locator = _identity(MUSIC, "first.flac")
+        stale_locator = _identity(MUSIC, "stale.flac")
+        second_locator = _identity(MUSIC, "second.flac")
+        db.library.list_songs_by_identity.return_value = [first, second]
+        db.library.list_song_tags_for_songs.return_value = {
+            first_locator: (_tag("title", "First"),),
+            second_locator: (_tag("title", "Second"),),
+        }
+
+        with patch(
+            "nomarr.components.library.library_song_query_comp.hydrate_songs_with_metadata",
+            side_effect=lambda _db, songs, locators: [
+                HydratedSong(song=song, metadata={"title": locator.normalized_path})
+                for song, locator in zip(songs, locators, strict=True)
+            ],
+        ) as hydrate:
+            result = tagged_songs_with_locators(
+                db,
+                [first_locator, stale_locator, second_locator],
+            )
+
+        # One pair per surviving locator, each carrier paired with its OWN locator,
+        # request order preserved; the stale locator is dropped.
+        assert [(locator, carrier.song) for locator, carrier in result] == [
+            (first_locator, first),
+            (second_locator, second),
+        ]
+        assert all(isinstance(carrier, TaggedSong) for _, carrier in result)
+        hydrate.assert_called_once_with(db, [first, second], [first_locator, second_locator])
+        db.library.list_song_tags_for_songs.assert_called_once_with([first_locator, second_locator])
+
+    @pytest.mark.unit
+    def test_for_locators_is_the_carrier_projection_of_with_locators(self) -> None:
+        db = _db()
+        first = _song("first.flac")
+        second = _song("second.flac")
+        first_locator = _identity(MUSIC, "first.flac")
+        stale_locator = _identity(MUSIC, "stale.flac")
+        second_locator = _identity(MUSIC, "second.flac")
+        db.library.list_songs_by_identity.return_value = [first, second]
+        db.library.list_song_tags_for_songs.return_value = {
+            first_locator: (_tag("title", "First"),),
+            second_locator: (_tag("title", "Second"),),
+        }
+
+        with patch(
+            "nomarr.components.library.library_song_query_comp.hydrate_songs_with_metadata",
+            side_effect=lambda _db, songs, locators: [
+                HydratedSong(song=song, metadata={}) for song, _locator in zip(songs, locators, strict=True)
+            ],
+        ):
+            pairs = tagged_songs_with_locators(db, [first_locator, stale_locator, second_locator])
+            carriers = tagged_songs_for_locators(db, [first_locator, stale_locator, second_locator])
+
+        assert carriers == [carrier for _, carrier in pairs]
+
+    @pytest.mark.unit
+    def test_all_stale_locators_yield_empty_projection_without_tag_reads(self) -> None:
+        db = _db()
+        stale_locator = _identity(MUSIC, "stale.flac")
+        db.library.list_songs_by_identity.return_value = []
+
+        with patch(
+            "nomarr.components.library.library_song_query_comp.hydrate_songs_with_metadata",
+            side_effect=lambda _db, songs, locators: [
+                HydratedSong(song=song, metadata={}) for song, _locator in zip(songs, locators, strict=True)
+            ],
+        ):
+            assert tagged_songs_with_locators(db, [stale_locator]) == []
+
+        db.library.list_song_tags_for_songs.assert_not_called()
+
+    @pytest.mark.unit
+    def test_empty_input_does_not_query_or_hydrate(self) -> None:
+        db = _db()
+
+        with patch(
+            "nomarr.components.library.library_song_query_comp.hydrate_songs_with_metadata",
+        ) as hydrate:
+            assert tagged_songs_with_locators(db, []) == []
+
+        db.library.list_songs_by_identity.assert_not_called()
+        db.library.list_song_tags_for_songs.assert_not_called()
+        hydrate.assert_not_called()
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# path lookup / single-song lookups
 # ─────────────────────────────────────────────────────────────────────────
 
 
@@ -178,7 +325,7 @@ class TestSingleSongLookups:
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# P2-S3 — listing / filtering / ordering / paging / cross-library
+# listing / filtering / ordering / paging / cross-library
 # ─────────────────────────────────────────────────────────────────────────
 
 
@@ -284,7 +431,7 @@ class TestListSongs:
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# P2-S3 — path/derived listings and state reads
+# path/derived listings and state reads
 # ─────────────────────────────────────────────────────────────────────────
 
 
@@ -353,7 +500,7 @@ class TestPathAndStateListings:
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# P2-S3 — tag search / typed tag outputs
+# tag search / typed tag outputs
 # ─────────────────────────────────────────────────────────────────────────
 
 
@@ -469,7 +616,7 @@ class TestTagSearch:
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# P2-S3 — recent activity / typed track outputs
+# recent activity / typed track outputs
 # ─────────────────────────────────────────────────────────────────────────
 
 
@@ -528,7 +675,7 @@ class TestRecentAndTracks:
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# P2-S3 — folder / state-annotation carriers
+# folder / state-annotation carriers
 # ─────────────────────────────────────────────────────────────────────────
 
 
@@ -568,7 +715,7 @@ class TestFolderStateAnnotations:
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# P2-S3/P2-S4 — aggregates, malformed/empty, resilience, no resurrection
+# aggregates, malformed/empty, resilience, no resurrection
 # ─────────────────────────────────────────────────────────────────────────
 
 
@@ -678,7 +825,7 @@ class TestAggregatesAndResilience:
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# P2-S1/P2-S4 — scalar helpers
+# scalar helpers
 # ─────────────────────────────────────────────────────────────────────────
 
 

@@ -59,7 +59,7 @@ class LibraryAdminMixin:
 
         This is the ONLY name resolver above persistence. It delegates to the
         natural-name component (``library_records_comp.get_library_by_name``).
-        The interface adapter (P4-S8) resolves a decoded wire name exactly once
+        The interface adapter  resolves a decoded wire name exactly once
         via this method before invoking any other service method; services never
         perform wire-ID decoding or an integer-to-library lookup.
 
@@ -73,7 +73,7 @@ class LibraryAdminMixin:
         return component_get_library_by_name(self.db, name)
 
     def get_library_by_uuid(self, library_uuid: str) -> Library | None:
-        """Resolve a library by its immutable ``library_uuid`` identity (ADR-049).
+        """Resolve a library by its immutable ``library_uuid`` identity (ADR-048).
 
         This is the owning-service helper the interface layer uses to resolve a
         decoded SongLocator ``library_uuid`` to its complete ``Library`` (current
@@ -166,7 +166,7 @@ class LibraryAdminMixin:
 
         Returns:
             List of domain ``Library`` values. Transport projections are built
-            by the interface adapter (P4-S8); per-library file/folder counts are
+            by the interface adapter ; per-library file/folder counts are
             exposed via ``LibraryService.get_library_counts`` (mechanism A).
             Services no longer construct ``LibraryDict`` or expose generated ids.
 
@@ -335,7 +335,7 @@ class LibraryAdminMixin:
             The watcher service keys observers by ``str``; the natural
             ``Library.name`` is used as the watcher key. The watcher service
             internals still refer to the key as a "library database ID" and need
-            a natural-name pass (P4-S8).
+            a natural-name pass .
 
         """
         if self.file_watcher_service is not None and library.name in self.file_watcher_service.observers:

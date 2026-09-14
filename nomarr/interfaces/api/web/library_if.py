@@ -36,7 +36,7 @@ router = APIRouter(prefix="/library", tags=["Library"])
 async def _resolve_library(library_service, raw_name: str) -> Library:
     """Resolve a URL-encoded natural library name to a domain ``Library``.
 
-    Mechanism A (TASK-library-domain-facades-A): the wire identity is the
+    The wire identity is the
     natural ``Library.name``. Missing names map to 404.
 
     Args:
@@ -112,7 +112,7 @@ async def list_libraries(
     try:
         libraries = await asyncio.to_thread(library_service.list_libraries, enabled_only=enabled_only)
         # Transport projection: build the name-keyed file/folder counts via the
-        # service (mechanism A) and per-library scan status (P4-S8).
+        # service and per-library scan status.
         counts = await asyncio.to_thread(library_service.get_library_counts)
         scans = {lib.name: await asyncio.to_thread(library_service.get_status, lib) for lib in libraries}
         return ListLibrariesResponse.from_dto(libraries, counts=counts, scans=scans)

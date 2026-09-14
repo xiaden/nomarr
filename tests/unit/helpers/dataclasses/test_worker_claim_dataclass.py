@@ -1,6 +1,6 @@
 """Unit tests for the worker-claim domain value objects.
 
-``TASK-worker-claims-intent-facade-A-correction`` Phase 1 (P1-S2): prove the
+Prove the
 frozen/slotted ``WorkerClaimIdentity``, ``WorkerClaim``, and
 ``ClaimRemovalRequest`` carry only natural claim semantics and never expose
 ``WorkerClaimRow``, raw dictionaries/JSONB, generated row ids, encoded claim

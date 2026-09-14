@@ -1,7 +1,7 @@
 """TypedDict DTOs for the EmbeddingStreamRepository return types.
 
 These mirror the SQLAlchemy ``MlEmbeddingStream`` model columns from
-Part A and provide type-safe return types for embedding stream
+the SQLAlchemy model columns and provide type-safe return types for embedding stream
 repository methods.  Import only from ``typing``.
 """
 

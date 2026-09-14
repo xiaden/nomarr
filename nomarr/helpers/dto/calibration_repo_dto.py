@@ -1,7 +1,7 @@
 """Repository-internal DTOs and typed join results for CalibrationRepo return types.
 
 These mirror the SQLAlchemy ``CalibrationState`` and ``CalibrationHistory``
-model columns from Part A and provide type-safe return types for
+model columns and provide type-safe return types for
 calibration repository methods.  Import only from ``typing``.
 """
 

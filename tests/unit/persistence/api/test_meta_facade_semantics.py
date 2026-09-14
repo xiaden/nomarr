@@ -2,7 +2,7 @@
 # mypy: disable-error-code=func-returns-value
 """Spec-first tests for the hard-cut semantic AppDb meta contract.
 
-Scope (TASK-meta-intent-facades-A-hard-cut, P1-S5): pin the CONTRACTED semantic
+Scope: pin the contracted semantic
 surface of ``AppDb`` for the meta-backed domains — user config, schema version,
 credentials (API key / admin password hash), calibration bookkeeping, model VRAM
 limits, capacity estimates, GPU resource snapshots, and worker-control state.
@@ -190,7 +190,7 @@ class TestCalibrationBookkeepingSemantics:
 
     @pytest.mark.unit
     def test_set_calibration_last_run_accepts_str_timestamp(self, app_db: AppDb) -> None:
-        """Locked (Phase 1): accepted type is ``str``, preserving the live caller."""
+        """Locked: accepted type is ``str``, preserving the live caller."""
         assert app_db.set_calibration_last_run("1750000000000") is None
 
     @pytest.mark.unit

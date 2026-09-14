@@ -5,8 +5,8 @@ service (``TaggingService``) against a **real migrated PostgreSQL**. These
 tests prove that public tag identity is the complete ``(namespace, name,
 value)`` TagRef (never the storage primary key), that relinking is atomic and
 duplicate-safe, that concurrent curation is safe or deterministically rejected,
-and that identity stays stable across fresh sessions, pagination and rename —
-per the ``CONTRACTS.md`` "Lifecycle contract".
+and that identity stays stable across fresh sessions, pagination and rename,
+per the tag-curation lifecycle contract.
 
 These are persistence/integration tests (marker ``requires_database``); they
 run in the ``database-tests`` CI tier. Locally they run against a bootstrapped
@@ -31,10 +31,12 @@ from nomarr.helpers.constants.file_states import (
 from nomarr.helpers.dataclasses.library_dataclass import Library
 from nomarr.helpers.dataclasses.song_command_dataclass import (
     LibraryIdentity,
+    SongIdentity,
     SongScanUpdate,
     SongUpsertInput,
 )
 from nomarr.helpers.dataclasses.song_tag_dataclass import SongTagAssignment, TagRef
+from nomarr.helpers.song_locator_codec import encode_song_locator
 from nomarr.helpers.tag_handle_codec import decode_tag_handle, encode_tag_handle
 from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence.db import Database
@@ -71,10 +73,13 @@ def _svc(db: Database) -> TaggingService:
     )
 
 
-def _seed(db: Database, root: str = "/repo/curation", n: int = 3) -> tuple[Library, list[Any], list[int]]:
+def _seed(db: Database, root: str = "/repo/curation", n: int = 3) -> tuple[Library, list[SongIdentity], list[str]]:
     """Seed a library with ``n`` songs carrying baseline write states.
 
-    Returns ``(library, song_identities, song_ids)``.
+    Returns ``(library, song_identities, song_paths)`` where each locator is the
+    semantic ``SongIdentity`` returned by ``add_song_to_library`` and
+    ``song_paths`` are their ``normalized_path`` values (the library-relative
+    locator path component — there is no generated integer song id; ADR-048).
     """
     name = f"cur_{root.strip('/').replace('/', '_')}"
     lib = db.library.create_library(Library(name=name, root_path=root))
@@ -84,27 +89,20 @@ def _seed(db: Database, root: str = "/repo/curation", n: int = 3) -> tuple[Libra
         root_path=lib.root_path,
     )
     now = now_ms().value
-    identities: list[Any] = []
-    paths: list[str] = []
+    identities: list[SongIdentity] = []
     for i in range(n):
         path = f"{root}/track{i}.flac"
         scan = SongScanUpdate(normalized_path=path, file_size=1000 + i, modified_time=now, duration_seconds=180.0)
         identities.append(db.library.add_song_to_library(SongUpsertInput(library=lib_ident, path=path, scan=scan)))
-        paths.append(path)
-    song_ids: list[int] = []
-    for p in paths:
-        song = db.library.get_song_by_normalized_path(p, lib)
-        assert song is not None, p
-        song_ids.append(song.song_id)
-    for sid in song_ids:
-        db.app.set_song_state([sid], STATE_WRITTEN)
-        db.app.set_song_state([sid], STATE_TAGS_CURRENT)
-        db.app.set_song_state([sid], STATE_PROCESSED)
-        db.app.set_song_state([sid], STATE_NOT_HYDRATED)
-    return lib, identities, song_ids
+    for identity in identities:
+        db.app.set_song_state([identity], STATE_WRITTEN)
+        db.app.set_song_state([identity], STATE_TAGS_CURRENT)
+        db.app.set_song_state([identity], STATE_PROCESSED)
+        db.app.set_song_state([identity], STATE_NOT_HYDRATED)
+    return lib, identities, [identity.normalized_path for identity in identities]
 
 
-def _tag(db: Database, song_identity: Any, pairs: list[tuple[str, object]]) -> None:
+def _tag(db: Database, song_identity: SongIdentity, pairs: list[tuple[str, object]]) -> None:
     """Assign ``default``-namespace tags (name, value) to one song."""
     db.library.replace_song_tags(
         song_identity,
@@ -112,8 +110,14 @@ def _tag(db: Database, song_identity: Any, pairs: list[tuple[str, object]]) -> N
     )
 
 
-def _songs_with(db: Database, identity: TagRef) -> set[int]:
-    return {s.song_id for s in db.library.find_songs_with_tag(identity, limit=None)}
+def _songs_with(db: Database, identity: TagRef) -> set[str]:
+    """Return the semantic ``normalized_path`` locator paths of tagged songs.
+
+    ``find_songs_with_tag`` returns bare ``Song`` values (no generated id); their
+    ``normalized_path`` is the locator path component, so the set compares
+    directly against the seeded ``song_paths``.
+    """
+    return {s.normalized_path for s in db.library.find_songs_with_tag(identity, limit=None)}
 
 
 def _storage_engine(url: str) -> Any:
@@ -138,27 +142,38 @@ def _tag_row_required(engine: Any, identity: TagRef) -> tuple[int, str, object, 
     return row
 
 
-def _edges_of_tag(engine: Any, tag_id: int) -> list[int]:
+def _edges_of_tag(engine: Any, tag_id: int) -> list[str]:
+    """Return a tag's edge songs as semantic ``songs.normalized_path`` values.
+
+    The private integer ``song_tags.song_id`` is joined back to its owning
+    ``songs.normalized_path`` so storage introspection is compared against the
+    semantic locator paths, never against generated integers.
+    """
     with engine.connect() as c:
         rows = c.execute(
-            text("SELECT song_id FROM song_tags WHERE tag_id=:t ORDER BY song_id"), {"t": tag_id}
+            text(
+                "SELECT s.normalized_path FROM song_tags st "
+                "JOIN songs s ON s.id = st.song_id "
+                "WHERE st.tag_id=:t ORDER BY s.normalized_path"
+            ),
+            {"t": tag_id},
         ).fetchall()
-    return [int(r[0]) for r in rows]
+    return [str(r[0]) for r in rows]
 
 
 # ---------------------------------------------------------------------------
-# P1-S1 — natural (namespace, name, value) identity drives every curation op
+# Natural (namespace, name, value) identity drives every curation op
 # ---------------------------------------------------------------------------
 
 
 def test_lookup_and_song_resolution_use_complete_natural_identity(curation_db: Database) -> None:
     """get_tag / find_songs_with_tag address songs by complete natural identity."""
-    _lib, identities, song_ids = _seed(curation_db)
+    _lib, identities, song_paths = _seed(curation_db)
     _tag(curation_db, identities[0], [("genre", "rock"), ("genre", "jazz")])
     _tag(curation_db, identities[1], [("genre", "rock")])
 
-    assert _songs_with(curation_db, GENRE) == {song_ids[0], song_ids[1]}
-    assert _songs_with(curation_db, JAZZ) == {song_ids[0]}
+    assert _songs_with(curation_db, GENRE) == {song_paths[0], song_paths[1]}
+    assert _songs_with(curation_db, JAZZ) == {song_paths[0]}
 
     got = curation_db.library.get_tag(GENRE)
     assert got is not None
@@ -177,7 +192,7 @@ def test_storage_pk_120_is_not_selectable_by_natural_value_120(curation_db: Data
     addressable by a natural probe for value '120' unless its
     ``(name, value, namespace)`` actually equals that.
     """
-    _lib, identities, song_ids = _seed(curation_db)
+    _lib, identities, song_paths = _seed(curation_db)
     # A tag whose natural value is literally the string '120' (assigned to song0).
     _tag(curation_db, identities[0], [("genre", "120")])
     # A second tag with an unrelated natural value, but NO edges yet.
@@ -205,7 +220,7 @@ def test_storage_pk_120_is_not_selectable_by_natural_value_120(curation_db: Data
         assert curation_db.library.get_tag(TagRef(name="pitch", value="eleven", namespace="default")) is not None
 
         # Only the songs actually tagged with natural value '120' are returned.
-        assert _songs_with(curation_db, TagRef(name="genre", value="120", namespace="default")) == {song_ids[0]}
+        assert _songs_with(curation_db, TagRef(name="genre", value="120", namespace="default")) == {song_paths[0]}
         assert _songs_with(curation_db, TagRef(name="pitch", value="120", namespace="default")) == set()
     finally:
         engine.dispose()
@@ -213,7 +228,7 @@ def test_storage_pk_120_is_not_selectable_by_natural_value_120(curation_db: Data
 
 def test_merge_uses_natural_identity_sources_removed(curation_db: Database) -> None:
     """merge_tags addresses canonical + sources by complete TagRef and drains sources."""
-    _lib, identities, song_ids = _seed(curation_db)
+    _lib, identities, song_paths = _seed(curation_db)
     _tag(curation_db, identities[0], [("genre", "rock"), ("genre", "jazz")])
     _tag(curation_db, identities[1], [("genre", "rock")])
     _tag(curation_db, identities[2], [("genre", "blues")])  # canonical already exists with song2
@@ -221,34 +236,36 @@ def test_merge_uses_natural_identity_sources_removed(curation_db: Database) -> N
     res = _svc(curation_db).merge_tags([GENRE, JAZZ], BLUES)
     assert res["total_moved"] == 2  # rock song0+song1 -> blues
     assert res["sources_removed"] == 2  # rock and jazz both drained
-    assert _songs_with(curation_db, BLUES) == {song_ids[0], song_ids[1], song_ids[2]}
+    assert _songs_with(curation_db, BLUES) == {song_paths[0], song_paths[1], song_paths[2]}
     assert _songs_with(curation_db, GENRE) == set()
     assert _songs_with(curation_db, JAZZ) == set()
 
 
 def test_split_moves_only_selected_songs_by_natural_identity(curation_db: Database) -> None:
     """split_tag restricts the move to the given songs, keyed off a natural source."""
-    _lib, identities, song_ids = _seed(curation_db)
+    _lib, identities, song_paths = _seed(curation_db)
     _tag(curation_db, identities[0], [("genre", "rock")])
     _tag(curation_db, identities[1], [("genre", "rock")])
     _tag(curation_db, identities[2], [("genre", "rock")])
 
-    res = _svc(curation_db).split_tag(GENRE, [str(song_ids[1])], "prog")
+    # split_tag's ``song_ids`` are opaque nom1 SongLocator tokens (ADR-048), not
+    # integers: encode the selected song's semantic locator.
+    res = _svc(curation_db).split_tag(GENRE, [encode_song_locator(identities[1])], "prog")
     assert res["moved"] == 1
     assert res["new_tag_created"] is True
-    assert _songs_with(curation_db, GENRE) == {song_ids[0], song_ids[2]}
-    assert _songs_with(curation_db, TagRef(name="genre", value="prog", namespace="default")) == {song_ids[1]}
+    assert _songs_with(curation_db, GENRE) == {song_paths[0], song_paths[2]}
+    assert _songs_with(curation_db, TagRef(name="genre", value="prog", namespace="default")) == {song_paths[1]}
 
 
 # ---------------------------------------------------------------------------
-# P1-S2 — collisions, duplicate-safe relinking, orphan cleanup, atomicity
+# Collisions, duplicate-safe relinking, orphan cleanup, atomicity
 # ---------------------------------------------------------------------------
 
 
 def test_duplicate_safe_relink_no_duplicate_edges(curation_db: Database, curation_db_url: str) -> None:
     """Renaming a source that already shares a song with the target deletes the
     collision before re-pointing the rest; no song ends with two edges to one tag."""
-    _lib, identities, song_ids = _seed(curation_db)
+    _lib, identities, song_paths = _seed(curation_db)
     # song0 has both rock and blues; song1 only rock; song2 only blues.
     _tag(curation_db, identities[0], [("genre", "rock"), ("genre", "blues")])
     _tag(curation_db, identities[1], [("genre", "rock")])
@@ -258,12 +275,12 @@ def test_duplicate_safe_relink_no_duplicate_edges(curation_db: Database, curatio
         res = _svc(curation_db).rename_tag(GENRE, "blues")
         # song0 rock edge collides with its existing blues edge -> skipped; song1 moved.
         assert res["moved"] == 1
-        assert _songs_with(curation_db, BLUES) == {song_ids[0], song_ids[1], song_ids[2]}
+        assert _songs_with(curation_db, BLUES) == {song_paths[0], song_paths[1], song_paths[2]}
         assert _songs_with(curation_db, GENRE) == set()
 
         blues_id = _tag_row_required(engine, BLUES)[0]
         edges = _edges_of_tag(engine, blues_id)
-        assert edges == sorted({song_ids[0], song_ids[1], song_ids[2]})
+        assert edges == sorted({song_paths[0], song_paths[1], song_paths[2]})
         assert len(edges) == len(set(edges))  # no duplicate edges
         rock_row = _tag_row(engine, GENRE)
         if rock_row is not None:
@@ -274,7 +291,7 @@ def test_duplicate_safe_relink_no_duplicate_edges(curation_db: Database, curatio
 
 def test_orphan_cleanup_removes_fully_moved_source(curation_db: Database) -> None:
     """After a full-move rename the source has no edges and is orphan-cleaned."""
-    _lib, identities, _song_ids = _seed(curation_db)
+    _lib, identities, _song_paths = _seed(curation_db)
     _tag(curation_db, identities[0], [("genre", "rock")])
     _tag(curation_db, identities[1], [("genre", "rock")])
     svc = _svc(curation_db)
@@ -293,7 +310,7 @@ def test_missing_source_target_raise_deterministic_errors_no_mutation(
     curation_db: Database, curation_db_url: str
 ) -> None:
     """Unknown source/canonical raise ValueError and leave the DB unchanged."""
-    _lib, identities, song_ids = _seed(curation_db)
+    _lib, identities, _song_paths = _seed(curation_db)
     _tag(curation_db, identities[0], [("genre", "rock")])
     ghost = TagRef(name="genre", value="ghost", namespace="default")
     engine = _storage_engine(curation_db_url)
@@ -314,7 +331,7 @@ def test_missing_source_target_raise_deterministic_errors_no_mutation(
         with pytest.raises(ValueError, match="not found"):
             svc.merge_tags([GENRE], ghost)
         with pytest.raises(ValueError, match="not found"):
-            svc.split_tag(ghost, [str(song_ids[0])], "prog")
+            svc.split_tag(ghost, [encode_song_locator(identities[0])], "prog")
         assert _snapshot() == before
         assert curation_db.library.get_tag(GENRE) is not None
     finally:
@@ -323,7 +340,7 @@ def test_missing_source_target_raise_deterministic_errors_no_mutation(
 
 def test_idempotent_retry_rename_to_same_value_is_noop(curation_db: Database, curation_db_url: str) -> None:
     """Renaming a tag to its own value mutates nothing and reports moved=0."""
-    _lib, identities, song_ids = _seed(curation_db)
+    _lib, identities, song_paths = _seed(curation_db)
     _tag(curation_db, identities[0], [("genre", "rock")])
     engine = _storage_engine(curation_db_url)
     try:
@@ -331,7 +348,7 @@ def test_idempotent_retry_rename_to_same_value_is_noop(curation_db: Database, cu
         res = _svc(curation_db).rename_tag(GENRE, "rock")
         assert res["moved"] == 0
         assert res["merged_into_existing"] is False
-        assert _songs_with(curation_db, GENRE) == {song_ids[0]}
+        assert _songs_with(curation_db, GENRE) == {song_paths[0]}
         assert _edges_of_tag(engine, _tag_row_required(engine, GENRE)[0]) == before
     finally:
         engine.dispose()
@@ -339,18 +356,18 @@ def test_idempotent_retry_rename_to_same_value_is_noop(curation_db: Database, cu
 
 def test_write_pending_transitions_persist_after_rename(curation_db: Database) -> None:
     """Songs under a renamed tag flip written->not_written, tags_current->tags_not_fresh."""
-    _lib, identities, song_ids = _seed(curation_db)
+    _lib, identities, _song_paths = _seed(curation_db)
     _tag(curation_db, identities[0], [("genre", "rock")])
     _tag(curation_db, identities[1], [("genre", "rock")])
-    assert "written" in curation_db.app.song_state_membership(song_ids[0])
-    assert "tags_current" in curation_db.app.song_state_membership(song_ids[0])
+    assert "written" in curation_db.app.song_state_membership(identities[0])
+    assert "tags_current" in curation_db.app.song_state_membership(identities[0])
 
     _svc(curation_db).rename_tag(GENRE, "alternative")
-    for sid in song_ids[:2]:
-        mem = curation_db.app.song_state_membership(sid)
+    for identity in identities[:2]:
+        mem = curation_db.app.song_state_membership(identity)
         assert "not_written" in mem
         assert "tags_not_fresh" in mem
-    mem2 = curation_db.app.song_state_membership(song_ids[2])
+    mem2 = curation_db.app.song_state_membership(identities[2])
     assert "written" in mem2
     assert "tags_current" in mem2
 
@@ -360,12 +377,12 @@ def test_failed_post_relink_step_leaves_consistent_edges_and_retry_recovers(
 ) -> None:
     """An injected failure after the cross-tag relink leaves no partial edge
     mutation; a retry completes the write-pending marking (idempotent recovery)."""
-    _lib, identities, song_ids = _seed(curation_db)
+    _lib, identities, song_paths = _seed(curation_db)
     _tag(curation_db, identities[0], [("genre", "rock")])
     _tag(curation_db, identities[1], [("genre", "rock")])
     svc = _svc(curation_db)
 
-    def _boom(song_id: int) -> None:
+    def _boom(song: SongIdentity) -> None:
         raise RuntimeError("injected write-pending failure")
 
     monkeypatch.setattr(svc, "_mark_song_write_pending", _boom)
@@ -375,21 +392,21 @@ def test_failed_post_relink_step_leaves_consistent_edges_and_retry_recovers(
 
     # Cross-tag edge relink is complete and consistent (no partial cross-tag state).
     alt = TagRef(name="genre", value="alternative", namespace="default")
-    assert _songs_with(curation_db, alt) == {song_ids[0], song_ids[1]}
+    assert _songs_with(curation_db, alt) == {song_paths[0], song_paths[1]}
     assert _songs_with(curation_db, GENRE) == set()
 
     # Retry (fault removed) is idempotent and now completes pending marking.
     monkeypatch.undo()
     res = svc.rename_tag(GENRE, "alternative")
     assert res["moved"] == 0  # already fully moved
-    for sid in song_ids[:2]:
-        mem = curation_db.app.song_state_membership(sid)
+    for identity in identities[:2]:
+        mem = curation_db.app.song_state_membership(identity)
         assert "not_written" in mem
         assert "tags_not_fresh" in mem
 
 
 # ---------------------------------------------------------------------------
-# P1-S3 — concurrency under repository transactions
+# Concurrency under repository transactions
 # ---------------------------------------------------------------------------
 
 
@@ -421,7 +438,7 @@ def test_concurrent_disjoint_merges_into_one_canonical_are_consistent(
 ) -> None:
     """Merging three disjoint source tags into one canonical concurrently never
     duplicates an edge; every source edge lands at the canonical exactly once."""
-    _lib, identities, song_ids = _seed(curation_db)
+    _lib, identities, song_paths = _seed(curation_db)
     for idx, value in enumerate(["happy", "sad", "calm"]):
         _tag(curation_db, identities[idx], [("mood", value)])
     # Canonical must pre-exist (merge_tags requires it).
@@ -439,10 +456,10 @@ def test_concurrent_disjoint_merges_into_one_canonical_are_consistent(
         assert all(e is None for e in outcomes), outcomes
 
         canonical = TagRef(name="mood", value="mellow", namespace="default")
-        assert _songs_with(curation_db, canonical) == set(song_ids)
+        assert _songs_with(curation_db, canonical) == set(song_paths)
         can_id = _tag_row_required(engine, canonical)[0]
         edges = _edges_of_tag(engine, can_id)
-        assert len(edges) == len(set(edges)) == len(song_ids)  # unique constraint holds
+        assert len(edges) == len(set(edges)) == len(song_paths)  # unique constraint holds
         for value in ("happy", "sad", "calm"):
             row = _tag_row(engine, TagRef(name="mood", value=value, namespace="default"))
             if row is not None:
@@ -457,7 +474,7 @@ def test_concurrent_same_target_renames_no_duplicate_edges_and_retry_converges(
     """Concurrent renames of distinct sources that share songs into one target may
     race; the DB UNIQUE(song_id, tag_id) constraint rejects any duplicate, so no
     duplicate edge ever persists. A retry of the rejected operation converges."""
-    _lib, identities, song_ids = _seed(curation_db)
+    _lib, identities, song_paths = _seed(curation_db)
     # song0 has both rock and blues; song1 rock; song2 blues.
     _tag(curation_db, identities[0], [("genre", "rock"), ("genre", "blues")])
     _tag(curation_db, identities[1], [("genre", "rock")])
@@ -477,10 +494,10 @@ def test_concurrent_same_target_renames_no_duplicate_edges_and_retry_converges(
                 _svc(curation_db).rename_tag(sources[idx], "unified")
 
         unified = TagRef(name="genre", value="unified", namespace="default")
-        assert _songs_with(curation_db, unified) == set(song_ids)
+        assert _songs_with(curation_db, unified) == set(song_paths)
         unif_id = _tag_row_required(engine, unified)[0]
         edges = _edges_of_tag(engine, unif_id)
-        assert len(edges) == len(set(edges)) == len(song_ids)  # no duplicate edges
+        assert len(edges) == len(set(edges)) == len(song_paths)  # no duplicate edges
         for src in sources:
             row = _tag_row(engine, src)
             if row is not None:
@@ -490,7 +507,7 @@ def test_concurrent_same_target_renames_no_duplicate_edges_and_retry_converges(
 
 
 # ---------------------------------------------------------------------------
-# P1-S4 — restart/reload + pagination + cache invariance
+# Restart/reload + pagination + cache invariance
 # ---------------------------------------------------------------------------
 
 
@@ -498,10 +515,10 @@ def test_handle_resolves_after_fresh_session_no_pk_cache(curation_db_url: str) -
     """A listed tag's opaque handle resolves across a fresh Database/connection
     (simulated restart) with no in-memory PK cache, by complete natural identity."""
     db1 = Database(url=curation_db_url)
-    identities: list[Any] = []
-    song_ids: list[int] = []
+    identities: list[SongIdentity] = []
+    song_paths: list[str] = []
     try:
-        _lib, identities, song_ids = _seed(db1, n=2)
+        _lib, identities, song_paths = _seed(db1, n=2)
         _tag(db1, identities[0], [("genre", "rock")])
         _tag(db1, identities[1], [("genre", "rock")])
         listing = db1.library.list_tags_with_song_count(name=None, limit=100, offset=0)
@@ -516,7 +533,7 @@ def test_handle_resolves_after_fresh_session_no_pk_cache(curation_db_url: str) -
         assert isinstance(identity, TagRef)
         assert (identity.name, identity.value, identity.namespace) == ("genre", "rock", "default")
         assert db2.library.get_tag(identity) is not None
-        assert _songs_with(db2, identity) == set(song_ids)
+        assert _songs_with(db2, identity) == set(song_paths)
     finally:
         db2.close()
 
@@ -525,9 +542,9 @@ def test_after_rename_old_identity_not_found_and_refreshed_listing_emits_new(cur
     """After rename, the old identity no longer selects songs and disappears from a
     refreshed listing after orphan cleanup; a fresh session sees the same thing."""
     db1 = Database(url=curation_db_url)
-    song_ids: list[int] = []
+    song_paths: list[str] = []
     try:
-        _lib, identities, song_ids = _seed(db1, n=2)
+        _lib, identities, song_paths = _seed(db1, n=2)
         _tag(db1, identities[0], [("genre", "rock")])
         _tag(db1, identities[1], [("genre", "rock")])
         old_handle = encode_tag_handle(GENRE)
@@ -547,7 +564,7 @@ def test_after_rename_old_identity_not_found_and_refreshed_listing_emits_new(cur
         assert "genre:rock" not in names
         assert "genre:alternative" in names
         new_handle = encode_tag_handle(next(u.identity for u in listing if u.identity.name == "genre"))
-        assert _songs_with(db2, decode_tag_handle(new_handle)) == set(song_ids)
+        assert _songs_with(db2, decode_tag_handle(new_handle)) == set(song_paths)
     finally:
         db2.close()
 
@@ -557,7 +574,7 @@ def test_handles_survive_pagination_boundaries_and_fresh_session(curation_db_url
     a fresh session (no dependence on a pagination cursor or in-memory PK)."""
     db1 = Database(url=curation_db_url)
     try:
-        _lib, identities, _song_ids = _seed(db1, n=4)
+        _lib, identities, _song_paths = _seed(db1, n=4)
         for idx, value in enumerate(["rock", "jazz", "blues", "prog"]):
             _tag(db1, identities[idx], [("genre", value)])
 

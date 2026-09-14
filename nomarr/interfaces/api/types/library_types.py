@@ -49,7 +49,7 @@ def _to_iso(value: int | str | None) -> str | None:
 class LibraryResponse(BaseModel):
     """Single library response.
 
-    Mechanism A (TASK-library-domain-facades-A): the wire identity is the
+    The wire identity is the
     URL-encoded natural ``Library.name`` (``library_id`` is a string natural-name
     token, never a generated primary key). Built from a domain ``Library`` plus
     optional per-library scan status and file/folder counts supplied by the
@@ -57,7 +57,7 @@ class LibraryResponse(BaseModel):
     """
 
     library_id: str  # natural library name (mechanism A)
-    library_uuid: str  # immutable Nomarr-owned SongLocator library identity (ADR-049)
+    library_uuid: str  # immutable Nomarr-owned SongLocator library identity (ADR-048)
     name: str
     root_path: str
     is_enabled: bool
@@ -253,7 +253,7 @@ class ListLibrariesResponse(BaseModel):
         """Convert a list of domain ``Library`` values to the response model.
 
         The interface adapter supplies the name-keyed file/folder ``counts`` and
-        per-library ``scans`` for the transport projection (P4-S8).
+        per-library ``scans`` for the transport projection.
 
         Args:
             libraries: Domain ``Library`` values.

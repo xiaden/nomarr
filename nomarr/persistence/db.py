@@ -85,7 +85,7 @@ class Database:
         )
         self._folder_repo = FolderRepository(self._scoped)
         self._tag_repo = TagRepository(self._scoped)
-        # Phase 2 (TASK-tag-persistence-ownership-D2): the song-tag repository is
+        # The song-tag repository is
         # the Tier-2 owner of the private locator-addressed mood intent, so it
         # receives the tag/song/library resolvers it composes privately.
         self._song_tag_repo = SongTagRepository(
@@ -136,28 +136,21 @@ class Database:
             folder_repo=self._folder_repo,
             song_state_repo=self._song_state_repo,
             song_hydration_repo=self._song_hydration_repo,
-            # TASK-library-domain-facades-A P3-S3/P3-S5: LibrarySongsDb now
-            # resolves the Library natural key -> storage library_id internally
-            # for folder + library-scoped song intents, so it needs the library
-            # repository. Added additively; the concurrent song-facade hunks
-            # above are preserved.
+            # LibrarySongsDb resolves the Library natural key to the private
+            # storage library_id for folder and library-scoped song intents.
             library_repo=self._library_repo,
         )
         tags = LibraryTagsDb(
             session=self._scoped,
             tag_repo=self._tag_repo,
             song_tag_repo=self._song_tag_repo,
-            # Phase 2 (TASK-song-intent-facade-correction-A): LibraryTagsDb now
-            # resolves SongIdentity -> storage song_id internally (library natural
-            # key first), so it needs the song + library repositories. Added
-            # additively to a block the concurrent regions work does not touch
-            # (preserve concurrent hunks).
+            # LibraryTagsDb resolves SongIdentity to the private storage song_id
+            # internally, using the library natural key first.
             song_repo=self._song_repo,
             library_repo=self._library_repo,
         )
-        # TASK-library-domain-facades-A P3-S1: LibraryScansDb now resolves the
-        # Library natural key -> storage library_id internally, so it needs the
-        # library repository.
+        # LibraryScansDb resolves the Library natural key to the private storage
+        # library_id internally.
         scans = LibraryScansDb(
             session=self._scoped,
             scan_repo=self._scan_repo,

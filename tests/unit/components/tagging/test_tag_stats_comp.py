@@ -1,6 +1,6 @@
 """Tests for nomarr.components.tagging.tag_stats_comp module.
 
-Q3-H rewrite: library stats read semantic ``Song`` attributes directly and tag
+Library stats read semantic ``Song`` attributes directly and tag
 distributions scope by projecting songs to UUID-bearing ``SongIdentity``
 locators. No generated id, row, resolver, or ``Song.to_dict`` participates.
 """

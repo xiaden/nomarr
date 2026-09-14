@@ -1,70 +1,40 @@
-# File State Machine
+# Song State Machine
 
-Nomarr tracks per-file processing status through a boolean state graph stored in the `file_states` PostgreSQL table. Each file can simultaneously hold one vertex per axis — every axis is an independent boolean.
+Nomarr tracks processing state per semantic song locator. The current application contract uses `SongIdentity` (also named `SongLocator`) and the `song_states` / `song_state_assignments` tables; generated song and library IDs remain persistence-private. State transitions are owned by the library state component and the `db.app` semantic intents.
 
-## Canonical definitions
+## Current contract
 
-All state vertex identifiers and axis pairs are defined in one place:
+State vertex identifiers and axis pairs are defined in:
 
 ```
 nomarr/helpers/constants/file_states.py
 ```
 
-Import from there everywhere. Never hard-code `"file_states/tagged"` strings in other modules.
+These constants are bare state values; they are not collection-qualified names. Use `SongIdentity` values with `nomarr.components.library.library_song_state_comp` and `db.app.song_state_memberships` / `db.app.transition_song_states`. Do not construct or pass generated file/song IDs through application callers. The component validates that both vertices belong to one axis before delegating the semantic persistence intent.
 
-## Axes and vertex pairs
+Each axis has a positive and negative pole. A song holds one pole per axis:
 
-Each axis has exactly two poles: a **positive** vertex and a **negative** vertex. A file holds one pole per axis at any given time. Negative poles always use the `not_` prefix for consistency.
+| Axis | Positive value | Negative value |
+| --- | --- | --- |
+| `processed` | `processed` | `not_processed` |
+| `calibrated` | `calibrated` | `not_calibrated` |
+| `written` | `written` | `not_written` |
+| `tags_current` | `tags_current` | `tags_not_fresh` |
+| `hydrated` | `hydrated` | `not_hydrated` |
+| `scanned` | `scanned` | `not_scanned` |
+| `vectors_extracted` | `vectors_extracted` | `not_vectors_extracted` |
+| `errored` | `errored` | `not_errored` |
 
- | Axis | Positive vertex | Negative vertex |
- | ------ | ---------------- | ---------------- |
- | `tagged` | `file_states/tagged` | `file_states/not_tagged` |
- | `calibrated` | `file_states/calibrated` | `file_states/not_calibrated` |
- | `tags_written` | `file_states/tags_written` | `file_states/tags_not_written` |
- | `tags_current` | `file_states/tags_current` | `file_states/tags_not_fresh` |
- | `tags_extracted` | `file_states/tags_extracted` | `file_states/tags_not_extracted` |
- | `scanned` | `file_states/scanned` | `file_states/not_scanned` |
- | `vectors_extracted` | `file_states/vectors_extracted` | `file_states/not_vectors_extracted` |
- | `errored` | `file_states/errored` | `file_states/not_errored` |
+A transition is valid only between the two poles of the same axis. Positive-to-negative and negative-to-positive transitions are both allowed; cross-axis transitions are rejected.
 
-These are exposed as `AXIS_PAIRS: dict[StateAxis, tuple[str, str]]` — a dict from axis name to `(positive_vertex, negative_vertex)`.
+## Historical/non-operative material
 
-## Valid transitions
-
-A transition is valid **if and only if** `from_state` and `to_state` are the two poles of the same axis. Cross-axis transitions (e.g., moving from `tagged` to `scanned`) are invalid.
-
-```
-tagged      ↔  not_tagged
-calibrated  ↔  not_calibrated
-tags_written ↔  tags_not_written
-tags_current ↔  tags_not_fresh
-tags_extracted ↔  tags_not_extracted
-scanned     ↔  not_scanned
-vectors_extracted ↔  not_vectors_extracted
-errored     ↔  not_errored
-```
-
-Each arrow represents the only allowed directions for that axis. Positive→negative and negative→positive are both permitted; anything else raises `ValueError`.
-
-## Enforcing transitions: `transition_file_state()`
-
-```
-nomarr/components/library/library_file_state_comp.py
-```
-
-`transition_file_state(db, file_ids, from_state, to_state)` is the single entry point for moving files between state vertices. It:
-
-1. Looks up `(from_state, to_state)` in a pre-built set derived from `AXIS_PAIRS`.
-2. Raises `ValueError` with a descriptive message if the pair is not a valid axis transition.
-3. Delegates to `db.file_states.transition()` on success.
-
-All callers that mutate file state should go through this function rather than calling persistence directly.
+Earlier versions of this page described a `file_states` API addressed by `file_ids`, including `transition_file_state()` and `db.file_states.transition()`. That model is historical and non-operative: it must not be used for new code or treated as the current persistence contract. The current owner is `nomarr/components/library/library_song_state_comp.py`, with semantic `SongIdentity` inputs and `db.app` song-state intents as described above.
 
 ## Adding a new axis
 
-1. Add `STATE_FOO = "file_states/foo"` and `STATE_NOT_FOO = "file_states/not_foo"` constants to `file_states.py`.
-2. Add both to `ALL_STATE_VERTICES`.
-3. Add `"foo": (STATE_FOO, STATE_NOT_FOO)` to `AXIS_PAIRS`.
-4. Extend `StateAxis` with the new literal.
-5. Write a migration that inserts the two new vertices into the `file_states` table and connects existing files to one pole (typically the negative).
-6. Export both constants in `__all__`.
+1. Add positive and negative constants to `file_states.py`.
+2. Add both vertices to `ALL_STATE_VERTICES` and the pair to `AXIS_PAIRS`.
+3. Extend the state-axis type.
+4. Add the corresponding schema/migration data and initialize existing songs to the appropriate pole.
+5. Export the constants in `__all__` where that module requires it.

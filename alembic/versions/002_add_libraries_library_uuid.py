@@ -4,7 +4,7 @@ Revision ID: 002_libraries_library_uuid
 Revises: baseline_20260830
 Create Date: 2026-09-10 00:00:00.000000
 
-ADR-049 introduces ``libraries.library_uuid`` as the immutable, NOT NULL,
+This revision introduces ``libraries.library_uuid`` as the immutable, NOT NULL,
 UNIQUE Nomarr-minted library application identity carried by the SongLocator.
 Nomarr is pre-production: this hard-cut mutation adds the column, backfills
 every existing library with a freshly minted UUID, then enforces NOT NULL and

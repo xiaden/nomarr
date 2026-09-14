@@ -1,6 +1,6 @@
 """Library document composition helpers.
 
-Migrated to the library-domain boundary (P4-S1 of TASK-library-domain-facades-A):
+Library-domain boundary:
 components operate on domain ``Library`` values (natural ``(name, root_path)``
 identity) and typed ``LibraryUpdate`` commands. No storage row, dictionary, or
 generated library id crosses this component's public surface. The scan/stat
@@ -180,7 +180,7 @@ def list_all_libraries(db: Database) -> list[Library]:
 
     Previously returned generated library primary-key ids (``list_library_keys``);
     the facade now exposes ``Library`` values and no component depends on a
-    generated library id (P2-S4).
+    generated library id.
     """
     return db.library.list_libraries()
 

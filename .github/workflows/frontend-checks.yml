@@ -15,9 +15,9 @@ name: Frontend Checks
 # ADDED vs. the old `frontend-test` job: a production build step
 # (`npm run build --prefix frontend`). The old job validated lint/type/test but
 # never produced the deployable bundle. Now that the Dockerfile builds the
-# frontend itself from source (see dockerfile + P1-S7) and the generated bundle
+# frontend itself from source (see dockerfile) and the generated bundle
 # is no longer committed, this gate proves `npm run build` succeeds in CI.
-# The build emits to frontend/dist (see frontend/vite.config.ts, P1-S6).
+# The build emits to frontend/dist (see frontend/vite.config.ts).
 
 on:
   push:

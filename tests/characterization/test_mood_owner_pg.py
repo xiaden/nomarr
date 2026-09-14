@@ -1,6 +1,6 @@
 """Owner-level mood/marker capability characterization on real PostgreSQL.
 
-D3 capability evidence (H-MK / H-BATCH / H-OUTCOME) for the Tier-2 mood owner.
+Capability evidence for the Tier-2 mood owner.
 This module exercises the frozen public mood surface —
 ``LibraryTagsDb.replace_mood_tags`` and ``LibraryTagsDb.replace_mood_tags_batch``
 — against a real PostgreSQL + pgvector engine (the ``pgvector/pgvector:pg17``
@@ -32,15 +32,15 @@ PostgreSQL evidence:
 
 Deliberately NOT in this module: the monkeypatched ``_commit_mood_batch``
 control-flow cases. Those are pure/unit control-flow evidence (``LOCAL_PASS``)
-and live in ``tests/unit/persistence/api/test_mood_owner_d2.py``; they are never
+and live in ``tests/unit/persistence/api/test_mood_owner.py``; they are never
 PostgreSQL, driver, SQLSTATE, connection-loss, poisoned-session, rollback, or
 real-commit evidence.
 
-Evidence labels used by the D3 handoff (D3A): ``LOCAL_PASS`` = executed and
+Evidence labels used by the deferred-capability handoff: ``LOCAL_PASS`` = executed and
 passed against a real PostgreSQL driver; ``CI_DEFERRED`` = wired into the
 ``database-tests`` job, awaiting actual GitHub execution; ``LOCAL_UNAVAILABLE`` /
 ``BLOCKED`` = not runnable or not deterministically reproducible, recorded with
-owner + stop condition in the D3 handoff artifacts.
+    owner + stop condition in the deferred-capability handoff.
 """
 
 from __future__ import annotations
@@ -159,7 +159,7 @@ def mood_world(db: Database, pg_engine) -> Iterator[dict]:
     """Create an isolated library with two songs and return their locators.
 
     Data is created through public domain APIs (library) plus raw persistence
-    inserts (songs, because D3 exercises the mood owner and must not depend on
+    inserts (songs, because this suite exercises the mood owner and must not depend on
     the concurrently-migrating song upsert facade). Everything is removed on
     teardown via the public library removal cascade.
     """
@@ -464,7 +464,7 @@ def _start_mood_batch_writer(
 
 
 # ---------------------------------------------------------------------------
-# H-MK: marker table + publication lifecycle on real PostgreSQL
+# marker table + publication lifecycle on real PostgreSQL
 # ---------------------------------------------------------------------------
 
 
@@ -626,7 +626,7 @@ class TestMoodMarkerCapability:
 
 
 # ---------------------------------------------------------------------------
-# H-OUTCOME: mood replacement outcomes on real PostgreSQL
+# mood replacement outcomes on real PostgreSQL
 # ---------------------------------------------------------------------------
 
 
@@ -776,7 +776,7 @@ class TestMoodReplacementOutcomes:
 
 
 # ---------------------------------------------------------------------------
-# H-BATCH: all-or-none, rollback, and retry classification on real PostgreSQL
+# all-or-none, rollback, and retry classification on real PostgreSQL
 # ---------------------------------------------------------------------------
 
 
@@ -786,9 +786,9 @@ class TestMoodBatchAllOrNone:
     """Genuine PostgreSQL all-or-none evidence only.
 
     The monkeypatched ``_commit_mood_batch`` rollback/retry/ambiguous cases were
-    removed from this live module (D3A P1-S1): they were Python control-flow fault
+    removed from this live module: they were Python control-flow fault
     injection and are owned as pure/unit ``LOCAL_PASS`` evidence by
-    ``tests/unit/persistence/api/test_mood_owner_d2.py::TestMoodCommitPhase``. Real
+    ``tests/unit/persistence/api/test_mood_owner.py::TestMoodCommitPhase``. Real
     driver-level commit-phase SQLSTATE evidence lives in
     ``TestMoodDriverCommitPhaseFaults`` below.
     """
@@ -822,9 +822,9 @@ class TestMoodBatchAllOrNone:
 class TestMoodConcurrencyAndReaddress:
     """Deterministic real-PostgreSQL same-locator serialization evidence.
 
-    D2R-A added ``SongTagRepository._lock_mood_song_rows`` (``SELECT ... FOR NO KEY
-    UPDATE`` on the resolved private ``songs`` row before any mood/marker read).
-    These tests prove the accepted D3A-D1 single-winner contract on real
+    ``SongTagRepository._lock_mood_song_rows`` (``SELECT ... FOR NO KEY
+    UPDATE`` on the resolved private ``songs`` row before any mood/marker read)
+    proves the single-winner contract on real
     PostgreSQL: a same-locator replacement that reaches its owner transaction first
     holds the row lock; a concurrent replacement with the same ``SongIdentity``
     blocks on that lock and, after the predecessor commits, reads the committed

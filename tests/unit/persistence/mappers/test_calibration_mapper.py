@@ -1,7 +1,6 @@
 """Contract tests for the persistence-owned calibration mappers.
 
-``TASK-calibration-state-intent-facade-correction-B`` Phase 3 (P3-S2): prove
-that ``nomarr/persistence/mappers/calibration_mapper.py`` converts repository
+Prove that ``nomarr/persistence/mappers/calibration_mapper.py`` converts repository
 rows/join results to the calibration domain value objects internally and
 builds the internal persistence payloads, so row DTOs, integer ids, JSONB
 envelopes, and event/data shapes never leak past the persistence boundary.
@@ -137,7 +136,7 @@ class TestCalibrationStateFromJoinedRecord:
     def test_constructing_from_joined_record_does_not_raise(self) -> None:
         # Regression: the joined record carries backbone_id model metadata, but
         # CalibrationState has no backbone_id field. The mapper must not forward
-        # it (Plan A removed the field) — constructing must not raise TypeError.
+        # it (the field was removed) — constructing must not raise TypeError.
         record = _joined_record(state_data={"head_name": "head", "label": "pop", "n": 5, "p5": 0.1, "p95": 0.9})
         state = calibration_state_from_joined_record(record)
         assert isinstance(state, CalibrationState)

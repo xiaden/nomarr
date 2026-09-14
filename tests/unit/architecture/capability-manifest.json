@@ -1,7 +1,7 @@
 {
-  "plan": "TASK-tag-persistence-ownership-D3B-mood-ci-wiring-required-check",
-  "refreshed_by": "TASK-tag-persistence-ownership-D3D-B-mood-fault-evidence-ci (D3D-B added commit-ack-drop/connection-loss closure + D3A-D1 resolved-by-D2R-B reconciliation; it did not author the whole manifest; docs-accuracy repair: leak proof cited to the fault-disarmed follow-up, pool.checkedout()==0 recorded as hygiene only); Q3-A boundary-suite wiring reconciliation (TASK-song-row-mirror-leaks-into-domain-Q3-A-state-claims-phase1): tests/integration/test_song_upsert_state_boundary_pg.py listed in pytest_paths + exact_command and skip-only in CI (no NOMARR_TEST_DATABASE_URL) = CI_DEFERRED; pytest_paths/exact_command/required_matrix/ci_job unchanged)",
-  "baseline": "418c5d9b checkpoint",
+  "scope": "semantic database evidence CI wiring",
+  "refreshed_by": "Semantic database evidence reconciliation: commit-ack-drop and connection-loss are covered by the deterministic fault harness; same-locator serialization is recorded under resolved_by_independent_evidence; the create-only boundary suite is listed in pytest_paths and exact_command and remains CI_DEFERRED without NOMARR_TEST_DATABASE_URL; pytest_paths/exact_command/required_matrix/ci_job unchanged",
+  "baseline": "418c5d9b baseline checkpoint",
   "status": "tracked-clean-checkout-fixture",
   "evidence_policy": {
     "local_pass": "Only a command actually executed locally and passed",
@@ -49,7 +49,7 @@
   "forbidden_workflow_properties": ["continue-on-error", "hidden exclusion"],
   "closed_capabilities": [
     {
-      "id": "D3A-D2",
+      "id": "ambiguous-commit-dropped-ack",
       "capability": "pgcode-less ambiguous commit (dropped commit ack)",
       "matrix": "commit-ack-drop",
       "evidence": "tests/characterization/test_mood_owner_pg_faults.py::test_drop_ack_batch_is_single_ambiguous_commit_with_convergence_readback (real PostgreSQL 17.11 driver through tests/characterization/pg_fault_proxy.py PgFaultMode.DROP_ACK); LOCAL_PASS",
@@ -57,7 +57,7 @@
       "contrast_traceability": "pre-commit SEVER_PRE_COMMIT contrast: tests/characterization/test_mood_owner_pg_faults.py::test_pre_commit_sever_is_infra_failure_not_ambiguous (no COMMIT forwarded -> INFRA_FAILURE, never AMBIGUOUS_COMMIT); LOCAL_PASS"
     },
     {
-      "id": "D3A-D3",
+      "id": "connection-loss",
       "capability": "connection-loss",
       "matrix": "connection-loss",
       "evidence": "tests/characterization/test_mood_owner_pg_faults.py::test_sever_commit_phase_is_single_ambiguous_commit_with_no_leak (real driver PgFaultMode.SEVER); LOCAL_PASS",
@@ -65,16 +65,16 @@
       "contrast_traceability": "pre-commit SEVER_PRE_COMMIT contrast: tests/characterization/test_mood_owner_pg_faults.py::test_pre_commit_sever_is_infra_failure_not_ambiguous (no COMMIT forwarded -> INFRA_FAILURE, never AMBIGUOUS_COMMIT); LOCAL_PASS"
     }
   ],
-  "resolved_by_other_plans": [
+  "resolved_by_independent_evidence": [
     {
-      "id": "D3A-D1",
+      "id": "same-locator-single-winner",
       "capability": "same-locator single-winner serialization",
-      "status": "RESOLVED_BY_D2R_B",
-      "resolved_by": "TASK-tag-persistence-ownership-D2R-B-mood-serialization-evidence",
+      "status": "RESOLVED_BY_INDEPENDENT_EVIDENCE",
+      "resolved_by": "independent mood-serialization evidence owner",
       "evidence_node": "tests/characterization/test_mood_owner_pg.py::TestMoodConcurrencyAndReaddress::test_same_locator_concurrent_writers_are_single_winner",
       "evidence_repeat": "5/5 consecutive LOCAL_PASS (deterministic real-PostgreSQL evidence)",
-      "source": "artifacts/designs/parts/tag-persistence-ownership/D2R-B-HANDOFF.md section 2/7",
-      "note": "Distinct from the D3D-B-closed capabilities (D3A-D2/D3A-D3): D3A-D1 was resolved upstream by D2R-B, not by D3D-B, and is not claimed as D3D-B closure. D3D-B only reconciles the manifest to the D2R-B handoff."
+      "source": "independent mood-serialization evidence",
+      "note": "Distinct from the fault-harness-closed capabilities (ambiguous-commit-dropped-ack / connection-loss): same-locator single-winner serialization was resolved by independent upstream mood-serialization evidence, not by the fault harness, and is not claimed as fault-harness closure. The fault-harness reconciliation only aligns the manifest with that upstream evidence."
     }
   ],
   "blocked_capabilities": []

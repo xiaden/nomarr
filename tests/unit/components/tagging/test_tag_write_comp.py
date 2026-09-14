@@ -1,6 +1,6 @@
 """Tests for nomarr.components.tagging.tag_write_comp module.
 
-Phase 6 rewrite: asserts the migrated domain-facing API. All writes route
+Rewrite: asserts the migrated domain-facing API. All writes route
 through the sealed ``LibraryTagsDb`` facade using ``SongIdentity`` /
 ``TagRef`` and typed ``SongTagAssignment`` commands / ``RelinkResult`` results.
 The component accepts semantic song locators directly; no numeric song bridge

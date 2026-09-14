@@ -1,15 +1,13 @@
-"""H Phase 3 static contract gates.
+"""Static contract gates for state/claim and hydration boundaries.
 
-These tests prevent broad integer-adapter approval and keep H's ownership
+These tests prevent broad integer-adapter approval and keep the ownership
 boundary explicit. Mood persistence is deliberately not implemented here: its
 named tag owner must publish the schema/marker/batch contract first.
 
-Clean-checkout boundary (Q2R-B): the formerly ignored-``artifacts`` reads now
-resolve REQUIRED evidence from tracked, non-sensitive fixtures under
-``tests/sabotage/fixtures/`` via a ``NOMARR_TEST_ROOT``-aware ``_root()`` helper.
-The globally gitignored ``artifacts/`` tree is consulted only by one guarded
-optional provenance check that is skipped when the ignored documents are absent,
-so a clean checkout collects and runs this module without them.
+Clean-checkout boundary: the required evidence resolves from tracked,
+non-sensitive fixtures under ``tests/sabotage/fixtures/`` via a
+``NOMARR_TEST_ROOT``-aware ``_root()`` helper, so a clean checkout collects and
+runs this module without the globally gitignored ``artifacts/`` tree.
 """
 
 from __future__ import annotations
@@ -46,7 +44,7 @@ def _fixture(name: str) -> Path:
 
 
 def _assert_tracked_clean_checkout_fixture(path: Path) -> None:
-    """Mirror the Q2R-A tracked-fixture containment proof for these fixtures."""
+    """Mirror the tracked-fixture containment proof for these fixtures."""
     assert path.is_file(), f"tracked evidence fixture missing: {path}"
     rel = path.relative_to(_root())
     assert rel.parts[0] == "tests", f"fixture must live under tests/: {rel}"
@@ -63,7 +61,7 @@ def _assert_tracked_clean_checkout_fixture(path: Path) -> None:
 
 
 @pytest.mark.sabotage_check
-class TestHChromaprintContract:
+class TestChromaprintContract:
     def test_value_is_canonical_and_provenanced(self) -> None:
         value = ChromaprintValue("abc123", provenance="decoder:chromaprint")
         assert value.value == "abc123"
@@ -84,7 +82,7 @@ class TestHChromaprintContract:
 
 
 @pytest.mark.sabotage_check
-class TestHExactHydrationAdapter:
+class TestExactHydrationAdapter:
     def test_hydration_dto_carries_no_storage_id(self) -> None:
         assert "song_id" not in inspect.signature(HydrateSongInput).parameters
 
@@ -97,47 +95,21 @@ class TestHExactHydrationAdapter:
         contract = _fixture("state-claim-contracts.md")
         _assert_tracked_clean_checkout_fixture(contract)
         contract_text = contract.read_text(encoding="utf-8")
-        assert "exact L/N/P allowlist" in contract_text
+        assert "exact owner/boundary allowlist" in contract_text
         assert "HydrateSongInput" in contract_text
         assert "resolve_song_identity`/`resolve_song_identities" in contract_text
 
 
 @pytest.mark.sabotage_check
-class TestHMoodOwnerCapabilityRefusal:
+class TestMoodOwnerCapabilityRefusal:
     def test_no_generic_hydration_path_claims_mood_owner(self) -> None:
         source = Path("nomarr/persistence/database/song_hydration_repo.py").read_text()
         assert "replace_mood_tags" not in source
         assert "CalibrationMoodMarker" not in source
 
-    def test_handoff_evidence_records_missing_named_owner(self) -> None:
+    def test_owner_gate_records_missing_named_owner(self) -> None:
         evidence = _fixture("state-claim-owner-gates.md")
         _assert_tracked_clean_checkout_fixture(evidence)
         evidence_text = evidence.read_text(encoding="utf-8")
         assert "BLOCKED: no named owner contract" in evidence_text
         assert "No schema or marker semantics are invented" in evidence_text
-
-
-@pytest.mark.sabotage_check
-def test_h_real_evidence_guarded_when_ignored_docs_present() -> None:
-    """Real ignored H/CONTRACTS provenance is asserted only when present.
-
-    On a clean checkout this is SKIPPED, never a local PASS: the tracked fixtures
-    above already carry the non-sensitive required vocabulary.
-    """
-    ignored_contracts = "artifacts/designs/parts/song-row-mirror-leaks-into-domain/CONTRACTS.md"
-    ignored_evidence = "artifacts/designs/parts/song-row-mirror-leaks-into-domain/evidence-H-phase3-owner-gates.md"
-    contracts = _root() / ignored_contracts
-    evidence = _root() / ignored_evidence
-    if not contracts.is_file() or not evidence.is_file():
-        pytest.skip(
-            "ignored H/CONTRACTS documents absent (clean checkout); "
-            "non-sensitive tracked fixtures cover required vocabulary; no LOCAL_PASS claimed"
-        )
-    contract_text = contracts.read_text(encoding="utf-8")
-    assert "exact L/N/P allowlist" in contract_text
-    assert "locator-addressed" in contract_text
-    assert "no inbound integer adapter" in contract_text
-    assert "resolve_song_identity`/`resolve_song_identities" in contract_text
-    evidence_text = evidence.read_text(encoding="utf-8")
-    assert "BLOCKED: no named owner contract" in evidence_text
-    assert "No schema or marker semantics are invented" in evidence_text

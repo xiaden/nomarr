@@ -85,7 +85,7 @@ def validate_library_tags_workflow(
     # ``get_songs_with_incomplete_tags`` returns typed ``IncompleteTagCandidate``
     # values. Each candidate carries its semantic ``SongIdentity`` locator and its
     # missing head names directly, so no raw row, integer identity, or resolver is
-    # consulted here (ADR-048; CONTRACTS §5/§9.1).
+    # consulted here (ADR-048; locator-addressing contract).
     incomplete = [candidate for candidate in results if candidate.missing_count > 0]
     missing_counter: Counter[str] = Counter()
     for candidate in incomplete:

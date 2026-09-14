@@ -8,7 +8,7 @@ Architecture:
 - GPU Telemetry: VRAM usage via nvidia-smi with TTL cache (not called until capability confirmed)
 - RAM Telemetry: Process RSS via psutil with TTL cache
 
-Per GPU_REFACTOR_PLAN.md Section 5:
+Capability rules:
 - A container is GPU-capable iff nvidia-smi succeeds inside the container
 - This check is performed once at startup and cached
 """

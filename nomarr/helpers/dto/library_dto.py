@@ -51,7 +51,7 @@ class LibraryStatsResult:
 class LibraryDict:
     """Single library transport projection (library_service.list_libraries or get_library).
 
-    Built from a domain ``Library`` value (P4-S1) — the storage primary key no
+    Built from a domain ``Library`` value — the storage primary key no
     longer crosses the component boundary, so ``id`` is ``None``. Wire ids live
     only in the interface adapter layer.
     """
@@ -60,7 +60,7 @@ class LibraryDict:
     root_path: str
     is_enabled: bool
     id: int | None = None  # storage PK (None post hard-cut)
-    library_uuid: str | None = None  # immutable SongLocator library identity (ADR-049)
+    library_uuid: str | None = None  # immutable SongLocator library identity (ADR-048)
     watch_mode: Literal["off", "event", "poll"] = "off"  # File watching mode (default: off)
     file_write_mode: Literal["none", "minimal", "full"] = "full"  # Tag write mode (default: full)
     library_auto_write: bool = False

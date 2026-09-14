@@ -353,7 +353,7 @@ def _add_library(repo: LibraryRepository, name: str, path: str, *, seed: int = 2
 @pytest.mark.unit
 @pytest.mark.integration
 class TestLibraryUuidIdentity:
-    """ADR-049: the repository round-trips an immutable minted library UUID."""
+    """The repository round-trips an immutable minted library UUID."""
 
     def test_add_library_mints_a_uuid(self, pg_session) -> None:
         repo = LibraryRepository(pg_session)

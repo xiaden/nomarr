@@ -1,7 +1,7 @@
 """TypedDict DTOs for repository return types.
 
-These mirror the SQLAlchemy model columns from Part A and provide
-type-safe return types for all Part C repository methods. Import
+These mirror the SQLAlchemy model columns and provide
+type-safe return types for all repository methods. Import
 only from ``typing`` and ``datetime``.
 """
 

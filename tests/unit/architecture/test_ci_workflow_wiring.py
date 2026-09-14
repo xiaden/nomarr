@@ -1,15 +1,16 @@
-"""Static proof that deferred row-mirror evidence is explicitly wired to CI.
+"""Static proof that deferred database-capability evidence is explicitly wired to CI.
 
 The capability manifest is a fixture under ``tests/unit/architecture/`` (moved out
-of the globally gitignored ``artifacts/`` tree by D3B). It is placed under ``tests/``
-and is not covered by any gitignore rule, so it is tracked on commit (pre-commit it is
-currently untracked). On a clean checkout the fixture is present, so these wiring gates
-hold without depending on an ignored, absent artifact.
+of the globally gitignored ``artifacts/`` tree). It is placed under ``tests/``
+and is not covered by any gitignore rule, so it is tracked on commit. On a clean
+checkout the fixture is present, so these wiring gates hold without depending on
+an ignored, absent artifact.
 """
 
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -20,10 +21,6 @@ import yaml
 ROOT = Path(__file__).parents[3]
 WORKFLOW = ROOT / ".github/workflows/backend-tests.yml"
 MANIFEST = ROOT / "tests/unit/architecture/capability-manifest.json"
-# The legacy, globally-gitignored location that must no longer be authoritative.
-IGNORED_MANIFEST = (
-    ROOT / "artifacts" / "designs" / "parts" / "song-row-mirror-leaks-into-domain" / "capability-manifest.json"
-)
 
 
 def _is_disabling_if(value: object) -> bool:
@@ -53,7 +50,7 @@ def test_deferred_capability_manifest_is_machine_readable() -> None:
     assert "local pass" in manifest["evidence_policy"]["ci_pass"].lower()
     # Exact set (not a superset): this both enumerates the required matrix and
     # prevents silent reintroduction of a removed/unsupported capability such as
-    # the previously-claimed `approved-decoder` (removed by D3A P1-S5).
+    # an unsupported decoder capability.
     assert set(manifest["required_matrix"]) == {
         "PostgreSQL",
         "transaction",
@@ -67,25 +64,23 @@ def test_deferred_capability_manifest_is_machine_readable() -> None:
         "commit-ack-drop",
         "connection-loss",
     }
-    # D3D-B closure: the deterministic D3D-A fault harness now covers the
-    # previously-unreproducible pgcode-less commit-ack-drop (D3A-D2) and
-    # connection-loss (D3A-D3) capabilities, so both are in the covered matrix
-    # and their D3B blocked entries are removed. D3A-D1 is likewise not blocked:
-    # it is resolved by the separate D2R-B single-winner plan (recorded under
-    # resolved_by_other_plans below), not by D3D-B.
+    # The deterministic fault harness covers pgcode-less commit-ack-drop and
+    # connection-loss capabilities. Same-locator serialization is recorded as
+    # resolved by an independent evidence owner below.
     assert "connection-loss" in manifest["required_matrix"]
     assert "commit-ack-drop" in manifest["required_matrix"]
     blocked = {entry["id"]: entry for entry in manifest["blocked_capabilities"]}
-    assert "D3A-D1" not in blocked
-    assert "D3A-D2" not in blocked
-    assert "D3A-D3" not in blocked
-    # D3A-D1 is resolved by D2R-B (distinct from D3D-B closure): the manifest
-    # records it under resolved_by_other_plans with the D2R-B evidence node.
-    d2rb_resolved = {entry["id"]: entry for entry in manifest["resolved_by_other_plans"]}
-    assert "D3A-D1" in d2rb_resolved
-    assert d2rb_resolved["D3A-D1"]["status"] == "RESOLVED_BY_D2R_B"
+    assert "same-locator-single-winner" not in blocked
+    assert "ambiguous-commit-dropped-ack" not in blocked
+    assert "connection-loss" not in blocked
+    # Same-locator single-winner is resolved by an independent evidence owner
+    # (distinct from the fault-harness closure): the manifest records it under
+    # resolved_by_independent_evidence with that independently produced evidence node.
+    resolved = {entry["id"]: entry for entry in manifest["resolved_by_independent_evidence"]}
+    assert "same-locator-single-winner" in resolved
+    assert resolved["same-locator-single-winner"]["status"] == "RESOLVED_BY_INDEPENDENT_EVIDENCE"
     assert (
-        d2rb_resolved["D3A-D1"]["evidence_node"]
+        resolved["same-locator-single-winner"]["evidence_node"]
         == "tests/characterization/test_mood_owner_pg.py::TestMoodConcurrencyAndReaddress::"
         "test_same_locator_concurrent_writers_are_single_winner"
     )
@@ -99,20 +94,12 @@ def test_deferred_capability_manifest_is_machine_readable() -> None:
 def test_manifest_fixture_is_not_gitignored_and_path_safe() -> None:
     """The active manifest is a path under ``tests/`` (not the ignored
     ``artifacts/`` tree) that is not gitignored and is path-safe, so a clean
-    checkout still resolves it. Trackedness is not asserted here: the fixture is
-    untracked until the wave commit, and a truthful name is preferred to an
-    overstatement.
+    checkout still resolves it.
     """
     assert MANIFEST.is_file(), f"tracked capability-manifest fixture missing: {MANIFEST}"
     rel = MANIFEST.relative_to(ROOT)
     assert rel.parts[0] == "tests", f"active manifest must live under tests/: {rel}"
     assert "artifacts" not in rel.parts, f"active manifest must not live under artifacts/: {rel}"
-    # The active reader (this module) must reference the tracked fixture, never
-    # the ignored artifacts path: the ignored path is a distinct, non-authoritative
-    # location and must not be the manifest under test.
-    assert not IGNORED_MANIFEST.exists(), (
-        "legacy ignored manifest must be retired (typed source of truth is the fixture)"
-    )
 
     # The fixture is not covered by any gitignore rule (global or repo-local), so it
     # is version-controlled once committed. Skip only when git/repo is unavailable.
@@ -179,8 +166,8 @@ def test_database_workflow_explicitly_invokes_required_matrix() -> None:
 
 
 @pytest.mark.unit
-def test_d3_mood_owner_suite_is_discoverable_and_database_marked() -> None:
-    """The D3 mood/marker suite exists, is DB-marked, and lives under a
+def test_mood_owner_suite_is_discoverable_and_database_marked() -> None:
+    """The mood/marker suite exists, is DB-marked, and lives under a
     directory the `database-tests` job actually collects with `-m requires_database`.
 
     Static only: this proves the deferred capability is wired for CI collection,
@@ -287,7 +274,7 @@ def test_is_disabling_if_allows_legitimate_guards(value: object) -> None:
 @pytest.mark.unit
 def test_database_workflow_on_triggers_match_required_contract() -> None:
     """The workflow's own `on:` trigger/path filters must match the applicability
-    the required-check contract assumes (P1-S6 trigger applicability).
+    the required-check contract assumes for trigger applicability.
 
     PyYAML parses the bare key `on` as boolean True (YAML 1.1), so read both
     spellings.
@@ -346,3 +333,63 @@ def test_song_upsert_state_boundary_is_wired_and_database_marked() -> None:
     assert "pytest.mark.requires_database" in source
     assert "-m requires_database" in steps
     assert "not requires_database" not in steps
+
+
+@pytest.mark.unit
+def test_architecture_qc_job_overrides_code_smell_deselection() -> None:
+    """The ``architecture-qc`` required gate must actually collect ADR-042 tests.
+
+    The root ``addopts`` in ``pyproject.toml`` carry
+    ``-m "not container_only and not requires_database and not code_smell"``, so a
+    bare ``pytest tests/test_architecture_qc.py`` deselects all 30 code_smell tests
+    (0 selected). The dedicated job must therefore override that expression with an
+    explicit ``-m`` that does not exclude ``code_smell``; otherwise the required
+    gate is vacuously green. A static ``-m`` check plus a real ``--collect-only``
+    count prove non-vacuity without executing the suite.
+    """
+    workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    job = workflow["jobs"]["architecture-qc"]
+    invocations = [
+        line.strip()
+        for step in job["steps"]
+        for line in step.get("run", "").splitlines()
+        if line.strip().startswith("pytest ")
+    ]
+    targeting = [line for line in invocations if "tests/test_architecture_qc.py" in line]
+    assert len(targeting) == 1, (
+        "architecture-qc must contain exactly one pytest invocation targeting "
+        f"tests/test_architecture_qc.py; got: {targeting!r}"
+    )
+    command = targeting[0]
+    match = re.search(r"""-m\s+["']([^"']+)["']""", command)
+    assert match is not None, f"architecture-qc pytest invocation must carry an explicit -m expression: {command!r}"
+    marker_expression = match.group(1)
+    assert "not code_smell" not in marker_expression, (
+        "architecture-qc -m must override the root addopts `not code_smell` deselection "
+        f"or the ADR-042 gate is vacuous; got: {marker_expression!r}"
+    )
+    assert "container_only" in marker_expression
+    assert "requires_database" in marker_expression
+
+    # Non-vacuity proof: the parsed -m expression must collect the code_smell-marked
+    # ADR-042 tests under the real pyproject addopts. Skip only when the subprocess
+    # launcher itself is unavailable, never to mask a vacuous gate.
+    uv = shutil.which("uv")
+    if uv is None:
+        pytest.skip("uv not available; cannot subprocess the architecture-qc collection count")
+    try:
+        proc = subprocess.run(
+            [uv, "run", "pytest", "--collect-only", "-q", "tests/test_architecture_qc.py", "-m", marker_expression],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:  # pragma: no cover - environment guard
+        pytest.skip(f"could not launch pytest for architecture-qc collection proof: {exc}")
+    assert proc.returncode == 0, f"architecture-qc --collect-only failed: {proc.stderr[-500:]}"
+    collected = re.search(r"(\d+) tests? collected", proc.stdout)
+    assert collected is not None, (
+        f"architecture-qc -m expression collected no tests (vacuous gate); output tail: {proc.stdout[-500:]}"
+    )
+    assert int(collected.group(1)) > 0
