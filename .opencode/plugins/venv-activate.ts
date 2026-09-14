@@ -23,7 +23,6 @@ export const VenvActivatePlugin: Plugin = async ({ directory }) => {
       )
       output.env.VIRTUAL_ENV = venvDir
       output.env.PYTHONNOUSERSITE = "1"
-      output.env.PIP_REQUIRE_VIRTUALENV = "1"
     },
   }
 }

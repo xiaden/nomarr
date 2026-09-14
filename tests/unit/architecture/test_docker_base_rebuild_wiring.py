@@ -1,0 +1,463 @@
+"""Static gate for Plan D's Docker base image + base-rebuild workflow wiring.
+
+Static only: this test reads ``dockerfile.base``, ``dockerfile``,
+``.github/workflows/build-base.yml``, and
+``.github/workflows/docker-publish.yml`` and parses them as YAML / text. It
+never invokes Docker and never executes a workflow.
+
+It covers Plan D's reusable-workflow wiring — ``build-base.yml`` becoming a
+``workflow_call``-able reusable workflow while keeping its standalone
+``workflow_dispatch``/``push`` triggers, ``docker-publish.yml`` invoking it as a
+non-required ``build-base`` job that gates ``build-and-push`` — and the
+pinned-uv base derivation (GPU dependency set derived from ``pyproject.toml`` +
+``uv.lock``, no pip/venv machinery, system-Python exact sync).
+
+``docker-publish.yml``'s ``build-base`` reusable-call job grants every
+permission the callee (``build-base.yml``) declares, because GitHub reusable
+workflows can only maintain or reduce permissions through the call chain and
+never grant ``id-token``/``attestations`` by default. It also pins the consumed
+``BASE_TAG`` by ref so the app is always built from the base the same-run
+``build-base`` job published for this commit.
+"""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+import pytest
+import yaml
+
+ROOT = Path(__file__).parents[3]
+DOCKERFILE_BASE = ROOT / "dockerfile.base"
+DOCKERFILE_APP = ROOT / "dockerfile"
+BUILD_BASE = ROOT / ".github/workflows/build-base.yml"
+DOCKER_PUBLISH = ROOT / ".github/workflows/docker-publish.yml"
+
+
+def _load_yaml(path: Path) -> dict:
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert isinstance(data, dict), f"{path} did not parse as a mapping"
+    return data
+
+
+def _on(workflow: dict) -> dict:
+    """Return the ``on:`` mapping.
+
+    PyYAML parses the bare ``on`` key as boolean True (YAML 1.1), so read both
+    spellings.
+    """
+    on = workflow.get("on", workflow.get(True))
+    assert isinstance(on, dict), f"workflow 'on' must be a mapping, got {on!r}"
+    return on
+
+
+def _run_blocks(workflow: dict) -> list[str]:
+    return [
+        step.get("run", "")
+        for job in workflow.get("jobs", {}).values()
+        for step in job.get("steps", [])
+        if "run" in step
+    ]
+
+
+def _dockerfile_run_command(text: str, prefix: str) -> str:
+    """Return the Dockerfile ``RUN`` instruction whose command starts with ``prefix``.
+
+    The returned string is the logical command with line continuations joined, so
+    assertions run against the command itself rather than whole-file text. This
+    keeps them immune to the same token appearing in an explanatory comment.
+    """
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        if not line.startswith("RUN ") or not line[len("RUN ") :].lstrip().startswith(prefix):
+            continue
+        command = [line[len("RUN ") :]]
+        while command[-1].rstrip().endswith("\\") and index + 1 < len(lines):
+            index += 1
+            command.append(lines[index])
+        return " ".join(part.rstrip("\\").strip() for part in command)
+    raise AssertionError(f"dockerfile.base has no RUN command starting with {prefix!r}")
+
+
+def _dockerfile_env_values(text: str) -> str:
+    """Return the joined body of every ``ENV`` instruction, comments excluded.
+
+    Only lines belonging to an ``ENV`` instruction (its start line plus any
+    ``\\`` continuations) are collected, so a token that also appears in a
+    ``#`` explanatory comment cannot satisfy an assertion about the configured
+    environment.
+    """
+    lines = text.splitlines()
+    chunks: list[str] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        if not line.startswith("ENV "):
+            index += 1
+            continue
+        body = [line[len("ENV ") :]]
+        while body[-1].rstrip().endswith("\\") and index + 1 < len(lines):
+            index += 1
+            body.append(lines[index])
+        chunks.append(" ".join(part.rstrip("\\").strip() for part in body))
+        index += 1
+    assert chunks, "dockerfile.base must declare at least one ENV instruction"
+    return " ".join(chunks)
+
+
+@pytest.mark.unit
+def test_build_base_is_reusable_and_keeps_standalone_triggers() -> None:
+    on = _on(_load_yaml(BUILD_BASE))
+    assert {"workflow_call", "workflow_dispatch", "push"} <= set(on), (
+        f"build-base.yml must be reusable and keep standalone triggers; got {sorted(on)!r}"
+    )
+    push = on["push"]
+    assert push["branches"] == ["main", "develop"], (
+        f"build-base.yml push branches must be [main, develop]; got {push['branches']!r}"
+    )
+    assert set(push["paths"]) == {
+        "dockerfile.base",
+        "build_resources/essentia/**",
+        "build_resources/scripts/**",
+    }, f"build-base.yml push must keep base-only standalone paths; got {sorted(push['paths'])!r}"
+
+
+@pytest.mark.unit
+def test_build_base_job_preserves_attestation_build() -> None:
+    workflow = _load_yaml(BUILD_BASE)
+    jobs = workflow["jobs"]
+    assert set(jobs) == {"build-base"}, f"build-base.yml must contain only the build-base job; got {sorted(jobs)!r}"
+    job = jobs["build-base"]
+    assert job["runs-on"] == "ubuntu-latest", f"build-base job must run on ubuntu-latest; got {job['runs-on']!r}"
+    assert set(job["permissions"].items()) >= {
+        ("contents", "read"),
+        ("packages", "write"),
+        ("id-token", "write"),
+        ("attestations", "write"),
+    }, f"build-base job must retain its attestation permissions; got {job['permissions']!r}"
+
+    build_steps = [step for step in job["steps"] if step.get("uses") == "docker/build-push-action@v7"]
+    assert len(build_steps) == 1, (
+        f"build-base job must have exactly one docker/build-push-action@v7 step; got {len(build_steps)}"
+    )
+    with_ = build_steps[0]["with"]
+    assert with_["file"] == "./dockerfile.base", f"base build file must be ./dockerfile.base; got {with_['file']!r}"
+    assert with_["push"] is True, f"base build must push; got {with_['push']!r}"
+    assert with_["provenance"] is True, f"base build must emit provenance; got {with_['provenance']!r}"
+    assert with_["sbom"] is True, f"base build must emit SBOM; got {with_['sbom']!r}"
+
+
+@pytest.mark.unit
+def test_docker_publish_calls_base_as_reusable_job() -> None:
+    job = _load_yaml(DOCKER_PUBLISH)["jobs"]["build-base"]
+    assert job["uses"] == "./.github/workflows/build-base.yml", (
+        f"docker-publish build-base must call the reusable workflow; got {job.get('uses')!r}"
+    )
+    assert job["secrets"] == "inherit", f"docker-publish build-base must inherit secrets; got {job.get('secrets')!r}"
+    assert "runs-on" not in job and "steps" not in job, (
+        f"reusable-call job must not define runs-on/steps; got {sorted(job)!r}"
+    )
+
+
+@pytest.mark.unit
+def test_docker_publish_orders_app_after_base_and_keeps_check_names() -> None:
+    jobs = _load_yaml(DOCKER_PUBLISH)["jobs"]
+    assert jobs["build-and-push"]["needs"] == "build-base", (
+        f"build-and-push must run after build-base; got {jobs['build-and-push'].get('needs')!r}"
+    )
+    assert jobs["promote"]["needs"] == ["build-and-push"], (
+        f"promote must depend on build-and-push; got {jobs['promote'].get('needs')!r}"
+    )
+    assert {"build-and-push", "promote"} <= set(jobs), f"required check names must be preserved; got {sorted(jobs)!r}"
+
+
+@pytest.mark.unit
+def test_docker_publish_paths_cover_dependency_inputs() -> None:
+    on = _on(_load_yaml(DOCKER_PUBLISH))
+    paths = set(on["push"]["paths"])
+    assert paths >= {
+        "uv.lock",
+        ".python-version",
+        ".github/workflows/build-base.yml",
+        "pyproject.toml",
+        "BASE_VERSION",
+        "dockerfile",
+        "docker/compose.yaml",
+        "playwright.config.ts",
+        "nomarr/**",
+        "tests/**",
+        "frontend/**",
+        "e2e/**",
+        ".github/workflows/docker-publish.yml",
+    }, f"docker-publish push paths must cover all dependency inputs; got {sorted(paths)!r}"
+    assert "workflow_dispatch" in on, "docker-publish must remain manually dispatchable"
+
+
+@pytest.mark.unit
+def test_docker_workflows_have_no_pip_or_venv_machinery() -> None:
+    forbidden = ("pip install", "python -m venv", "pip install --upgrade pip")
+    offending = [
+        f"{path.name}: {fragment!r}"
+        for path in (BUILD_BASE, DOCKER_PUBLISH)
+        for run in _run_blocks(_load_yaml(path))
+        for fragment in forbidden
+        if fragment in run
+    ]
+    assert offending == [], f"pip-era install machinery must be absent from Docker workflows: {offending}"
+
+
+@pytest.mark.unit
+def test_docker_base_derives_gpu_set_from_lock_with_pinned_uv() -> None:
+    text = DOCKERFILE_BASE.read_text(encoding="utf-8")
+    assert re.search(r"ghcr\.io/astral-sh/uv:\d[^\s]*", text), (
+        "dockerfile.base must copy uv from a version-pinned image tag"
+    )
+    assert "astral-sh/uv:latest" not in text, "dockerfile.base must not use the unbounded uv:latest tag"
+    assert "COPY pyproject.toml uv.lock .python-version ./" in text, (
+        "dockerfile.base must COPY the lockfile and interpreter pin for the export"
+    )
+    assert "uv export --frozen --no-default-groups --group gpu" in text, (
+        "dockerfile.base must derive the GPU set from the lock with --no-default-groups --group gpu"
+    )
+    assert text.count("uv pip sync --system --break-system-packages") == 2, (
+        "dockerfile.base must contain exactly one dry-run and one real exact sync"
+    )
+    assert "--dry-run" in text, "dockerfile.base must dry-run the exact sync before applying it"
+    assert re.search(r"uv sync\b", text) is None, (
+        "dockerfile.base must not run a project-level 'uv sync' (only 'uv pip sync')"
+    )
+
+
+@pytest.mark.unit
+def test_docker_base_removes_pip_and_forbids_venv_env() -> None:
+    text = DOCKERFILE_BASE.read_text(encoding="utf-8")
+    for forbidden in ("pip install", "python3-pip", "PIP_NO_CACHE_DIR", "VIRTUAL_ENV", "UV_PROJECT_ENVIRONMENT"):
+        assert forbidden not in text, f"dockerfile.base must not contain {forbidden!r}"
+    env_values = _dockerfile_env_values(text)
+    for required in ("UV_PYTHON_DOWNLOADS=never", "UV_LINK_MODE=copy", "UV_COMPILE_BYTECODE=1"):
+        assert required in env_values, (
+            f"dockerfile.base must set {required!r} in an ENV instruction "
+            "(a token in an explanatory comment must not satisfy this)"
+        )
+
+
+@pytest.mark.unit
+def test_docker_base_installs_exactly_once_before_essentia_and_checks_last() -> None:
+    text = DOCKERFILE_BASE.read_text(encoding="utf-8")
+    waf_idx = text.index("waf configure")
+    after_waf = text[waf_idx:]
+    assert re.search(r"uv export|uv pip sync|uv sync\b", after_waf) is None, (
+        "dockerfile.base must not exact-sync again after the Essentia waf build"
+    )
+
+    last_run = text.rsplit("\nRUN ", 1)[-1]
+    for expected in ("CUDAExecutionProvider", "essentia", "chromaprint", "sys.path"):
+        assert expected in last_run, f"final RUN sanity check must assert {expected!r}"
+
+    for probe in ("importlib.metadata", "version('onnxruntime-gpu')", "get_available_providers"):
+        assert probe in last_run, (
+            f"final RUN sanity check must exercise the C5 GPU metadata/provider contract with {probe!r}"
+        )
+
+
+@pytest.mark.unit
+def test_app_dockerfile_adds_no_second_package_path() -> None:
+    text = DOCKERFILE_APP.read_text(encoding="utf-8")
+    assert "FROM ghcr.io/xiaden/nomarr-base:${BASE_TAG}" in text, (
+        "app dockerfile must build on the pre-built base image"
+    )
+    for forbidden in ("pip install", "python -m venv", "RUN uv ", "uv sync", "uv pip"):
+        assert forbidden not in text, f"app dockerfile must not install packages; found {forbidden!r}"
+    for required in (
+        "HEALTHCHECK",
+        'ENTRYPOINT ["/usr/bin/tini", "--"]',
+        "PYTHONPATH=/app:/usr/local/lib/python3/dist-packages",
+        "USER 1000:1000",
+        "EXPOSE 8356",
+        'CMD ["python3", "-m", "nomarr.start"]',
+    ):
+        assert required in text, f"app dockerfile must preserve runtime contract {required!r}"
+
+
+@pytest.mark.unit
+def test_build_base_caller_grants_callee_permissions() -> None:
+    caller = _load_yaml(DOCKER_PUBLISH)["jobs"]["build-base"].get("permissions") or {}
+    callee = _load_yaml(BUILD_BASE)["jobs"]["build-base"]["permissions"]
+    assert all(caller.get(k) == v for k, v in callee.items()), (
+        "the build-base reusable-call job must grant every permission the callee requests, "
+        f"at equal-or-greater level; caller={caller!r} callee={callee!r}"
+    )
+
+
+@pytest.mark.unit
+def test_docker_publish_selects_base_tag_by_ref_without_unguarded_default() -> None:
+    jobs = _load_yaml(DOCKER_PUBLISH)["jobs"]
+    tags_step = next(step for step in jobs["build-and-push"]["steps"] if step.get("id") == "tags")
+    run = tags_step["run"]
+
+    assert 'BASE_TAG="sha-${SHORT_SHA}"' in run, (
+        "non-main/develop refs must select the same-run sha-${SHORT_SHA} base tag"
+    )
+    assert run.count('BASE_TAG="v${BASE_VERSION}"') == 1, (
+        "the version-addressed base tag must be assigned exactly once, inside the "
+        "main/develop guard (no unguarded assignment)"
+    )
+
+    guard = 'if [ "${{ github.ref_name }}" = "main" ] || [ "${{ github.ref_name }}" = "develop" ]; then'
+    guard_idx = run.find(guard)
+    assert guard_idx != -1, "Compute image tags must guard the version-addressed base tag on main/develop"
+    v_idx = run.find('BASE_TAG="v${BASE_VERSION}"')
+    else_idx = run.find("else", guard_idx)
+    sha_idx = run.find('BASE_TAG="sha-${SHORT_SHA}"')
+    assert guard_idx < v_idx < else_idx, (
+        "BASE_TAG=v${BASE_VERSION} must sit inside the main/develop branch (no unguarded assignment)"
+    )
+    assert else_idx < sha_idx, "BASE_TAG=sha-${SHORT_SHA} must be the non-main/develop branch"
+
+
+@pytest.mark.unit
+def test_build_base_publishes_short_sha_on_all_arms_and_declares_no_output() -> None:
+    workflow = _load_yaml(BUILD_BASE)
+    on = _on(workflow)
+    assert not on.get("workflow_call"), (
+        f"build-base must not declare workflow_call outputs; got {on.get('workflow_call')!r}"
+    )
+    assert "base_tag" not in BUILD_BASE.read_text(encoding="utf-8"), "build-base.yml must not declare a base_tag output"
+
+    job = workflow["jobs"]["build-base"]
+    tags_step = next(step for step in job["steps"] if step.get("id") == "tags")
+    run = tags_step["run"]
+    assert run.count("${REPO}:sha-${SHORT_SHA}") == 3, (
+        "build-base must publish sha-${SHORT_SHA} in all three branch arms"
+    )
+    main_arm, rest = run.split("elif", 1)
+    develop_arm, else_arm = rest.split("else", 1)
+    for name, arm in (("main", main_arm), ("develop", develop_arm), ("else", else_arm)):
+        assert "${REPO}:sha-${SHORT_SHA}" in arm, (
+            f"build-base {name} arm must publish sha-${{SHORT_SHA}}; got {arm.strip()!r}"
+        )
+
+
+@pytest.mark.unit
+def test_app_build_consumes_same_run_base_and_promote_ordering() -> None:
+    jobs = _load_yaml(DOCKER_PUBLISH)["jobs"]
+    build_job = jobs["build-and-push"]
+    assert build_job["needs"] == "build-base", (
+        f"build-and-push must run after the same-run base job; got {build_job.get('needs')!r}"
+    )
+
+    build_steps = [step for step in build_job["steps"] if step.get("uses") == "docker/build-push-action@v7"]
+    assert len(build_steps) == 1, (
+        f"build-and-push must have exactly one docker/build-push-action@v7 step; got {len(build_steps)}"
+    )
+    build_args = build_steps[0]["with"].get("build-args", "")
+    assert "BASE_TAG=${{ steps.tags.outputs.base_tag }}" in build_args, (
+        f"app build must consume the ref-selected base tag; got {build_args!r}"
+    )
+    assert jobs["promote"]["needs"] == ["build-and-push"], (
+        f"promote must depend on build-and-push; got {jobs['promote'].get('needs')!r}"
+    )
+
+
+@pytest.mark.unit
+def test_build_base_republishes_version_tag_on_main_and_develop() -> None:
+    """build-base's main/develop arms must republish v${BASE_VERSION} (DD §12 D2, R14).
+
+    docker-publish.yml ref-selects ``BASE_TAG="v${BASE_VERSION}"`` on main/develop,
+    so the base that same run builds must carry that tag. Without this, the
+    stale-base defect A1 fixed could silently return.
+    """
+    job = _load_yaml(BUILD_BASE)["jobs"]["build-base"]
+    tags_step = next(step for step in job["steps"] if step.get("id") == "tags")
+    run = tags_step["run"]
+
+    main_arm, rest = run.split("elif", 1)
+    develop_arm, else_arm = rest.split("else", 1)
+    for name, arm in (("main", main_arm), ("develop", develop_arm)):
+        assert ":v${BASE_VERSION}" in arm, (
+            f"build-base {name} arm must republish :v${{BASE_VERSION}}; got {arm.strip()!r}"
+        )
+    assert ":v${BASE_VERSION}" not in else_arm, (
+        f"build-base else arm must not publish the version-addressed tag; got {else_arm.strip()!r}"
+    )
+
+
+@pytest.mark.unit
+def test_docker_base_export_carries_exact_sync_flags() -> None:
+    text = DOCKERFILE_BASE.read_text(encoding="utf-8")
+    export_command = _dockerfile_run_command(text, "uv export")
+    for flag in ("--no-emit-project", "--no-hashes"):
+        assert flag in export_command, (
+            f"dockerfile.base export command must carry {flag!r} (C5 exact-sync flags); "
+            "scoped to the export RUN command so an explanatory comment cannot satisfy it"
+        )
+    assert "--python /usr/bin/python3" in export_command, (
+        "the dockerfile.base export command must carry '--python /usr/bin/python3' "
+        "(C5 exact-sync flags; forbids a managed CPython download per R11); scoped to the "
+        "export RUN command so an explanatory comment cannot satisfy it"
+    )
+
+
+@pytest.mark.unit
+def test_run_command_helper_scopes_assertions_to_run_bodies_only() -> None:
+    """Regression: a token in a comment must never satisfy a RUN-scoped assertion.
+
+    ``dockerfile.base`` carries the prose ``is REQUIRED`` in an explanatory
+    comment. The helper must select only a ``RUN`` instruction body whose command
+    starts with the prefix, so comment-only tokens are neither matched as
+    prefixes nor smuggled into an isolated command.
+    """
+    text = DOCKERFILE_BASE.read_text(encoding="utf-8")
+    with pytest.raises(AssertionError):
+        _dockerfile_run_command(text, "is REQUIRED")
+
+    export_command = _dockerfile_run_command(text, "uv export")
+    assert "is REQUIRED" not in export_command, (
+        "the isolated uv export command must contain only the RUN body, not comment prose"
+    )
+
+
+@pytest.mark.unit
+def test_docker_base_deletes_transient_requirements_in_export_run() -> None:
+    text = DOCKERFILE_BASE.read_text(encoding="utf-8")
+    rm_lines = [line for line in text.splitlines() if "rm -rf" in line]
+    assert any("/tmp/nomarr-deps" in line and "/tmp/nomarr-gpu-requirements.txt" in line for line in rm_lines), (
+        "dockerfile.base's export RUN must rm -rf both /tmp/nomarr-deps and "
+        f"/tmp/nomarr-gpu-requirements.txt (R10: transient only); got {rm_lines!r}"
+    )
+
+
+@pytest.mark.unit
+def test_docker_base_dry_run_precedes_real_exact_sync() -> None:
+    text = DOCKERFILE_BASE.read_text(encoding="utf-8")
+    dry_marker = "uv pip sync --system --break-system-packages --dry-run"
+    real_marker = "uv pip sync --system --break-system-packages"
+
+    dry_idx = text.find(dry_marker)
+    assert dry_idx > 0, "dockerfile.base must dry-run the exact sync before applying it"
+    real_idx = text.find(real_marker, dry_idx + len(dry_marker))
+    assert real_idx != -1, "dockerfile.base must run the real exact sync after the dry-run"
+    assert dry_idx < real_idx, (
+        f"the R15 --dry-run evidence must precede the real exact sync (dry-run at {dry_idx}, real sync at {real_idx})"
+    )
+
+
+@pytest.mark.unit
+def test_docker_publish_promote_job_retains_guard() -> None:
+    promote = _load_yaml(DOCKER_PUBLISH)["jobs"]["promote"]
+    assert promote["if"] == "needs.build-and-push.outputs.promote_tags != ''", (
+        f"promote must keep its non-empty promote_tags guard; got {promote.get('if')!r}"
+    )
+
+
+@pytest.mark.unit
+def test_final_sanity_run_logs_resolved_module_files() -> None:
+    text = DOCKERFILE_BASE.read_text(encoding="utf-8")
+    last_run = text.rsplit("\nRUN ", 1)[-1]
+    for expected in ("essentia.__file__", "chromaprint.__file__"):
+        assert expected in last_run, f"final RUN sanity check must log the resolved {expected!r} path (DD §8.2 / C5)"
+    for probe in ("importlib.metadata", "version('onnxruntime-gpu')", "get_available_providers"):
+        assert probe in last_run, (
+            f"final RUN sanity check must exercise the C5 GPU metadata/provider contract with {probe!r}"
+        )

@@ -15,6 +15,7 @@ import pytest
 from scripts.embedding_research.similarity import (
     DISC_HEAD_GAP,
     DISC_HEAD_WINDOW,
+    K_ESTABLISHED,
     _rankings_from_sim,
     compute_retrieval_metrics,
     cosine_matrix,
@@ -593,3 +594,31 @@ def test_per_song_mrr_genre_list_length_matches_n_when_genres_present():
 
     assert isinstance(m["per_song"]["mrr_genre"], list)
     assert len(m["per_song"]["mrr_genre"]) == n
+
+
+# ---------------------------------------------------------------------------
+# K_ESTABLISHED is the pinned, unchanged default cut-off
+# ---------------------------------------------------------------------------
+
+
+def test_k_established_is_ten_and_is_the_default_cutoff():
+    """The established K is 10 and remains the unchanged oracle default."""
+    import inspect
+
+    assert K_ESTABLISHED == 10
+    default = inspect.signature(compute_retrieval_metrics).parameters["k"].default
+    assert default is K_ESTABLISHED
+
+
+def test_default_k_matches_explicit_established_k():
+    """Omitting k is byte-identical to passing k=K_ESTABLISHED."""
+    sim = _block_sim(within=0.9, cross=0.1)
+    labels = ["A", "A", "B", "B"]
+
+    implicit = compute_retrieval_metrics(sim, labels)
+    explicit = compute_retrieval_metrics(sim, labels, k=K_ESTABLISHED)
+
+    assert implicit["map_k_artist"] == explicit["map_k_artist"]
+    assert implicit["mrr"] == explicit["mrr"]
+    assert implicit["ndcg_k_artist"] == explicit["ndcg_k_artist"]
+    assert implicit["recall_k_artist"] == explicit["recall_k_artist"]

@@ -55,7 +55,8 @@ RUN if id -nu 1000 >/dev/null 2>&1; then \
 WORKDIR /app
 
 # ----------------------------------------------------------------------
-#  Copy in project files (fast - no pip installs!)
+#  Copy in project files (fast - no Python package installs; the base image is
+#  uv-managed and already carries the production dependency set)
 # ----------------------------------------------------------------------
 # Copy directories preserving structure
 COPY nomarr/ /app/nomarr/
@@ -70,8 +71,8 @@ COPY build_resources/scripts/*.sh /app/docker/
 RUN cp /app/docker/cleanup-cron.sh /app/ && \
     cp /app/docker/nom-cli.sh /usr/local/bin/nom
 
-# The tracked frontend bundle under nomarr/public_html/ was removed (P1-S9)
-# and is gitignored (P1-S8). The runtime image's /app/nomarr/public_html/ is
+# The tracked frontend bundle under nomarr/public_html/ was removed
+# and is gitignored. The runtime image's /app/nomarr/public_html/ is
 # produced here from the frontend-builder stage, not from the checked-out
 # nomarr/ tree.
 COPY --from=frontend-builder /build/frontend/dist/ /app/nomarr/public_html/

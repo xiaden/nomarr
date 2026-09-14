@@ -22,14 +22,18 @@ import pytest
 from scripts.embedding_research.common.geometry_analysis import (
     FrozenSearchRepresentation,
     GeometryAnalysisCounters,
+    GeometryBaselineAggregateMetric,
     GeometryCandidate,
     GeometryCorpusAnalysis,
     GeometryCorpusHypothesis,
+    GeometryEvaluationCorpusEntry,
     GeometryQueryEvidence,
     GeometryRepresentationRoster,
     GeometryScoreBundle,
     GeometrySongAnalysis,
     GeometrySongRequest,
+    GeometryThresholdClassRow,
+    GeometryThresholdStructuralRow,
     NeighborhoodEntry,
     build_geometry_corpus_identity,
     read_geometry_corpus_analysis,
@@ -261,8 +265,49 @@ def _corpus(
         baseline_deltas={"artist": 0.25},
         comparable=comparable,
         counters=GeometryAnalysisCounters(1, 1, 1, 1, 1, 1, 0),
+        # A threshold-independent baseline aggregate makes the backbone obligation resolve so the
+        # run terminalizes exactly once; the writer's normalized surfaces are otherwise empty here.
+        baseline_aggregate_metrics=(GeometryBaselineAggregateMetric("backbone-a", "artist", "mrr", 10, 0.25, 1, 0),),
         queries=(query,),
         hypotheses=(hypothesis,),
+        evaluation_corpus=(
+            GeometryEvaluationCorpusEntry(
+                song_id=record.identity.song_id,
+                backbone=record.identity.backbone,
+                geometry_id=record.geometry_id,
+                observation_group_sha256=record.identity.observation_group_sha256,
+                numerical_profile_digest=record.identity.numerical_profile_digest,
+                searchable_count=3,
+                comparable=True,
+                reasons=(),
+                baseline_valid=True,
+            ),
+        ),
+        threshold_class_map=(
+            GeometryThresholdClassRow(
+                threshold_index=threshold.index,
+                threshold_id=threshold.threshold_id,
+                threshold_value=float(threshold.value),
+                corpus_search_class_id="representation-a",
+                comparable=comparable,
+                reasons=(),
+            ),
+        ),
+        threshold_structural=(
+            GeometryThresholdStructuralRow(
+                song_id=record.identity.song_id,
+                backbone=record.identity.backbone,
+                threshold_index=threshold.index,
+                threshold_id=threshold.threshold_id,
+                structural_identity=structural.identity,
+                search_representation_id="representation-a",
+                searchable_count=3,
+                medoid_defined=True,
+                alignment_ok=True,
+                comparable=comparable,
+                reasons=(),
+            ),
+        ),
     )
 
 

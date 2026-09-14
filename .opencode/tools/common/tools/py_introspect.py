@@ -340,10 +340,7 @@ def _find_venv_python(project_root: Path) -> Path:
         candidate = project_root / ".venv" / "bin" / "python"
     if candidate.exists():
         return candidate
-    raise FileNotFoundError(
-        f"Required virtual-environment Python not found in {project_root / '.venv'}. "
-        "Run scripts/human-scripts/tools/ensure_venv.py before using py_introspect."
-    )
+    raise FileNotFoundError(f"Run `uv sync --locked` in {project_root} to create the workspace .venv.")
 
 
 def _build_safe_env() -> dict[str, str]:

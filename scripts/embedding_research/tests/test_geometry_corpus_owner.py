@@ -166,24 +166,20 @@ def test_real_owner_loads_decodes_derives_then_gathers_unique_representations() 
     con.close()
 
 
-def test_owner_zero_mask_is_empty_and_baseline_is_separate() -> None:
+def test_owner_zero_mask_is_refused_not_dropped() -> None:
     con = duckdb.connect(":memory:")
     ensure_schema(con)
     observation, _record, request = _seed(con)
     observation.mask = np.zeros(3, dtype=np.uint8)
     store = _Store(observation)
-    result = analyze_geometry_corpus(
-        request, con=con, stream_store=store, profile=GeometryProfile.current(), scoring=_scorer([])
-    )
-    # Zero searchable mass is explicit non-comparable evidence, not a silent drop.
-    assert result.noncomparable
-    assert all("zero_searchable" in evidence.reasons for evidence in result.noncomparable)
-    assert result.baseline is None
-    assert result.scores is None
-    assert result.candidates == ()
-    assert result.counters.source_gather_count == 0
-    assert result.queries[0].state.comparable is False
-    assert result.queries[0].neighborhood == ()
+    with pytest.raises(IntegrityRefused) as excinfo:
+        analyze_geometry_corpus(
+            request, con=con, stream_store=store, profile=GeometryProfile.current(), scoring=_scorer([])
+        )
+    # The fixed evaluation corpus refuses a song with zero whole-song searchable mass; it is
+    # never dropped, and no shrunken/non-comparable corpus is ever emitted.
+    assert "INTEGRITY_REFUSED" in str(excinfo.value)
+    assert "zero_searchable" in str(excinfo.value)
     con.close()
 
 
@@ -209,16 +205,27 @@ def test_builder_to_analyze_empirical_handoff_requires_frozen_current_head(monke
         "scripts.embedding_research.common.geometry_analysis._selected_geometry_items",
         lambda *_args: ((song, "backbone-a"),),
     )
-    monkeypatch.setattr(
-        "scripts.embedding_research.streams.heads_current.resolve_current_head_suite",
-        lambda *_args: SimpleNamespace(
-            record=SimpleNamespace(head_ids="head-a,head-b"),
-            marker=SimpleNamespace(head_set_fingerprint="head-suite-current"),
-        ),
+    from scripts.embedding_research.common.head_ruler_labels import HeadSongLabel
+
+    label = HeadSongLabel(
+        song_id="song-1",
+        backbone="backbone-a",
+        full_tuple=(("gender", 1), ("timbre", 0)),
+        labels=("male", "bright"),
+        pooled=(0.8, 0.2),
+        searchable_rows=3,
+        head_set_fingerprint="head-suite-current",
+        head_ids="gender,timbre",
+        dim_by_head="gender:2,timbre:2",
+        stream_ref="stream-ref",
+        stream_digest="stream-digest",
+        mask_ref="mask-ref",
+        mask_digest="mask-digest",
+        present=True,
     )
     monkeypatch.setattr(
-        "scripts.embedding_research.streams.records.parse_head_ids",
-        lambda value: tuple(value.split(",")),
+        "scripts.embedding_research.common.geometry_analysis.resolve_head_ruler_labels",
+        lambda **_kwargs: label,
     )
     request = build_geometry_corpus_request(
         con,
@@ -247,10 +254,18 @@ def test_builder_to_analyze_empirical_handoff_requires_frozen_current_head(monke
     assert len(result.analyses) == 1 and len(result.analyses[0].results) == 171
     assert result.hypotheses and result.queries
 
-    missing = replace(request.items[0], head_label=None)
-    refused = replace(request, items=(missing,))
-    with pytest.raises(IntegrityRefused, match="current-head evidence"):
-        analyze_geometry_corpus(refused, con=con, stream_store=store, profile=profile)
+    # A missing per-song head label must NOT refuse the request: it excludes the song from
+    # the HEAD ruler only and never fabricates an ``unknown`` label.
+    missing = replace(
+        request.items[0],
+        head_label=None,
+        head_suite_identity=None,
+        head_provenance=None,
+    )
+    accepted = replace(request, items=(missing,))
+    result2 = analyze_geometry_corpus(accepted, con=con, stream_store=store, profile=profile)
+    assert result2.head_evidence_provenance["head_labels_bound"] == 0
+    assert result2.head_evidence_provenance["current_head_bindings"] == []
     con.close()
 
 

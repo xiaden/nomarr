@@ -20,6 +20,7 @@ stream_registry — stream_registry / head_stream_registry low-level row CRUD
 geometry        — exact-key per-song Gram geometry persistence
 geometry_profile — pinned numerical execution profile
 identity_persistence — geometry analysis/head evidence rows
+result_surfaces — normalized class/baseline result surfaces + compact provenance
 canary          — post-crash durability canary (dynamic PK/UNIQUE probe)
 """
 
@@ -74,9 +75,18 @@ from .geometry import (
 from .identity_persistence import (
     IdentityRefusal,
     read_analysis_rows,
+    read_evaluation_corpus,
     read_head_evidence,
+    read_head_label_provenance,
+    read_threshold_class_map,
+    read_threshold_structural,
     write_analysis_rows,
+    write_evaluation_corpus,
+    write_evaluation_corpus_in_transaction,
     write_head_evidence,
+    write_head_label_provenance_in_transaction,
+    write_threshold_class_map_in_transaction,
+    write_threshold_structural_in_transaction,
 )
 
 __all__ = [
@@ -137,6 +147,22 @@ from .provenance import (
 from .queries import (
     query_analysis_done,
 )
+from .result_surfaces import (
+    read_baseline_aggregate_metrics,
+    read_baseline_neighborhoods,
+    read_baseline_query_metrics,
+    read_class_aggregate_metrics,
+    read_class_neighborhoods,
+    read_class_query_metrics,
+    read_result_provenance,
+    write_baseline_aggregate_metrics_in_transaction,
+    write_baseline_neighborhoods_in_transaction,
+    write_baseline_query_metrics_in_transaction,
+    write_class_aggregate_metrics_in_transaction,
+    write_class_neighborhoods_in_transaction,
+    write_class_query_metrics_in_transaction,
+    write_result_provenance_in_transaction,
+)
 from .songs import (
     load_all_songs,
     song_exists,
@@ -181,10 +207,21 @@ __all__ = [
     "raise_if_head_duplicate",
     "raise_if_stream_duplicate",
     "read_analysis_rows",
+    "read_baseline_aggregate_metrics",
+    "read_baseline_neighborhoods",
+    "read_baseline_query_metrics",
+    "read_class_aggregate_metrics",
+    "read_class_neighborhoods",
+    "read_class_query_metrics",
     "read_corpus_state",
+    "read_evaluation_corpus",
     "read_head_evidence",
+    "read_head_label_provenance",
     "read_incomplete_analyze_diagnostics",
+    "read_result_provenance",
     "read_run_provenance",
+    "read_threshold_class_map",
+    "read_threshold_structural",
     "require_supported_duckdb",
     "run_provenance_columns",
     "run_rollback_canary",
@@ -196,9 +233,21 @@ __all__ = [
     "upsert_song",
     "write_analysis_rows",
     "write_analyze_metrics",
+    "write_baseline_aggregate_metrics_in_transaction",
+    "write_baseline_neighborhoods_in_transaction",
+    "write_baseline_query_metrics_in_transaction",
+    "write_class_aggregate_metrics_in_transaction",
+    "write_class_neighborhoods_in_transaction",
+    "write_class_query_metrics_in_transaction",
+    "write_evaluation_corpus",
+    "write_evaluation_corpus_in_transaction",
     "write_head_evidence",
+    "write_head_label_provenance_in_transaction",
     "write_head_phase_provenance",
     "write_incomplete_analyze_diagnostic",
+    "write_result_provenance_in_transaction",
     "write_run_provenance",
     "write_song_retrieval_metrics",
+    "write_threshold_class_map_in_transaction",
+    "write_threshold_structural_in_transaction",
 ]

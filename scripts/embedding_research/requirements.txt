@@ -1,6 +1,6 @@
 # Research package dependencies — install inside the devcontainer before running.
 #
-#   pip install -r /workspace/nomarr/scripts/embedding_research/requirements.txt
+#   uv venv .venv-research && uv pip install --python .venv-research/bin/python -r /workspace/nomarr/scripts/embedding_research/requirements.txt
 #
 # Core ML / metrics (FAISS/ANN dependency removed under Plan D P1-S6 — similarity.py is exact-CPU-only)
 scikit-learn>=1.4.0       # MAP, NDCG, pairwise metrics, t-SNE

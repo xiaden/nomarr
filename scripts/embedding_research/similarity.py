@@ -12,6 +12,22 @@ Metrics:
 
 Retrieval metrics:
   MAP@k, MRR, NDCG@k, Recall@k computed over artist, genre, and head labels.
+
+Class-scoped ruler metric mapping (Experiment One result layer):
+  The geometry analysis owner calls this oracle once per ruler with the fixed K
+  (:data:`K_ESTABLISHED`) and passes that ruler's canonical label per song in the
+  ``labels`` slot, then reads only the artist-family keys plus the shared MRR.  The
+  canonical metric names used by the class-scoped surfaces are:
+
+    map_k_artist  -> map_k
+    mrr           -> mrr
+    ndcg_k_artist -> ndcg_k
+    recall_k_artist -> recall_k
+    disc_artist   -> disc
+
+  The oracle's genre/head branches are a different (window/continuous) relevance
+  semantics and are never used for class-scoped ruler surfaces.  No arithmetic is
+  changed here; the mapping is a pure rename of the artist-family outputs.
 """
 
 from __future__ import annotations
@@ -39,6 +55,11 @@ except ImportError:
 # Hyperparameter: disc_head window-based scoring
 DISC_HEAD_WINDOW: float = 0.1  # half-width of the in-set score neighborhood
 DISC_HEAD_GAP: float = 0.1  # minimum score gap before a song enters the out-set
+
+# Established retrieval cut-off for the Experiment One class-scoped surfaces.
+# This is the canonical K the oracle has always defaulted to; it is pinned so
+# callers name it explicitly instead of re-declaring a private constant.
+K_ESTABLISHED: int = 10
 
 
 # -- L2-normalisation -------------------------------------------------------
@@ -83,7 +104,7 @@ def _rankings_from_sim(sim_matrix: np.ndarray) -> np.ndarray:
 def compute_retrieval_metrics(
     sim_matrix: np.ndarray,
     labels: list[str],
-    k: int = 10,
+    k: int = K_ESTABLISHED,
     *,
     albums: list[str] | None = None,
     genres: list[str] | None = None,

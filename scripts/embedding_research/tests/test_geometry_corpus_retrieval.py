@@ -31,7 +31,7 @@ from scripts.embedding_research.common.threshold_analysis import (
     dense_primary_threshold_request,
 )
 from scripts.embedding_research.db import ensure_schema, write_geometry
-from scripts.embedding_research.db.geometry import GeometryIdentity
+from scripts.embedding_research.db.geometry import GeometryIdentity, IntegrityRefused
 from scripts.embedding_research.db.geometry_profile import GeometryProfile
 from scripts.embedding_research.helpers.corpus_identity import (
     CorpusSongSearchInput,
@@ -292,7 +292,7 @@ def test_same_population_baseline_and_independent_rulers() -> None:
     con.close()
 
 
-def test_zero_searchable_is_explicitly_non_comparable() -> None:
+def test_zero_searchable_is_refused_not_dropped() -> None:
     con = duckdb.connect(":memory:")
     ensure_schema(con)
     songs = [
@@ -300,18 +300,14 @@ def test_zero_searchable_is_explicitly_non_comparable() -> None:
         {"song_id": "song-2", "stream": _STREAMS["song-2"]},
     ]
     request, store = _corpus(con, songs)
-    result = analyze_geometry_corpus(
-        request, con=con, stream_store=store, profile=GeometryProfile.current(), scoring=_scorer([])
-    )
-
-    assert all(candidate.representation.song_id != "song-1" for candidate in result.candidates)
-    assert result.noncomparable
-    assert all(evidence.song_id == "song-1" for evidence in result.noncomparable)
-    assert any("zero_searchable" in evidence.reasons for evidence in result.noncomparable)
-    disabled = next(query for query in result.queries if query.request.song_id == "song-1")
-    assert disabled.state.comparable is False
-    assert disabled.state.reasons
-    assert disabled.neighborhood == ()
+    with pytest.raises(IntegrityRefused) as excinfo:
+        analyze_geometry_corpus(
+            request, con=con, stream_store=store, profile=GeometryProfile.current(), scoring=_scorer([])
+        )
+    # A song with zero whole-song searchable mass refuses the corpus instead of being
+    # silently dropped into a shrunken, non-comparable population.
+    assert "INTEGRITY_REFUSED" in str(excinfo.value)
+    assert "zero_searchable" in str(excinfo.value)
     con.close()
 
 

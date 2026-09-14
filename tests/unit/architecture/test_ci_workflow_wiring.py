@@ -27,9 +27,11 @@ def _is_disabling_if(value: object) -> bool:
     """Return True if an ``if:`` value disables a step/job.
 
     YAML parses a bare ``if: false`` as bool False and ``if: ${{ false }}`` as a
-    non-'false' string, so normalizing strings is required. The legitimate
-    cache-hit guard (``steps.cache-venv.outputs.cache-hit != 'true'``) must
-    return False.
+    non-'false' string, so normalizing strings is required. Non-disabling
+    (truthy) values return False. The pre-migration venv-caching pipeline
+    carried a legitimate cache-hit guard
+    (``steps.cache-venv.outputs.cache-hit != 'true'``); Phase 2 removed that
+    step, so the migrated workflows carry no step-level ``if:`` guard at all.
     """
     if value is False or value is None:
         return True
@@ -150,7 +152,7 @@ def test_database_workflow_explicitly_invokes_required_matrix() -> None:
     assert other_pytest_lines == set(), (
         f"unexpected additional pytest invocations in database-tests: {sorted(other_pytest_lines)!r}"
     )
-    assert 'pip install -e ".[dev]"' in steps
+    assert "uv sync --locked" in steps
     assert "docker version" in steps
     assert "tests/characterization/" in steps
     assert "tests/characterization/test_mood_owner_pg.py" in steps
@@ -218,7 +220,9 @@ def test_workflow_has_named_required_jobs_and_no_hidden_database_gate() -> None:
     # No step-level disable. YAML parses `if: false` to bool False and
     # `if: ${{ false }}` to a non-'false' string, so the old `!= 'false'` check
     # was a no-op. Reject bool False/None and any string that normalizes to
-    # false, while ALLOWING the legitimate cache-hit guard.
+    # false; a truthy guard is allowed (the migrated workflows currently carry
+    # no step-level `if:` at all, and the pre-migration venv cache-hit guard is
+    # only a historical example of a legitimate truthy condition).
     for step in jobs["database-tests"]["steps"]:
         # A missing `if` is not a disabling guard; only an explicit `if:` that
         # evaluates falsy disables the step.
@@ -226,7 +230,10 @@ def test_workflow_has_named_required_jobs_and_no_hidden_database_gate() -> None:
             continue
         if_value = step["if"]
         assert not _is_disabling_if(if_value), f"step '{step.get('name')}' is disabled via if: {if_value!r}"
-        # The only legitimate step-level condition is the cache-hit guard.
+        # Historically the only legitimate step-level condition was the
+        # pre-migration cache-hit guard; the migrated workflows carry no
+        # step-level `if:`, so this branch is not exercised by the current clean
+        # workflow and the assertion only guards against reintroducing one.
         assert "cache-venv.outputs.cache-hit" in str(if_value), f"unexpected step-level condition: {if_value!r}"
 
 
@@ -266,8 +273,12 @@ def test_is_disabling_if_rejects_falsy_guards(value: object) -> None:
     ],
 )
 def test_is_disabling_if_allows_legitimate_guards(value: object) -> None:
-    """The helper must not false-positive on the legitimate cache-hit guard or
-    any other truthy condition."""
+    """The helper must not false-positive on legitimate truthy conditions.
+
+    The pre-migration venv-caching pipeline's cache-hit guard is retained here
+    as a historical example of a legitimate truthy guard; the migrated
+    workflows no longer carry it.
+    """
     assert _is_disabling_if(value) is False, f"expected allowed guard for {value!r}"
 
 
@@ -292,7 +303,7 @@ def test_database_workflow_on_triggers_match_required_contract() -> None:
         "docker/compose.yaml",
         "pyproject.toml",
         "uv.lock",
-        "requirements.txt",
+        ".python-version",
         "playwright.config.ts",
         ".github/workflows/backend-tests.yml",
     }

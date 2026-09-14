@@ -7,7 +7,7 @@ name: Backend Quality
 #
 # Preserved from the original `ci.yml` (ADR-019 / ADR-042):
 #   - ruff check, ruff format --check, mypy, lint-imports, deptry commands
-#   - Python 3.12 setup, venv caching, `pip install -e ".[dev]"`
+#   - Python 3.12 setup, setup-uv, `uv sync --locked`
 #   - push branches [main, develop, feat/**] + PR to [main, develop] path
 #     filters + workflow_dispatch
 # Each job fails independently; there is no cross-workflow `needs` chain.
@@ -24,7 +24,7 @@ on:
       - "docker/compose.yaml"
       - "pyproject.toml"
       - "uv.lock"
-      - "requirements.txt"
+      - ".python-version"
       - "playwright.config.ts"
       - "BASE_VERSION"
       - ".github/workflows/backend-quality.yml"
@@ -39,7 +39,7 @@ on:
       - "docker/compose.yaml"
       - "pyproject.toml"
       - "uv.lock"
-      - "requirements.txt"
+      - ".python-version"
       - "playwright.config.ts"
       - ".github/workflows/backend-quality.yml"
   workflow_dispatch:
@@ -49,29 +49,25 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      UV_PYTHON_PREFERENCE: only-system
+      UV_PYTHON_DOWNLOADS: never
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
 
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10.1.0
+        with:
+          version: "0.12.13"
+
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: '3.12'
-
-      - name: Cache virtualenv
-        id: cache-venv
-        uses: actions/cache@v5
-        with:
-          path: .venv
-          key: venv-${{ runner.os }}-py3.12-${{ hashFiles('pyproject.toml', 'uv.lock') }}
+          python-version-file: .python-version
 
       - name: Install dependencies
-        if: steps.cache-venv.outputs.cache-hit != 'true'
-        run: |
-          python -m venv .venv
-          source .venv/bin/activate
-          pip install --upgrade pip
-          pip install -e ".[dev]"
+        run: uv sync --locked
 
       - name: Lint (ruff check)
         run: |
@@ -97,29 +93,25 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      UV_PYTHON_PREFERENCE: only-system
+      UV_PYTHON_DOWNLOADS: never
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
 
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10.1.0
+        with:
+          version: "0.12.13"
+
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: '3.12'
-
-      - name: Cache virtualenv
-        id: cache-venv
-        uses: actions/cache@v5
-        with:
-          path: .venv
-          key: venv-${{ runner.os }}-py3.12-${{ hashFiles('pyproject.toml', 'uv.lock') }}
+          python-version-file: .python-version
 
       - name: Install dependencies
-        if: steps.cache-venv.outputs.cache-hit != 'true'
-        run: |
-          python -m venv .venv
-          source .venv/bin/activate
-          pip install --upgrade pip
-          pip install -e ".[dev]"
+        run: uv sync --locked
 
       - name: Run deptry
         run: |

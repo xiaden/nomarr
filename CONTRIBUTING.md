@@ -115,7 +115,8 @@ All development targets the `develop` branch. Clone the repository and switch to
 
 ### Prerequisites
 
-- Python 3.12+
+- Python 3.12+ (uv selects it via the committed `.python-version`)
+- [uv](https://docs.astral.sh/uv/) >= 0.12.13 — Nomarr's sole Python package/environment manager. Keep it current with `uv self update`.
 - Node.js 18+ (for frontend)
 - Docker + Docker Compose
 - NVIDIA GPU with CUDA support (for ML inference)
@@ -133,9 +134,9 @@ All development targets the `develop` branch. Clone the repository and switch to
 2. **Backend setup:**
 
    ```bash
-   # Create/update the workspace virtual environment and install dependencies.
+   # Create/update .venv and install the locked dev + CPU dependency set.
    # Run this once from an external terminal before starting OpenCode.
-   python scripts/human-scripts/tools/ensure_venv.py
+   uv sync --locked
 
    # Activate it for manual terminal work (OpenCode activates it automatically).
    source .venv/bin/activate  # On Windows: .venv\Scripts\activate
@@ -185,7 +186,7 @@ All development targets the `develop` branch. Clone the repository and switch to
 
 ### Running Tests
 
-These commands mirror the independent CI gates. Run them locally before pushing — CI enforces the same commands, but does not run on your machine, and there is no pre-commit hook to do it for you. In a manual terminal, activate `.venv` first; OpenCode prepends the workspace venv automatically and refuses to run its shell when the venv is missing.
+These commands mirror the independent CI gates. Run them locally before pushing — CI enforces the same commands, but does not run on your machine, and there is no pre-commit hook to do it for you. In a manual terminal, create `.venv` with `uv sync --locked` if it does not exist yet, then activate it first; OpenCode prepends the workspace venv automatically and refuses to run its shell when the venv is missing.
 
 ```bash
 # Backend quality (matches backend-quality.yml)

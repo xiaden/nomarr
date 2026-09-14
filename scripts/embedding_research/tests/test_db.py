@@ -61,6 +61,28 @@ EXPECTED_TABLES = {
     # Exact geometry-era analysis + head evidence tables.
     "geometry_analysis_records",
     "geometry_head_evidence",
+    # The ONE fixed evaluation corpus (Plan A Phase 1) — one membership row per
+    # (run_id, evaluation_id, song_id, backbone); no PK/UNIQUE, application-enforced identity.
+    "geometry_evaluation_corpus",
+    # Normalized Experiment One result-layer surfaces (Plan A Phase 2): the
+    # threshold-to-class map (one row per configured threshold) and per-(song, threshold)
+    # structural/search evidence.  No PK/UNIQUE, application-enforced identity.
+    "geometry_threshold_class_map",
+    "geometry_threshold_structural",
+    # Per-song frozen semantic-head label + head-suite provenance (Plan A Phase 3): the
+    # activation-derived ruler label and the suite identity live in SEPARATE columns.
+    # No PK/UNIQUE, application-enforced identity.
+    "geometry_head_label_provenance",
+    # Normalized Experiment One result-layer surfaces (Plan A Phase 5): flat class-scoped
+    # aggregate/query/neighborhood metrics, the threshold-independent baseline, and one compact
+    # per-run provenance row.  No PK/UNIQUE, application-enforced identity.
+    "geometry_class_aggregate_metrics",
+    "geometry_class_query_metrics",
+    "geometry_class_neighborhoods",
+    "geometry_baseline_aggregate_metrics",
+    "geometry_baseline_query_metrics",
+    "geometry_baseline_neighborhoods",
+    "geometry_result_provenance",
 }
 
 # The thirteen tables removed in the P1-S5 Wave 2b hard cut.  Asserted absent.

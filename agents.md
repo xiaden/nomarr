@@ -50,9 +50,9 @@ Testing conventions across all three test suites.
 **Virtual environment requirement:** Before running Python tools such as pytest,
 check for the project virtual environment and use its interpreter directly:
 `.venv/bin/python -m pytest ...`. The repository's venv is `.venv/`; on Linux
-the executable is `.venv/bin/python` (see
-`scripts/human-scripts/tools/ensure_venv.py`). Do not infer that a tool is
-unavailable solely because its bare command is not on `PATH`.
+the executable is `.venv/bin/python`. Create and keep it in sync with
+`uv sync --locked`. Do not infer that a tool is unavailable solely because its
+bare command is not on `PATH`.
 
 ---
 

@@ -1,7 +1,7 @@
 """
 DuckDB schema, connection management, and DDL for the embedding research DB.
 
-Tables (13 total)
+Tables (24 total)
 -----------------
 The obsolete copied-vector / threshold / stratification tables that earlier corrective
 passes (P1-S5 Wave 1 / Wave 2a) stripped their writers and readers from are now PHYSICALLY
@@ -58,6 +58,65 @@ ACTIVE — frozen-stream / geometry / provenance + core live-writer tables (prim
                              baseline_evaluation_corpus_comparable, created_at)
                              -- non-metric diagnostics, no PK/UNIQUE; app-scoped
                              replacement by (run_id, geometry_id, evaluation_id, sim_metric)
+  geometry_evaluation_corpus (run_id, execution_id, evaluation_id, experiment, song_id,
+                             backbone, geometry_id, observation_group_sha256,
+                             numerical_profile_digest, searchable_count, comparable,
+                             reasons_json, baseline_valid, created_at_ms)
+                             -- ONE fixed evaluation-corpus membership row per
+                             (run_id, evaluation_id, song_id, backbone); no PK/UNIQUE,
+                             application-enforced identity, never per-threshold
+  geometry_threshold_class_map (run_id, execution_id, evaluation_id, experiment,
+                             threshold_index, threshold_value, threshold_id,
+                             corpus_search_class_id, comparable, reasons_json, created_at_ms)
+                             -- ONE row per configured threshold keyed by
+                             (run_id, execution_id, evaluation_id, threshold_index); equal
+                             ordered corpus scoring inputs share corpus_search_class_id;
+                             no PK/UNIQUE, application-enforced identity
+  geometry_threshold_structural (run_id, evaluation_id, song_id, backbone,
+                             threshold_index, threshold_id, structural_identity,
+                             search_representation_id, searchable_count, medoid_defined,
+                             alignment_ok, comparable, reasons_json, created_at_ms)
+                             -- per-(song, threshold) structural/search evidence ONLY (no
+                             retrieval metrics); O(N x T); no PK/UNIQUE, application-enforced
+  geometry_head_label_provenance (run_id, evaluation_id, song_id, backbone, present,
+                             semantic_label_json, labels_json, pooled_json,
+                             head_set_fingerprint, head_ids, dim_by_head, stream_ref,
+                             stream_digest, mask_ref, mask_digest, created_at_ms)
+                             -- per-song frozen semantic-head label + head-suite identity kept
+                             -- SEPARATE from the label; no PK/UNIQUE, application-enforced
+                             identity by (run_id, evaluation_id, song_id, threshold_index)
+  geometry_class_aggregate_metrics (run_id, execution_id, evaluation_id,
+                             corpus_search_class_id, ruler, metric, k, value,
+                             evaluable_query_count, undefined_query_count, created_at_ms)
+                             -- ONE aggregate row per (run_id, corpus_search_class_id, ruler,
+                             -- metric, k); O(C x R x M); no PK/UNIQUE, app-enforced identity
+  geometry_class_query_metrics (run_id, corpus_search_class_id, query_song_id, ruler,
+                             metric, k, value, status, created_at_ms)
+                             -- ONE per-query row per (run_id, class, query, ruler, metric, k);
+                             -- explicit defined/undefined status; no PK/UNIQUE
+  geometry_class_neighborhoods (run_id, corpus_search_class_id, query_song_id,
+                             candidate_song_id, rank, score, created_at_ms)
+                             -- retained class-scoped browsing window; ONE row per
+                             -- (run_id, class, query, candidate), self forbidden; no PK/UNIQUE
+  geometry_baseline_aggregate_metrics (run_id, execution_id, evaluation_id, backbone,
+                             ruler, metric, k, value, evaluable_query_count,
+                             undefined_query_count, created_at_ms)
+                             -- ONE threshold-independent baseline aggregate row per
+                             -- (run_id, backbone, ruler, metric, k); no PK/UNIQUE
+  geometry_baseline_query_metrics (run_id, backbone, query_song_id, ruler, metric, k,
+                             value, status, created_at_ms)
+                             -- ONE baseline per-query row per (run_id, backbone, query,
+                             -- ruler, metric, k); no PK/UNIQUE
+  geometry_baseline_neighborhoods (run_id, backbone, query_song_id, candidate_song_id,
+                             rank, score, created_at_ms)
+                             -- retained baseline browsing window; ONE row per
+                             -- (run_id, backbone, query, candidate), self forbidden; no PK/UNIQUE
+  geometry_result_provenance (run_id, execution_id, evaluation_id, experiment,
+                             scoring_semantics_version, geometry_semantics_version,
+                             numerical_profile_digest, evidence_mode, synthetic_only,
+                             comparable, reasons_json, geometry_axes_json,
+                             head_evidence_provenance_json, counters_json, created_at_ms)
+                             -- ONE compact provenance row per run; no PK/UNIQUE
     phase_timings             (run_ts, phase, elapsed_s)  -- active efficiency source
 """
 
@@ -368,6 +427,278 @@ _INCOMPLETE_DIAGNOSTICS_CREATE = (
 )
 
 
+# -- geometry_evaluation_corpus (14 columns) -----------------------------------
+# The ONE fixed evaluation corpus resolved once per analyze invocation, before any
+# threshold evaluation.  Membership depends only on the whole-song observed-global-medoid
+# baseline representation (finite nonzero observed medoid row over a valid committed mask),
+# never on artist/genre/head labels or the configured threshold set.  One row per
+# (run_id, evaluation_id, song_id, backbone); no PRIMARY KEY / UNIQUE (DuckDB ART/WAL
+# policy).  Identity is application-enforced by db.identity_persistence.
+_EVALUATION_CORPUS_COLUMN_DEFS: tuple[str, ...] = (
+    "run_id                       TEXT NOT NULL",
+    "execution_id                 TEXT NOT NULL",
+    "evaluation_id               TEXT NOT NULL",
+    "experiment                  TEXT NOT NULL",
+    "song_id                     TEXT NOT NULL",
+    "backbone                    TEXT NOT NULL",
+    "geometry_id                 TEXT NOT NULL",
+    "observation_group_sha256    TEXT NOT NULL",
+    "numerical_profile_digest    TEXT NOT NULL",
+    "searchable_count            INTEGER NOT NULL",
+    "comparable                  BOOLEAN NOT NULL",
+    "reasons_json                TEXT NOT NULL",
+    "baseline_valid              BOOLEAN NOT NULL",
+    "created_at_ms               BIGINT NOT NULL",
+)
+
+#: ``CREATE TABLE IF NOT EXISTS`` statement for the fixed evaluation corpus.
+_EVALUATION_CORPUS_CREATE = (
+    "CREATE TABLE IF NOT EXISTS geometry_evaluation_corpus (\n    "
+    + ",\n    ".join(_EVALUATION_CORPUS_COLUMN_DEFS)
+    + "\n);"
+)
+
+
+# -- geometry_threshold_class_map (11 columns) ---------------------------------
+# ONE map row per configured threshold, keyed by
+# (run_id, execution_id, evaluation_id, threshold_index).  Equal ordered corpus scoring
+# inputs collapse to one ``corpus_search_class_id``; every configured threshold index is
+# still retained, so exactly ``len(threshold_request.indices)`` rows exist regardless of
+# collapse.  No PRIMARY KEY / UNIQUE (DuckDB ART/WAL policy); identity is application-enforced.
+_THRESHOLD_CLASS_MAP_COLUMN_DEFS: tuple[str, ...] = (
+    "run_id                 TEXT NOT NULL",
+    "execution_id           TEXT NOT NULL",
+    "evaluation_id          TEXT NOT NULL",
+    "experiment             TEXT NOT NULL",
+    "threshold_index        INTEGER NOT NULL",
+    "threshold_value        DOUBLE NOT NULL",
+    "threshold_id           TEXT NOT NULL",
+    "corpus_search_class_id TEXT NOT NULL",
+    "comparable             BOOLEAN NOT NULL",
+    "reasons_json           TEXT NOT NULL",
+    "created_at_ms          BIGINT NOT NULL",
+)
+
+#: ``CREATE TABLE IF NOT EXISTS`` statement for the threshold-to-class map.
+_THRESHOLD_CLASS_MAP_CREATE = (
+    "CREATE TABLE IF NOT EXISTS geometry_threshold_class_map (\n    "
+    + ",\n    ".join(_THRESHOLD_CLASS_MAP_COLUMN_DEFS)
+    + "\n);"
+)
+
+
+# -- geometry_threshold_structural (14 columns) --------------------------------
+# Per-(song, threshold) structural/search evidence.  It carries NO retrieval metric: only
+# the structural identity, the per-song search representation identity, and the per-threshold
+# searchable_count read from that exact threshold's ``ThresholdAnalysisResult.search``.  Row
+# count is O(N x T).  No PRIMARY KEY / UNIQUE; application identity is
+# (run_id, evaluation_id, song_id, threshold_index).
+_THRESHOLD_STRUCTURAL_COLUMN_DEFS: tuple[str, ...] = (
+    "run_id                   TEXT NOT NULL",
+    "evaluation_id            TEXT NOT NULL",
+    "song_id                  TEXT NOT NULL",
+    "backbone                 TEXT NOT NULL",
+    "threshold_index          INTEGER NOT NULL",
+    "threshold_id             TEXT NOT NULL",
+    "structural_identity      TEXT NOT NULL",
+    "search_representation_id TEXT NOT NULL",
+    "searchable_count         INTEGER NOT NULL",
+    "medoid_defined           BOOLEAN NOT NULL",
+    "alignment_ok             BOOLEAN NOT NULL",
+    "comparable               BOOLEAN NOT NULL",
+    "reasons_json             TEXT NOT NULL",
+    "created_at_ms            BIGINT NOT NULL",
+)
+
+#: ``CREATE TABLE IF NOT EXISTS`` statement for the per-song/per-threshold structural rows.
+_THRESHOLD_STRUCTURAL_CREATE = (
+    "CREATE TABLE IF NOT EXISTS geometry_threshold_structural (\n    "
+    + ",\n    ".join(_THRESHOLD_STRUCTURAL_COLUMN_DEFS)
+    + "\n);"
+)
+
+
+# -- geometry_head_label_provenance (16 columns) -------------------------------
+# Per-(song, backbone) frozen semantic-head evidence.  The ACTIVATION-DERIVED ruler label
+# (``semantic_label_json`` — the ordered ``((head, side), ...)`` full tuple) and the aligned
+# canonical ``labels_json``/``pooled_json`` are stored SEPARATELY from the head-suite
+# identity (``head_set_fingerprint``/``head_ids``/``dim_by_head``) and the stream/mask
+# refs+digests: the suite identity is provenance only and is NEVER the ruler label.  A song
+# whose frozen head evidence is missing persists ``present = FALSE`` with empty identity
+# strings and ``null``/empty payloads; it is excluded from the HEAD ruler only.  No PRIMARY
+# KEY / UNIQUE (DuckDB ART/WAL policy); application identity is
+# (run_id, evaluation_id, song_id, backbone).
+_HEAD_LABEL_PROVENANCE_COLUMN_DEFS: tuple[str, ...] = (
+    "run_id               TEXT NOT NULL",
+    "evaluation_id        TEXT NOT NULL",
+    "song_id              TEXT NOT NULL",
+    "backbone             TEXT NOT NULL",
+    "present              BOOLEAN NOT NULL",
+    "semantic_label_json  TEXT NOT NULL",
+    "labels_json          TEXT NOT NULL",
+    "pooled_json          TEXT NOT NULL",
+    "head_set_fingerprint TEXT NOT NULL",
+    "head_ids             TEXT NOT NULL",
+    "dim_by_head          TEXT NOT NULL",
+    "stream_ref           TEXT NOT NULL",
+    "stream_digest        TEXT NOT NULL",
+    "mask_ref             TEXT NOT NULL",
+    "mask_digest          TEXT NOT NULL",
+    "created_at_ms        BIGINT NOT NULL",
+)
+
+#: ``CREATE TABLE IF NOT EXISTS`` statement for the frozen semantic-head label provenance.
+_HEAD_LABEL_PROVENANCE_CREATE = (
+    "CREATE TABLE IF NOT EXISTS geometry_head_label_provenance (\n    "
+    + ",\n    ".join(_HEAD_LABEL_PROVENANCE_COLUMN_DEFS)
+    + "\n);"
+)
+
+# Normalized Experiment One result-layer surfaces B-G (Plan A Phase 5).  The giant nested
+# ``role="corpus"`` JSON blob is replaced by these flat, query-ready rows; reachability of a
+# run keys off ``geometry_baseline_aggregate_metrics`` so baseline presence is independent of
+# the configured threshold count.  No PRIMARY KEY / UNIQUE (DuckDB ART/WAL policy); every
+# identity is enforced in the persistence writer.
+_CLASS_AGGREGATE_METRIC_COLUMN_DEFS: tuple[str, ...] = (
+    "run_id                 TEXT NOT NULL",
+    "execution_id           TEXT NOT NULL",
+    "evaluation_id          TEXT NOT NULL",
+    "corpus_search_class_id TEXT NOT NULL",
+    "ruler                  TEXT NOT NULL",
+    "metric                 TEXT NOT NULL",
+    "k                      INTEGER NOT NULL",
+    "value                  DOUBLE NOT NULL",
+    "evaluable_query_count  INTEGER NOT NULL",
+    "undefined_query_count  INTEGER NOT NULL",
+    "created_at_ms          BIGINT NOT NULL",
+)
+
+#: ``CREATE TABLE IF NOT EXISTS`` statement for class-scoped aggregate metrics (surface B).
+_CLASS_AGGREGATE_METRIC_CREATE = (
+    "CREATE TABLE IF NOT EXISTS geometry_class_aggregate_metrics (\n    "
+    + ",\n    ".join(_CLASS_AGGREGATE_METRIC_COLUMN_DEFS)
+    + "\n);"
+)
+
+_CLASS_QUERY_METRIC_COLUMN_DEFS: tuple[str, ...] = (
+    "run_id                 TEXT NOT NULL",
+    "corpus_search_class_id TEXT NOT NULL",
+    "query_song_id          TEXT NOT NULL",
+    "ruler                  TEXT NOT NULL",
+    "metric                 TEXT NOT NULL",
+    "k                      INTEGER NOT NULL",
+    "value                  DOUBLE NOT NULL",
+    "status                 TEXT NOT NULL",
+    "created_at_ms          BIGINT NOT NULL",
+)
+
+#: ``CREATE TABLE IF NOT EXISTS`` statement for class-scoped per-query metrics (surface C).
+_CLASS_QUERY_METRIC_CREATE = (
+    "CREATE TABLE IF NOT EXISTS geometry_class_query_metrics (\n    "
+    + ",\n    ".join(_CLASS_QUERY_METRIC_COLUMN_DEFS)
+    + "\n);"
+)
+
+_CLASS_NEIGHBORHOOD_COLUMN_DEFS: tuple[str, ...] = (
+    "run_id                 TEXT NOT NULL",
+    "corpus_search_class_id TEXT NOT NULL",
+    "query_song_id          TEXT NOT NULL",
+    "candidate_song_id      TEXT NOT NULL",
+    "rank                   INTEGER NOT NULL",
+    "score                  DOUBLE NOT NULL",
+    "created_at_ms          BIGINT NOT NULL",
+)
+
+#: ``CREATE TABLE IF NOT EXISTS`` statement for class-scoped retained neighborhoods (surface D).
+_CLASS_NEIGHBORHOOD_CREATE = (
+    "CREATE TABLE IF NOT EXISTS geometry_class_neighborhoods (\n    "
+    + ",\n    ".join(_CLASS_NEIGHBORHOOD_COLUMN_DEFS)
+    + "\n);"
+)
+
+_BASELINE_AGGREGATE_METRIC_COLUMN_DEFS: tuple[str, ...] = (
+    "run_id                 TEXT NOT NULL",
+    "execution_id           TEXT NOT NULL",
+    "evaluation_id          TEXT NOT NULL",
+    "backbone               TEXT NOT NULL",
+    "ruler                  TEXT NOT NULL",
+    "metric                 TEXT NOT NULL",
+    "k                      INTEGER NOT NULL",
+    "value                  DOUBLE NOT NULL",
+    "evaluable_query_count  INTEGER NOT NULL",
+    "undefined_query_count  INTEGER NOT NULL",
+    "created_at_ms          BIGINT NOT NULL",
+)
+
+#: ``CREATE TABLE IF NOT EXISTS`` statement for baseline aggregate metrics (surface E).
+_BASELINE_AGGREGATE_METRIC_CREATE = (
+    "CREATE TABLE IF NOT EXISTS geometry_baseline_aggregate_metrics (\n    "
+    + ",\n    ".join(_BASELINE_AGGREGATE_METRIC_COLUMN_DEFS)
+    + "\n);"
+)
+
+_BASELINE_QUERY_METRIC_COLUMN_DEFS: tuple[str, ...] = (
+    "run_id                 TEXT NOT NULL",
+    "backbone               TEXT NOT NULL",
+    "query_song_id          TEXT NOT NULL",
+    "ruler                  TEXT NOT NULL",
+    "metric                 TEXT NOT NULL",
+    "k                      INTEGER NOT NULL",
+    "value                  DOUBLE NOT NULL",
+    "status                 TEXT NOT NULL",
+    "created_at_ms          BIGINT NOT NULL",
+)
+
+#: ``CREATE TABLE IF NOT EXISTS`` statement for baseline per-query metrics (surface F).
+_BASELINE_QUERY_METRIC_CREATE = (
+    "CREATE TABLE IF NOT EXISTS geometry_baseline_query_metrics (\n    "
+    + ",\n    ".join(_BASELINE_QUERY_METRIC_COLUMN_DEFS)
+    + "\n);"
+)
+
+_BASELINE_NEIGHBORHOOD_COLUMN_DEFS: tuple[str, ...] = (
+    "run_id                 TEXT NOT NULL",
+    "backbone               TEXT NOT NULL",
+    "query_song_id          TEXT NOT NULL",
+    "candidate_song_id      TEXT NOT NULL",
+    "rank                   INTEGER NOT NULL",
+    "score                  DOUBLE NOT NULL",
+    "created_at_ms          BIGINT NOT NULL",
+)
+
+#: ``CREATE TABLE IF NOT EXISTS`` statement for baseline retained neighborhoods (surface G).
+_BASELINE_NEIGHBORHOOD_CREATE = (
+    "CREATE TABLE IF NOT EXISTS geometry_baseline_neighborhoods (\n    "
+    + ",\n    ".join(_BASELINE_NEIGHBORHOOD_COLUMN_DEFS)
+    + "\n);"
+)
+
+_RESULT_PROVENANCE_COLUMN_DEFS: tuple[str, ...] = (
+    "run_id                        TEXT NOT NULL",
+    "execution_id                  TEXT NOT NULL",
+    "evaluation_id                 TEXT NOT NULL",
+    "experiment                    TEXT NOT NULL",
+    "scoring_semantics_version     INTEGER NOT NULL",
+    "geometry_semantics_version    TEXT NOT NULL",
+    "numerical_profile_digest      TEXT NOT NULL",
+    "evidence_mode                 TEXT NOT NULL",
+    "synthetic_only                BOOLEAN NOT NULL",
+    "comparable                    BOOLEAN NOT NULL",
+    "reasons_json                  TEXT NOT NULL",
+    "geometry_axes_json            TEXT NOT NULL",
+    "head_evidence_provenance_json TEXT NOT NULL",
+    "counters_json                 TEXT NOT NULL",
+    "created_at_ms                 BIGINT NOT NULL",
+)
+
+#: ``CREATE TABLE IF NOT EXISTS`` statement for the compact per-run provenance row.
+_RESULT_PROVENANCE_CREATE = (
+    "CREATE TABLE IF NOT EXISTS geometry_result_provenance (\n    "
+    + ",\n    ".join(_RESULT_PROVENANCE_COLUMN_DEFS)
+    + "\n);"
+)
+
+
 def _table_exists(con, table: str) -> bool:
     row = con.execute("SELECT COUNT(*) FROM information_schema.tables WHERE table_name = ?", [table]).fetchone()
     return bool(row and row[0])
@@ -453,7 +784,7 @@ def _ensure_current_analyze_metrics(con) -> None:
 def _require_duckdb() -> None:
     if not _HAS_DUCKDB:
         raise ImportError(
-            "duckdb is not installed. Run:\n  pip install -r /workspace/nomarr/scripts/embedding_research/requirements.txt"
+            "duckdb is not installed. Run:\n  uv venv .venv-research && uv pip install --python .venv-research/bin/python -r /workspace/nomarr/scripts/embedding_research/requirements.txt"
         )
 
 
@@ -505,7 +836,7 @@ def require_supported_duckdb() -> None:
         raise RuntimeError(
             f"Unsupported duckdb version {duckdb.__version__!r}: this research package requires "
             f"duckdb >=1.5,<2.0 (got {version[0]}.{version[1]}). Install a supported release:"
-            "\n  pip install -r /workspace/nomarr/scripts/embedding_research/requirements.txt"
+            "\n  uv venv .venv-research && uv pip install --python .venv-research/bin/python -r /workspace/nomarr/scripts/embedding_research/requirements.txt"
         )
 
 
@@ -543,11 +874,20 @@ def ensure_schema(con) -> None:
 
     Ensures the current run-scoped ``analyze_metrics`` table (creating it when absent, or
     raising :class:`StaleSchemaError` when an incompatible table is present), then the
-    monolithic DDL and the two tables owned
-    outside the monolithic ``_DDL``: the canonical 16-column ``head_phase_provenance`` table
-    and the 29-column ``analyze_incomplete_diagnostics`` table (``_INCOMPLETE_DIAGNOSTICS_CREATE``,
-    built from ``_INCOMPLETE_DIAGNOSTIC_COLUMN_DEFS``).  The ``geometry_analysis_records``
-    and ``geometry_head_evidence`` tables are defined once in the monolithic ``_DDL``.
+    monolithic DDL and the tables owned outside the monolithic ``_DDL``: the canonical
+    16-column ``head_phase_provenance`` table and the 29-column
+    ``analyze_incomplete_diagnostics`` table (``_INCOMPLETE_DIAGNOSTICS_CREATE``,
+    built from ``_INCOMPLETE_DIAGNOSTIC_COLUMN_DEFS``).  The 14-column fixed evaluation-corpus
+    table ``geometry_evaluation_corpus`` (``_EVALUATION_CORPUS_CREATE``) is also owned here, so
+    its identity columns cannot drift from the persistence writer.  The 11-column
+    ``geometry_threshold_class_map`` and 14-column ``geometry_threshold_structural`` tables are
+    owned here too, as is the 16-column ``geometry_head_label_provenance`` table.  The seven
+    normalized Experiment One result surfaces added in Plan A Phase 5 are owned here as well:
+    ``geometry_class_aggregate_metrics``, ``geometry_class_query_metrics``,
+    ``geometry_class_neighborhoods``, ``geometry_baseline_aggregate_metrics``,
+    ``geometry_baseline_query_metrics``, ``geometry_baseline_neighborhoods``, and the compact
+    ``geometry_result_provenance`` row.  The ``geometry_analysis_records`` and
+    ``geometry_head_evidence`` tables are defined once in the monolithic ``_DDL``.
     """
     _require_duckdb()
     _ensure_current_analyze_metrics(con)
@@ -555,6 +895,17 @@ def ensure_schema(con) -> None:
     con.execute(_GEOMETRY_CREATE)
     con.execute(_HPP_CREATE)
     con.execute(_INCOMPLETE_DIAGNOSTICS_CREATE)
+    con.execute(_EVALUATION_CORPUS_CREATE)
+    con.execute(_THRESHOLD_CLASS_MAP_CREATE)
+    con.execute(_THRESHOLD_STRUCTURAL_CREATE)
+    con.execute(_HEAD_LABEL_PROVENANCE_CREATE)
+    con.execute(_CLASS_AGGREGATE_METRIC_CREATE)
+    con.execute(_CLASS_QUERY_METRIC_CREATE)
+    con.execute(_CLASS_NEIGHBORHOOD_CREATE)
+    con.execute(_BASELINE_AGGREGATE_METRIC_CREATE)
+    con.execute(_BASELINE_QUERY_METRIC_CREATE)
+    con.execute(_BASELINE_NEIGHBORHOOD_CREATE)
+    con.execute(_RESULT_PROVENANCE_CREATE)
     schema_fingerprint(con)
 
 

@@ -212,7 +212,13 @@ def _run_geometry(con, cfg: dict, run_id: str) -> dict:
 
 
 def _run_analyze(con, cfg: dict, run_id: str) -> dict:
-    """Analyze committed geometry evidence through the sole CPU corpus owner."""
+    """Analyze committed geometry evidence through the sole CPU corpus owner.
+
+    Every execution is scoped to exactly ONE backbone: the configured ``backbones`` are
+    resolved up front and each is analyzed and published under its own
+    ``execution_id = f"execution:{run_id}:{backbone}"``.  A resolved execution therefore
+    carries no backbone ambiguity, and no cross-backbone averaging is possible.
+    """
     from scripts.embedding_research.common.geometry_analysis import (
         analyze_geometry_corpus,
         build_geometry_corpus_request,
@@ -224,26 +230,45 @@ def _run_analyze(con, cfg: dict, run_id: str) -> dict:
     profile = GeometryProfile.current()
     store = StreamStore(con, output_root=cfg.get("runtime_root") or RUNTIME_ROOT)
     heads = HeadStreamStore(con, output_root=cfg.get("runtime_root") or RUNTIME_ROOT)
-    request = build_geometry_corpus_request(
+    resolved_backbones = tuple(dict.fromkeys(str(backbone) for backbone in (cfg.get("backbones") or ["effnet"])))
+
+    # Declare every backbone obligation up front: each execution writes its own
+    # backbone-scoped baseline aggregate, and the run terminalizes exactly once, only after the
+    # last obligation resolves.  Every execution remains single-backbone.
+    from scripts.embedding_research.db.analyze_scope import record_analyze_invocation
+
+    record_analyze_invocation(
         con,
-        stream_store=store,
-        profile=profile,
-        threshold_request=cfg["threshold_request"],
-        experiment=cfg["experiment"],
-        evaluation_id=f"evaluation:{run_id}",
         run_id=run_id,
-        execution_id=f"execution:{run_id}",
-        scoring_semantics_version=1,
-        song_ids=cfg.get("song_ids"),
-        backbones=cfg.get("backbones"),
-        head_store=heads,
-        synthetic_only=False,
+        backbones=[(backbone, f"execution:{run_id}:{backbone}") for backbone in resolved_backbones],
     )
-    result = analyze_geometry_corpus(request, con=con, stream_store=store, profile=profile)
-    write_geometry_corpus_analysis(con, run_id=run_id, result=result, stream_store=store, profile=profile)
+
+    execution_ids: list[str] = []
+    song_count = 0
+    for backbone in resolved_backbones:
+        execution_id = f"execution:{run_id}:{backbone}"
+        request = build_geometry_corpus_request(
+            con,
+            stream_store=store,
+            profile=profile,
+            threshold_request=cfg["threshold_request"],
+            experiment=cfg["experiment"],
+            evaluation_id=f"evaluation:{run_id}",
+            run_id=run_id,
+            execution_id=execution_id,
+            scoring_semantics_version=1,
+            song_ids=cfg.get("song_ids"),
+            backbones=[backbone],
+            head_store=heads,
+            synthetic_only=False,
+        )
+        result = analyze_geometry_corpus(request, con=con, stream_store=store, profile=profile)
+        write_geometry_corpus_analysis(con, run_id=run_id, result=result, stream_store=store, profile=profile)
+        execution_ids.append(execution_id)
+        song_count += len(request.items)
     return {
-        "song_count": len(request.items),
-        "identity_hash": hashlib.sha256(request.execution_id.encode()).hexdigest(),
+        "song_count": song_count,
+        "identity_hash": hashlib.sha256("|".join(execution_ids).encode()).hexdigest(),
     }
 
 

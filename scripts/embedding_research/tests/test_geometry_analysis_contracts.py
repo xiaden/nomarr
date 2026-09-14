@@ -174,7 +174,7 @@ def test_geometry_analysis_module_rejects_non_cpu_external_ownership() -> None:
     imports.update(
         node.module.split(".")[0] for node in ast.walk(tree) if isinstance(node, ast.ImportFrom) and node.module
     )
-    assert imports <= {"__future__", "collections", "dataclasses", "types", "typing", "numpy", "scripts"}
+    assert imports <= {"__future__", "collections", "dataclasses", "hashlib", "types", "typing", "numpy", "scripts"}
     source = path.read_text(encoding="utf-8").lower()
     for forbidden in ("onnx", "cuda", "torch", "audio"):
         assert forbidden not in source
@@ -240,11 +240,11 @@ def test_empirical_request_builder_uses_head_store_and_never_synthetic_substitut
         )
 
 
-@pytest.mark.unit
 def test_builder_populates_empirical_frozen_head_evidence_and_keeps_fixture_mode_explicit(monkeypatch) -> None:
     from types import SimpleNamespace
 
     from scripts.embedding_research.common import geometry_analysis
+    from scripts.embedding_research.common.head_ruler_labels import HeadSongLabel
 
     profile = GeometryProfile.current()
     identity = GeometryIdentity("song-a", "effnet", "observation-a", "geometry-v1", profile.digest)
@@ -257,19 +257,29 @@ def test_builder_populates_empirical_frozen_head_evidence_and_keeps_fixture_mode
     class HeadStore:
         output_root = Path("/empirical/head-store")
 
-    selection = SimpleNamespace(
-        record=SimpleNamespace(head_ids="head-a,head-b"),
-        marker=SimpleNamespace(head_set_fingerprint="heads-a"),
+    label = HeadSongLabel(
+        song_id="song-a",
+        backbone="effnet",
+        full_tuple=(("gender", 1), ("timbre", 0)),
+        labels=("male", "bright"),
+        pooled=(0.8, 0.2),
+        searchable_rows=3,
+        head_set_fingerprint="heads-a",
+        head_ids="gender,timbre",
+        dim_by_head="gender:2,timbre:2",
+        stream_ref="stream-a",
+        stream_digest="stream-digest-a",
+        mask_ref="mask-a",
+        mask_digest="mask-digest-a",
+        present=True,
     )
-    calls: list[tuple[str, str]] = []
-    monkeypatch.setattr(
-        "scripts.embedding_research.streams.heads_current.resolve_current_head_suite",
-        lambda _root, song_id, backbone: calls.append((song_id, backbone)) or selection,
-    )
-    monkeypatch.setattr(
-        "scripts.embedding_research.streams.records.parse_head_ids",
-        lambda value: tuple(value.split(",")),
-    )
+    calls: list[tuple[str, str, str]] = []
+
+    def _resolve(*, head_store, song_id, backbone, **_kwargs):  # type: ignore[no-untyped-def]
+        calls.append((str(head_store.output_root), song_id, backbone))
+        return label
+
+    monkeypatch.setattr(geometry_analysis, "resolve_head_ruler_labels", _resolve)
     empirical = build_geometry_corpus_request(
         object(),
         stream_store=object(),
@@ -284,9 +294,12 @@ def test_builder_populates_empirical_frozen_head_evidence_and_keeps_fixture_mode
         synthetic_only=False,
     )
     assert empirical.synthetic_only is False
-    assert empirical.items[0].head_label == ("head-a", "head-b")
+    # The ruler label is the frozen ACTIVATION-DERIVED semantic tuple, never the suite name.
+    assert empirical.items[0].head_label == (("gender", 1), ("timbre", 0))
+    # Head-suite identity is retained SEPARATELY as provenance only.
     assert empirical.items[0].head_suite_identity == "heads-a"
-    assert calls == [("song-a", "effnet")]
+    assert empirical.items[0].head_provenance is label
+    assert calls == [("/empirical/head-store", "song-a", "effnet")]
 
     fixture = build_geometry_corpus_request(
         object(),
@@ -303,11 +316,12 @@ def test_builder_populates_empirical_frozen_head_evidence_and_keeps_fixture_mode
     assert fixture.synthetic_only is True
     assert fixture.items[0].head_label == ("fixture",)
     assert fixture.items[0].head_suite_identity is None
+    assert fixture.items[0].head_provenance is None
 
-    def missing_suite(*_args):
+    def missing_evidence(**_kwargs):  # type: ignore[no-untyped-def]
         raise RuntimeError("missing empirical head evidence")
 
-    monkeypatch.setattr("scripts.embedding_research.streams.heads_current.resolve_current_head_suite", missing_suite)
+    monkeypatch.setattr(geometry_analysis, "resolve_head_ruler_labels", missing_evidence)
     with pytest.raises(RuntimeError, match="missing empirical head evidence"):
         build_geometry_corpus_request(
             object(),

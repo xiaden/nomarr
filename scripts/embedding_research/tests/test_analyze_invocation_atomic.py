@@ -67,6 +67,14 @@ def _seed_baseline_evidence(con, run_id: str, backbone: str) -> str:
         metrics={"baseline_present": 1.0},
         evidence={"role": "mandatory-observed-baseline", "backbone": backbone},
     )
+    # The normalized baseline aggregate is the run-lifecycle reachability signal: a declared
+    # backbone obligation resolves only when at least one row exists for (run_id, backbone).
+    con.execute(
+        "INSERT INTO geometry_baseline_aggregate_metrics (run_id,execution_id,evaluation_id,backbone,"
+        "ruler,metric,k,value,evaluable_query_count,undefined_query_count,created_at_ms) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        (run_id, "execution", "evaluation", backbone, "artist", "mrr", 10, 1.0, 1, 0, _BASE),
+    )
     return _geometry_id(backbone)
 
 

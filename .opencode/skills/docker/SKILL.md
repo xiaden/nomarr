@@ -265,8 +265,10 @@ docker exec nomarr-dev ps -ef
 # Effective environment — .env file values land here; check DATABASE_URL is set correctly
 docker exec nomarr-dev env
 
-# Installed Python packages (useful to confirm a dependency is present)
-docker exec nomarr-dev python -m pip list --format=freeze
+# Installed system Python packages (useful to confirm a dependency is present)
+# python3-pip was removed from the uv-managed base; uv is present at /bin/uv.
+# `uv pip list --system` is read-only, so no --break-system-packages is needed.
+docker exec nomarr-dev uv pip list --system --format=freeze
 
 # Verify a specific module resolves from the bind mount (not a stale image layer)
 docker exec nomarr-dev python -c "import nomarr; print(nomarr.__file__)"

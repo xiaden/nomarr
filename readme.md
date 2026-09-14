@@ -113,6 +113,24 @@ docker compose logs nomarr | grep "Admin password"
 
 That gets you running. The **[Getting Started guide](docs/user/getting_started.md)** has the full walkthrough — GPU setup, reverse proxy, first scan.
 
+### Local development setup
+
+Running Nomarr from source (contributing, not just deploying) uses uv as the sole
+Python package/environment manager:
+
+```bash
+uv sync --locked
+```
+
+That creates/synchronizes the workspace `.venv` with the locked `dev` + CPU ONNX
+dependency set from `pyproject.toml` and `uv.lock`. See
+**[CONTRIBUTING.md](CONTRIBUTING.md)** for the full contributor setup.
+
+> **Unsupported install routes.** `pip install .`, `uv pip install .`, and
+> `uv pip install -r pyproject.toml` are **not** supported. They cannot select
+> uv's default dependency group, so they produce an application with no ONNX
+> runtime. Use `uv sync --locked`.
+
 ### Docker image tags
 
 If you pull published images from GHCR instead of building locally, use these tags:

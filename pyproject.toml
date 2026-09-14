@@ -25,7 +25,6 @@ classifiers = [
 dependencies = [
     "numpy==1.26.4",           # Pinned: onnxruntime compatibility
     "scipy>=1.13.1",
-    "onnxruntime>=1.18.0",     # CPU-only for dev/CI; Docker/GPU builds use onnxruntime-gpu (see dockerfile.base)
     "mutagen>=1.47.0",
     "pyyaml>=6.0.2",
     "fastapi>=0.115.0",
@@ -52,7 +51,9 @@ dependencies = [
     "pydantic>=2.0.0",  # DEP003: transitive via fastapi; 17 direct imports under nomarr/interfaces/api/**
 ]
 
-[project.optional-dependencies]
+# Dev-only dependencies live in a uv dependency group (not an optional extra) so a plain
+# `uv sync --locked` installs the complete dev toolchain instead of pruning it (R4).
+[dependency-groups]
 dev = [
     # Floor pinned to 0.25.1 — the version the [tool.deptry] config was verified against
     "deptry>=0.25.1",
@@ -69,6 +70,15 @@ dev = [
     "pre-commit>=4.0.0",
     "testcontainers[postgres]>=4.9.0",
 ]
+# Mutually exclusive CPU/GPU ONNX forks in one uv.lock. CPU is the default (dev/CI); GPU is the
+# Docker production selection derived from the same lock (no install-then-replace).
+cpu = ["onnxruntime>=1.18.0"]
+gpu = ["onnxruntime-gpu>=1.18.0,<1.27"]  # <1.27 = CUDA 12.x wheels; base image is CUDA 12.8.1
+
+[tool.uv]
+default-groups = ["dev", "cpu"]
+required-version = ">=0.12.13"  # floor only; no upper bound
+conflicts = [[{ group = "cpu" }, { group = "gpu" }]]
 
 [project.urls]
 Homepage = "https://github.com/xiaden/nomarr"
@@ -246,6 +256,14 @@ extend_exclude = [
     "scripts/tools/**",
     "scripts/migrate_logs_to_jsonl.py",
 ]
+# cpu/gpu are regular runtime dependency groups, not dev groups. Without this deptry treats
+# them as dev and raises DEP004 on the production `import onnxruntime`.
+non_dev_dependency_groups = ["cpu", "gpu"]
+
+[tool.deptry.package_module_name_map]
+# onnxruntime-gpu (the GPU group) shares the module name `onnxruntime`; without the map
+# deptry's fallback heuristic guesses `onnxruntime_gpu` and raises DEP002.
+onnxruntime-gpu = "onnxruntime"
 
 [tool.deptry.per_rule_ignores]
 # DEP002: deps whose usage is invisible to static import scans (CLI/plugin/stub/transitive).
@@ -272,8 +290,9 @@ DEP002 = [
     "mcp",
 ]
 # DEP001: essentia is built from source in dockerfile.base (waf) and has NO PyPI wheel for this
-# platform (`pip index versions essentia` -> "No matching distribution found"), so declaring it in
-# [project] dependencies would break CI's `pip install -e '.[dev]'` and the docker build.
+# platform (`pip index versions essentia` -> "No matching distribution found"), so it is
+# intentionally absent from [project.dependencies] and from the uv.lock-derived Docker package
+# set selected via `uv export --no-default-groups --group gpu`.
 # Imported in exactly 2 files: nomarr/components/ml/audio/ml_audio_comp.py:83 and
 # nomarr/components/ml/audio/ml_preprocess_comp.py:171. deptry 0.25.1 has NO per-file ignore
 # mechanism; per_rule_ignores matches module name 'essentia', which covers exactly those two files

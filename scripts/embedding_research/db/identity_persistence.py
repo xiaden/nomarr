@@ -201,6 +201,172 @@ def read_head_evidence_for_run(con, *, run_id: str) -> tuple[dict[str, Any], ...
     return tuple(dict(zip(_HEAD_EVIDENCE_COLUMNS, row, strict=True)) for row in rows)
 
 
+_EVALUATION_CORPUS_COLUMNS: tuple[str, ...] = (
+    "run_id",
+    "execution_id",
+    "evaluation_id",
+    "experiment",
+    "song_id",
+    "backbone",
+    "geometry_id",
+    "observation_group_sha256",
+    "numerical_profile_digest",
+    "searchable_count",
+    "comparable",
+    "reasons_json",
+    "baseline_valid",
+    "created_at_ms",
+)
+
+
+def _required_text(value: Any, name: str) -> str:
+    text = "" if value is None else str(value)
+    if not text:
+        raise IdentityRefusal(f"evaluation corpus {name} is required")
+    return text
+
+
+def _evaluation_corpus_row(
+    entry: Any,
+    *,
+    run_id: str,
+    evaluation_id: str,
+    experiment: str,
+    execution_id: str,
+) -> tuple[Any, ...]:
+    song_id = _required_text(getattr(entry, "song_id", ""), "song_id")
+    backbone = _required_text(getattr(entry, "backbone", ""), "backbone")
+    geometry_id = _required_text(getattr(entry, "geometry_id", ""), "geometry_id")
+    observation_group = _required_text(getattr(entry, "observation_group_sha256", ""), "observation_group_sha256")
+    profile_digest = _required_text(getattr(entry, "numerical_profile_digest", ""), "numerical_profile_digest")
+    searchable_count = getattr(entry, "searchable_count", None)
+    if isinstance(searchable_count, bool) or not isinstance(searchable_count, int) or searchable_count < 0:
+        raise IdentityRefusal("evaluation corpus searchable_count must be a non-negative integer")
+    for name in ("comparable", "baseline_valid"):
+        if not isinstance(getattr(entry, name, None), bool):
+            raise IdentityRefusal(f"evaluation corpus {name} must be boolean")
+    reasons = tuple(str(reason) for reason in getattr(entry, "reasons", ()))
+    return (
+        run_id,
+        execution_id,
+        evaluation_id,
+        experiment,
+        song_id,
+        backbone,
+        geometry_id,
+        observation_group,
+        profile_digest,
+        searchable_count,
+        bool(entry.comparable),
+        _json(list(reasons)),
+        bool(entry.baseline_valid),
+        int(time.time() * 1000),
+    )
+
+
+def write_evaluation_corpus_in_transaction(
+    con,
+    *,
+    run_id: str,
+    evaluation_id: str,
+    experiment: str,
+    execution_id: str,
+    entries: Iterable[Any],
+) -> None:
+    """Insert the fixed evaluation-corpus membership on the caller's open transaction.
+
+    One row per ``(run_id, evaluation_id, song_id, backbone)`` is application-enforced: a
+    duplicate in the batch or already present in the table is refused, so membership can
+    never be duplicated per threshold.
+    """
+    run_id = _required_text(run_id, "run_id")
+    evaluation_id = _required_text(evaluation_id, "evaluation_id")
+    experiment = _required_text(experiment, "experiment")
+    execution_id = _required_text(execution_id, "execution_id")
+    materialized = list(entries)
+    if not materialized:
+        raise IdentityRefusal("evaluation corpus is empty")
+    seen: set[tuple[str, str]] = set()
+    rows: list[tuple[Any, ...]] = []
+    for entry in materialized:
+        row = _evaluation_corpus_row(
+            entry,
+            run_id=run_id,
+            evaluation_id=evaluation_id,
+            experiment=experiment,
+            execution_id=execution_id,
+        )
+        key = (str(row[4]), str(row[5]))
+        if key in seen:
+            raise IdentityRefusal("duplicate evaluation corpus membership in one write")
+        seen.add(key)
+        exists = con.execute(
+            "SELECT count(*) FROM geometry_evaluation_corpus "
+            "WHERE run_id=? AND evaluation_id=? AND song_id=? AND backbone=?",
+            [run_id, evaluation_id, key[0], key[1]],
+        ).fetchone()[0]
+        if exists:
+            raise IdentityRefusal("evaluation corpus membership already exists")
+        rows.append(row)
+    con.executemany(
+        "INSERT INTO geometry_evaluation_corpus (run_id,execution_id,evaluation_id,experiment,song_id,backbone,"
+        "geometry_id,observation_group_sha256,numerical_profile_digest,searchable_count,comparable,reasons_json,"
+        "baseline_valid,created_at_ms) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        rows,
+    )
+
+
+def write_evaluation_corpus(
+    con,
+    *,
+    run_id: str,
+    evaluation_id: str,
+    experiment: str,
+    execution_id: str,
+    entries: Iterable[Any],
+) -> None:
+    """Persist the ONE fixed evaluation corpus, once per ``(run, evaluation, song, backbone)``."""
+    with _transaction(con):
+        write_evaluation_corpus_in_transaction(
+            con,
+            run_id=run_id,
+            evaluation_id=evaluation_id,
+            experiment=experiment,
+            execution_id=execution_id,
+            entries=entries,
+        )
+
+
+def read_evaluation_corpus(
+    con: Any,
+    *,
+    run_id: str,
+    evaluation_id: str | None = None,
+    execution_id: str | None = None,
+) -> tuple[dict[str, Any], ...]:
+    """Read persisted evaluation-corpus membership, ordered deterministically."""
+    sql = (
+        "SELECT run_id,execution_id,evaluation_id,experiment,song_id,backbone,geometry_id,"
+        "observation_group_sha256,numerical_profile_digest,searchable_count,comparable,"
+        "reasons_json,baseline_valid,created_at_ms FROM geometry_evaluation_corpus WHERE run_id=?"
+    )
+    params: list[Any] = [run_id]
+    if evaluation_id is not None:
+        sql += " AND evaluation_id=?"
+        params.append(evaluation_id)
+    if execution_id is not None:
+        sql += " AND execution_id=?"
+        params.append(execution_id)
+    sql += " ORDER BY evaluation_id,execution_id,backbone,song_id"
+    rows = con.execute(sql, params).fetchall()
+    records: list[dict[str, Any]] = []
+    for row in rows:
+        record = dict(zip(_EVALUATION_CORPUS_COLUMNS, row, strict=True))
+        record["reasons"] = tuple(json.loads(record.pop("reasons_json")))
+        records.append(record)
+    return tuple(records)
+
+
 def read_threshold_map_rows(
     con: Any,
     *,
@@ -236,3 +402,386 @@ def read_threshold_map_rows(
             }
         )
     return tuple(entries)
+
+
+_THRESHOLD_CLASS_MAP_COLUMNS: tuple[str, ...] = (
+    "run_id",
+    "execution_id",
+    "evaluation_id",
+    "experiment",
+    "threshold_index",
+    "threshold_value",
+    "threshold_id",
+    "corpus_search_class_id",
+    "comparable",
+    "reasons_json",
+    "created_at_ms",
+)
+
+_THRESHOLD_STRUCTURAL_COLUMNS: tuple[str, ...] = (
+    "run_id",
+    "evaluation_id",
+    "song_id",
+    "backbone",
+    "threshold_index",
+    "threshold_id",
+    "structural_identity",
+    "search_representation_id",
+    "searchable_count",
+    "medoid_defined",
+    "alignment_ok",
+    "comparable",
+    "reasons_json",
+    "created_at_ms",
+)
+
+
+def _non_negative_index(value: Any, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise IdentityRefusal(f"{name} must be a non-negative integer")
+    return value
+
+
+def _threshold_class_row(
+    row: Any, *, run_id: str, evaluation_id: str, execution_id: str, experiment: str
+) -> tuple[Any, ...]:
+    index = _non_negative_index(getattr(row, "threshold_index", None), "threshold class threshold_index")
+    threshold_value = getattr(row, "threshold_value", None)
+    if isinstance(threshold_value, bool) or not isinstance(threshold_value, (int, float)):
+        raise IdentityRefusal("threshold class threshold_value must be finite")
+    if not isinstance(row.comparable, bool):
+        raise IdentityRefusal("threshold class comparable must be boolean")
+    reasons = tuple(str(reason) for reason in getattr(row, "reasons", ()))
+    return (
+        run_id,
+        execution_id,
+        evaluation_id,
+        experiment,
+        index,
+        float(threshold_value),
+        _required_text(getattr(row, "threshold_id", ""), "threshold_id"),
+        _required_text(getattr(row, "corpus_search_class_id", ""), "corpus_search_class_id"),
+        bool(row.comparable),
+        _json(list(reasons)),
+        int(time.time() * 1000),
+    )
+
+
+def write_threshold_class_map_in_transaction(
+    con,
+    *,
+    run_id: str,
+    evaluation_id: str,
+    execution_id: str,
+    experiment: str,
+    rows: Iterable[Any],
+) -> None:
+    """Insert the threshold-to-class map on the caller's open transaction.
+
+    Exactly one row per configured threshold is written, keyed by
+    ``(run_id, execution_id, evaluation_id, threshold_index)``.  A duplicate index in the
+    batch or already present in the table is refused; equal ordered corpus scoring inputs
+    may share ``corpus_search_class_id`` without collapsing away any threshold row.
+    """
+    run_id = _required_text(run_id, "run_id")
+    evaluation_id = _required_text(evaluation_id, "evaluation_id")
+    execution_id = _required_text(execution_id, "execution_id")
+    experiment = _required_text(experiment, "experiment")
+    materialized = list(rows)
+    if not materialized:
+        raise IdentityRefusal("threshold class map is empty")
+    seen: set[int] = set()
+    records: list[tuple[Any, ...]] = []
+    for row in materialized:
+        record = _threshold_class_row(
+            row,
+            run_id=run_id,
+            evaluation_id=evaluation_id,
+            execution_id=execution_id,
+            experiment=experiment,
+        )
+        index = int(record[4])
+        if index in seen:
+            raise IdentityRefusal("duplicate threshold class map identity in one write")
+        seen.add(index)
+        exists = con.execute(
+            "SELECT count(*) FROM geometry_threshold_class_map "
+            "WHERE run_id=? AND execution_id=? AND evaluation_id=? AND threshold_index=?",
+            [run_id, execution_id, evaluation_id, index],
+        ).fetchone()[0]
+        if exists:
+            raise IdentityRefusal("threshold class map identity already exists")
+        records.append(record)
+    con.executemany(
+        "INSERT INTO geometry_threshold_class_map (run_id,execution_id,evaluation_id,experiment,threshold_index,"
+        "threshold_value,threshold_id,corpus_search_class_id,comparable,reasons_json,created_at_ms) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        records,
+    )
+
+
+def _threshold_structural_row(row: Any, *, run_id: str, evaluation_id: str) -> tuple[Any, ...]:
+    index = _non_negative_index(getattr(row, "threshold_index", None), "threshold structural threshold_index")
+    searchable_count = getattr(row, "searchable_count", None)
+    if isinstance(searchable_count, bool) or not isinstance(searchable_count, int) or searchable_count < 0:
+        raise IdentityRefusal("threshold structural searchable_count must be a non-negative integer")
+    for name in ("medoid_defined", "alignment_ok", "comparable"):
+        if not isinstance(getattr(row, name, None), bool):
+            raise IdentityRefusal(f"threshold structural {name} must be boolean")
+    reasons = tuple(str(reason) for reason in getattr(row, "reasons", ()))
+    return (
+        run_id,
+        evaluation_id,
+        _required_text(getattr(row, "song_id", ""), "song_id"),
+        _required_text(getattr(row, "backbone", ""), "backbone"),
+        index,
+        _required_text(getattr(row, "threshold_id", ""), "threshold_id"),
+        _required_text(getattr(row, "structural_identity", ""), "structural_identity"),
+        _required_text(getattr(row, "search_representation_id", ""), "search_representation_id"),
+        searchable_count,
+        bool(row.medoid_defined),
+        bool(row.alignment_ok),
+        bool(row.comparable),
+        _json(list(reasons)),
+        int(time.time() * 1000),
+    )
+
+
+def write_threshold_structural_in_transaction(
+    con,
+    *,
+    run_id: str,
+    evaluation_id: str,
+    rows: Iterable[Any],
+) -> None:
+    """Insert per-``(song, threshold)`` structural/search evidence on the caller's transaction.
+
+    Row identity is application-enforced by ``(run_id, evaluation_id, song_id, threshold_index)``;
+    a duplicate in the batch or already present in the table is refused.  These rows carry
+    structural/search evidence only - never a retrieval metric.
+    """
+    run_id = _required_text(run_id, "run_id")
+    evaluation_id = _required_text(evaluation_id, "evaluation_id")
+    materialized = list(rows)
+    if not materialized:
+        raise IdentityRefusal("threshold structural rows are empty")
+    seen: set[tuple[str, int]] = set()
+    records: list[tuple[Any, ...]] = []
+    for row in materialized:
+        record = _threshold_structural_row(row, run_id=run_id, evaluation_id=evaluation_id)
+        key = (str(record[2]), int(record[4]))
+        if key in seen:
+            raise IdentityRefusal("duplicate threshold structural identity in one write")
+        seen.add(key)
+        exists = con.execute(
+            "SELECT count(*) FROM geometry_threshold_structural "
+            "WHERE run_id=? AND evaluation_id=? AND song_id=? AND threshold_index=?",
+            [run_id, evaluation_id, key[0], key[1]],
+        ).fetchone()[0]
+        if exists:
+            raise IdentityRefusal("threshold structural identity already exists")
+        records.append(record)
+    con.executemany(
+        "INSERT INTO geometry_threshold_structural (run_id,evaluation_id,song_id,backbone,threshold_index,"
+        "threshold_id,structural_identity,search_representation_id,searchable_count,medoid_defined,alignment_ok,"
+        "comparable,reasons_json,created_at_ms) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        records,
+    )
+
+
+def read_threshold_class_map(
+    con: Any,
+    *,
+    run_id: str,
+    evaluation_id: str | None = None,
+    execution_id: str | None = None,
+) -> tuple[dict[str, Any], ...]:
+    """Read the persisted threshold-to-class map, ordered by threshold index."""
+    sql = (
+        "SELECT run_id,execution_id,evaluation_id,experiment,threshold_index,threshold_value,"
+        "threshold_id,corpus_search_class_id,comparable,reasons_json,created_at_ms "
+        "FROM geometry_threshold_class_map WHERE run_id=?"
+    )
+    params: list[Any] = [run_id]
+    if evaluation_id is not None:
+        sql += " AND evaluation_id=?"
+        params.append(evaluation_id)
+    if execution_id is not None:
+        sql += " AND execution_id=?"
+        params.append(execution_id)
+    sql += " ORDER BY evaluation_id,execution_id,threshold_index"
+    records: list[dict[str, Any]] = []
+    for row in con.execute(sql, params).fetchall():
+        record = dict(zip(_THRESHOLD_CLASS_MAP_COLUMNS, row, strict=True))
+        record["reasons"] = tuple(json.loads(record.pop("reasons_json")))
+        records.append(record)
+    return tuple(records)
+
+
+def read_threshold_structural(
+    con: Any,
+    *,
+    run_id: str,
+    evaluation_id: str | None = None,
+) -> tuple[dict[str, Any], ...]:
+    """Read per-``(song, threshold)`` structural/search evidence, ordered deterministically."""
+    sql = (
+        "SELECT run_id,evaluation_id,song_id,backbone,threshold_index,threshold_id,structural_identity,"
+        "search_representation_id,searchable_count,medoid_defined,alignment_ok,comparable,reasons_json,"
+        "created_at_ms FROM geometry_threshold_structural WHERE run_id=?"
+    )
+    params: list[Any] = [run_id]
+    if evaluation_id is not None:
+        sql += " AND evaluation_id=?"
+        params.append(evaluation_id)
+    sql += " ORDER BY evaluation_id,song_id,threshold_index"
+    records: list[dict[str, Any]] = []
+    for row in con.execute(sql, params).fetchall():
+        record = dict(zip(_THRESHOLD_STRUCTURAL_COLUMNS, row, strict=True))
+        record["reasons"] = tuple(json.loads(record.pop("reasons_json")))
+        records.append(record)
+    return tuple(records)
+
+
+_HEAD_LABEL_PROVENANCE_COLUMNS: tuple[str, ...] = (
+    "run_id",
+    "evaluation_id",
+    "song_id",
+    "backbone",
+    "present",
+    "semantic_label_json",
+    "labels_json",
+    "pooled_json",
+    "head_set_fingerprint",
+    "head_ids",
+    "dim_by_head",
+    "stream_ref",
+    "stream_digest",
+    "mask_ref",
+    "mask_digest",
+    "created_at_ms",
+)
+
+
+def _head_label_provenance_row(row: Any, *, run_id: str, evaluation_id: str) -> tuple[Any, ...]:
+    present = getattr(row, "present", None)
+    if not isinstance(present, bool):
+        raise IdentityRefusal("head label provenance present must be boolean")
+    song_id = _required_text(getattr(row, "song_id", ""), "song_id")
+    backbone = _required_text(getattr(row, "backbone", ""), "backbone")
+    if present:
+        full_tuple = getattr(row, "full_tuple", None)
+        if not full_tuple:
+            raise IdentityRefusal("present head label provenance requires a full_tuple")
+        semantic = [[str(head), int(side)] for head, side in full_tuple]
+        labels = [str(label) for label in getattr(row, "labels", ())]
+        pooled = [float(value) for value in getattr(row, "pooled", ())]
+        if not all(math.isfinite(value) for value in pooled):
+            raise IdentityRefusal("head label provenance pooled values must be finite")
+        if len(labels) != len(semantic) or len(pooled) != len(semantic):
+            raise IdentityRefusal("head label provenance tuple/labels/pooled must be aligned")
+        fingerprint = _required_text(getattr(row, "head_set_fingerprint", ""), "head_set_fingerprint")
+        head_ids = _required_text(getattr(row, "head_ids", ""), "head_ids")
+        dim_by_head = _required_text(getattr(row, "dim_by_head", ""), "dim_by_head")
+        stream_ref = _required_text(getattr(row, "stream_ref", ""), "stream_ref")
+        stream_digest = _required_text(getattr(row, "stream_digest", ""), "stream_digest")
+        mask_ref = _required_text(getattr(row, "mask_ref", ""), "mask_ref")
+        mask_digest = _required_text(getattr(row, "mask_digest", ""), "mask_digest")
+    else:
+        semantic = None
+        labels = []
+        pooled = []
+        fingerprint = head_ids = dim_by_head = stream_ref = stream_digest = mask_ref = mask_digest = ""
+    return (
+        run_id,
+        evaluation_id,
+        song_id,
+        backbone,
+        present,
+        _json(semantic),
+        _json(labels),
+        _json(pooled),
+        fingerprint,
+        head_ids,
+        dim_by_head,
+        stream_ref,
+        stream_digest,
+        mask_ref,
+        mask_digest,
+        int(time.time() * 1000),
+    )
+
+
+def write_head_label_provenance_in_transaction(
+    con,
+    *,
+    run_id: str,
+    evaluation_id: str,
+    rows: Iterable[Any],
+) -> None:
+    """Insert frozen semantic-head label + head-suite provenance on the caller's transaction.
+
+    Row identity is application-enforced by ``(run_id, evaluation_id, song_id, backbone)``;
+    a duplicate in the batch or already present in the table is refused.  The activation-derived
+    semantic ruler label and the head-suite identity are persisted in SEPARATE columns: the
+    suite fingerprint is provenance only and is never used as the ruler label.  A ``row`` with
+    ``present = False`` records a per-song HEAD ruler exclusion (missing frozen head evidence)
+    with empty identity strings and null/empty payloads.
+    """
+    run_id = _required_text(run_id, "run_id")
+    evaluation_id = _required_text(evaluation_id, "evaluation_id")
+    materialized = list(rows)
+    if not materialized:
+        raise IdentityRefusal("head label provenance rows are empty")
+    seen: set[tuple[str, str]] = set()
+    records: list[tuple[Any, ...]] = []
+    for row in materialized:
+        record = _head_label_provenance_row(row, run_id=run_id, evaluation_id=evaluation_id)
+        key = (str(record[2]), str(record[3]))
+        if key in seen:
+            raise IdentityRefusal("duplicate head label provenance identity in one write")
+        seen.add(key)
+        exists = con.execute(
+            "SELECT count(*) FROM geometry_head_label_provenance "
+            "WHERE run_id=? AND evaluation_id=? AND song_id=? AND backbone=?",
+            [run_id, evaluation_id, key[0], key[1]],
+        ).fetchone()[0]
+        if exists:
+            raise IdentityRefusal("head label provenance identity already exists")
+        records.append(record)
+    con.executemany(
+        "INSERT INTO geometry_head_label_provenance (run_id,evaluation_id,song_id,backbone,present,"
+        "semantic_label_json,labels_json,pooled_json,head_set_fingerprint,head_ids,dim_by_head,"
+        "stream_ref,stream_digest,mask_ref,mask_digest,created_at_ms) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        records,
+    )
+
+
+def read_head_label_provenance(
+    con: Any,
+    *,
+    run_id: str,
+    evaluation_id: str | None = None,
+) -> tuple[dict[str, Any], ...]:
+    """Read frozen semantic-head label + head-suite provenance, ordered deterministically."""
+    sql = (
+        "SELECT run_id,evaluation_id,song_id,backbone,present,semantic_label_json,labels_json,"
+        "pooled_json,head_set_fingerprint,head_ids,dim_by_head,stream_ref,stream_digest,mask_ref,"
+        "mask_digest,created_at_ms FROM geometry_head_label_provenance WHERE run_id=?"
+    )
+    params: list[Any] = [run_id]
+    if evaluation_id is not None:
+        sql += " AND evaluation_id=?"
+        params.append(evaluation_id)
+    sql += " ORDER BY evaluation_id,song_id,backbone"
+    records: list[dict[str, Any]] = []
+    for row in con.execute(sql, params).fetchall():
+        record = dict(zip(_HEAD_LABEL_PROVENANCE_COLUMNS, row, strict=True))
+        raw_semantic = json.loads(record.pop("semantic_label_json"))
+        record["semantic_label"] = (
+            None if raw_semantic is None else tuple((str(entry[0]), int(entry[1])) for entry in raw_semantic)
+        )
+        record["labels"] = tuple(str(label) for label in json.loads(record.pop("labels_json")))
+        record["pooled"] = tuple(float(value) for value in json.loads(record.pop("pooled_json")))
+        records.append(record)
+    return tuple(records)

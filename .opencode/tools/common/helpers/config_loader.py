@@ -257,10 +257,7 @@ def get_venv_binary(project_root: Path, name: str) -> Path:
     for candidate in candidates:
         if candidate.exists():
             return candidate
-    raise FileNotFoundError(
-        f"Required virtual-environment executable not found: {name}. "
-        f"Run scripts/human-scripts/tools/ensure_venv.py in {project_root}."
-    )
+    raise FileNotFoundError(f"Run `uv sync --locked` in {project_root} to create the workspace .venv.")
 
 
 def _auto_detect_paths(workspace_root: Path, config: dict) -> dict:

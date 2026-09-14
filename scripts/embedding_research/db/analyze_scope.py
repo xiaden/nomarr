@@ -140,6 +140,36 @@ def invocation_state(con, *, run_id: str) -> dict:
     }
 
 
+def unresolved_obligations(con, *, run_id: str) -> list[str]:
+    """Return the declared analyze obligations that have no persisted baseline yet.
+
+    A declared ``(backbone, geometry_id)`` obligation is resolved when
+    :mod:`~scripts.embedding_research.db.result_surfaces` has persisted at least one
+    ``geometry_baseline_aggregate_metrics`` row for ``(run_id, backbone)``.  That normalized
+    surface is the threshold-independent reachability signal, so baseline presence -- and
+    therefore a run's ability to terminalize -- does not depend on how many thresholds were
+    configured.  The entry's ``geometry_id`` only has to be non-empty: the published baseline
+    rows are backbone-scoped and the exact corpus geometry identity is enforced at publication
+    time by the geometry-binding revalidation.
+    """
+    state = invocation_state(con, run_id=run_id)
+    obligations = state["obligations"] or {}
+    unresolved: list[str] = []
+    for entry in obligations.get("backbones", []):
+        geometry_id = str(entry.get("geometry_id", ""))
+        backbone = str(entry.get("backbone", ""))
+        if not geometry_id:
+            unresolved.append(f"{backbone}: missing mandatory geometry identity")
+            continue
+        n = con.execute(
+            "SELECT count(*) FROM geometry_baseline_aggregate_metrics WHERE run_id=? AND backbone=?",
+            (run_id, backbone),
+        ).fetchone()[0]
+        if not n:
+            unresolved.append(f"{backbone}: no persisted baseline aggregate evidence")
+    return unresolved
+
+
 def terminalize_analyze_completed(
     con,
     *,
@@ -174,20 +204,7 @@ def terminalize_analyze_completed(
             f"refusing duplicate terminalization of run_id={run_id!r}: a completed terminal "
             "already exists (an invocation has exactly one terminal outcome)"
         )
-    obligations = state["obligations"] or {}
-    unresolved: list[str] = []
-    for entry in obligations.get("backbones", []):
-        geometry_id = str(entry.get("geometry_id", ""))
-        backbone = str(entry.get("backbone", ""))
-        if not geometry_id:
-            unresolved.append(f"{backbone}: missing mandatory geometry identity")
-            continue
-        n = con.execute(
-            "SELECT count(*) FROM geometry_analysis_records WHERE run_id=? AND geometry_id=? AND metric='baseline_present'",
-            (run_id, geometry_id),
-        ).fetchone()[0]
-        if not n:
-            unresolved.append(f"{backbone}: no {geometry_id} baseline evidence")
+    unresolved = unresolved_obligations(con, run_id=run_id)
     if unresolved:
         raise AnalyzeInvocationIncompleteError(
             f"refusing to terminalize run_id={run_id!r} completed with unresolved obligations: " + "; ".join(unresolved)

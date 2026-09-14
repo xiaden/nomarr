@@ -1,5 +1,5 @@
 # Dependabot configuration for Nomarr
-# Automates dependency updates for Python (pip) and JavaScript (npm)
+# Automates dependency updates for Python (uv and pip), JavaScript (npm), GitHub Actions, and Docker
 
 version: 2
 updates:
@@ -27,13 +27,57 @@ updates:
           - "uvicorn*"
       ml-stack:
         patterns:
-          - "tensorflow*"
           - "numpy*"
           - "scipy*"
       testing:
         patterns:
           - "pytest*"
           - "coverage*"
+    # Allow pre-release versions for these packages (alpha project)
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    # Version pinning strategy: allow minor/patch updates only
+    versioning-strategy: increase
+
+  # Backend - Python dependencies via uv (tracks pyproject.toml + uv.lock)
+  - package-ecosystem: "uv"
+    directory: "/"
+    target-branch: "develop"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "05:00"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "backend"
+    commit-message:
+      prefix: "deps(backend)"
+    # Group minor/patch updates for common packages. onnxruntime* is excluded
+    # from every group so the GPU <1.27 cap is always a reviewed change, never
+    # auto-batched.
+    groups:
+      fastapi-ecosystem:
+        patterns:
+          - "fastapi*"
+          - "pydantic*"
+          - "starlette*"
+          - "uvicorn*"
+        exclude-patterns:
+          - "onnxruntime*"
+      ml-stack:
+        patterns:
+          - "numpy*"
+          - "scipy*"
+        exclude-patterns:
+          - "onnxruntime*"
+      testing:
+        patterns:
+          - "pytest*"
+          - "coverage*"
+        exclude-patterns:
+          - "onnxruntime*"
     # Allow pre-release versions for these packages (alpha project)
     ignore:
       - dependency-name: "*"
@@ -102,20 +146,3 @@ updates:
       - "docker"
     commit-message:
       prefix: "docker"
-
-  # code-intel - Independent MCP server (will be split to separate repo)
-  - package-ecosystem: "pip"
-    directory: "/code-intel"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "05:00"
-    target-branch: "develop"
-    open-pull-requests-limit: 5
-    labels:
-      - "dependencies"
-      - "code-intel"
-    commit-message:
-      prefix: "deps(code-intel)"
-
-    versioning-strategy: increase

@@ -44,7 +44,7 @@
   "mood_suite_path": "tests/characterization/test_mood_owner_pg.py",
   "marker": "requires_database",
   "exact_command": "pytest tests/characterization/ tests/characterization/test_mood_owner_pg.py tests/integration/test_library_uuid_locator_identity_pg.py tests/integration/test_song_upsert_state_boundary_pg.py tests/sabotage/test_no_facades_begin_transactions.py -v -m requires_database",
-  "dependency_install": "pip install -e \".[dev]\"",
+  "dependency_install": "uv sync --locked",
   "docker_requirement": "docker version --format '{{.Server.Version}}' (testcontainers pgvector/pgvector:pg17 needs the native Docker daemon preinstalled on ubuntu-latest)",
   "forbidden_workflow_properties": ["continue-on-error", "hidden exclusion"],
   "closed_capabilities": [
