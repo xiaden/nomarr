@@ -36,7 +36,7 @@ File and library management — scanning, syncing, metadata extraction, move det
  | `tag_hydration_comp` | Hydrate songs with canonical metadata from tags |
  | `metadata_extraction_comp` | Extract metadata from audio files (mutagen-based: MP3/MP4/FLAC), resolve artists, compute chromaprints |
  | `missing_file_detection_comp` | Folder-aware detection of files removed from disk (respects skipped folders) |
- | `move_detection_comp` | Chromaprint-based move detection with duration pre-filter and early termination; DB-fallback matches applied only when the source is absent from disk |
+ | `move_detection_comp` | Per-file move detection: a bounded, library-scoped, persistence-backed chromaprint lookup with 1 s duration tolerance; a match is a relocation only when its source is genuinely absent from disk |
  | `reconcile_paths_comp` | Re-validate all library paths after config changes (dry-run, mark-invalid, or delete) |
  | `reconciliation_comp` | Claim/release files for reconciliation, count files needing reconciliation |
  | `search_files_comp` | Search library files with filtering; list unique tag keys/values |
@@ -45,7 +45,7 @@ File and library management — scanning, syncing, metadata extraction, move det
 ## Patterns
 
 - **Incremental scanning:** `folder_analysis_comp` compares folder mtime and file count against a DB cache to skip unchanged folders, making re-scans fast.
-- **Move detection:** When files disappear and new files appear, chromaprints are compared. Duration pre-filtering and early termination optimize the matching. The DB chromaprint fallback lookup has no existence filter, so a match is a real relocation only when its source is genuinely absent from disk — a live duplicate must not be repointed.
+- **Move detection:** Each newly discovered file is resolved individually via a bounded, library-scoped, persistence-backed chromaprint lookup — the DB listing is the primary and only lookup, never a whole-library in-memory comparison. Candidates are filtered by the 1 s duration tolerance. The chromaprint column has no existence filter, so a match is a real relocation only when its source is genuinely absent from disk — a live duplicate must not be repointed.
 - **Batch upserts:** `library_scan_file_ops_comp._upsert_batch` builds typed `SongUpsertInput` commands and sends one atomic persistence batch. Persistence initializes state only for newly created rows; edge bootstrapping for files that skip ML processing is a separate scan operation.
 - **Security boundary:** All library roots must be nested under a configured `base_library_root`. Path traversal is prevented by `library_root_comp`.
 

@@ -27,7 +27,7 @@ Workflows for library scanning, file synchronization, tag I/O, path reconciliati
 ## Patterns
 
 - **Scan dispatch**: Setup runs synchronously (catchable errors), actual scan dispatched as background task
-- **Move detection**: Both quick and full scans reconcile moved files via chromaprint before any genuine insert/delete (ordering matters: detection runs first). Quick scan reconciles only the folders it walked — unchanged (cache-skipped) folders and folders whose walk failed are not reconciled; full scan walks every folder. A DB-fallback match is applied only when its source is genuinely absent from disk, so a live duplicate is never repointed.
+- **Move detection**: Both quick and full scans reconcile moves interleaved with the per-folder walk, not in a separate first pass. Within each successfully-walked folder, modified files upsert in place, same-locator root/mount rebases apply in place, and each genuine new file is resolved individually via a bounded, library-scoped chromaprint lookup before it is treated as a genuine insert. Genuine deletes happen only in a deferred scoped cleanup pass over successfully-walked or vanished folders; unchanged (cache-skipped) and failed folders are never reconciled or cleaned. A match is applied only when its source is genuinely absent from disk, so a live duplicate is never repointed. Quick scan reconciles only the folders it walked; full scan walks every folder.
 - **Fast-path sync**: When `file_id` is known, `sync_file_to_library_wf` skips path-based upsert
 
 ## Architecture Rules

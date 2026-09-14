@@ -384,6 +384,45 @@ class TestSongRepository:
         assert result is not None
         assert result["chromaprint"] == "abc123"
 
+    def test_list_songs_by_chromaprint_is_library_scoped_and_limited(self, pg_session) -> None:
+        """list_songs_by_chromaprint returns only the library's rows for the
+        fingerprint, capped by ``limit``.
+
+        The foreign-library colliding row is inserted FIRST so it has the lowest
+        primary key. The query orders by id and truncates, so a missing library
+        filter would place that foreign row inside the bounded window and break
+        the ``limit``/``library_id``/``id`` assertions below.
+        """
+        lib_a = _create_library(pg_session)
+        lib_b = _create_library(pg_session)
+        repo = SongRepository(pg_session)
+        # Insert the foreign-library collision first: lowest id, so it sits at
+        # the front of the id-ordered window if the library filter is absent.
+        other_id = _create_song(pg_session, lib_b, "/music/b-cp.mp3")
+        repo.update_song(other_id, {"chromaprint": "shared"})
+        # A distinct fingerprint in the same library must not match either.
+        distinct_id = _create_song(pg_session, lib_a, "/music/a-distinct.mp3")
+        repo.update_song(distinct_id, {"chromaprint": "other"})
+        lib_a_ids = []
+        for i in range(4):
+            sid = _create_song(pg_session, lib_a, f"/music/a-cp{i}.mp3")
+            repo.update_song(sid, {"chromaprint": "shared"})
+            lib_a_ids.append(sid)
+
+        result = repo.list_songs_by_chromaprint(lib_a, "shared", limit=2)
+
+        assert len(result) == 2
+        assert all(row["library_id"] == lib_a for row in result)
+        assert {row["id"] for row in result} <= set(lib_a_ids)
+        assert all(row["chromaprint"] == "shared" for row in result)
+
+        # A limit larger than the in-library match count must return exactly the
+        # 4 in-library rows, never the foreign collision or the distinct row.
+        unbounded = repo.list_songs_by_chromaprint(lib_a, "shared", limit=10)
+        assert len(unbounded) == len(lib_a_ids) == 4
+        assert {row["id"] for row in unbounded} == set(lib_a_ids)
+        assert all(row["library_id"] == lib_a for row in unbounded)
+
     def test_list_songs_for_folder(self, pg_session) -> None:
         """list_songs_for_folder should return songs in a folder."""
         lib_id = _create_library(pg_session)

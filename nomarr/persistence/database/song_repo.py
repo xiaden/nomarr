@@ -531,6 +531,25 @@ class SongRepository:
             row = result.fetchone()
             return _row_to_dto(row) if row else None
 
+    def list_songs_by_chromaprint(self, library_id: int, chromaprint: str, *, limit: int) -> list[SongRow]:
+        """Return bounded songs in a library matching a chromaprint (non-unique fingerprint).
+
+        The bounded window is deterministically ordered by the primary key
+        (``id``) before the ``limit`` is applied.
+        """
+        with map_persistence_exceptions():
+            stmt = (
+                select(_T)
+                .where(
+                    _T.c.chromaprint == chromaprint,
+                    _T.c.library_id == library_id,
+                )
+                .order_by(_T.c.id)
+                .limit(limit)
+            )
+            result = self._session.execute(stmt)
+            return [_row_to_dto(r) for r in result.all()]
+
     def list_songs_for_folder(self, library_id: int, folder_rel_path: str) -> list[SongRow]:
         """Return songs whose relative path is beneath the requested folder."""
         with map_persistence_exceptions():

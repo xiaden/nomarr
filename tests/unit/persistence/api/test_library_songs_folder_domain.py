@@ -342,6 +342,33 @@ def test_find_library_song_by_chromaprint_resolves_and_maps() -> None:
 
 
 @pytest.mark.unit
+def test_list_library_songs_by_chromaprint_resolves_and_maps() -> None:
+    songs, song_repo, _, library_repo = _make_songs()
+    library_repo.get_library_by_uuid = MagicMock(return_value=_library_row())
+    song_repo.list_songs_by_chromaprint = MagicMock(return_value=[_song_row(chromaprint="abc")])
+
+    result = songs.list_library_songs_by_chromaprint(_main_library(), "abc", limit=25)
+
+    song_repo.list_songs_by_chromaprint.assert_called_once_with(7, "abc", limit=25)
+    assert len(result) == 1
+    assert result[0].chromaprint == "abc"
+    assert not hasattr(result[0], "song_id")  # generated songs.id stays persistence-private
+    library_repo.get_library_by_uuid.assert_called_once_with("00000000-0000-0000-0000-000000000007")
+
+
+@pytest.mark.unit
+def test_list_library_songs_by_chromaprint_defaults_limit_to_50() -> None:
+    """The bounded chromaprint listing caps at 50 candidates when no limit is given."""
+    songs, song_repo, _, library_repo = _make_songs()
+    library_repo.get_library_by_uuid = MagicMock(return_value=_library_row())
+    song_repo.list_songs_by_chromaprint = MagicMock(return_value=[])
+
+    songs.list_library_songs_by_chromaprint(_main_library(), "abc")
+
+    song_repo.list_songs_by_chromaprint.assert_called_once_with(7, "abc", limit=50)
+
+
+@pytest.mark.unit
 def test_list_existing_song_paths_resolves_library() -> None:
     songs, song_repo, _, library_repo = _make_songs()
     library_repo.get_library_by_uuid = MagicMock(return_value=_library_row())

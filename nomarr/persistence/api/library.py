@@ -244,7 +244,18 @@ class LibraryDb:
         library: Library,
         chromaprint: str,
     ) -> Song | None:
+        """Find a library song by its Chromaprint fingerprint."""
         return self._songs.find_library_song_by_chromaprint(library, chromaprint)
+
+    def list_library_songs_by_chromaprint(
+        self,
+        library: Library,
+        chromaprint: str,
+        *,
+        limit: int = 50,
+    ) -> list[Song]:
+        """Forward the bounded library-scoped chromaprint listing intent."""
+        return self._songs.list_library_songs_by_chromaprint(library, chromaprint, limit=limit)
 
     def add_song_to_library(self, command: SongUpsertInput) -> SongIdentity:
         return self._songs.add_song_to_library(command)

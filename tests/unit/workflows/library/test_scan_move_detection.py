@@ -3,21 +3,24 @@
 Both ``scan_library_quick_workflow`` and ``scan_library_full_workflow`` must
 reconcile detected relocations *before* treating a missing path as a delete and a
 newly discovered path as an insert. These tests drive the real
-``detect_file_moves`` / ``apply_detected_moves`` / ``detect_file_move_via_db``
-component (only chromaprint decoding is stubbed) through the workflow so the
-wiring itself is exercised:
+``detect_move_for_new_file`` / ``relocate_song`` component (only chromaprint
+decoding and the bounded DB candidate lookup are stubbed) through the workflow so
+the wiring itself is exercised:
 
 * moves within one changed folder,
 * moves across two changed folders,
 * moves from a folder that vanished entirely into a discovered location,
-* the DB-lookup fallback for otherwise-unmatched new files, and its rejection
-  when the matched source is still present on disk,
+* the bounded DB-candidate lookup for otherwise-unmatched new files, and its
+  rejection when the matched source is still present on disk,
 * multi-move / multi-new batches reconciled per file,
 * quick-scan skipping of unchanged cached folders,
-* the no-chromaprint cost gate (no audio decode without a print-bearing
-  candidate),
+* one chromaprint decode per genuine new file (bounded, never whole-library),
 * negatives: a genuinely new file is still inserted, and a genuinely missing
   file is still removed.
+
+The bounded design no longer holds a whole-library in-memory candidate set; the
+per-new-file lookup is authoritative and every genuine new file computes its own
+chromaprint exactly once.
 """
 
 from __future__ import annotations
@@ -29,6 +32,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import nomarr.components.library.move_detection_comp as move_comp
 import nomarr.workflows.library.scan_library_full_wf as full_wf
 import nomarr.workflows.library.scan_library_quick_wf as quick_wf
 from nomarr.components.library.file_batch_scanner_comp import FileBatchResult
@@ -90,14 +94,17 @@ def _carrier(song: Song) -> StateTaggedSong:
     )
 
 
-def _entry(path: str, normalized_path: str) -> dict[str, Any]:
-    return {
+def _entry(path: str, normalized_path: str, *, duration: float | None = None) -> dict[str, Any]:
+    entry: dict[str, Any] = {
         "path": path,
         "normalized_path": normalized_path,
         "file_size": 2048,
         "modified_time": 9999,
         "scanned_at": 1,
     }
+    if duration is not None:
+        entry["duration_seconds"] = duration
+    return entry
 
 
 def _batch(
@@ -129,28 +136,49 @@ def _patched_scan(
     batches: dict[str, FileBatchResult],
     db_folder_paths: set[str] | None = None,
     chromaprint_by_path: dict[str, str] | None = None,
-    db_candidate: Song | None = None,
+    db_candidates: list[Song] | None = None,
     cached_folders: dict[str, SimpleNamespace] | None = None,
     folder_errors: dict[str, Exception] | None = None,
     folder_transient_errors: dict[str, Exception] | None = None,
+    present_paths: set[str] | None = None,
+    spy_detect: bool = False,
 ) -> Iterator[SimpleNamespace]:
     """Patch one scan workflow module and the move-detection chromaprint edges.
 
-    ``existing`` maps a folder rel path to its DB carrier map; ``batches`` maps a
-    folder absolute path to the ``FileBatchResult`` the scan returns. Only the
-    expensive chromaprint decode is stubbed; move matching/application runs for
-    real against a mocked ``Database``. ``cached_folders`` seeds the quick-scan
-    folder cache so unchanged folders can be skipped. ``folder_errors`` maps a
-    folder absolute path to an exception raised on every walk attempt, simulating
-    a folder whose walk fails after the retry. ``folder_transient_errors`` maps a
-    folder absolute path to an exception raised only on the first walk attempt,
-    simulating a transient failure that the retry recovers from.
+    ``existing`` maps a folder rel path to its mutable DB carrier map; ``batches``
+    maps a folder absolute path to the ``FileBatchResult`` the scan returns. Only
+    the expensive chromaprint decode and the bounded DB candidate lookup are
+    stubbed; move matching/application runs for real against a mocked ``Database``.
+
+    ``present_paths`` models on-disk presence for the workflow's patchable
+    ``_path_exists``. It defaults to the union of every batch's ``discovered_paths``
+    (so undiscovered persisted rows are genuinely absent). Because a move removes the
+    row from its old normalized folder, a successful ``move_library_song`` removes
+    the source carrier from the per-folder mapping — mirroring production, where
+    ``get_songs_for_folder`` no longer returns a relocated row under its old folder.
+
+    ``cached_folders`` seeds the quick-scan folder cache so unchanged folders can be
+    skipped. ``folder_errors`` maps a folder absolute path to an exception raised on
+    every walk attempt; ``folder_transient_errors`` raises only on the first attempt.
+    ``spy_detect`` patches the workflow's ``detect_move_for_new_file`` with a spy that
+    calls the real function, exposing it as ``mocks.detect``.
     """
     db = MagicMock()
     db.library = MagicMock()
     db.library.count_songs_for_library.return_value = 0
 
+    candidates = db_candidates or []
+
     def _destination(command: Any) -> SongIdentity:
+        # Persistence semantics: after a move the source row no longer lives under
+        # its old normalized folder, so the carrier is removed from the per-folder
+        # mapping. Cleanup therefore must not re-delete a relocated row.
+        source_normalized = command.song_identity.normalized_path
+        for folder_map in existing.values():
+            for key, carrier in list(folder_map.items()):
+                if carrier.candidate.song.normalized_path == source_normalized:
+                    del folder_map[key]
+                    break
         return SongIdentity(library=command.song_identity.library, normalized_path=command.scan.normalized_path)
 
     db.library.move_library_song.side_effect = _destination
@@ -159,6 +187,10 @@ def _patched_scan(
     errors = folder_errors or {}
     transient_errors = folder_transient_errors or {}
     transient_attempts: dict[str, int] = {}
+    discovered = set()
+    for batch in batches.values():
+        discovered |= batch.discovered_paths
+    present = set(present_paths) if present_paths is not None else set(discovered)
 
     def _compute(library_path: Any) -> str:
         return chromaprints[library_path.absolute]
@@ -174,6 +206,18 @@ def _patched_scan(
                 raise transient_errors[folder_path]
         return batches[folder_path]
 
+    def _folder_rows(rel: str) -> dict[str, StateTaggedSong]:
+        # Production ``get_songs_for_folder`` is prefix-recursive: it returns the
+        # requested folder's rows plus every row in a nested descendant folder.
+        # Model that here so ancestor-cleanup tests genuinely surface descendant
+        # rows (a row keyed under ``rel + "/"`` is a descendant; ``rel10`` is not).
+        prefix = rel.rstrip("/") + "/" if rel not in ("", ".") else ""
+        rows: dict[str, StateTaggedSong] = {}
+        for folder_rel, folder_map in existing.items():
+            if folder_rel == rel or (prefix and folder_rel.startswith(prefix)):
+                rows.update(folder_map)
+        return rows
+
     mocks = SimpleNamespace()
     with ExitStack() as stack:
         stack.enter_context(patch.object(module, "resolve_library_for_scan", return_value=_LIBRARY))
@@ -182,7 +226,7 @@ def _patched_scan(
         stack.enter_context(patch.object(module, "get_cached_folders", return_value=cached_folders or {}))
         stack.enter_context(patch.object(module, "discover_library_folders", return_value=folders))
         mocks.get_songs_for_folder = stack.enter_context(
-            patch.object(module, "get_songs_for_folder", side_effect=lambda _db, _lib, rel: existing.get(rel, {}))
+            patch.object(module, "get_songs_for_folder", side_effect=lambda _db, _lib, rel: _folder_rows(rel))
         )
         mocks.scan_folder_files = stack.enter_context(
             patch.object(module, "scan_folder_files", side_effect=_scan_folder)
@@ -206,11 +250,24 @@ def _patched_scan(
         stack.enter_context(patch.object(module, "update_scan_progress"))
         stack.enter_context(patch.object(module, "mark_scan_completed"))
 
+        # Model on-disk presence deterministically for the workflow's cleanup and
+        # candidate-source checks (both read the module-global ``_path_exists``).
+        stack.enter_context(patch.object(module, "_path_exists", side_effect=lambda path: path in present))
+
         stack.enter_context(patch(f"{_MOVEMENT_MODULE}.build_library_path_from_input", side_effect=_fake_library_path))
         mocks.compute_chromaprint = stack.enter_context(
             patch(f"{_MOVEMENT_MODULE}.compute_chromaprint_for_file", side_effect=_compute)
         )
-        stack.enter_context(patch(f"{_MOVEMENT_MODULE}.find_move_candidate_by_chromaprint", return_value=db_candidate))
+        stack.enter_context(
+            patch(
+                f"{_MOVEMENT_MODULE}.find_move_candidates_by_chromaprint",
+                side_effect=lambda _db, _lib, chromaprint: [c for c in candidates if c.chromaprint == chromaprint],
+            )
+        )
+        if spy_detect:
+            mocks.detect = stack.enter_context(
+                patch.object(module, "detect_move_for_new_file", side_effect=move_comp.detect_move_for_new_file)
+            )
 
         yield SimpleNamespace(db=db, mocks=mocks)
 
@@ -268,6 +325,7 @@ class TestScanMoveDetection:
             existing={"f1": {old.path: _carrier(old)}},
             batches={"/music/f1": _batch(entries=[new], discovered={new["path"]})},
             chromaprint_by_path={new["path"]: "cp-a"},
+            db_candidates=[old],
         ) as ctx:
             result = self._run(module, callable_, ctx.db)
 
@@ -294,6 +352,7 @@ class TestScanMoveDetection:
                 "/music/b": _batch(entries=[new], discovered={new["path"]}),
             },
             chromaprint_by_path={new["path"]: "cp-shared"},
+            db_candidates=[old],
         ) as ctx:
             result = self._run(module, callable_, ctx.db)
 
@@ -316,6 +375,7 @@ class TestScanMoveDetection:
             batches={"/music/fresh": _batch(entries=[new], discovered={new["path"]})},
             db_folder_paths={"gone"},
             chromaprint_by_path={new["path"]: "cp-vanished"},
+            db_candidates=[old],
         ) as ctx:
             result = self._run(module, callable_, ctx.db)
 
@@ -327,10 +387,9 @@ class TestScanMoveDetection:
         assert old.path not in _removed_paths(ctx.mocks.remove_deleted)
         assert result["files_moved"] == 1
 
-    def test_db_fallback_detects_move_for_unmatched_new_file(self, workflow: tuple[Any, Any]) -> None:
-        """A new file whose in-memory missing candidate does not match is looked
-        up directly in the DB and moved instead of inserted, when the DB match's
-        source is genuinely absent from disk."""
+    def test_db_candidate_lookup_detects_move_for_unmatched_new_file(self, workflow: tuple[Any, Any]) -> None:
+        """A new file is looked up per-file in the DB and moved instead of
+        inserted, when the matched source is genuinely absent from disk."""
         module, callable_ = workflow
         old = _song("/music/f1/old.flac", "f1/old.flac", "cp-unrelated")
         new = _entry("/music/f1/new.flac", "f1/new.flac")
@@ -344,7 +403,7 @@ class TestScanMoveDetection:
             batches={"/music/f1": _batch(entries=[new], discovered={new["path"]})},
             db_folder_paths={"gone"},
             chromaprint_by_path={new["path"]: "cp-move"},
-            db_candidate=vanished,
+            db_candidates=[vanished],
         ) as ctx:
             result = self._run(module, callable_, ctx.db)
 
@@ -358,7 +417,7 @@ class TestScanMoveDetection:
         assert result["files_moved"] == 1
         assert result["files_removed"] == 1
 
-    def test_db_fallback_rejects_match_to_still_present_source(self, workflow: tuple[Any, Any]) -> None:
+    def test_db_candidate_lookup_rejects_match_to_still_present_source(self, workflow: tuple[Any, Any]) -> None:
         """A DB chromaprint match whose source is still present on disk must not
         be relocated: the live row keeps its path and the new file is inserted."""
         module, callable_ = workflow
@@ -374,7 +433,7 @@ class TestScanMoveDetection:
             existing={"f1": {trigger.path: _carrier(trigger)}},
             batches={"/music/f1": _batch(entries=[new], discovered={new["path"], live.path})},
             chromaprint_by_path={new["path"]: "cp-move"},
-            db_candidate=live,
+            db_candidates=[live],
         ) as ctx:
             result = self._run(module, callable_, ctx.db)
 
@@ -398,6 +457,7 @@ class TestScanMoveDetection:
             batches={"/music/f1": _batch(entries=[new], discovered={new["path"]})},
             cached_folders={"cached": _cached_folder("cached")},
             chromaprint_by_path={new["path"]: "cp-a"},
+            db_candidates=[old],
         ) as ctx:
             result = quick_wf.scan_library_quick_workflow(ctx.db, _LIBRARY, tagger_version="v1")
 
@@ -411,9 +471,9 @@ class TestScanMoveDetection:
         assert result["files_moved"] == 1
         assert result["folders_skipped"] == 1
 
-    def test_no_chromaprint_candidate_avoids_audio_decode(self, workflow: tuple[Any, Any]) -> None:
-        """With only chromaprint-less missing candidates the move pass is skipped,
-        so no audio is decoded, yet the missing file is still reconciled."""
+    def test_new_file_chromaprint_computed_once_and_inserted(self, workflow: tuple[Any, Any]) -> None:
+        """Every genuine new file computes its chromaprint exactly once, misses the
+        bounded lookup, and is inserted; the chromaprint-less missing row is removed."""
         module, callable_ = workflow
         old = _song("/music/f1/old.flac", "f1/old.flac", None)
         new = _entry("/music/f1/new.flac", "f1/new.flac")
@@ -422,10 +482,11 @@ class TestScanMoveDetection:
             folders=[_folder("f1")],
             existing={"f1": {old.path: _carrier(old)}},
             batches={"/music/f1": _batch(entries=[new], discovered={new["path"]})},
+            chromaprint_by_path={new["path"]: "cp-new"},
         ) as ctx:
             result = self._run(module, callable_, ctx.db)
 
-        ctx.mocks.compute_chromaprint.assert_not_called()
+        ctx.mocks.compute_chromaprint.assert_called_once()
         assert new["path"] in _upsert_paths(ctx.mocks.upsert)
         assert old.path in _removed_paths(ctx.mocks.remove_deleted)
         assert result["files_moved"] == 0
@@ -455,6 +516,7 @@ class TestScanMoveDetection:
                 ),
             },
             chromaprint_by_path={new_a["path"]: "cp-a", new_b["path"]: "cp-b", brand_new["path"]: "cp-unmatched"},
+            db_candidates=[old_a, old_b],
         ) as ctx:
             result = self._run(module, callable_, ctx.db)
 
@@ -526,6 +588,7 @@ class TestScanMoveDetection:
                     discovered={modified_entry["path"], new_entry["path"]},
                 )
             },
+            chromaprint_by_path={new_entry["path"]: "cp-new"},
         ) as ctx:
             result = self._run(module, callable_, ctx.db)
 
@@ -535,7 +598,7 @@ class TestScanMoveDetection:
         deferred_entries, _ = ctx.mocks.upsert_returns[1]
         assert [e["path"] for e in immediate_entries] == [modified_entry["path"]]
         assert [e["path"] for e in deferred_entries] == [new_entry["path"]]
-        # The modified path never reaches the deferred Step-8 insert.
+        # The modified path never reaches the deferred insert.
         assert modified_entry["path"] not in {e["path"] for e in deferred_entries}
 
         # Only the genuinely-new entry is counted as added.
@@ -612,44 +675,56 @@ class TestFolderWalkRetry:
 
 @pytest.mark.unit
 @pytest.mark.mocked
-class TestSourceStillPresent:
-    def test_unreconciled_root_folder_rejects_nested_and_accepts_top_level(self) -> None:
-        """The root folder ``""`` as an unreconciled path rejects a nested
-        ``normalized_path`` (it belongs to the root) and accepts a top-level one."""
-        assert quick_wf._source_still_present("sub/dir/track.flac", "/music/sub/dir/track.flac", set(), {""}) is False
-        assert full_wf._source_still_present("sub/dir/track.flac", "/music/sub/dir/track.flac", set(), {""}) is False
-        assert quick_wf._source_still_present("track.flac", "/music/track.flac", set(), {""}) is True
-        assert full_wf._source_still_present("track.flac", "/music/track.flac", set(), {""}) is True
+class TestCandidateSourcePresent:
+    """``_candidate_source_present`` decides whether a chromaprint candidate may
+    still be a relocation origin: only a genuinely absent source qualifies."""
 
-    def test_discovered_path_is_present_and_other_folder_is_not(self) -> None:
-        """A discovered source is present; a source in an unrelated folder is not."""
-        assert quick_wf._source_still_present("f1/a.flac", "/music/f1/a.flac", {"/music/f1/a.flac"}, set()) is True
-        assert full_wf._source_still_present("f1/a.flac", "/music/f1/a.flac", {"/music/f1/a.flac"}, set()) is True
-        assert quick_wf._source_still_present("other/a.flac", "/music/other/a.flac", set(), {"f1"}) is False
-        assert full_wf._source_still_present("other/a.flac", "/music/other/a.flac", set(), {"f1"}) is False
+    def test_unreconciled_root_folder_presumes_present_even_when_absent(self) -> None:
+        """The root folder ``""`` as an unreconciled path short-circuits a root-level
+        ``normalized_path`` (parent ``""``) to present regardless of disk state."""
+        root_song = _song("/music/track.flac", "track.flac", "cp")
+        nested_song = _song("/music/sub/dir/track.flac", "sub/dir/track.flac", "cp")
+        for module in (quick_wf, full_wf):
+            with patch.object(module, "_path_exists", return_value=False):
+                assert module._candidate_source_present(root_song, {""}) is True
+                assert module._candidate_source_present(root_song, set()) is False
+                assert module._candidate_source_present(nested_song, {""}) is False
+
+    def test_present_path_is_present_and_absent_path_is_not(self) -> None:
+        song = _song("/music/f1/a.flac", "f1/a.flac", "cp")
+        for module in (quick_wf, full_wf):
+            with patch.object(module, "_path_exists", return_value=True):
+                assert module._candidate_source_present(song, set()) is True
+            with patch.object(module, "_path_exists", return_value=False):
+                assert module._candidate_source_present(song, set()) is False
+
+    def test_unreconciled_parent_folder_short_circuits_absent_path(self) -> None:
+        song = _song("/music/f1/a.flac", "f1/a.flac", "cp")
+        for module in (quick_wf, full_wf):
+            with patch.object(module, "_path_exists", return_value=False):
+                assert module._candidate_source_present(song, {"f1"}) is True
 
 
 @pytest.mark.unit
 @pytest.mark.mocked
-class TestDbFallbackGuardUnreconciledFolders:
-    def test_db_fallback_rejects_match_to_source_in_cached_folder(self) -> None:
-        """A DB chromaprint match whose source lives in an unchanged cached folder
-        must not be relocated: the cached folder was not walked, so the source is
-        still present on disk and the new file is inserted instead."""
-        module, callable_ = quick_wf, quick_wf.scan_library_quick_workflow
+class TestDbCandidateGuardUnreconciledFolders:
+    def test_rejects_match_to_source_in_cached_folder(self) -> None:
+        """A chromaprint match whose source lives in an unchanged cached folder must
+        not be relocated: the cached folder was not walked, so the source is still
+        present and the new file is inserted instead."""
         cached = _song("/music/cached/live.flac", "cached/live.flac", "cp-move")
         new = _entry("/music/f1/new.flac", "f1/new.flac")
         trigger = _song("/music/f1/trigger.flac", "f1/trigger.flac", "cp-trigger")
         with _patched_scan(
-            module,
+            quick_wf,
             folders=[_folder("cached"), _folder("f1")],
             existing={"cached": {cached.path: _carrier(cached)}, "f1": {trigger.path: _carrier(trigger)}},
             batches={"/music/f1": _batch(entries=[new], discovered={new["path"]})},
             cached_folders={"cached": _cached_folder("cached")},
             chromaprint_by_path={new["path"]: "cp-move"},
-            db_candidate=cached,
+            db_candidates=[cached],
         ) as ctx:
-            result = callable_(ctx.db, _LIBRARY, tagger_version="v1")
+            result = quick_wf.scan_library_quick_workflow(ctx.db, _LIBRARY, tagger_version="v1")
 
         ctx.db.library.move_library_song.assert_not_called()
         assert new["path"] in _upsert_paths(ctx.mocks.upsert)
@@ -657,11 +732,10 @@ class TestDbFallbackGuardUnreconciledFolders:
         assert result["files_moved"] == 0
         assert result["files_added"] == 1
 
-    def test_db_fallback_rejects_match_to_source_in_folder_that_failed_walk(self, workflow: tuple[Any, Any]) -> None:
-        """A folder whose walk failed after the retry contributes no discovered
-        paths or missing candidates, so its live rows must be treated as unknown:
-        a DB-fallback match sourced there is not applied and the new file is
-        inserted."""
+    def test_rejects_match_to_source_in_folder_that_failed_walk(self, workflow: tuple[Any, Any]) -> None:
+        """A folder whose walk failed after the retry contributes no discoveries, so
+        its live rows must be treated as unknown: a match sourced there is not applied
+        and the new file is inserted."""
         module, callable_ = workflow
         live = _song("/music/broken/live.flac", "broken/live.flac", "cp-move")
         new = _entry("/music/f1/new.flac", "f1/new.flac")
@@ -673,7 +747,7 @@ class TestDbFallbackGuardUnreconciledFolders:
             batches={"/music/f1": _batch(entries=[new], discovered={new["path"]})},
             folder_errors={"/music/broken": OSError("walk failed")},
             chromaprint_by_path={new["path"]: "cp-move"},
-            db_candidate=live,
+            db_candidates=[live],
         ) as ctx:
             result = callable_(ctx.db, _LIBRARY, tagger_version="v1")
 
@@ -682,3 +756,288 @@ class TestDbFallbackGuardUnreconciledFolders:
         assert live.path not in _removed_paths(ctx.mocks.remove_deleted)
         assert result["files_moved"] == 0
         assert result["files_added"] == 1
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+class TestLibraryRootRemap:
+    def test_root_remap_rebases_same_locator_with_zero_chromaprint(self, workflow: tuple[Any, Any]) -> None:
+        """A library-root/mount remap changes every absolute path while the
+        normalized paths (the identities) stay fixed. Each row is rebased in place
+        by its unchanged locator: no chromaprint decode, no insert, no deletion."""
+        module, callable_ = workflow
+        count = 12
+        rows = [_song(f"/music/album/track{i}.flac", f"album/track{i}.flac", f"cp-{i}") for i in range(count)]
+        entries = [_entry(f"/newroot/album/track{i}.flac", f"album/track{i}.flac") for i in range(count)]
+        with _patched_scan(
+            module,
+            folders=[_folder("album", file_count=count)],
+            existing={"album": {row.path: _carrier(row) for row in rows}},
+            batches={
+                "/music/album": _batch(entries=entries, discovered={e["path"] for e in entries}),
+            },
+        ) as ctx:
+            result = self._run_root_remap(callable_, ctx.db)
+
+        assert ctx.mocks.compute_chromaprint.call_count == 0
+        assert ctx.db.library.move_library_song.call_count == count
+        for call in ctx.db.library.move_library_song.call_args_list:
+            command = call.args[0]
+            assert command.song_identity.normalized_path.startswith("album/track")
+            assert command.new_path.startswith("/newroot/album/track")
+        ctx.mocks.upsert.assert_not_called()
+        ctx.mocks.remove_deleted.assert_not_called()
+        assert result["files_moved"] == count
+
+    @staticmethod
+    def _run_root_remap(callable_: Any, db: MagicMock) -> dict[str, Any]:
+        return cast("dict[str, Any]", callable_(db, _LIBRARY, tagger_version="v1"))
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+class TestSameLocatorRebaseFallthrough:
+    def test_rebase_failure_falls_through_to_new_insert(self, workflow: tuple[Any, Any]) -> None:
+        """A same-locator entry (unchanged normalized path, changed absolute path)
+        whose rebase fails because the source locator is stale/missing must not be
+        silently dropped: no move is applied, the file still reaches the deferred
+        insert, and it is counted as added."""
+        module, callable_ = workflow
+        old = _song("/music/f1/old.flac", "f1/old.flac", "cp-old")
+        remapped = _entry("/newroot/f1/old.flac", "f1/old.flac")
+        with (
+            _patched_scan(
+                module,
+                folders=[_folder("f1")],
+                existing={"f1": {old.path: _carrier(old)}},
+                batches={"/music/f1": _batch(entries=[remapped], discovered={remapped["path"]})},
+                chromaprint_by_path={remapped["path"]: "cp-old"},
+            ) as ctx,
+            patch.object(module, "relocate_song", return_value=False),
+        ):
+            result = callable_(ctx.db, _LIBRARY, tagger_version="v1")
+
+        ctx.db.library.move_library_song.assert_not_called()
+        assert remapped["path"] in _upsert_paths(ctx.mocks.upsert)
+        assert result["files_moved"] == 0
+        assert result["files_added"] == 1
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+class TestMassRenameBounded:
+    def test_removed_bulk_move_symbols_do_not_exist(self) -> None:
+        """The whole-library bulk move surface is gone from every layer."""
+        for module in (quick_wf, full_wf, move_comp):
+            assert not hasattr(module, "detect_file_moves")
+        assert not hasattr(move_comp, "apply_detected_moves")
+        assert not hasattr(move_comp, "detect_file_move_via_db")
+        assert not hasattr(move_comp, "MoveDetectionResult")
+        assert not hasattr(move_comp, "find_move_candidate_by_chromaprint")
+
+    def test_detect_called_once_per_genuine_new_entry(self, workflow: tuple[Any, Any]) -> None:
+        """Move detection is bounded per genuine new entry — never once over a
+        whole-library candidate set. A batch of two new files with five unrelated
+        persisted rows calls the detector exactly twice."""
+        module, callable_ = workflow
+        known = [_song(f"/music/f1/keep{i}.flac", f"f1/keep{i}.flac", f"cp-keep{i}") for i in range(5)]
+        new_entries = [
+            _entry("/music/f1/new-a.flac", "f1/new-a.flac"),
+            _entry("/music/f1/new-b.flac", "f1/new-b.flac"),
+        ]
+        with _patched_scan(
+            module,
+            folders=[_folder("f1", file_count=len(known) + len(new_entries))],
+            existing={"f1": {song.path: _carrier(song) for song in known}},
+            batches={
+                "/music/f1": _batch(entries=new_entries, discovered={e["path"] for e in new_entries}),
+            },
+            chromaprint_by_path={entry["path"]: f"cp-new-{i}" for i, entry in enumerate(new_entries)},
+            spy_detect=True,
+        ) as ctx:
+            result = callable_(ctx.db, _LIBRARY, tagger_version="v1")
+
+        assert ctx.mocks.detect.call_count == len(new_entries)
+        assert result["files_added"] == len(new_entries)
+        assert result["files_moved"] == 0
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+class TestLiveDuplicate:
+    def test_live_duplicate_with_identical_chromaprint_inserted_distinct(self, workflow: tuple[Any, Any]) -> None:
+        """A chromaprint collision whose source is still present on disk is a live
+        duplicate/copy, not a move: the new file is inserted, no move is applied,
+        and the live row is never removed."""
+        module, callable_ = workflow
+        live = _song("/music/f1/live.flac", "f1/live.flac", "cp-dup")
+        new = _entry("/music/f1/new.flac", "f1/new.flac")
+        with _patched_scan(
+            module,
+            folders=[_folder("f1")],
+            existing={"f1": {live.path: _carrier(live)}},
+            batches={"/music/f1": _batch(entries=[new], discovered={new["path"]})},
+            db_candidates=[live],
+            chromaprint_by_path={new["path"]: "cp-dup"},
+            present_paths={live.path, new["path"]},
+        ) as ctx:
+            result = callable_(ctx.db, _LIBRARY, tagger_version="v1")
+
+        ctx.db.library.move_library_song.assert_not_called()
+        assert new["path"] in _upsert_paths(ctx.mocks.upsert)
+        assert live.path not in _removed_paths(ctx.mocks.remove_deleted)
+        assert result["files_moved"] == 0
+        assert result["files_added"] == 1
+        assert result["files_removed"] == 0
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+class TestAmbiguousRelocation:
+    def test_multiple_absent_candidates_do_not_cause_an_arbitrary_move(self, workflow: tuple[Any, Any]) -> None:
+        """Two absent rows sharing the new file's chromaprint are ambiguous: no
+        arbitrary pick is applied, the new file is inserted, and both stale rows
+        are cleaned up."""
+        module, callable_ = workflow
+        src_a = _song("/music/f1/a.flac", "f1/a.flac", "cp-amb")
+        src_b = _song("/music/f1/b.flac", "f1/b.flac", "cp-amb")
+        new = _entry("/music/f1/new.flac", "f1/new.flac")
+        with _patched_scan(
+            module,
+            folders=[_folder("f1")],
+            existing={"f1": {src_a.path: _carrier(src_a), src_b.path: _carrier(src_b)}},
+            batches={"/music/f1": _batch(entries=[new], discovered={new["path"]})},
+            db_candidates=[src_a, src_b],
+            chromaprint_by_path={new["path"]: "cp-amb"},
+        ) as ctx:
+            result = callable_(ctx.db, _LIBRARY, tagger_version="v1")
+
+        ctx.db.library.move_library_song.assert_not_called()
+        assert new["path"] in _upsert_paths(ctx.mocks.upsert)
+        assert {src_a.path, src_b.path} <= _removed_paths(ctx.mocks.remove_deleted)
+        assert result["files_moved"] == 0
+        assert result["files_added"] == 1
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+class TestDeletionScoping:
+    def test_quick_scan_never_cleans_cache_skipped_folder_rows(self) -> None:
+        """A no-op/cache-skipped folder's rows are never deleted, while a changed
+        folder's genuinely absent rows are."""
+        cached_row = _song("/music/cached/stale.flac", "cached/stale.flac", "cp-cached")
+        changed_row = _song("/music/f1/gone.flac", "f1/gone.flac", "cp-gone")
+        with _patched_scan(
+            quick_wf,
+            folders=[_folder("cached"), _folder("f1")],
+            existing={
+                "cached": {cached_row.path: _carrier(cached_row)},
+                "f1": {changed_row.path: _carrier(changed_row)},
+            },
+            batches={"/music/f1": _batch(discovered=set())},
+            cached_folders={"cached": _cached_folder("cached")},
+        ) as ctx:
+            result = quick_wf.scan_library_quick_workflow(ctx.db, _LIBRARY, tagger_version="v1")
+
+        removed = _removed_paths(ctx.mocks.remove_deleted)
+        assert changed_row.path in removed
+        assert cached_row.path not in removed
+        assert result["files_removed"] == 1
+
+    def test_full_scan_never_cleans_folder_that_failed_walk(self) -> None:
+        """A folder whose walk fails both attempts is unreconciled and stays out of
+        the cleanup scope, while a successfully-walked folder's absent rows are
+        removed."""
+        broken_row = _song("/music/broken/live.flac", "broken/live.flac", "cp-broken")
+        changed_row = _song("/music/f1/gone.flac", "f1/gone.flac", "cp-gone")
+        with _patched_scan(
+            full_wf,
+            folders=[_folder("broken"), _folder("f1")],
+            existing={
+                "broken": {broken_row.path: _carrier(broken_row)},
+                "f1": {changed_row.path: _carrier(changed_row)},
+            },
+            batches={"/music/f1": _batch(discovered=set())},
+            folder_errors={"/music/broken": OSError("walk failed")},
+        ) as ctx:
+            result = full_wf.scan_library_full_workflow(ctx.db, _LIBRARY, tagger_version="v1")
+
+        removed = _removed_paths(ctx.mocks.remove_deleted)
+        assert changed_row.path in removed
+        assert broken_row.path not in removed
+        assert result["files_removed"] == 1
+
+    def test_reconciled_ancestor_never_cleans_nested_skipped_child_rows(self) -> None:
+        """``get_songs_for_folder`` is prefix-recursive, so an eligible ancestor
+        folder's cleanup lookup also returns rows in nested descendant folders.
+        A genuinely-absent row whose own folder is a cache-skipped child must not
+        be deleted, while an absent row directly in the reconciled ancestor is."""
+        child_row = _song("/music/parent/child/stale.flac", "parent/child/stale.flac", "cp-child")
+        parent_row = _song("/music/parent/gone.flac", "parent/gone.flac", "cp-parent")
+        with _patched_scan(
+            quick_wf,
+            folders=[_folder("parent"), _folder("parent/child")],
+            existing={
+                "parent": {parent_row.path: _carrier(parent_row)},
+                "parent/child": {child_row.path: _carrier(child_row)},
+            },
+            batches={"/music/parent": _batch(discovered=set())},
+            cached_folders={"parent/child": _cached_folder("parent/child")},
+        ) as ctx:
+            result = quick_wf.scan_library_quick_workflow(ctx.db, _LIBRARY, tagger_version="v1")
+
+        removed = _removed_paths(ctx.mocks.remove_deleted)
+        assert parent_row.path in removed
+        assert child_row.path not in removed
+        assert result["files_removed"] == 1
+
+    def test_reconciled_ancestor_never_cleans_nested_failed_child_rows(self) -> None:
+        """The same ancestor-cleanup scoping holds for a nested child whose walk
+        FAILED: its absent row must not be deleted while the absent row directly
+        in the reconciled ancestor is."""
+        child_row = _song("/music/parent/child/stale.flac", "parent/child/stale.flac", "cp-child")
+        parent_row = _song("/music/parent/gone.flac", "parent/gone.flac", "cp-parent")
+        with _patched_scan(
+            full_wf,
+            folders=[_folder("parent"), _folder("parent/child")],
+            existing={
+                "parent": {parent_row.path: _carrier(parent_row)},
+                "parent/child": {child_row.path: _carrier(child_row)},
+            },
+            batches={"/music/parent": _batch(discovered=set())},
+            folder_errors={"/music/parent/child": OSError("walk failed")},
+        ) as ctx:
+            result = full_wf.scan_library_full_workflow(ctx.db, _LIBRARY, tagger_version="v1")
+
+        removed = _removed_paths(ctx.mocks.remove_deleted)
+        assert parent_row.path in removed
+        assert child_row.path not in removed
+        assert result["files_removed"] == 1
+
+    def test_vanished_folder_absent_rows_are_deleted_by_cleanup(self, workflow: tuple[Any, Any]) -> None:
+        """AC3 (``quick = changed + vanished``): a vanished folder's genuinely absent
+        persisted row must be removed by the deferred cleanup pass. The vanished
+        folder is never walked, so its absence is established only by the loop over
+        ``(*reconciled_folder_paths, *vanished_folder_paths)``; if that loop iterated
+        only ``reconciled_folder_paths``, ``rel_path="gone"`` would never be visited
+        and the phantom row would survive."""
+        module, callable_ = workflow
+        gone = _song("/music/gone/old.flac", "gone/old.flac", "cp-gone")
+        with _patched_scan(
+            module,
+            folders=[_folder("f1")],
+            existing={"gone": {gone.path: _carrier(gone)}, "f1": {}},
+            batches={"/music/f1": _batch(discovered=set())},
+            db_folder_paths={"gone"},
+            present_paths=set(),
+        ) as ctx:
+            result = callable_(ctx.db, _LIBRARY, tagger_version="v1")
+
+        # Falsifiable regression: dropping ``vanished_folder_paths`` from the cleanup
+        # loop at scan_library_quick_wf.py:319 / scan_library_full_wf.py:307 makes
+        # this first assertion fail.
+        assert gone.path in _removed_paths(ctx.mocks.remove_deleted)
+        ctx.db.library.move_library_song.assert_not_called()
+        assert result["files_moved"] == 0
+        assert result["files_added"] == 0
+        assert result["files_removed"] == 1

@@ -22,7 +22,7 @@ from nomarr.components.library.library_song_query_comp import (
     count_recently_tagged,
     count_songs_by_tag,
     detect_nd_path_prefix,
-    find_move_candidate_by_chromaprint,
+    find_move_candidates_by_chromaprint,
     get_all_library_paths,
     get_artist_album_frequencies,
     get_existing_file_paths,
@@ -317,11 +317,12 @@ class TestSingleSongLookups:
         assert get_songs_by_paths_bulk(_db(), []) == {}
 
     @pytest.mark.unit
-    def test_find_move_candidate_by_chromaprint_delegates(self) -> None:
+    def test_find_move_candidates_by_chromaprint_delegates(self) -> None:
         db = _db()
         song = _song("a.flac")
-        db.library.find_library_song_by_chromaprint.return_value = song
-        assert find_move_candidate_by_chromaprint(db, MUSIC_LIB, "fp") is song
+        db.library.list_library_songs_by_chromaprint.return_value = [song]
+        assert find_move_candidates_by_chromaprint(db, MUSIC_LIB, "fp") == [song]
+        db.library.list_library_songs_by_chromaprint.assert_called_once_with(MUSIC_LIB, "fp")
 
 
 # ─────────────────────────────────────────────────────────────────────────

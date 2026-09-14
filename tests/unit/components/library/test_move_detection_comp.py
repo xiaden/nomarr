@@ -1,26 +1,27 @@
 """Tests for ``nomarr.components.library.move_detection_comp``.
 
-Move detection now addresses detected moves by their **source locator**
-``SongIdentity(library, normalized_path)`` (ADR-048) instead of a stable
-``song_id``: ``detect_file_move_via_db`` takes the natural ``Library`` domain
-value (never a numeric ``library_id``) and builds each ``FileMove`` source
-identity from the library's natural key and the candidate row's
-``normalized_path``. ``apply_detected_moves`` forwards that source locator,
-reseed tags under the destination identity returned by the move intent, and
-treats a stale/missing source (``None`` return) as a skip-and-continue miss.
+Move detection is bounded and persistence-backed. ``detect_move_for_new_file``
+computes the new file's chromaprint, asks persistence for the bounded,
+library-scoped candidate set sharing that fingerprint, filters candidates (self,
+same locator, duration tolerance, still-present source) and returns a
+:class:`FileMove` only when exactly one absent survivor remains — zero or many
+yields ``None``. ``relocate_song`` builds exactly one complete ``SongPathUpdate``
+addressed by the source ``SongIdentity`` and reports whether it committed.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
+from contextlib import contextmanager
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from nomarr.components.library.move_detection_comp import (
     FileMove,
-    apply_detected_moves,
-    detect_file_move_via_db,
+    detect_move_for_new_file,
+    relocate_song,
+    song_identity_for,
 )
 from nomarr.helpers.dataclasses.library_dataclass import Library
 from nomarr.helpers.dataclasses.song_command_dataclass import (
@@ -30,6 +31,11 @@ from nomarr.helpers.dataclasses.song_command_dataclass import (
     SongScanUpdate,
 )
 from nomarr.helpers.dataclasses.song_dataclass import Song
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator, Sequence
+
+_COMPONENT = "nomarr.components.library.move_detection_comp"
 
 
 def make_db() -> MagicMock:
@@ -42,8 +48,9 @@ def make_db() -> MagicMock:
 
 
 def _new_file_entry(**overrides: object) -> dict[str, object]:
-    base: dict = {
+    base: dict[str, object] = {
         "path": "D:/Music/new/song.flac",
+        "normalized_path": "new/song.flac",
         "file_size": 1000,
         "modified_time": 2000,
         "duration_seconds": 180.0,
@@ -52,12 +59,11 @@ def _new_file_entry(**overrides: object) -> dict[str, object]:
     return base
 
 
-def _mock_valid_library_path(mock_build: MagicMock) -> None:
-    """Make ``build_library_path_from_input`` return a valid path handle."""
-    mock_build.return_value.is_valid.return_value = True
-
-
-def _song(path: str, normalized_path: str, duration_seconds: float | None = 180.0) -> Song:
+def _song(
+    path: str,
+    normalized_path: str,
+    duration_seconds: float | None = 180.0,
+) -> Song:
     """Build the semantic ``Song`` a chromaprint candidate lookup returns."""
     return Song(
         path=path,
@@ -65,7 +71,7 @@ def _song(path: str, normalized_path: str, duration_seconds: float | None = 180.
         file_size=1000,
         modified_time=2000,
         duration_seconds=duration_seconds,
-        chromaprint=None,
+        chromaprint="cp-candidate",
         needs_tagging=False,
         is_valid=True,
         tagged=False,
@@ -83,313 +89,299 @@ _LIBRARY_IDENTITY = LibraryIdentity(
 )
 
 
+@contextmanager
+def _patched_detection(candidates: Sequence[Song]) -> Iterator[MagicMock]:
+    """Patch chromaprint decode and the bounded DB candidate lookup."""
+    with (
+        patch(f"{_COMPONENT}.build_library_path_from_input") as mock_build,
+        patch(f"{_COMPONENT}.compute_chromaprint_for_file") as mock_chromaprint,
+        patch(f"{_COMPONENT}.find_move_candidates_by_chromaprint") as mock_candidate,
+    ):
+        mock_build.return_value.is_valid.return_value = True
+        mock_chromaprint.return_value = "abc123"
+        mock_candidate.return_value = list(candidates)
+        yield mock_candidate
+
+
+def _detect(
+    entry: dict[str, object],
+    candidates: Sequence[Song],
+    *,
+    source_present: bool = False,
+) -> FileMove | None:
+    with _patched_detection(candidates):
+        return detect_move_for_new_file(entry, _LIBRARY, make_db(), source_present=lambda _song: source_present)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# song_identity_for
+# ─────────────────────────────────────────────────────────────────────────
+
+
 @pytest.mark.unit
-def test_detect_file_move_via_db_returns_none_when_no_candidate() -> None:
-    db = make_db()
+def test_song_identity_for_builds_library_scoped_locator() -> None:
+    identity = song_identity_for(_LIBRARY, "album/track.flac")
+    assert identity == SongIdentity(library=_LIBRARY_IDENTITY, normalized_path="album/track.flac")
+    assert not hasattr(identity, "song_id")
+
+
+@pytest.mark.unit
+def test_song_identity_for_raises_when_library_uuid_missing() -> None:
+    """A library without its immutable identity cannot address a song locator."""
+    library = Library(library_uuid=None, name="x", root_path="/m")
+
+    with pytest.raises(ValueError, match="has no library_uuid"):
+        song_identity_for(library, "a.flac")
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# detect_move_for_new_file
+# ─────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.unit
+def test_detect_move_returns_none_when_no_candidate() -> None:
     entry = _new_file_entry()
 
-    with (
-        patch("nomarr.components.library.move_detection_comp.build_library_path_from_input") as mock_build,
-        patch("nomarr.components.library.move_detection_comp.compute_chromaprint_for_file") as mock_chromaprint,
-        patch("nomarr.components.library.move_detection_comp.find_move_candidate_by_chromaprint") as mock_candidate,
-    ):
-        _mock_valid_library_path(mock_build)
-        mock_chromaprint.return_value = "abc123"
-        mock_candidate.return_value = None
-
-        result = detect_file_move_via_db(entry, _LIBRARY, db)
+    with _patched_detection([]) as mock_candidate:
+        result = detect_move_for_new_file(entry, _LIBRARY, make_db(), source_present=lambda _song: False)
 
     assert result is None
     mock_candidate.assert_called_once()
+    assert mock_candidate.call_args.args[1] is _LIBRARY
+    assert mock_candidate.call_args.args[2] == "abc123"
 
 
 @pytest.mark.unit
-def test_detect_file_move_via_db_skips_self_match() -> None:
-    """A candidate whose physical path equals the new path is a re-scan self
-    match, not a move."""
-    db = make_db()
+def test_detect_move_skips_self_match() -> None:
+    """A candidate whose physical path equals the new path is a re-scan self match."""
     entry = _new_file_entry()
+    self_match = _song(path=str(entry["path"]), normalized_path="new/song.flac")
 
-    with (
-        patch("nomarr.components.library.move_detection_comp.build_library_path_from_input") as mock_build,
-        patch("nomarr.components.library.move_detection_comp.compute_chromaprint_for_file") as mock_chromaprint,
-        patch("nomarr.components.library.move_detection_comp.find_move_candidate_by_chromaprint") as mock_candidate,
-    ):
-        _mock_valid_library_path(mock_build)
-        mock_chromaprint.return_value = "abc123"
-        mock_candidate.return_value = _song(
-            path=str(entry["path"]),  # same path → self-match
-            normalized_path="new/song.flac",
-        )
-
-        result = detect_file_move_via_db(entry, _LIBRARY, db)
-
-    assert result is None
+    assert _detect(entry, [self_match]) is None
 
 
 @pytest.mark.unit
-def test_detect_file_move_via_db_passes_library_domain_object_and_builds_source_locator() -> None:
-    db = make_db()
+def test_detect_move_skips_same_locator_candidate() -> None:
+    """A candidate whose normalized path equals the new entry's own locator is the
+    same row, not a move."""
     entry = _new_file_entry()
-    candidate = _song(path="D:/Music/old/song.flac", normalized_path="old/song.flac")
+    same_locator = _song(path="D:/Other/song.flac", normalized_path="new/song.flac")
 
-    with (
-        patch("nomarr.components.library.move_detection_comp.build_library_path_from_input") as mock_build,
-        patch("nomarr.components.library.move_detection_comp.compute_chromaprint_for_file") as mock_chromaprint,
-        patch("nomarr.components.library.move_detection_comp.find_move_candidate_by_chromaprint") as mock_candidate_fn,
-    ):
-        _mock_valid_library_path(mock_build)
-        mock_chromaprint.return_value = "abc123"
-        mock_candidate_fn.return_value = candidate
+    assert _detect(entry, [same_locator]) is None
 
-        result = detect_file_move_via_db(entry, _LIBRARY, db)
 
-    # The chromaprint lookup receives the passed natural Library domain object.
-    mock_candidate_fn.assert_called_once()
-    args = mock_candidate_fn.call_args.args
-    passed_library = args[1]
-    assert isinstance(passed_library, Library)
-    assert passed_library.name == "main"
-    assert passed_library.root_path == "/music"
-    assert args[2] == "abc123"
+@pytest.mark.unit
+def test_detect_move_rejects_candidate_outside_duration_tolerance() -> None:
+    """When both durations are known and differ by more than 1 s, the candidate is a
+    fingerprint collision, not a relocation."""
+    entry = _new_file_entry(duration_seconds=181.5)
+    candidate = _song("D:/Music/old/song.flac", "old/song.flac", duration_seconds=180.0)
+
+    assert _detect(entry, [candidate]) is None
+
+
+@pytest.mark.unit
+def test_detect_move_accepts_candidate_within_duration_tolerance() -> None:
+    entry = _new_file_entry(duration_seconds=180.9)
+    candidate = _song("D:/Music/old/song.flac", "old/song.flac", duration_seconds=180.0)
+
+    result = _detect(entry, [candidate])
+
+    assert isinstance(result, FileMove)
+
+
+@pytest.mark.unit
+def test_detect_move_excludes_candidate_whose_source_is_present() -> None:
+    """A live source (present on disk) is never a relocation origin."""
+    entry = _new_file_entry()
+    candidate = _song("D:/Music/old/song.flac", "old/song.flac")
+
+    assert _detect(entry, [candidate], source_present=True) is None
+
+
+@pytest.mark.unit
+def test_detect_move_returns_file_move_for_exactly_one_absent_survivor() -> None:
+    entry = _new_file_entry()
+    candidate = _song("D:/Music/old/song.flac", "old/song.flac")
+
+    result = _detect(entry, [candidate])
 
     assert isinstance(result, FileMove)
     assert result.old_path == "D:/Music/old/song.flac"
     assert result.new_path == "D:/Music/new/song.flac"
-    # The move is addressed by its source SongIdentity locator (library + source
-    # normalized_path), NOT a stable song_id / row id.
     assert result.song_identity == SongIdentity(library=_LIBRARY_IDENTITY, normalized_path="old/song.flac")
     assert not hasattr(result, "song_id")
     assert result.chromaprint == "abc123"
-
-
-def _move(**overrides: object) -> FileMove:
-    """Build a canonical detected ``FileMove`` (source-locator addressing)."""
-    base: dict = {
-        "song_identity": SongIdentity(library=_LIBRARY_IDENTITY, normalized_path="old/a.flac"),
-        "old_path": "/music/old/a.flac",
-        "new_path": "/music/new/a.flac",
-        "chromaprint": "cp-a-flac",
-        "old_duration": 180.0,
-        "new_duration": 181.0,
-        "new_file_size": 2048,
-        "new_modified_time": 9999,
-    }
-    base.update(overrides)
-    return FileMove(**base)  # type: ignore[arg-type]
+    assert result.old_duration == 180.0
+    assert result.new_duration == 180.0
+    assert result.new_file_size == 1000
+    assert result.new_modified_time == 2000
 
 
 @pytest.mark.unit
-class TestApplyDetectedMoves:
-    """``apply_detected_moves`` (the actual owner of a bulk move) drives one
-    atomic move intent per move addressed by the source SongIdentity locator."""
+def test_detect_move_preserves_candidate_duration_when_entry_has_none() -> None:
+    """When the new entry carries no duration, the candidate's known duration is
+    preserved on the returned move rather than dropped."""
+    entry = _new_file_entry(duration_seconds=None)
+    candidate = _song("D:/Music/old/song.flac", "old/song.flac", duration_seconds=181.0)
 
-    def _make_db(self) -> MagicMock:
-        db = make_db()
+    result = _detect(entry, [candidate])
 
-        def _destination(command: SongPathUpdate) -> SongIdentity:
-            return SongIdentity(library=command.song_identity.library, normalized_path=command.scan.normalized_path)
+    assert isinstance(result, FileMove)
+    assert result.new_duration == 181.0
 
-        # On a successful move the intent returns the DESTINATION locator.
-        db.library.move_library_song.side_effect = _destination
-        return db
 
-    def _patch_entity_tags(self, mock_build: MagicMock) -> None:
-        """Return a truthy assignment list so reseeding runs."""
-        mock_build.return_value = [MagicMock()]
+@pytest.mark.unit
+def test_detect_move_returns_none_for_ambiguous_multiple_survivors() -> None:
+    entry = _new_file_entry()
+    first = _song("D:/Music/old/a.flac", "old/a.flac")
+    second = _song("D:/Music/old/b.flac", "old/b.flac")
 
-    def test_persists_one_move_intent_with_source_locator(self) -> None:
-        db = self._make_db()
-        move = _move()
+    assert _detect(entry, [first, second]) is None
 
-        with (
-            patch("nomarr.components.library.move_detection_comp._extract_entity_tags"),
-            patch("nomarr.components.library.move_detection_comp.build_song_tag_assignments") as mock_build,
-        ):
-            self._patch_entity_tags(mock_build)
-            applied = apply_detected_moves([move], {move.new_path: {"title": "A"}}, db, Path("/music"))
 
-        assert applied == 1
-        # Exactly ONE move-intent facade call per move carrying the source
-        # SongIdentity locator (never a song_id / natural path separately).
-        db.library.move_library_song.assert_called_once()
-        command = db.library.move_library_song.call_args.args[0]
-        assert isinstance(command, SongPathUpdate)
-        assert command.song_identity == move.song_identity
-        assert command.song_identity.library == _LIBRARY_IDENTITY
-        assert command.song_identity.normalized_path == "old/a.flac"
-        assert not hasattr(command, "song_id")
-        assert command.new_path == "/music/new/a.flac"
-        assert isinstance(command.scan, SongScanUpdate)
-        assert command.scan.file_size == 2048
-        assert command.scan.modified_time == 9999
-        assert command.scan.duration_seconds == 181.0
+@pytest.mark.unit
+def test_detect_move_returns_none_when_chromaprint_is_empty() -> None:
+    entry = _new_file_entry()
+    with (
+        patch(f"{_COMPONENT}.build_library_path_from_input") as mock_build,
+        patch(f"{_COMPONENT}.compute_chromaprint_for_file", return_value=""),
+        patch(f"{_COMPONENT}.find_move_candidates_by_chromaprint") as mock_candidate,
+    ):
+        mock_build.return_value.is_valid.return_value = True
+        assert detect_move_for_new_file(entry, _LIBRARY, make_db(), source_present=lambda _song: False) is None
+    mock_candidate.assert_not_called()
 
-    def test_computes_normalized_path_from_library_root(self) -> None:
-        db = self._make_db()
-        move = _move()
 
-        with (
-            patch("nomarr.components.library.move_detection_comp._extract_entity_tags") as mock_extract,
-            patch("nomarr.components.library.move_detection_comp.build_song_tag_assignments") as mock_build,
-        ):
-            mock_extract.return_value = []
-            mock_build.return_value = []
-            apply_detected_moves([move], {}, db, Path("/music"))
+@pytest.mark.unit
+def test_detect_move_returns_none_when_library_path_invalid() -> None:
+    """An unresolvable library-relative path is not decoded and never looked up."""
+    entry = _new_file_entry()
+    with (
+        patch(f"{_COMPONENT}.build_library_path_from_input") as mock_build,
+        patch(f"{_COMPONENT}.compute_chromaprint_for_file") as mock_chromaprint,
+        patch(f"{_COMPONENT}.find_move_candidates_by_chromaprint") as mock_candidate,
+    ):
+        mock_build.return_value.is_valid.return_value = False
+        mock_build.return_value.reason = "no library for path"
+        result = detect_move_for_new_file(entry, _LIBRARY, make_db(), source_present=lambda _song: False)
 
-        command = db.library.move_library_song.call_args.args[0]
-        assert command.scan.normalized_path == "new/a.flac"
+    assert result is None
+    mock_chromaprint.assert_not_called()
+    mock_candidate.assert_not_called()
 
-    def test_out_of_root_destination_aborts_before_any_write(self) -> None:
-        """A destination outside the library root keeps the defensive None
-        normalized-path fallback. The real facade raises ValueError BEFORE any
-        write for a None normalized_path (songs.normalized_path is NOT NULL) and
-        never returns a destination, so the abort contract must hold: the move is
-        never applied (no destination locator, no reseed) and the ValueError
-        propagates out of apply_detected_moves."""
-        db = self._make_db()
-        move = _move(new_path="/elsewhere/b.flac")
-        db.library.move_library_song.side_effect = ValueError("move_library_song() requires a normalized_path")
 
-        with (
-            patch("nomarr.components.library.move_detection_comp._extract_entity_tags"),
-            patch("nomarr.components.library.move_detection_comp.build_song_tag_assignments"),
-            pytest.raises(ValueError, match="normalized_path"),
-        ):
-            apply_detected_moves([move], {}, db, Path("/music"))
+@pytest.mark.unit
+def test_detect_move_returns_none_when_chromaprint_decode_raises_oserror() -> None:
+    """A corrupt/unreadable new file is a safe miss: no candidate lookup runs."""
+    entry = _new_file_entry()
+    with (
+        patch(f"{_COMPONENT}.build_library_path_from_input") as mock_build,
+        patch(f"{_COMPONENT}.compute_chromaprint_for_file", side_effect=OSError("unreadable")),
+        patch(f"{_COMPONENT}.find_move_candidates_by_chromaprint") as mock_candidate,
+    ):
+        mock_build.return_value.is_valid.return_value = True
+        result = detect_move_for_new_file(entry, _LIBRARY, make_db(), source_present=lambda _song: False)
 
-        # The None-normalized-path command is what persistence rejects; exactly
-        # one move-intent call is issued and no reseed (destination) is resolved.
-        command = db.library.move_library_song.call_args.args[0]
-        assert command.scan.normalized_path is None
-        db.library.move_library_song.assert_called_once()
+    assert result is None
+    mock_candidate.assert_not_called()
 
-    def test_reseeds_entity_tags_under_destination_identity(self) -> None:
-        db = self._make_db()
-        move = _move()
-        assignments = [MagicMock()]
-        destination = SongIdentity(library=_LIBRARY_IDENTITY, normalized_path="new/a.flac")
 
-        with (
-            patch("nomarr.components.library.move_detection_comp._extract_entity_tags") as mock_extract,
-            patch("nomarr.components.library.move_detection_comp.build_song_tag_assignments") as mock_build,
-        ):
-            mock_extract.return_value = [{"name": "artist", "value": "X"}]
-            mock_build.return_value = assignments
-            applied = apply_detected_moves([move], {move.new_path: {"artist": "X"}}, db, Path("/music"))
+@pytest.mark.unit
+def test_detect_move_returns_none_when_chromaprint_decode_raises_runtimeerror() -> None:
+    """A decoder runtime failure on the new file is also a safe miss."""
+    entry = _new_file_entry()
+    with (
+        patch(f"{_COMPONENT}.build_library_path_from_input") as mock_build,
+        patch(f"{_COMPONENT}.compute_chromaprint_for_file", side_effect=RuntimeError("decoder failed")),
+        patch(f"{_COMPONENT}.find_move_candidates_by_chromaprint") as mock_candidate,
+    ):
+        mock_build.return_value.is_valid.return_value = True
+        result = detect_move_for_new_file(entry, _LIBRARY, make_db(), source_present=lambda _song: False)
 
-        assert applied == 1
-        mock_extract.assert_called_once_with({"artist": "X"})
-        # build_song_tag_assignments is compute-only and takes only the entity
-        # tags — no numeric identity argument participates.
-        mock_build.assert_called_once_with([{"name": "artist", "value": "X"}])
-        # Tags are re-seeded under the DESTINATION locator returned by the move
-        # intent (after a successful move the source locator no longer resolves);
-        # the retired numeric resolve_song_identity(source song_id) bridge is gone.
-        db.library.replace_song_tags.assert_called_once_with(destination, assignments)
+    assert result is None
+    mock_candidate.assert_not_called()
 
-    def test_counts_applied_and_reseeds_per_move(self) -> None:
-        db = self._make_db()
-        move_a = _move(new_path="/music/new/a.flac")
-        move_b = _move(
-            song_identity=SongIdentity(library=_LIBRARY_IDENTITY, normalized_path="old/b.flac"),
-            new_path="/music/new/b.flac",
-        )
-        metadata = {
-            move_a.new_path: {"artist": "A"},
-            move_b.new_path: {"artist": "B"},
-        }
 
-        with (
-            patch("nomarr.components.library.move_detection_comp._extract_entity_tags") as mock_extract,
-            patch("nomarr.components.library.move_detection_comp.build_song_tag_assignments") as mock_build,
-        ):
-            mock_extract.side_effect = lambda meta: [meta]
-            mock_build.side_effect = lambda *_args, **_kwargs: [MagicMock()]
-            applied = apply_detected_moves([move_a, move_b], metadata, db, Path("/music"))
+@pytest.mark.unit
+def test_detect_move_skips_self_match_when_locator_absent() -> None:
+    """The physical-path self-match guard fires independently of the same-locator
+    guard: with no normalized locator on the entry, a candidate at the new file's
+    own path must still be skipped (otherwise the row would move onto itself)."""
+    entry = _new_file_entry(normalized_path=None)
+    self_match = _song(path=str(entry["path"]), normalized_path="old/song.flac")
 
-        assert applied == 2
-        assert db.library.move_library_song.call_count == 2
-        # One reseed per moved song under its own destination identity.
-        assert db.library.replace_song_tags.call_count == 2
+    assert _detect(entry, [self_match]) is None
 
-    def test_skips_reseed_when_no_metadata_but_still_applies(self) -> None:
-        db = self._make_db()
-        move = _move()
 
-        applied = apply_detected_moves([move], {}, db, Path("/music"))
+@pytest.mark.unit
+def test_detect_move_accepts_candidate_with_unknown_duration() -> None:
+    """When the candidate's duration is unknown the tolerance check is skipped and
+    the candidate is still a valid relocation origin."""
+    entry = _new_file_entry(duration_seconds=180.0)
+    candidate = _song("D:/Music/old/song.flac", "old/song.flac", duration_seconds=None)
 
-        assert applied == 1
-        db.library.move_library_song.assert_called_once()
-        db.library.replace_song_tags.assert_not_called()
+    result = _detect(entry, [candidate])
 
-    def test_logs_warning_and_still_applies_when_reseed_fails(self) -> None:
-        db = self._make_db()
-        move = _move()
-        db.library.replace_song_tags.side_effect = RuntimeError("reseed boom")
+    assert isinstance(result, FileMove)
+    assert result.old_duration is None
+    assert result.new_duration == 180.0
 
-        with (
-            patch("nomarr.components.library.move_detection_comp._extract_entity_tags") as mock_extract,
-            patch("nomarr.components.library.move_detection_comp.build_song_tag_assignments") as mock_build,
-            patch("nomarr.components.library.move_detection_comp.logger.warning") as mock_warn,
-        ):
-            mock_extract.return_value = [{"artist": "X"}]
-            mock_build.return_value = [MagicMock()]
-            applied = apply_detected_moves([move], {move.new_path: {"artist": "X"}}, db, Path("/music"))
 
-        # A reseed failure is logged and does NOT roll back / abort the move.
-        assert applied == 1
-        mock_warn.assert_called_once()
-        db.library.move_library_song.assert_called_once()
+# ─────────────────────────────────────────────────────────────────────────
+# relocate_song
+# ─────────────────────────────────────────────────────────────────────────
 
-    def test_stale_source_skips_and_continues(self) -> None:
-        """A stale/missing source locator (move intent returns None) is a safe
-        no-op miss (ADR-048 §5): the move is not applied, no reseed runs, and
-        processing continues to the next move."""
-        db = self._make_db()
-        move_a = _move()
-        move_b = _move(
-            song_identity=SongIdentity(library=_LIBRARY_IDENTITY, normalized_path="old/b.flac"),
-            new_path="/music/new/b.flac",
+
+@pytest.mark.unit
+def test_relocate_song_builds_one_path_update_and_returns_true() -> None:
+    db = make_db()
+    source = SongIdentity(library=_LIBRARY_IDENTITY, normalized_path="old/a.flac")
+    destination = SongIdentity(library=_LIBRARY_IDENTITY, normalized_path="new/a.flac")
+
+    with patch(f"{_COMPONENT}.update_song_path") as mock_update:
+        mock_update.return_value = destination
+        result = relocate_song(
+            db,
+            source,
+            new_path="/music/new/a.flac",
+            normalized_path="new/a.flac",
+            file_size=2048,
+            modified_time=9999,
+            duration_seconds=181.0,
         )
 
-        def _dest_or_none(command: SongPathUpdate) -> SongIdentity | None:
-            if command.song_identity.normalized_path == "old/a.flac":
-                return None  # stale source for the first move
-            return SongIdentity(library=command.song_identity.library, normalized_path=command.scan.normalized_path)
+    assert result is True
+    mock_update.assert_called_once()
+    passed_db, command = mock_update.call_args.args
+    assert passed_db is db
+    assert isinstance(command, SongPathUpdate)
+    assert command.song_identity == source
+    assert not hasattr(command, "song_id")
+    assert command.new_path == "/music/new/a.flac"
+    assert isinstance(command.scan, SongScanUpdate)
+    assert command.scan.normalized_path == "new/a.flac"
+    assert command.scan.file_size == 2048
+    assert command.scan.modified_time == 9999
+    assert command.scan.duration_seconds == 181.0
 
-        db.library.move_library_song.side_effect = _dest_or_none
-        db.library.replace_song_tags.reset_mock()
 
-        with (
-            patch("nomarr.components.library.move_detection_comp._extract_entity_tags") as mock_extract,
-            patch("nomarr.components.library.move_detection_comp.build_song_tag_assignments") as mock_build,
-            patch("nomarr.components.library.move_detection_comp.logger.warning") as mock_warn,
-        ):
-            mock_extract.side_effect = lambda meta: [meta]
-            mock_build.return_value = [MagicMock()]
-            applied = apply_detected_moves([move_a, move_b], {move_b.new_path: {"artist": "B"}}, db, Path("/music"))
+@pytest.mark.unit
+def test_relocate_song_returns_false_when_intent_returns_none() -> None:
+    """A stale/missing source locator is a safe no-op miss (``False``)."""
+    db = make_db()
+    source = SongIdentity(library=_LIBRARY_IDENTITY, normalized_path="old/a.flac")
 
-        # move_a skipped (stale), move_b applied.
-        assert applied == 1
-        assert db.library.move_library_song.call_count == 2
-        # No reseed ran for the stale move; one reseed for move_b.
-        assert db.library.replace_song_tags.call_count == 1
-        mock_warn.assert_called_once()
+    with patch(f"{_COMPONENT}.update_song_path", return_value=None):
+        result = relocate_song(
+            db,
+            source,
+            new_path="/music/new/a.flac",
+            normalized_path="new/a.flac",
+            file_size=2048,
+            modified_time=9999,
+            duration_seconds=181.0,
+        )
 
-    def test_persistence_failure_propagates_and_is_not_reported_applied(self) -> None:
-        """A persistence failure in the move intent propagates to the caller (the
-        historical abort-on-first contract); the failed move is never reported
-        applied and its reseed never runs."""
-        db = self._make_db()
-        move = _move()
-        db.library.move_library_song.side_effect = RuntimeError("db down")
-
-        with (
-            patch("nomarr.components.library.move_detection_comp._extract_entity_tags"),
-            patch("nomarr.components.library.move_detection_comp.build_song_tag_assignments"),
-            pytest.raises(RuntimeError, match="db down"),
-        ):
-            apply_detected_moves([move], {move.new_path: {"artist": "X"}}, db, Path("/music"))
-
-        db.library.move_library_song.assert_called_once()
+    assert result is False

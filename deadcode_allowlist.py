@@ -966,7 +966,6 @@ EQ = None  # TypedDict field
 expires_in = None  # TypedDict field
 files_checked = None  # TypedDict field
 files_found = None  # TypedDict field
-files_moved_count = None  # TypedDict field
 files_repaired = None  # TypedDict field
 FilterDict = None  # TypedDict field
 finished_at = None  # TypedDict field

@@ -15,7 +15,7 @@ These tests cover the sealed domain contracts (per ADR-032/041/043):
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, call, sentinel
+from unittest.mock import MagicMock, call, patch, sentinel
 
 import pytest
 
@@ -663,6 +663,18 @@ def test_count_recently_tagged_delegates() -> None:
 
     assert result == 7
     song_repo.count_recently_tagged.assert_called_once_with(1000)
+
+
+@pytest.mark.unit
+def test_list_library_songs_by_chromaprint_forwards_bounded_default_limit() -> None:
+    """LibraryDb is a thin forwarder: the songs sub-facade receives the call with
+    the bounded default ``limit=50`` intact when the caller omits it."""
+    db, *_ = _make_library_db()
+
+    with patch.object(db.songs, "list_library_songs_by_chromaprint", return_value=[]) as mock_list:
+        db.list_library_songs_by_chromaprint(_LIB, "abc")
+
+    mock_list.assert_called_once_with(_LIB, "abc", limit=50)
 
 
 @pytest.mark.unit

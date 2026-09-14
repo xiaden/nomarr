@@ -439,9 +439,9 @@ def get_songs_by_paths_bulk(db: Database, paths: list[str]) -> dict[str, Song]:
     return result
 
 
-def find_move_candidate_by_chromaprint(db: Database, library: Library, chromaprint: str) -> Song | None:
-    """Return the semantic song matching ``chromaprint``, or ``None`` (DB move detection)."""
-    return db.library.find_library_song_by_chromaprint(library, chromaprint)
+def find_move_candidates_by_chromaprint(db: Database, library: Library, chromaprint: str) -> list[Song]:
+    """Return bounded semantic candidate songs matching a chromaprint within a library."""
+    return db.library.list_library_songs_by_chromaprint(library, chromaprint)
 
 
 # ─────────────────────────────────────────────────────────────────────────
