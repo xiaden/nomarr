@@ -531,6 +531,34 @@ class TestSongRepository:
 
         assert [song["normalized_path"] for song in result] == ["a\\b/track.mp3"]
 
+    def test_list_songs_after_normalized_path_orders_cursor_and_limit(self, pg_session) -> None:
+        """Bounded page: ordered by normalized_path, exclusive cursor, respects the limit."""
+        lib_id = _create_library(pg_session)
+        for normalized in ("a/t.mp3", "b/t.mp3", "c/t.mp3"):
+            _create_song(pg_session, lib_id, f"/music/{normalized}", normalized)
+        repo = SongRepository(pg_session)
+
+        first = repo.list_songs_after_normalized_path(lib_id, after_normalized_path=None, limit=2)
+        assert [song["normalized_path"] for song in first] == ["a/t.mp3", "b/t.mp3"]
+
+        cursor = first[-1]["normalized_path"]
+        second = repo.list_songs_after_normalized_path(lib_id, after_normalized_path=cursor, limit=2)
+        # Exclusive cursor: "b/t.mp3" is not repeated.
+        assert [song["normalized_path"] for song in second] == ["c/t.mp3"]
+        assert repo.list_songs_after_normalized_path(lib_id, after_normalized_path="c/t.mp3", limit=2) == []
+
+    def test_list_songs_after_normalized_path_is_library_scoped(self, pg_session) -> None:
+        """A page never leaks rows from another library."""
+        lib_id = _create_library(pg_session)
+        other_lib_id = _create_library(pg_session)
+        _create_song(pg_session, lib_id, "/music/a.mp3", "a.mp3")
+        _create_song(pg_session, other_lib_id, "/music/b.mp3", "b.mp3")
+        repo = SongRepository(pg_session)
+
+        page = repo.list_songs_after_normalized_path(lib_id, after_normalized_path=None, limit=10)
+
+        assert [song["normalized_path"] for song in page] == ["a.mp3"]
+
     def test_list_tracks_for_matching(self, pg_session) -> None:
         """list_tracks_for_matching should return songs ordered by id."""
         lib_id = _create_library(pg_session)

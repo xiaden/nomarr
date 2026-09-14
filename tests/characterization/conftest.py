@@ -485,11 +485,54 @@ def serialize_facade_result(result: Any) -> bytes:
 # ---------------------------------------------------------------------------
 
 
-def assert_snapshot_matches(snapshot_name: str, result: Any) -> None:
-    """Compare a result against a stored snapshot file.
+def _canonical_payload_json(payload: Any) -> str:
+    """Render a parsed JSON payload canonically (sorted keys, 2-space indent).
 
-    If the snapshot doesn't exist, creates it as the baseline.
-    If it exists, compares the serialized result against the stored snapshot.
+    Used for semantic comparison and readable mismatch output. It deliberately
+    does NOT re-apply ``_normalize``: the current result is normalized once via
+    ``serialize_facade_result`` before being parsed, and the committed snapshot
+    is already normalized. Sorting keys and fixing indentation makes two
+    equivalent JSON documents render identically regardless of their on-disk
+    whitespace (trailing newline, CRLF vs LF, indentation).
+    """
+    return orjson.dumps(
+        payload,
+        default=_orjson_fallback,
+        option=orjson.OPT_SORT_KEYS | orjson.OPT_INDENT_2,
+    ).decode("utf-8")
+
+
+def _parse_committed_snapshot(snapshot_path: Path) -> Any:
+    """Parse a committed snapshot file into its JSON payload.
+
+    Raises:
+        AssertionError: If the committed file is not valid JSON, reported as a
+            characterization mismatch rather than an opaque decode error.
+    """
+    try:
+        return json.loads(snapshot_path.read_bytes())
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise AssertionError(
+            f"Snapshot {snapshot_path.name} is not valid JSON ({exc}). "
+            "The committed snapshot must be a valid JSON document."
+        ) from exc
+
+
+def assert_snapshot_matches(snapshot_name: str, result: Any) -> None:
+    """Compare a result against a stored snapshot file by semantic JSON payload.
+
+    If the snapshot doesn't exist, it is created from the serialized result as
+    the baseline. If it exists, the current result is normalized and serialized
+    through the existing authoritative pipeline (``serialize_facade_result``),
+    then the committed snapshot and the current serialization are both parsed
+    and compared as JSON values.
+
+    The contract is semantic: ``committed JSON payload == current normalized
+    facade result``. On-disk formatting (trailing newline, CRLF vs LF,
+    indentation, insignificant whitespace, key order) is not part of it.
+    Added/removed fields, changed values, changed array contents/order, changed
+    return shape, changed normalized identities, and null/value changes still
+    fail.
 
     Args:
         snapshot_name: Name of the snapshot file (without .json extension).
@@ -505,10 +548,14 @@ def assert_snapshot_matches(snapshot_name: str, result: Any) -> None:
         snapshot_path.write_bytes(serialized)
         return
 
-    # Compare against existing snapshot
-    expected = snapshot_path.read_bytes()
-    assert serialized == expected, (
-        f"Snapshot mismatch for {snapshot_name}.\n"
-        f"Expected:\n{expected.decode('utf-8')}\n"
-        f"Got:\n{serialized.decode('utf-8')}"
-    )
+    expected_payload = _parse_committed_snapshot(snapshot_path)
+    actual_payload = json.loads(serialized)
+
+    expected_text = _canonical_payload_json(expected_payload)
+    actual_text = _canonical_payload_json(actual_payload)
+    if actual_text != expected_text:
+        raise AssertionError(
+            f"Snapshot mismatch for {snapshot_name} (JSON payload differs).\n"
+            f"Expected (committed):\n{expected_text}\n"
+            f"Got (current normalized result):\n{actual_text}"
+        )

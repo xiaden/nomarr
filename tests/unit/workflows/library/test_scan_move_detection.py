@@ -222,17 +222,21 @@ def _patched_scan(
         exact_returns.append((rel, rows))
         return rows
 
-    def _subtree_folder_rows(rel: str) -> dict[str, StateTaggedSong]:
-        # Production ``get_songs_for_folder`` is prefix-recursive: it returns the
-        # requested folder's rows plus every row in a nested descendant folder.
-        # Model that here so ancestor-cleanup tests genuinely surface descendant
-        # rows (a row keyed under ``rel + "/"`` is a descendant; ``rel10`` is not).
-        prefix = rel.rstrip("/") + "/" if rel not in ("", ".") else ""
-        rows: dict[str, StateTaggedSong] = {}
-        for folder_rel, folder_map in existing.items():
-            if folder_rel == rel or (prefix and folder_rel.startswith(prefix)):
-                rows.update(folder_map)
-        return rows
+    def _songs_page(after_normalized_path: str | None, limit: int) -> list[Song]:
+        # Production ``list_songs_after_normalized_path`` returns one bounded page
+        # of the library's songs ordered by ``normalized_path``. Model that over ALL
+        # carriers currently in ``existing`` (a relocated carrier is removed from
+        # its source folder), honoring the exclusive cursor and the limit.
+        rows = [carrier.candidate.song for folder_map in existing.values() for carrier in folder_map.values()]
+        rows.sort(key=lambda song: song.normalized_path)
+        if after_normalized_path is not None:
+            rows = [song for song in rows if song.normalized_path > after_normalized_path]
+        return rows[:limit]
+
+    def _songs_page_call(_library: Any, *, after_normalized_path: str | None, limit: int) -> list[Song]:
+        return _songs_page(after_normalized_path, limit)
+
+    db.library.list_songs_after_normalized_path.side_effect = _songs_page_call
 
     mocks = SimpleNamespace()
     with ExitStack() as stack:
@@ -246,9 +250,7 @@ def _patched_scan(
                 module, "get_songs_in_exact_folder", side_effect=lambda _db, _lib, rel: _exact_folder_rows(rel)
             )
         )
-        mocks.get_songs_for_folder = stack.enter_context(
-            patch.object(module, "get_songs_for_folder", side_effect=lambda _db, _lib, rel: _subtree_folder_rows(rel))
-        )
+        mocks.get_songs_page = db.library.list_songs_after_normalized_path
         mocks.exact_returns = exact_returns
         mocks.scan_folder_files = stack.enter_context(
             patch.object(module, "scan_folder_files", side_effect=_scan_folder)
@@ -1118,8 +1120,41 @@ class TestDeletionScoping:
 @pytest.mark.unit
 @pytest.mark.mocked
 class TestExactFolderWalkWorkingSet:
-    """The per-folder walk working set is bounded to direct members of exactly the
-    folder being walked. The recursive subtree read remains the cleanup path."""
+    """The per-folder walk AND the deferred cleanup working set are each bounded to
+    direct members of exactly one folder. Both use the exact-folder read, so a
+    nested descendant subtree is never re-materialized by an ancestor. Genuinely
+    untracked parents are recovered only by the full-scan bounded orphan sweep."""
+
+    def test_nested_folders_cleanup_reads_only_exact_direct_members(self, workflow: tuple[Any, Any]) -> None:
+        """Nested audio-bearing folders all scanned with no deletions: every cleanup
+        read is exact to its folder's direct rows, so no ancestor materializes a
+        descendant subtree."""
+        module, callable_ = workflow
+        parent_row = _song("/music/parent/a.flac", "parent/a.flac", "cp-parent")
+        child_row = _song("/music/parent/child/b.flac", "parent/child/b.flac", "cp-child")
+        with _patched_scan(
+            module,
+            folders=[_folder("parent"), _folder("parent/child")],
+            existing={
+                "parent": {parent_row.path: _carrier(parent_row)},
+                "parent/child": {child_row.path: _carrier(child_row)},
+            },
+            batches={
+                "/music/parent": _batch(discovered={parent_row.path}),
+                "/music/parent/child": _batch(discovered={child_row.path}),
+            },
+            present_paths={parent_row.path, child_row.path},
+        ) as ctx:
+            result = callable_(ctx.db, _LIBRARY, tagger_version="v1")
+
+        for rel, rows in ctx.mocks.exact_returns:
+            if rel == "parent":
+                assert set(rows) == {parent_row.path}
+            elif rel == "parent/child":
+                assert set(rows) == {child_row.path}
+        read_paths = {path for _rel, rows in ctx.mocks.exact_returns for path in rows}
+        assert read_paths == {parent_row.path, child_row.path}
+        assert result["files_removed"] == 0
 
     def test_parent_and_child_scanned_use_exact_per_folder_working_sets(self, workflow: tuple[Any, Any]) -> None:
         """Parent and child are both walked: each working set contains only its own
@@ -1206,8 +1241,8 @@ class TestExactFolderWalkWorkingSet:
 
     def test_large_descendant_subtree_not_in_parent_walk_working_set(self, workflow: tuple[Any, Any]) -> None:
         """A large nested subtree under a walked parent is never materialized as the
-        parent's working set: the walk uses the exact-folder query, so its working
-        set stays bounded to direct members."""
+        parent's walk OR cleanup working set: both use the exact-folder query, so
+        the parent is read only for its direct members."""
         module, callable_ = workflow
         direct = _song("/music/parent/a.flac", "parent/a.flac", "cp-a")
         existing: dict[str, dict[str, StateTaggedSong]] = {"parent": {direct.path: _carrier(direct)}}
@@ -1225,18 +1260,21 @@ class TestExactFolderWalkWorkingSet:
         ) as ctx:
             result = callable_(ctx.db, _LIBRARY, tagger_version="v1")
 
-        # Structurally: the walk called the exact accessor exactly once...
-        assert len(ctx.mocks.get_songs_in_exact_folder.call_args_list) == 1
-        # ...and its working set held the single direct member, not the 300 descendants.
-        walked = {rel: set(rows) for rel, rows in ctx.mocks.exact_returns}
-        assert walked["parent"] == {direct.path}
-        # The recursive accessor is the cleanup path, not the walk.
-        assert ctx.mocks.get_songs_for_folder.call_args_list
+        # The parent is both walked and cleaned, so its exact read runs more than
+        # once; every such read returns ONLY the single direct member.
+        parent_reads = [rows for rel, rows in ctx.mocks.exact_returns if rel == "parent"]
+        assert parent_reads
+        for rows in parent_reads:
+            assert set(rows) == {direct.path}
+        # No descendant path is ever read by a walk/cleanup working set.
+        read_paths = {path for _rel, rows in ctx.mocks.exact_returns for path in rows}
+        assert not any(path.startswith("/music/parent/sub") for path in read_paths)
         assert result["files_removed"] == 0
 
     def test_nested_reconciled_and_vanished_cleanup_deletes_missing_preserves_others(self) -> None:
-        """Recursive cleanup deletes genuinely-missing rows under a reconciled
-        ancestor and a vanished folder while preserving a skipped child's rows."""
+        """Exact-folder cleanup deletes genuinely-missing direct members under a
+        reconciled ancestor and a vanished folder while preserving a skipped
+        child's rows."""
         parent_gone = _song("/music/parent/gone.flac", "parent/gone.flac", "cp-pg")
         child_skipped = _song("/music/parent/child/keep.flac", "parent/child/keep.flac", "cp-child")
         vanished = _song("/music/gone/old.flac", "gone/old.flac", "cp-gone")
@@ -1261,19 +1299,47 @@ class TestExactFolderWalkWorkingSet:
         assert child_skipped.path not in removed
         assert result["files_removed"] == 2
 
-    def test_folderless_orphan_row_deleted_by_recursive_cleanup_not_surfaced_by_exact_walk(
-        self, workflow: tuple[Any, Any]
-    ) -> None:
-        """A row whose parent folder has no ``library_folders`` record is never
-        walked, so the exact-folder walk never surfaces it. Recursive cleanup from a
-        reconciled ancestor still surfaces it and deletes it once its path is absent
-        — this is why cleanup keeps the recursive read."""
-        module, callable_ = workflow
+
+class TestOrphanRecoverySweep:
+    """Genuinely-untracked parents are recovered only by the FULL scan's bounded,
+    natural-key-paginated sweep; quick scan defers. The sweep holds one page in
+    memory and is guarded by the covered set and the unreconciled-ancestor check."""
+
+    def test_full_scan_recovers_stale_song_under_untracked_top_level_folder(self) -> None:
+        orphan = _song("/music/untracked/x.flac", "untracked/x.flac", None)
+        with _patched_scan(
+            full_wf,
+            folders=[_folder("scanned")],
+            existing={"scanned": {}, "untracked": {orphan.path: _carrier(orphan)}},
+            batches={"/music/scanned": _batch(discovered=set())},
+            present_paths=set(),
+        ) as ctx:
+            result = full_wf.scan_library_full_workflow(ctx.db, _LIBRARY, tagger_version="v1")
+
+        assert orphan.path in _removed_paths(ctx.mocks.remove_deleted)
+        assert result["files_removed"] == 1
+
+    def test_full_scan_recovers_stale_song_beneath_audio_less_ancestors(self) -> None:
+        deep = _song("/music/untracked/a/b/c/x.flac", "untracked/a/b/c/x.flac", None)
+        with _patched_scan(
+            full_wf,
+            folders=[_folder("scanned")],
+            existing={"scanned": {}, "untracked/a/b/c": {deep.path: _carrier(deep)}},
+            batches={"/music/scanned": _batch(discovered=set())},
+            present_paths=set(),
+        ) as ctx:
+            result = full_wf.scan_library_full_workflow(ctx.db, _LIBRARY, tagger_version="v1")
+
+        assert deep.path in _removed_paths(ctx.mocks.remove_deleted)
+        assert result["files_removed"] == 1
+
+    def test_folderless_orphan_under_reconciled_ancestor_recovered_by_full_scan(self) -> None:
+        """A row under an untracked parent nested beneath a reconciled ancestor is
+        no longer surfaced by exact cleanup, but the full-scan sweep recovers it."""
         orphan = _song("/music/parent/orphan/x.flac", "parent/orphan/x.flac", "cp-orphan")
         parent_row = _song("/music/parent/a.flac", "parent/a.flac", "cp-parent")
         with _patched_scan(
-            module,
-            # ``parent/orphan`` has no folder record: never discovered, never walked.
+            full_wf,
             folders=[_folder("parent")],
             existing={
                 "parent": {parent_row.path: _carrier(parent_row)},
@@ -1282,12 +1348,79 @@ class TestExactFolderWalkWorkingSet:
             batches={"/music/parent": _batch(discovered={parent_row.path})},
             present_paths={parent_row.path},
         ) as ctx:
-            result = callable_(ctx.db, _LIBRARY, tagger_version="v1")
+            result = full_wf.scan_library_full_workflow(ctx.db, _LIBRARY, tagger_version="v1")
 
-        walked = {rel: set(rows) for rel, rows in ctx.mocks.exact_returns}
-        assert walked["parent"] == {parent_row.path}
-        assert orphan.path not in walked["parent"]
         removed = _removed_paths(ctx.mocks.remove_deleted)
         assert orphan.path in removed
         assert parent_row.path not in removed
         assert result["files_removed"] == 1
+
+    def test_full_scan_preserves_untracked_nested_row_under_failed_folder(self) -> None:
+        """The unreconciled-ancestor guard preserves a row in a nested untracked
+        subfolder even when its path is absent, because its ancestor scope failed to
+        walk and was not authoritatively inspected."""
+        nested = _song("/music/failed/untracked/x.flac", "failed/untracked/x.flac", None)
+        failed_row = _song("/music/failed/live.flac", "failed/live.flac", None)
+        with _patched_scan(
+            full_wf,
+            folders=[_folder("failed")],
+            existing={
+                "failed": {failed_row.path: _carrier(failed_row)},
+                "failed/untracked": {nested.path: _carrier(nested)},
+            },
+            batches={},
+            folder_errors={"/music/failed": OSError("walk failed")},
+            present_paths=set(),
+        ) as ctx:
+            result = full_wf.scan_library_full_workflow(ctx.db, _LIBRARY, tagger_version="v1")
+
+        removed = _removed_paths(ctx.mocks.remove_deleted)
+        assert nested.path not in removed
+        assert failed_row.path not in removed
+        assert result["files_removed"] == 0
+
+    def test_quick_scan_defers_untracked_parent_recovery_to_full_scan(self) -> None:
+        orphan = _song("/music/untracked/x.flac", "untracked/x.flac", None)
+        with _patched_scan(
+            quick_wf,
+            folders=[_folder("scanned")],
+            existing={"scanned": {}, "untracked": {orphan.path: _carrier(orphan)}},
+            batches={"/music/scanned": _batch(discovered=set())},
+            present_paths=set(),
+        ) as ctx:
+            quick_result = quick_wf.scan_library_quick_workflow(ctx.db, _LIBRARY, tagger_version="v1")
+        assert orphan.path not in _removed_paths(ctx.mocks.remove_deleted)
+        ctx.mocks.get_songs_page.assert_not_called()
+        assert quick_result["files_removed"] == 0
+
+        with _patched_scan(
+            full_wf,
+            folders=[_folder("scanned")],
+            existing={"scanned": {}, "untracked": {orphan.path: _carrier(orphan)}},
+            batches={"/music/scanned": _batch(discovered=set())},
+            present_paths=set(),
+        ) as ctx_full:
+            full_result = full_wf.scan_library_full_workflow(ctx_full.db, _LIBRARY, tagger_version="v1")
+        assert orphan.path in _removed_paths(ctx_full.mocks.remove_deleted)
+        assert full_result["files_removed"] == 1
+
+    def test_orphan_recovery_pages_bounded_with_advancing_cursor(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(full_wf, "_ORPHAN_RECOVERY_BATCH_SIZE", 2)
+        orphans = [_song(f"/music/o{i}/x.flac", f"o{i}/x.flac", None) for i in range(5)]
+        existing: dict[str, dict[str, StateTaggedSong]] = {"scanned": {}}
+        existing.update({f"o{i}": {orphans[i].path: _carrier(orphans[i])} for i in range(5)})
+        with _patched_scan(
+            full_wf,
+            folders=[_folder("scanned")],
+            existing=existing,
+            batches={"/music/scanned": _batch(discovered=set())},
+            present_paths=set(),
+        ) as ctx:
+            result = full_wf.scan_library_full_workflow(ctx.db, _LIBRARY, tagger_version="v1")
+
+        calls = ctx.mocks.get_songs_page.call_args_list
+        # Pages of 2, 2, 1 -> three bounded reads, never one materialized library.
+        assert len(calls) == 3
+        cursors = [call.kwargs["after_normalized_path"] for call in calls]
+        assert cursors == [None, "o1/x.flac", "o3/x.flac"]
+        assert result["files_removed"] == 5

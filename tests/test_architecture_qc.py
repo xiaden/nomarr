@@ -754,29 +754,68 @@ def test_deptry_clean() -> None:
         pytest.fail(f"deptry reported dependency issues (exit {proc.returncode}).\n\nOutput tail:\n{tail}")
 
 
+def _assert_snapshot_serializes_deterministically(snapshot: Path, serialize) -> None:
+    """Check one committed snapshot against the characterization serializer.
+
+    Validates, in order:
+      * the committed snapshot is valid JSON;
+      * serializing its parsed payload twice is byte-identical (catches
+        nondeterministic key order, float drift, or set/dict iteration leaking
+        into output);
+      * the serializer output parses back to the committed JSON value - the
+        serializer preserves the committed payload.
+
+    None of these depend on the snapshot file's own whitespace/indentation:
+    the committed bytes' formatting is explicitly not the contract.
+
+    Args:
+        snapshot: Path to a committed characterization snapshot JSON file.
+        serialize: The characterization serializer
+            (``conftest.serialize_facade_result``), called with a parsed payload.
+    """
+    with snapshot.open("rb") as fh:
+        try:
+            payload = json.load(fh)
+        except (ValueError, UnicodeDecodeError) as exc:
+            raise AssertionError(f"Snapshot {snapshot.name} is not valid JSON ({exc}).") from exc
+
+    first = serialize(payload)
+    second = serialize(payload)
+    assert first == second, (
+        f"Snapshot {snapshot.name} re-serializes non-deterministically:\n  pass 1: {first!r}\n  pass 2: {second!r}"
+    )
+    assert json.loads(first) == payload, (
+        f"Snapshot {snapshot.name} is not preserved by the serializer: its committed JSON value no longer "
+        "round-trips through serialize_facade_result(). If the behavioral change is intended, delete the snapshot "
+        "file and re-run the characterization suite to re-baseline it; do not hand-edit formatting."
+    )
+
+
 @pytest.mark.code_smell
 def test_deterministic_snapshots() -> None:
-    """Characterization snapshots must be byte-deterministic re-serialization.
+    """Characterization snapshots must be valid JSON and re-serialize deterministically.
 
     The characterization suite (tests/characterization/) serializes facade
     results with serialize_facade_result() from its conftest - orjson with
-    sorted keys and 2-space indent over a normalized structure - and stores
-    the bytes as baseline JSON files in snapshots/. Determinism of that
-    serialization is what makes stored baselines comparable across runs.
+    sorted keys and 2-space indent over a normalized structure - and stores the
+    bytes as baseline JSON files in snapshots/. Determinism of that
+    serialization is what makes stored baselines comparable across runs; the
+    committed file's own whitespace is not part of the contract.
 
     This test loads the suite's own serializer (importlib; no fixtures run)
     and, for every committed snapshot:
+      * asserts the committed snapshot is valid JSON;
       * re-serializes the stored payload twice - the two passes must be
         byte-identical (catches nondeterministic key order, float drift, or
         set/dict iteration leaking into output);
-      * asserts the re-serialization equals the committed bytes - a mismatch
-        means the current serializer no longer produces what the baselines
-        contain (regenerate them).
+      * asserts the serializer output parses back to the committed JSON value
+        (catches a serializer that drops or corrupts the payload).
 
-    Because normalized facade results may legitimately be a JSON object, array,
-    or scalar (e.g. a list of libraries, a null miss, an int count, or a bool
-    flag), the round-trip is the whole shape guarantee: it proves every
-    committed baseline re-serializes byte-for-byte under the current serializer.
+    It deliberately does NOT require the committed file bytes to equal the
+    serializer's exact byte output: trailing newlines, CRLF vs LF, and
+    indentation are formatting, not architecture. Actual payload changes are
+    caught by the characterization comparisons themselves
+    (``conftest.assert_snapshot_matches`` compares parsed JSON payloads).
 
     Snapshots are only written when Docker runs the characterization suite, so
     the test skips when snapshots/ is empty - but the serializer round-trip
@@ -789,20 +828,7 @@ def test_deterministic_snapshots() -> None:
 
     snapshots = sorted(snapshot_dir.glob("*.json"))
     for snapshot in snapshots:
-        with snapshot.open("rb") as fh:
-            payload = json.load(fh)
-        first = serialize(payload)
-        second = serialize(payload)
-        assert first == second, (
-            f"Snapshot {snapshot.name} re-serializes non-deterministically:\n  pass 1: {first!r}\n  pass 2: {second!r}"
-        )
-        committed = snapshot.read_bytes()
-        assert first == committed, (
-            f"Snapshot {snapshot.name} does not match the current canonical "
-            f"serialization ({len(first)} bytes re-serialized vs "
-            f"{len(committed)} committed). Regenerate it by running the "
-            "characterization suite."
-        )
+        _assert_snapshot_serializes_deterministically(snapshot, serialize)
 
     if not snapshots:
         pytest.skip(
@@ -810,6 +836,130 @@ def test_deterministic_snapshots() -> None:
             "Docker-gated suite writes them on first run); the pure-python "
             "serializer determinism checks above still ran."
         )
+
+
+# ---------------------------------------------------------------------------
+# Snapshot comparison contract: semantic JSON payload, not file formatting
+# ---------------------------------------------------------------------------
+
+#: A JSON payload chosen so normalization is the identity: no integers over the
+#: DB-ID masking threshold (>1000), no UUIDs, and no locator tokens.
+_SEMANTIC_SNAPSHOT_PAYLOAD: dict[str, object] = {
+    "chromaprint": None,
+    "tagged": False,
+    "total": 2,
+    "tracks": [
+        {"index": 1, "title": "alpha"},
+        {"index": 2, "title": "beta"},
+    ],
+}
+
+
+@pytest.fixture()
+def snapshot_conftest(tmp_path, monkeypatch):
+    """Load the characterization conftest with its snapshot dir pointed at tmp_path."""
+    conftest = _load_characterization_conftest()
+    monkeypatch.setattr(conftest, "SNAPSHOT_DIR", tmp_path)
+    return conftest
+
+
+def _write_committed_snapshot(conftest, name: str, raw_json: bytes) -> None:
+    """Write raw bytes as a committed snapshot file for the shared conftest."""
+    (conftest.SNAPSHOT_DIR / f"{name}.json").write_bytes(raw_json)
+
+
+@pytest.mark.parametrize(
+    "render",
+    [
+        pytest.param(lambda p: json.dumps(p, indent=2, sort_keys=True).encode(), id="indent2-no-newline"),
+        pytest.param(lambda p: json.dumps(p, indent=2, sort_keys=True).encode() + b"\n", id="trailing-lf"),
+        pytest.param(lambda p: json.dumps(p, indent=4).encode(), id="indent4"),
+        pytest.param(lambda p: json.dumps(p, indent=2).encode().replace(b"\n", b"\r\n"), id="crlf"),
+        pytest.param(lambda p: json.dumps(p, separators=(",", ":")).encode(), id="compact"),
+        pytest.param(lambda p: json.dumps(dict(reversed(list(p.items()))), indent=2).encode(), id="reversed-key-order"),
+    ],
+)
+def test_snapshot_comparison_accepts_equivalent_json_formatting(snapshot_conftest, render) -> None:
+    """Formatting-only differences (newline, CRLF, indent, key order) are not mismatches."""
+    name = "SemanticFormattingCase"
+    _write_committed_snapshot(snapshot_conftest, name, render(_SEMANTIC_SNAPSHOT_PAYLOAD))
+    # Must not raise: identical JSON payload in any physical formatting.
+    snapshot_conftest.assert_snapshot_matches(name, _SEMANTIC_SNAPSHOT_PAYLOAD)
+
+
+def _commit_payload(snapshot_conftest, name: str, payload: object) -> None:
+    """Commit ``payload`` as a canonical snapshot for the shared conftest."""
+    _write_committed_snapshot(snapshot_conftest, name, json.dumps(payload, indent=2, sort_keys=True).encode())
+
+
+def test_snapshot_comparison_rejects_changed_value(snapshot_conftest) -> None:
+    """A changed boolean/value is still a mismatch."""
+    name = "ChangedValueCase"
+    _commit_payload(snapshot_conftest, name, _SEMANTIC_SNAPSHOT_PAYLOAD)
+    changed = dict(_SEMANTIC_SNAPSHOT_PAYLOAD, tagged=True)
+    with pytest.raises(AssertionError, match="Snapshot mismatch"):
+        snapshot_conftest.assert_snapshot_matches(name, changed)
+
+
+def test_snapshot_comparison_rejects_null_becoming_value(snapshot_conftest) -> None:
+    """A null payload slot becoming a value is still a mismatch."""
+    name = "NullChangedCase"
+    _commit_payload(snapshot_conftest, name, _SEMANTIC_SNAPSHOT_PAYLOAD)
+    changed = dict(_SEMANTIC_SNAPSHOT_PAYLOAD, chromaprint="abc")
+    with pytest.raises(AssertionError, match="Snapshot mismatch"):
+        snapshot_conftest.assert_snapshot_matches(name, changed)
+
+
+def test_snapshot_comparison_rejects_added_field(snapshot_conftest) -> None:
+    """An added field is still a mismatch."""
+    name = "AddedFieldCase"
+    _commit_payload(snapshot_conftest, name, _SEMANTIC_SNAPSHOT_PAYLOAD)
+    added = dict(_SEMANTIC_SNAPSHOT_PAYLOAD, extra=1)
+    with pytest.raises(AssertionError, match="Snapshot mismatch"):
+        snapshot_conftest.assert_snapshot_matches(name, added)
+
+
+def test_snapshot_comparison_rejects_removed_field(snapshot_conftest) -> None:
+    """A removed field is still a mismatch."""
+    name = "RemovedFieldCase"
+    _commit_payload(snapshot_conftest, name, dict(_SEMANTIC_SNAPSHOT_PAYLOAD, extra=1))
+    with pytest.raises(AssertionError, match="Snapshot mismatch"):
+        snapshot_conftest.assert_snapshot_matches(name, _SEMANTIC_SNAPSHOT_PAYLOAD)
+
+
+def test_snapshot_comparison_rejects_changed_array_order(snapshot_conftest) -> None:
+    """Meaningful array order changes are still mismatches."""
+    name = "ArrayOrderCase"
+    _commit_payload(snapshot_conftest, name, _SEMANTIC_SNAPSHOT_PAYLOAD)
+    reordered = dict(_SEMANTIC_SNAPSHOT_PAYLOAD, tracks=list(reversed(_SEMANTIC_SNAPSHOT_PAYLOAD["tracks"])))
+    with pytest.raises(AssertionError, match="Snapshot mismatch"):
+        snapshot_conftest.assert_snapshot_matches(name, reordered)
+
+
+def test_determinism_check_rejects_nondeterministic_serializer(tmp_path) -> None:
+    """The determinism gate still fails when serialization is actually nondeterministic."""
+    snapshot = tmp_path / "Nondeterministic.json"
+    snapshot.write_bytes(b'{"a": 1}')
+    outputs = iter([b'{"a": 1}', b'{"a": 2}'])
+    with pytest.raises(AssertionError, match="non-deterministically"):
+        _assert_snapshot_serializes_deterministically(snapshot, lambda _payload: next(outputs))
+
+
+def test_determinism_check_rejects_invalid_json(tmp_path) -> None:
+    """A committed snapshot that is not valid JSON fails the gate with a clear message."""
+    snapshot = tmp_path / "Invalid.json"
+    snapshot.write_bytes(b'{"a": 1')
+    with pytest.raises(AssertionError, match="not valid JSON"):
+        _assert_snapshot_serializes_deterministically(snapshot, lambda _payload: b"null")
+
+
+def test_determinism_check_accepts_trailing_newline(tmp_path) -> None:
+    """A trailing newline in the committed file is not a determinism/serializer failure."""
+    snapshot = tmp_path / "TrailingNewline.json"
+    snapshot.write_bytes(b'{\n  "tagged": false,\n  "total": 2\n}\n')
+    _assert_snapshot_serializes_deterministically(
+        snapshot, lambda payload: json.dumps(payload, sort_keys=True).encode()
+    )
 
 
 #: AR-SDR-4 transaction vocabulary that must not reappear in the facade API

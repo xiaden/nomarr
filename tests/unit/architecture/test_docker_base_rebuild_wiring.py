@@ -5,12 +5,14 @@ Static only: this test reads ``dockerfile.base``, ``dockerfile``,
 ``.github/workflows/docker-publish.yml`` and parses them as YAML / text. It
 never invokes Docker and never executes a workflow.
 
-It covers Plan D's reusable-workflow wiring — ``build-base.yml`` becoming a
-``workflow_call``-able reusable workflow while keeping its standalone
-``workflow_dispatch``/``push`` triggers, ``docker-publish.yml`` invoking it as a
-non-required ``build-base`` job that gates ``build-and-push`` — and the
-pinned-uv base derivation (GPU dependency set derived from ``pyproject.toml`` +
-``uv.lock``, no pip/venv machinery, system-Python exact sync).
+It covers the reusable-workflow wiring — ``build-base.yml`` is a
+``workflow_call``-able reusable workflow that is also manually dispatchable
+(``workflow_dispatch``) and carries **no standalone ``push`` trigger** (Amendment
+A2: ``docker-publish.yml`` is the single push-triggered base orchestrator),
+``docker-publish.yml`` invoking it as a non-required ``build-base`` job that
+gates ``build-and-push`` — and the pinned-uv base derivation (GPU dependency set
+derived from ``pyproject.toml`` + ``uv.lock``, no pip/venv machinery,
+system-Python exact sync).
 
 ``docker-publish.yml``'s ``build-base`` reusable-call job grants every
 permission the callee (``build-base.yml``) declares, because GitHub reusable
@@ -107,20 +109,15 @@ def _dockerfile_env_values(text: str) -> str:
 
 
 @pytest.mark.unit
-def test_build_base_is_reusable_and_keeps_standalone_triggers() -> None:
+def test_build_base_is_reusable_and_manual_dispatch_only() -> None:
     on = _on(_load_yaml(BUILD_BASE))
-    assert {"workflow_call", "workflow_dispatch", "push"} <= set(on), (
-        f"build-base.yml must be reusable and keep standalone triggers; got {sorted(on)!r}"
+    assert {"workflow_call", "workflow_dispatch"} <= set(on), (
+        f"build-base.yml must be reusable and manually dispatchable; got {sorted(on)!r}"
     )
-    push = on["push"]
-    assert push["branches"] == ["main", "develop"], (
-        f"build-base.yml push branches must be [main, develop]; got {push['branches']!r}"
+    assert "push" not in on, (
+        "build-base.yml must not carry a standalone push trigger (Amendment A2: "
+        f"docker-publish.yml is the single push-triggered base orchestrator); got push={on.get('push')!r}"
     )
-    assert set(push["paths"]) == {
-        "dockerfile.base",
-        "build_resources/essentia/**",
-        "build_resources/scripts/**",
-    }, f"build-base.yml push must keep base-only standalone paths; got {sorted(push['paths'])!r}"
 
 
 @pytest.mark.unit
@@ -191,6 +188,14 @@ def test_docker_publish_paths_cover_dependency_inputs() -> None:
         "e2e/**",
         ".github/workflows/docker-publish.yml",
     }, f"docker-publish push paths must cover all dependency inputs; got {sorted(paths)!r}"
+    assert paths >= {
+        "dockerfile.base",
+        "build_resources/essentia/**",
+        "build_resources/scripts/**",
+    }, (
+        "docker-publish push paths must also cover the base-only inputs (Amendment A2/R14) so a "
+        f"base-only change on any ref gets same-run base→app validation; got {sorted(paths)!r}"
+    )
     assert "workflow_dispatch" in on, "docker-publish must remain manually dispatchable"
 
 
