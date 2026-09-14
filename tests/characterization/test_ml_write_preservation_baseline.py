@@ -219,7 +219,9 @@ class TestWritePreservationBaseline:
         assert row["tier"] == "hot"
         assert row["genres"] == ["rock", "pop"]
         # vector values AND order preserved verbatim.
-        assert _decode_embedding(row["embedding"]) == tuple(stored)
+        # pgvector renders halfvec text with ~9 significant digits, so the decoded
+        # values are the fp16 payload rounded to that width; compare within tolerance.
+        assert _decode_embedding(row["embedding"]) == pytest.approx(tuple(stored), abs=1e-6)
 
     def test_genres_none_is_distinct(self, db: Database, inference_session: Session, seed_data: dict) -> None:
         """genres=None persists as NULL (distinct from []); num_segments preserved."""
@@ -430,4 +432,4 @@ class TestAggregateSessionNeutrality:
         rows = _vector_rows(inference_session, song)
         assert len(rows) == 1
         assert rows[0]["model_id"] == "m-ok"
-        assert _decode_embedding(rows[0]["embedding"]) == tuple(good_vec)
+        assert _decode_embedding(rows[0]["embedding"]) == pytest.approx(tuple(good_vec), abs=1e-6)
