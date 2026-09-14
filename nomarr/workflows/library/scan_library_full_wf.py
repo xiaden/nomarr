@@ -28,6 +28,7 @@ from nomarr.components.library.library_scan_state_comp import transition_pipelin
 from nomarr.components.library.library_song_query_comp import (
     get_folder_rel_paths,
     get_songs_for_folder,
+    get_songs_in_exact_folder,
 )
 from nomarr.components.library.library_song_state_comp import transition_song_state
 from nomarr.components.library.move_detection_comp import (
@@ -178,13 +179,15 @@ def scan_library_full_workflow(
         # Step 5 — Per-folder scan. Unchanged/modified files are processed
         # immediately, same-locator rebases are applied immediately, and each
         # true new/move destination is resolved individually. Missing rows are
-        # NOT deleted here.
+        # NOT deleted here. The walk working set uses the exact-folder query
+        # because ``scan_folder_files`` reads a single directory non-recursively,
+        # so descendant rows are never needed by the walk.
         for folder in all_folders:
             _check_cancelled(stop_event)
             stats["folders_scanned"] += 1
             for attempt in range(2):
                 try:
-                    existing_for_folder = get_songs_for_folder(db, library, folder.rel_path)
+                    existing_for_folder = get_songs_in_exact_folder(db, library, folder.rel_path)
                     batch = scan_folder_files(
                         folder_path=Path(folder.abs_path),
                         library_root=library_root,
@@ -297,13 +300,20 @@ def scan_library_full_workflow(
             update_scan_progress(db, library, progress=stats["files_discovered"])
 
         # Step 6 — Deferred, scoped cleanup. Only successfully-walked and vanished
-        # folders are eligible; failed folders are never touched. ``get_songs_for_folder``
-        # is prefix-recursive, so an eligible ancestor's lookup also surfaces rows in
-        # nested descendant folders. Per row, reuse the candidate source-presence guard:
-        # delete only rows whose own normalized parent folder was reconciled by this
-        # scan AND whose current absolute path no longer exists. This keeps rows in a
-        # nested failed subtree out of the cleanup scope (a relocated row now points at
-        # its new, existing path and is not deleted).
+        # folders are eligible; failed folders are never touched. Cleanup deliberately
+        # uses the prefix-recursive ``get_songs_for_folder`` rather than the exact-folder
+        # query: exact-folder would miss persisted rows whose parent folder has no
+        # ``library_folders`` record (reachable when ``save_folder_record`` fails after
+        # ``upsert_scanned_files``/``add_songs_to_library_batch`` commits the rows and the
+        # folder is later removed from disk). Such a folder is in neither
+        # ``reconciled_folder_paths`` nor ``vanished_folder_paths``, so exact per-folder
+        # iteration would never visit it. Recursive retrieval from a reconciled/vanished
+        # ancestor still surfaces those rows, and the absent guard below then deletes
+        # them. Per row, reuse the candidate source-presence guard: delete only rows
+        # whose own normalized parent folder was reconciled by this scan AND whose current
+        # absolute path no longer exists. This keeps rows in a nested failed subtree out
+        # of the cleanup scope (a relocated row now points at its new, existing path and
+        # is not deleted).
         for rel_path in (*reconciled_folder_paths, *vanished_folder_paths):
             _check_cancelled(stop_event)
             folder_rows = get_songs_for_folder(db, library, rel_path)

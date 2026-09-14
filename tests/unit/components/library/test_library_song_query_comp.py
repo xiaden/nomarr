@@ -37,6 +37,7 @@ from nomarr.components.library.library_song_query_comp import (
     get_songs_by_paths_bulk,
     get_songs_for_folder,
     get_songs_for_folders,
+    get_songs_in_exact_folder,
     get_tagged_file_paths,
     get_tracks_for_matching,
     list_songs,
@@ -697,6 +698,22 @@ class TestFolderStateAnnotations:
         # candidate carries a semantic locator (never an id)
         assert isinstance(result["/music/album/a.flac"].candidate.identity, SongIdentity)
         assert not hasattr(result["/music/album/a.flac"].candidate.song, "song_id")
+
+    @pytest.mark.unit
+    def test_get_songs_in_exact_folder_returns_state_tagged_keyed_by_path(self) -> None:
+        db = _db()
+        song_a = _song("album/a.flac")
+        song_b = _song("album/b.flac")
+        db.library.list_songs_in_exact_folder.return_value = [song_a, song_b]
+        db.library.list_songs_with_state.return_value = [_candidate(song_a)]
+        result = get_songs_in_exact_folder(db, MUSIC_LIB, "album")
+        assert set(result) == {"/music/album/a.flac", "/music/album/b.flac"}
+        assert all(isinstance(v, StateTaggedSong) for v in result.values())
+        assert result["/music/album/a.flac"].has_tagged_state is True
+        assert result["/music/album/b.flac"].has_tagged_state is False
+        # The exact accessor is used, never the recursive one.
+        db.library.list_songs_in_exact_folder.assert_called_once_with(MUSIC_LIB, "album")
+        db.library.list_songs_for_folder.assert_not_called()
 
     @pytest.mark.unit
     def test_get_songs_for_folders_filters_across_folders(self, song_state_contract) -> None:

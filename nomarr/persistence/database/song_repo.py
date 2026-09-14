@@ -553,7 +553,14 @@ class SongRepository:
             return ChromaprintSongRows(songs=rows[:limit], complete=len(rows) <= limit)
 
     def list_songs_for_folder(self, library_id: int, folder_rel_path: str) -> list[SongRow]:
-        """Return songs whose relative path is beneath the requested folder."""
+        """Return songs whose relative path is beneath the requested folder.
+
+        For a non-root folder this is prefix-RECURSIVE: it returns the whole
+        descendant subtree, not just direct members. At the library root
+        (``""`` or ``"."``) only root-level direct members are returned, since
+        there is no parent folder to recurse beneath. For direct members of
+        exactly one folder use :meth:`list_songs_in_exact_folder`.
+        """
         with map_persistence_exceptions():
             if folder_rel_path in ("", "."):
                 stmt = select(_T).where(
@@ -568,6 +575,33 @@ class SongRepository:
             stmt = select(_T).where(
                 _T.c.library_id == library_id,
                 _T.c.normalized_path.like(escaped_prefix + "%", escape="\\"),
+            )
+            result = self._session.execute(stmt)
+            return [_row_to_dto(r) for r in result.all()]
+
+    def list_songs_in_exact_folder(self, library_id: int, folder_rel_path: str) -> list[SongRow]:
+        """Return songs that are DIRECT members of exactly one folder.
+
+        A direct member's ``normalized_path`` has the folder as its parent
+        (``<folder>/<name>``) with no deeper segment. Nested descendants are
+        excluded by the negative wildcard predicate. Use
+        :meth:`list_songs_for_folder` for the recursive whole-subtree read.
+        """
+        with map_persistence_exceptions():
+            if folder_rel_path in ("", "."):
+                stmt = select(_T).where(
+                    _T.c.library_id == library_id,
+                    ~_T.c.normalized_path.like("%/%"),
+                )
+                result = self._session.execute(stmt)
+                return [_row_to_dto(r) for r in result.all()]
+
+            prefix = folder_rel_path.rstrip("/") + "/"
+            escaped_prefix = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            stmt = select(_T).where(
+                _T.c.library_id == library_id,
+                _T.c.normalized_path.like(escaped_prefix + "%", escape="\\"),
+                ~_T.c.normalized_path.like(escaped_prefix + "%/%", escape="\\"),
             )
             result = self._session.execute(stmt)
             return [_row_to_dto(r) for r in result.all()]

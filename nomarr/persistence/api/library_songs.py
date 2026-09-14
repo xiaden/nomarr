@@ -870,9 +870,20 @@ class LibrarySongsDb:
         library: Library,
         folder_rel_path: str,
     ) -> list[Song]:
-        """Return domain songs within a specific folder of a library."""
+        """Return domain songs beneath a folder (prefix-recursive; at the library root, direct members only)."""
         library_id = self._resolve_library_id(library)
         return [song_row_to_domain(row) for row in self._song_repo.list_songs_for_folder(library_id, folder_rel_path)]
+
+    def list_songs_in_exact_folder(
+        self,
+        library: Library,
+        folder_rel_path: str,
+    ) -> list[Song]:
+        """Return domain songs that are direct members of exactly one folder of a library."""
+        library_id = self._resolve_library_id(library)
+        return [
+            song_row_to_domain(row) for row in self._song_repo.list_songs_in_exact_folder(library_id, folder_rel_path)
+        ]
 
     def update_song_calibration_hash(self, song: SongIdentity, calibration_hash: str) -> bool:
         """Persist a calibration hash addressed by semantic song identity."""

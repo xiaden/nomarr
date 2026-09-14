@@ -740,9 +740,34 @@ def _state_tagged_songs(
 
 
 def get_songs_for_folder(db: Database, library: Library, folder_rel_path: str) -> dict[str, StateTaggedSong]:
-    """Get ``StateTaggedSong`` values for a single folder, keyed by physical path."""
+    """Get ``StateTaggedSong`` values for a folder subtree, keyed by physical path.
+
+    Prefix-recursive for a non-root folder: nested descendant folders are
+    included. At the library root (``""`` or ``"."``) only root-level direct
+    members are returned. For direct members of exactly one folder use
+    :func:`get_songs_in_exact_folder`.
+    """
     library_identity = _library_identity(library)
     songs = db.library.list_songs_for_folder(library, folder_rel_path)
+    return {
+        state_tagged.candidate.song.path: state_tagged
+        for state_tagged in _state_tagged_songs(db, songs, library_identity)
+        if isinstance(state_tagged.candidate.song.path, str)
+    }
+
+
+def get_songs_in_exact_folder(
+    db: Database,
+    library: Library,
+    folder_rel_path: str,
+) -> dict[str, StateTaggedSong]:
+    """Get ``StateTaggedSong`` values for a folder's direct members, keyed by physical path.
+
+    Only rows whose ``normalized_path`` is a direct member of exactly
+    ``folder_rel_path`` are returned; nested descendant rows are excluded.
+    """
+    library_identity = _library_identity(library)
+    songs = db.library.list_songs_in_exact_folder(library, folder_rel_path)
     return {
         state_tagged.candidate.song.path: state_tagged
         for state_tagged in _state_tagged_songs(db, songs, library_identity)

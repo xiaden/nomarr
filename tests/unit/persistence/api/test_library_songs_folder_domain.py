@@ -319,6 +319,19 @@ def test_list_songs_for_folder_resolves_library_and_maps() -> None:
 
 
 @pytest.mark.unit
+def test_list_songs_in_exact_folder_resolves_library_and_maps() -> None:
+    songs, song_repo, _, library_repo = _make_songs()
+    library_repo.get_library_by_uuid = MagicMock(return_value=_library_row())
+    song_repo.list_songs_in_exact_folder = MagicMock(return_value=[_song_row()])
+
+    result = songs.list_songs_in_exact_folder(_main_library(), "Album")
+
+    song_repo.list_songs_in_exact_folder.assert_called_once_with(7, "Album")
+    assert result[0].path == "Album/track.mp3"
+    assert not hasattr(result[0], "song_id")  # generated songs.id stays persistence-private
+
+
+@pytest.mark.unit
 def test_count_songs_for_library_resolves_library() -> None:
     songs, song_repo, _, library_repo = _make_songs()
     library_repo.get_library_by_uuid = MagicMock(return_value=_library_row())

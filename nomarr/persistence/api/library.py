@@ -328,6 +328,13 @@ class LibraryDb:
     ) -> list[Song]:
         return self._songs.list_songs_for_folder(library, folder_rel_path)
 
+    def list_songs_in_exact_folder(
+        self,
+        library: Library,
+        folder_rel_path: str,
+    ) -> list[Song]:
+        return self._songs.list_songs_in_exact_folder(library, folder_rel_path)
+
     def list_tracks_for_matching(self, library: Library, *, limit: int | None = None) -> list[Song]:
         return self._songs.list_tracks_for_matching(library, limit=limit)
 

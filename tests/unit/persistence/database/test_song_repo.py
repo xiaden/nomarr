@@ -482,6 +482,55 @@ class TestSongRepository:
 
         assert [song["path"] for song in result] == ["/music/100%_complete/file1.mp3"]
 
+    def test_list_songs_in_exact_folder_returns_direct_members_only(self, pg_session) -> None:
+        """Exact-folder returns direct members only while the recursive read includes nested rows."""
+        lib_id = _create_library(pg_session)
+        _create_song(pg_session, lib_id, "/music/folder/file1.mp3", "folder/file1.mp3")
+        _create_song(pg_session, lib_id, "/music/folder/nested/deep.mp3", "folder/nested/deep.mp3")
+        repo = SongRepository(pg_session)
+
+        exact = repo.list_songs_in_exact_folder(lib_id, "folder")
+        recursive = repo.list_songs_for_folder(lib_id, "folder")
+
+        assert {s["normalized_path"] for s in exact} == {"folder/file1.mp3"}
+        # Pins the contract difference: the subtree read still returns the nested row.
+        assert {s["normalized_path"] for s in recursive} == {"folder/file1.mp3", "folder/nested/deep.mp3"}
+
+    def test_list_songs_in_exact_folder_handles_root_and_library_scope(self, pg_session) -> None:
+        """Root/dot queries return root-level direct members and exclude other libraries."""
+        lib_id = _create_library(pg_session)
+        other_lib_id = _create_library(pg_session)
+        _create_song(pg_session, lib_id, "/music/root.mp3", "root.mp3")
+        _create_song(pg_session, lib_id, "/music/folder/nested.mp3", "folder/nested.mp3")
+        _create_song(pg_session, other_lib_id, "/music/other-root.mp3", "other-root.mp3")
+        repo = SongRepository(pg_session)
+
+        assert [song["normalized_path"] for song in repo.list_songs_in_exact_folder(lib_id, "")] == ["root.mp3"]
+        assert [song["normalized_path"] for song in repo.list_songs_in_exact_folder(lib_id, ".")] == ["root.mp3"]
+
+    def test_list_songs_in_exact_folder_escapes_like_wildcards(self, pg_session) -> None:
+        """Wildcard characters match literally and nested rows are excluded."""
+        lib_id = _create_library(pg_session)
+        _create_song(pg_session, lib_id, "/music/100%_complete/file1.mp3", "100%_complete/file1.mp3")
+        _create_song(pg_session, lib_id, "/music/100%_complete/sub/x.mp3", "100%_complete/sub/x.mp3")
+        _create_song(pg_session, lib_id, "/music/100Xacomplete/file2.mp3", "100Xacomplete/file2.mp3")
+        repo = SongRepository(pg_session)
+
+        result = repo.list_songs_in_exact_folder(lib_id, "100%_complete")
+
+        assert [song["path"] for song in result] == ["/music/100%_complete/file1.mp3"]
+
+    def test_list_songs_in_exact_folder_escapes_backslash(self, pg_session) -> None:
+        """A literal backslash in the folder name is matched literally, not as LIKE's escape char."""
+        lib_id = _create_library(pg_session)
+        _create_song(pg_session, lib_id, "/music/a\\b/track.mp3", "a\\b/track.mp3")
+        _create_song(pg_session, lib_id, "/music/ab/track.mp3", "ab/track.mp3")
+        repo = SongRepository(pg_session)
+
+        result = repo.list_songs_in_exact_folder(lib_id, "a\\b")
+
+        assert [song["normalized_path"] for song in result] == ["a\\b/track.mp3"]
+
     def test_list_tracks_for_matching(self, pg_session) -> None:
         """list_tracks_for_matching should return songs ordered by id."""
         lib_id = _create_library(pg_session)
