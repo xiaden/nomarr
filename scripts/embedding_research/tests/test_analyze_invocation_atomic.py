@@ -15,8 +15,6 @@ incomplete-obligation run is never a completed analyze scope.
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 import pytest
 
 from scripts.embedding_research import run as run_mod
@@ -27,7 +25,6 @@ from scripts.embedding_research.db.analyze_scope import (
     record_analyze_invocation,
     terminalize_analyze_completed,
 )
-from scripts.embedding_research.db.identity_persistence import write_analysis_rows
 from scripts.embedding_research.db.provenance import write_run_provenance
 
 _BASE = 1_700_000_000_000
@@ -43,30 +40,8 @@ def _obligation(backbone: str) -> tuple[str, str]:
     return (backbone, _geometry_id(backbone))
 
 
-def _baseline_identity(backbone: str) -> SimpleNamespace:
-    return SimpleNamespace(
-        geometry_id=_geometry_id(backbone),
-        observation_group_sha256=f"observation:{backbone}",
-        geometry_semantics_version="gram-v1",
-        numerical_profile_digest="profile-digest",
-        threshold_id=f"observed-baseline:{backbone}",
-        structural_identity=f"temporal_global:observed-medoid:{backbone}",
-        search_representation_id=f"observed-medoid:{backbone}",
-        evaluation_id="evaluation",
-        scoring_semantics_version=1,
-        execution_id="execution",
-    )
-
-
 def _seed_baseline_evidence(con, run_id: str, backbone: str) -> str:
-    """Persist the MANDATORY observed baseline under its exact geometry identity."""
-    write_analysis_rows(
-        con,
-        run_id=run_id,
-        identity=_baseline_identity(backbone),
-        metrics={"baseline_present": 1.0},
-        evidence={"role": "mandatory-observed-baseline", "backbone": backbone},
-    )
+    """Persist the MANDATORY observed baseline reachability row under its exact geometry identity."""
     # The normalized baseline aggregate is the run-lifecycle reachability signal: a declared
     # backbone obligation resolves only when at least one row exists for (run_id, backbone).
     con.execute(
@@ -74,6 +49,13 @@ def _seed_baseline_evidence(con, run_id: str, backbone: str) -> str:
         "ruler,metric,k,value,evaluable_query_count,undefined_query_count,created_at_ms) "
         "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
         (run_id, "execution", "evaluation", backbone, "artist", "mrr", 10, 1.0, 1, 0, _BASE),
+    )
+    # A class-map row is the report-phase artifact signal that a completed analyze scope exists.
+    con.execute(
+        "INSERT INTO geometry_threshold_class_map (run_id,execution_id,evaluation_id,experiment,"
+        "threshold_index,threshold_value,threshold_id,corpus_search_class_id,comparable,reasons_json,created_at_ms) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        (run_id, "execution", "evaluation", "temporal_global", 0, 0.0, "t-000", "class:0", True, "[]", _BASE),
     )
     return _geometry_id(backbone)
 
@@ -98,7 +80,9 @@ def _count_analyze_rows(con, run_id: str) -> int:
 
 
 def _count_geometry_evidence(con, run_id: str) -> int:
-    return con.execute("SELECT count(*) FROM geometry_analysis_records WHERE run_id=?", (run_id,)).fetchone()[0]
+    return con.execute("SELECT count(*) FROM geometry_baseline_aggregate_metrics WHERE run_id=?", (run_id,)).fetchone()[
+        0
+    ]
 
 
 # ── failure after the first class ─────────────────────────────────────────────

@@ -1,14 +1,12 @@
-"""Focused synthetic tests for the corrective Plan D geometry corpus persistence.
+"""Focused synthetic tests for normalized geometry corpus persistence.
 
-They prove that one complete corpus analysis publishes atomically through the single
-exact-identity DuckDB APIs (threshold-to-representation map + mandatory observed baseline +
-aggregate/per-song/ruler/counter evidence + membership/missing-song/comparability evidence +
-per-query ruler metrics + winner and baseline neighborhoods + invocation/terminal lifecycle),
-that every geometry binding is revalidated before commit, that a non-comparable corpus is
-published with explicit reasons instead of being refused, that any write failure rolls back
-every output, and that the exact readers reject incomplete invocation state, duplicate rows,
-non-finite values and mixed/stale evidence.  No alternate vocabulary or dual schema, real
-corpus, filesystem Gram storage, or threshold-result table is involved.
+They prove that one complete corpus analysis publishes atomically through the seven
+normalized result surfaces + one compact provenance row + the invocation/terminal
+lifecycle, that a non-comparable corpus is published with explicit reasons instead of
+being refused, that any write failure rolls back every output, and that the normalized
+reader rejects incomplete invocation state and refuses a pre-cut database.  No alternate
+vocabulary or dual schema, real corpus, filesystem Gram storage, or nested evidence table
+is involved.
 """
 
 from __future__ import annotations
@@ -27,18 +25,16 @@ from scripts.embedding_research.common.geometry_analysis import (
     GeometryCorpusAnalysis,
     GeometryCorpusHypothesis,
     GeometryEvaluationCorpusEntry,
-    GeometryQueryEvidence,
     GeometryRepresentationRoster,
     GeometryScoreBundle,
     GeometrySongAnalysis,
     GeometrySongRequest,
     GeometryThresholdClassRow,
     GeometryThresholdStructuralRow,
-    NeighborhoodEntry,
+    RankedNeighbor,
     build_geometry_corpus_identity,
-    read_geometry_corpus_analysis,
-    read_geometry_corpus_evidence,
-    read_geometry_threshold_map,
+    corpus_result_identity_from_provenance,
+    read_geometry_corpus_analysis_normalized,
     write_geometry_corpus_analysis,
 )
 from scripts.embedding_research.common.threshold_analysis import (
@@ -53,7 +49,7 @@ from scripts.embedding_research.db import ensure_schema, write_geometry
 from scripts.embedding_research.db.analyze_scope import invocation_state, record_analyze_invocation
 from scripts.embedding_research.db.geometry import GeometryIdentity, IntegrityRefused
 from scripts.embedding_research.db.geometry_profile import GeometryProfile
-from scripts.embedding_research.db.identity_persistence import IdentityRefusal, write_analysis_rows
+from scripts.embedding_research.db.result_surfaces import read_result_provenance
 from scripts.embedding_research.helpers.corpus_identity import RepresentationState
 
 pytestmark = pytest.mark.unit
@@ -125,13 +121,6 @@ def _representation(record, *, name: str, baseline: bool = False) -> FrozenSearc
     )
 
 
-def _neighborhood(count: int, *, prefix: str = "rep") -> tuple[NeighborhoodEntry, ...]:
-    return tuple(
-        NeighborhoodEntry(rank, f"song-{rank + 2}", "backbone-a", f"{prefix}-{rank}", 1.0 - rank * 0.001)
-        for rank in range(count)
-    )
-
-
 def _song_analysis(
     record,
     *,
@@ -139,8 +128,6 @@ def _song_analysis(
     roster: GeometryRepresentationRoster,
     scores: GeometryScoreBundle,
     state: RepresentationState | None = None,
-    neighborhood: tuple[NeighborhoodEntry, ...] = (),
-    baseline_neighborhood: tuple[NeighborhoodEntry, ...] = (),
 ) -> GeometrySongAnalysis:
     request = GeometrySongRequest(
         song_id=record.identity.song_id,
@@ -160,8 +147,8 @@ def _song_analysis(
         roster=roster,
         scores=scores,
         state=state or RepresentationState(True, True, True, ()),
-        neighborhood=neighborhood,
-        baseline_neighborhood=baseline_neighborhood,
+        neighborhood=(RankedNeighbor(0, "song-2", "backbone-a", "rep-0", 0.9),),
+        baseline_neighborhood=(RankedNeighbor(0, "song-2", "backbone-a", "observed-medoid-0", 0.4),),
         threshold_id=analysis.results[0].threshold.threshold_id,
         collapse_class_id="collapse:representation-a",
     )
@@ -172,8 +159,6 @@ def _corpus(
     *,
     comparable: bool = True,
     state: RepresentationState | None = None,
-    neighborhood: tuple[NeighborhoodEntry, ...] = (),
-    baseline_neighborhood: tuple[NeighborhoodEntry, ...] = (),
 ) -> GeometryCorpusAnalysis:
     threshold = ThresholdSpec(0, 0.0, "temporal_global:threshold:0:0.0")
     structural = StructuralIdentity(threshold.threshold_id, 0, (), (), "structural-a")
@@ -209,24 +194,7 @@ def _corpus(
         baseline_representation_id="baseline-a",
         evaluation_comparable=comparable,
     )
-    query = _song_analysis(
-        record,
-        analysis=analysis,
-        roster=roster,
-        scores=scores,
-        state=state,
-        neighborhood=neighborhood,
-        baseline_neighborhood=baseline_neighborhood,
-    )
-    ruler = {
-        "active": 1.0,
-        "n_songs": 1.0,
-        "n_compared": 1.0,
-        "missing_count": 0.0,
-        "mean_winner": 0.5,
-        "mean_baseline": 0.25,
-        "mean_delta": 0.25,
-    }
+    query = _song_analysis(record, analysis=analysis, roster=roster, scores=scores, state=state)
     hypothesis = GeometryCorpusHypothesis(
         threshold_id=threshold.threshold_id,
         collapse_class_id="collapse:representation-a",
@@ -251,23 +219,12 @@ def _corpus(
         roster=roster,
         scores=scores,
         baseline=baseline,
-        artist_metrics=dict(ruler),
-        genre_metrics=dict(ruler),
-        head_metrics=dict(ruler),
-        per_song_metrics={
-            record.identity.song_id: {
-                "winner_score": 0.5,
-                "comparable": 1.0,
-                "baseline_score": 0.25,
-                "baseline_delta": 0.25,
-            }
-        },
-        baseline_deltas={"artist": 0.25},
         comparable=comparable,
         counters=GeometryAnalysisCounters(1, 1, 1, 1, 1, 1, 0),
         # A threshold-independent baseline aggregate makes the backbone obligation resolve so the
-        # run terminalizes exactly once; the writer's normalized surfaces are otherwise empty here.
+        # run terminalizes exactly once.
         baseline_aggregate_metrics=(GeometryBaselineAggregateMetric("backbone-a", "artist", "mrr", 10, 0.25, 1, 0),),
+        reasons=() if comparable else ("zero_searchable",),
         queries=(query,),
         hypotheses=(hypothesis,),
         evaluation_corpus=(
@@ -326,7 +283,14 @@ def _raw_identity(record) -> AnalysisEvidenceIdentity:
     )
 
 
-def test_corpus_roundtrip_exact_identity_and_terminal() -> None:
+def _read_normalized(con, _record):
+    provenance = read_result_provenance(con, run_id=_RUN_ID)
+    assert len(provenance) == 1
+    identity = corpus_result_identity_from_provenance(provenance[0])
+    return read_geometry_corpus_analysis_normalized(con, run_id=_RUN_ID, identity=identity)
+
+
+def test_corpus_roundtrip_normalized_and_terminal() -> None:
     con = duckdb.connect(":memory:")
     ensure_schema(con)
     record = _seed_geometry(con)
@@ -337,77 +301,21 @@ def test_corpus_roundtrip_exact_identity_and_terminal() -> None:
     assert state["obligations_present"] is True
     assert state["terminal_completed"] is True
     assert (
-        con.execute(
-            "SELECT count(*) FROM geometry_analysis_records "
-            "WHERE run_id=? AND metric='baseline_present' AND threshold_id=?",
-            (_RUN_ID, "observed-baseline:backbone-a"),
-        ).fetchone()[0]
+        con.execute("SELECT count(*) FROM geometry_baseline_aggregate_metrics WHERE run_id=?", (_RUN_ID,)).fetchone()[0]
         > 0
     )
 
-    identity = build_geometry_corpus_identity(result)
-    loaded = read_geometry_corpus_analysis(con, run_id=_RUN_ID, identity=identity)
+    # The corpus identity is still derivable from the result for identity assertions.
+    assert build_geometry_corpus_identity(result).evaluation_id == _EVALUATION_ID
+
+    loaded = _read_normalized(con, record)
     assert loaded.run_id == _RUN_ID
-    assert loaded.execution_id == _EXECUTION_ID
-    assert loaded.experiment == "temporal_global"
-    assert loaded.comparable is True
-    assert loaded.artist_metrics["mean_winner"] == pytest.approx(0.5)
-    assert loaded.per_song_metrics[record.identity.song_id]["baseline_delta"] == pytest.approx(0.25)
-    assert loaded.baseline_deltas["artist"] == pytest.approx(0.25)
-    assert loaded.counters == GeometryAnalysisCounters(1, 1, 1, 1, 1, 1, 0)
-
-    wrong = AnalysisEvidenceIdentity(
-        geometry_id="superseded",
-        observation_group_sha256=record.identity.observation_group_sha256,
-        geometry_semantics_version=record.identity.geometry_semantics_version,
-        numerical_profile_digest=record.identity.numerical_profile_digest,
-        threshold_id="corpus",
-        structural_identity="temporal_global:corpus",
-        evaluation_id=_EVALUATION_ID,
-        search_representation_id="corpus",
-        scoring_semantics_version=1,
-        execution_id=_EXECUTION_ID,
-    )
-    with pytest.raises(IdentityRefusal):
-        read_geometry_corpus_analysis(con, run_id=_RUN_ID, identity=wrong)
-    con.close()
-
-
-def test_threshold_map_and_corpus_evidence_roundtrip() -> None:
-    con = duckdb.connect(":memory:")
-    ensure_schema(con)
-    record = _seed_geometry(con)
-    result = _corpus(
-        record, neighborhood=_neighborhood(100), baseline_neighborhood=_neighborhood(100, prefix="observed-medoid")
-    )
-    write_geometry_corpus_analysis(con, run_id=_RUN_ID, result=result)
-
-    identity = build_geometry_corpus_identity(result)
-    threshold_map = read_geometry_threshold_map(con, run_id=_RUN_ID, identity=identity)
-    assert len(threshold_map) == 1
-    assert threshold_map[0].threshold_id == "temporal_global:threshold:0:0.0"
-    assert threshold_map[0].structural_identity == "structural-a"
-    assert threshold_map[0].search_representation_id == "representation-a"
-    assert threshold_map[0].song_id == record.identity.song_id
-    assert threshold_map[0].comparable is True
-
-    evidence = read_geometry_corpus_evidence(con, run_id=_RUN_ID, identity=identity)
-    assert evidence.comparable is True
-    assert len(evidence.membership) == 1
-    assert evidence.membership[0].observation_group_sha256 == record.identity.observation_group_sha256
-    assert evidence.missing_searchable == ()
-    assert len(evidence.queries) == 1
-    query = evidence.queries[0]
-    assert isinstance(query, GeometryQueryEvidence)
-    assert query.winner_score == pytest.approx(0.5)
-    assert query.baseline_score == pytest.approx(0.25)
-    assert query.baseline_delta == pytest.approx(0.25)
-    assert query.searchable_count == 3
-    assert [entry.rank for entry in query.neighborhood] == list(range(100))
-    assert len(query.neighborhood) == 100
-    assert len(query.baseline_neighborhood) == 100
-    assert query.neighborhood[0].search_representation_id == "rep-0"
-    assert query.baseline_neighborhood[0].search_representation_id == "observed-medoid-0"
+    assert loaded.provenance.execution_id == _EXECUTION_ID
+    assert loaded.provenance.experiment == "temporal_global"
+    assert loaded.provenance.comparable is True
+    assert len(loaded.evaluation_corpus) == 1
+    assert len(loaded.threshold_class_map) == 1
+    assert len(loaded.baseline_aggregate_metrics) == 1
     con.close()
 
 
@@ -420,15 +328,9 @@ def test_non_comparable_corpus_publishes_explicit_reasons() -> None:
     write_geometry_corpus_analysis(con, run_id=_RUN_ID, result=result)
 
     assert invocation_state(con, run_id=_RUN_ID)["terminal_completed"] is True
-    identity = build_geometry_corpus_identity(result)
-    loaded = read_geometry_corpus_analysis(con, run_id=_RUN_ID, identity=identity)
-    assert loaded.comparable is False
-    assert "zero_searchable" in loaded.reasons
-
-    evidence = read_geometry_corpus_evidence(con, run_id=_RUN_ID, identity=identity)
-    assert evidence.comparable is False
-    assert "zero_searchable" in evidence.reasons
-    assert evidence.queries[0].comparable is False
+    loaded = _read_normalized(con, record)
+    assert loaded.provenance.comparable is False
+    assert "zero_searchable" in loaded.provenance.reasons
     con.close()
 
 
@@ -450,12 +352,12 @@ def test_corpus_rolls_back_on_injected_write_failure() -> None:
 
     class _FailingConnection:
         def execute(self, sql, params=None):
-            if isinstance(sql, str) and "geometry_analysis_records" in sql:
+            if isinstance(sql, str) and "geometry_baseline_aggregate_metrics" in sql:
                 raise RuntimeError("injected corpus write failure")
             return con.execute(sql, params) if params is not None else con.execute(sql)
 
         def executemany(self, sql, params):
-            if isinstance(sql, str) and "geometry_analysis_records" in sql:
+            if isinstance(sql, str) and "geometry_baseline_aggregate_metrics" in sql:
                 raise RuntimeError("injected corpus write failure")
             return con.executemany(sql, params)
 
@@ -465,7 +367,7 @@ def test_corpus_rolls_back_on_injected_write_failure() -> None:
     with pytest.raises(RuntimeError, match="injected corpus write failure"):
         write_geometry_corpus_analysis(_FailingConnection(), run_id=_RUN_ID, result=_corpus(record))
 
-    assert con.execute("SELECT count(*) FROM geometry_analysis_records").fetchone()[0] == 0
+    assert con.execute("SELECT count(*) FROM geometry_baseline_aggregate_metrics").fetchone()[0] == 0
     assert invocation_state(con, run_id=_RUN_ID)["obligations_present"] is False
     con.close()
 
@@ -476,65 +378,12 @@ def test_reader_rejects_incomplete_invocation_state() -> None:
     record = _seed_geometry(con)
     identity = _raw_identity(record)
     record_analyze_invocation(con, run_id="run-open", backbones=[])
-    write_analysis_rows(
-        con,
-        run_id="run-open",
-        identity=identity,
-        metrics={"corpus_present": 1.0},
-        evidence={"role": "corpus"},
-    )
-    with pytest.raises(ValueError, match="invocation state is incomplete"):
-        read_geometry_corpus_analysis(con, run_id="run-open", identity=identity)
+    with pytest.raises(IntegrityRefused, match="terminal record is missing"):
+        read_geometry_corpus_analysis_normalized(con, run_id="run-open", identity=identity)
     con.close()
 
 
-def test_reader_rejects_duplicate_and_nonfinite_rows() -> None:
-    con = duckdb.connect(":memory:")
-    ensure_schema(con)
-    record = _seed_geometry(con)
-    result = _corpus(record)
-    write_geometry_corpus_analysis(con, run_id=_RUN_ID, result=result)
-    identity = build_geometry_corpus_identity(result)
-    evidence = con.execute(
-        "SELECT evidence_json FROM geometry_analysis_records WHERE run_id=? AND threshold_id='corpus' LIMIT 1",
-        (_RUN_ID,),
-    ).fetchone()[0]
-
-    columns = (
-        "run_id, geometry_id, observation_group_sha256, geometry_semantics_version, numerical_profile_digest,"
-        " threshold_id, structural_identity, search_representation_id, evaluation_id,"
-        " scoring_semantics_version, execution_id, metric, value, evidence_json, created_at_ms"
-    )
-    base = (
-        _RUN_ID,
-        identity.geometry_id,
-        identity.observation_group_sha256,
-        identity.geometry_semantics_version,
-        identity.numerical_profile_digest,
-        "corpus",
-        "temporal_global:corpus",
-        "corpus",
-        _EVALUATION_ID,
-        1,
-        _EXECUTION_ID,
-    )
-    con.execute(
-        f"INSERT INTO geometry_analysis_records ({columns}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        [*base, "artist_active", 1.0, evidence, 1],
-    )
-    with pytest.raises(ValueError, match="duplicate geometry corpus evidence rows"):
-        read_geometry_corpus_analysis(con, run_id=_RUN_ID, identity=identity)
-    con.execute("DELETE FROM geometry_analysis_records WHERE metric='artist_active'")
-    con.execute(
-        f"INSERT INTO geometry_analysis_records ({columns}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        [*base, "nonfinite_probe", float("nan"), evidence, 1],
-    )
-    with pytest.raises(ValueError, match="non-finite geometry evidence"):
-        read_geometry_corpus_analysis(con, run_id=_RUN_ID, identity=identity)
-    con.close()
-
-
-def test_empirical_publication_requires_matching_frozen_head_provenance() -> None:
+def test_empirical_publication_persists_head_provenance() -> None:
     con = duckdb.connect(":memory:")
     ensure_schema(con)
     record = _seed_geometry(con)
@@ -549,10 +398,9 @@ def test_empirical_publication_requires_matching_frozen_head_provenance() -> Non
         },
     )
     write_geometry_corpus_analysis(con, run_id=_RUN_ID, result=empirical)
-    identity = build_geometry_corpus_identity(empirical)
-    loaded = read_geometry_corpus_evidence(con, run_id=_RUN_ID, identity=identity)
-    assert loaded.evidence_mode == "empirical_request"
-    assert loaded.head_evidence_provenance["head_suite_identities"] == ["head-set-a"]
+    provenance = read_result_provenance(con, run_id=_RUN_ID)[0]
+    assert provenance["evidence_mode"] == "empirical_request"
+    assert provenance["head_evidence_provenance"]["head_suite_identities"] == ["head-set-a"]
     con.close()
 
 
@@ -563,7 +411,7 @@ def test_empirical_publication_refuses_missing_head_provenance_atomically() -> N
     empirical = replace(_corpus(record), synthetic_only=False, evidence_mode="empirical_request")
     with pytest.raises(IntegrityRefused, match="frozen-head provenance"):
         write_geometry_corpus_analysis(con, run_id=_RUN_ID, result=empirical)
-    assert con.execute("SELECT count(*) FROM geometry_analysis_records").fetchone()[0] == 0
+    assert con.execute("SELECT count(*) FROM geometry_baseline_aggregate_metrics").fetchone()[0] == 0
     assert invocation_state(con, run_id=_RUN_ID)["obligations_present"] is False
     con.close()
 
@@ -574,5 +422,5 @@ def test_writer_rejects_mismatched_run_and_missing_baseline() -> None:
     record = _seed_geometry(con)
     with pytest.raises(ValueError, match="run identity does not match"):
         write_geometry_corpus_analysis(con, run_id="run-other", result=_corpus(record))
-    assert con.execute("SELECT count(*) FROM geometry_analysis_records").fetchone()[0] == 0
+    assert con.execute("SELECT count(*) FROM geometry_baseline_aggregate_metrics").fetchone()[0] == 0
     con.close()

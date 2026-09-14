@@ -1,63 +1,40 @@
 """Geometry winners report section.
 
-Renders winner representation evidence and the observed global-medoid baseline as two
+Renders class-scoped neighborhood evidence and the observed global-medoid baseline as two
 distinct tables.  A refused/empty scope renders an explicit refusal instead of a
 successful empty winners section.
 """
 
 from __future__ import annotations
 
-import pandas as pd
+from dataclasses import asdict
+from typing import Any
 
 from ._base import make_section, make_table
-from ._winners import baseline_rows, winner_rows
 
 
-def section_winners(
-    winners_df: pd.DataFrame | None,
-    baseline_df: pd.DataFrame | None = None,
-    *,
-    corpus_evidence: dict | None = None,
-) -> dict:
-    """Render canonical winner and global-medoid baseline neighborhoods separately."""
-    if corpus_evidence is not None:
-        queries = corpus_evidence.get("queries") or []
-        winners = pd.DataFrame(
-            [
-                {"query_song_id": q.get("song_id"), **entry}
-                for q in queries
-                if isinstance(q, dict)
-                for entry in q.get("neighborhood") or []
-            ]
-        )
-        baselines = pd.DataFrame(
-            [
-                {"query_song_id": q.get("song_id"), **entry}
-                for q in queries
-                if isinstance(q, dict)
-                for entry in q.get("baseline_neighborhood") or []
-            ]
-        )
-    else:
-        winners = winner_rows(winners_df)
-        baselines = baseline_rows(baseline_df)
+def section_winners(result: Any = None) -> dict:
+    """Render class-scoped neighborhoods and the baseline neighborhoods separately."""
     tables: list[dict] = []
-    if not winners.empty:
-        tables.append(
-            make_table(
-                winners.to_dict("records"),
-                id="geometry_representations",
-                title="Geometry winner representation evidence",
+    if result is not None:
+        winner_rows = [asdict(row) for row in result.class_neighborhoods]
+        baseline_rows = [asdict(row) for row in result.baseline_neighborhoods]
+        if winner_rows:
+            tables.append(
+                make_table(
+                    winner_rows,
+                    id="geometry_representations",
+                    title="Class-scoped geometry neighborhood evidence",
+                )
             )
-        )
-    if not baselines.empty:
-        tables.append(
-            make_table(
-                baselines.to_dict("records"),
-                id="observed_global_medoid_baseline",
-                title="Observed global-medoid baseline (separate from winners)",
+        if baseline_rows:
+            tables.append(
+                make_table(
+                    baseline_rows,
+                    id="observed_global_medoid_baseline",
+                    title="Observed global-medoid baseline (separate from winners)",
+                )
             )
-        )
     if not tables:
         return make_section(
             "winners",
@@ -69,8 +46,8 @@ def section_winners(
         "winners",
         "Geometry Winners & Observed Baseline",
         description=(
-            "Winner threshold representation evidence, with the mandatory observed global-medoid "
-            "baseline rendered separately. The baseline is never a winner candidate."
+            "Class-scoped neighborhood evidence, with the single threshold-independent observed "
+            "global-medoid baseline rendered separately. The baseline is never a winner candidate."
         ),
         tables=tables,
     )

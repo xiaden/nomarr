@@ -17,13 +17,14 @@ import numpy as np
 from scripts.embedding_research.db._schema import ensure_schema, upsert_phase_timing
 from scripts.embedding_research.db.geometry import GeometryRecord, write_geometry
 from scripts.embedding_research.db.geometry_profile import GeometryProfile
-from scripts.embedding_research.db.identity_persistence import write_analysis_rows, write_head_evidence
+from scripts.embedding_research.db.identity_persistence import write_head_evidence
 from scripts.embedding_research.db.provenance import write_run_provenance
 from scripts.embedding_research.db.songs import upsert_song
 
 PHASE_NAMES = ("ingest", "embed", "infer-heads", "geometry", "analyze", "head-analysis", "report")
 RUN_ID = "fixture-geometry-run"
 RUN_TS = "fixture-run"
+_ANALYZE_STARTED_MS = 1_700_000_000_000 + PHASE_NAMES.index("analyze") * 2_000
 BACKBONES = ("effnet", "musicnn")
 SONGS = (
     ("s1", "Alice", "jazz"),
@@ -175,38 +176,230 @@ def seed_geometry(con, *, run_id: str = RUN_ID, backbones: tuple[str, ...] = BAC
     return tuple(records)
 
 
-def seed_analysis(con, *, run_id: str = RUN_ID, records: tuple[GeometryRecord, ...]) -> None:
-    """Seed exact winner threshold evidence plus the mandatory observed baseline."""
+def _song_anchors(records: tuple[GeometryRecord, ...]) -> tuple[GeometryRecord, ...]:
+    """One representative geometry record per distinct song (backbone-independent)."""
+    seen: dict[str, GeometryRecord] = {}
     for record in records:
-        for threshold_id in THRESHOLD_IDS:
-            identity = analysis_identity(
-                record,
-                threshold_id=threshold_id,
-                structural_identity=f"{EXPERIMENT}:{record.identity.backbone}:{threshold_id}",
-                search_representation_id=f"rep:{record.identity.song_id}:{record.identity.backbone}:{threshold_id}",
-            )
-            write_analysis_rows(
-                con,
-                run_id=run_id,
-                identity=identity,
-                metrics={"total_searchable": 1.0, "searchable_weight_sum": 1.0},
-                evidence={"role": "threshold", "experiment": EXPERIMENT},
-            )
-    for backbone in BACKBONES:
-        anchor = next(record for record in records if record.identity.backbone == backbone)
-        baseline_identity = analysis_identity(
-            anchor,
-            threshold_id=f"observed-baseline:{backbone}",
-            structural_identity=f"{EXPERIMENT}:observed-medoid:{backbone}",
-            search_representation_id=f"observed-medoid:{backbone}",
+        seen.setdefault(record.identity.song_id, record)
+    return tuple(seen.values())
+
+
+def _query_candidate_pairs(records: tuple[GeometryRecord, ...]) -> tuple[tuple[GeometryRecord, GeometryRecord], ...]:
+    """Ordered non-self (query, candidate) anchor pairs over the distinct songs."""
+    anchors = _song_anchors(records)
+    return tuple(
+        (query, candidate)
+        for query in anchors
+        for candidate in anchors
+        if query.identity.song_id != candidate.identity.song_id
+    )
+
+
+def seed_analysis(con, *, run_id: str = RUN_ID, records: tuple[GeometryRecord, ...]) -> None:
+    """Seed the normalized Experiment One result surfaces plus the invocation lifecycle."""
+    from scripts.embedding_research.common.geometry_analysis import (
+        GeometryBaselineAggregateMetric,
+        GeometryBaselineNeighborhood,
+        GeometryBaselineQueryMetric,
+        GeometryClassAggregateMetric,
+        GeometryClassNeighborhood,
+        GeometryClassQueryMetric,
+        GeometryEvaluationCorpusEntry,
+        GeometryResultProvenanceRow,
+        GeometryThresholdClassRow,
+        GeometryThresholdStructuralRow,
+    )
+    from scripts.embedding_research.db.analyze_scope import record_analyze_invocation, terminalize_analyze_completed
+    from scripts.embedding_research.db.identity_persistence import (
+        write_evaluation_corpus_in_transaction,
+        write_threshold_class_map_in_transaction,
+        write_threshold_structural_in_transaction,
+    )
+    from scripts.embedding_research.db.result_surfaces import (
+        write_baseline_aggregate_metrics_in_transaction,
+        write_baseline_neighborhoods_in_transaction,
+        write_baseline_query_metrics_in_transaction,
+        write_class_aggregate_metrics_in_transaction,
+        write_class_neighborhoods_in_transaction,
+        write_class_query_metrics_in_transaction,
+        write_result_provenance_in_transaction,
+    )
+
+    anchors = _song_anchors(records)
+    backbones = sorted({record.identity.backbone for record in records})
+    corpus = tuple(
+        GeometryEvaluationCorpusEntry(
+            song_id=record.identity.song_id,
+            backbone=record.identity.backbone,
+            geometry_id=record.geometry_id,
+            observation_group_sha256=record.identity.observation_group_sha256,
+            numerical_profile_digest=record.identity.numerical_profile_digest,
+            searchable_count=1,
+            comparable=True,
+            reasons=(),
+            baseline_valid=True,
         )
-        write_analysis_rows(
-            con,
-            run_id=run_id,
-            identity=baseline_identity,
-            metrics={"baseline_present": 1.0, "baseline_delta_artist": 0.05},
-            evidence={"role": "mandatory-observed-baseline", "backbone": backbone},
+        for record in records
+    )
+    threshold_rows = tuple(
+        GeometryThresholdClassRow(index, threshold_id, float(index), f"class:{threshold_id}", True, ())
+        for index, threshold_id in enumerate(THRESHOLD_IDS)
+    )
+    structural_rows = tuple(
+        GeometryThresholdStructuralRow(
+            song_id=record.identity.song_id,
+            backbone=record.identity.backbone,
+            threshold_index=index,
+            threshold_id=threshold_id,
+            structural_identity=f"{EXPERIMENT}:{record.identity.backbone}:{threshold_id}",
+            search_representation_id=f"rep:{record.identity.song_id}:{record.identity.backbone}:{threshold_id}",
+            searchable_count=1,
+            medoid_defined=True,
+            alignment_ok=True,
+            comparable=True,
+            reasons=(),
         )
+        for record in anchors
+        for index, threshold_id in enumerate(THRESHOLD_IDS)
+    )
+    ruler_metrics = (("artist", "mrr"), ("genre", "map_k"))
+    class_aggregate_rows = tuple(
+        GeometryClassAggregateMetric(
+            corpus_search_class_id=f"class:{threshold_id}",
+            ruler=ruler,
+            metric=metric,
+            k=10,
+            value=0.5 + 0.1 * index,
+            evaluable_query_count=len(anchors),
+            undefined_query_count=0,
+        )
+        for index, threshold_id in enumerate(THRESHOLD_IDS)
+        for ruler, metric in ruler_metrics
+    )
+    class_query_rows = tuple(
+        GeometryClassQueryMetric(
+            corpus_search_class_id=f"class:{threshold_id}",
+            query_song_id=record.identity.song_id,
+            ruler=ruler,
+            metric=metric,
+            k=10,
+            value=0.5 + 0.1 * index,
+            status="defined",
+        )
+        for index, threshold_id in enumerate(THRESHOLD_IDS)
+        for record in anchors
+        for ruler, metric in ruler_metrics
+    )
+    class_neighborhood_rows = tuple(
+        GeometryClassNeighborhood(
+            corpus_search_class_id=f"class:{threshold_id}",
+            query_song_id=query.identity.song_id,
+            candidate_song_id=candidate.identity.song_id,
+            rank=rank,
+            score=0.9 - 0.1 * rank,
+        )
+        for threshold_id in THRESHOLD_IDS
+        for rank, (query, candidate) in enumerate(_query_candidate_pairs(records))
+    )
+    baseline_aggregate_rows = tuple(
+        GeometryBaselineAggregateMetric(
+            backbone=backbone,
+            ruler=ruler,
+            metric=metric,
+            k=10,
+            value=0.4 + 0.1 * index,
+            evaluable_query_count=len(anchors),
+            undefined_query_count=0,
+        )
+        for index, backbone in enumerate(backbones)
+        for ruler, metric in ruler_metrics
+    )
+    baseline_query_rows = tuple(
+        GeometryBaselineQueryMetric(
+            backbone=backbone,
+            query_song_id=record.identity.song_id,
+            ruler=ruler,
+            metric=metric,
+            k=10,
+            value=0.4 + 0.1 * index,
+            status="defined",
+        )
+        for index, backbone in enumerate(backbones)
+        for record in anchors
+        for ruler, metric in ruler_metrics
+    )
+    baseline_neighborhood_rows = tuple(
+        GeometryBaselineNeighborhood(
+            backbone=backbone,
+            query_song_id=query.identity.song_id,
+            candidate_song_id=candidate.identity.song_id,
+            rank=rank,
+            score=0.9 - 0.1 * rank,
+        )
+        for backbone in backbones
+        for rank, (query, candidate) in enumerate(_query_candidate_pairs(records))
+    )
+    provenance = GeometryResultProvenanceRow(
+        execution_id=EXECUTION_ID,
+        evaluation_id=EVALUATION_ID,
+        experiment=EXPERIMENT,
+        scoring_semantics_version=SCORING_SEMANTICS_VERSION,
+        geometry_semantics_version=records[0].identity.geometry_semantics_version,
+        numerical_profile_digest=records[0].identity.numerical_profile_digest,
+        evidence_mode="synthetic_fixture",
+        synthetic_only=True,
+        comparable=True,
+        reasons=(),
+        geometry_axes=tuple(
+            {
+                "song_id": record.identity.song_id,
+                "backbone": record.identity.backbone,
+                "geometry_id": record.geometry_id,
+                "observation_group_sha256": record.identity.observation_group_sha256,
+                "geometry_semantics_version": record.identity.geometry_semantics_version,
+                "numerical_profile_digest": record.identity.numerical_profile_digest,
+            }
+            for record in records
+        ),
+        head_evidence_provenance={},
+        counters={"scorer_calls": 1.0},
+    )
+
+    write_evaluation_corpus_in_transaction(
+        con,
+        run_id=run_id,
+        evaluation_id=EVALUATION_ID,
+        experiment=EXPERIMENT,
+        execution_id=EXECUTION_ID,
+        entries=corpus,
+    )
+    write_threshold_class_map_in_transaction(
+        con,
+        run_id=run_id,
+        evaluation_id=EVALUATION_ID,
+        execution_id=EXECUTION_ID,
+        experiment=EXPERIMENT,
+        rows=threshold_rows,
+    )
+    write_threshold_structural_in_transaction(con, run_id=run_id, evaluation_id=EVALUATION_ID, rows=structural_rows)
+    write_class_aggregate_metrics_in_transaction(
+        con, run_id=run_id, execution_id=EXECUTION_ID, evaluation_id=EVALUATION_ID, rows=class_aggregate_rows
+    )
+    write_class_query_metrics_in_transaction(con, run_id=run_id, rows=class_query_rows)
+    write_class_neighborhoods_in_transaction(con, run_id=run_id, rows=class_neighborhood_rows)
+    write_baseline_aggregate_metrics_in_transaction(
+        con, run_id=run_id, execution_id=EXECUTION_ID, evaluation_id=EVALUATION_ID, rows=baseline_aggregate_rows
+    )
+    write_baseline_query_metrics_in_transaction(con, run_id=run_id, rows=baseline_query_rows)
+    write_baseline_neighborhoods_in_transaction(con, run_id=run_id, rows=baseline_neighborhood_rows)
+    write_result_provenance_in_transaction(con, run_id=run_id, row=provenance)
+
+    obligations = [
+        (backbone, next(record.geometry_id for record in records if record.identity.backbone == backbone))
+        for backbone in backbones
+    ]
+    record_analyze_invocation(con, run_id=run_id, backbones=obligations, started_at=_ANALYZE_STARTED_MS)
+    terminalize_analyze_completed(con, run_id=run_id, finished_at=_ANALYZE_STARTED_MS + 500)
 
 
 def seed_head_evidence(con, *, run_id: str = RUN_ID, records: tuple[GeometryRecord, ...]) -> None:

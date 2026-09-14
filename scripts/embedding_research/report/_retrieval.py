@@ -2,60 +2,26 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from typing import Any
-
-import pandas as pd
 
 from ._base import make_section, make_table
 
+#: Retained as documentation of the observed-baseline evidence role; the retired nested
+#: evidence table that used to carry it was hard-cut in favour of the normalized surfaces.
 BASELINE_EVIDENCE_ROLE = "mandatory-observed-baseline"
 
-
-def _require_run_id(run_id: str | None) -> str:
-    if not run_id:
-        raise ValueError("exact run_id is required; the report never blends runs")
-    return str(run_id)
-
-
-def query_incomplete_analyze_diagnostics(con, *, run_id: str) -> tuple[dict[str, Any], ...]:
-    exact_run = _require_run_id(run_id)
-    rows = con.execute(
-        "SELECT * FROM analyze_incomplete_diagnostics WHERE run_id=? ORDER BY created_at", (exact_run,)
-    ).fetchall()
-    names = [item[0] for item in con.description]
-    return tuple(dict(zip(names, row, strict=False)) for row in rows)
-
-
-def query_normalized_result(con, *, run_id: str) -> Any:
-    from scripts.embedding_research.common.geometry_analysis import read_geometry_corpus_analysis_normalized
-    from scripts.embedding_research.common.threshold_analysis import AnalysisEvidenceIdentity
-    from scripts.embedding_research.db.result_surfaces import read_result_provenance
-
-    row = read_result_provenance(con, run_id=_require_run_id(run_id))[0]
-    identity = AnalysisEvidenceIdentity(
-        geometry_id=str(row["geometry_id"]),
-        observation_group_sha256=str(row["observation_group_sha256"]),
-        geometry_semantics_version=str(row["geometry_semantics_version"]),
-        numerical_profile_digest=str(row["numerical_profile_digest"]),
-        threshold_id="corpus",
-        structural_identity=f"{row['experiment']}:corpus",
-        evaluation_id=str(row["evaluation_id"]),
-        search_representation_id="corpus",
-        scoring_semantics_version=int(row["scoring_semantics_version"]),
-        execution_id=str(row["execution_id"]),
-    )
-    return read_geometry_corpus_analysis_normalized(con, run_id=run_id, identity=identity)
-
-
-def section_analysis(*args: Any, **kwargs: Any) -> dict[str, Any]:
-    return make_section("analysis", [])
-
-
-__all__ = [
-    "BASELINE_EVIDENCE_ROLE",
-    "query_incomplete_analyze_diagnostics",
-    "query_normalized_result",
-    "section_analysis",
+IDENTITY_COLUMNS = [
+    "geometry_id",
+    "observation_group_sha256",
+    "geometry_semantics_version",
+    "numerical_profile_digest",
+    "threshold_id",
+    "structural_identity",
+    "search_representation_id",
+    "evaluation_id",
+    "scoring_semantics_version",
+    "execution_id",
 ]
 
 
@@ -63,62 +29,6 @@ def _require_run_id(run_id: str | None) -> str:
     if not run_id:
         raise ValueError("exact run_id is required; the report never blends runs")
     return str(run_id)
-
-
-def query_analyze_metrics(con, *, run_id: str) -> pd.DataFrame:
-    """Read every exact geometry analysis evidence row for one run scope."""
-    exact_run = _require_run_id(run_id)
-    columns = ", ".join(GEOMETRY_ANALYSIS_COLUMNS)
-    rows = con.execute(
-        f"SELECT {columns} FROM geometry_analysis_records WHERE run_id=? ORDER BY geometry_id, threshold_id, metric",
-        (exact_run,),
-    ).fetchall()
-    return pd.DataFrame(rows, columns=GEOMETRY_ANALYSIS_COLUMNS)
-
-
-def query_geometry_identity(con, *, run_id: str) -> pd.DataFrame:
-    """Read the distinct exact identity axis tuples persisted for one run scope.
-
-    Absence is explicit refusal evidence (an empty frame); another run is never
-    substituted.
-    """
-    exact_run = _require_run_id(run_id)
-    query = (
-        "SELECT run_id, geometry_id, observation_group_sha256, geometry_semantics_version, "
-        "numerical_profile_digest, threshold_id, structural_identity, "
-        "search_representation_id, evaluation_id, scoring_semantics_version, execution_id "
-        "FROM geometry_analysis_records WHERE run_id=? "
-        "ORDER BY run_id, geometry_id, threshold_id, metric"
-    )
-    rows = con.execute(query, (exact_run,)).fetchall()
-    return pd.DataFrame(rows, columns=["run_id", *IDENTITY_COLUMNS]).drop_duplicates().reset_index(drop=True)
-
-
-def _baseline_mask(frame: pd.DataFrame) -> pd.Series:
-    return frame["evidence_json"].astype(str).str.contains(BASELINE_EVIDENCE_ROLE, regex=False)
-
-
-def query_observed_baselines(con, *, run_id: str) -> pd.DataFrame:
-    """Read only the mandatory observed global-medoid baseline evidence rows."""
-    frame = query_analyze_metrics(con, run_id=run_id)
-    if frame.empty:
-        return frame
-    return frame[_baseline_mask(frame)].reset_index(drop=True)
-
-
-def query_geometry_winners(con, *, run_id: str) -> pd.DataFrame:
-    """Read only the winner threshold representation evidence rows (never baselines)."""
-    frame = query_analyze_metrics(con, run_id=run_id)
-    if frame.empty:
-        return frame
-    return frame[~_baseline_mask(frame)].reset_index(drop=True)
-
-
-def query_winners_metrics(con, *, run_id: str) -> pd.DataFrame:
-    """Winner evidence with the persisted incomplete diagnostics attached as frame attrs."""
-    frame = query_geometry_winners(con, run_id=run_id)
-    frame.attrs["persisted_incomplete_diagnostics"] = query_incomplete_analyze_diagnostics(con, run_id=run_id)
-    return frame
 
 
 def query_incomplete_analyze_diagnostics(con, *, run_id: str) -> tuple[dict[str, Any], ...]:
@@ -131,184 +41,88 @@ def query_incomplete_analyze_diagnostics(con, *, run_id: str) -> tuple[dict[str,
     return tuple(dict(zip(names, row, strict=False)) for row in rows)
 
 
-def query_corpus_evidence(con, *, run_id: str) -> dict[str, Any] | None:
-    """Read the canonical complete corpus evidence for the exact run publication."""
+def query_normalized_result(con, *, run_id: str) -> Any:
+    """Read the exact run's class-scoped result from the Phase 6 normalized surfaces."""
+    from scripts.embedding_research.common.geometry_analysis import (
+        corpus_result_identity_from_provenance,
+        read_geometry_corpus_analysis_normalized,
+    )
+    from scripts.embedding_research.db.result_surfaces import read_result_provenance
+
     exact_run = _require_run_id(run_id)
-    from scripts.embedding_research.common.geometry_analysis import read_geometry_corpus_evidence
-    from scripts.embedding_research.common.threshold_analysis import AnalysisEvidenceIdentity
-
-    rows = con.execute(
-        "SELECT geometry_id, observation_group_sha256, geometry_semantics_version, numerical_profile_digest, "
-        "threshold_id, structural_identity, evaluation_id, search_representation_id, "
-        "scoring_semantics_version, execution_id FROM geometry_analysis_records "
-        'WHERE run_id=? AND evidence_json LIKE \'%"role":"corpus"%\'',
-        (exact_run,),
-    ).fetchall()
-    if not rows:
-        return None
-    row = rows[0]
-    identity = AnalysisEvidenceIdentity(
-        geometry_id=str(row[0]),
-        observation_group_sha256=str(row[1]),
-        geometry_semantics_version=str(row[2]),
-        numerical_profile_digest=str(row[3]),
-        threshold_id=str(row[4]),
-        structural_identity=str(row[5]),
-        evaluation_id=str(row[6]),
-        search_representation_id=str(row[7]),
-        scoring_semantics_version=int(row[8]),
-        execution_id=str(row[9]),
-    )
-    evidence = read_geometry_corpus_evidence(con, run_id=exact_run, identity=identity)
-    from dataclasses import asdict
-
-    return asdict(evidence)
+    rows = read_result_provenance(con, run_id=exact_run)
+    if len(rows) != 1:
+        raise ValueError("exact run must carry exactly one compact result provenance row")
+    identity = corpus_result_identity_from_provenance(rows[0])
+    return read_geometry_corpus_analysis_normalized(con, run_id=exact_run, identity=identity)
 
 
-def _neighborhood_rows(queries: Any, key: str) -> list[dict[str, Any]]:
+def _identity_rows(result: Any) -> list[dict[str, Any]]:
+    """Render the persisted per-representation identity axes as full ten-axis rows."""
+    provenance = result.provenance
     rows: list[dict[str, Any]] = []
-    seen: set[tuple[str, str]] = set()
-    for query in queries or ():
-        if not isinstance(query, dict):
-            continue
-        song_id = str(query.get("song_id", ""))
-        for entry in query.get(key) or ():
-            if not isinstance(entry, dict):
-                continue
-            candidate = str(entry.get("song_id", ""))
-            if not candidate or candidate == song_id or (song_id, candidate) in seen:
-                raise ValueError("invalid duplicate or self candidate in geometry neighborhood")
-            seen.add((song_id, candidate))
-            rows.append({"query_song_id": song_id, **entry})
+    for axis in provenance.geometry_axes:
+        row = dict.fromkeys(IDENTITY_COLUMNS)
+        row.update(
+            {
+                "geometry_id": str(axis["geometry_id"]),
+                "observation_group_sha256": str(axis["observation_group_sha256"]),
+                "geometry_semantics_version": str(provenance.geometry_semantics_version),
+                "numerical_profile_digest": str(axis["numerical_profile_digest"]),
+                "threshold_id": "corpus",
+                "structural_identity": f"{provenance.experiment}:corpus",
+                "search_representation_id": "corpus",
+                "evaluation_id": str(provenance.evaluation_id),
+                "scoring_semantics_version": int(provenance.scoring_semantics_version),
+                "execution_id": str(provenance.execution_id),
+            }
+        )
+        rows.append(row)
     return rows
 
 
-def _threshold_map_rows(df: pd.DataFrame) -> list[dict[str, Any]]:
-    if df is None or df.empty:
-        return []
-    rows: list[dict[str, Any]] = []
-    for record in df.to_dict("records"):
-        raw = record.get("evidence_json")
-        try:
-            evidence = json.loads(raw) if raw else {}
-        except (TypeError, ValueError):
-            continue
-        if not isinstance(evidence, dict) or evidence.get("role") != "threshold":
-            continue
-        rows.append(
-            {
-                "song_id": str(evidence.get("song_id", "")),
-                "backbone": str(evidence.get("backbone", "")),
-                "threshold_id": str(record.get("threshold_id", "")),
-                "structural_identity": str(record.get("structural_identity", "")),
-                "search_representation_id": str(record.get("search_representation_id", "")),
-                "comparable": bool(evidence.get("comparable", True)),
-            }
-        )
-    return rows
+def _threshold_class_rows(result: Any) -> list[dict[str, Any]]:
+    return [
+        {
+            "threshold_index": row.threshold_index,
+            "threshold_id": row.threshold_id,
+            "threshold_value": row.threshold_value,
+            "corpus_search_class_id": row.corpus_search_class_id,
+            "comparable": row.comparable,
+            "reasons": ", ".join(row.reasons),
+        }
+        for row in result.threshold_class_map
+    ]
 
 
-def section_analysis(
-    df: pd.DataFrame,
-    identity: pd.DataFrame | None = None,
-    *,
-    corpus_evidence: dict[str, Any] | None = None,
-) -> dict:
-    """Render exact identity, maps, comparability, and neighborhoods, or refuse visibly."""
-    tables = []
-    if identity is not None and not identity.empty:
-        tables.append(
-            make_table(identity.to_dict("records"), id="geometry_identity", title="Exact geometry identity evidence")
-        )
-    if df is not None and not df.empty:
-        tables.append(make_table(df.to_dict("records"), id="geometry_analysis", title="Geometry analysis metrics"))
-    threshold_map = (
-        list(corpus_evidence.get("threshold_map") or []) if corpus_evidence is not None else _threshold_map_rows(df)
-    )
-    if corpus_evidence is not None or threshold_map:
-        tables.append(make_table(threshold_map, id="geometry_threshold_map", title="Threshold-to-representation map"))
-
-    warnings: list[dict[str, str]] = []
-    if corpus_evidence is None:
-        warnings.append(
-            {
-                "level": "error",
-                "message": "Corpus comparability/neighborhood evidence unavailable; only raw identity rows are shown.",
-            }
-        )
-    else:
-        hypotheses = corpus_evidence.get("hypotheses")
-        if isinstance(hypotheses, list) and hypotheses:
-            context_rows = [
-                {
-                    "threshold_id": item.get("threshold_id"),
-                    "collapse_class_id": item.get("collapse_class_id"),
-                    "ordered_song_count": len(item.get("members") or []),
-                }
-                for item in hypotheses
-                if isinstance(item, dict)
-            ]
-            tables.append(
-                make_table(
-                    context_rows,
-                    id="geometry_threshold_collapse_context",
-                    title="Threshold and collapse hypothesis context",
-                )
-            )
-        membership = corpus_evidence.get("membership")
-        if isinstance(membership, list) and membership:
-            tables.append(
-                make_table(list(membership), id="geometry_membership", title="Corpus membership and comparability")
-            )
-        missing = corpus_evidence.get("missing_searchable")
-        if isinstance(missing, list) and missing:
-            warnings.append(
-                {
-                    "level": "warning",
-                    "message": f"Songs without any searchable representation: {', '.join(str(song) for song in missing)}",
-                }
-            )
-        queries = corpus_evidence.get("queries")
-        if isinstance(queries, list) and queries:
-            query_rows = [
-                {key: value for key, value in query.items() if key not in ("neighborhood", "baseline_neighborhood")}
-                for query in queries
-                if isinstance(query, dict)
-            ]
-            tables.append(
-                make_table(query_rows, id="geometry_queries", title="Per-query ruler metrics and comparability")
-            )
-            winner_rows = _neighborhood_rows(queries, "neighborhood")
-            if winner_rows:
-                tables.append(
-                    make_table(winner_rows, id="geometry_neighborhoods", title="Winner neighborhoods (leave-one-out)")
-                )
-            baseline_rows = _neighborhood_rows(queries, "baseline_neighborhood")
-            if baseline_rows:
-                tables.append(
-                    make_table(
-                        baseline_rows,
-                        id="geometry_baseline_neighborhoods",
-                        title="Same-population observed baseline neighborhoods",
-                    )
-                )
-        if not bool(corpus_evidence.get("comparable", False)):
-            reasons = corpus_evidence.get("reasons") or []
-            warnings.append(
-                {
-                    "level": "error",
-                    "message": "Non-comparable geometry corpus published with explicit reasons: "
-                    + (", ".join(str(reason) for reason in reasons) or "unspecified"),
-                }
-            )
-    if not tables:
+def section_analysis(result: Any = None) -> dict:
+    """Render the normalized class-scoped result or refuse visibly."""
+    if result is None:
         return make_section(
             "analysis",
             "Geometry Analysis",
             warnings=[{"level": "error", "message": "Geometry identity evidence unavailable; analysis refused."}],
             empty_message="REFUSED: no exact geometry identity evidence.",
         )
+    tables = [
+        make_table(_identity_rows(result), id="geometry_identity", title="Exact geometry identity evidence"),
+        make_table(
+            [asdict(row) for row in result.class_aggregate_metrics],
+            id="geometry_analysis",
+            title="Class-scoped geometry analysis metrics",
+        ),
+        make_table(_threshold_class_rows(result), id="geometry_threshold_map", title="Threshold-to-class map"),
+    ]
     section = make_section("analysis", "Geometry Analysis", tables=tables)
+    warnings: list[dict[str, str]] = []
+    if not result.provenance.comparable:
+        reasons = ", ".join(result.provenance.reasons) or "unspecified"
+        warnings.append(
+            {
+                "level": "error",
+                "message": f"Non-comparable geometry corpus published with explicit reasons: {reasons}",
+            }
+        )
     if warnings:
         section["warnings"] = warnings
     return section
@@ -326,27 +140,19 @@ def verify_geometry_bindings_for_run(con, *, run_id: str, stream_store: Any, pro
         GeometryRefusal,
         verify_geometry_current,
     )
+    from scripts.embedding_research.db.result_surfaces import read_result_provenance
 
     exact_run = _require_run_id(run_id)
-    rows = con.execute("SELECT evidence_json FROM geometry_analysis_records WHERE run_id=?", (exact_run,)).fetchall()
-    corpus_evidence = None
-    for row in rows:
-        raw = row[0]
-        if not raw:
-            continue
-        try:
-            doc = json.loads(raw)
-        except (TypeError, ValueError):
-            continue
-        if isinstance(doc, dict) and doc.get("role") == "corpus":
-            corpus_evidence = doc
-            break
-    if corpus_evidence is None:
-        # Runs without a persisted corpus axis payload (for example a threshold-only synthetic
+    rows = read_result_provenance(con, run_id=exact_run)
+    if not rows:
+        # Runs without a persisted provenance row (for example a threshold-only synthetic
         # scope) carry no geometry axes to rebind; there is nothing to verify here.
         return
-    axes = corpus_evidence.get("geometry_axes")
-    if not isinstance(axes, list) or not axes:
+    if bool(rows[0].get("synthetic_only")):
+        # Synthetic-only scopes publish no committed real observation groups to rebind.
+        return
+    axes = tuple(rows[0].get("geometry_axes") or ())
+    if not axes:
         raise GeometryRefusal("INTEGRITY_REFUSED: report corpus geometry axes are missing")
     for axis in axes:
         identity = GeometryIdentity(
@@ -366,15 +172,9 @@ def verify_geometry_bindings_for_run(con, *, run_id: str, stream_store: Any, pro
 
 __all__ = [
     "BASELINE_EVIDENCE_ROLE",
-    "GEOMETRY_ANALYSIS_COLUMNS",
     "IDENTITY_COLUMNS",
-    "query_analyze_metrics",
-    "query_corpus_evidence",
-    "query_geometry_identity",
-    "query_geometry_winners",
     "query_incomplete_analyze_diagnostics",
-    "query_observed_baselines",
-    "query_winners_metrics",
+    "query_normalized_result",
     "section_analysis",
     "verify_geometry_bindings_for_run",
 ]

@@ -16,9 +16,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import replace
 from typing import Any
 
-import pandas as pd
 import pytest
 
 from scripts.embedding_research.generate_fixture_report import main as generate_report
@@ -30,10 +30,11 @@ from scripts.embedding_research.helpers.corpus_identity import (
     structural_identity,
 )
 from scripts.embedding_research.report._retrieval import (
-    query_corpus_evidence,
+    query_normalized_result,
     section_analysis,
 )
 from scripts.embedding_research.report._summary import section_summary
+from scripts.embedding_research.tests._report_seed import RUN_ID, build_seeded_con
 from scripts.embedding_research.tools import _evidence
 from scripts.embedding_research.tools.emit_corrective_evidence import (
     main as emit_corrective_evidence,
@@ -45,91 +46,7 @@ pytestmark = pytest.mark.unit
 
 # ── G1: report._retrieval corpus-evidence rendering ───────────────────────────
 
-
-def _analysis_frame() -> pd.DataFrame:
-    """A small synthetic analyze-metrics frame with one real threshold-map row."""
-    return pd.DataFrame(
-        [
-            {
-                "evidence_json": json.dumps(
-                    {"role": "threshold", "song_id": "s1", "backbone": "effnet", "comparable": True}
-                ),
-                "threshold_id": "t-000",
-                "structural_identity": "struct-1",
-                "search_representation_id": "rep-1",
-            },
-            {
-                "evidence_json": "",
-                "threshold_id": "t-001",
-                "structural_identity": "struct-2",
-                "search_representation_id": "rep-2",
-            },
-        ]
-    )
-
-
-def _membership_row() -> dict[str, Any]:
-    return {
-        "song_id": "s1",
-        "backbone": "effnet",
-        "observation_group_sha256": "a" * 64,
-        "geometry_id": "g1",
-        "numerical_profile_digest": "b" * 64,
-        "comparable": True,
-        "defined": True,
-        "eligible": True,
-        "reasons": [],
-        "searchable_count": 3,
-    }
-
-
-def _query_doc() -> dict[str, Any]:
-    return {
-        "song_id": "s1",
-        "backbone": "effnet",
-        "comparable": True,
-        "defined": True,
-        "eligible": True,
-        "reasons": [],
-        "winner_score": 0.9,
-        "baseline_score": 0.4,
-        "baseline_delta": 0.5,
-        "searchable_count": 3,
-        "neighborhood": [
-            {
-                "rank": 0,
-                "song_id": "s2",
-                "backbone": "effnet",
-                "search_representation_id": "rep-2",
-                "score": 0.9,
-            }
-        ],
-        "baseline_neighborhood": [
-            {
-                "rank": 0,
-                "song_id": "s2",
-                "backbone": "effnet",
-                "search_representation_id": "rep-2",
-                "score": 0.4,
-            }
-        ],
-    }
-
-
-def _corpus_evidence(
-    *,
-    comparable: bool = True,
-    reasons: list[str] | None = None,
-    missing_searchable: list[str] | None = None,
-) -> dict[str, Any]:
-    return {
-        "role": "corpus",
-        "comparable": comparable,
-        "reasons": list(reasons or []),
-        "membership": [_membership_row()],
-        "missing_searchable": list(missing_searchable or []),
-        "queries": [_query_doc()],
-    }
+# ── G1: normalized report rendering ───────────────────────────────────────────
 
 
 def _table_ids(section: dict) -> list[str]:
@@ -142,44 +59,31 @@ def _messages(section: dict, level: str | None = None) -> list[str]:
     ]
 
 
-def test_section_summary_separates_winner_and_observed_baseline_evidence() -> None:
-    evidence = _corpus_evidence()
-    evidence["queries"][0]["neighborhood"][0].update(
-        {
-            "geometry_id": "winner-geometry",
-            "threshold_id": "winner-threshold",
-            "metric": "artist",
-            "value": 0.9,
-        }
-    )
-    evidence["queries"][0]["baseline_neighborhood"][0].update(
-        {
-            "geometry_id": "baseline-geometry",
-            "threshold_id": "observed-baseline:global-medoid",
-            "metric": "artist",
-            "value": 0.4,
-        }
-    )
-
-    section = section_summary(pd.DataFrame(), corpus_evidence=evidence)
+def test_section_summary_separates_class_and_observed_baseline_evidence() -> None:
+    con = build_seeded_con()
+    try:
+        result = query_normalized_result(con, run_id=RUN_ID)
+        section = section_summary(result)
+    finally:
+        con.close()
 
     stats = {stat["label"]: stat["value"] for stat in section["stats"]}
-    assert stats["analysis rows"] == 1
-    assert stats["baseline rows"] == 1
+    assert stats["class metric rows"] > 0
+    assert stats["baseline rows"] > 0
     assert {table["id"] for table in section["tables"]} == {
         "geometry_threshold_summary",
         "observed_baseline_summary",
     }
     winner_table = next(table for table in section["tables"] if table["id"] == "geometry_threshold_summary")
     baseline_table = next(table for table in section["tables"] if table["id"] == "observed_baseline_summary")
-    assert winner_table["rows"] == [["winner-threshold", "1", "1"]]
-    assert baseline_table["rows"] == [["observed-baseline:global-medoid", "1", "1"]]
-    assert "observed-baseline:global-medoid" not in str(winner_table["rows"])
-    assert "winner-threshold" not in str(baseline_table["rows"])
+    assert winner_table["rows"]
+    assert baseline_table["rows"]
+    assert "backbone" in baseline_table["columns"]
+    assert "backbone" not in winner_table["columns"]
 
 
-def test_section_summary_refuses_empty_canonical_corpus_evidence() -> None:
-    section = section_summary(pd.DataFrame(), corpus_evidence={"queries": []})
+def test_section_summary_refuses_without_normalized_result() -> None:
+    section = section_summary(None)
 
     assert section["empty_message"] == "REFUSED: no exact geometry analysis or observed-baseline evidence."
     assert section["warnings"] == [
@@ -189,115 +93,45 @@ def test_section_summary_refuses_empty_canonical_corpus_evidence() -> None:
     assert section["tables"] == []
 
 
-def test_section_analysis_renders_corpus_membership_queries_and_neighborhoods() -> None:
-    evidence = _corpus_evidence()
-    second = dict(_query_doc())
-    second["song_id"] = "s2"
-    second["threshold_id"] = "second-threshold"
-    second["collapse_class_id"] = "second-collapse"
-    second["neighborhood"] = [dict(second["neighborhood"][0])]
-    second["neighborhood"] = [{**second["neighborhood"][0], "song_id": "s1"}]
-    second["baseline_neighborhood"] = [{**second["baseline_neighborhood"][0], "song_id": "s1"}]
-    evidence["queries"].append(second)
-    evidence["hypotheses"] = [
-        {"threshold_id": "first-threshold", "collapse_class_id": "first-collapse", "members": [{"song_id": "s1"}]},
-        {"threshold_id": "second-threshold", "collapse_class_id": "second-collapse", "members": [{"song_id": "s1"}]},
-    ]
-    section = section_analysis(_analysis_frame(), corpus_evidence=evidence)
+def test_section_analysis_renders_identity_threshold_map_and_class_metrics() -> None:
+    con = build_seeded_con()
+    try:
+        result = query_normalized_result(con, run_id=RUN_ID)
+        section = section_analysis(result)
+    finally:
+        con.close()
 
     ids = _table_ids(section)
-    assert "geometry_analysis" in ids
-    assert "geometry_threshold_map" in ids
-    assert "geometry_membership" in ids
-    assert "geometry_queries" in ids
-    assert "geometry_neighborhoods" in ids
-    assert "geometry_baseline_neighborhoods" in ids
-    query_table = next(table for table in section["tables"] if table["id"] == "geometry_queries")
-    assert len(query_table["rows"]) == 2
-    context_table = next(table for table in section["tables"] if table["id"] == "geometry_threshold_collapse_context")
-    assert len(context_table["rows"]) == 2
+    assert {"geometry_identity", "geometry_analysis", "geometry_threshold_map"} <= set(ids)
+    identity_table = next(table for table in section["tables"] if table["id"] == "geometry_identity")
+    assert identity_table["rows"]
     assert section["empty_message"] == ""
     assert _messages(section) == []
 
 
-def test_section_analysis_warns_on_missing_searchable_representations() -> None:
-    section = section_analysis(
-        _analysis_frame(),
-        corpus_evidence=_corpus_evidence(missing_searchable=["s9", "s10"]),
+def test_section_analysis_errors_on_non_comparable_result() -> None:
+    con = build_seeded_con()
+    try:
+        result = query_normalized_result(con, run_id=RUN_ID)
+    finally:
+        con.close()
+    non_comparable = replace(
+        result,
+        provenance=replace(result.provenance, comparable=False, reasons=("no_searchable",)),
     )
 
-    warnings = _messages(section, level="warning")
-    assert any("Songs without any searchable representation" in message for message in warnings)
-    assert any("s9" in message and "s10" in message for message in warnings)
-
-
-def test_section_analysis_errors_on_non_comparable_corpus_with_reasons() -> None:
-    section = section_analysis(
-        _analysis_frame(),
-        corpus_evidence=_corpus_evidence(comparable=False, reasons=["no_searchable"]),
-    )
+    section = section_analysis(non_comparable)
 
     errors = _messages(section, level="error")
     assert any("Non-comparable geometry corpus published with explicit reasons" in message for message in errors)
     assert any("no_searchable" in message for message in errors)
 
 
-def test_section_analysis_errors_when_corpus_evidence_unavailable() -> None:
-    section = section_analysis(_analysis_frame(), corpus_evidence=None)
+def test_section_analysis_errors_when_result_unavailable() -> None:
+    section = section_analysis(None)
 
     errors = _messages(section, level="error")
-    assert any("Corpus comparability/neighborhood evidence unavailable" in message for message in errors)
-
-
-_ANALYSIS_COLUMNS = (
-    "run_id, geometry_id, observation_group_sha256, geometry_semantics_version, numerical_profile_digest,"
-    " threshold_id, structural_identity, search_representation_id, evaluation_id,"
-    " scoring_semantics_version, execution_id, metric, value, evidence_json, created_at_ms"
-)
-
-
-def _insert_analysis_row(con, *, run_id: str, evidence_json: str | None, metric: str = "corpus") -> None:
-    con.execute(
-        f"INSERT INTO geometry_analysis_records ({_ANALYSIS_COLUMNS}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        [
-            run_id,
-            "g1",
-            "obs-1",
-            "gram-v1",
-            "profile-digest",
-            "corpus",
-            "struct-1",
-            "rep-1",
-            "eval-1",
-            1,
-            "exec-1",
-            metric,
-            0.0,
-            evidence_json,
-            1,
-        ],
-    )
-
-
-def test_query_corpus_evidence_rejects_incomplete_corpus_rows(con) -> None:
-    corpus_doc = {"role": "corpus", "comparable": True, "membership": []}
-    _insert_analysis_row(con, run_id="run-a", evidence_json="{not json")
-    _insert_analysis_row(con, run_id="run-a", evidence_json="", metric="other")
-    _insert_analysis_row(con, run_id="run-a", evidence_json=json.dumps({"role": "threshold"}))
-    _insert_analysis_row(con, run_id="run-a", evidence_json=json.dumps(corpus_doc))
-
-    assert query_corpus_evidence(con, run_id="run-a") is None
-
-
-def test_query_corpus_evidence_returns_none_without_a_corpus_row(con) -> None:
-    _insert_analysis_row(con, run_id="run-b", evidence_json="{not json")
-    _insert_analysis_row(con, run_id="run-b", evidence_json="", metric="other")
-
-    assert query_corpus_evidence(con, run_id="run-b") is None
-    assert query_corpus_evidence(con, run_id="run-absent") is None
-
-
-# ── G2: validate_report corrective-evidence fail-closed checks ─────────────────
+    assert any("Geometry identity evidence unavailable" in message for message in errors)
 
 
 def _generate_and_mutate(tmp_path, mutate) -> Any:

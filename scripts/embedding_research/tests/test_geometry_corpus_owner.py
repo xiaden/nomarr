@@ -162,7 +162,7 @@ def test_real_owner_loads_decodes_derives_then_gathers_unique_representations() 
     assert result.baseline is not None
     assert result.queries[0].state.comparable is False
     assert "no_candidates" in result.queries[0].state.reasons
-    assert result.noncomparable
+    assert not any(row.comparable for row in result.threshold_class_map)
     con.close()
 
 

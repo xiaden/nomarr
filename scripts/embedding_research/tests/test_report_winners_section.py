@@ -1,8 +1,8 @@
-"""Winners section renders winner evidence and the observed baseline as separate tables."""
+"""Winners section renders class-scoped neighborhoods and the observed baseline separately."""
 
 from __future__ import annotations
 
-from scripts.embedding_research.report._retrieval import query_geometry_winners, query_observed_baselines
+from scripts.embedding_research.report._retrieval import query_normalized_result
 from scripts.embedding_research.report._winners_report import section_winners
 from scripts.embedding_research.tests._report_seed import RUN_ID, build_seeded_con
 
@@ -11,12 +11,11 @@ def _table_ids(section: dict) -> set[str]:
     return {table["id"] for table in section.get("tables", [])}
 
 
-def test_section_winners_renders_winner_and_baseline_tables():
+def test_section_winners_renders_class_and_baseline_tables():
     con = build_seeded_con()
     try:
-        winners = query_geometry_winners(con, run_id=RUN_ID)
-        baselines = query_observed_baselines(con, run_id=RUN_ID)
-        section = section_winners(winners, baselines)
+        result = query_normalized_result(con, run_id=RUN_ID)
+        section = section_winners(result)
     finally:
         con.close()
 
@@ -26,6 +25,6 @@ def test_section_winners_renders_winner_and_baseline_tables():
 
 
 def test_section_winners_refuses_when_evidence_absent():
-    section = section_winners(None, None)
+    section = section_winners(None)
     assert section["empty_message"]
     assert section.get("warnings")

@@ -578,8 +578,6 @@ def test_refuses_differing_identity_axis() -> None:
 
 def test_reader_never_falls_back_to_nested_evidence_shape() -> None:
     con, _record, _result, identity = _seeded()
-    # The removed-format nested corpus evidence rows still exist in this (pre-cut) database.
-    assert con.execute("SELECT count(*) FROM geometry_analysis_records").fetchone()[0] > 0
     for table in (
         "geometry_result_provenance",
         "geometry_evaluation_corpus",
@@ -594,7 +592,7 @@ def test_reader_never_falls_back_to_nested_evidence_shape() -> None:
     ):
         con.execute(f"DELETE FROM {table}")
     # With every normalized surface gone the reader refuses; it never reconstructs the result
-    # from the nested role="corpus" JSON that still sits in geometry_analysis_records.
+    # from any retired nested evidence shape.
     with pytest.raises(IntegrityRefused, match="provenance"):
         read_geometry_corpus_analysis_normalized(con, run_id=_RUN_ID, identity=identity)
     con.close()

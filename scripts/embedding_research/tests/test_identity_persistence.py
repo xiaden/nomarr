@@ -1,3 +1,9 @@
+"""Head-evidence identity round trip and refusal contracts.
+
+The retired per-axis analysis-row persistence round trip was hard-cut with the nested
+result model; only the head-evidence identity contract remains here.
+"""
+
 from types import SimpleNamespace
 
 import duckdb
@@ -7,9 +13,7 @@ from scripts.embedding_research.common.head_analysis import GeometryHeadOutput
 from scripts.embedding_research.db import (
     IdentityRefusal,
     ensure_schema,
-    read_analysis_rows,
     read_head_evidence,
-    write_analysis_rows,
     write_head_evidence,
 )
 
@@ -29,16 +33,6 @@ def identity(**overrides):
     }
     values.update(overrides)
     return SimpleNamespace(**values)
-
-
-def test_analysis_roundtrip_reopen_and_exact_identity():
-    con = duckdb.connect(":memory:")
-    ensure_schema(con)
-    write_analysis_rows(con, run_id="r", identity=identity(), metrics={"m": 1.25}, evidence={"songs": ["a"]})
-    assert read_analysis_rows(con, run_id="r", identity=identity())[0]["value"] == pytest.approx(1.25)
-    with pytest.raises(IdentityRefusal):
-        read_analysis_rows(con, run_id="other", identity=identity())
-    con.close()
 
 
 def test_head_evidence_reads_only_complete_exact_identity_axes():
@@ -65,19 +59,4 @@ def test_head_evidence_reads_only_complete_exact_identity_axes():
             read_head_evidence(con, run_id="r", identity=changed)
     with pytest.raises(IdentityRefusal):
         read_head_evidence(con, run_id="r", identity=identity(threshold_id="missing"))
-    con.close()
-
-
-def test_refuses_incomplete_nonfinite_duplicate_and_stale_identity():
-    con = duckdb.connect(":memory:")
-    ensure_schema(con)
-    with pytest.raises(IdentityRefusal):
-        write_analysis_rows(con, run_id="r", identity=identity(observation_group_sha256=""), metrics={"m": 1})
-    with pytest.raises(IdentityRefusal):
-        write_analysis_rows(con, run_id="r", identity=identity(), metrics={"m": float("nan")})
-    write_analysis_rows(con, run_id="r", identity=identity(), metrics={"m": 1})
-    with pytest.raises(IdentityRefusal):
-        write_analysis_rows(con, run_id="r", identity=identity(), metrics={"m": 2})
-    with pytest.raises(IdentityRefusal):
-        read_analysis_rows(con, run_id="r", identity=identity(geometry_id="superseded"))
     con.close()

@@ -17,24 +17,16 @@ import duckdb
 import numpy as np
 import pytest
 
-from scripts.embedding_research.common.geometry_analysis import (
-    GeometryRepresentationRoster,
-    GeometryScoreBundle,
-    GeometrySongAnalysis,
-    GeometrySongRequest,
-    _geometry_ruler_metrics,
-)
 from scripts.embedding_research.common.head_ruler_labels import (
     HeadSongLabel,
     resolve_head_ruler_labels,
 )
-from scripts.embedding_research.common.threshold_analysis import AllThresholdAnalysis
 from scripts.embedding_research.db import (
     ensure_schema,
     read_head_label_provenance,
     write_head_label_provenance_in_transaction,
 )
-from scripts.embedding_research.db.geometry import GeometryIdentity, IntegrityRefused
+from scripts.embedding_research.db.geometry import IntegrityRefused
 from scripts.embedding_research.streams.records import HeadSuiteCurrentError
 
 if TYPE_CHECKING:
@@ -175,61 +167,6 @@ def test_missing_evidence_yields_no_label_and_non_finite_fails_closed(tmp_path, 
     # A physically PRESENT stored non-finite activation is corruption and fails closed.
     with pytest.raises(IntegrityRefused):
         resolve_head_ruler_labels(head_store=head_store, stream_store=store, song_id="nan-song", backbone="effnet")
-
-
-def _song_request(song_id: str, head_label: object | None) -> GeometrySongRequest:
-    return GeometrySongRequest(
-        song_id=song_id,
-        backbone="effnet",
-        geometry_identity=GeometryIdentity(song_id, "effnet", "commit-a", "geometry-v1", "profile-a"),
-        observation_evidence={"observation_group_sha256": f"observation-{song_id}"},
-        artist="artist-a",
-        genre="genre-a",
-        head_label=head_label,
-        head_suite_identity="suite-shared" if head_label is not None else None,
-    )
-
-
-def _song_analysis(request: GeometrySongRequest) -> GeometrySongAnalysis:
-    thresholds = AllThresholdAnalysis(
-        experiment="temporal_global",
-        geometry_id=f"geometry-{request.song_id}",
-        observation_group_sha256=f"observation-{request.song_id}",
-        profile_digest="profile-a",
-        mask_digest="mask-a",
-        results=(),
-        geometry_semantics_version="geometry-v1",
-        evaluation_id=_EVAL,
-        execution_id="execution-a",
-    )
-    scores = GeometryScoreBundle(
-        scores={f"representation-{request.song_id}": 0.5},
-        baseline_score=0.1,
-        evaluation_comparable=True,
-    )
-    return GeometrySongAnalysis(request, thresholds, GeometryRepresentationRoster(()), scores)
-
-
-def test_missing_head_evidence_excludes_only_the_head_ruler() -> None:
-    request_a = _song_request("song-a", (("gender", 0), ("timbre", 1)))
-    request_b = _song_request("song-b", (("gender", 1), ("timbre", 0)))
-    request_c = _song_request("song-c", None)
-    analyses = (_song_analysis(request_a), _song_analysis(request_b), _song_analysis(request_c))
-
-    artist_metrics, genre_metrics, head_metrics, per_song, _deltas = _geometry_ruler_metrics(analyses)
-
-    # song-c has NO head evidence but keeps its artist/genre labels: those rulers stay
-    # defined/eligible for it and never lose the member.
-    assert artist_metrics["n_songs"] == 3.0
-    assert artist_metrics["missing_count"] == 0.0
-    assert genre_metrics["n_songs"] == 3.0
-    assert genre_metrics["missing_count"] == 0.0
-    # Only song-c is excluded from the HEAD ruler; no "unknown" bucket is fabricated.
-    assert head_metrics["n_songs"] == 2.0
-    assert head_metrics["missing_count"] == 1.0
-    assert per_song["song-c"]["eligible_artist"] == 1.0
-    assert per_song["song-c"]["eligible_genre"] == 1.0
-    assert per_song["song-c"]["eligible_head"] == 0.0
 
 
 def test_suite_identity_is_persisted_separately_from_the_ruler_label() -> None:

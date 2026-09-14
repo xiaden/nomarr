@@ -59,7 +59,6 @@ EXPECTED_TABLES = {
     "corpus_state",
     "song_patch_geometry",
     # Exact geometry-era analysis + head evidence tables.
-    "geometry_analysis_records",
     "geometry_head_evidence",
     # The ONE fixed evaluation corpus (Plan A Phase 1) — one membership row per
     # (run_id, evaluation_id, song_id, backbone); no PK/UNIQUE, application-enforced identity.

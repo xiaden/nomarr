@@ -1,10 +1,9 @@
 """Synthetic edge-contract tests for the corrective Gram-geometry surface.
 
-Fills four confirmed coverage gaps left by the corrective repair:
+Fills three confirmed coverage gaps left by the corrective repair:
 
 * ``geometry_analysis._select_neighborhood`` search-identity tie-break / limit / absent-key skip.
 * ``geometry_analysis._normalized_query_vectors`` empty-mask and zero-row filtering.
-* ``identity_persistence.read_threshold_map_rows`` exact-scope isolation and row filtering.
 * Zero / near-zero segment-centroid fixtures through ``derive_temporal_global_from_gram``.
 
 Everything here is deterministic synthetic data: no audio, ONNX, CUDA, real corpus,
@@ -13,7 +12,6 @@ network, or source-control reads.  DuckDB is in-memory.
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import numpy as np
@@ -24,7 +22,6 @@ from scripts.embedding_research.common.geometry_analysis import (
     _normalized_query_vectors,
     _select_neighborhood,
 )
-from scripts.embedding_research.db.identity_persistence import read_threshold_map_rows
 from scripts.embedding_research.helpers.gram_segmentation import (
     GramRefusalError,
     derive_temporal_global_from_gram,
@@ -133,112 +130,7 @@ def test_threshold_projection_refuses_empty_searchable_query() -> None:
     assert all(segment.searchable_weight == 0.0 for segment in projection.segments)
 
 
-# ── GAP 3: read_threshold_map_rows exact scope and filtering ───────────────────
-
-_ANALYSIS_COLUMNS = (
-    "run_id, geometry_id, observation_group_sha256, geometry_semantics_version, numerical_profile_digest,"
-    " threshold_id, structural_identity, search_representation_id, evaluation_id,"
-    " scoring_semantics_version, execution_id, metric, value, evidence_json, created_at_ms"
-)
-
-
-def _insert_threshold_row(
-    con: Any,
-    *,
-    run_id: str = "run-a",
-    evaluation_id: str = "eval-a",
-    execution_id: str = "exec-a",
-    threshold_id: str,
-    evidence_json: str | None,
-    metric: str = "total_searchable",
-) -> None:
-    con.execute(
-        f"INSERT INTO geometry_analysis_records ({_ANALYSIS_COLUMNS}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        [
-            run_id,
-            "g1",
-            "obs-1",
-            "gram-v1",
-            "profile-digest",
-            threshold_id,
-            "struct-1",
-            "rep-1",
-            evaluation_id,
-            1,
-            execution_id,
-            metric,
-            0.0,
-            evidence_json,
-            1,
-        ],
-    )
-
-
-def _threshold_evidence(**overrides: Any) -> str:
-    evidence: dict[str, Any] = {"role": "threshold", "song_id": "s1", "backbone": "effnet"}
-    evidence.update(overrides)
-    return json.dumps(evidence)
-
-
-def test_read_threshold_map_rows_isolates_exact_scope(con) -> None:
-    good = _threshold_evidence()
-    _insert_threshold_row(con, threshold_id="t-exact", evidence_json=good)
-    # Decoy on each scope axis; each would be returned if scoping were leaky.
-    _insert_threshold_row(con, evaluation_id="eval-b", threshold_id="t-eval", evidence_json=good)
-    _insert_threshold_row(con, execution_id="exec-b", threshold_id="t-exec", evidence_json=good)
-    _insert_threshold_row(con, run_id="run-b", threshold_id="t-run", evidence_json=good)
-
-    rows = read_threshold_map_rows(con, run_id="run-a", evaluation_id="eval-a", execution_id="exec-a")
-
-    assert [row["threshold_id"] for row in rows] == ["t-exact"]
-
-
-def test_read_threshold_map_rows_skips_wrong_metric_empty_and_non_threshold_evidence(con) -> None:
-    _insert_threshold_row(con, threshold_id="t-metric", evidence_json=_threshold_evidence(), metric="corpus")
-    _insert_threshold_row(con, threshold_id="t-empty", evidence_json="")
-    _insert_threshold_row(con, threshold_id="t-nondict", evidence_json="[]")
-    _insert_threshold_row(con, threshold_id="t-role", evidence_json=json.dumps({"role": "corpus"}))
-    _insert_threshold_row(con, threshold_id="t-ok", evidence_json=_threshold_evidence())
-
-    rows = read_threshold_map_rows(con, run_id="run-a", evaluation_id="eval-a", execution_id="exec-a")
-
-    assert [row["threshold_id"] for row in rows] == ["t-ok"]
-
-
-def test_read_threshold_map_rows_orders_by_threshold_and_maps_comparable(con) -> None:
-    _insert_threshold_row(
-        con,
-        threshold_id="t-010",
-        evidence_json=_threshold_evidence(song_id="s2", comparable=False),
-    )
-    _insert_threshold_row(con, threshold_id="t-002", evidence_json=_threshold_evidence(song_id="s1"))
-    _insert_threshold_row(
-        con,
-        threshold_id="t-100",
-        evidence_json=_threshold_evidence(song_id="s3", comparable=True),
-    )
-
-    rows = read_threshold_map_rows(con, run_id="run-a", evaluation_id="eval-a", execution_id="exec-a")
-
-    assert [row["threshold_id"] for row in rows] == ["t-002", "t-010", "t-100"]
-    by_id = {row["threshold_id"]: row for row in rows}
-    assert set(by_id["t-002"]) == {
-        "song_id",
-        "backbone",
-        "threshold_id",
-        "structural_identity",
-        "search_representation_id",
-        "comparable",
-    }
-    assert by_id["t-002"]["song_id"] == "s1"
-    assert by_id["t-002"]["backbone"] == "effnet"
-    # Absent comparable defaults to True; an explicit False is preserved.
-    assert by_id["t-002"]["comparable"] is True
-    assert by_id["t-100"]["comparable"] is True
-    assert by_id["t-010"]["comparable"] is False
-
-
-# ── GAP 4: zero / near-zero segment-centroid fixtures ──────────────────────────
+# ── GAP 3: zero / near-zero segment-centroid fixtures ──────────────────────────
 
 
 def _assert_coherent(result: Any, count: int) -> None:

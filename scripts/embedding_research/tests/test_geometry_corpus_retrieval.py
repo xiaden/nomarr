@@ -283,9 +283,12 @@ def test_same_population_baseline_and_independent_rulers() -> None:
         assert max(query.scores.scores.values()) >= query.scores.baseline_score
 
     # artist ruler covers song-1/song-2, genre covers song-1/song-3, head covers song-1/song-3.
-    assert result.artist_metrics["n_songs"] >= 2.0
-    assert result.genre_metrics["n_songs"] >= 2.0
-    assert result.head_metrics["n_songs"] >= 2.0
+    evaluable_by_ruler: dict[str, list[int]] = {}
+    for row in result.class_aggregate_metrics:
+        evaluable_by_ruler.setdefault(row.ruler, []).append(row.evaluable_query_count)
+    assert max(evaluable_by_ruler["artist"]) >= 2
+    assert max(evaluable_by_ruler["genre"]) >= 2
+    assert max(evaluable_by_ruler["head"]) >= 2
     by_song = {query.request.song_id: query for query in result.queries}
     assert by_song["song-1"].state.eligible is True
     assert by_song["song-2"].state.eligible is True

@@ -423,24 +423,26 @@ def _insert_corpus_evidence(con, record, *, run_id: str) -> None:
             "geometry_id": record.geometry_id,
         }
     ]
-    evidence = json.dumps({"role": "corpus", "geometry_axes": axes})
     con.execute(
-        "INSERT INTO geometry_analysis_records VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO geometry_result_provenance (run_id,execution_id,evaluation_id,experiment,"
+        "scoring_semantics_version,geometry_semantics_version,numerical_profile_digest,evidence_mode,"
+        "synthetic_only,comparable,reasons_json,geometry_axes_json,head_evidence_provenance_json,"
+        "counters_json,created_at_ms) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (
             run_id,
-            record.geometry_id,
-            record.identity.observation_group_sha256,
+            "execution-a",
+            "evaluation-a",
+            "temporal_global",
+            1,
             record.identity.geometry_semantics_version,
             record.identity.numerical_profile_digest,
-            "threshold:0",
-            "structural",
-            "representation",
-            "evaluation-a",
-            1,
-            "execution-a",
-            "metric-a",
-            1.0,
-            evidence,
+            "synthetic_fixture",
+            False,
+            True,
+            "[]",
+            json.dumps(axes),
+            "{}",
+            "{}",
             1,
         ),
     )

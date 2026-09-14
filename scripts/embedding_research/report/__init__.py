@@ -14,13 +14,7 @@ from ._efficiency import section_efficiency
 from ._heads import section_head_analysis
 from ._provenance import section_provenance
 from ._retrieval import (
-    GEOMETRY_ANALYSIS_COLUMNS,
-    IDENTITY_COLUMNS,
-    query_analyze_metrics,
-    query_corpus_evidence,
-    query_geometry_identity,
-    query_observed_baselines,
-    query_winners_metrics,
+    query_normalized_result,
     section_analysis,
     verify_geometry_bindings_for_run,
 )
@@ -334,8 +328,6 @@ def run(
 
     print("Generating report…")
 
-    import pandas as pd
-
     if run_id and stream_store is not None and profile is not None:
         # Fail closed before reading or rendering anything: a superseded/corrupt geometry
         # binding must never publish a clean-looking report.
@@ -344,20 +336,9 @@ def run(
             lambda: verify_geometry_bindings_for_run(con, run_id=run_id, stream_store=stream_store, profile=profile),
         )
 
+    normalized_result = None
     if run_id:
-        df, _ = _step("query_analyze_metrics", lambda: query_analyze_metrics(con, run_id=run_id))
-        identity, _ = _step("query_geometry_identity", lambda: query_geometry_identity(con, run_id=run_id))
-        wdf, _ = _step("query_winners_metrics", lambda: query_winners_metrics(con, run_id=run_id))
-        bdf, _ = _step("query_observed_baselines", lambda: query_observed_baselines(con, run_id=run_id))
-        corpus_evidence, _ = _step("query_corpus_evidence", lambda: query_corpus_evidence(con, run_id=run_id))
-    else:
-        # No completed analyze scope was resolved: every evidence section visibly refuses
-        # instead of blending runs or selecting a latest/current scope.
-        df = pd.DataFrame(columns=GEOMETRY_ANALYSIS_COLUMNS)
-        identity = pd.DataFrame(columns=["run_id", *IDENTITY_COLUMNS])
-        wdf = df
-        bdf = df
-        corpus_evidence = None
+        normalized_result, _ = _step("query_normalized_result", lambda: query_normalized_result(con, run_id=run_id))
 
     # Global warnings
     warnings, _ = _step("discrimination_warnings", lambda: ruler_disc_warnings(con))
@@ -372,10 +353,10 @@ def run(
 
     # Section builders (exact order contract).
     sections_raw: list[tuple[str, Any]] = [
-        ("summary", lambda: section_summary(wdf, bdf, corpus_evidence=corpus_evidence)),
+        ("summary", lambda: section_summary(normalized_result)),
         ("corpus", lambda: section_corpus(con)),
-        ("analysis", lambda: section_analysis(df, identity, corpus_evidence=corpus_evidence)),
-        ("winners", lambda: section_winners(wdf, bdf, corpus_evidence=corpus_evidence)),
+        ("analysis", lambda: section_analysis(normalized_result)),
+        ("winners", lambda: section_winners(normalized_result)),
         ("head-analysis", lambda: section_head_analysis(con, run_id=run_id)),
         ("provenance", lambda: section_provenance(con, run_id=run_id)),
         ("efficiency", lambda: section_efficiency(con)),

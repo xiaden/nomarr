@@ -493,8 +493,8 @@ class GeometrySongAnalysis:
     roster: GeometryRepresentationRoster
     scores: GeometryScoreBundle
     state: RepresentationState = field(default_factory=lambda: RepresentationState(True, True, True, ()))
-    neighborhood: tuple[NeighborhoodEntry, ...] = ()
-    baseline_neighborhood: tuple[NeighborhoodEntry, ...] = ()
+    neighborhood: tuple[RankedNeighbor, ...] = ()
+    baseline_neighborhood: tuple[RankedNeighbor, ...] = ()
     threshold_id: str = ""
     collapse_class_id: str = ""
 
@@ -861,7 +861,6 @@ class GeometryCorpusAnalysis:
     # canonical publication and reporting.
     threshold_queries: tuple[GeometrySongAnalysis, ...] = ()
     candidates: tuple[GeometryCandidate, ...] = ()
-    noncomparable: tuple[NonComparableEvidence, ...] = ()
     reasons: tuple[str, ...] = ()
     hypotheses: tuple[GeometryCorpusHypothesis, ...] = ()
     evidence_mode: str = "synthetic_fixture"
@@ -932,12 +931,6 @@ def _ruler_label(value: Any) -> object | None:
             return None
         return tuple(item.strip() if isinstance(item, str) else item for item in items)
     return value
-
-
-def _legacy_metrics_removed(
-    *_args: Any, **_kwargs: Any
-) -> tuple[dict[str, float], dict[str, float], dict[str, float], dict[str, dict[str, float]], dict[str, float]]:
-    return {}, {}, {}, {}, {}
 
 
 def _stable_id(*parts: object) -> str:
@@ -1248,7 +1241,6 @@ def analyze_geometry_corpus(
     threshold_rosters: dict[str, tuple[GeometryCandidate, ...]] = {}
     threshold_members: dict[tuple[str, int], tuple[GeometryCandidate, ...]] = {}
     representative_members: dict[str, tuple[GeometryCandidate, ...]] = {}
-    noncomparable: list[NonComparableEvidence] = []
     baseline_roster: dict[tuple[str, str], FrozenSearchRepresentation] = {}
     representation_cache: dict[tuple[str, str, str], FrozenSearchRepresentation] = {}
 
@@ -1313,17 +1305,6 @@ def analyze_geometry_corpus(
                     candidate_count=len(request.items) - 1,
                     label_defined=_label_defined(item),
                 )
-                if not state.comparable:
-                    noncomparable.append(
-                        NonComparableEvidence(
-                            item.song_id,
-                            item.backbone,
-                            (int(threshold_index),),
-                            str(result.structural.identity),
-                            collapse_class_id,
-                            state.reasons,
-                        )
-                    )
                 representation = next(
                     member.representation for member in class_members if member.representation.song_id == item.song_id
                 )
@@ -1443,7 +1424,7 @@ def analyze_geometry_corpus(
                 baseline_query = baseline_roster.get((item.song_id, item.backbone))
                 baseline_scores: Mapping[str, float] = MappingProxyType({})
                 baseline_calls = 0
-                baseline_neighborhood: tuple[NeighborhoodEntry, ...] = ()
+                baseline_neighborhood: tuple[RankedNeighbor, ...] = ()
                 if baseline_query is not None:
                     baseline_others = tuple(
                         rep
@@ -1573,7 +1554,6 @@ def analyze_geometry_corpus(
         queries=tuple(queries),
         threshold_queries=threshold_queries,
         candidates=candidates,
-        noncomparable=tuple(noncomparable),
         hypotheses=tuple(threshold_hypotheses),
         evidence_mode="synthetic_fixture" if request.synthetic_only else "empirical_request",
         head_evidence_provenance=_corpus_head_provenance(request),
@@ -1737,7 +1717,7 @@ def _corpus_backbones(result: GeometryCorpusAnalysis) -> tuple[str, ...]:
 def _threshold_searchable_count(analysis: Any, threshold_id: str) -> int:
     """Exact ``total_searchable`` for one threshold, never a max across the sweep.
 
-    ``_analysis_query_pairs`` yields one pair per ``(song, threshold)``; each pair must
+    One ``(song, threshold)`` pair is reported per analyzed threshold; each pair must
     report the count of that exact ``ThresholdAnalysisResult``, not the maximum count any
     threshold in the song's sweep happened to reach.  The threshold identity is resolved
     by its canonical id or, when the query carries the bare index, by threshold index.
@@ -1775,11 +1755,16 @@ def _geometry_axes_payload(result: GeometryCorpusAnalysis) -> list[dict[str, str
     reps = _corpus_representations(result)
     if reps:
         axes: list[dict[str, str]] = []
+        seen: set[tuple[str, str, str, str]] = set()
         for rep in reps:
             key = (str(rep.geometry_id), str(rep.observation_group_sha256), str(rep.numerical_profile_digest))
             version = versions.get(key)
             if version is None:
                 raise ValueError("representation has no matching corpus geometry identity")
+            unique = (key[0], key[1], key[2], version)
+            if unique in seen:
+                continue
+            seen.add(unique)
             axes.append(
                 {
                     "song_id": str(rep.song_id),
@@ -1933,7 +1918,6 @@ def write_geometry_corpus_analysis(
     before commit, and the invocation is terminalized only after complete publication.  Any
     refusal rolls back every output; there is no threshold-result table or compatibility path.
     """
-    from types import SimpleNamespace
 
     from scripts.embedding_research.db.analyze_scope import (
         invocation_state,
@@ -2272,6 +2256,40 @@ def _normalized_baseline_neighborhood(row: Mapping[str, Any]) -> GeometryBaselin
         candidate_song_id=str(row["candidate_song_id"]),
         rank=_normalized_index(row["rank"], "rank"),
         score=_normalized_finite(row["score"], "neighborhood score"),
+    )
+
+
+def corpus_result_identity_from_provenance(provenance: Mapping[str, Any]) -> AnalysisEvidenceIdentity:
+    """Reconstruct the corpus-level ten-axis identity from a compact provenance row.
+
+    ``geometry_result_provenance`` is corpus-level: it stores the per-representation geometry
+    axes rather than one digest pair, so the corpus geometry/observation digests are recomputed
+    exactly the way :func:`_verify_normalized_corpus_digest` expects (same sorted member order).
+    """
+    axes = tuple(dict(axis) for axis in provenance.get("geometry_axes") or ())
+    if not axes:
+        raise IntegrityRefused("INTEGRITY_REFUSED: result provenance carries no geometry axes")
+    semantics = str(provenance["geometry_semantics_version"])
+    members = sorted(
+        (
+            str(axis["geometry_id"]),
+            str(axis["observation_group_sha256"]),
+            str(axis["numerical_profile_digest"]),
+            semantics,
+        )
+        for axis in axes
+    )
+    return AnalysisEvidenceIdentity(
+        geometry_id=_stable_id("corpus-geometry", [member[0] for member in members]),
+        observation_group_sha256=_stable_id("corpus-observation", [member[1] for member in members]),
+        geometry_semantics_version=semantics,
+        numerical_profile_digest=str(provenance["numerical_profile_digest"]),
+        threshold_id=_CORPUS_THRESHOLD_ID,
+        structural_identity=f"{provenance['experiment']}:corpus",
+        evaluation_id=str(provenance["evaluation_id"]),
+        search_representation_id=_CORPUS_SEARCH_REPRESENTATION_ID,
+        scoring_semantics_version=int(provenance["scoring_semantics_version"]),
+        execution_id=str(provenance["execution_id"]),
     )
 
 
@@ -2781,15 +2799,26 @@ def _song_search_identity(
     )
 
 
+@dataclass(frozen=True)
+class RankedNeighbor:
+    """One retained top-N neighborhood candidate: rank, song identity, and score."""
+
+    rank: int
+    song_id: str
+    backbone: str
+    search_representation_id: str
+    score: float
+
+
 def _select_neighborhood(
     scores: Mapping[str, float],
     lookup: Mapping[str, FrozenSearchRepresentation],
     *,
     limit: int = _NEIGHBORHOOD_SIZE,
-) -> tuple[NeighborhoodEntry, ...]:
+) -> tuple[RankedNeighbor, ...]:
     """Deterministic descending-score top-N with a search-identity tie-break."""
     ranked = sorted(((str(key), float(value)) for key, value in scores.items()), key=lambda pair: (-pair[1], pair[0]))
-    entries: list[NeighborhoodEntry] = []
+    entries: list[RankedNeighbor] = []
     seen_songs: set[str] = set()
     for _rank, (key, value) in enumerate(ranked[:limit]):
         representation = lookup.get(key)
@@ -2798,7 +2827,7 @@ def _select_neighborhood(
         seen_songs.add(representation.song_id)
         _finite(value, "score")
         entries.append(
-            NeighborhoodEntry(
+            RankedNeighbor(
                 len(entries),
                 representation.song_id,
                 representation.backbone,

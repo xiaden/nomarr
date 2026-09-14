@@ -88,7 +88,7 @@ def test_diagnostic_roundtrip_exact_identity_and_baseline_ordering(con) -> None:
     assert row["missing_count"] == 2
     assert row["missing_song_ids_json"] == '["song-a","song-b"]'
     # A diagnostic is NEVER an analysis metric row.
-    assert con.execute("SELECT count(*) FROM geometry_analysis_records").fetchone()[0] == 0
+    assert con.execute("SELECT count(*) FROM geometry_class_aggregate_metrics").fetchone()[0] == 0
 
 
 def test_comparable_result_is_refused(con) -> None:

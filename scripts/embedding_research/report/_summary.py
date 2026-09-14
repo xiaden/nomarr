@@ -1,42 +1,36 @@
-"""Geometry analysis summary section (exact run-scoped evidence)."""
+"""Geometry analysis summary section (normalized run-scoped evidence)."""
 
 from __future__ import annotations
 
-import pandas as pd
-
-from ._base import make_section, make_table
+from typing import Any
 
 
-def _group_counts(frame: pd.DataFrame, key: str) -> list[dict]:
-    rows: list[dict] = []
-    for value, group in frame.groupby(key, sort=True, dropna=False):
-        rows.append(
-            {
-                key: str(value),
-                "metric_cells": len(group),
-                "finite_cells": int(group["value"].notna().sum()),
-            }
-        )
-    return rows
+def _class_counts(result: Any) -> list[dict]:
+    counts: dict[str, int] = {}
+    for row in result.class_aggregate_metrics:
+        counts[row.corpus_search_class_id] = counts.get(row.corpus_search_class_id, 0) + 1
+    return [
+        {"corpus_search_class_id": str(class_id), "metric_cells": count, "finite_cells": count}
+        for class_id, count in sorted(counts.items())
+    ]
 
 
-def section_summary(
-    analysis_df: pd.DataFrame,
-    baseline_df: pd.DataFrame | None = None,
-    *,
-    corpus_evidence: dict | None = None,
-) -> dict:
-    """Summarize canonical winner hypotheses and the observed baseline separately."""
-    if corpus_evidence is not None:
-        queries = corpus_evidence.get("queries") or []
-        analysis_df = pd.DataFrame(
-            [entry for q in queries if isinstance(q, dict) for entry in q.get("neighborhood") or []]
-        )
-        baseline_df = pd.DataFrame(
-            [entry for q in queries if isinstance(q, dict) for entry in q.get("baseline_neighborhood") or []]
-        )
-    has_analysis = analysis_df is not None and not analysis_df.empty
-    has_baseline = baseline_df is not None and not baseline_df.empty
+def _backbone_counts(result: Any) -> list[dict]:
+    counts: dict[str, int] = {}
+    for row in result.baseline_aggregate_metrics:
+        counts[row.backbone] = counts.get(row.backbone, 0) + 1
+    return [
+        {"backbone": str(backbone), "metric_cells": count, "finite_cells": count}
+        for backbone, count in sorted(counts.items())
+    ]
+
+
+def section_summary(result: Any = None) -> dict:
+    """Summarize the single threshold-independent baseline and class-scoped metric coverage."""
+    from ._base import make_section, make_table
+
+    has_analysis = result is not None and bool(result.class_aggregate_metrics)
+    has_baseline = result is not None and bool(result.baseline_aggregate_metrics)
     if not has_analysis and not has_baseline:
         return make_section(
             "summary",
@@ -50,34 +44,29 @@ def section_summary(
     if has_analysis:
         stats.extend(
             [
-                {"label": "analysis rows", "value": len(analysis_df)},
+                {"label": "class metric rows", "value": len(result.class_aggregate_metrics)},
                 {
-                    "label": "geometry ids",
-                    "value": int(analysis_df["geometry_id"].nunique()) if "geometry_id" in analysis_df else 0,
+                    "label": "classes",
+                    "value": len({row.corpus_search_class_id for row in result.class_aggregate_metrics}),
                 },
                 {
-                    "label": "thresholds",
-                    "value": int(analysis_df["threshold_id"].nunique()) if "threshold_id" in analysis_df else 0,
-                },
-                {"label": "metrics", "value": int(analysis_df["metric"].nunique()) if "metric" in analysis_df else 0},
-                {
-                    "label": "finite values",
-                    "value": int(analysis_df["value"].notna().sum()) if "value" in analysis_df else 0,
+                    "label": "metrics",
+                    "value": len({row.metric for row in result.class_aggregate_metrics}),
                 },
             ]
         )
         tables.append(
             make_table(
-                _group_counts(analysis_df, "threshold_id"),
+                _class_counts(result),
                 id="geometry_threshold_summary",
-                title="Winner threshold evidence summary",
+                title="Class-scoped metric coverage summary",
             )
         )
     if has_baseline:
-        stats.append({"label": "baseline rows", "value": len(baseline_df)})
+        stats.append({"label": "baseline rows", "value": len(result.baseline_aggregate_metrics)})
         tables.append(
             make_table(
-                _group_counts(baseline_df, "threshold_id"),
+                _backbone_counts(result),
                 id="observed_baseline_summary",
                 title="Observed global-medoid baseline summary",
             )
@@ -87,8 +76,8 @@ def section_summary(
         "summary",
         "Geometry Result Status",
         description=(
-            "Exact run-scoped geometry evidence only. Winner threshold rows and the mandatory "
-            "observed global-medoid baseline are counted separately; the baseline is never a winner."
+            "Exact run-scoped geometry evidence only. Class-scoped threshold metrics and the "
+            "single threshold-independent observed global-medoid baseline are counted separately."
         ),
         stats=stats,
         tables=tables,
