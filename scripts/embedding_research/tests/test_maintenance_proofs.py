@@ -412,7 +412,7 @@ class _FakeHeadStore:
         return _HeadPayload(self._matrix)
 
 
-def _insert_corpus_evidence(con, record, *, run_id: str) -> None:
+def _insert_result_evidence(con, record, *, run_id: str) -> None:
     axes = [
         {
             "song_id": record.identity.song_id,
@@ -446,6 +446,27 @@ def _insert_corpus_evidence(con, record, *, run_id: str) -> None:
             1,
         ),
     )
+    con.execute(
+        "INSERT INTO geometry_evaluation_corpus (run_id,execution_id,evaluation_id,experiment,song_id,"
+        "backbone,geometry_id,observation_group_sha256,numerical_profile_digest,searchable_count,comparable,"
+        "reasons_json,baseline_valid,created_at_ms) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (
+            run_id,
+            "execution-a",
+            "evaluation-a",
+            "temporal_global",
+            record.identity.song_id,
+            record.identity.backbone,
+            record.geometry_id,
+            record.identity.observation_group_sha256,
+            record.identity.numerical_profile_digest,
+            1,
+            True,
+            "[]",
+            True,
+            1,
+        ),
+    )
 
 
 def test_report_refuses_superseded_geometry_before_publication(tmp_path, profile):
@@ -454,7 +475,7 @@ def test_report_refuses_superseded_geometry_before_publication(tmp_path, profile
     con = _fresh_con()
     root = tmp_path / "root"
     store, _first, record = _seed(root, con)
-    _insert_corpus_evidence(con, record, run_id="run-a")
+    _insert_result_evidence(con, record, run_id="run-a")
     _supersede(root, con)
     out_dir = tmp_path / "out"
 

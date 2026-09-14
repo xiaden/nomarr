@@ -2,8 +2,8 @@
 
 Fills the confirmed coverage gaps left by the corrective repair:
 
-* ``report._retrieval.section_analysis`` corpus-evidence rendering and
-  ``report._retrieval.query_corpus_evidence`` run-scoped retrieval.
+* ``report._retrieval.section_analysis`` normalized result-surface rendering and
+  ``report._retrieval.collect_report_frames`` run-scoped retrieval.
 * ``validate_fixture_report.validate_report`` corrective-evidence fail-closed checks.
 * ``tools.emit_corrective_evidence.main`` deterministic Plan F summary emission.
 * ``helpers.corpus_identity`` validation/refusal error paths.
@@ -30,7 +30,7 @@ from scripts.embedding_research.helpers.corpus_identity import (
     structural_identity,
 )
 from scripts.embedding_research.report._retrieval import (
-    query_normalized_result,
+    collect_report_frames,
     section_analysis,
 )
 from scripts.embedding_research.report._summary import section_summary
@@ -62,8 +62,8 @@ def _messages(section: dict, level: str | None = None) -> list[str]:
 def test_section_summary_separates_class_and_observed_baseline_evidence() -> None:
     con = build_seeded_con()
     try:
-        result = query_normalized_result(con, run_id=RUN_ID)
-        section = section_summary(result)
+        frames = collect_report_frames(con, run_id=RUN_ID)
+        section = section_summary(frames)
     finally:
         con.close()
 
@@ -96,8 +96,8 @@ def test_section_summary_refuses_without_normalized_result() -> None:
 def test_section_analysis_renders_identity_threshold_map_and_class_metrics() -> None:
     con = build_seeded_con()
     try:
-        result = query_normalized_result(con, run_id=RUN_ID)
-        section = section_analysis(result)
+        frames = collect_report_frames(con, run_id=RUN_ID)
+        section = section_analysis(frames)
     finally:
         con.close()
 
@@ -112,19 +112,19 @@ def test_section_analysis_renders_identity_threshold_map_and_class_metrics() -> 
 def test_section_analysis_errors_on_non_comparable_result() -> None:
     con = build_seeded_con()
     try:
-        result = query_normalized_result(con, run_id=RUN_ID)
+        frames = collect_report_frames(con, run_id=RUN_ID)
     finally:
         con.close()
     non_comparable = replace(
-        result,
-        provenance=replace(result.provenance, comparable=False, reasons=("no_searchable",)),
+        frames,
+        provenance={**frames.provenance, "comparable": False, "reasons": ("zero_searchable",)},
     )
 
     section = section_analysis(non_comparable)
 
     errors = _messages(section, level="error")
     assert any("Non-comparable geometry corpus published with explicit reasons" in message for message in errors)
-    assert any("no_searchable" in message for message in errors)
+    assert any("zero_searchable" in message for message in errors)
 
 
 def test_section_analysis_errors_when_result_unavailable() -> None:

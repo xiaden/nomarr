@@ -28,19 +28,26 @@ name: Docker Publish
 # validated separately by scripts/validate_commit.py. Nothing in this file
 # re-runs, repairs, or merges other workflows.
 #
-# F3 base-rebuild wiring: this workflow invokes build-base.yml as a reusable
-# workflow through a non-required `build-base` job, and `build-and-push` runs
-# only after it (`needs: build-base`). A dependency-input change therefore
-# rebuilds the base once, inside this same run and from the same commit, before
-# the app image is built. On every ref where this workflow runs (`main`,
-# `develop`, `feat/**`, and `workflow_dispatch` on any ref), `build-and-push`
-# pins the base tag the reusable `build-base` job just published for this
-# commit: `BASE_TAG=v${BASE_VERSION}` on `main`/`develop` (where build-base.yml
+# F3 base-rebuild wiring (Amendment A2): there is exactly one push-triggered
+# base-image orchestrator, `docker-publish.yml`. It invokes build-base.yml as a
+# reusable workflow through a non-required `build-base` job, and `build-and-push`
+# runs only after it (`needs: build-base`). build-base.yml retains no independent
+# `push` trigger but remains reusable and manually dispatchable, with its tag
+# scheme, provenance, and SBOM attestations intact. On every ref where this
+# workflow runs (`main`, `develop`, `feat/**`, and `workflow_dispatch` on any
+# ref), every change capable of altering the base image or the resolved package
+# environment (`dockerfile.base`, `build_resources/essentia/**`,
+# `build_resources/scripts/**`, `pyproject.toml`, `uv.lock`, `.python-version`,
+# `BASE_VERSION`) as well as every ordinary source change builds the app image in
+# the same workflow run, from the same commit, after the reusable `build-base`
+# job has rebuilt and published the base for that commit. `build-and-push` pins
+# the base tag the same-run `build-base` job just published:
+# `BASE_TAG=v${BASE_VERSION}` on `main`/`develop` (where build-base.yml
 # republishes that tag) and `BASE_TAG=sha-${SHORT_SHA}` on every other ref
 # (where build-base.yml publishes `sha-${SHORT_SHA}`, unique to that commit).
-# The app image therefore never resolves a base carrying dependency metadata
-# older than the commit that produced it. The base tag scheme is unchanged, and
-# the required check names remain `build-and-push` and `promote`.
+# The base tag scheme is unchanged, and the required check names remain
+# `build-and-push` and `promote`. The app image therefore never resolves a base
+# carrying dependency metadata older than the commit that produced it.
 
 on:
   push:
@@ -51,12 +58,15 @@ on:
       - "frontend/**"
       - "e2e/**"
       - "dockerfile"
+      - "dockerfile.base"
       - "docker/compose.yaml"
       - "pyproject.toml"
       - "uv.lock"
       - ".python-version"
       - "playwright.config.ts"
       - "BASE_VERSION"
+      - "build_resources/essentia/**"
+      - "build_resources/scripts/**"
       - ".github/workflows/docker-publish.yml"
       - ".github/workflows/build-base.yml"
   workflow_dispatch:

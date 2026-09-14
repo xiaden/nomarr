@@ -5,32 +5,32 @@ from __future__ import annotations
 from typing import Any
 
 
-def _class_counts(result: Any) -> list[dict]:
+def _class_counts(frames: Any) -> list[dict]:
     counts: dict[str, int] = {}
-    for row in result.class_aggregate_metrics:
-        counts[row.corpus_search_class_id] = counts.get(row.corpus_search_class_id, 0) + 1
+    for row in frames.class_aggregate_metrics:
+        counts[row["corpus_search_class_id"]] = counts.get(row["corpus_search_class_id"], 0) + 1
     return [
         {"corpus_search_class_id": str(class_id), "metric_cells": count, "finite_cells": count}
         for class_id, count in sorted(counts.items())
     ]
 
 
-def _backbone_counts(result: Any) -> list[dict]:
+def _backbone_counts(frames: Any) -> list[dict]:
     counts: dict[str, int] = {}
-    for row in result.baseline_aggregate_metrics:
-        counts[row.backbone] = counts.get(row.backbone, 0) + 1
+    for row in frames.baseline_aggregate_metrics:
+        counts[row["backbone"]] = counts.get(row["backbone"], 0) + 1
     return [
         {"backbone": str(backbone), "metric_cells": count, "finite_cells": count}
         for backbone, count in sorted(counts.items())
     ]
 
 
-def section_summary(result: Any = None) -> dict:
+def section_summary(frames: Any = None) -> dict:
     """Summarize the single threshold-independent baseline and class-scoped metric coverage."""
     from ._base import make_section, make_table
 
-    has_analysis = result is not None and bool(result.class_aggregate_metrics)
-    has_baseline = result is not None and bool(result.baseline_aggregate_metrics)
+    has_analysis = frames is not None and bool(frames.class_aggregate_metrics)
+    has_baseline = frames is not None and bool(frames.baseline_aggregate_metrics)
     if not has_analysis and not has_baseline:
         return make_section(
             "summary",
@@ -44,29 +44,30 @@ def section_summary(result: Any = None) -> dict:
     if has_analysis:
         stats.extend(
             [
-                {"label": "class metric rows", "value": len(result.class_aggregate_metrics)},
+                {"label": "class metric rows", "value": len(frames.class_aggregate_metrics)},
                 {
                     "label": "classes",
-                    "value": len({row.corpus_search_class_id for row in result.class_aggregate_metrics}),
+                    "value": len({row["corpus_search_class_id"] for row in frames.class_aggregate_metrics}),
                 },
                 {
                     "label": "metrics",
-                    "value": len({row.metric for row in result.class_aggregate_metrics}),
+                    "value": len({row["metric"] for row in frames.class_aggregate_metrics}),
                 },
             ]
         )
         tables.append(
             make_table(
-                _class_counts(result),
+                _class_counts(frames),
                 id="geometry_threshold_summary",
                 title="Class-scoped metric coverage summary",
             )
         )
     if has_baseline:
-        stats.append({"label": "baseline rows", "value": len(result.baseline_aggregate_metrics)})
+        # The fixed threshold-independent baseline is reported exactly once, here.
+        stats.append({"label": "baseline rows", "value": len(frames.baseline_aggregate_metrics)})
         tables.append(
             make_table(
-                _backbone_counts(result),
+                _backbone_counts(frames),
                 id="observed_baseline_summary",
                 title="Observed global-medoid baseline summary",
             )

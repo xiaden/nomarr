@@ -26,6 +26,9 @@ RUN_ID = "fixture-geometry-run"
 RUN_TS = "fixture-run"
 _ANALYZE_STARTED_MS = 1_700_000_000_000 + PHASE_NAMES.index("analyze") * 2_000
 BACKBONES = ("effnet", "musicnn")
+#: Every analyze execution is scoped to exactly one backbone; the synthetic analysis
+#: surfaces are seeded from this consistent single-backbone (effnet) result.
+ANALYSIS_BACKBONE = "effnet"
 SONGS = (
     ("s1", "Alice", "jazz"),
     ("s2", "Alice", "jazz"),
@@ -35,7 +38,7 @@ SONGS = (
 THRESHOLD_IDS = ("t-000", "t-001", "t-002")
 EXPERIMENT = "temporal_global"
 EVALUATION_ID = "fixture-evaluation"
-EXECUTION_ID = "fixture-execution"
+EXECUTION_ID = f"fixture-execution:{ANALYSIS_BACKBONE}"
 SCORING_SEMANTICS_VERSION = 1
 
 SYNTHETIC_WARNING = {
@@ -225,8 +228,9 @@ def seed_analysis(con, *, run_id: str = RUN_ID, records: tuple[GeometryRecord, .
         write_result_provenance_in_transaction,
     )
 
-    anchors = _song_anchors(records)
-    backbones = sorted({record.identity.backbone for record in records})
+    analysis_records = tuple(record for record in records if record.identity.backbone == ANALYSIS_BACKBONE)
+    anchors = _song_anchors(analysis_records)
+    backbones = sorted({record.identity.backbone for record in analysis_records})
     corpus = tuple(
         GeometryEvaluationCorpusEntry(
             song_id=record.identity.song_id,
@@ -239,7 +243,7 @@ def seed_analysis(con, *, run_id: str = RUN_ID, records: tuple[GeometryRecord, .
             reasons=(),
             baseline_valid=True,
         )
-        for record in records
+        for record in analysis_records
     )
     threshold_rows = tuple(
         GeometryThresholdClassRow(index, threshold_id, float(index), f"class:{threshold_id}", True, ())
@@ -299,7 +303,7 @@ def seed_analysis(con, *, run_id: str = RUN_ID, records: tuple[GeometryRecord, .
             score=0.9 - 0.1 * rank,
         )
         for threshold_id in THRESHOLD_IDS
-        for rank, (query, candidate) in enumerate(_query_candidate_pairs(records))
+        for rank, (query, candidate) in enumerate(_query_candidate_pairs(analysis_records))
     )
     baseline_aggregate_rows = tuple(
         GeometryBaselineAggregateMetric(
@@ -337,7 +341,7 @@ def seed_analysis(con, *, run_id: str = RUN_ID, records: tuple[GeometryRecord, .
             score=0.9 - 0.1 * rank,
         )
         for backbone in backbones
-        for rank, (query, candidate) in enumerate(_query_candidate_pairs(records))
+        for rank, (query, candidate) in enumerate(_query_candidate_pairs(analysis_records))
     )
     provenance = GeometryResultProvenanceRow(
         execution_id=EXECUTION_ID,
@@ -345,7 +349,7 @@ def seed_analysis(con, *, run_id: str = RUN_ID, records: tuple[GeometryRecord, .
         experiment=EXPERIMENT,
         scoring_semantics_version=SCORING_SEMANTICS_VERSION,
         geometry_semantics_version=records[0].identity.geometry_semantics_version,
-        numerical_profile_digest=records[0].identity.numerical_profile_digest,
+        numerical_profile_digest=analysis_records[0].identity.numerical_profile_digest,
         evidence_mode="synthetic_fixture",
         synthetic_only=True,
         comparable=True,
@@ -359,7 +363,7 @@ def seed_analysis(con, *, run_id: str = RUN_ID, records: tuple[GeometryRecord, .
                 "geometry_semantics_version": record.identity.geometry_semantics_version,
                 "numerical_profile_digest": record.identity.numerical_profile_digest,
             }
-            for record in records
+            for record in analysis_records
         ),
         head_evidence_provenance={},
         counters={"scorer_calls": 1.0},
@@ -395,7 +399,7 @@ def seed_analysis(con, *, run_id: str = RUN_ID, records: tuple[GeometryRecord, .
     write_result_provenance_in_transaction(con, run_id=run_id, row=provenance)
 
     obligations = [
-        (backbone, next(record.geometry_id for record in records if record.identity.backbone == backbone))
+        (backbone, next(record.geometry_id for record in analysis_records if record.identity.backbone == backbone))
         for backbone in backbones
     ]
     record_analyze_invocation(con, run_id=run_id, backbones=obligations, started_at=_ANALYZE_STARTED_MS)
@@ -450,6 +454,7 @@ def build_seeded_con(*, run_id: str = RUN_ID) -> duckdb.DuckDBPyConnection:
 
 
 __all__ = [
+    "ANALYSIS_BACKBONE",
     "BACKBONES",
     "EVALUATION_ID",
     "EXECUTION_ID",

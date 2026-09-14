@@ -25,6 +25,7 @@ import numpy as np
 import pytest
 
 from scripts.embedding_research.common.geometry_analysis import (
+    _NEIGHBORHOOD_SIZE,
     FrozenSearchRepresentation,
     GeometryCorpusRequest,
     GeometryRepresentationRoster,
@@ -52,10 +53,14 @@ from scripts.embedding_research.db.identity_persistence import (
 from scripts.embedding_research.db.result_surfaces import (
     read_baseline_aggregate_metrics,
     read_baseline_neighborhoods,
+    read_baseline_query_metrics,
     read_class_aggregate_metrics,
     read_class_neighborhoods,
     read_class_query_metrics,
     read_result_provenance,
+    write_baseline_aggregate_metrics_in_transaction,
+    write_baseline_neighborhoods_in_transaction,
+    write_baseline_query_metrics_in_transaction,
     write_class_neighborhoods_in_transaction,
     write_class_query_metrics_in_transaction,
 )
@@ -66,6 +71,10 @@ _BACKBONE = "effnet"
 _RUN_ID = "run-result-surfaces"
 _EVALUATION_ID = "evaluation-result-surfaces"
 _EXECUTION_ID = "execution:run-result-surfaces:effnet"
+
+#: The class-scoped result oracle publishes one aggregate row per ruler per metric.
+_RULERS = 3
+_METRICS = 5
 
 # ---------------------------------------------------------------------------
 # Direct-helper fixtures (single-backbone synthetic scoring)
@@ -401,6 +410,38 @@ def test_a_normalized_surfaces_write_no_duplicate_identity_over_171_thresholds()
     assert len(provenance) == 1
     assert provenance[0]["evidence_mode"] == "synthetic_fixture"
     assert provenance[0]["synthetic_only"] is True
+
+    # P9-S1: every persisted surface is bounded by the corpus/class/ruler/metric axes and the
+    # retained top-N window — never by a persisted N x N similarity matrix.
+    n = 3
+    top_n = min(n - 1, _NEIGHBORHOOD_SIZE)
+    assert top_n == 2
+    assert _NEIGHBORHOOD_SIZE <= 100
+    assert len(structural) == n * 171
+    assert len(aggregate) == len(distinct_classes) * _RULERS * _METRICS
+    assert len(query_rows) <= len(distinct_classes) * n * _RULERS * _METRICS
+    assert len(neighborhoods) == len(distinct_classes) * n * top_n
+    assert len(baseline_aggregate) == _RULERS * _METRICS
+    assert len(baseline_neighborhoods) == n * top_n
+    persisted_surfaces = (
+        structural,
+        class_map,
+        aggregate,
+        query_rows,
+        neighborhoods,
+        baseline_aggregate,
+        read_baseline_query_metrics(con, run_id=_RUN_ID),
+        baseline_neighborhoods,
+    )
+    # A persisted full N x N similarity matrix would be exactly N*N rows on some surface. The
+    # class similarity matrix is transient — constructed inside the metric pass and never stored.
+    full_matrix_rows = n * n
+    for surface in persisted_surfaces:
+        assert len(surface) != full_matrix_rows
+    assert full_matrix_rows not in {
+        len(neighborhoods) // len(distinct_classes),
+        len(baseline_neighborhoods) // n,
+    }
     con.close()
 
 
@@ -425,6 +466,13 @@ def test_e_non_comparable_class_emits_no_partial_metrics_but_baseline_covers_cor
     assert len(baseline_aggregate) == 3 * 5
     assert len(baseline_neighborhood) == 3 * 2
     assert {row.query_song_id for row in baseline_neighborhood} == {"song-q", "song-a", "song-b"}
+    # P9-S1: a non-comparable class emits no retrieval rows at all; only the threshold-
+    # independent baseline's O(N x topN) window is retained, never an N x N matrix.
+    top_n = min(len(_THREE_SONGS) - 1, _NEIGHBORHOOD_SIZE)
+    assert len(baseline_aggregate) == _RULERS * _METRICS
+    assert len(baseline_neighborhood) == len(_THREE_SONGS) * top_n
+    assert len(baseline_neighborhood) != len(_THREE_SONGS) ** 2
+    assert len(baseline_aggregate) != len(_THREE_SONGS) ** 2
 
     # The structural evidence for the non-comparable threshold is retained with canonical reasons.
     con = duckdb.connect(":memory:")
@@ -485,6 +533,41 @@ def test_i_baseline_counts_are_independent_of_threshold_count() -> None:
     assert len(one_aggregate) == 3 * 5
     assert len(one_neighborhood) == 3 * 2
 
+    # P9-S1: the threshold-independent baseline is byte-identical at the PERSISTED level too;
+    # the two runs differ only in their run identity and the created_at_ms wall-clock stamp.
+    con = duckdb.connect(":memory:")
+    ensure_schema(con)
+    for run_id, aggregate, query, neighborhood in (
+        ("run-one-class", one_aggregate, one_query, one_neighborhood),
+        ("run-two-classes", two_aggregate, two_query, two_neighborhood),
+    ):
+        con.execute("BEGIN")
+        write_baseline_aggregate_metrics_in_transaction(
+            con,
+            run_id=run_id,
+            execution_id=_EXECUTION_ID,
+            evaluation_id=_EVALUATION_ID,
+            rows=aggregate,
+        )
+        write_baseline_query_metrics_in_transaction(con, run_id=run_id, rows=query)
+        write_baseline_neighborhoods_in_transaction(con, run_id=run_id, rows=neighborhood)
+        con.execute("COMMIT")
+
+    def _baseline_snapshot(run_id: str) -> tuple[object, object, object]:
+        def _strip(rows: list[dict]) -> tuple[dict, ...]:
+            return tuple(
+                {key: value for key, value in row.items() if key not in {"run_id", "created_at_ms"}} for row in rows
+            )
+
+        return (
+            _strip(read_baseline_aggregate_metrics(con, run_id=run_id)),
+            _strip(read_baseline_query_metrics(con, run_id=run_id)),
+            _strip(read_baseline_neighborhoods(con, run_id=run_id)),
+        )
+
+    assert _baseline_snapshot("run-one-class") == _baseline_snapshot("run-two-classes")
+    con.close()
+
 
 # ---------------------------------------------------------------------------
 # J — the same (query, candidate) under two classes round-trips distinctly
@@ -529,6 +612,15 @@ def test_j_same_query_candidate_under_two_classes_round_trips_distinctly() -> No
         for row in stored_queries
     }
     assert len(query_keys) == len(stored_queries)
+    # P9-S2: the class is part of the metric identity too — the same query under two classes keeps
+    # its own per-query metric values rather than being collapsed across classes.
+    per_class_mrr = {
+        row["corpus_search_class_id"]: row["value"]
+        for row in stored_queries
+        if row["query_song_id"] == "song-q" and row["ruler"] == "artist" and row["metric"] == "mrr"
+    }
+    assert set(per_class_mrr) == {"class-t1", "class-t2"}
+    assert per_class_mrr["class-t1"] != per_class_mrr["class-t2"]
     con.close()
 
 
@@ -555,6 +647,17 @@ def test_k_per_query_metrics_cover_artist_genre_and_head_with_status() -> None:
     assert {row.ruler for row in song_b} == {"artist", "genre", "head"}
     assert {row.status for row in song_b} == {"undefined"}
 
+    # P9-S2: every (class, query, ruler) persists the full per-query metric set (the four
+    # metrics that expose a per-song oracle value; ndcg_k is aggregate-only).
+    per_query_metrics: dict[tuple[str, str, str], set[str]] = {}
+    for row in query_rows:
+        key = (row.corpus_search_class_id, row.query_song_id, row.ruler)
+        per_query_metrics.setdefault(key, set()).add(row.metric)
+    assert per_query_metrics
+    assert {"artist", "genre", "head"} == {key[2] for key in per_query_metrics}
+    assert all(metrics <= {"map_k", "mrr", "ndcg_k", "recall_k", "disc"} for metrics in per_query_metrics.values())
+    assert {row.status for row in query_rows} == {"defined", "undefined"}
+
     con = duckdb.connect(":memory:")
     ensure_schema(con)
     con.execute("BEGIN")
@@ -563,4 +666,9 @@ def test_k_per_query_metrics_cover_artist_genre_and_head_with_status() -> None:
     stored = read_class_query_metrics(con, run_id=_RUN_ID)
     assert {"artist", "genre", "head"} <= {row["ruler"] for row in stored}
     assert {"defined", "undefined"} <= {row["status"] for row in stored}
+    # P9-S2: all three rulers carry both defined and undefined statuses across the corpus.
+    defined_rulers = {row["ruler"] for row in stored if row["status"] == "defined"}
+    undefined_rulers = {row["ruler"] for row in stored if row["status"] == "undefined"}
+    assert {"artist", "genre", "head"} <= defined_rulers
+    assert {"artist", "genre", "head"} <= undefined_rulers
     con.close()

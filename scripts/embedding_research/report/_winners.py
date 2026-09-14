@@ -1,34 +1,49 @@
-"""Geometry winner and observed-baseline report rows, kept strictly separate.
+"""Class-scoped and baseline neighborhood rows for the winners report section.
 
-Winner rows are the exact threshold representation evidence; observed-baseline rows are
-the mandatory global-medoid baseline evidence.  They share the same complete identity
-axes but are never merged, and no strategy key is decoded here.
+Both surfaces are rendered from the normalized frames and kept strictly separate: class
+neighborhoods are keyed by ``(corpus_search_class_id, query, candidate)`` while baseline
+neighborhoods are keyed by ``(backbone, query, candidate)``.  Uniqueness is always scoped
+by the owning class/backbone; the same ``(query, candidate)`` pair under two classes is
+never collapsed into one row.
 """
 
 from __future__ import annotations
 
-import pandas as pd
+from typing import Any
 
-from ._retrieval import IDENTITY_COLUMNS
-
-WINNER_COLUMNS = [*IDENTITY_COLUMNS, "metric", "value"]
-BASELINE_COLUMNS = [*IDENTITY_COLUMNS, "metric", "value"]
+CLASS_NEIGHBORHOOD_COLUMNS = ["corpus_search_class_id", "query_song_id", "candidate_song_id", "rank", "score"]
+BASELINE_NEIGHBORHOOD_COLUMNS = ["backbone", "query_song_id", "candidate_song_id", "rank", "score"]
 
 
-def _project(frame: pd.DataFrame | None, columns: list[str]) -> pd.DataFrame:
-    if frame is None or frame.empty:
-        return pd.DataFrame(columns=columns)
-    return frame[[column for column in columns if column in frame.columns]].reset_index(drop=True)
+def _project(rows: Any, columns: list[str], scope: tuple[str, ...]) -> list[dict[str, Any]]:
+    if rows is None:
+        return []
+    seen: set[tuple[Any, ...]] = set()
+    projected: list[dict[str, Any]] = []
+    for row in rows:
+        key = tuple(row[column] for column in scope)
+        if key in seen:
+            continue
+        seen.add(key)
+        projected.append({column: row[column] for column in columns})
+    return projected
 
 
-def winner_rows(frame: pd.DataFrame | None) -> pd.DataFrame:
-    """Exact winner representation rows (never observed-baseline rows)."""
-    return _project(frame, WINNER_COLUMNS)
+def class_neighborhood_rows(frames: Any) -> list[dict[str, Any]]:
+    """Class-scoped neighborhood rows, unique by ``(class, query, candidate)``."""
+    rows = None if frames is None else frames.class_neighborhoods
+    return _project(rows, CLASS_NEIGHBORHOOD_COLUMNS, ("corpus_search_class_id", "query_song_id", "candidate_song_id"))
 
 
-def baseline_rows(frame: pd.DataFrame | None) -> pd.DataFrame:
-    """Exact observed global-medoid baseline rows (never winner rows)."""
-    return _project(frame, BASELINE_COLUMNS)
+def baseline_neighborhood_rows(frames: Any) -> list[dict[str, Any]]:
+    """Baseline neighborhood rows, unique by ``(backbone, query, candidate)``."""
+    rows = None if frames is None else frames.baseline_neighborhoods
+    return _project(rows, BASELINE_NEIGHBORHOOD_COLUMNS, ("backbone", "query_song_id", "candidate_song_id"))
 
 
-__all__ = ["BASELINE_COLUMNS", "WINNER_COLUMNS", "baseline_rows", "winner_rows"]
+__all__ = [
+    "BASELINE_NEIGHBORHOOD_COLUMNS",
+    "CLASS_NEIGHBORHOOD_COLUMNS",
+    "baseline_neighborhood_rows",
+    "class_neighborhood_rows",
+]

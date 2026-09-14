@@ -7,34 +7,33 @@ successful empty winners section.
 
 from __future__ import annotations
 
-from dataclasses import asdict
 from typing import Any
 
 from ._base import make_section, make_table
+from ._winners import baseline_neighborhood_rows, class_neighborhood_rows
 
 
-def section_winners(result: Any = None) -> dict:
-    """Render class-scoped neighborhoods and the baseline neighborhoods separately."""
+def section_winners(frames: Any = None) -> dict:
+    """Render class-scoped neighborhoods and the single baseline neighborhood set separately."""
     tables: list[dict] = []
-    if result is not None:
-        winner_rows = [asdict(row) for row in result.class_neighborhoods]
-        baseline_rows = [asdict(row) for row in result.baseline_neighborhoods]
-        if winner_rows:
-            tables.append(
-                make_table(
-                    winner_rows,
-                    id="geometry_representations",
-                    title="Class-scoped geometry neighborhood evidence",
-                )
+    winner_rows = class_neighborhood_rows(frames)
+    baseline_rows = baseline_neighborhood_rows(frames)
+    if winner_rows:
+        tables.append(
+            make_table(
+                winner_rows,
+                id="geometry_representations",
+                title="Class-scoped geometry neighborhood evidence",
             )
-        if baseline_rows:
-            tables.append(
-                make_table(
-                    baseline_rows,
-                    id="observed_global_medoid_baseline",
-                    title="Observed global-medoid baseline (separate from winners)",
-                )
+        )
+    if baseline_rows:
+        tables.append(
+            make_table(
+                baseline_rows,
+                id="observed_global_medoid_baseline",
+                title="Observed global-medoid baseline (separate from winners)",
             )
+        )
     if not tables:
         return make_section(
             "winners",

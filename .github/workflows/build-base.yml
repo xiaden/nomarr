@@ -3,12 +3,6 @@ name: Build Base Image
 on:
   workflow_call:
   workflow_dispatch:
-  push:
-    branches: [main, develop]
-    paths:
-      - "dockerfile.base"
-      - "build_resources/essentia/**"
-      - "build_resources/scripts/**"
 
 jobs:
   build-base:

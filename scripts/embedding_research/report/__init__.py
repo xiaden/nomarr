@@ -14,7 +14,7 @@ from ._efficiency import section_efficiency
 from ._heads import section_head_analysis
 from ._provenance import section_provenance
 from ._retrieval import (
-    query_normalized_result,
+    collect_report_frames,
     section_analysis,
     verify_geometry_bindings_for_run,
 )
@@ -336,9 +336,9 @@ def run(
             lambda: verify_geometry_bindings_for_run(con, run_id=run_id, stream_store=stream_store, profile=profile),
         )
 
-    normalized_result = None
+    frames = None
     if run_id:
-        normalized_result, _ = _step("query_normalized_result", lambda: query_normalized_result(con, run_id=run_id))
+        frames, _ = _step("collect_report_frames", lambda: collect_report_frames(con, run_id=run_id))
 
     # Global warnings
     warnings, _ = _step("discrimination_warnings", lambda: ruler_disc_warnings(con))
@@ -353,10 +353,10 @@ def run(
 
     # Section builders (exact order contract).
     sections_raw: list[tuple[str, Any]] = [
-        ("summary", lambda: section_summary(normalized_result)),
+        ("summary", lambda: section_summary(frames)),
         ("corpus", lambda: section_corpus(con)),
-        ("analysis", lambda: section_analysis(normalized_result)),
-        ("winners", lambda: section_winners(normalized_result)),
+        ("analysis", lambda: section_analysis(frames)),
+        ("winners", lambda: section_winners(frames)),
         ("head-analysis", lambda: section_head_analysis(con, run_id=run_id)),
         ("provenance", lambda: section_provenance(con, run_id=run_id)),
         ("efficiency", lambda: section_efficiency(con)),

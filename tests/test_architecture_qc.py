@@ -30,6 +30,7 @@ from collections.abc import Generator
 from datetime import date
 from pathlib import Path
 
+import orjson
 import pytest
 
 # Get project root
@@ -784,7 +785,10 @@ def _assert_snapshot_serializes_deterministically(snapshot: Path, serialize) -> 
     assert first == second, (
         f"Snapshot {snapshot.name} re-serializes non-deterministically:\n  pass 1: {first!r}\n  pass 2: {second!r}"
     )
-    assert json.loads(first) == payload, (
+    serialized_payload = json.loads(first)
+    expected_canonical = orjson.dumps(payload, option=orjson.OPT_SORT_KEYS)
+    actual_canonical = orjson.dumps(serialized_payload, option=orjson.OPT_SORT_KEYS)
+    assert actual_canonical == expected_canonical, (
         f"Snapshot {snapshot.name} is not preserved by the serializer: its committed JSON value no longer "
         "round-trips through serialize_facade_result(). If the behavioral change is intended, delete the snapshot "
         "file and re-run the characterization suite to re-baseline it; do not hand-edit formatting."
@@ -951,6 +955,22 @@ def test_determinism_check_rejects_invalid_json(tmp_path) -> None:
     snapshot.write_bytes(b'{"a": 1')
     with pytest.raises(AssertionError, match="not valid JSON"):
         _assert_snapshot_serializes_deterministically(snapshot, lambda _payload: b"null")
+
+
+@pytest.mark.parametrize(
+    ("committed", "serialized", "case"),
+    [
+        (b'{"value": 1}', b'{"value": true}', "integer-to-boolean"),
+        (b'{"value": 0}', b'{"value": false}', "zero-to-boolean"),
+        (b'{"value": 1}', b'{"value": 1.0}', "integer-to-float"),
+    ],
+)
+def test_determinism_check_rejects_json_type_changes(tmp_path, committed, serialized, case) -> None:
+    """Deterministic output that changes a JSON value's type fails preservation."""
+    snapshot = tmp_path / f"TypeChange-{case}.json"
+    snapshot.write_bytes(committed)
+    with pytest.raises(AssertionError, match="not preserved"):
+        _assert_snapshot_serializes_deterministically(snapshot, lambda _payload: serialized)
 
 
 def test_determinism_check_accepts_trailing_newline(tmp_path) -> None:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from scripts.embedding_research.report._retrieval import query_normalized_result
+from scripts.embedding_research.report._retrieval import collect_report_frames
 from scripts.embedding_research.report._winners_report import section_winners
 from scripts.embedding_research.tests._report_seed import RUN_ID, build_seeded_con
 
@@ -14,8 +14,8 @@ def _table_ids(section: dict) -> set[str]:
 def test_section_winners_renders_class_and_baseline_tables():
     con = build_seeded_con()
     try:
-        result = query_normalized_result(con, run_id=RUN_ID)
-        section = section_winners(result)
+        frames = collect_report_frames(con, run_id=RUN_ID)
+        section = section_winners(frames)
     finally:
         con.close()
 
