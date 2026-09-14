@@ -36,6 +36,7 @@ import nomarr.components.library.move_detection_comp as move_comp
 import nomarr.workflows.library.scan_library_full_wf as full_wf
 import nomarr.workflows.library.scan_library_quick_wf as quick_wf
 from nomarr.components.library.file_batch_scanner_comp import FileBatchResult
+from nomarr.components.library.folder_analysis_comp import FolderDiscovery
 from nomarr.components.library.song_query_types import StateTaggedSong
 from nomarr.helpers.constants.file_states import (
     STATE_ERRORED,
@@ -146,6 +147,7 @@ def _patched_scan(
     folder_errors: dict[str, Exception] | None = None,
     folder_transient_errors: dict[str, Exception] | None = None,
     present_paths: set[str] | None = None,
+    uninspected_paths: set[str] | None = None,
     spy_detect: bool = False,
 ) -> Iterator[SimpleNamespace]:
     """Patch one scan workflow module and the move-detection chromaprint edges.
@@ -244,7 +246,13 @@ def _patched_scan(
         stack.enter_context(patch.object(module, "validate_library_root"))
         stack.enter_context(patch.object(module, "get_folder_rel_paths", return_value=db_folder_paths or set()))
         stack.enter_context(patch.object(module, "get_cached_folders", return_value=cached_folders or {}))
-        stack.enter_context(patch.object(module, "discover_library_folders", return_value=folders))
+        stack.enter_context(
+            patch.object(
+                module,
+                "discover_library_folders",
+                return_value=FolderDiscovery(folders=folders, uninspected_rel_paths=set(uninspected_paths or ())),
+            )
+        )
         mocks.get_songs_in_exact_folder = stack.enter_context(
             patch.object(
                 module, "get_songs_in_exact_folder", side_effect=lambda _db, _lib, rel: _exact_folder_rows(rel)
@@ -269,7 +277,7 @@ def _patched_scan(
             patch.object(module, "remove_deleted_files", side_effect=lambda _db, _lib, paths: len(paths))
         )
         stack.enter_context(patch.object(module, "save_folder_record"))
-        stack.enter_context(patch.object(module, "cleanup_stale_folders"))
+        mocks.cleanup_stale_folders = stack.enter_context(patch.object(module, "cleanup_stale_folders"))
         stack.enter_context(patch.object(module, "cleanup_orphaned_entities_workflow"))
         stack.enter_context(patch.object(module, "update_scan_progress"))
         stack.enter_context(patch.object(module, "mark_scan_completed"))
@@ -1358,6 +1366,30 @@ class TestOrphanRecoverySweep:
         assert parent_row.path not in removed
         assert result["files_removed"] == 1
 
+    def test_full_scan_preserves_nested_row_under_uninspected_root(self) -> None:
+        """An uninspected ROOT (``{""}``) preserves a top-level folder's absent row.
+
+        The sweep normally treats an absent row under a genuinely-untracked
+        top-level parent as an orphan delete. But when discovery could not inspect
+        the library root at all (``uninspected_rel_paths == {""}``), that scope —
+        and every descendant, including a top-level parent such as ``rel`` — was
+        never authoritatively inspected, so no row may be removed.
+        """
+        nested = _song("/music/rel/f1.flac", "rel/f1.flac", None)
+        with _patched_scan(
+            full_wf,
+            folders=[_folder("scanned")],
+            existing={"scanned": {}, "rel": {nested.path: _carrier(nested)}},
+            batches={"/music/scanned": _batch(discovered=set())},
+            uninspected_paths={""},
+            present_paths=set(),
+        ) as ctx:
+            result = full_wf.scan_library_full_workflow(ctx.db, _LIBRARY, tagger_version="v1")
+
+        assert _removed_paths(ctx.mocks.remove_deleted) == set()
+        ctx.mocks.remove_deleted.assert_not_called()
+        assert result["files_removed"] == 0
+
     def test_full_scan_preserves_untracked_nested_row_under_failed_folder(self) -> None:
         """The unreconciled-ancestor guard preserves a row in a nested untracked
         subfolder even when its path is absent, because its ancestor scope failed to
@@ -1475,3 +1507,186 @@ class TestOrphanRecoverySweep:
         assert len(calls) == 1
         assert calls[0].kwargs["after_normalized_path"] is None
         assert result["files_removed"] == 0
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+class TestUninspectedDiscoveryScope:
+    """Discovery/measurement failures are un-inspected scope: a folder that could
+    not be authoritatively inspected — or any descendant of one — is never treated
+    as absent (not vanished, not cleaned, not an orphan, not a relocation source)."""
+
+    def test_full_scan_preserves_rows_in_folder_that_failed_discovery(self) -> None:
+        """A row directly in a folder whose discovery failed is preserved by the
+        orphan sweep even when its absolute path is absent."""
+        row = _song("/music/bad/x.flac", "bad/x.flac", None)
+        with _patched_scan(
+            full_wf,
+            folders=[_folder("scanned")],
+            existing={"scanned": {}, "bad": {row.path: _carrier(row)}},
+            batches={"/music/scanned": _batch(discovered=set())},
+            uninspected_paths={"bad"},
+            present_paths=set(),
+        ) as ctx:
+            result = full_wf.scan_library_full_workflow(ctx.db, _LIBRARY, tagger_version="v1")
+
+        assert row.path not in _removed_paths(ctx.mocks.remove_deleted)
+        assert result["files_removed"] == 0
+
+    def test_quick_scan_does_not_treat_failed_discovery_folder_as_vanished(self) -> None:
+        """A tracked folder that fails discovery is not classified vanished and its
+        absent row is preserved by quick-scan cleanup."""
+        row = _song("/music/bad/x.flac", "bad/x.flac", None)
+        with _patched_scan(
+            quick_wf,
+            folders=[_folder("f1")],
+            existing={"f1": {}, "bad": {row.path: _carrier(row)}},
+            batches={"/music/f1": _batch(discovered=set())},
+            db_folder_paths={"bad"},
+            uninspected_paths={"bad"},
+            present_paths=set(),
+        ) as ctx:
+            result = quick_wf.scan_library_quick_workflow(ctx.db, _LIBRARY, tagger_version="v1")
+
+        assert row.path not in _removed_paths(ctx.mocks.remove_deleted)
+        assert result["files_removed"] == 0
+
+    def test_full_scan_preserves_descendant_of_uninspected_ancestor(self) -> None:
+        """A row whose parent is a subfolder of an uninspected ancestor is preserved
+        by the orphan sweep via the ancestor guard, even when its path is absent."""
+        row = _song("/music/bad/sub/x.flac", "bad/sub/x.flac", None)
+        with _patched_scan(
+            full_wf,
+            folders=[_folder("scanned")],
+            existing={"scanned": {}, "bad/sub": {row.path: _carrier(row)}},
+            batches={"/music/scanned": _batch(discovered=set())},
+            uninspected_paths={"bad"},
+            present_paths=set(),
+        ) as ctx:
+            result = full_wf.scan_library_full_workflow(ctx.db, _LIBRARY, tagger_version="v1")
+
+        assert row.path not in _removed_paths(ctx.mocks.remove_deleted)
+        assert result["files_removed"] == 0
+
+    def test_quick_scan_preserves_descendant_of_uninspected_ancestor(self) -> None:
+        """A tracked descendant of an uninspected ancestor is excluded from the
+        vanished set, so quick-scan cleanup never reads or deletes its rows."""
+        row = _song("/music/bad/sub/x.flac", "bad/sub/x.flac", None)
+        with _patched_scan(
+            quick_wf,
+            folders=[_folder("f1")],
+            existing={"f1": {}, "bad/sub": {row.path: _carrier(row)}},
+            batches={"/music/f1": _batch(discovered=set())},
+            db_folder_paths={"bad/sub"},
+            uninspected_paths={"bad"},
+            present_paths=set(),
+        ) as ctx:
+            result = quick_wf.scan_library_quick_workflow(ctx.db, _LIBRARY, tagger_version="v1")
+
+        assert row.path not in _removed_paths(ctx.mocks.remove_deleted)
+        assert result["files_removed"] == 0
+
+    def test_tracked_descendant_of_uninspected_ancestor_preserved_as_stale_folder(self) -> None:
+        """The tracked descendant's folder record is preserved rather than deleted as
+        stale, because its scope (itself or an ancestor) was not authoritatively
+        inspected."""
+        with _patched_scan(
+            quick_wf,
+            folders=[_folder("f1")],
+            existing={"f1": {}, "bad/sub": {}},
+            batches={"/music/f1": _batch(discovered=set())},
+            db_folder_paths={"bad/sub"},
+            uninspected_paths={"bad"},
+            present_paths=set(),
+        ) as ctx:
+            quick_wf.scan_library_quick_workflow(ctx.db, _LIBRARY, tagger_version="v1")
+
+        ctx.mocks.cleanup_stale_folders.assert_called_once()
+        preserved = set(ctx.mocks.cleanup_stale_folders.call_args.args[2])
+        assert "bad/sub" in preserved
+        assert "f1" in preserved
+
+    def test_rejects_match_to_source_in_folder_that_failed_discovery(self, workflow: tuple[Any, Any]) -> None:
+        """A folder that failed discovery contributes no discoveries, so its live
+        rows are unknown: a match sourced there is not applied and the new file is
+        inserted."""
+        module, callable_ = workflow
+        live = _song("/music/bad/live.flac", "bad/live.flac", "cp-move")
+        new = _entry("/music/f1/new.flac", "f1/new.flac")
+        trigger = _song("/music/f1/trigger.flac", "f1/trigger.flac", "cp-trigger")
+        with _patched_scan(
+            module,
+            folders=[_folder("bad"), _folder("f1")],
+            existing={"bad": {live.path: _carrier(live)}, "f1": {trigger.path: _carrier(trigger)}},
+            batches={"/music/f1": _batch(entries=[new], discovered={new["path"]})},
+            uninspected_paths={"bad"},
+            chromaprint_by_path={new["path"]: "cp-move"},
+            db_candidates=[live],
+        ) as ctx:
+            result = callable_(ctx.db, _LIBRARY, tagger_version="v1")
+
+        ctx.db.library.move_library_song.assert_not_called()
+        assert new["path"] in _upsert_paths(ctx.mocks.upsert)
+        assert live.path not in _removed_paths(ctx.mocks.remove_deleted)
+        assert result["files_moved"] == 0
+        assert result["files_added"] == 1
+
+    @pytest.mark.parametrize("module", [quick_wf, full_wf])
+    def test_scope_uninspected_matches_self_ancestors_and_root(self, module: Any) -> None:
+        scope = {"bad", ""}
+        assert module._scope_uninspected("bad", scope) is True
+        assert module._scope_uninspected("bad/sub/deep", scope) is True
+        assert module._scope_uninspected("other", scope) is True  # guarded by root ""
+        assert module._scope_uninspected("bad", set()) is False
+        assert module._scope_uninspected("other/x", {"bad"}) is False
+
+    def test_full_scan_does_not_treat_tracked_descendant_of_uninspected_ancestor_as_vanished(self) -> None:
+        """A TRACKED descendant of an uninspected ancestor must not be classified
+        vanished, so Step 6's exact-folder cleanup never deletes its absent row.
+
+        The descendant's immediate parent (``bad/sub``) is not itself in the
+        uninspected set, and ``_candidate_source_present`` is direct-parent-only, so
+        it does not recognize the uninspected ANCESTOR ``bad``. The only guard
+        protecting this row in Step 6 is the ``_scope_uninspected`` filter on
+        ``vanished_folder_paths``. Removing that filter makes ``bad/sub`` vanish,
+        Step 6 reads its exact-folder rows, and the absent row is deleted — which
+        this test would then catch.
+        """
+        row = _song("/music/bad/sub/x.flac", "bad/sub/x.flac", None)
+        with _patched_scan(
+            full_wf,
+            folders=[_folder("scanned")],
+            existing={"scanned": {}, "bad/sub": {row.path: _carrier(row)}},
+            batches={"/music/scanned": _batch(discovered=set())},
+            db_folder_paths={"bad/sub"},
+            uninspected_paths={"bad"},
+            present_paths=set(),
+        ) as ctx:
+            result = full_wf.scan_library_full_workflow(ctx.db, _LIBRARY, tagger_version="v1")
+
+        assert row.path not in _removed_paths(ctx.mocks.remove_deleted)
+        assert result["files_removed"] == 0
+
+    def test_full_scan_preserves_uninspected_tracked_folder_in_stale_cleanup(self) -> None:
+        """Step 7 must pass an uninspected tracked folder into the preserved set.
+
+        ``bad/sub`` is tracked in the DB but absent from discovery, so its scope
+        (itself or the uninspected ancestor ``bad``) was not authoritatively
+        inspected; its ``library_folders`` record must survive stale cleanup.
+        """
+        row = _song("/music/bad/sub/x.flac", "bad/sub/x.flac", None)
+        with _patched_scan(
+            full_wf,
+            folders=[_folder("scanned")],
+            existing={"scanned": {}, "bad/sub": {row.path: _carrier(row)}},
+            batches={"/music/scanned": _batch(discovered=set())},
+            db_folder_paths={"bad/sub"},
+            uninspected_paths={"bad"},
+            present_paths=set(),
+        ) as ctx:
+            full_wf.scan_library_full_workflow(ctx.db, _LIBRARY, tagger_version="v1")
+
+        ctx.mocks.cleanup_stale_folders.assert_called_once()
+        preserved = set(ctx.mocks.cleanup_stale_folders.call_args.args[2])
+        assert "bad/sub" in preserved
+        assert "scanned" in preserved

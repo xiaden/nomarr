@@ -14,6 +14,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nomarr.components.library.folder_analysis_comp import FolderDiscovery
 from nomarr.helpers import ManagedTask
 from nomarr.helpers.constants.pipeline_states import SCAN_NOT_SCANNED, SCAN_STATE_FIELD
 from nomarr.helpers.dataclasses.library_dataclass import Library
@@ -72,7 +73,9 @@ class TestScanCancellationTerminal:
             ),
             patch(
                 "nomarr.workflows.library.scan_library_quick_wf.discover_library_folders",
-                return_value=[SimpleNamespace(rel_path="f1", file_count=1)],
+                return_value=FolderDiscovery(
+                    folders=[SimpleNamespace(rel_path="f1", file_count=1)], uninspected_rel_paths=set()
+                ),
             ),
             patch("nomarr.workflows.library.scan_library_quick_wf.update_scan_progress") as mock_progress,
             patch(
@@ -125,7 +128,9 @@ class TestScanCancellationTerminal:
             patch("nomarr.workflows.library.scan_library_full_wf.get_cached_folders", return_value={}),
             patch(
                 "nomarr.workflows.library.scan_library_full_wf.discover_library_folders",
-                return_value=[SimpleNamespace(rel_path="f1", file_count=1)],
+                return_value=FolderDiscovery(
+                    folders=[SimpleNamespace(rel_path="f1", file_count=1)], uninspected_rel_paths=set()
+                ),
             ),
             patch("nomarr.workflows.library.scan_library_full_wf.update_scan_progress") as mock_progress,
             patch("nomarr.workflows.library.scan_library_full_wf.transition_pipeline_axis") as mock_transition,

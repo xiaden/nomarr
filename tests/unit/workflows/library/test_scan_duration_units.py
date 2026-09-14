@@ -18,6 +18,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nomarr.components.library.folder_analysis_comp import FolderDiscovery
 from nomarr.helpers.dataclasses.library_dataclass import Library
 from nomarr.workflows.library.scan_library_full_wf import scan_library_full_workflow
 from nomarr.workflows.library.scan_library_quick_wf import scan_library_quick_workflow
@@ -63,7 +64,7 @@ class TestScanDurationUnits:
             ),
             patch(
                 "nomarr.workflows.library.scan_library_full_wf.discover_library_folders",
-                return_value=[],
+                return_value=FolderDiscovery(folders=[], uninspected_rel_paths=set()),
             ),
             patch("nomarr.workflows.library.scan_library_full_wf.cleanup_stale_folders"),
             patch("nomarr.workflows.library.scan_library_full_wf.cleanup_orphaned_entities_workflow"),
@@ -108,7 +109,7 @@ class TestScanDurationUnits:
             ),
             patch(
                 "nomarr.workflows.library.scan_library_quick_wf.discover_library_folders",
-                return_value=[],
+                return_value=FolderDiscovery(folders=[], uninspected_rel_paths=set()),
             ),
             patch("nomarr.workflows.library.scan_library_quick_wf.cleanup_stale_folders"),
             patch("nomarr.workflows.library.scan_library_quick_wf.cleanup_orphaned_entities_workflow"),

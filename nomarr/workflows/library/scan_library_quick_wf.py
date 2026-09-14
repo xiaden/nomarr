@@ -80,15 +80,29 @@ def _path_exists(path: str) -> bool:
 def _candidate_source_present(song: Song, unreconciled_folder_paths: set[str]) -> bool:
     """True when a chromaprint candidate's source is still known/presumed present.
 
-    A candidate is presumed live when its folder was not reconciled by this scan
-    (an unchanged cache-skipped folder, or a folder whose walk failed), or when
-    its current absolute path still exists on disk. Only an absent source may be
-    treated as a relocation origin.
+    Direct-parent-only: only the song's immediate parent folder (the last
+    component of ``normalized_path``) is consulted — ancestors are never
+    checked. A candidate is presumed live when its parent folder was not
+    reconciled by this scan (an unchanged cache-skipped folder, a folder whose
+    walk failed, or a folder that could not be authoritatively inspected during
+    discovery), or when its current absolute path still exists on disk. Only an
+    absent source may be treated as a relocation origin.
     """
     parent = song.normalized_path.rsplit("/", 1)[0] if "/" in song.normalized_path else ""
     if parent in unreconciled_folder_paths:
         return True
     return _path_exists(song.path)
+
+
+def _scope_uninspected(rel_path: str, uninspected_folder_paths: set[str]) -> bool:
+    """True when rel_path itself or any ancestor could not be authoritatively inspected."""
+    candidate = rel_path
+    while True:
+        if candidate in uninspected_folder_paths:
+            return True
+        if not candidate:
+            return False
+        candidate = candidate.rsplit("/", 1)[0] if "/" in candidate else ""
 
 
 def scan_library_quick_workflow(
@@ -110,8 +124,18 @@ def scan_library_quick_workflow(
     resolved one new file at a time via a bounded, library-scoped chromaprint
     lookup. Missing rows are not deleted during the walk; a final exact-folder
     cleanup pass removes only direct members of successfully-walked (changed) or
-    vanished folders. Unchanged (cache-skipped) and failed folders are never
-    reconciled or cleaned.
+    vanished folders. Unchanged (cache-skipped), failed, and un-inspected folders
+    are never reconciled or cleaned.
+
+    Discovery and measurement failures are un-inspected scope, matched with the
+    ancestry-aware ``_scope_uninspected``: a folder that could not be
+    authoritatively inspected, and every descendant of it, is never treated as
+    vanished and never cleaned up as stale. Quick scan has no orphan sweep, so
+    there is no further deletion path to guard. Relocation sourcing is the
+    exception: it uses the direct-parent-only ``_candidate_source_present``, so
+    for a descendant of an un-inspected folder the guarantee does not extend to
+    its status as a relocation origin — only the song's immediate parent folder
+    is consulted.
 
     Deferral contract: quick scan does NOT perform untracked-parent-folder
     recovery. A row whose parent folder has no ``library_folders`` record (and no
@@ -155,25 +179,34 @@ def scan_library_quick_workflow(
         db_folder_paths = get_folder_rel_paths(db, library)
         cached_folders = get_cached_folders(db, library)
 
-        # Step 3 — Discover folders on disk
-        all_folders = discover_library_folders(library_root, [library_root])
+        # Step 3 — Discover folders on disk and track uninspected scope
+        discovery = discover_library_folders(library_root, [library_root])
+        all_folders = discovery.folders
         discovered_folder_paths = {f.rel_path for f in all_folders}
+        uninspected_folder_paths = set(discovery.uninspected_rel_paths)
 
         update_scan_progress(db, library, total=sum(f.file_count for f in all_folders))
 
         # Step 4 — Track vanished folders. Their persisted rows are reconciled
         # against changed-folder discoveries during the walk and removed by the
         # deferred cleanup pass; they never become a library-wide candidate set.
-        vanished_folder_paths = db_folder_paths - discovered_folder_paths
+        # A folder that could not be authoritatively inspected — itself or any
+        # ancestor — is NEVER treated as vanished.
+        vanished_folder_paths = {
+            rel_path
+            for rel_path in db_folder_paths - discovered_folder_paths
+            if not _scope_uninspected(rel_path, uninspected_folder_paths)
+        }
         processed_file_count = 0
 
         # Folder-scoped bookkeeping only. Successfully-walked folders are
-        # cleaned up after the walk; unchanged (cache-skipped) folders and
-        # folders whose walk failed are unreconciled — never cleaned up and never
+        # cleaned up after the walk; unchanged (cache-skipped) folders, folders
+        # whose walk failed, and folders that could not be authoritatively
+        # inspected during discovery are unreconciled — never cleaned up and never
         # a relocation source. Seeding the unreconciled set before the walk keeps
         # skip decisions order-independent.
         reconciled_folder_paths: set[str] = set()
-        unreconciled_folder_paths: set[str] = set()
+        unreconciled_folder_paths: set[str] = set(uninspected_folder_paths)
         for folder in all_folders:
             cached = cached_folders.get(folder.rel_path)
             if cached and cached.mtime == folder.mtime and cached.file_count == folder.file_count:
@@ -338,8 +371,13 @@ def scan_library_quick_workflow(
             if dead:
                 stats["files_removed"] += remove_deleted_files(db, library, dead)
 
-        # Step 7 — Clean up stale folder records
-        cleanup_stale_folders(db, library, discovered_folder_paths)
+        # Step 7 — Clean up stale folder records. Preserve discovered folders and
+        # every folder that could not be authoritatively inspected (itself or an
+        # ancestor), so an un-inspected folder record is never deleted as stale.
+        preserved_folder_paths = discovered_folder_paths | {
+            rel_path for rel_path in db_folder_paths if _scope_uninspected(rel_path, uninspected_folder_paths)
+        }
+        cleanup_stale_folders(db, library, preserved_folder_paths)
 
         # Step 8 — Entity graph cleanup (skip when scan was a no-op)
         has_changes = stats["files_added"] + stats["files_updated"] + stats["files_removed"] + stats["files_moved"] > 0

@@ -29,6 +29,22 @@ class FolderMetadata:
 
 
 @dataclass
+class FolderDiscovery:
+    """Result of walking the filesystem for audio-bearing folders.
+
+    ``uninspected_rel_paths`` holds library-relative POSIX folder paths that
+    could not be authoritatively inspected — either the walk itself failed
+    (``os.walk`` ``onerror``) or per-directory measurement raised ``OSError``.
+    Callers must treat these paths as un-inspected scope: their absence may not
+    be inferred. The set is bounded by the number of failed directories and
+    contains paths only (no song/path materialization).
+    """
+
+    folders: list[FolderMetadata]
+    uninspected_rel_paths: set[str]
+
+
+@dataclass
 class FolderScanPlan:
     """Plan describing which folders need scanning."""
 
@@ -41,29 +57,49 @@ class FolderScanPlan:
 def discover_library_folders(
     library_root: Path,
     scan_paths: list[Path],
-) -> list[FolderMetadata]:
+) -> FolderDiscovery:
     """Walk the filesystem and discover all folders containing audio files.
 
     Pure discovery — no cache comparison, no scan policy decisions.
+
+    Discovery failures are explicit rather than silent: a directory that cannot
+    be walked (``os.walk`` ``onerror``) or measured (``OSError`` from
+    ``_get_folder_mtime``) is recorded in ``uninspected_rel_paths`` so callers
+    never infer its absence. Successful discovery is unchanged.
 
     Args:
         library_root: Absolute path to library root
         scan_paths: Paths to walk (typically ``[library_root]``)
 
     Returns:
-        List of :class:`FolderMetadata` for every folder with at least
-        one audio file.
+        :class:`FolderDiscovery` with :class:`FolderMetadata` for every folder
+        with at least one audio file, plus the bounded set of library-relative
+        paths that could not be authoritatively inspected.
 
     """
     folders: list[FolderMetadata] = []
+    uninspected: set[str] = set()
+
+    def _record_uninspected(raw_path: str) -> None:
+        """Record a failed path as uninspected; never raise from error handling."""
+        try:
+            uninspected.add(_compute_folder_path(Path(raw_path), library_root))
+        except ValueError:
+            logger.warning("Uninspected path outside library root, cannot encode: %s", raw_path)
+
+    def _on_walk_error(error: OSError) -> None:
+        if error.filename:
+            _record_uninspected(error.filename)
+        logger.warning("Cannot walk folder %s: %s", error.filename, error)
 
     for scan_path in scan_paths:
-        for dirpath, _dirnames, _filenames in os.walk(str(scan_path)):
+        for dirpath, _dirnames, _filenames in os.walk(str(scan_path), onerror=_on_walk_error):
             try:
                 folder_mtime = _get_folder_mtime(dirpath)
                 folder_file_count = _count_audio_files_in_folder(dirpath)
             except OSError as e:
                 logger.warning("Cannot access folder %s: %s", dirpath, e)
+                _record_uninspected(dirpath)
                 continue
 
             if folder_file_count == 0:
@@ -80,7 +116,7 @@ def discover_library_folders(
                 ),
             )
 
-    return folders
+    return FolderDiscovery(folders=folders, uninspected_rel_paths=uninspected)
 
 
 def plan_incremental_scan(
@@ -93,7 +129,8 @@ def plan_incremental_scan(
     DB cache.  Folders whose cache entry matches are skipped.
 
     Args:
-        all_folders: Discovered folders from :func:`discover_library_folders`
+        all_folders: Discovered folders from ``FolderDiscovery.folders`` (see
+            :func:`discover_library_folders`)
         cached_folders: DB cache — ``rel_path -> {mtime, file_count}``
 
     Returns:
@@ -128,7 +165,8 @@ def plan_full_scan(
     No cache comparison — all discovered folders are marked for scanning.
 
     Args:
-        all_folders: Discovered folders from :func:`discover_library_folders`
+        all_folders: Discovered folders from ``FolderDiscovery.folders`` (see
+            :func:`discover_library_folders`)
 
     Returns:
         :class:`FolderScanPlan` with all folders in ``folders_to_scan``
