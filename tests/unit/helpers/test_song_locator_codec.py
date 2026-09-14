@@ -335,17 +335,11 @@ class TestRejectsNoncanonicalPaths:
         with pytest.raises(SongLocatorFormatError):
             decode_song_locator(_json_token({"library_uuid": _UUID_A, "path": bad_path}))
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "Known codec gap: is_canonical_relative_path uses "
-            "posixpath.normpath, which preserves a leading '..' segment, contradicting "
-            "the documented 'no . or .. segments' canonical grammar. Strict xfail so "
-            "this flips to a failure once the codec rejects parent escapes."
-        ),
-    )
     def test_leading_parent_segment_is_rejected(self) -> None:
+        """A leading ``..`` segment must be rejected as a parent-directory escape."""
         assert not is_canonical_relative_path("../escape/song.mp3")
+        with pytest.raises(SongLocatorFormatError):
+            decode_song_locator(_json_token({"library_uuid": _UUID_A, "path": "../escape/song.mp3"}))
 
     @pytest.mark.parametrize("good_path", ["song.mp3", "dir/song.mp3", "a/b/c.flac", "École/café.opus"])
     def test_canonical_relative_path_is_accepted(self, good_path: str) -> None:

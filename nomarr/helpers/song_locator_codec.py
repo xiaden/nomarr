@@ -72,16 +72,21 @@ def canonical_song_locator_json(library_uuid: str, path: str) -> str:
 
 
 def is_canonical_relative_path(path: str) -> bool:
-    """Whether ``path`` is the canonical normalized library-relative POSIX path."""
+    """Whether ``path`` is the canonical normalized library-relative POSIX path.
+
+    Enforces the documented grammar: no leading slash, no backslashes, no ``.``
+    or ``..`` segments, and no duplicate/trailing separators. The segment check
+    is explicit because :func:`posixpath.normpath` preserves a leading ``..``
+    (e.g. ``../escape/song.mp3``), so a normpath comparison alone would accept
+    parent-directory escapes.
+    """
     if not path or path != path.strip():
         return False
     if path.startswith("/") or "\\" in path:
         return False
-    if path in {".", ".."}:
+    if any(segment in {".", ".."} for segment in path.split("/")):
         return False
-    if posixpath.normpath(path) != path:
-        return False
-    return not path.startswith("./")
+    return posixpath.normpath(path) == path
 
 
 def encode_song_locator(locator: object) -> str:

@@ -78,6 +78,18 @@ class TestDatabaseUrlValidation:
         with pytest.raises(ArgumentError):
             _validate_database_url("not-a-url")
 
+    def test_rejects_non_string_database_url(self):
+        """Non-string URLs must be rejected before SQLAlchemy engine setup.
+
+        Regression: a MagicMock URL has a ``__str__``, so ``make_url`` returns it
+        unchanged and the drivername/database checks pass, deferring the failure to
+        ``create_engine`` with a cryptic unpack error.
+        """
+        from nomarr.services.infrastructure.workers.discovery_worker import _validate_database_url
+
+        with pytest.raises(ValueError):
+            _validate_database_url(MagicMock())  # type: ignore[arg-type]  # Intentional: exercises the non-str runtime guard
+
     def test_accepts_postgresql_url_with_database_name(self):
         from nomarr.services.infrastructure.workers.discovery_worker import _validate_database_url
 

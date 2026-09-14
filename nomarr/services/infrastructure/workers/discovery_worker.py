@@ -47,6 +47,9 @@ def _validate_database_url(database_url: str) -> None:
     """Reject unusable worker database configuration before engine creation."""
     from sqlalchemy.engine import make_url
 
+    if not isinstance(database_url, str):
+        msg = f"database URL must be a string, got {type(database_url).__name__}"
+        raise ValueError(msg)
     if not database_url:
         raise ValueError("database URL is empty")
     parsed_url = make_url(database_url)

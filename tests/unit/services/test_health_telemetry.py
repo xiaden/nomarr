@@ -366,11 +366,20 @@ class TestComponentLifecycleHandler:
 
         context = StatusChangeContext(consecutive_misses=0)
 
-        # Patch ensure_future to avoid event-loop errors in sync tests
-        with patch("asyncio.ensure_future"):
+        # Patch ensure_future to avoid event-loop errors in sync tests. Patch
+        # threading.Timer as well: the "dead" transition schedules a restart, and an
+        # unpatched timer would fire _restart_worker after this test and spawn a real
+        # DiscoveryWorker process (the source of the leaked worker-startup traceback).
+        with (
+            patch("asyncio.ensure_future"),
+            patch("threading.Timer") as mock_timer_cls,
+        ):
             # Should not raise
             service.on_status_change("worker:tag:0", "pending", "healthy", context)
             service.on_status_change("worker:tag:0", "healthy", "dead", context)
+
+        # The restart path was exercised, but only through the patched timer.
+        mock_timer_cls.assert_called_once()
 
 
 class TestHealthFrameEmission:
