@@ -88,56 +88,6 @@ def _transaction(con):
     return Tx()
 
 
-def write_analysis_rows_in_transaction(
-    con, *, run_id: str, identity: Any, metrics: dict[str, Any], evidence: Any = None
-) -> None:
-    """Write one exact identity's finite evidence on the caller's already-open transaction.
-
-    This is the transaction-participating half of :func:`write_analysis_rows`: it performs
-    the same complete-identity, finite-value and duplicate-identity validation but never
-    opens its own ``BEGIN``, so a multi-table corpus publication can share exactly one
-    atomic transaction (DuckDB has no nested transactions).
-    """
-    if not run_id:
-        raise IdentityRefusal("run_id is required")
-    ident = _identity(identity)
-    rows = [(str(name), _finite(value)) for name, value in sorted(metrics.items())]
-    if not rows:
-        raise IdentityRefusal("analysis has no metric evidence")
-    payload = _json(evidence if evidence is not None else {})
-    stamp = int(time.time() * 1000)
-    for metric, value in rows:
-        key = (run_id, *ident.values(), metric)
-        count = con.execute(
-            "SELECT count(*) FROM geometry_analysis_records WHERE run_id=? AND geometry_id=? AND observation_group_sha256=? AND geometry_semantics_version=? AND numerical_profile_digest=? AND threshold_id=? AND structural_identity=? AND search_representation_id=? AND evaluation_id=? AND scoring_semantics_version=? AND execution_id=? AND metric=?",
-            key,
-        ).fetchone()[0]
-        if count:
-            raise IdentityRefusal("duplicate geometry analysis identity")
-        con.execute(
-            "INSERT INTO geometry_analysis_records (run_id,geometry_id,observation_group_sha256,geometry_semantics_version,numerical_profile_digest,threshold_id,structural_identity,search_representation_id,evaluation_id,scoring_semantics_version,execution_id,metric,value,evidence_json,created_at_ms) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            [run_id, *ident.values(), metric, value, payload, stamp],
-        )
-
-
-def write_analysis_rows(con, *, run_id: str, identity: Any, metrics: dict[str, Any], evidence: Any = None) -> None:
-    """Persist geometry analysis metric rows under one complete geometry identity."""
-    with _transaction(con):
-        write_analysis_rows_in_transaction(con, run_id=run_id, identity=identity, metrics=metrics, evidence=evidence)
-
-
-def read_analysis_rows(con, *, run_id: str, identity: Any) -> tuple[dict[str, Any], ...]:
-    """Read the metric rows for one exact geometry identity, refusing when absent."""
-    ident = _identity(identity)
-    rows = con.execute(
-        "SELECT metric,value,evidence_json FROM geometry_analysis_records WHERE run_id=? AND geometry_id=? AND observation_group_sha256=? AND geometry_semantics_version=? AND numerical_profile_digest=? AND threshold_id=? AND structural_identity=? AND search_representation_id=? AND evaluation_id=? AND scoring_semantics_version=? AND execution_id=? ORDER BY metric",
-        [run_id, *ident.values()],
-    ).fetchall()
-    if not rows:
-        raise IdentityRefusal("exact geometry analysis identity not found")
-    return tuple({"metric": row[0], "value": float(row[1]), "evidence": json.loads(row[2])} for row in rows)
-
-
 def write_head_evidence(con, *, run_id: str, outputs: Iterable[Any]) -> None:
     """Persist done head-evidence payloads, refusing empty or duplicate identities."""
     materialized = list(outputs)
@@ -365,43 +315,6 @@ def read_evaluation_corpus(
         record["reasons"] = tuple(json.loads(record.pop("reasons_json")))
         records.append(record)
     return tuple(records)
-
-
-def read_threshold_map_rows(
-    con: Any,
-    *,
-    run_id: str,
-    evaluation_id: str,
-    execution_id: str,
-) -> tuple[dict[str, Any], ...]:
-    """Read the per-threshold structural/search mapping rows for one exact corpus scope.
-
-    Threshold rows carry the structural identity and search representation chosen for one
-    threshold plus the role/song/backbone/comparability evidence.  Rows from another
-    evaluation or execution are never substituted.
-    """
-    rows = con.execute(
-        "SELECT threshold_id, structural_identity, search_representation_id, evidence_json "
-        "FROM geometry_analysis_records WHERE run_id=? AND evaluation_id=? AND execution_id=? "
-        "AND metric='total_searchable' ORDER BY threshold_id",
-        (run_id, evaluation_id, execution_id),
-    ).fetchall()
-    entries: list[dict[str, Any]] = []
-    for threshold_id, structural_identity, search_representation_id, evidence_json in rows:
-        evidence = json.loads(evidence_json) if evidence_json else {}
-        if not isinstance(evidence, dict) or evidence.get("role") != "threshold":
-            continue
-        entries.append(
-            {
-                "song_id": str(evidence.get("song_id", "")),
-                "backbone": str(evidence.get("backbone", "")),
-                "threshold_id": str(threshold_id),
-                "structural_identity": str(structural_identity),
-                "search_representation_id": str(search_representation_id),
-                "comparable": bool(evidence.get("comparable", True)),
-            }
-        )
-    return tuple(entries)
 
 
 _THRESHOLD_CLASS_MAP_COLUMNS: tuple[str, ...] = (

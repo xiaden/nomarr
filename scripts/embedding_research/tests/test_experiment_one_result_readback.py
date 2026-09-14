@@ -5,7 +5,7 @@ reconstructs the class-scoped result from the flat surfaces (fixed evaluation co
 threshold class map, threshold structural evidence, class/baseline aggregate/per-query/
 neighborhood metrics, head-label provenance and the ONE compact provenance row) under the
 exact ten-axis identity, and refuses every corruption instead of consulting the
-retired nested ``role="corpus"`` evidence shape or ``geometry_analysis_records``.
+removed nested ``role="corpus"`` evidence shape or ``geometry_analysis_records``.
 
 * **exact round-trip** — every written normalized field is read back equal to the
   in-memory computation for a bounded synthetic fixture.
@@ -572,13 +572,13 @@ def test_refuses_differing_identity_axis() -> None:
 
 
 # ---------------------------------------------------------------------------
-# No alternate path to the retired nested evidence shape
+# No alternate path to the removed nested evidence shape
 # ---------------------------------------------------------------------------
 
 
 def test_reader_never_falls_back_to_nested_evidence_shape() -> None:
     con, _record, _result, identity = _seeded()
-    # The legacy nested corpus evidence rows still exist in this (pre-cut) database.
+    # The removed-format nested corpus evidence rows still exist in this (pre-cut) database.
     assert con.execute("SELECT count(*) FROM geometry_analysis_records").fetchone()[0] > 0
     for table in (
         "geometry_result_provenance",

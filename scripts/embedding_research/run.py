@@ -500,7 +500,7 @@ _DERIVED_CONSUMER_PHASES = frozenset({"geometry", "analyze", "head-analysis", "r
 
 
 def _has_geometry_analysis(con) -> bool:
-    return bool(con.execute("SELECT count(*) FROM geometry_analysis_records").fetchone()[0])
+    return bool(con.execute("SELECT count(*) FROM geometry_threshold_class_map").fetchone()[0])
 
 
 def _preflight_derived_phase(con, phase: str, cfg: dict, *, db_path=None) -> list[str]:

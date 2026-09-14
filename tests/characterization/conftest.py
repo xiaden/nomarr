@@ -266,20 +266,20 @@ def seed_data(db):
     tag5 = db.library.ensure_tag(TagRef(name="nom:tempo", value="fast", namespace="nom"))
     created["tags"] = [tag1, tag2, tag3, tag4, tag5]
 
-    # Assign tags to songs via directly-constructed semantic locators: no
-    # integer-handle -> SongIdentity resolver crossing participates.
+    # Rebuild the same semantic locators with complete library metadata for
+    # tag-return snapshots; raw storage IDs never cross this fixture boundary.
     assert lib1.library_uuid is not None
     assert lib2.library_uuid is not None
     song1 = SongIdentity(
-        library=LibraryIdentity(library_uuid=lib1.library_uuid),
+        library=LibraryIdentity(library_uuid=lib1.library_uuid, name=lib1.name, root_path=lib1.root_path),
         normalized_path="song1.flac",
     )
     song2 = SongIdentity(
-        library=LibraryIdentity(library_uuid=lib1.library_uuid),
+        library=LibraryIdentity(library_uuid=lib1.library_uuid, name=lib1.name, root_path=lib1.root_path),
         normalized_path="song2.mp3",
     )
     song3 = SongIdentity(
-        library=LibraryIdentity(library_uuid=lib2.library_uuid),
+        library=LibraryIdentity(library_uuid=lib2.library_uuid, name=lib2.name, root_path=lib2.root_path),
         normalized_path="song3.flac",
     )
     created["song_identities"] = [song1, song2, song3]
@@ -339,6 +339,7 @@ _SONG_LOCATOR_PREFIX = "nom1"
 # identical absolute path; mask the counter so path-bearing snapshots are
 # deterministic.
 _PYTEST_TMP_RE = re.compile(r"pytest-\d+")
+_PYTEST_USER_RE = re.compile(r"pytest-of-[^/]+")
 
 
 def _mask_song_locator(token: str) -> str:
@@ -401,6 +402,8 @@ def _normalize(value: Any) -> Any:
             return "<UUID>"
         if value.startswith(_SONG_LOCATOR_PREFIX) and len(value) > len(_SONG_LOCATOR_PREFIX):
             return _mask_song_locator(value)
+        if "pytest-of-" in value:
+            value = _PYTEST_USER_RE.sub("pytest-of-<USER>", value)
         if "pytest-" in value:
             return _PYTEST_TMP_RE.sub("pytest-<N>", value)
         return value

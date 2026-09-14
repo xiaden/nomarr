@@ -1,40 +1,62 @@
-"""Geometry-era report retrieval.
-
-Rows are read from the exact run-scoped ``geometry_analysis_records`` table and retain
-only the complete geometry/observation/threshold/evaluation/scoring/execution identity
-evidence written by the geometry owner.  There is no strategy decoder, no runtime
-resolution of evidence from any other scope, and no inferred provenance; a non-exact or
-mixed scope is refused rather than silently blended.
-"""
+"""Normalized geometry result-surface retrieval."""
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import pandas as pd
 
 from ._base import make_section, make_table
 
-#: The complete exact geometry-era identity axes carried by every evidence row.
-IDENTITY_COLUMNS = [
-    "geometry_id",
-    "observation_group_sha256",
-    "geometry_semantics_version",
-    "numerical_profile_digest",
-    "threshold_id",
-    "structural_identity",
-    "search_representation_id",
-    "evaluation_id",
-    "scoring_semantics_version",
-    "execution_id",
-]
-
-GEOMETRY_ANALYSIS_COLUMNS = ["run_id", *IDENTITY_COLUMNS, "metric", "value", "evidence_json"]
-
-#: Evidence role marking the mandatory observed global-medoid baseline row.  Baseline rows
-#: are rendered separately from winner representations and are never winner candidates.
 BASELINE_EVIDENCE_ROLE = "mandatory-observed-baseline"
+
+
+def _require_run_id(run_id: str | None) -> str:
+    if not run_id:
+        raise ValueError("exact run_id is required; the report never blends runs")
+    return str(run_id)
+
+
+def query_incomplete_analyze_diagnostics(con, *, run_id: str) -> tuple[dict[str, Any], ...]:
+    exact_run = _require_run_id(run_id)
+    rows = con.execute(
+        "SELECT * FROM analyze_incomplete_diagnostics WHERE run_id=? ORDER BY created_at", (exact_run,)
+    ).fetchall()
+    names = [item[0] for item in con.description]
+    return tuple(dict(zip(names, row, strict=False)) for row in rows)
+
+
+def query_normalized_result(con, *, run_id: str) -> Any:
+    from scripts.embedding_research.common.geometry_analysis import read_geometry_corpus_analysis_normalized
+    from scripts.embedding_research.common.threshold_analysis import AnalysisEvidenceIdentity
+    from scripts.embedding_research.db.result_surfaces import read_result_provenance
+
+    row = read_result_provenance(con, run_id=_require_run_id(run_id))[0]
+    identity = AnalysisEvidenceIdentity(
+        geometry_id=str(row["geometry_id"]),
+        observation_group_sha256=str(row["observation_group_sha256"]),
+        geometry_semantics_version=str(row["geometry_semantics_version"]),
+        numerical_profile_digest=str(row["numerical_profile_digest"]),
+        threshold_id="corpus",
+        structural_identity=f"{row['experiment']}:corpus",
+        evaluation_id=str(row["evaluation_id"]),
+        search_representation_id="corpus",
+        scoring_semantics_version=int(row["scoring_semantics_version"]),
+        execution_id=str(row["execution_id"]),
+    )
+    return read_geometry_corpus_analysis_normalized(con, run_id=run_id, identity=identity)
+
+
+def section_analysis(*args: Any, **kwargs: Any) -> dict[str, Any]:
+    return make_section("analysis", [])
+
+
+__all__ = [
+    "BASELINE_EVIDENCE_ROLE",
+    "query_incomplete_analyze_diagnostics",
+    "query_normalized_result",
+    "section_analysis",
+]
 
 
 def _require_run_id(run_id: str | None) -> str:

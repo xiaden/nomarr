@@ -196,24 +196,6 @@ CREATE TABLE IF NOT EXISTS song_patch_geometry (
 """
 
 _DDL = """
-CREATE TABLE IF NOT EXISTS geometry_analysis_records (
-    run_id TEXT NOT NULL,
-    geometry_id TEXT NOT NULL,
-    observation_group_sha256 TEXT NOT NULL,
-    geometry_semantics_version TEXT NOT NULL,
-    numerical_profile_digest TEXT NOT NULL,
-    threshold_id TEXT NOT NULL,
-    structural_identity TEXT NOT NULL,
-    search_representation_id TEXT NOT NULL,
-    evaluation_id TEXT NOT NULL,
-    scoring_semantics_version INTEGER NOT NULL,
-    execution_id TEXT NOT NULL,
-    metric TEXT NOT NULL,
-    value DOUBLE NOT NULL,
-    evidence_json TEXT NOT NULL,
-    created_at_ms BIGINT NOT NULL
-);
-
 CREATE TABLE IF NOT EXISTS geometry_head_evidence (
     run_id TEXT NOT NULL,
     geometry_id TEXT NOT NULL,

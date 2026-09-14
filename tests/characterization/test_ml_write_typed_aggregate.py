@@ -39,7 +39,9 @@ from nomarr.helpers.dataclasses.ml_output_stream_dataclass import OutputStreamWr
 from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
 from nomarr.helpers.dataclasses.vector_dataclass import BackboneVectorWrite
 from nomarr.persistence.models.embedding import Embedding
+from nomarr.persistence.models.library import Library
 from nomarr.persistence.models.ml_output_stream import MlOutputStream
+from nomarr.persistence.models.song import Song
 
 _EMBED_DIM = 1280
 _TIMESTAMP_FIELDS = ("created_at", "updated_at")
@@ -98,13 +100,26 @@ def _normalize_row(row: Any) -> dict[str, Any]:
     return normalized
 
 
-def _vector_rows(session: Any, song_id: int) -> list[dict[str, Any]]:
-    stmt = select(_EMBEDDING_TABLE).where(_EMBEDDING_TABLE.c.song_id == song_id)
+def _storage_song_id(session: Any, song: SongIdentity) -> int:
+    """Resolve a semantic fixture locator for raw persistence-row assertions."""
+    resolved = session.execute(
+        select(Song.__table__.c.id)
+        .join(Library.__table__, Song.__table__.c.library_id == Library.__table__.c.id)
+        .where(
+            Library.__table__.c.library_uuid == song.library.library_uuid,
+            Song.__table__.c.normalized_path == song.normalized_path,
+        )
+    ).scalar_one()
+    return int(resolved)
+
+
+def _vector_rows(session: Any, song: SongIdentity) -> list[dict[str, Any]]:
+    stmt = select(_EMBEDDING_TABLE).where(_EMBEDDING_TABLE.c.song_id == _storage_song_id(session, song))
     return [_normalize_row(r) for r in session.execute(stmt).all()]
 
 
-def _stream_rows(session: Any, song_id: int) -> list[dict[str, Any]]:
-    stmt = select(_STREAM_TABLE).where(_STREAM_TABLE.c.song_id == song_id)
+def _stream_rows(session: Any, song: SongIdentity) -> list[dict[str, Any]]:
+    stmt = select(_STREAM_TABLE).where(_STREAM_TABLE.c.song_id == _storage_song_id(session, song))
     return [_normalize_row(r) for r in session.execute(stmt).all()]
 
 
@@ -132,8 +147,7 @@ class TestTypedWritePreservation:
 
     def test_vector_row_field_preservation(self, db: Any, inference_session: Any, seed_data: dict) -> None:
         """embed_dim, suite-hash mapping, empty suite-hash col, NULL seg hash, hot tier."""
-        song_id = seed_data["songs"][0]
-        song = _song_identity(seed_data, seed_data["songs"].index(song_id))
+        song = _song_identity(seed_data)
         suite_hash = "suite-hash-canonical"
         stored = tuple(_random_vector(seed=101))
 
@@ -147,7 +161,7 @@ class TestTypedWritePreservation:
             streams=[],
         )
 
-        rows = _vector_rows(inference_session, song_id)
+        rows = _vector_rows(inference_session, song)
         assert len(rows) == 1
         row = rows[0]
         assert row["backbone_id"] == "effnet"
@@ -164,8 +178,7 @@ class TestTypedWritePreservation:
 
     def test_genres_none_is_distinct(self, db: Any, inference_session: Any, seed_data: dict) -> None:
         """genres=None persists as NULL (distinct from []); num_segments preserved."""
-        song_id = seed_data["songs"][0]
-        song = _song_identity(seed_data, seed_data["songs"].index(song_id))
+        song = _song_identity(seed_data)
         _typed_write(
             db,
             song,
@@ -180,7 +193,7 @@ class TestTypedWritePreservation:
             ],
             streams=[],
         )
-        rows = _vector_rows(inference_session, song_id)
+        rows = _vector_rows(inference_session, song)
         assert len(rows) == 1
         assert rows[0]["genres"] is None
         assert rows[0]["num_segments"] == 3
@@ -190,8 +203,7 @@ class TestTypedWritePreservation:
         self, db: Any, inference_session: Any, seed_data: dict
     ) -> None:
         """genres=() persists as [] (empty array), distinct from genres=None (NULL)."""
-        song_id = seed_data["songs"][0]
-        song = _song_identity(seed_data, seed_data["songs"].index(song_id))
+        song = _song_identity(seed_data)
         _typed_write(
             db,
             song,
@@ -206,7 +218,7 @@ class TestTypedWritePreservation:
             ],
             streams=[],
         )
-        rows = _vector_rows(inference_session, song_id)
+        rows = _vector_rows(inference_session, song)
         assert len(rows) == 1
         # () maps to a persisted empty array ([]), never NULL.
         assert rows[0]["genres"] == []
@@ -215,8 +227,7 @@ class TestTypedWritePreservation:
         self, db: Any, inference_session: Any, seed_data: dict
     ) -> None:
         """R5: persisting one backbone never erases another backbone's vectors."""
-        song_id = seed_data["songs"][0]
-        song = _song_identity(seed_data, seed_data["songs"].index(song_id))
+        song = _song_identity(seed_data)
         _typed_write(
             db,
             song,
@@ -251,7 +262,7 @@ class TestTypedWritePreservation:
             ],
             streams=[],
         )
-        rows = _vector_rows(inference_session, song_id)
+        rows = _vector_rows(inference_session, song)
         by_backbone = {r["backbone_id"]: r for r in rows}
         assert set(by_backbone) == {"backbone_a", "backbone_b"}
         assert by_backbone["backbone_a"]["model_id"] == "model-a2"
@@ -261,8 +272,7 @@ class TestTypedWritePreservation:
         self, db: Any, inference_session: Any, seed_data: dict
     ) -> None:
         """Stable ids/values/order round-trip; duplicate output_id is last-wins (1 row)."""
-        song_id = seed_data["songs"][0]
-        song = _song_identity(seed_data, seed_data["songs"].index(song_id))
+        song = _song_identity(seed_data)
         suite_hash = "suite-hash-streams"
         out_id_0 = canonical_output_id(suite_hash, 0)
         out_id_1 = canonical_output_id(suite_hash, 1)
@@ -280,7 +290,7 @@ class TestTypedWritePreservation:
             ],
         )
 
-        rows = _stream_rows(inference_session, song_id)
+        rows = _stream_rows(inference_session, song)
         by_id = {row["output_id"]: row for row in rows}
         assert set(by_id) == {out_id_0, out_id_1}
         # Stable string identity is the documented sha256[:16] form, stored verbatim.
@@ -292,8 +302,7 @@ class TestTypedWritePreservation:
 
     def test_stream_only_sentinel_keeps_vectors(self, db: Any, inference_session: Any, seed_data: dict) -> None:
         """Streams-only (vectors=[], backbone="") clears streams but keeps vectors."""
-        song_id = seed_data["songs"][0]
-        song = _song_identity(seed_data, seed_data["songs"].index(song_id))
+        song = _song_identity(seed_data)
         out_id = canonical_output_id("suite-clear", 0)
         _typed_write(
             db,
@@ -306,7 +315,7 @@ class TestTypedWritePreservation:
             ],
             streams=[OutputStreamWrite(output_id=out_id, values=[1.0], output_index=0)],
         )
-        assert _stream_rows(inference_session, song_id)
+        assert _stream_rows(inference_session, song)
 
         # Streams-only sentinel clears streams but must NOT delete vectors.
         _typed_write(
@@ -316,14 +325,13 @@ class TestTypedWritePreservation:
             vectors=[],
             streams=[OutputStreamWrite(output_id=out_id, values=[2.0], output_index=0)],
         )
-        streams = _stream_rows(inference_session, song_id)
+        streams = _stream_rows(inference_session, song)
         assert [row["values"] for row in streams] == [[2.0]]
-        assert len(_vector_rows(inference_session, song_id)) == 1
+        assert len(_vector_rows(inference_session, song)) == 1
 
     def test_empty_streams_arg_clears_streams(self, db: Any, inference_session: Any, seed_data: dict) -> None:
         """R6: output_streams=[] with an empty backbone is the clear-stream path."""
-        song_id = seed_data["songs"][0]
-        song = _song_identity(seed_data, seed_data["songs"].index(song_id))
+        song = _song_identity(seed_data)
         out_id = canonical_output_id("suite-empty", 0)
         _typed_write(
             db,
@@ -332,10 +340,10 @@ class TestTypedWritePreservation:
             vectors=[],
             streams=[OutputStreamWrite(output_id=out_id, values=[1.0], output_index=0)],
         )
-        assert _stream_rows(inference_session, song_id)
+        assert _stream_rows(inference_session, song)
 
         _typed_write(db, song, "", vectors=[], streams=[])
-        assert _stream_rows(inference_session, song_id) == []
+        assert _stream_rows(inference_session, song) == []
 
 
 @pytest.mark.characterization
@@ -347,8 +355,8 @@ class TestTypedWriteRejectsStorageShapedInput:
         """Resolution failure surfaces as EntityNotFoundError (repo-owned mapping)."""
         from nomarr.helpers.exceptions import EntityNotFoundError
 
-        known = _song_identity(db, seed_data["songs"][0])
-        unknown = SongIdentity(library=known.library, normalized_path="/tmp/test1/does-not-exist.flac")
+        known = _song_identity(seed_data)
+        unknown = SongIdentity(library=known.library, normalized_path="does-not-exist.flac")
         with pytest.raises(EntityNotFoundError):
             _typed_write(
                 db,
@@ -361,11 +369,11 @@ class TestTypedWriteRejectsStorageShapedInput:
     def test_integer_song_key_rejected(self, db: Any, seed_data: dict) -> None:
         """An integer song storage key is rejected at the typed boundary (TypeError)."""
         with pytest.raises(TypeError):
-            db.ml.replace_song_inference_results(seed_data["songs"][0], "effnet", vectors=[], output_streams=[])  # type: ignore[arg-type]
+            db.ml.replace_song_inference_results(123, "effnet", vectors=[], output_streams=[])  # type: ignore[arg-type]
 
     def test_raw_vector_dictionary_rejected(self, db: Any, seed_data: dict) -> None:
         """A raw vector dict (with storage fields) is rejected at the typed boundary."""
-        song = _song_identity(db, seed_data["songs"][0])
+        song = _song_identity(seed_data)
         with pytest.raises(TypeError):
             db.ml.replace_song_inference_results(
                 song,
@@ -395,8 +403,7 @@ class TestTypedAggregateSessionNeutrality:
         """R10: an insert violation inside the aggregate rolls back both tables."""
         from nomarr.helpers.exceptions import DuplicateEntityError
 
-        song_id = seed_data["songs"][0]
-        song = _song_identity(seed_data, seed_data["songs"].index(song_id))
+        song = _song_identity(seed_data)
         with pytest.raises(DuplicateEntityError):
             _typed_write(
                 db,
@@ -412,14 +419,13 @@ class TestTypedAggregateSessionNeutrality:
                 ],
                 streams=[],
             )
-        assert _vector_rows(inference_session, song_id) == []
+        assert _vector_rows(inference_session, song) == []
 
     def test_session_is_neutral_after_failure(self, db: Any, inference_session: Any, seed_data: dict) -> None:
         """R9: after an injected failure, a subsequent write on the same session succeeds."""
         from nomarr.helpers.exceptions import DuplicateEntityError
 
-        song_id = seed_data["songs"][0]
-        song = _song_identity(seed_data, seed_data["songs"].index(song_id))
+        song = _song_identity(seed_data)
         with pytest.raises(DuplicateEntityError):
             _typed_write(
                 db,
@@ -440,7 +446,7 @@ class TestTypedAggregateSessionNeutrality:
         # transaction on failure, so the aggregate's shared scoped session is
         # NOT left in an open/pending transaction that the worker's subsequent
         # errored-transition/release calls would inherit.
-        assert not db._scoped.in_transaction()
+        assert not db._scoped().in_transaction()
 
         good_vec = tuple(_random_vector(seed=5))
         _typed_write(
@@ -450,7 +456,7 @@ class TestTypedAggregateSessionNeutrality:
             vectors=[BackboneVectorWrite(vector=good_vec, num_segments=2, model_suite_hash="m-ok", genres=None)],
             streams=[],
         )
-        rows = _vector_rows(inference_session, song_id)
+        rows = _vector_rows(inference_session, song)
         assert len(rows) == 1
         assert rows[0]["model_id"] == "m-ok"
         assert _decode_embedding(rows[0]["embedding"]) == good_vec

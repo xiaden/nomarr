@@ -49,7 +49,9 @@ from sqlalchemy import select
 from nomarr.helpers.dataclasses.ml_output_stream_dataclass import OutputStreamWrite
 from nomarr.helpers.dataclasses.vector_dataclass import BackboneVectorWrite
 from nomarr.persistence.models.embedding import Embedding
+from nomarr.persistence.models.library import Library
 from nomarr.persistence.models.ml_output_stream import MlOutputStream
+from nomarr.persistence.models.song import Song
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -154,13 +156,26 @@ def _persist_typed(
     )
 
 
-def _vector_rows(session: Session, song_id: int) -> list[dict[str, Any]]:
-    stmt = select(_EMBEDDING_TABLE).where(_EMBEDDING_TABLE.c.song_id == song_id)
+def _storage_song_id(session: Session, song: SongIdentity) -> int:
+    """Resolve a semantic fixture locator for raw persistence-row assertions."""
+    resolved = session.execute(
+        select(Song.__table__.c.id)
+        .join(Library.__table__, Song.__table__.c.library_id == Library.__table__.c.id)
+        .where(
+            Library.__table__.c.library_uuid == song.library.library_uuid,
+            Song.__table__.c.normalized_path == song.normalized_path,
+        )
+    ).scalar_one()
+    return int(resolved)
+
+
+def _vector_rows(session: Session, song: SongIdentity) -> list[dict[str, Any]]:
+    stmt = select(_EMBEDDING_TABLE).where(_EMBEDDING_TABLE.c.song_id == _storage_song_id(session, song))
     return [_normalize_row(r) for r in session.execute(stmt).all()]
 
 
-def _stream_rows(session: Session, song_id: int) -> list[dict[str, Any]]:
-    stmt = select(_STREAM_TABLE).where(_STREAM_TABLE.c.song_id == song_id)
+def _stream_rows(session: Session, song: SongIdentity) -> list[dict[str, Any]]:
+    stmt = select(_STREAM_TABLE).where(_STREAM_TABLE.c.song_id == _storage_song_id(session, song))
     return [_normalize_row(r) for r in session.execute(stmt).all()]
 
 
@@ -190,7 +205,7 @@ class TestWritePreservationBaseline:
             streams=[],
         )
 
-        rows = _vector_rows(inference_session, cast("int", seed_data["songs"][0]))
+        rows = _vector_rows(inference_session, song)
         assert len(rows) == 1
         row = rows[0]
         assert row["backbone_id"] == "effnet"
@@ -223,7 +238,7 @@ class TestWritePreservationBaseline:
             ],
             streams=[],
         )
-        rows = _vector_rows(inference_session, cast("int", seed_data["songs"][0]))
+        rows = _vector_rows(inference_session, song)
         assert len(rows) == 1
         assert rows[0]["genres"] is None
         assert rows[0]["num_segments"] == 3
@@ -262,7 +277,7 @@ class TestWritePreservationBaseline:
             ],
             streams=[],
         )
-        rows = _vector_rows(inference_session, cast("int", seed_data["songs"][0]))
+        rows = _vector_rows(inference_session, song)
         by_backbone = {r["backbone_id"]: r for r in rows}
         assert set(by_backbone) == {"backbone_a", "backbone_b"}
         assert by_backbone["backbone_a"]["model_id"] == "model-a2"
@@ -290,7 +305,7 @@ class TestWritePreservationBaseline:
             ],
         )
 
-        rows = _stream_rows(inference_session, cast("int", seed_data["songs"][0]))
+        rows = _stream_rows(inference_session, song)
         by_id = {row["output_id"]: row for row in rows}
         assert set(by_id) == {out_id_0, out_id_1}
         # Stable string identity is exactly the documented sha256[:16] form.
@@ -321,7 +336,7 @@ class TestWritePreservationBaseline:
             ],
             streams=[OutputStreamWrite(output_id=out_id, values=[1.0], output_index=0)],
         )
-        assert _stream_rows(inference_session, cast("int", seed_data["songs"][0]))
+        assert _stream_rows(inference_session, song)
 
         # Streams-only sentinel clears streams but must NOT delete vectors.
         _persist_typed(
@@ -331,9 +346,9 @@ class TestWritePreservationBaseline:
             vectors=[],
             streams=[OutputStreamWrite(output_id=out_id, values=[2.0], output_index=0)],
         )
-        streams = _stream_rows(inference_session, cast("int", seed_data["songs"][0]))
+        streams = _stream_rows(inference_session, song)
         assert [row["values"] for row in streams] == [[2.0]]
-        assert len(_vector_rows(inference_session, cast("int", seed_data["songs"][0]))) == 1
+        assert len(_vector_rows(inference_session, song)) == 1
 
     def test_empty_streams_arg_clears_streams(self, db: Database, inference_session: Session, seed_data: dict) -> None:
         """R6: output_streams=[] with an empty backbone is the clear-stream path."""
@@ -346,10 +361,10 @@ class TestWritePreservationBaseline:
             vectors=[],
             streams=[OutputStreamWrite(output_id=out_id, values=[1.0], output_index=0)],
         )
-        assert _stream_rows(inference_session, cast("int", seed_data["songs"][0]))
+        assert _stream_rows(inference_session, song)
 
         _persist_typed(db, song, "", vectors=[], streams=[])
-        assert _stream_rows(inference_session, cast("int", seed_data["songs"][0])) == []
+        assert _stream_rows(inference_session, song) == []
 
 
 @pytest.mark.characterization
@@ -385,7 +400,7 @@ class TestAggregateSessionNeutrality:
                 ],
                 streams=[],
             )
-        assert _vector_rows(inference_session, cast("int", seed_data["songs"][0])) == []
+        assert _vector_rows(inference_session, song) == []
 
     def test_session_is_neutral_after_failure(self, db: Database, inference_session: Session, seed_data: dict) -> None:
         """R9: after an injected failure, a subsequent write on the same session succeeds."""
@@ -412,7 +427,7 @@ class TestAggregateSessionNeutrality:
             vectors=[{"embedding_vector": good_vec, "model_id": "m-ok", "num_segments": 2, "genres": None}],
             streams=[],
         )
-        rows = _vector_rows(inference_session, cast("int", seed_data["songs"][0]))
+        rows = _vector_rows(inference_session, song)
         assert len(rows) == 1
         assert rows[0]["model_id"] == "m-ok"
         assert _decode_embedding(rows[0]["embedding"]) == tuple(good_vec)

@@ -92,7 +92,10 @@ def _seed(db: Database, root: str = "/repo/curation", n: int = 3) -> tuple[Libra
     identities: list[SongIdentity] = []
     for i in range(n):
         path = f"{root}/track{i}.flac"
-        scan = SongScanUpdate(normalized_path=path, file_size=1000 + i, modified_time=now, duration_seconds=180.0)
+        normalized_path = f"track{i}.flac"
+        scan = SongScanUpdate(
+            normalized_path=normalized_path, file_size=1000 + i, modified_time=now, duration_seconds=180.0
+        )
         identities.append(db.library.add_song_to_library(SongUpsertInput(library=lib_ident, path=path, scan=scan)))
     for identity in identities:
         db.app.set_song_state([identity], STATE_WRITTEN)

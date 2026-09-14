@@ -461,3 +461,30 @@ def test_final_sanity_run_logs_resolved_module_files() -> None:
         assert probe in last_run, (
             f"final RUN sanity check must exercise the C5 GPU metadata/provider contract with {probe!r}"
         )
+
+
+@pytest.mark.unit
+def test_docker_base_supplies_distutils_shim_to_essentia_waf() -> None:
+    """Python 3.12 removed stdlib ``distutils``; Essentia's ``src/python/wscript``
+    imports ``distutils.sysconfig`` at configure time.
+
+    On Ubuntu noble the import shim is provided by ``python3-setuptools``. apt used
+    to pull it in transitively as a hard dependency of ``python3-pip``, but uv
+    installs only the lock contents, so ``setuptools`` must be an explicit
+    build-only apt dependency: present while waf runs, purged afterwards.
+    """
+    text = DOCKERFILE_BASE.read_text(encoding="utf-8")
+    install = _dockerfile_run_command(text, "apt-get update")
+    purge = _dockerfile_run_command(text, "apt-get purge")
+
+    assert "python3-setuptools" in install, (
+        "dockerfile.base must apt-install python3-setuptools before the Essentia waf "
+        "build (Python 3.12 has no stdlib distutils)"
+    )
+    assert "python3-setuptools" in purge, (
+        "python3-setuptools is build-only and must be purged with the other "
+        "build-only packages after the Essentia waf build"
+    )
+    assert text.index("python3-setuptools") < text.index("waf configure"), (
+        "python3-setuptools must be installed before waf configure runs"
+    )

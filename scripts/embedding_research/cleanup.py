@@ -31,7 +31,6 @@ _STAGING_WRITE_SUBDIRS = ("streams", "heads", "audio_masks", "observation_commit
 #: reset performs no filesystem mutation, so stream/mask/head payloads and
 #: observation-commit markers are preserved byte-for-byte as well.
 _DISPOSABLE_ANALYSIS_TABLES: tuple[str, ...] = (
-    "geometry_analysis_records",
     "geometry_head_evidence",
     "head_phase_provenance",
     "analyze_incomplete_diagnostics",

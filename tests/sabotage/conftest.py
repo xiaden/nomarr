@@ -15,6 +15,7 @@ from testcontainers.community.postgres import PostgresContainer
 
 from alembic import command
 from nomarr.helpers.dataclasses.library_dataclass import Library
+from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongScanUpdate, SongUpsertInput
 from nomarr.helpers.dataclasses.song_tag_dataclass import SongTagAssignment, TagRef
 from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence.db import Database
@@ -115,43 +116,40 @@ def seed_data(db):
     # Create 3 songs (2 in lib1, 1 in lib2); returns semantic locators.
     now_ms_val = now_ms()
     song1 = db.library.add_song_to_library(
-        lib1,
-        {
-            "path": "/tmp/test1/song1.flac",
-            "normalized_path": "/tmp/test1/song1.flac",
-            "file_size": 1024000,
-            "modified_time": now_ms_val.value,
-            "duration_seconds": 180.5,
-            "needs_tagging": 0,
-            "is_valid": 1,
-            "tagged": 0,
-        },
+        SongUpsertInput(
+            library=LibraryIdentity(library_uuid=lib1.library_uuid or "", name=lib1.name, root_path=lib1.root_path),
+            path="/tmp/test1/song1.flac",
+            scan=SongScanUpdate(
+                normalized_path="song1.flac",
+                file_size=1024000,
+                modified_time=now_ms_val.value,
+                duration_seconds=180.5,
+            ),
+        )
     )
     song2 = db.library.add_song_to_library(
-        lib1,
-        {
-            "path": "/tmp/test1/song2.mp3",
-            "normalized_path": "/tmp/test1/song2.mp3",
-            "file_size": 512000,
-            "modified_time": now_ms_val.value,
-            "duration_seconds": 240.0,
-            "needs_tagging": 1,
-            "is_valid": 1,
-            "tagged": 0,
-        },
+        SongUpsertInput(
+            library=LibraryIdentity(library_uuid=lib1.library_uuid or "", name=lib1.name, root_path=lib1.root_path),
+            path="/tmp/test1/song2.mp3",
+            scan=SongScanUpdate(
+                normalized_path="song2.mp3",
+                file_size=512000,
+                modified_time=now_ms_val.value,
+                duration_seconds=240.0,
+            ),
+        )
     )
     song3 = db.library.add_song_to_library(
-        lib2,
-        {
-            "path": "/tmp/test2/song3.flac",
-            "normalized_path": "/tmp/test2/song3.flac",
-            "file_size": 2048000,
-            "modified_time": now_ms_val.value,
-            "duration_seconds": 300.0,
-            "needs_tagging": 0,
-            "is_valid": 1,
-            "tagged": 1,
-        },
+        SongUpsertInput(
+            library=LibraryIdentity(library_uuid=lib2.library_uuid or "", name=lib2.name, root_path=lib2.root_path),
+            path="/tmp/test2/song3.flac",
+            scan=SongScanUpdate(
+                normalized_path="song3.flac",
+                file_size=2048000,
+                modified_time=now_ms_val.value,
+                duration_seconds=300.0,
+            ),
+        )
     )
     created["songs"] = [song1, song2, song3]
 

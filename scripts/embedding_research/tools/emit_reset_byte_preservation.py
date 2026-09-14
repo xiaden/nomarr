@@ -77,7 +77,6 @@ def main(argv: list[str] | None = None) -> int:
     )
     before = con.execute("SELECT geometry_id, gram_blob FROM song_patch_geometry ORDER BY geometry_id").fetchall()
     before_hashes = {geometry_id: hashlib.sha256(blob).hexdigest() for geometry_id, blob in before}
-    con.execute("DELETE FROM geometry_analysis_records")
     con.execute("DELETE FROM geometry_head_evidence")
     after = con.execute("SELECT geometry_id, gram_blob FROM song_patch_geometry ORDER BY geometry_id").fetchall()
     after_hashes = {geometry_id: hashlib.sha256(blob).hexdigest() for geometry_id, blob in after}
