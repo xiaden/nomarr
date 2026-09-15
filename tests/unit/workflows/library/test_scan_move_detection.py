@@ -32,6 +32,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import nomarr.components.library.file_batch_scanner_comp as scanner_comp
 import nomarr.components.library.move_detection_comp as move_comp
 import nomarr.workflows.library.scan_library_full_wf as full_wf
 import nomarr.workflows.library.scan_library_quick_wf as quick_wf
@@ -146,6 +147,7 @@ def _patched_scan(
     cached_folders: dict[str, SimpleNamespace] | None = None,
     folder_errors: dict[str, Exception] | None = None,
     folder_transient_errors: dict[str, Exception] | None = None,
+    real_scan_listdir_errors: dict[str, Exception] | None = None,
     present_paths: set[str] | None = None,
     uninspected_paths: set[str] | None = None,
     spy_detect: bool = False,
@@ -168,7 +170,14 @@ def _patched_scan(
     ``cached_folders`` seeds the quick-scan folder cache so unchanged folders can be
     skipped. ``folder_errors`` maps a folder absolute path to an exception raised on
     every walk attempt; ``folder_transient_errors`` raises only on the first attempt.
-    ``spy_detect`` patches the workflow's ``detect_move_for_new_file`` with a spy that
+    ``real_scan_listdir_errors`` selects the REAL-CALLER seam: when provided, the
+    workflow is NOT given a patched ``scan_folder_files`` — it calls the real component,
+    whose folder enumeration is driven by a patched ``os.listdir`` that raises
+    ``real_scan_listdir_errors[absolute_path]`` for a mapped path and returns ``[]``
+    otherwise (so unmapped real folders scan as legitimately empty). In that mode
+    ``mocks.scan_folder_files`` is intentionally absent; use ``mocks.save_folder_record``
+    and ``_removed_paths(ctx.mocks.remove_deleted)`` instead. ``spy_detect`` patches the
+    workflow's ``detect_move_for_new_file`` with a spy that
     calls the real function, exposing it as ``mocks.detect``.
     """
     db = MagicMock()
@@ -194,6 +203,7 @@ def _patched_scan(
     chromaprints = chromaprint_by_path or {}
     errors = folder_errors or {}
     transient_errors = folder_transient_errors or {}
+    real_scan_errors = real_scan_listdir_errors or {}
     transient_attempts: dict[str, int] = {}
     discovered = set()
     for batch in batches.values():
@@ -263,9 +273,20 @@ def _patched_scan(
         )
         mocks.get_songs_page = db.library.list_songs_after_normalized_path
         mocks.exact_returns = exact_returns
-        mocks.scan_folder_files = stack.enter_context(
-            patch.object(module, "scan_folder_files", side_effect=_scan_folder)
-        )
+        if real_scan_listdir_errors is None:
+            mocks.scan_folder_files = stack.enter_context(
+                patch.object(module, "scan_folder_files", side_effect=_scan_folder)
+            )
+        else:
+
+            def _raise_or_empty(path: str) -> list[str]:
+                if path in real_scan_errors:
+                    raise real_scan_errors[path]
+                return []
+
+            stack.enter_context(
+                patch(f"{scanner_comp.__name__}.os.listdir", side_effect=_raise_or_empty),
+            )
         upsert_returns: list[tuple[list[dict[str, Any]], list[MagicMock]]] = []
 
         def _upsert(_db: Any, _lib: Any, entries: list[dict[str, Any]], *_a: Any) -> list[MagicMock]:
@@ -279,7 +300,7 @@ def _patched_scan(
         mocks.remove_deleted = stack.enter_context(
             patch.object(module, "remove_deleted_files", side_effect=lambda _db, _lib, paths: len(paths))
         )
-        stack.enter_context(patch.object(module, "save_folder_record"))
+        mocks.save_folder_record = stack.enter_context(patch.object(module, "save_folder_record"))
         mocks.cleanup_stale_folders = stack.enter_context(patch.object(module, "cleanup_stale_folders"))
         stack.enter_context(patch.object(module, "cleanup_orphaned_entities_workflow"))
         stack.enter_context(patch.object(module, "update_scan_progress"))
@@ -1139,6 +1160,56 @@ class TestDeletionScoping:
         assert result["files_moved"] == 0
         assert result["files_added"] == 0
         assert result["files_removed"] == 1
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+class TestUnreadableFolderReconciliation:
+    """An existing folder that cannot be authoritatively read is unreconciled: its
+    persisted rows survive, its folder cache state is neither updated nor reconciled,
+    and the read failure surfaces in the scan result. Proven through both the
+    mocked-caller seam (patched ``scan_folder_files`` raising) and the real-caller
+    seam (the real component with a failing ``os.listdir``)."""
+
+    def test_unreadable_folder_is_unreconciled_and_preserves_rows(self, workflow: tuple[Any, Any]) -> None:
+        module, run = workflow
+        song_a = _song("/music/broken/a.flac", "broken/a.flac", "cp-a")
+        song_b = _song("/music/broken/b.flac", "broken/b.flac", "cp-b")
+        folder = _folder("broken", file_count=2)
+        existing = {"broken": {song.path: _carrier(song) for song in (song_a, song_b)}}
+        with _patched_scan(
+            module,
+            folders=[folder],
+            existing=existing,
+            batches={},
+            folder_errors={"/music/broken": OSError("denied")},
+        ) as ctx:
+            result = run(ctx.db, _LIBRARY, tagger_version="v1")
+
+        assert _removed_paths(ctx.mocks.remove_deleted) == set()
+        assert ctx.mocks.save_folder_record.call_args_list == []
+        assert result["files_failed"] == 2
+        assert any("broken" in warning for warning in result["warnings"])
+
+    def test_real_folder_read_failure_is_unreconciled_and_preserves_rows(self, workflow: tuple[Any, Any]) -> None:
+        module, run = workflow
+        song_a = _song("/music/broken/a.flac", "broken/a.flac", "cp-a")
+        song_b = _song("/music/broken/b.flac", "broken/b.flac", "cp-b")
+        folder = _folder("broken", file_count=2)
+        existing = {"broken": {song.path: _carrier(song) for song in (song_a, song_b)}}
+        with _patched_scan(
+            module,
+            folders=[folder],
+            existing=existing,
+            batches={},
+            real_scan_listdir_errors={"/music/broken": OSError("denied")},
+        ) as ctx:
+            result = run(ctx.db, _LIBRARY, tagger_version="v1")
+
+        assert _removed_paths(ctx.mocks.remove_deleted) == set()
+        assert ctx.mocks.save_folder_record.call_args_list == []
+        assert result["files_failed"] == 2
+        assert any("broken" in warning for warning in result["warnings"])
 
 
 @pytest.mark.unit

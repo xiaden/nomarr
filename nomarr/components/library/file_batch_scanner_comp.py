@@ -55,7 +55,15 @@ def scan_folder_files(
         db: Database instance (for build_library_path_from_input)
 
     Returns:
-        FileBatchResult with file entries ready for upsert
+        FileBatchResult with file entries ready for upsert. A folder that is
+        readable but contains no audio files yields a successful empty result.
+
+    Raises:
+        OSError: When the folder's contents cannot be authoritatively enumerated
+            because the directory read (``os.listdir``) fails. Callers must treat
+            the folder as unreconciled for that scan: it is not recorded as
+            reconciled, its folder cache state is not updated, and its persisted
+            rows are excluded from missing-file cleanup.
 
     """
     file_entries: list[dict[str, Any]] = []
@@ -65,24 +73,18 @@ def scan_folder_files(
     warnings: list[str] = []
     edge_bootstraps: list[dict[str, Any]] = []
 
-    # Get audio files in this folder (non-recursive)
-    try:
-        filenames = os.listdir(str(folder_path))
-        files = [
-            os.path.join(str(folder_path), f)
-            for f in filenames
-            if is_audio_file(f) and os.path.isfile(os.path.join(str(folder_path), f))
-        ]
-    except OSError as e:
-        logger.exception(f"Cannot read folder {folder_path}: {e}")
-        return FileBatchResult(
-            file_entries=file_entries,
-            discovered_paths=discovered_paths,
-            new_file_paths=new_file_paths,
-            stats=stats,
-            warnings=warnings,
-            edge_bootstraps=edge_bootstraps,
-        )
+    # Get audio files in this folder (non-recursive). An OSError raised by the
+    # directory read (os.listdir) means the folder's contents could not be
+    # authoritatively enumerated. It propagates to the caller so the folder is
+    # treated as unreconciled rather than as an authoritative empty folder.
+    # (The per-file OSError handler inside the loop below is a different contract
+    # and stays.)
+    filenames = os.listdir(str(folder_path))
+    files = [
+        os.path.join(str(folder_path), f)
+        for f in filenames
+        if is_audio_file(f) and os.path.isfile(os.path.join(str(folder_path), f))
+    ]
 
     # Process each file
     for file_path in files:

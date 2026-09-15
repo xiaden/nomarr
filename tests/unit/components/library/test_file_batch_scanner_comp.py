@@ -104,18 +104,39 @@ class TestScanFolderFiles:
 
     @pytest.mark.unit
     @pytest.mark.mocked
-    def test_returns_empty_result_when_folder_cannot_be_read(self, tmp_path: Path) -> None:
+    def test_raises_when_folder_cannot_be_read(self, tmp_path: Path) -> None:
         mock_db = MagicMock()
         folder_path = tmp_path / "missing"
         library_root = tmp_path / "music"
 
-        with patch(f"{MODULE}.os.listdir", side_effect=OSError("denied")):
-            result = scan_folder_files(
+        with (
+            patch(f"{MODULE}.os.listdir", side_effect=OSError("denied")),
+            pytest.raises(OSError, match="denied"),
+        ):
+            scan_folder_files(
                 folder_path=folder_path,
                 library_root=library_root,
                 existing_files={},
                 db=mock_db,
             )
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_legitimately_empty_folder_returns_successful_empty_result(self, tmp_path: Path) -> None:
+        """A folder that is readable but contains no audio files remains a successful
+        empty result: the correct counterpart to ``test_raises_when_folder_cannot_be_read``.
+        """
+        mock_db = MagicMock()
+        library_root = tmp_path / "music"
+        folder_path = library_root / "empty"
+        folder_path.mkdir(parents=True)
+
+        result = scan_folder_files(
+            folder_path=folder_path,
+            library_root=library_root,
+            existing_files={},
+            db=mock_db,
+        )
 
         assert result.file_entries == []
         assert result.discovered_paths == set()
