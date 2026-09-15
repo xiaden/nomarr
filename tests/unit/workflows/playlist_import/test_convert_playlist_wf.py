@@ -15,8 +15,10 @@ import pytest
 from nomarr.components.library.song_query_types import TrackSong
 from nomarr.components.playlist_import.track_matcher_comp import LibraryTrack
 from nomarr.components.playlist_import.url_parser_comp import ParsedPlaylistUrl
+from nomarr.helpers.dataclasses.library_dataclass import Library
 from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
 from nomarr.helpers.dataclasses.song_dataclass import Song
+from nomarr.helpers.dataclasses.song_tag_dataclass import SongTagAssignment
 from nomarr.helpers.dto.playlist_import_dto import (
     MatchedFileInfo,
     MatchResult,
@@ -171,3 +173,62 @@ def test_convert_classifies_match_statuses() -> None:
     assert result.fuzzy_matches == 1
     assert result.ambiguous_count == 1
     assert result.not_found_count == 1
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+def test_convert_matches_entry_beyond_first_page() -> None:
+    """Real-caller journey: an entry past the first page still matches and reaches the M3U.
+
+    This deliberately does NOT use ``_patches``: that helper patches
+    ``get_tracks_for_matching``, so it could never observe the page-bounded corpus.
+    Here ``get_tracks_for_matching``, ``LibraryTrack.from_track_song`` and
+    ``match_tracks`` are all real; only the network/URL boundary and the locator
+    projection are stubbed.
+    """
+    db = MagicMock()
+    library = Library(
+        library_uuid="123e4567-e89b-42d3-a456-426614174000",
+        name="test-lib",
+        root_path="/music",
+    )
+    songs = [_song(f"filler{i:04d}.mp3") for i in range(1000)] + [_song("late/target.mp3")]
+    tags: dict[SongIdentity, tuple[SongTagAssignment, ...]] = {
+        _identity(f"filler{i:04d}.mp3"): (
+            SongTagAssignment(name="title", value=f"Filler {i}"),
+            SongTagAssignment(name="artist", value="Nobody"),
+        )
+        for i in range(1000)
+    }
+    tags[_identity("late/target.mp3")] = (
+        SongTagAssignment(name="title", value="Late"),
+        SongTagAssignment(name="artist", value="Artist"),
+    )
+    db.library.list_libraries.return_value = [library]
+    # Limit-honoring side effect (mandatory): reproduces the page bound so the test
+    # actually fails before the exhaustive-enumeration fix.
+    db.library.list_tracks_for_matching.side_effect = lambda _library, *, limit=None: (
+        songs[:limit] if limit is not None else list(songs)
+    )
+    db.library.list_song_tags_for_songs.return_value = tags
+
+    parsed = ParsedPlaylistUrl(platform="deezer", playlist_id="1234567890", original_url=_URL)
+    input_tracks = [PlaylistTrackInput(title="Late", artist="Artist", album="Album")]
+    with (
+        patch.object(convert_playlist_wf, "parse_playlist_url", return_value=parsed),
+        patch.object(convert_playlist_wf, "_fetch_playlist", return_value=(_metadata(), input_tracks)),
+        patch.object(
+            convert_playlist_wf,
+            "locators_for_carriers",
+            side_effect=lambda _db, carriers: [_identity(c.song.normalized_path) for c in carriers],
+        ),
+    ):
+        result = convert_playlist_wf.convert_playlist_workflow(db, _URL)
+
+    assert result.total_tracks == 1
+    assert result.matched_count == 1
+    assert result.exact_matches == 1
+    assert result.not_found_count == 0
+    assert result.match_results[0].matched_file is not None
+    assert result.match_results[0].matched_file.path == "/music/late/target.mp3"
+    assert "/music/late/target.mp3" in result.m3u_content

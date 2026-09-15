@@ -674,19 +674,26 @@ def get_songs_by_chromaprint(db: Database, chromaprint: str, library: Library | 
 
 
 def get_tracks_for_matching(db: Database, library: Library | None = None) -> list[TrackSong]:
-    """Get typed track carriers for fuzzy playlist matching, optionally scoped."""
+    """Enumerate the COMPLETE eligible track corpus for the requested library scope.
+
+    Returns typed ``TrackSong`` carriers for fuzzy playlist matching, optionally
+    scoped to a single library. This is an exhaustive enumeration \u2014 no pagination
+    bound is applied \u2014 because playlist matching must see every eligible song;
+    passing ``limit=None`` at both call sites is the exhaustive contract here, not
+    a tuning value.
+
+    ``DEFAULT_LIMIT`` remains in force only for the bounded listing/UI surfaces in
+    this module: :func:`get_all_library_paths`, :func:`detect_nd_path_prefix`, and
+    :func:`get_recently_processed`.
+    """
     pairs: list[tuple[Song, LibraryIdentity]] = []
     if library is not None:
         library_identity = _library_identity(library)
-        pairs.extend(
-            (song, library_identity) for song in db.library.list_tracks_for_matching(library, limit=DEFAULT_LIMIT)
-        )
+        pairs.extend((song, library_identity) for song in db.library.list_tracks_for_matching(library, limit=None))
     else:
         for library in db.library.list_libraries():
             library_identity = _library_identity(library)
-            pairs.extend(
-                (song, library_identity) for song in db.library.list_tracks_for_matching(library, limit=DEFAULT_LIMIT)
-            )
+            pairs.extend((song, library_identity) for song in db.library.list_tracks_for_matching(library, limit=None))
     if not pairs:
         return []
     songs = [song for song, _ in pairs]

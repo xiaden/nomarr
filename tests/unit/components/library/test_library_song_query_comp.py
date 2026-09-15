@@ -18,6 +18,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from nomarr.components.library.library_song_query_comp import (
+    DEFAULT_LIMIT,
     clear_library_data,
     count_recently_tagged,
     count_songs_by_tag,
@@ -472,6 +473,18 @@ class TestPathAndStateListings:
         assert sorted(get_all_library_paths(db)) == ["/music/a.flac", "/vault/v.flac"]
 
     @pytest.mark.unit
+    def test_get_all_library_paths_keeps_bounded_listing_limit(self) -> None:
+        db = _db()
+        db.library.list_libraries.return_value = [MUSIC_LIB]
+        db.library.list_songs.return_value = []
+
+        get_all_library_paths(db)
+
+        # Do-not-weaken pin: the bounded listing/UI surface must keep DEFAULT_LIMIT
+        # even though get_tracks_for_matching now enumerates exhaustively.
+        assert db.library.list_songs.call_args.kwargs["limit"] == DEFAULT_LIMIT
+
+    @pytest.mark.unit
     def test_get_sample_normalized_path_and_empty(self) -> None:
         db = _db()
         db.library.list_libraries.return_value = [MUSIC_LIB]
@@ -500,6 +513,18 @@ class TestPathAndStateListings:
         db.library.list_songs.return_value = [_song("album/a.flac")]
         assert detect_nd_path_prefix(db, "/nd/music/album/a.flac") == "/nd/music/"
         assert detect_nd_path_prefix(db, "/unrelated/x.flac") is None
+
+    @pytest.mark.unit
+    def test_detect_nd_path_prefix_keeps_bounded_listing_limit(self) -> None:
+        db = _db()
+        db.library.list_libraries.return_value = [MUSIC_LIB]
+        db.library.list_songs.return_value = [_song("album/a.flac")]
+
+        detect_nd_path_prefix(db, "/nd/music/album/a.flac")
+
+        # Do-not-weaken pin: the bounded listing/UI surface must keep DEFAULT_LIMIT
+        # even though get_tracks_for_matching now enumerates exhaustively.
+        assert db.library.list_songs.call_args.kwargs["limit"] == DEFAULT_LIMIT
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -647,6 +672,17 @@ class TestRecentAndTracks:
         assert get_recently_processed(db) == []
 
     @pytest.mark.unit
+    def test_get_recently_processed_keeps_bounded_listing_limit(self) -> None:
+        db = _db()
+        db.library.list_songs_with_state.return_value = []
+
+        get_recently_processed(db)
+
+        # Do-not-weaken pin: the bounded listing/UI surface must keep DEFAULT_LIMIT
+        # even though get_tracks_for_matching now enumerates exhaustively.
+        assert db.library.list_songs_with_state.call_args.kwargs["limit"] == DEFAULT_LIMIT
+
+    @pytest.mark.unit
     def test_get_tracks_for_matching_returns_track_carriers(self) -> None:
         db = _db()
         song = _song("a.flac")
@@ -675,6 +711,40 @@ class TestRecentAndTracks:
         db2.library.list_song_tags_for_songs.return_value = {_identity(MUSIC, "a.flac"): ()}
         result = get_tracks_for_matching(db2)
         assert result[0].isrc is None
+
+    @pytest.mark.unit
+    def test_get_tracks_for_matching_enumerates_beyond_one_page_all_libraries(self) -> None:
+        db = _db()
+        songs = [_song(f"track{i:04d}.flac") for i in range(1001)]
+        db.library.list_libraries.return_value = [MUSIC_LIB]
+        # Limit-honoring side effect (mandatory): it reproduces the page bound so the
+        # test can actually fail before the exhaustive-enumeration fix. A bare
+        # ``return_value=[...]`` cannot truncate and would never go red.
+        db.library.list_tracks_for_matching.side_effect = lambda _library, *, limit=None: (
+            songs[:limit] if limit is not None else list(songs)
+        )
+        db.library.list_song_tags_for_songs.return_value = {}
+
+        result = get_tracks_for_matching(db)
+
+        assert len(result) == 1001
+        assert result[-1].song.normalized_path == "track1000.flac"
+
+    @pytest.mark.unit
+    def test_get_tracks_for_matching_enumerates_beyond_one_page_scoped(self) -> None:
+        db = _db()
+        songs = [_song(f"track{i:04d}.flac") for i in range(1001)]
+        db.library.list_tracks_for_matching.side_effect = lambda _library, *, limit=None: (
+            songs[:limit] if limit is not None else list(songs)
+        )
+        db.library.list_song_tags_for_songs.return_value = {}
+
+        result = get_tracks_for_matching(db, library=MUSIC_LIB)
+
+        assert len(result) == 1001
+        assert result[-1].song.normalized_path == "track1000.flac"
+        # Explicit exhaustive contract: the scoped branch must pass no bound at all.
+        assert db.library.list_tracks_for_matching.call_args.kwargs.get("limit", "absent") is None
 
 
 # ─────────────────────────────────────────────────────────────────────────
