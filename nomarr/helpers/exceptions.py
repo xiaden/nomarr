@@ -8,7 +8,10 @@ Rules:
 
 from __future__ import annotations
 
+import os
 from typing import Any
+
+from nomarr.helpers.fs_contract import FsFact  # noqa: TC001 - runtime import required by plan decision D-A2
 
 
 class PlaylistQueryError(Exception):
@@ -91,3 +94,23 @@ class TaskCancelledError(Exception):
     def __init__(self, message: str = "Task cancelled", *, result: Any | None = None) -> None:
         self.result = result
         super().__init__(message)
+
+
+class FilesystemError(ValueError):
+    """A filesystem operation failed; carries the structured ``FsFact``.
+
+    Subclassing ``ValueError`` keeps every existing ``except ValueError`` call site
+    working while still exposing the structured facts of the failure. The human-readable
+    ``message`` must stay generic and client-safe (ADR-037) — it must never embed the
+    path or the OS ``strerror`` — while ``.fact`` (and the derived ``.errno``/``.strerror``)
+    are server-side only and may be logged.
+
+    Raise sites must use ``raise FilesystemError(message, fact=fact) from exc`` so the
+    original ``OSError`` is preserved as ``__cause__`` for diagnosis.
+    """
+
+    def __init__(self, message: str, *, fact: FsFact) -> None:
+        super().__init__(message)
+        self.fact = fact
+        self.errno = fact.errno
+        self.strerror = os.strerror(fact.errno) if fact.errno is not None else None
