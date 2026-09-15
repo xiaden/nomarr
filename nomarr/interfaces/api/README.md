@@ -13,7 +13,7 @@ FastAPI application setup, authentication, and ID encoding for HTTP transport.
 
  | Module | Purpose |
  | -------- | -------- |
- | `api_app.py` | FastAPI app factory — lifespan, exception handler, SPA serving, health check |
+ | `api_app.py` | FastAPI app factory — lifespan, generic exception handler, `FilesystemError` handler mapping `FsFact.kind` → HTTP status (404/403/503/507/400/500) with client-safe messages, SPA serving, health check |
  | `auth.py` | `verify_key`, `verify_session`, password hashing, session create/validate/invalidate |
  | `id_codec.py` | `encode_id`/`decode_id` for database IDs, recursive `encode_ids` for response data |
  | `INTERFACE_STATUS.md` | Tracks API endpoint completion status |

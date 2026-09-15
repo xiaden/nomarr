@@ -185,3 +185,70 @@ def test_fs_fact_is_a_frozen_contract_value() -> None:
     fact = FsFact(presence="unknown", kind="invalid_path", errno=None)
     assert fact.kind == "invalid_path"
     assert FilesystemError("boom", fact=fact).fact is fact
+
+
+def test_build_library_path_from_input_containment_failure_returns_unknown_with_fs_fact(tmp_path: Path) -> None:
+    """``find_library_containing_path`` raising ``FilesystemError`` -> ``unknown`` + fact.
+
+    The queried path canonicalises normally; the failure comes from resolving the
+    configured library root, so this exercises the containment-search branch (D-B3)
+    rather than the earlier input-path canonicalisation branch.
+    """
+    loop = tmp_path / "loop"
+    loop.symlink_to(loop, target_is_directory=True)
+    db = _mock_db(_library(loop))
+
+    result = build_library_path_from_input(str(tmp_path / "song.mp3"), db)
+
+    assert result.status == "unknown"
+    assert result.fs_fact is not None
+    assert result.fs_fact.kind == "invalid_path"
+
+
+def test_build_library_path_from_db_containment_failure_returns_unknown_with_fs_fact(tmp_path: Path) -> None:
+    """The ``library_id is None`` containment search maps ``FilesystemError`` to a fact.
+
+    The stored path canonicalises normally; resolving the library root raises, so the
+    failure is attributed to the containment search (D-B3), never to the stored path.
+    """
+    loop = tmp_path / "loop"
+    loop.symlink_to(loop, target_is_directory=True)
+    db = _mock_db(_library(loop))
+
+    result = build_library_path_from_db(stored_path=str(tmp_path / "song.mp3"), db=db, library_id=None)
+
+    assert result.status == "unknown"
+    assert result.fs_fact is not None
+    assert result.fs_fact.kind == "invalid_path"
+
+
+def test_build_library_path_from_input_outside_all_roots_is_invalid_config(tmp_path: Path) -> None:
+    """A path outside every configured root is a config miss, not a filesystem fact."""
+    other_root = tmp_path / "elsewhere"
+    other_root.mkdir()
+    library = _library(other_root)
+    db = _mock_db(library, [library])
+
+    result = build_library_path_from_input(str(tmp_path / "outside.mp3"), db)
+
+    assert result.status == "invalid_config"
+    assert result.fs_fact is None
+
+
+@pytest.mark.parametrize("library", [None, _library("/nonexistent", name="gone-lib")], ids=["missing", "disabled"])
+def test_build_library_path_from_db_unknown_or_disabled_library_is_invalid_config(
+    library: Library | None,
+) -> None:
+    """A missing/disabled named library is a config/semantic condition, not ``unknown``."""
+    if library is not None:
+        library = Library(
+            name=library.name,
+            root_path=library.root_path,
+            is_enabled=False,
+        )
+    db = _mock_db(library)
+
+    result = build_library_path_from_db(stored_path="song.mp3", db=db, library_id="gone-lib")
+
+    assert result.status == "invalid_config"
+    assert result.fs_fact is None
