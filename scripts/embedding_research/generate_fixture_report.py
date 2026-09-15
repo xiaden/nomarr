@@ -26,13 +26,9 @@ from scripts.embedding_research.config import REPORT_DIR, RUNTIME_ROOT
 from scripts.embedding_research.db._schema import schema_fingerprint
 from scripts.embedding_research.report import run as report_run
 from scripts.embedding_research.tests._report_seed import (
-    EVALUATION_ID,
-    EXECUTION_ID,
-    EXPERIMENT,
     MATRICES,
     PHASE_NAMES,
     RUN_ID,
-    SCORING_SEMANTICS_VERSION,
     SYNTHETIC_WARNING,
     THRESHOLD_IDS,
     build_seeded_con,
@@ -46,19 +42,13 @@ _FIXTURE_RUN_ID = RUN_ID
 
 
 def _identity_evidence_rows(rows: list[tuple]) -> list[dict]:
-    """Map geometry identity rows to the report's identity-evidence records."""
+    """Map exact geometry rows to the normalized report identity surface."""
     return [
         {
             "geometry_id": row[0],
             "observation_group_sha256": row[1],
             "geometry_semantics_version": row[2],
             "numerical_profile_digest": row[3],
-            "threshold_id": THRESHOLD_IDS[0],
-            "structural_identity": f"{EXPERIMENT}:{THRESHOLD_IDS[0]}",
-            "search_representation_id": f"rep:{THRESHOLD_IDS[0]}",
-            "evaluation_id": EVALUATION_ID,
-            "scoring_semantics_version": SCORING_SEMANTICS_VERSION,
-            "execution_id": EXECUTION_ID,
         }
         for row in rows
     ]
@@ -99,6 +89,35 @@ def main(report_dir: Path = REPORT_DIR, *, html_out_path: Path | None = None) ->
             "numerical_profile_digest FROM geometry_head_evidence "
             "ORDER BY geometry_id, segment_id"
         ).fetchall()
+        threshold_rows = con.execute(
+            "SELECT threshold_index, threshold_id, corpus_search_class_id, comparable "
+            "FROM geometry_threshold_class_map WHERE run_id=? ORDER BY threshold_index",
+            (RUN_ID,),
+        ).fetchall()
+        class_rows = con.execute(
+            "SELECT DISTINCT corpus_search_class_id FROM geometry_class_aggregate_metrics "
+            "WHERE run_id=? ORDER BY corpus_search_class_id",
+            (RUN_ID,),
+        ).fetchall()
+        class_metric_rows = con.execute(
+            "SELECT DISTINCT corpus_search_class_id, ruler, metric FROM geometry_class_aggregate_metrics "
+            "WHERE run_id=? ORDER BY corpus_search_class_id, ruler, metric",
+            (RUN_ID,),
+        ).fetchall()
+        class_value_rows = con.execute(
+            "SELECT corpus_search_class_id, value FROM geometry_class_aggregate_metrics "
+            "WHERE run_id=? ORDER BY corpus_search_class_id, ruler, metric",
+            (RUN_ID,),
+        ).fetchall()
+        class_neighborhood_rows = con.execute(
+            "SELECT corpus_search_class_id, query_song_id, candidate_song_id "
+            "FROM geometry_class_neighborhoods WHERE run_id=?",
+            (RUN_ID,),
+        ).fetchall()
+        baseline_rows = con.execute(
+            "SELECT DISTINCT backbone FROM geometry_baseline_aggregate_metrics WHERE run_id=?",
+            (RUN_ID,),
+        ).fetchall()
     finally:
         con.close()
 
@@ -109,6 +128,26 @@ def main(report_dir: Path = REPORT_DIR, *, html_out_path: Path | None = None) ->
         "geometry": _identity_evidence_rows(geometry_rows),
         "head": _identity_evidence_rows(head_rows),
         "phases": list(PHASE_NAMES),
+        "analysis_backbone": "effnet",
+        "synthetic_only": True,
+        "normalized_surfaces": [
+            "geometry_threshold_class_map",
+            "geometry_threshold_structural",
+            "geometry_class_aggregate_metrics",
+            "geometry_class_query_metrics",
+            "geometry_class_neighborhoods",
+            "geometry_baseline_aggregate_metrics",
+            "geometry_baseline_query_metrics",
+            "geometry_baseline_neighborhoods",
+            "geometry_evaluation_corpus",
+            "geometry_head_label_provenance",
+            "geometry_result_provenance",
+        ],
+        "threshold_points": len(threshold_rows),
+        "classes": [row[0] for row in class_rows],
+        "class_metric_cells": [list(row) for row in class_metric_rows],
+        "class_neighborhood_key_count": len({tuple(row) for row in class_neighborhood_rows}),
+        "baseline_backbones": [row[0] for row in baseline_rows],
     }
     data["matrices"] = MATRICES
     benchmark = {
@@ -134,37 +173,50 @@ def main(report_dir: Path = REPORT_DIR, *, html_out_path: Path | None = None) ->
         "finite": True,
         "numerical_kernel_version": "numpy_row_normalize_float32_matmul_v1",
     }
+    configured_threshold_count = len(threshold_rows)
+    if configured_threshold_count < 2:
+        raise AssertionError("fixture requires at least two threshold points")
+    if len({row[2] for row in threshold_rows}) < 2:
+        raise AssertionError("fixture requires distinct threshold classes")
+    if len({row[1] for row in class_value_rows}) < 2:
+        raise AssertionError("fixture requires distinct expected class metrics")
+    if configured_threshold_count != len(THRESHOLD_IDS):
+        raise AssertionError("threshold map count does not match configured threshold count")
+    if len(baseline_rows) != 1:
+        raise AssertionError("fixture requires exactly one fixed baseline block")
+    # This is the compact normalized evidence summary; all detailed result data
+    # remains in the normalized report tables and is never nested in this payload.
     data["corrective_evidence"] = {
-        "retrieval": {
-            "corpus_wide_leave_one_out": True,
-            "self_candidate_count": 0,
-            "segmentation_from_scorer_count": 0,
-            "canonical_scorer": "max_per_candidate_segment",
+        "threshold_map": {
+            "count": configured_threshold_count,
+            "first_index": threshold_rows[0][0],
+            "last_index": threshold_rows[-1][0],
         },
-        "identity": {
-            "collapse_requires_all_scoring_inputs": True,
-            "structural_identity_separate": True,
-            "search_representation_id_excludes_structural_identity": True,
+        "class_collapse_context": [
+            {
+                "corpus_search_class_id": row[0],
+                "threshold_indices": [item[0] for item in threshold_rows if item[2] == row[0]],
+                "comparable": all(item[3] for item in threshold_rows if item[2] == row[0]),
+            }
+            for row in class_rows
+        ],
+        "per_ruler_metric_availability": {
+            ruler: sorted({row[2] for row in class_metric_rows if row[1] == ruler})
+            for ruler in sorted({row[1] for row in class_metric_rows})
         },
-        "comparability": {
-            "non_comparable_persisted": True,
-            "explicit_reasons": ["alignment_failed", "zero_searchable", "no_medoid", "no_candidates", "label_missing"],
-            "reason_vocabulary_owner": "helpers.corpus_identity.classify_representation",
+        "baseline_once": {
+            "count": len(baseline_rows),
+            "fixed": True,
+            "control": "observed whole-song source-medoid baseline",
+            "same_population": True,
         },
-        "rulers": ["artist", "genre", "frozen_head"],
-        "threshold_map": {"count": 171, "first_index": 0, "last_index": 170},
-        "corpus_map": {"candidate_population": "ordered_corpus_song_ids", "leave_one_out": True},
-        "neighborhoods": {
-            "winner": {"min": 0, "max": 100, "bounded": True},
-            "baseline": {"min": 0, "max": 100, "same_population": True},
+        "class_scoped_neighborhood_uniqueness": {
+            "key": ["corpus_search_class_id", "query_song_id", "candidate_song_id"],
+            "unique": len(class_neighborhood_rows) == len({tuple(row) for row in class_neighborhood_rows}),
+            "self_candidate_count": sum(row[1] == row[2] for row in class_neighborhood_rows),
         },
-        "numeric_profile": {
-            "kernel": "numpy_row_normalize_float32_matmul",
-            "serialization": "little_endian_c_order_float32",
-            "zero_near_zero_centroid_fixtures": True,
-            "ulp_boundary_fixtures": True,
-        },
-        "round_trips": ["geometry_blob", "report_json", "scientific_hashes"],
+        "reason_vocabulary_owner": "helpers.corpus_identity.classify_representation",
+        "observed_baseline_control": "observed whole-song source-medoid baseline",
         "scientific_hash_retention": True,
         "benchmark": benchmark,
     }

@@ -3,7 +3,7 @@
 Fills three confirmed coverage gaps left by the corrective repair:
 
 * ``geometry_analysis._select_neighborhood`` search-identity tie-break / limit / absent-key skip.
-* ``geometry_analysis._normalized_query_vectors`` empty-mask and zero-row filtering.
+* ``geometry_analysis._normalized_query_vectors`` hard-cut tombstone refusal (retired raw whole-song query representation).
 * Zero / near-zero segment-centroid fixtures through ``derive_temporal_global_from_gram``.
 
 Everything here is deterministic synthetic data: no audio, ONNX, CUDA, real corpus,

@@ -26,10 +26,11 @@
   over a one-song or single-similarity population.
 - **Independent rulers.** Artist, genre, and frozen-head rulers are evaluated independently, each with
   per-query eligibility, defined-state, baseline, and delta metrics.
-- **Persisted evidence.** Threshold maps, corpus maps, per-query ruler metrics, and at least one
-  hundred deterministic top-N winner neighborhoods plus the same-population baseline neighborhoods
-  are persisted. Non-comparable thresholds/representations persist with missing ids and explicit
-  reasons instead of being silently dropped.
+- **Persisted evidence.** The normalized run-scoped result surfaces A–G (threshold-to-class maps,
+  threshold structural evidence, class aggregate/per-query metrics, class neighborhoods, the fixed
+  evaluation corpus, the threshold-independent observed source-medoid baseline, and compact
+  provenance) are persisted. Non-comparable thresholds/representations persist with missing ids and
+  explicit reasons instead of being silently dropped.
 
 ### Numeric kernel
 
@@ -118,15 +119,20 @@ GeometryCorpusRequest(items, threshold_request, experiment, evaluation_id,
 FrozenGeometryEvaluation(evaluation_id, query_vectors, query_weights,
                          eligible_song_ids, observation_evidence_digest, comparable)
 GeometrySongAnalysis(request, thresholds, roster, scores)
-GeometryCorpusAnalysis result fields consumed by K/report are `analyses` (all threshold
+GeometryCorpusAnalysis keeps the in-memory compute graph fields `analyses` (all threshold
 batches), `hypotheses` (threshold/collapse membership), `queries` (leave-one-out winner and
 observed-baseline neighborhoods), the independent ruler metrics, `per_song_metrics`,
-`baseline_deltas`, `counters`, `noncomparable`/`reasons`, `evidence_mode`, and
-`head_evidence_provenance`. K persists these through `write_geometry_corpus_analysis`
-atomically; report retrieval reads the exact run scope through `query_corpus_evidence`.
-For `synthetic_only=False`, the result is `empirical_request` only when every item has a
-non-empty current committed head-suite identity and label; missing or mismatched head
-evidence is refused.
+`baseline_deltas`, `counters`, `comparable`/`reasons`, `evidence_mode`, and
+`head_evidence_provenance`. K persists the normalized surfaces through
+`write_geometry_corpus_analysis` atomically (`evaluation_corpus`, `threshold_class_map`,
+`threshold_structural`, and the `class_*`/`baseline_*` surfaces); the report consumes the
+normalized surface fields through `report._retrieval.collect_report_frames`, not the nested
+`queries`/`hypotheses` fields.
+For `synthetic_only=False`, empirical mode requires only the supplied current head-store seam
+(`build_geometry_corpus_request` refuses with `ValueError` when no such seam is provided). Each
+item's frozen head label is resolved from the committed head suite when available; a missing label
+leaves that item without head evidence and excludes only the head ruler — it does not refuse the
+whole request. Fixture mode may supply labels directly on its request items.
 build_geometry_corpus_request(con, *, stream_store, profile, threshold_request,
                               experiment, evaluation_id, run_id, execution_id,
                               scoring_semantics_version, song_ids=None,
@@ -137,7 +143,7 @@ analyze_geometry_corpus(request, *, con, stream_store, profile,
                         scoring=score_bounded_exact) -> GeometryCorpusAnalysis
 score_unique_geometry_representations(roster, evaluation, scoring) -> GeometryScoreBundle
 write_geometry_corpus_analysis(con, *, run_id, result, stream_store=None, profile=None) -> None
-read_geometry_corpus_analysis(con, *, run_id, identity, stream_store=None, profile=None) -> GeometryCorpusAnalysis
+read_geometry_corpus_analysis_normalized(con, *, run_id, identity) -> GeometryNormalizedResult
 ```
 
 The scheduler orders `(song_id, backbone)` deterministically; loads/verifies exactly one committed
@@ -195,8 +201,8 @@ strategy-key identity decoded from `geometry:{backbone}:{score_variant}:v{versio
 analysis that schedules every distinct current search representation exactly once as its own
 leave-one-out pass over only that representation's canonical rows (per-representation retrieval
 passes, never a merged union); and the observed whole-song source medoid RESTORED as an ACTIVE
-baseline against which the report computes per-`(backbone, sim_metric, k, metric)` winner/delta
-rows.
+baseline against which the report computes `delta = class - baseline` rows for matching
+`(backbone, ruler, metric, k)`.
 
 Still held regardless of surface: no synthetic/coordinate `median`, no `agg_method=medoid`, no
 `disc_album`, no non-finite output, and no cross-backbone corpus mixing — the observed medoid
@@ -317,8 +323,9 @@ columns concatenated in canonical head order and source-index semantics. `infer-
 complete, finite `[T,C]` streams whose `T` matches the backbone patch count; missing or mismatched
 heads are rejected. The canonical CPU head runner is
 `common.head_analysis.run_shared_geometry_head_analysis`, which pools classifier head outputs over
-the shared geometry boundary, keeps pooled values transient, and writes only non-blocking
-coverage/skip provenance into `head_phase_provenance`.
+the shared geometry boundary, keeps pooled values transient, and returns a per-segment
+`GeometryHeadAnalysisManifest` without persisting anything. The `head-analysis` phase persists the
+manifest outcomes through `write_head_evidence` into `geometry_head_evidence`.
 
 ## Geometry persistence and analysis (current)
 
@@ -351,7 +358,7 @@ bounded CPU scorer boundary and keeps the separately identified observed baselin
 winner `scores`. `write_geometry_corpus_analysis` preflights every identity and finite value,
 persists the mandatory observed baseline before any other aggregate evidence, revalidates every
 geometry binding before commit, and terminalizes the invocation only after complete publication;
-any refusal rolls back every output. `read_geometry_corpus_analysis` reads exactly one complete
+any refusal rolls back every output. `read_geometry_corpus_analysis_normalized` reads exactly one complete
 scope and has no latest/current resolution path.
 
 ## DuckDB logical schema
@@ -360,9 +367,9 @@ New/maintained active tables use scalar columns and intentionally have no new `P
 constraints. Application checks and duplicate tests enforce identities.
 
 - `song_patch_geometry` — one exact-key complete geometry per `(song_id, backbone)` (see above).
-- `geometry_analysis_records` — run-scoped aggregate/per-song/ruler/baseline geometry analysis
-  records with the complete identity axes.
 - `geometry_head_evidence` — geometry-bound head analysis evidence.
+- The retired `geometry_analysis_records` table is replaced by the normalized Experiment One
+  result surfaces documented under "Experiment One normalized result-layer contract (surfaces A–G)" below.
 - `stream_registry` and `head_stream_registry` — immutable sidecar registries; identity
   `(song_id, backbone)`.
 - `songs` — corpus rows (PK `song_id`).
@@ -383,21 +390,46 @@ writes are run-scoped under a caller-supplied current run id. A stale pre-cut ta
 explicitly reset via `python run.py reset --scope analysis`; no executable writer or reader
 reinterprets a stale row as current lineage.
 
+## Experiment One normalized result-layer contract (surfaces A–G)
+
+Experiment One publishes normalized, run-scoped DuckDB surfaces rather than a nested corpus-evidence document. The surfaces are joined by `run_id`, `execution_id`, `evaluation_id`, `experiment`, and the exact ten-axis identity where applicable (`geometry_id`, `observation_group_sha256`, `geometry_semantics_version`, `numerical_profile_digest`, `threshold_id`, `structural_identity`, `search_representation_id`, `evaluation_id`, `scoring_semantics_version`, `execution_id`).
+
+| Surface | Required identity and fields |
+| --- | --- |
+| A `geometry_threshold_class_map` | threshold identity (`threshold_index`, `threshold_value`, `threshold_id`), `corpus_search_class_id`, `comparable`, `reasons_json` |
+| B `geometry_threshold_structural` | threshold identity, `structural_identity` (boundaries/absorbed locations folded in), `search_representation_id`, `searchable_count`, boolean `medoid_defined`/`alignment_ok`, `comparable`, `reasons_json` |
+| C `geometry_class_aggregate_metrics` / D `geometry_class_query_metrics` | class, query/ruler scope, `metric`, `k`, finite `value`, aggregate `evaluable_query_count`/`undefined_query_count`, per-query `status` (`defined`/`undefined`) |
+| E `geometry_class_neighborhoods` | class/query/candidate/rank/score, no self candidate and no duplicate `(class, query, candidate)` |
+| F `geometry_baseline_aggregate_metrics` / query metrics / neighborhoods | one threshold-independent observed whole-song source-medoid control over the fixed eligible population |
+| G `geometry_evaluation_corpus`, `geometry_head_label_provenance`, and `geometry_result_provenance` | fixed membership/state, semantic labels plus separate head-suite provenance, and one compact provenance row |
+
+Class metrics use the established oracle mapping: `map_k`, `mrr`, `ndcg_k`, `recall_k`, and `disc`, independently for the artist, genre, and frozen-head rulers, with `k = K_ESTABLISHED`. The evaluation corpus is fixed before threshold scoring and membership is label-independent; missing labels affect only the relevant ruler's eligibility. The baseline is computed once, is independent of threshold/class, and is never a winner candidate.
+
+Canonical non-comparability reasons are owned by `helpers.corpus_identity.classify_representation`: `alignment_failed`, `zero_searchable`, `no_medoid`, `no_candidates`, and `label_missing`. They are persisted instead of shrinking the population. For every metric scope, `delta = class_value - baseline_value`; a delta is emitted only when both values are finite and share the exact `(backbone, ruler, metric, k)` scope.
+
+The report JOIN contract is explicit: threshold rows join to class rows on `(run_id, corpus_search_class_id)`; class metrics join to class neighborhoods on `(run_id, corpus_search_class_id, query_song_id)`; baseline rows join only on `(run_id, backbone, ruler, metric, k)`; all result rows join to the compact provenance row by `(run_id, execution_id, evaluation_id)` and must retain their identity axes. No nested-array compatibility reader or alternate result schema is permitted.
+
 ## Report contract (schema v2 — seven sections, active geometry only)
 
 The `report` phase is the executable entry point. It renders exactly seven sections in this order:
 `summary`, `corpus`, `analysis`, `winners`, `head-analysis`, `provenance`, `efficiency`.
 
-- `summary` — active geometry-result status per backbone (winner / delta / factor summary, or an
-  explicit empty-active-results message).
+- `summary` — active geometry-result status: class-scoped metric coverage
+  (`geometry_threshold_summary`) and the single fixed threshold-independent baseline
+  (`observed_baseline_summary`), rendered separately, or an explicit empty-active-results message.
 - `corpus` — active songs / corpus health.
-- `analysis` — canonical corpus evidence rendered as threshold/collapse maps, ordered corpus membership with states/reasons, per-query ruler metrics, bounded winner neighborhoods, and separately observed-baseline neighborhoods. The section renders `geometry_threshold_map`, `geometry_membership`, `geometry_queries`, `geometry_neighborhoods`, and `geometry_baseline_neighborhoods`; it emits explicit warnings for non-comparable corpora and songs with no searchable representation, and missing corpus evidence is itself a visible error.
-- `winners` — deterministic winner / delta / factor tables per backbone. The baseline per
-  `(backbone, sim_metric, k, metric)` is the observed whole-song source medoid baseline row (when
-  a finite one shares that exact scope); the medoid is never itself a winner candidate. The winner
-  is the highest finite matched geometry class with `strategy_key` tie-break, and
-  `delta = winner − baseline`. A cell without a finite medoid baseline row emits no delta row.
-- `head-analysis` — canonical `head_phase_provenance` per supported backbone with finite / status
+- `analysis` — canonical geometry evidence rendered as exactly three tables: `geometry_identity`
+  (exact identity evidence), `geometry_analysis` (class-scoped per-query metrics), and
+  `geometry_threshold_map` (threshold -> class -> metrics -> delta vs the single fixed baseline).
+  It emits explicit warnings for non-comparable corpora, non-comparable thresholds, and undefined
+  ruler metrics; missing geometry identity evidence is itself a visible error. The observed-baseline
+  neighborhoods are not rendered here — they belong to `winners` as `observed_global_medoid_baseline`.
+- `winners` — class-scoped neighborhood evidence (`geometry_representations`) and the single
+  threshold-independent observed global-medoid baseline (`observed_global_medoid_baseline`), kept
+  strictly separate. Baseline rows join on `(run_id, backbone, ruler, metric, k)`; `delta =
+  class_value - baseline_value` for a matching `(backbone, ruler, metric, k)` scope. The observed
+  medoid is never itself a winner candidate.
+- `head-analysis` — canonical `geometry_head_identity` per supported backbone with finite / status
   / coverage and provenance.
 - `provenance` — active `run_provenance`, command lines, hashes, warnings, reuse/refusal
   decisions, and limitations.

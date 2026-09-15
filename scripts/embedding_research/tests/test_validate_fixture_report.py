@@ -106,3 +106,31 @@ def test_report_has_no_retired_identity_columns(workspace: dict[str, Path]) -> N
     blob = json.dumps(report)
     assert _PREVIEW not in blob
     assert _j("cat", "alog", "_fingerprint") not in blob
+
+
+def test_fixture_producer_emits_normalized_result_contract(workspace: dict[str, Path]) -> None:
+    report = json.loads(workspace["report"].read_text(encoding="utf-8"))
+    evidence = report["corrective_evidence"]
+    assert report["synthetic_only"] is True
+    assert evidence["threshold_map"] == {"count": 3, "first_index": 0, "last_index": 2}
+    assert evidence["class_collapse_context"]
+    assert evidence["per_ruler_metric_availability"]
+    assert evidence["baseline_once"] == {
+        "count": 1,
+        "fixed": True,
+        "control": "observed whole-song source-medoid baseline",
+        "same_population": True,
+    }
+    assert evidence["class_scoped_neighborhood_uniqueness"]["unique"] is True
+    assert evidence["reason_vocabulary_owner"] == "helpers.corpus_identity.classify_representation"
+    assert evidence["observed_baseline_control"] == "observed whole-song source-medoid baseline"
+    retired_keys = {"corpus_map", "round_trips", "queries", "hypotheses", "neighborhood"}
+    assert not retired_keys.intersection(evidence)
+
+    analysis = next(section for section in report["sections"] if section["id"] == "analysis")
+    curve = next(table for table in analysis["tables"] if table["id"] == "geometry_threshold_map")
+    columns = curve["columns"]
+    rows = [dict(zip(columns, row, strict=True)) for row in curve["rows"]]
+    assert len({row["threshold_index"] for row in rows}) >= 2
+    assert len({row["class_value"] for row in rows}) >= 2
+    assert {"threshold_id", "corpus_search_class_id", "metric", "delta"}.issubset(columns)

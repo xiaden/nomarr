@@ -31,6 +31,17 @@ _STAGING_WRITE_SUBDIRS = ("streams", "heads", "audio_masks", "observation_commit
 #: reset performs no filesystem mutation, so stream/mask/head payloads and
 #: observation-commit markers are preserved byte-for-byte as well.
 _DISPOSABLE_ANALYSIS_TABLES: tuple[str, ...] = (
+    "geometry_threshold_class_map",
+    "geometry_class_aggregate_metrics",
+    "geometry_class_query_metrics",
+    "geometry_class_neighborhoods",
+    "geometry_baseline_aggregate_metrics",
+    "geometry_baseline_query_metrics",
+    "geometry_baseline_neighborhoods",
+    "geometry_evaluation_corpus",
+    "geometry_threshold_structural",
+    "geometry_head_label_provenance",
+    "geometry_result_provenance",
     "geometry_head_evidence",
     "head_phase_provenance",
     "analyze_incomplete_diagnostics",
@@ -161,8 +172,10 @@ def reset_analysis(_root: Path, db_path: Path, *, dry_run: bool = False) -> Clea
     con = duckdb.connect(str(db_path))
     try:
         schema_fingerprint(con)
+        existing = {row[0] for row in con.execute("SELECT table_name FROM information_schema.tables").fetchall()}
         for table in _DISPOSABLE_ANALYSIS_TABLES:
-            con.execute(f"DELETE FROM {table}")
+            if table in existing:
+                con.execute(f"DELETE FROM {table}")
         con.commit()
         report.removed.append(f"analysis metadata in {db_path}")
     finally:

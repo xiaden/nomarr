@@ -47,7 +47,7 @@ _SKIP_SUFFIXES = frozenset(
 
 
 def _forbidden_tokens() -> tuple[str, ...]:
-    """Retired vocabulary roots, assembled from fragments (never literal here)."""
+    """Retired ownership and nested-result roots, assembled from fragments."""
     return (
         "cat" + "alog",
         "search" + "_" + "view",

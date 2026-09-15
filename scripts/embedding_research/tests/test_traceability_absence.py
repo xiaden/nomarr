@@ -37,6 +37,14 @@ def test_traceability_option_is_not_accepted() -> None:
     assert raised.value.code == 2
 
 
+def test_nested_result_and_replay_surfaces_remain_absent() -> None:
+    source = inspect.getsource(validator)
+    assert "_nested_result_arrays" in source
+    assert "validate_traceability" not in source
+    assert "source.commit" not in source
+    assert "source.files" not in source
+
+
 def test_scientific_hash_helpers_remain_available() -> None:
     payload = b'{"scientific":true}'
     expected = hashlib.sha256(payload).hexdigest()

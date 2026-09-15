@@ -17,8 +17,10 @@ if str(_HERE.parents[3]) not in sys.path:
 from scripts.embedding_research.tools._evidence import (
     PACKAGE_ROOT,
     iter_python_files,
+    normalized_result_layer,
     relative,
     scan_files,
+    scan_result_layer_files,
     write_evidence,
 )
 
@@ -43,6 +45,7 @@ def main(argv: list[str] | None = None) -> int:
     root = Path(arguments.root).resolve()
     files = iter_python_files(root, include_tests=True)
     matches = scan_files(files, _tokens())
+    retired_result_markers = scan_result_layer_files(root)
     write_evidence(
         arguments.output,
         {
@@ -51,10 +54,12 @@ def main(argv: list[str] | None = None) -> int:
             "tokens": list(_tokens()),
             "scanned_files": [relative(path) for path in files],
             "filesystem_matches": matches,
+            "result_layer": normalized_result_layer(),
+            "retired_result_markers": retired_result_markers,
             "exit_status": "NONZERO" if matches else "PASS",
         },
     )
-    return 1 if matches else 0
+    return 1 if matches or retired_result_markers else 0
 
 
 if __name__ == "__main__":

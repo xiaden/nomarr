@@ -3,9 +3,11 @@
 Proves the hard-cut result layer: the giant nested ``role="corpus"`` JSON blob is replaced by
 flat, query-ready rows that are written and read back atomically.
 
-* **A** — 171 thresholds publish no duplicate identities; structural rows scale ``O(N x T)``
-  and retrieval rows ``O(C x N)``.
-* **E** — a non-comparable class emits no partial segmented metrics while the threshold-
+ * **A** — 171 thresholds publish no duplicate identities; structural rows scale ``O(N x T)``
+   and retrieval rows ``O(C x N)``.
+ * **C** — thresholds with identical complete corpus scoring inputs collapse to ONE class with ONE
+   metric/neighborhood block, and every collapsed threshold reads back through that shared class.
+ * **E** — a non-comparable class emits no partial segmented metrics while the threshold-
   independent baseline still covers the fixed corpus, and the structural evidence keeps its
   canonical reasons.
 * **I** — baseline row counts do not depend on the configured threshold count.
@@ -442,6 +444,53 @@ def test_a_normalized_surfaces_write_no_duplicate_identity_over_171_thresholds()
         len(neighborhoods) // len(distinct_classes),
         len(baseline_neighborhoods) // n,
     }
+    con.close()
+
+
+# ---------------------------------------------------------------------------
+# C — equal complete corpus scoring inputs collapse to one class, one retrieval set
+# ---------------------------------------------------------------------------
+
+
+def test_c_equal_threshold_inputs_collapse_to_one_class_and_read_back() -> None:
+    con = duckdb.connect(":memory:")
+    ensure_schema(con)
+    result = _pipeline(con)
+    write_geometry_corpus_analysis(con, run_id=_RUN_ID, result=result)
+
+    class_map = read_threshold_class_map(con, run_id=_RUN_ID)
+    assert len(class_map) == 171
+    # A collapse stays inside ONE backbone-scoped execution, never one execution per threshold.
+    assert {row["execution_id"] for row in class_map} == {_EXECUTION_ID}
+
+    by_class: dict[str, list[int]] = {}
+    for row in class_map:
+        by_class.setdefault(row["corpus_search_class_id"], []).append(row["threshold_index"])
+    collapsed = {class_id: indices for class_id, indices in by_class.items() if len(indices) >= 2}
+    assert collapsed, "identical corpus scoring inputs must collapse at least two thresholds"
+
+    # Retrieval rows are keyed by the shared class: ONE metric block and ONE neighborhood set per
+    # class, never a per-threshold duplicate.
+    distinct_classes = set(by_class)
+    aggregate = read_class_aggregate_metrics(con, run_id=_RUN_ID)
+    aggregate_keys = {(row["corpus_search_class_id"], row["ruler"], row["metric"], row["k"]) for row in aggregate}
+    assert len(aggregate_keys) == len(aggregate) == len(distinct_classes) * _RULERS * _METRICS
+    neighborhoods = read_class_neighborhoods(con, run_id=_RUN_ID)
+    neighborhood_keys = {
+        (row["corpus_search_class_id"], row["query_song_id"], row["candidate_song_id"]) for row in neighborhoods
+    }
+    assert len(neighborhood_keys) == len(neighborhoods)
+
+    # Every threshold in the collapse is published with the SAME class id, so reading metrics
+    # through that shared class yields one identical block for both thresholds.
+    shared_class, collapsed_indices = next(iter(sorted(collapsed.items())))
+    assert len(collapsed_indices) >= 2
+    assert {row["corpus_search_class_id"] for row in class_map if row["threshold_index"] in collapsed_indices} == {
+        shared_class
+    }
+    block = [row for row in aggregate if row["corpus_search_class_id"] == shared_class]
+    assert {row["ruler"] for row in block} == {"artist", "genre", "head"}
+    assert len(block) == _RULERS * _METRICS
     con.close()
 
 

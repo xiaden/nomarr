@@ -17,6 +17,11 @@ import duckdb
 import numpy as np
 import pytest
 
+from scripts.embedding_research.common.geometry_analysis import (
+    GeometrySongRequest,
+    _label_defined,
+    _ruler_label_array,
+)
 from scripts.embedding_research.common.head_ruler_labels import (
     HeadSongLabel,
     resolve_head_ruler_labels,
@@ -26,7 +31,7 @@ from scripts.embedding_research.db import (
     read_head_label_provenance,
     write_head_label_provenance_in_transaction,
 )
-from scripts.embedding_research.db.geometry import IntegrityRefused
+from scripts.embedding_research.db.geometry import GeometryIdentity, IntegrityRefused
 from scripts.embedding_research.streams.records import HeadSuiteCurrentError
 
 if TYPE_CHECKING:
@@ -44,6 +49,18 @@ def _identity(song_id: str) -> SimpleNamespace:
         stream_digest=f"stream-digest-{song_id}",
         mask_ref=f"mask-{song_id}",
         mask_digest=f"mask-digest-{song_id}",
+    )
+
+
+def _ruler_song(song_id: str, *, artist=None, genre=None, head_label=None) -> GeometrySongRequest:
+    return GeometrySongRequest(
+        song_id=song_id,
+        backbone="effnet",
+        geometry_identity=GeometryIdentity(song_id, "effnet", f"commit:{song_id}", "geometry-v1", "profile-a"),
+        observation_evidence={"observation_group_sha256": f"obs:{song_id}"},
+        artist=artist,  # type: ignore[arg-type]
+        genre=genre,  # type: ignore[arg-type]
+        head_label=head_label,
     )
 
 
@@ -80,6 +97,25 @@ def _patch_suite(monkeypatch, selections: dict[str, SimpleNamespace]) -> None:
         "scripts.embedding_research.common.head_ruler_labels.resolve_current_head_suite",
         _resolve,
     )
+
+
+def test_missing_head_evidence_excludes_only_the_head_ruler() -> None:
+    items = (
+        _ruler_song("song-a", artist="art", genre="rock", head_label=(("gender", 0),)),
+        _ruler_song("song-b", artist="art", genre="rock", head_label=(("gender", 0),)),
+        _ruler_song("song-c", artist="art", genre="rock", head_label=None),
+    )
+    _, artist_defined = _ruler_label_array(items, "artist")
+    _, genre_defined = _ruler_label_array(items, "genre")
+    _, head_defined = _ruler_label_array(items, "head")
+
+    # A missing head label leaves artist/genre evaluable for the SAME song...
+    assert artist_defined == [True, True, True]
+    assert genre_defined == [True, True, True]
+    # ...and excludes only that song from the HEAD ruler.
+    assert head_defined == [True, True, False]
+    # It is not a member-level label_missing either: the song is never dropped from the class.
+    assert _label_defined(items[2]) is True
 
 
 def test_frozen_activations_not_suite_names_drive_the_head_label(tmp_path, monkeypatch) -> None:

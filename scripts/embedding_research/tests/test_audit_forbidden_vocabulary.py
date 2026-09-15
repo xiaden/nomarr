@@ -357,7 +357,7 @@ def scan_schema() -> dict[str, Any]:
 
 
 def generated_output_tokens() -> tuple[str, ...]:
-    """Retired identity/file-system tokens that generated output must never emit.
+    """Retired identity/result-layer tokens that generated output must never emit.
 
     Generic English words (``leg...`` / ``ali...`` / ``fall...``) are deliberately
     excluded here: the bundled report HTML vendors third-party code that contains
@@ -376,6 +376,8 @@ def generated_output_tokens() -> tuple[str, ...]:
         _j("latest", "_selector"),
         _j("latest", "-selector"),
         "view_refs",
+        "queries[*].neighborhood",
+        "geometry_" + "analysis_records",
         *retired_filesystem_artifacts(),
     )
 

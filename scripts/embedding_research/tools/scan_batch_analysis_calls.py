@@ -13,6 +13,7 @@ if str(_HERE.parents[3]) not in sys.path:
 
 from scripts.embedding_research.tools._evidence import (
     PACKAGE_ROOT,
+    normalized_result_layer,
     relative,
     write_evidence,
 )
@@ -65,6 +66,7 @@ def main(argv: list[str] | None = None) -> int:
             "rule": "one-decode-per-geometry-and-no-scorer-segmentation",
             "counters": counters,
             "scorer_segmentation_violations": violations,
+            "result_layer": normalized_result_layer(),
             "exit_status": "PASS" if not violations else "NONZERO",
         },
     )

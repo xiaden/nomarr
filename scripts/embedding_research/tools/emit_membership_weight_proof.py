@@ -12,7 +12,7 @@ if str(_HERE.parents[3]) not in sys.path:
 
 import itertools
 
-from scripts.embedding_research.tools._evidence import write_evidence
+from scripts.embedding_research.tools._evidence import normalized_result_layer, write_evidence
 
 _BOUNDARIES = (0, 3, 7, 10)
 _ABSORBED = {5}
@@ -55,6 +55,7 @@ def main(argv: list[str] | None = None) -> int:
             "weight_sum": weight_sum,
             "total_searchable": total_searchable,
             "violations": violations,
+            "surface_proof": normalized_result_layer(),
             "exit_status": "PASS" if not violations else "NONZERO",
         },
     )

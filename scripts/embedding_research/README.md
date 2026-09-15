@@ -91,7 +91,7 @@ CPU-only DERIVED phases.
 | aligned silence mask + observation group | `embed` | committed observation group written last |
 | head streams + `head_stream_registry` | `infer-heads` | finite `[T,C]` rows aligned to the backbone patch count |
 | `song_patch_geometry` rows | `geometry` | one exact-key complete geometry per `(song_id, backbone)` |
-| `geometry_analysis_records` | `analyze` | run-scoped identity-keyed analysis with the observed baseline |
+| `geometry_threshold_class_map` + `geometry_class_*` + `geometry_baseline_*` + `geometry_result_provenance` | `analyze` | normalized result surfaces A–G; run-scoped class metrics plus the threshold-independent observed source-medoid baseline |
 | `geometry_head_evidence` | `head-analysis` | geometry-bound head evidence |
 | rendered report | `report` | seven sections: summary, corpus, analysis, winners, head-analysis, provenance, efficiency |
 | `phase_timings` / `run_provenance` | every phase | efficiency and reuse/refusal provenance |
@@ -105,19 +105,26 @@ index/cache metadata: `reindex` reconciles each registry row to exactly `ready`,
 `corrupt` from the on-disk manifests, and only `ready` records that also validate on disk may be
 read. Paths are never IDs or SQL keys.
 
-## Report and evidence contract
+## Experiment One normalized result and evidence contract
+
+The result layer is normalized across surfaces A–G: threshold-to-class mapping, threshold structural evidence, class aggregate/per-query metrics, class neighborhoods, the fixed evaluation corpus, the threshold-independent observed source-medoid baseline (aggregate/per-query/neighborhoods), head-label provenance, and one compact run provenance row. Class metrics are the established `map_k`/`mrr`/`ndcg_k`/`recall_k`/`disc` oracle at `K_ESTABLISHED`, independently for artist, genre, and frozen-head rulers. `delta` is the finite class metric minus the matching finite baseline metric. Membership is fixed and label-independent; canonical reasons are `alignment_failed`, `zero_searchable`, `no_medoid`, `no_candidates`, and `label_missing`.
+
+Generated evidence is JSON-only below `config.OUTPUT_ROOT`; the report renderer consumes normalized tables and emits threshold → class → metric → delta curves. The external sibling HTML viewer is the only human-readable output. The validator rejects nested result arrays, duplicate class/query/candidate neighborhoods, self candidates, missing baseline blocks, unknown reasons, and viewers under `OUTPUT_ROOT/docs`.
 
 The sole scientific evidence root is `config.OUTPUT_ROOT` (`/workspace/scripts/outputs/embedding_research`) and is JSON-only. Fixture/report generation writes `report/report.json` and other JSON/hash evidence below it, and writes the optional human-readable viewer to the external sibling runtime root `embedding_research_runtime/docs/embedding-research-report.html` (or another explicitly supplied external HTML destination); `OUTPUT_ROOT/docs` is invalid. The retired `artifacts/evidence/threshold-independent-per-song-gram-geometry-migration` helper/fixture root is not a compatibility path. Logs, locks, caches/streams/sidecars, DuckDB, and patch arrays remain external; scientific artifact SHA-256 hashes are retained.
 
 
 `report` renders exactly seven sections (`summary`, `corpus`, `analysis`, `winners`,
-`head-analysis`, `provenance`, `efficiency`) from canonical corpus evidence. The `analysis`
-section renders threshold/collapse maps, ordered membership and states/reasons, per-query winner
-metrics and neighborhoods, and separately observed-baseline neighborhoods (including the
-`section_summary` winner/baseline split). It selects a completed scope per `run_id`; a
-contradictory or incomplete run is refused, never silently selected. The `winners` baseline per
-`(backbone, sim_metric, k, metric)` is the observed whole-song source medoid baseline, which is
-never itself a winner candidate. See `CONTRACTS.md` for the full section contract.
+`head-analysis`, `provenance`, `efficiency`) from the normalized result surfaces. The `analysis`
+section renders exactly three tables — `geometry_identity`, `geometry_analysis` (class-scoped
+per-query metrics), and `geometry_threshold_map` (threshold -> class -> metrics -> delta vs the
+single fixed baseline). The `summary` section renders `geometry_threshold_summary` (class-scoped
+metric coverage) and `observed_baseline_summary` (the single fixed baseline); the `winners`
+section renders `geometry_representations` (class-scoped neighborhoods) and
+`observed_global_medoid_baseline` separately. Baseline rows join on `(backbone, ruler, metric, k)`
+and the observed medoid is never itself a winner candidate. The report selects a completed scope
+per `run_id`; a contradictory or incomplete run is refused, never silently selected. See
+`CONTRACTS.md` for the full section contract.
 
 ## Running the tests
 

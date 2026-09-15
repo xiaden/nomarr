@@ -19,9 +19,11 @@ if str(_HERE.parents[3]) not in sys.path:
 from scripts.embedding_research.tools._evidence import (
     PACKAGE_ROOT,
     iter_python_files,
+    normalized_result_layer,
     relative,
     rule_for,
     scan_files,
+    scan_result_layer_files,
     write_evidence,
 )
 
@@ -50,6 +52,7 @@ def main(argv: list[str] | None = None) -> int:
     if arguments.include_config:
         scanned.extend(_config_files(root))
     runtime_matches = scan_files(scanned, tokens)
+    retired_result_markers = scan_result_layer_files(root)
 
     test_references: list[dict] = []
     if arguments.include_tests:
@@ -74,12 +77,14 @@ def main(argv: list[str] | None = None) -> int:
             "tokens": list(tokens),
             "scanned_runtime_files": [relative(path) for path in scanned],
             "runtime_matches": runtime_matches,
+            "result_layer": normalized_result_layer(),
+            "retired_result_markers": retired_result_markers,
             "test_references": test_references,
             "generated_matches": generated_matches,
             "exit_status": "NONZERO" if (runtime_matches or generated_matches) else "PASS",
         },
     )
-    return 1 if (runtime_matches or generated_matches) else 0
+    return 1 if (runtime_matches or generated_matches or retired_result_markers) else 0
 
 
 if __name__ == "__main__":

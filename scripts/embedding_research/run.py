@@ -450,7 +450,7 @@ def _run_report(con, cfg: dict, _run_id: str) -> dict:
     ``run_provenance`` via the grouped per-run predicate — a run with any failed ``analyze`` row is
     NOT completed (the failed row vetoes the whole run) and is therefore never selected and is
     refused when named explicitly.  Incomplete scopes are rejected rather than silently blended
-    into a whole-set read — either run-scoped ``geometry_analysis_records`` rows with no completed
+    into a whole-set read — either run-scoped ``geometry_threshold_class_map`` rows with no completed
     analyze scope, or an explicitly requested scope that is not a completed analyze run (including a
     contradictory complete-plus-failed run).  An empty database (no run-scoped analysis rows)
     renders an empty report, preserving the preflight-warned path.

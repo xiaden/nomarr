@@ -1994,7 +1994,7 @@ def write_geometry_corpus_analysis(
             evaluation_id=str(result.evaluation_id),
             rows=result.threshold_structural,
         )
-        # Normalized Experiment One result surfaces B-G + one compact provenance row.
+        # Normalized Experiment One result surfaces A-G + one compact provenance row.
         write_class_aggregate_metrics_in_transaction(
             con,
             run_id=run_id,
@@ -2756,47 +2756,14 @@ def _geometry_class_scoped_metrics(
 
 
 def _normalized_query_vectors(_stream: Any, _mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Reject the retired raw whole-song query representation."""
+    """Reject the retired raw whole-song query representation.
+
+    Intentional hard-cut tombstone, not dead code: the runtime query path is T-derived
+    only, and this refusal is locked by
+    ``tests/test_corrective_edge_contracts.py::test_retired_raw_query_helper_remains_tombstoned``
+    so the retired representation cannot be reintroduced unnoticed.
+    """
     raise RuntimeError("raw whole-song query vectors are not a geometry representation")
-
-
-def _song_search_identity(
-    *,
-    request: GeometryCorpusRequest,
-    item: GeometrySongRequest,
-    search: Any,
-    indices: tuple[int, ...],
-    weights: tuple[float, ...],
-    _ordered_song_ids: tuple[str, ...],
-) -> str:
-    """Build a corpus-ready identity for one ordered song input."""
-    ordered_inputs = tuple(
-        CorpusSongSearchInput(
-            song_id=member.song_id,
-            observation_group_sha256=member.geometry_identity.observation_group_sha256,
-            mask_identity=str(
-                next(
-                    (
-                        candidate.observation_evidence.get("mask_payload_sha256", "")
-                        for candidate in request.items
-                        if candidate.song_id == member.song_id and candidate.backbone == member.backbone
-                    ),
-                    "",
-                )
-            ),
-            medoid_source_indices=indices if member.song_id == item.song_id else (),
-            normalized_searchable_weights=weights if member.song_id == item.song_id else (),
-            searchable_count=int(search.total_searchable) if member.song_id == item.song_id else 0,
-        )
-        for member in request.items
-    )
-    return search_representation_id(
-        experiment=request.experiment,
-        scoring_semantics_version=int(search.scoring_semantics_version),
-        geometry_semantics_version=str(request.experiment),
-        numerical_profile_digest=str(search.profile_digest),
-        ordered_song_inputs=ordered_inputs,
-    )
 
 
 @dataclass(frozen=True)

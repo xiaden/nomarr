@@ -38,6 +38,10 @@ warns-and-returns an empty mapping.
   candidate, and no synthetic/coordinate-wise medoid is permitted.
 - Strategy-key identity is decoded from `geometry:{backbone}:{score_variant}:v{version}:{keyset}`.
 
+## Experiment One normalized result layer
+
+The fixture and report now expose normalized surfaces A–G rather than nested corpus evidence. Thresholds map to reusable search classes; class aggregate and per-query rows use the established `map_k`, `mrr`, `ndcg_k`, `recall_k`, and `disc` oracle at `K_ESTABLISHED`; neighborhoods are class-scoped and leave-one-out. Evaluation membership is fixed and label-independent. One observed whole-song source-medoid baseline is computed threshold-independently, and each finite winner delta is `class - baseline` for the same `(backbone, ruler, metric, k)` scope. Head labels retain separate suite provenance. Canonical reasons remain `alignment_failed`, `zero_searchable`, `no_medoid`, `no_candidates`, and `label_missing`.
+
 ## Rulers and report
 
 Artist, genre, and frozen semantic-head are three independent rulers; a missing or blank label

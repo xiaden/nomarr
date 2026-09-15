@@ -14,6 +14,7 @@ from scripts.embedding_research.tools._evidence import (
     PACKAGE_ROOT,
     imported_names,
     iter_python_files,
+    normalized_result_layer,
     relative,
     write_evidence,
 )
@@ -53,6 +54,7 @@ def main(argv: list[str] | None = None) -> int:
             "excluded_roots": list(_EXCLUDED_ROOTS),
             "scanned_files": [relative(path) for path in files],
             "violations": violations,
+            "result_layer": normalized_result_layer(),
             "exit_status": "PASS" if not violations else "NONZERO",
         },
     )

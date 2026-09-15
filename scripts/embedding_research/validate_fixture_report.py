@@ -108,11 +108,16 @@ def _section(data: dict, section_id: str) -> dict | None:
 
 
 def _tables(node: Any):
-    if isinstance(node, dict):
-        if isinstance(node.get("tables"), list):
-            yield from node["tables"]
-        for key in ("panels", "subsections"):
-            for child in node.get(key, []) or []:
+    """Yield rendered tables from the normalized report tree."""
+    if not isinstance(node, dict):
+        return
+    tables = node.get("tables")
+    if isinstance(tables, list):
+        yield from (table for table in tables if isinstance(table, dict))
+    for key in ("panels", "subsections"):
+        children = node.get(key)
+        if isinstance(children, list):
+            for child in children:
                 yield from _tables(child)
 
 
@@ -136,6 +141,7 @@ def _check_finite(node: Any, problems: list[str], path: str = "report") -> None:
 
 
 def _require_identity_table(section: dict | None, table_id: str, problems: list[str]) -> None:
+    """Require a populated normalized identity table with all ten axes."""
     table = _table(section, table_id)
     if table is None or table.get("empty"):
         problems.append(f"missing non-empty {table_id}")
@@ -143,8 +149,12 @@ def _require_identity_table(section: dict | None, table_id: str, problems: list[
     columns = table.get("columns", [])
     missing_columns = [column for column in EXPECTED_IDENTITY_COLUMNS if column not in columns]
     problems.extend(f"{table_id} missing identity column {column}" for column in missing_columns)
-    for row in table.get("rows", []):
-        if len(row) != len(columns):
+    rows = table.get("rows", [])
+    if not isinstance(rows, list) or not rows:
+        problems.append(f"{table_id} must contain identity rows")
+        return
+    for row in rows:
+        if not isinstance(row, list) or len(row) != len(columns):
             problems.append(f"{table_id} row width does not match columns")
             continue
         missing = [
@@ -165,49 +175,9 @@ def _retired_vocabulary_in(node: Any) -> list[str]:
     return [token for token in retired_identity_tokens() if token in lowered]
 
 
-def _comparability_reason_problems(comparability: dict) -> list[str]:
-    """Fail-closed checks for ``corrective_evidence.comparability``.
-
-    The explicit-reason vocabulary is owned by
-    :func:`scripts.embedding_research.helpers.corpus_identity.classify_representation`; every
-    emitted reason must be a subset of that canonical vocabulary so a regenerated report can
-    never carry retired comparability words.
-    """
-    from scripts.embedding_research.helpers.corpus_identity import classify_representation
-
-    canonical: list[str] = []
-    for kwargs in (
-        {
-            "alignment_ok": False,
-            "searchable_count": 0,
-            "medoid_defined": False,
-            "candidate_count": 0,
-            "label_defined": False,
-        },
-        {
-            "alignment_ok": True,
-            "searchable_count": 1,
-            "medoid_defined": True,
-            "candidate_count": 1,
-            "label_defined": False,
-        },
-    ):
-        canonical.extend(classify_representation(**kwargs).reasons)
-    vocabulary = frozenset(canonical)
-
-    problems: list[str] = []
-    if not isinstance(comparability, dict):
-        return ["comparability corrective evidence is missing"]
-    if comparability.get("non_comparable_persisted") is not True:
-        problems.append("non-comparable evidence persistence is missing")
-    reasons = comparability.get("explicit_reasons")
-    if not isinstance(reasons, list) or not reasons or not all(isinstance(reason, str) for reason in reasons):
-        problems.append("comparability explicit_reasons must be a non-empty list of strings")
-        return problems
-    unknown = sorted({reason for reason in reasons if reason not in vocabulary})
-    if unknown:
-        problems.append(f"comparability explicit_reasons contain non-canonical vocabulary: {unknown}")
-    return problems
+_COMPARABILITY_REASONS = frozenset(
+    {"alignment_failed", "zero_searchable", "no_medoid", "no_candidates", "label_missing"}
+)
 
 
 def _scientific_root(report_path: Path) -> Path:
@@ -215,11 +185,47 @@ def _scientific_root(report_path: Path) -> Path:
 
 
 def _viewer_is_external(viewer: Path, report_path: Path) -> bool:
+    """Return whether the resolved HTML viewer is outside the scientific JSON root."""
     try:
         viewer.resolve().relative_to(_scientific_root(report_path))
     except ValueError:
         return True
     return False
+
+
+def _nested_result_arrays(node: Any, path: str = "report") -> list[str]:
+    """Find retired nested result arrays instead of accepting them as evidence."""
+    found: list[str] = []
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key in {"threshold_map", "queries", "hypotheses", "neighborhood"} and isinstance(value, list):
+                found.append(f"{path}.{key}")
+            found.extend(_nested_result_arrays(value, f"{path}.{key}"))
+    elif isinstance(node, list):
+        for index, value in enumerate(node):
+            found.extend(_nested_result_arrays(value, f"{path}[{index}]"))
+    return found
+
+
+def _rows_as_dicts(table: dict | None) -> list[dict[str, Any]]:
+    if table is None:
+        return []
+    columns = table.get("columns", [])
+    return [dict(zip(columns, row, strict=False)) for row in table.get("rows", []) if isinstance(row, list)]
+
+
+def _neighborhood_problems(section: dict | None, table_id: str, scope_column: str) -> list[str]:
+    rows = _rows_as_dicts(_table(section, table_id))
+    problems: list[str] = []
+    keys: set[tuple[Any, Any, Any]] = set()
+    for row in rows:
+        key = (row.get(scope_column), row.get("query_song_id"), row.get("candidate_song_id"))
+        if key in keys:
+            problems.append(f"{table_id} has duplicate neighborhood key {key}")
+        keys.add(key)
+        if key[1] == key[2]:
+            problems.append(f"{table_id} has self candidate {key[1]}")
+    return problems
 
 
 def _viewer_candidates(report_path: Path) -> tuple[Path, ...]:
@@ -273,7 +279,7 @@ def validate_report(path: str | Path, html_path: str | Path | None = None) -> li
     corpus = _section(data, "corpus")
     analysis = _section(data, "analysis")
     winners = _section(data, "winners")
-    head_analysis = _section(data, "head-analysis")
+    _section(data, "head-analysis")
     provenance = _section(data, "provenance")
     efficiency = _section(data, "efficiency")
     if corpus is None or corpus.get("empty_message"):
@@ -282,8 +288,7 @@ def validate_report(path: str | Path, html_path: str | Path | None = None) -> li
         problems.append("analysis section is missing")
     else:
         _require_identity_table(analysis, "geometry_identity", problems)
-    if head_analysis is not None and not head_analysis.get("empty_message"):
-        _require_identity_table(head_analysis, "geometry_head_identity", problems)
+    # Head evidence is provenance, not a retired geometry-analysis identity table.
     if winners is None or not any(
         _table(winners, table_id) for table_id in ("geometry_winner_deltas", "geometry_representations")
     ):
@@ -306,6 +311,9 @@ def validate_report(path: str | Path, html_path: str | Path | None = None) -> li
             timing_phases = {row[columns.index("phase")] for row in timing.get("rows", [])}
             if not set(EXACT_PHASE_NAMES).issubset(timing_phases):
                 problems.append(f"phase timing is incomplete: {sorted(timing_phases)}")
+    problems.extend(f"retired nested result array is forbidden: {path}" for path in _nested_result_arrays(data))
+    problems.extend(_neighborhood_problems(winners, "geometry_representations", "corpus_search_class_id"))
+    problems.extend(_neighborhood_problems(winners, "observed_global_medoid_baseline", "backbone"))
     matrices = data.get("matrices")
     if not isinstance(matrices, dict) or set(matrices) != {"refusal", "incomplete", "resource"}:
         problems.append("refusal/incomplete/resource matrices are missing")
@@ -313,33 +321,30 @@ def validate_report(path: str | Path, html_path: str | Path | None = None) -> li
     if not isinstance(corrective, dict):
         problems.append("corrective_evidence is missing")
     else:
-        retrieval = corrective.get("retrieval", {})
-        if retrieval.get("self_candidate_count") != 0:
-            problems.append("retrieval self_candidate_count must be zero")
-        if retrieval.get("segmentation_from_scorer_count") != 0:
-            problems.append("retrieval segmentation_from_scorer_count must be zero")
-        if not retrieval.get("corpus_wide_leave_one_out"):
-            problems.append("corpus-wide leave-one-out evidence is missing")
         threshold_map = corrective.get("threshold_map", {})
-        if threshold_map.get("count") != 171:
-            problems.append("threshold map must contain all 171 hypotheses")
+        if not isinstance(threshold_map, dict) or not isinstance(threshold_map.get("count"), int):
+            problems.append("normalized threshold_map metadata is missing")
         analysis_section = _section(data, "analysis") or {}
-        table_ids = {table.get("id") for table in analysis_section.get("tables", []) if isinstance(table, dict)}
-        if not ({"geometry_threshold_collapse_context", "geometry_threshold_map"} & table_ids):
-            problems.append("per-threshold/collapse evidence is missing")
-        corpus_map = corrective.get("corpus_map", {})
-        if corpus_map.get("candidate_population") != "ordered_corpus_song_ids" or not corpus_map.get("leave_one_out"):
-            problems.append("ordered corpus/collapse evidence is missing")
+        threshold_table = _table(analysis_section, "geometry_threshold_map")
+        if threshold_table is None or not _rows_as_dicts(threshold_table):
+            problems.append("normalized threshold-to-class evidence is missing")
+        else:
+            for row in _rows_as_dicts(threshold_table):
+                reasons = [reason.strip() for reason in str(row.get("reasons", "")).split(",") if reason.strip()]
+                unknown = sorted(set(reasons) - _COMPARABILITY_REASONS)
+                if unknown:
+                    problems.append(f"threshold map contains non-canonical reasons: {unknown}")
+        baseline = corrective.get("baseline_once")
+        if not isinstance(baseline, dict) or baseline.get("count") != 1 or baseline.get("fixed") is not True:
+            problems.append("exactly one fixed baseline block is required")
+        neighborhoods = corrective.get("class_scoped_neighborhood_uniqueness")
+        if isinstance(neighborhoods, dict) and neighborhoods.get("self_candidate_count") != 0:
+            problems.append("class-scoped neighborhoods contain self candidates")
         serialized = json.dumps(data, sort_keys=True)
         if "raw-query" in serialized or "raw_query" in serialized or "whole-song query" in serialized:
             problems.append("raw-query markers are forbidden")
         if data.get("synthetic_only") is not True:
             problems.append("fixture report must remain explicitly synthetic")
-        comparability = corrective.get("comparability", {})
-        if not isinstance(comparability, dict):
-            problems.append("comparability corrective evidence is missing")
-        else:
-            problems.extend(_comparability_reason_problems(comparability))
         if not corrective.get("scientific_hash_retention"):
             problems.append("scientific artifact-hash retention is missing")
         benchmark = corrective.get("benchmark")

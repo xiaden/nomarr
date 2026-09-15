@@ -11,7 +11,7 @@ _HERE = Path(__file__).resolve()
 if str(_HERE.parents[3]) not in sys.path:
     sys.path.insert(0, str(_HERE.parents[3]))
 
-from scripts.embedding_research.tools._evidence import PACKAGE_ROOT, relative, write_evidence
+from scripts.embedding_research.tools._evidence import PACKAGE_ROOT, normalized_result_layer, relative, write_evidence
 
 
 def _extract(root: Path) -> dict[str, Any]:
@@ -62,6 +62,7 @@ def main(argv: list[str] | None = None) -> int:
             "derived_allowed_import_roots": allowed_roots,
             "violations": violations,
             "exit_status": "PASS" if not violations else "NONZERO",
+            "surface_proof": normalized_result_layer(),
         },
     )
     return 0 if not violations else 1

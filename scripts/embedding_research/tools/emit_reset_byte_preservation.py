@@ -13,7 +13,7 @@ _HERE = Path(__file__).resolve()
 if str(_HERE.parents[3]) not in sys.path:
     sys.path.insert(0, str(_HERE.parents[3]))
 
-from scripts.embedding_research.tools._evidence import write_evidence
+from scripts.embedding_research.tools._evidence import normalized_result_layer, write_evidence
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -90,6 +90,7 @@ def main(argv: list[str] | None = None) -> int:
             "before_hashes": before_hashes,
             "after_hashes": after_hashes,
             "violations": violations,
+            "surface_proof": normalized_result_layer(),
             "exit_status": "PASS" if not violations else "NONZERO",
         },
     )

@@ -148,19 +148,14 @@ def _delete_corrective_evidence(data: dict) -> None:
 
 
 def _set_self_candidate_count(data: dict) -> None:
-    data["corrective_evidence"]["retrieval"]["self_candidate_count"] = 1
-
-
-def _set_segmentation_from_scorer_count(data: dict) -> None:
-    data["corrective_evidence"]["retrieval"]["segmentation_from_scorer_count"] = 1
-
-
-def _disable_leave_one_out(data: dict) -> None:
-    data["corrective_evidence"]["retrieval"]["corpus_wide_leave_one_out"] = False
+    data["corrective_evidence"]["class_scoped_neighborhood_uniqueness"]["self_candidate_count"] = 1
 
 
 def _truncate_threshold_map(data: dict) -> None:
-    data["corrective_evidence"]["threshold_map"]["count"] = 170
+    data["corrective_evidence"]["threshold_map"]["count"] = 0
+    section = next(section for section in data["sections"] if section["id"] == "analysis")
+    table = next(table for table in section["tables"] if table["id"] == "geometry_threshold_map")
+    table["rows"] = []
 
 
 def _drop_hash_retention(data: dict) -> None:
@@ -175,18 +170,14 @@ def _non_dict_benchmark(data: dict) -> None:
     ("mutate", "expected"),
     [
         (_delete_corrective_evidence, "corrective_evidence is missing"),
-        (_set_self_candidate_count, "retrieval self_candidate_count must be zero"),
-        (_set_segmentation_from_scorer_count, "retrieval segmentation_from_scorer_count must be zero"),
-        (_disable_leave_one_out, "corpus-wide leave-one-out evidence is missing"),
-        (_truncate_threshold_map, "threshold map must contain all 171 hypotheses"),
+        (_set_self_candidate_count, "class-scoped neighborhoods contain self candidates"),
+        (_truncate_threshold_map, "normalized threshold-to-class evidence is missing"),
         (_drop_hash_retention, "scientific artifact-hash retention is missing"),
         (_non_dict_benchmark, "fixtures-only benchmark metadata is missing"),
     ],
     ids=[
         "missing-corrective-evidence",
         "self-candidate-count",
-        "segmentation-from-scorer-count",
-        "leave-one-out",
         "threshold-map-count",
         "hash-retention",
         "benchmark-not-dict",
@@ -203,6 +194,31 @@ def test_generated_report_validates_clean(tmp_path) -> None:
     report_path = generate_report(tmp_path)
 
     assert validate_report(report_path) == []
+
+
+def test_validator_rejects_missing_baseline_block(tmp_path) -> None:
+    report_path = _generate_and_mutate(tmp_path, lambda data: data["corrective_evidence"].pop("baseline_once"))
+    assert any("exactly one fixed baseline block" in problem for problem in validate_report(report_path))
+
+
+def test_validator_rejects_duplicate_class_neighborhood(tmp_path) -> None:
+    def mutate(data):
+        section = next(section for section in data["sections"] if section["id"] == "winners")
+        table = next(table for table in section["tables"] if table["id"] == "geometry_representations")
+        table["rows"].append(table["rows"][0])
+
+    report_path = _generate_and_mutate(tmp_path, mutate)
+    assert any("duplicate neighborhood key" in problem for problem in validate_report(report_path))
+
+
+def test_validator_rejects_unknown_reason(tmp_path) -> None:
+    def mutate(data):
+        section = next(section for section in data["sections"] if section["id"] == "analysis")
+        table = next(table for table in section["tables"] if table["id"] == "geometry_threshold_map")
+        table["rows"][0][5] = "unknown_reason"
+
+    report_path = _generate_and_mutate(tmp_path, mutate)
+    assert any("non-canonical reasons" in problem for problem in validate_report(report_path))
 
 
 # ── G3: Plan F corrective-evidence emitter ─────────────────────────────────────
@@ -226,6 +242,11 @@ def test_emit_corrective_evidence_writes_json_only_evidence(tmp_path, monkeypatc
     assert proof["self_candidate_count"] == 0
     assert proof["segmentation_from_scorer_count"] == 0
     assert proof["threshold_count"] == 171
+    # The static corpus-wide leave-one-out proof claim is only sound if the report it
+    # summarizes actually contains no self-referential class-scoped neighborhoods.
+    report_data = json.loads(report_path.read_text(encoding="utf-8"))
+    uniqueness = report_data["corrective_evidence"]["class_scoped_neighborhood_uniqueness"]
+    assert proof["corpus_wide_leave_one_out"] is (uniqueness["self_candidate_count"] == 0)
     assert payload["benchmark"]["fixtures_only"] is True
     assert payload["scientific_hashes"]["report_json_sha256"] == hashlib.sha256(report_path.read_bytes()).hexdigest()
 

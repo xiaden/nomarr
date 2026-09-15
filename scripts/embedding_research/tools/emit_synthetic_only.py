@@ -10,7 +10,7 @@ _HERE = Path(__file__).resolve()
 if str(_HERE.parents[3]) not in sys.path:
     sys.path.insert(0, str(_HERE.parents[3]))
 
-from scripts.embedding_research.tools._evidence import PACKAGE_ROOT, relative, write_evidence
+from scripts.embedding_research.tools._evidence import PACKAGE_ROOT, normalized_result_layer, relative, write_evidence
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -31,6 +31,7 @@ def main(argv: list[str] | None = None) -> int:
             "root": relative(root),
             "warning": "SYNTHETIC FIXTURE — no empirical retrieval claim.",
             "exit_status": "PASS",
+            "surface_proof": normalized_result_layer(),
         },
     )
     return 0

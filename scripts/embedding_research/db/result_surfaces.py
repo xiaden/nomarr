@@ -3,12 +3,12 @@
 The retired design persisted one giant nested ``role="corpus"`` JSON blob.  These surfaces
 replace it with flat, query-ready rows:
 
-* B ``geometry_class_aggregate_metrics`` -- one row per ``(class, ruler, metric, k)``
-* C ``geometry_class_query_metrics``    -- one row per ``(class, query, ruler, metric, k)``
-* D ``geometry_class_neighborhoods``    -- one retained row per ``(class, query, candidate)``
-* E ``geometry_baseline_aggregate_metrics`` -- one row per ``(backbone, ruler, metric, k)``
+* C ``geometry_class_aggregate_metrics`` -- one row per ``(class, ruler, metric, k)``
+* D ``geometry_class_query_metrics``    -- one row per ``(class, query, ruler, metric, k)``
+* E ``geometry_class_neighborhoods``    -- one retained row per ``(class, query, candidate)``
+* F ``geometry_baseline_aggregate_metrics`` -- one row per ``(backbone, ruler, metric, k)``
 * F ``geometry_baseline_query_metrics`` -- one row per ``(backbone, query, ruler, metric, k)``
-* G ``geometry_baseline_neighborhoods`` -- one retained row per ``(backbone, query, candidate)``
+* F ``geometry_baseline_neighborhoods`` -- one retained row per ``(backbone, query, candidate)``
 * ``geometry_result_provenance``        -- ONE compact provenance row per run
 
 There is no PRIMARY KEY / UNIQUE (DuckDB ART/WAL policy); every row identity is enforced in
@@ -211,7 +211,7 @@ def write_class_aggregate_metrics_in_transaction(
     evaluation_id: str,
     rows: Iterable[Any],
 ) -> None:
-    """Insert class-scoped aggregate metrics (surface B) on the caller's transaction.
+    """Insert class-scoped aggregate metrics (surface C) on the caller's transaction.
 
     Identity is ``(run_id, corpus_search_class_id, ruler, metric, k)``.  The evaluable and
     undefined query counts stay side by side so a metric an eligible query could not
@@ -248,7 +248,7 @@ def write_class_aggregate_metrics_in_transaction(
 
 
 def write_class_query_metrics_in_transaction(con: Any, *, run_id: str, rows: Iterable[Any]) -> None:
-    """Insert class-scoped per-query metrics (surface C) on the caller's transaction.
+    """Insert class-scoped per-query metrics (surface D) on the caller's transaction.
 
     Identity is ``(run_id, corpus_search_class_id, query_song_id, ruler, metric, k)`` with an
     explicit ``defined``/``undefined`` status.
@@ -280,7 +280,7 @@ def write_class_query_metrics_in_transaction(con: Any, *, run_id: str, rows: Ite
 
 
 def write_class_neighborhoods_in_transaction(con: Any, *, run_id: str, rows: Iterable[Any]) -> None:
-    """Insert retained class-scoped browsing windows (surface D) on the caller's transaction."""
+    """Insert retained class-scoped browsing windows (surface E) on the caller's transaction."""
     run_id = _text(run_id, "run_id")
     stamp = int(time.time() * 1000)
     records = [
@@ -314,7 +314,7 @@ def write_baseline_aggregate_metrics_in_transaction(
     evaluation_id: str,
     rows: Iterable[Any],
 ) -> None:
-    """Insert threshold-independent baseline aggregates (surface E) on the caller's transaction.
+    """Insert threshold-independent baseline aggregates (surface F) on the caller's transaction.
 
     Identity is ``(run_id, backbone, ruler, metric, k)``.  These rows are the run-lifecycle
     reachability signal: baseline presence per backbone is independent of the configured
@@ -379,7 +379,7 @@ def write_baseline_query_metrics_in_transaction(con: Any, *, run_id: str, rows: 
 
 
 def write_baseline_neighborhoods_in_transaction(con: Any, *, run_id: str, rows: Iterable[Any]) -> None:
-    """Insert retained baseline browsing windows (surface G) on the caller's transaction."""
+    """Insert retained baseline browsing windows (surface F) on the caller's transaction."""
     run_id = _text(run_id, "run_id")
     stamp = int(time.time() * 1000)
     records = [
@@ -464,7 +464,7 @@ def _read(con: Any, *, sql: str, columns: tuple[str, ...], run_id: str) -> tuple
 
 
 def read_class_aggregate_metrics(con: Any, *, run_id: str) -> tuple[dict[str, Any], ...]:
-    """Read class-scoped aggregate metrics (surface B), ordered deterministically."""
+    """Read class-scoped aggregate metrics (surface C), ordered deterministically."""
     return _read(
         con,
         sql=(
@@ -478,7 +478,7 @@ def read_class_aggregate_metrics(con: Any, *, run_id: str) -> tuple[dict[str, An
 
 
 def read_class_query_metrics(con: Any, *, run_id: str) -> tuple[dict[str, Any], ...]:
-    """Read class-scoped per-query metrics (surface C), ordered deterministically."""
+    """Read class-scoped per-query metrics (surface D), ordered deterministically."""
     return _read(
         con,
         sql=(
@@ -492,7 +492,7 @@ def read_class_query_metrics(con: Any, *, run_id: str) -> tuple[dict[str, Any], 
 
 
 def read_class_neighborhoods(con: Any, *, run_id: str) -> tuple[dict[str, Any], ...]:
-    """Read retained class-scoped neighborhoods (surface D), ordered deterministically."""
+    """Read retained class-scoped neighborhoods (surface E), ordered deterministically."""
     return _read(
         con,
         sql=(
@@ -506,7 +506,7 @@ def read_class_neighborhoods(con: Any, *, run_id: str) -> tuple[dict[str, Any], 
 
 
 def read_baseline_aggregate_metrics(con: Any, *, run_id: str) -> tuple[dict[str, Any], ...]:
-    """Read threshold-independent baseline aggregates (surface E), ordered deterministically."""
+    """Read threshold-independent baseline aggregates (surface F), ordered deterministically."""
     return _read(
         con,
         sql=(
@@ -533,7 +533,7 @@ def read_baseline_query_metrics(con: Any, *, run_id: str) -> tuple[dict[str, Any
 
 
 def read_baseline_neighborhoods(con: Any, *, run_id: str) -> tuple[dict[str, Any], ...]:
-    """Read retained baseline neighborhoods (surface G), ordered deterministically."""
+    """Read retained baseline neighborhoods (surface F), ordered deterministically."""
     return _read(
         con,
         sql=(

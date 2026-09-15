@@ -19,6 +19,7 @@ if str(_HERE.parents[3]) not in sys.path:
 from scripts.embedding_research.tools._evidence import (
     PACKAGE_ROOT,
     definition_names,
+    normalized_result_layer,
     relative,
     write_evidence,
 )
@@ -71,6 +72,7 @@ def main(argv: list[str] | None = None) -> int:
             "engine_callers": engine_callers,
             "call_graph": graph,
             "exit_status": "PASS" if len(owners) == 1 else "NONZERO",
+            "surface_proof": normalized_result_layer(),
         },
     )
     return 0 if len(owners) == 1 else 1

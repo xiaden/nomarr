@@ -54,6 +54,8 @@ def main(argv: list[str] | None = None) -> int:
         missing = [column for column in EXPECTED_IDENTITY_COLUMNS if column not in columns]
         violations.extend(f"report identity table missing {column}" for column in missing)
 
+    from scripts.embedding_research.tools._evidence import normalized_result_layer
+
     write_evidence(
         arguments.output,
         {
@@ -62,6 +64,7 @@ def main(argv: list[str] | None = None) -> int:
             "expected_identity_columns": list(EXPECTED_IDENTITY_COLUMNS),
             "observed_identity_columns": columns,
             "violations": violations,
+            "surface_proof": normalized_result_layer(),
             "exit_status": "PASS" if not violations else "NONZERO",
         },
     )

@@ -1,7 +1,7 @@
 """
 DuckDB schema, connection management, and DDL for the embedding research DB.
 
-Tables (24 total)
+Tables (23 total)
 -----------------
 The obsolete copied-vector / threshold / stratification tables that earlier corrective
 passes (P1-S5 Wave 1 / Wave 2a) stripped their writers and readers from are now PHYSICALLY
@@ -29,8 +29,6 @@ ACTIVE — frozen-stream / geometry / provenance + core live-writer tables (prim
                              status, run_id, created_at, updated_at)  -- no PK/UNIQUE
   song_patch_geometry       (exact committed geometry identity + BLOB digests; see
                              ``GEOMETRY_COLUMNS``)  -- authoritative geometry rows
-  geometry_analysis_records (run_id + the eight geometry axes + metric, value, evidence_json)
-                             -- exact semantic analysis evidence, no PK/UNIQUE
   geometry_head_evidence    (run_id + the eight geometry axes + head, segment_id, evidence_json)
                              -- exact head evidence, no PK/UNIQUE
   run_provenance            (run_id, phase, status, started_at, finished_at,
@@ -84,7 +82,7 @@ ACTIVE — frozen-stream / geometry / provenance + core live-writer tables (prim
                              stream_digest, mask_ref, mask_digest, created_at_ms)
                              -- per-song frozen semantic-head label + head-suite identity kept
                              -- SEPARATE from the label; no PK/UNIQUE, application-enforced
-                             identity by (run_id, evaluation_id, song_id, threshold_index)
+                             identity by (run_id, evaluation_id, song_id, backbone)
   geometry_class_aggregate_metrics (run_id, execution_id, evaluation_id,
                              corpus_search_class_id, ruler, metric, k, value,
                              evaluable_query_count, undefined_query_count, created_at_ms)
@@ -536,7 +534,7 @@ _HEAD_LABEL_PROVENANCE_CREATE = (
     + "\n);"
 )
 
-# Normalized Experiment One result-layer surfaces B-G (Plan A Phase 5).  The giant nested
+# Normalized Experiment One result-layer surfaces A-G (Plan A Phase 5).  The giant nested
 # ``role="corpus"`` JSON blob is replaced by these flat, query-ready rows; reachability of a
 # run keys off ``geometry_baseline_aggregate_metrics`` so baseline presence is independent of
 # the configured threshold count.  No PRIMARY KEY / UNIQUE (DuckDB ART/WAL policy); every
@@ -555,7 +553,7 @@ _CLASS_AGGREGATE_METRIC_COLUMN_DEFS: tuple[str, ...] = (
     "created_at_ms          BIGINT NOT NULL",
 )
 
-#: ``CREATE TABLE IF NOT EXISTS`` statement for class-scoped aggregate metrics (surface B).
+#: ``CREATE TABLE IF NOT EXISTS`` statement for class-scoped aggregate metrics (surface C).
 _CLASS_AGGREGATE_METRIC_CREATE = (
     "CREATE TABLE IF NOT EXISTS geometry_class_aggregate_metrics (\n    "
     + ",\n    ".join(_CLASS_AGGREGATE_METRIC_COLUMN_DEFS)
@@ -574,7 +572,7 @@ _CLASS_QUERY_METRIC_COLUMN_DEFS: tuple[str, ...] = (
     "created_at_ms          BIGINT NOT NULL",
 )
 
-#: ``CREATE TABLE IF NOT EXISTS`` statement for class-scoped per-query metrics (surface C).
+#: ``CREATE TABLE IF NOT EXISTS`` statement for class-scoped per-query metrics (surface D).
 _CLASS_QUERY_METRIC_CREATE = (
     "CREATE TABLE IF NOT EXISTS geometry_class_query_metrics (\n    "
     + ",\n    ".join(_CLASS_QUERY_METRIC_COLUMN_DEFS)
@@ -591,7 +589,7 @@ _CLASS_NEIGHBORHOOD_COLUMN_DEFS: tuple[str, ...] = (
     "created_at_ms          BIGINT NOT NULL",
 )
 
-#: ``CREATE TABLE IF NOT EXISTS`` statement for class-scoped retained neighborhoods (surface D).
+#: ``CREATE TABLE IF NOT EXISTS`` statement for class-scoped retained neighborhoods (surface E).
 _CLASS_NEIGHBORHOOD_CREATE = (
     "CREATE TABLE IF NOT EXISTS geometry_class_neighborhoods (\n    "
     + ",\n    ".join(_CLASS_NEIGHBORHOOD_COLUMN_DEFS)
@@ -612,7 +610,7 @@ _BASELINE_AGGREGATE_METRIC_COLUMN_DEFS: tuple[str, ...] = (
     "created_at_ms          BIGINT NOT NULL",
 )
 
-#: ``CREATE TABLE IF NOT EXISTS`` statement for baseline aggregate metrics (surface E).
+#: ``CREATE TABLE IF NOT EXISTS`` statement for baseline aggregate metrics (surface F).
 _BASELINE_AGGREGATE_METRIC_CREATE = (
     "CREATE TABLE IF NOT EXISTS geometry_baseline_aggregate_metrics (\n    "
     + ",\n    ".join(_BASELINE_AGGREGATE_METRIC_COLUMN_DEFS)
@@ -648,7 +646,7 @@ _BASELINE_NEIGHBORHOOD_COLUMN_DEFS: tuple[str, ...] = (
     "created_at_ms          BIGINT NOT NULL",
 )
 
-#: ``CREATE TABLE IF NOT EXISTS`` statement for baseline retained neighborhoods (surface G).
+#: ``CREATE TABLE IF NOT EXISTS`` statement for baseline retained neighborhoods (surface F).
 _BASELINE_NEIGHBORHOOD_CREATE = (
     "CREATE TABLE IF NOT EXISTS geometry_baseline_neighborhoods (\n    "
     + ",\n    ".join(_BASELINE_NEIGHBORHOOD_COLUMN_DEFS)
@@ -868,8 +866,8 @@ def ensure_schema(con) -> None:
     ``geometry_class_aggregate_metrics``, ``geometry_class_query_metrics``,
     ``geometry_class_neighborhoods``, ``geometry_baseline_aggregate_metrics``,
     ``geometry_baseline_query_metrics``, ``geometry_baseline_neighborhoods``, and the compact
-    ``geometry_result_provenance`` row.  The ``geometry_analysis_records`` and
-    ``geometry_head_evidence`` tables are defined once in the monolithic ``_DDL``.
+    ``geometry_result_provenance`` row.  The ``geometry_head_evidence`` table is defined once in
+    the monolithic ``_DDL``.
     """
     _require_duckdb()
     _ensure_current_analyze_metrics(con)

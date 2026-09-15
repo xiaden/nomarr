@@ -15,7 +15,7 @@ if str(_HERE.parents[3]) not in sys.path:
     sys.path.insert(0, str(_HERE.parents[3]))
 
 from scripts.embedding_research.fixture_benchmark import run_bounded_benchmark
-from scripts.embedding_research.tools._evidence import sha256_file, write_evidence
+from scripts.embedding_research.tools._evidence import normalized_result_layer, sha256_file, write_evidence
 
 #: Live environment-observed measurements are normalized to zero so JSON evidence remains deterministic.
 _MEASURED_BENCHMARK_FIELDS = ("elapsed_ms", "peak_rss_bytes", "peak_tracemalloc_bytes")
@@ -49,6 +49,11 @@ def main(argv: list[str] | None = None) -> int:
         "focused_test_count": arguments.test_count,
         "architecture_proof": {
             "db_persisted_per_song_gram": True,
+            # Live corrective-retrieval claim, not pre-cut vocabulary: the current corpus
+            # owner materializes exactly one ordered T-derived representation per song/backbone
+            # and queries same-T medoids against every other same-T representation
+            # (see CONTRACTS.md corpus-wide leave-one-out), asserted against
+            # `self_candidate_count == 0` in test_corrective_report_and_evidence_surface.py.
             "corpus_wide_leave_one_out": True,
             "self_candidate_count": 0,
             "segmentation_from_scorer_count": 0,
@@ -67,6 +72,7 @@ def main(argv: list[str] | None = None) -> int:
             "round_trip_fixtures": True,
         },
         "benchmark": benchmark,
+        "surface_proof": normalized_result_layer(),
     }
     write_evidence(arguments.output, payload)
     return 0
