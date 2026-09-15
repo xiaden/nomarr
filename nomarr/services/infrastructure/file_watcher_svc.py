@@ -37,7 +37,8 @@ from watchdog.observers import Observer
 
 from nomarr.components.library import get_library_watch_config, list_watchable_libraries
 from nomarr.components.library.update_library_metadata_comp import UpdateLibraryMetadataComp
-from nomarr.helpers.exceptions import LibraryAlreadyScanningError, LibraryNotFoundError
+from nomarr.helpers.exceptions import FilesystemError, LibraryAlreadyScanningError, LibraryNotFoundError
+from nomarr.helpers.fs_contract import probe_fact
 from nomarr.helpers.time_helper import InternalSeconds, internal_s
 
 if TYPE_CHECKING:
@@ -221,6 +222,16 @@ class FileWatcherService:
             if library_id not in self.observers:
                 try:
                     self.start_watching_library(library_id)
+                except FilesystemError as e:
+                    # Per-library best-effort: log the structured fact and continue (G7, D-B8).
+                    logger.warning(
+                        "Could not start watcher for library %s (presence=%s kind=%s errno=%s detail=%s)",
+                        library_id,
+                        e.fact.presence,
+                        e.fact.kind,
+                        e.fact.errno,
+                        e.fact.detail,
+                    )
                 except ValueError as e:
                     logger.warning(f"Could not start watcher for library {library_id}: {e}")
                 except Exception as e:
@@ -269,9 +280,11 @@ class FileWatcherService:
             raise ValueError(msg)
 
         library_root = Path(library_config["root_path"])
-        if not library_root.exists():
-            msg = f"Library path does not exist: {library_root}"
-            raise ValueError(msg)
+        root_fact = probe_fact(library_root)
+        if root_fact.presence != "present":
+            # Generic, path-free message; the fact carries server-side detail (D-B9).
+            msg = "Library path is not accessible"
+            raise FilesystemError(msg, fact=root_fact) from None
 
         # Get watch mode from library config (default to 'off')
         watch_mode = library_config.get("watch_mode", "off")

@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from nomarr.helpers.exceptions import FilesystemError
 from nomarr.helpers.files_helper import (
     AUDIO_EXTENSIONS,
     collect_audio_files,
@@ -246,3 +247,46 @@ class TestValidateLibraryPath:
         """Non-existent files raise ValueError."""
         with pytest.raises(ValueError, match="Access denied"):
             validate_library_path(file_path="missing.mp3", library_path=str(tmp_path))
+
+
+class TestResolveLibraryPathTypedFailure:
+    """Part-B migration: ``resolve_library_path`` raises a typed ``FilesystemError``.
+
+    ``FilesystemError`` remains a ``ValueError`` (A-B1) so existing ``except ValueError``
+    callers stay valid, while the structured ``.fact`` preserves the failure kind.
+    """
+
+    def test_resolve_library_path_missing_file_raises_filesystem_error_with_fact(self, tmp_path: Path):
+        """A missing file is an ``unconfirmed_missing`` fact, not a bool preflight."""
+        with pytest.raises(ValueError) as exc_info:
+            resolve_library_path(library_root=tmp_path, user_path="missing.mp3", must_exist=True)
+
+        error = exc_info.value
+        assert isinstance(error, FilesystemError)
+        assert error.fact.presence == "unknown"
+        assert error.fact.kind == "unconfirmed_missing"
+
+    def test_resolve_library_path_failure_remains_a_value_error(self, tmp_path: Path):
+        """The typed raise is still catchable by ``except ValueError`` callers."""
+        with pytest.raises(ValueError) as exc_info:
+            resolve_library_path(library_root=tmp_path, user_path="missing.mp3", must_exist=True)
+
+        assert isinstance(exc_info.value, FilesystemError)
+        assert exc_info.value.fact is not None
+
+    def test_resolve_library_path_symlink_loop_reports_invalid_path(self, tmp_path: Path):
+        """``Path.resolve()``'s ``RuntimeError`` normalises to an ``invalid_path`` fact."""
+        loop = tmp_path / "loop.mp3"
+        loop.symlink_to(loop)
+
+        with pytest.raises(ValueError) as exc_info:
+            resolve_library_path(library_root=tmp_path, user_path="loop.mp3", must_exist=True)
+
+        error = exc_info.value
+        assert isinstance(error, FilesystemError)
+        assert error.fact.kind == "invalid_path"
+
+    def test_resolve_library_path_outside_root_is_denied(self, tmp_path: Path):
+        """Structural rejection keeps the ``ValueError``/``Access denied`` contract."""
+        with pytest.raises(ValueError, match="Access denied"):
+            resolve_library_path(library_root=tmp_path, user_path="/etc/passwd")

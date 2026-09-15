@@ -22,6 +22,7 @@ from nomarr.components.library.library_records_comp import (
 from nomarr.helpers.constants.pipeline_states import ML_IN_PROGRESS
 from nomarr.helpers.dataclasses.library_dataclass import Library
 from nomarr.helpers.dataclasses.library_domain_dataclasses import LibraryPipelineState, LibraryUpdate
+from nomarr.helpers.exceptions import FilesystemError
 
 
 class TestListAllLibraries:
@@ -421,3 +422,33 @@ class TestFindMlCompleteLibraries:
             ((mock_db, lib7),),
             ((mock_db, lib42),),
         ]
+
+
+class TestFindLibraryContainingPathCanonicalisation:
+    """Part-B G2/D-B6: canonicalisation failure is a typed raise, not ``None``."""
+
+    @pytest.mark.unit
+    def test_find_library_containing_path_canonicalisation_failure_raises_filesystem_error(self, tmp_path) -> None:
+        """A symlink loop must raise ``FilesystemError`` with an ``invalid_path`` fact."""
+        mock_db = MagicMock()
+        mock_db.library.list_libraries.return_value = []
+        loop = tmp_path / "loop.mp3"
+        loop.symlink_to(loop)
+
+        try:
+            find_library_containing_path(mock_db, str(loop))
+        except (OSError, RuntimeError, ValueError) as exc:
+            assert isinstance(exc, FilesystemError)
+            assert exc.fact.kind == "invalid_path"
+        else:
+            pytest.fail("a canonicalisation failure must raise FilesystemError, not return None")
+
+    @pytest.mark.unit
+    def test_find_library_containing_path_returns_none_only_for_a_contained_path_search(self, tmp_path) -> None:
+        """``None`` means no configured root contains a successfully canonicalised path."""
+        mock_db = MagicMock()
+        mock_db.library.list_libraries.return_value = [Library(name="A", root_path=str(tmp_path / "libA"))]
+
+        result = find_library_containing_path(mock_db, str(tmp_path / "libB" / "song.mp3"))
+
+        assert result is None

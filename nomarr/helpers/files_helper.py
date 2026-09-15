@@ -18,7 +18,11 @@ from __future__ import annotations
 
 import logging
 import os
+import stat
 from pathlib import Path, PurePath
+
+from nomarr.helpers.exceptions import FilesystemError
+from nomarr.helpers.fs_contract import canonicalize, fact_from_error, probe_fact
 
 logger = logging.getLogger(__name__)
 
@@ -171,14 +175,21 @@ def resolve_library_path(
 
     # Step 6: Convert to Path and resolve symlinks for canonical path validation
     candidate = Path(fullpath)
-    # Canonicalize both base and candidate by resolving symlinks
+    # Canonicalize both base and candidate by resolving symlinks. Every failure is
+    # normalised to ``OSError`` by ``canonicalize`` and classified into an ``FsFact``.
     try:
-        resolved_base = Path(base).resolve(strict=True)
-        resolved_candidate = candidate.resolve(strict=must_exist)
-    except (OSError, RuntimeError) as e:
-        logger.warning(f"[security] Failed to resolve symlink for {candidate!r}: {e}")
+        resolved_base = canonicalize(base, strict=True)
+    except OSError as exc:
+        logger.warning(f"[security] Failed to resolve library root {base!r}: {exc}")
         msg = "Access denied"
-        raise ValueError(msg) from e
+        raise FilesystemError(msg, fact=fact_from_error(exc, path=base)) from exc
+
+    try:
+        resolved_candidate = canonicalize(candidate, strict=must_exist)
+    except OSError as exc:
+        logger.warning(f"[security] Failed to resolve symlink for {candidate!r}: {exc}")
+        msg = "Access denied"
+        raise FilesystemError(msg, fact=fact_from_error(exc, path=candidate)) from exc
 
     # Ensure symlinks don't escape the root
     try:
@@ -190,21 +201,29 @@ def resolve_library_path(
         msg = "Access denied"
         raise ValueError(msg) from e
 
-    # Validate existence if required
-    if must_exist and not resolved_candidate.exists():
-        logger.debug(f"[security] Path does not exist: {resolved_candidate}")
-        msg = "Access denied"
-        raise ValueError(msg)
+    # Classify presence and (when a type is required) the resource type. Presence
+    # is a fact probe; the type decision uses one classified ``os.stat`` (A-B2).
+    if must_exist or must_be_file is not None:
+        fact = probe_fact(resolved_candidate)
+        if fact.presence != "present":
+            logger.debug(f"[security] Path is not accessible: {resolved_candidate}")
+            msg = "Access denied"
+            raise FilesystemError(msg, fact=fact) from None
 
-    # Validate file/directory type if specified
-    if must_be_file is True and not resolved_candidate.is_file():
-        logger.debug(f"[security] Path is not a file: {resolved_candidate}")
-        msg = "Access denied"
-        raise ValueError(msg)
-    if must_be_file is False and not resolved_candidate.is_dir():
-        logger.debug(f"[security] Path is not a directory: {resolved_candidate}")
-        msg = "Access denied"
-        raise ValueError(msg)
+        if must_be_file is not None:
+            try:
+                mode = os.stat(resolved_candidate).st_mode
+            except OSError as exc:
+                msg = "Access denied"
+                raise FilesystemError(msg, fact=fact_from_error(exc, path=resolved_candidate)) from exc
+            if must_be_file is True and not stat.S_ISREG(mode):
+                logger.debug(f"[security] Path is not a file: {resolved_candidate}")
+                msg = "Access denied"
+                raise ValueError(msg)
+            if must_be_file is False and not stat.S_ISDIR(mode):
+                logger.debug(f"[security] Path is not a directory: {resolved_candidate}")
+                msg = "Access denied"
+                raise ValueError(msg)
 
     return resolved_candidate
 

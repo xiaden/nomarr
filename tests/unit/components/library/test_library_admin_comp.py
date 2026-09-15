@@ -8,7 +8,7 @@ import pytest
 
 from nomarr.components.library.library_admin_comp import clear_library_data, create_library, delete_library
 from nomarr.helpers.dataclasses.library_dataclass import Library
-from nomarr.helpers.exceptions import DuplicateEntityError
+from nomarr.helpers.exceptions import DuplicateEntityError, FilesystemError
 
 
 @pytest.fixture(autouse=True)
@@ -279,3 +279,29 @@ class TestClearLibraryData:
             pytest.raises(RuntimeError, match="reset aborted mid-way"),
         ):
             clear_library_data(db=mock_db, library_root="/music")
+
+
+class TestCreateLibraryStructuredRootFailure:
+    """Part-B: the real resolution chain preserves the structured fact to the caller."""
+
+    @pytest.mark.unit
+    def test_create_library_real_root_failure_preserves_the_structured_fact(self, tmp_path) -> None:
+        """Real ``get_base_library_root`` -> ``normalize_library_root`` -> ``resolve_library_path``.
+
+        Only the persistence facade is mocked; the failure must reach the caller as the
+        typed ``FilesystemError`` rather than a re-wrapped plain ``ValueError``.
+        """
+        mock_db = MagicMock()
+
+        with pytest.raises(ValueError) as exc_info:
+            create_library(
+                db=mock_db,
+                base_library_root=str(tmp_path),
+                name=None,
+                root_path="missing_dir",
+            )
+
+        error = exc_info.value
+        assert isinstance(error, FilesystemError)
+        assert error.fact.presence == "unknown"
+        assert error.fact.kind == "unconfirmed_missing"

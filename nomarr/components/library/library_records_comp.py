@@ -11,7 +11,6 @@ unchanged but it no longer carries a storage primary key.
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 from nomarr.components.library.library_scan_state_comp import (
@@ -25,6 +24,8 @@ from nomarr.helpers.constants.pipeline_states import ML_IN_PROGRESS
 from nomarr.helpers.dataclasses.library_dataclass import Library
 from nomarr.helpers.dataclasses.library_domain_dataclasses import LibraryUpdate
 from nomarr.helpers.dto.library_dto import LibraryDict
+from nomarr.helpers.exceptions import FilesystemError
+from nomarr.helpers.fs_contract import canonicalize, fact_from_error
 from nomarr.helpers.time_helper import now_ms
 
 if TYPE_CHECKING:
@@ -188,23 +189,30 @@ def list_all_libraries(db: Database) -> list[Library]:
 def find_library_containing_path(db: Database, file_path: str) -> Library | None:
     """Find the most specific library root containing ``file_path``.
 
-    Returns the domain ``Library`` whose ``root_path`` contains ``file_path``.
+    Returns the domain ``Library`` whose ``root_path`` contains the canonicalised
+    ``file_path``, or ``None`` when no configured root contains it (a
+    config/semantic miss). A canonicalisation failure raises ``FilesystemError``
+    carrying the classified fact rather than masquerading as "not contained".
     """
     try:
-        normalized_path = Path(file_path).resolve()
-    except (ValueError, OSError):
-        return None
+        normalized_path = canonicalize(file_path, strict=False)
+    except OSError as exc:
+        msg = "Could not resolve path"
+        raise FilesystemError(msg, fact=fact_from_error(exc, path=file_path)) from exc
 
     libraries = db.library.list_libraries(enabled_only=False)
     libraries.sort(key=lambda lib: len(str(lib.root_path)), reverse=True)
 
     for library in libraries:
-        library_root = library.root_path
         try:
-            normalized_path.relative_to(Path(library_root).resolve())
+            library_root = canonicalize(library.root_path, strict=False)
+        except OSError as exc:
+            msg = "Could not resolve library root"
+            raise FilesystemError(msg, fact=fact_from_error(exc, path=library.root_path)) from exc
+
+        # Containment is structural; a failed containment check is a miss.
+        if normalized_path.is_relative_to(library_root):
             return library
-        except ValueError:
-            continue  # Path is not under this library root; try the next one
 
     return None
 

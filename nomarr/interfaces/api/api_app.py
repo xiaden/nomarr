@@ -20,6 +20,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 import nomarr
+from nomarr.helpers.exceptions import FilesystemError
 from nomarr.interfaces.api import web
 from nomarr.interfaces.api.v1 import navidrome_v1_if, public_if
 
@@ -51,6 +52,55 @@ api_app = FastAPI(title="Nomarr", version="1.2", lifespan=lifespan)
 async def exception_handler(_request, exc: Exception):
     logger.error(f"[API] Exception: {exc}", exc_info=exc)
     return JSONResponse(status_code=500, content={"error": str(exc)})
+
+
+# D-B10: fail-closed kind -> HTTP status. Unknown kinds fall through to 500.
+_FILESYSTEM_ERROR_STATUS: dict[str, int] = {
+    "resource_missing": 404,
+    "unconfirmed_missing": 503,
+    "permission_denied": 403,
+    "storage_unavailable": 503,
+    "transient_io": 503,
+    "storage_full": 507,
+    "read_only_fs": 403,
+    "invalid_path": 400,
+    "wrong_resource_type": 400,
+    "unknown": 500,
+}
+
+_FILESYSTEM_ERROR_MESSAGES: dict[str, str] = {
+    "resource_missing": "The requested resource could not be found.",
+    "unconfirmed_missing": "The resource is temporarily unavailable. Please try again.",
+    "permission_denied": "You do not have permission to access this resource.",
+    "storage_unavailable": "The storage backing this resource is unavailable. Please try again.",
+    "transient_io": "A temporary filesystem error occurred. Please try again.",
+    "storage_full": "The storage is full and cannot accept the operation.",
+    "read_only_fs": "The file system is read-only and cannot accept the operation.",
+    "invalid_path": "The supplied path is invalid.",
+    "wrong_resource_type": "The resource is not the expected type.",
+    "unknown": "An unexpected filesystem error occurred.",
+}
+
+
+@api_app.exception_handler(FilesystemError)
+async def filesystem_error_handler(_request, exc: FilesystemError):
+    """Map a typed filesystem failure to a safe status and generic client message (D-B10).
+
+    The client never sees ``str(exc)``, the path, or the raw ``errno``; those are
+    logged server-side only. Unrecognised kinds fail closed to 500.
+    """
+    fact = exc.fact
+    kind = fact.kind or "unknown"
+    logger.error(
+        "[API] Filesystem error: presence=%s kind=%s errno=%s detail=%s",
+        fact.presence,
+        fact.kind,
+        fact.errno,
+        fact.detail,
+    )
+    status_code = _FILESYSTEM_ERROR_STATUS.get(kind, 500)
+    message = _FILESYSTEM_ERROR_MESSAGES.get(kind, _FILESYSTEM_ERROR_MESSAGES["unknown"])
+    return JSONResponse(status_code=status_code, content={"error": message})
 
 
 integration_router = APIRouter(prefix="/api")

@@ -234,7 +234,28 @@ class TestResolveLibraryPath:
         monkeypatch.setattr(f"{_MODULE}.build_library_path_from_db", fake_build)
         assert _resolve_library_path(_song(), MagicMock()) == (path, library)
         assert captured["library_id"] == library.name
-        assert captured["check_disk"] is True
+        assert "check_disk" not in captured
+
+    def test_resolution_uses_real_build_library_path_without_disk_check(self, tmp_path: Path) -> None:
+        """Real resolution chain (only the DB facade mocked) must stay disk-probe-free.
+
+        Drives real ``_resolve_library_path`` -> real ``find_library_containing_path`` ->
+        real ``build_library_path_from_db``. A missing config-resolvable file can only come
+        back ``valid`` if ``check_disk`` was removed in place.
+        """
+        library = Library(name="lib1", root_path=str(tmp_path), library_uuid="uuid-lib1")
+        db = MagicMock()
+        db.library.list_libraries.return_value = [library]
+        # The builder's library_id branch re-fetches the named library, so the
+        # facade lookup must return the same domain library as list_libraries.
+        db.library.get_library_by_name.return_value = library
+        song = _song(path=str(tmp_path / "gone.mp3"), normalized_path="gone.mp3")
+
+        library_path, resolved_library = _resolve_library_path(song, db)
+
+        assert resolved_library is not None
+        assert library_path is not None
+        assert library_path.status == "valid"
 
 
 @pytest.mark.unit

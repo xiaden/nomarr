@@ -7,6 +7,8 @@ Tests verify:
 - Per-library watch modes (event/poll/off)
 """
 
+import errno
+import logging
 import threading
 import time
 from dataclasses import replace
@@ -16,7 +18,9 @@ import pytest
 from watchdog.observers import Observer
 
 from nomarr.helpers.dataclasses.library_dataclass import Library
-from nomarr.helpers.exceptions import LibraryAlreadyScanningError, LibraryNotFoundError
+from nomarr.helpers.exceptions import FilesystemError, LibraryAlreadyScanningError, LibraryNotFoundError
+from nomarr.helpers.fs_contract import fact_from_error
+from nomarr.services.infrastructure import file_watcher_svc as file_watcher_svc_module
 from nomarr.services.infrastructure.file_watcher_svc import (
     FileWatcherService,
     LibraryEventHandler,
@@ -1015,6 +1019,78 @@ class TestSyncWatchers:
             pytest.raises(ValueError, match="not found"),
         ):
             watcher.switch_watch_mode(999, "event")
+
+
+class TestRootPresenceContract:
+    """Part-B §8.8: root presence is a classified fact, not a boolean preflight."""
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_start_watching_library_missing_root_raises_filesystem_error_with_fact(self, tmp_path, monkeypatch) -> None:
+        """A genuinely missing root raises ``FilesystemError`` with a classified fact."""
+        library = Library(name="Missing", root_path=str(tmp_path / "not_there"), is_enabled=True)
+        library_service = MagicMock()
+        library_service.get_library_by_name.return_value = library
+        config = {"root_path": library.root_path, "watch_mode": "event", "is_enabled": True}
+        monkeypatch.setattr(file_watcher_svc_module, "get_library_watch_config", lambda _db, _lib: config)
+        watcher = FileWatcherService(db=MagicMock(), library_service=library_service)
+
+        with pytest.raises(ValueError) as exc_info:
+            watcher.start_watching_library("Missing")
+
+        error = exc_info.value
+        assert isinstance(error, FilesystemError)
+        assert error.fact.presence == "unknown"
+        assert error.fact.kind == "unconfirmed_missing"
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_start_watching_library_transient_root_oserror_is_not_a_missing_root(self, tmp_path, monkeypatch) -> None:
+        """A transient NAS error is ``storage_unavailable``, not a permanent missing root."""
+        library = Library(name="Stale", root_path=str(tmp_path), is_enabled=True)
+        library_service = MagicMock()
+        library_service.get_library_by_name.return_value = library
+        config = {"root_path": library.root_path, "watch_mode": "off", "is_enabled": True}
+        monkeypatch.setattr(file_watcher_svc_module, "get_library_watch_config", lambda _db, _lib: config)
+        stale = fact_from_error(OSError(errno.ESTALE, "Stale file handle"), path=library.root_path)
+        monkeypatch.setattr(file_watcher_svc_module, "probe_fact", lambda _path: stale, raising=False)
+        monkeypatch.setattr("nomarr.helpers.fs_contract.probe_fact", lambda _path: stale, raising=False)
+        watcher = FileWatcherService(db=MagicMock(), library_service=library_service)
+
+        with pytest.raises(ValueError) as exc_info:
+            watcher.start_watching_library("Stale")
+
+        error = exc_info.value
+        assert isinstance(error, FilesystemError)
+        assert error.fact.kind == "storage_unavailable"
+        assert error.fact.kind != "unconfirmed_missing"
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_sync_watchers_continues_after_filesystem_error_and_preserves_fact(self, caplog) -> None:
+        """G7/D-B8: the sync loop logs the structured fact and keeps going."""
+        db = MagicMock()
+        watcher = FileWatcherService(db=db, library_service=MagicMock())
+        stale = fact_from_error(OSError(errno.ESTALE, "Stale file handle"), path="/vol")
+        calls: list[object] = []
+
+        def _start(library_id):
+            calls.append(library_id)
+            if library_id == "Library 1":
+                raise FilesystemError("generic watcher error", fact=stale)
+
+        with (
+            patch(
+                "nomarr.services.infrastructure.file_watcher_svc.list_watchable_libraries",
+                return_value=[{"id": "Library 1"}, {"id": "Library 2"}],
+            ),
+            patch.object(watcher, "start_watching_library", side_effect=_start),
+            caplog.at_level(logging.WARNING),
+        ):
+            watcher.sync_watchers()
+
+        assert calls == ["Library 1", "Library 2"]
+        assert "storage_unavailable" in caplog.text
 
 
 if __name__ == "__main__":

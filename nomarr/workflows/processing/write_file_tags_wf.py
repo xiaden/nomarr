@@ -121,7 +121,6 @@ def _resolve_library_path(
         stored_path=stored_path,
         db=db,
         library_id=library.name,
-        check_disk=True,
     )
 
     if not library_path.is_valid():

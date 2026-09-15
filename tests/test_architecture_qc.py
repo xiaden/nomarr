@@ -19,6 +19,7 @@ Architecture rules enforced:
 6. Higher layers must not import Tier 1/Tier 2 persistence internals - NOT in import-linter
 """
 
+import ast
 import importlib.util
 import io
 import json
@@ -1898,3 +1899,66 @@ def test_no_reset_choreography_outside_persistence() -> None:
             "(db.library.maintenance.reset_library_data). Found a caller-reconstructed "
             "reset or a retired reset-only method:\n" + report
         )
+
+
+# ---------------------------------------------------------------------------
+# Part B — resolution classifies with os.stat/errno, never boolean probes
+# ---------------------------------------------------------------------------
+
+_MIGRATED_RESOLUTION_FUNCTIONS: dict[str, tuple[str, ...]] = {
+    "nomarr/components/infrastructure/path_comp.py": (
+        "build_library_path_from_db",
+        "build_library_path_from_input",
+    ),
+    "nomarr/helpers/files_helper.py": ("resolve_library_path",),
+    "nomarr/components/library/library_root_comp.py": (
+        "get_base_library_root",
+        "normalize_library_root",
+        "validate_library_root",
+        "ensure_no_overlapping_library_root",
+    ),
+    "nomarr/components/library/library_records_comp.py": ("find_library_containing_path",),
+    "nomarr/services/infrastructure/file_watcher_svc.py": ("start_watching_library",),
+}
+
+_PATHLIB_PRESENCE_METHODS = frozenset({"exists", "is_file", "is_dir"})
+_OS_PATH_PRESENCE_CALLS = frozenset({"exists", "isfile"})
+
+
+def _presence_probe_lines(function: ast.AST) -> list[int]:
+    """Return line numbers of boolean presence probes inside ``function``."""
+    violations: list[int] = []
+    for node in ast.walk(function):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            continue
+        func = node.func
+        if func.attr in _PATHLIB_PRESENCE_METHODS or (
+            func.attr in _OS_PATH_PRESENCE_CALLS and isinstance(func.value, ast.Attribute) and func.value.attr == "path"
+        ):
+            violations.append(node.lineno)
+    return violations
+
+
+@pytest.mark.unit
+def test_migrated_resolution_functions_have_no_pathlib_presence_probes() -> None:
+    """Part B: migrated functions classify with ``os.stat``/errno, never boolean probes.
+
+    Function-scoped on purpose: ``files_helper.collect_audio_files`` legitimately keeps
+    ``Path`` probes, so a file-scoped ban would be wrong.
+    """
+    violations: list[str] = []
+    for relative_path, function_names in _MIGRATED_RESOLUTION_FUNCTIONS.items():
+        tree = ast.parse((PROJECT_ROOT / relative_path).read_text(encoding="utf-8"))
+        wanted = set(function_names)
+        found: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in wanted:
+                found.add(node.name)
+                violations.extend(f"  {relative_path}:{lineno}: {node.name}" for lineno in _presence_probe_lines(node))
+        missing = wanted - found
+        assert not missing, f"{relative_path} is missing migrated function(s): {sorted(missing)}"
+
+    assert not violations, (
+        "Migrated resolution functions must classify failures via os.stat/errno, not "
+        "Path.exists()/is_file()/is_dir() or os.path.exists/isfile:\n" + "\n".join(violations)
+    )

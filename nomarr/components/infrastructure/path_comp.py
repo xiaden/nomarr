@@ -1,110 +1,146 @@
 from pathlib import Path
+from typing import Literal
 
 from nomarr.components.library.library_records_comp import find_library_containing_path, get_library_by_name
-from nomarr.helpers.dto.path_dto import LibraryPath
+from nomarr.helpers.dto.path_dto import LibraryPath, PathStatus
+from nomarr.helpers.exceptions import FilesystemError
 from nomarr.helpers.files_helper import is_audio_file
+from nomarr.helpers.fs_contract import FsFact, canonicalize, fact_from_error
 from nomarr.persistence.db import Database
+
+_ConfigStatus = Literal["valid", "invalid_config"]
+
+
+def _derive_status(
+    *,
+    config_status: _ConfigStatus,
+    config_reason: str | None,
+    fs_fact: FsFact | None,
+) -> tuple[PathStatus, str | None]:
+    """Single producer of the derived ``status``/``reason`` view (D-B1, SEAM-3).
+
+    ``invalid_config`` is reserved for config/semantic conditions provable without
+    touching the filesystem; any filesystem fact downgrades an otherwise-valid
+    config mapping to ``"unknown"``. ``"not_found"`` is never produced (D-B2).
+    """
+    if config_status != "valid":
+        return "invalid_config", config_reason
+    if fs_fact is not None:
+        return "unknown", fs_fact.detail
+    return "valid", None
+
+
+def _build_path(
+    *,
+    relative: str,
+    absolute: Path,
+    library_id: str | None,
+    config_status: _ConfigStatus = "valid",
+    config_reason: str | None = None,
+    fs_fact: FsFact | None = None,
+) -> LibraryPath:
+    """Construct a ``LibraryPath`` through the single derivation helper."""
+    status, reason = _derive_status(
+        config_status=config_status,
+        config_reason=config_reason,
+        fs_fact=fs_fact,
+    )
+    return LibraryPath(
+        relative=relative,
+        absolute=absolute,
+        library_id=library_id,
+        status=status,
+        reason=reason,
+        fs_fact=fs_fact,
+    )
 
 
 def build_library_path_from_input(raw_path: str, db: Database) -> LibraryPath:
     """Build LibraryPath from user input (API, CLI, etc.).
 
-    This is the primary entry point for external path inputs.
-    It validates the path against current library configuration and sets status:
-    - "valid": Path is within a library root, exists, and is accessible
-    - "invalid_config": Path is outside all configured library roots
-    - "not_found": Path is within a library root but file doesn't exist
+    This is the primary entry point for external path inputs. Resolution is
+    config/semantic-only: it validates the path against the current library
+    configuration and classifies any filesystem failure into ``fs_fact`` rather
+    than probing for existence.
+    - "valid": Path is within a library root and no filesystem fact applies
+    - "invalid_config": Path is outside all configured library roots, is not an
+      audio path, or is no longer relative to its root
+    - "unknown": Config mapping looks okay but a filesystem fact was observed
 
     Args:
         raw_path: Raw file path from user input (absolute or relative)
         db: Database instance to look up library configuration
 
     Returns:
-        LibraryPath with status and diagnostic info
+        LibraryPath with derived status and structured filesystem fact
 
     """
-    # Resolve to absolute path
+    # Canonicalise the input path; a filesystem failure is a typed fact, not a leak.
     try:
-        absolute = Path(raw_path).resolve()
-    except (ValueError, OSError) as e:
-        return LibraryPath(
+        absolute = canonicalize(raw_path, strict=False)
+    except OSError as exc:
+        return _build_path(
             relative="",
             absolute=Path(raw_path),
             library_id=None,
-            status="invalid_config",
-            reason=f"Cannot resolve path: {e}",
+            fs_fact=fact_from_error(exc, path=raw_path),
         )
 
     # Find which library contains this path
-    library = find_library_containing_path(db, str(absolute))
+    try:
+        library = find_library_containing_path(db, str(absolute))
+    except FilesystemError as exc:
+        return _build_path(relative="", absolute=absolute, library_id=None, fs_fact=exc.fact)
+
     if not library:
-        return LibraryPath(
+        return _build_path(
             relative="",
             absolute=absolute,
             library_id=None,
-            status="invalid_config",
-            reason="Path is outside all configured library roots",
+            config_status="invalid_config",
+            config_reason="Path is outside all configured library roots",
         )
 
     # Calculate relative path
-    library_root = Path(library.root_path).resolve()
+    try:
+        library_root = canonicalize(library.root_path, strict=False)
+    except OSError as exc:
+        return _build_path(
+            relative="",
+            absolute=absolute,
+            library_id=library.name,
+            fs_fact=fact_from_error(exc, path=library.root_path),
+        )
+
     try:
         relative_path = absolute.relative_to(library_root)
         relative_str = str(relative_path).replace("\\", "/")  # Normalize to forward slashes
     except ValueError:
-        return LibraryPath(
+        return _build_path(
             relative="",
             absolute=absolute,
             library_id=library.name,
-            status="invalid_config",
-            reason=f"Path not relative to library root: {library_root}",
+            config_status="invalid_config",
+            config_reason=f"Path not relative to library root: {library_root}",
         )
 
-    # Check if file exists
-    if not absolute.exists():
-        return LibraryPath(
-            relative=relative_str,
-            absolute=absolute,
-            library_id=library.name,
-            status="not_found",
-            reason="File does not exist on disk",
-        )
-
-    # Check if it's a file (not directory)
-    if not absolute.is_file():
-        return LibraryPath(
-            relative=relative_str,
-            absolute=absolute,
-            library_id=library.name,
-            status="invalid_config",
-            reason="Path is a directory, not a file",
-        )
-
-    # Check if it's a supported audio file
+    # Supported audio format is a config/semantic property (extension-only).
     if not is_audio_file(str(absolute)):
-        return LibraryPath(
+        return _build_path(
             relative=relative_str,
             absolute=absolute,
             library_id=library.name,
-            status="invalid_config",
-            reason="Not a supported audio file format",
+            config_status="invalid_config",
+            config_reason="Not a supported audio file format",
         )
 
-    # All checks passed
-    return LibraryPath(
-        relative=relative_str,
-        absolute=absolute,
-        library_id=library.name,
-        status="valid",
-        reason=None,
-    )
+    return _build_path(relative=relative_str, absolute=absolute, library_id=library.name)
 
 
 def build_library_path_from_db(
     stored_path: str,
     db: Database,
     library_id: str | None = None,
-    check_disk: bool = True,
 ) -> LibraryPath:
     """Build LibraryPath from database-stored path.
 
@@ -113,12 +149,14 @@ def build_library_path_from_db(
 
     This function re-validates stored paths against the CURRENT configuration,
     detecting cases where config has changed (library root moved/changed).
+    Resolution is config/semantic-only: it never probes for file existence, so a
+    config-resolvable path is ``valid`` regardless of any filesystem condition,
+    which is instead carried in ``fs_fact``.
 
     Args:
         stored_path: Path as stored in database (may be relative or absolute)
         db: Database instance to look up current library configuration
         library_id: Optional natural library ``name`` if known from DB join
-        check_disk: Whether to check if file exists (default: True)
 
     Returns:
         LibraryPath with status reflecting current config validity
@@ -129,111 +167,100 @@ def build_library_path_from_db(
         library = get_library_by_name(db, library_id)
         if not library or not library.is_enabled:
             # Library was disabled or deleted
-            return LibraryPath(
+            return _build_path(
                 relative=stored_path,
                 absolute=Path(stored_path),
                 library_id=library_id,
-                status="invalid_config",
-                reason=f"Library {library_id} is disabled or no longer exists",
+                config_status="invalid_config",
+                config_reason=f"Library {library_id} is disabled or no longer exists",
             )
 
-        library_root = Path(library.root_path).resolve()
+        try:
+            library_root = canonicalize(library.root_path, strict=False)
+        except OSError as exc:
+            return _build_path(
+                relative=stored_path,
+                absolute=Path(stored_path),
+                library_id=library_id,
+                fs_fact=fact_from_error(exc, path=library.root_path),
+            )
 
-        # Try to construct absolute path
         # stored_path might be relative or absolute
-        if Path(stored_path).is_absolute():
-            absolute = Path(stored_path).resolve()
-        else:
-            absolute = (library_root / stored_path).resolve()
+        absolute_raw = stored_path if Path(stored_path).is_absolute() else str(library_root / stored_path)
+        try:
+            absolute = canonicalize(absolute_raw, strict=False)
+        except OSError as exc:
+            return _build_path(
+                relative=stored_path,
+                absolute=Path(absolute_raw),
+                library_id=library_id,
+                fs_fact=fact_from_error(exc, path=absolute_raw),
+            )
 
         # Verify it's still within the library root
         try:
             relative_path = absolute.relative_to(library_root)
             relative_str = str(relative_path).replace("\\", "/")
         except ValueError:
-            return LibraryPath(
+            return _build_path(
                 relative=stored_path,
                 absolute=absolute,
                 library_id=library_id,
-                status="invalid_config",
-                reason=f"Path no longer within library root: {library_root}",
+                config_status="invalid_config",
+                config_reason=f"Path no longer within library root: {library_root}",
             )
 
     else:
         # No library_id provided, need to find which library contains this path
         try:
-            absolute = Path(stored_path).resolve()
-        except (ValueError, OSError) as e:
-            return LibraryPath(
+            absolute = canonicalize(stored_path, strict=False)
+        except OSError as exc:
+            return _build_path(
                 relative=stored_path,
                 absolute=Path(stored_path),
                 library_id=None,
-                status="invalid_config",
-                reason=f"Cannot resolve stored path: {e}",
+                fs_fact=fact_from_error(exc, path=stored_path),
             )
 
-        found = find_library_containing_path(db, str(absolute))
+        try:
+            found = find_library_containing_path(db, str(absolute))
+        except FilesystemError as exc:
+            return _build_path(relative=stored_path, absolute=absolute, library_id=None, fs_fact=exc.fact)
+
         if not found:
-            return LibraryPath(
+            return _build_path(
                 relative=stored_path,
                 absolute=absolute,
                 library_id=None,
-                status="invalid_config",
-                reason="Stored path is outside all configured library roots",
+                config_status="invalid_config",
+                config_reason="Stored path is outside all configured library roots",
             )
 
-        library_root = Path(found.root_path).resolve()
+        try:
+            library_root = canonicalize(found.root_path, strict=False)
+        except OSError as exc:
+            return _build_path(
+                relative=stored_path,
+                absolute=absolute,
+                library_id=found.name,
+                fs_fact=fact_from_error(exc, path=found.root_path),
+            )
+
         try:
             relative_path = absolute.relative_to(library_root)
             relative_str = str(relative_path).replace("\\", "/")
         except ValueError:
-            return LibraryPath(
+            return _build_path(
                 relative=stored_path,
                 absolute=absolute,
                 library_id=found.name,
-                status="invalid_config",
-                reason=f"Stored path not relative to library root: {library_root}",
+                config_status="invalid_config",
+                config_reason=f"Stored path not relative to library root: {library_root}",
             )
 
         library_id = found.name
 
-    # Optionally check disk
-    if check_disk:
-        if not absolute.exists():
-            return LibraryPath(
-                relative=relative_str,
-                absolute=absolute,
-                library_id=library_id,
-                status="not_found",
-                reason="File no longer exists on disk",
-            )
-
-        if not absolute.is_file():
-            return LibraryPath(
-                relative=relative_str,
-                absolute=absolute,
-                library_id=library_id,
-                status="invalid_config",
-                reason="Stored path is now a directory, not a file",
-            )
-
-        if not is_audio_file(str(absolute)):
-            return LibraryPath(
-                relative=relative_str,
-                absolute=absolute,
-                library_id=library_id,
-                status="invalid_config",
-                reason="Stored path is no longer a supported audio file",
-            )
-
-    # Valid (or unknown if we didn't check disk)
-    return LibraryPath(
-        relative=relative_str,
-        absolute=absolute,
-        library_id=library_id,
-        status="valid" if check_disk else "unknown",
-        reason=None,
-    )
+    return _build_path(relative=relative_str, absolute=absolute, library_id=library_id)
 
 
 def get_library_root(library_path: LibraryPath, db: Database) -> Path | None:

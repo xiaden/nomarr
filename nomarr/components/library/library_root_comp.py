@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import errno
 import os
+import stat
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from nomarr.components.library.library_records_comp import list_all_libraries
+from nomarr.helpers.exceptions import FilesystemError
 from nomarr.helpers.files_helper import resolve_library_path
+from nomarr.helpers.fs_contract import FsFact, canonicalize, fact_from_error, probe_fact
 
 if TYPE_CHECKING:
     from nomarr.helpers.dataclasses.library_dataclass import Library
@@ -17,27 +21,44 @@ if TYPE_CHECKING:
 def get_base_library_root(library_root_config: str | None) -> Path:
     """Resolve and validate the configured base library root.
 
-    Raises ValueError if not configured, does not exist, or is not a directory.
+    Raises ``ValueError`` if not configured, or ``FilesystemError`` carrying a
+    classified fact when the filesystem cannot confirm the root. A transient or
+    storage error is never relabelled as a permanent config error.
     """
     if not library_root_config:
         msg = "Library root not configured"
         raise ValueError(msg)
 
     try:
-        base = Path(library_root_config).expanduser().resolve()
+        base = canonicalize(Path(library_root_config).expanduser(), strict=False)
+    except OSError as exc:
+        msg = "Invalid base library root"
+        raise FilesystemError(msg, fact=fact_from_error(exc, path=library_root_config)) from exc
 
-        if not base.exists():
-            msg = f"Base library root does not exist: {library_root_config}"
-            raise ValueError(msg)
-        if not base.is_dir():
-            msg = f"Base library root is not a directory: {library_root_config}"
-            raise ValueError(msg)
+    fact = probe_fact(base)
+    if fact.presence != "present":
+        msg = "Invalid base library root"
+        raise FilesystemError(msg, fact=fact) from None
 
-        return base
+    try:
+        mode = os.stat(base).st_mode
+    except OSError as exc:
+        msg = "Invalid base library root"
+        raise FilesystemError(msg, fact=fact_from_error(exc, path=str(base))) from exc
 
-    except (OSError, ValueError) as e:
-        msg = f"Invalid base library root: {e}"
-        raise ValueError(msg) from e
+    if not stat.S_ISDIR(mode):
+        msg = "Invalid base library root"
+        raise FilesystemError(
+            msg,
+            fact=FsFact(
+                presence="unknown",
+                kind="wrong_resource_type",
+                errno=errno.ENOTDIR,
+                detail=f"{base}: not a directory",
+            ),
+        ) from None
+
+    return base
 
 
 def normalize_library_root(base_library_root: Path, raw_root: str | Path) -> str:
@@ -52,9 +73,12 @@ def normalize_library_root(base_library_root: Path, raw_root: str | Path) -> str
 
     if raw_path.is_absolute():
         try:
-            abs_path = raw_path.resolve()
+            abs_path = canonicalize(raw_path, strict=False)
             user_path = os.path.relpath(abs_path, base_library_root)
-        except (ValueError, OSError) as e:
+        except OSError as e:
+            msg = "Cannot compute relative path from base root"
+            raise FilesystemError(msg, fact=fact_from_error(e, path=raw_root_str)) from e
+        except ValueError as e:
             msg = f"Cannot compute relative path from base root: {e}"
             raise ValueError(msg) from e
     else:
@@ -67,6 +91,9 @@ def normalize_library_root(base_library_root: Path, raw_root: str | Path) -> str
             must_exist=True,
             must_be_file=False,
         )
+    except FilesystemError:
+        # Preserve the structured fact; do not re-wrap the typed error.
+        raise
     except ValueError as e:
         # Re-raise with more context
         msg = f"Library root validation failed: {e}"
@@ -89,7 +116,7 @@ def ensure_no_overlapping_library_root(
     Raises ValueError if roots overlap — library roots must be disjoint.
     """
     # Resolve candidate to canonical absolute path
-    candidate_path = Path(candidate_root).resolve()
+    candidate_path = canonicalize(candidate_root, strict=False)
 
     existing_libraries = list_all_libraries(db)
 
@@ -97,32 +124,22 @@ def ensure_no_overlapping_library_root(
         if ignore is not None and library.name == ignore.name:
             continue
 
-        existing_path = Path(library.root_path).resolve()
+        existing_path = canonicalize(library.root_path, strict=False)
 
-        try:
-            candidate_path.relative_to(existing_path)
+        # Containment is structural; the decision never matches a message substring.
+        if candidate_path.is_relative_to(existing_path):
             msg = (
-                f"Library root '{candidate_root}' is nested inside "
-                f"existing library '{library.name}' at '{library.root_path}'. "
-                f"Library roots must be disjoint."
+                f"Library root '{candidate_root}' overlaps existing library "
+                f"'{library.name}' at '{library.root_path}'. Library roots must be disjoint."
             )
             raise ValueError(msg)
-        except ValueError as e:
-            if "is nested inside" in str(e):
-                raise
-            # Paths are not related — continue
 
-        try:
-            existing_path.relative_to(candidate_path)
+        if existing_path.is_relative_to(candidate_path):
             msg = (
-                f"Existing library '{library.name}' at '{library.root_path}' "
-                f"is nested inside new library root '{candidate_root}'. "
-                f"Library roots must be disjoint."
+                f"Existing library '{library.name}' at '{library.root_path}' overlaps "
+                f"new library root '{candidate_root}'. Library roots must be disjoint."
             )
             raise ValueError(msg)
-        except ValueError as e:
-            if "is nested inside" in str(e):
-                raise
 
 
 def resolve_path_within_library(
@@ -149,22 +166,30 @@ def validate_library_root(library_root: Path) -> None:
 
     Raises OSError if the root doesn't exist, is inaccessible, or is empty.
     """
-    if not library_root.exists():
-        msg = f"Library root does not exist: {library_root} \u2014 the volume may not be mounted"
-        raise OSError(msg)
-    if not library_root.is_dir():
-        msg = f"Library root is not a directory: {library_root}"
-        raise OSError(msg)
+    fact = probe_fact(library_root)
+    if fact.presence != "present":
+        msg = "Library root is not accessible"
+        raise OSError(fact.errno, msg)
+
+    try:
+        mode = os.stat(library_root).st_mode
+    except OSError as exc:
+        msg = "Library root is not accessible"
+        raise OSError(exc.errno, msg) from exc
+
+    if not stat.S_ISDIR(mode):
+        msg = "Library root is not a directory"
+        raise OSError(errno.ENOTDIR, msg)
 
     try:
         entries = list(library_root.iterdir())
-    except PermissionError:
-        msg = f"Library root is not accessible (permission denied): {library_root}"
-        raise OSError(msg) from None
+    except PermissionError as e:
+        msg = "Library root is not accessible"
+        raise OSError(e.errno or errno.EACCES, msg) from e
     except OSError as e:
-        msg = f"Library root is not accessible (mount/IO error): {library_root} \u2014 {e}"
-        raise OSError(msg) from e
+        msg = "Library root is not accessible"
+        raise OSError(e.errno, msg) from e
 
     if not entries:
-        msg = f"Library root is empty: {library_root} \u2014 the volume may not be mounted correctly"
+        msg = "Library root is empty"
         raise OSError(msg)

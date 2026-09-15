@@ -71,9 +71,7 @@ def reconcile_library_paths(
             result["total_files"] += 1
             file_path = file_record.song.path
             try:
-                library_path = build_library_path_from_db(
-                    stored_path=file_path, db=db, library_id=library.name, check_disk=True
-                )
+                library_path = build_library_path_from_db(stored_path=file_path, db=db, library_id=library.name)
                 if library_path.is_valid():
                     result["valid_files"] += 1
                 elif library_path.status == "invalid_config":

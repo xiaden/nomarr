@@ -73,7 +73,7 @@ def process_file_workflow(
         RuntimeError: If no heads are found or all heads fail.
 
     """
-    library_path = build_library_path_from_db(stored_path=path, db=db, library_id=None, check_disk=True)
+    library_path = build_library_path_from_db(stored_path=path, db=db, library_id=None)
     if not library_path.is_valid():
         if library_path.status == "not_found":
             logger.warning(f"[process_file_workflow] File no longer exists on disk, cleaning up: {path}")

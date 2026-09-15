@@ -125,7 +125,7 @@ def generate_static_playlist_workflow(
     library_root = ""
     if files:
         first_path = str(files[0]["path"])
-        library_path = build_library_path_from_db(first_path, db, check_disk=False)
+        library_path = build_library_path_from_db(first_path, db)
         root = get_library_root(library_path, db)
         if root is not None:
             library_root = str(root)
