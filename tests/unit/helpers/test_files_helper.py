@@ -290,3 +290,15 @@ class TestResolveLibraryPathTypedFailure:
         """Structural rejection keeps the ``ValueError``/``Access denied`` contract."""
         with pytest.raises(ValueError, match="Access denied"):
             resolve_library_path(library_root=tmp_path, user_path="/etc/passwd")
+
+    def test_resolve_library_path_base_root_symlink_loop_reports_invalid_path(self, tmp_path: Path):
+        """The base-root canonicalisation failure is classified, not the candidate's."""
+        loop = tmp_path / "loop"
+        loop.symlink_to(loop, target_is_directory=True)
+
+        with pytest.raises(ValueError) as exc_info:
+            resolve_library_path(library_root=loop, user_path="song.mp3", must_exist=True)
+
+        error = exc_info.value
+        assert isinstance(error, FilesystemError)
+        assert error.fact.kind == "invalid_path"

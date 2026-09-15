@@ -118,6 +118,26 @@ def test_validate_library_root_classifies_before_composing_message(
     assert stale_info.value.errno == errno.ESTALE
 
 
+def test_validate_library_root_not_a_directory_reports_enotdir(tmp_path: Path) -> None:
+    """An existing regular file as the root is a type error classified as ``ENOTDIR``."""
+    file_root = tmp_path / "not_a_dir"
+    file_root.write_text("x", encoding="utf-8")
+
+    with pytest.raises(OSError) as exc_info:
+        validate_library_root(file_root)
+
+    assert exc_info.value.errno == errno.ENOTDIR
+
+
+def test_validate_library_root_empty_directory_raises(tmp_path: Path) -> None:
+    """An existing but empty directory is rejected as an unusable library root."""
+    empty_root = tmp_path / "empty"
+    empty_root.mkdir()
+
+    with pytest.raises(OSError, match="Library root is empty"):
+        validate_library_root(empty_root)
+
+
 def test_overlapping_library_root_raises_without_string_matching(tmp_path: Path) -> None:
     """G3/D-B7: containment is structural; the decision never matches a message substring."""
     db = MagicMock()
@@ -132,3 +152,28 @@ def test_overlapping_library_root_raises_without_string_matching(tmp_path: Path)
         "ensure_no_overlapping_library_root must decide containment with is_relative_to, "
         "not by string-matching a ValueError message"
     )
+
+
+def test_overlapping_library_root_raises_when_candidate_contains_existing(tmp_path: Path) -> None:
+    """REVERSE containment: an existing root nested inside the candidate is rejected."""
+    nested = tmp_path / "nested"
+    nested.mkdir()
+    db = MagicMock()
+    existing = Library(name="existing", root_path=str(nested))
+    db.library.list_libraries.return_value = [existing]
+
+    with pytest.raises(ValueError, match="Library roots must be disjoint"):
+        ensure_no_overlapping_library_root(db, str(tmp_path))
+
+
+def test_disjoint_library_root_does_not_raise(tmp_path: Path) -> None:
+    """A candidate unrelated to every existing root is accepted silently."""
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    db = MagicMock()
+    existing = Library(name="existing", root_path=str(first))
+    db.library.list_libraries.return_value = [existing]
+
+    ensure_no_overlapping_library_root(db, str(second))

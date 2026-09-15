@@ -42,7 +42,11 @@ def validate_library_path(file_path: str, library_path: str) -> str:
         Absolute, normalized file path within library
 
     Raises:
-        ValueError: If path is outside library, doesn't exist, or isn't a file
+        ValueError: If the path leaves the library boundary, or fails structural
+            validation (traversal component, NUL byte, invalid structure).
+        FilesystemError: If the path cannot be resolved or accessed on disk. A
+            ValueError subclass carrying the classified .fact (and derived
+            .errno/.strerror) for server-side diagnosis.
 
     Examples:
         >>> validate_library_path("/music/song.mp3", "/music")
@@ -95,7 +99,14 @@ def resolve_library_path(
         Resolved absolute Path within library root
 
     Raises:
-        ValueError: If path validation fails (generic message to prevent info leakage)
+        ValueError: If structural or config validation fails (absolute path,
+            traversal component, NUL byte, containment violation, unconfigured
+            root, or wrong file/directory type) — generic message to prevent
+            information leakage.
+        FilesystemError: If a filesystem operation fails (canonicalisation,
+            presence probe, or type check). A ValueError subclass carrying the
+            classified .fact (and derived .errno/.strerror) for server-side
+            diagnosis.
 
     Examples:
         >>> resolve_library_path("/music", "album/song.mp3", must_be_file=True)

@@ -252,3 +252,25 @@ def test_build_library_path_from_db_unknown_or_disabled_library_is_invalid_confi
 
     assert result.status == "invalid_config"
     assert result.fs_fact is None
+
+
+def test_build_library_path_from_db_named_library_broken_root_returns_unknown_with_fs_fact(
+    tmp_path: Path,
+) -> None:
+    """A named library whose own root cannot be canonicalised is ``unknown`` + ``invalid_path``.
+
+    Round-1 coverage exercised only the ``library_id=None`` containment-search branch; this
+    exercises the named-library branch where the library exists and is enabled but its
+    configured ``root_path`` itself fails canonicalisation (D-B3).
+    """
+    loop = tmp_path / "loop"
+    loop.symlink_to(loop, target_is_directory=True)
+    library = _library(loop, name="broken-lib")
+    db = _mock_db(library)
+
+    result = build_library_path_from_db(stored_path="song.mp3", db=db, library_id="broken-lib")
+
+    assert result.status == "unknown"
+    assert result.fs_fact is not None
+    assert result.fs_fact.kind == "invalid_path"
+    assert result.library_id == "broken-lib"
