@@ -26,7 +26,7 @@ from nomarr.components.library.library_root_comp import (
 )
 from nomarr.helpers.dataclasses.library_dataclass import Library
 from nomarr.helpers.exceptions import FilesystemError
-from nomarr.helpers.fs_contract import fact_from_error
+from nomarr.helpers.fs_contract import FsFact, fact_from_error
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -253,6 +253,100 @@ def test_validate_library_root_generic_oserror_preserves_errno(
         raise OSError(errno.EIO, "io error")
 
     monkeypatch.setattr("pathlib.Path.iterdir", _io_error)
+
+    with pytest.raises(OSError) as exc_info:
+        validate_library_root(tmp_path)
+
+    assert isinstance(exc_info.value, OSError)
+    assert exc_info.value.errno == errno.EIO
+
+
+def test_get_base_library_root_unconfigured_raises_plain_value_error() -> None:
+    """An unconfigured base root is a plain config ``ValueError``, never a filesystem failure.
+
+    ``FilesystemError`` subclasses ``ValueError``, so the exact type and message are asserted to
+    distinguish the unconfigured guard from the typed filesystem failures below it.
+    """
+    for unconfigured in (None, ""):
+        with pytest.raises(ValueError) as exc_info:
+            get_base_library_root(unconfigured)
+
+        error = exc_info.value
+        assert not isinstance(error, FilesystemError)
+        assert str(error) == "Library root not configured"
+
+
+def test_get_base_library_root_symlink_loop_is_invalid_path_filesystem_error(tmp_path: Path) -> None:
+    """A self-referential symlink base root fails canonicalisation as a classified fact.
+
+    ``canonicalize`` normalises ``Path.resolve``'s ``RuntimeError`` to ``OSError(ELOOP)``; the
+    base-root guard must classify that as ``invalid_path`` rather than leak a bare ``OSError``.
+    """
+    loop = tmp_path / "loop"
+    loop.symlink_to(loop, target_is_directory=True)
+
+    with pytest.raises(FilesystemError) as exc_info:
+        get_base_library_root(str(loop))
+
+    error = exc_info.value
+    assert error.fact.presence == "unknown"
+    assert error.fact.kind == "invalid_path"
+    assert error.fact.errno == errno.ELOOP
+
+
+def test_normalize_library_root_traversal_rewraps_plain_value_error(tmp_path: Path) -> None:
+    """A plain ``ValueError`` from resolution is re-wrapped with context, not passed through.
+
+    Only the typed ``FilesystemError`` is preserved unchanged; an ordinary ``ValueError``
+    (``Access denied`` from a ``..`` traversal) must be re-wrapped, and the result must stay a
+    plain ``ValueError`` rather than become a ``FilesystemError``.
+    """
+    with pytest.raises(ValueError) as exc_info:
+        normalize_library_root(tmp_path, "../outside")
+
+    error = exc_info.value
+    assert type(error) is ValueError
+    assert not isinstance(error, FilesystemError)
+    assert str(error) == "Library root validation failed: Access denied"
+
+
+def test_get_base_library_root_post_probe_stat_failure_is_transient_io(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failure in the second ``os.stat`` after a successful probe is classified, not relabelled.
+
+    ``probe_fact`` is patched first so it does not itself call the patched ``os.stat``; the only
+    failure is the post-probe stat, which must surface as a ``transient_io`` fact.
+    """
+    present = FsFact(presence="present", kind=None, errno=None)
+    monkeypatch.setattr(root_comp_module, "probe_fact", lambda _path: present, raising=False)
+
+    def _raise(*_args: object, **_kwargs: object) -> None:
+        raise OSError(errno.EIO, "io error")
+
+    monkeypatch.setattr("nomarr.components.library.library_root_comp.os.stat", _raise)
+
+    with pytest.raises(FilesystemError) as exc_info:
+        get_base_library_root(str(tmp_path))
+
+    error = exc_info.value
+    assert error.fact.kind == "transient_io"
+    assert error.fact.errno == errno.EIO
+
+
+def test_validate_library_root_post_probe_stat_failure_preserves_errno(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SEAM-1: a post-probe ``os.stat`` failure raises ``OSError`` preserving the real errno."""
+    present = FsFact(presence="present", kind=None, errno=None)
+    monkeypatch.setattr(root_comp_module, "probe_fact", lambda _path: present, raising=False)
+
+    def _raise(*_args: object, **_kwargs: object) -> None:
+        raise OSError(errno.EIO, "io error")
+
+    monkeypatch.setattr("nomarr.components.library.library_root_comp.os.stat", _raise)
 
     with pytest.raises(OSError) as exc_info:
         validate_library_root(tmp_path)
