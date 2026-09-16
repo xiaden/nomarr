@@ -177,3 +177,85 @@ def test_disjoint_library_root_does_not_raise(tmp_path: Path) -> None:
     db.library.list_libraries.return_value = [existing]
 
     ensure_no_overlapping_library_root(db, str(second))
+
+
+def test_normalize_library_root_absolute_path_within_base_resolves(tmp_path: Path) -> None:
+    """An existing absolute directory under the base root resolves to its canonical path.
+
+    Existing coverage only drives the relative ``raw_root`` branch; this exercises the
+    absolute branch (``raw_path.is_absolute()``) where the path is relativised to the base
+    root before ``resolve_library_path`` validates it.
+    """
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "song.mp3").touch()
+
+    result = normalize_library_root(tmp_path, str(sub))
+
+    assert result == str(sub.resolve())
+
+
+def test_normalize_library_root_absolute_symlink_loop_raises_filesystem_error(tmp_path: Path) -> None:
+    """An absolute symlink-loop root is a typed ``FilesystemError``, never a bare ``OSError``."""
+    loop = tmp_path / "loop"
+    loop.symlink_to(loop, target_is_directory=True)
+
+    with pytest.raises(FilesystemError) as exc_info:
+        normalize_library_root(tmp_path, str(loop))
+
+    error = exc_info.value
+    assert error.fact.presence == "unknown"
+    assert error.fact.kind == "invalid_path"
+
+
+def test_ensure_no_overlapping_library_root_skips_ignored_library(tmp_path: Path) -> None:
+    """The ``ignore``-match skip is exercised in both directions.
+
+    With a matching ``ignore`` the candidate is not rejected even though it is nested in
+    the existing root; without it (``ignore=None``) the same candidate must raise.
+    """
+    db = MagicMock()
+    existing = Library(name="existing", root_path=str(tmp_path))
+    db.library.list_libraries.return_value = [existing]
+    candidate = str(tmp_path / "nested")
+
+    ensure_no_overlapping_library_root(db, candidate, ignore=Library(name="existing", root_path=str(tmp_path)))
+
+    with pytest.raises(ValueError, match="Library roots must be disjoint"):
+        ensure_no_overlapping_library_root(db, candidate, ignore=None)
+
+
+def test_validate_library_root_permission_error_preserves_eacces(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SEAM-1: an ``EACCES`` listing failure re-raises ``OSError`` preserving the errno."""
+
+    def _denied(_self: Path) -> list[Path]:
+        raise PermissionError(errno.EACCES, "denied")
+
+    monkeypatch.setattr("pathlib.Path.iterdir", _denied)
+
+    with pytest.raises(OSError) as exc_info:
+        validate_library_root(tmp_path)
+
+    assert isinstance(exc_info.value, OSError)
+    assert exc_info.value.errno == errno.EACCES
+
+
+def test_validate_library_root_generic_oserror_preserves_errno(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SEAM-1: a generic listing ``OSError`` re-raises ``OSError`` preserving its errno."""
+
+    def _io_error(_self: Path) -> list[Path]:
+        raise OSError(errno.EIO, "io error")
+
+    monkeypatch.setattr("pathlib.Path.iterdir", _io_error)
+
+    with pytest.raises(OSError) as exc_info:
+        validate_library_root(tmp_path)
+
+    assert isinstance(exc_info.value, OSError)
+    assert exc_info.value.errno == errno.EIO

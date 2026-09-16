@@ -18,7 +18,7 @@ Health monitoring and path resolution for filesystem–database coordination.
 ## Patterns
 
 - **Two path entry points:** `build_library_path_from_input` handles API/CLI input (validates against library roots). `build_library_path_from_db` re-validates stored paths against current config, catching library root moves.
-- **Status-based validation:** LibraryPath carries a config/semantic status (`valid`, `invalid_config`, `unknown`) plus an optional `fs_fact` describing any observed filesystem condition. Resolution is config/semantic-only: it never probes the disk, never produces `not_found`, and never raises — any observed filesystem failure is recorded as an `fs_fact` and downgrades the derived status to `unknown`. Raises do exist elsewhere (`files_helper`, `library_root_comp`, `file_watcher_svc`); those `FilesystemError`s are handled centrally by the API app, which maps `FsFact.kind` to an HTTP status.
+- **Status-based validation:** LibraryPath carries a config/semantic status (`valid`, `invalid_config`, `unknown`) plus an optional `fs_fact` describing any observed filesystem condition. Resolution is config/semantic-only: it never probes the disk, never produces `not_found`, and never raises — any observed filesystem failure is recorded as an `fs_fact` and downgrades the derived status to `unknown`. Raises do exist elsewhere (`files_helper`, `library_root_comp`, `library_records_comp`, `file_watcher_svc`); those `FilesystemError`s are handled centrally by the API app, which maps `FsFact.kind` to an HTTP status.
 - **Class vs. functions:** `health_comp` uses a class with injected DB handle; `path_comp` uses stateless functions that accept DB as a parameter.
 
 ## Dependencies

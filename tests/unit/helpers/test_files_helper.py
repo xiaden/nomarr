@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 from typing import TYPE_CHECKING
 
 import pytest
@@ -302,3 +303,23 @@ class TestResolveLibraryPathTypedFailure:
         error = exc_info.value
         assert isinstance(error, FilesystemError)
         assert error.fact.kind == "invalid_path"
+
+    def test_resolve_library_path_absent_required_file_raises_presence_fact(self, tmp_path: Path):
+        """``must_exist=False`` + ``must_be_file=True`` on an absent path raises the presence fact.
+
+        This is the only route to the presence-probe raise: with ``must_exist=True`` the
+        strict canonicalisation fails first. The fact is ``unknown``/``unconfirmed_missing``
+        (never ``absent``): a bare ``ENOENT`` does not authorize absence (Part-A contract).
+        """
+        with pytest.raises(FilesystemError) as exc_info:
+            resolve_library_path(
+                library_root=tmp_path,
+                user_path="missing.mp3",
+                must_exist=False,
+                must_be_file=True,
+            )
+
+        fact = exc_info.value.fact
+        assert fact.presence == "unknown"
+        assert fact.kind == "unconfirmed_missing"
+        assert fact.errno == errno.ENOENT

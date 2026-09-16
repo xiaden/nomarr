@@ -274,3 +274,94 @@ def test_build_library_path_from_db_named_library_broken_root_returns_unknown_wi
     assert result.fs_fact is not None
     assert result.fs_fact.kind == "invalid_path"
     assert result.library_id == "broken-lib"
+
+
+def test_build_library_path_from_db_stored_path_outside_named_root_is_invalid_config(tmp_path: Path) -> None:
+    """A stored path under a different root than its *named* library is config drift.
+
+    The named library exists and is enabled and the stored path canonicalises; it is
+    simply no longer relative to the library's *current* root, so this is
+    ``invalid_config`` with no filesystem fact (D-B1).
+    """
+    root = tmp_path / "libA"
+    root.mkdir()
+    library = _library(root, name="libA")
+    db = _mock_db(library, [library])
+
+    result = build_library_path_from_db(
+        stored_path=str(tmp_path / "libB" / "song.mp3"),
+        db=db,
+        library_id="libA",
+    )
+
+    assert result.status == "invalid_config"
+    assert result.fs_fact is None
+    assert result.reason is not None
+    assert "no longer within library root" in result.reason
+
+
+def test_build_library_path_from_db_stored_path_outside_all_roots_is_invalid_config(tmp_path: Path) -> None:
+    """An unnamed stored path contained by no configured root is a config miss, not a fact."""
+    db = _mock_db(None)
+
+    result = build_library_path_from_db(stored_path=str(tmp_path / "song.mp3"), db=db, library_id=None)
+
+    assert result.status == "invalid_config"
+    assert result.fs_fact is None
+    assert result.reason == "Stored path is outside all configured library roots"
+
+
+def test_build_library_path_from_input_non_audio_extension_is_invalid_config(tmp_path: Path) -> None:
+    """A path inside a configured root with a non-audio extension is ``invalid_config``.
+
+    The extension check is a config/semantic property (no disk probe); it must not be
+    reported as ``unknown`` or ``valid``.
+    """
+    library = _library(tmp_path)
+    db = _mock_db(library, [library])
+
+    result = build_library_path_from_input(str(tmp_path / "notes.txt"), db)
+
+    assert result.status == "invalid_config"
+    assert result.fs_fact is None
+    assert result.reason == "Not a supported audio file format"
+    assert result.is_valid() is False
+
+
+def test_build_library_path_from_db_named_stored_path_symlink_loop_is_unknown_with_fs_fact(tmp_path: Path) -> None:
+    """A named library whose *stored path* canonicalisation fails is ``unknown`` + fact.
+
+    The library root canonicalises fine; the loop is in the stored path, so the failure
+    must be a typed fact (``invalid_path``), never a bare ``OSError`` (D-B3).
+    """
+    library = _library(tmp_path, name="lib1")
+    db = _mock_db(library)
+    loop = tmp_path / "stored_loop.mp3"
+    loop.symlink_to(loop)
+
+    try:
+        result = build_library_path_from_db(stored_path=str(loop), db=db, library_id="lib1")
+    except OSError as exc:  # pragma: no cover - would be a contract regression
+        pytest.fail(f"stored-path canonicalisation failure escaped as OSError: {exc!r}")
+
+    assert result.status == "unknown"
+    assert result.fs_fact is not None
+    assert result.fs_fact.presence == "unknown"
+    assert result.fs_fact.kind == "invalid_path"
+
+
+def test_build_library_path_from_db_unnamed_stored_path_symlink_loop_is_unknown_with_fs_fact(tmp_path: Path) -> None:
+    """The ``library_id=None`` branch also classifies a stored-path symlink loop."""
+    db = _mock_db(None)
+    loop = tmp_path / "stored_loop.mp3"
+    loop.symlink_to(loop)
+
+    try:
+        result = build_library_path_from_db(stored_path=str(loop), db=db, library_id=None)
+    except OSError as exc:  # pragma: no cover - would be a contract regression
+        pytest.fail(f"stored-path canonicalisation failure escaped as OSError: {exc!r}")
+
+    assert result.status == "unknown"
+    assert result.fs_fact is not None
+    assert result.fs_fact.presence == "unknown"
+    assert result.fs_fact.kind == "invalid_path"

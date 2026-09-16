@@ -133,7 +133,9 @@ class LibrarySongsMixin:
                 - valid_files: Files that passed validation
                 - invalid_config: Files outside current library roots
                 - not_found: Retained for wire compatibility; resolution no longer
-                  produces this status (a missing file is ``valid`` with an ``fs_fact``)
+                  produces this status (a missing file resolves to ``valid`` because
+                  resolution performs no disk probe; ``fs_fact`` is recorded only when
+                  a filesystem operation fails)
                 - unknown_status: Config mapping looks okay but a filesystem fact was observed
                 - deleted_files: Files removed (if policy="delete_invalid")
                 - errors: Validation errors

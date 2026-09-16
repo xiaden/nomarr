@@ -106,8 +106,9 @@ def _resolve_library_path(
     file's physical ``path`` using ``find_library_containing_path`` (path-based
     natural identity), never from the integer storage ``library_id``. Returns
     ``(None, None)`` when no library contains the path, and ``(None, library)``
-    when the library is known but the path is otherwise invalid (e.g. missing
-    on disk).
+    when the library is known but the path is otherwise invalid for config or
+    semantic reasons (e.g. the stored path is no longer relative to the library
+    root).
     """
     stored_path = song.path
     if not stored_path:
