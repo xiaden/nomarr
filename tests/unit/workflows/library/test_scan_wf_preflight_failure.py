@@ -15,6 +15,7 @@ and resets the scan axis to ``not_scanned``.
 
 from __future__ import annotations
 
+import errno
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -87,4 +88,56 @@ class TestScanPreflightFailureRecovery:
 
         mock_progress.assert_called_once()
         assert mock_progress.call_args.kwargs["scan_error"] == "library gone"
+        mock_transition.assert_called_once_with(mock_db, library, SCAN_STATE_FIELD, SCAN_NOT_SCANNED)
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    @pytest.mark.parametrize(("module_path", "workflow"), WORKFLOWS)
+    def test_errno_preflight_failure_names_kind_and_resets_scan_axis(self, module_path: str, workflow) -> None:
+        """A classified preflight failure (EACCES -> permission_denied) must carry a
+        kind-named message — never a claim that the root does not exist — preserve the
+        errno, record the failure, and reset the scan axis."""
+        mock_db = MagicMock()
+        library = _library()
+
+        with (
+            patch(f"{module_path}.resolve_library_for_scan", return_value=library),
+            patch(f"{module_path}.validate_library_root", side_effect=OSError(errno.EACCES, "denied")),
+            patch(f"{module_path}.update_scan_progress") as mock_progress,
+            patch(f"{module_path}.transition_pipeline_axis") as mock_transition,
+            pytest.raises(OSError, match="permission_denied") as exc_info,
+        ):
+            workflow(mock_db, library, tagger_version="v1")
+
+        assert exc_info.value.errno == errno.EACCES
+        assert "does not exist" not in str(exc_info.value)
+        mock_progress.assert_called_once()
+        assert "permission_denied" in mock_progress.call_args.kwargs["scan_error"]
+        mock_transition.assert_called_once_with(mock_db, library, SCAN_STATE_FIELD, SCAN_NOT_SCANNED)
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    @pytest.mark.parametrize(("module_path", "workflow"), WORKFLOWS)
+    def test_errno_less_preflight_failure_classifies_unknown_and_resets_scan_axis(
+        self, module_path: str, workflow
+    ) -> None:
+        """An errno-less validation failure classifies as ``unknown``: the message
+        must not claim the root does not exist, ``errno`` stays ``None``, the failure
+        is recorded, and the scan axis is reset (still recoverable)."""
+        mock_db = MagicMock()
+        library = _library()
+
+        with (
+            patch(f"{module_path}.resolve_library_for_scan", return_value=library),
+            patch(f"{module_path}.validate_library_root", side_effect=OSError("no errno available")),
+            patch(f"{module_path}.update_scan_progress") as mock_progress,
+            patch(f"{module_path}.transition_pipeline_axis") as mock_transition,
+            pytest.raises(OSError, match="unknown") as exc_info,
+        ):
+            workflow(mock_db, library, tagger_version="v1")
+
+        assert exc_info.value.errno is None
+        assert "does not exist" not in str(exc_info.value)
+        mock_progress.assert_called_once()
+        assert "unknown" in mock_progress.call_args.kwargs["scan_error"]
         mock_transition.assert_called_once_with(mock_db, library, SCAN_STATE_FIELD, SCAN_NOT_SCANNED)

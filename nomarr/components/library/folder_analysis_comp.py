@@ -9,12 +9,19 @@ Provides filesystem discovery and scan planning as separate concerns:
 
 import logging
 import os
-from dataclasses import dataclass
+import stat
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from nomarr.helpers.files_helper import is_audio_file
+from nomarr.helpers.fs_contract import classify_os_error
 
 logger = logging.getLogger(__name__)
+
+# Per-entry measurement failure kinds that indicate the folder's whole
+# medium/storage is unavailable. They propagate so discovery records the folder
+# as uninspected rather than as an authoritative empty folder.
+_MOUNT_LEVEL_KINDS = frozenset({"storage_unavailable", "unconfirmed_missing", "transient_io"})
 
 
 # Component-local DTOs (not promoted to helpers/dto)
@@ -26,6 +33,15 @@ class FolderMetadata:
     rel_path: str  # POSIX relative to library root
     mtime: int  # Modification time in milliseconds
     file_count: int  # Number of audio files
+    failed_count: int = 0  # Audio entries that could not be individually stat'd
+
+
+@dataclass(frozen=True)
+class FolderMeasurement:
+    """Audio-file measurement for one folder: count plus per-entry failures."""
+
+    file_count: int
+    failed_count: int
 
 
 @dataclass
@@ -38,10 +54,15 @@ class FolderDiscovery:
     Callers must treat these paths as un-inspected scope: their absence may not
     be inferred. The set is bounded by the number of failed directories and
     contains paths only (no song/path materialization).
+
+    ``enumerated_entries`` maps every walked folder's library-relative path to
+    its raw ``os.walk`` listing names (directories and files), so callers can
+    corroborate a folder's absence without a further filesystem probe.
     """
 
     folders: list[FolderMetadata]
     uninspected_rel_paths: set[str]
+    enumerated_entries: dict[str, frozenset[str]] = field(default_factory=dict)
 
 
 @dataclass
@@ -80,6 +101,7 @@ def discover_library_folders(
     """
     folders: list[FolderMetadata] = []
     uninspected: set[str] = set()
+    enumerated: dict[str, frozenset[str]] = {}
 
     def _record_uninspected(raw_path: str) -> None:
         """Record a failed path as uninspected; never raise from error handling."""
@@ -94,30 +116,39 @@ def discover_library_folders(
         logger.warning("Cannot walk folder %s: %s", error.filename, error)
 
     for scan_path in scan_paths:
-        for dirpath, _dirnames, _filenames in os.walk(str(scan_path), onerror=_on_walk_error):
+        for dirpath, dirnames, filenames in os.walk(str(scan_path), onerror=_on_walk_error):
             try:
                 folder_mtime = _get_folder_mtime(dirpath)
-                folder_file_count = _count_audio_files_in_folder(dirpath)
+                measurement = _count_audio_files_in_folder(dirpath)
             except OSError as e:
                 logger.warning("Cannot access folder %s: %s", dirpath, e)
                 _record_uninspected(dirpath)
                 continue
 
-            if folder_file_count == 0:
-                continue
-
             folder_rel_path = _compute_folder_path(Path(dirpath), library_root)
+            enumerated[folder_rel_path] = frozenset(dirnames) | frozenset(filenames)
+
+            # A folder measured zero solely from isolated per-entry failures must
+            # still be emitted (file_count == 0, failed_count > 0) so it can never
+            # be classified vanished.
+            if measurement.file_count == 0 and measurement.failed_count == 0:
+                continue
 
             folders.append(
                 FolderMetadata(
                     abs_path=dirpath,
                     rel_path=folder_rel_path,
                     mtime=folder_mtime,
-                    file_count=folder_file_count,
+                    file_count=measurement.file_count,
+                    failed_count=measurement.failed_count,
                 ),
             )
 
-    return FolderDiscovery(folders=folders, uninspected_rel_paths=uninspected)
+    return FolderDiscovery(
+        folders=folders,
+        uninspected_rel_paths=uninspected,
+        enumerated_entries=enumerated,
+    )
 
 
 def plan_incremental_scan(
@@ -188,13 +219,33 @@ def _get_folder_mtime(folder_path: str) -> int:
     return int(os.stat(folder_path).st_mtime * 1000)
 
 
-def _count_audio_files_in_folder(folder_path: str) -> int:
-    """Count audio files in a single folder (non-recursive).
+def _count_audio_files_in_folder(folder_path: str) -> FolderMeasurement:
+    """Measure audio entries in one folder (non-recursive), one stat per entry.
 
-    ``OSError`` deliberately propagates so discovery can record the folder as
-    uninspected rather than treating an inaccessible directory as empty.
+    A directory-listing failure, or a mount/storage-level per-entry ``os.stat``
+    failure (``storage_unavailable``, ``unconfirmed_missing``, ``transient_io``),
+    deliberately propagates so discovery can record the folder as uninspected
+    rather than treating an inaccessible directory as empty. An isolated
+    per-entry failure increments ``failed_count`` while the folder stays
+    reconciled; a non-regular entry is likewise a per-entry failure.
     """
-    return sum(1 for f in os.listdir(folder_path) if is_audio_file(f) and os.path.isfile(os.path.join(folder_path, f)))
+    file_count = 0
+    failed_count = 0
+    for name in os.listdir(folder_path):
+        if not is_audio_file(name):
+            continue
+        try:
+            entry_stat = os.stat(os.path.join(folder_path, name))
+        except OSError as e:
+            if classify_os_error(e) in _MOUNT_LEVEL_KINDS:
+                raise
+            failed_count += 1
+            continue
+        if stat.S_ISREG(entry_stat.st_mode):
+            file_count += 1
+        else:
+            failed_count += 1
+    return FolderMeasurement(file_count=file_count, failed_count=failed_count)
 
 
 def _compute_folder_path(absolute_folder: Path, library_root: Path) -> str:

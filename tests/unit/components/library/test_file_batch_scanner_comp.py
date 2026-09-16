@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import errno
+import os
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -17,10 +19,19 @@ from nomarr.helpers.dataclasses.song_dataclass import Song
 from nomarr.helpers.dataclasses.song_state_candidate_dataclass import SongStateCandidate
 from nomarr.helpers.time_helper import Milliseconds
 
-if TYPE_CHECKING:
-    from pathlib import Path
-
 MODULE = "nomarr.components.library.file_batch_scanner_comp"
+
+
+def _stat_raising_for(target: Path, error: OSError) -> object:
+    """Wrap the real ``os.stat`` so it raises ``error`` for ``target`` only."""
+    real_stat = os.stat
+
+    def _stat(path: object, *args: object, **kwargs: object) -> object:
+        if os.fspath(path) == str(target):  # type: ignore[arg-type]
+            raise error
+        return real_stat(path, *args, **kwargs)  # type: ignore[arg-type]
+
+    return _stat
 
 
 def _make_audio_file(path: Path) -> Path:
@@ -401,3 +412,202 @@ class TestScanFolderFiles:
                 existing_files={str(track_path): {"modified_time": 0}},
                 db=mock_db,
             )
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+class TestEnumeratedEntriesAndPerFileClassification:
+    """Scanner corroboration inputs and the DD §15 Q5 escalation split (RED)."""
+
+    def test_enumerated_entries_are_raw_listing_names(self, tmp_path: Path) -> None:
+        """``enumerated_entries`` carries every raw ``os.listdir`` name — audio,
+        non-audio and failed names alike — because corroboration is set membership.
+        """
+        mock_db = MagicMock()
+        library_root = tmp_path / "music"
+        folder_path = library_root / "Rock"
+        _make_audio_file(folder_path / "song.mp3")
+        _make_audio_file(folder_path / "other.flac")
+        (folder_path / "notes.txt").write_bytes(b"notes")
+        failing = _make_audio_file(folder_path / "broken.mp3")
+
+        with (
+            patch(
+                f"{MODULE}.build_library_path_from_input",
+                side_effect=lambda path, _db: _make_valid_library_path(Path(path)),
+            ),
+            patch(f"{MODULE}.os.stat", _stat_raising_for(failing, OSError(errno.EACCES, "denied"))),
+            patch(f"{MODULE}.now_ms", return_value=Milliseconds(1)),
+        ):
+            result = scan_folder_files(
+                folder_path=folder_path,
+                library_root=library_root,
+                existing_files={},
+                db=mock_db,
+            )
+
+        assert result.enumerated_entries == {"song.mp3", "other.flac", "broken.mp3", "notes.txt"}
+        assert result.stats["files_failed"] == 1
+        assert result.warnings
+        # The two healthy audio entries are still discovered and upserted.
+        assert {Path(entry["path"]).name for entry in result.file_entries} == {"song.mp3", "other.flac"}
+
+    @pytest.mark.parametrize("error_number", [errno.EACCES, errno.ENOTDIR, errno.ELOOP])
+    def test_isolated_per_file_stat_failure_is_counted_warned_and_witnessed(
+        self, tmp_path: Path, error_number: int
+    ) -> None:
+        """An isolated per-file stat failure counts ``files_failed``, warns, keeps
+        the folder successful, and leaves the failed entry's name witnessed."""
+        mock_db = MagicMock()
+        library_root = tmp_path / "music"
+        folder_path = library_root / "Rock"
+        failing = _make_audio_file(folder_path / "broken.mp3")
+
+        with patch(f"{MODULE}.os.stat", _stat_raising_for(failing, OSError(error_number, "per-file"))):
+            result = scan_folder_files(
+                folder_path=folder_path,
+                library_root=library_root,
+                existing_files={},
+                db=mock_db,
+            )
+
+        assert result.enumerated_entries == {"broken.mp3"}
+        assert result.stats["files_failed"] == 1
+        assert result.stats["files_updated"] == 0
+        assert result.file_entries == []
+        assert any("broken.mp3" in warning for warning in result.warnings)
+
+    @pytest.mark.parametrize(
+        "error",
+        [
+            pytest.param(OSError(errno.ENOSPC, "full"), id="storage_full"),
+            pytest.param(OSError(errno.EROFS, "read-only"), id="read_only_fs"),
+            pytest.param(OSError(), id="unknown"),
+        ],
+    )
+    def test_non_escalating_kinds_are_isolated_per_file_failures(self, tmp_path: Path, error: OSError) -> None:
+        """The non-mount-level kinds stay isolated per-file failures.
+
+        ``storage_full`` (ENOSPC), ``read_only_fs`` (EROFS) and ``unknown`` (no
+        errno) are absent from ``_MOUNT_LEVEL_KINDS``: they increment
+        ``files_failed``, append a warning, keep the folder reconciled and leave
+        the raw name witnessed. Were any of them promoted to a mount-level kind
+        the call would raise instead of returning, failing these assertions.
+        """
+        mock_db = MagicMock()
+        library_root = tmp_path / "music"
+        folder_path = library_root / "Rock"
+        failing = _make_audio_file(folder_path / "broken.mp3")
+
+        with patch(f"{MODULE}.os.stat", _stat_raising_for(failing, error)):
+            result = scan_folder_files(
+                folder_path=folder_path,
+                library_root=library_root,
+                existing_files={},
+                db=mock_db,
+            )
+
+        assert result.enumerated_entries == {"broken.mp3"}
+        assert result.stats["files_failed"] == 1
+        assert result.stats["files_updated"] == 0
+        assert result.file_entries == []
+        assert any("broken.mp3" in warning for warning in result.warnings)
+
+    @pytest.mark.parametrize("error_number", [errno.EIO, errno.ESTALE, errno.ENOENT])
+    def test_mount_level_stat_failure_propagates_as_oserror(self, tmp_path: Path, error_number: int) -> None:
+        """Every mount/storage-level kind (transient_io, storage_unavailable,
+        unconfirmed_missing) re-raises so the caller treats the folder as
+        unreconciled (#164 contract), never as an authoritative empty folder."""
+        mock_db = MagicMock()
+        library_root = tmp_path / "music"
+        folder_path = library_root / "Rock"
+        failing = _make_audio_file(folder_path / "broken.mp3")
+
+        with (
+            patch(f"{MODULE}.os.stat", _stat_raising_for(failing, OSError(error_number, "mount gone"))),
+            pytest.raises(OSError),
+        ):
+            scan_folder_files(
+                folder_path=folder_path,
+                library_root=library_root,
+                existing_files={},
+                db=mock_db,
+            )
+
+    def test_exactly_one_listdir_and_one_stat_per_audio_entry(self, tmp_path: Path) -> None:
+        """No added probe: exactly one ``os.listdir`` and one ``os.stat`` per audio
+        entry — the metadata stat is reused for classification, never repeated."""
+        mock_db = MagicMock()
+        library_root = tmp_path / "music"
+        folder_path = library_root / "Rock"
+        _make_audio_file(folder_path / "a.mp3")
+        _make_audio_file(folder_path / "b.flac")
+        (folder_path / "notes.txt").write_bytes(b"notes")
+
+        real_listdir = os.listdir
+        real_stat = os.stat
+        counts = {"listdir": 0, "stat": 0}
+
+        def _counting_listdir(path: object) -> list[str]:
+            counts["listdir"] += 1
+            return real_listdir(path)  # type: ignore[arg-type]
+
+        def _counting_stat(path: object, *args: object, **kwargs: object) -> os.stat_result:
+            counts["stat"] += 1
+            return real_stat(path, *args, **kwargs)  # type: ignore[arg-type]
+
+        with (
+            patch(
+                f"{MODULE}.build_library_path_from_input",
+                side_effect=lambda path, _db: _make_valid_library_path(Path(path)),
+            ),
+            patch(f"{MODULE}.now_ms", return_value=Milliseconds(1)),
+            patch.object(os, "listdir", _counting_listdir),
+            patch.object(os, "stat", _counting_stat),
+        ):
+            result = scan_folder_files(
+                folder_path=folder_path,
+                library_root=library_root,
+                existing_files={},
+                db=mock_db,
+            )
+
+        assert counts["listdir"] == 1
+        assert counts["stat"] == 2
+        assert result.enumerated_entries == {"a.mp3", "b.flac", "notes.txt"}
+
+    def test_non_regular_audio_entry_is_isolated_failure_and_witnessed(self, tmp_path: Path) -> None:
+        """A directory whose name looks like audio is a per-file failure.
+
+        It must be counted, warned about with ``not a regular file``, left in
+        ``enumerated_entries`` as raw listing material, and excluded from the
+        discovered/upserted set so classification cannot silently change.
+        """
+        mock_db = MagicMock()
+        library_root = tmp_path / "music"
+        folder_path = library_root / "Rock"
+        folder_path.mkdir(parents=True)
+        pseudo_track = folder_path / "x.mp3"
+        pseudo_track.mkdir()
+        real_track = _make_audio_file(folder_path / "song.mp3")
+
+        with (
+            patch(
+                f"{MODULE}.build_library_path_from_input",
+                side_effect=lambda path, _db: _make_valid_library_path(Path(path)),
+            ),
+            patch(f"{MODULE}.now_ms", return_value=Milliseconds(1)),
+        ):
+            result = scan_folder_files(
+                folder_path=folder_path,
+                library_root=library_root,
+                existing_files={},
+                db=mock_db,
+            )
+
+        assert result.stats["files_failed"] == 1
+        assert any("not a regular file" in warning for warning in result.warnings)
+        assert result.enumerated_entries == {"x.mp3", "song.mp3"}
+        assert str(pseudo_track) not in result.discovered_paths
+        assert result.discovered_paths == {str(real_track)}
+        assert {Path(entry["path"]).name for entry in result.file_entries} == {"song.mp3"}

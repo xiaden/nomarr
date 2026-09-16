@@ -35,6 +35,10 @@ from nomarr.components.library.move_detection_comp import (
     relocate_song,
     song_identity_for,
 )
+from nomarr.components.library.scan_absence_comp import (
+    authorize_absent,
+    scope_uninspected,
+)
 from nomarr.components.library.scan_lifecycle_comp import (
     mark_scan_completed,
     resolve_library_for_scan,
@@ -50,6 +54,7 @@ from nomarr.helpers.constants.file_states import (
 )
 from nomarr.helpers.constants.pipeline_states import SCAN_NOT_SCANNED, SCAN_STATE_FIELD
 from nomarr.helpers.exceptions import TaskCancelledError
+from nomarr.helpers.fs_contract import classify_os_error
 from nomarr.helpers.time_helper import internal_s, now_ms
 from nomarr.workflows.metadata.cleanup_orphaned_entities_wf import cleanup_orphaned_entities_workflow
 
@@ -57,7 +62,6 @@ if TYPE_CHECKING:
     import threading
 
     from nomarr.helpers.dataclasses.library_dataclass import Library
-    from nomarr.helpers.dataclasses.song_dataclass import Song
     from nomarr.persistence.db import Database
 
 logger = logging.getLogger(__name__)
@@ -70,46 +74,6 @@ class ScanCancelledError(TaskCancelledError):
 def _check_cancelled(stop_event: threading.Event | None) -> None:
     if stop_event is not None and stop_event.is_set():
         raise ScanCancelledError("Scan cancelled by user")
-
-
-def _path_exists(path: str) -> bool:
-    """Return whether an absolute path currently exists on disk (patchable)."""
-    return Path(path).exists()
-
-
-def _candidate_source_present(
-    song: Song,
-    unreconciled_folder_paths: set[str],
-    discovery_uninspected_folder_paths: set[str],
-) -> bool:
-    """True when a chromaprint candidate's source is still known/presumed present.
-
-    Two distinct scopes are consulted. Ordinary unreconciled scope is
-    immediate-parent-only: a candidate is presumed live when its immediate parent
-    folder (the last component of ``normalized_path``) was not reconciled by this
-    scan. Discovery-uninspected scope is ancestry-aware: a candidate is also
-    presumed live when its parent or any ancestor (including the root ``""``) is
-    within discovery-uninspected scope, so a discovery-uninspected ancestor
-    blocks a descendant candidate from relocation sourcing. A candidate whose
-    absolute path still exists on disk is likewise presumed present. Only a
-    genuinely absent, successfully-inspected source may be treated as a
-    relocation origin.
-    """
-    parent = song.normalized_path.rsplit("/", 1)[0] if "/" in song.normalized_path else ""
-    if parent in unreconciled_folder_paths or _scope_uninspected(parent, discovery_uninspected_folder_paths):
-        return True
-    return _path_exists(song.path)
-
-
-def _scope_uninspected(rel_path: str, uninspected_folder_paths: set[str]) -> bool:
-    """True when rel_path itself or any ancestor could not be authoritatively inspected."""
-    candidate = rel_path
-    while True:
-        if candidate in uninspected_folder_paths:
-            return True
-        if not candidate:
-            return False
-        candidate = candidate.rsplit("/", 1)[0] if "/" in candidate else ""
 
 
 def scan_library_quick_workflow(
@@ -131,11 +95,12 @@ def scan_library_quick_workflow(
     resolved one new file at a time via a bounded, library-scoped chromaprint
     lookup. Missing rows are not deleted during the walk; a final exact-folder
     cleanup pass removes only direct members of successfully-walked (changed) or
-    vanished folders. Unchanged (cache-skipped), failed, and un-inspected folders
-    are never reconciled or cleaned.
+    vanished folders, as authorized by the corroborated-absence witness
+    (``authorize_absent``). Unchanged (cache-skipped), failed, and un-inspected
+    folders are never reconciled or cleaned.
 
     Discovery and measurement failures are un-inspected scope, matched with the
-    ancestry-aware ``_scope_uninspected``: a folder that could not be
+    ancestry-aware ``scope_uninspected``: a folder that could not be
     authoritatively inspected, and every descendant of it, is never treated as
     vanished and never cleaned up as stale. Quick scan has no orphan sweep, so
     there is no further deletion path to guard. Relocation sourcing consults the
@@ -180,7 +145,22 @@ def scan_library_quick_workflow(
         # Step 1 — Resolve library and validate root
         library = resolve_library_for_scan(db, library)
         library_root = Path(library.root_path).resolve()
-        validate_library_root(library_root)
+        try:
+            validate_library_root(library_root)
+        except OSError as exc:
+            # Classify the preflight failure from its errno rather than matching
+            # its message. A genuine resource_missing is an actionable error; an
+            # errno-less failure classifies as unknown and stays recoverable,
+            # never a scan-aborting claim of permanent absence.
+            kind = classify_os_error(exc)
+            message = (
+                f"Library root does not exist: {library_root}"
+                if kind in {"resource_missing", "unconfirmed_missing"}
+                else f"Library root is not accessible ({kind}): {library_root}"
+            )
+            if exc.errno is not None:
+                raise OSError(exc.errno, message) from exc
+            raise OSError(message) from exc
 
         # Step 2 — Pre-scan DB lookups
         db_folder_paths = get_folder_rel_paths(db, library)
@@ -202,7 +182,7 @@ def scan_library_quick_workflow(
         vanished_folder_paths = {
             rel_path
             for rel_path in db_folder_paths - discovered_folder_paths
-            if not _scope_uninspected(rel_path, uninspected_folder_paths)
+            if not scope_uninspected(rel_path, uninspected_folder_paths)
         }
         processed_file_count = 0
 
@@ -221,6 +201,18 @@ def scan_library_quick_workflow(
             cached = cached_folders.get(folder.rel_path)
             if cached and cached.mtime == folder.mtime and cached.file_count == folder.file_count:
                 unreconciled_folder_paths.add(folder.rel_path)
+
+        # Absence is decided by the corroborated-absence witness (``authorize_absent``);
+        # its reconciled mapping is seeded from the discovery listings and overlaid
+        # with each successfully scanned folder's raw names. It is mutated in place
+        # so move detection and cleanup observe final pass state.
+        reconciled_folders: dict[str, frozenset[str]] = dict(discovery.enumerated_entries)
+        witness: dict[str, Any] = {
+            "reconciled_folders": reconciled_folders,
+            "unreconciled_folders": unreconciled_folder_paths,
+            "vanished_folders": vanished_folder_paths,
+            "uninspected_scope": uninspected_folder_paths,
+        }
 
         # Step 5 — Per-folder scan. Unchanged/modified files are processed
         # immediately, same-locator rebases are applied immediately, and each
@@ -303,8 +295,13 @@ def scan_library_quick_workflow(
                                 entry,
                                 library,
                                 db,
-                                source_present=lambda song: _candidate_source_present(
-                                    song, unreconciled_folder_paths, uninspected_folder_paths
+                                source_present=lambda song: (
+                                    authorize_absent(
+                                        rel_path=song.normalized_path,
+                                        absolute_path=song.path,
+                                        **witness,
+                                    ).presence
+                                    != "absent"
                                 ),
                             )
                             if move is not None and relocate_song(
@@ -336,6 +333,7 @@ def scan_library_quick_workflow(
                         folder.file_count,
                     )
                     reconciled_folder_paths.add(folder.rel_path)
+                    reconciled_folders[folder.rel_path] = frozenset(batch.enumerated_entries)
                     break
 
                 except Exception as e:
@@ -368,8 +366,8 @@ def scan_library_quick_workflow(
         # is bounded to that folder and never re-materializes a nested descendant
         # subtree. A row relocated during the walk no longer belongs to its source
         # exact-folder query (it now points at its destination) and is preserved.
-        # Per row, reuse the candidate source-presence guard: delete only rows
-        # whose current absolute path no longer exists. Genuinely-untracked-folder
+        # Per row, the corroborated-absence witness decides: delete only rows
+        # ``authorize_absent`` authorizes as absent. Genuinely-untracked-folder
         # recovery is NOT performed by quick scan; it is deferred to the exhaustive
         # full scan.
         for rel_path in (*reconciled_folder_paths, *vanished_folder_paths):
@@ -378,9 +376,12 @@ def scan_library_quick_workflow(
             dead = [
                 carrier.candidate.song.path
                 for carrier in folder_rows.values()
-                if not _candidate_source_present(
-                    carrier.candidate.song, unreconciled_folder_paths, uninspected_folder_paths
-                )
+                if authorize_absent(
+                    rel_path=carrier.candidate.song.normalized_path,
+                    absolute_path=carrier.candidate.song.path,
+                    **witness,
+                ).presence
+                == "absent"
             ]
             if dead:
                 stats["files_removed"] += remove_deleted_files(db, library, dead)
@@ -389,7 +390,7 @@ def scan_library_quick_workflow(
         # every folder that could not be authoritatively inspected (itself or an
         # ancestor), so an un-inspected folder record is never deleted as stale.
         preserved_folder_paths = discovered_folder_paths | {
-            rel_path for rel_path in db_folder_paths if _scope_uninspected(rel_path, uninspected_folder_paths)
+            rel_path for rel_path in db_folder_paths if scope_uninspected(rel_path, uninspected_folder_paths)
         }
         cleanup_stale_folders(db, library, preserved_folder_paths)
 

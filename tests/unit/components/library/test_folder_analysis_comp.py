@@ -8,6 +8,8 @@ successful discovery is unchanged.
 
 from __future__ import annotations
 
+import errno
+import os
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -136,3 +138,134 @@ class TestDiscoverLibraryFoldersUninspected:
 
         assert result.folders == []
         assert result.uninspected_rel_paths == set()
+
+
+def _stat_raising_for(target: Any, error: OSError) -> Any:
+    """Wrap the real ``os.stat`` so it raises ``error`` for ``target`` only."""
+    real_stat = os.stat
+
+    def _stat(path: Any, *args: Any, **kwargs: Any) -> Any:
+        if os.fspath(path) == str(target):
+            raise error
+        return real_stat(path, *args, **kwargs)
+
+    return _stat
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+class TestEnumeratedEntriesAndMeasurement:
+    """Discovery records raw listings and surfaces per-file measurement failures (RED)."""
+
+    def test_enumerated_entries_records_raw_names_for_every_walked_directory(self, tmp_path: Path) -> None:
+        root = _make_library(tmp_path)
+        (root / "a.mp3").write_bytes(b"x")
+        (root / "notes.txt").write_bytes(b"x")
+        sub = root / "sub"
+        sub.mkdir()
+        (sub / "b.flac").write_bytes(b"x")
+        (sub / "cover.jpg").write_bytes(b"x")
+        empty = root / "empty"
+        empty.mkdir()
+        (empty / "readme.txt").write_bytes(b"x")
+
+        result = discover_library_folders(root, [root])
+
+        assert result.enumerated_entries[""] == {"a.mp3", "notes.txt", "sub", "empty"}
+        assert result.enumerated_entries["sub"] == {"b.flac", "cover.jpg"}
+        assert result.enumerated_entries["empty"] == {"readme.txt"}
+
+    def test_folder_whose_audio_entries_all_fail_is_still_emitted(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A folder measured zero *solely* because per-file stat calls failed must
+        still be emitted (file_count == 0, failed_count > 0) so it can never be
+        classified vanished."""
+        root = _make_library(tmp_path)
+        folder = root / "failed"
+        folder.mkdir()
+        audio = folder / "a.flac"
+        audio.write_bytes(b"x")
+
+        monkeypatch.setattr(comp.os, "stat", _stat_raising_for(audio, OSError(errno.EACCES, "denied")))
+
+        result = discover_library_folders(root, [root])
+
+        emitted = {f.rel_path: f for f in result.folders}
+        assert "failed" in emitted
+        assert emitted["failed"].file_count == 0
+        assert emitted["failed"].failed_count > 0
+        assert result.uninspected_rel_paths == set()
+
+    @pytest.mark.parametrize(
+        "error",
+        [
+            pytest.param(OSError(errno.ENOSPC, "full"), id="storage_full"),
+            pytest.param(OSError(errno.EROFS, "read-only"), id="read_only_fs"),
+            pytest.param(OSError(), id="unknown"),
+        ],
+    )
+    def test_non_escalating_per_entry_kinds_emit_folder_rather_than_uninspected(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error: OSError
+    ) -> None:
+        """The non-mount-level per-entry kinds stay isolated, never uninspected.
+
+        ``storage_full`` (ENOSPC), ``read_only_fs`` (EROFS) and ``unknown`` (no
+        errno) are absent from ``_MOUNT_LEVEL_KINDS``: the folder is emitted with
+        ``file_count == 0`` and ``failed_count > 0`` and is NOT recorded in
+        ``uninspected_rel_paths``. Were any promoted to a mount-level kind the
+        folder would be excluded and recorded uninspected, failing this test.
+        """
+        root = _make_library(tmp_path)
+        folder = root / "failed"
+        folder.mkdir()
+        audio = folder / "a.flac"
+        audio.write_bytes(b"x")
+
+        monkeypatch.setattr(comp.os, "stat", _stat_raising_for(audio, error))
+
+        result = discover_library_folders(root, [root])
+
+        emitted = {f.rel_path: f for f in result.folders}
+        assert "failed" in emitted
+        assert emitted["failed"].file_count == 0
+        assert emitted["failed"].failed_count > 0
+        assert result.uninspected_rel_paths == set()
+
+    @pytest.mark.parametrize("error_number", [errno.EIO, errno.ESTALE, errno.ENOENT])
+    def test_mount_level_per_file_failure_marks_folder_uninspected(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error_number: int
+    ) -> None:
+        """Every mount/storage-level kind (transient_io, storage_unavailable,
+        unconfirmed_missing) propagates so the folder is recorded in
+        ``uninspected_rel_paths`` and excluded from ``folders``."""
+        root = _make_library(tmp_path)
+        folder = root / "storage"
+        folder.mkdir()
+        audio = folder / "a.flac"
+        audio.write_bytes(b"x")
+
+        monkeypatch.setattr(comp.os, "stat", _stat_raising_for(audio, OSError(error_number, "mount gone")))
+
+        result = discover_library_folders(root, [root])
+
+        assert "storage" not in {f.rel_path for f in result.folders}
+        assert "storage" in result.uninspected_rel_paths
+
+    def test_non_regular_audio_entry_emits_folder_rather_than_dropping(self, tmp_path: Path) -> None:
+        """A folder whose only audio-named entry is a non-regular file must be
+        emitted (``file_count == 0``, ``failed_count > 0``) rather than dropped, so
+        it can never be classified vanished; the raw name is still enumerated."""
+        root = _make_library(tmp_path)
+        album = root / "album"
+        album.mkdir()
+        (album / "x.mp3").mkdir()
+
+        result = discover_library_folders(root, [root])
+
+        emitted = {f.rel_path: f for f in result.folders}
+        assert "album" in emitted
+        assert emitted["album"].file_count == 0
+        assert emitted["album"].failed_count >= 1
+        assert "album" not in result.uninspected_rel_paths
+        assert result.enumerated_entries["album"] == {"x.mp3"}

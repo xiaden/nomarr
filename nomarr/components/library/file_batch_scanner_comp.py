@@ -7,6 +7,7 @@ Audio tag extraction is handled by the background tag extraction worker.
 
 import logging
 import os
+import stat
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -15,10 +16,17 @@ from typing import Any
 from nomarr.components.infrastructure.path_comp import build_library_path_from_input
 from nomarr.components.library.song_query_types import StateTaggedSong
 from nomarr.helpers.files_helper import is_audio_file
+from nomarr.helpers.fs_contract import classify_os_error
 from nomarr.helpers.time_helper import now_ms
 from nomarr.persistence import Database
 
 logger = logging.getLogger(__name__)
+
+# Per-file stat failure kinds that indicate the folder's whole medium/storage is
+# unavailable. They re-raise OSError (#164 contract): the caller must treat the
+# folder as unreconciled, never as an authoritative listing. Every other kind is
+# an isolated per-file failure that keeps the folder reconciled.
+_MOUNT_LEVEL_KINDS = frozenset({"storage_unavailable", "unconfirmed_missing", "transient_io"})
 
 
 # Component-local DTOs (not promoted to helpers/dto)
@@ -32,6 +40,9 @@ class FileBatchResult:
     stats: dict[str, int]  # files_updated, files_failed, files_skipped
     warnings: list[str]
     edge_bootstraps: list[dict[str, Any]] = field(default_factory=list)  # Post-upsert edge creation metadata
+    # Raw ``os.listdir`` names for this folder (audio, non-audio and failed names
+    # alike). Key presence is the absence witness's reconciliation authority.
+    enumerated_entries: set[str] = field(default_factory=set)
 
 
 def scan_folder_files(
@@ -60,10 +71,12 @@ def scan_folder_files(
 
     Raises:
         OSError: When the folder's contents cannot be authoritatively enumerated
-            because the directory read (``os.listdir``) fails. Callers must treat
-            the folder as unreconciled for that scan: it is not recorded as
-            reconciled, its folder cache state is not updated, and its persisted
-            rows are excluded from missing-file cleanup.
+            because the directory read (``os.listdir``) fails, or when a per-entry
+            ``os.stat`` fails with a mount/storage-level kind (``storage_unavailable``,
+            ``unconfirmed_missing``, ``transient_io``). Callers must treat the folder
+            as unreconciled for that scan: it is not recorded as reconciled, its
+            folder cache state is not updated, and its persisted rows are excluded
+            from missing-file cleanup.
 
     """
     file_entries: list[dict[str, Any]] = []
@@ -80,14 +93,36 @@ def scan_folder_files(
     # (The per-file OSError handler inside the loop below is a different contract
     # and stays.)
     filenames = os.listdir(str(folder_path))
-    files = [
-        os.path.join(str(folder_path), f)
-        for f in filenames
-        if is_audio_file(f) and os.path.isfile(os.path.join(str(folder_path), f))
-    ]
+    enumerated_entries = set(filenames)
+
+    # Enumerate audio entries with a single reusable metadata stat per entry. A
+    # per-file stat failure is classified: mount/storage-level kinds re-raise so
+    # the caller treats the folder as unreconciled (#164); every other kind is an
+    # isolated per-file failure that leaves the entry's name witnessed and the
+    # folder reconciled. A non-regular entry is likewise a per-file failure.
+    files: list[tuple[str, os.stat_result]] = []
+    for name in filenames:
+        if not is_audio_file(name):
+            continue
+        entry_path = os.path.join(str(folder_path), name)
+        try:
+            entry_stat = os.stat(entry_path)
+        except OSError as e:
+            if classify_os_error(e) in _MOUNT_LEVEL_KINDS:
+                raise
+            logger.warning("Failed to stat %s: %s", entry_path, e)
+            stats["files_failed"] += 1
+            warnings.append(f"Scan failed: {entry_path} - {str(e)[:100]}")
+            continue
+        if not stat.S_ISREG(entry_stat.st_mode):
+            logger.warning("Not a regular file: %s", entry_path)
+            stats["files_failed"] += 1
+            warnings.append(f"Scan failed: {entry_path} - not a regular file")
+            continue
+        files.append((entry_path, entry_stat))
 
     # Process each file
-    for file_path in files:
+    for file_path, file_stat in files:
         try:
             # Validate path
             library_path = build_library_path_from_input(file_path, db)
@@ -110,9 +145,9 @@ def scan_folder_files(
 
             discovered_paths.add(file_path_str)
 
-            # Check if the database already knows this file and get the disk mtime
+            # Check if the database already knows this file; the metadata stat was
+            # taken once during enumeration and is reused here.
             existing_file = existing_files.get(file_path_str)
-            file_stat = os.stat(file_path_str)
             modified_time = int(file_stat.st_mtime * 1000)
             file_size = file_stat.st_size
 
@@ -161,6 +196,7 @@ def scan_folder_files(
         stats=stats,
         warnings=warnings,
         edge_bootstraps=edge_bootstraps,
+        enumerated_entries=enumerated_entries,
     )
 
 

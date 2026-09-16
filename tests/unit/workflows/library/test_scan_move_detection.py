@@ -25,6 +25,9 @@ chromaprint exactly once.
 
 from __future__ import annotations
 
+import errno
+import functools
+import os
 from contextlib import ExitStack, contextmanager
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, cast
@@ -34,10 +37,12 @@ import pytest
 
 import nomarr.components.library.file_batch_scanner_comp as scanner_comp
 import nomarr.components.library.move_detection_comp as move_comp
+import nomarr.components.library.scan_absence_comp as absence_comp
 import nomarr.workflows.library.scan_library_full_wf as full_wf
 import nomarr.workflows.library.scan_library_quick_wf as quick_wf
 from nomarr.components.library.file_batch_scanner_comp import FileBatchResult
 from nomarr.components.library.folder_analysis_comp import FolderDiscovery
+from nomarr.components.library.scan_absence_comp import authorize_absent, scope_uninspected
 from nomarr.components.library.song_query_types import StateTaggedSong
 from nomarr.helpers.constants.file_states import (
     STATE_ERRORED,
@@ -57,6 +62,7 @@ from nomarr.helpers.dataclasses.song_state_candidate_dataclass import SongStateC
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+    from pathlib import Path
 
 _MOVEMENT_MODULE = "nomarr.components.library.move_detection_comp"
 
@@ -117,16 +123,22 @@ def _batch(
     *,
     entries: list[dict[str, Any]] | None = None,
     discovered: set[str] | None = None,
+    enumerated: set[str] | None = None,
+    files_failed: int = 0,
+    warnings: list[str] | None = None,
 ) -> FileBatchResult:
     entries = entries or []
-    return FileBatchResult(
+    batch = FileBatchResult(
         file_entries=entries,
         discovered_paths=discovered or set(),
         new_file_paths={e["path"] for e in entries},
-        stats={"files_updated": 0, "files_failed": 0, "files_skipped": 0},
-        warnings=[],
+        stats={"files_updated": 0, "files_failed": files_failed, "files_skipped": 0},
+        warnings=list(warnings or []),
         edge_bootstraps=[],
     )
+    if enumerated is not None:
+        batch.enumerated_entries = set(enumerated)  # type: ignore[attr-defined]
+    return batch
 
 
 def _fake_library_path(path: str, db: Any) -> Any:
@@ -149,6 +161,7 @@ def _patched_scan(
     folder_transient_errors: dict[str, Exception] | None = None,
     real_scan_listdir_errors: dict[str, Exception] | None = None,
     present_paths: set[str] | None = None,
+    enumerated_entries: dict[str, set[str]] | None = None,
     uninspected_paths: set[str] | None = None,
     spy_detect: bool = False,
 ) -> Iterator[SimpleNamespace]:
@@ -159,9 +172,13 @@ def _patched_scan(
     the expensive chromaprint decode and the bounded DB candidate lookup are
     stubbed; move matching/application runs for real against a mocked ``Database``.
 
-    ``present_paths`` models on-disk presence for the workflow's patchable
-    ``_path_exists``. It defaults to the union of every batch's ``discovered_paths``
-    (so undiscovered persisted rows are genuinely absent). Because a move removes the
+    ``present_paths`` overrides the set of paths believed present on disk; it defaults
+    to the union of every batch's ``discovered_paths`` (so undiscovered persisted rows
+    are genuinely absent). ``enumerated_entries`` is the raw-listings witness keyed by
+    folder rel path (key presence = reconciliation authority, value = that folder's
+    raw names). When omitted it is derived from the present/discovered paths and the
+    discovered folder set, so every walked folder is an enumerated key (an empty value
+    means "listed this pass with nothing in it"). Because a move removes the
     row from its old normalized folder, a successful ``move_library_song`` removes
     the source carrier from the per-folder mapping — mirroring production, where
     the exact-folder walk accessor no longer returns a relocated row under its old
@@ -210,6 +227,32 @@ def _patched_scan(
         discovered |= batch.discovered_paths
     present = set(present_paths) if present_paths is not None else set(discovered)
 
+    # The corroboration witness consumed by ``authorize_absent``. Key presence is the
+    # reconciliation authority; the value is the folder's raw listing names.
+    if enumerated_entries is not None:
+        names: dict[str, set[str]] = {rel: set(values) for rel, values in enumerated_entries.items()}
+    else:
+        names = {}
+
+        def _add_name(folder_rel: str, name: str) -> None:
+            names.setdefault(folder_rel, set()).add(name)
+
+        for folder in folders:
+            rel = folder.rel_path
+            if rel:
+                _add_name("", rel.split("/", 1)[0])
+            names.setdefault(rel, set())
+        for abs_path in present:
+            rel = abs_path[len("/music/") :] if abs_path.startswith("/music/") else abs_path.lstrip("/")
+            components = rel.split("/")
+            if components and components[0]:
+                _add_name("", components[0])
+            for index in range(1, len(components)):
+                _add_name("/".join(components[:index]), components[index])
+
+    def _folder_rel(folder_path: str) -> str:
+        return folder_path.removeprefix("/music/")
+
     def _compute(library_path: Any) -> str:
         return chromaprints[library_path.absolute]
 
@@ -222,7 +265,11 @@ def _patched_scan(
             transient_attempts[folder_path] = attempt + 1
             if attempt == 0:
                 raise transient_errors[folder_path]
-        return batches[folder_path]
+        batch = batches[folder_path]
+        batch.enumerated_entries = set(names.get(_folder_rel(folder_path), ())) | set(
+            getattr(batch, "enumerated_entries", ())
+        )
+        return batch
 
     exact_returns: list[tuple[str, dict[str, StateTaggedSong]]] = []
 
@@ -263,6 +310,7 @@ def _patched_scan(
                 return_value=FolderDiscovery(
                     folders=cast("Any", folders),
                     uninspected_rel_paths=set(uninspected_paths or ()),
+                    enumerated_entries={rel: frozenset(values) for rel, values in names.items()},
                 ),
             )
         )
@@ -305,10 +353,6 @@ def _patched_scan(
         stack.enter_context(patch.object(module, "cleanup_orphaned_entities_workflow"))
         stack.enter_context(patch.object(module, "update_scan_progress"))
         stack.enter_context(patch.object(module, "mark_scan_completed"))
-
-        # Model on-disk presence deterministically for the workflow's cleanup and
-        # candidate-source checks (both read the module-global ``_path_exists``).
-        stack.enter_context(patch.object(module, "_path_exists", side_effect=lambda path: path in present))
 
         stack.enter_context(patch(f"{_MOVEMENT_MODULE}.build_library_path_from_input", side_effect=_fake_library_path))
         mocks.compute_chromaprint = stack.enter_context(
@@ -357,6 +401,21 @@ def _removed_paths(mock: MagicMock) -> set[str]:
     for call in mock.call_args_list:
         paths.update(call.args[2])
     return paths
+
+
+def _force_orphan_page_size(monkeypatch: pytest.MonkeyPatch, size: int = 2) -> None:
+    """Bound the full-scan orphan sweep's page size without a workflow constant.
+
+    The workflow-private ``_ORPHAN_RECOVERY_BATCH_SIZE`` is deleted in the Part C
+    split; the bounded-paging contract now lives in the absence component's
+    ``iter_orphaned_absent_paths(..., page_size=...)``. Bind the page size there so
+    the sweep still runs for real while exercising multi-page termination.
+    """
+    monkeypatch.setattr(
+        full_wf,
+        "iter_orphaned_absent_paths",
+        functools.partial(absence_comp.iter_orphaned_absent_paths, page_size=size),
+    )
 
 
 def _scanned_paths(mock: MagicMock) -> set[str]:
@@ -742,48 +801,68 @@ class TestFolderWalkRetry:
         assert result["warnings"] == []
 
 
+def _authorize_source(
+    rel_path: str,
+    *,
+    reconciled: dict[str, frozenset[str]] | None = None,
+    unreconciled: set[str] | None = None,
+    uninspected: set[str] | None = None,
+) -> Any:
+    """Drive ``authorize_absent`` the way the workflow's source-presence guard does."""
+    return authorize_absent(
+        rel_path=rel_path,
+        absolute_path=f"/music/{rel_path}",
+        reconciled_folders=reconciled or {},
+        unreconciled_folders=set(unreconciled or ()),
+        vanished_folders=set(),
+        uninspected_scope=set(uninspected or ()),
+    )
+
+
 @pytest.mark.unit
 @pytest.mark.mocked
 class TestCandidateSourcePresent:
-    """``_candidate_source_present`` decides whether a chromaprint candidate may
-    still be a relocation origin: only a genuinely absent source qualifies."""
+    """``authorize_absent`` decides whether a chromaprint candidate may still be a
+    relocation origin: only a genuinely absent source qualifies. A source parent
+    that is unreconciled or inside an uninspected scope is never absent."""
 
     def test_unreconciled_root_folder_presumes_present_even_when_absent(self) -> None:
-        """The root folder ``""`` as an unreconciled path short-circuits a root-level
-        ``normalized_path`` (parent ``""``) to present regardless of disk state."""
-        root_song = _song("/music/track.flac", "track.flac", "cp")
-        nested_song = _song("/music/sub/dir/track.flac", "sub/dir/track.flac", "cp")
-        for module in (quick_wf, full_wf):
-            with patch.object(module, "_path_exists", return_value=False):
-                assert module._candidate_source_present(root_song, {""}, set()) is True
-                assert module._candidate_source_present(root_song, set(), set()) is False
-                assert module._candidate_source_present(nested_song, {""}, set()) is False
+        """The root folder ``""`` as an unreconciled path keeps a root-level source
+        un-proven-absent regardless of disk state, and a nested source too."""
+        assert _authorize_source("track.flac", unreconciled={""}).presence != "absent"
+        assert _authorize_source("track.flac").presence != "absent"
+        assert _authorize_source("sub/dir/track.flac", unreconciled={""}).presence != "absent"
 
     def test_present_path_is_present_and_absent_path_is_not(self) -> None:
-        song = _song("/music/f1/a.flac", "f1/a.flac", "cp")
-        for module in (quick_wf, full_wf):
-            with patch.object(module, "_path_exists", return_value=True):
-                assert module._candidate_source_present(song, set(), set()) is True
-            with patch.object(module, "_path_exists", return_value=False):
-                assert module._candidate_source_present(song, set(), set()) is False
+        present = _authorize_source("f1/a.flac", reconciled={"f1": frozenset({"a.flac"})})
+        absent = _authorize_source("f1/a.flac", reconciled={"f1": frozenset({"b.flac"})})
+        assert present.presence == "present"
+        assert absent.presence == "absent"
 
     def test_unreconciled_parent_folder_short_circuits_absent_path(self) -> None:
-        song = _song("/music/f1/a.flac", "f1/a.flac", "cp")
-        for module in (quick_wf, full_wf):
-            with patch.object(module, "_path_exists", return_value=False):
-                assert module._candidate_source_present(song, {"f1"}, set()) is True
+        fact = _authorize_source(
+            "f1/a.flac",
+            reconciled={"f1": frozenset({"b.flac"})},
+            unreconciled={"f1"},
+        )
+        assert fact.presence != "absent"
 
     def test_discovery_uninspected_ancestor_blocks_absent_source(self) -> None:
-        song = _song("/music/bad/sub/a.flac", "bad/sub/a.flac", "cp")
-        for module in (quick_wf, full_wf):
-            with patch.object(module, "_path_exists", return_value=False):
-                assert module._candidate_source_present(song, set(), {"bad"}) is True
+        fact = _authorize_source(
+            "bad/sub/a.flac",
+            reconciled={"bad/sub": frozenset(), "bad": frozenset({"sub"}), "": frozenset({"bad"})},
+            uninspected={"bad"},
+        )
+        assert fact.presence != "absent"
 
     def test_reconciled_parent_is_not_blocked_by_unrelated_cache_scope(self) -> None:
-        song = _song("/music/good/a.flac", "good/a.flac", "cp")
-        for module in (quick_wf, full_wf):
-            with patch.object(module, "_path_exists", return_value=False):
-                assert module._candidate_source_present(song, {"cached"}, {"bad"}) is False
+        fact = _authorize_source(
+            "good/a.flac",
+            reconciled={"good": frozenset({"b.flac"})},
+            unreconciled={"cached"},
+            uninspected={"bad"},
+        )
+        assert fact.presence == "absent"
 
 
 @pytest.mark.unit
@@ -1527,7 +1606,7 @@ class TestOrphanRecoverySweep:
         assert full_result["files_removed"] == 1
 
     def test_orphan_recovery_pages_bounded_with_advancing_cursor(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(full_wf, "_ORPHAN_RECOVERY_BATCH_SIZE", 2)
+        _force_orphan_page_size(monkeypatch)
         orphans = [_song(f"/music/o{i}/x.flac", f"o{i}/x.flac", None) for i in range(5)]
         existing: dict[str, dict[str, StateTaggedSong]] = {"scanned": {}}
         existing.update({f"o{i}": {orphans[i].path: _carrier(orphans[i])} for i in range(5)})
@@ -1556,7 +1635,7 @@ class TestOrphanRecoverySweep:
         returns nothing and terminate via the empty-page branch. Without that
         branch the sweep would index ``page[-1]`` on an empty page.
         """
-        monkeypatch.setattr(full_wf, "_ORPHAN_RECOVERY_BATCH_SIZE", 2)
+        _force_orphan_page_size(monkeypatch)
         orphans = [_song(f"/music/o{i}/x.flac", f"o{i}/x.flac", None) for i in range(4)]
         existing: dict[str, dict[str, StateTaggedSong]] = {"scanned": {}}
         existing.update({f"o{i}": {orphans[i].path: _carrier(orphans[i])} for i in range(4)})
@@ -1580,7 +1659,7 @@ class TestOrphanRecoverySweep:
 
     def test_orphan_recovery_empty_library_single_page_no_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """A library with no songs yields one empty page, no removals, no error."""
-        monkeypatch.setattr(full_wf, "_ORPHAN_RECOVERY_BATCH_SIZE", 2)
+        _force_orphan_page_size(monkeypatch)
         with _patched_scan(
             full_wf,
             folders=[_folder("scanned")],
@@ -1724,14 +1803,15 @@ class TestUninspectedDiscoveryScope:
         assert result["files_moved"] == 0
         assert result["files_added"] == 1
 
-    @pytest.mark.parametrize("module", [quick_wf, full_wf])
-    def test_scope_uninspected_matches_self_ancestors_and_root(self, module: Any) -> None:
+    def test_scope_uninspected_matches_self_ancestors_and_root(self) -> None:
+        # ``_scope_uninspected`` moved verbatim to the absence component; the
+        # workflow now delegates to it there rather than owning a private copy.
         scope = {"bad", ""}
-        assert module._scope_uninspected("bad", scope) is True
-        assert module._scope_uninspected("bad/sub/deep", scope) is True
-        assert module._scope_uninspected("other", scope) is True  # guarded by root ""
-        assert module._scope_uninspected("bad", set()) is False
-        assert module._scope_uninspected("other/x", {"bad"}) is False
+        assert scope_uninspected("bad", scope) is True
+        assert scope_uninspected("bad/sub/deep", scope) is True
+        assert scope_uninspected("other", scope) is True  # guarded by root ""
+        assert scope_uninspected("bad", set()) is False
+        assert scope_uninspected("other/x", {"bad"}) is False
 
     def test_full_scan_does_not_treat_tracked_descendant_of_uninspected_ancestor_as_vanished(self) -> None:
         """A TRACKED descendant of an uninspected ancestor must not be classified
@@ -1783,3 +1863,228 @@ class TestUninspectedDiscoveryScope:
         preserved = set(ctx.mocks.cleanup_stale_folders.call_args.args[2])
         assert "bad/sub" in preserved
         assert "scanned" in preserved
+
+
+@contextmanager
+def _real_scan_witness(
+    module: Any,
+    *,
+    root: Path,
+    existing: dict[str, dict[str, StateTaggedSong]],
+    stat_errors: dict[str, OSError] | None = None,
+    db_folder_paths: set[str] | None = None,
+) -> Iterator[SimpleNamespace]:
+    """Drive the REAL discovery + scanner + absence witness for one scan workflow.
+
+    ONLY the ``Database`` boundary (and the scanner's path-resolution helper) is
+    mocked, matching the existing harness's mocked DB. ``discover_library_folders``,
+    ``scan_folder_files`` and ``authorize_absent`` all run for real; the sole injected
+    fault is an ``os.stat`` failure for mapped absolute paths.
+    """
+    db = MagicMock()
+    db.library = MagicMock()
+    db.library.count_songs_for_library.return_value = 0
+    library = Library(library_uuid=_LIBRARY.library_uuid, name=_LIBRARY.name, root_path=str(root))
+
+    injected = stat_errors or {}
+    real_stat = os.stat
+
+    def _stat(path: Any, *args: Any, **kwargs: Any) -> Any:
+        if os.fspath(path) in injected:
+            raise injected[os.fspath(path)]
+        return real_stat(path, *args, **kwargs)
+
+    def _exact_folder_rows(rel: str) -> dict[str, StateTaggedSong]:
+        return dict(existing.get(rel, {}))
+
+    def _upsert(_db: Any, _lib: Any, entries: list[dict[str, Any]], *_a: Any) -> list[MagicMock]:
+        return [MagicMock() for _ in entries]
+
+    def _songs_page(_library: Any, *, after_normalized_path: str | None, limit: int) -> list[Song]:
+        rows = [carrier.candidate.song for folder_map in existing.values() for carrier in folder_map.values()]
+        rows.sort(key=lambda song: song.normalized_path)
+        if after_normalized_path is not None:
+            rows = [song for song in rows if song.normalized_path > after_normalized_path]
+        return rows[:limit]
+
+    db.library.list_songs_after_normalized_path.side_effect = _songs_page
+
+    with ExitStack() as stack:
+        stack.enter_context(patch.object(module, "resolve_library_for_scan", return_value=library))
+        stack.enter_context(patch.object(module, "validate_library_root"))
+        stack.enter_context(patch.object(module, "get_folder_rel_paths", return_value=db_folder_paths or set()))
+        stack.enter_context(patch.object(module, "get_cached_folders", return_value={}))
+        stack.enter_context(
+            patch.object(
+                module,
+                "get_songs_in_exact_folder",
+                side_effect=lambda _db, _lib, rel: _exact_folder_rows(rel),
+            )
+        )
+        mocks_upsert = stack.enter_context(patch.object(module, "upsert_scanned_files", side_effect=_upsert))
+        stack.enter_context(patch.object(module, "transition_song_state"))
+        mocks_remove = stack.enter_context(
+            patch.object(module, "remove_deleted_files", side_effect=lambda _db, _lib, paths: len(paths))
+        )
+        stack.enter_context(patch.object(module, "save_folder_record"))
+        stack.enter_context(patch.object(module, "cleanup_stale_folders"))
+        stack.enter_context(patch.object(module, "cleanup_orphaned_entities_workflow"))
+        stack.enter_context(patch.object(module, "update_scan_progress"))
+        stack.enter_context(patch.object(module, "mark_scan_completed"))
+        stack.enter_context(
+            patch(f"{scanner_comp.__name__}.build_library_path_from_input", side_effect=_fake_library_path)
+        )
+        # The fault channel: folder discovery and the per-file scanner share the
+        # ``os`` module, so this injects the mount-level stat failure into BOTH.
+        stack.enter_context(patch.object(scanner_comp.os, "stat", _stat))
+        yield SimpleNamespace(db=db, mocks=SimpleNamespace(remove_deleted=mocks_remove, upsert=mocks_upsert))
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+class TestCorroboratedAbsenceEscalation:
+    """DD §15 Q5 escalation: only mount/storage-level per-file facts escalate a folder
+    to unreconciled; isolated per-file failures stay per-file and never manufacture
+    absence."""
+
+    def test_isolated_per_file_failure_does_not_poison_folder(self, workflow: tuple[Any, Any]) -> None:
+        module, run = workflow
+        dead = _song("/music/f1/dead.flac", "f1/dead.flac", None)
+        # An isolated permission-denied stat failure is a per-file fact: the folder is
+        # still reconciled, so its genuinely-absent row is removed.
+        batch = _batch(
+            discovered=set(),
+            enumerated={"failed.flac"},
+            files_failed=1,
+            warnings=["Scan failed: /music/f1/failed.flac - Permission denied"],
+        )
+        with _patched_scan(
+            module,
+            folders=[_folder("f1")],
+            existing={"f1": {dead.path: _carrier(dead)}},
+            batches={"/music/f1": batch},
+            present_paths=set(),
+        ) as ctx:
+            result = run(ctx.db, _LIBRARY, tagger_version="v1")
+
+        assert result["files_failed"] == 1
+        assert dead.path in _removed_paths(ctx.mocks.remove_deleted)
+
+    def test_mount_level_escalation_removes_nothing_from_folder(self, workflow: tuple[Any, Any]) -> None:
+        module, run = workflow
+        dead = _song("/music/f1/dead.flac", "f1/dead.flac", None)
+        with _patched_scan(
+            module,
+            folders=[_folder("f1")],
+            existing={"f1": {dead.path: _carrier(dead)}},
+            batches={},
+            folder_errors={"/music/f1": OSError(errno.EIO, "io error")},
+        ) as ctx:
+            result = run(ctx.db, _LIBRARY, tagger_version="v1")
+
+        assert dead.path not in _removed_paths(ctx.mocks.remove_deleted)
+        assert result["files_removed"] == 0
+        assert result["files_failed"] >= 1
+
+    def test_absent_basename_removed_while_stat_failed_entry_preserved(self, workflow: tuple[Any, Any]) -> None:
+        module, run = workflow
+        dead = _song("/music/f1/dead.flac", "f1/dead.flac", None)
+        failed = _song("/music/f1/failed.flac", "f1/failed.flac", None)
+        # The failed entry's name is still in the raw listing, so it cannot be absent
+        # even though its metadata stat failed; the truly-absent row is removed.
+        with _patched_scan(
+            module,
+            folders=[_folder("f1")],
+            existing={"f1": {dead.path: _carrier(dead), failed.path: _carrier(failed)}},
+            batches={"/music/f1": _batch(discovered=set(), enumerated={"failed.flac"})},
+            present_paths=set(),
+        ) as ctx:
+            result = run(ctx.db, _LIBRARY, tagger_version="v1")
+
+        removed = _removed_paths(ctx.mocks.remove_deleted)
+        assert dead.path in removed
+        assert failed.path not in removed
+        assert result["files_removed"] == 1
+
+    def test_vanished_folder_rows_removed_via_folder_level_witness(self, workflow: tuple[Any, Any]) -> None:
+        module, run = workflow
+        row = _song("/music/gone/x.flac", "gone/x.flac", None)
+        # ``gone``'s immediate parent is the enumerated root, whose raw names omit it:
+        # the folder-level witness authorizes the row's absence without a probe.
+        with _patched_scan(
+            module,
+            folders=[_folder("other")],
+            existing={"other": {}, "gone": {row.path: _carrier(row)}},
+            batches={"/music/other": _batch(discovered=set())},
+            db_folder_paths={"gone"},
+            present_paths=set(),
+        ) as ctx:
+            result = run(ctx.db, _LIBRARY, tagger_version="v1")
+
+        assert row.path in _removed_paths(ctx.mocks.remove_deleted)
+        assert result["files_removed"] == 1
+
+    def test_row_under_unenumerated_ancestor_is_preserved(self, workflow: tuple[Any, Any]) -> None:
+        module, run = workflow
+        row = _song("/music/untracked/x.flac", "untracked/x.flac", None)
+        with _patched_scan(
+            module,
+            folders=[_folder("scanned")],
+            existing={"scanned": {}, "untracked": {row.path: _carrier(row)}},
+            batches={"/music/scanned": _batch(discovered=set())},
+            enumerated_entries={},
+            present_paths=set(),
+        ) as ctx:
+            result = run(ctx.db, _LIBRARY, tagger_version="v1")
+
+        assert row.path not in _removed_paths(ctx.mocks.remove_deleted)
+        assert result["files_removed"] == 0
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+class TestRealComponentAbsenceCorroboration:
+    """Non-mock caller path: REAL ``discover_library_folders``, REAL
+    ``scan_folder_files`` and REAL ``authorize_absent`` through both scan workflows.
+
+    ONLY the ``Database`` boundary is mocked (the scan's read/write persistence,
+    exactly as the existing harness does) plus the scanner's path-resolution helper;
+    the absence witness is set membership over the pass's raw listings, so no
+    filesystem probe is required to corroborate. The sole injected fault is a
+    mount-level ``os.stat`` failure.
+    """
+
+    def test_real_file_upserted_and_deleted_row_corroborated_absent(
+        self, workflow: tuple[Any, Any], tmp_path: Path
+    ) -> None:
+        module, run = workflow
+        root = tmp_path / "music"
+        (root / "f1").mkdir(parents=True)
+        (root / "f1" / "song.mp3").write_bytes(b"audio")
+        dead = _song(str(root / "f1" / "deleted.mp3"), "f1/deleted.mp3", None)
+
+        with _real_scan_witness(module, root=root, existing={"f1": {dead.path: _carrier(dead)}}) as ctx:
+            result = run(ctx.db, _LIBRARY, tagger_version="v1")
+
+        assert str(root / "f1" / "song.mp3") in _upsert_paths(ctx.mocks.upsert)
+        assert dead.path in _removed_paths(ctx.mocks.remove_deleted)
+        assert result["files_removed"] == 1
+
+    def test_mount_level_stat_failure_removes_nothing(self, workflow: tuple[Any, Any], tmp_path: Path) -> None:
+        module, run = workflow
+        root = tmp_path / "music"
+        (root / "f2").mkdir(parents=True)
+        target = root / "f2" / "x.mp3"
+        target.write_bytes(b"audio")
+        row = _song(str(target), "f2/x.mp3", None)
+
+        with _real_scan_witness(
+            module,
+            root=root,
+            existing={"f2": {row.path: _carrier(row)}},
+            stat_errors={str(target): OSError(errno.EIO, "io error")},
+        ) as ctx:
+            result = run(ctx.db, _LIBRARY, tagger_version="v1")
+
+        assert row.path not in _removed_paths(ctx.mocks.remove_deleted)
+        assert result["files_removed"] == 0

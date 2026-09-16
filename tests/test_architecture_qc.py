@@ -1902,6 +1902,53 @@ def test_no_reset_choreography_outside_persistence() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Part C — scanner-only corroborated absence producer
+# ---------------------------------------------------------------------------
+
+
+def test_scanner_is_sole_producer_of_corroborated_filesystem_absence() -> None:
+    """Only the scanner witness may produce an authoritative filesystem absence."""
+    allowed = {
+        "nomarr/components/library/scan_absence_comp.py",
+        "nomarr/helpers/fs_contract.py",
+    }
+    violations: list[str] = []
+    for py_file in find_python_files(NOMARR_DIR):
+        relative_path = py_file.relative_to(PROJECT_ROOT).as_posix()
+        if relative_path in allowed:
+            continue
+        try:
+            content = py_file.read_text(encoding="utf-8")
+            tree = ast.parse(content)
+        except (OSError, UnicodeDecodeError, SyntaxError) as exc:
+            pytest.fail(f"Failed to inspect {relative_path}: {exc}")
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                violations.extend(
+                    f"{relative_path}:{node.lineno}: {keyword.value.value!r}"
+                    for keyword in node.keywords
+                    if keyword.arg in {"presence", "kind"}
+                    and isinstance(keyword.value, ast.Constant)
+                    and keyword.value.value in {"absent", "resource_missing"}
+                )
+
+    for workflow in (
+        NOMARR_DIR / "workflows" / "library" / "scan_library_full_wf.py",
+        NOMARR_DIR / "workflows" / "library" / "scan_library_quick_wf.py",
+    ):
+        tree = ast.parse(workflow.read_text(encoding="utf-8"))
+        violations.extend(
+            f"{workflow.relative_to(PROJECT_ROOT)}:{node.lineno}: filesystem presence probe"
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in {"exists", "isfile"}
+        )
+
+    assert not violations, "Filesystem absence must have one scanner producer:\n" + "\n".join(violations)
+
+
+# ---------------------------------------------------------------------------
 # Part B — resolution classifies with os.stat/errno, never boolean probes
 # ---------------------------------------------------------------------------
 

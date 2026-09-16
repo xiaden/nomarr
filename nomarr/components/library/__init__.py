@@ -44,6 +44,11 @@ from .metadata_extraction_comp import (
     extract_metadata,
     resolve_artists,
 )
+from .scan_absence_comp import (
+    authorize_absent,
+    iter_orphaned_absent_paths,
+    scope_uninspected,
+)
 from .scan_lifecycle_comp import (
     check_interrupted_scan,
     get_library_scan_histories,
@@ -61,6 +66,7 @@ from .song_sync_comp import mark_song_processed, save_song_tags
 from .song_tags_comp import get_song_tags_with_path
 
 __all__ = [
+    "authorize_absent",
     "bulk_set_not_hydrated",
     "check_interrupted_scan",
     "cleanup_stale_folders",
@@ -80,6 +86,7 @@ __all__ = [
     "get_scanning_library_ids",
     "get_song_tags_with_path",
     "get_unique_tag_values",
+    "iter_orphaned_absent_paths",
     "list_all_libraries",
     "list_library_records",
     "list_watchable_libraries",
@@ -94,6 +101,7 @@ __all__ = [
     "resolve_path_within_library",
     "save_folder_record",
     "save_song_tags",
+    "scope_uninspected",
     "search_songs",
     "set_chromaprint",
     "snapshot_existing_files",
