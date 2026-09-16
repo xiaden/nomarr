@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import contextlib
 import json
-from pathlib import Path as PathLib
 from typing import TYPE_CHECKING, cast
 
 import mutagen
@@ -16,13 +15,13 @@ from mutagen.oggopus import OggOpus
 from mutagen.oggvorbis import OggVorbis
 
 from nomarr.components.tagging.safe_write_comp import SafeWriteResult, safe_write_tags
-from nomarr.helpers.dto.path_dto import LibraryPath
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
     from pathlib import Path
 
     from nomarr.helpers.dataclasses.tags_dataclass import Tags
+    from nomarr.helpers.dto.path_dto import LibraryPath
 
 
 def _to_text_value(value: object) -> str:
@@ -66,13 +65,9 @@ class _MP3Writer:
             with contextlib.suppress(Exception):
                 del id3[key_to_delete]
 
-    def write(self, path: LibraryPath, tags: Mapping[str, object]) -> None:
+    def write(self, path: str | Path, tags: Mapping[str, object]) -> None:
         """Write tags as ID3 TXXX frames."""
-        if not path.is_valid():
-            msg = f"Cannot write tags to invalid path ({path.status}): {path.absolute} - {path.reason}"
-            raise ValueError(msg)
-
-        path_str = str(path.absolute)
+        path_str = str(path)
         try:
             try:
                 id3 = ID3(path_str)
@@ -119,13 +114,9 @@ class _MP4Writer:
             with contextlib.suppress(Exception):
                 del mp4.tags[key_to_delete]
 
-    def write(self, path: LibraryPath, tags: Mapping[str, object]) -> None:
+    def write(self, path: str | Path, tags: Mapping[str, object]) -> None:
         """Write tags as iTunes freeform atoms."""
-        if not path.is_valid():
-            msg = f"Cannot write tags to invalid path ({path.status}): {path.absolute} - {path.reason}"
-            raise ValueError(msg)
-
-        path_str = str(path.absolute)
+        path_str = str(path)
         try:
             mp4 = MP4(path_str)
             if mp4.tags is None:
@@ -175,15 +166,11 @@ class _VorbisWriter:
             with contextlib.suppress(Exception):
                 del vorbis_file.tags[key_to_delete]
 
-    def write(self, path: LibraryPath, tags: Mapping[str, object]) -> None:
-        """Write tags as Vorbis comments."""
-        if not path.is_valid():
-            msg = f"Cannot write tags to invalid path ({path.status}): {path.absolute} - {path.reason}"
-            raise ValueError(msg)
-
-        path_str = str(path.absolute)
+    def write(self, path: str | Path, tags: Mapping[str, object], *, source_ext: str) -> None:
+        """Write tags as Vorbis comments, selecting the container from ``source_ext``."""
+        path_str = str(path)
         try:
-            ext = path_str.lower().rsplit(".", 1)[-1]
+            ext = source_ext.lower()
             if ext == "flac":
                 vorbis_file: mutagen.FileType = FLAC(path_str)
             elif ext == "ogg":
@@ -227,17 +214,15 @@ class TagWriter:
         self._mp4 = _MP4Writer(overwrite=overwrite, ns_prefix=namespace)
         self._vorbis = _VorbisWriter(overwrite=overwrite, ns_prefix=namespace)
 
-    def _write_to_path(self, path_str: str, tags: Mapping[str, object]) -> None:
-        """Write tags to a temp file path using the appropriate format writer."""
-        temp_lib_path = LibraryPath(relative="", absolute=PathLib(path_str), library_id=None, status="valid")
-
-        ext = path_str.lower().rsplit(".", 1)[-1]
+    def _write_to_path(self, path_str: str, tags: Mapping[str, object], *, source_ext: str) -> None:
+        """Write tags to a temp path, dispatching on ``source_ext`` (never the temp suffix)."""
+        ext = source_ext.lower()
         if ext == "mp3":
-            self._mp3.write(temp_lib_path, tags)
+            self._mp3.write(path_str, tags)
         elif ext in ("m4a", "mp4", "m4b"):
-            self._mp4.write(temp_lib_path, tags)
+            self._mp4.write(path_str, tags)
         elif ext in ("flac", "ogg", "opus"):
-            self._vorbis.write(temp_lib_path, tags)
+            self._vorbis.write(path_str, tags, source_ext=source_ext)
         else:
             msg = f"Unsupported file type for writing: .{ext}"
             raise RuntimeError(msg)
@@ -254,15 +239,15 @@ class TagWriter:
 
         tags_dict = tags.to_dict() if tags is not None else {}
 
-        ext = str(path.absolute).lower().rsplit(".", 1)[-1]
-        if ext == "mp3":
-            self._mp3.write(path, tags_dict)
-        elif ext in ("m4a", "mp4", "m4b"):
-            self._mp4.write(path, tags_dict)
-        elif ext in ("flac", "ogg", "opus"):
-            self._vorbis.write(path, tags_dict)
+        source_ext = str(path.absolute).lower().rsplit(".", 1)[-1]
+        if source_ext == "mp3":
+            self._mp3.write(path.absolute, tags_dict)
+        elif source_ext in ("m4a", "mp4", "m4b"):
+            self._mp4.write(path.absolute, tags_dict)
+        elif source_ext in ("flac", "ogg", "opus"):
+            self._vorbis.write(path.absolute, tags_dict, source_ext=source_ext)
         else:
-            msg = f"Unsupported file type for writing: .{ext}"
+            msg = f"Unsupported file type for writing: .{source_ext}"
             raise RuntimeError(msg)
 
     def write_safe(
@@ -281,8 +266,12 @@ class TagWriter:
             return SafeWriteResult(success=False, error=f"Invalid path: {path.reason}")
 
         tags_dict = tags.to_dict() if tags is not None else {}
+        # Derive the source format ONCE from the original path. The temp file passed to
+        # ``write_fn`` is named ``*.nomarr-tmp`` (non-audio, defect B/D-E1), so the format
+        # must never be re-parsed from the temp suffix (DD v0.6 §20.7 / D-E8).
+        source_ext = str(path.absolute).lower().rsplit(".", 1)[-1]
 
-        def write_fn(temp_path: PathLib) -> None:
-            self._write_to_path(str(temp_path), tags_dict)
+        def write_fn(temp_path: Path) -> None:
+            self._write_to_path(str(temp_path), tags_dict, source_ext=source_ext)
 
         return safe_write_tags(path, library_root, write_fn, expected_mtime_ms)
