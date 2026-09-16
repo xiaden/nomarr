@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import json
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import mutagen
 from mutagen import MutagenError
@@ -78,8 +78,8 @@ class _MP3Writer:
 
             for tag_key, tag_value in (tags or {}).items():
                 ns_key = _ns_key(tag_key, self.ns_prefix)
-                if isinstance(tag_value, list) and all(isinstance(x, str) for x in tag_value):
-                    id3.add(TXXX(encoding=3, desc=ns_key, text=tag_value))
+                if isinstance(tag_value, list | tuple) and all(isinstance(x, str) for x in tag_value):
+                    id3.add(TXXX(encoding=3, desc=ns_key, text=[str(x) for x in tag_value]))
                 else:
                     txt = _to_text_value(tag_value)
                     id3.add(TXXX(encoding=3, desc=ns_key, text=[txt]))
@@ -124,13 +124,14 @@ class _MP4Writer:
 
             self._clear_ns(mp4)
 
-            if not isinstance(mp4.tags, dict):
-                return
-            mp4_tags = cast("dict[str, list[MP4FreeForm]]", mp4.tags)
+            mp4_tags = mp4.tags
+            if mp4_tags is None:
+                msg = f"MP4 container exposes no writable tag mapping after add_tags(): {path_str}"
+                raise RuntimeError(msg)
             for tag_key, tag_value in (tags or {}).items():
                 ns_key = _ns_key(tag_key, self.ns_prefix)
                 atom_key = self._ff_key(ns_key)
-                if isinstance(tag_value, list) and all(isinstance(x, str) for x in tag_value):
+                if isinstance(tag_value, list | tuple) and all(isinstance(x, str) for x in tag_value):
                     mp4_tags[atom_key] = [MP4FreeForm(str(x).encode("utf-8")) for x in tag_value]
                 else:
                     payload = _to_text_value(tag_value).encode("utf-8")
@@ -186,14 +187,15 @@ class _VorbisWriter:
 
             self._clear_ns(vorbis_file)
 
-            if not isinstance(vorbis_file.tags, dict):
-                return
-            vorbis_tags = cast("dict[str, list[str]]", vorbis_file.tags)
+            vorbis_tags = vorbis_file.tags
+            if vorbis_tags is None:
+                msg = f"Vorbis container exposes no writable tag mapping after add_tags(): {path_str}"
+                raise RuntimeError(msg)
             for tag_key, tag_value in (tags or {}).items():
                 ns_key = _ns_key(tag_key, self.ns_prefix)
                 vorbis_key = self._vorbis_key(ns_key)
 
-                if isinstance(tag_value, list) and all(isinstance(x, str) for x in tag_value):
+                if isinstance(tag_value, list | tuple) and all(isinstance(x, str) for x in tag_value):
                     vorbis_tags[vorbis_key] = [str(x) for x in tag_value]
                 else:
                     vorbis_tags[vorbis_key] = [_to_text_value(tag_value)]

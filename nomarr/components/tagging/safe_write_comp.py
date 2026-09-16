@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING
 
 import mutagen
 from mutagen import MutagenError
+from mutagen.oggopus import OggOpusInfo
 
 from nomarr.helpers.fs_contract import FsFact, fact_from_error
 
@@ -42,6 +43,12 @@ TEMP_FOLDER_NAME = ".ignore"
 
 # Tolerance for duration comparison — allows for container rounding differences
 DURATION_TOLERANCE_S = 1.0
+
+# Opus decodes to a fixed 48 kHz output rate regardless of the container's original
+# sample rate; mutagen's ``OggOpusInfo._post_tags`` derives ``length`` as
+# ``(page.position - pre_skip) / 48000.0`` and discards ``orig_sample_rate``, so this
+# constant is the true decoder output rate (RFC 7845 §5.1).
+OPUS_DECODED_SAMPLE_RATE_HZ = 48000
 
 
 @dataclass
@@ -78,9 +85,15 @@ def _probe_audio_properties(path: Path) -> _AudioProperties:
         msg = f"mutagen could not read audio file: {path.name}"
         raise RuntimeError(msg)
     info = audio.info
+    sample_rate = getattr(info, "sample_rate", None)
+    if sample_rate is None:
+        if not isinstance(info, OggOpusInfo):
+            msg = f"audio info of type {type(info).__name__} exposes no sample_rate"
+            raise RuntimeError(msg)
+        sample_rate = OPUS_DECODED_SAMPLE_RATE_HZ
     return _AudioProperties(
         duration=float(info.length),
-        sample_rate=int(info.sample_rate),
+        sample_rate=int(sample_rate),
         channels=int(info.channels),
     )
 

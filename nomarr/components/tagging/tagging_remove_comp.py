@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import mutagen
 from mutagen import MutagenError
@@ -107,11 +107,9 @@ def _remove_vorbis_tags(path: str, namespace: str) -> int:
             return 0
 
         vorbis_prefix = f"{namespace.upper()}_"
-        if not isinstance(audio.tags, dict):
-            return 0
-        audio_tags = cast("dict[str, list[str]]", audio.tags)
+        audio_tags = audio.tags
         keys_to_remove = [
-            key for key, _ in audio_tags.items() if isinstance(key, str) and key.startswith(vorbis_prefix)
+            key for key, _ in audio_tags.items() if isinstance(key, str) and key.upper().startswith(vorbis_prefix)
         ]
 
         for key in keys_to_remove:

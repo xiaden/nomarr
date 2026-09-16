@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import errno
 import os
+import shutil
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -23,6 +24,8 @@ from nomarr.helpers.files_helper import AUDIO_EXTENSIONS, is_audio_file
 pytestmark = [pytest.mark.unit]
 
 _GOOD_PROPS = _AudioProperties(duration=180.0, sample_rate=44100, channels=2)
+
+_FIXTURE_DIR = Path(__file__).resolve().parents[4] / "tests/fixtures/library/good/AllFormats/SameTrack"
 
 _OLD_BYTES = b"old original bytes"
 _NEW_BYTES = b"new written bytes"
@@ -919,3 +922,59 @@ class TestProbeAudioProperties:
 
         with pytest.raises(RuntimeError, match=r"mutagen could not read audio file: mystery\.dat"):
             _probe_audio_properties(unreadable)
+
+    @pytest.mark.integration
+    @pytest.mark.requires_audio
+    def test_probe_opus_fixture_reports_decoded_48khz(self, tmp_path: Path) -> None:
+        """Site 3: ``OggOpusInfo`` exposes no ``sample_rate``; the probe reports 48 kHz."""
+        fixture = _FIXTURE_DIR / "cooltrack.opus"
+        target = tmp_path / "cooltrack.opus"
+        shutil.copy2(fixture, target)
+
+        props = _probe_audio_properties(target)
+
+        assert props.sample_rate == 48000
+        assert props.channels == 1
+        assert props.duration == pytest.approx(32.0, abs=1.0)
+
+    def test_probe_info_without_sample_rate_raises_runtime_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Non-OggOpus info lacking ``sample_rate`` raises ``RuntimeError`` naming the info type.
+
+        Boundary fake: no real fixture reaches this branch because every non-Opus fixture
+        exposes ``sample_rate`` and Opus is an ``OggOpusInfo``. The guarded-getattr path is
+        what turns a missing attribute into a named ``RuntimeError``; the pre-fix
+        ``int(info.sample_rate)`` would surface an ``AttributeError`` instead.
+        """
+        target = tmp_path / "song.mp3"
+        target.write_bytes(_OLD_BYTES)
+        stub_audio = SimpleNamespace(info=SimpleNamespace(length=1.0, channels=2))
+        monkeypatch.setattr(safe_write_comp.mutagen, "File", lambda _path: stub_audio)
+
+        with pytest.raises(RuntimeError) as exc_info:
+            _probe_audio_properties(target)
+
+        message = str(exc_info.value)
+        assert "SimpleNamespace" in message
+        assert "sample_rate" in message
+
+    def test_probe_no_sample_rate_contained_as_probe_failure(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The no-sample-rate ``RuntimeError`` is contained into a ``SafeWriteResult`` failure."""
+        target = tmp_path / "song.mp3"
+        target.write_bytes(_OLD_BYTES)
+        library_path = _make_library_path(target)
+        stub_audio = SimpleNamespace(info=SimpleNamespace(length=1.0, channels=2))
+        monkeypatch.setattr(safe_write_comp.mutagen, "File", lambda _path: stub_audio)
+
+        mtime_ms = int(target.stat().st_mtime * 1000)
+        result = safe_write_tags(library_path, tmp_path, lambda _: None, mtime_ms)
+
+        assert isinstance(result, SafeWriteResult)
+        assert result.success is False
+        assert (result.error or "").startswith("Failed to probe original file")
+        assert "sample_rate" in (result.error or "")
+        # The probe fails before any copy/write, so the original is untouched on disk.
+        assert target.read_bytes() == _OLD_BYTES
