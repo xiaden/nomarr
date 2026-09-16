@@ -488,6 +488,55 @@ class TestProcessClaimedFile:
         mock_malloc_trim.assert_called_once_with()
 
     @pytest.mark.unit
+    def test_not_found_workflow_result_deletes_nothing_and_preserves_row(self):
+        """A not-found workflow result reaches the worker without deleting the row."""
+        from nomarr.workflows.processing import process_file_wf as workflow_module
+
+        mock_self = _make_worker_self()
+        mock_db = MagicMock()
+        mock_db.library.get_song.return_value = self._located_song()
+        result = SimpleNamespace(
+            heads_processed=0,
+            tags_written=0,
+            head_results={"_not_found": {"status": "not_found", "reason": "file missing on disk"}},
+            deferred_writes=None,
+        )
+        with patch(self._PATCH_PROCESS, return_value=result):
+            returned = self._call(mock_self, mock_db, _song(), MagicMock(), MagicMock(), None, MagicMock())
+
+        assert returned == (None, True)
+        mock_db.library.remove_song_by_path.assert_not_called()
+        assert not hasattr(workflow_module, "bulk_delete_songs")
+
+    @pytest.mark.unit
+    def test_real_workflow_not_found_preserves_song_row(self):
+        """The real worker and workflow preserve a row on a not-found result."""
+        from pathlib import Path
+
+        from nomarr.helpers.dto.path_dto import LibraryPath
+        from nomarr.services.infrastructure.workers.discovery_worker import DiscoveryWorker
+
+        mock_self = _make_worker_self()
+        mock_db = MagicMock()
+        mock_db.library.get_song.return_value = self._located_song()
+        missing_path = LibraryPath(
+            relative="song.flac",
+            absolute=Path("/music/song.flac"),
+            library_id="music",
+            status="not_found",
+            reason="file missing on disk",
+        )
+        config = SimpleNamespace()
+        with patch("nomarr.workflows.processing.process_file_wf.build_library_path_from_db", return_value=missing_path):
+            returned = DiscoveryWorker._process_claimed_file(
+                mock_self, mock_db, _song(), config, MagicMock(), None, MagicMock()
+            )
+
+        assert returned[1] is True
+        assert returned[0] is None
+        mock_db.library.remove_song_by_path.assert_not_called()
+
+    @pytest.mark.unit
     @patch(_PATCH_RELEASE)
     @patch(_PATCH_MALLOC_TRIM)
     @patch(_PATCH_GETSIZE)

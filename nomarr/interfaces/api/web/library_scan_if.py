@@ -139,11 +139,22 @@ async def reconcile_library_paths(
     library_service: Annotated["LibraryService", Depends(get_library_service)],
     policy: Annotated[
         Literal["mark_invalid", "delete_invalid", "dry_run"],
-        Query(description="Policy for invalid paths: dry_run, mark_invalid, delete_invalid"),
+        Query(
+            description=(
+                "Policy for invalid paths: dry_run, mark_invalid, delete_invalid; "
+                "delete_invalid removes only config/semantic invalidity, while "
+                "not_found rows are reported and preserved"
+            )
+        ),
     ] = "mark_invalid",
     batch_size: Annotated[int, Query(description="Number of files to process per batch", ge=1, le=10000)] = 1000,
 ) -> ReconcilePathsResponse:
-    """Reconcile library paths after configuration changes."""
+    """Reconcile paths after configuration changes.
+
+    ``delete_invalid`` removes only genuine config/semantic invalidity
+    (``status == "invalid_config"`` with no filesystem fact). Filesystem-absence
+    conditions are reported and preserved; scanner reconciliation owns that deletion.
+    """
     library = await _resolve_library(library_service, library_name)
     if library is None:
         raise HTTPException(status_code=404, detail="Library not found")

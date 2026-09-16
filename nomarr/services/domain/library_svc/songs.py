@@ -124,7 +124,10 @@ class LibrarySongsMixin:
             policy: What to do with invalid paths:
                 - "dry_run": Only report, don't modify database
                 - "mark_invalid": Keep files but log warnings (default)
-                - "delete_invalid": Remove invalid files from database
+                - "delete_invalid": Remove only genuine config/semantic invalidity
+                  (``status == "invalid_config"`` with no filesystem fact); filesystem
+                  absence, including not-found rows, is reported and preserved because
+                  scanner reconciliation owns absence-based deletion
             batch_size: Number of files to process per batch (default: 1000)
 
         Returns:
@@ -137,7 +140,8 @@ class LibrarySongsMixin:
                   resolution performs no disk probe; ``fs_fact`` is recorded only when
                   a filesystem operation fails)
                 - unknown_status: Config mapping looks okay but a filesystem fact was observed
-                - deleted_files: Files removed (if policy="delete_invalid")
+                - deleted_files: Config/semantic-invalid files removed when
+                  ``policy="delete_invalid"``; filesystem-absence rows are preserved
                 - errors: Validation errors
 
         Raises:
@@ -150,7 +154,7 @@ class LibrarySongsMixin:
                 policy="delete_invalid",
                 batch_size=500
             )
-            print(f"Cleaned up {result['deleted_files']} invalid files")
+            print(f"Cleaned up {result['deleted_files']} config-invalid files")
 
         """
         return reconcile_library_paths_workflow(

@@ -40,7 +40,10 @@ def reconcile_library_paths(
         policy: What to do with invalid paths:
             - "dry_run": Only report, don't modify database
             - "mark_invalid": Keep files but log warnings
-            - "delete_invalid": Remove invalid files from database
+            - "delete_invalid": Remove only genuine config/semantic invalidity
+              (``status == "invalid_config"`` with no filesystem fact); filesystem
+              absence (including ``not_found``) is reported and preserved because
+              scanner reconciliation owns absence-based deletion
         batch_size: Number of files to process per batch (default: 1000)
 
     Returns:
@@ -107,9 +110,15 @@ def reconcile_library_paths(
     if policy == "dry_run":
         logger.info(
             f"[reconcile_library_paths] DRY RUN: Would have affected "
-            f"{total_invalid} files (use policy='delete_invalid' to actually remove them)"
+            f"{total_invalid} files (policy='delete_invalid' removes only genuine "
+            f"config/semantic-invalid rows; filesystem-absence rows are preserved)"
         )
     return result
+
+
+def _is_config_semantic_invalid(library_path: LibraryPath) -> bool:
+    """Return whether a path is deletion-authorized by configuration semantics."""
+    return library_path.status == "invalid_config" and library_path.fs_fact is None
 
 
 def _handle_invalid_path(
@@ -137,7 +146,7 @@ def _handle_invalid_path(
         logger.info(f"[reconcile_library_paths] DRY RUN: Would handle {status} path: {file_path} ({reason})")
     elif policy == "mark_invalid":
         logger.warning(f"[reconcile_library_paths] Invalid path ({status}): {file_path} - {reason}")
-    elif policy == "delete_invalid":
+    elif policy == "delete_invalid" and _is_config_semantic_invalid(library_path):
         try:
             db.library.remove_song_by_path(file_path, library)
             result["deleted_files"] += 1
@@ -145,3 +154,9 @@ def _handle_invalid_path(
         except RuntimeError as e:
             logger.exception("[reconcile_library_paths] Failed to delete %s: %s", file_path, e)
             result["errors"] += 1
+    elif policy == "delete_invalid":
+        fact_kind = library_path.fs_fact.kind if library_path.fs_fact is not None else "none"
+        logger.warning(
+            f"[reconcile_library_paths] Preserving non-authoritative invalid path: "
+            f"{file_path} (fact={fact_kind}) - {reason}"
+        )

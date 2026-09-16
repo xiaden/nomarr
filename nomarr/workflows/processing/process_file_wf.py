@@ -12,7 +12,6 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from nomarr.components.infrastructure.path_comp import build_library_path_from_db
-from nomarr.components.library.library_song_mutation_comp import bulk_delete_songs
 from nomarr.components.ml.audio.ml_audio_comp import (
     AudioLoadCrashError,
     AudioLoadShutdownError,
@@ -68,6 +67,10 @@ def process_file_workflow(
     Returns:
         ProcessFileResult with elapsed time, head outcomes, mood aggregations, and tags.
 
+    On a legacy ``not_found`` resolution status, returns a report-only result and
+    preserves the Song row; the scanner reconciliation path owns filesystem-absence
+    deletion after corroboration.
+
     Raises:
         ValueError: If path validation fails.
         RuntimeError: If no heads are found or all heads fail.
@@ -76,11 +79,7 @@ def process_file_workflow(
     library_path = build_library_path_from_db(stored_path=path, db=db, library_id=None)
     if not library_path.is_valid():
         if library_path.status == "not_found":
-            logger.warning(f"[process_file_workflow] File no longer exists on disk, cleaning up: {path}")
-            if library_path.library_id is not None:
-                library = db.library.get_library_by_name(library_path.library_id)
-                if library is not None:
-                    bulk_delete_songs(db, [path], library)
+            logger.warning(f"[process_file_workflow] File no longer exists on disk; preserving row: {path}")
             return ProcessFileResult(
                 file_path=path,
                 elapsed=0,
@@ -130,9 +129,8 @@ def process_file_workflow(
         raise
     except AudioLoadCrashError as e:
         logger.error(f"[processor] Audio load crashed for {path}: {e}")
-        # A decoder crash may be transient or recoverable.  Preserve the song
-        # row and its associated tags/state/vectors for a later retry; only a
-        # confirmed missing file is cleaned up during path validation above.
+        # A decoder crash may be transient or recoverable. Preserve the song
+        # row and its associated tags/state/vectors for a later retry.
         elapsed = round((internal_ms().value - start_all.value) / 1000, 2)
         return ProcessFileResult(
             file_path=path,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import logging
 from pathlib import Path
 from types import SimpleNamespace
@@ -155,7 +156,7 @@ def test_process_file_workflow_packages_resolved_output_streams_and_skips_missin
 
 @pytest.mark.unit
 @pytest.mark.mocked
-def test_audio_load_crash_preserves_song_record() -> None:
+def test_audio_load_crash_returns_without_song_deletion() -> None:
     """Decoder crashes return a retryable result without deleting song data."""
     config = ProcessorConfig(
         models_dir="models",
@@ -187,19 +188,19 @@ def test_audio_load_crash_preserves_song_record() -> None:
             "nomarr.workflows.processing.process_file_wf.load_audio_mono",
             side_effect=AudioLoadCrashError("decoder unavailable"),
         ),
-        patch("nomarr.workflows.processing.process_file_wf.bulk_delete_songs") as delete_mock,
     ):
         result = process_file_workflow("song.flac", config, cache, db, song=_song())
 
-    delete_mock.assert_not_called()
+    process_file_wf_module = importlib.import_module("nomarr.workflows.processing.process_file_wf")
+    assert not hasattr(process_file_wf_module, "bulk_delete_songs")
     assert result.head_results == {"_crash": {"status": "crash", "reason": "decoder unavailable"}}
     assert result.tags is None
 
 
 @pytest.mark.unit
 @pytest.mark.mocked
-def test_not_found_path_returns_result_with_tags_none() -> None:
-    """A missing file on disk returns a cleanup result with ``tags=None``."""
+def test_not_found_path_preserves_song_row() -> None:
+    """A missing file on disk is reported and the song row is preserved."""
     config = ProcessorConfig(
         models_dir="models",
         min_duration_s=30,
@@ -221,19 +222,20 @@ def test_not_found_path_returns_result_with_tags_none() -> None:
 
     with (
         patch("nomarr.workflows.processing.process_file_wf.build_library_path_from_db", return_value=library_path),
-        patch("nomarr.workflows.processing.process_file_wf.bulk_delete_songs") as delete_mock,
     ):
         result = process_file_workflow("song.flac", config, cache, db, song=_song())
 
-    delete_mock.assert_called_once_with(db, ["song.flac"], library)
+    db.library.remove_song_by_path.assert_not_called()
+    process_file_wf_module = importlib.import_module("nomarr.workflows.processing.process_file_wf")
+    assert not hasattr(process_file_wf_module, "bulk_delete_songs")
     assert result.tags is None
     assert result.head_results == {"_not_found": {"status": "not_found", "reason": "file missing on disk"}}
 
 
 @pytest.mark.unit
 @pytest.mark.mocked
-def test_not_found_path_skips_delete_when_library_gone() -> None:
-    """When the library no longer exists, missing-file cleanup is skipped without error."""
+def test_not_found_path_preserves_row_when_library_unresolved() -> None:
+    """When the library no longer exists, the missing row remains preserved."""
     config = ProcessorConfig(
         models_dir="models",
         min_duration_s=30,
@@ -254,11 +256,11 @@ def test_not_found_path_skips_delete_when_library_gone() -> None:
 
     with (
         patch("nomarr.workflows.processing.process_file_wf.build_library_path_from_db", return_value=library_path),
-        patch("nomarr.workflows.processing.process_file_wf.bulk_delete_songs") as delete_mock,
     ):
         result = process_file_workflow("song.flac", config, cache, db, song=_song())
 
-    delete_mock.assert_not_called()
+    process_file_wf_module = importlib.import_module("nomarr.workflows.processing.process_file_wf")
+    assert not hasattr(process_file_wf_module, "bulk_delete_songs")
     assert result.tags is None
     assert result.head_results == {"_not_found": {"status": "not_found", "reason": "file missing on disk"}}
 
@@ -306,3 +308,39 @@ def test_all_heads_skipped_returns_tags_none() -> None:
 
     assert result.tags is None
     assert result.head_results == {"genre-head": {"status": "skipped", "reason": "audio too short"}}
+
+
+@pytest.mark.unit
+@pytest.mark.mocked
+@pytest.mark.parametrize("status", ["invalid_config", "unknown"])
+def test_invalid_resolution_status_raises_without_song_deletion(status: str) -> None:
+    """Only ``not_found`` is report-only; every other invalid resolution raises and deletes nothing.
+
+    The commit narrowed the invalid-resolution branch to a ``not_found`` carve-out: a
+    config-invalid or unknown path must raise ``ValueError`` rather than being downgraded
+    to a report-only result. No deletion surface is reachable on this path.
+    """
+    config = ProcessorConfig(
+        models_dir="models",
+        min_duration_s=30,
+        allow_short=False,
+        batch_size=4,
+        namespace="nom",
+        version_tag_key="tagger_version",
+        tagger_version="v-test",
+    )
+    cache = cast("Any", SimpleNamespace(warm=False))
+    db = MagicMock()
+    library_path = MagicMock()
+    library_path.is_valid.return_value = False
+    library_path.status = status
+    library_path.reason = "not a supported audio file format"
+    library_path.library_id = "music"
+
+    with (
+        patch("nomarr.workflows.processing.process_file_wf.build_library_path_from_db", return_value=library_path),
+        pytest.raises(ValueError, match=rf"Path validation failed \({status}\): not a supported audio file format"),
+    ):
+        process_file_workflow("song.flac", config, cache, db, song=_song())
+
+    db.library.remove_song_by_path.assert_not_called()

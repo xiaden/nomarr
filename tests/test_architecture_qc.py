@@ -1949,6 +1949,205 @@ def test_scanner_is_sole_producer_of_corroborated_filesystem_absence() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Part D — scanner-only filesystem-absence deletion authority
+# ---------------------------------------------------------------------------
+
+#: Destructive Song-deletion primitives whose call sites must stay confined to
+#: the authorized producers: the scanner sweep (``remove_deleted_files``), the
+#: config/semantic reconciliation gate (``remove_song_by_path`` inside
+#: ``reconcile_paths_comp``), the mutation component that owns the primitives,
+#: and the persistence facade/repository definitions themselves.
+_DESTRUCTIVE_DELETION_PRIMITIVES = ("remove_song_by_path", "bulk_delete_songs", "remove_deleted_files")
+
+#: Production modules allowed to import or call a destructive deletion
+#: primitive. ``process_file_wf.py`` is deliberately absent: ML processing must
+#: never delete a Song on a filesystem-absence signal (ADR-050 item 3 / DD 8.5).
+_DELETION_AUTHORITY_ALLOWLIST = {
+    "nomarr/components/library/__init__.py",
+    "nomarr/components/library/library_scan_file_ops_comp.py",
+    "nomarr/components/library/reconcile_paths_comp.py",
+    "nomarr/components/library/library_song_mutation_comp.py",
+    "nomarr/workflows/library/scan_library_full_wf.py",
+    "nomarr/workflows/library/scan_library_quick_wf.py",
+    "nomarr/persistence/api/library.py",
+    "nomarr/persistence/api/library_songs.py",
+}
+
+#: Exactly the modules permitted to import ``remove_deleted_files``: its
+#: definition module, the package re-export shim, and the two scan workflows
+#: whose sweep is the sole authorized filesystem-absence deletion path.
+_REMOVE_DELETED_FILES_IMPORTERS = {
+    "nomarr/components/library/library_scan_file_ops_comp.py",
+    "nomarr/components/library/__init__.py",
+    "nomarr/workflows/library/scan_library_full_wf.py",
+    "nomarr/workflows/library/scan_library_quick_wf.py",
+}
+
+
+def _imported_names(tree: ast.Module) -> set[str]:
+    """Return every name bound by an ``import``/``from ... import`` statement."""
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names.update(alias.name.split(".")[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            names.update(alias.name for alias in node.names)
+            names.update(alias.asname for alias in node.names if alias.asname)
+    return names
+
+
+def _attribute_call_names(tree: ast.AST) -> list[tuple[str, int]]:
+    """Return ``(attribute_name, lineno)`` for every ``obj.method(...)`` call."""
+    return [
+        (node.func.attr, node.lineno)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+    ]
+
+
+def _bare_call_names(tree: ast.AST) -> list[tuple[str, int]]:
+    """Return ``(name, lineno)`` for every bare ``name(...)`` call.
+
+    Imported-module refactors (``from x import primitive`` then ``primitive(...)``)
+    would otherwise bypass the attribute-call inventory.
+    """
+    return [
+        (node.func.id, node.lineno)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    ]
+
+
+def _imported_symbol_names(tree: ast.AST) -> set[str]:
+    """Return every symbol imported by a ``from ... import symbol`` statement.
+
+    Unlike :func:`_imported_names`, this yields the imported member
+    (``bulk_delete_songs``) and not only the top-level module alias derived from
+    ``ImportFrom.module``.
+    """
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            names.update(alias.asname or alias.name for alias in node.names)
+    return names
+
+
+def test_filesystem_absence_deletion_authority_is_scanner_only() -> None:
+    """Filesystem-absence Song deletion stays scanner-only (ADR-050 item 3).
+
+    Pins the DD section 8.5 Enforcement rule with three independent regressions:
+
+    (a) ``remove_deleted_files`` is imported only by its definition module, the
+        ``nomarr/components/library`` re-export shim, and the two scan workflows;
+    (b) the destructive-call inventory of ``remove_song_by_path``,
+        ``bulk_delete_songs``, and ``remove_deleted_files`` stays confined to the
+        authorized producers (notably never ``process_file_wf.py``, which also
+        must not import a destructive primitive);
+    (c) in ``reconcile_paths_comp._handle_invalid_path`` the sole
+        ``remove_song_by_path`` call is structurally nested under a call to
+        ``_is_config_semantic_invalid``, so the destructive gate cannot lose its
+        config/semantic guard.
+    """
+    violations: list[str] = []
+    remove_deleted_files_importers: set[str] = set()
+
+    for py_file in find_python_files(NOMARR_DIR):
+        relative_path = py_file.relative_to(PROJECT_ROOT).as_posix()
+        try:
+            tree = ast.parse(py_file.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, SyntaxError) as exc:
+            pytest.fail(f"Failed to inspect {relative_path}: {exc}")
+
+        imported_names = _imported_names(tree)
+        imported_symbols = _imported_symbol_names(tree)
+        call_names = _attribute_call_names(tree) + _bare_call_names(tree)
+
+        # Import detection covers both module-qualified imports (which surface
+        # via ``_imported_names``) and ``from x import remove_deleted_files``
+        # member imports (``_imported_symbol_names``).
+        if "remove_deleted_files" in imported_names or "remove_deleted_files" in imported_symbols:
+            remove_deleted_files_importers.add(relative_path)
+
+        if relative_path in _DELETION_AUTHORITY_ALLOWLIST:
+            continue
+        for name, lineno in call_names:
+            if name in _DESTRUCTIVE_DELETION_PRIMITIVES:
+                violations.append(f"{relative_path}:{lineno}: {name}(...) outside the deletion-authority allowlist")
+        for primitive in _DESTRUCTIVE_DELETION_PRIMITIVES:
+            if primitive in imported_names or primitive in imported_symbols:
+                violations.extend(
+                    f"{relative_path}: imports destructive primitive {primitive} outside the "
+                    "deletion-authority allowlist"
+                )
+
+    # (a) The filesystem-absence primitive has exactly the scanner importers.
+    unexpected_importers = sorted(remove_deleted_files_importers - _REMOVE_DELETED_FILES_IMPORTERS)
+    if unexpected_importers:
+        violations.append(
+            "remove_deleted_files imported outside the scanner allowlist: " + ", ".join(unexpected_importers)
+        )
+    # The definition module declares the symbol rather than importing it; the
+    # remaining allowlisted modules are the re-export shim and the two scanner
+    # workflows, each of which must actually import it.
+    required_importers = _REMOVE_DELETED_FILES_IMPORTERS - {"nomarr/components/library/library_scan_file_ops_comp.py"}
+    missing_importers = sorted(required_importers - remove_deleted_files_importers)
+    if missing_importers:
+        violations.append("remove_deleted_files importer missing: " + ", ".join(missing_importers))
+
+    # (b) ML processing has no destructive deletion surface at all.
+    process_path = NOMARR_DIR / "workflows" / "processing" / "process_file_wf.py"
+    process_tree = ast.parse(process_path.read_text(encoding="utf-8"))
+    process_imports = _imported_names(process_tree) | _imported_symbol_names(process_tree)
+    process_call_names = {name for name, _ in _attribute_call_names(process_tree) + _bare_call_names(process_tree)}
+    violations.extend(
+        f"nomarr/workflows/processing/process_file_wf.py must not import or call {primitive}"
+        for primitive in _DESTRUCTIVE_DELETION_PRIMITIVES
+        if primitive in process_imports or primitive in process_call_names
+    )
+
+    # (c) The reconciliation delete call keeps its _is_config_semantic_invalid guard.
+    reconcile_path = NOMARR_DIR / "components" / "library" / "reconcile_paths_comp.py"
+    reconcile_tree = ast.parse(reconcile_path.read_text(encoding="utf-8"))
+    handlers = [
+        node
+        for node in ast.walk(reconcile_tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "_handle_invalid_path"
+    ]
+    assert len(handlers) == 1, "_handle_invalid_path must be defined exactly once"
+    handler = handlers[0]
+    deletion_calls = [
+        node
+        for node in ast.walk(handler)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "remove_song_by_path"
+    ]
+    assert len(deletion_calls) == 1, "_handle_invalid_path must contain exactly one remove_song_by_path call"
+    deletion_call = deletion_calls[0]
+    guarded = False
+    for node in ast.walk(handler):
+        if not isinstance(node, ast.If):
+            continue
+        if not (node.lineno <= deletion_call.lineno <= (node.end_lineno or node.lineno)):
+            continue
+        if any(
+            isinstance(test_node, ast.Call)
+            and isinstance(test_node.func, ast.Name)
+            and test_node.func.id == "_is_config_semantic_invalid"
+            for test_node in ast.walk(node.test)
+        ):
+            guarded = True
+            break
+    if not guarded:
+        violations.append(
+            "nomarr/components/library/reconcile_paths_comp.py: the remove_song_by_path call in "
+            "_handle_invalid_path is not structurally nested under _is_config_semantic_invalid"
+        )
+
+    assert not violations, "Filesystem-absence deletion authority must be scanner-only:\n" + "\n".join(violations)
+
+
+# ---------------------------------------------------------------------------
 # Part B — resolution classifies with os.stat/errno, never boolean probes
 # ---------------------------------------------------------------------------
 
