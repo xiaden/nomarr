@@ -108,6 +108,52 @@ class TestPipelineEndpoint:
         mock_library_service.get_library_by_name.assert_called_once_with("Test Library")
         mock_pipeline_service.get_pipeline_status.assert_called_once_with(library)
 
+    def test_get_pipeline_status_forwards_non_none_write_outcome(
+        self,
+        client: TestClient,
+        mock_library_service: MagicMock,
+        mock_pipeline_service: MagicMock,
+    ) -> None:
+        """A non-None ``write_outcome`` on the DTO reaches the HTTP response body.
+
+        The happy-path test leaves ``write_outcome`` at its ``None`` default, so a
+        dropped ``write_outcome=dto.write_outcome`` forwarding would still pass it.
+        """
+        library = make_library()
+        mock_library_service.get_library_by_name.return_value = library
+        mock_pipeline_service.get_pipeline_status.return_value = LibraryPipelineStatusDTO(
+            library_id="Test Library",
+            scan_state="scanned",
+            ml_state="ML_processed",
+            calibration_state="not_calibrated",
+            tag_write_state="not_written",
+            untagged_count=None,
+            uncalibrated_count=None,
+            pending_write_count=17,
+            library_auto_write=False,
+            file_write_mode="full",
+            write_outcome="partial",
+        )
+
+        response = client.get("/api/web/library/Test%20Library/pipeline")
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "library_id": "Test Library",
+            "scan_state": "scanned",
+            "ml_state": "ML_processed",
+            "calibration_state": "not_calibrated",
+            "tag_write_state": "not_written",
+            "untagged_count": None,
+            "uncalibrated_count": None,
+            "pending_write_count": 17,
+            "library_auto_write": False,
+            "file_write_mode": "full",
+            "write_outcome": "partial",
+        }
+        mock_library_service.get_library_by_name.assert_called_once_with("Test Library")
+        mock_pipeline_service.get_pipeline_status.assert_called_once_with(library)
+
     def test_get_pipeline_status_returns_404_when_name_missing(
         self,
         client: TestClient,

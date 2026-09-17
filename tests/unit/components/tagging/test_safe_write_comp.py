@@ -20,6 +20,7 @@ from nomarr.components.tagging.safe_write_comp import (
 )
 from nomarr.helpers.dto.path_dto import LibraryPath
 from nomarr.helpers.files_helper import AUDIO_EXTENSIONS, is_audio_file
+from nomarr.helpers.fs_contract import FsFact
 
 pytestmark = [pytest.mark.unit]
 
@@ -220,6 +221,39 @@ class TestSafeWriteVerification:
             assert result.outcome == "probe_unsupported"
             assert result.fs_fact is None
 
+    def test_original_probe_oserror_returns_probe_failed_transient(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """An ``OSError`` probing the ORIGINAL file is the transient-probe branch.
+
+        The sibling RuntimeError test pins the ``probe_unsupported`` arm; this pins the
+        separate ``except OSError`` arm, which the helper ``_stub_probe`` only reaches on
+        the post-write probe — never on the original probe.
+        """
+        target = tmp_path / "song.mp3"
+        target.write_bytes(_OLD_BYTES)
+        library_path = _make_library_path(target)
+        probes: list[Path] = []
+
+        def boom_probe(path: Path) -> _AudioProperties:
+            probes.append(path)
+            raise OSError(errno.EIO, "probe io failed")
+
+        monkeypatch.setattr(safe_write_comp, "_probe_audio_properties", boom_probe)
+
+        mtime_ms = int(target.stat().st_mtime * 1000)
+        result = safe_write_tags(library_path, tmp_path, lambda _: None, mtime_ms)
+
+        assert probes == [target]
+        assert result.success is False
+        assert result.outcome == "probe_failed_transient"
+        assert result.fs_fact is None
+        assert target.read_bytes() == _OLD_BYTES
+        assert _leftover_names(tmp_path, ".nomarr-tmp") == []
+        assert _leftover_names(tmp_path, ".nomarr-bak") == []
+
 
 class TestSafeWriteResult:
     """Tests for SafeWriteResult dataclass."""
@@ -235,6 +269,42 @@ class TestSafeWriteResult:
         result = SafeWriteResult(success=False, outcome="write_failed")
         assert result.success is False
         assert result.outcome == "write_failed"
+        assert result.error == "write_failed"
+
+
+class TestSafeWriteResultErrorFallback:
+    """The derived ``error`` falls back to ``fs_fact.kind`` only when ``outcome`` is absent."""
+
+    def test_fs_fact_kind_used_when_outcome_is_none(self) -> None:
+        """With no outcome, the structured fact kind is the error text."""
+        result = SafeWriteResult(
+            success=False,
+            fs_fact=FsFact(presence="unknown", kind="permission_denied", errno=13),
+        )
+        assert result.outcome is None
+        assert result.error == "permission_denied"
+
+    def test_invalid_path_fact_used_when_outcome_is_none(self) -> None:
+        """A structurally invalid path reports its fact kind when no outcome is set."""
+        result = SafeWriteResult(
+            success=False,
+            fs_fact=FsFact(presence="unknown", kind="invalid_path", errno=None),
+        )
+        assert result.outcome is None
+        assert result.error == "invalid_path"
+
+    def test_no_truth_channel_returns_none(self) -> None:
+        """A failure carrying neither outcome nor fact derives no error text."""
+        result = SafeWriteResult(success=False, outcome=None, fs_fact=None)
+        assert result.error is None
+
+    def test_structured_outcome_wins_over_fs_fact(self) -> None:
+        """When both channels are present, the structured outcome is authoritative."""
+        result = SafeWriteResult(
+            success=False,
+            outcome="write_failed",
+            fs_fact=FsFact(presence="unknown", kind="permission_denied", errno=13),
+        )
         assert result.error == "write_failed"
 
 

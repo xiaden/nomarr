@@ -27,7 +27,7 @@ export interface PipelineLibrary {
   name: string;
   state: string;
   library_auto_write: boolean;
-  /** Tag-write reconcile outcome ("complete" | "partial"); absent/None is unknown. */
+  /** Tag-write reconcile outcome ("running" | "complete" | "partial"); absent/None is unknown. */
   write_outcome?: string | null;
 }
 

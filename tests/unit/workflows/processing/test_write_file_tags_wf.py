@@ -18,6 +18,7 @@ from nomarr.helpers.dataclasses.tags_dataclass import Tag, Tags
 from nomarr.helpers.dto.path_dto import LibraryPath
 from nomarr.helpers.fs_contract import FsFact
 from nomarr.workflows.processing.write_file_tags_wf import (
+    WriteResult,
     _filter_tags_for_mode,
     _release_failed_write,
     _resolve_library_path,
@@ -438,3 +439,44 @@ class TestWriteFileTagsWorkflow:
         assert "/music" not in error
         assert result.file_key is workflow.identity
         assert workflow.release_calls == [(workflow.db, workflow.identity, "reconcile:lib1")]
+
+
+@pytest.mark.unit
+class TestWriteResultErrorFallback:
+    """The derived ``error`` falls back to ``fs_fact.kind`` only when ``outcome`` is absent."""
+
+    def test_fs_fact_kind_used_when_outcome_is_none(self) -> None:
+        """With no outcome, the structured fact kind is the error text."""
+        result = WriteResult(
+            file_key=_identity(),
+            tags_written=0,
+            tags_filtered=0,
+            success=False,
+            fs_fact=FsFact(presence="unknown", kind="invalid_path", errno=None),
+        )
+        assert result.outcome is None
+        assert result.error == "invalid_path"
+
+    def test_no_truth_channel_returns_none(self) -> None:
+        """A failure carrying neither outcome nor fact derives no error text."""
+        result = WriteResult(
+            file_key=_identity(),
+            tags_written=0,
+            tags_filtered=0,
+            success=False,
+            outcome=None,
+            fs_fact=None,
+        )
+        assert result.error is None
+
+    def test_structured_outcome_wins_over_fs_fact(self) -> None:
+        """When both channels are present, the structured outcome is authoritative."""
+        result = WriteResult(
+            file_key=_identity(),
+            tags_written=0,
+            tags_filtered=0,
+            success=False,
+            outcome="song_record_missing",
+            fs_fact=FsFact(presence="unknown", kind="permission_denied", errno=13),
+        )
+        assert result.error == "song_record_missing"
