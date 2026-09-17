@@ -8,9 +8,9 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from nomarr.helpers.dataclasses.ml_model_output_dataclass import ModelOutput
-from nomarr.helpers.dto.info_dto import WorkStatusResult
+from nomarr.helpers.dto.info_dto import LibraryPipelineInfo, WorkStatusResult
 from nomarr.interfaces.api.auth import verify_session
-from nomarr.interfaces.api.web.dependencies import get_library_service, get_ml_service
+from nomarr.interfaces.api.web.dependencies import get_library_service, get_ml_service, get_tagging_service
 from nomarr.interfaces.api.web.ml_if import router as ml_router
 
 if TYPE_CHECKING:
@@ -30,9 +30,16 @@ def mock_ml_service() -> MagicMock:
 
 
 @pytest.fixture
+def mock_tagging_service() -> MagicMock:
+    """Provide a mocked tagging service dependency."""
+    return MagicMock()
+
+
+@pytest.fixture
 def app(
     mock_library_service: MagicMock,
     mock_ml_service: MagicMock,
+    mock_tagging_service: MagicMock,
 ) -> Iterator[FastAPI]:
     """Build a minimal FastAPI app for ML endpoints."""
     test_app = FastAPI()
@@ -44,6 +51,7 @@ def app(
     test_app.dependency_overrides[verify_session] = allow_session
     test_app.dependency_overrides[get_library_service] = lambda: mock_library_service
     test_app.dependency_overrides[get_ml_service] = lambda: mock_ml_service
+    test_app.dependency_overrides[get_tagging_service] = lambda: mock_tagging_service
 
     yield test_app
 
@@ -66,6 +74,7 @@ class TestMlIfRoutes:
         self,
         client: TestClient,
         mock_library_service: MagicMock,
+        mock_tagging_service: MagicMock,
     ) -> None:
         """The work-status endpoint should be reachable under /machine-learning."""
         mock_library_service.get_work_status.return_value = WorkStatusResult(
@@ -96,7 +105,49 @@ class TestMlIfRoutes:
             "estimated_minutes_remaining": None,
             "is_busy": False,
         }
-        mock_library_service.get_work_status.assert_called_once_with()
+        mock_library_service.get_work_status.assert_called_once_with(tagging_service=mock_tagging_service)
+
+    def test_work_status_projects_write_outcome_at_http_boundary(
+        self,
+        client: TestClient,
+        mock_library_service: MagicMock,
+        mock_tagging_service: MagicMock,
+    ) -> None:
+        """The real /work-status endpoint serialises write_outcome from the DTO."""
+        mock_library_service.get_work_status.return_value = WorkStatusResult(
+            is_scanning=False,
+            scanning_libraries=[],
+            pipeline_libraries=[
+                LibraryPipelineInfo(
+                    library_id="Rock Library",
+                    name="Rock Library",
+                    state="write_ready",
+                    library_auto_write=False,
+                    write_outcome="partial",
+                ),
+            ],
+            is_processing=False,
+            pending_files=0,
+            processed_files=0,
+            total_files=0,
+            files_per_minute=0.0,
+            estimated_minutes_remaining=None,
+            is_busy=False,
+        )
+
+        response = client.get("/api/web/machine-learning/work-status")
+
+        assert response.status_code == 200
+        assert response.json()["pipeline_libraries"] == [
+            {
+                "library_id": "Rock Library",
+                "name": "Rock Library",
+                "state": "write_ready",
+                "library_auto_write": False,
+                "write_outcome": "partial",
+            },
+        ]
+        mock_library_service.get_work_status.assert_called_once_with(tagging_service=mock_tagging_service)
 
     def test_recent_activity_is_reachable_at_machine_learning_prefix(
         self,

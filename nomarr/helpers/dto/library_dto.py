@@ -231,6 +231,18 @@ class FileTagsResult:
     tags: list[FileTag]
 
 
+# Failure-reason vocabulary for a tag write (DD §8.7), consumed by SafeWriteResult/WriteResult.
+WriteOutcome = Literal[
+    "modified_externally",
+    "audio_sanity_failed",
+    "probe_failed_transient",
+    "probe_unsupported",
+    "write_failed",
+    "song_record_missing",
+    "library_unresolved",
+]
+
+
 @dataclass
 class WriteTagsResult:
     """Result from tagging_svc.write_tags_to_files."""
@@ -238,6 +250,7 @@ class WriteTagsResult:
     processed: int  # Number of files successfully written
     remaining: int  # Files still pending tag write
     failed: int  # Files that failed during this batch
+    outcome: Literal["complete", "partial"] = "partial"  # Conservative default; drained path sets "complete"
 
 
 @dataclass
@@ -254,6 +267,7 @@ class LibraryPipelineStatusDTO:
     pending_write_count: int | None
     library_auto_write: bool
     file_write_mode: str
+    write_outcome: str | None = None
 
 
 class ErroredFileItem(TypedDict):
@@ -296,5 +310,6 @@ __all__ = [
     "TagCleanupResult",
     "UniqueTagKeysResult",
     "UpdateLibraryFromTagsParams",
+    "WriteOutcome",
     "WriteTagsResult",
 ]

@@ -59,7 +59,7 @@ Each library has exactly one current pipeline state.
 | `awaiting_calibration` | All current files are tagged and the library is waiting for calibration to start. |
 | `calibrating` | Nomarr is generating calibration data. |
 | `applying` | Nomarr is applying the current calibration to the library's tagged files. |
-| `write_ready` | Database-side processing is complete. The library is ready for file writeback, but writing has not started yet. |
+| `write_ready` | Database-side processing is complete. The library is ready for file writeback, but writing has not started yet — either because it has not begun, or because a previous write run ended with files still pending. |
 | `writing` | Nomarr is writing curated tags into the music files on disk. |
 | `done` | The pipeline finished all currently required stages for the library. |
 
@@ -84,6 +84,18 @@ Keeping these phases separate gives you control:
 - You can inspect and work with curated tags in Nomarr before writing anything to disk
 - You can disable auto-write for libraries where you want manual approval
 - You can still benefit from database-side tagging even if you do not want automatic file changes
+
+## Partial writes
+
+A tag-write run does not always finish every file. If Nomarr cannot write some files — for example because they were changed outside Nomarr, or because of a transient filesystem problem — the run ends with those files still pending instead of failing outright.
+
+When this happens:
+
+- The library shows the **Partial write** marker, and a caption reads "Tag write ended with files still pending."
+- The library's pipeline state returns to `write_ready`, so the pending files remain resumable.
+- The Navidrome rescan is deliberately skipped until a later run writes every pending file.
+
+To resume, start another file writeback run for the library. Nomarr attempts to write each pending file at most 3 times per run, and a new run starts with a fresh retry budget, so files still pending after one run are picked up again on the next.
 
 ## What to expect in practice
 

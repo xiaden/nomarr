@@ -719,6 +719,7 @@ export function LibraryManagement() {
           {libraries.map((lib) => {
             const pipelineLibrary = pipelineLibraryById.get(lib.library_id);
             const pipelineState = pipelineLibrary?.state ?? "idle";
+            const isPartialWrite = pipelineLibrary?.write_outcome === "partial";
 
             return (
             <Panel key={lib.library_id}>
@@ -732,6 +733,9 @@ export function LibraryManagement() {
                   <Stack direction="row" alignItems="center" spacing={1.25} sx={{ mb: 0.5 }}>
                     <Typography variant="h6">{lib.name}</Typography>
                     <PipelineStateBadge state={pipelineState} />
+                    {isPartialWrite && (
+                      <Chip label="Partial write" color="warning" size="small" />
+                    )}
                     {isOutsideLibraryRoot(lib.rootPath) && (
                       <Chip
                         label="Outside library_root"
@@ -837,6 +841,11 @@ export function LibraryManagement() {
                   <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: "block" }}>
                     Auto-write: {pipelineLibrary?.library_auto_write ?? lib.libraryAutoWrite ? "Enabled" : "Disabled"}
                   </Typography>
+                  {isPartialWrite && (
+                    <Typography variant="caption" color="warning.main" sx={{ mt: 0.5, display: "block" }}>
+                      Tag write ended with files still pending.
+                    </Typography>
+                  )}
                 </Box>
                 <Stack direction="row" alignItems="center" spacing={1}>
                   <Box

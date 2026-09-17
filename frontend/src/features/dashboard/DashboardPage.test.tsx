@@ -63,4 +63,40 @@ describe("DashboardPage", () => {
     );
     expect(screen.getByTestId("pipeline-state-badge")).toHaveTextContent("Awaiting calibration");
   });
+
+  it("distinguishes a partial tag write from a drained library", async () => {
+    vi.mocked(getWorkStatus).mockResolvedValue({
+      ...workStatus,
+      pipeline_libraries: [
+        {
+          library_id: "library-1",
+          name: "Partial Library",
+          state: "write_ready",
+          library_auto_write: false,
+          write_outcome: "partial",
+        },
+        {
+          library_id: "library-2",
+          name: "Drained Library",
+          state: "done",
+          library_auto_write: true,
+          write_outcome: "complete",
+        },
+      ],
+    });
+
+    renderWithProviders(<DashboardPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Partial Library")).toBeInTheDocument();
+    });
+
+    expect(screen.getAllByText("Tag write ended with files still pending.")).toHaveLength(1);
+    expect(screen.getByText("Drained Library")).toBeInTheDocument();
+
+    const badges = screen.getAllByTestId("pipeline-state-badge");
+    expect(badges).toHaveLength(2);
+    expect(badges[0]).toHaveTextContent("Write ready");
+    expect(badges[1]).toHaveTextContent("Done");
+  });
 });

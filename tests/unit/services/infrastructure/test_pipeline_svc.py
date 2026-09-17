@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 from types import SimpleNamespace
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
 import pytest
@@ -12,6 +14,8 @@ from nomarr.helpers.constants.pipeline_states import (
     CAL_IN_PROGRESS,
     CAL_NOT_CALIBRATED,
     CAL_STATE_FIELD,
+    ML_COMPLETE,
+    SCAN_COMPLETE,
     SCAN_NOT_SCANNED,
     SCAN_STATE_FIELD,
     WRITE_COMPLETE,
@@ -21,6 +25,9 @@ from nomarr.helpers.constants.pipeline_states import (
 )
 from nomarr.helpers.dataclasses.library_dataclass import Library
 from nomarr.services.infrastructure.pipeline_svc import LibraryPipelineService
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 pytestmark = [pytest.mark.unit, pytest.mark.mocked]
 
@@ -306,47 +313,142 @@ class TestOnApplyComplete:
 
 
 class TestOnWriteComplete:
-    """Tests for tag write completion handling."""
+    """Tests for tag write completion handling.
+
+    Every behavior test drives the real ``_dispatch_write`` ``on_complete``
+    closure rather than calling ``on_write_complete`` in isolation.
+    """
+
+    @staticmethod
+    def _dispatch_closure(
+        pipeline_service: LibraryPipelineService,
+        mock_tagging_svc: MagicMock,
+    ) -> tuple[Library, Callable[[], None]]:
+        """Dispatch write work and return the library plus the real completion closure."""
+        library = _make_library()
+        pipeline_service._dispatch_write(library)
+        on_complete = mock_tagging_svc.start_write_tags_background.call_args.kwargs["on_complete"]
+        return library, on_complete
 
     def test_on_write_complete_transitions_to_written(
         self,
         pipeline_service: LibraryPipelineService,
         mock_db: MagicMock,
+        mock_tagging_svc: MagicMock,
+        mock_navidrome_svc: MagicMock,
     ) -> None:
-        """Write completion should transition to written."""
-        library = _make_library()
+        """A reconcile status without a pending count is an authoritative completion."""
+        mock_tagging_svc.get_reconcile_status.return_value = {}
+        library, on_complete = self._dispatch_closure(pipeline_service, mock_tagging_svc)
 
-        pipeline_service.on_write_complete(library)
+        on_complete()
 
         mock_db.app.upsert_pipeline_state.assert_called_with(library, WRITE_STATE_FIELD, {"state": WRITE_COMPLETE})
+        mock_navidrome_svc.trigger_rescan.assert_called_once()
 
-    def test_on_write_complete_rejects_remaining_work(
+    def test_on_write_complete_partial_returns_axis_to_not_written_without_rescan(
         self,
         pipeline_service: LibraryPipelineService,
         mock_db: MagicMock,
+        mock_tagging_svc: MagicMock,
+        mock_navidrome_svc: MagicMock,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """Write completion must refuse to mark complete while files remain."""
-        library = _make_library()
+        """A partial run returns the axis to not_written, warns, and skips the rescan."""
+        mock_tagging_svc.get_reconcile_status.return_value = {
+            "pending_count": 5,
+            "failed_count": 5,
+            "in_progress": False,
+            "outcome": "partial",
+        }
+        library, on_complete = self._dispatch_closure(pipeline_service, mock_tagging_svc)
 
-        with pytest.raises(RuntimeError, match="files remain"):
-            pipeline_service.on_write_complete(library, remaining=5)
+        # Must not raise RuntimeError any more.
+        with caplog.at_level(logging.WARNING, logger="nomarr.services.infrastructure.pipeline_svc"):
+            on_complete()
 
-        # The write-complete transition must NOT have been reached.
-        mock_db.app.upsert_pipeline_state.assert_not_called()
+        mock_db.app.upsert_pipeline_state.assert_called_once_with(
+            library,
+            WRITE_STATE_FIELD,
+            {"state": WRITE_NOT_WRITTEN},
+        )
+        mock_navidrome_svc.trigger_rescan.assert_not_called()
+        assert any(record.levelno == logging.WARNING for record in caplog.records)
 
     def test_on_write_complete_zero_remaining_transitions_to_written(
         self,
         pipeline_service: LibraryPipelineService,
         mock_db: MagicMock,
+        mock_tagging_svc: MagicMock,
         mock_navidrome_svc: MagicMock,
     ) -> None:
         """Zero remaining files is the all-done representation and completes."""
-        library = _make_library()
+        mock_tagging_svc.get_reconcile_status.return_value = {
+            "pending_count": 0,
+            "failed_count": 0,
+            "in_progress": False,
+            "outcome": "complete",
+        }
+        library, on_complete = self._dispatch_closure(pipeline_service, mock_tagging_svc)
 
-        pipeline_service.on_write_complete(library, remaining=0)
+        on_complete()
 
         mock_db.app.upsert_pipeline_state.assert_called_with(library, WRITE_STATE_FIELD, {"state": WRITE_COMPLETE})
         mock_navidrome_svc.trigger_rescan.assert_called_once()
+
+
+class TestGetPipelineStatus:
+    """Tests for state-aware pipeline status projection."""
+
+    def test_get_pipeline_status_projects_write_outcome_on_write_axis(
+        self,
+        pipeline_service: LibraryPipelineService,
+        mock_db: MagicMock,
+        mock_tagging_svc: MagicMock,
+    ) -> None:
+        """A write-axis library surfaces the reconcile pending count and outcome."""
+        library = _make_library()
+        mock_db.library.get_pipeline_state.return_value = SimpleNamespace(
+            scan_state=SCAN_COMPLETE,
+            ml_state=ML_COMPLETE,
+            calibration_state=CAL_COMPLETE,
+            tag_write_state=WRITE_NOT_WRITTEN,
+        )
+        mock_tagging_svc.get_reconcile_status.return_value = {
+            "pending_count": 2,
+            "failed_count": 1,
+            "in_progress": False,
+            "outcome": "partial",
+        }
+
+        status = pipeline_service.get_pipeline_status(library)
+
+        assert status is not None
+        assert status.write_outcome == "partial"
+        assert status.pending_write_count == 2
+        mock_tagging_svc.get_reconcile_status.assert_called_once_with(library)
+
+    def test_get_pipeline_status_omits_write_outcome_off_write_axis(
+        self,
+        pipeline_service: LibraryPipelineService,
+        mock_db: MagicMock,
+        mock_tagging_svc: MagicMock,
+    ) -> None:
+        """A written axis must not query reconcile status or project an outcome."""
+        library = _make_library()
+        mock_db.library.get_pipeline_state.return_value = SimpleNamespace(
+            scan_state=SCAN_COMPLETE,
+            ml_state=ML_COMPLETE,
+            calibration_state=CAL_COMPLETE,
+            tag_write_state=WRITE_COMPLETE,
+        )
+
+        status = pipeline_service.get_pipeline_status(library)
+
+        assert status is not None
+        assert status.write_outcome is None
+        assert status.pending_write_count is None
+        mock_tagging_svc.get_reconcile_status.assert_not_called()
 
 
 class TestDispatchWrite:

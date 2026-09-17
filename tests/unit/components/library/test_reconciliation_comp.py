@@ -164,6 +164,38 @@ class TestClaimFilesForReconciliation:
 
     @pytest.mark.unit
     @pytest.mark.mocked
+    def test_exclusion_applied_before_batch_cap_does_not_starve_tail(self) -> None:
+        """Excluded candidates deeper than ``batch_size`` must not consume the batch slots.
+
+        A post-cap filter would exhaust the ``batch_size`` budget on the leading run of
+        excluded candidates and return nothing; the query-side predicate must skip them
+        before the cap so the eligible tail is still claimed.
+        """
+        mock_db = _make_mock_db()
+        excluded = [_candidate(f"excluded-{index}.mp3") for index in range(3)]
+        tail = [_candidate("tail-a.mp3"), _candidate("tail-b.mp3")]
+        mock_db.library.list_songs_with_state.side_effect = [[*excluded, *tail], []]
+        exclude_locators = {_identity(f"excluded-{index}.mp3") for index in range(3)}
+
+        with patch(
+            "nomarr.components.library.reconciliation_comp.now_ms",
+            return_value=Milliseconds(30_000),
+        ):
+            result = claim_files_for_reconciliation(
+                mock_db,
+                _library(),
+                "workers/test",
+                batch_size=2,
+                exclude_locators=exclude_locators,
+            )
+
+        assert result == tail
+        assert mock_db.app.add_claim.call_count == 2
+        claimed_paths = {call.args[0].identity.song.normalized_path for call in mock_db.app.add_claim.call_args_list}
+        assert claimed_paths == {"tail-a.mp3", "tail-b.mp3"}
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
     def test_skips_already_claimed_active_candidate(self) -> None:
         mock_db = _make_mock_db()
         mock_db.library.list_songs_with_state.side_effect = [[_candidate("song-123.mp3")], []]
@@ -280,6 +312,24 @@ class TestCountFilesNeedingReconciliation:
         result = count_files_needing_reconciliation(mock_db, _library())
 
         assert result == 3
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_count_excludes_locators(self) -> None:
+        """Excluded locators are subtracted from the identity-deduped union count."""
+        mock_db = _make_mock_db()
+        mock_db.library.list_songs_with_state.side_effect = [
+            [_candidate("a.mp3"), _candidate("b.mp3")],
+            [_candidate("b.mp3", states=(STATE_NOT_WRITTEN,)), _candidate("c.mp3", states=(STATE_NOT_WRITTEN,))],
+        ]
+
+        result = count_files_needing_reconciliation(
+            mock_db,
+            _library(),
+            exclude_locators={_identity("a.mp3"), _identity("c.mp3")},
+        )
+
+        assert result == 1
 
     @pytest.mark.unit
     @pytest.mark.mocked

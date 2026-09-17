@@ -16,6 +16,8 @@ from nomarr.helpers.dataclasses.worker_claim_dataclass import WorkerClaim, Worke
 from nomarr.helpers.time_helper import now_ms
 
 if TYPE_CHECKING:
+    from collections.abc import Collection
+
     from nomarr.helpers.dataclasses.library_dataclass import Library
     from nomarr.helpers.dataclasses.song_state_candidate_dataclass import SongStateCandidate
     from nomarr.persistence.db import Database
@@ -27,8 +29,15 @@ def claim_files_for_reconciliation(
     worker_id: str,
     batch_size: int = 100,
     lease_ms: int = 60000,
+    *,
+    exclude_locators: Collection[SongIdentity] = (),
 ) -> list[SongStateCandidate]:
-    """Claim stale or pending songs as typed candidates addressed by semantic locators."""
+    """Claim stale or pending songs as typed candidates addressed by semantic locators.
+
+    ``exclude_locators`` is a read-only run-scoped exclusion filter. Excluded candidates
+    are skipped **before** the ``batch_size`` cap, so a deep run of excluded candidates
+    cannot consume every batch slot and starve the eligible queue tail.
+    """
     library_identity = library.library_uuid
     if library_identity is None:
         return []
@@ -42,7 +51,10 @@ def claim_files_for_reconciliation(
     ]
     claimed: list[SongStateCandidate] = []
     now = now_ms().value
+    exclusion = set(exclude_locators)
     for candidate in dict.fromkeys(candidates):
+        if candidate.identity in exclusion:
+            continue
         if len(claimed) >= batch_size:
             break
         claim = WorkerClaim(
@@ -67,11 +79,22 @@ def release_claim(db: Database, song: SongIdentity, worker_id: str) -> None:
     db.app.remove_claim(WorkerClaimIdentity(song=song, worker_id=worker_id, claim_type="reconcile"))
 
 
-def count_files_needing_reconciliation(db: Database, library: Library) -> int:
-    """Count locator-addressed songs whose database projection needs writing."""
+def count_files_needing_reconciliation(
+    db: Database,
+    library: Library,
+    *,
+    exclude_locators: Collection[SongIdentity] = (),
+) -> int:
+    """Count locator-addressed songs whose database projection needs writing.
+
+    Returns the identity-deduped union count minus ``exclude_locators``. The
+    ``int`` return type and library-generic signature are unchanged; the keyword-only
+    default ``()`` preserves current behaviour exactly.
+    """
     if library.library_uuid is None:
         return 0
     library_identity = LibraryIdentity(library.library_uuid, library.name, library.root_path)
     stale = db.library.list_songs_with_state(STATE_TAGS_NOT_FRESH, library=library_identity)
     pending = db.library.list_songs_with_state(STATE_NOT_WRITTEN, library=library_identity)
-    return len({candidate.identity for candidate in [*stale, *pending]})
+    identities = {candidate.identity for candidate in [*stale, *pending]}
+    return len(identities - set(exclude_locators))

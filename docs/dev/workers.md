@@ -112,7 +112,13 @@ task_id = self._bts.start_task(
 )
 ```
 
-The `_task` function loops until the library is fully reconciled (`remaining == 0`) or cancellation is requested.
+The `_task` function is a **three-exit, bounded-retry driver** (ADR-051), not a loop that runs until `remaining == 0`:
+
+1. **Drained** — `remaining == 0`: returns the result with `outcome="complete"`.
+2. **Partial** — `remaining > 0` but no eligible candidate remains (`eligible_remaining == 0` after every retryable failure either succeeded or entered the run-scoped exclusion set): returns a result with `outcome="partial"`. The task still reaches BTS `complete` and `on_complete` fires with a partial signal; the `tag_write` axis returns to `not_written` and the Navidrome rescan is skipped until a later run fully drains the library.
+3. **Cancelled** — `stop_event` set with work outstanding: raises `TaskCancelledError`, so BTS records `cancelled` and skips `on_complete`.
+
+Each locator receives a bounded, run-local retry budget — at most `_MAX_WRITE_ATTEMPTS` (3) total attempts per run, with a fixed `_INTER_ATTEMPT_DELAY_SECONDS` (1.0 s) delay applied via `stop_event.wait` (cancellation-responsive). A non-retryable structured outcome excludes the locator immediately; a retryable failure is excluded once its budget is exhausted. The exclusion set and attempt counters are created fresh per dispatch and never persisted, so a new write-tags run gets a fresh budget.
 
 ### Cancellation Protocol
 

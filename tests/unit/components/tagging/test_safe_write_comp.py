@@ -139,7 +139,8 @@ class TestSafeWriteVerification:
             result = safe_write_tags(library_path, tmp_path, mock_write_fn, mtime_ms)
 
             assert result.success is False
-            assert "Duration changed" in (result.error or "")
+            assert result.outcome == "audio_sanity_failed"
+            assert result.fs_fact is None
 
     def test_sample_rate_mismatch_returns_failure(self, tmp_path: Path) -> None:
         """Returns failure when sample rate changes after write."""
@@ -165,7 +166,8 @@ class TestSafeWriteVerification:
             result = safe_write_tags(library_path, tmp_path, mock_write_fn, mtime_ms)
 
             assert result.success is False
-            assert "Sample rate changed" in (result.error or "")
+            assert result.outcome == "audio_sanity_failed"
+            assert result.fs_fact is None
 
     def test_channels_mismatch_returns_failure(self, tmp_path: Path) -> None:
         """Returns failure when the channel count changes after write."""
@@ -191,7 +193,8 @@ class TestSafeWriteVerification:
             result = safe_write_tags(library_path, tmp_path, mock_write_fn, mtime_ms)
 
             assert result.success is False
-            assert "Channel count changed" in (result.error or "")
+            assert result.outcome == "audio_sanity_failed"
+            assert result.fs_fact is None
             assert test_file.read_bytes() == _OLD_BYTES
 
     def test_probe_failure_on_original_returns_failure(self, tmp_path: Path) -> None:
@@ -214,7 +217,8 @@ class TestSafeWriteVerification:
             result = safe_write_tags(library_path, tmp_path, lambda _: None, mtime_ms)
 
             assert result.success is False
-            assert "Failed to probe original file" in (result.error or "")
+            assert result.outcome == "probe_unsupported"
+            assert result.fs_fact is None
 
 
 class TestSafeWriteResult:
@@ -227,10 +231,11 @@ class TestSafeWriteResult:
         assert result.error is None
 
     def test_failure_result(self) -> None:
-        """Can create a failure result with error message."""
-        result = SafeWriteResult(success=False, error="Something went wrong")
+        """A failure result derives ``error`` from the structured outcome."""
+        result = SafeWriteResult(success=False, outcome="write_failed")
         assert result.success is False
-        assert result.error == "Something went wrong"
+        assert result.outcome == "write_failed"
+        assert result.error == "write_failed"
 
 
 class TestSafeWriteResultFactField:
@@ -241,13 +246,14 @@ class TestSafeWriteResultFactField:
         assert SafeWriteResult(success=True).fs_fact is None
 
     def test_positional_field_order_is_stable(self) -> None:
-        """``fs_fact`` is the fourth positional field, after success/error/new_mtime_ms."""
+        """``outcome`` is the fourth positional field, after success/new_mtime_ms/fs_fact."""
         fact = _present_fact()
-        result = SafeWriteResult(True, None, None, fact)
+        result = SafeWriteResult(True, None, fact, None)
         assert result.success is True
         assert result.error is None
         assert result.new_mtime_ms is None
         assert result.fs_fact is fact
+        assert result.outcome is None
 
     def test_fact_round_trips_on_field(self) -> None:
         """A constructed FsFact round-trips unchanged on the field."""
@@ -551,7 +557,8 @@ class TestSafeWriteHardlinkAtomicity:
             result = safe_write_tags(library_path, tmp_path, _write_new_bytes, mtime_ms)
 
         assert result.success is False
-        assert "vanished" in (result.error or "").lower()
+        assert result.outcome == "write_failed"
+        assert result.fs_fact is None
         assert created, "expected the same-call backup link to be created before the guard"
         backup = created[0]
         assert backup.exists()
@@ -800,7 +807,8 @@ class TestSafeWriteFallbackSanityFailure:
         result = safe_write_tags(library_path, tmp_path, _write_new_bytes, mtime_ms)
 
         assert result.success is False
-        assert "Audio sanity check failed" in (result.error or "")
+        assert result.outcome == "audio_sanity_failed"
+        assert result.fs_fact is None
         assert original.exists()
         assert original.read_bytes() == _OLD_BYTES
         assert _leftover_names(tmp_path, ".nomarr-tmp") == []
@@ -840,7 +848,8 @@ class TestSafeWriteNonOSErrorContainment:
         result = safe_write_tags(library_path, tmp_path, boom_write, mtime_ms)
 
         assert result.success is False
-        assert result.error == "boom"
+        assert result.outcome == "write_failed"
+        assert result.fs_fact is None
         assert original.exists()
         assert original.read_bytes() == _OLD_BYTES
         assert self._leftover_artifacts(tmp_path) == []
@@ -871,6 +880,7 @@ class TestSafeWriteMtimeGuard:
         result = safe_write_tags(library_path, tmp_path, recording_write_fn, stale_mtime_ms)
 
         assert result.success is False
+        assert result.outcome == "modified_externally"
         assert result.error == "file_modified_externally"
         assert result.new_mtime_ms is None
         # This abort is not a filesystem-fact classification (DD section 8.6).
@@ -889,7 +899,7 @@ class TestSafeWriteInvalidPath:
         self,
         tmp_path: Path,
     ) -> None:
-        """An invalid ``LibraryPath`` aborts with an ``Invalid path`` error and never calls ``write_fn``."""
+        """A known library with an invalid path aborts with the invalid_path fact, never writing."""
         target = tmp_path / "song.mp3"
         library_path = LibraryPath(
             relative="song.mp3",
@@ -906,8 +916,35 @@ class TestSafeWriteInvalidPath:
         result = safe_write_tags(library_path, tmp_path, recording_write_fn, 0)
 
         assert result.success is False
-        assert (result.error or "").startswith("Invalid path")
-        assert "missing on disk" in (result.error or "")
+        assert result.outcome is None
+        assert result.fs_fact is not None
+        assert result.fs_fact.kind == "invalid_path"
+        assert calls == []
+        assert not target.exists()
+
+    def test_invalid_library_path_without_library_reports_library_unresolved(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """An invalid path with no owning library is a domain/config miss, not a filesystem fact."""
+        target = tmp_path / "song.mp3"
+        library_path = LibraryPath(
+            relative="song.mp3",
+            absolute=target,
+            library_id=None,
+            status="not_found",
+            reason="missing on disk",
+        )
+        calls: list[Path] = []
+
+        def recording_write_fn(temp_path: Path) -> None:
+            calls.append(Path(temp_path))
+
+        result = safe_write_tags(library_path, tmp_path, recording_write_fn, 0)
+
+        assert result.success is False
+        assert result.outcome == "library_unresolved"
+        assert result.fs_fact is None
         assert calls == []
         assert not target.exists()
 
@@ -974,7 +1011,7 @@ class TestProbeAudioProperties:
 
         assert isinstance(result, SafeWriteResult)
         assert result.success is False
-        assert (result.error or "").startswith("Failed to probe original file")
-        assert "sample_rate" in (result.error or "")
+        assert result.outcome == "probe_unsupported"
+        assert result.fs_fact is None
         # The probe fails before any copy/write, so the original is untouched on disk.
         assert target.read_bytes() == _OLD_BYTES

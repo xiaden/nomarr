@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import threading
 from types import SimpleNamespace
-from typing import Literal
+from typing import TYPE_CHECKING, ClassVar, Literal
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -14,9 +14,14 @@ from nomarr.helpers.dataclasses.library_dataclass import Library
 from nomarr.helpers.dataclasses.song_command_dataclass import LibraryIdentity, SongIdentity
 from nomarr.helpers.dataclasses.song_dataclass import Song
 from nomarr.helpers.dataclasses.song_state_candidate_dataclass import SongStateCandidate
-from nomarr.helpers.dto.library_dto import WriteTagsResult
+from nomarr.helpers.dto.library_dto import WriteOutcome, WriteTagsResult
 from nomarr.helpers.exceptions import TaskCancelledError
+from nomarr.helpers.fs_contract import FsFact
 from nomarr.services.domain.tagging_svc import TaggingService, TaggingServiceConfig
+from nomarr.services.domain.tagging_svc.write import _is_retryable
+
+if TYPE_CHECKING:
+    from nomarr.helpers.dto.tag_curation_dto import CommitResult
 
 
 def _make_library(name: str = "lib1", file_write_mode: Literal["none", "minimal", "full"] = "full") -> Library:
@@ -106,7 +111,7 @@ class TestStartWriteTagsBackground:
 
             managed_task.fn()
 
-            mock_write_tags.assert_called_once_with(library)
+            mock_write_tags.assert_called_once_with(library, exclude_locators=set(), retry_counts={})
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -160,7 +165,17 @@ class TestStartWriteTagsBackground:
             SimpleNamespace(remaining=2),
             SimpleNamespace(remaining=0),
         ]
-        with patch.object(service, "write_tags_to_files", side_effect=write_results) as mock_write_tags:
+        with (
+            patch.object(service, "write_tags_to_files", side_effect=write_results) as mock_write_tags,
+            patch(
+                "nomarr.services.domain.tagging_svc.write.count_files_needing_reconciliation",
+                return_value=5,
+            ),
+            patch(
+                "nomarr.services.domain.tagging_svc.write._INTER_ATTEMPT_DELAY_SECONDS",
+                0.0,
+            ),
+        ):
             service.start_write_tags_background(_make_library(), threading.Event())
 
             managed_task = mock_bts.start_task.call_args.args[0]
@@ -189,7 +204,7 @@ class TestGetReconcileStatus:
         ):
             result = service.get_reconcile_status(_make_library())
 
-        assert result == {"pending_count": 4, "failed_count": 0, "in_progress": True}
+        assert result == {"pending_count": 4, "failed_count": 0, "in_progress": True, "outcome": "running"}
         mock_bts.get_task_status.assert_called_once_with("write_tags:lib1")
 
     @pytest.mark.unit
@@ -209,7 +224,7 @@ class TestGetReconcileStatus:
         ):
             result = service.get_reconcile_status(_make_library())
 
-        assert result == {"pending_count": 2, "failed_count": 0, "in_progress": False}
+        assert result == {"pending_count": 2, "failed_count": 0, "in_progress": False, "outcome": "partial"}
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -219,7 +234,7 @@ class TestGetReconcileStatus:
         mock_bts = MagicMock()
         mock_bts.get_task_status.return_value = {
             "status": "complete",
-            "result": WriteTagsResult(processed=1, remaining=2, failed=2),
+            "result": WriteTagsResult(processed=1, remaining=2, failed=2, outcome="partial"),
         }
         service = _make_service(db=mock_db, bts=mock_bts)
 
@@ -231,7 +246,7 @@ class TestGetReconcileStatus:
         ):
             result = service.get_reconcile_status(_make_library())
 
-        assert result == {"pending_count": 2, "failed_count": 2, "in_progress": False}
+        assert result == {"pending_count": 2, "failed_count": 2, "in_progress": False, "outcome": "partial"}
 
     @pytest.mark.unit
     @pytest.mark.mocked
@@ -240,13 +255,55 @@ class TestGetReconcileStatus:
         mock_db = MagicMock()
         mock_bts = MagicMock()
         service = _make_service(db=mock_db, bts=mock_bts)
-        batch_result = WriteTagsResult(processed=1, remaining=0, failed=1)
+        batch_result = WriteTagsResult(processed=1, remaining=0, failed=1, outcome="complete")
         mock_bts.start_task.side_effect = lambda task: task.fn()
 
         with patch.object(service, "write_tags_to_files", return_value=batch_result):
             result = service.start_write_tags_background(_make_library(), threading.Event())
 
         assert result == batch_result
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_get_reconcile_status_no_usable_result_with_zero_pending_is_complete(self) -> None:
+        """A drained library with no usable BTS result defaults conservatively to complete."""
+        mock_db = MagicMock()
+        mock_bts = MagicMock()
+        mock_bts.get_task_status.return_value = None
+        service = _make_service(db=mock_db, bts=mock_bts)
+
+        with (
+            patch(
+                "nomarr.services.domain.tagging_svc.write.count_files_needing_reconciliation",
+                return_value=0,
+            ),
+        ):
+            result = service.get_reconcile_status(_make_library())
+
+        assert result == {"pending_count": 0, "failed_count": 0, "in_progress": False, "outcome": "complete"}
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_get_reconcile_status_completed_task_exposes_complete_outcome(self) -> None:
+        """A terminal task result carrying outcome=complete is surfaced verbatim."""
+        mock_db = MagicMock()
+        mock_bts = MagicMock()
+        mock_bts.get_task_status.return_value = {
+            "status": "complete",
+            "result": WriteTagsResult(processed=2, remaining=0, failed=0, outcome="complete"),
+        }
+        service = _make_service(db=mock_db, bts=mock_bts)
+
+        with (
+            patch(
+                "nomarr.services.domain.tagging_svc.write.count_files_needing_reconciliation",
+                return_value=0,
+            ),
+        ):
+            result = service.get_reconcile_status(_make_library())
+
+        assert result["outcome"] == "complete"
+        assert result["failed_count"] == 0
 
 
 class TestWriteTagsToFiles:
@@ -283,7 +340,7 @@ class TestWriteTagsToFiles:
         ):
             result = service.write_tags_to_files(library)
 
-        assert result == WriteTagsResult(processed=2, remaining=0, failed=0)
+        assert result == WriteTagsResult(processed=2, remaining=0, failed=0, outcome="complete")
         assert mock_workflow.call_count == 2
         mock_release_claim.assert_not_called()
 
@@ -312,13 +369,13 @@ class TestWriteTagsToFiles:
                 "nomarr.services.domain.tagging_svc.write.write_file_tags_workflow",
                 side_effect=[
                     SimpleNamespace(success=True),
-                    SimpleNamespace(success=False, error="write_error"),
+                    SimpleNamespace(success=False, outcome="write_failed", fs_fact=None),
                 ],
             ),
         ):
             result = service.write_tags_to_files(library)
 
-        assert result == WriteTagsResult(processed=1, remaining=0, failed=1)
+        assert result == WriteTagsResult(processed=1, remaining=0, failed=1, outcome="complete")
         mock_release_claim.assert_called_once_with(mock_db, _identity("song2.mp3"), "reconcile:lib1")
 
     @pytest.mark.unit
@@ -344,12 +401,12 @@ class TestWriteTagsToFiles:
             ) as mock_release_claim,
             patch(
                 "nomarr.services.domain.tagging_svc.write.write_file_tags_workflow",
-                return_value=SimpleNamespace(success=False, error="file_modified_externally"),
+                return_value=SimpleNamespace(success=False, outcome="modified_externally", fs_fact=None),
             ),
         ):
             result = service.write_tags_to_files(library)
 
-        assert result == WriteTagsResult(processed=0, remaining=0, failed=0)
+        assert result == WriteTagsResult(processed=0, remaining=0, failed=0, outcome="complete")
         mock_release_claim.assert_called_once_with(mock_db, _identity(), "reconcile:lib1")
 
     @pytest.mark.unit
@@ -380,7 +437,7 @@ class TestWriteTagsToFiles:
         ):
             result = service.write_tags_to_files(library)
 
-        assert result == WriteTagsResult(processed=0, remaining=0, failed=1)
+        assert result == WriteTagsResult(processed=0, remaining=0, failed=1, outcome="complete")
         mock_release_claim.assert_called_once_with(mock_db, _identity(), "reconcile:lib1")
 
     @pytest.mark.unit
@@ -403,7 +460,7 @@ class TestWriteTagsToFiles:
         ):
             result = service.write_tags_to_files(library)
 
-        assert result == WriteTagsResult(processed=0, remaining=0, failed=0)
+        assert result == WriteTagsResult(processed=0, remaining=0, failed=0, outcome="complete")
         # The real claim read returns no candidates for a UUID-less library.
         mock_db.library.list_songs_with_state.assert_not_called()
         mock_workflow.assert_not_called()
@@ -437,7 +494,7 @@ class TestWriteTagsToFiles:
         ):
             result = service.write_tags_to_files(library)
 
-        assert result == WriteTagsResult(processed=0, remaining=0, failed=1)
+        assert result == WriteTagsResult(processed=0, remaining=0, failed=1, outcome="complete")
         mock_release_claim.assert_called_once_with(mock_db, _identity(), "reconcile:lib1")
 
 
@@ -472,7 +529,7 @@ class TestWriteTagsToFilesTypedClaims:
         ):
             result = service.write_tags_to_files(_make_library())
 
-        assert result == WriteTagsResult(processed=1, remaining=0, failed=0)
+        assert result == WriteTagsResult(processed=1, remaining=0, failed=0, outcome="complete")
         assert mock_workflow.call_args.kwargs["file_key"] == candidate.identity
 
     @pytest.mark.unit
@@ -505,5 +562,70 @@ class TestWriteTagsToFilesTypedClaims:
         ):
             result = service.write_tags_to_files(_make_library())
 
-        assert result == WriteTagsResult(processed=0, remaining=1, failed=1)
+        assert result == WriteTagsResult(processed=0, remaining=1, failed=1, outcome="partial")
         mock_release_claim.assert_called_once_with(mock_db, candidate.identity, "reconcile:lib1")
+
+
+class TestIsRetryable:
+    """The single non-retryable predicate over structured facts/outcomes (DD §A2.1)."""
+
+    _NON_RETRYABLE: ClassVar[list[tuple[FsFact | None, WriteOutcome | None]]] = [
+        (None, "modified_externally"),
+        (None, "probe_unsupported"),
+        (None, "song_record_missing"),
+        (None, "library_unresolved"),
+        (FsFact(presence="absent", kind="resource_missing", errno=2), None),
+        (FsFact(presence="unknown", kind="invalid_path", errno=None), None),
+        (FsFact(presence="unknown", kind="wrong_resource_type", errno=20), None),
+    ]
+    _RETRYABLE: ClassVar[list[tuple[FsFact | None, WriteOutcome | None]]] = [
+        (None, None),
+        (None, "audio_sanity_failed"),
+        (None, "probe_failed_transient"),
+        (None, "write_failed"),
+        (FsFact(presence="present", kind=None, errno=None), None),
+        (FsFact(presence="unknown", kind="unconfirmed_missing", errno=2), None),
+        (FsFact(presence="unknown", kind="permission_denied", errno=13), None),
+        (FsFact(presence="unknown", kind="storage_unavailable", errno=116), None),
+        (FsFact(presence="unknown", kind="transient_io", errno=5), None),
+        (FsFact(presence="unknown", kind="storage_full", errno=28), None),
+        (FsFact(presence="unknown", kind="read_only_fs", errno=30), None),
+        (FsFact(presence="unknown", kind="unknown", errno=None), None),
+    ]
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(("fact", "outcome"), _NON_RETRYABLE)
+    def test_is_retryable_non_retryable_values(self, fact: FsFact | None, outcome: WriteOutcome | None) -> None:
+        """Every non-retryable structured value is classified as not retryable."""
+        assert _is_retryable(fact, outcome) is False
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(("fact", "outcome"), _RETRYABLE)
+    def test_is_retryable_retryable_values(self, fact: FsFact | None, outcome: WriteOutcome | None) -> None:
+        """Every other structured value is retryable (fail-safe default)."""
+        assert _is_retryable(fact, outcome) is True
+
+
+class TestCommitPendingTagsRealCallerClosure:
+    """Non-mock closure for the ``commit_pending_tags`` single-pass caller."""
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_commit_pending_tags_real_caller_accepts_omitted_new_kwargs(self) -> None:
+        """The real ``commit_pending_tags`` still calls the real ``write_tags_to_files``.
+
+        The DB is the mocked boundary; the caller and the ``write_tags_to_files``
+        implementation are real. The call omits the new keyword-only parameters, so
+        this pins that the Protocol/implementation signature extension stays
+        backward compatible (no ``TypeError``) and still returns ``CommitResult``.
+        """
+        mock_db = MagicMock()
+        mock_db.app.get_calibration_version.return_value = None
+        mock_db.app.count_songs_with_state.return_value = 1
+        mock_db.library.list_songs_with_state.return_value = []
+        service = _make_service(db=mock_db)
+
+        result: CommitResult = service.commit_pending_tags(_make_library())
+
+        assert result["started"] is True
+        assert result["pending_files"] == 1

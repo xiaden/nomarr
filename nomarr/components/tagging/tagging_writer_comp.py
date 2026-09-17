@@ -15,6 +15,7 @@ from mutagen.oggopus import OggOpus
 from mutagen.oggvorbis import OggVorbis
 
 from nomarr.components.tagging.safe_write_comp import SafeWriteResult, safe_write_tags
+from nomarr.helpers.fs_contract import FsFact
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
@@ -265,7 +266,12 @@ class TagWriter:
         cleared and no tags are written.
         """
         if not path.is_valid():
-            return SafeWriteResult(success=False, error=f"Invalid path: {path.reason}")
+            if path.library_id is None:
+                return SafeWriteResult(success=False, outcome="library_unresolved")
+            return SafeWriteResult(
+                success=False,
+                fs_fact=FsFact(presence="unknown", kind="invalid_path", errno=None),
+            )
 
         tags_dict = tags.to_dict() if tags is not None else {}
         # Derive the source format ONCE from the original path. The temp file passed to

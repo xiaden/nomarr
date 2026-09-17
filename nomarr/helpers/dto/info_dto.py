@@ -128,6 +128,7 @@ class LibraryPipelineInfo:
     name: str
     state: str
     library_auto_write: bool
+    write_outcome: str | None = None
 
 
 @dataclass

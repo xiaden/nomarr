@@ -327,6 +327,7 @@ class LibraryPipelineService:
         untagged_count: int | None = None
         uncalibrated_count: int | None = None
         pending_write_count: int | None = None
+        write_outcome: str | None = None
 
         if getattr(state, ML_STATE_FIELD) == ML_IN_PROGRESS:
             untagged_count = count_untagged_files(self.db, library)
@@ -335,6 +336,7 @@ class LibraryPipelineService:
         elif getattr(state, WRITE_STATE_FIELD) in {WRITE_NOT_WRITTEN, WRITE_IN_PROGRESS}:
             reconcile_status = self.tagging_svc.get_reconcile_status(library)
             pending_write_count = int(reconcile_status["pending_count"])
+            write_outcome = reconcile_status.get("outcome")
 
         return LibraryPipelineStatusDTO(
             library_id=library.name,
@@ -345,6 +347,7 @@ class LibraryPipelineService:
             untagged_count=untagged_count,
             uncalibrated_count=uncalibrated_count,
             pending_write_count=pending_write_count,
+            write_outcome=write_outcome,
             library_auto_write=library.library_auto_write,
             file_write_mode=library.file_write_mode,
         )
@@ -417,7 +420,14 @@ class LibraryPipelineService:
         self.stop_write(library)
 
     def on_write_complete(self, library: Library, *, remaining: int | None = None) -> None:
-        """Mark tag_write complete only after all pending writes are drained.
+        """Complete a drained write run, or leave the axis resumable on partial.
+
+        A full drain (``remaining == 0``, or ``None`` for direct callers that
+        already hold an authoritative completion guarantee) advances the
+        ``tag_write`` axis to ``written`` and triggers the Navidrome rescan.
+        A partial run (``remaining > 0``) is not a failure: the axis returns to
+        ``not_written`` so the remaining work stays resumable, and the Navidrome
+        rescan is deliberately skipped until the library fully drains.
 
         Args:
             library: Library whose tag writes completed.
@@ -425,11 +435,17 @@ class LibraryPipelineService:
                 completion callback. ``None`` is retained for direct callers
                 that already have an authoritative completion guarantee.
 
-        Raises:
-            RuntimeError: If the completion callback observes pending writes.
         """
-        if remaining is not None and remaining != 0:
-            raise RuntimeError(f"Cannot complete tag writes for {library.name}: {remaining} files remain")
+        if remaining is not None and remaining > 0:
+            transition_pipeline_axis(self.db, library, WRITE_STATE_FIELD, WRITE_NOT_WRITTEN)
+            logger.warning(
+                "Library %s tag write finished with %s file(s) still pending; "
+                "tag_write axis returned to not_written and Navidrome rescan skipped",
+                library.name,
+                remaining,
+            )
+            return
+
         transition_pipeline_axis(self.db, library, WRITE_STATE_FIELD, WRITE_COMPLETE)
         logger.info("Library %s tag_write axis transitioned to written", library.name)
         rescan_triggered = self.navidrome_svc.trigger_rescan()

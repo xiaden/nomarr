@@ -103,6 +103,7 @@ class TestPipelineEndpoint:
             "pending_write_count": 17,
             "library_auto_write": False,
             "file_write_mode": "full",
+            "write_outcome": None,
         }
         mock_library_service.get_library_by_name.assert_called_once_with("Test Library")
         mock_pipeline_service.get_pipeline_status.assert_called_once_with(library)

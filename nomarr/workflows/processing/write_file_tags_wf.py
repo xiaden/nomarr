@@ -28,12 +28,14 @@ from nomarr.components.library.reconciliation_comp import release_claim, set_fil
 from nomarr.components.processing.file_write_comp import resolve_library_root
 from nomarr.components.tagging.tagging_writer_comp import TagWriter
 from nomarr.helpers.dataclasses.tags_dataclass import Tag, Tags, TagValue
+from nomarr.helpers.fs_contract import FsFact
 
 if TYPE_CHECKING:
     from nomarr.helpers.dataclasses.library_dataclass import Library
     from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
     from nomarr.helpers.dataclasses.song_dataclass import Song
     from nomarr.helpers.dataclasses.song_tag_dataclass import SongTagAssignment
+    from nomarr.helpers.dto.library_dto import WriteOutcome
     from nomarr.helpers.dto.path_dto import LibraryPath
     from nomarr.persistence.db import Database
 
@@ -48,7 +50,27 @@ class WriteResult:
     tags_written: int  # Number of tags written to file
     tags_filtered: int  # Number of tags filtered out by mode
     success: bool  # Whether write succeeded
-    error: str | None = None  # Error message if failed
+    fs_fact: FsFact | None = None  # Structured filesystem fact for a filesystem failure
+    outcome: WriteOutcome | None = None  # Structured failure reason (DD §8.7)
+
+    @property
+    def error(self) -> str | None:
+        """Derived, read-only ``str | None`` view over ``outcome``/``fs_fact`` (DD §8.7).
+
+        ``error`` is not an independently settable field — it is a pure function of the
+        structured fields, so it cannot drift from them. ``outcome == "modified_externally"``
+        renders the legacy ``"file_modified_externally"`` token for backward-compatible
+        textual reporting and logging; every other outcome maps to its own name.
+        """
+        if self.success:
+            return None
+        if self.outcome == "modified_externally":
+            return "file_modified_externally"
+        if self.outcome is not None:
+            return self.outcome
+        if self.fs_fact is not None:
+            return self.fs_fact.kind
+        return None
 
 
 def _filter_tags_for_mode(
@@ -185,19 +207,29 @@ def write_file_tags_workflow(
                 tags_written=0,
                 tags_filtered=0,
                 success=False,
-                error="File not found",
+                outcome="song_record_missing",
             )
 
         # Resolve library path + owning domain Library from the file's path.
         library_path, library = _resolve_library_path(song, db)
         if not library_path:
             _release_failed_write(db, file_key, worker_id)
+            if library is None:
+                # No containing library: a config/domain miss, not a filesystem fact.
+                return WriteResult(
+                    file_key=file_key,
+                    tags_written=0,
+                    tags_filtered=0,
+                    success=False,
+                    outcome="library_unresolved",
+                )
+            # A known library with a structurally invalid path carries the invalid_path fact.
             return WriteResult(
                 file_key=file_key,
                 tags_written=0,
                 tags_filtered=0,
                 success=False,
-                error="Invalid path",
+                fs_fact=FsFact(presence="unknown", kind="invalid_path", errno=None),
             )
 
         # A valid ``library_path`` always carries its owning domain ``Library``
@@ -215,7 +247,7 @@ def write_file_tags_workflow(
                 tags_written=0,
                 tags_filtered=0,
                 success=False,
-                error="Library not found",
+                outcome="library_unresolved",
             )
 
         # Require known mtime to prevent writing to externally-modified files.
@@ -251,20 +283,13 @@ def write_file_tags_workflow(
         result = tag_writer.write_safe(library_path, tags_to_write, library_root, expected_mtime_ms)
         if not result.success:
             _release_failed_write(db, file_key, worker_id)
-            if result.error == "file_modified_externally":
-                return WriteResult(
-                    file_key=file_key,
-                    tags_written=0,
-                    tags_filtered=tags_filtered,
-                    success=False,
-                    error="file_modified_externally",
-                )
             return WriteResult(
                 file_key=file_key,
                 tags_written=0,
                 tags_filtered=tags_filtered,
                 success=False,
-                error=f"Safe write failed: {result.error}",
+                fs_fact=result.fs_fact,
+                outcome=result.outcome,
             )
 
         # Sync mtime in DB so scanner skips this file on next scan
@@ -294,5 +319,5 @@ def write_file_tags_workflow(
             tags_written=0,
             tags_filtered=0,
             success=False,
-            error="Unexpected error during tag write",
+            outcome="write_failed",
         )

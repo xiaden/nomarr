@@ -472,6 +472,7 @@ class PipelineStatusResponse(BaseModel):
     pending_write_count: int | None
     library_auto_write: bool
     file_write_mode: str
+    write_outcome: str | None = None
 
     @classmethod
     def from_dto(cls, dto: LibraryPipelineStatusDTO) -> Self:
@@ -488,6 +489,7 @@ class PipelineStatusResponse(BaseModel):
             pending_write_count=dto.pending_write_count,
             library_auto_write=dto.library_auto_write,
             file_write_mode=dto.file_write_mode,
+            write_outcome=dto.write_outcome,
         )
 
 

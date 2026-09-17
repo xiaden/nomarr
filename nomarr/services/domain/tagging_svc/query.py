@@ -33,6 +33,7 @@ from nomarr.workflows.library.cleanup_orphaned_tags_wf import cleanup_orphaned_t
 
 if TYPE_CHECKING:
     from nomarr.helpers.dataclasses.library_dataclass import Library
+    from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
     from nomarr.helpers.dataclasses.song_dataclass import Song
     from nomarr.helpers.dataclasses.song_tag_dataclass import TagRef
     from nomarr.helpers.dto.library_dto import WriteTagsResult
@@ -49,6 +50,9 @@ class _TaggingQueryService(Protocol):
         library: Library,
         batch_size: int = 100,
         namespace: str = "nom",
+        *,
+        exclude_locators: set[SongIdentity] | None = None,
+        retry_counts: dict[SongIdentity, int] | None = None,
     ) -> WriteTagsResult: ...
 
 

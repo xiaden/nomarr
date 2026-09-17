@@ -34,6 +34,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
+    from nomarr.helpers.dto.library_dto import WriteOutcome
     from nomarr.helpers.dto.path_dto import LibraryPath
 
 logger = logging.getLogger(__name__)
@@ -56,9 +57,29 @@ class SafeWriteResult:
     """Result of a safe write operation."""
 
     success: bool
-    error: str | None = None
     new_mtime_ms: int | None = None
     fs_fact: FsFact | None = None
+    outcome: WriteOutcome | None = None
+
+    @property
+    def error(self) -> str | None:
+        """Derived, read-only ``str | None`` view over the structured fields (DD §10.2).
+
+        ``error`` is not an independently settable field: it is a pure function of
+        ``success``/``outcome``/``fs_fact``, so no duplicate truth channel can drift.
+        ``outcome == "modified_externally"`` renders the legacy ``"file_modified_externally"``
+        token for backward-compatible textual reporting and logging; every other outcome
+        maps to its own name.
+        """
+        if self.success:
+            return None
+        if self.outcome == "modified_externally":
+            return "file_modified_externally"
+        if self.outcome is not None:
+            return self.outcome
+        if self.fs_fact is not None:
+            return self.fs_fact.kind
+        return None
 
 
 @dataclass
@@ -98,18 +119,13 @@ def _probe_audio_properties(path: Path) -> _AudioProperties:
     )
 
 
-def _check_audio_properties(original: _AudioProperties, after: _AudioProperties) -> str | None:
-    """Return an error string if properties differ beyond tolerance, else None."""
-    if abs(after.duration - original.duration) > DURATION_TOLERANCE_S:
-        return (
-            f"Duration changed: {original.duration:.2f}s \u2192 {after.duration:.2f}s "
-            f"(tolerance \u00b1{DURATION_TOLERANCE_S}s)"
-        )
-    if after.sample_rate != original.sample_rate:
-        return f"Sample rate changed: {original.sample_rate}Hz \u2192 {after.sample_rate}Hz"
-    if after.channels != original.channels:
-        return f"Channel count changed: {original.channels} \u2192 {after.channels}"
-    return None
+def _check_audio_properties(original: _AudioProperties, after: _AudioProperties) -> bool:
+    """Return ``True`` when properties differ beyond tolerance, else ``False``."""
+    return (
+        abs(after.duration - original.duration) > DURATION_TOLERANCE_S
+        or after.sample_rate != original.sample_rate
+        or after.channels != original.channels
+    )
 
 
 def _get_temp_folder(library_root: Path) -> Path:
@@ -168,7 +184,12 @@ def safe_write_tags(
 
     """
     if not library_path.is_valid():
-        return SafeWriteResult(success=False, error=f"Invalid path: {library_path.reason}")
+        if library_path.library_id is None:
+            return SafeWriteResult(success=False, outcome="library_unresolved")
+        return SafeWriteResult(
+            success=False,
+            fs_fact=FsFact(presence="unknown", kind="invalid_path", errno=None),
+        )
 
     original_path = library_path.absolute
     filename = original_path.name
@@ -180,21 +201,18 @@ def safe_write_tags(
         logger.exception(f"[tagging] Failed to stat original file: {exc}")
         return SafeWriteResult(
             success=False,
-            error=f"Failed to stat original file: {exc}",
             fs_fact=fact_from_error(exc, path=str(original_path)),
         )
     if actual_mtime_ms != expected_mtime_ms:
-        return SafeWriteResult(
-            success=False,
-            error="file_modified_externally",
-            new_mtime_ms=None,
-        )
+        return SafeWriteResult(success=False, new_mtime_ms=None, outcome="modified_externally")
 
     # Probe original before any writes
     try:
         original_props = _probe_audio_properties(original_path)
-    except (RuntimeError, OSError, MutagenError) as e:
-        return SafeWriteResult(success=False, error=f"Failed to probe original file: {e}")
+    except OSError:
+        return SafeWriteResult(success=False, outcome="probe_failed_transient")
+    except (RuntimeError, MutagenError):
+        return SafeWriteResult(success=False, outcome="probe_unsupported")
 
     # Try hardlink approach first
     try:
@@ -203,7 +221,6 @@ def safe_write_tags(
         logger.exception(f"[tagging] Failed to prepare temp folder: {exc}")
         return SafeWriteResult(
             success=False,
-            error=f"Failed to prepare temp folder: {exc}",
             fs_fact=fact_from_error(exc, path=str(library_root / TEMP_FOLDER_NAME)),
         )
     use_hardlink = _supports_hardlinks(original_path, temp_folder)
@@ -235,9 +252,8 @@ def _safe_write_hardlink(
 
         # Step 3: Verify audio properties unchanged
         after_props = _probe_audio_properties(temp_path)
-        error = _check_audio_properties(original_props, after_props)
-        if error:
-            return SafeWriteResult(success=False, error=f"Audio sanity check failed: {error}")
+        if _check_audio_properties(original_props, after_props):
+            return SafeWriteResult(success=False, outcome="audio_sanity_failed")
         logger.debug("[tagging] Audio properties verified")
 
         # Step 4: Atomic backup-link swap. Create a namespaced, non-audio backup hardlink
@@ -249,17 +265,13 @@ def _safe_write_hardlink(
         except OSError as exc:
             return SafeWriteResult(
                 success=False,
-                error=f"Hardlink backup failed: {exc}",
                 fs_fact=fact_from_error(exc, path=str(original_path)),
             )
 
         # os.link proves the original existed. Confirm nothing removed it meanwhile; if
         # it vanished, abort and preserve the backup (never restore/delete a `.bak`).
         if not original_path.exists():
-            return SafeWriteResult(
-                success=False,
-                error=f"Original vanished after backup link: {original_path}",
-            )
+            return SafeWriteResult(success=False, outcome="write_failed")
 
         try:
             os.replace(temp_path, original_path)
@@ -268,7 +280,6 @@ def _safe_write_hardlink(
                 backup_path.unlink()
             return SafeWriteResult(
                 success=False,
-                error=f"Hardlink replacement failed: {exc}",
                 fs_fact=fact_from_error(exc, path=str(original_path)),
             )
         logger.debug("[tagging] Hardlink replacement complete")
@@ -292,10 +303,14 @@ def _safe_write_hardlink(
 
     except OSError as exc:
         logger.exception(f"[tagging] Hardlink write failed: {exc}")
-        return SafeWriteResult(success=False, error=str(exc), fs_fact=fact_from_error(exc, path=str(original_path)))
+        return SafeWriteResult(
+            success=False,
+            outcome="write_failed",
+            fs_fact=fact_from_error(exc, path=str(original_path)),
+        )
     except Exception as exc:
         logger.exception(f"[tagging] Hardlink write failed: {exc}")
-        return SafeWriteResult(success=False, error=str(exc))
+        return SafeWriteResult(success=False, outcome="write_failed")
 
     finally:
         with contextlib.suppress(OSError):
@@ -323,9 +338,8 @@ def _safe_write_fallback(
 
         # Step 3: Verify audio properties unchanged
         after_props = _probe_audio_properties(temp_path)
-        error = _check_audio_properties(original_props, after_props)
-        if error:
-            return SafeWriteResult(success=False, error=f"Audio sanity check failed: {error}")
+        if _check_audio_properties(original_props, after_props):
+            return SafeWriteResult(success=False, outcome="audio_sanity_failed")
         logger.debug("[tagging] Audio properties verified")
 
         # Step 4: Atomic same-directory replace (no unlink-before-rename window)
@@ -345,10 +359,14 @@ def _safe_write_fallback(
 
     except OSError as exc:
         logger.exception(f"[tagging] Fallback write failed: {exc}")
-        return SafeWriteResult(success=False, error=str(exc), fs_fact=fact_from_error(exc, path=str(original_path)))
+        return SafeWriteResult(
+            success=False,
+            outcome="write_failed",
+            fs_fact=fact_from_error(exc, path=str(original_path)),
+        )
     except Exception as exc:
         logger.exception(f"[tagging] Fallback write failed: {exc}")
-        return SafeWriteResult(success=False, error=str(exc))
+        return SafeWriteResult(success=False, outcome="write_failed")
 
     finally:
         with contextlib.suppress(OSError):

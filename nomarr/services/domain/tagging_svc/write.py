@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
 from nomarr.components.library.library_song_state_comp import bulk_set_tags_not_fresh
 from nomarr.components.library.reconciliation_comp import (
@@ -23,11 +23,47 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from nomarr.helpers.dataclasses.library_dataclass import Library
+    from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
+    from nomarr.helpers.dto.library_dto import WriteOutcome
+    from nomarr.helpers.fs_contract import FsFact
     from nomarr.persistence.db import Database
     from nomarr.services.infrastructure.background_tasks_svc import BackgroundTaskService
 
 
 logger = logging.getLogger(__name__)
+
+# Bounded run-local per-file retry policy (ADR-051 item 1; DD §1). A locator is
+# attempted at most ``_MAX_WRITE_ATTEMPTS`` times per run; budget exhaustion enters
+# the run-scoped exclusion set. The inter-attempt delay is fixed, bounded, in-run
+# only, and cancellation-responsive via ``stop_event.wait``. There is no persistent
+# cooldown, scheduler, background-task-level retry machinery, or durable ledger.
+_MAX_WRITE_ATTEMPTS: Final[int] = 3
+_INTER_ATTEMPT_DELAY_SECONDS: Final[float] = 1.0
+
+
+def _is_retryable(fact: FsFact | None, outcome: WriteOutcome | None) -> bool:
+    """Decide whether a failed tag write may be re-attempted within the same run.
+
+    The single non-retryable predicate over the canonical structured outcome
+    (ADR-051 item 1; DD §A2.1). Non-retryable iff the outcome is
+    ``modified_externally`` (semantic conflict), ``probe_unsupported``
+    (deterministic), or a known domain miss (``song_record_missing`` /
+    ``library_unresolved``), or the fact corroborates absence, or the fact kind is
+    ``invalid_path`` / ``wrong_resource_type``. Everything else
+    (transient/storage/permission/unconfirmed kinds, ``audio_sanity_failed``,
+    ``probe_failed_transient``, ``write_failed``, and ``None``/unknown) is
+    retryable-bounded — the fail-safe default. This function never inspects an
+    error string.
+    """
+    non_retryable = (
+        outcome == "modified_externally"
+        or outcome == "probe_unsupported"
+        or outcome == "song_record_missing"
+        or outcome == "library_unresolved"
+        or (fact is not None and fact.presence == "absent")
+        or (fact is not None and fact.kind in {"invalid_path", "wrong_resource_type"})
+    )
+    return not non_retryable
 
 
 class TaggingWriteMixin:
@@ -75,6 +111,9 @@ class TaggingWriteMixin:
         library: Library,
         batch_size: int = 100,
         namespace: str = "nom",
+        *,
+        exclude_locators: set[SongIdentity] | None = None,
+        retry_counts: dict[SongIdentity, int] | None = None,
     ) -> WriteTagsResult:
         """Write pending file tags for a library based on its file_write_mode.
 
@@ -88,9 +127,17 @@ class TaggingWriteMixin:
             library: Domain ``Library`` (natural identity) to write.
             batch_size: Number of files to process per batch
             namespace: Tag namespace (default: "nom")
+            exclude_locators: Run-owned exclusion set used as the claim filter. When
+                provided, non-retryable failures and retry-budget exhaustion add the
+                locator to it in place. ``None`` (the single-pass caller) creates no
+                run-local state.
+            retry_counts: Run-owned per-locator attempt counter, mutated in place for
+                retryable failures. ``None`` disables retry accounting.
 
         Returns:
-            WriteTagsResult with processed, remaining, and failed counts
+            WriteTagsResult with processed, remaining (the plain, non-exclusion-aware
+            pending count), failed, and outcome (``"complete"`` only when nothing is
+            pending).
 
         """
         target_mode = library.file_write_mode
@@ -103,10 +150,25 @@ class TaggingWriteMixin:
             library=library,
             worker_id=worker_id,
             batch_size=batch_size,
+            exclude_locators=exclude_locators or (),
         )
 
         processed = 0
         failed = 0
+
+        def _record_failure(file_key: SongIdentity, result: Any | None) -> None:
+            """Apply the run-local retry/exclusion accounting for one non-success."""
+            fact = result.fs_fact if result is not None else None
+            outcome = result.outcome if result is not None else None
+            if not _is_retryable(fact, outcome):
+                if exclude_locators is not None:
+                    exclude_locators.add(file_key)
+                return
+            if retry_counts is not None:
+                attempts = retry_counts.get(file_key, 0) + 1
+                retry_counts[file_key] = attempts
+                if attempts >= _MAX_WRITE_ATTEMPTS and exclude_locators is not None:
+                    exclude_locators.add(file_key)
 
         # ``claim_files_for_reconciliation`` returns typed ``SongStateCandidate`` values;
         # each candidate already carries the locator to re-address, so no path/identity is
@@ -125,13 +187,16 @@ class TaggingWriteMixin:
                 )
                 if result.success:
                     processed += 1
-                elif result.error == "file_modified_externally":
+                elif result.outcome == "modified_externally":
                     logger.debug("[reconcile] Skipping modified file; will retry after rescan")
                     release_claim(self.db, file_key, worker_id)
+                    # Benign skip: release and exclude, but do not count as failed.
+                    _record_failure(file_key, result)
                 else:
                     failed += 1
                     release_claim(self.db, file_key, worker_id)
-                    logger.warning("[reconcile] Failed to write tags for locator: %s", result.error)
+                    logger.warning("[reconcile] Failed to write tags for locator: %s", file_key)
+                    _record_failure(file_key, result)
             except Exception as e:
                 failed += 1
                 logger.exception("[reconcile] Error processing locator: %s", e)
@@ -139,6 +204,9 @@ class TaggingWriteMixin:
                     release_claim(self.db, file_key, worker_id)
                 except Exception as release_err:
                     logger.warning("[reconcile] Failed to release claim: %s", release_err, exc_info=True)
+                # The attempt counter is incremented independently of the best-effort
+                # release, so a failed release cannot break termination.
+                _record_failure(file_key, None)
 
         remaining = count_files_needing_reconciliation(self.db, library=library)
 
@@ -150,6 +218,7 @@ class TaggingWriteMixin:
             processed=processed,
             remaining=remaining,
             failed=failed,
+            outcome="complete" if remaining == 0 else "partial",
         )
 
     def start_write_tags_background(
@@ -160,23 +229,30 @@ class TaggingWriteMixin:
     ) -> str:
         """Dispatch a non-blocking background write-tags loop for a library.
 
-        Starts a managed background task that repeatedly calls
-        :meth:`write_tags_to_files` for the given library until either all pending
-        tag writes have been processed (``remaining == 0``) or ``stop_event`` is
-        set.
+        Starts a managed background task that drives the bounded three-exit loop:
 
-        If the loop is cancelled while files remain pending, it raises
-        ``TaskCancelledError`` so the background task service records the task as
-        ``cancelled`` (never ``complete``) and skips ``on_complete`` — leaving the
-        library's tag-write work resumable rather than falsely reported written.
+        1. ``remaining == 0`` → return the drained result (``outcome="complete"``);
+        2. no eligible candidate remains while work is still pending
+           (``eligible_remaining == 0 and remaining > 0``) → return a partial
+           result (``outcome="partial"``) so the task still reaches BTS
+           ``complete`` and ``on_complete`` fires with a partial signal;
+        3. ``stop_event`` set with work outstanding → raise ``TaskCancelledError``
+           so the background task service records ``cancelled`` and skips
+           ``on_complete``.
+
+        Run-local ``exclude`` and ``retry_counts`` are created fresh per dispatch
+        and never persisted, so an independently triggered run gets a fresh attempt
+        budget. A retryable failure is re-attempted at most ``_MAX_WRITE_ATTEMPTS``
+        times before entering the run exclusion set; a non-retryable failure is
+        excluded immediately.
 
         Args:
             library: Domain ``Library`` (natural identity) to write.
             stop_event: Cooperative cancellation event. The background loop exits
                 when this event is set.
-            on_complete: Optional callback invoked only after the loop drains all
-                pending writes (``remaining == 0``). It is skipped on
-                cancellation or failure.
+            on_complete: Optional callback invoked only after the loop terminates
+                without outstanding eligible work (full drain or partial terminal).
+                It is skipped on cancellation.
 
         Returns:
             Task ID string in the form ``"write_tags:{library.name}"`` returned by
@@ -187,13 +263,25 @@ class TaggingWriteMixin:
         task_id = write_tags_task_id(library)
 
         def _task() -> WriteTagsResult:
+            exclude: set[SongIdentity] = set()
+            retry_counts: dict[SongIdentity, int] = {}
             last_result = WriteTagsResult(processed=0, remaining=0, failed=0)
             while not stop_event.is_set():
-                result = self.write_tags_to_files(library)
+                result = self.write_tags_to_files(
+                    library,
+                    exclude_locators=exclude,
+                    retry_counts=retry_counts,
+                )
                 last_result = result
                 if result.remaining == 0:
                     return last_result
-                stop_event.wait(1.0)
+                # Single owner of the exclusion-aware eligibility count. Leases are
+                # not excluded, so a concurrently held candidate keeps the loop
+                # waiting rather than manufacturing a false partial.
+                eligible_remaining = count_files_needing_reconciliation(self.db, library, exclude_locators=exclude)
+                if eligible_remaining == 0:
+                    return last_result
+                stop_event.wait(_INTER_ATTEMPT_DELAY_SECONDS)
             # The loop exited before reconciliation drained. This is cooperative
             # cancellation with pending work: raise so BTS records "cancelled"
             # instead of "complete" and does not run on_complete (which would
@@ -229,7 +317,10 @@ class TaggingWriteMixin:
             library: Domain ``Library`` (natural identity).
 
         Returns:
-            Dict with pending_count, failed_count, and in_progress status
+            Dict with pending_count, failed_count, in_progress, and outcome
+            (``"running"`` / ``"complete"`` / ``"partial"``). The no-usable-result
+            default is conservative: ``pending_count > 0`` → ``"partial"``,
+            ``0`` → ``"complete"``.
 
         """
         pending_count = count_files_needing_reconciliation(self.db, library=library)
@@ -238,8 +329,18 @@ class TaggingWriteMixin:
         task_result = task_status.get("result") if task_status is not None else None
         failed_count = task_result.failed if isinstance(task_result, WriteTagsResult) else 0
 
+        if in_progress:
+            outcome = "running"
+        elif isinstance(task_result, WriteTagsResult):
+            outcome = task_result.outcome
+        elif pending_count > 0:
+            outcome = "partial"
+        else:
+            outcome = "complete"
+
         return {
             "pending_count": pending_count,
             "failed_count": failed_count,
             "in_progress": in_progress,
+            "outcome": outcome,
         }

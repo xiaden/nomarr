@@ -194,7 +194,11 @@ async def write_library_tags(
         stop_event = threading.Event()
 
         def trigger_navidrome_rescan() -> None:
-            navidrome_service.trigger_rescan()
+            # ADR-051 item 4: rescan only after a full drain. A partial run (or an
+            # unknown reconcile state) must not trigger a rescan and must not raise.
+            pending_count = tagging_service.get_reconcile_status(library).get("pending_count")
+            if pending_count == 0:
+                navidrome_service.trigger_rescan()
 
         task_id = tagging_service.start_write_tags_background(
             library,

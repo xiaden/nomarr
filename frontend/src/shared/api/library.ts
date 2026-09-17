@@ -212,6 +212,8 @@ export interface LibraryPipelineStatus {
   pending_write_count: number | null;
   library_auto_write: boolean;
   file_write_mode: string;
+  /** Tag-write reconcile outcome ("complete" | "partial"); absent/None is unknown. */
+  write_outcome?: string | null;
 }
 
 /**

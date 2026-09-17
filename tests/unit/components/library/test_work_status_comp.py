@@ -290,3 +290,48 @@ class TestComputeWorkStatus:
             pipeline_states={"Rock Library": _make_pipeline_state()},
         )
         assert result.is_busy is False
+
+
+class TestWriteOutcomes:
+    """Tests for the keyword-only ``write_outcomes`` input."""
+
+    @pytest.mark.unit
+    def test_write_outcomes_projected_into_pipeline_libraries(self) -> None:
+        """Per-library reconcile outcome is projected onto LibraryPipelineInfo."""
+        libraries = [_make_library(name="Rock Library", library_auto_write=False)]
+        result = compute_work_status(
+            libraries=libraries,
+            stats=_make_stats(total=10, needs_tagging=0),
+            recently_tagged_count=0,
+            pipeline_states={"Rock Library": _make_pipeline_state(tw="not_written")},
+            write_outcomes={"Rock Library": "partial"},
+        )
+
+        assert result.pipeline_libraries[0].write_outcome == "partial"
+
+    @pytest.mark.unit
+    def test_write_outcome_defaults_to_none_without_mapping(self) -> None:
+        """Absent write_outcomes mapping yields None (conservative default)."""
+        libraries = [_make_library(name="Rock Library", library_auto_write=False)]
+        result = compute_work_status(
+            libraries=libraries,
+            stats=_make_stats(total=10, needs_tagging=0),
+            recently_tagged_count=0,
+            pipeline_states={"Rock Library": _make_pipeline_state(tw="not_written")},
+        )
+
+        assert result.pipeline_libraries[0].write_outcome is None
+
+    @pytest.mark.unit
+    def test_write_outcomes_keyed_by_name_does_not_leak_other_libraries(self) -> None:
+        """A mapping entry for another library does not leak onto this one."""
+        libraries = [_make_library(name="Rock Library", library_auto_write=False)]
+        result = compute_work_status(
+            libraries=libraries,
+            stats=_make_stats(total=10, needs_tagging=0),
+            recently_tagged_count=0,
+            pipeline_states={"Rock Library": _make_pipeline_state(tw="not_written")},
+            write_outcomes={"Jazz Library": "partial"},
+        )
+
+        assert result.pipeline_libraries[0].write_outcome is None

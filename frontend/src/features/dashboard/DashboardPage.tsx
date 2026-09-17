@@ -234,14 +234,16 @@ export function DashboardPage() {
             ) : (
               <Stack spacing={1.25}>
                 {pipelineLibraries.map((library) => {
+                  const isPartialWrite = library.write_outcome === "partial";
                   const needsCalibration =
                     library.state === "awaiting_calibration" || library.state === "cal_ready";
-                  const needsAttention = needsCalibration || library.state === "write_ready";
+                  const needsAttention =
+                    needsCalibration || isPartialWrite || library.state === "write_ready";
 
                   return needsAttention ? (
                     <Alert
                       key={library.library_id}
-                      severity={needsCalibration ? "warning" : "info"}
+                      severity={needsCalibration || isPartialWrite ? "warning" : "info"}
                       variant="outlined"
                     >
                       <Stack
@@ -258,6 +260,8 @@ export function DashboardPage() {
                               ? library.state === "awaiting_calibration"
                                 ? "Calibration is required before tag writing can continue."
                                 : "Needs more tagged files before calibration can continue."
+                              : isPartialWrite
+                              ? "Tag write ended with files still pending."
                               : "Ready for file writeback review."}
                           </Typography>
                         </Box>

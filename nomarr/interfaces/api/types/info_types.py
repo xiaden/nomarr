@@ -194,6 +194,9 @@ class LibraryPipelineInfoResponse(BaseModel):
     name: str = Field(..., description="Library name")
     state: str = Field(..., description="Current pipeline state key")
     library_auto_write: bool = Field(..., description="Whether the library auto-writes tags")
+    write_outcome: str | None = Field(
+        None, description="Tag-write reconcile outcome (complete/partial/running) if known"
+    )
 
     @classmethod
     def from_dto(cls, dto: LibraryPipelineInfo) -> LibraryPipelineInfoResponse:
@@ -203,6 +206,7 @@ class LibraryPipelineInfoResponse(BaseModel):
             name=dto.name,
             state=dto.state,
             library_auto_write=dto.library_auto_write,
+            write_outcome=dto.write_outcome,
         )
 
 

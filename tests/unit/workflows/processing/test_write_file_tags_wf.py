@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
 import pytest
@@ -15,12 +16,16 @@ from nomarr.helpers.dataclasses.song_dataclass import Song
 from nomarr.helpers.dataclasses.song_tag_dataclass import SongTagAssignment
 from nomarr.helpers.dataclasses.tags_dataclass import Tag, Tags
 from nomarr.helpers.dto.path_dto import LibraryPath
+from nomarr.helpers.fs_contract import FsFact
 from nomarr.workflows.processing.write_file_tags_wf import (
     _filter_tags_for_mode,
     _release_failed_write,
     _resolve_library_path,
     write_file_tags_workflow,
 )
+
+if TYPE_CHECKING:
+    from nomarr.helpers.dto.library_dto import WriteOutcome
 
 _MODULE = "nomarr.workflows.processing.write_file_tags_wf"
 
@@ -272,23 +277,45 @@ class TestWriteFileTagsWorkflow:
             has_calibration=calibration,
         )
 
-    def test_missing_locator_releases_claim_and_reports_file_not_found(self, workflow: SimpleNamespace) -> None:
-        """A stale/missing locator is a clean miss that releases the exact claim."""
+    def test_missing_locator_releases_claim_and_reports_song_record_missing(self, workflow: SimpleNamespace) -> None:
+        """A stale/missing locator is a clean domain miss that releases the exact claim."""
         workflow.db.library.get_song.return_value = None
         result = self._run(workflow)
         assert result.file_key is workflow.identity
         assert result.success is False
-        assert result.error == "File not found"
+        assert result.outcome == "song_record_missing"
+        assert result.fs_fact is None
         assert workflow.identity.normalized_path not in (result.error or "")
         assert workflow.release_calls == [(workflow.db, workflow.identity, "reconcile:lib1")]
         assert workflow.written_calls == []
 
     def test_invalid_path_releases_claim(self, workflow: SimpleNamespace, monkeypatch: pytest.MonkeyPatch) -> None:
-        """An unresolvable path releases the claim and returns the generic failure."""
+        """No containing library releases the claim and reports the domain-miss outcome."""
         workflow.db.library.get_song.return_value = _song()
         monkeypatch.setattr(f"{_MODULE}.find_library_containing_path", lambda _db, _path: None)
         result = self._run(workflow)
-        assert result.error == "Invalid path"
+        assert result.outcome == "library_unresolved"
+        assert result.fs_fact is None
+        assert result.file_key is workflow.identity
+        assert workflow.release_calls == [(workflow.db, workflow.identity, "reconcile:lib1")]
+
+    def test_structurally_invalid_path_reports_invalid_path_fact(
+        self, workflow: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A known library with an invalid path reports the invalid_path fact."""
+        workflow.db.library.get_song.return_value = _song()
+        invalid = LibraryPath(
+            relative="song.mp3",
+            absolute=Path("/music/song.mp3"),
+            library_id="lib1",
+            status="invalid_config",
+            reason="not relative to root",
+        )
+        monkeypatch.setattr(f"{_MODULE}.build_library_path_from_db", lambda **_kwargs: invalid)
+        result = self._run(workflow)
+        assert result.outcome is None
+        assert result.fs_fact is not None
+        assert result.fs_fact.kind == "invalid_path"
         assert result.file_key is workflow.identity
         assert workflow.release_calls == [(workflow.db, workflow.identity, "reconcile:lib1")]
 
@@ -299,7 +326,8 @@ class TestWriteFileTagsWorkflow:
         workflow.db.library.get_song.return_value = _song()
         monkeypatch.setattr(f"{_MODULE}.resolve_library_root", lambda _db, _lib: None)
         result = self._run(workflow)
-        assert result.error == "Library not found"
+        assert result.outcome == "library_unresolved"
+        assert result.fs_fact is None
         assert result.file_key is workflow.identity
         assert workflow.release_calls == [(workflow.db, workflow.identity, "reconcile:lib1")]
 
@@ -344,26 +372,57 @@ class TestWriteFileTagsWorkflow:
         workflow.db.library.set_modified_time.assert_not_called()
         assert workflow.written_calls == [(workflow.db, workflow.identity, "reconcile:lib1")]
 
-    def test_safe_write_failure_releases_claim_and_maps_error(self, workflow: SimpleNamespace) -> None:
-        """A generic safe-write failure releases the claim and maps the error."""
+    @pytest.mark.parametrize(
+        ("outcome", "fact"),
+        [
+            ("modified_externally", None),
+            ("audio_sanity_failed", None),
+            ("probe_failed_transient", None),
+            ("probe_unsupported", None),
+            ("write_failed", None),
+            ("write_failed", FsFact(presence="unknown", kind="transient_io", errno=5)),
+        ],
+        ids=[
+            "modified-externally",
+            "audio-sanity-failed",
+            "probe-failed-transient",
+            "probe-unsupported",
+            "write-failed",
+            "write-failed-with-fact",
+        ],
+    )
+    def test_safe_write_failure_passes_through_producer_result(
+        self,
+        workflow: SimpleNamespace,
+        outcome: WriteOutcome,
+        fact: FsFact | None,
+    ) -> None:
+        """A safe-write failure releases the claim and passes the producer's structured result through."""
         workflow.db.library.get_song.return_value = _song()
-        workflow.writer_cls.return_value.write_safe.return_value = SafeWriteResult(success=False, error="boom")
+        workflow.writer_cls.return_value.write_safe.return_value = SafeWriteResult(
+            success=False,
+            outcome=outcome,
+            fs_fact=fact,
+        )
         result = self._run(workflow)
         assert result.success is False
-        assert result.error == "Safe write failed: boom"
+        assert result.outcome == outcome
+        assert result.fs_fact is fact
         assert result.file_key is workflow.identity
         assert workflow.release_calls == [(workflow.db, workflow.identity, "reconcile:lib1")]
         assert workflow.written_calls == []
 
-    def test_file_modified_externally_preserves_error_token(self, workflow: SimpleNamespace) -> None:
-        """External modification keeps its retry token and releases the claim."""
+    def test_modified_externally_preserves_outcome_and_legacy_token(self, workflow: SimpleNamespace) -> None:
+        """External modification keeps its structured outcome and the derived legacy token."""
         workflow.db.library.get_song.return_value = _song()
         workflow.writer_cls.return_value.write_safe.return_value = SafeWriteResult(
             success=False,
-            error="file_modified_externally",
+            outcome="modified_externally",
         )
         result = self._run(workflow)
+        assert result.outcome == "modified_externally"
         assert result.error == "file_modified_externally"
+        assert result.fs_fact is None
         assert result.file_key is workflow.identity
         assert workflow.release_calls == [(workflow.db, workflow.identity, "reconcile:lib1")]
 
@@ -373,7 +432,8 @@ class TestWriteFileTagsWorkflow:
         result = self._run(workflow)
         error = result.error or ""
         assert result.success is False
-        assert error == "Unexpected error during tag write"
+        assert result.outcome == "write_failed"
+        assert result.fs_fact is None
         assert "secret" not in error
         assert "/music" not in error
         assert result.file_key is workflow.identity

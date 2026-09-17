@@ -267,7 +267,7 @@ class TestTagWriterWriteSafe:
 
         def fake_safe_write_tags(path, library_root, write_fn, expected_mtime_ms) -> SafeWriteResult:
             write_fn(Path("/tmp/temp.flac"))
-            return SafeWriteResult(success=True, error=None)
+            return SafeWriteResult(success=True)
 
         monkeypatch.setattr(
             "nomarr.components.tagging.tagging_writer_comp.safe_write_tags",
@@ -289,7 +289,7 @@ class TestTagWriterWriteSafe:
 
         def fake_safe_write_tags(path, library_root, write_fn, expected_mtime_ms) -> SafeWriteResult:
             write_fn(Path("/tmp/temp.flac"))
-            return SafeWriteResult(success=True, error=None)
+            return SafeWriteResult(success=True)
 
         monkeypatch.setattr(
             "nomarr.components.tagging.tagging_writer_comp.safe_write_tags",
@@ -305,6 +305,7 @@ class TestTagWriterWriteSafe:
     @pytest.mark.unit
     @pytest.mark.mocked
     def test_write_safe_returns_failure_for_invalid_path(self) -> None:
+        """A known library with a structurally invalid path returns the invalid_path fact."""
         writer = TagWriter()
         lib_path = LibraryPath(
             relative="song.mp3",
@@ -315,7 +316,26 @@ class TestTagWriterWriteSafe:
         )
         result = writer.write_safe(lib_path, _make_tags(), library_root=Path("/music"), expected_mtime_ms=1000)
         assert result.success is False
-        assert "Invalid path" in (result.error or "")
+        assert result.outcome is None
+        assert result.fs_fact is not None
+        assert result.fs_fact.kind == "invalid_path"
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_write_safe_invalid_path_without_library_reports_library_unresolved(self) -> None:
+        """An invalid path with no owning library is the non-retryable domain-miss outcome."""
+        writer = TagWriter()
+        lib_path = LibraryPath(
+            relative="song.mp3",
+            absolute=Path("/music/song.mp3"),
+            library_id=None,
+            status="not_found",
+            reason="missing on disk",
+        )
+        result = writer.write_safe(lib_path, _make_tags(), library_root=Path("/music"), expected_mtime_ms=1000)
+        assert result.success is False
+        assert result.outcome == "library_unresolved"
+        assert result.fs_fact is None
 
 
 class TestWriteSafeRealCallerPath:
@@ -449,7 +469,7 @@ class TestWriteSafeRealCallerPath:
         result = writer.write_safe(lib_path, _make_tags(), library_root=tmp_path, expected_mtime_ms=mtime_ms)
 
         assert result.success is False
-        assert "Unsupported file type" in (result.error or "")
+        assert result.outcome == "write_failed"
         assert original.read_bytes() == b"headerless audio bytes"
         assert list(tmp_path.glob(".*.nomarr-tmp")) == []
 
@@ -616,7 +636,7 @@ class TestWriteSafeRealCallerPath:
         result = TagWriter().write_safe(lib_path, _make_tags(), library_root=tmp_path, expected_mtime_ms=mtime_ms)
 
         assert result.success is False
-        assert result.error
+        assert result.outcome == "write_failed"
         assert original.read_bytes() == b"headerless audio bytes"
 
     @pytest.mark.integration

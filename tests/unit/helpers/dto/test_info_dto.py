@@ -296,6 +296,7 @@ class TestLibraryPipelineInfo:
         assert info.name == "Rock Library"
         assert info.state == "write_ready"
         assert info.library_auto_write is True
+        assert info.write_outcome is None
 
     @pytest.mark.unit
     def test_library_auto_write_false(self) -> None:

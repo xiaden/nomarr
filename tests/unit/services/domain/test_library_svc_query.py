@@ -519,3 +519,95 @@ class TestGetWorkStatus:
         # _derive_pipeline_state reports the first incomplete axis: calibrating.
         assert result.pipeline_libraries[0].state == "calibrating"
         assert result.is_busy is True
+
+
+class TestGetWorkStatusWriteOutcome:
+    """Tests for the tagging-service reconcile-outcome seam on get_work_status.
+
+    These exercise the REAL ``compute_work_status`` (never patched); only the
+    reconcile boundary (the injected ``tagging_service``) is mocked.
+    """
+
+    def _make_stats(self) -> LibraryStatsResult:
+        return LibraryStatsResult(
+            total_files=100,
+            total_artists=5,
+            total_albums=10,
+            total_duration=36000,
+            total_size=500_000_000,
+            needs_tagging_count=0,
+        )
+
+    def _make_library_doc(self) -> LibraryDict:
+        """Build a ``LibraryDict`` transport projection (no storage PK / timestamps)."""
+        return LibraryDict(
+            name="Rock Library",
+            root_path="/music",
+            is_enabled=True,
+            library_auto_write=False,
+        )
+
+    @pytest.mark.unit
+    def test_get_work_status_forwards_write_outcome(self) -> None:
+        """Real compute_work_status projects the reconcile outcome forwarded from the service."""
+        mock_db = MagicMock()
+        mock_db.app.get_file_query_stats = MagicMock(return_value={})
+        mock_db.library.count_recently_tagged = MagicMock(return_value=0)
+        mixin = _ConcreteQueryMixin(mock_db)
+        library_doc = self._make_library_doc()
+        tagging_service = MagicMock()
+        tagging_service.get_reconcile_status.return_value = {
+            "pending_count": 2,
+            "failed_count": 1,
+            "in_progress": False,
+            "outcome": "partial",
+        }
+
+        with (
+            patch(
+                "nomarr.services.domain.library_svc.query.list_library_records",
+                return_value=[library_doc],
+            ),
+            patch.object(
+                LibraryQueryMixin,
+                "get_library_stats",
+                return_value=self._make_stats(),
+            ),
+            patch(
+                "nomarr.services.domain.library_svc.query.get_libraries_in_axis_state",
+                return_value=[],
+            ),
+        ):
+            result = mixin.get_work_status(tagging_service=tagging_service)
+
+        assert len(result.pipeline_libraries) == 1
+        assert result.pipeline_libraries[0].write_outcome == "partial"
+        tagging_service.get_reconcile_status.assert_called_once_with(library_doc)
+
+    @pytest.mark.unit
+    def test_get_work_status_tolerates_missing_tagging_service(self) -> None:
+        """Absent tagging_service yields write_outcome=None and makes no reconcile call."""
+        mock_db = MagicMock()
+        mock_db.app.get_file_query_stats = MagicMock(return_value={})
+        mock_db.library.count_recently_tagged = MagicMock(return_value=0)
+        mixin = _ConcreteQueryMixin(mock_db)
+
+        with (
+            patch(
+                "nomarr.services.domain.library_svc.query.list_library_records",
+                return_value=[self._make_library_doc()],
+            ),
+            patch.object(
+                LibraryQueryMixin,
+                "get_library_stats",
+                return_value=self._make_stats(),
+            ),
+            patch(
+                "nomarr.services.domain.library_svc.query.get_libraries_in_axis_state",
+                return_value=[],
+            ),
+        ):
+            result = mixin.get_work_status()
+
+        assert len(result.pipeline_libraries) == 1
+        assert result.pipeline_libraries[0].write_outcome is None

@@ -17,8 +17,9 @@ from nomarr.interfaces.api.types.ml_types import (
     MlModelResponse,
     UpdateOutputLabelRequest,
 )
-from nomarr.interfaces.api.web.dependencies import get_library_service, get_ml_service
+from nomarr.interfaces.api.web.dependencies import get_library_service, get_ml_service, get_tagging_service
 from nomarr.services.domain.library_svc import LibraryService
+from nomarr.services.domain.tagging_svc import TaggingService
 from nomarr.services.infrastructure.ml_svc import MLService
 
 logger = logging.getLogger(__name__)
@@ -175,6 +176,7 @@ async def ml_trigger_vram_probe(
 @router.get("/work-status", dependencies=[Depends(verify_session)])
 async def web_work_status(
     library_service: Annotated[LibraryService, Depends(get_library_service)],
+    tagging_service: Annotated[TaggingService, Depends(get_tagging_service)],
 ) -> WorkStatusResponse:
     """Get unified work status for the system.
 
@@ -186,7 +188,7 @@ async def web_work_status(
     Poll at 1s intervals when busy, 30s when idle.
     """
     try:
-        result = await asyncio.to_thread(library_service.get_work_status)
+        result = await asyncio.to_thread(library_service.get_work_status, tagging_service=tagging_service)
         return WorkStatusResponse.from_dto(result)
     except Exception as e:
         logger.exception("[ml_if] Failed to get work status")

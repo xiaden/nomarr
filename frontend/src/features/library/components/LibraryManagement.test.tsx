@@ -320,4 +320,45 @@ describe("LibraryManagement", () => {
     expect(screen.getByText("Ready for file writeback review.")).toBeInTheDocument();
     expect(screen.getByText("Needs more tagged files before calibration can continue.")).toBeInTheDocument();
   });
+
+  it("renders a partial tag write distinctly from a drained library", async () => {
+    const drainedLibrary: Library = {
+      ...libraryFixture,
+      library_id: "drained library",
+      libraryUuid: "library-uuid-2",
+      name: "drained library",
+      rootPath: "/music/drained-library",
+    };
+    vi.mocked(list).mockResolvedValue([libraryFixture, drainedLibrary]);
+    vi.mocked(getWorkStatus).mockResolvedValue({
+      ...workStatusFixture,
+      pipeline_libraries: [
+        {
+          library_id: "library name",
+          name: "library name",
+          state: "write_ready",
+          library_auto_write: false,
+          write_outcome: "partial",
+        },
+        {
+          library_id: "drained library",
+          name: "drained library",
+          state: "done",
+          library_auto_write: true,
+          write_outcome: "complete",
+        },
+      ],
+    });
+
+    renderWithProviders(<LibraryManagement />);
+
+    await waitFor(() => {
+      expect(screen.getByText("library name")).toBeInTheDocument();
+    });
+
+    expect(await screen.findByText("Partial write")).toBeInTheDocument();
+    expect(screen.getAllByText("Tag write ended with files still pending.")).toHaveLength(1);
+    // The drained library renders its terminal badge and no partial marker.
+    expect(screen.getByText("Done")).toBeInTheDocument();
+  });
 });

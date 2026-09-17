@@ -298,6 +298,59 @@ class TestLibraryWriteTag:
         assert response.json() == {"status": "started", "task_id": "task-42"}
         assert mock_tagging_service.start_write_tags_background.call_args.args[0] is library
 
+    def test_write_tag_rescan_skipped_when_pending_work_remains(
+        self,
+        client: TestClient,
+        mock_library_service: MagicMock,
+        mock_tagging_service: MagicMock,
+        mock_navidrome_service: MagicMock,
+    ) -> None:
+        """A partial reconcile state must not trigger the Navidrome rescan."""
+        library = make_library()
+        mock_library_service.get_library_by_name.return_value = library
+        mock_tagging_service.start_write_tags_background.return_value = "task-42"
+        mock_tagging_service.get_reconcile_status.return_value = {
+            "pending_count": 4,
+            "failed_count": 4,
+            "in_progress": False,
+            "outcome": "partial",
+        }
+
+        response = client.post("/api/web/library/Test%20Library/write-tag")
+
+        assert response.status_code == 202
+        on_complete = mock_tagging_service.start_write_tags_background.call_args.kwargs["on_complete"]
+        on_complete()
+
+        mock_tagging_service.get_reconcile_status.assert_called_once_with(library)
+        mock_navidrome_service.trigger_rescan.assert_not_called()
+
+    def test_write_tag_rescan_fires_when_drained(
+        self,
+        client: TestClient,
+        mock_library_service: MagicMock,
+        mock_tagging_service: MagicMock,
+        mock_navidrome_service: MagicMock,
+    ) -> None:
+        """A fully drained reconcile state triggers exactly one Navidrome rescan."""
+        library = make_library()
+        mock_library_service.get_library_by_name.return_value = library
+        mock_tagging_service.start_write_tags_background.return_value = "task-42"
+        mock_tagging_service.get_reconcile_status.return_value = {
+            "pending_count": 0,
+            "failed_count": 0,
+            "in_progress": False,
+            "outcome": "complete",
+        }
+
+        response = client.post("/api/web/library/Test%20Library/write-tag")
+
+        assert response.status_code == 202
+        on_complete = mock_tagging_service.start_write_tags_background.call_args.kwargs["on_complete"]
+        on_complete()
+
+        mock_navidrome_service.trigger_rescan.assert_called_once()
+
     def test_write_tag_returns_404_when_library_missing(
         self,
         client: TestClient,
@@ -313,6 +366,27 @@ class TestLibraryWriteTag:
 
         assert response.status_code == 404
         assert response.json() == {"detail": "Library not found"}
+
+    def test_write_tag_rescan_skipped_when_reconcile_state_unknown(
+        self,
+        client: TestClient,
+        mock_library_service: MagicMock,
+        mock_tagging_service: MagicMock,
+        mock_navidrome_service: MagicMock,
+    ) -> None:
+        """An unknown reconcile state (missing pending_count) must not trigger a rescan."""
+        library = make_library()
+        mock_library_service.get_library_by_name.return_value = library
+        mock_tagging_service.start_write_tags_background.return_value = "task-42"
+        mock_tagging_service.get_reconcile_status.return_value = {}
+
+        response = client.post("/api/web/library/Test%20Library/write-tag")
+
+        assert response.status_code == 202
+        on_complete = mock_tagging_service.start_write_tags_background.call_args.kwargs["on_complete"]
+        on_complete()  # unknown state must be handled without raising
+
+        mock_navidrome_service.trigger_rescan.assert_not_called()
 
 
 @pytest.mark.unit

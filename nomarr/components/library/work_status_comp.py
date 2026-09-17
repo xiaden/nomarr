@@ -21,6 +21,8 @@ from nomarr.helpers.constants.pipeline_states import (
 from nomarr.helpers.dto.info_dto import LibraryPipelineInfo, ScanningLibraryInfo, WorkStatusResult
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from nomarr.helpers.dto.library_dto import LibraryDict, LibraryStatsResult
 
 
@@ -31,6 +33,8 @@ def compute_work_status(
     pipeline_states: dict[str, dict[str, str]] | None = None,
     velocity_window_seconds: int = 300,
     library_docs: list[LibraryDict] | None = None,
+    *,
+    write_outcomes: Mapping[str, str | None] | None = None,
 ) -> WorkStatusResult:
     """Compute unified work status from raw data.
 
@@ -42,6 +46,10 @@ def compute_work_status(
             (``{library_name: {state_fields}}``).
         velocity_window_seconds: Window size for velocity calculation (default 5 min).
         library_docs: Alternative library docs used for pipeline_libraries building.
+        write_outcomes: Per-library tag-write reconcile outcome keyed by natural
+            library name. The caller (service layer) owns the persistence/facade
+            read; this component receives the mapping only (ADR-046). Missing
+            entries yield ``None``.
 
     Returns:
         WorkStatusResult DTO with scanning, processing, and velocity info.
@@ -94,6 +102,7 @@ def compute_work_status(
                 name=lib.name or "Unknown",
                 state=state,
                 library_auto_write=bool(lib.library_auto_write),
+                write_outcome=(write_outcomes or {}).get(lib_name),
             )
         )
 

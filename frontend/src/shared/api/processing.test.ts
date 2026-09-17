@@ -33,6 +33,7 @@ describe("getWorkStatus", () => {
           name: "My Library",
           state: "scanning",
           library_auto_write: true,
+          write_outcome: "partial",
         },
       ],
       is_processing: false,

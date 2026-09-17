@@ -76,6 +76,7 @@ if TYPE_CHECKING:
     from nomarr.helpers.dataclasses.song_command_dataclass import SongIdentity
     from nomarr.helpers.dto.info_dto import WorkStatusResult
     from nomarr.persistence.db import Database
+    from nomarr.services.domain.tagging_svc import TaggingService
 
     from .config import LibraryServiceConfig
 
@@ -327,7 +328,7 @@ class LibraryQueryMixin:
         values = get_unique_mood_values(self.db, mood_tier=mood_tier, limit=limit)
         return UniqueTagKeysResult(tag_keys=values, count=len(values), calibration=None, library_id=None)
 
-    def get_work_status(self) -> WorkStatusResult:
+    def get_work_status(self, tagging_service: TaggingService | None = None) -> WorkStatusResult:
         """Get unified work status for the system.
 
         Returns status of:
@@ -339,6 +340,13 @@ class LibraryQueryMixin:
         ``is_busy`` is true while scanning, ML processing, calibration, or tag
         writing is active, or while files remain pending. This method is
         designed for frontend polling to show activity indicators.
+
+        Args:
+            tagging_service: Optional ``TaggingService`` used to read the live
+                tag-write reconcile outcome per library. When absent,
+                ``write_outcome`` is ``None`` for every library (conservative);
+                the injected interface dependency owns the composition because
+                ``LibraryService`` does not hold ``TaggingService``.
 
         Returns:
             WorkStatusResult DTO with pipeline, scanning, processing, and velocity status
@@ -403,12 +411,23 @@ class LibraryQueryMixin:
                 ),
             }
 
+        # Tag-write reconcile outcomes are read through the injected tagging
+        # service (the interface layer owns the dependency because LibraryService
+        # does not hold TaggingService). ``LibraryDict`` is the transport
+        # projection of the domain ``Library``; reconcile status only reads the
+        # natural identity fields, so the projection is structurally sufficient.
+        write_outcomes: dict[str, str | None] = {}
+        if tagging_service is not None:
+            for lib in libraries:
+                write_outcomes[lib.name] = tagging_service.get_reconcile_status(cast("Library", lib))["outcome"]
+
         return compute_work_status(
             libraries,
             stats,
             recently_tagged,
             pipeline_states,
             library_docs=libraries,
+            write_outcomes=write_outcomes,
         )
 
     def get_recently_processed(
