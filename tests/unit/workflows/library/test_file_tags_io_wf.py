@@ -2,14 +2,22 @@
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nomarr.components.tagging.tagging_writer_comp import TagWriter
 from nomarr.helpers.dataclasses.tags_dataclass import Tag, Tags
 from nomarr.helpers.dto.path_dto import LibraryPath
 from nomarr.workflows.library.file_tags_io_wf import read_file_tags_workflow
+
+_FIXTURE_DIR = Path(__file__).resolve().parents[4] / "tests/fixtures/library/good/AllFormats/SameTrack"
+
+
+def _real_library_path(target: Path) -> LibraryPath:
+    return LibraryPath(relative=target.name, absolute=target, library_id=1, status="valid")
 
 
 def _valid_library_path(relative: str) -> LibraryPath:
@@ -86,3 +94,29 @@ class TestReadFileTagsWorkflow:
             pytest.raises(ValueError, match="Invalid path"),
         ):
             read_file_tags_workflow(mock_db, "song.mp3", "nom")
+
+
+class TestReadFileTagsWorkflowRealCallerPath:
+    """Real-caller path: ``TagWriter`` writes to disk, ``read_file_tags_workflow`` reads it back.
+
+    Only the ``build_library_path_from_input`` DB resolver is patched (the workflow receives a
+    ``MagicMock`` db); the real ``read_file_tags_workflow`` -> ``read_tags_from_file`` chain runs
+    over the real fixture copy written by the real ``TagWriter``.
+    """
+
+    @pytest.mark.integration
+    @pytest.mark.requires_audio
+    @pytest.mark.parametrize("ext", ["flac", "ogg", "opus"])
+    def test_vorbis_write_then_read_back_through_workflow(self, tmp_path: Path, ext: str) -> None:
+        target = tmp_path / f"cooltrack.{ext}"
+        shutil.copy2(_FIXTURE_DIR / f"cooltrack.{ext}", target)
+        lib_path = _real_library_path(target)
+        TagWriter().write(lib_path, Tags(items=(Tag(name="genre", values=("rock",)),)))
+
+        with patch(
+            "nomarr.workflows.library.file_tags_io_wf.build_library_path_from_input",
+            return_value=lib_path,
+        ):
+            result = read_file_tags_workflow(MagicMock(), str(target), "nom")
+
+        assert result == {"genre": ("rock",)}

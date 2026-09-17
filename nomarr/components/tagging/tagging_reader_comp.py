@@ -168,7 +168,7 @@ def _extract_vorbis_tags(audio: mutagen.FileType, namespace: str) -> dict[str, l
     vorbis_prefix = f"{namespace.upper()}_"
 
     for key, values in audio.tags.items():
-        if not isinstance(key, str) or not key.startswith(vorbis_prefix):
+        if not isinstance(key, str) or not key.upper().startswith(vorbis_prefix):
             continue
 
         clean_name = key[len(vorbis_prefix) :].lower().replace("_", "-")

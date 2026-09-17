@@ -81,6 +81,33 @@ class TestTagWriterWrite:
 
     @pytest.mark.unit
     @pytest.mark.mocked
+    @pytest.mark.parametrize("source_ext", ["flac", "ogg", "opus"])
+    def test_write_routes_vorbis_extensions_with_source_ext(self, source_ext: str) -> None:
+        """The flac/ogg/opus branch delegates the absolute path and the threaded ``source_ext``."""
+        writer = TagWriter()
+        writer._vorbis = MagicMock()
+        lib_path = _valid_library_path(f"song.{source_ext}")
+
+        writer.write(lib_path, _make_tags())
+
+        writer._vorbis.write.assert_called_once_with(
+            lib_path.absolute,
+            {"genre": ("rock", "pop")},
+            source_ext=source_ext,
+        )
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
+    def test_write_raises_runtime_error_for_unsupported_extension(self) -> None:
+        """An unrecognized extension is rejected at the public in-place entry point."""
+        writer = TagWriter()
+        lib_path = _valid_library_path("song.wav")
+
+        with pytest.raises(RuntimeError, match="Unsupported file type"):
+            writer.write(lib_path, _make_tags())
+
+    @pytest.mark.unit
+    @pytest.mark.mocked
     def test_write_raises_value_error_for_invalid_path(self) -> None:
         writer = TagWriter()
         lib_path = LibraryPath(
