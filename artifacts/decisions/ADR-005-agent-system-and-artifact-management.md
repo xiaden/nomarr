@@ -1,9 +1,10 @@
 # ADR-005: Agent System Architecture and Artifact Management
 
-**Status:** Accepted  
+**Status:** Deprecated  
 **Date:** 2026-04-03  
 **Tags:** agents, tooling, code-intel, institutional-memory, architecture  
 **Source Log:** exec-director#L2  
+**Retired:** 2026-09-17 — the agent/artifact-management system this ADR governs is no longer owned or operated by Nomarr; retained for history only.  
 
 ## Context
 
